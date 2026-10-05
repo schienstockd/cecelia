@@ -705,5 +705,61 @@ class CommitMsgHookTest(unittest.TestCase):
         self.assertEqual(rc, 0)
 
 
+class ForeignStampTest(unittest.TestCase):
+    """Gate 0: a message carrying recital output for a DIFFERENT change blocks.
+
+    The incident: two sessions sharing one scratchpad each ran `pixi run recital > <same
+    path>`. Both shells opened (and truncated) the file before either wrote; each wrote from
+    offset 0 through its own descriptor, so the shorter, later write replaced only the head of
+    the longer one. The file read as run B's body + the tail of run A's, and the session that
+    committed it shipped another change's review as its evidence.
+    """
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self.head = "d" * 40
+        for name, value in (("_current_head_sha", self.head), ("_current_branch", "feat/mine")):
+            p = mock.patch.object(self.hook, name, return_value=value)
+            p.start()
+            self.addCleanup(p.stop)
+        from cecelia.effectiveness.recital import recital_stamp
+        self.stamp = recital_stamp
+
+    def _body(self, branch: str, sha: str, n: int) -> str:
+        return ("_Fanout audit: run_\n" + f"evidence for {branch}\n" * n
+                + self.stamp(branch, sha) + "\n")
+
+    def test_own_stamp_passes(self):
+        self.assertIsNone(self.hook.check("subject\n\n" + self._body("feat/mine", self.head, 1)))
+
+    def test_no_stamp_passes(self):
+        # the manual fallback protocol carries no stamp
+        self.assertIsNone(self.hook.check("subject\n\n_Fanout audit: run_\n"))
+
+    def test_unknown_parts_pass(self):
+        self.assertIsNone(self.hook.check("x\n" + self.stamp(None, None)))
+
+    def test_other_branch_blocks(self):
+        reason = self.hook.check("x\n" + self._body("feat/other", self.head, 1))
+        self.assertIsNotNone(reason)
+        self.assertIn("different change", reason)
+
+    def test_other_parent_sha_blocks(self):
+        self.assertIsNotNone(self.hook.check("x\n" + self._body("feat/mine", "e" * 40, 1)))
+
+    def test_spliced_shared_file_blocks(self):
+        # Reproduce the splice itself, then check the hook on what the reader would paste.
+        with tempfile.TemporaryDirectory() as td:
+            path = pathlib.Path(td) / "recital.txt"
+            other = open(path, "w", encoding="utf-8")   # session A's `>` (truncates)
+            mine = open(path, "w", encoding="utf-8")    # session B's `>` (truncates, empty)
+            other.write(self._body("feat/other", "e" * 40, 20)); other.close()   # A finishes first
+            mine.write(self._body("feat/mine", self.head, 2)); mine.close()      # B, shorter
+            spliced = path.read_text(encoding="utf-8")
+        self.assertTrue(spliced.startswith(self._body("feat/mine", self.head, 2)))
+        self.assertIn(self.stamp("feat/other", "e" * 40), spliced)              # A's tail survived
+        self.assertIsNotNone(self.hook.check("subject\n\n" + spliced))
+
+
 if __name__ == "__main__":
     unittest.main()

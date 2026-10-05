@@ -28,6 +28,10 @@ silently commits over. Fanout audit is the same shape for its own findings.
 
 This hook enforces these gates on a commit whose message carries reviewer findings:
 
+0. **The recital is this change's.** Every `_Recital stamp: <branch>@<sha12>_` line (recital
+   ends its body with one) must name this commit's branch and parent SHA — any commit, findings
+   or not. Catches a recital body spliced from another session's run (a shared output file).
+
 1. **Outcome-tag presence.** For every `**confirmed**` fanout / `**should reuse**` or
    `**wrong home**` convention finding line, the message must carry an outcome tag from the
    closed vocabulary — `fixed_pre_commit`, or `shipped_with_finding` / `false_positive` /
@@ -77,7 +81,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
-from cecelia.effectiveness.recital import MARKERS, outside_code  # noqa: E402
+from cecelia.effectiveness.recital import MARKERS, STAMP_RE, outside_code  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -196,10 +200,37 @@ def _has_matching_run(head_sha: str, branch: str | None = None) -> bool:
     return False
 
 
+def foreign_stamp(message: str, head_sha: str | None, branch: str | None) -> str | None:
+    """Why `message` carries recital output for a DIFFERENT change, or None.
+
+    Every `recital_stamp` in the message must name this commit's branch and parent SHA. A
+    mismatch means the body was produced elsewhere — the case this exists for is two sessions
+    writing their recital to the same file path: the second write overwrites only the head of
+    the first, so the file reads as one run's body plus the other's tail, and whoever commits it
+    ships another change's review evidence. Unknown parts (`?`, or git unreadable here) are not
+    held against the message; a message with no stamp (manual protocol) passes.
+    """
+    for m in STAMP_RE.finditer(message):
+        s_branch, s_sha = m.group(1), m.group(2)
+        wrong_branch = branch is not None and s_branch != "?" and s_branch != branch
+        wrong_sha = head_sha is not None and s_sha != "?" and not head_sha.startswith(s_sha)
+        if wrong_branch or wrong_sha:
+            return (
+                f"the message carries recital output for a different change ({m.group(0)}; "
+                f"this commit is {branch or '?'}@{(head_sha or '?')[:12]}). A recital file "
+                "shared with another session gets spliced — write recital output to a path "
+                "only this run uses (`mktemp`), re-run `pixi run recital`, and paste its own "
+                "output. Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
+            )
+    return None
+
+
 def check(command: str) -> str | None:
     """Return None if the commit message `command` is allowed; else a human-readable reason.
 
-    Three gates:
+    Four gates:
+    0. **The recital is this change's** — no `recital_stamp` for another branch / parent SHA
+       (`foreign_stamp`).
     1. **Outcome-tag presence** — every finding marker (recital's `MARKERS`)
        needs a matching outcome tag (bare or slug-paired). Duplicate slugs are rejected.
     2. **SHA-anchored real-review** — a findings-carrying commit must have at least one
@@ -214,6 +245,10 @@ def check(command: str) -> str | None:
     Gates 2 and 3 are skipped when HEAD SHA cannot be captured (not a repo, git missing) — degrade
     to allow rather than block on our own failure.
     """
+    # Gate 0: the recital body in the message is THIS change's (see `foreign_stamp`).
+    foreign = foreign_stamp(command, _current_head_sha(), _current_branch())
+    if foreign is not None:
+        return foreign
     # Same rule as the recital parser: a marker quoted in backticks is prose, not a finding.
     findings = _FINDING_MARKERS.findall(outside_code(command))
     # Strip slug pairs first: the outcome word inside `[fanout-…: fixed_pre_commit]` also

@@ -32,7 +32,7 @@ import unittest
 from unittest import mock
 
 from cecelia.effectiveness import EVENT_TYPES, read_events
-from cecelia.effectiveness.recital import RecitalError, run_recital
+from cecelia.effectiveness.recital import STAMP_RE, RecitalError, recital_stamp, run_recital
 
 
 class RecitalTest(unittest.TestCase):
@@ -164,6 +164,23 @@ class RecitalTest(unittest.TestCase):
         convention_tail_count = recital.count("_Convention check: run_")
         self.assertEqual(convention_tail_count, 1,
                          f"expected 1 convention tail, got {convention_tail_count}:\n{recital}")
+
+    def test_body_ends_with_the_stamp_of_the_change_it_reviewed(self):
+        # The text names its own change (the log rows always did), so the commit hook can tell a
+        # body produced for another branch from this one's.
+        sha = "c" * 40
+        with mock.patch("cecelia.effectiveness.recital._current_head_sha", return_value=sha), \
+             mock.patch("cecelia.effectiveness.recital._current_branch", return_value="feat/x"):
+            recital = run_recital("some diff", claude_runner=lambda _p: "no findings")
+        last = recital.rstrip().splitlines()[-1]
+        self.assertEqual(last, recital_stamp("feat/x", sha))
+        m = STAMP_RE.fullmatch(last)
+        self.assertIsNotNone(m)
+        self.assertEqual((m.group(1), m.group(2)), ("feat/x", sha[:12]))
+
+    def test_stamp_marks_what_git_could_not_report(self):
+        self.assertEqual(recital_stamp(None, None), "_Recital stamp: ?@?_")
+        self.assertIsNotNone(STAMP_RE.fullmatch(recital_stamp(None, None)))
 
 
 class FindingsEmissionTest(unittest.TestCase):
