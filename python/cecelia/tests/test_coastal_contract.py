@@ -1,6 +1,6 @@
 """The INSTALLED coastal must accept the calls cecelia makes.
 
-`pixi.toml` pins coastal by rev and calls that rev a HARD FLOOR — cecelia passes arguments that do
+`pixi.toml` pins coastal to one commit and calls that commit a HARD FLOOR — cecelia passes arguments that do
 not exist before it. Its own comment names the hole this closes: *"Nothing catches a rollback past
 the `segment.coastal` / `opticalFlow.train` calls above."* Nothing did, and it bit — a rev bump was
 left out of the PR that started passing `flow_cache=`, so `main` had cecelia calling a coastal that

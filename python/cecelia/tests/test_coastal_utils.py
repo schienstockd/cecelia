@@ -1,6 +1,6 @@
 """`CoastalUtils` — the parts that fail SILENTLY if they are wrong.
 
-Coastal itself is not exercised here: it is a pinned git dependency whose inference path needs a
+Coastal itself is not exercised here: it is a commit-pinned dependency whose inference path needs a
 trained checkpoint and a GPU, and the pinned revision may lag what this file targets. What IS tested
 is the glue, and specifically the three ways this glue can produce a plausible wrong answer with no
 error at all:

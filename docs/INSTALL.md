@@ -121,7 +121,7 @@ pixi run python -c "import torch, cellpose; print('cuda', torch.cuda.is_availabl
 
 > Always run the stack through `pixi run` (`pixi run dev`, `pixi run prod`, …) so the
 > Julia server's Python subprocesses use this env. The design rationale — the cellpose-v4
-> floor, the `coastal` git dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
+> floor, the `coastal` commit-pinned tarball dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
 > model — lives in `docs/SHIPPING.md`, not here.
 
 > **First cellpose run downloads weights.** Cellpose 4 fetches `cpsam_v2` (~1.2 GB) from

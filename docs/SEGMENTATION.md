@@ -754,7 +754,7 @@ rather than a fabricated zero one.
 weighted sum, so storing its floor separately would create a number that can disagree with the terms
 it is made of.
 
-**The floors arrive only with coastal's pin.** `pixi.toml` pins coastal by git rev and the env
+**The floors arrive only with coastal's pin.** `pixi.toml` pins coastal to one commit and the env
 installs a copy, so a cecelia checkout does *not* see a working-tree edit to a local coastal clone —
 `bce_floor` / `with_floor` had to be merged into coastal's `main` and the rev bumped before any
 manifest could gain `lossFloors`. A rollback past that rev is the quietest of the three things the
