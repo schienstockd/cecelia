@@ -128,9 +128,9 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
      for v in vn_order]
 end
 
-# ── popScope: the two object scopes a MODULE FUNCTION's population picker offers (docs/ANALYSIS.md).
-#    A task's popSelection param declares `popScope` = "cells" or "tracks" instead of hand-rolling a
-#    raw pop_type per module. This is the Julia parity of the old R `isTrack` pop-map attribute + the
+# ── popScope (LEGACY — built-ins declare `accepts`, allow_list.jl): the two object scopes a module
+#    function's population picker used to declare (docs/MODULES.md → *popScope*), kept for custom
+#    modules + the UMAP view. "cells" or "tracks" instead of hand-rolling a raw pop_type per module. This is the Julia parity of the old R `isTrack` pop-map attribute + the
 #    `tracksOnly` flag: "cells" = per-cell populations (flow gates [+ clust clusters]); "tracks" =
 #    per-track populations (the derived `_tracked` sets [+ per-track gates + trackclust clusters]).
 #    Clustering-derived pops are included by default; a picker opts out with `includeClusters=false`.

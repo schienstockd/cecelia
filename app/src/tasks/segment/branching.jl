@@ -108,9 +108,10 @@ function _aniso_grid_findings(bytes::Integer, n_boxes::Integer, box_um::Real)
                              "at $(round(box_um, digits = 2)) µm")]
 end
 
-# A `refPops` ref → its member CELL labels, or (nothing, why). Any pop type the picker offers — a gate,
-# a cluster, a `_tracked` subset, a per-track gate (its tracks' cells) — through `pop_df_multi`, the
-# mixed-type accessor; the map probe only tells "no such population" apart from an empty one.
+# A `refPops` ref → its member CELL labels, or (nothing, why). The single-mode picker offers only the
+# segmentation's cell gates (`accepts: ["live"]`), but resolution goes through `pop_df_multi`, the
+# mixed-type accessor, so a REPL/chain ref of any pop type (a cluster, a `_tracked` subset, a per-track
+# gate's cells) resolves too; the map probe only tells "no such population" apart from an empty one.
 function _ref_pop_cell_labels(img::CciaImage, ref::AbstractString, default_vn::AbstractString)
     vn, path = _split_pop_ref(ref, default_vn)
     pt = resolve_pop_type(img, vn, path)
@@ -193,7 +194,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     end
 
     # Resolve refPops in Julia (Decision 7): Python receives a plain list of label IDs, never a
-    # pop map. Multi-accept picker → resolve_pop_type discovers which map to load.
+    # pop map. resolve_pop_type discovers which map to load (any pop type a ref names).
     label_ids = nothing
     if p.refPops != "NONE"
         label_ids, err = _ref_pop_cell_labels(img, p.refPops, p.valueName)

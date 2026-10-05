@@ -27,7 +27,7 @@
       "key": "refPops",
       "label": "Restrict to population",
       "type": "popSelection",
-      "accepts": ["live", "clust", "region"],
+      "accepts": ["live"],
       "default": "NONE",
       "tip": "Skeletonise only these cells; NONE = the whole segmentation"
     },

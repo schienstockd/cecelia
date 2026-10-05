@@ -148,7 +148,9 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
 
     uids     = [img.uid for img in imgs]
     pop_cols = unique(vcat(_MOTIF_FEATURE_COLS, ["track_id", tcol]))
-    df = pop_df(imgs, uids, "live", p.pops; pop_cols=pop_cols, granularity=:cell)
+    # mixed-type read: every pop the picker `accepts` (`_tracked`, track gates, track clusters)
+    # resolves to its member cells
+    df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell)
     nrow(df) == 0 && (on_log("[ERROR] Motif discovery: no cells for pops=$(p.pops)"); return nothing)
     missing_cols = setdiff(_MOTIF_FEATURE_COLS, names(df))
     isempty(missing_cols) ||

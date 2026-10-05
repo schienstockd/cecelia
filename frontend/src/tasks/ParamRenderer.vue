@@ -20,7 +20,7 @@ import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfie
          paramAppliesToImages, resolveParamTip,
          scopeValueName, scopeValueNames, siblingKeyOfType, groupOrderKeys, newEntryDefaults } from './paramValues'
 import ImagePickerModal from '../components/ImagePickerModal.vue'
-import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
@@ -232,8 +232,9 @@ function onPickerSave(box: Record<string, number> | null) {
 }
 
 // popSelection — two modes:
-//  • single (default): a dropdown of flow populations for ONE segmentation (the sibling
-//    `valueName`), plus "NONE (whole segmentation)". Used by e.g. tracking.bayesianTracking.
+//  • single (default): a dropdown of ONE pop map's populations for ONE segmentation (the sibling
+//    `valueName`), plus "NONE (whole segmentation)" — the map named by the single `accepts` token
+//    (`singlePopType`; `live` → the flow gates). Used by e.g. tracking.bayesianTracking.
 //  • multi / acrossSegmentations: a chip multi-select listing populations from EVERY segmentation,
 //    each value prefixed with its value_name ("A/_tracked", "B/_tracked", …). `pop_df` pools these
 //    (the prefix names the segmentation), so behaviour/HMM fits tracked A, B, C across images at once.
@@ -276,13 +277,12 @@ async function loadPops() {
   if (props.param.type !== 'popSelection') return
   const img = props.context?.images?.[0]
   const projectUid = props.context?.projectUid
-  // popScope (cells|tracks) is the defined module-function scope; the backend resolves sources +
-  // cell/track filtering + existence-checked roots. Falls back to the raw popType picker when absent.
-  // accepts (explicit pop_type allow-list, Decision 14) supersedes popScope; both resolve the
-  // sources + cell/track tagging server-side. popType is the legacy raw path.
+  // accepts (explicit pop_type allow-list, Decision 14) is what every built-in declares; the backend
+  // resolves the sources + cell/track tagging + existence-checked roots server-side. popScope
+  // (cells|tracks) is the legacy shim over it, kept for user custom modules. popType is the raw path.
   const accepts = props.param.accepts
   const popScope = props.param.popScope
-  const popType = props.param.popType ?? (popScope === 'cells' ? 'flow' : popScope === 'tracks' ? 'live' : 'flow')
+  const popType = singlePopType(props.param)
   if (popAcross.value) {
     // populations across every segmentation, value_name-prefixed (incl. the derived /_tracked),
     // grouped by "<granularity> · <category>" (the tags the backend now sends).

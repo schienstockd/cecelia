@@ -27,7 +27,7 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
                            on_progress::Function = (n, t) -> nothing,
                            on_process::Function  = _ -> nothing)
     # TRACK POPULATIONS, not a segmentation. Anything measured along tracks takes a `popSelection`
-    # with `popScope: "tracks"` and NO `valueName` dropdown beside it — each picker value already
+    # with `accepts: ["track", "trackclust"]` and NO `valueName` dropdown beside it — each picker value already
     # carries its segmentation as a prefix, so a second dropdown is redundant and can disagree with
     # the pick. docs/MODULES.md → *Which picker* / *Derive the segmentation from the pops*.
     raw     = get(params, "pops", String[])
@@ -45,10 +45,11 @@ function Cecelia._run_task(::TrackContext, img::Cecelia.CciaImage, params::Dict{
 
     # ── Julia: per-track mean of `measure`, broadcast back to each cell ────────────
     on_progress(0, 2)
-    # `pop_df` is THE accessor (docs/POPULATION.md): it resolves which cells are in the chosen
-    # populations AND reads the columns in one narrow read. Reading the whole table and filtering
-    # afterwards would be a second, divergent membership implementation.
-    cell = Cecelia.pop_df(img, "live", pops; pop_cols = ["track_id", measure], granularity = :cell)
+    # `pop_df_multi` is THE accessor (docs/POPULATION.md): it resolves which cells are in the chosen
+    # populations — whatever their type (a `_tracked` set, a track gate, a track cluster) — AND reads
+    # the columns in one narrow read. Reading the whole table and filtering afterwards would be a
+    # second, divergent membership implementation.
+    cell = Cecelia.pop_df_multi(img, pops; pop_cols = ["track_id", measure], granularity = :cell)
     "track_id" in Cecelia.DataFrames.names(cell) ||
         (on_log("[ERROR] '$vn' is not tracked (no track_id)"); return nothing)
     measure in Cecelia.DataFrames.names(cell) ||

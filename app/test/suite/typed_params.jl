@@ -458,16 +458,16 @@ end
         @test p.transformation == "NONE"
     end
 
-    # clustTracks — same shape as clustPops plus popType + minTracklength.
+    # clustTracks — same shape as clustPops plus minTracklength. No `popType`: each picked pop's
+    # type is discovered at read (pop_df_multi), so a stray `popType` key is simply ignored.
     let p = Cecelia.parse_clust_tracks_params(Dict{String,Any}(
             "popsToCluster" => ["A/_tracked"], "popType" => "track",
             "minTracklength" => 10, "resolution" => 2.0))
         @test p.popsToCluster == ["A/_tracked"]
-        @test p.popType == "track"
+        @test !hasproperty(p, :popType)
         @test p.minTracklength === 10
     end
     let p = Cecelia.parse_clust_tracks_params(Dict{String,Any}())
-        @test p.popType == "live"                   # default: _tracked cells
         @test p.minTracklength === 5
     end
 

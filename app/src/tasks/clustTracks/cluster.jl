@@ -6,7 +6,7 @@
 # instead of per cell.
 #
 # Division of labour (docs/ARCHITECTURE.md boundaries):
-#   • Julia resolves membership (`pop_df(:track)` over `popsToCluster`) AND builds the per-track
+#   • Julia resolves membership (`pop_df_multi(:track)` over `popsToCluster`) AND builds the per-track
 #     feature matrix via `track_props` — motility (stored in `{vn}__tracks.h5ad`) ⊕ on-read
 #     aggregates of per-cell measures (HMM-state / transition frequencies, intensity / morphology
 #     means). These aggregates are compute-on-read (nothing persisted — `track_props.jl`), so ONLY
@@ -29,10 +29,9 @@ using DataFrames: nrow, groupby, names
 struct ClustTracks <: CciaTask end
 
 # Typed shape of what `_run_task(::ClustTracks, …)` reads from `params`. Same clustering-engine
-# shape as `ClustPops`, plus track-specific `popType` + `minTracklength`.
+# shape as `ClustPops`, plus track-specific `minTracklength`.
 Base.@kwdef struct ClustTracksParams
     popsToCluster::Vector{String}      = String[]
-    popType::String                    = "live"
     valueNameSuffix::String            = "default"
     clusterMeasures::Vector{String}    = String[]
     minTracklength::Int                = 5
@@ -52,7 +51,6 @@ end
 function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
     ClustTracksParams(;
         popsToCluster              = _str_list(d, "popsToCluster"),
-        popType                    = string(get(d, "popType", "live")),
         valueNameSuffix            = string(get(d, "valueNameSuffix", "default")),
         clusterMeasures            = _str_list(d, "clusterMeasures"),
         minTracklength             = Int(get(d, "minTracklength", 5)),
@@ -98,10 +96,10 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     cell_measures = String[f for f in p.clusterMeasures if !(f in mot_set)]
 
     # ── pooled per-track features: one row per track tagged with uID + value_name + track_id ──
-    # pop_type "live" + :track → membership from the `_tracked` cell gate, features from `track_props`
-    # (motility ⊕ on-read aggregates), one point per track. (pop_type "track"/"trackclust" would gate
-    # the per-track table directly — same `track_props` features, different membership source.)
-    df = pop_df(imgs, uids, p.popType, p.popsToCluster;
+    # mixed-type read at :track — a `_tracked` set (cell membership → its tracks) and a per-track gate /
+    # track cluster (gated on the per-track table) give the same `track_props` row shape (motility ⊕
+    # on-read aggregates), one point per track; pop_df_multi resolves each to its own pop_type.
+    df = pop_df_multi(imgs, uids, p.popsToCluster;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(p.popsToCluster)"); return nothing)
     on_progress(2, 4)

@@ -22,10 +22,10 @@
 #
 # **It takes TRACK POPULATIONS, not a segmentation.** That is the house convention for anything
 # measured along tracks (`behaviour.hmm_states`, `behaviour.hmm_transitions`, `clustTracks.cluster`
-# all do the same) — a `popSelection` with `popScope: "tracks"`, and NO `valueName` dropdown beside
+# all do the same) — a `popSelection` with `accepts: ["track", "trackclust"]`, and NO `valueName` dropdown beside
 # it, because each picker value already carries its segmentation as a prefix. The first version of
 # this file had a `valueNameSelection` labelled "Segmentation", which was both the wrong picker and
-# the wrong word for what the task consumes. See docs/MODULES.md → *popScope* and *Derive the
+# the wrong word for what the task consumes. See docs/MODULES.md → *accepts* and *Derive the
 # segmentation from the pops*.
 #
 # The file is `include`d INTO the Cecelia module, so names resolve with the `Cecelia.` prefix.
@@ -82,7 +82,7 @@ function Cecelia._run_task(::CumulativeChange, img::Cecelia.CciaImage, params::D
     # from B while the dropdown says A and the run silently resolves to zero cells.
     vn = Cecelia.pops_value_name(pops)
 
-    # `pop_df` is THE accessor (docs/POPULATION.md) — it resolves which cells are in the chosen
+    # `pop_df_multi` is THE accessor (docs/POPULATION.md) — it resolves which cells are in the chosen
     # populations AND reads the columns in one narrow read. Reading the whole table through
     # `label_props` and filtering afterwards would be a second, divergent membership implementation.
     path = Cecelia.img_label_props_path(img, vn)
@@ -92,14 +92,14 @@ function Cecelia._run_task(::CumulativeChange, img::Cecelia.CciaImage, params::D
     isempty(cent) && (on_log("[ERROR] No centroid columns found"); return nothing)
 
     on_progress(0, 1)
-    # pop_type "live": a track population's members are resolved to their CELLS, which is what a
-    # per-position measure needs. `_tracked` (track_id > 0) is the whole segmentation's tracks.
+    # Every pop the picker `accepts` — a `_tracked` set (track_id > 0), a per-track gate, a track
+    # cluster — is resolved to its member CELLS, which is what a per-position measure needs.
     #
     # `centroids = :pixel` rather than naming the coordinate columns in `pop_cols`: which axes exist
     # differs per segmentation (no `centroid_z` on a 2D image) and pop_df resolves that per
     # value_name. Pixels, not µm, because `gap` windows are compared within one image.
-    cell = Cecelia.pop_df(img, "live", pops;
-                          pop_cols = ["track_id"], centroids = :pixel, granularity = :cell)
+    cell = Cecelia.pop_df_multi(img, pops;
+                                pop_cols = ["track_id"], centroids = :pixel, granularity = :cell)
     cols = Cecelia.DataFrames.names(cell)
     "track_id" in cols ||
         (on_log("[ERROR] '$vn' is not tracked (no track_id)"); return nothing)
