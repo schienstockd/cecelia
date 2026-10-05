@@ -106,13 +106,15 @@ end
     @test is_track_pop("track", "/TEST") == true                # per-track gate
     @test is_track_pop("trackclust", "/clusterA") == true       # track cluster
 
-    # scope_pop_types: sources loaded per scope; clusters toggleable; unknown scope throws.
+    # the maps a scope LOADS — through the shim (`_scope_accepts` → `_accept_pop_types`), the one
+    # path `population_scope_groups` takes; clusters toggleable; unknown scope throws.
     # `cells` also loads `region` (spatial regions) alongside `clust` — both cluster-family.
-    @test scope_pop_types("cells", true)  == ["live", "clust", "region"]
-    @test scope_pop_types("cells", false) == ["live"]
-    @test scope_pop_types("tracks", true)  == ["live", "track", "trackclust"]
-    @test scope_pop_types("tracks", false) == ["live", "track"]
-    @test_throws ErrorException scope_pop_types("bogus", true)
+    scope_loads(s, c) = Cecelia._accept_pop_types(Cecelia._scope_accepts(s, c))
+    @test scope_loads("cells", true)  == ["live", "clust", "region"]
+    @test scope_loads("cells", false) == ["live"]
+    @test scope_loads("tracks", true)  == ["live", "track", "trackclust"]
+    @test scope_loads("tracks", false) == ["live", "track"]
+    @test_throws ErrorException scope_loads("bogus", true)
 
     # maps: flow gates (/qc, /qc/sub), a per-track gate (/TEST), a cell cluster (/myeloid),
     # a track cluster (/clusterA)

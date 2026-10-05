@@ -135,7 +135,7 @@ end
 #    per-track populations (the derived `_tracked` sets [+ per-track gates + trackclust clusters]).
 #    Clustering-derived pops are included by default; a picker opts out with `includeClusters=false`.
 #    Resolution lives here (package: Revise-tracked + headless-testable per docs/ARCHITECTURE.md);
-#    api/plotting_api.jl stays a thin wrapper. New scopes slot in via `scope_pop_types`. ────────────
+#    api/plotting_api.jl stays a thin wrapper. A scope maps to accepts tokens via `_scope_accepts`. ────────────
 
 """
     is_track_pop(pop_type, path) -> Bool
@@ -210,24 +210,3 @@ function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::Ab
     isempty(created) || save_pop_map!(m, img)
     created
 end
-
-"""
-    scope_pop_types(scope, include_clusters) -> Vector{String}
-
-The pop_types `population_scope_groups` must load to cover a `popScope`. BOTH scopes load `live`: its
-stored flow gates are the cell pops AND the parents the derived `/_tracked` children hang off. `tracks`
-adds `track` (the per-track gate map) and, unless excluded, `trackclust`; `cells` adds `clust` and
-`region` unless excluded. Throws on an unknown scope (a spec typo should fail loudly, not silently
-empty the picker).
-"""
-function scope_pop_types(scope::AbstractString, include_clusters::Bool)::Vector{String}
-    if String(scope) == "tracks"
-        pts = ["live", "track"]; include_clusters && push!(pts, "trackclust")
-    elseif String(scope) == "cells"
-        pts = ["live"]; include_clusters && append!(pts, ("clust", "region"))
-    else
-        error("unknown popScope: $scope (expected \"cells\" or \"tracks\")")
-    end
-    pts
-end
-
