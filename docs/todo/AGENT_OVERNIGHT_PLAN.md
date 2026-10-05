@@ -1,6 +1,7 @@
 # Agent overnight run — "track everything, give me the behaviours, I'm back tomorrow"
 
 **Status:** in progress (2026-10-02) — P0 shipped (#1335, #1346); P1–P3 shipped (#1350; harness verified with a scripted stand-in, no agent run yet); P4 built, not enabled; P5 L1/L2 design proposed, needs a decision.
+**Reframed (2026-10-06):** the app-tier runs (P4b) are guide runs — an agent follows one in-app guide and you review the result; see [`GUIDE_RUNS_PLAN.md`](GUIDE_RUNS_PLAN.md).
 **Audit this builds on:** [`docs/audit/agent-sandbox-value-name.md`](../audit/agent-sandbox-value-name.md).
 
 ## Goal

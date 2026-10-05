@@ -1,9 +1,10 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run. Current
-> design lives in `docs/todo/AGENT_OVERNIGHT_PLAN.md` and `docs/todo/AGENT_RUN_REVIEW_PLAN.md`.
+> design lives in `docs/todo/GUIDE_RUNS_PLAN.md`.
 >
-> **Outcome:** pending — written 2026-10-06 after the three guide runs of 2026-10-06 (records
-> `bb-20261006T025058-30ca80`, `bb-20261006T031851-a88a53`, `bb-20261006T033555-f9aef2` in tSJpBI).
+> **Outcome:** not run as a brief; its questions were answered in a chat with Dominik on 2026-10-06,
+> which reframed the runs as guide runs reviewed by a person rather than smoke tests (a clean finish
+> hid most of what the runs found). Read [`docs/todo/GUIDE_RUNS_PLAN.md`](../todo/GUIDE_RUNS_PLAN.md).
 
 # Define what the autonomous runs are for: guide smoke tests, not unattended analysis
 
