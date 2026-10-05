@@ -1,5 +1,6 @@
 # ── pop_df_multi + tracked_pop_parents + cluster-share testsets ───────
-# Three sections covering: pop_df_multi integration (KDIeEm) — cross-value_name pooling,
+# Four sections covering: pop_df_multi integration (KDIeEm) — cross-value_name pooling, track
+# gates resolved for the track tasks (KDIeEm),
 # tracked_pop_parents (no _tracked row that copies a deeper one, KDIeEm), and cluster pop
 # auto-share (co-clustered value_names). Extracted from suite.jl to keep it small enough
 # to merge without EOF conflicts on every append. The extracted file loads inside this
@@ -54,6 +55,53 @@
         @test nrow(trkd) == expected_tracked                  # tracked cells now resolve
         @test resolve_pop_type(img, "B", "/pos/_tracked") == "live"
         @test pop_namespace(img, ["/pos/_tracked"]; value_name="B") == "live"
+        rm(td; recursive=true)
+    end
+end
+
+# ── The track-population tasks' read: every pop their picker `accepts` resolves ───────────────────
+# hmm_states / hmm_transitions / motif_discovery (:cell) and clustTracks (:track) declare
+# accepts=["track","trackclust"], which offers per-track gates beside the `_tracked` sets. They used to
+# read `pop_df(…, "live", …)`, the flow map: a per-track gate came back EMPTY at :cell and THREW at
+# :track ("pop_membership: not found"). `pop_df_multi` resolves it — and must hand the task the same
+# frame shape it gets for `_tracked`, or the widening is not safe.
+@testset "pop_df_multi resolves track gates for the track tasks (KDIeEm)" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "pop_df_multi track gates (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
+        cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        spd = Float64.(collect(skipmissing(track_props(img; value_name="B")[!, "live.track.speed"])))
+        thr = sort(spd)[cld(length(spd), 2)]
+        m = PopulationMap(pop_type="track", value_name="B")
+        add_pop!(m, "fast"; gate=RectangleGate("live.track.speed", "live.track.speed", thr, 1e12, -1e12, 1e12))
+        save_pop_map!(m, img)
+        imgs, uids = [img], ["KDIeEm"]
+
+        # :cell (the behaviour tasks): the HMM/motif columns arrive on the gated tracks' cells
+        pc = ["track_id", "centroid_t", "live.cell.speed"]
+        @test nrow(pop_df(imgs, uids, "live", ["B/fast"]; pop_cols=pc, granularity=:cell)) == 0  # the old read
+        tr = pop_df_multi(imgs, uids, ["B/_tracked"]; pop_cols=pc, granularity=:cell)
+        fc = pop_df_multi(imgs, uids, ["B/fast"]; pop_cols=pc, granularity=:cell)
+        @test 0 < nrow(fc) < nrow(tr)
+        @test Set(names(fc)) == Set(names(tr))
+        @test all(t -> t isa Real && t > 0, fc.track_id)
+        @test nrow(pop_df_multi(imgs, uids, ["B/_tracked", "B/fast"]; pop_cols=pc)) == nrow(tr)  # dedup
+
+        # :track (clustTracks): one row per track, same columns as the `_tracked` read
+        kw = (granularity=:track, cell_measures=["area"], pop_cols=String[])
+        @test_throws ErrorException pop_df(imgs, uids, "live", ["B/fast"]; kw...)               # the old read
+        tt = pop_df_multi(imgs, uids, ["B/_tracked"]; kw...)
+        ft = pop_df_multi(imgs, uids, ["B/fast"]; kw...)
+        @test count(>=(thr), spd) == nrow(ft) < nrow(tt)
+        @test Set(names(ft)) == Set(names(tt))
+        @test length(unique(ft.track_id)) == nrow(ft)
+        @test nrow(pop_df_multi(imgs, uids, ["B/_tracked", "B/fast"]; kw...)) == nrow(tt)        # dedup by track
         rm(td; recursive=true)
     end
 end

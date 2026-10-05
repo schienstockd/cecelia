@@ -105,7 +105,11 @@ function population_accept_groups(imgs, value_names_for::Function, load_map::Fun
      for g in groups]
 end
 
-# scope → accepts tokens, for the back-compatible `popScope` shim.
+# scope → accepts tokens, for the back-compatible `popScope` shim. No built-in task spec uses
+# `popScope` any more (pinned by task_spec_ratchets.jl) — it stays for two callers that are not built-in
+# specs: user custom modules / plugins written against it (docs/CUSTOM_MODULES.md; their specs are not
+# ours to migrate), and the UMAP view's colour-by picker (`UmapView.vue`, `popScope` +
+# `includeClusters=false` on /api/plots/populations). Delete it only when both are gone.
 function _scope_accepts(scope::AbstractString, include_clusters::Bool)::Vector{String}
     if String(scope) == "tracks"
         acc = ["track"]; include_clusters && push!(acc, "trackclust")

@@ -12,7 +12,7 @@
       "key": "pops",
       "label": "Track populations",
       "type": "popSelection",
-      "popScope": "tracks",
+      "accepts": ["track", "trackclust"],
       "multiple": true,
       "acrossSegmentations": false,
       "required": true,

@@ -6,6 +6,8 @@
 // sees WHAT they are choosing (cells vs tracks vs branches; gated vs clustered vs region) instead
 // of one flat undifferentiated strip. Pure/presentational — selection stays keyed on `value`.
 
+import type { ParamDef } from '../tasks/types'
+
 export interface PopOption { label: string; value: string; colour?: string }
 export interface PopGroupDef { title: string; opts: PopOption[] }
 
@@ -58,4 +60,21 @@ export function groupPopulations(groups: RawGroup[]): PopGroupDef[] {
   for (const k of ORDER) emit(k)
   for (const k of byKey.keys()) if (!seen.has(k)) emit(k)   // any unforeseen combo, appended
   return out
+}
+
+/** The popSelection fields that decide which populations a picker offers. */
+export type PopPickerSpec = Pick<ParamDef, 'accepts' | 'popScope' | 'popType'>
+
+/**
+ * The pop_type a SINGLE-segmentation popSelection lists (`/api/gating/popmap?popType=`). Single mode
+ * reads ONE map, so it takes ONE `accepts` token (`live`/`flow` → the flow gate map); built-ins are
+ * pinned to exactly one by `app/test/suite/task_spec_ratchets.jl`. An explicit `popType` wins; the
+ * legacy `popScope` (custom modules) maps `cells` → `flow`, `tracks` → `live`. Default `flow`.
+ */
+export function singlePopType(p: PopPickerSpec): string {
+  if (p.popType) return p.popType
+  const tok = p.accepts?.[0]
+  if (tok) return tok === 'live' ? 'flow' : tok
+  if (p.popScope === 'tracks') return 'live'
+  return 'flow'
 }

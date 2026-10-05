@@ -1,10 +1,11 @@
 # ── Task-spec ratchets + copy-style testsets ──────────────────────────
-# 11 sections pinning the task-spec surface: numeric param ranges are plausible, task
+# 12 sections pinning the task-spec surface: numeric param ranges are plausible, task
 # spec tips stay short, a handler fallback never contradicts its spec default, every task
 # spec field is declared and documented, optionsFrom fills a picker from a named source,
 # showIf conditions name a param that exists, a param that says segmentation reads
 # SEGMENTATIONS, a picker gates on `labels` only when the task needs the MASK, every task
-# param carries a tip, task spec copy follows the house style, and run_stats. Extracted
+# param carries a tip, task spec copy follows the house style, run_stats, and every popSelection
+# declares `accepts`. Extracted
 # from suite.jl to keep it small enough to merge without EOF conflicts on every append.
 # The extracted file loads inside this file's aggregating testset scope, so any helpers
 # defined earlier in suite.jl are still in scope (lexical include).
@@ -614,5 +615,37 @@ end
         @test_throws ArgumentError Cecelia.run_stats(three; test=:mannwhitney)
         @test_throws ArgumentError Cecelia.run_stats(["A"=>[1.0,2], "B"=>[3.0,4]];
                                                     test=:notarealtest)
+    end
+end
+
+# ── Every popSelection declares exactly what it resolves (`accepts`, Decision 14) ──────────────
+# The legacy `popScope` shim claims a fixed set (cells → live+clust+region, tracks →
+# track+trackclust) whatever the task actually reads — which is how three built-ins advertised clust/
+# region or track gates their Julia never resolved. `accepts` is stated per param, so it can be true.
+# Single mode (neither `multiple` nor `acrossSegmentations`) lists ONE pop map for the sibling
+# segmentation — the frontend's `singlePopType` (utils/popGroups.ts) reads the first token — so a
+# single picker must declare exactly one token, or the declaration claims types the picker never offers.
+# Covers the copyable examples too (spec_dirs). `popScope` stays honoured for user custom modules.
+@testset "popSelection params declare accepts (no popScope)" begin
+    pickers = Tuple[]
+    each_spec() do f, spec
+        each_spec_param(spec_get(spec, "params")) do p, _
+            String(something(spec_get(p, "type"), "")) == "popSelection" || return
+            push!(pickers, (f, String(something(spec_get(p, "key"), "?")), p))
+        end
+    end
+    @test length(pickers) >= 15                       # the walk found the built-in pickers
+    for (f, k, p) in pickers
+        where_ = "$f/$k"
+        @test spec_get(p, "popScope") === nothing || "$where_: popScope — declare accepts" == ""
+        @test spec_get(p, "popType") === nothing  || "$where_: popType — declare accepts" == ""
+        acc = spec_get(p, "accepts")
+        @test (acc !== nothing && !isempty(acc)) || "$where_: no accepts" == ""
+        acc === nothing && continue
+        bad = setdiff(String.(collect(acc)), Cecelia.ACCEPT_TOKENS)
+        @test isempty(bad) || "$where_: unknown accepts token(s) $bad" == ""
+        single = spec_get(p, "multiple") !== true && spec_get(p, "acrossSegmentations") !== true
+        @test !single || length(acc) == 1 ||
+              "$where_: a single-segmentation picker lists one map — declare one accepts token" == ""
     end
 end

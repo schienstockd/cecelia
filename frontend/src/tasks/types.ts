@@ -22,9 +22,9 @@ export interface ParamDef {
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
-  popScope?: 'cells' | 'tracks'  // popSelection: the module-function object scope — cell pops vs tracked pops (backend resolves sources + cell/track filtering); preferred over raw popType
+  popScope?: 'cells' | 'tracks'  // popSelection: LEGACY two-scope shim (cells → live+clust+region, tracks → track+trackclust). Built-ins all declare `accepts`; kept so user custom modules written against it still render
   includeClusters?: boolean      // popSelection (popScope): also offer clustering-derived pops (clust/trackclust); default true
-  accepts?: string[]             // popSelection: explicit pop_type allow-list (Decision 14) — the exact types this function takes (any of 'live'/'flow','clust','region','track','trackclust'); supersedes popScope, enables cells+tracks in one picker (e.g. region-clustering basis)
+  accepts?: string[]             // popSelection: explicit pop_type allow-list (Decision 14) — the exact types this function RESOLVES (any of 'live'/'flow','clust','region','track','trackclust','branch'). Multi/across mode offers all of them; single mode reads ONE map, so takes one token (`singlePopType`)
   // int / float
   min?: number
   max?: number

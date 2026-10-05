@@ -10,9 +10,10 @@
 # is the I/O wrapper. Cells without complete measurements (track starts) get NaN (no state).
 #
 # Populations are selected ACROSS SEGMENTATIONS (the R `popDT` semantics): each `pops` entry carries
-# its segmentation as a value_name prefix ("A/_tracked", "B/_tracked", …). `pop_df` (pop_type "live")
-# pools them — one row per cell tagged with its `value_name` — so a single run fits tracked A, B, C
-# from every image together. There is no separate `valueName` param; the segmentations are exactly
+# its segmentation as a value_name prefix ("A/_tracked", "B/_tracked", …). `pop_df_multi` pools them —
+# one row per cell tagged with its `value_name` — so a single run fits tracked A, B, C from every image
+# together. The picker `accepts` track gates and track clusters as well as `_tracked` sets; each resolves
+# to its member cells. There is no separate `valueName` param; the segmentations are exactly
 # those named by the pops.
 
 using DataFrames: nrow, DataFrame
@@ -94,10 +95,10 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
 
     uids     = [img.uid for img in imgs]
     pop_cols = unique(vcat(p.modelMeasurements, ["track_id", tcol]))
-    # pop_type "live" = cell-level pops with the derived `/_tracked` injected (track_id > 0); the same
-    # flow gate file backs it (gating/{vn}.json). No value_name kwarg: each prefixed pop resolves its
-    # own segmentation (cross-segmentation pool), one row per cell tagged with its `value_name`.
-    df = pop_df(imgs, uids, "live", p.pops; pop_cols=pop_cols, granularity=:cell)
+    # Mixed-type read: `_tracked` sets resolve as `live`, per-track gates / track clusters expand to
+    # their member cells (carrying `pop_cols`), so every pop the picker `accepts` resolves. No
+    # value_name kwarg: each prefixed pop resolves its own segmentation (cross-segmentation pool).
+    df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell)
     nrow(df) == 0 && (on_log("[ERROR] No cells for pops=$(p.pops)"); return nothing)
     on_progress(2, 4)
 

@@ -14,7 +14,7 @@
       "requiredMessage": "Select at least one tracked population",
       "label": "Populations",
       "type": "popSelection",
-      "popScope": "tracks",
+      "accepts": ["track", "trackclust"],
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],

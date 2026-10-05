@@ -548,6 +548,14 @@ types in ONE segmentation would be ambiguous. Guarded at both ends:
 - Refs are grouped by discovered type, `pop_df` is called **per type** at `granularity` (track/trackclust
   pops **expand to member cells** at `:cell`), and the frames are stacked. A cell/track that fell into
   pops of different types is deduped to one row (first-selected type wins).
+- `granularity=:track` gives one row per track for every type — a `_tracked` set (cell membership →
+  its tracks) and a per-track gate / `trackclust` (gated on the track table) return the same
+  `track_props` columns, deduped on `(value_name, track_id)`. That is what `clustTracks` reads; the
+  behaviour tasks (`hmm_*`, `motif_discovery`) read `:cell`, where a track pop's member cells carry the
+  requested `pop_cols`. **The rule: a picker's `accepts` must be what its task resolves** — a task that
+  reads `pop_df(…, "live", …)` resolves flow gates + `_tracked` only (a per-track gate comes back empty
+  at `:cell` and throws at `:track`), so a picker offering track gates must read through `pop_df_multi`.
+  Pinned on real data in `pop_df_multi_share.jl`; the declarations in `task_spec_ratchets.jl`.
 - Set-level `pop_df_multi(imgs, uids, pops; …)` runs per image (each discovers its own pops' types, so a
   pop absent on an image is skipped there) and adds a `uID` column.
 

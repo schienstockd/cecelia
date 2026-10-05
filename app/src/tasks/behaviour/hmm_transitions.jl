@@ -55,9 +55,9 @@ function _run_task(::HmmTransitions, imgs::Vector{CciaImage}, params::Dict{Strin
 
     uids     = [img.uid for img in imgs]
     pop_cols = unique(vcat(state_cols, ["track_id", tcol]))
-    # pop_type "live" (derived `/_tracked` injected); no value_name kwarg — each prefixed pop resolves
-    # its own segmentation (cross-segmentation pool).
-    df = pop_df(imgs, uids, "live", p.pops; pop_cols=pop_cols, granularity=:cell)
+    # mixed-type read (`_tracked`, track gates, track clusters → member cells), same as hmm_states;
+    # no value_name kwarg — each prefixed pop resolves its own segmentation (cross-segmentation pool).
+    df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell)
     nrow(df) == 0 && (on_log("[ERROR] No cells for pops=$(p.pops)"); return nothing)
     # all requested state columns must be present (run HMM states first)
     missing_cols = [c for c in state_cols if !(c in names(df))]

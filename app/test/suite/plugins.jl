@@ -502,7 +502,7 @@ end
         # both the wrong picker and the wrong word for what it consumes.
         cc_spec = Cecelia._task_spec(_task_from_fun_name("trackTools.cumulativeChange"))
         cc_pops = only(filter(p -> get(p, "key", "") == "pops", cc_spec["params"]))
-        @test cc_pops["type"] == "popSelection" && cc_pops["popScope"] == "tracks"
+        @test cc_pops["type"] == "popSelection" && cc_pops["accepts"] == ["track", "trackclust"]
         @test !any(p -> get(p, "type", "") == "valueNameSelection", cc_spec["params"])
 
         ok_pops = Dict{String,Any}("pops" => ["default/_tracked"])

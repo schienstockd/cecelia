@@ -140,11 +140,11 @@ ALLOWED_ROUTES = frozenset(
 # visibility conditions) — is bloat Claude doesn't need, so `get_module_params` strips it at the MCP
 # boundary. The shared /api/tasks/definitions route is untouched (the frontend still gets full specs).
 _PARAM_KEEP = ("key", "label", "type", "default", "min", "max", "step", "tip",
-               # `field`/`popScope` say WHAT a selection param wants (which versioned field, cells vs
-               # tracks). The option LIST is live project state, not in the spec, so these are the only
+               # `field`/`accepts` say WHAT a selection param wants (which versioned field, which pop
+               # types; `popScope` is the legacy cells-vs-tracks form custom modules may still use). The option LIST is live project state, not in the spec, so these are the only
                # hint available for the params that matter most when wiring a chain — which
                # segmentation feeds which tracking. Without them a selection param is just a name.
-               "field", "popScope")
+               "field", "accepts", "popScope")
 
 # A `select`'s enum is short (2–6 entries across every task spec today); this is a bloat backstop, not a
 # real limit. Keeping the whole list matters — a truncated enum reads as "these are the valid values".

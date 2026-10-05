@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupPopulations } from './popGroups'
+import { groupPopulations, singlePopType } from './popGroups'
 
 describe('groupPopulations', () => {
   const groups = [{
@@ -70,5 +70,24 @@ describe('groupPopulations', () => {
     expect(branches.opts.map(o => o.value)).toEqual([
       'stroma/endpoint-to-endpoint', 'stroma/junction-to-junction',
     ])
+  })
+})
+
+describe('singlePopType', () => {
+  it('maps the one accepts token to the map the single picker reads', () => {
+    expect(singlePopType({ accepts: ['live'] })).toBe('flow')
+    expect(singlePopType({ accepts: ['flow'] })).toBe('flow')
+    expect(singlePopType({ accepts: ['clust'] })).toBe('clust')
+    expect(singlePopType({ accepts: ['track'] })).toBe('track')
+  })
+  it('honours an explicit popType over accepts', () => {
+    expect(singlePopType({ popType: 'live', accepts: ['live'] })).toBe('live')
+  })
+  it('keeps the legacy popScope mapping for custom modules', () => {
+    expect(singlePopType({ popScope: 'cells' })).toBe('flow')
+    expect(singlePopType({ popScope: 'tracks' })).toBe('live')
+  })
+  it('defaults to the flow gate map', () => {
+    expect(singlePopType({})).toBe('flow')
   })
 })

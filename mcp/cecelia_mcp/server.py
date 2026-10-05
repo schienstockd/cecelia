@@ -284,13 +284,13 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
 
     **Selection params name live project state, which is NOT in the spec** — their candidates are absent
     here by design, so resolve them per project before you set one (this is where an under-informed guess
-    usually happens). `type` (plus `field` / `popScope`) tells you which tool answers it:
+    usually happens). `type` (plus `field` / `accepts`) tells you which tool answers it:
 
       | param `type`             | what it wants                  | get the candidates from |
       |--------------------------|--------------------------------|-------------------------|
       | `channelSelection`       | a channel of the image         | get_image_info → `channels` |
       | `valueNameSelection`     | a versioned field's value_name | get_image_info (`field`, e.g. filepaths/labels) + get_analysis_lineage → `segmentations` |
-      | `popSelection`           | a population path              | get_populations (`popScope` cells vs tracks) |
+      | `popSelection`           | a population path              | get_populations (`accepts` = the pop types it takes) |
       | `labelPropsColsSelection`| measure columns                | get_measure_summary → the `measures` names |
       | `motionDimsSelection`    | motion dims                    | leave at `auto` unless the user says otherwise |
 

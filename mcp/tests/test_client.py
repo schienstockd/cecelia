@@ -478,6 +478,8 @@ class ClientTest(unittest.TestCase):
                  "min": 1, "max": 200, "step": 1, "default": 20, "tip": "px/frame"},
                 {"key": "valueName", "type": "valueNameSelection", "field": "labels",
                  "default": "default", "options": ["a", "b", "c"]},
+                {"key": "popsToTrack", "type": "popSelection", "accepts": ["live"],
+                 "default": "NONE"},
             ],
         }]}
         with _patch_urlopen(raw) as u:
@@ -489,7 +491,8 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(spec["fun_name"], "tracking.bayesian_tracking")
         self.assertNotIn("env", spec)               # top-level UI plumbing stripped
         self.assertNotIn("resource_pool", spec)
-        p_knob, p_sel = spec["params"]
+        p_knob, p_sel, p_pop = spec["params"]
+        self.assertEqual(p_pop["accepts"], ["live"])  # which pop types a picker takes — kept
         self.assertEqual((p_knob["min"], p_knob["max"], p_knob["default"]), (1, 200, 20))
         # `field` is KEPT — it says what a selection param wants (which versioned field), which is the
         # only hint available when authoring a chain node, since the option list is live project state
