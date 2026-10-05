@@ -5,7 +5,10 @@ NO built-in tools (no shell, no files, no python) — a disposable copy of the r
 set (`app_project.py`) and a one-line brief. Everything it does lands in the copy.
 
     pixi run python scripts/agent_eval/run_app.py --projects-dir ~/cecelia-feijoa/projects \\
-        --source-project tSJpBI --image yDfwP7 --image UJS0Hz --root /tmp/cecelia-agent-app/<stamp>
+        --source-project tSJpBI --image yDfwP7 --image UJS0Hz --root ~/.cecelia-effectiveness/app-runs/<stamp>
+
+`pixi run guide-run <guide>` (`guide_run.py`) is the usual way in: it picks the guide's test project,
+writes the brief and the root, and logs the cost.
 
 Writes into `--root`: run.json (the copy), mcp.json, trace.jsonl (stream-json, written live — tail it
 to supervise), stderr.log, record.json, decisions.json. The source project is canaried: a file
@@ -20,6 +23,7 @@ import datetime
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import time
@@ -163,6 +167,20 @@ def cohort_qc(api_url: str, project: str, set_uid: str, images: list[str]) -> di
     return out
 
 
+def _stop(proc: subprocess.Popen) -> int:
+    """End the agent: terminate, then kill after 30 s. Its MCP servers exit when their stdin closes."""
+    proc.terminate()
+    try:
+        return proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return proc.wait()
+
+
+def _raise_on_sigterm(signum, frame):
+    raise SystemExit(128 + signum)
+
+
 def run(a) -> dict:
     root = pathlib.Path(a.root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -190,19 +208,18 @@ def run(a) -> dict:
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=out, stderr=err, cwd=str(workdir),
                                 text=True, encoding="utf-8")
         (root / "pid").write_text(str(proc.pid), encoding="utf-8")
-        proc.stdin.write(prompt)
-        proc.stdin.close()
         try:
+            proc.stdin.write(prompt)
+            proc.stdin.close()
             rc = proc.wait(timeout=a.timeout_s)
             timed_out = False
         except subprocess.TimeoutExpired:
-            proc.terminate()
-            try:
-                rc = proc.wait(timeout=30)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                rc = proc.wait()
-            timed_out = True
+            rc, timed_out = _stop(proc), True
+        except BaseException:
+            # Ctrl-C / SIGTERM: never leave the agent running; a second SIGTERM must not cut this short
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            _stop(proc)
+            raise
     wall = round(time.time() - t0)
 
     after = score.snapshot(src_root)
@@ -211,7 +228,7 @@ def run(a) -> dict:
     canary["appBookkeeping"] = [f for f, h in before["files"].items()
                                 if any(x in f for x in APP_BOOKKEEPING) and after["files"].get(f) != h]
     rec = {"startedAt": stamp, "startedAtUtc": started_utc, "codeSha": code_sha, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
-           "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
+           "guide": a.guide or None, "checklist": a.check or [], "knowledgeOn": bool(a.knowledge), "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
            "trace": summarise_trace(root / "trace.jsonl", a.source_project),
            "canary": canary}
     rec["agent"], rec["reference"] = {}, {}
@@ -254,6 +271,8 @@ def main(argv=None) -> int:
                     help="skip the post-run why turn (it resumes the session once)")
     ap.add_argument("--knowledge", action="store_true",
                     help="carry the source project's lab-knowledge entries into the copy (P4)")
+    ap.add_argument("--guide", default="", help="the guide id the brief names; goes on the run record")
+    ap.add_argument("--check", action="append", help="a reviewer checklist item, shown atop the record (repeat)")
     ap.add_argument("--root", required=True)
     ap.add_argument("--brief", default=DEFAULT_BRIEF)
     ap.add_argument("--budget-usd", type=float, default=15.0)
@@ -262,6 +281,7 @@ def main(argv=None) -> int:
     ap.add_argument("--prefix", default="")
     ap.add_argument("--api-url", default=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
     ap.add_argument("--claude", default="claude")
+    signal.signal(signal.SIGTERM, _raise_on_sigterm)   # so a stopped run still tears down the agent
     rec = run(ap.parse_args(argv))
     t = rec["trace"]
     print(json.dumps({"copy": rec["copy"]["projectUid"], "wallS": rec["wallS"], "costUsd": t["costUsd"],

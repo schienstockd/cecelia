@@ -1,0 +1,19 @@
+{
+  "intravital-timelapse": {
+    "sourceProject": "tSJpBI",
+    "sourceSet": "k58SK7",
+    "images": [
+      "jV6p8M",
+      "8F20qd",
+      "QWhG6x"
+    ],
+    "about": "The 'Crop' set, mouse M2's crops: the easiest, cleanest intravital data (GUIDE_RUNS_PLAN Decision 1).",
+    "checklist": [
+      "cleanup before segmenting (AF if channels bleed)",
+      "QC gate checked on the image",
+      "cells per frame",
+      "speeds vs reference",
+      "what each cluster is made of"
+    ]
+  }
+}

@@ -206,7 +206,7 @@ names it in `removedMarked` so a Claude caller tells the user.*
 write); "Lesson" on a marked section with a note (a new entry, marked, opened for editing — no rename
 route, so its title is the note) and a Knowledge toggle on any note; the "Knowledge" list filter;
 `app_project.copy_knowledge` (live text only — no history, attachments or `from`) behind
-`run_app.py --knowledge` / `CECELIA_AGENT_APP_KNOWLEDGE=1`; the run record names the entries carried
+`run_app.py --knowledge` / `pixi run guide-run <guide> --knowledge`; the run record names the entries carried
 and its title says "with lab knowledge"; the briefing flags `knowledge: true` rows and lists them
 first.*
 - "Promote to lab knowledge" on a section: a new entry pre-filled with the note, marked as knowledge,
