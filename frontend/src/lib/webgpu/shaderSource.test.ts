@@ -87,6 +87,17 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
+  // A colour table (negative paletteRows) must mean the same thing in every raycast that draws labels:
+  // the brick copies once clamped it to row 0 and drew hidden labels.
+  const labelled = { MIP_WGSL, BRICK_WGSL, BRICK_N2: brick[1], BRICK_N3: brick[2], BRICK_N4: brick[3] }
+  for (const [k, code] of Object.entries(labelled)) {
+    it(`${k} colours labels with the one shared labColour / labShown`, () => {
+      expect(code).toContain(expandWgsl('label_colour.wgsl'))
+      expect(code.match(/fn labColour\(/g)).toHaveLength(1)
+      expect(code).toMatch(/if \(id != 0u && labShown\(id\)\) \{ labId = id;/)
+    })
+  }
+
   it('the TS constants are the shader constants', () => {
     expect([MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, PICK_BITSET_CAPACITY, PICK_BITSET_WORDS]).toEqual([
       SHADER_CONSTANTS.MAX_CHANNELS, SHADER_CONSTANTS.LUT_STOPS, SHADER_CONSTANTS.VIEW_HALF_ANGLE,

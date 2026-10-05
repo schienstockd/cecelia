@@ -149,10 +149,7 @@ fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
   return false;
 }
 
-fn labColour(id: u32) -> vec3<f32> {
-  let rows = max(i32(p.lab.z), 1);
-  return textureLoad(pal, vec2<i32>(i32(id % u32(rows)), 0), 0).rgb;
-}
+#include "label_colour.wgsl"
 
 fn ramp(c: i32, n: f32) -> vec3<f32> {
   let q = clamp(n, 0.0, 1.0) * (${LUT_STOPS}.0 - 1.0);
@@ -197,7 +194,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     let vi = vec3<i32>(uvw * p.dims.xyz);
     if (p.lab.x > 0.0 && labId == 0u) {
       let id = labAtlasSample(vi);
-      if (id != 0u) { labId = id; labVi = vi; }
+      if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
     }
     for (var ci = 0; ci < nch; ci = ci + 1) {
       let v = f32(atlasSample(vi, ci));
@@ -212,7 +209,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     acc = acc + ramp(ci, win);
   }
   if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
-    acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
+    acc = mix(min(acc, vec3(1.0)), labColour(labId).rgb, p.lab.x);
   }
   if (labId != 0u) {
     let pw = labPickContourPx();

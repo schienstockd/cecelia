@@ -152,6 +152,7 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - **The shaders are files.** `frontend/src/lib/webgpu/shaders/`: `mip.wgsl`, `mip_points.wgsl`,
   `mip_segments.wgsl`, `mip_common.wgsl` (struct + camera), `tile.wgsl`, `brick.wgsl`,
   `brick_multi.wgsl`, `brick_points.wgsl`, `brick_segments.wgsl`, `brick_common.wgsl`, `pick.wgsl`,
+  `label_colour.wgsl` (labColour + labShown, shared by the three raycasts),
   plus `constants.json`. The reasoning comments moved with the code; `mipShader.ts`, `tileShader.ts`
   and `brickShader.ts` now only expand.
 - **One expander per language, two rules.** `#include "x.wgsl" [NAME=VALUE]` and `${NAME}`.
@@ -295,8 +296,10 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
 - **Population masks stay.** `mip.wgsl` gained a colour-table mode (a negative row count): label →
   colour, alpha 0 = not drawn, hidden labels skipped by the march. Movies send
   `mask_id_colours` (the old `build_mask_for` policy: pop-filtered, pop-coloured, colour-by) as that
-  table; "all cells" draws the viewer's palette. The viewer still sends the palette's row count —
-  its output is bit-identical to before (max Δ 0 on flat, pitched and contour scenes).
+  table; "all cells" draws the viewer's palette. The table lives in `label_colour.wgsl`, which the
+  brick raycasts include too, so a Phase 5 brick movie can send the same table. The viewer still
+  sends the palette's row count — its output is bit-identical to before (max Δ 0 on flat, pitched
+  and contour scenes).
 - **What changed on screen.** 2D masks are the viewer's (`labEdge` outline, nearest label in a
   range — not the old max-id projection); points are the viewer's radius-sized discs (the half-size
   bug is gone); a 2D movie on one plane shows only the points / tail ends within the viewer's z
