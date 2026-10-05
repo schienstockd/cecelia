@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import functools
+import json
 import os
 
 from mcp.server.mcpserver import Image, MCPServer
@@ -1116,6 +1117,32 @@ def get_repl_api() -> dict:
     Population paths/types are project-specific — get those from get_populations, not here. This tool is
     project-independent (the interface is the same for every project). Read-only."""
     return _client.get_repl_api()
+
+
+# The in-app guides and recipes as text — rendered from frontend/src/lib/guides by guideText.ts and
+# committed beside this file (a vitest file snapshot keeps the copy in step with the source).
+_GUIDES_PATH = os.path.join(os.path.dirname(__file__), "guides.json")
+
+
+@_tool
+def get_guide(guide_id: str = "") -> dict:
+    """The app's own how-to: the same guides and recipes a user follows in Cecelia's Guides dialog.
+
+    Without `guide_id`: the catalogue `[{id, kind, title, summary}]`. `kind` "recipe" is a whole
+    pipeline for one kind of data (e.g. "intravital-timelapse"), with each step's reason and every
+    guide it uses inlined; "guide" is one page or task. With `guide_id`: `{id, kind, title, text}`,
+    the text as Markdown. Task guides name the function they run (`Runs: segment.coastalMeasure`)
+    and the parameters worth setting. The steps are written for the GUI ("pick it from the
+    dropdown"); the function name and parameters are what a REPL / run_task caller needs.
+    Project-independent. Read-only."""
+    with open(_GUIDES_PATH, encoding="utf-8") as f:
+        entries = json.load(f)
+    if not guide_id:
+        return {"guides": [{k: e[k] for k in ("id", "kind", "title", "summary")} for e in entries]}
+    for e in entries:
+        if e["id"] == guide_id:
+            return {k: e[k] for k in ("id", "kind", "title", "text")}
+    raise ToolError(f"no guide {guide_id!r}; known: {', '.join(e['id'] for e in entries)}")
 
 
 @_tool

@@ -82,7 +82,8 @@ get_labarchives_context. The board's plot types: get_available_plots. The boards
 built: get_analysis_boards. How the images are annotated: get_image_attributes. Where a uid the user \
 quotes actually lives (which project, which set): find_object — one call, never a sweep over projects. The notebook/REPL \
 data-access surface: get_repl_api, and the notebooks themselves: list_notebooks, get_notebook — so \
-you can read one the user is stuck in and walk them through the fix.
+you can read one the user is stuck in and walk them through the fix. How the app teaches a \
+workflow — the in-app guides and whole-pipeline recipes the user follows: get_guide.
 
 WHAT YOU CAN WRITE — additive only, and only when asked: append_lab_log (one short line, tagged \
 [Claude] server-side), create_notebook / revise_notebook (revise snapshots first, so nothing is \

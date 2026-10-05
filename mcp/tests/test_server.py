@@ -30,6 +30,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
             "create_chain",
+            "get_guide",                    # the in-app guides + recipes as text
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
@@ -286,6 +287,26 @@ class ServerToolRegistrationTest(unittest.TestCase):
         # what this replaces.)
         self.assertIn("find_object", self.names)
         self.assertIn("find_object", guidance.SERVER_INSTRUCTIONS)
+
+
+class GetGuideTest(unittest.TestCase):
+    """get_guide serves the committed guides.json (rendered from the frontend guides)."""
+
+    def test_catalogue_lists_the_intravital_recipe(self):
+        out = server.get_guide()
+        rows = {g["id"]: g for g in out["guides"]}
+        self.assertEqual("recipe", rows["intravital-timelapse"]["kind"])
+        self.assertEqual("guide", rows["track-cells"]["kind"])
+        self.assertNotIn("text", rows["track-cells"])
+
+    def test_one_guide_carries_its_function(self):
+        out = server.get_guide("segment-by-motion")
+        self.assertIn("segment.coastalMeasure", out["text"])
+
+    def test_unknown_id_names_the_known_ones(self):
+        with self.assertRaises(server.ToolError) as cm:
+            server.get_guide("nope")
+        self.assertIn("intravital-timelapse", str(cm.exception))
 
 
 class ToolErrorSurfacingTest(unittest.TestCase):
