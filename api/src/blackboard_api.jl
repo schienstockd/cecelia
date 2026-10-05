@@ -952,7 +952,9 @@ end
     POST /api/blackboard/revise
 
 Body: `{ projectUid, entryId, content, note?: string, attachments?: [captureId, ...] }`
-Reply: `{ ok:true, version }` — or `{ ok:true, version:<current>, unchanged:true }` on a no-op.
+Reply: `{ ok:true, version, removedMarked? }` — or `{ ok:true, version:<current>, unchanged:true }` on a no-op.
+`removedMarked: [{sectionId, verdict, note}]` names the `### sNN ·` sections a person had marked
+that this revise removed (their verdicts stay stored; a restore brings them back).
 
 Snapshots the CURRENT entry.md as v<N> (so nothing is lost), then overwrites with `content`. The
 optional `attachments` REPLACES the previous list (a revision is a self-contained write) — omit to
@@ -1034,7 +1036,10 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     _write_bb_registry!(uid, reg)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
-    200, JSON3.write((; ok = true, version = v))
+    # the sections a person marked that this revise removed — a Claude caller tells the user
+    removed = _bb_removed_marked(meta, old_content, content)
+    isempty(removed) && return 200, JSON3.write((; ok = true, version = v))
+    200, JSON3.write((; ok = true, version = v, removedMarked = removed))
 end
 
 """

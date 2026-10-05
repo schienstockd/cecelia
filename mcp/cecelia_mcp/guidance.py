@@ -237,7 +237,9 @@ When an entry you write holds more than one claim or suggestion the user could j
 give each its own `### s01 · <the claim in a line>` heading (`s02`, … in order; ` · ` after the \
 id). The user can then mark each section good / bad / unsure instead of the whole entry. On a \
 revise keep every existing section's id, even when you reword its heading, and number new ones on \
-from the highest; a verdict belongs to the id. One-claim entries need no sections. An agent run's \
+from the highest; a verdict belongs to the id. Don't drop a section the user marked without \
+saying so — a revise reply's `removedMarked` lists any you did; tell the user which, with their \
+note. One-claim entries need no sections. An agent run's \
 record (an entry with `agentRun`) has one `### dNN` section per decision instead. When the user \
 reviews sections with you, `set_blackboard_section_outcome(project_uid, entry_id, section_id, \
 verdict, note)` proposes a verdict for one; it shows as your proposal, and a section the user \

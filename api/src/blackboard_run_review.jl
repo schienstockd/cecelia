@@ -21,7 +21,8 @@
 #
 # `sectionIds` (written by `_write_bb_meta!` from entry.md) lists the sections the live text has. A
 # verdict on a section a revise removed stays in `sectionOutcomes` (a restore brings it back) but is
-# not counted or shown.
+# not counted; the page lists it under the entry, where a person can clear it. The revise reply
+# names the person-marked sections it removed (`removedMarked`) so a Claude caller can say so.
 
 const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge")
 const _BB_SECTION_VERDICTS = ("good", "bad", "unsure")
@@ -106,6 +107,14 @@ function _bb_put_run_review!(row::AbstractDict, meta; list_row::Bool = false)
     row
 end
 
+# The sections a person marked that going from `old_md` to `new_md` removes, for the revise reply.
+function _bb_removed_marked(meta, old_md::AbstractString, new_md::AbstractString)::Vector{Any}
+    so = _section_outcomes(meta)
+    kept = _bb_section_ids(new_md)
+    Any[Dict{String,Any}("sectionId" => sid, "verdict" => so[sid]["verdict"], "note" => get(so[sid], "note", ""))
+        for sid in _bb_section_ids(old_md) if !(sid in kept) && _by_person(get(so, sid, nothing))]
+end
+
 # Does entry.md have a `### <sid> ·` heading?
 _bb_has_section(uid::AbstractString, id::AbstractString, sid::AbstractString)::Bool =
     sid in _bb_section_ids(uid, id)
@@ -118,7 +127,8 @@ Reply: `{ ok:true, sectionId, outcome: {verdict, note, by, at} | null }`
 
 A verdict on one section (`### dNN ·` / `### mNN ·` in a run record, `### sNN ·` in any other
 entry) — AGENT_RUN_REVIEW_PLAN Decision 7.
-The note is required for `bad`. `verdict: ""` clears the section's verdict. `by` is the caller
+The note is required for `bad`. `verdict: ""` clears the section's verdict, also on a section a
+revise removed. `by` is the caller
 (`author_stamp()`): a call from Claude (`X-Cecelia-Client: claude`) is a PROPOSAL and may neither
 replace nor clear a person's verdict (409). No snapshot — metadata only, like `/outcome`.
 """
@@ -141,7 +151,9 @@ function api_blackboard_section_outcome(body_bytes::Vector{UInt8})
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
     meta = _read_bb_meta(uid, id)
     meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
-    _bb_has_section(uid, id, sid) || return 404, JSON3.write((; error = "No section $sid in this entry"))
+    # clearing works on a section a revise removed too — the page lists those verdicts to clear
+    isempty(verdict) || _bb_has_section(uid, id, sid) ||
+        return 404, JSON3.write((; error = "No section $sid in this entry"))
 
     so = _section_outcomes(meta)
     by = author_stamp()

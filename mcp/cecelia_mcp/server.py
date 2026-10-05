@@ -1276,7 +1276,9 @@ def revise_blackboard_entry(project_uid: str, entry_id: str, content_md: str,
     Flow: read the current entry with `read_blackboard_entry` first, propose the change to the
     user, THEN call this with the FULL new `content_md` (not a diff). Keep each `### sNN ·`
     section's id when you reword it and number new sections on from the highest — a verdict is
-    stored against the id. `attach_capture_ids` is
+    stored against the id. Don't drop a section the user marked (`sectionOutcomes` on the read)
+    without saying so; if a revise does, the reply's `removedMarked` lists them — tell the user
+    which, with their note. `attach_capture_ids` is
     optional — OMIT to keep the entry's existing attachment set; pass an explicit list (possibly
     empty) to REPLACE it. Attachments are versioned per-snapshot: a later read at `version=N`
     returns the attachment set that was live when v<N> was captured. `note` is a short changelog

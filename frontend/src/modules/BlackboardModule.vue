@@ -247,6 +247,14 @@ const paneParts = computed(() => {
              html: nl < 0 ? '' : renderBlackboardMarkdown(p.md.slice(nl + 1), titleById.value) }
   })
 })
+// Verdicts on sections a revise removed: kept (a restore brings the section back), listed under the
+// entry so a note is not lost from view, and clearable there.
+const removedVerdicts = computed(() => {
+  const so = selected.value?.sectionOutcomes
+  if (!so || viewingVersion.value !== null) return []
+  const live = new Set(splitEntrySections(paneContent.value).flatMap(p => p.kind === 'section' ? [p.id] : []))
+  return Object.entries(so).filter(([id]) => !live.has(id)).map(([id, o]) => ({ id, ...o }))
+})
 const runImages = computed(() => selected.value?.agentRun?.images.map(i => i.sourceImageUid) ?? [])
 const savingSection = ref(false)
 async function onSectionSave(sectionId: string, verdict: SectionVerdict | '', note: string) {
@@ -854,6 +862,21 @@ onUnmounted(() => { mermaidRenderSeq++ })
             </div>
             <div v-else ref="paneRef" class="bb-body" v-html="paneHtml" @click="onPaneClick" />
 
+            <div v-if="removedVerdicts.length > 0" class="bb-attach">
+              <div class="bb-attach-label cc-muted cc-fs-2xs"
+                   v-tooltip.top="'A revise removed these sections; restoring a version brings them back'">
+                Verdicts on removed sections</div>
+              <div v-for="o in removedVerdicts" :key="o.id" class="cc-row cc-row-tight cc-fs-xs bb-removed-verdict"
+                   :class="`bb-section-${o.by?.via === 'claude' ? 'proposed' : o.verdict}`">
+                <span class="cc-muted">{{ o.id }}</span>
+                <span>{{ o.by?.via === 'claude' ? 'Claude proposes ' + o.verdict : o.verdict }}<template v-if="o.note">: {{ o.note }}</template></span>
+                <button class="cc-btn cc-btn-ghost cc-btn-dense" :disabled="savingSection"
+                        @click="onSectionSave(o.id, '', '')" v-tooltip.top="'Clear this verdict'">
+                  <i class="pi pi-times" />
+                </button>
+              </div>
+            </div>
+
             <div v-if="selected.attachments.length > 0" class="bb-attach">
               <div class="bb-attach-label cc-muted cc-fs-2xs">Attachments</div>
               <div class="bb-attach-strip">
@@ -1055,6 +1078,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
 .bb-section-bad    { border-left-color: rgba(213, 94, 0, 0.8); }
 .bb-section-unsure { border-left-color: rgba(148, 163, 184, 0.7); }
 .bb-section-pics { margin: 4px 0; }
+.bb-removed-verdict { border-left: 3px solid transparent; padding-left: 6px; }
 .bb-attach-thumb.bb-section-pic { width: 14rem; height: 12rem; }
 .bb-body :deep(code) {
   font-family: var(--cc-mono);

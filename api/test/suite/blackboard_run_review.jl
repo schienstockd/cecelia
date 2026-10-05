@@ -114,14 +114,30 @@ end
         @test set("s02", "bad", "it is a cell type")[1] == 200
         @test set("s03", "good")[1] == 404
         @test row().sectionsMarked == 2
-        # a revise drops s02: not counted, still stored
-        @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
-            "content" => "### s01 · CD8 gate on volume\n- why\n"))[1] == 200
+        # a revise drops s02: not counted, still stored, named in the reply
+        st, body = _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
+            "content" => "### s01 · CD8 gate on volume\n- why\n"))
+        @test st == 200
+        rm_ = JSON3.read(body).removedMarked
+        @test length(rm_) == 1 && rm_[1].sectionId == "s02" && rm_[1].note == "it is a cell type"
         @test row().sectionCount == 1 && row().sectionsMarked == 1
         @test entry().sectionOutcomes.s02.verdict == "bad"
+        @test set("s02", "good")[1] == 404                    # no verdict on a removed section …
+        st, body = _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
+            "content" => "### s01 · CD8 gate on volume\n- why, reworded\n"))
+        @test st == 200 && !haskey(JSON3.read(body), :removedMarked)   # named once, not on every revise
         # the restore brings it back
         @test _post(api_blackboard_restore, Dict("projectUid" => uid, "entryId" => eid, "version" => "1"))[1] == 200
         @test row().sectionCount == 2 && row().sectionsMarked == 2
+        # … but a person can clear one; a proposal cannot clear a person's
+        @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
+            "content" => "### s01 · CD8 gate on volume\n- why\n"))[1] == 200
+        @test handle_http(HTTP.Request("POST", "/api/blackboard/section-outcome", ["X-Cecelia-Client" => "claude"]),
+            Vector{UInt8}(JSON3.write(Dict("projectUid" => uid, "entryId" => eid, "sectionId" => "s02", "verdict" => ""))))[1] == 409
+        @test set("s02", "")[1] == 200
+        @test !haskey(entry().sectionOutcomes, :s02)
+        @test _post(api_blackboard_restore, Dict("projectUid" => uid, "entryId" => eid, "version" => "1"))[1] == 200
+        @test row().sectionCount == 2 && row().sectionsMarked == 1
         # a status flip keeps the count; an entry without sections has none
         @test _post(api_blackboard_status, Dict("projectUid" => uid, "entryId" => eid, "status" => "resolved"))[1] == 200
         @test row().sectionCount == 2

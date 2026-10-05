@@ -157,8 +157,9 @@ caller's `author_stamp()`, so a Claude verdict is a proposal by construction, no
 Refs into the copy are next — the record already reads completely without them (text + captures).
 Extended (2026-10-05) to any entry: an interactive session writes `### sNN · <claim>` per claim
 (MCP guidance), the page splits any live entry with sections, and the list shows "k of N sections
-marked" from meta `sectionIds` (recomputed from entry.md on every write; a removed section's verdict
-stays stored but is not counted).*
+marked" from meta `sectionIds` (recomputed from entry.md on every write). A removed section's verdict
+stays stored, is not counted, is listed under the entry to clear, and the revise that removed it
+names it in `removedMarked` so a Claude caller tells the user.*
 - `KiwiRef` gains an optional `projectUid` (resolver + chip open the copy; absent = the entry's own
   project, so every existing ref is unchanged); a `chain` kind `{name, node}`. Frozen labels written
   by the harness, so the existing `was: <label>` fallback covers a deleted copy.
