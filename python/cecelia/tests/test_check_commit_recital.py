@@ -158,14 +158,14 @@ class CheckTest(unittest.TestCase):
         self.assertIsNone(self._check(msg))
 
     def test_conv_slug_pair_counts(self):
-        msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive]'"
+        msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive: not canonical]'"
         self.assertIsNone(self._check(msg))
 
     def test_mixed_bare_and_paired_outcomes_both_count(self):
         # Two findings, one bare tag and one slug pair — total covers both.
         msg = """git commit -m '
         - a [**confirmed**] [fixed_pre_commit]
-        - b [**should reuse**] [conv-abcdef00: shipped_with_finding]
+        - b [**should reuse**] [conv-abcdef00: shipped_with_finding: follow-up PR]
         '"""
         self.assertIsNone(self._check(msg))
 
@@ -180,6 +180,22 @@ class CheckTest(unittest.TestCase):
         self.assertIsNotNone(reason)
         self.assertIn("Duplicate slug", reason)
         self.assertIn("fanout-abcd1234", reason)
+
+    def test_slug_pair_without_a_reason_blocks(self):
+        # Every outcome but `fixed_pre_commit` explains itself: the bug sweep's judge reads a
+        # `false_positive`'s reason, and a drop's reason tells deliberate from abandoned.
+        for outcome in ("false_positive", "shipped_with_finding", "dropped_no_action"):
+            reason = self._check(f"git commit -m 'foo [**confirmed**] [fanout-abcd1234: {outcome}]'")
+            self.assertIsNotNone(reason, outcome)
+            self.assertIn(f"[fanout-abcd1234: {outcome}]", reason)
+            self.assertIn("no reason", reason)
+        self.assertIsNotNone(self._check("git commit -m 'foo [**confirmed**] [fanout-abcd1234: false_positive:  ]'"))
+
+    def test_slug_pair_reason_may_hold_colons_and_backticks(self):
+        msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: false_positive: `a.py:12` filters it: see `keep()`]'"
+        self.assertIsNone(self._check(msg))
+        self.assertEqual(self.hook._parse_pairs(msg),
+                         [("fanout-abcd1234", "false_positive", "`a.py:12` filters it: see `keep()`")])
 
 class ResolutionWritingTest(unittest.TestCase):
     """P3: slug-paired outcomes get written to the effectiveness log as resolution rows.
@@ -211,7 +227,15 @@ class ResolutionWritingTest(unittest.TestCase):
         self.assertEqual(row["event"], "fanout_audit_finding_resolved")
         self.assertEqual(row["payload"]["slug"], "fanout-abcd1234")
         self.assertEqual(row["payload"]["outcome"], "fixed_pre_commit")
+        self.assertNotIn("reason", row["payload"])
         self.assertEqual(row["pr"], "#1400")
+
+    def test_reason_lands_on_the_resolution_row(self):
+        msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: false_positive: the caller already filters it ]'"
+        self.hook.write_resolutions(msg, pr=None)
+        self.assertEqual(self._events()[0]["payload"],
+                         {"slug": "fanout-abcd1234", "outcome": "false_positive",
+                          "reason": "the caller already filters it"})
 
     def test_conv_slug_pair_writes_convention_check_finding_resolved(self):
         msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive]'"
@@ -223,8 +247,8 @@ class ResolutionWritingTest(unittest.TestCase):
     def test_multiple_pairs_write_multiple_rows(self):
         msg = """git commit -m '
         - a [**confirmed**] [fanout-11111111: fixed_pre_commit]
-        - b [**confirmed**] [fanout-22222222: shipped_with_finding]
-        - c [**should reuse**] [conv-33333333: false_positive]
+        - b [**confirmed**] [fanout-22222222: shipped_with_finding: later]
+        - c [**should reuse**] [conv-33333333: false_positive: bespoke]
         '"""
         n = self.hook.write_resolutions(msg, pr="#1401")
         self.assertEqual(n, 3)
@@ -541,7 +565,7 @@ class UntaggedSlugGateTest(unittest.TestCase):
 
     def test_deliberate_drop_is_a_tag(self):
         self._emit_finding("fanout-cccccccc")
-        self.assertIsNone(self.hook.check("x [fanout-cccccccc: dropped_no_action]"))
+        self.assertIsNone(self.hook.check("x [fanout-cccccccc: dropped_no_action: out of scope, filed #9]"))
 
 
 class GuardTest(unittest.TestCase):

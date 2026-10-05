@@ -34,8 +34,9 @@ def _finding(slug, file="a.py", line=2, marker="confirmed", **kw):
                 {"slug": slug, "file": file, "line": line, "desc": f"desc {slug}", "marker": marker}, **kw)
 
 
-def _resolved(slug, outcome):
-    return _row("fanout_audit_finding_resolved", {"slug": slug, "outcome": outcome})
+def _resolved(slug, outcome, reason=None):
+    return _row("fanout_audit_finding_resolved",
+                {"slug": slug, "outcome": outcome} | ({"reason": reason} if reason else {}))
 
 
 def _advisory(file="a.py", line=3, desc="maybe", **kw):
@@ -97,12 +98,23 @@ class CandidatesTest(_Repo):
                                                     "desc": "d", "marker": "should reuse"}),
                   _advisory(), _advisory()]                                           # one key, twice
         keys = [c["key"] for c in self.b.candidates(events, since="2026-09-28")]
-        self.assertEqual(keys[:2], ["fanout-00000003", "fanout-00000004"])
-        self.assertEqual(len(keys), 3)
-        self.assertTrue(keys[2].startswith("fanout-"))   # the advisory, keyed like recital slugs it
+        # a false_positive is the agent's claim, so it's judged like a shipped one
+        self.assertEqual(keys[:3], ["fanout-00000002", "fanout-00000003", "fanout-00000004"])
+        self.assertEqual(len(keys), 4)
+        self.assertTrue(keys[3].startswith("fanout-"))   # the advisory, keyed like recital slugs it
 
 
 class SweepTest(_Repo):
+    def test_the_judge_sees_a_false_positive_and_its_reason(self):
+        events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "false_positive", "caller filters it"),
+                  _finding("fanout-00000002", line=40), _resolved("fanout-00000002", "false_positive")]
+        bugs, _ = self.sweep(events)
+        self.assertIn("desc fanout-00000001\n(tagged false_positive: caller filters it)\n", self.prompts[0])
+        self.assertIn("desc fanout-00000002\n(tagged false_positive)\n", self.prompts[0])
+        self.assertEqual({b["key"]: b["status"] for b in bugs},
+                         {"fanout-00000001": "open", "fanout-00000002": "open"})
+        self.assertEqual(bugs[0]["reason"], "caller filters it")
+
     def test_the_judge_sees_the_code_at_the_pinned_sha_and_its_verdicts_land(self):
         events = [_finding("fanout-00000001", line=30), _finding("fanout-00000002")]
         bugs, cost = self.sweep(events, judge=self.judge(only={"fanout-00000001"}))

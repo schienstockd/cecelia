@@ -309,12 +309,14 @@ def _render_finding_rows(
         payload = f.get("payload", {})
         resolved = resolutions_by_slug.get(slug)
         outcome = (resolved or {}).get("payload", {}).get("outcome") or "unresolved"
+        reason = (resolved or {}).get("payload", {}).get("reason")
         file = payload.get("file", "?")
         line = payload.get("line", "?")
         desc = payload.get("desc", "").strip()
         pr = _resolve_pr(f, resolved, pr_cache, pr_lookup=pr_lookup)
         pr_txt = f"{pr} — " if pr else ""
-        return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [**{outcome}**]"
+        tag = f"**{outcome}**: {reason}" if reason else f"**{outcome}**"
+        return outcome, f"- {pr_txt}`{file}:{line}` — {desc} [{tag}]"
 
     def _row_for_slugless(f: dict) -> tuple[str, str]:
         payload = f.get("payload", {})
