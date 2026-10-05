@@ -102,7 +102,7 @@ affected control. Concretely, the first four (Dominik's own list):
 
 | scenario | the fork it exists to state |
 |---|---|
-| Intravital timelapse | flow model + `segment.coastal`, **not** cellpose — with the QC number behind it |
+| Intravital timelapse | ~~flow model + `segment.coastal`, **not** cellpose~~ — revised 2026-10-05, see *D-rev* below: cellpose by default, motion segmentation only for dim movies |
 | Behaviour / tracks / interactions | segment **+ measure** (the composite), then track + measures, then HMM — the "labels with no measures" trap |
 | Large multiplex images | AF correction before segmentation; cellpose (static is its case); tiling params |
 | Many small confocal images, interactions | do it as a **chain** over a set, not image by image |
@@ -157,6 +157,17 @@ whose whole doc discipline is one canonical name per job. So: type `RecipeDef`, 
 
 The USER-facing heading is a separate, copy-only decision (D5 applies): proposed **"What are you
 trying to do?"** as the first section of the picker, with the guide groups below it unchanged.
+
+### D-rev — The intravital recipe is the paper's workflow, cellpose by default  *(Dominik, 2026-10-05)*
+
+The first version taught motion segmentation as THE intravital path. Wrong for most data (Dominik):
+cellpose is fine for most movies; the optical-flow model was needed for this lab's own dim movie, which
+is not the norm. The recipe now follows the Cecelia paper's behaviour analysis (Nat Commun 2025,
+Fig. 4c): drift correction → cellpose segment + measure (flow model + motion segmentation as an
+**optional** fork for dim cells) → QC gating → track + measures → HMM states + transitions → Leiden
+track clustering on whole-track measures + HMM states + transitions. The cluster-tracks guide's
+"HMM is the supervised alternative" bullet was wrong the same way — the two are combined, not
+alternatives — and now says so. Found when the recipe was handed to an agent through `get_guide`.
 
 ### D7 — Intravital needs no new guide; the other three each need one we should not write blind  *(2026-08-21)*
 
@@ -300,13 +311,18 @@ is the measured cellpose-4-vs-`cyto2` QC pair from `SEG_QUALITY_PLAN.md`, on thi
 
 The recipe being written:
 
+(Revised 2026-10-05 — see *D-rev*; the original five steps put motion segmentation on the main path.)
+
 | step | guide | the fork it states |
 |---|---|---|
-| 1 (optional) | `drift-correct` | only if the movie drifts; it makes a version, it does not overwrite |
-| 2 | `train-flow-model` | motion, not brightness — trained once per kind of movie, reused after |
-| 3 | `segment-by-motion` | **not** cellpose, with the measured QC pair behind it |
-| 4 | `track-cells` | the composite, so tracks carry measures |
-| 5 | `behaviour-states` | what tracks are for |
+| 1 | `drift-correct` | tissue drift reads as movement in every track |
+| 2 | `segment-an-image` | cellpose finds the cells in most movies |
+| 3 (optional) | `train-flow-model` | only if cellpose misses dim cells |
+| 4 (optional) | `segment-by-motion` | with that model; the measured QC pair behind it |
+| 5 | `gate-populations` | QC gate (size × intensity) before tracking |
+| 6 | `track-cells` | the composite, so tracks carry measures |
+| 7 | `behaviour-states` | HMM states + transitions |
+| 8 | `cluster-tracks` | Leiden on whole-track measures + HMM states + transitions |
 
 **P3 — deferred until a request says what to write.** The multiplex and interaction recipes, the two
 guides they need (D7), and `flowModelTrained` as a real prereq (D8). Recipes as drop-in JSON when a lab
