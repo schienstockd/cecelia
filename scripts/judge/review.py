@@ -305,7 +305,29 @@ def _fit(lines: list[str], height: int, *, use_colour: bool) -> list[str]:
                                             "widen or heighten the terminal to see them", use_colour=use_colour)]
 
 
-def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.TextIO = sys.stdout,
+def read_key(prompt: str) -> str:
+    """One keypress from the terminal, no Enter: the answer keys act at once (`z` undoes a slip). An
+    arrow or other escape sequence reads as nothing, so its trailing `A`..`D` can't pass as a key."""
+    import termios
+    import tty
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    fd = sys.stdin.fileno()
+    saved = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)   # Ctrl-C still works; typeahead is dropped, so a double press skips no card
+        got = os.read(fd, 32).decode("utf-8", errors="ignore")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+    if not got or got[0] == "\x04":
+        raise EOFError
+    key = "" if got[0] == "\x1b" else got[0]
+    sys.stdout.write(key.strip() + "\n")
+    return key
+
+
+def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
+              press: _t.Callable[[str], str] | None = None, out: _t.TextIO = sys.stdout,
               path: pathlib.Path | None = None, use_colour: bool = True, width: int | None = None,
               fullscreen: bool = False, launch: _t.Callable[[str, pathlib.Path], str | None] = default_launch,
               cwd: pathlib.Path | None = None) -> int:
@@ -314,8 +336,11 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.Te
     The queue is re-read after every answer, so a decide bug kept open joins the work list at once.
     `fullscreen` (a terminal) repaints one card per screen, like `pixi run recital-console`; off, the
     cards scroll, which is what a pipe or a test reads. `launch` starts a fix session (`default_launch`)
-    in `cwd`, by default the `workspace()` the owner starts sessions in.
+    in `cwd`, by default the `workspace()` the owner starts sessions in. `press` reads the answer key
+    (`read_key` on a terminal, no Enter); `read` reads a line: the typed answer, and the key when
+    `press` is None.
     """
+    press = press or read
     cols, rows = _terminal_size((_MAX_WIDTH, 40))
     width = width or min(cols, _MAX_WIDTH)
     base = record
@@ -360,7 +385,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input, out: _t.Te
                   *describe(rec, item, width=width, use_colour=use_colour)])
             status = ""
             try:
-                key = read(_prompt(keys, use_colour=use_colour)).strip().lower()[:1]
+                key = press(_prompt(keys, use_colour=use_colour)).strip().lower()[:1]
             except EOFError:
                 key = "q"
             if key == "q":
@@ -440,7 +465,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"judge-review: {record['date']} is a failure record; nothing to review", file=sys.stderr)
         return 1
     tty = sys.stdout.isatty()
-    run_queue(record, use_colour=tty, fullscreen=tty)
+    run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty)
     return 0
 
 
