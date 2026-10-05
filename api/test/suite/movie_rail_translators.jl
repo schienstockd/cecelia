@@ -149,6 +149,12 @@
     @test _normalise_track_sources(Dict(:B => Dict(:visible => true)); default_colour = "#123456") ==
           [Dict{String,Any}("valueName" => "B", "colour" => "#123456")]
     @test isempty(_normalise_track_sources(nothing))
+    # `_whole_seg_track_sources` — chosen-but-all-hidden sources turn `allTracks` off; absent keeps it.
+    @test _whole_seg_track_sources(true, nothing) == (true, Dict{String,Any}[])
+    @test first(_whole_seg_track_sources(true, Any[])) === false
+    @test first(_whole_seg_track_sources(true, Dict{String,Any}("B" => Dict{String,Any}("visible" => false)))) === false
+    @test first(_whole_seg_track_sources(true, Any[Dict("valueName" => "B")])) === true
+    @test first(_whole_seg_track_sources(false, Any[Dict("valueName" => "B")])) === false
 end
 
 @testset "API: movie rail — viewstate → render args (keyframe rendering)" begin

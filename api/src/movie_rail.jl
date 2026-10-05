@@ -210,6 +210,17 @@ function _normalise_track_sources(x; default_colour::AbstractString = OVERLAY_GR
     sources
 end
 
+# Whole-segmentation tracks under `trackSources`: `(all_tracks, sources)` with `all_tracks` turned off
+# when sources were chosen (a list or map arrived) and none is visible — the viewer then draws no
+# whole-seg tracks, where an ABSENT `trackSources` means the single-source grey. The translator and
+# both overlay readers apply it, so a prebuilt `overlays` dict (record-test, a request's `overlays`)
+# reads an empty list the way the translator does.
+function _whole_seg_track_sources(all_tracks::Bool, x; default_colour::AbstractString = OVERLAY_GREY)
+    sources = _normalise_track_sources(x; default_colour = default_colour)
+    hidden = x isa Union{AbstractDict,AbstractVector} && isempty(sources)
+    (all_tracks && !hidden, sources)
+end
+
 # The segmentation a batch movie draws its pops from: the picked `popValueName`, else the mask's
 # (`labelValueNames[1]`), else the config's `valueName` — the 2D rail's order
 # (`_resolve_movie_overlays_mask` falls back to the frame's mask, then its version). The 3D batch and
@@ -306,16 +317,13 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # can now see both, each in its own colour.
     ts_raw = get(cfg, "trackSources", nothing)
     ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
-    if ts_raw isa Union{AbstractDict,AbstractVector}
-        sources = _normalise_track_sources(ts_raw)
-        if !isempty(sources)
-            out["trackSources"] = sources
-        elseif out["allTracks"]
-            # Sources were chosen and every one is hidden: no whole-segmentation tracks — not the
-            # grey fallback an ABSENT list means (the viewer draws none).
-            out["allTracks"] = false
-            out["includeTracks"] = show_gated
-        end
+    all_tracks, sources = _whole_seg_track_sources(out["allTracks"], ts_raw)
+    isempty(sources) || (out["trackSources"] = sources)
+    if out["allTracks"] && !all_tracks
+        # Sources were chosen and every one is hidden: no whole-segmentation tracks — not the
+        # grey fallback an ABSENT list means (the viewer draws none).
+        out["allTracks"] = false
+        out["includeTracks"] = show_gated
     end
     out
 end

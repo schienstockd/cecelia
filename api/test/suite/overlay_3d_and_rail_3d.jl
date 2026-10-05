@@ -94,6 +94,20 @@
             @test b3m !== nothing
             _, s3m = b3m(5)
             @test s3m !== nothing && all(==(RGB{N0f8}(0, 0, 1)), s3m.colour)
+            # ... and one whose sources are all hidden (an empty list, or a map of hidden entries)
+            # draws no whole-seg tracks — not the single-source grey an ABSENT list means. Both readers.
+            arr, caxes = zeros(UInt8, 20, 1, 8, 8), ["t", "c", "y", "x"]
+            grey = Dict{String,Any}("allTracks" => true, "includeTracks" => true, "valueName" => "B",
+                                    "showPopulations" => false, "tailLength" => 5)
+            @test something(first(_resolve_keyframe_overlay_builders(img, grey))(5)[2],
+                            (; x0 = Float64[])).x0 |> !isempty          # absent → the grey tails
+            for ts in (Any[], Dict{String,Any}("B" => Dict{String,Any}("visible" => false)))
+                hidden = merge(grey, Dict{String,Any}("trackSources" => ts))
+                @test _resolve_keyframe_overlay_builders(img, hidden) === (nothing, nothing)
+                ov2 = _resolve_movie_overlays_mask(img, nothing, arr, caxes, hidden, "B")
+                @test ov2.overlays3d_for === nothing
+                @test startswith(ov2.ov_diag["reason"], "no overlay type requested")
+            end
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
