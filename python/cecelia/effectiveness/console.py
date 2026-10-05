@@ -154,6 +154,7 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "maintainability_lint": ("mlnt", _CYAN),
     "citation_currency": ("cite", _CYAN),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
+    "agent_run": ("agnt", _RED),  # platform errors an unattended agent run hit (run_findings.py)
     "claude_md_eval": ("cmd ", _GREY),  # retired eval — old log rows still render
     "human_override": ("ovrd", _GREY),
     "retrospective_miss": ("miss", _RED),
@@ -184,6 +185,29 @@ def _is_finding(event: str) -> bool:
     return event.endswith(("_finding", "_advisory"))
 
 
+def _marker_of(payload: dict) -> str:
+    """A finding's marker. Reviewer findings carry `marker`; an `agent_run_finding` carries
+    none — its `kind` ("repeat") is the marker, and no kind means a straight platform error."""
+    if "marker" in payload:
+        return payload["marker"]
+    if "tool" in payload:
+        return payload.get("kind") or "error"
+    return "?"
+
+
+def _marker_text(payload: dict) -> str:
+    """The marker as shown — a repeat says how many runs hit it (`repeat ×3`)."""
+    runs = payload.get("runs")
+    return f"{_marker_of(payload)} ×{runs}" if runs else _marker_of(payload)
+
+
+def _where_of(payload: dict) -> str:
+    """`file:line`, or the tool an agent-run finding hit when no stacktrace named repo code."""
+    if "file" not in payload and "tool" in payload:
+        return payload["tool"]
+    return f"{payload.get('file', '?')}:{payload.get('line', '?')}"
+
+
 def _colour_for_label(label: str) -> str:
     return _LABEL_COLOUR.get(label.strip(), _GREY)
 
@@ -202,6 +226,8 @@ _MARKER_COLOUR: dict[str, str] = {
     "wrong home": _YELLOW,             # attention semantic — content belongs in another doc
     "plausible": _YELLOW,              # advisory — fanout fit unverified
     "potential duplicate": _YELLOW,    # advisory — convention fit unverified
+    "error": _ORANGE,                  # agent run hit a platform error (5xx, no error text)
+    "repeat": _YELLOW,                 # same 4xx across separate agent runs — guidance gap
 }
 _OUTCOME_COLOUR: dict[str, str] = {
     "fixed_pre_commit": _GREEN,
@@ -363,7 +389,7 @@ class _Tally:
             outcome = payload.get("outcome", "unresolved")
             self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
         elif _is_finding(name):
-            marker = payload.get("marker", "?")
+            marker = _marker_of(payload)
             self.findings.setdefault(key, {})[marker] = self.findings.get(key, {}).get(marker, 0) + 1
         elif name == "ratchet_hit":
             self.findings.setdefault(key, {})["hit"] = self.findings.get(key, {}).get("hit", 0) + 1
@@ -460,15 +486,14 @@ def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = Tr
     """
     label, colour = _mechanism_of(event.get("event", ""))
     payload = event.get("payload", {}) or {}
-    marker = payload.get("marker", "?")
-    marker_col = _MARKER_COLOUR.get(marker, _YELLOW)
+    marker_col = _MARKER_COLOUR.get(_marker_of(payload), _YELLOW)
     ctx = _fmt_context(event) if with_context else ""
     ctx_str = "  " + _col(_DIM, ctx, use_colour=use_colour) if ctx else ""
     return (f"{_col(_GREY, _fmt_hms(event.get('ts', '')), use_colour=use_colour)} "
             f"{_col(colour, label, use_colour=use_colour)} "
             f"{_col(_BOLD, 'FIND'.ljust(_VERB_WIDTH), use_colour=use_colour)} "
-            f"{_col(marker_col, marker, use_colour=use_colour)}  "
-            f"{payload.get('file', '?')}:{payload.get('line', '?')}"
+            f"{_col(marker_col, _marker_text(payload), use_colour=use_colour)}  "
+            f"{_where_of(payload)}"
             f"{ctx_str}")
 
 
@@ -680,13 +705,11 @@ def format_event(event: dict, *, use_colour: bool = True,
         return _col(_BOLD, v.ljust(_VERB_WIDTH), use_colour=use_colour)
 
     if _is_finding(name):
-        marker = payload.get("marker", "?")
-        marker_col = _MARKER_COLOUR.get(marker, _YELLOW)
-        marker_str = _col(marker_col, f"[{marker}]", use_colour=use_colour)
+        marker_col = _MARKER_COLOUR.get(_marker_of(payload), _YELLOW)
+        marker_str = _col(marker_col, f"[{_marker_text(payload)}]", use_colour=use_colour)
         slug = payload.get("slug", "")
         slug_str = _col(_DIM, slug, use_colour=use_colour) if slug else ""
-        file_line = f"{payload.get('file', '?')}:{payload.get('line', '?')}"
-        head = f"{ts} {tag} {_verb('FIND')} {marker_str}  {file_line}  {slug_str}{ctx_str}"
+        head = f"{ts} {tag} {_verb('FIND')} {marker_str}  {_where_of(payload)}  {slug_str}{ctx_str}"
         desc = (payload.get("desc") or "").strip()
         if not desc:
             return head
