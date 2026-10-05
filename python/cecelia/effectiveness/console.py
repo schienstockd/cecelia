@@ -99,12 +99,13 @@ def _clip(line: str, width: int) -> str:
 
 # ── Scrolling — shared with `pixi run judge-review`, whose cards outgrow the screen the same way.
 #: Named keys; every other key reads as its one character.
-PGUP, PGDN, RESIZE = "pgup", "pgdn", "resize"
-_NAMED_KEYS = {"\x1b[5~": PGUP, "\x1b[6~": PGDN}
+PGUP, PGDN, LEFT, RIGHT, RESIZE = "pgup", "pgdn", "left", "right", "resize"
+_NAMED_KEYS = {"\x1b[5~": PGUP, "\x1b[6~": PGDN, "\x1b[D": LEFT, "\x1b[C": RIGHT,
+               "\x1bOD": LEFT, "\x1bOC": RIGHT}   # `O` form: a terminal in application-cursor mode
 
 
 def decode_key(got: str) -> str:
-    """One terminal read → a key: PgUp/PgDn by name, any other escape sequence (an arrow) as "",
+    """One terminal read → a key: PgUp/PgDn/←/→ by name, any other escape sequence (↑) as "",
     so its trailing letter can't pass as a key; else the first character."""
     if got.startswith("\x1b"):
         return next((name for seq, name in _NAMED_KEYS.items() if got.startswith(seq)), "")
@@ -418,6 +419,7 @@ class DashboardState:
     bottom. Findings are held as raw event dicts (not pre-rendered strings) so the pane can
     re-wrap them if the terminal width changes between frames. `findings_offset` is how far
     PgDn has scrolled the findings pane; each frame clamps it and sets `findings_page`, the step.
+    `findings_expanded` (→, ← undoes) shows every description in full instead of capped.
     """
 
     def __init__(self, *, max_events: int = _MAX_EVENTS, max_findings: int = _MAX_FINDINGS):
@@ -428,6 +430,7 @@ class DashboardState:
         self.last_event_ts: str | None = None
         self.findings_offset = 0
         self.findings_page = 1
+        self.findings_expanded = False
 
     def add(self, event: dict) -> None:
         self.tally.add(event)
@@ -589,15 +592,21 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         # Uncap descriptions one line at a time while every held finding still fits, so a
         # tall terminal shows full text instead of `…`; stop once nothing more unfolds.
         cap, blocks = _FINDING_DESC_LINES, _blocks(_FINDING_DESC_LINES)
-        while True:
+        full = _blocks(10 ** 6)
+        while not state.findings_expanded:
             wider = _blocks(cap + 1)
             if wider == blocks or sum(map(len, wider)) > findings_budget:
                 break
             cap, blocks = cap + 1, wider
+        if state.findings_expanded:
+            blocks = full
         findings_block, state.findings_offset, state.findings_page = scroll_window(
             [row for block in blocks for row in block], findings_budget, state.findings_offset,
             use_colour=use_colour)
-        findings_block.insert(0, _hr("recent findings", width, use_colour=use_colour))
+        # the hint only when the key changes something: a cut description, or the expanded view
+        hint = (" · ← cut text" if state.findings_expanded and full != _blocks(cap)
+                else " · → full text" if full != blocks else "")
+        findings_block.insert(0, _hr("recent findings" + hint, width, use_colour=use_colour))
 
     activity_block: list[str] = [_hr("activity", width, use_colour=use_colour)]
     if activity_budget <= 0:
@@ -912,7 +921,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     thread falls back to tick-latency, which is imperceptible in practice.
 
     `key_fd` (the terminal, POSIX) is read in cbreak mode during the sleep: PgUp/PgDn scroll the
-    findings pane and repaint at once.
+    findings pane, → shows its descriptions in full and ← cuts them again; each repaints at once.
     """
     state = DashboardState()
     for event in seed_events:
@@ -994,6 +1003,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                     continue
                 if key in (PGUP, PGDN):
                     state.findings_offset += state.findings_page * (1 if key == PGDN else -1)
+                    break
+                if key in (LEFT, RIGHT):
+                    state.findings_expanded, state.findings_offset = key == RIGHT, 0
                     break
     except KeyboardInterrupt:
         pass

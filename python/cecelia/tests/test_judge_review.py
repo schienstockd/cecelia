@@ -316,6 +316,7 @@ class ReadKeyTest(unittest.TestCase):
 
     def test_an_arrow_key_is_not_its_trailing_letter(self):
         self.assertEqual(self.press(b"\x1b[A"), "")
+        self.assertEqual(self.press(b"\x1b[D"), "")   # ← expands in the recital console, not here
 
     def test_ctrl_d_is_end_of_input(self):
         with self.assertRaises(EOFError):

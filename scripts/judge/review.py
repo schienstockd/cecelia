@@ -33,7 +33,7 @@ from cecelia.effectiveness import git_context, read_events  # noqa: E402
 from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import (  # noqa: E402
-    _BOLD, _DIM, PGDN, PGUP, RESIZE, _col, _hr, _terminal_size, _wrap_desc, poll_key, scroll_window)
+    _BOLD, _DIM, LEFT, PGDN, PGUP, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc, poll_key, scroll_window)
 from cecelia.effectiveness.palette import (  # noqa: E402
     BLUE, BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
 
@@ -301,7 +301,7 @@ _ENTER, _LEAVE, _CLEAR = "\033[?1049h", "\033[?1049l", "\033[2J\033[H"
 def read_key(prompt: str) -> str:
     """One keypress from the terminal, no Enter: the answer keys act at once (`z` undoes a slip).
     PgUp/PgDn come back as `PGUP`/`PGDN` and a terminal resize as `RESIZE`, so the card repaints;
-    any other escape sequence (an arrow) reads as nothing (`console.decode_key`)."""
+    any other escape sequence (an arrow) reads as nothing."""
     import signal
     import termios
     import tty
@@ -325,6 +325,8 @@ def read_key(prompt: str) -> str:
             signal.signal(signal.SIGWINCH, prev_winch)
     if key is None:
         return RESIZE
+    if key in (LEFT, RIGHT):   # the recital console's expand keys; nothing here
+        key = ""
     if key not in (PGUP, PGDN):
         sys.stdout.write(key.strip() + "\n")
     return key

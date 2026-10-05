@@ -768,6 +768,28 @@ class DashboardTest(unittest.TestCase):
         state.findings_offset -= state.findings_page   # one PgUp from the end moves at once
         self.assertNotEqual(frame(), end)
 
+    def test_right_arrow_shows_every_description_in_full(self):
+        long = " ".join(f"word{j}" for j in range(200))
+        state = self._state_with([_finding(payload={"desc": long + " END"})])
+
+        def frame():
+            return render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=30,
+                                    use_colour=False)
+        capped = frame()
+        self.assertNotIn("END", capped)
+        self.assertIn("recent findings · → full text", capped)
+        state.findings_expanded = True
+        full = frame()
+        self.assertIn("recent findings · ← cut text", full)
+        self.assertIn("more line(s) · PgDn", full)   # full text outgrows the pane: it scrolls
+        state.findings_offset = 10 ** 6
+        self.assertIn("END", frame())
+
+    def test_no_expand_hint_when_nothing_is_cut(self):
+        out = render_dashboard(self._state_with([_finding()]), pathlib.Path("/tmp/x"), width=120,
+                               use_colour=False)
+        self.assertNotIn("full text", out)
+
     def test_clip_leaves_short_lines_alone(self):
         self.assertEqual(console._clip("\x1b[1mabc\x1b[0m", 10), "\x1b[1mabc\x1b[0m")
 
@@ -833,4 +855,6 @@ class ScrollTest(unittest.TestCase):
         self.assertEqual(console.decode_key("\x1b[5~"), console.PGUP)
         self.assertEqual(console.decode_key("\x1b[6~\x1b[6~"), console.PGDN)   # two presses, one read
         self.assertEqual(console.decode_key("\x1b[B"), "")
+        self.assertEqual(console.decode_key("\x1b[C"), console.RIGHT)
+        self.assertEqual(console.decode_key("\x1bOD"), console.LEFT)
         self.assertEqual(console.decode_key("q"), "q")
