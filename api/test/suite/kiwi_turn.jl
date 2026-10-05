@@ -346,6 +346,11 @@ end
         @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/other"]))
         @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "groupBy" => "other"))
         @test !kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "cell_measures"))
+        # the one asked → stored mapping both the click and the dry run use: a hidden `_tracked` copy
+        # resolves to the offered set, anything unresolvable stays as asked
+        res = kiwi_pop_resolver(Dict("B/qc/_tracked" => "B", "T/qc/_tracked" => "T"))
+        @test res("B/_tracked") == "B/qc/_tracked" && res("B/other") == "B/other"
+        @test kiwi_slot_holds(slot, Dict("kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/_tracked"]); resolve = res)
 
         # keep only the last KIWI_TURNS_KEEP, then clear
         for i in 1:(KIWI_TURNS_KEEP + 2)
