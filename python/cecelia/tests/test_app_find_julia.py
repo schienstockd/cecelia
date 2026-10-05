@@ -29,12 +29,13 @@ class FindJuliaTest(unittest.TestCase):
 
     def test_install_owned_juliaup_wins_over_path(self):
         bin_dir = os.path.join(self.root, "juliaup", "bin")
+        julia = os.path.join(bin_dir, self.app._exe("julia"))   # julia.exe on the Windows runner
         os.makedirs(bin_dir)
-        open(os.path.join(bin_dir, "julia"), "w", encoding="utf-8").close()
+        open(julia, "w", encoding="utf-8").close()
         env = {"PATH": "/usr/local/bin:/usr/bin", "JULIAUP_DEPOT_PATH": "/Users/x/.julia/juliaup"}
         with mock.patch.dict(os.environ, env, clear=True), \
              mock.patch("shutil.which", return_value="/usr/local/bin/julia"):
-            self.assertEqual(self.app._find_julia(), os.path.join(bin_dir, "julia"))
+            self.assertEqual(self.app._find_julia(), julia)
             self.assertEqual(os.environ["JULIAUP_DEPOT_PATH"], os.path.join(self.root, "juliaup"))
             self.app._find_julia()          # called again on every reprovision: PATH must not grow
             self.assertEqual(os.environ["PATH"], bin_dir + os.pathsep + "/usr/local/bin:/usr/bin")
