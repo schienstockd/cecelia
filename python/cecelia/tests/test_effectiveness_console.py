@@ -790,6 +790,14 @@ class DashboardTest(unittest.TestCase):
                                use_colour=False)
         self.assertNotIn("full text", out)
 
+    def test_no_collapse_hint_when_the_collapsed_view_is_already_full(self):
+        # 8 description lines: past the 3-line cap, but a tall terminal unfolds them all anyway
+        state = self._state_with([_finding(payload={"desc": " ".join(f"word{j}" for j in range(80))})])
+        state.findings_expanded = True
+        out = render_dashboard(state, pathlib.Path("/tmp/x"), width=100, height=60, use_colour=False)
+        self.assertIn("word79", out)
+        self.assertNotIn("cut text", out)
+
     def test_clip_leaves_short_lines_alone(self):
         self.assertEqual(console._clip("\x1b[1mabc\x1b[0m", 10), "\x1b[1mabc\x1b[0m")
 

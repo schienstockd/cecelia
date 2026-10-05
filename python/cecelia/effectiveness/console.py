@@ -592,20 +592,20 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
         # Uncap descriptions one line at a time while every held finding still fits, so a
         # tall terminal shows full text instead of `…`; stop once nothing more unfolds.
         cap, blocks = _FINDING_DESC_LINES, _blocks(_FINDING_DESC_LINES)
-        full = _blocks(10 ** 6)
-        while not state.findings_expanded:
+        while True:
             wider = _blocks(cap + 1)
             if wider == blocks or sum(map(len, wider)) > findings_budget:
                 break
             cap, blocks = cap + 1, wider
+        full = _blocks(10 ** 6)
+        cut = full != blocks   # the collapsed view, `blocks`, hides some text
         if state.findings_expanded:
             blocks = full
         findings_block, state.findings_offset, state.findings_page = scroll_window(
             [row for block in blocks for row in block], findings_budget, state.findings_offset,
             use_colour=use_colour)
         # the hint only when the key changes something: a cut description, or the expanded view
-        hint = (" · ← cut text" if state.findings_expanded and full != _blocks(cap)
-                else " · → full text" if full != blocks else "")
+        hint = "" if not cut else " · ← cut text" if state.findings_expanded else " · → full text"
         findings_block.insert(0, _hr("recent findings" + hint, width, use_colour=use_colour))
 
     activity_block: list[str] = [_hr("activity", width, use_colour=use_colour)]
