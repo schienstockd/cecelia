@@ -1126,6 +1126,36 @@ function api_gating_density(req::HTTP.Request)
     200, collect(reinterpret(UInt8, Float32.(vec(d.counts))))
 end
 
+# ── GET /api/gating/summary → the distribution a gate is chosen from (JSON) ───
+# ?projectUid&imageUid&valueName&x&y[&pop&popType&bins&xt…&yt…] → { n, x:{channel, …axis_summary},
+# y:{…}, grid?:grid_summary } over the SAME read as the gate plot (`_plot_xy`), so the numbers
+# describe the cloud the plot shows, in the coordinates a gate is written in. `grid` only when x ≠ y.
+function api_gating_summary(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn = _resolve_vn(img, get(q, "valueName", ""))
+    x = get(q, "x", ""); y = get(q, "y", "")
+    (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
+    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
+    xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
+    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
+    if isempty(xv)
+        # nothing read: a column the table lacks, a population that doesn't exist, or an empty one
+        # (which is an answer, n = 0). The whole-segmentation read tells the first apart.
+        columns_ok = !is_root(pop) && !isempty(_plot_xy(img, vn, pop_type, x, y, ROOT, xt, yt)[1])
+        columns_ok || return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
+        has_pop(_live_map(img, vn, pop_type), pop) || return _gerr(404, "Population not found: $pop")
+    end
+    out = Dict{String,Any}(
+        "valueName" => vn, "pop" => pop, "n" => count(isfinite, xv),
+        "x" => merge(Dict{String,Any}("channel" => x, "transform" => transform_spec(xt)), axis_summary(xv; bins = bins)),
+        "y" => merge(Dict{String,Any}("channel" => y, "transform" => transform_spec(yt)), axis_summary(yv; bins = bins)))
+    x != y && (out["grid"] = grid_summary(xv, yv))
+    200, JSON3.write(out)
+end
+
 # ── POST mutations (add / set-gate / delete / rename) ─────────────────────────
 
 # Extract (projectUid, imageUid) from a parsed body without raising `KeyError`. Every gating

@@ -17,7 +17,9 @@ get_measure_summary lists them, get_image_info lists channel names in index orde
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
 {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}.
 Alongside the image: each axis's extent and the gates with their path and coordinates (a
-gate reaching past the axes is clipped in the picture, not in the list)."""
+gate reaching past the axes is clipped in the picture, not in the list). The tick labels are RAW
+values; gate coordinates and `extent` are TRANSFORMED — with a non-linear transform, read vertices
+off gate_histogram's `grid`, not off the ticks."""
 
 GATE_CELLS_VIEW_DOC = """The image with population `pop` marked: one timepoint `t` (default the middle frame), z
 max-projected in the saved viewer contrast, with segmentation `value_name`'s outlines — `pop`'s cells

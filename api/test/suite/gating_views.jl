@@ -84,6 +84,23 @@ end
             msg = String(JSON3.read(get_(api_gating_plot_image, "x=$(first(tcols))&y=area")[2]).error)
             @test occursin("per-track column", msg)
         end
+        # the distribution a gate is chosen from — the same read as the plot, so the same n
+        st, b = get_(api_gating_summary, "x=mean_intensity_0&y=area")
+        sm = JSON3.read(b)
+        @test st == 200 && sm.n == 1377 && sm.x.n == 1377 && length(sm.x.bins) == 30
+        @test sum(sum, sm.grid.counts) == 1377 && length(sm.grid.x_edges) == 21
+        @test sm.x.transform.kind == "linear"
+        @test !haskey(JSON3.read(get_(api_gating_summary, "x=area&y=area")[2]), :grid)   # one axis, no grid
+        @test JSON3.read(get_(api_gating_summary, "x=mean_intensity_0&y=area&pop=/dim")[2]).n < 1377
+        @test get_(api_gating_summary, "x=mean_intensity_0&y=area&pop=/nope")[1] == 404
+        @test get_(api_gating_summary, "x=not_a_column&y=area")[1] == 400
+        # a population that exists but holds no cells is an answer (n = 0), not an error
+        none = merge(gate, Dict{String,Any}("x_min" => -2.0, "x_max" => -1.0))
+        _post(api_gating_pop_add, Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+              "valueName" => "B", "popType" => "flow", "name" => "none", "gate" => none, "colour" => "#e11d48"))
+        st, b = get_(api_gating_summary, "x=mean_intensity_0&y=area&pop=/none")
+        @test st == 200 && JSON3.read(b).n == 0
+
         @test get_(api_gating_plot_image, "y=area")[1] == 400
         @test get_(api_gating_cells_image, "pop=/nope")[1] == 404
         @test get_(api_gating_cells_image, "pop=/dim")[1] == 404      # the fixture has no label store / zarr

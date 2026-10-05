@@ -135,6 +135,31 @@ end
     @test sum(dz.counts) == 0
 end
 
+# ── Gating engine: distribution summary (what a gate is chosen from) ──────
+@testset "Distribution summary" begin
+    a = axis_summary([1.0; fill(1.0, 49); fill(9.0, 30); NaN]; bins = 4)
+    @test (a["n"], a["min"], a["max"]) == (80, 1.0, 9.0)            # NaN dropped
+    @test [b["n"] for b in a["bins"]] == [50, 0, 0, 30]             # the max lands in the last bin
+    @test a["quantiles"]["p50"] == 1.0 && a["quantiles"]["p95"] == 9.0
+    @test axis_summary([NaN, Inf]) == Dict("n" => 0)
+
+    # a diagonal cloud fills the diagonal of the grid, nothing else
+    x = [float(i % 100) for i in 0:999]
+    g = grid_summary(x, x; bins = 4)
+    @test g["n"] == 1000 && length(g["x_edges"]) == 5
+    @test all(g["counts"][j][i] == 0 for i in 1:4, j in 1:4 if i != j)
+    # a far tail clamps into the edge bin instead of squashing the rest into the first one
+    t = grid_summary([x[1:999]; 1e6], [x[1:999]; 1e6]; bins = 4)
+    @test t["x_edges"][end] < 1e6 && sum(sum, t["counts"]) == 1000
+    @test t["counts"][2][2] > 0
+    # counts[j][i]: row j is the y-bin — a point high in y, low in x sits in the last row, first column
+    h = grid_summary([0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0]; bins = 2, clip = (0.0, 1.0))
+    @test h["counts"] == [[1, 1], [1, 1]]
+    v = grid_summary([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]; bins = 2, clip = (0.0, 1.0))
+    @test v["counts"][2][1] == 1 && v["counts"][1][2] == 1
+    @test grid_summary([NaN], [1.0]) == Dict("n" => 0)
+end
+
 # ── Population manager: paths, tree, persistence ──────────────────────────
 @testset "Population manager" begin
     @test pop_parent("/a/b") == "/a"

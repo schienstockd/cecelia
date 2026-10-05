@@ -2,7 +2,6 @@
 import asyncio
 import base64
 import os
-import struct
 import unittest
 from unittest import mock
 
@@ -99,20 +98,6 @@ class GatingPost(unittest.TestCase):
         self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
 
 
-class Histogram(unittest.TestCase):
-    def test_decode_and_bimodal_bins(self):
-        vals = [1.0] * 50 + [9.0] * 30
-        raw = b"".join(struct.pack("<2f", v, 0.0) for v in vals)
-        xs, ys = au.decode_pairs(raw)
-        self.assertEqual(len(xs), 80)
-        h = au.histogram(xs, bins=4)
-        self.assertEqual((h["n"], h["min"], h["max"]), (80, 1.0, 9.0))
-        self.assertEqual([b["n"] for b in h["bins"]], [50, 0, 0, 30])
-
-    def test_empty_and_nan(self):
-        self.assertEqual(au.histogram([float("nan")]), {"n": 0})
-
-
 class GatingPictures(unittest.TestCase):
     def _client(self, reply):
         c = au.AutonomousClient("http://x")
@@ -129,6 +114,20 @@ class GatingPictures(unittest.TestCase):
         method, route, q = r.call_args[0][:3]
         self.assertEqual((method, route), ("GET", "/api/gating/plot-image"))
         self.assertEqual((q["xt"], q["xcof"], q["yt"], q["ycof"], q["pop"]), ("asinh", 5, "asinh", 5, "/qc"))
+        self.assertIn((method, route), au.AUTONOMOUS_ROUTES)
+
+    def test_gate_histogram_relays_the_summary_route(self):
+        # the numbers come from Julia (`axis_summary` / `grid_summary`) — the client only relays
+        c, req = self._client({"n": 3, "x": {"n": 3}, "y": {"n": 3}, "grid": {"n": 3}})
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(c, "_require_measured") as measured, req as r:
+            out = c.gate_histogram("copy01", "img", "T", "mean_intensity_2", "area",
+                                   {"kind": "asinh", "cof": 5}, "/qc", 30)
+        self.assertEqual(out["grid"], {"n": 3})
+        measured.assert_called_once()
+        method, route, q = r.call_args[0][:3]
+        self.assertEqual((method, route), ("GET", "/api/gating/summary"))
+        self.assertEqual((q["xt"], q["xcof"], q["pop"], q["bins"]), ("asinh", 5, "/qc", 30))
         self.assertIn((method, route), au.AUTONOMOUS_ROUTES)
 
     def test_cells_view_only_sends_what_was_asked(self):
