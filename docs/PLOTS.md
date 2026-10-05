@@ -724,7 +724,14 @@ Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all
 four `plot_summary_data` methods + `/api/plot_data` as `matrixMode`/`measures`/`category`/`separator`/
 `zscore`/`matrixNormalize`). Returns a flat `cells` `[{x,y,value,n|count}]` + ordered `xLabels`/
-`yLabels` + `valueLabel`. An **empty frame is an empty grid, not an error** (`_empty_matrix`): a
+`yLabels` + `valueLabel`; profile also returns `xCounts` (rows per level — a cluster's size; a cell's
+`n` counts only the rows finite in that measure). **Track-grained rows that are per-track AGGREGATES**
+(`live.cell.hmm.state.movement.1`, `area.mean` — a track-cluster run's recorded features are these
+expanded names) come back because `pop_df` derives the base cell measures from the columns it is asked
+for (`track_aggregate_measures` → `track_cell_measures`, the inverse of `track_props`' naming). Before
+it did, the cluster heatmap silently dropped every HMM row and a `live` per-track plot of an HMM
+frequency errored "column not found"; the fix is in the accessor, so every chart type at track grain
+gets it. An **empty frame is an empty grid, not an error** (`_empty_matrix`): a
 population with no rows on this image comes back from `pop_df` with no columns at all, and erroring on
 the then-absent `category` column printed a raw error message into the panel every time a cluster pop
 was absent from one image of a per-image board. Every other chart type answers an empty frame with an

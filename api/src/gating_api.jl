@@ -387,9 +387,7 @@ _entry_field(e, key) = e === nothing ? nothing :
 function _clust_members(props_path::AbstractString, suffixes, family)
     out = Dict{String,Any}()
     for s in suffixes
-        e = Cecelia._clustfeatures_entry(props_path, s; family = family)
-        po = _entry_field(e, "partOf")
-        out[s] = po isa AbstractVector ? String[string(x) for x in po] : String[]
+        out[s] = Cecelia._clustfeatures_part_of(Cecelia._clustfeatures_entry(props_path, s; family = family))
     end
     out
 end

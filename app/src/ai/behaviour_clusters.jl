@@ -3,7 +3,8 @@
 #   behaviour_summary — HMM state distribution (fraction per state) + transition counts, from the
 #     per-cell obs columns `live.cell.hmm.state.*` / `live.cell.hmm.transitions.*`.
 #   cluster_summary   — per clustering run (`clusters.{suffix}`): n clusters, sizes, largest fraction,
-#     the feature list — cell obs for clustPops, track obs for clustTracks.
+#     the feature list — cell obs for clustPops, track obs for clustTracks — and each run's PROFILE
+#     (the cluster heatmap's numbers: per cluster, the z-scored mean of every feature).
 # READ-ONLY, summary-level. Reads obs through the canonical `pop_df` (mtime-cached) — distributions,
 # never raw rows. `category_dist_metrics` (qc.jl) only returns aggregates, so we compute the per-category
 # breakdown here (same null/NaN filtering).
@@ -91,15 +92,80 @@ cells. Reads the `live.cell.hmm.*` obs columns via `pop_df`. Slice D of OBSERVER
 behaviour_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =
     observer_image_summary(proj, _behaviour_image; image_uid = image_uid, set_uid = set_uid)
 
+# ── Cluster PROFILES — what defines each cluster ─────────────────────────────────
+# Sizes say how the points landed, not what a cluster IS. The profile is the per-cluster heatmap's
+# matrix (ClusterHeatmapPanel: matrix/profile over `clusters.{suffix}`, root pop, z-scored), produced by
+# the SAME `plot_summary_data` call the panel's request reaches — so what an agent reads is what the user
+# sees, and there is no second aggregation to drift. One per RUN: a run is (suffix, granularity, the
+# images it pooled — `partOf`); its segmentations are pooled by `plot_summary_data` itself
+# (`co_clustered_value_names`). Run-wide even when the summary is scoped to one image: a cluster's
+# definition belongs to the run, and the z-score is across the run's clusters.
+
+const _PROFILE_DIGITS = 2
+
+_round_or_null(v) = (v isa Real && isfinite(v)) ? round(Float64(v); digits = _PROFILE_DIGITS) : nothing
+
+# One run's profile — `features` as rows (`z` parallel to `clusters`), `n` the rows per cluster. A run
+# whose matrix cannot be built (a stale sidecar naming a column the table lost) reports `error` rather
+# than failing the whole summary.
+function _cluster_profile(by_uid::AbstractDict, sfx::AbstractString, gran::Symbol,
+                          part::Vector{String}, feats::Vector{String})
+    imgs = CciaImage[by_uid[u] for u in part if haskey(by_uid, u)]
+    head = (; suffix = String(sfx), granularity = string(gran), imageUids = [im.uid for im in imgs])
+    isempty(imgs) && return (; head..., error = "none of the run's images are in this project")
+    vns = co_clustered_value_names(first(imgs), sfx; granularity = gran)
+    pop_type = gran === :track ? "trackclust" : "clust"
+    r = try
+        plot_summary_data(imgs, [im.uid for im in imgs], pop_type,
+                          ["root"], "matrix"; scope = :summarised, granularity = gran,
+                          matrix_mode = "profile", measures = feats,
+                          category = _cluster_measure_prefix(pop_type) * sfx,
+                          zscore = true, cluster_suffix = sfx)
+    catch e
+        return (; head..., valueNames = vns, error = first(sprint(showerror, e), 200))
+    end
+    clusters = String.(r["xLabels"])
+    val = Dict((String(c["x"]), String(c["y"])) => c["value"] for c in r["cells"])
+    rows = [(; feature = String(m), z = [_round_or_null(get(val, (k, String(m)), nothing)) for k in clusters])
+            for m in r["yLabels"]]
+    (; head..., valueNames = vns, clusters = clusters, n = Int.(r["xCounts"]), features = rows,
+       missingFeatures = setdiff(feats, String.(r["yLabels"])))
+end
+
+# Every run any in-scope image took part in, once each, in first-seen order.
+function _cluster_profiles(proj::CciaProject, scope_imgs)
+    by_uid = Dict(im.uid => im for im in images(proj))
+    for im in scope_imgs; by_uid[im.uid] = im; end
+    runs = Dict{Tuple{String,Symbol,Vector{String}},Vector{String}}(); order = Tuple{String,Symbol,Vector{String}}[]
+    for img in scope_imgs, vn in sort(img_value_names(img))
+        for (gran, path) in ((:cell, img_label_props_path(img, vn)), (:track, img_track_props_path(img, vn)))
+            isfile(path) || continue
+            for sfx in sort!(collect(_clustfeatures_suffixes(path)))
+                feats = _clustfeatures_features(path, sfx); isempty(feats) && continue
+                part = sort!(_clustfeatures_part_of(_clustfeatures_entry(path, sfx), img.uid))
+                key = (sfx, gran, part)
+                haskey(runs, key) || (runs[key] = feats; push!(order, key))
+            end
+        end
+    end
+    [_cluster_profile(by_uid, k..., runs[k]) for k in order]
+end
+
 """
     cluster_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
 Per image, each clustering run (`clusters.{suffix}`): n clusters, cluster sizes, largest fraction (cell
 obs for clustPops, track obs for clustTracks) — plus a top-level `featuresByRun` (`{suffix => features}`)
-holding each run's feature list ONCE instead of on every per-image entry. Slice D of OBSERVER_DATA_ACCESS_PLAN.md.
+holding each run's feature list ONCE instead of on every per-image entry, and `profiles`: per RUN
+(suffix × granularity × the images it pooled, over every segmentation it ran on) the cluster heatmap's
+matrix — `clusters` (ids), `n` (rows per cluster), `features: [{feature, z}]` with `z` the z-scored
+per-cluster mean (across the run's clusters, `nothing` where undefined), rounded. Computed by
+`plot_summary_data`, the heatmap's own aggregation. Slice D of OBSERVER_DATA_ACCESS_PLAN.md.
 """
 function cluster_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "")
     feats = Dict{String,Vector{String}}()
-    imgs = [_cluster_image(img, feats) for img in _observer_scope_images(proj, image_uid, set_uid)]
-    (; projectUid = proj.uid, images = imgs, featuresByRun = feats)
+    scope = _observer_scope_images(proj, image_uid, set_uid)
+    imgs = [_cluster_image(img, feats) for img in scope]
+    (; projectUid = proj.uid, images = imgs, featuresByRun = feats,
+       profiles = _cluster_profiles(proj, scope))
 end

@@ -400,6 +400,9 @@ end
     @test cell(pr, "1", "speed")["value"] == 2.0           # mean(1,3)
     @test cell(pr, "2", "speed")["value"] == 11.0          # mean(10,12); NaN excluded
     @test cell(pr, "2", "speed")["n"] == 2
+    # `xCounts` = rows per level (the cluster's size), NOT the per-cell finite count: level 2 has 3
+    # rows though only 2 are finite in speed
+    @test pr["xCounts"] == [2, 3]
     @test isempty(pr["series"])
 
     # z-score standardises each row across its levels (mean 0) — the comparable "signature"
@@ -551,6 +554,53 @@ end
                                measure="live.track.speed", granularity=:track, scope=:per_image, nbins=10)
         @test length(hh["series"]) == 2 && length(hh["binEdges"]) == 11
         @test all(sum(s["counts"]) == nrow(one) for s in hh["series"])
+    end
+end
+
+# ── track-grained plots return the per-track AGGREGATE columns they name ───────
+# A track-cluster run's features (its clustfeatures sidecar → the heatmap's rows) are EXPANDED names —
+# `live.cell.hmm.state.movement.1` — which exist only once `track_props` aggregates their base cell
+# measure. pop_df must derive those bases from the requested columns; before it did, every HMM row of
+# the cluster heatmap was silently dropped (only the motility rows came back) and a `live` per-track
+# plot of an HMM frequency errored "column … not found".
+@testset "track-grained plots return the aggregates they name" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    cf  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.clustfeatures.json")
+    if !have_fixture(h5) || !have_fixture(trk) || !have_fixture(cf)
+        @test_skip "track aggregates in plots (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        for f in (h5, trk, cf); cp(f, joinpath(td, "labelProps", basename(f))); end
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        # a per-cell HMM state (integer code set → categorical → per-track `{base}.{state}` frequencies)
+        cells = label_props(img; value_name="B") |> select_cols(["track_id"]) |> as_df
+        label_props(img_label_props_path(img, "B")) |>
+            add_obs(DataFrame("label" => cells.label,
+                              "live.cell.hmm.state.movement" => [Float64(l % 3 + 1) for l in cells.label])) |> save!
+
+        hmm = ["live.cell.hmm.state.movement.$k" for k in 1:3]
+        feats = vcat("live.track.speed", hmm, "live.cell.speed.mean")   # motility, frequencies, a numeric mean
+        # the request ClusterHeatmapPanel builds (utils/clusterHeatmapBody.ts): profile over the run column
+        r = plot_summary_data(img, "trackclust", ["root"], "matrix"; granularity=:track,
+                              matrix_mode="profile", measures=feats, category="clusters.movement",
+                              zscore=true, cluster_suffix="movement")
+        @test r["yLabels"] == feats                                  # every requested row, in order
+        ntr = nrow(track_props(img; value_name="B"))
+        @test sum(r["xCounts"]) == ntr && length(r["xLabels"]) == 3  # every track in one of 3 clusters
+        @test all(c -> c["value"] !== nothing, r["cells"])           # each row varies across clusters
+
+        # the same frequency through a per-track `live` plot (the cell-properties panel at track grain)
+        b = plot_summary_data(img, "live", ["B/_tracked"], "boxplot"; granularity=:track, measure=hmm[1])
+        @test length(b["series"]) == 1 && b["series"][1]["n"] == ntr
+        @test 0.0 <= b["series"][1]["median"] <= 1.0                  # a within-track frequency
+
+        # a cell-grained track read naming a per-CELL column derives no phantom base (no unknown-column
+        # warning from the reader) and still carries the column
+        d = @test_logs min_level=Logging.Warn pop_df(img, "trackclust", ["root"]; value_name="B",
+                       granularity=:cell, pop_cols=["live.cell.hmm.state.movement"])
+        @test "live.cell.hmm.state.movement" in names(d)
     end
 end
 

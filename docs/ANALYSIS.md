@@ -243,6 +243,13 @@ Cluster plots (UMAP + `CLUSTER_PANELS`) share **one clustering run per board**: 
 **read-only** `PopulationManager` (highlight/tick to colour, no add/delete/rename/recolour/reassign)
 that follows the active cluster slot with per-family global/local scope.
 
+The **cluster heatmap**'s rows default to the run's recorded features (the clustfeatures sidecar). For
+a track run those include per-track AGGREGATES of cell measures — HMM-state / transition frequencies
+`live.cell.hmm.state.{suffix}.{k}` — which `pop_df` derives from the requested names
+(`track_aggregate_measures`; `docs/PLOTS.md` §9). The same matrix, rounded, is what the observer's
+`get_cluster_summary` returns as each run's `profiles` entry (`app/src/ai/behaviour_clusters.jl`), so
+an agent reads the numbers the user sees.
+
 ### Behaviour cards — one family per registry entry
 Three snapshot-card families on the analysis board, sharing a spine:
 

@@ -74,7 +74,9 @@ produced: get_analysis_lineage (the pipeline behind an image, and `rollup.diverg
 image out), get_chains. The analysis itself: get_populations (what a population MEANS — its gate \
 geometry or filter rule), gate_plot and gate_cells_view (a population's gate plot, and its cells \
 outlined in the image — as pictures), get_measure_summary (phenotype + motility per population), \
-get_behaviour_summary (HMM states), get_cluster_summary, get_region_clusters (spatial niches), \
+get_behaviour_summary (HMM states), get_cluster_summary (cluster sizes, and what defines each \
+cluster: its z-scored feature profile — describe from it, the name is the user's call), \
+get_region_clusters (spatial niches), \
 get_contact_stats (pairwise co-localisation). Cross-set QC: \
 get_cohort_qc. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
 words), get_qc_metrics. The lab log: read_lab_log. The experiment as the lab notebook records it: \

@@ -191,7 +191,43 @@ function track_table_cols(img::CciaImage, value_name::AbstractString)::Vector{St
 end
 
 """
-    track_cell_measures(cols, motility_cols) -> Vector{String}
+    track_aggregate_base(col, direct; cell_cols=nothing) -> Union{String,Nothing}
+
+THE naming rule between a per-track column and the cell measure it aggregates — the inverse of
+`track_props`' `{base}.{agg}` / `{base}.{category}` columns, for ONE column. `nothing` when `col` needs no
+aggregation (a column in `direct` — what `{vn}__tracks.h5ad` holds itself — or `track_id`/`label`/
+`num_cells` bookkeeping) or names no base.
+
+With `cell_cols` (the cell measures that exist, or the bases a caller selected) the base is the LONGEST
+of them that `col` extends by `.{suffix}` — exact, so a category that itself contains a dot (the
+cross-model hybrid `1.2_3.4`) still maps home, and a per-cell column (`live.cell.hmm.state.movement`
+asked of a cell-grained read) maps to nothing rather than to a phantom base. Without `cell_cols` the
+rule is by name alone: a numeric aggregate suffix (`.mean|.median|.sum|.qUp|.qLow|.sd`) is stripped,
+otherwise the text before the last dot is the base.
+
+Both directions use it: `track_cell_measures` (columns a plot/gate names → bases to aggregate) and
+clustTracks (selected bases → the columns they expanded to), so the two cannot disagree.
+"""
+function track_aggregate_base(col::AbstractString, direct;
+                              cell_cols=nothing)::Union{String,Nothing}
+    c = String(col)
+    (c in direct || c in ("track_id", "label", "num_cells")) && return nothing
+    if cell_cols !== nothing
+        best = nothing
+        for i in findall(==('.'), c)                   # ascending: the last hit is the longest base
+            b = c[1:prevind(c, i)]
+            b in cell_cols && (best = b)
+        end
+        return best
+    end
+    hit = findfirst(s -> endswith(c, s), _TRACK_NUM_AGG_SUFFIXES)
+    hit !== nothing && return c[1:end-ncodeunits(_TRACK_NUM_AGG_SUFFIXES[hit])]   # strip `.agg`
+    idx = findlast('.', c)                                                          # `{base}.{cat}` → base
+    idx === nothing ? nothing : c[1:prevind(c, idx)]
+end
+
+"""
+    track_cell_measures(cols, motility_cols; cell_cols=nothing) -> Vector{String}
 
 Inverse of `track_props`'s column naming: given desired **track-property** column names (a gating
 axis or a gate's channels) and the set of motility columns (free from `{vn}__tracks.h5ad`), return
@@ -199,21 +235,36 @@ the base **cell** measures that must be aggregated to produce them — i.e. the 
 `track_props`/`pop_df(…, "track")`. A motility column (or `track_id`/`label`/`num_cells`
 bookkeeping) needs no aggregation; `{base}.mean|median|sum|qUp|qLow|sd` → `base`; any other
 `{base}.{cat}` (a categorical within-track frequency) → `base`. Lets the gating API request exactly
-the per-track aggregates an axis needs without enumerating every measure×aggregate.
+the per-track aggregates an axis needs without enumerating every measure×aggregate. Per column the rule
+is `track_aggregate_base` (pass `cell_cols` for the exact, existence-checked form); for an image,
+`track_aggregate_measures` does that lookup.
 """
-function track_cell_measures(cols, motility_cols)::Vector{String}
-    mot = Set(String.(collect(motility_cols)))
-    skip = union(mot, Set(["track_id", "label", "num_cells"]))
+function track_cell_measures(cols, motility_cols; cell_cols=nothing)::Vector{String}
+    direct = Set(String.(collect(motility_cols)))
+    known = cell_cols === nothing ? nothing : Set(String.(collect(cell_cols)))
     bases = String[]
     for c in String.(collect(cols))
-        c in skip && continue
-        hit = findfirst(s -> endswith(c, s), _TRACK_NUM_AGG_SUFFIXES)
-        if hit !== nothing
-            push!(bases, c[1:end-ncodeunits(_TRACK_NUM_AGG_SUFFIXES[hit])])  # strip `.agg`
-        else
-            idx = findlast('.', c)                                          # `{base}.{cat}` → base
-            idx === nothing || push!(bases, c[1:prevind(c, idx)])
-        end
+        b = track_aggregate_base(c, direct; cell_cols=known)
+        b === nothing || push!(bases, b)
     end
     unique(bases)
+end
+
+"""
+    track_aggregate_measures(img, value_name, cols) -> Vector{String}
+
+The base cell measures segmentation `value_name` must aggregate so a per-track read can return `cols`
+— `track_cell_measures` against THIS segmentation's track table (`track_table_cols`) and cell table
+(only bases that exist there). The one call every track-grained reader makes: `pop_df` derives its
+aggregates from the columns it is asked for with it, so a plot or heatmap that names
+`live.cell.hmm.state.movement.1` or `area.mean` gets that column without spelling the base out. Empty
+for an untracked or unsegmented `value_name`.
+"""
+function track_aggregate_measures(img::CciaImage, value_name::AbstractString, cols)::Vector{String}
+    want = String.(collect(cols))
+    isempty(want) && return String[]
+    lp = label_props(img; value_name=value_name)
+    isfile(lp.path) || return String[]
+    cell = vcat(col_names(lp; data_type=:vars), col_names(lp; data_type=:obs))
+    track_cell_measures(want, track_table_cols(img, value_name); cell_cols=cell)
 end

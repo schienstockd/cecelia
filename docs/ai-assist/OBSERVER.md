@@ -63,7 +63,15 @@ get_guide                 → the in-app guides + whole-pipeline recipes as Mark
 get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
 list_notebooks            → a project's notebooks (name, file, description, version) + shipped examples (Phase 2)
 get_notebook              → a notebook's current Pluto source (with the user's edits) — the "have a look" flow (Phase 2)
+get_cluster_summary       → per clustering run: sizes per image + `profiles` (per RUN: per-cluster n + z-scored mean of each feature)
 ```
+
+**A cluster is judged by its profile, not its size.** `get_cluster_summary` used to return only sizes,
+so an unattended agent could count its clusters but not say what any of them was. Each run now carries
+the numbers the cluster heatmap shows (`profiles`: `clusters`, `n`, `features: [{feature, z}]`),
+produced by the same `plot_summary_data` matrix call as the panel — no second aggregation. `z` is
+relative (across the run's clusters), so it says which features push a cluster apart, not absolute
+values; the tool docstring says how to read it, and that a cluster's NAME stays the user's call.
 
 **Write (the non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
 ```

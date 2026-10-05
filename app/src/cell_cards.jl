@@ -55,8 +55,7 @@ function clustering_features_pooled(img::CciaImage, value_name::AbstractString,
                                "under value_name '$value_name'")
     feats = String[string(x) for x in get(entry, "features", get(entry, :features, String[]))]
     isempty(feats) && error("clustering_features_pooled: clustfeatures entry has no features (suffix=$suffix)")
-    part_of = String[string(x) for x in get(entry, "partOf", get(entry, :partOf, String[]))]
-    isempty(part_of) && (part_of = [img.uid])   # legacy sidecars without partOf → single-image run
+    part_of = _clustfeatures_part_of(entry, img.uid)   # legacy sidecars without partOf → single-image run
 
     cluster_col = "$(family).$(suffix)"
     pool = @NamedTuple{uid::String, value_name::String}[]

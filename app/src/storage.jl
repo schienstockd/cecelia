@@ -677,12 +677,8 @@ function _rename_would_break_cross_image_clustering(img::CciaImage, from::String
         props = granularity === :track ? img_track_props_path(img, from) : img_label_props_path(img, from)
         isfile(props) || continue
         for sfx in _clustfeatures_suffixes(props; family = family)
-            e = _clustfeatures_entry(props, sfx; family = family)
-            e === nothing && continue
-            part_of = get(e, "partOf", get(e, :partOf, String[]))
-            part_of isa AbstractVector || continue
-            for uid in part_of
-                String(uid) != img.uid && return true
+            for uid in _clustfeatures_part_of(_clustfeatures_entry(props, sfx; family = family))
+                uid != img.uid && return true
             end
         end
     end

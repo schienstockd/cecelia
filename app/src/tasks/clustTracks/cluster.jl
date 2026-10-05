@@ -114,13 +114,15 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     end
 
     # expand each selected feature to its produced matrix column(s): a motility measure is used
-    # directly; a cell base expands to all its `{base}.…` aggregate/frequency columns.
-    present_cols = String[]
+    # directly; a cell base expands to the columns whose base it is (`track_aggregate_base` — the rule
+    # plots use to map them back; a bare prefix match would also claim a base `{f}.x`'s columns).
+    sel_bases = Set(cell_measures); present_cols = String[]
     for f in p.clusterMeasures
         if f in mot_set
             f in names(df) && push!(present_cols, f)
         else
-            append!(present_cols, String[c for c in names(df) if startswith(c, f * ".")])
+            append!(present_cols, String[c for c in names(df)
+                                         if track_aggregate_base(c, mot_set; cell_cols=sel_bases) == f])
         end
     end
     present_cols = unique(present_cols)
