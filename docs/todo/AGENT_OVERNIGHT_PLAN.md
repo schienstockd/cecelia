@@ -80,6 +80,23 @@ Audit doc; a versioning-aware overwrite (now `versioned_set_field!`) replaces th
 
 ## How to run it (built)
 
+**App tier — the runs that matter now** ([`GUIDE_RUNS_PLAN.md`](GUIDE_RUNS_PLAN.md)): the app must
+already be running (`pixi run dev`); the command never starts or stops it.
+
+```bash
+pixi run guide-run intravital-timelapse                # one run now, $5 cap, knowledge off
+pixi run guide-run intravital-timelapse --runs 3       # three in turn (to check a fix changed behaviour)
+pixi run guide-run intravital-timelapse --knowledge    # a knowledge run, reported apart
+pixi run guide-run intravital-timelapse --at 02:00     # once at 02:00 — Linux, a transient systemd user timer
+```
+
+Guide → test project (source, set, images, reviewer checklist): `scripts/agent_eval/guide_projects.json`.
+Each run lands in `~/.cecelia-effectiveness/app-runs/<stamp>/` and as a run record on the source
+project's Blackboard; one line per run (cost, wall time, exit, record id — also for an aborted run)
+goes to `~/.cecelia-effectiveness/guide-runs.jsonl`.
+
+**Synthetic tier:**
+
 ```bash
 pixi run agent-eval-run --root /tmp/agent-night-1 --dry-run             # build only, show the prompt
 pixi run agent-eval-run --root /tmp/agent-night-1 --scripted-ceiling    # harness check, $0
@@ -178,13 +195,13 @@ agent only what any user's install offers: `claude -p --tools ""` (no shell, fil
 observer + the opt-in `cecelia-autonomous` server (`docs/inventory/MCP.md`), locked to a disposable
 raw-only copy of the run images in one set (`app_project.py`: `default` store only, fresh uids).
 Brief: *"Hey. can you track the cells in these images and analyse their behaviour?"* plus the
-one-line open-project context the app would give. Records in `/tmp/cecelia-agent-app/<stamp>/`
+one-line open-project context the app would give. Records in `~/.cecelia-effectiveness/app-runs/<stamp>/`
 (`trace.jsonl` live — read with `trace_view.py`, `record.json`: cost, tool calls/errors, reads of the
 source project, per image the copy's label sets / gates / chains next to the source's, cohort QC on
 both sides, and a canary over the whole source project). The reviewable record is a blackboard entry
 in the SOURCE project, one section per decision (`run_record.py`,
-[`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) P1). `cron_app.sh` = the crontab
-entry (checks out origin/main first, skips if the app is down or a run holds the lock). A run the
+[`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) P1). Started with
+`pixi run guide-run` (`guide_run.py`, above); the old crontab wrapper `cron_app.sh` is gone. A run the
 usage limit stopped carries `rateLimited: {message, resetAt}` in `record.json`, its blackboard entry
 says so in the title (*· stopped by usage limit*), at the top and in the `agentRun` marker, the CLI's
 refusal is not shown as the agent's last message, and `run_app.py` exits 75. A post-run why the limit

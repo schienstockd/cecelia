@@ -119,10 +119,9 @@ end
 # the tasks ran, the guides completed, the next page was just empty.
 #
 # So whenever a guide teaches a task that some composite CONTAINS, that has to be a decision on record.
-# Drift correction is the legitimate case — its composite adds autofluorescence removal, a separate
-# scientific step, not the missing half of drift — which is exactly the distinction a human has to make
-# and a test cannot. This is the inventory that forces the question, in the same spirit as the
-# frontend's DECLARED_TIMERS list.
+# Whether a composite's bare half is the right thing to teach is exactly the distinction a human has
+# to make and a test cannot. No guide teaches one today, so the list is empty. This is the inventory
+# that forces the question, in the same spirit as the frontend's DECLARED_TIMERS list.
 @testset "a guide teaching a composite's bare half is declared" begin
     dir = joinpath(_repo, "frontend", "src", "lib", "guides")
     if !isdir(dir)
@@ -156,6 +155,31 @@ end
         stale = [k for k in keys(bare_by_design)
                  if !(k in taught) || !haskey(wrapped_by, k)]
         @test isempty(stale)
+    end
+end
+
+# ── A guide's "preview it first" step names a previewable task ───────────────
+# `withPreview: true` inserts a step pointing at the preview button, which TaskRunner renders only for
+# a task the backend declares `task_previewable`. On any other task the step points at nothing, and
+# its fallback bubble ("tick a single row") sends the user looking for a control that never appears.
+@testset "a guide's preview step names a previewable task" begin
+    dir = joinpath(_repo, "frontend", "src", "lib", "guides")
+    if !isdir(dir)
+        @test_skip "frontend guides catalogue not found"
+    else
+        src = join([read(joinpath(dir, f), String)
+                    for f in readdir(dir) if endswith(f, ".ts") && !endswith(f, ".test.ts")], "\n")
+        registry = Cecelia._fun_name_map()
+        with_preview = String[]
+        # one chunk per `moduleTaskGuide({…})` call; its own funName and flags sit inside it
+        for chunk in split(src, "moduleTaskGuide({")[2:end]
+            occursin(r"withPreview:\s*true", chunk) || continue
+            m = match(r"funName:\s*'([^']+)'", chunk)
+            m === nothing || push!(with_preview, String(m.captures[1]))
+        end
+        @test !isempty(with_preview)       # the loop below must not pass vacuously
+        @test isempty([f for f in with_preview
+                       if !haskey(registry, f) || !Cecelia.task_previewable(registry[f])])
     end
 end
 

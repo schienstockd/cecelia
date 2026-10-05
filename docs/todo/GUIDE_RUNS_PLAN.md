@@ -1,6 +1,7 @@
 # Guide runs — an agent follows one in-app guide, you review what it hands back
 
-**Status:** parked (2026-10-06), nothing built. Reframes the app-tier runs of
+**Status:** in progress (2026-10-06) — P3 `pixi run guide-run` built; its checkpoint (one reviewed intravital run) is open.
+Reframes the app-tier runs of
 [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md) P4b. Builds on the run record and section
 verdicts of [`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) (P1, P1b, P2, P4), whose P3 score
 this replaces. The brief that asked the question:
@@ -88,11 +89,16 @@ The repeated tool errors (the mechanical part) already reach the judge.
 - `agent` causes are listed per guide. Two that match across runs are proposed as one guide gap.
 - **Checkpoint:** P1's marks appear in `pixi run judge-review`.
 
-### P3 — `guide-run`
+### P3 — `guide-run` — **built, checkpoint open**
 - `scripts/agent_eval/guide_run.py` wraps `run_app.py`: guide id → test project + brief, `--runs`,
   `--at`, `--knowledge`, `--budget-usd`. Runs are sequential, one at a time. The record title names
   the guide.
 - Traces are written to `~/.cecelia-effectiveness/app-runs/<stamp>/`, not `/tmp`.
+- Built as specified, plus: the guide → test project map (with the reviewer checklist, shown atop
+  the record) is `scripts/agent_eval/guide_projects.json`; the projects dir comes from the running
+  app's `/api/diagnostics`; each run (or a run skipped because the app is down or the lock is held)
+  appends one line to `~/.cecelia-effectiveness/guide-runs.jsonl`; `--runs N` stops at the first run
+  that fails. The record's `agentRun` meta carries `guide`, `codeSha` and `knowledgeOn`.
 - **Checkpoint:** one intravital run started with the command, then reviewed with P1.
 
 ## What would change this plan

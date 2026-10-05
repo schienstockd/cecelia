@@ -90,6 +90,21 @@
         @test specs[1].key == "CD169-Kat"
         @test specs[1].targetChannel == ["CD169-Kat"]
         @test specs[1].competingChannels == ["SHG", "CH4"]
+        @test specs[1].exclusive === true          # absent → the spec's default (on)
+    end
+    # "Different cell types" must reach Python: it picks the bleedthrough estimator, and Python
+    # defaults it to true when absent, so a translator that drops it makes the toggle a no-op.
+    let raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+                "default" => ["SHG", "GFP", "TOM"], "_active" => "default")),
+        combos = Cecelia.af_combinations_for_python(Dict{String,Any}(
+            "afCombinations" => Dict{String,Any}(
+                "GFP" => Dict{String,Any}("targetChannel" => ["GFP"],
+                                          "competingChannels" => ["TOM"], "exclusive" => false),
+                "TOM" => Dict{String,Any}("targetChannel" => ["TOM"],
+                                          "competingChannels" => ["GFP"]))), raw)
+        @test combos["1"]["competingChannels"] == [2]
+        @test combos["1"]["exclusive"] === false
+        @test combos["2"]["exclusive"] === true
     end
     # AfChannelStats round-trips the Python-side per-channel block and carries a Dict{String,Float64}
     # bleedthrough. A missing bleedthrough is a legal shape (no leaks detected) → empty Dict.

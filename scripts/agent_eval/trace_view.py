@@ -1,7 +1,7 @@
 """Read an agent run's stream-json trace as a transcript: its text, each tool call + a slice of the
 result (errors marked), and the final result line. Safe on a trace still being written.
 
-    python scripts/agent_eval/trace_view.py /tmp/cecelia-agent-app/<run>/trace.jsonl [--width 300] [--tail 40]
+    python scripts/agent_eval/trace_view.py ~/.cecelia-effectiveness/app-runs/<run>/trace.jsonl [--width 300] [--tail 40]
 """
 from __future__ import annotations
 

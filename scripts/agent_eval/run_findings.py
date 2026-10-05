@@ -18,9 +18,9 @@ and `runs` = the count: independent agents making the same mistake means the pla
 guiding them. Everything else goes as a finding straight away: a 5xx, an MCP-side exception, an
 error with no text at all (a lost message is itself the bug).
 
-    pixi run python scripts/agent_eval/run_findings.py /tmp/cecelia-agent-app/<stamp> [--commit SHA] [--dry-run]
+    pixi run python scripts/agent_eval/run_findings.py ~/.cecelia-effectiveness/app-runs/<stamp> [--commit SHA] [--dry-run]
     # several runs, oldest first: a dry run counts repeats across them as if each had been logged
-    pixi run python scripts/agent_eval/run_findings.py /tmp/cecelia-agent-app/2026* --dry-run --api-url ''
+    pixi run python scripts/agent_eval/run_findings.py ~/.cecelia-effectiveness/app-runs/2026* --dry-run --api-url ''
 """
 from __future__ import annotations
 
