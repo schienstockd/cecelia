@@ -234,6 +234,24 @@ class FormatEventTest(unittest.TestCase):
         self.assertIn("zarr-access", line)
         self.assertIn("fixed_pre_commit", line)
 
+    def test_agent_run_finding_shows_kind_and_tool(self):
+        # No marker / file / line on these rows — the kind and the tool stand in, not `? ?:?`.
+        base = {"event": "agent_run_finding", "ts": "2026-10-05T05:04:57Z",
+                "pr": None, "branch": None, "commit": "310b051", "session": "s",
+                "source": "live", "schema_version": 1}
+        repeat = format_event({**base, "payload": {
+            "key": "rep-1", "kind": "repeat", "runs": 3, "tool": "gate_plot", "desc": "d"}},
+            use_colour=False)
+        self.assertIn("agnt", repeat)
+        self.assertIn("[repeat ×3]  gate_plot", repeat)
+        error = format_event({**base, "payload": {"key": "run-1", "tool": "set_gate", "desc": "d"}},
+                             use_colour=False)
+        self.assertIn("[error]  set_gate", error)
+        traced = format_event({**base, "payload": {
+            "key": "run-2", "tool": "set_gate", "file": "app/x.jl", "line": 4, "desc": "d"}},
+            use_colour=False)
+        self.assertIn("app/x.jl:4", traced)
+
     def test_sibling_audit_legacy_event_renders_under_fanout_label(self):
         # Pre-rename rows live in the append-only log forever — CLAUDE.md and rollup.py fold
         # them under the same header, the console must too or the reader sees two mechanisms
