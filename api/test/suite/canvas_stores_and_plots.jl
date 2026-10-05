@@ -224,21 +224,25 @@ end
 end
 
 @testset "API: plotmeta gate-autoscale helpers" begin
-    # _gates_bbox: display-space bbox over a mixed rectangle + polygon gate list
-    @test _gates_bbox([]) == (Inf, -Inf, Inf, -Inf)          # nothing to enclose
+    # _gate_edges: every edge coordinate per axis, over a mixed rectangle + polygon gate list
+    @test _gate_edges([]) == (Float64[], Float64[])
     rect = Dict{String,Any}("kind" => "rectangle", "x_min" => 1.0, "x_max" => 3.0,
                             "y_min" => -2.0, "y_max" => 0.5)
     poly = Dict{String,Any}("kind" => "polygon", "vertices" => [[5.0, 1.0], [6.0, -4.0], [4.5, 2.0]])
-    @test _gates_bbox([rect]) == (1.0, 3.0, -2.0, 0.5)
-    bb = _gates_bbox([rect, poly])
-    @test bb == (1.0, 6.0, -4.0, 2.0)                        # union across both gate kinds
+    @test _gate_edges([rect, poly]) == ([1.0, 3.0, 5.0, 6.0, 4.5], [-2.0, 0.5, 1.0, -4.0, 2.0])
 
-    # _include_range: only the side a gate actually exceeds moves; margin = fraction of the span
-    @test _include_range((0.0, 10.0), Inf, -Inf) == (0.0, 10.0)   # no finite gate → unchanged
-    @test _include_range((0.0, 10.0), 2.0, 8.0)  == (0.0, 10.0)   # gate inside → unchanged
-    lo, hi = _include_range((0.0, 10.0), -5.0, 20.0)              # exceeds both sides
-    @test lo == -5.0 - 0.5 && hi == 20.0 + 0.5                    # margin = 0.05 * span(10) = 0.5
-    lo2, hi2 = _include_range((0.0, 10.0), -5.0, 8.0)            # exceeds low side only
-    @test lo2 == -5.5 && hi2 == 10.0
+    # _include_edges: only the side an edge exceeds moves; margin = 0.05 × the data span (10 → 0.5)
+    @test _include_edges((0.0, 10.0), Float64[]) == (0.0, 10.0)          # no gate → unchanged
+    @test _include_edges((0.0, 10.0), [2.0, 8.0]) == (0.0, 10.0)         # inside → unchanged
+    @test _include_edges((0.0, 10.0), [-3.0, 14.0]) == (-3.5, 14.5)      # near both sides → grows
+    @test _include_edges((0.0, 10.0), [-3.0, 8.0]) == (-3.5, 10.0)       # low side only
+    # an open-ended threshold ("up to 5000" on data reaching 10) is left off-axis — the plot keeps
+    # the cells' scale and the gate is clipped at the border — but a NEAR edge still counts
+    @test _include_edges((0.0, 10.0), [2.0, 5000.0]) == (0.0, 10.0)
+    @test _include_edges((0.0, 10.0), [12.0, 5000.0, -1e9]) == (0.0, 12.5)
+    @test _include_edges((0.0, 10.0), [NaN, Inf]) == (0.0, 10.0)
+    # reach = one data span: an edge a user dragged a whole plot-width off still regrows the axes
+    @test _include_edges((0.0, 10.0), [19.0]) == (0.0, 19.5)
+    @test _include_edges((0.0, 10.0), [21.0]) == (0.0, 10.0)
 end
 

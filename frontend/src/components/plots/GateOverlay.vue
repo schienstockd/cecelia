@@ -21,7 +21,8 @@ import { observeBoxChanges } from '../../composables/usePlotResize'
 import { useWindowListener } from '../../composables/useKeepAlive'
 import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '../../plots/axisMap'
 import type { GateSpec } from '../../stores/gating'
-import { svgPolygon, svgEsc } from '../../plots/export'
+import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
+import { gateLabelPos } from '../../utils/gateLabel'
 import { isClickNotDrag, isDegeneratePolygon } from '../../plots/gateGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
@@ -173,30 +174,17 @@ function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
 // subtle population-name label centred at the gate's top edge. An explicit `label` overrides the
 // derived name (the gating-strategy plot passes "name  pct%").
 function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string) {
-  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1]))
-  if (!pts.length) return
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
-  const top = Math.min(...ys), bottom = Math.max(...ys)
+  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
   const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
   const c = ctx!; c.save()
   c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'
   c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.7)'   // dark halo for legibility
-  // normally sit just ABOVE the gate's top edge; if a gate near the plot top would push the label
-  // off-canvas at the top (it was getting clipped), put it just BELOW the gate instead; only if that
-  // would also clip (a gate spanning the full height) fall back to just inside the top edge.
-  const { w, h } = size(); const LABEL_H = 15          // ~12px glyphs + halo
-  let y: number, baseline: CanvasTextBaseline
-  if (top - 4 >= LABEL_H) { y = top - 4; baseline = 'bottom' }
-  else if (bottom + 4 + LABEL_H <= h) { y = bottom + 4; baseline = 'top' }
-  else { y = top + 4; baseline = 'top' }
-  c.textBaseline = baseline
-  // clamp horizontally so a gate near the left/right edge doesn't push the (centred) label — and its
-  // trailing "…%" — off-canvas where it gets clipped. Keep the whole label inside the plot area.
-  const halfW = c.measureText(name).width / 2 + 3
-  const x = Math.max(halfW, Math.min(w - halfW, cx))
-  c.strokeText(name, x, y)
-  c.fillStyle = colour; c.fillText(name, x, y); c.restore()
+  const { w, h } = size()
+  const pos = gateLabelPos(pts, c.measureText(name).width, w, h)    // placement rules: utils/gateLabel.ts
+  if (!pos) { c.restore(); return }
+  c.textBaseline = pos.baseline
+  c.strokeText(name, pos.x, pos.y)
+  c.fillStyle = colour; c.fillText(name, pos.x, pos.y); c.restore()
 }
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = '#fff'; c.strokeStyle = colour; c.lineWidth = 1.5
@@ -225,37 +213,36 @@ function paintGates() {
 // The committed gate outlines (+ labels) as SVG in LOCAL plot-area coords [0..w,0..h] — <polygon> per
 // gate, reusing rectCorners/vertices + dataToPx (same geometry as strokeShape). Handles / in-progress
 // shapes are interaction-only and never exported. The host translates this into the capture.
-function gateLabelSvg(g: GateSpec, path: string, colour: string, label: string | undefined, h: number): string {
-  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1]))
-  if (!pts.length) return ''
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
-  const top = Math.min(...ys), bottom = Math.max(...ys)
+function gateLabelSvg(g: GateSpec, path: string, colour: string, label: string | undefined, w: number, h: number): string {
+  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
   const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
   if (!name) return ''
-  const LABEL_H = 15, SIZE = 12
-  // mirror drawGateLabel placement: above the gate; below if it'd clip the top; else just inside the top
-  let y: number
-  if (top - 4 >= LABEL_H) y = top - 4
-  else if (bottom + 4 + LABEL_H <= h) y = bottom + 4 + SIZE
-  else y = top + 4 + SIZE
+  const SIZE = 12
+  // measured with the same font the canvas label uses, on the overlay's own canvas
+  const c = ctx; let labelW = name.length * SIZE * 0.6
+  if (c) { c.save(); c.font = 'bold 12px system-ui, sans-serif'; labelW = c.measureText(name).width; c.restore() }
+  const pos = gateLabelPos(pts, labelW, w, h)
+  if (!pos) return ''
+  // canvas `textBaseline` → SVG: a 'top' label's baseline sits one glyph height lower
+  const y = pos.baseline === 'top' ? pos.y + SIZE : pos.y
   const r1 = (n: number) => Math.round(n * 10) / 10
   // paint-order:stroke → dark halo BEHIND the coloured fill (legible over dense dots), like the canvas
-  return `<text x="${r1(cx)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
+  return `<text x="${r1(pos.x)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
          `font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="rgba(0,0,0,0.7)" ` +
          `stroke-width="3" stroke-linejoin="round" fill="${colour}">${svgEsc(name)}</text>`
 }
+// Outlines are clipped to the plot area like the canvas (an open-ended gate runs far off-axis).
 function exportSvgContent(): string {
   const { w, h } = size(); if (!w || !h) return ''
-  let body = ''
+  let outlines = '', labels = ''
   for (const g of props.gates ?? []) {
     const pts = (g.gate.kind === 'rectangle' ? rectCorners(g.gate) : (g.gate.vertices ?? []))
       .map(p => dataToPx(p[0], p[1])) as [number, number][]
     if (pts.length < 2) continue
-    body += svgPolygon(pts, { stroke: gateColour(g.colour), width: props.lineWidth })
-    if (props.showLabels) body += gateLabelSvg(g.gate, g.path, g.colour || '#fafafa', g.label, h)
+    outlines += svgPolygon(pts, { stroke: gateColour(g.colour), width: props.lineWidth })
+    if (props.showLabels) labels += gateLabelSvg(g.gate, g.path, g.colour || '#fafafa', g.label, w, h)
   }
-  return body
+  return svgClip({ w, h }, outlines) + labels
 }
 
 function draw() {

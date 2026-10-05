@@ -25,7 +25,7 @@ import { dataToPx, gridToPx, type PxBox } from '../../plots/axisMap'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB, heatCss } from '../../plots/flowColors'
 import { normValues, barTicks, fitLabel, barStops, colourBarSvg } from '../../plots/valueColour'
-import { svgImage, svgCircles, svgPath, svgRect } from '../../plots/export'
+import { svgImage, svgCircles, svgPath, svgRect, svgClip } from '../../plots/export'
 import { paintDimmed } from '../../plots/dimLayer'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
@@ -388,8 +388,8 @@ function exportSvgContent(): string {
       body += dotsSvg(pop.points, pop.colour, POP_R * dotK())   // categorical → vector, dots in EVERY mode (paintContent)
     }
   }
-  if (showBar()) body += barSvg()                       // same order as paintContent
-  return body
+  // marks clipped to the plot area as the canvas clips them (a zoomed view leaves dots outside it)
+  return svgClip({ w, h }, body) + (showBar() ? barSvg() : '')   // same order as paintContent
 }
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 

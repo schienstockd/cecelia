@@ -409,7 +409,8 @@ watch(parentVersion, refreshMembership)
 // bumps the CHILD's popVersion, never the displayed parent's, so neither parentVersion nor fetchPlot
 // (axis/parent watch) fires and a deleted child's outline would linger. Watch a signature of the
 // parent's children and refresh on any change. Use fetchMeta (not the outlines-only fetchGates) so the
-// autoscale re-runs: dragging a gate BEYOND the current axes regrows the extent to fit it, so the gate
+// autoscale re-runs: dragging a gate BEYOND the current axes regrows the extent to fit it (up to one
+// data span beyond — `_include_edges`; farther reads as an open-ended threshold), so the gate
 // snaps back on-plot on release — no more toggling the segmentation to force a redraw. fetchMeta also
 // returns the outlines, so this covers add/delete too. Signature logic → utils/childGateSig.ts (tested).
 const childGateSig = computed(() => childGateSignature(g.flat, parent.value))

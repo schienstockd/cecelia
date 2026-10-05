@@ -683,26 +683,6 @@ function _finite_extrema(v, fallback::Tuple{Float64,Float64} = (0.0, 1.0))::Tupl
     lo <= hi ? (lo, hi) : fallback
 end
 
-# Display-space bounding box (xlo, xhi, ylo, yhi) enclosing a plotmeta `gates` list (projected
-# child-gate outlines). Rectangles carry x_min/x_max/y_min/y_max; polygons carry `vertices`
-# ([[x,y],…]). All coords are already in the plot's display transform. Inf's when there are no
-# gates (nothing to enclose).
-function _gates_bbox(gates)
-    xlo = Inf; xhi = -Inf; ylo = Inf; yhi = -Inf
-    for pj in gates
-        if get(pj, "kind", "") == "rectangle"
-            xlo = min(xlo, pj["x_min"]); xhi = max(xhi, pj["x_max"])
-            ylo = min(ylo, pj["y_min"]); yhi = max(yhi, pj["y_max"])
-        else
-            for v in get(pj, "vertices", ())
-                xlo = min(xlo, v[1]); xhi = max(xhi, v[1])
-                ylo = min(ylo, v[2]); yhi = max(yhi, v[2])
-            end
-        end
-    end
-    (xlo, xhi, ylo, yhi)
-end
-
 # The COLOUR ramp's range: a robust 2–98 percentile of the (transformed) values, not min…max.
 #
 # Measured on a real 3P spleen dataset (4471 cells, `Bcells-ubiTom` on logicle): p2–p98 covered **28%**
@@ -729,17 +709,37 @@ function _ramp_range(v::AbstractVector)
     e[2] > e[1] ? e : nothing
 end
 
-# Grow a display extent `(lo, hi)` to also enclose `[glo, ghi]`, plus a `margin` fraction of the
-# resulting span so a gate edge lands inside the axes (grabbable), not flush on the border. No-op
-# when the target range is not finite (no gate). Used to autoscale a plot to its child gates so a
-# gate drawn beyond the data cloud stays on-screen and adjustable.
-function _include_range((lo, hi)::Tuple, glo, ghi; margin::Float64 = 0.05)
-    (isfinite(glo) && isfinite(ghi)) || return (float(lo), float(hi))
+# Grow a display extent `(lo, hi)` to also enclose the gate edges `edges` (display coordinates on that
+# axis), plus a `margin` fraction of the span so an edge lands inside the axes (grabbable), not flush
+# on the border. Only the side an edge exceeds moves. `reach` (one data span) covers any edge a user
+# drags off the plot — the overlay tracks the drag on the window, so a release can land beyond the
+# axes and must come back grabbable. An edge farther than that beyond the data is an OPEN-ENDED threshold (a one-sided gate written as "up to 5000"), not a boundary
+# someone placed out there: following it would shrink the cells into a corner of the plot, so it is
+# left off-axis and the renderer clips the gate at the border instead.
+function _include_edges((lo, hi)::Tuple, edges; margin::Float64 = 0.05, reach::Float64 = 1.0)
     span = hi > lo ? hi - lo : 1.0
-    m = margin * span
-    nlo = glo < lo ? glo - m : float(lo)     # only grow the side a gate actually exceeds
-    nhi = ghi > hi ? ghi + m : float(hi)
+    lim_lo = lo - reach * span; lim_hi = hi + reach * span
+    glo = minimum((e for e in edges if isfinite(e) && lim_lo <= e < lo); init = Inf)
+    ghi = maximum((e for e in edges if isfinite(e) && hi < e <= lim_hi); init = -Inf)
+    nlo = isfinite(glo) ? glo - margin * span : float(lo)
+    nhi = isfinite(ghi) ? ghi + margin * span : float(hi)
     (nlo, nhi)
+end
+
+# Every edge coordinate of a plotmeta `gates` list (projected child-gate outlines), per axis:
+# rectangles give x_min/x_max/y_min/y_max, polygons their vertices. Display coordinates.
+function _gate_edges(gates)
+    xs = Float64[]; ys = Float64[]
+    for pj in gates
+        if get(pj, "kind", "") == "rectangle"
+            push!(xs, pj["x_min"], pj["x_max"]); push!(ys, pj["y_min"], pj["y_max"])
+        else
+            for v in get(pj, "vertices", ())
+                push!(xs, v[1]); push!(ys, v[2])
+            end
+        end
+    end
+    xs, ys
 end
 
 # The child gates of `pop` drawn on this (x, y) pair, re-projected into the display transforms — each
@@ -839,12 +839,12 @@ function api_gating_plotmeta(req::HTTP.Request)
     # their outlines land on the dots even when a gate was drawn under a different transform (the client
     # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
     gates = _child_gate_outlines(load_pop_map(img; value_name = vn, pop_type = pop_type), pop, x, y, xt, yt)
-    # Autoscale to the child gates: a gate drawn beyond the data cloud would otherwise fall outside
-    # the axes and be un-grabbable. Grow the display extent to enclose the projected outlines, and
-    # re-derive the raw tick range from the widened extent so ticks span the whole axis. Only the
-    # side a gate actually exceeds moves (the common in-bounds case is untouched).
-    gb = _gates_bbox(gates)
-    xext2 = _include_range(xext, gb[1], gb[2]); yext2 = _include_range(yext, gb[3], gb[4])
+    # Autoscale to the child gates: a gate edge drawn just beyond the data cloud would otherwise fall
+    # outside the axes and be un-grabbable, so grow the display extent to it and re-derive the raw tick
+    # range so ticks span the whole axis. Only the side an edge exceeds moves, and only for an edge
+    # near the data — a far one is an open-ended threshold and is clipped (see `_include_edges`).
+    gx, gy = _gate_edges(gates)
+    xext2 = _include_edges(xext, gx); yext2 = _include_edges(yext, gy)
     if xext2 != xext || yext2 != yext
         xext, yext = xext2, yext2
         rxext = (invert_transform(xt, xext[1]), invert_transform(xt, xext[2]))
