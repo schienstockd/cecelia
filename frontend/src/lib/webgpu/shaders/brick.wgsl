@@ -35,6 +35,7 @@
 @group(0) @binding(5) var labAtlas: texture_3d<u32>;
 // Label palette: LABEL_PALETTE_N x 1 rgba8. id % rows -- consecutive ids get consecutive rows,
 // so touching cells always come out maximally far apart in hue.
+// Or a colour table when p.lab.z < 0 -- see label_colour.wgsl.
 @group(0) @binding(6) var pal: texture_2d<f32>;
 // Pick highlight — bitset + focus id + contour width in one storage buffer. All the correction-cockpit
 // "what am I editing right now" work rides through this binding; BU stays untouched, which is what
@@ -165,11 +166,7 @@ fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
   return false;
 }
 
-// id % rows on the one-row palette. Id 0 never reaches here so every row is available.
-fn labColour(id: u32) -> vec3<f32> {
-  let rows = max(i32(p.lab.z), 1);
-  return textureLoad(pal, vec2<i32>(i32(id % u32(rows)), 0), 0).rgb;
-}
+#include "label_colour.wgsl"
 
 // Channel c's ramp at normalised intensity n. Same discipline as mip.wgsl's ramp: lerp
 // between the two LUT stops n falls between, row c addressed exactly, so no filtering can bleed
@@ -220,7 +217,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     let vi = vec3<i32>(uvw * p.dims.xyz);
     if (p.lab.x > 0.0 && labId == 0u) {
       let id = labAtlasSample(vi);
-      if (id != 0u) { labId = id; labVi = vi; }
+      if (id != 0u && labShown(id)) { labId = id; labVi = vi; }
     }
     for (var ci = 0; ci < nch; ci = ci + 1) {
       let v = f32(atlasSample(vi, ci));
@@ -239,7 +236,7 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   // ray already found the front-most id; labEdge decides whether THIS voxel is on the contour.
   // No cascade to the outer channels -- viewer draws the mask on top of the signal.
   if (labId != 0u && p.lab.x > 0.0 && labEdge(labVi, labId, i32(p.lab.y))) {
-    acc = mix(min(acc, vec3(1.0)), labColour(labId), p.lab.x);
+    acc = mix(min(acc, vec3(1.0)), labColour(labId).rgb, p.lab.x);
   }
   // Pick highlight sits ON TOP of everything above — the whole point of "what am I editing right now"
   // is that it is legible without the user having to hunt. Focus wins over pick (both may be true).
