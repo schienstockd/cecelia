@@ -206,6 +206,14 @@
         @test length(proj) == nc
         @test all(i -> proj[i][2] >= specs[i][2], 1:nc)
         @test _sampled_specs(p, nc; project = true) == proj
+        # …and every stack render takes the SAME rule through `_render_default_specs`: a render with no
+        # z plane (the movie rail's all-Z MIP, the smoke route, the gate-cells still) opens on the
+        # stack-max window, a plane render on the mid plane's. No saved props here (cold start).
+        noprops = joinpath(d, "no-props.json")
+        @test [(s.lo, s.hi) for s in _render_default_specs(noprops, p, nc; max_projection = true)] ==
+              [(s.lo, s.hi) for s in resolved_display_specs(proj)]
+        @test [(s.lo, s.hi) for s in _render_default_specs(noprops, p, nc; max_projection = false)] ==
+              [(s.lo, s.hi) for s in resolved_display_specs(specs)]
     end
 
     # `resolved_display_specs` is the ONE place a colormap name becomes RGB — the browser must not
@@ -427,6 +435,39 @@ end
         @test haskey(j[:labelDims], :mismatched)
         @test (j[:labelDims][:matching][:nX],   j[:labelDims][:matching][:nY])   == (8,  6)
         @test (j[:labelDims][:mismatched][:nX], j[:labelDims][:mismatched][:nY]) == (10, 6)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+# The movie rail's frame resolver feeds `record_view_movie`, which with no z draws the stack's MAX. Its
+# cold-start window must then come from the max too — it used to take the mid plane while the cards and
+# gate-cells stills (the same image, the same projection) took the stack max.
+@testset "API: movie frame resolver — a z-max movie takes the stack-max default contrast" begin
+    axes_ms(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names],
+                                                 "datasets" => [Dict("path" => "0")])])
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = "MOVTST"; img = "IMGMOV"
+        img_dir = joinpath(tmp, proj, "1", img); mkpath(img_dir)
+        store = joinpath(tmp, proj, "0", img, "ccidImage.ome.zarr"); mkpath(dirname(store))
+        g = zgroup(Zarr.DirectoryStore(store); attrs = axes_ms(["t", "c", "z", "y", "x"]))
+        nx, ny, nz = 16, 12, 5
+        a = zcreate(UInt16, g, "0", nx, ny, nz, 1, 1; chunks = (nx, ny, 1, 1, 1))
+        # signal rises with z, so the stack max is brighter than the mid plane
+        a[:, :, :, :, :] = UInt16[100 * z + x + y for x in 1:nx, y in 1:ny, z in 1:nz, c in 1:1, t in 1:1]
+        write(joinpath(img_dir, "ccid.json"),
+              JSON3.write(Dict("filepath" => Dict("default" => "ccidImage.ome.zarr", "_active" => "default"))))
+        zp, _, _, s_max, err = _resolve_frame_for_record(proj, img, nothing; max_projection = true)
+        @test err === nothing
+        _, _, _, s_mid, _ = _resolve_frame_for_record(proj, img, nothing)
+        @test (s_max[1].lo, s_max[1].hi) == let s = _sampled_specs(zp, 1; project = true)[1]; (s[1], s[2]) end
+        @test (s_mid[1].lo, s_mid[1].hi) == let s = _sampled_specs(zp, 1)[1]; (s[1], s[2]) end
+        @test s_max[1].hi > s_mid[1].hi
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

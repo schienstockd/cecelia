@@ -31,6 +31,13 @@ _STAGE = {"segment": "segment", "tracking": "track", "behaviour.hmm": "hmm",
 CLUSTER_POP_VIEWS = ("hmmStates", "hmmTransitions", "cellCards")
 
 
+def output_value_name(params: dict) -> str:
+    """The value_name a task WROTE: `outputValueName` when it has one (a segmentation reads the image
+    version `valueName` and writes the labels under `outputValueName`), else `valueName` (a task that
+    writes where it reads — tracking, drift correction)."""
+    return (params or {}).get("outputValueName") or (params or {}).get("valueName") or ""
+
+
 def stage_of(fn: str) -> str | None:
     if fn == "segment.measureLabels":
         return None
@@ -51,7 +58,8 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
     """[(label, candidate plot lists)] — the expander picks the first candidate the project accepts."""
     p = (units[0].get("params") or {}) if units else {}
     if stage == "segment":
-        pops = [f"{u['target']}/labels" for u in units if u.get("target")]
+        segs = [output_value_name(u.get("params") or {}) or u.get("target") for u in units]
+        pops = [f"{vn}/labels" for vn in dict.fromkeys(segs) if vn]
         return [("Segmentation QC", [[
             # a count chart's default is the raw count (`defaultNormalize`, plots/plot.ts) — cells per frame
             {"plot": "segmentation_qc", "chart": "count", "groupBy": "centroid_t", "pops": pops,

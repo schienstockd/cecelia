@@ -74,6 +74,22 @@ class Lock(unittest.TestCase):
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
 
 
+class RunChainStoredName(unittest.TestCase):
+    def test_runs_under_the_name_the_server_stored(self):
+        # create_chain repairs "Drift + segment" to "Drift segment"; an agent that then runs the name
+        # it SENT must still start the stored chain — the GET resolves it, chain:run must use the result
+        c = au.AutonomousClient("http://x")
+        replies = {"/api/chains/get": {"name": "Drift segment", "nodes": []},
+                   "/api/chains/runs": {"runs": [{"chainName": "Drift segment", "runId": "r1",
+                                                  "createdAt": 9e12}]}}
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
+                mock.patch.object(c, "_request", side_effect=lambda m, r, *a, **k: replies[r]), \
+                mock.patch.object(c, "_ws_send", return_value=[{"type": "chain:run:started"}]) as ws:
+            out = c.run_chain("copy01", "Drift + segment", ["img1"])
+        self.assertEqual(ws.call_args[0][0]["chain"], "Drift segment")
+        self.assertEqual((out["chain"], out["runId"]), ("Drift segment", "r1"))
+
+
 class RequireMeasured(unittest.TestCase):
     def test_refuses_when_api_resolves_a_different_value_name(self):
         c = au.AutonomousClient("http://x")

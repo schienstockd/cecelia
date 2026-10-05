@@ -183,3 +183,106 @@ end
     end
   end
 end
+
+# A derived `_tracked` set is what tracking makes and tasks take as input (`B/_tracked`,
+# `B/dim/_tracked`), so the read routes must find it too. They defaulted to `popType=flow`, whose map
+# never carries the derived sets — an unattended agent's gate_stats on `/P14qc/_tracked` 404'd while
+# clustTracks accepted the same path. `read_pop_type` is the shared rule: discover from the path when
+# no popType is sent, and read a derived leaf asked for under its stored map (`flow`) as `live`.
+@testset "API: gating read routes resolve derived _tracked sets" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        base = "projectUid=testpr&imageUid=KDIeEm&valueName=B"
+        get_(route, q) = route(HTTP.Request("GET", "/x?$base&$q"))
+        _post(api_gating_pop_add, Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+            "valueName" => "B", "popType" => "flow", "name" => "dim",
+            "gate" => Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0",
+                "y_channel" => "area", "x_min" => 0.0, "x_max" => 1000.0, "y_min" => 0.0, "y_max" => 1e9)))
+        img = Cecelia.init_object("testpr", "KDIeEm")
+        # the counts the task read gives for the same paths
+        want(p) = size(pop_df_multi(img, [p]; value_name = "B"), 1)
+        @test read_pop_type(img, "B", "/dim/_tracked") == "live"
+        @test read_pop_type(img, "B", "/dim/_tracked", "flow") == "live"     # flow's map + derived = live
+        @test read_pop_type(img, "B", "/dim", "flow") == "flow"
+        @test read_pop_type(img, "B", "/dim/_tracked", "track") == "track"   # an explicit other type stands
+        for (q, p) in (("pop=/_tracked", "/_tracked"), ("pop=/dim/_tracked", "/dim/_tracked"),
+                       ("popType=flow&pop=/dim/_tracked", "/dim/_tracked"))
+            st, b = get_(api_gating_stats, q)
+            @test st == 200
+            @test JSON3.read(b).count == want(p) > 0
+        end
+        # a plain gate with no popType still reads as cells
+        @test JSON3.read(get_(api_gating_stats, "pop=/dim")[2]).count == want("/dim")
+        @test get_(api_gating_stats, "pop=/nope")[1] == 404
+        # membership over a gate AND its tracked subset in one request
+        st, b = get_(api_gating_membership, "pops=/dim,/dim/_tracked")
+        mem = JSON3.read(b).membership
+        @test st == 200 && length(mem[Symbol("/dim/_tracked")]) == want("/dim/_tracked") < length(mem[Symbol("/dim")])
+        # the summary a gate is chosen from reads the same set
+        st, b = get_(api_gating_summary, "pop=/dim/_tracked&x=mean_intensity_0&y=area")
+        @test st == 200 && JSON3.read(b).n == want("/dim/_tracked")
+        # …and so do the plot reads (they don't 404 — an unresolved pop was a silently EMPTY plot)
+        @test length(collect(reinterpret(Float32, get_(api_gating_plotdata,
+            "pop=/dim/_tracked&x=mean_intensity_0&y=area")[2]))) == 2 * want("/dim/_tracked")
+        @test JSON3.read(get_(api_gating_plotmeta, "pop=/dim/_tracked&x=mean_intensity_0&y=area")[2]).n ==
+              want("/dim/_tracked")
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# The board route REPORTS a population it stored under a different path. A gate holding every cell makes
+# `/_tracked` a copy of `/all/_tracked`, so the picker hides it; a board asking for `B/_tracked` is stored
+# as `B/all/_tracked` (board_pop_ref) — and the reply says so, per plot. The board enumerates a
+# project's SETS, so the tracked fixture table is placed in a real set rather than used as `testpr`.
+@testset "API: boards/add reports resolved populations" begin
+  h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+  if !api_have_fixture(h5)
+    @test_skip "testpr fixture missing"
+  else
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "boards-add-resolved")
+        img = add_image!(add_set!(proj; name = "s"); name = "i", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        mkpath(joinpath(img._dir, "labelProps"))
+        cp(h5, joinpath(img._dir, "labelProps", "B.h5ad"))
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"; save!(img)
+        @test _post(api_gating_pop_add, Dict{String,Any}("projectUid" => proj.uid, "imageUid" => img.uid,
+            "valueName" => "B", "popType" => "flow", "name" => "all",
+            "gate" => Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0",
+                "y_channel" => "area", "x_min" => -1e12, "x_max" => 1e12, "y_min" => -1e12, "y_max" => 1e12)))[1] == 200
+        # Kiwi's proposal dry run (the same expander) says so too
+        kr = _kiwi_resolve_proposedPlot(proj.uid, Dict{String,Any}("kind" => "proposedPlot",
+                                        "plot" => "track_measures", "pops" => ["B/_tracked"]))
+        @test kr["ok"] == true && kr["detail"] == "draws B/_tracked as B/all/_tracked"
+        add(name, pops) = _post(api_boards_add, Dict{String,Any}("projectUid" => proj.uid, "name" => name,
+            "plots" => [Dict{String,Any}("plot" => "track_measures", "pops" => pops)]))
+        st, b = add("aliased", ["B/_tracked"])
+        r = JSON3.read(b)
+        @test st == 200
+        @test length(r.resolvedPops) == 1
+        @test (r.resolvedPops[1].plot, String(r.resolvedPops[1].asked), String(r.resolvedPops[1].stored)) ==
+              (1, "B/_tracked", "B/all/_tracked")
+        # …and once that board exists, Kiwi finds it under the asked name rather than adding a duplicate
+        st, o = kiwi_open_proposed_plot(proj.uid, Dict{String,Any}("kind" => "proposedPlot",
+                                        "plot" => "track_measures", "pops" => ["B/_tracked"]))
+        @test st == 200 && o["created"] == false && o["board"] == "aliased"
+        @test occursin("already on board", _kiwi_resolve_proposedPlot(proj.uid, Dict{String,Any}(
+            "kind" => "proposedPlot", "plot" => "track_measures", "pops" => ["B/_tracked"]))["detail"])
+        st, b = add("exact", ["B/all/_tracked"])
+        @test st == 200 && isempty(JSON3.read(b).resolvedPops)        # nothing substituted → empty, present
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+  end
+end

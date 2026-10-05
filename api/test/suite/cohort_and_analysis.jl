@@ -38,10 +38,19 @@
         # GET validation
         @test _qc("")[1] == 400                                              # missing params
         @test _qc("$base&funName=bad.fun")[1] == 400                         # not a metric producer
-        # a composite names the steps its QC is banked under
+        # REPAIR, don't warn: a composite is ANSWERED from its steps, keyed per step so the caller sees
+        # which step each metric came from
         st, body = _qc("$base&funName=segment.cellposeMeasure")
-        @test st == 400 && collect(JSON3.read(body).parts) == ["segment.cellpose", "segment.measureLabels"]
-        @test occursin("ask for segment.cellpose or segment.measureLabels", JSON3.read(body).error)
+        @test st == 200
+        dcomp = JSON3.read(body)
+        @test collect(dcomp.parts) == ["segment.cellpose", "segment.measureLabels"]
+        @test dcomp.byStep[Symbol("segment.measureLabels")].byValueName.default.metrics.nCells.n == 4
+        @test isempty(dcomp.byStep[Symbol("segment.cellpose")].valueNames)   # that step banked nothing here
+        # …with an explicit valueName each step carries the single doc
+        dcv = JSON3.read(_qc("$base&funName=segment.cellposeMeasure&valueName=default")[2])
+        @test dcv.byStep[Symbol("segment.measureLabels")].metrics.nCells.mean == 801.25
+        @test !isfile(sidecar)                                              # still a read: nothing written
+        # a fun with no metrics and no parts is still the 400
         @test isempty(JSON3.read(_qc("$base&funName=bad.fun")[2]).parts)
         @test_throws r"ask for segment.cellpose or segment.measureLabels" cohort_qc_for(s, "segment.cellposeMeasure")
         @test_throws r"ask for segment.cellpose" cohort_qc_for_all(s, "segment.cellposeMeasure")
@@ -66,6 +75,11 @@
         # POST /check (no valueName) → checks every label set, persists each sidecar
         @test _check((;))[1] == 400                                          # missing params
         @test _check((; projectUid = proj.uid, setUid = s.uid, funName = "bad.fun"))[1] == 400
+        # the check action answers a composite the same way — and persists its steps' sidecars
+        stc, bc = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.cellposeMeasure"))
+        @test stc == 200 && isfile(sidecar)
+        @test haskey(JSON3.read(bc).byStep, Symbol("segment.measureLabels"))
+        rm(sidecar)
         stc, bc = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels"))
         @test stc == 200 && isfile(sidecar)
         @test haskey(JSON3.read(bc), :byValueName)

@@ -204,6 +204,16 @@ function _sampled_specs(zarr_path::AbstractString, nc::Int; target::Int = 256, p
     specs
 end
 
+# The display specs a STACK RENDER takes: the saved viewer props at `props`, else the cold-start sample
+# — from the stack's max when the render draws the stack's max (`max_projection`: a movie or still
+# with no z plane, i.e. the movie rail's all-Z MIP, the smoke route, the gate-cells still), else from
+# the mid plane. One rule, so a movie of a z-max and a card / gate-cells still of the same image open
+# on the same window.
+function _render_default_specs(props, zp::AbstractString, nc::Int; max_projection::Bool)
+    specs = resolved_display_specs(props, nc)
+    specs === nothing ? resolved_display_specs(_sampled_specs(zp, nc; project = max_projection)) : specs
+end
+
 # ── GET /api/viewer/meta ──────────────────────────────────────────────────────────
 # ?projectUid=&imageUid=&valueName= →
 #   {nT, nC, nZ, nX, nY, bytesPerVoxel, slabBytes, contrastSource,
@@ -1301,9 +1311,10 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
         d = axis_dims(caxes, ndims(arr))
         haskey(d, "c") ? size(arr, d["c"]) : 1
     catch; 1 end
-    props = _props_path(td, zp)
-    specs = resolved_display_specs(props, nc)
-    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+    z_raw = get(data, :z, nothing)
+    z = z_raw === nothing ? nothing : Int(z_raw)
+    # no `z` = the stack's max, and so is the cold-start window
+    specs = _render_default_specs(_props_path(td, zp), zp, nc; max_projection = z === nothing)
     # Timepoint range. `ts = [start, end]` inclusive, both 0-based to match the browser's slab route;
     # missing = all frames. Capped by `maxFrames` so a 200-frame movie is not the default surprise.
     ts_raw = get(data, :ts, nothing)
@@ -1316,8 +1327,6 @@ function api_viewer_record_test(body_bytes::Vector{UInt8})
     if ts !== nothing && length(ts) > max_frames
         ts = ts[1:max_frames]
     end
-    z_raw = get(data, :z, nothing)
-    z = z_raw === nothing ? nothing : Int(z_raw)
     tc_raw = get(data, :titleCard, nothing)
     title_card = tc_raw isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in tc_raw) : nothing
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { summariseCohortResult, type CohortDoc } from './cohortCheck'
+import { summariseCohortResult, cohortDocsOf, type CohortDoc } from './cohortCheck'
 import { cohortFunsFor, COHORT_STAGES } from './cohortStages'
 
 describe('summariseCohortResult', () => {
@@ -47,5 +47,18 @@ describe('cohortStages', () => {
   it('every mapped fun is dotted category.task', () => {
     for (const funs of Object.values(COHORT_STAGES))
       for (const f of funs) expect(f).toMatch(/^[a-zA-Z]+\.[a-zA-Z_]+$/)
+  })
+})
+
+describe('cohortDocsOf', () => {
+  const doc = (fun: string): CohortDoc => ({ funName: fun, nIncluded: 3, metrics: {} })
+  it('single doc, byValueName, and a composite byStep all fold to their docs', () => {
+    expect(cohortDocsOf(doc('a'))).toEqual([doc('a')])
+    expect(cohortDocsOf({ byValueName: { T: doc('t'), B: doc('b') } })).toEqual([doc('t'), doc('b')])
+    const composite = { funName: 'segment.cellposeMeasure', parts: ['segment.cellpose', 'segment.measureLabels'],
+      byStep: { 'segment.cellpose': { byValueName: { default: doc('cp') } },
+                'segment.measureLabels': doc('ml') } }
+    expect(cohortDocsOf(composite).map(d => d.funName)).toEqual(['cp', 'ml'])
+    expect(cohortDocsOf(null)).toEqual([])
   })
 })

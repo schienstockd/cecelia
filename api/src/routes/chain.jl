@@ -18,7 +18,8 @@ function api_chains_get(req::HTTP.Request)
     name  = get(query, "name", "")
     isempty(uid)  && return 400, JSON3.write((; error="projectUid required"))
     isempty(name) && return 400, JSON3.write((; error="name required"))
-    _valid_chain_name(name) || return _bad_chain_name(name)
+    rn = _repair_chain_name(name); rn[1] isa Integer && return rn
+    name = rn[1]   # a lookup takes the same repair, so the name an author SENT finds what was stored
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
     path  = joinpath(_chains_dir_for_project(uid), "$(name).json")
     isfile(path) || return 404, JSON3.write((; error="Chain not found: $name"))
@@ -34,7 +35,8 @@ function api_chains_delete(body_bytes::Vector{UInt8})
     name = _wstr(body, :name)
     isempty(uid)  && return 400, JSON3.write((; error="projectUid required"))
     isempty(name) && return 400, JSON3.write((; error="name required"))
-    _valid_chain_name(name) || return _bad_chain_name(name)
+    rn = _repair_chain_name(name); rn[1] isa Integer && return rn
+    name = rn[1]
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
     path = joinpath(_chains_dir_for_project(uid), "$(name).json")
     isfile(path) || return 404, JSON3.write((; error="Chain not found: $name"))
@@ -100,7 +102,8 @@ function api_chains_save(body_bytes::Vector{UInt8})
     isnothing(tmpl)   && return 400, JSON3.write((; error="template required"))
     name = _wstr(tmpl, :name)
     isempty(name)     && return 400, JSON3.write((; error="template.name required"))
-    _valid_chain_name(name) || return _bad_chain_name(name)
+    rn = _repair_chain_name(name); rn[1] isa Integer && return rn
+    name, renamed_from = rn
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
 
     # SAME CHECKER AS THE CREATE ROUTE. This wrote verbatim on the premise recorded below in
@@ -109,7 +112,9 @@ function api_chains_save(body_bytes::Vector{UInt8})
     # reads that as "run the whole chain", so an unwired dot surfaced NOWHERE between the canvas and
     # the executor. One checker, both doors.
     template = try
-        chain_template_from_raw(tmpl; name = name)
+        t = chain_template_from_raw(tmpl; name = name)
+        # the STORED name, not the document's — a repaired name must not reach the filename unrepaired
+        ChainTemplate(name, t.nodes, t.edges, t.start_targets)
     catch e
         return 400, JSON3.write((; error="Could not read template: $(sprint(showerror, e))"))
     end
@@ -120,6 +125,7 @@ function api_chains_save(body_bytes::Vector{UInt8})
     # hard-fail every chain saved before this route validated (two in the MERTK project alone).
     # Only this one field is ever rewritten; everything else is written back as it arrived.
     out = Dict{String,Any}(String(k) => v for (k, v) in tmpl)
+    out["name"] = name   # the stored (possibly repaired) name — the field must match the filename
     if isempty(template.start_targets)
         roots    = chain_root_ids(template)
         template = ChainTemplate(template.name, template.nodes, template.edges, roots)
@@ -145,7 +151,7 @@ function api_chains_save(body_bytes::Vector{UInt8})
     out["updatedBy"] = author_stamp()
     # Still the whiteboard's own body — `positions` and any other canvas-only sidecar field survive.
     write_json_atomic(path, out)
-    200, JSON3.write((; ok=true))
+    200, JSON3.write((; ok=true, _chain_name_reply(name, renamed_from)...))
 end
 
 # POST /api/chains/create — author a chain from OUTSIDE the whiteboard (today: Claude via the MCP's
@@ -173,18 +179,25 @@ function api_chains_create(body_bytes::Vector{UInt8})
     isnothing(tmpl) && return 400, JSON3.write((; error="template required"))
     name = _wstr(tmpl, :name)
     isempty(name)   && return 400, JSON3.write((; error="template.name required"))
-    _valid_chain_name(name) || return _bad_chain_name(name)
+    # A name the guard refuses is REPAIRED (`+`, `(…)`, `/` → spaces) and the stored name returned —
+    # see _repair_chain_name. Collisions are checked on the repaired name, below.
+    rn = _repair_chain_name(name); rn[1] isa Integer && return rn
+    name, renamed_from = rn
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
 
     dir  = _chains_dir_for_project(uid)
     path = joinpath(dir, "$(name).json")
     isfile(path) && return 409, JSON3.write((;
-        error="Chain '$name' already exists — pick another name (this route never overwrites)"))
+        error="Chain '$name' already exists" *
+              (renamed_from === nothing ? "" : " ('$renamed_from' is stored as '$name')") *
+              " — pick another name (this route never overwrites)"))
 
     # Parse through the package's own reader so what we validate is exactly what run_chain will
     # load, then validate. Unknown/absent fields default the same way a loaded template does.
     template = try
-        chain_template_from_raw(tmpl; name = name)
+        t = chain_template_from_raw(tmpl; name = name)
+        # the STORED name, not the document's — a repaired name must not reach the filename unrepaired
+        ChainTemplate(name, t.nodes, t.edges, t.start_targets)
     catch e
         return 400, JSON3.write((; error="Could not read template: $(sprint(showerror, e))"))
     end
@@ -212,7 +225,7 @@ function api_chains_create(body_bytes::Vector{UInt8})
     save_chain_template!(load_project(uid), template; created_by = author_stamp())
     @info "Created chain" name project=uid nodes=length(template.nodes)
     _broadcast_chains_updated(uid)
-    200, JSON3.write((; ok=true, name, nodeCount=length(template.nodes)))
+    200, JSON3.write((; ok=true, _chain_name_reply(name, renamed_from)..., nodeCount=length(template.nodes)))
 end
 
 # POST /api/chains/rename — body {projectUid, name, newName}. One atomic move, rather than the
@@ -232,15 +245,17 @@ function api_chains_rename(body_bytes::Vector{UInt8})
     isempty(uid)     && return 400, JSON3.write((; error="projectUid required"))
     isempty(name)    && return 400, JSON3.write((; error="name required"))
     isempty(newname) && return 400, JSON3.write((; error="newName required"))
-    _valid_chain_name(name)    || return _bad_chain_name(name)
-    _valid_chain_name(newname) || return _bad_chain_name(newname)
+    rn = _repair_chain_name(name);    rn[1] isa Integer && return rn
+    name = rn[1]
+    rn = _repair_chain_name(newname); rn[1] isa Integer && return rn
+    newname, renamed_from = rn
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found"))
 
     dir = _chains_dir_for_project(uid)
     src = joinpath(dir, "$(name).json")
     dst = joinpath(dir, "$(newname).json")
     isfile(src) || return 404, JSON3.write((; error="Chain not found: $name"))
-    name == newname && return 200, JSON3.write((; ok=true, name=newname))   # no-op, not an error
+    name == newname && return 200, JSON3.write((; ok=true, _chain_name_reply(newname, renamed_from)...))   # no-op, not an error
     isfile(dst) && return 409, JSON3.write((; error="Chain '$newname' already exists"))
 
     # The template carries its own `name` field (load_chain_template falls back to the filename, but
@@ -258,6 +273,6 @@ function api_chains_rename(body_bytes::Vector{UInt8})
     rm(src)
     @info "Renamed chain" from=name to=newname project=uid
     _broadcast_chains_updated(uid)
-    200, JSON3.write((; ok=true, name=newname))
+    200, JSON3.write((; ok=true, _chain_name_reply(newname, renamed_from)...))
 end
 

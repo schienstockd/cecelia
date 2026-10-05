@@ -160,7 +160,8 @@ def delete_gate(project_uid: str, image_uid: str, value_name: str, path: str) ->
 
 @_tool
 def gate_stats(project_uid: str, image_uid: str, value_name: str, pop: str) -> dict:
-    """Cells in population `pop` and its % of the parent."""
+    """Cells in population `pop` and its % of the parent. `pop` may be a gate (`/qc`) or a tracked set
+    (`/qc/_tracked`, `/_tracked`) — the same paths a task takes as input."""
     return _client.pop_stats(project_uid, image_uid, value_name, pop)
 
 

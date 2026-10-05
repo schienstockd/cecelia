@@ -75,7 +75,7 @@ export state_file, obj_meta_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings
 export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
-export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message
+export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
@@ -129,7 +129,7 @@ export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, 
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
 export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
-export pop_df_multi, resolve_pop_type, pop_namespace, pop_name_conflict, pops_value_name
+export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
 export quiver_df, branch_segments, anisotropy_df
@@ -421,7 +421,7 @@ include("ai/labarchives.jl")   # before briefing.jl — session_briefing calls l
 include("ai/briefing.jl")
 export analysis_lineage, board_summaries, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export BoardsDoc, boards_doc_path, normalise_boards, read_boards_doc, write_boards_doc, boards_doc_payload
-export BoardSpecError, expand_board, append_board, plot_specs, plot_spec_index, board_template_grid,
+export BoardSpecError, expand_board, board_pop_ref, append_board, plot_specs, plot_spec_index, board_template_grid,
        BOARD_VIEWS, BOARD_VIEWS_UNSUPPORTED, board_spec_cluster_suffixes,
        board_slot_areas, board_display_name
 export chains_summary, session_briefing

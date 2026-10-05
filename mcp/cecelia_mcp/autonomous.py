@@ -231,6 +231,9 @@ class AutonomousClient:
     def run_chain(self, project_uid: str, chain_name: str, image_uids: list[str]) -> dict:
         check_project(project_uid)
         template = self._request("GET", "/api/chains/get", {"projectUid": project_uid, "name": chain_name})
+        # The server repairs a name its filename guard refuses ("a + b" is stored as "a b") and the GET
+        # resolves the sent name the same way — run under the STORED name so chain:run finds it too.
+        chain_name = str(template.get("name") or chain_name)
         problems = []
         for node in template.get("nodes", []) or []:
             fn = node.get("fn") or node.get("fun") or ""

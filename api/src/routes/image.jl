@@ -532,8 +532,8 @@ function api_tasks_history(req::HTTP.Request)
     200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
 end
 
-# The 400 for a fun with no cohort metrics. A composite's QC is banked under its steps, so the
-# reply names them rather than leaving the caller to guess.
+# The 400 for a fun with no cohort metrics and no steps that bank any (a composite is answered from
+# its steps instead — see _cohort_reply).
 function _no_cohort_metrics(fun_name::AbstractString)
     400, JSON3.write((; error = cohort_no_metrics_message(fun_name), parts = cohort_parts(fun_name),
                        known = sort(collect(keys(COHORT_METRICS)))))
@@ -549,38 +549,45 @@ function api_qc_cohort(req::HTTP.Request)
     fun_name    = get(q, "funName", "")
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    haskey(COHORT_METRICS, fun_name) || return _no_cohort_metrics(fun_name)
+    _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = get(q, "valueName", "")
     run_param = get(q, "run", "")   # clustering: restrict to one run's value_names (see cohort_runs)
     thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
-    set = try
-        obj = init_object(project_uid, set_uid)
-        obj isa CciaSet || error("Not a set: $set_uid")
-        obj
-    catch e
-        return 404, JSON3.write((; error = sprint(showerror, e)))
-    end
+    set = _cohort_set(project_uid, set_uid)
+    set isa Tuple && return set
     # READ-ONLY: compute + return, write nothing (a GET must be safe). The write path — set sidecar +
     # per-image cohort findings — is the explicit POST /api/qc/cohort/check below.
     # No valueName → discover every value_name this fun banked and return per-value_name cohorts (a
     # `byValueName` map): clustering banks per label set (T/B), segment/tracking under "default", so a
     # caller that doesn't know the suffix still gets all cohorts. An explicit valueName returns just that
-    # one cohort (single doc, backward-compatible).
-    if isempty(vn_param)
-        byval = try
-            cohort_qc_for_all(set, fun_name; threshold = thr, run = run_param)
-        catch e
-            return 500, JSON3.write((; error = sprint(showerror, e)))
-        end
-        return 200, JSON3.write((; funName = fun_name, valueNames = sort(collect(keys(byval))), byValueName = byval))
-    end
-    doc = try
-        cohort_qc_for(set, fun_name, vn_param; threshold = thr)
+    # one cohort (single doc, backward-compatible). A composite answers from its steps (`byStep`).
+    reply = try
+        _cohort_reply(set, fun_name; value_name = vn_param, threshold = thr, run = run_param, persist = false)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
-    200, JSON3.write(doc)
+    200, JSON3.write(reply)
 end
+
+# A fun the cohort routes can answer: it banks metrics, or it is a composite whose steps do.
+_has_cohort_answer(fun_name::AbstractString) =
+    haskey(COHORT_METRICS, fun_name) || !isempty(cohort_parts(fun_name))
+
+# The set a cohort route reads, or the (404, body) error tuple.
+function _cohort_set(project_uid::AbstractString, set_uid::AbstractString)
+    try
+        obj = init_object(project_uid, set_uid)
+        obj isa CciaSet || error("Not a set: $set_uid")
+        obj
+    catch e
+        (404, JSON3.write((; error = sprint(showerror, e))))
+    end
+end
+
+# Both cohort routes' answer: the fun's own reply, or — for a composite with no metrics of its own —
+# its steps' replies keyed per step (`cohort_qc_by_step`).
+_cohort_reply(set, fun_name; kw...) = haskey(COHORT_METRICS, fun_name) ?
+    cohort_qc_reply(set, fun_name; kw...) : cohort_qc_by_step(set, fun_name; kw...)
 
 # GET /api/qc/cohort/runs?projectUid&setUid&funName — the distinct clustering RUNS a fun banked across
 # the set (cheap: scans QC filenames + reads each doc's runSuffix, no cohort math). Powers the Check-
@@ -593,13 +600,8 @@ function api_qc_cohort_runs(req::HTTP.Request)
     fun_name    = get(q, "funName", "")
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    set = try
-        obj = init_object(project_uid, set_uid)
-        obj isa CciaSet || error("Not a set: $set_uid")
-        obj
-    catch e
-        return 404, JSON3.write((; error = sprint(showerror, e)))
-    end
+    set = _cohort_set(project_uid, set_uid)
+    set isa Tuple && return set
     runs = try
         [(; run = r.run, valueNames = r.valueNames) for r in cohort_runs(set, fun_name)]
     catch e
@@ -746,18 +748,13 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     fun_name    = _wstr(body, :funName)
     (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
-    haskey(COHORT_METRICS, fun_name) || return _no_cohort_metrics(fun_name)
+    _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = _wstr(body, :valueName)
     run_param = _wstr(body, :run)   # clustering: check only this run's value_names (see cohort_runs)
     tv  = get(body, :threshold, nothing)
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
-    set = try
-        obj = init_object(project_uid, set_uid)
-        obj isa CciaSet || error("Not a set: $set_uid")
-        obj
-    catch e
-        return 404, JSON3.write((; error = sprint(showerror, e)))
-    end
+    set = _cohort_set(project_uid, set_uid)
+    set isa Tuple && return set
     # Cecelia authors a "Cohort check" lab-log entry ONLY for docs that flagged (an all-clear would be
     # noise). This is the cross-image analysis — image UIDs (stable; the panel resolves uid→name on
     # demand), the metric, its value vs the cohort median — the durable record the amber button points
@@ -776,23 +773,15 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
             @warn "cohort check: lab-log append failed" exception = e
         end
     end
-    # No valueName → check EVERY value_name the fun banked (per label set); else just the one.
-    if isempty(vn_param)
-        byval = try
-            cohort_qc_for_all!(set, fun_name; threshold = thr, run = run_param)
-        catch e
-            return 500, JSON3.write((; error = sprint(showerror, e)))
-        end
-        log_flagged(collect(values(byval)))
-        return 200, JSON3.write((; funName = fun_name, valueNames = sort(collect(keys(byval))), byValueName = byval))
-    end
-    doc = try
-        cohort_qc_for!(set, fun_name, vn_param; threshold = thr)
+    # No valueName → check EVERY value_name the fun banked (per label set); else just the one. A
+    # composite checks each of its steps (`byStep`).
+    reply = try
+        _cohort_reply(set, fun_name; value_name = vn_param, threshold = thr, run = run_param, persist = true)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
-    log_flagged([doc])
-    200, JSON3.write(doc)
+    log_flagged(cohort_reply_docs(reply))
+    200, JSON3.write(reply)
 end
 
 function api_images_delete(body_bytes::Vector{UInt8})

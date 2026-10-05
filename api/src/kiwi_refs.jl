@@ -275,16 +275,22 @@ function _kiwi_resolve_proposedPlot(puid, ref)
     proj = try load_project(String(puid)) catch; return _kiwi_bad("proposal", "the project could not be read") end
     entry = Dict{String,Any}(String(k) => v for (k, v) in pairs(ref) if !(String(k) in ("kind", "compareBy")))
     compare = string(something(_kiwi_get(ref, "compareBy"), ""))
+    resolved = Any[]
     try
-        expand_board(proj, "Kiwi proposal", Any[entry]; compare_by = compare)
+        expand_board(proj, "Kiwi proposal", Any[entry]; compare_by = compare, resolved_pops = resolved)
     catch e
         e isa BoardSpecError || return _kiwi_bad("proposal", sprint(showerror, e))
         return _kiwi_bad("proposal", replace(e.msg, r"^plots\[1\]:\s*" => ""))
     end
     r = _kiwi_ok("proposal", kiwi_proposed_plot_label(ref))
+    # a population the board would draw under another path (`board_pop_ref`) — say so, never silently
+    isempty(resolved) || (r["detail"] = "draws " *
+        join(("$(x["asked"]) as $(x["stored"])" for x in resolved), ", "))
+    stored = Dict(x["asked"] => x["stored"] for x in resolved)
+    resolve = p -> get(stored, p, p)
     # already drawn somewhere? then it isn't new — say where (a click opens that board, `kiwi_slot_holds`)
     for b in (try board_summaries(proj) catch; Any[] end), s in get(b, "plots", Any[])
-        kiwi_slot_holds(s, ref) && (r["detail"] = "already on board “$(b["name"])”"; break)
+        kiwi_slot_holds(s, ref; resolve) && (r["detail"] = "already on board “$(b["name"])”"; break)
     end
     r
 end

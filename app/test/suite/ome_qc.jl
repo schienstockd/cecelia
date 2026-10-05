@@ -1934,6 +1934,30 @@ end
         # describe a board the same way (Decision 2)
         @test [let t = Cecelia._parse_tkey(k); "$(t.valueName)$(t.pop)" end for k in d["state"]["sel"]] ==
               ["B/qc/_tracked", "T/qc/_tracked"]
+        # …and a `_tracked` the picker HIDES because it copies a deeper one resolves to that one. Tracking
+        # on `/P14qc` makes `P14/_tracked` the same tracks as `P14/P14qc/_tracked`, and the former is
+        # what an agent ran clustTracks / the HMM on — the board used to reject it ("no population").
+        hid = Dict("P14/P14qc/_tracked" => "live", "P14/P14qc" => "live", "P14/P14qc/B" => "live",
+                   "P14/P14qc/B/_tracked" => "live")
+        @test board_pop_ref(hid, "P14/_tracked") == "P14/P14qc/_tracked"          # shallowest offered
+        @test board_pop_ref(hid, "P14/P14qc/_tracked") == "P14/P14qc/_tracked"    # exact stands
+        @test board_pop_ref(hid, "OTI/_tracked") === nothing                      # nothing tracked there
+        @test board_pop_ref(hid, "P14/nope") === nothing                          # only derived leaves alias
+        @test board_pop_ref(Dict("P14/A/_tracked" => "live", "P14/B/_tracked" => "live"),
+                            "P14/_tracked") === nothing                           # two siblings: ambiguous
+        dh = expand_board(proj, "hidden-tracked", [Dict("plot" => "track_measures", "pops" => ["P14/_tracked"])];
+                          pops = hid)["contents"][1]
+        @test dh["state"]["sel"] == ["live::P14/P14qc/_tracked"]
+        dv = expand_board(proj, "hidden-tracked-view", [Dict("plot" => "trackPaths", "pops" => ["P14/_tracked"])];
+                          pops = hid)["contents"][1]
+        @test dv["state"]["sel"] == ["live::P14/P14qc/_tracked"]
+        # …and the substitution is REPORTED, per plot, never silent; an exact match reports nothing
+        res = Any[]
+        expand_board(proj, "hidden-tracked-report",
+                     [Dict("plot" => "track_measures", "pops" => ["P14/_tracked", "P14/P14qc"]),
+                      Dict("plot" => "trackPaths", "pops" => ["P14/_tracked"])]; pops = hid, resolved_pops = res)
+        @test res == [Dict{String,Any}("plot" => 1, "asked" => "P14/_tracked", "stored" => "P14/P14qc/_tracked"),
+                      Dict{String,Any}("plot" => 2, "asked" => "P14/_tracked", "stored" => "P14/P14qc/_tracked")]
         # ── popType must REACH the named populations ────────────────────────────────────────────────
         # The panel fetches its list with `plot_pop_types(popType, granularity)` and tags each pop with
         # the family it was found under; a tkey outside that expansion matches nothing and the panel

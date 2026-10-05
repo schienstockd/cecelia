@@ -392,6 +392,29 @@ class TestStageBoards(unittest.TestCase):
         self.assertEqual(len(specs["HMM"]["attach"]), 4)
         self.assertTrue(all(s["name"].startswith("Run ST · ") for s in specs.values()))
 
+    def test_segmentation_board_names_the_output_not_the_image_version(self):
+        # a run_task segmentation reading the image version `driftCorrected` and writing `gBTsmooth`:
+        # the segmentation is what it WROTE, not the version it read
+        params = {"valueName": "driftCorrected", "intensityValueName": "driftCorrected",
+                  "outputValueName": "gBTsmooth", "models": {"0": {"model": "cpsam_v2", "cellChannels": [3]}}}
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "trace.jsonl"
+            path.write_text(_trace(
+                ("call", "t1", "run_task", {"fun_name": "segment.cellposeMeasure", "params": params,
+                                            "image_uids": ["cp1"]}),
+                ("result", "t1", json.dumps({"tasks": []}), False)), encoding="utf-8")
+            dec = run_record.decisions(str(path), self.IMAGES)
+        seg = next(s for s in dec["sections"] if s["step"] == "segment")
+        self.assertEqual(seg["units"][0]["target"], "gBTsmooth")
+        specs = {s["label"]: s for s in stage_boards.board_specs(dec, "ST", self.IMAGES)}
+        self.assertEqual(specs["Segmentation QC"]["candidates"][0][0]["pops"], ["gBTsmooth/labels"])
+        # a decisions file written before the fix (target = the image version) derives it from params too
+        seg["units"][0]["target"] = "driftCorrected"
+        specs = {s["label"]: s for s in stage_boards.board_specs(dec, "ST", self.IMAGES)}
+        self.assertEqual(specs["Segmentation QC"]["candidates"][0][0]["pops"], ["gBTsmooth/labels"])
+        # a task that writes where it reads keeps its valueName
+        self.assertEqual(stage_boards.output_value_name({"valueName": "Tsm"}), "Tsm")
+
     def test_no_app_costs_the_pictures_not_the_record(self):
         dec = self._dec()
         run = {"projectUid": "CP", "projectName": "x", "images": self.IMAGES, "source": {"projectUid": "SRC"}}

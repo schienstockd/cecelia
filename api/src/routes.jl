@@ -79,6 +79,24 @@ function _bad_chain_name(name)
         suggestion = hint)))
 end
 
+# REPAIR, don't reject: every chain route takes the name it was given through this. A valid name passes
+# unchanged; one the guard refuses becomes `_chain_name_suggestion(name)` ("Drift + segment" → "Drift
+# segment").
+# Only a name with nothing left to keep (`"+++"`, empty after repair) is still a 400. Returns
+# `(name, renamed_from)` — `renamed_from` is the raw name when it was repaired, else `nothing` — or the
+# `(status, body)` error tuple, so a caller does `rn[1] isa Integer && return rn`.
+function _repair_chain_name(name::AbstractString)
+    _valid_chain_name(name) && return (String(name), nothing)
+    hint = _chain_name_suggestion(name)
+    isempty(hint) && return _bad_chain_name(name)
+    (hint, String(name))
+end
+
+# The reply fields a route adds when it stored a repaired name: the stored `name` always, and
+# `renamedFrom` (the name as sent) only when it differs — so a caller can see what it now has to use.
+_chain_name_reply(name, renamed_from) =
+    renamed_from === nothing ? (; name) : (; name, renamedFrom = renamed_from)
+
 # The chains dir changed → tell every open whiteboard to re-read the LIST. Without this, a chain
 # written by anything other than the whiteboard itself (Claude via /api/chains/create, the REPL) is
 # invisible until a full page reload: the picker is filled by `loadChainList()`, which runs on mount

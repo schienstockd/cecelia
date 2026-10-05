@@ -354,6 +354,15 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   because the picker asks on every load while a full gate evaluation per tracked segmentation is what
   it costs — measured 0.27 s → ~1 ms per repeat load on `zolIMa/fXgbTl`. A saved gate edit or a
   re-tracked segmentation changes a stamp and recomputes.
+- **Hidden is not missing — every read resolves a `_tracked` path.** The rule above decides what a
+  picker LISTS; it does not make the hidden copies unreadable. A task takes `P14/_tracked` as input
+  (`pop_df_multi` → `resolve_pop_type` → `live`), so the read routes do too: `read_pop_type(img, vn,
+  path, requested)` is the shared rule (`/api/gating/stats`, `/membership`, `/summary`, `/plotmeta`,
+  `/plotdata`, `/density`, `/plot-image`, `/cells-image`) — no `popType` = discovered from the path, and a derived leaf asked for under its
+  stored map (`flow`) reads as `live`. A board (`board_pop_ref`, `analysis_board_spec.jl`) resolves a
+  hidden `…/_tracked` to the offered set it copies — the shallowest `_tracked` in its subtree, when
+  there is exactly one (tracking on `/P14qc` makes `P14/_tracked` ≡ `P14/P14qc/_tracked`) — so the
+  panel's picker can show it; the board-add reply reports each such substitution (`resolvedPops`); two candidates (tracking split across sibling gates) stays a rejection.
 
 ## Gating pop types & copy across images
 

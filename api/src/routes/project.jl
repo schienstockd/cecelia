@@ -220,13 +220,16 @@ function api_boards_add(body_bytes::Vector{UInt8})
             return 409, JSON3.write((; error="A board named \"$(strip(name))\" already exists in this project",
                                        code="duplicate_board_name"))
         end
+        resolved = Any[]
         layout = expand_board(proj, name, plots; template = template,
-                              compare_by = _wstr(body, :compareBy))
+                              compare_by = _wstr(body, :compareBy), resolved_pops = resolved)
         updated, id = append_board(doc, name, layout)
         version = write_boards_doc(path, updated; version = doc.version + 1)
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
+        # `resolvedPops`: every population stored under a different path than asked (a `_tracked` the
+        # picker hides as a copy → the offered set it copies). Always present, so "none" is explicit.
         return 200, JSON3.write((; ok=true, tabId=id, name=strip(name), version,
-                                   slots=length(layout["contents"])))
+                                   slots=length(layout["contents"]), resolvedPops=resolved))
     catch e
         e isa BoardSpecError && return 422, JSON3.write((; error=e.msg, code="invalid_board_spec"))
         return 500, JSON3.write((; error=sprint(showerror, e)))

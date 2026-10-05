@@ -140,6 +140,11 @@ _live_map(img, vn, pop_type; labels_version::Union{String,Nothing}=nothing) =
     computed_pop_map(img; value_name = vn, pop_type = pop_type, labels_version = labels_version,
                      map_hook = _pick_hook(img, pop_type))
 
+# The pop_type a read route evaluates `pop` under: the package's `read_pop_type` over the request's
+# `popType` (absent = discover from the path). So a derived `_tracked` set — what tracking makes and
+# tasks take as input (`P14/_tracked`) — is found by every read, not 404'd under the `flow` default.
+_read_pop_type(q::AbstractDict, img, vn, pop) = read_pop_type(img, vn, pop, get(q, "popType", ""))
+
 # build an AxisTransform from query params, prefix "x"/"y" (e.g. xt=logicle&xT=262144)
 function _axis_transform(q::AbstractDict, p::AbstractString)
     kind = lowercase(get(q, p * "t", "linear"))
@@ -641,7 +646,7 @@ function api_gating_stats(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
-    m = _live_map(img, vn, get(q, "popType", "flow"); labels_version = _labels_version_pin(q))
+    m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
     (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
     s = pop_stats(m, pop)
     200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
@@ -655,7 +660,10 @@ function api_gating_membership(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pops = split(get(q, "pops", ""), ","; keepempty = false)
     isempty(pops) && return _gerr(400, "pops required")
-    m = _live_map(img, vn, get(q, "popType", "flow"); labels_version = _labels_version_pin(q))
+    # one map serves every pop: `live` is `flow` plus the derived sets, so a mix of the two reads as live
+    pts = unique(_read_pop_type(q, img, vn, p) for p in pops)
+    pt = length(pts) == 1 ? only(pts) : issubset(pts, ("flow", "live")) ? "live" : get(q, "popType", "flow")
+    m = _live_map(img, vn, pt; labels_version = _labels_version_pin(q))
     for p in pops
         (is_root(p) || has_pop(m, p)) || return _gerr(404, "Population not found: $p")
     end
@@ -765,7 +773,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     # A track-grained plot (popType track/trackclust) of an untracked segmentation has no data — tell
     # the client to track first (it shows a message) and skip the empty data reads. `tracked` rides on
     # every plotmeta response so the client can distinguish "not tracked" from "genuinely no points".
@@ -881,7 +889,7 @@ function api_gating_plotdata(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     # `z` (optional) = the colour-by measure: the response becomes TRIPLES [x,y,z,…] instead of pairs,
     # read in the SAME pass as x/y so each z belongs to its own dot (`_plot_cols_raw`). The client
     # switches stride on whether it asked for z, so old callers are untouched.
@@ -1027,7 +1035,8 @@ function api_gating_density(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     bins = parse(Int, get(q, "bins", "256"))
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    xv, yv = _plot_xy(img, vn, get(q, "popType", "flow"), x, y, get(q, "pop", ROOT), xt, yt;
+    pop = get(q, "pop", ROOT)
+    xv, yv = _plot_xy(img, vn, _read_pop_type(q, img, vn, pop), x, y, pop, xt, yt;
                        labels_version = _labels_version_pin(q))
     d = density_2d(xv, yv; bins = bins)
     200, collect(reinterpret(UInt8, Float32.(vec(d.counts))))
@@ -1044,7 +1053,7 @@ function api_gating_summary(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
