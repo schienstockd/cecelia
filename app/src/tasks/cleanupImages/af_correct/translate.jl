@@ -6,6 +6,7 @@ struct AfCombinationSpec
     key::String                    # numerator's name-or-index as sent (used for output keys)
     targetChannel::Any             # scalar or Vector; resolved via channel_indices
     competingChannels::Any         # Vector of names/indices; resolved via channel_indices
+    exclusive::Bool                # "Different cell types" — picks the bleedthrough estimator
 end
 """
     af_combinations_for_python(params, raw) -> Dict
@@ -41,7 +42,9 @@ function parse_af_combinations(params::AbstractDict)::Vector{AfCombinationSpec}
         push!(specs, AfCombinationSpec(
             String(k),
             get(entry, "targetChannel", []),
-            get(entry, "competingChannels", [])))
+            get(entry, "competingChannels", []),
+            # only an explicit `false` turns it off — absent means the spec's default (on)
+            get(entry, "exclusive", true) !== false))
     end
     specs
 end
@@ -65,7 +68,10 @@ function af_combinations_for_python(params::AbstractDict, raw::AbstractDict)::Di
         target_idx = tryparse(Int, combo_key)
         af_combos[combo_key] = Dict{String,Any}(
             "competingChannels" => isnothing(target_idx) ? unique(idx_channels) :
-                                   filter(!=(target_idx), unique(idx_channels)))
+                                   filter(!=(target_idx), unique(idx_channels)),
+            # Python reads it per combination (`af_correct_image`, the preview worker) and defaults
+            # it to true when absent — so dropping it here made the toggle a no-op in both.
+            "exclusive" => spec.exclusive)
     end
     af_combos
 end
