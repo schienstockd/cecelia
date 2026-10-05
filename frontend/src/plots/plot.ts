@@ -25,6 +25,18 @@ import { needsXRotation } from './autoOverride'
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
 // on these (see facetOverride in plots/autoOverride.ts)
 const NON_FACETING_CHARTS = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100', 'heatmap'])
+/**
+ * Charts whose series have NO position label — every series is composited into one frame (histogram,
+ * stacked) or sits in a facet with its x axis hidden (grouped frequency) — so the fill colour plus the
+ * legend is the only way to tell series apart. Under the 'standard' palette two series of one population
+ * share its colour; on these charts that has to be resolved to distinct hues (a box/bar chart labels each
+ * series on its axis and keeps the population colour).
+ */
+export const COLOUR_IS_IDENTITY = new Set<string>(['histogram', 'frequency', 'stacked', 'stacked100'])
+/** True when two series keys of a colour scale share one colour. */
+export function coloursCollide(color: { domain: string[]; range: string[] }): boolean {
+  return new Set(color.range).size < color.domain.length
+}
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
 export const CATEGORICAL_CHARTS: ChartType[] = ['frequency', 'stacked', 'stacked100']
 // A 0/1 measure is numeric, but its useful readout is the FRACTION positive — "% of B cells in contact
@@ -33,6 +45,17 @@ export const CATEGORICAL_CHARTS: ChartType[] = ['frequency', 'stacked', 'stacked
 export const chartsForMeasure = (t: string | undefined, isBoolean = false): ChartType[] =>
   t === 'categorical' ? CATEGORICAL_CHARTS
                       : (isBoolean ? [...NUMERIC_CHARTS, 'percent'] : NUMERIC_CHARTS)
+
+/**
+ * The Proportion toggle's value when the user has not set it. A spec that declares a `normalize` param
+ * decides (the frequency/summary families default to a proportion). Otherwise a COUNT chart shows the
+ * count: defaulting it to a fraction made a "cells per frame" trend read 0…0.03 ("fraction (loess)") and
+ * an unsplit count chart draw every bar at exactly 1 — each series' share of itself.
+ */
+export function defaultNormalize(chartType: ChartType, specDefault: unknown): boolean {
+  if (specDefault !== undefined && specDefault !== null) return Boolean(specDefault)
+  return chartType !== 'count'
+}
 
 // frontend chart type → the backend aggregation it needs (several charts share one server shape)
 export function backendChart(c: ChartType): { chartType: string; rawPoints?: boolean; normalize?: boolean } {
@@ -479,14 +502,18 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // `group=""`) must keep the population colours, not get distinct hues (the "track measures show
   // red/green instead of the pop colours" bug).
   const groupColouring = d.grp && o.palette === 'standard'
+  // …and when colour is the ONLY thing that says which bar is which (see COLOUR_IS_IDENTITY), two series
+  // sharing a population colour are indistinguishable — the same pop across three images drew three
+  // identical bars, and the deduped legend collapsed to one entry, so it was not drawn at all.
+  const identityColouring = o.palette === 'standard' && COLOUR_IS_IDENTITY.has(o.chartType) && coloursCollide(color)
   // palette override (R adjustColors): assign palette/user/distinct colours by series order;
   // 'standard' keeps the population-manager colours from colorOf (consistent across images).
   if (o.palette === 'user') {
     // user list, cycled by series order; an EMPTY list → everything grey (not the population colours)
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
     color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
-  } else if (groupColouring || (o.palette && o.palette !== 'standard')) {
-    const pal = (o.palette === 'distinct' || groupColouring)
+  } else if (groupColouring || identityColouring || (o.palette && o.palette !== 'standard')) {
+    const pal = (o.palette === 'distinct' || groupColouring || identityColouring)
       ? distinctColors(color.domain.length) : (PALETTES[o.palette] ?? [])
     if (pal.length) color = { ...color, range: color.domain.map((_, i) => pal[i % pal.length]) }
   }
@@ -780,7 +807,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   let color = colourScale(r.series, keyOf, o.colorOf)
   // distinguish lines: if population colours collide (same pop across images) or a non-standard palette
   // is picked, assign distinct hues per line key.
-  const collide = new Set(color.range).size < color.domain.length
+  const collide = coloursCollide(color)
   if (o.palette === 'user') {
     const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
     color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }

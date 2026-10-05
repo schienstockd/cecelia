@@ -45,7 +45,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import PlotNotice from '../canvas/PlotNotice.vue'
-import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
+import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf, figureToSvg } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { debouncedLatest } from '../../utils/debouncedLatest'
 import { followSelection, selectionMissed, EMPTY_TRACK_SELECTION,
@@ -437,7 +437,9 @@ async function exportImage(): Promise<string | null> {
 async function exportSvg(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const svg = svgOf(host.value)?.outerHTML ?? null
+  // a coloured view is a Plot <figure> (chart + its colour legend): export both, not its first <svg>
+  const fig = host.value?.querySelector('figure')
+  const svg = fig ? figureToSvg(fig, null) : (svgOf(host.value)?.outerHTML ?? null)
   forceLight.value = false; await render()
   return svg
 }

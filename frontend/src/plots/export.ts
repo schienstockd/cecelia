@@ -294,7 +294,9 @@ export function svgImage(dataUrl: string, x: number, y: number, w: number, h: nu
 // SVG into ONE page SVG (plots/boardSvg.ts). We control the input (our svgDoc output, or Observable
 // Plot's <svg>), so a light re-attribute of the root tag is safe. Default overflow (hidden) clips the
 // inner content to the slot rect, so a plot can't bleed into its neighbours.
-export function nestSvg(fullSvg: string, x: number, y: number, w: number, h: number): string {
+const NEST_CARRY = ['fill', 'fill-opacity', 'stroke', 'font-family', 'font-size', 'font-weight', 'text-anchor', 'style']
+export function nestSvg(fullSvg: string, x: number, y: number, w: number, h: number,
+                        o: { overflow?: 'visible' } = {}): string {
   if (!fullSvg) return ''
   const m = fullSvg.match(/<svg\b([^>]*)>/i)
   if (!m) return ''
@@ -306,7 +308,13 @@ export function nestSvg(fullSvg: string, x: number, y: number, w: number, h: num
   }
   const inner = fullSvg.slice((m.index ?? 0) + m[0].length).replace(/<\/svg>\s*$/i, '')
   const vb = viewBox ? ` viewBox="${viewBox}"` : ''
-  return `<svg x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}"${vb} ` +
+  const ov = o.overflow ? ` overflow="${o.overflow}"` : ''
+  // the root's INHERITED paint must survive the rewrite: Observable Plot puts `text-anchor="middle"`,
+  // `fill="currentColor"`, the font and its theme `style` on the root, so dropping them left-anchored every
+  // x tick label of a board SVG; a legend swatch's colour IS its root `fill`
+  const paint = NEST_CARRY.map(a => { const v = attrs.match(new RegExp(`(?:^|\\s)${a}\\s*=\\s*"([^"]*)"`, 'i'))
+    return v ? ` ${a}="${v[1]}"` : '' }).join('')
+  return `<svg x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}"${vb}${ov}${paint} ` +
          `preserveAspectRatio="xMidYMid meet">${inner}</svg>`
 }
 
@@ -327,4 +335,104 @@ export function svgSizeWarning(svg: string, label = 'This figure'): string | nul
 // trigger a browser download of a text string (SVG / CSV) — thin wrapper over downloadBlob
 export function downloadText(name: string, text: string, mime = 'text/plain') {
   downloadBlob(name, new Blob([text], { type: mime }))
+}
+
+// ── HTML overlays → SVG (the legend / title a canvas plot floats over its <svg>) ─────────────────────
+//
+// A Plot chart's legend + title are absolute HTML over a bare <svg> (`plots/overlays.ts`), so they are not
+// in the SVG an export serialises. The export snapshots them as laid out on screen — each text run and
+// each swatch/ramp <svg> at its measured rect — and draws them into the exported SVG as vector elements.
+// Measuring instead of re-laying-out means the wrap, the gaps and the reserved band are the browser's,
+// and it stays one rule for any overlay a chart grows.
+
+/** One measured piece of an overlay, in the plot host's CSS-px space. */
+export type OverlayItem =
+  | { kind: 'text'; x: number; y: number; h: number; text: string; size: number; weight?: string; fill: string }
+  | { kind: 'svg'; x: number; y: number; w: number; h: number; markup: string; color: string }
+
+/** The SVG body (no root) drawing measured overlay items. Text is vertically centred on its line box. */
+export function overlaySvgBody(items: OverlayItem[]): string {
+  let body = ''
+  for (const it of items) {
+    if (it.kind === 'text') {
+      if (!it.text.trim()) continue
+      // anchor stated: the plot's root <svg> carries text-anchor="middle", which a bare <text> inherits
+      body += svgText(it.x, it.y + it.h / 2, it.text, { fill: it.fill, size: it.size, weight: it.weight, anchor: 'start' })
+        .replace('<text ', '<text dominant-baseline="central" ')
+    } else {
+      // a continuous ramp is a canvas-made <image href> — Inkscape needs `xlink:href` (see svgImage); the
+      // document svgDoc builds around this body declares the prefix
+      const markup = it.markup.replace(/(<image\b[^>]*?\s)href=/g, '$1xlink:href=')
+        // …and the screen's ink comes off the root (`legendOverlay` styles it), or it would beat `it.color`
+        .replace(/(<svg\b[^>]*?\sstyle=")([^"]*)"/i, (_m, head: string, css: string) =>
+          `${head}${css.replace(/(^|;)\s*color\s*:[^;]*/gi, '$1')}"`)
+      // overflow visible: a ramp's end tick labels sit past its box, as they do on screen
+      const nested = nestSvg(markup, it.x, it.y, it.w, it.h, { overflow: 'visible' })
+      // a ramp's ticks and label are `currentColor` — give them the export's ink, not the screen's
+      if (nested) body += `<g color="${it.color}" style="color:${it.color}">${nested}</g>`
+    }
+  }
+  return body ? `<g class="cc-export-overlay">${body}</g>` : ''
+}
+
+/**
+ * Measure the overlay nodes floated over `host` into `OverlayItem`s. `ink` overrides the text colour
+ * (the light-theme export of a dark-theme plot); null keeps each text's on-screen colour.
+ */
+export function collectOverlayItems(host: HTMLElement, nodes: (Element | null)[], ink: string | null): OverlayItem[] {
+  const hr = host.getBoundingClientRect()
+  const k = host.clientWidth ? hr.width / host.clientWidth : 1     // ancestor CSS zoom (see plotHostToImageURL)
+  const at = (r: DOMRect) => ({ x: (r.left - hr.left) / k, y: (r.top - hr.top) / k, w: r.width / k, h: r.height / k })
+  const out: OverlayItem[] = []
+  const walk = (el: Element) => {
+    if (el.tagName.toLowerCase() === 'svg') {
+      const r = at(el.getBoundingClientRect())
+      if (r.w > 0 && r.h > 0) out.push({ kind: 'svg', ...r, markup: new XMLSerializer().serializeToString(el),
+                                         color: ink ?? getComputedStyle(el).color })
+      return
+    }
+    if (el.tagName.toLowerCase() === 'style') return
+    for (const child of Array.from(el.childNodes)) {
+      if (child.nodeType === 1) { walk(child as Element); continue }
+      if (child.nodeType !== 3 || !child.textContent?.trim()) continue
+      const range = document.createRange(); range.selectNodeContents(child)
+      const r = at(range.getBoundingClientRect())
+      const cs = getComputedStyle(el)
+      out.push({ kind: 'text', x: r.x, y: r.y, h: r.h, text: child.textContent.trim(),
+                 size: parseFloat(cs.fontSize) || 11, weight: Number(cs.fontWeight) >= 600 ? cs.fontWeight : undefined,
+                 fill: ink ?? cs.color })
+    }
+  }
+  for (const n of nodes) if (n) walk(n)
+  return out
+}
+
+/** A copy of `svg` with the overlay items drawn on top (the input is not touched). */
+export function svgWithOverlays(svg: SVGSVGElement, items: OverlayItem[]): SVGSVGElement {
+  const out = svg.cloneNode(true) as SVGSVGElement
+  const body = overlaySvgBody(items)
+  if (!body) return out
+  const doc = new DOMParser().parseFromString(
+    svgDoc({ width: out.width.baseVal.value || 1, height: out.height.baseVal.value || 1, body }), 'image/svg+xml')
+  for (const n of Array.from(doc.documentElement.childNodes)) out.appendChild(document.importNode(n, true))
+  return out
+}
+
+/**
+ * A Plot `<figure>` (a chart drawn with an inline `legend: true` — its legend is HTML or a ramp <svg>
+ * beside the chart) as ONE light-theme SVG: the chart nested at its rect, the legend snapshotted in.
+ * `svgOf` on a figure returned only its first <svg>, which dropped the legend — or WAS the legend ramp.
+ */
+export function figureToSvg(fig: Element, ink: string | null, background = 'white'): string | null {
+  const kids = Array.from(fig.children)
+  const chart = kids.filter(c => c.tagName.toLowerCase() === 'svg').pop()
+  if (!chart) return null
+  const fr = fig.getBoundingClientRect()
+  const w = (fig as HTMLElement).clientWidth || fr.width, h = (fig as HTMLElement).clientHeight || fr.height
+  const k = w ? fr.width / w : 1
+  const cr = chart.getBoundingClientRect()
+  const body = nestSvg(new XMLSerializer().serializeToString(chart), (cr.left - fr.left) / k, (cr.top - fr.top) / k,
+                       cr.width / k, cr.height / k, { overflow: 'visible' }) +
+               overlaySvgBody(collectOverlayItems(fig as HTMLElement, kids.filter(c => c !== chart), ink))
+  return svgDoc({ width: w, height: h, background, body })
 }

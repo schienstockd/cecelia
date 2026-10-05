@@ -396,7 +396,9 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   **light-theme** PNG (summary via `PlotChart.toImageURL(_, light)`; interactive/cluster via a
   `forceLight`/`.cc-light` re-render). Chrome is excluded (the plot host is captured, not the slot).
   `UmapView` also drops its plot bounding-box border under `forceLight` so the exported figure is
-  frameless.
+  frameless. The summary charts' HTML legend + title overlays are drawn INTO the export from their on-screen
+  layout (`PlotChart.toImageURL` → `plots/export.ts` `svgWithOverlays`; `docs/PLOTS.md` → *Legend &
+  sizing*) — they used to be dropped, so a board PDF lost every series legend and heatmap colour bar.
 - **Hi-res raster**: WebGL scatters (UMAP, gating cell) would export soft at screen backing size. The
   **shared** helpers `rasterExportScale` + `rasterPlotToImageURL` (`plots/export.ts`) target a fixed
   ~2200px long side (scale 4–14×) and re-render the point cloud at that scale via each view's `hiRes`

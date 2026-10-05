@@ -200,6 +200,12 @@
         @test length(specs) == nc
         @test all(s -> s[2] >= s[1], specs)
         @test _sampled_specs(p, nc) == specs           # same (t, z) every time, so stable
+        # a stack-max still (cards, gate cells) takes its window from the stack's max: a value that
+        # rises with z puts that window at or above the mid plane's
+        proj = _sampled_specs(p, nc; project = true)
+        @test length(proj) == nc
+        @test all(i -> proj[i][2] >= specs[i][2], 1:nc)
+        @test _sampled_specs(p, nc; project = true) == proj
     end
 
     # `resolved_display_specs` is the ONE place a colormap name becomes RGB — the browser must not

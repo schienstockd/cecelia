@@ -171,20 +171,34 @@ end
 #
 # It is sampled from ONE FIXED (t, z) on purpose — decision 5 of WEB_VIEWER_PLAN.md. Contrast computed
 # per timepoint makes playback flicker as the window chases each frame's own distribution.
-function _sampled_specs(zarr_path::AbstractString, nc::Int; target::Int = 256)
+#
+# `project = true` is for a caller that draws the WHOLE STACK'S MAX (the card filmstrips, the gate-cells
+# view — `render_view_stills` with no `z`): the window then comes from the max over the stack at that
+# timepoint (up to `MAX_PROJECT_PLANES` evenly spaced planes), because a max-projection's background is
+# well above any one plane's — sampled from the mid plane, the camera noise of a 9-plane stack sat at
+# ~20–30% of every ramp and the crops read as a coloured haze.
+const MAX_PROJECT_PLANES = 16
+function _sampled_specs(zarr_path::AbstractString, nc::Int; target::Int = 256, project::Bool = false)
     arr, caxes = open_level0(zarr_path)
     nd   = ndims(arr)
     dims = axis_dims(caxes, nd)
     jz   = get(dims, "z", 0)
+    nz   = jz == 0 ? 1 : size(arr, jz)
+    zs   = jz == 0 ? [0] : !project ? [cld(nz, 2)] :
+           unique(round.(Int, range(1, nz; length = min(nz, MAX_PROJECT_PLANES))))
     specs = Tuple{Float64,Float64,Any,Bool}[]
     for c in 0:(nc - 1)
-        idx = Any[Colon() for _ in 1:nd]
-        haskey(dims, "t") && (idx[dims["t"]] = 1)
-        haskey(dims, "c") && (idx[dims["c"]] = c + 1)
-        jz != 0 && (idx[jz] = cld(size(arr, jz), 2))            # mid-stack plane
-        plane = read_native(arr, idx...)
-        step  = max(1, cld(maximum(size(plane)), target))
-        step > 1 && (plane = plane[(1:step:s for s in size(plane))...])
+        plane = nothing
+        for z in zs
+            idx = Any[Colon() for _ in 1:nd]
+            haskey(dims, "t") && (idx[dims["t"]] = 1)
+            haskey(dims, "c") && (idx[dims["c"]] = c + 1)
+            jz != 0 && (idx[jz] = z)
+            p = read_native(arr, idx...)
+            step = max(1, cld(maximum(size(p)), target))
+            step > 1 && (p = p[(1:step:s for s in size(p))...])
+            plane = plane === nothing ? p : max.(plane, p)
+        end
         push!(specs, percentile_spec(plane, DEFAULT_CMAPS[mod1(c + 1, 4)]))
     end
     specs

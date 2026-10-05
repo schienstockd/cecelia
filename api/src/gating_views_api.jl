@@ -131,7 +131,8 @@ function api_gating_cells_image(req::HTTP.Request)
     chans = [c for c in (parse(Int, s) for s in split(get(q, "channels", ""), ","; keepempty = false))
              if 0 <= c < nc]
     specs = resolved_display_specs(_props_path(td, zp), nc)
-    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+    # no `z` below: the still is the stack's max, so is the cold-start window (`project`)
+    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc; project = true)))
     # The renderer takes every channel and a spec per channel; which ones show is the spec's `visible`
     # (the movie rail's convention). Asked-for channels show even if hidden in the saved viewer.
     isempty(chans) || (specs = [merge(sp, (; visible = (c - 1) in chans)) for (c, sp) in enumerate(specs)])

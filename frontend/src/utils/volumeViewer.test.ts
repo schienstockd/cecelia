@@ -357,6 +357,16 @@ describe('contrastFromSlab', () => {
     const { hi } = contrastFromSlab(v, row, 20_000)
     expect(hi).toBeGreaterThan(1000)              // it found the signal past column 0
   })
+  // 2026-10-05: a drift-corrected movie is zero-padded where the frames were shifted (~10–25% of a
+  // plane on the RkJd6s copy). Counted, those zeros put `lo` at 0 and the ~100-count camera offset
+  // rendered mid-ramp — every channel washed out. Fill is not signal; `percentile_spec` agrees.
+  it('ignores zero fill (a drift-correction border) when picking lo', () => {
+    const v = new Uint16Array(10_000)
+    for (let i = 0; i < v.length; i++) v[i] = i < 2_500 ? 0 : 100 + (i % 20)
+    const { lo } = contrastFromSlab(v)
+    expect(lo).toBeGreaterThanOrEqual(100)
+    expect(contrastFromSlab(new Uint16Array(64))).toEqual({ lo: 0, hi: 1, max: 1 })   // all fill
+  })
   it('handles an empty slab without throwing', () => {
     expect(contrastFromSlab(new Uint16Array(0))).toEqual({ lo: 0, hi: 1, max: 1 })
   })
