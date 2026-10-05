@@ -324,5 +324,30 @@ end
         @test all(l -> textwidth(replace(l, r"\e\[[HJ2]*" => "")) <= cols, lines)
         @test occursin("Cecelia task console", lines[1])              # header still on screen
     end
+
+    # No logs yet (they only arrive live), then nothing at all: activity takes the logs' rows, and once
+    # both buffers run dry the footer is still pinned to the last row rather than floating mid-screen.
+    empty!(C.LOGS)
+    redirect_stdout(devnull) do
+        for i in 1:30; C.push_event!("chain:log", "line $i"); end
+    end
+    lines = frame(30, 120)
+    @test length(lines) == 30 && startswith(lines[end], "(reporting only")
+    @test count(l -> occursin(r"chain:log\s+line \d+", l), lines) > 4   # not stuck at the 4-row peek
+    @test !any(isempty, lines[5:end-1])                                  # no dead space between
+    empty!(C.EVENTS)
+    lines = frame(30, 120)
+    @test length(lines) == 30 && startswith(lines[end], "(reporting only")
     empty!(C.EVENTS); empty!(C.LOGS); empty!(C.POOLS)
+end
+
+# ── Task console: a tqdm `\r` redraw must not overwrite the row's own prefix ──
+@testset "API: task console cleans carriage-return log lines" begin
+    C = TaskConsoleUT
+    @test C.clean_line(" 50%|█████     | 1/2\r100%|██████████| 2/2 [00:00<00:00]\r") ==
+          "100%|██████████| 2/2 [00:00<00:00]"
+    @test C.clean_line("\e[32mok\e[0m\tdone\e[K") == "ok done"
+    @test C.clean_line("Error: boom\n  at f()") == "Error: boom   at f()"     # one row, words kept apart
+    @test C.clean_line("\r") == ""
+    @test C.clean_line("plain") == "plain"
 end
