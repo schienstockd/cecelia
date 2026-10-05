@@ -125,6 +125,12 @@ describe('splitEntrySections / appendMissSection', () => {
     expect(parts[3].md.startsWith('## Tool errors')).toBe(true)
   })
 
+  it("splits a note's sNN sections the same way; other ids are not sections", () => {
+    const note = 'Two claims.\n\n### s01 · CD8 gate on volume\nwhy\n\n### s02 · cluster 4 is debris\nwhy\n\n### x01 · not one'
+    expect(splitEntrySections(note).map(p => p.kind === 'section' ? p.id : 'md')).toEqual(['md', 's01', 's02', 'md'])
+    expect(splitEntrySections('### s01 · a\n### s01 · again').map(p => p.kind === 'section' ? p.id : 'md')).toEqual(['s01', 'md'])
+  })
+
   it('a note without decision headings stays one part', () => {
     expect(splitEntrySections('# hi\n\ntext').map(p => p.kind)).toEqual(['md'])
     expect(splitEntrySections('')).toEqual([])

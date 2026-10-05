@@ -367,6 +367,12 @@ function _write_bb_meta!(uid::AbstractString, id::AbstractString;
             haskey(prev, k) && (meta[k] = prev[k])
         end
     end
+    # The entry's `### sNN ·` / `dNN` / `mNN` sections as the live entry.md has them, so the list can
+    # show "k of N marked" without reading entry.md. Every content write lands here after entry.md.
+    # A run record keeps the key even when empty, so the harness's ids never stand in for a revise
+    # that removed every section.
+    sids = _bb_section_ids(uid, id)
+    (!isempty(sids) || haskey(meta, "agentRun")) && (meta["sectionIds"] = sids)
     write_json_atomic(joinpath(dir, "meta.json"), meta)
 end
 # KIWI_CAPTURE_AND_BLACKBOARD_PLAN P2. Cap the sidecar so a runaway plotSummary can't blow
@@ -946,7 +952,9 @@ end
     POST /api/blackboard/revise
 
 Body: `{ projectUid, entryId, content, note?: string, attachments?: [captureId, ...] }`
-Reply: `{ ok:true, version }` — or `{ ok:true, version:<current>, unchanged:true }` on a no-op.
+Reply: `{ ok:true, version, removedMarked? }` — or `{ ok:true, version:<current>, unchanged:true }` on a no-op.
+`removedMarked: [{sectionId, verdict, note}]` names the `### sNN ·` sections a person had marked
+that this revise removed (their verdicts stay stored; a restore brings them back).
 
 Snapshots the CURRENT entry.md as v<N> (so nothing is lost), then overwrites with `content`. The
 optional `attachments` REPLACES the previous list (a revision is a self-contained write) — omit to
@@ -1028,7 +1036,10 @@ function api_blackboard_revise(body_bytes::Vector{UInt8})
     _write_bb_registry!(uid, reg)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
-    200, JSON3.write((; ok = true, version = v))
+    # the sections a person marked that this revise removed — a Claude caller tells the user
+    removed = _bb_removed_marked(meta, old_content, content)
+    isempty(removed) && return 200, JSON3.write((; ok = true, version = v))
+    200, JSON3.write((; ok = true, version = v, removedMarked = removed))
 end
 
 """

@@ -110,7 +110,8 @@ export interface BlackboardEntrySummary {
   status: BlackboardStatus       // D3 — backfilled to "open" if missing on disk
   outcome?: BlackboardOutcome    // D11 — absent when untagged
   agentRun?: AgentRun            // an agent run's record
-  sectionsMarked?: number        // on a run record: sections a person has marked
+  sectionCount?: number          // on an entry with `### sNN ·` / `dNN` / `mNN` sections: how many
+  sectionsMarked?: number        // … and how many of them a person has marked
   knowledge?: Knowledge          // P4 — lab knowledge, carried into run copies
 }
 
@@ -157,7 +158,10 @@ function parseSummary(raw: unknown): BlackboardEntrySummary | null {
     attachmentsCount: typeof r.attachmentsCount === 'number' ? r.attachmentsCount : 0,
     status:           parseStatus(r.status),
     ...(outcome ? { outcome } : {}),
-    ...(agentRun ? { agentRun, sectionsMarked: typeof r.sectionsMarked === 'number' ? r.sectionsMarked : 0 } : {}),
+    ...(agentRun ? { agentRun } : {}),
+    ...(typeof r.sectionCount === 'number' && r.sectionCount > 0
+      ? { sectionCount: r.sectionCount, sectionsMarked: typeof r.sectionsMarked === 'number' ? r.sectionsMarked : 0 }
+      : {}),
     ...(knowledge ? { knowledge } : {}),
   }
 }
