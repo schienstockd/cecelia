@@ -23,6 +23,13 @@ import webbrowser
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
+def _exe(name: str) -> str:
+    """A binary's file name on this platform: `julia` -> `julia.exe` on Windows. Only for paths we
+    build ourselves — `shutil.which` already applies PATHEXT, but `os.path.exists` on a hand-built
+    `~/.juliaup/bin/julia` is false on Windows, where install.ps1 puts `julia.exe`."""
+    return name + ".exe" if sys.platform == "win32" else name
+
+
 def _find_julia() -> str:
     """Resolve the Julia binary. A GUI-launched desktop shortcut may not have juliaup on PATH,
     so fall back to its default install location.
@@ -32,17 +39,24 @@ def _find_julia() -> str:
     so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`.
     Every `pixi run` already gets this from scripts/activate_juliaup.sh; this covers a launch that bypasses pixi."""
     private = os.path.join(ROOT, "juliaup")
-    if os.path.exists(os.path.join(private, "bin", "julia")):
-        bin_dir = os.path.join(private, "bin")
+    bin_dir = os.path.join(private, "bin")
+    if os.path.exists(os.path.join(bin_dir, _exe("julia"))):
         os.environ["JULIAUP_DEPOT_PATH"] = private
         if not os.environ.get("PATH", "").startswith(bin_dir + os.pathsep):
             os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
-        return os.path.join(bin_dir, "julia")
+        return os.path.join(bin_dir, _exe("julia"))
     found = shutil.which("julia")
     if found:
         return found
-    candidate = os.path.expanduser("~/.juliaup/bin/julia")
+    candidate = os.path.join(os.path.expanduser("~"), ".juliaup", "bin", _exe("julia"))
     return candidate if os.path.exists(candidate) else "julia"
+
+
+def _find_pixi() -> str:
+    """Resolve the Pixi binary: PATH first, else Pixi's default per-user install location."""
+    return shutil.which("pixi") or os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+
+
 PORT = os.environ.get("CECELIA_PORT", "8080")
 # The server decides HTTP vs HTTPS from `[tls].enabled` / `CECELIA_TLS` (see app/src/config/tls.jl);
 # prod defaults to HTTPS + HTTP/2, dev to HTTP/1.1, and a missing openssl silently falls back to HTTP.
@@ -116,7 +130,7 @@ def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
 def _reprovision_env() -> None:
     """Re-provision Pixi + Julia deps after either an apply or a revert — pixi.lock and Manifest may
     have moved in either direction. Both paths call this."""
-    pixi = shutil.which("pixi") or os.path.expanduser("~/.pixi/bin/pixi")
+    pixi = _find_pixi()
     print("Updating environment...")
     subprocess.run([pixi, "install"], cwd=ROOT, check=False)
     subprocess.run([_find_julia(), "--project=api", "-e", "using Pkg; Pkg.instantiate()"],

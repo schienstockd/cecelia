@@ -29,12 +29,13 @@ class FindJuliaTest(unittest.TestCase):
 
     def test_install_owned_juliaup_wins_over_path(self):
         bin_dir = os.path.join(self.root, "juliaup", "bin")
+        julia = os.path.join(bin_dir, self.app._exe("julia"))   # julia.exe on the Windows runner
         os.makedirs(bin_dir)
-        open(os.path.join(bin_dir, "julia"), "w", encoding="utf-8").close()
+        open(julia, "w", encoding="utf-8").close()
         env = {"PATH": "/usr/local/bin:/usr/bin", "JULIAUP_DEPOT_PATH": "/Users/x/.julia/juliaup"}
         with mock.patch.dict(os.environ, env, clear=True), \
              mock.patch("shutil.which", return_value="/usr/local/bin/julia"):
-            self.assertEqual(self.app._find_julia(), os.path.join(bin_dir, "julia"))
+            self.assertEqual(self.app._find_julia(), julia)
             self.assertEqual(os.environ["JULIAUP_DEPOT_PATH"], os.path.join(self.root, "juliaup"))
             self.app._find_julia()          # called again on every reprovision: PATH must not grow
             self.assertEqual(os.environ["PATH"], bin_dir + os.pathsep + "/usr/local/bin:/usr/bin")
@@ -46,6 +47,48 @@ class FindJuliaTest(unittest.TestCase):
             self.assertEqual(self.app._find_julia(), "/usr/local/bin/julia")
             self.assertNotIn("JULIAUP_DEPOT_PATH", os.environ)
             self.assertEqual(os.environ["PATH"], "/usr/local/bin:/usr/bin")
+
+
+class FindBinaryWindowsTest(unittest.TestCase):
+    """On Windows the hand-built fallback paths must carry `.exe`: install.ps1 puts
+    `~\\.juliaup\\bin\\julia.exe`, and a GUI launch whose PATH lacks juliaup reaches these fallbacks.
+    Simulated by patching `sys.platform`, which is what `app._exe` branches on."""
+
+    def setUp(self):
+        self.app = _load_app()
+        self.root = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        self.app.ROOT = self.root
+
+    def _touch(self, *parts):
+        path = os.path.join(*parts)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w", encoding="utf-8").close()
+        return path
+
+    def _windows(self, env):
+        env = {"HOME": self.home, "USERPROFILE": self.home, **env}
+        return (mock.patch.dict(os.environ, env, clear=True),
+                mock.patch("sys.platform", "win32"),
+                mock.patch("shutil.which", return_value=None))
+
+    def test_user_juliaup_exe_is_found_when_not_on_path(self):
+        exe = self._touch(self.home, ".juliaup", "bin", "julia.exe")
+        a, b, c = self._windows({"PATH": "/usr/bin"})
+        with a, b, c:
+            self.assertEqual(self.app._find_julia(), exe)
+
+    def test_install_owned_juliaup_exe_wins(self):
+        exe = self._touch(self.root, "juliaup", "bin", "julia.exe")
+        a, b, c = self._windows({"PATH": "/usr/bin"})
+        with a, b, c:
+            self.assertEqual(self.app._find_julia(), exe)
+            self.assertEqual(os.environ["JULIAUP_DEPOT_PATH"], os.path.join(self.root, "juliaup"))
+
+    def test_pixi_fallback_is_exe(self):
+        a, b, c = self._windows({"PATH": "/usr/bin"})
+        with a, b, c:
+            self.assertEqual(self.app._find_pixi(), os.path.join(self.home, ".pixi", "bin", "pixi.exe"))
 
 
 if __name__ == "__main__":
