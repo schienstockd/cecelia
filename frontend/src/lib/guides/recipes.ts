@@ -57,27 +57,38 @@ export type RecipeDef = WrittenRecipe | WantedRecipe
 
 export const RECIPES: RecipeDef[] = [
   {
+    // The workflow of the Cecelia paper's behaviour analysis (Schienstock et al. 2025, Nat Commun
+    // 16:1931, doi:10.1038/s41467-025-57193-y, Fig. 4c): cellpose → btrack → HMM states on speed and
+    // angle → Leiden on whole-track measures + HMM states + transitions.
     id: 'intravital-timelapse',
     title: 'Intravital timelapse',
-    whenThisIsYou: 'Photon-limited movie of moving cells in tissue.',
+    whenThisIsYou: 'A time-lapse of cells moving in tissue, e.g. T cells in a lymph node.',
     icon: 'pi-video',
     steps: [
       {
         guide: 'drift-correct',
-        why: 'Only if the tissue drifts — it adds a version and never overwrites your import.',
+        why: 'Tissue drift would read as movement in every track — remove it before anything else.',
+      },
+      {
+        guide: 'segment-an-image',
+        why: 'Cellpose finds the cells in most movies — start here.',
+      },
+      // The fork for movies too dim for cellpose. The one number is measured
+      // (docs/todo/SEG_QUALITY_PLAN.md): on this lab's own photon-limited movie, 0 of 65 cellpose
+      // objects passed QC. It is the exception, not the default path.
+      {
+        guide: 'train-flow-model',
+        why: 'Only if cellpose misses dim cells: a flow model reads movement instead of brightness.',
         optional: true,
       },
       {
-        guide: 'train-flow-model',
-        why: 'Cellpose reads brightness; a flow model reads movement, which is what your cells give you.',
+        guide: 'segment-by-motion',
+        why: 'With that model: on one dim movie, 0 of the 65 cells cellpose found passed QC.',
+        optional: true,
       },
       {
-        guide: 'segment-by-motion',
-        // The one number in here, and it is measured: docs/todo/SEG_QUALITY_PLAN.md, cellpose 4
-        // matched to the tuned v3 config on this lab's own intravital movie — 0 of 65 objects passed
-        // QC. The version archaeology (tuned cyto2 reached 13.4%, and is no longer selectable) is in
-        // that plan; a recipe states the fork, not the history.
-        why: 'Not cellpose: on a dim intravital movie, 0 of the 65 cells it found passed QC.',
+        guide: 'gate-populations',
+        why: 'QC before tracking: gate out debris and doublets on size × intensity, then track the gate.',
       },
       {
         guide: 'track-cells',
@@ -85,7 +96,11 @@ export const RECIPES: RecipeDef[] = [
       },
       {
         guide: 'behaviour-states',
-        why: 'What tracks are for: the states a cell moves through, not only where it went.',
+        why: 'States per timepoint from speed and angle, plus the transitions between them in each track.',
+      },
+      {
+        guide: 'cluster-tracks',
+        why: 'Leiden on whole-track measures plus HMM states and transitions: finer than track averages.',
       },
     ],
   },

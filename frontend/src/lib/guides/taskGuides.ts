@@ -150,7 +150,7 @@ export const segmentGuide = moduleTaskGuide({
   funHint: [
     'Plain "Cellpose segmentation" makes labels only — no measures to gate or cluster on.',
     'This one measures too, so everything downstream has something to read.',
-    'Dim moving cells in tissue? Segment by motion instead — cellpose is for static signal.',
+    'Cells too dim for cellpose in a movie? Segment by motion instead.',
   ],
   params: [
     'Cell channels — the channels carrying the cell signal; they are merged by maximum.',
@@ -238,7 +238,7 @@ export const trackCellsGuide = moduleTaskGuide({
       title: 'What you now have',
       bullets: [
         'Every cell has a track_id and a position at each timepoint.',
-        'Behaviour → HMM fits states to those measures; Cluster tracks groups on them.',
+        'Behaviour → HMM fits states to those measures; Cluster tracks groups on both.',
       ],
     },
   ],
@@ -505,14 +505,14 @@ export const clusterTracksGuide = moduleTaskGuide({
   waitLabel: 'Clustering tracks',
   prereqs: [PREREQ.projectOpen, PREREQ.tracked],
   intro: 'One row per track instead of per cell — so this needs tracking, not just segmentation.',
-  funHint: ['Cell measures are aggregated per track for you; you pick the base measures.'],
+  funHint: ['Cell measures are aggregated per track for you; HMM states become per-track frequencies.'],
   selectHint: [
     'Select every image to cluster TOGETHER — the run pools across them.',
     'Needs measured tracks — the Track guide\'s function does both.',
   ],
   params: [
     'Track populations — which tracks to cluster; every selection is clustered jointly.',
-    'Cluster on — base measures; cell measures are aggregated per track automatically.',
+    'Cluster on — whole-track measures plus the HMM state and transitions columns (run HMM first).',
     'Minimum track length — drop tracks too short to characterise.',
     'Resolution — the Leiden resolution; higher gives more, smaller clusters.',
   ],
@@ -525,7 +525,7 @@ export const clusterTracksGuide = moduleTaskGuide({
       text: 'The UMAP separates behaviours; the heatmap says which measures define each one.',
       bullets: [
         'This answers "how many kinds of movement are in here", without naming them first.',
-        'HMM states are the supervised alternative — fixed states, fitted per timepoint.',
+        'With the HMM states and transitions in, it separates behaviours track averages blur.',
       ],
     },
     ...clusterToPops('/clust-tracks', 'behaviour'),

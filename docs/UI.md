@@ -1083,11 +1083,10 @@ mine*: an ordered list of existing guides with a one-line reason attached to eac
 first section of `GuidesDialog`. Catalogue: `lib/guides/recipes.ts`. Design:
 `docs/todo/WORKFLOW_RECIPES_PLAN.md`.
 
-**The reasons are the product.** `segmentGuide` cannot say "use the motion segmentation instead" — it
+**The reasons are the product.** `segmentGuide` cannot say "too dim for cellpose? segment by motion" — it
 is the cellpose guide. A recipe is the one place where "for this data, that tool, and here is why" gets
 said once, instead of as a tip on every affected control. So a `why` states the FORK, not a summary of
-the step, and `whenThisIsYou` is a recognition test ("photon-limited movie of moving cells inside
-tissue") rather than a description.
+the step, and `whenThisIsYou` is a recognition test ("a time-lapse of cells moving in tissue") rather than a description.
 
 **A recipe adds no runtime.** Starting a step starts the ordinary guide with the ordinary bubble;
 `RecipeStep.guide` is a `GuideDef` id and `guides.test.ts` fails on one that does not resolve. Per-row
