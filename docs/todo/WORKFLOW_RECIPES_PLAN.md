@@ -171,6 +171,10 @@ alternatives — and now says so. Found when the recipe was handed to an agent t
 
 ### D7 — Intravital needs no new guide; the other three each need one we should not write blind  *(2026-08-21)*
 
+> **Superseded for intravital by *D-rev* (2026-10-05):** the step list below is the original recipe.
+> The current one adds `segment-an-image`, `gate-populations` and `cluster-tracks`, makes drift
+> correction a regular step and the two coastal guides optional — still with no new guide.
+
 D1 says a recipe step naming a guide that does not exist is a build error. Checked against the
 catalogue as it stands (18 guides, `lib/guides/index.ts`):
 
