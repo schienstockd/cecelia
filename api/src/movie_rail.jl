@@ -19,7 +19,7 @@
 # The frame's zarr + task dir + specs, the same three inputs `api_viewer_record_test` reads. Pulled out
 # so the batch loop doesn't repeat the boilerplate per image.
 function _resolve_frame_for_record(pu::AbstractString, iu::AbstractString, value_name;
-                                   version = nothing)
+                                   version = nothing, max_projection::Bool = false)
     vnn = (value_name === nothing || String(value_name) == "") ? nothing : String(value_name)
     vvn = (version === nothing || String(version) == "") ? nothing : String(version)
     zp, td, err = resolve_image_version(pu, iu, vnn; version = vvn)
@@ -27,11 +27,11 @@ function _resolve_frame_for_record(pu::AbstractString, iu::AbstractString, value
     arr, caxes = open_level0(zp)
     d  = axis_dims(caxes, ndims(arr))
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
-    props = _props_path(td, zp)
-    specs = resolved_display_specs(props, nc)
     # Same cold-start fallback the smoke route uses: an image nobody has opened has no viewer props,
-    # so contrast is sampled from one plane. Sampled per t would flicker (decision 5).
-    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+    # so contrast is sampled at ONE timepoint (sampled per t would flicker, decision 5) — over the
+    # stack's max when the render draws it (`max_projection`), else the mid plane. A 3D volume render
+    # keeps the default (a plane), as the viewer's own 3D view opens on the mid-plane window.
+    specs = _render_default_specs(_props_path(td, zp), zp, nc; max_projection)
     (zp, arr, caxes, specs, nothing)
 end
 
@@ -377,7 +377,12 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    frame = _resolve_frame_for_record(project_uid, image_uid, value_name)
+    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z, so
+    # a movie that MIPs the whole stack for lack of an explicit `zSlice` diverges from what the user
+    # was looking at when they hit Record. `z_from_view_state` returns `nothing` for 3D and for
+    # snapshots without a usable step, leaving the render at its previous all-Z MIP fallback.
+    z_slice === nothing && (z_slice = z_from_view_state(view_state))
+    frame = _resolve_frame_for_record(project_uid, image_uid, value_name; max_projection = z_slice === nothing)
     if frame[5] !== nothing
         ws_log(nothing, task_id, "[ERROR] " * String(frame[5]))
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
@@ -405,15 +410,6 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
     view_crop = (native_h > 0 && native_w > 0) ?
         crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
-    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z, so
-    # a movie that MIPs the whole stack for lack of an explicit `zSlice` diverges from what the user
-    # was looking at when they hit Record. `z_from_view_state` returns `nothing` for 3D and for
-    # snapshots without a usable step, leaving the render at its previous all-Z MIP fallback.
-    if z_slice === nothing
-        derived_z = z_from_view_state(view_state)
-        derived_z === nothing || (z_slice = derived_z)
-    end
-
     # Overlays: an explicit `overlays_raw` on the request wins (smoke-route shape). Otherwise, translate
     # the on-screen `look` (banked in `movie_config`) into that shape so the offline record doesn't
     # regress to channels-only. `has_mask` reflects the request's `labelValueNames`.
@@ -606,7 +602,7 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                                                       show_timestamp = show_ts, show_scale_bar = show_sb)
                     cancelled_here === nothing && (push!(errors, uid); ws_progress(nothing, task_id, i, n); continue)
                 else
-                    frame = _resolve_frame_for_record(project_uid, uid, value_name)
+                    frame = _resolve_frame_for_record(project_uid, uid, value_name; max_projection = z_slice === nothing)
                     if frame[5] !== nothing
                         push!(errors, uid)
                         ws_log(nothing, task_id, "[ERROR] $uid: " * String(frame[5]))
@@ -763,7 +759,12 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
                             view_state::Union{Nothing,AbstractDict} = nothing,
                             on_log::Union{Nothing,Function} = nothing)
     vn = String(get(cfg, :valueName, ""))
-    frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn)
+    # The cell's plane: its config's, else the viewer's (same rule as `run_single_offline` — every
+    # cell of a compare grid shares the viewer's one z-plane view); `nothing` = the stack's max.
+    z_slice = get(cfg, :zSlice, nothing) === nothing ? nothing : Int(get(cfg, :zSlice, 0))
+    z_slice === nothing && (z_slice = z_from_view_state(view_state))
+    frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn;
+                                      max_projection = z_slice === nothing)
     frame[5] === nothing || throw(ArgumentError(String(frame[5])))
     zp, arr, caxes, specs, _ = frame
     picked_specs = _apply_channel_picks(specs, cfg, img, isempty(vn) ? nothing : vn)
@@ -778,7 +779,6 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     else
         nothing
     end
-    z_slice = get(cfg, :zSlice, nothing) === nothing ? nothing : Int(get(cfg, :zSlice, 0))
     has_mask = label_vn !== nothing
     overlays_dict = _overlays_raw_from_config(cfg, has_mask)
     # Compare-grid mask outlines default to per-id rainbow. Gray on top of coloured channels was
@@ -800,12 +800,6 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     native_w = haskey(d, "x") ? size(arr, d["x"]) : 0
     view_crop = (native_h > 0 && native_w > 0) ?
         crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
-    # Match the viewer's plane when the cell's config didn't pin one (same rule as
-    # `run_single_offline`). Every cell of a compare grid shares the viewer's one z-plane view.
-    if z_slice === nothing
-        derived_z = z_from_view_state(view_state)
-        derived_z === nothing || (z_slice = derived_z)
-    end
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
                                        label_vn === nothing ? vnn : label_vn;
                                        tally = false,

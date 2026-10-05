@@ -132,6 +132,44 @@ function board_spec_populations(proj::CciaProject;
     pops
 end
 
+"""
+    board_pop_ref(pops, ref) -> Union{String,Nothing}
+
+The `pops` key (`board_spec_populations`) a board's population reference `ref` names, or `nothing`.
+Exact match first. Then a derived leaf the picker HIDES because it copies a deeper one: `P14/_tracked`
+when tracking ran on `/P14qc` is the same tracks as `P14/P14qc/_tracked` (`tracked_pop_parents` keeps
+only the deepest of a chain of equal sets), and is exactly what a task takes as input — so it resolves
+to that offered set, the one the panel's picker can show. Only when the subtree offers ONE shallowest
+`…/_tracked`; two (tracking split across sibling gates) is ambiguous and stays unresolved.
+"""
+function board_pop_ref(pops::AbstractDict, ref::AbstractString)::Union{String,Nothing}
+    r = String(ref)
+    haskey(pops, r) && return r
+    idx = findlast('/', r)
+    idx === nothing && return nothing
+    leaf = r[idx+1:end]
+    haskey(_DERIVED_POPS, leaf) || return nothing
+    base = r[1:idx]                                     # "P14/" or "P14/qc/" — the subtree to search
+    cands = [String(k) for k in keys(pops)
+             if startswith(String(k), base) && endswith(String(k), "/" * leaf) && String(k) != r]
+    isempty(cands) && return nothing
+    depth = k -> count(==('/'), k)
+    top = minimum(depth, cands)
+    shallowest = filter(k -> depth(k) == top, cands)
+    length(shallowest) == 1 ? only(shallowest) : nothing
+end
+
+# `board_pop_ref` for every reference, or the BoardSpecError naming the first that resolves to nothing.
+function _board_pop_refs(pops::AbstractDict, wanted::AbstractVector, i::Int)::Vector{String}
+    map(wanted) do p
+        k = board_pop_ref(pops, p)
+        k === nothing && throw(BoardSpecError(
+            "plots[$i]: no population \"$p\" in this project. " *
+            "Use get_populations to see what exists (as valueName/pop)."))
+        k
+    end
+end
+
 _TEMPLATE_RE = r"^(\d+)\s*[x×]\s*(\d+)$"
 
 # `template` → (cols, rows). Empty picks the smallest near-square grid that holds the plots, which is
@@ -228,12 +266,7 @@ function _expand_plot(specs::AbstractDict, pops::AbstractDict, raw, i::Int)
     first_pt = isempty(offered) ? "" : _pt_of(first(offered))
     asked_pt = _bs_str(get(d, "popType", nothing))
 
-    wanted = _bs_strs(get(d, "pops", nothing))
-    for p in wanted
-        haskey(pops, p) || throw(BoardSpecError(
-            "plots[$i]: no population \"$p\" in this project. " *
-            "Use get_populations to see what exists (as valueName/pop)."))
-    end
+    wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i)
     needed = unique(String[pops[p] for p in wanted])          # the families the named pops live in
 
     if isempty(asked_pt)
@@ -380,11 +413,8 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
         end
         haskey(d, "hierarchy") && (state["showHierarchy"] = get(d, "hierarchy", false) === true)
     elseif key in ("trackPaths", "trackDiagnostics")
-        wanted = _bs_strs(get(d, "pops", nothing))
+        wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i)
         for p in wanted
-            haskey(pops, p) || throw(BoardSpecError(
-                "plots[$i]: no population \"$p\" in this project. " *
-                "Use get_populations to see what exists (as valueName/pop)."))
             pops[p] in _TRACK_FAMILIES || throw(BoardSpecError(
                 "plots[$i]: \"$key\" draws tracks; \"$p\" is a $(pops[p]) population. " *
                 "It takes $(join(_TRACK_FAMILIES, ", ")) populations."))

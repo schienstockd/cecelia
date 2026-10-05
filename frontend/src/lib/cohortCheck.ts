@@ -34,6 +34,17 @@ export function summariseCohortResult(docs: CohortDoc[]): CohortSummary {
     : { severity: 'ok', flagged: 0, nIncluded, message: `All ${nIncluded} image${s(nIncluded)} within range` }
 }
 
+// PURE: every cohort doc in a check reply — a single doc (explicit valueName), a `byValueName` map
+// (every label set the fun banked), or a composite's `byStep` map of either (the server answers a
+// composite like segment.cellposeMeasure from its steps).
+export function cohortDocsOf(body: unknown): CohortDoc[] {
+  if (!body || typeof body !== 'object') return []
+  const b = body as { byStep?: Record<string, unknown>; byValueName?: Record<string, CohortDoc> }
+  if (b.byStep) return Object.values(b.byStep).flatMap(cohortDocsOf)
+  if (b.byValueName) return Object.values(b.byValueName)
+  return [body as CohortDoc]
+}
+
 // A clustering RUN (value-name suffix) with the value_names it produced — the Check-cohort button's
 // run selector picks one so a check judges just that run (cluster QC is banked per run).
 export interface CohortRun { run: string; valueNames: string[] }
@@ -63,12 +74,10 @@ export async function runCohortCheck(projectUid: string, setUid: string,
         body: JSON.stringify({ projectUid, setUid, funName, ...(run ? { run } : {}) }),
       })
       if (!res.ok) continue
-      const body = await res.json()
       // No valueName sent → the server checks EVERY value_name the fun banked and returns a
-      // `byValueName` map (clustering is per label set T/B; segment/tracking under "default"). Fold each
-      // per-label-set cohort into the summary; a single-doc response (explicit valueName) is pushed as-is.
-      if (body?.byValueName) docs.push(...(Object.values(body.byValueName) as CohortDoc[]))
-      else docs.push(body)
+      // `byValueName` map (clustering is per label set T/B; segment/tracking under "default"), per step
+      // for a composite. Fold each cohort into the summary.
+      docs.push(...cohortDocsOf(await res.json()))
     } catch { /* skip this fun; others still report */ }
   }
   return summariseCohortResult(docs)

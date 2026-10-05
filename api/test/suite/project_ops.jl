@@ -144,16 +144,31 @@ end
                     Dict("projectUid"=>"nope",
                          "template"=>tmpl("x", [node("n1")], [])))[1] == 404
 
-        # a name is a filename — path traversal must not resolve anywhere
-        for bad in ("../../evil", "a/b", "..", ".hidden")
-            @test create(tmpl(bad, [node("n1")], []))[1] == 400
-        end
-        # the 400 offers a name that passes the guard
+        # a name is a filename — path traversal must not resolve anywhere: what can't be repaired is
+        # refused, what can is stored under its repair inside the chains dir (below)
+        @test create(tmpl("..", [node("n1")], []))[1] == 400
+        # REPAIR, don't reject: a name the guard refuses is stored as its repair and the reply says so
         st, body = create(tmpl("Drift + segment (P14 / OTI)", [node("n1")], []))
-        @test st == 400 && JSON3.read(body).suggestion == "Drift segment P14 OTI"
-        @test occursin("e.g. 'Drift segment P14 OTI'", JSON3.read(body).error)
-        @test JSON3.read(create(tmpl("../../evil", [node("n1")], []))[2]).suggestion == "evil"
-        @test JSON3.read(create(tmpl("+++", [node("n1")], []))[2]).suggestion == ""
+        @test st == 200
+        @test String(JSON3.read(body).name) == "Drift segment P14 OTI"
+        @test String(JSON3.read(body).renamedFrom) == "Drift + segment (P14 / OTI)"
+        @test isfile(path("Drift segment P14 OTI"))
+        @test String(JSON3.read(read(path("Drift segment P14 OTI"), String)).name) == "Drift segment P14 OTI"
+        # a lookup by the name as SENT finds the stored chain
+        @test api_chains_get(HTTP.Request("GET", "/api/chains/get?projectUid=$uid&name=" *
+                             HTTP.escapeuri("Drift + segment (P14 / OTI)")))[1] == 200
+        # the collision check runs on the REPAIRED name — and says which name it compared
+        st, body = create(tmpl("Drift + segment / P14 OTI", [node("n1")], []))
+        @test st == 409 && occursin("is stored as 'Drift segment P14 OTI'", JSON3.read(body).error)
+        # a valid name is not echoed as renamed
+        @test !haskey(JSON3.read(create(tmpl("plain-name", [node("n1")], []))[2]), :renamedFrom)
+        # traversal is repaired to a plain filename inside the chains dir, never resolved
+        st, body = create(tmpl("../../evil", [node("n1")], []))
+        @test st == 200 && String(JSON3.read(body).name) == "evil"
+        @test isfile(path("evil")) && !isfile(joinpath(tmp, "evil.json"))
+        # nothing left to keep → still a 400
+        st, body = create(tmpl("+++", [node("n1")], []))
+        @test st == 400 && JSON3.read(body).suggestion == ""
 
         # happy path
         st, body = create(tmpl("pipeline", [node("n1"), node("n2")],
@@ -204,7 +219,7 @@ end
         @test ren("pipeline", "")[1] == 400                     # newName required
         @test ren("ghost", "whatever")[1] == 404                # source must exist
         @test ren("pipeline", "sparse")[1] == 409               # target must not
-        @test ren("pipeline", "../evil")[1] == 400              # guarded on both names
+        @test ren("pipeline", "..")[1] == 400                   # guarded on both names
         @test ren("pipeline", "pipeline")[1] == 200             # no-op, not an error
 
         st, body = ren("pipeline", "pipeline-v2")
@@ -213,6 +228,15 @@ end
         # the `name` FIELD moves too — else the whiteboard saves the renamed chain back under the old
         # name and the rename silently undoes itself on the next save
         @test String(JSON3.read(read(path("pipeline-v2"), String)).name) == "pipeline-v2"
+        # rename and save repair the same way, and return the stored name
+        st, body = ren("pipeline-v2", "pipeline (v3)")
+        @test st == 200 && String(JSON3.read(body).name) == "pipeline v3" &&
+              String(JSON3.read(body).renamedFrom) == "pipeline (v3)"
+        @test isfile(path("pipeline v3"))
+        st, body = _post(api_chains_save,
+                         Dict("projectUid"=>uid, "template"=>tmpl("saved + repaired", [node("n1")], [])))
+        @test st == 200 && String(JSON3.read(body).name) == "saved repaired"
+        @test String(JSON3.read(read(path("saved repaired"), String)).name) == "saved repaired"
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)

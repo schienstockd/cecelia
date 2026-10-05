@@ -765,17 +765,17 @@ async function renameChain() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid: uid, name: from, newName: to }),
     })
-    if (!res.ok) {
-      const detail = await res.json().catch(() => ({})) as { error?: string }
-      throw new Error(detail.error ?? `HTTP ${res.status}`)
-    }
-    chainNames.value = chainNames.value.filter(n => n !== from).concat(to).sort()
-    activeChain.value = to
+    const detail = await res.json().catch(() => ({})) as { error?: string; name?: string }
+    if (!res.ok) throw new Error(detail.error ?? `HTTP ${res.status}`)
+    // The server REPAIRS a name its filename guard refuses ("a + b" → "a b") and returns the stored one.
+    const stored = detail.name ?? to
+    chainNames.value = chainNames.value.filter(n => n !== from).concat(stored).sort()
+    activeChain.value = stored
     closeNameInput()
     // Reload from disk so the canvas reflects the stored template (whose `name` field moved too)
     // rather than the pre-rename copy still in memory.
-    await loadChain(to)
-    log.info(`Chain renamed to "${to}".`, { source: 'whiteboard' })
+    await loadChain(stored)
+    log.info(`Chain renamed to "${stored}".`, { source: 'whiteboard' })
   } catch (e) {
     log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'whiteboard' })
   }
@@ -797,9 +797,11 @@ async function createChain() {
       }),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    if (!chainNames.value.includes(name)) chainNames.value.push(name)
+    // The stored name — the server repairs one its filename guard refuses ("a + b" → "a b").
+    const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
+    if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
     chainNames.value.sort()
-    activeChain.value = name
+    activeChain.value = stored
     removeNodes(nodes.value.map(n => n.id))
     removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
@@ -810,7 +812,7 @@ async function createChain() {
     // off-screen at the origin. Offset right so there's room for tasks.
     await nextTick()
     setCenter(230, 60, { zoom: 1, duration: 350 })
-    log.info(`Chain "${name}" created.`, { source: 'whiteboard' })
+    log.info(`Chain "${stored}" created.`, { source: 'whiteboard' })
   } catch (e) {
     log.error(`Create failed: ${e}`, { source: 'whiteboard' })
   }

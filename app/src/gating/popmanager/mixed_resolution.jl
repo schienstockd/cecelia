@@ -61,6 +61,29 @@ function resolve_pop_type(img::CciaImage, value_name::AbstractString, path::Abst
     first(matches)
 end
 
+"""
+    read_pop_type(img, value_name, path, requested="") -> String
+
+The `pop_type` a read of ONE population path evaluates under, given the pop_type a caller asked for
+(`""` = it did not say). The rule the gating read routes (`/api/gating/stats`, `/membership`, …) share
+with `pop_df_multi`, so a path a task takes as input is a path the read routes find:
+- nothing requested → discovered from the path (`resolve_pop_type`): `/qc/_tracked` → `live`;
+- a requested pop_type whose STORED map a derived leaf on the path layers onto (`flow`, for `live`'s
+  `_tracked`) → the derived pop_type. `live` is `flow`'s map with the derived pops added, so every
+  stored population reads the same and the derived one now exists;
+- anything else → as requested.
+"""
+function read_pop_type(img::CciaImage, value_name::AbstractString, path::AbstractString,
+                       requested::AbstractString = "")::String
+    isempty(requested) && return resolve_pop_type(img, value_name, path)
+    for seg in split(String(path), '/'; keepempty=false)
+        sp = get(_DERIVED_POPS, String(seg), nothing)
+        sp === nothing && continue
+        _stored_pop_type(sp.pop_type) == String(requested) && return string(sp.pop_type)
+    end
+    String(requested)
+end
+
 # Group refs by discovered pop_type, preserving first-appearance order (so dedup below keeps the
 # first-selected type on a cell that falls in pops of several types). Returns ordered pop_type => refs.
 function _group_pops_by_type(img::CciaImage, pops, default_vn::AbstractString)::Vector{Pair{String,Vector{String}}}

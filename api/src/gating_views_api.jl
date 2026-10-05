@@ -31,12 +31,13 @@ function api_gating_plot_image(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT)
-    m = _live_map(img, vn, "flow")
+    pt = read_pop_type(img, vn, pop, "flow")     # cell gates — or `live` for a derived `_tracked` set
+    m = _live_map(img, vn, pt)
     (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
-    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, "flow", x, y, pop, xt, yt)
+    xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt)
     # the Gate page's default axes (plotmeta x0/y0=1): raw 0 → the WHOLE dataset's max, so walking
     # down the tree keeps the scale; grown to the child gates' near edges, as the browser does
     rx = _finite_extrema(invert_transform.(Ref(xt), rxv)); ry = _finite_extrema(invert_transform.(Ref(yt), ryv))
@@ -101,7 +102,7 @@ function api_gating_cells_image(req::HTTP.Request)
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pop = get(q, "pop", ROOT)
-    m = _live_map(img, vn, "flow")
+    m = _live_map(img, vn, read_pop_type(img, vn, pop, "flow"))   # `live` for a derived `_tracked` set
     (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
     parent = is_root(pop) ? ROOT : m.pops[pop].parent
     lp = img_labels_path(img, vn)
@@ -130,9 +131,8 @@ function api_gating_cells_image(req::HTTP.Request)
     nc = haskey(d, "c") ? size(arr, d["c"]) : 1
     chans = [c for c in (parse(Int, s) for s in split(get(q, "channels", ""), ","; keepempty = false))
              if 0 <= c < nc]
-    specs = resolved_display_specs(_props_path(td, zp), nc)
-    # no `z` below: the still is the stack's max, so is the cold-start window (`project`)
-    specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc; project = true)))
+    # no `z` below: the still is the stack's max, so is the cold-start window
+    specs = _render_default_specs(_props_path(td, zp), zp, nc; max_projection = true)
     # The renderer takes every channel and a spec per channel; which ones show is the spec's `visible`
     # (the movie rail's convention). Asked-for channels show even if hidden in the saved viewer.
     isempty(chans) || (specs = [merge(sp, (; visible = (c - 1) in chans)) for (c, sp) in enumerate(specs)])

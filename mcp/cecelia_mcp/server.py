@@ -193,7 +193,10 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     INCLUDED images, into mean/SD + z-scored outliers.
 
     `set_uid` comes from get_project_info's `sets` / list_images' per-image set. `fun_name` must be a
-    metric producer (else the call errors AND lists the current valid funs; for a composite, the steps that bank its QC). Check the fun of WHATEVER
+    metric producer (else the call errors AND lists the current valid funs). A COMPOSITE that ran as one
+    task (e.g. "segment.cellposeMeasure") is answered from its steps, keyed per step:
+       {funName, parts: [...], byStep: {"segment.cellpose": <reply>, "segment.measureLabels": <reply>}}
+    — each <reply> is what asking for that step alone returns. Check the fun of WHATEVER
     task actually ran (from get_task_history) — e.g. if you just clustered, check clustPops/clustTracks,
     not segmentation. The metric producers:
       - "segment.cellpose"           → nCells
@@ -1527,7 +1530,10 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     and never imply it has started. (Exception: an unattended session that also has the separate
     cecelia-autonomous server starts it with that server's run_chain.)
 
-    `name` — letters, numbers, spaces, `.` `_` `-`; max 64 characters.
+    `name` — letters, numbers, spaces, `.` `_` `-`; max 64 characters. Anything else (`+`, `(…)`, `/`)
+    is REPAIRED to spaces, not refused: the reply's `name` is the name it was stored under, and
+    `renamedFrom` (present only when it changed) is what you sent. Use the returned `name` when you
+    refer to the chain — in chat, and in run_chain.
 
     `nodes` = `[{id, fn, params?, scope?, barrier_policy?, resource_pool?}]`:
       - `id` — any short unique string ("seg", "track"); `edges` reference these.
@@ -1558,7 +1564,9 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     Then say in chat which values you took from where. A param you set from real project state and a
     param you left at its default are very different things to the person pressing Run.
 
-    CREATE-ONLY: 409 if `name` exists — it can never overwrite a chain the user wired. To offer an
+    Returns `{ok, name, nodeCount, renamedFrom?}`.
+
+    CREATE-ONLY: 409 if `name` (after repair) exists — it can never overwrite a chain the user wired. To offer an
     alternative to an existing chain, create a NEW one named for what it does (not "-v2"), tell them
     it sits **beside** the original, and let them compare the two on the canvas and delete the loser.
     You cannot rename or delete a chain; both are the user's, in the GUI.

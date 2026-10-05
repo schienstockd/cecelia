@@ -443,6 +443,49 @@ function cohort_qc_for_all!(set::CciaSet, fun_name::AbstractString;
                      for vn in _value_names_for_run(set, fun_name, cohort_value_names(set, fun_name), run))
 end
 
+# One fun's cohort reply in the route's shape: the single doc for an explicit `value_name`, else every
+# value_name it banked as `{funName, valueNames, byValueName}`. `persist` picks the check action
+# (`cohort_qc_for!`, writes) over the read (`cohort_qc_for`, writes nothing).
+function cohort_qc_reply(set::CciaSet, fun_name::AbstractString;
+                         value_name::AbstractString = "", threshold::Real = _COHORT_MODZ_THRESHOLD,
+                         run::AbstractString = "", persist::Bool = false)::Dict{String,Any}
+    if isempty(value_name)
+        byval = persist ? cohort_qc_for_all!(set, fun_name; threshold, run) :
+                          cohort_qc_for_all(set, fun_name; threshold, run)
+        return Dict{String,Any}("funName" => string(fun_name), "valueNames" => sort(collect(keys(byval))),
+                                "byValueName" => byval)
+    end
+    persist ? cohort_qc_for!(set, fun_name, value_name; threshold) :
+              cohort_qc_for(set, fun_name, value_name; threshold)
+end
+
+"""
+    cohort_qc_by_step(set, fun_name; value_name="", threshold=3.5, run="", persist=false) -> Dict
+
+A COMPOSITE's cohort QC, answered from its steps (`segment.cellposeMeasure` → `segment.cellpose` +
+`segment.measureLabels`): `{funName, parts, byStep: {step => cohort_qc_reply(step)}}`, keyed per step so
+a caller sees which step each metric came from. Errors for a fun with no parts.
+"""
+function cohort_qc_by_step(set::CciaSet, fun_name::AbstractString; value_name::AbstractString = "",
+                           threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "",
+                           persist::Bool = false)::Dict{String,Any}
+    parts = cohort_parts(fun_name)
+    isempty(parts) && error(cohort_no_metrics_message(fun_name))
+    Dict{String,Any}("funName" => string(fun_name), "parts" => parts,
+                     "byStep" => Dict{String,Any}(
+                         step => cohort_qc_reply(set, step; value_name, threshold, run, persist)
+                         for step in parts))
+end
+
+# Every cohort doc in a reply of either shape above (single doc, byValueName, byStep) — what the check
+# action logs.
+function cohort_reply_docs(reply::AbstractDict)::Vector{Any}
+    haskey(reply, "byStep") && return reduce(vcat, (cohort_reply_docs(r) for r in values(reply["byStep"]));
+                                             init = Any[])
+    haskey(reply, "byValueName") && return collect(Any, values(reply["byValueName"]))
+    Any[reply]
+end
+
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)
 

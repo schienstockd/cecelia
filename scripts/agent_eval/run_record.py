@@ -121,8 +121,8 @@ def units_of(items: list[dict], i: int, chains: dict, all_images: list[str]) -> 
         for node in chains.get(inp.get("chain_name"), []):
             fn, params = node.get("fn", "?"), node.get("params") or {}
             got = {img: (states.get(img) or {}).get(node.get("id"), "?") for img in images}
-            out.append({"step": step_of(fn), "fn": fn, "target": params.get("outputValueName") or
-                        params.get("valueName", ""), "images": images,
+            out.append({"step": step_of(fn), "fn": fn, "target": stage_boards.output_value_name(params),
+                        "images": images,
                         "did": f"`{fn}` (chain {inp.get('chain_name')!r}, node {node.get('id')}) {_short(params, 400)}",
                         "params": params, "outcome": got})
         return out
@@ -139,7 +139,7 @@ def units_of(items: list[dict], i: int, chains: dict, all_images: list[str]) -> 
                 f"{t.get('status', '?')}, not waited on" + (f" (last log: {_short(last, 120)})" if last else "")
             for img in ([t["imageUid"]] if t.get("imageUid") else images):
                 got[img] = state
-        return [{"step": step_of(fn), "fn": fn, "target": params.get("valueName", ""), "images": images,
+        return [{"step": step_of(fn), "fn": fn, "target": stage_boards.output_value_name(params), "images": images,
                  "did": f"`{fn}` {_short(params, 400)}", "params": params, "outcome": got}]
     if name in GATE_TOOLS:
         img, vn = inp.get("image_uid", ""), inp.get("value_name", "")
