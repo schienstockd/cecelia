@@ -3,7 +3,8 @@
 Only the ``# ── Julia`` / ``# ── Pixi`` sections are executed (sliced out of the script), so nothing
 is installed. A juliaup with no ``julia`` launcher must be asked for a channel — winget no-ops on
 it — and a Julia that still can't be found must fail before the multi-GB ``pixi install``, not at
-its first use; likewise a Pixi installer that leaves no ``pixi``. Runs where ``pwsh`` is on PATH,
+its first use; likewise a Pixi installer that leaves no ``pixi``. System scope must ignore the admin's
+own Julia and put a Cecelia-owned juliaup in the shared depot, which the all-users launcher puts on PATH. Runs where ``pwsh`` is on PATH,
 on Linux/macOS only: the stubs are shell scripts, which Windows' PATHEXT lookup wouldn't resolve.
 """
 import os
@@ -110,6 +111,89 @@ class InstallPs1JuliaTest(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(calls, [])
         self.assertIn("JULIA=" + os.path.join(self.bin, "julia"), out.stdout)
+
+
+# System scope: `Invoke-WebRequest` is shadowed to hand over a portable juliaup archive built from
+# stubs (juliaup.exe + julia.exe, flat, like the real release asset). Its juliaup.exe logs its calls.
+SYSTEM_PRELUDE = PRELUDE + r"""
+$Scope = 'system'
+$JuliaupDepot = $env:STUB_DEPOT
+$env:JULIAUP_DEPOT_PATH = $JuliaupDepot
+function Invoke-WebRequest($Uri, $OutFile) {
+  Add-Content -Path $env:STUB_LOG -Value "download $Uri"
+  Copy-Item $env:STUB_PORTABLE $OutFile
+}
+"""
+
+
+@unittest.skipUnless(PWSH and os.name != "nt", "needs pwsh and POSIX shell stubs")
+class InstallPs1SystemJuliaTest(unittest.TestCase):
+    """System scope must provision a Cecelia-owned juliaup in the shared depot. The admin's own Julia
+    (or a Store juliaup) is per-user, so other accounts' launcher couldn't run it."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.bin = os.path.join(self.root, "bin")
+        self.home = os.path.join(self.root, "home")
+        self.depot = os.path.join(self.root, "install", "juliaup")
+        os.makedirs(self.bin)
+        os.makedirs(self.home)
+        self.log = os.path.join(self.root, "log")
+        pathlib.Path(self.log).touch()
+        pkg = os.path.join(self.root, "pkg")
+        os.makedirs(pkg)
+        _stub(os.path.join(pkg, "juliaup.exe"), '#!/bin/sh\necho "shared-juliaup $*" >> "$STUB_LOG"\n')
+        _stub(os.path.join(pkg, "julia.exe"))
+        self.portable = os.path.join(self.root, "portable.tar.gz")
+        subprocess.run(["tar", "-czf", self.portable, "-C", pkg, "."], check=True)
+        self.script = os.path.join(self.root, "julia_section.ps1")
+        pathlib.Path(self.script).write_text(
+            SYSTEM_PRELUDE + _section("Julia") + '\nWrite-Output "JULIA=$Julia"\n', encoding="utf-8")
+
+    def tearDown(self):
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def _run(self):
+        env = {"PATH": self.bin + os.pathsep + "/usr/bin:/bin", "USERPROFILE": self.home,
+               "HOME": self.home, "STUB_LOG": self.log, "STUB_DEPOT": self.depot,
+               "STUB_PORTABLE": self.portable}
+        out = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", self.script],
+                             env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
+        return out, pathlib.Path(self.log).read_text(encoding="utf-8").splitlines()
+
+    def test_admins_own_julia_is_not_used(self):
+        # The elevated admin has a Julia and a juliaup of their own on PATH.
+        _stub(os.path.join(self.bin, "julia"))
+        _stub(os.path.join(self.bin, "juliaup"), '#!/bin/sh\necho "own-juliaup $*" >> "$STUB_LOG"\n')
+        out, calls = self._run()
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("JULIA=" + os.path.join(self.depot, "bin", "julia.exe"), out.stdout)
+        self.assertEqual(len(calls), 3, calls)
+        self.assertRegex(calls[0], r"^download https://github\.com/JuliaLang/juliaup/releases/download/"
+                                   r"v[0-9.]+/juliaup-[0-9.]+-x86_64-pc-windows-gnu-portable\.tar\.gz$")
+        self.assertEqual(calls[1:], ["shared-juliaup add release", "shared-juliaup default release"])
+
+    def test_existing_shared_juliaup_is_reused(self):
+        os.makedirs(os.path.join(self.depot, "bin"))
+        _stub(os.path.join(self.depot, "bin", "julia.exe"))
+        out, calls = self._run()
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(calls, [])
+        self.assertIn("JULIA=" + os.path.join(self.depot, "bin", "julia.exe"), out.stdout)
+
+    def test_all_users_launcher_puts_the_shared_julia_on_path(self):
+        text = INSTALL_PS1.read_text(encoding="utf-8")
+        start = text.index("@\"\n@echo off")
+        launcher = text[start:text.index('\n"@', start) + 3]
+        script = os.path.join(self.root, "launcher.ps1")
+        pathlib.Path(script).write_text(
+            "$PixiHome='P'; $JuliaupDepot='J'; $InstallDir='I'; $Pixi='X'\n"
+            "Write-Output " + launcher + "\n", encoding="utf-8")
+        out = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", script],
+                             capture_output=True, text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        path_lines = [ln for ln in out.stdout.splitlines() if ln.startswith('set "PATH=')]
+        self.assertEqual(path_lines, ['set "PATH=P\\bin;J\\bin;%PATH%"'])
 
 
 # The Pixi installer is a child `powershell`; shadowed by a function that installs nothing.
