@@ -99,7 +99,7 @@ CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2.
 ## Working the record
 
 `pixi run judge-review` is where the record gets worked. It runs full screen, one bug per screen;
-a key answers as soon as it is pressed, no Enter (`[z]` undoes a slip). PgUp/PgDn scroll a bug taller
+a key answers as soon as it is pressed, no Enter (`[z]` undoes a slip). PgUp/PgDn or the mouse wheel scroll a bug taller
 than the screen, and a resize repaints it at once:
 
 1. **Decide.** The bugs a verify agent sent to you. `[o] keep open` (a session follows the agent's

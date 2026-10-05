@@ -17,6 +17,7 @@ import time
 import unittest
 from unittest import mock
 
+from cecelia.effectiveness import console
 from cecelia.tests.test_judge_record import _bug, _Fixture
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
@@ -213,7 +214,7 @@ class FullscreenTest(_ReviewFixture):
 
     def test_page_down_scrolls_a_card_taller_than_the_terminal(self):
         with mock.patch.object(self.rv, "_terminal_size", return_value=(80, 12)):   # a 7-row card window
-            _, text = self.queue(self.rv.PGDN, self.rv.PGDN, self.rv.PGUP, "q", fullscreen=True)
+            _, text = self.queue(console.PGDN, console.PGDN, console.PGUP, "q", fullscreen=True)
         first, down, end, up = (self.card_rows(text, i) for i in (1, 2, 3, 4))
         self.assertIn("── B1 · decide", first[2])
         self.assertIn("more line(s) · PgDn", first[-2])
@@ -224,13 +225,21 @@ class FullscreenTest(_ReviewFixture):
         self.assertNotEqual(up, end)                   # PgUp from the clamped end moves at once
         self.assertEqual(self.rv.read_reviews(self.log), [])   # scrolling answers nothing
 
+    def test_the_wheel_scrolls_a_few_rows(self):
+        with mock.patch.object(self.rv, "_terminal_size", return_value=(80, 12)):
+            _, text = self.queue(console.DOWN, console.UP, "q", fullscreen=True)
+        first, down, up = (self.card_rows(text, i) for i in (1, 2, 3))
+        self.assertIn(f"↑ {console.WHEEL_ROWS} more line(s) · PgUp", down[2])
+        self.assertEqual(up[:len(first)], first)       # back at the top; the session summary follows
+        self.assertEqual(self.rv.read_reviews(self.log), [])   # scrolling answers nothing
+
     def test_a_resize_repaints_the_card_at_the_new_size(self):
         size = [(80, 40)]
-        presses = iter([self.rv.RESIZE, "q"])
+        presses = iter([console.RESIZE, "q"])
 
         def press(prompt):
             key = next(presses)
-            if key == self.rv.RESIZE:
+            if key == console.RESIZE:
                 size[0] = (80, 12)   # the terminal shrinks while the card waits for a key
             return key
         with mock.patch.object(self.rv, "_terminal_size", side_effect=lambda *_: size[0]):
@@ -309,14 +318,15 @@ class ReadKeyTest(unittest.TestCase):
         self.assertEqual(self.press(b"f"), "f")
 
     def test_page_down_is_named(self):
-        self.assertEqual(self.press(b"\x1b[6~"), _load_review().PGDN)
+        self.assertEqual(self.press(b"\x1b[6~"), console.PGDN)
 
     def test_a_resize_while_waiting_returns_to_repaint(self):
-        self.assertEqual(self.press(None), _load_review().RESIZE)
+        self.assertEqual(self.press(None), console.RESIZE)
 
     def test_an_arrow_key_is_not_its_trailing_letter(self):
-        self.assertEqual(self.press(b"\x1b[A"), "")
+        self.assertEqual(self.press(b"\x1b[A"), console.UP)   # the wheel, on the alternate screen
         self.assertEqual(self.press(b"\x1b[D"), "")   # ← expands in the recital console, not here
+        self.assertEqual(self.press(b"\x1b[3~"), "")  # Delete: an unnamed sequence
 
     def test_ctrl_d_is_end_of_input(self):
         with self.assertRaises(EOFError):
