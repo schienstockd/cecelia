@@ -11,9 +11,9 @@ Signature-only, deliberately: a call test would need a trained checkpoint and a 
 the rest of the coastal-side tests stub coastal out. What breaks a floor is an argument that is not
 there, and that is exactly what `inspect.signature` sees.
 
-SKIPPED when coastal is absent, because it legitimately is — the other tests stub it and CI does not
-install it. A skip here means "not checked", which is honest; asserting against a stub would be
-worse than not testing at all.
+SKIPPED when coastal is absent (an external `pip install cecelia`); the default pixi env — the one
+CI's `test-py` runs in — installs it. A skip here means "not checked", which is honest; asserting
+against a stub would be worse than not testing at all.
 """
 import inspect
 import unittest
