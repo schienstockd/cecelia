@@ -375,6 +375,19 @@ def _run_reviewer(
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
 
 
+#: The stamp recital ends its body with — which change (branch @ parent SHA) the review is OF.
+#: The commit-msg hook rejects a message carrying a stamp for a different change: a recital body
+#: written to a file another session also writes (a shared scratchpad) gets spliced — one run's
+#: body over the head of the other's — and the reader commits review evidence for code it never
+#: changed. The log rows already carry branch + SHA; the text did not, so nothing could tell.
+STAMP_RE = re.compile(r"_Recital stamp: (\S+)@([0-9a-f]{12}|\?)_")
+
+
+def recital_stamp(branch: str | None, commit: str | None) -> str:
+    """`_Recital stamp: <branch>@<sha12>_` — `?` for a part git could not report."""
+    return f"_Recital stamp: {branch or '?'}@{commit[:12] if commit else '?'}_"
+
+
 def run_recital(
     diff: str,
     *,
@@ -387,7 +400,7 @@ def run_recital(
       `callable(prompt: str) -> str` (stdout on success, raises `RecitalError` on failure).
 
     Return value is markdown ready to append to the commit-message body. Includes both
-    reviewers' evidence folds and tail lines. `_run` events are appended to
+    reviewers' evidence folds and tail lines, and ends with `recital_stamp(branch, commit)`. `_run` events are appended to
     `~/.cecelia-effectiveness/events.jsonl` regardless of reviewer success — a failure
     payload gets `error` in it, so the log has both signals. Each row records the HEAD SHA
     at recital time in the row-level `commit` field so the pre-commit hook can enforce that
@@ -432,4 +445,5 @@ def run_recital(
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
 
-    return f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}\n\n{lint_section}"
+    return (f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}\n\n{lint_section}"
+            f"\n\n{recital_stamp(branch, commit)}")

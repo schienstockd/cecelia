@@ -316,7 +316,10 @@ un-slugged findings, but slug-paired form is preferred — the commit hook write
 telemetry into evidence (see [`docs/todo/FINDINGS_EMISSION_PLAN.md`](docs/todo/FINDINGS_EMISSION_PLAN.md)).
 
 Then append the recital body to the commit message. Don't reassure or wait to be asked "any
-reservations?".
+reservations?". If you capture recital output to a file, use a path only this run writes
+(`mktemp`): parallel sessions can share a scratchpad, and two `>` redirects to one path splice one
+run's body over the other's head. The body ends with `_Recital stamp: <branch>@<sha>_`; the
+commit hook blocks a message stamped for a different change.
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
