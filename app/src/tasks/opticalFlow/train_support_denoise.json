@@ -6,7 +6,7 @@
   "useWhen": [
     "Before Denoising (SUPPORT), which runs a trained model",
     "Photon-limited channels of similar noise can share one pooled model",
-    "Train on the drift-corrected version"
+    { "text": "Train on the drift-corrected version", "check": "driftCorrected" }
   ],
   "notWhen": [
     "Saturated or bright channels: there is no shot noise to learn",

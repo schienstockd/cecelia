@@ -7,7 +7,7 @@
   "notWhen": [
     "Detail finer than the new pixel size is lost",
     "Only for zoomed-out viewing: Convert's pyramid levels already do that",
-    "Image already segmented: labels stay on the source image"
+    { "text": "Image already segmented: labels stay on the source image", "check": "segmented" }
   ],
   "category": "Edit",
   "env": [

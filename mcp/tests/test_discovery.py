@@ -24,7 +24,8 @@ def _spec(fun, **kw):
 DEFS = {
     "segment": [_spec("segment.cellpose", purpose="Find cells", useWhen=["Round cells"], notWhen=[])],
     "cleanupImages": [
-        _spec("cleanupImages.denoise", purpose="Remove shot noise", useWhen=["Photon-limited"],
+        _spec("cleanupImages.denoise", purpose="Remove shot noise",
+              useWhen=["Photon-limited", {"text": "After Drift correction", "check": "driftCorrected"}],
               notWhen=["Bright, saturated signal"]),
         _spec("cleanupImages.smooth", purpose="Smooth"),
     ],
@@ -57,6 +58,7 @@ class TaskCatalogueTest(unittest.TestCase):
         cleanup = out["stages"][0]["tasks"]
         self.assertEqual([t["fun_name"] for t in cleanup], ["cleanupImages.denoise", "cleanupImages.smooth"])
         self.assertEqual(cleanup[0]["notWhen"], ["Bright, saturated signal"])
+        self.assertEqual(cleanup[0]["useWhen"], ["Photon-limited", "After Drift correction"])
         self.assertEqual(cleanup[1]["useWhen"], [])           # absent → empty list, same shape
         self.assertNotIn("params", cleanup[0])
         funs = [t["fun_name"] for s in out["stages"] for t in s["tasks"]]
@@ -107,6 +109,8 @@ class ModuleParamsFieldsTest(unittest.TestCase):
         spec = self._params("on")
         self.assertEqual(spec["purpose"], "Remove shot noise")
         self.assertEqual(spec["notWhen"], ["Bright, saturated signal"])
+        # a checked line leaves the MCP as its text — the check is a GUI-only advisory
+        self.assertEqual(spec["useWhen"], ["Photon-limited", "After Drift correction"])
 
     def test_off_strips_them(self):
         spec = self._params("off")

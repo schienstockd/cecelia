@@ -3,7 +3,7 @@
   "fun_name": "editImages.zProject",
   "label": "Z-projection",
   "purpose": "Collapse Z into one plane with a per-pixel statistic",
-  "useWhen": ["One 2D plane summarising a Z stack", "A map of where signal varies through Z"],
+  "useWhen": [{ "text": "One 2D plane summarising a Z stack", "check": "zStack" }, "A map of where signal varies through Z"],
   "notWhen": [
     "Coarse, jittery Z in tracks: set Track measures to 2D instead",
     "Only to feed Branching analysis: it has its own Z projection",

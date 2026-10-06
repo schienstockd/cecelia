@@ -510,7 +510,9 @@ end
 # ── Task discovery: every visible task says what it is for (docs/todo/TASK_DISCOVERY_PLAN.md) ──────
 #
 # `purpose` (one line), `useWhen` (1–3) and `notWhen` (0–3) are the ONE source the module page's task
-# picker, the "Which step?" guide view and the MCP's get_task_catalogue / get_module_params all read.
+# picker and the MCP's get_task_catalogue / get_module_params read. A `useWhen` / `notWhen` line is a
+# string or `{text, check}` — `check` names an advisory frontend check (utils/taskDiscovery.ts
+# TASK_CHECKS, whose ids `taskDiscovery.test.ts` pins); its `text` obeys the same copy rules.
 # Presence is required on every built-in task a user can pick (a `hidden` one may skip); the shape and
 # the copy rules apply wherever the fields appear, including the example custom modules and plugins.
 # Each line is a property of the METHOD, never of some dataset — that half is review, not this test.
@@ -535,8 +537,16 @@ end
         end
         (use isa AbstractVector && 1 <= length(use) <= 3) || push!(bad_shape, "$f: useWhen needs 1–3 lines")
         (nt isa AbstractVector && length(nt) <= 3)         || push!(bad_shape, "$f: notWhen takes 0–3 lines")
-        for t in vcat([purpose], use isa AbstractVector ? collect(use) : Any[], nt isa AbstractVector ? collect(nt) : Any[])
-            t isa AbstractString || (push!(bad_line, "$f: not a string: $t"); continue)
+        for l in vcat([purpose], use isa AbstractVector ? collect(use) : Any[], nt isa AbstractVector ? collect(nt) : Any[])
+            t = l
+            if l isa AbstractDict
+                Set(string.(keys(l))) ⊆ Set(["text", "check"]) || push!(bad_line, "$f: a line takes only text + check: $l")
+                c = get(l, :check, nothing)
+                (c === nothing || (c isa AbstractString && occursin(r"^!?[a-zA-Z]+$", c))) ||
+                    push!(bad_line, "$f: check must be an id (optionally !id): $l")
+                t = get(l, :text, nothing)
+            end
+            t isa AbstractString || (push!(bad_line, "$f: not a string: $l"); continue)
             length(t) > LINE_MAX         && push!(bad_line, "$f: [$(length(t))] $t")
             occursin(r"\.$", t)          && push!(bad_line, "$f: trailing period: $t")
             occursin(r"\.\s+[A-Z]", t)   && push!(bad_line, "$f: two sentences: $t")

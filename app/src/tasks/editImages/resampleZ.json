@@ -7,7 +7,7 @@
   "notWhen": [
     "Interpolated planes add no real Z detail",
     "Cell segmentation: it handles coarse Z plane by plane",
-    "No recorded Z step: set it in the image metadata first"
+    { "text": "No recorded Z step: set it in the image metadata first", "check": "!zStepSet" }
   ],
   "category": "Edit",
   "env": [

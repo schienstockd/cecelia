@@ -6,7 +6,7 @@
   "useWhen": ["Comparing states across images: one model fits all selected images"],
   "notWhen": [
     "Short or broken tracks: fix tracking before fitting states",
-    "Tracks have no speed or angle: run Track measures first"
+    { "text": "Tracks have no speed or angle: run Track measures first", "check": "!trackMeasured" }
   ],
   "category": "Behaviour",
   "env": ["local"],
