@@ -66,7 +66,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -2046,6 +2046,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
             && m.labelDims && labelDimsMismatch(m, vn)) {
           return null
         }
+        // A mask with fewer levels than the image has nothing at this zoom — skip it so the image
+        // still draws; the sidebar flags the row. The server refuses the read (409) either way.
+        const short = labelLevelsShort(m, vn)
+        if (short && lvl >= short.nLevels) return null
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
@@ -2062,7 +2066,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
           rev: cacheClearRev.value || undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
-        if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
+        if (res.status === 409) return null
+        if (!res.ok) throw new Error(`Mask "${vn}" could not be loaded (${res.status})`)
         const buf = await res.arrayBuffer()
         // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
         // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
@@ -2070,7 +2075,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
         const bad = slabShapeError(
           res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
-        if (bad) throw new Error('Mask: ' + bad)
+        if (bad) throw new Error(`Mask "${vn}" could not be loaded (${bad})`)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return widenLabelSlab(buf, bpv)
       })(),
@@ -2853,6 +2858,9 @@ function onUp(e: PointerEvent) {
   }
 }
 
+/** A pick on a mask with no level at this zoom (409) — the cell can't be read where it's drawn. */
+const MASK_ZOOM_IN = 'This mask has no level at this zoom — zoom in to pick cells'
+
 /**
  * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
  * broadcast lights up the transient pop on the plots — this window never touches the gating store
@@ -2893,6 +2901,7 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
     if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
     // `/Pick selection` membership changed on the server — wake same-window (Pinia ref) and
     // cross-window (localStorage) subscribers. The correction cockpit watches this to re-fetch
@@ -2968,6 +2977,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
     if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
     viewerStore.bumpPickSelectionTick()  // see the note on the pick-cell twin
     const j = await res.json() as { nLabels?: number; nSelected?: number }
@@ -4085,9 +4095,14 @@ watch(meta, m => {
       byVn[vn] = { nX: d.nX, nY: d.nY }
     }
   }
+  const shortLevels: Record<string, { nLevels: number; imageLevels: number }> = {}
+  for (const vn of Object.keys(dims)) {
+    const short = labelLevelsShort(m, vn)
+    if (short) shortLevels[vn] = short
+  }
   viewerStore.setLabelsDimMismatch({
     imageUid, valueName: valueName.value || (m.valueName ?? ''),
-    imageNX: m.nX, imageNY: m.nY, mismatched, byVn,
+    imageNX: m.nX, imageNY: m.nY, mismatched, byVn, shortLevels,
   })
 }, { immediate: true })
 

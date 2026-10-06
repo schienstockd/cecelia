@@ -146,6 +146,7 @@ const labelRows = computed(() => {
     masked: labelNames.value.includes(valueName),
     live: live.has(valueName),
     dimMismatch: mismatchedMaskVns.value.has(valueName),
+    shortLevels: !!dimMismatchInfo.value?.shortLevels?.[valueName],
   }))
 })
 const hasLabelRows = computed(() => labelRows.value.length > 0)
@@ -765,6 +766,13 @@ function mismatchTooltip(vn: string): string {
   return `Mask is ${d.nX}×${d.nY}, image version is ${info.imageNX}×${info.imageNY} — pick a matching version, or re-segment`
 }
 
+/** Tooltip for a mask with fewer zoom levels than the image: it draws only where it has a level. */
+function shortLevelsTooltip(vn: string): string {
+  const d = dimMismatchInfo.value?.shortLevels?.[vn]
+  const n = d ? `${d.nLevels} of ${d.imageLevels}` : 'too few'
+  return `Mask has ${n} zoom levels — zoom in to see it, or re-run the task that made it`
+}
+
 function toggleLabel(valueName: string) {
   // Write the settings bag; the WebGPU viewer reads it via `storage` events.
   //
@@ -980,6 +988,9 @@ onUnmounted(() => {
             <i v-if="row.dimMismatch"
                class="pi pi-exclamation-triangle viewer-label-warn"
                v-tooltip.right="mismatchTooltip(row.valueName)" />
+            <i v-else-if="row.shortLevels"
+               class="pi pi-exclamation-triangle viewer-label-warn"
+               v-tooltip.right="shortLevelsTooltip(row.valueName)" />
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
             <!-- The live-preview toggle is NOT hover-hidden: it exists only while the run does, so a

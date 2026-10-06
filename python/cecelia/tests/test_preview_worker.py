@@ -335,3 +335,38 @@ class PreviewWorkerRenderTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
+class PreviewStoreLevelsTest(unittest.TestCase):
+    """A preview store has the IMAGE's levels, each equal to the strided pyramid of the full-size
+    store — what a zoomed-out viewer draws, and what the run's own label pyramid will show."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+        self.worker = _load_worker()
+        omexml = ome_types.from_xml(_ome_xml(1, 1, 1, 21, 26))
+        du = DimUtils(omexml, use_channel_axis=True)
+        shape = (1, 1, 1, 21, 26)
+        du.calc_image_dimensions(list(shape))
+        self.im_path = os.path.join(self.dir, 'im.ome.zarr')
+        g, lv0, pchunks = zarr_utils.open_multiscales_for_writing(
+            self.im_path, shape, np.uint16, du, nscales=3)
+        zarr_utils.write_multiscale_pyramid(g, lv0, du, 3, list(pchunks))
+        ome_xml_utils.save_meta_in_zarr(self.im_path, omexml=omexml)
+
+    def test_every_level_is_the_strided_full_store(self):
+        full_shape = (1, 21, 26)
+        bounds = {'Y': (5, 16), 'X': (3, 18)}                 # odd starts: alignment matters
+        block = np.arange(1, 1 + 11 * 15, dtype=np.uint32).reshape(1, 11, 15)
+        path = self.worker._stage_labels_store(
+            block, ['T', 'Y', 'X'], full_shape, bounds, self.dir, 'vn', im_path=self.im_path)
+        full = np.zeros(full_shape, dtype=np.uint32)
+        full[:, 5:16, 3:18] = block
+        levels, _ = zarr_utils.open_as_zarr(path, as_dask=False)
+        self.assertEqual(len(levels), 3)
+        for lv in range(3):
+            s = 2 ** lv
+            np.testing.assert_array_equal(np.asarray(levels[lv][:]), full[:, ::s, ::s],
+                                          err_msg=f'level {lv}')
