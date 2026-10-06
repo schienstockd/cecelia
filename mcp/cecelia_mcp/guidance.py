@@ -24,6 +24,8 @@ disciplines that no single tool can state on its own.
 """
 from __future__ import annotations
 
+from cecelia_mcp.discovery import discovery_enabled
+
 # ── Always in context — the entry point only ──────────────────────────────────────────────────────
 #
 # Budget: a few sentences. Every line here is paid for in every unrelated session, so anything that
@@ -63,6 +65,11 @@ these tools cannot reach Cecelia, say so; do not try to install, register or con
 # one mouse; a board rebuilt that the user already had; a chain reported as "running"; an opening
 # line spent on a missing lab-notebook link the user could not act on. Deleting one brings its
 # failure back.
+# Off in the `--discovery off` guide-run arm, with the tool itself (discovery.py).
+_CATALOGUE_LINE = (" What each step is for, and when it is the wrong step: get_task_catalogue — read it "
+                   "before choosing a step, and again when a result looks wrong, because the fix is often "
+                   "an earlier step.")
+
 BRIEFING_GUIDANCE = """\
 How to work with this project.
 
@@ -85,7 +92,7 @@ built: get_analysis_boards. How the images are annotated: get_image_attributes. 
 quotes actually lives (which project, which set): find_object — one call, never a sweep over projects. The notebook/REPL \
 data-access surface: get_repl_api, and the notebooks themselves: list_notebooks, get_notebook — so \
 you can read one the user is stuck in and walk them through the fix. How the app teaches a \
-workflow — the in-app guides and whole-pipeline recipes the user follows: get_guide.
+workflow — the in-app guides and whole-pipeline recipes the user follows: get_guide.{catalogue}
 
 WHAT YOU CAN WRITE — additive only, and only when asked: append_lab_log (one short line, tagged \
 [Claude] server-side), create_notebook / revise_notebook (revise snapshots first, so nothing is \
@@ -370,3 +377,4 @@ this session has a LabArchives connector — track down what this experiment act
 lab notebook and store it (set_labarchives_context). Expect real searching for that last one: the \
 notebook may be a colleague's, the project name may match hundreds of unrelated pages, and the \
 user may not know which page it is. Then follow their lead."""
+BRIEFING_GUIDANCE = BRIEFING_GUIDANCE.replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
