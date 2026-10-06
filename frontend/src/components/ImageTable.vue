@@ -23,6 +23,7 @@ import { moduleTagStyle, moduleIdFromFun } from '../utils/taskModule'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import { isTimeSeries } from '../utils/imageState'
 
 const props = defineProps<{
   setUid: string
@@ -480,7 +481,9 @@ const channelIndices = computed(() =>
 // Dimension columns only appear when the set actually has a z-stack / timelapse (mirrors the
 // metadata-warning z>1 / t>1 tests), so 2D single-timepoint sets aren't cluttered with empty columns.
 const anyZStack    = computed(() => images.value.some(i => (i.sizeZ ?? 0) > 1))
-const anyTimelapse = computed(() => images.value.some(i => (i.sizeT ?? 0) > 1))
+// the same T test as the task gate and the guide prereq — an older import with only a frame interval
+// is still a timelapse (utils/imageState.ts → taskGating.imageAxes)
+const anyTimelapse = computed(() => images.value.some(isTimeSeries))
 
 // Union of attr keys across the set, sorted.
 const attrKeys = computed(() => {
