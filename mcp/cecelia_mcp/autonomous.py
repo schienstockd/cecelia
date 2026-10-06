@@ -47,7 +47,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
     ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
     ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
-    ("POST", "/api/correction-plan/recommend"),  # pure (no write): the metadata-only cleanup plan
+    ("POST", "/api/correction-plan/recommend"),  # pure (no write): the recommended cleanup plan
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
     ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
@@ -71,6 +71,12 @@ def locked_project() -> str:
 
 def required_prefix() -> str:
     return os.environ.get(PREFIX_ENV, "").strip()
+
+
+# TASK_DISCOVERY_PLAN Decision 9: `off` = the guide-run arm without the discovery information.
+# Local stand-in until the shared MCP reader for this variable lands; swap the call for it then.
+def _discovery_off() -> bool:
+    return os.environ.get("CECELIA_MCP_DISCOVERY", "").strip().lower() == "off"
 
 
 def check_project(project_uid: str) -> None:
@@ -313,8 +319,10 @@ class AutonomousClient:
 
     def recommend_correction_plan(self, project_uid: str, image_uid: str) -> dict:
         check_project(project_uid)
+        # discovery off → the metadata-only answer, without the photon-limited rules
         plan = self._request("POST", "/api/correction-plan/recommend",
-                             body={"projectUid": project_uid, "imageUid": image_uid})
+                             body={"projectUid": project_uid, "imageUid": image_uid,
+                                   "evidence": "metadata" if _discovery_off() else "all"})
         keep = ("funName", "params", "source", "exclusionReason")
         return {"included": [{k: s.get(k) for k in keep} for s in plan.get("included") or []],
                 "excluded": [{k: s.get(k) for k in keep} for s in plan.get("excluded") or []],

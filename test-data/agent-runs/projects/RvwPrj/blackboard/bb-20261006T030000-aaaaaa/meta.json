@@ -1,0 +1,78 @@
+{
+  "entryId": "bb-20261006T030000-aaaaaa",
+  "status": "open",
+  "title": "Agent run 2026-10-06 01:59 \u2014 Crop",
+  "agentRun": {
+    "run": "20261006T015831",
+    "guide": "intravital",
+    "copyProjectUid": "CpyA01",
+    "sectionIds": [
+      "d01",
+      "d02",
+      "d03",
+      "d04",
+      "d05",
+      "m01"
+    ]
+  },
+  "sectionOutcomes": {
+    "d01": {
+      "verdict": "bad",
+      "note": "the guide never asks for AF correction before merged-channel segmentation",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "guide"
+    },
+    "d02": {
+      "verdict": "bad",
+      "note": "proposal only",
+      "by": {
+        "profile": "default",
+        "via": "claude"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "platform"
+    },
+    "d03": {
+      "verdict": "bad",
+      "note": "no QC gate before tracking",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "agent"
+    },
+    "d04": {
+      "verdict": "good",
+      "note": "",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00"
+    },
+    "d05": {
+      "verdict": "bad",
+      "note": "marked before causes existed",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00"
+    },
+    "m01": {
+      "verdict": "bad",
+      "note": "gate_plot squashed the view; the agent could not see the populations",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "platform"
+    }
+  }
+}

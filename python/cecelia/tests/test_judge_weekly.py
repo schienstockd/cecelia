@@ -34,6 +34,10 @@ class _WeeklyFixture(_Fixture):
         super().setUp()
         self.w = _load_weekly()
         self.rec = self.w._record   # the module the pass writes with
+        # never the real projects dir: the run-review scan reads an empty one unless a test says so
+        env = mock.patch.dict(os.environ, {"CECELIA_AGENT_APP_PROJECTS": str(self.tmp / "no-projects")})
+        env.start()
+        self.addCleanup(env.stop)
         self.swept = {}
 
         self.fail_steps: dict = {}   # step → error its judge "failed" with

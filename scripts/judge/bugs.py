@@ -32,7 +32,9 @@ stacktrace) is judged like a finding; one without has no code to excerpt, so it 
 stays `open` and goes to verify, whose agent finds the code path itself. A `repeat` one is a 4xx the
 API answered with a reason that agents hit in several runs: the question is whether the platform's
 guidance failed them, and its `runs` is the emitter's count, not a row count. Dismissed, it is
-carried muted until that count doubles.
+carried muted until that count doubles. A `review` one is a run record's section a person marked
+`bad` with cause `guide` or `platform` (`run_reviews.py`, logged once per verdict): open without the
+judge, and verify checks whether the fix is in, not whether the finding is real.
 
 Usage:
     pixi run judge-bugs [--date D]               # print the sweep (one judge call)
@@ -71,6 +73,8 @@ _record = _load_sibling("record")
 #: An error an autonomous agent run hit: payload `key`, `tool`, `error`, `desc`, and `file` / `line`
 #: only when a backend stacktrace gave one. `commit` is the SHA the run checked out; no branch.
 #: `kind: "repeat"` + `runs`: a 4xx-with-reason the emitter counted in that many separate runs.
+#: `kind: "review"`: a person's `bad` verdict with cause `guide` / `platform` on a run record's section
+#: (`run_reviews.py`), carrying `cause`, `note`, `guide`, `project`, `entry`, `section`, `run`.
 AGENT_RUN_EVENT = "agent_run_finding"
 #: A tagged finding resolved one of these ways is handled; anything else may still be live.
 #: Not `false_positive`: an agent wrongly calling a real bug false was the one way past the sweep.
@@ -133,15 +137,20 @@ def _key(row: dict) -> str:
                                   p.get("marker") or "", p.get("desc") or "")
 
 
+_REVIEW_FIELDS = ("cause", "note", "guide", "project", "entry", "section", "run")
+
+
 def _agent_run(r: dict) -> dict:
     p = r["payload"]
-    repeat = p.get("kind") == "repeat"
-    return {"key": p["key"], "kind": "agent_run", "marker": "repeated agent error" if repeat else "agent run",
+    repeat, review = p.get("kind") == "repeat", p.get("kind") == "review"
+    return {"key": p["key"], "kind": "agent_run",
+            "marker": "repeated agent error" if repeat else "run review" if review else "agent run",
             "tool": p.get("tool"), "error": p.get("error"), "file": p.get("file"), "line": p.get("line"),
             "desc": p.get("desc") or f"`{p.get('tool')}` failed: {p.get('error')}",
             "branch": None, "commit": r.get("commit"), "logged": r.get("ts"),
             "runs": int(p.get("runs") or 1) if repeat else 1, "last_seen": r.get("ts"),
-            **({"repeat": True} if repeat else {})}
+            **({"repeat": True} if repeat else {}),
+            **({"review": True, **{k: p.get(k) for k in _REVIEW_FIELDS}} if review else {})}
 
 
 def _hit_again(b: dict, c: dict) -> None:
@@ -423,6 +432,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         if b.get("kind") == "agent_run" and not b.get("file"):
             why = (f"agents hit this 4xx in {b.get('runs')} separate runs: is the platform failing to guide "
                    "them? Verify traces the tool's guidance" if b.get("repeat") else
+                   f"a person marked this run section bad, cause {b.get('cause')}: verify checks whether "
+                   "the fix is in" if b.get("review") else
                    "an agent run hit this error; no file:line to excerpt, so verify traces it")
             bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date), "why": why})
             continue
@@ -506,8 +517,11 @@ def main(argv: list[str] | None = None) -> int:
     if not sha:
         print(f"judge-bugs: can't resolve {args.ref}", file=sys.stderr)
         return 1
-    bugs, cost = sweep(list(read_events()), date=date, sha=sha, previous=earlier[-1] if earlier else None,
-                       no_judge=args.no_judge, merged_prs=(lambda d: []) if args.no_stranded else None)
+    try:
+        bugs, cost = sweep(list(read_events()), date=date, sha=sha, previous=earlier[-1] if earlier else None,
+                           no_judge=args.no_judge, merged_prs=(lambda d: []) if args.no_stranded else None)
+    except _judge.RateLimited as e:
+        return _judge.limit_exit("judge-bugs", e)
     print(json.dumps(bugs, indent=2, ensure_ascii=False))
     n = {s: sum(b["status"] == s for b in bugs) for s in ("open", "unjudged")}
     print(f"{n['open']} open, {n['unjudged']} unjudged bug(s); judge ${cost:.2f}", file=sys.stderr)

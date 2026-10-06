@@ -1,7 +1,8 @@
 # Guide runs — an agent follows one in-app guide, you review what it hands back
 
 **Status:** in progress (2026-10-06) — P1 built (`cause` on a run record's `bad` section verdict: API, GUI, MCP);
-P3 `pixi run guide-run` built, its checkpoint (one reviewed intravital run) open; P2 next.
+P2 built (run reviews to the weekly judge; `agent` causes listed, not matched); P3 `pixi run guide-run`
+built. Checkpoints open: P1's marks, P2 in `judge-review`, one reviewed intravital run.
 Reframes the app-tier runs of
 [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md) P4b. Builds on the run record and section
 verdicts of [`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) (P1, P1b, P2, P4), whose P3 score
@@ -106,6 +107,15 @@ The repeated tool errors (the mechanical part) already reach the judge.
   verdict is logged once.
 - `agent` causes are listed per guide. Two that match across runs are proposed as one guide gap.
 - **Checkpoint:** P1's marks appear in `pixi run judge-review`.
+- *Built:* `scripts/judge/run_reviews.py`, run by `weekly.py` before the bug sweep (and
+  `pixi run judge-run-reviews` to print). It scans `*/blackboard/*/meta.json` under the
+  projects dir (`--projects-dir`, else `CECELIA_AGENT_APP_PROJECTS`, else `~/cecelia-feijoa/projects`). A person's `bad` with
+  `guide` / `platform` → one row, key `rev-` + sha1(project, entry, section), carrying run, section,
+  heading, cause, note and `agentRun.guide`. The sweep opens it without the judge; verify checks
+  whether the fix is in. The rows are stamped a second before the pass started, so the next pass
+  never reads them as new. **Matching is not built:** no judge step compares free-text notes, and one
+  would be a new LLM layer. The record lists `agent` causes per guide and flags a guide whose notes
+  span 2+ runs as a possible gap, for a person to compare. Design: `docs/ai-assist/WEEKLY_JUDGE.md`.
 
 ### P3 — `guide-run` — **built, checkpoint open**
 - `scripts/agent_eval/guide_run.py` wraps `run_app.py`: guide id → test project + brief, `--runs`,
