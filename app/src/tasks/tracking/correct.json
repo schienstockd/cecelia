@@ -2,6 +2,12 @@
   "task": "trackCorrect",
   "fun_name": "tracking.correct",
   "label": "Correct tracks",
+  "purpose": "Join, split or remove tracks by hand",
+  "useWhen": ["A few tracks are wrong after tracking"],
+  "notWhen": [
+    "Many tracks wrong: change the tracking settings and re-track",
+    "Measures needed afterwards: use Correct tracks + measures"
+  ],
   "category": "Tracking",
   "env": ["local"],
   "resource_pool": "cpu",

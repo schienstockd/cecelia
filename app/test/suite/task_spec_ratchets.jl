@@ -1,11 +1,11 @@
 # ── Task-spec ratchets + copy-style testsets ──────────────────────────
-# 12 sections pinning the task-spec surface: numeric param ranges are plausible, task
+# 13 sections pinning the task-spec surface: numeric param ranges are plausible, task
 # spec tips stay short, a handler fallback never contradicts its spec default, every task
 # spec field is declared and documented, optionsFrom fills a picker from a named source,
 # showIf conditions name a param that exists, a param that says segmentation reads
 # SEGMENTATIONS, a picker gates on `labels` only when the task needs the MASK, every task
-# param carries a tip, task spec copy follows the house style, run_stats, and every popSelection
-# declares `accepts`. Extracted
+# param carries a tip, task spec copy follows the house style, every visible task says what it
+# is for, run_stats, and every popSelection declares `accepts`. Extracted
 # from suite.jl to keep it small enough to merge without EOF conflicts on every append.
 # The extracted file loads inside this file's aggregating testset scope, so any helpers
 # defined earlier in suite.jl are still in scope (lexical include).
@@ -505,6 +505,49 @@ end
     wrong_verb = ["$f: \"$s\" — use $good" for (f, s) in vcat(labels, tips2)
                   for (bad, good) in BANNED if occursin(Regex("\\b$bad\\b", "i"), s)]
     @test isempty(wrong_verb)
+end
+
+# ── Task discovery: every visible task says what it is for (docs/todo/TASK_DISCOVERY_PLAN.md) ──────
+#
+# `purpose` (one line), `useWhen` (1–3) and `notWhen` (0–3) are the ONE source the module page's task
+# picker, the "Which step?" guide view and the MCP's get_task_catalogue / get_module_params all read.
+# Presence is required on every built-in task a user can pick (a `hidden` one may skip); the shape and
+# the copy rules apply wherever the fields appear, including the example custom modules and plugins.
+# Each line is a property of the METHOD, never of some dataset — that half is review, not this test.
+@testset "every visible task says what it is for" begin
+    LINE_MAX = 80     # docs/ui/COPY.md: one short line. Tighter than a `tip`'s 90 — these are read as a list
+    builtin = joinpath(dirname(dirname(pathof(Cecelia))), "src", "tasks")
+
+    missing_purpose, bad_shape, bad_line = String[], String[], String[]
+    nvisible = 0
+    each_spec() do f, spec
+        isempty(string(get(spec, :fun_name, ""))) && return
+        haspurpose = haskey(spec, :purpose) || haskey(spec, :useWhen) || haskey(spec, :notWhen)
+        is_builtin = isfile(joinpath(builtin, f)) && !startswith(f, "testTasks")
+        visible = is_builtin && get(spec, :hidden, false) != true
+        visible && (nvisible += 1)
+        visible || haspurpose || return
+
+        purpose = get(spec, :purpose, nothing)
+        use, nt = get(spec, :useWhen, nothing), get(spec, :notWhen, String[])
+        if !(purpose isa AbstractString) || isempty(strip(purpose))
+            push!(missing_purpose, f); return
+        end
+        (use isa AbstractVector && 1 <= length(use) <= 3) || push!(bad_shape, "$f: useWhen needs 1–3 lines")
+        (nt isa AbstractVector && length(nt) <= 3)         || push!(bad_shape, "$f: notWhen takes 0–3 lines")
+        for t in vcat([purpose], use isa AbstractVector ? collect(use) : Any[], nt isa AbstractVector ? collect(nt) : Any[])
+            t isa AbstractString || (push!(bad_line, "$f: not a string: $t"); continue)
+            length(t) > LINE_MAX         && push!(bad_line, "$f: [$(length(t))] $t")
+            occursin(r"\.$", t)          && push!(bad_line, "$f: trailing period: $t")
+            occursin(r"\.\s+[A-Z]", t)   && push!(bad_line, "$f: two sentences: $t")
+            occursin(r"^[a-z]", t)        && push!(bad_line, "$f: sentence case: $t")
+        end
+    end
+
+    @test nvisible > 40                     # the walk found the built-in specs
+    @test isempty(missing_purpose) || (@info "visible task spec with no `purpose`" missing_purpose; false)
+    @test isempty(bad_shape)       || (@info "discovery fields out of shape" bad_shape; false)
+    @test isempty(bad_line)        || (@info "discovery line breaks the copy rules" bad_line; false)
 end
 
 # ── Stats module (docs/todo/STATS_ANNOTATIONS_PLAN.md) ─────────────────────

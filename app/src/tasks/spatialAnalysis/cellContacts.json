@@ -2,6 +2,12 @@
   "task": "cellContacts",
   "fun_name": "spatialAnalysis.cellContacts",
   "label": "Cell contacts (points)",
+  "purpose": "Find each cell's nearest target cell and whether they touch",
+  "useWhen": [
+    "Quick contact check by centre-to-centre distance",
+    "Target population spread over several segmentations"
+  ],
+  "notWhen": ["Cell surfaces matter, as in live imaging: use Cell contacts (meshes)"],
   "category": "Spatial analysis",
   "env": ["local"],
   "resource_pool": "cpu",

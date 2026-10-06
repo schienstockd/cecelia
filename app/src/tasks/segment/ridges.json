@@ -2,6 +2,12 @@
   "task": "ridges",
   "fun_name": "segment.ridges",
   "label": "Ridge segmentation",
+  "purpose": "Segment fibres and other ridge-like structure in one channel",
+  "useWhen": [
+    "Collagen (SHG) or other label-free structure (THG)",
+    "Bright or dark lines on a background, with no trained model"
+  ],
+  "notWhen": ["Round cells rather than fibres: use Cellpose segmentation"],
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "cpu",

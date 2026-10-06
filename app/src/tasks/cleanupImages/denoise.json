@@ -2,6 +2,17 @@
   "task": "denoise",
   "fun_name": "cleanupImages.denoise",
   "label": "Denoising (SUPPORT)",
+  "purpose": "Remove shot noise from photon-limited movies with a trained model",
+  "useWhen": [
+    "Photon-limited channels: sparse, low photon counts",
+    "Needs a model from Train denoise model (SUPPORT)",
+    "After Drift correction: it compares each pixel across frames"
+  ],
+  "notWhen": [
+    "Saturated or bright channels: no shot noise left to remove",
+    "Static structure channels: nothing for a temporal denoiser to use",
+    "Movies shorter than the model's temporal window"
+  ],
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "gpu",
