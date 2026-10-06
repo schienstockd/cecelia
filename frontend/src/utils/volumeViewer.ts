@@ -512,6 +512,30 @@ export function loadedPlanes(
 }
 
 /**
+ * The inverse of `loadedPlanes`: the z controls that load `range` — what restoring a view state's
+ * `dims.zRange` sets. A range that IS `zPlane ± half` (clipped the same way) comes back as the window,
+ * so the Plane slider moves it as it did when captured; any other 3D range (the whole stack included)
+ * is the Depth crop; a 2D view with no window is its one plane. Clamped to the stack, so a range
+ * captured on a deeper image cannot index past this one.
+ */
+export function zControlsForLoaded(
+  mode: 'plane' | 'volume', zPlane: number, range: [number, number], nZ: number,
+): { window: { on: boolean; half: number }; depth: [number, number] | null } {
+  const maxZ = Math.max(nZ - 1, 0)
+  const c = (v: number) => Math.max(0, Math.min(maxZ, Math.round(v)))
+  const z = c(zPlane)
+  const lo = Math.min(c(range[0]), c(range[1])), hi = Math.max(c(range[0]), c(range[1]))
+  const half = Math.max(z - lo, hi - z)
+  // The whole stack in 3D is the default Depth, not a window that happens to reach both ends.
+  const whole3D = mode === 'volume' && lo === 0 && hi === maxZ
+  if (!whole3D && half > 0 && lo <= z && z <= hi) {
+    const [wl, wh] = loadedPlanes(mode, z, [lo, hi], half, nZ)
+    if (wl === lo && wh === hi) return { window: { on: true, half }, depth: null }
+  }
+  return { window: { on: false, half: 0 }, depth: mode === 'volume' ? [lo, hi] : null }
+}
+
+/**
  * Physical extent of the loaded box in µm, `[x, y, z]`. Uncalibrated axes come back as voxel counts,
  * which renders isotropic — the same thing viewer shows for an uncalibrated stack.
  *

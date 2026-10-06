@@ -166,7 +166,17 @@ end
         ["CH1", "CH2"], nothing, 100, 100)
     @test args.t == 5
     @test args.z == 2
+    @test args.zrange === nothing          # a snapshot without `zRange` = the plane / whole stack
     @test args.crop === nothing            # no canvas hints → no crop
+
+    # `dims.zRange` — the planes the viewer loaded. 2D: a window is the slab's max (`z` a range);
+    # 3D: carried as `zrange`, the box the renderer crops to. Interpolated floats round.
+    a2 = viewstate_to_render_args(Dict{String,Any}("dims" => Dict("ndisplay" => 2,
+             "current_step" => [0, 8], "zRange" => [0.0, 16.4])), ["CH1"], nothing, 100, 100)
+    @test a2.z == 0:16 && a2.zrange == 0:16
+    a3 = viewstate_to_render_args(Dict{String,Any}("dims" => Dict("ndisplay" => 3,
+             "current_step" => [0, 8], "zRange" => [0, 16])), ["CH1"], nothing, 100, 100)
+    @test a3.z == 8 && a3.zrange == 0:16
 
     # Missing viewState fields fall back to defaults.
     args2 = viewstate_to_render_args(Dict{String,Any}(), ["CH1"],
@@ -284,6 +294,15 @@ end
     @test z_from_view_state(Dict{String,Any}("dims" => Dict("ndisplay" => 2))) === nothing
     @test z_from_view_state(
         Dict{String,Any}("dims" => Dict("ndisplay" => 2, "current_step" => [0]))) === nothing
+
+    # The ±n window: the viewer shows the max over `zPlane ± n`, so the record takes that range rather
+    # than the whole stack. A one-plane range is the plane.
+    win = Dict("ndisplay" => 2, "current_step" => [0, 8], "zRange" => [0, 16])
+    @test z_from_view_state(Dict{String,Any}("dims" => win)) == 0:16
+    one = Dict("ndisplay" => 2, "current_step" => [0, 8], "zRange" => [8, 8])
+    @test z_from_view_state(Dict{String,Any}("dims" => one)) == 8
+    @test z_from_view_state(Dict{String,Any}("dims" => Dict("ndisplay" => 3, "current_step" => [0, 8],
+                                                            "zRange" => [0, 16]))) === nothing
 end
 
 @testset "API: _max_px_from_view_state — blank size fields cap at the viewer canvas" begin

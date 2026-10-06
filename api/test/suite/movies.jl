@@ -109,6 +109,11 @@ end
     @test _config_3d_canvas(cfg, nothing, nothing) == (800, 600)
     @test _config_3d_canvas(cfg, 400, nothing) == (400, 600)
     @test _config_3d_canvas(Dict{Symbol,Any}(), nothing, nothing) == (512, 512)
+    # a plane range (Fill from view of the viewer's Depth crop / ±n window) → the box the states render
+    kz = _config_3d_keyframes(Dict{Symbol,Any}(:zRange => [0, 16]), 0, 1)
+    @test kz[1]["viewState"]["dims"]["zRange"] == [0, 16]
+    @test !haskey(k0[1]["viewState"]["dims"], "zRange")
+    @test viewstate_to_render_args(interpolate_keyframes(kz)[1], ["CH1"], nothing, 10, 10).zrange == 0:16
 end
 
 @testset "API: filename fragments are sanitised one way" begin
@@ -296,6 +301,17 @@ end
     @test _z_slice(Dict(:zSlice => -1))                      == 0          # floored, clamped again bridge-side
     @test _z_slice(Dict(:show3D => true, :zSlice => 4))      === nothing   # 3D ignores the index…
     @test _z_slice(Dict(:show3D => false, :zSlice => 4))     == 4          # …and keeps it for next time
+
+    # A plane range — the max over it — wins over the one plane in 2D (`_z_planes`, what renders); the
+    # plane stays what `_z_slice` banks. Ignored in 3D (that box rides the keyframes), junk is absent.
+    @test _z_planes(Dict(:zSlice => 8, :zRange => [0, 16]))  == 0:16
+    @test _z_planes(Dict(:zSlice => 8, :zRange => [16, 0]))  == 0:16
+    @test _z_planes(Dict(:zSlice => 8, :zRange => [5, 5]))   == 5
+    @test _z_planes(Dict(:zSlice => 8))                      == 8
+    @test _z_planes(Dict(:zSlice => 8, :zRange => nothing))  == 8
+    @test _z_planes(Dict(:zSlice => 8, :zRange => [1]))      == 8
+    @test _z_planes(Dict(:show3D => true, :zRange => [0, 16])) === nothing
+    @test _z_slice(Dict(:zSlice => 8, :zRange => [0, 16]))   == 8
 end
 
 # Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in

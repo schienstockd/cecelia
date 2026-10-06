@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
+  slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -440,6 +440,22 @@ describe('the request is sized by the TEXTURE, not the view mode', () => {
     // range that runs off the end would come back SHORT — a shape the texture is not holding.
     expect(slabZ(8, 41, 0, 40)).toEqual({ z: 33, zTo: 40 })
     expect(slabZ(8, 41, 0, -5)).toEqual({ z: 0, zTo: 7 })
+  })
+})
+
+describe('zControlsForLoaded — restoring a view state\'s loaded planes', () => {
+  it('a range that is plane ± n is the window, clipped at the stack ends like loadedPlanes', () => {
+    expect(zControlsForLoaded('volume', 8, [0, 16], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+    expect(zControlsForLoaded('plane', 2, [0, 10], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+    expect(zControlsForLoaded('plane', 33, [25, 34], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+  })
+  it('any other 3D range is the Depth crop; a 2D plane is no window', () => {
+    expect(zControlsForLoaded('volume', 17, [0, 34], 35)).toEqual({ window: { on: false, half: 0 }, depth: [0, 34] })
+    expect(zControlsForLoaded('volume', 5, [10, 20], 35)).toEqual({ window: { on: false, half: 0 }, depth: [10, 20] })
+    expect(zControlsForLoaded('plane', 8, [8, 8], 35)).toEqual({ window: { on: false, half: 0 }, depth: null })
+  })
+  it('clamps a range captured on a deeper stack', () => {
+    expect(zControlsForLoaded('volume', 17, [0, 60], 20).depth).toEqual([0, 19])
   })
 })
 

@@ -151,10 +151,14 @@ function _config_3d_keyframes(config, t0::Int, t1::Int)
     # the viewer's projection toggle (1 = perspective); absent = orthographic, as before
     p_raw = _cfg_maybe(cam, "perspective")
     persp = p_raw isa Real && Float64(p_raw) > 0 ? 1.0 : 0.0
+    # the planes to render (the viewer's Depth crop / ±n window, via Fill from view); absent = all
+    zr = _z_range(config)
     function state(t)
+        dims = Dict{String,Any}("ndisplay" => 3, "current_step" => [t, 0])
+        zr === nothing || (dims["zRange"] = [first(zr), last(zr)])
         st = Dict{String,Any}("camera" => Dict{String,Any}("angles" => angles, "zoom" => zoom,
                                                             "perspective" => persp),
-                              "dims"   => Dict{String,Any}("ndisplay" => 3, "current_step" => [t, 0]))
+                              "dims"   => dims)
         (cw === nothing || ch === nothing) || (st["canvas"] = Dict{String,Any}("width" => cw, "height" => ch))
         st
     end
@@ -352,7 +356,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
                             value_name::AbstractString = "",
                             label_value_name::Union{AbstractString,Nothing} = nothing,
                             label_contour::Int = 1,
-                            z_slice::Union{Int,Nothing} = nothing,
+                            z_slice::Union{Int,UnitRange{Int},Nothing} = nothing,
                             t_start::Int = 0, t_end::Union{Int,Nothing} = nothing,
                             show_timestamp::Bool = true, show_scale_bar::Bool = true,
                             overlays_raw = nothing,
@@ -377,10 +381,11 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
         ws_status(nothing, task_id, "failed", image_uid; fun = fun, pool = "job")
         return nothing
     end
-    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z, so
-    # a movie that MIPs the whole stack for lack of an explicit `zSlice` diverges from what the user
-    # was looking at when they hit Record. `z_from_view_state` returns `nothing` for 3D and for
-    # snapshots without a usable step, leaving the render at its previous all-Z MIP fallback.
+    # Match the viewer's plane when the request didn't pin one. A 2D browser viewer shows ONE z (or
+    # the max over its ±n window — then a range), so a movie that MIPs the whole stack for lack of an
+    # explicit `zSlice` diverges from what the user was looking at when they hit Record.
+    # `z_from_view_state` returns `nothing` for 3D and for snapshots without a usable step, leaving
+    # the render at its previous all-Z MIP fallback.
     z_slice === nothing && (z_slice = z_from_view_state(view_state))
     frame = _resolve_frame_for_record(project_uid, image_uid, value_name; max_projection = z_slice === nothing)
     if frame[5] !== nothing
@@ -537,7 +542,7 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
     else
         nothing
     end
-    z_slice        = get(config, :zSlice, nothing) === nothing ? nothing : Int(get(config, :zSlice, 0))
+    z_slice        = _z_planes(config)
     overlays_raw   = get(config, :overlays, nothing)
     # Compare grid: 2+ versions and/or 2+ masks per image. When true, each image renders through
     # `_render_grid_offline` (same offline stitcher) instead of a single `record_view_movie`.
@@ -761,7 +766,7 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
     vn = String(get(cfg, :valueName, ""))
     # The cell's plane: its config's, else the viewer's (same rule as `run_single_offline` — every
     # cell of a compare grid shares the viewer's one z-plane view); `nothing` = the stack's max.
-    z_slice = get(cfg, :zSlice, nothing) === nothing ? nothing : Int(get(cfg, :zSlice, 0))
+    z_slice = _z_planes(cfg)
     z_slice === nothing && (z_slice = z_from_view_state(view_state))
     frame = _resolve_frame_for_record(pu, iu, isempty(vn) ? nothing : vn;
                                       max_projection = z_slice === nothing)

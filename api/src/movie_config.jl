@@ -60,6 +60,8 @@ Base.@kwdef struct MovieRecordConfig <: MovieConfig
     labelContour::Int                       = 0
     show3D::Bool                            = false
     zSlice::Union{Int,Nothing}              = nothing
+    # `[lo, hi]` — the 2D max over these planes (the viewer's ±n window); nothing = the one slice
+    zRange::Union{Vector{Int},Nothing}      = nothing
     tStart::Int                             = 1
     tEnd::Union{Int,Nothing}                = nothing
     compareLayout::String                   = "row"

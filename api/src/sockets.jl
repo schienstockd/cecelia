@@ -384,6 +384,7 @@ function handle_movie_record(ws, data)
     t_start, t_end = _t_range(data)
     show_3d     = _show_3d(data)                # whole z stack as a 3D render…
     z_slice     = _z_slice(data)                # …or one slice in 2D (nothing = whatever is showing)
+    z_range     = _z_range(data)                # …or the max over a range of them (the ±n window)
     share_ctr   = _share_contrast(get(data, :compareContrast, ""))
     layout      = _wstr(data, :compareLayout, "row")
     # Baked overlays, burnt into every frame. Default true = what every movie was.
@@ -431,6 +432,7 @@ function handle_movie_record(ws, data)
         valueNames = value_names, labelValueNames = label_vns,
         branchValueNames = branch_vns, labelContour = contour,
         show3D = show_3d, zSlice = z_slice, tStart = t_start, tEnd = t_end,
+        zRange = z_range === nothing ? nothing : [first(z_range), last(z_range)],
         compareLayout = layout,
         compareContrast = String(get(data, :compareContrast, "")),
         showTimestamp = show_ts, showScaleBar = show_sb,
@@ -513,6 +515,8 @@ function handle_movie_record(ws, data)
         compare_cfg[:labelContour]     = contour
         compare_cfg[:show3D]           = show_3d
         z_slice === nothing || (compare_cfg[:zSlice] = z_slice)
+        # the request's range, never the look's: this recorder's own z pick is the authority
+        compare_cfg[:zRange] = z_range === nothing ? nothing : [first(z_range), last(z_range)]
         compare_cfg[:compareLayout]    = layout
         compare_cfg[:compareContrast]  = String(get(data, :compareContrast, ""))
         @async try
@@ -543,7 +547,7 @@ function handle_movie_record(ws, data)
                            value_name = first_vn,
                            label_value_name = first_lvn,
                            label_contour = contour,
-                           z_slice = z_slice,
+                           z_slice = _z_planes(data),
                            t_start = t_start, t_end = t_end,
                            show_timestamp = show_ts, show_scale_bar = show_sb,
                            overlays_raw = overlays_raw,

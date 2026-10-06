@@ -3,6 +3,11 @@ import { clampContour, LABEL_CONTOUR_MAX, buildBatchMovieConfig, resolveTrackSou
 import { OVERLAY_Z_TOL } from './viewerLabels'
 
 describe('buildBatchMovieConfig', () => {
+  it('sends the plane range — the max over it in 2D, the box in 3D — and null when unset', () => {
+    expect(buildBatchMovieConfig({ zSlice: 8, zRange: [0, 16] }, [], {}).zRange).toEqual([0, 16])
+    expect(buildBatchMovieConfig({}, [], {}).zRange).toBeNull()
+  })
+
   it('fills defaults for an empty config', () => {
     const c = buildBatchMovieConfig({}, ['A', 'B'], {})
     expect(c.valueName).toBe('')

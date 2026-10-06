@@ -59,6 +59,10 @@ export interface BatchMovieCfg {
   // before the setting existed. One switch for both layer kinds — image and mask.
   show3D?: boolean
   zSlice?: number | null
+  // A range of planes `[lo, hi]`: in 2D the max over them (wins over `zSlice`), in 3D the box rendered.
+  // Null / absent = one slice, or the whole stack. Fill from view sets it from the viewer's ±n window
+  // or 3D Depth crop; clamped per image by the recorder.
+  zRange?: [number, number] | null
   renderQuality?: RenderQuality
   camera3d?: Camera3D
   compareLayout?: CompareLayout
@@ -132,6 +136,7 @@ export interface BatchMovieRequestConfig {
   labelContour: number
   show3D: boolean
   zSlice: number | null
+  zRange: [number, number] | null
   renderQuality: RenderQuality
   camera3d: Camera3D | null
   compareLayout: CompareLayout
@@ -228,6 +233,7 @@ export function buildBatchMovieConfig(
     // a z index alongside show3D is a leftover from the last time 2D was picked — Julia ignores it
     // (`_z_slice`), and sending null rather than dropping the key keeps the two ends reading alike
     zSlice: cfg.show3D ? null : (cfg.zSlice ?? null),
+    zRange: cfg.zRange ? [cfg.zRange[0], cfg.zRange[1]] : null,
     // only read in 3D: the ray-cast density and the camera every image is rendered from
     renderQuality: cfg.renderQuality ?? RENDER_QUALITY_DEFAULT,
     camera3d: cfg.show3D ? (cfg.camera3d ?? null) : null,

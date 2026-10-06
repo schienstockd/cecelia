@@ -65,7 +65,7 @@ import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
-  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
+  slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
@@ -4131,7 +4131,7 @@ const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
   const canvasW = Math.max(1, c.clientWidth)
   const canvasH = Math.max(1, c.clientHeight)
   const vs = buildViewState({
-    cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value,
+    cam: cam.value, meta: m, t: t.value, zPlane: zPlane.value, zLoaded: zLoaded.value,
     ndisplay: mode.value === 'plane' ? 2 : 3,
     canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
     perspective: settings.viewerVolumeProjection === 'persp',
@@ -4145,7 +4145,7 @@ const publishViewStateSink = debouncedLatest<void>(async (_v, isCurrent) => {
 // that don't replace the array reference.
 watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
        () => cam.value.yaw, () => cam.value.pitch,
-       zPlane, t, mode, meta, () => settings.viewerVolumeProjection],
+       zPlane, zLoaded, t, mode, meta, () => settings.viewerVolumeProjection],
       () => publishViewStateSink.schedule(undefined))
 watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|${ch.hi}`).join(','),
       () => publishViewStateSink.schedule(undefined))
@@ -4229,14 +4229,36 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
     // renderer active, which is what the user hit: controls updated but the canvas never redrew
     // because the plane renderer's watchers didn't fire for the new mode.
     const modeChanged = mode.value !== (applied.ndisplay === 3 ? 'volume' : 'plane')
+    const bricksBefore = bricksEnabled.value
     mode.value = applied.ndisplay === 3 ? 'volume' : 'plane'
+
+    // The planes the view had loaded: its ±n window, or its 3D Depth crop (`zControlsForLoaded`).
+    // A snapshot without them leaves both as they are.
+    let zChanged = false
+    if (applied.zRange) {
+      const zc = zControlsForLoaded(mode.value, applied.zPlane, applied.zRange, m.nZ)
+      // the ± slider's own bound, as `commitZWindow` / the props restore clamp it
+      zc.window.half = Math.min(zc.window.half, zWindowMax.value)
+      if (zc.window.on !== zWindowOn.value || (zc.window.on && zc.window.half !== zWindowHalf.value)) {
+        zWindowOn.value = zc.window.on
+        if (zc.window.on) zWindowHalf.value = zWindowDraft.value = zc.window.half
+        zChanged = true
+      }
+      if (zc.depth && (zc.depth[0] !== zRange.value[0] || zc.depth[1] !== zRange.value[1])) {
+        zRange.value = zc.depth
+        zChanged = true
+      }
+    }
 
     // z uses the canonical `stepZ` (writes the ref + schedules the reallocate pump); a bare
     // `zPlane.value = …` moves the number but leaves the tile atlas / volume texture on the old
     // plane. `gotoT` is the canonical t-setter for the same reason: it schedules the tile pump or
-    // the timepoint pump depending on the render path, then redraws.
-    if (modeChanged) {
-      await reallocate(false)
+    // the timepoint pump depending on the render path, then redraws. A mode or window/Depth change
+    // reallocates anyway, so the plane rides along on it — once: when the change flipped
+    // `bricksEnabled`, its own watcher does the reallocate (see `commitZWindow`).
+    if (modeChanged || zChanged) {
+      zPlane.value = applied.zPlane
+      if (modeChanged || bricksEnabled.value === bricksBefore) await reallocate(false)
     } else if (zPlane.value !== applied.zPlane) {
       stepZ(applied.zPlane)
     }
@@ -4770,7 +4792,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     const canvasW = Math.max(1, el.clientWidth)
     const canvasH = Math.max(1, el.clientHeight)
     const viewStateSnapshot = meta.value ? buildViewState({
-      cam: cam.value, meta: meta.value, t: shownT.value, zPlane: zPlane.value,
+      cam: cam.value, meta: meta.value, t: shownT.value, zPlane: zPlane.value, zLoaded: zLoaded.value,
       ndisplay: mode.value === 'plane' ? 2 : 3,
       canvasW, canvasH, viewHalfAngle: VIEW_HALF_ANGLE,
       perspective: settings.viewerVolumeProjection === 'persp',
