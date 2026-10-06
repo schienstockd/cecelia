@@ -40,6 +40,28 @@ class FindJuliaTest(unittest.TestCase):
             self.app._find_julia()          # called again on every reprovision: PATH must not grow
             self.assertEqual(os.environ["PATH"], bin_dir + os.pathsep + "/usr/local/bin:/usr/bin")
 
+    def test_system_scope_stacks_a_writable_depot_over_the_shared_one(self):
+        # <root>/juliaup/depot exists only for a system install, which other accounts see read-only.
+        bin_dir = os.path.join(self.root, "juliaup", "bin")
+        shared = os.path.join(self.root, "juliaup", "depot")
+        os.makedirs(bin_dir)
+        os.makedirs(shared)
+        open(os.path.join(bin_dir, self.app._exe("julia")), "w", encoding="utf-8").close()
+        home = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"PATH": "/usr/bin", "HOME": home, "USERPROFILE": home}, clear=True):
+            self.app._find_julia()
+            self.assertEqual(os.environ["JULIA_DEPOT_PATH"].split(os.pathsep),
+                             [os.path.join(home, ".cecelia", "julia-depot"), shared, ""])
+
+    def test_user_scope_private_juliaup_leaves_depot_alone(self):
+        # The Apple-Silicon user-scope juliaup has no shared depot: the user's own ~/.julia stays.
+        bin_dir = os.path.join(self.root, "juliaup", "bin")
+        os.makedirs(bin_dir)
+        open(os.path.join(bin_dir, self.app._exe("julia")), "w", encoding="utf-8").close()
+        with mock.patch.dict(os.environ, {"PATH": "/usr/bin"}, clear=True):
+            self.app._find_julia()
+            self.assertNotIn("JULIA_DEPOT_PATH", os.environ)
+
     def test_without_it_path_julia_is_used_and_env_untouched(self):
         env = {"PATH": "/usr/local/bin:/usr/bin"}
         with mock.patch.dict(os.environ, env, clear=True), \

@@ -59,7 +59,8 @@ if ($Scope -eq 'system') {
   $JuliaupDepot = Join-Path $InstallDir 'juliaup'
   $env:PIXI_HOME = $PixiHome
   $env:JULIAUP_DEPOT_PATH = $JuliaupDepot
-  $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot')
+  # Trailing ';' = Julia's bundled stdlib depot, so the stdlibs aren't recompiled into the shared one.
+  $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot') + ';'
 } else {
   $PixiHome = if ($env:PIXI_HOME) { $env:PIXI_HOME } else { Join-Path $env:USERPROFILE '.pixi' }
   $env:PIXI_HOME = $PixiHome
@@ -278,15 +279,18 @@ Say "Installed: $Provenance ($Scope scope)"
 # ── Start Menu shortcut ───────────────────────────────────────────────────────
 if ($Scope -eq 'system') {
   # A wrapper any account runs: exports the shared runtime env, then `pixi run app`. The shortcut goes
-  # in the All-Users Start Menu (CommonPrograms).
+  # in the All-Users Start Menu (CommonPrograms). JULIA_DEPOT_PATH puts a per-user writable depot in
+  # front of the shared one (read-only to non-admins) and keeps Julia's bundled stdlib depot (the
+  # trailing empty entry) — same shape and reason as install.sh's launcher. `--as-is` because a plain
+  # `pixi run` takes a write lock on the env, which non-admins can't (also as in install.sh).
   $Launch = Join-Path $InstallDir 'cecelia-launch.cmd'
   @"
 @echo off
 set "PIXI_HOME=$PixiHome"
 set "JULIAUP_DEPOT_PATH=$JuliaupDepot"
-set "JULIA_DEPOT_PATH=$JuliaupDepot\depot"
+set "JULIA_DEPOT_PATH=%USERPROFILE%\.cecelia\julia-depot;$JuliaupDepot\depot;"
 set "PATH=$PixiHome\bin;$JuliaupDepot\bin;%PATH%"
-cd /d "$InstallDir" && "$Pixi" run app
+cd /d "$InstallDir" && "$Pixi" run --as-is app
 "@ | Set-Content -Path $Launch -Encoding ASCII
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
   $Lnk = Join-Path $Programs 'Cecelia.lnk'

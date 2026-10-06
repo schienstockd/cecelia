@@ -15,6 +15,26 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+### Added
+
+- **Uninstaller.** `uninstall.sh` and `uninstall.ps1` remove Cecelia: the app, its environment and
+  its menu entry. Your settings and projects are kept unless you choose to delete them. It asks on a
+  terminal, or you can pass `--wipe-settings` / `--wipe-projects`. Projects are deleted one by one;
+  other files in your projects folder are left alone. See *Uninstall* in `docs/INSTALL.md`.
+
+### Changed
+
+- **A shared (system-wide) install now belongs to the admin who installs it, not to root.** Run the
+  installer as your admin account, without `sudo`. It asks for your password only to create
+  `/opt/cecelia` and the menu entry. Downloads and caches no longer pile up in `/root`, and the admin
+  can update it without `sudo`.
+
+### Fixed
+
+- **Other accounts can start a shared install.** Julia used to fail for any account except the one
+  that installed it, while trying to write into the shared, read-only package folder. Each account
+  now gets its own small writable Julia folder.
+
 ## [0.2.10] — 2026-10-02
 
 Patch release: two data-loss fixes in image bookkeeping, 3D movies at the viewer's brightness, and

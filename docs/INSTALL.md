@@ -209,10 +209,50 @@ both ways — ALPN downgrades under dev and TLS earns nothing there. Set `CECELI
 
 ## Shared / lab machines (system-wide install)
 
-For one shared install serving every account, pass `CECELIA_INSTALL_SCOPE=system` (needs root /
-Administrator). It installs to `/opt/cecelia` · `/Applications/cecelia` · `%ProgramFiles%\cecelia`
-with a shared runtime; config + projects stay per-user (`~/.cecelia`), and updates are admin-only.
-See `docs/SHIPPING.md` → *Install scope* for the full model and its verification status.
+For one shared install serving every account, pass `CECELIA_INSTALL_SCOPE=system`. It installs to
+`/opt/cecelia` · `/Applications/cecelia` · `%ProgramFiles%\cecelia` with a shared runtime; config +
+projects stay per-user (`~/.cecelia`).
+
+On Linux/macOS, run it **as your admin account, without `sudo`**. The installer asks for your sudo
+password only to create `/opt/cecelia` and the all-users menu entry. The install is then owned by
+that account: its downloads and caches stay in that account's home (nothing in `/root`), other
+accounts get read-only access, and the admin updates it by re-running the same command.
+
+```sh
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_INSTALL_SCOPE=system sh
+```
+
+`… | sudo sh` also works: the installer hands the work to the account that ran `sudo`. The install
+has to live outside a home directory, because Ubuntu's home dirs are private (`750`) and other
+accounts couldn't reach it there. On Windows, run an elevated PowerShell. See `docs/SHIPPING.md` →
+*Install scope* for the full model and its verification status.
+
+## Uninstall
+
+`uninstall.sh` / `uninstall.ps1` (in the install dir, and at the same raw URL as the installers)
+removes the install, including the shared Pixi + Julia of a system install, plus its menu entry or
+shortcut, the launcher logs and the Claude observer registration. **Your settings (`~/.cecelia`)
+and projects are kept** unless you say otherwise. On a terminal it shows what it found, with sizes,
+and asks. Deleting projects needs `delete` typed out.
+
+```sh
+sh ~/.local/share/cecelia/uninstall.sh                     # user install (or /opt/cecelia/uninstall.sh)
+sh ~/.local/share/cecelia/uninstall.sh --wipe-settings --wipe-projects --yes   # no questions
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/uninstall.sh | sh
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\cecelia\uninstall.ps1"   # -WipeSettings -WipeProjects -Yes
+```
+
+- **Projects are deleted one by one.** Only folders inside your projects dir that hold a
+  `project.json` are removed. The projects dir itself is removed only if nothing else is left in it.
+- **Never removed:** Pixi (`~/.pixi`), Julia (`~/.juliaup`, `~/.julia`), caches and Claude, because
+  other software uses them. The summary lists the ones present, with sizes.
+- **Shared machine:** removing a system install removes it for everyone. Other accounts' settings and
+  projects are untouched. Each user can clear their own with `--data-only --wipe-settings
+  --wipe-projects`.
+- It refuses while Cecelia is running. Quit it first.
 
 ## Custom install location
 

@@ -327,7 +327,7 @@ install *script* is identical; only the location, the runtime home, and the shor
 | `system` | `/opt/cecelia` | `/Applications/cecelia` | `%ProgramFiles%\cecelia` | root / Administrator |
 
 ```
-curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh      # Linux/macOS
+curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sh              # Linux/macOS, as the admin
 # Windows: run an elevated PowerShell, then set $env:CECELIA_INSTALL_SCOPE='system' before irm|iex
 ```
 
@@ -340,14 +340,47 @@ always `~/.cecelia/custom.toml` + the wizard-chosen projects dir — because `co
 on install scope (see `docs/todo/ONBOARDING_PLAN.md` D1). So a shared workstation needs no per-user
 setup beyond each user running the first-launch wizard once.
 
-**Updates on a system install are admin-only.** The app files are root-owned, so the in-app updater
+**Owned by the installing admin, not root** (Linux/macOS — `docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`).
+The installer runs as the admin. It uses `sudo` only to create the install dir (then `chown`s it to
+the admin) and to write `/usr/share/applications/cecelia.desktop`. Under `sudo sh` it hands every
+download and provisioning step to `$SUDO_USER`. Package caches therefore stay in the admin's home,
+and nothing lands in `/root`. `PIXI_NO_PATH_UPDATE=1` keeps the admin's shell rc untouched. The
+admin updates by re-running the installer, with no sudo once the dir exists.
+
+**Every other account sees the install read-only — Julia's depot is stacked for that.** The launcher
+(and `scripts/activate_juliaup.sh`, and `_find_julia` in `app.py`) sets
+`JULIA_DEPOT_PATH=~/.cecelia/julia-depot:<install>/juliaup/depot:`. Each piece is load-bearing:
+- the per-user writable depot comes first, because Julia writes compile caches and logs to the first
+  depot;
+- the shared depot follows;
+- the trailing empty entry keeps Julia's bundled stdlib depot. Without it the stdlibs look
+  uncompiled, and Julia dies precompiling them into the read-only depot
+  (`EROFS … .ji.pidfile`, reproduced in a `bwrap` sandbox).
+
+**The launcher runs `pixi run --as-is app`.** A plain `pixi run` takes a write lock on the env
+prefix. On an install another account owns, it fails with `failed to acquire install lock …
+Read-only file system`, before any Python runs. That broke the old root-owned layout too.
+`--as-is` (= `--frozen --no-install`) skips the lock. The env was provisioned by the installer, and
+updates re-run the installer.
+
+**Updates on a system install are admin-only.** The app files are not the user's, so the in-app updater
 refuses to self-update: the installer writes `.cecelia-scope` at the install root, `/api/update/check`
 reports it, `/api/update/apply` returns 403 for a `system` scope, and Settings → Software (plus the
 header badge) show an "updates must be run by an administrator (re-run the install-system script)"
 note instead of the Update button. Re-running `install.sh` as root updates the shared install.
 
-> **Verification status.** The user-scope path is verified on Linux. The **system-scope path is
-> authored but not yet verified on any real multi-user box — Linux, macOS, or Windows.** All three
+> **Verification status (2026-10-06).** Linux system scope was verified end to end in a `bwrap`
+> sandbox:
+> - a full install of v0.2.10 as a non-root owner, with a fake `/opt`;
+> - the server launched as a different uid against the read-only install, reaching `/api/health`
+>   in 10 s.
+>
+> The control launch with the old `JULIA_DEPOT_PATH` died with `EROFS`. Not covered there: the
+> `sudo sh` → `$SUDO_USER` hand-over (sudo can't run in the sandbox), Pluto notebooks for non-owners,
+> and real OS permissions as opposed to a read-only bind.
+>
+> Earlier status: the user-scope path is verified on Linux. The **system-scope path is otherwise
+> not yet verified on a real multi-user box — Linux, macOS, or Windows.** All three
 > are multi-user, and macOS is the *primary* target, so this matters most there. Unverified in
 > particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, the juliaup
 > `--path`, and the portable juliaup on Windows), whether a non-admin account can `pixi run` a root-owned read-only env, and the
