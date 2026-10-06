@@ -217,7 +217,7 @@ class TestRunnerRateLimit(unittest.TestCase):
                 return runner.subprocess.CompletedProcess(cmd, 1, stdout, "")
             scored = mock.Mock(return_value={"one": {"declared": None, "byValueName": {}}})
             a = runner.argparse.Namespace(root=str(root), images=1, seed=0, prior="none", fixture=None,
-                                          brief="vague", claude_path="/bin/true", budget_usd=1.0, model=None,
+                                          brief="vague", claude_path=sys.executable, budget_usd=1.0, model=None,
                                           timeout_min=1, dry_run=False, scripted_ceiling=False)
             with mock.patch.object(runner.setup, "main", fake_setup), \
                     mock.patch.object(runner, "make_checkout", return_value=pathlib.Path(d)), \
