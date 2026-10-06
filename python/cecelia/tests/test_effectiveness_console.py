@@ -251,6 +251,10 @@ class FormatEventTest(unittest.TestCase):
             "key": "run-2", "tool": "set_gate", "file": "app/x.jl", "line": 4, "desc": "d"}},
             use_colour=False)
         self.assertIn("app/x.jl:4", traced)
+        review = format_event({**base, "payload": {
+            "key": "rev-1", "kind": "review", "tool": None, "file": None, "line": None,
+            "cause": "guide", "section": "d03", "desc": "d"}}, use_colour=False)
+        self.assertIn("[review]  guide · d03", review)
 
     def test_sibling_audit_legacy_event_renders_under_fanout_label(self):
         # Pre-rename rows live in the append-only log forever — CLAUDE.md and rollup.py fold

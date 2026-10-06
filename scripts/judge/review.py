@@ -161,6 +161,9 @@ def pending(record: dict, reviews: _t.Iterable[dict]) -> list[dict]:
 
 def _origin(bug: dict) -> str:
     """Where a bug came from: the reviewed branch, or the agent runs that hit it."""
+    if bug.get("review"):
+        return (f"marked bad (cause {bug.get('cause')}) by the reviewer of agent run {bug.get('run') or '?'}, "
+                f"Blackboard entry `{bug.get('entry')}` in project `{bug.get('project')}`")
     if bug.get("kind") == "agent_run":
         return f"hit in {bug.get('runs') or 1} agent run(s), first at commit `{(bug.get('commit') or '?')[:8]}`"
     return f"raised on branch `{bug.get('branch') or '?'}`"
@@ -271,7 +274,7 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
     verdict = v.get("verdict") or b.get("status", "?")
     head = (f"  {_col(_VERDICT_COLOUR.get(verdict, YELLOW), verdict, use_colour=use_colour)}  "
             f"{_col(_BOLD, where, use_colour=use_colour)}  "
-            + _col(_DIM, f"{b.get('branch') or (str(b.get('runs') or 1) + ' agent run(s)' if b.get('kind') == 'agent_run' else '?')}"
+            + _col(_DIM, f"{b.get('branch') or ('run ' + str(b.get('run') or '?') if b.get('review') else str(b.get('runs') or 1) + ' agent run(s)' if b.get('kind') == 'agent_run' else '?')}"
                          f" · {b['key']}", use_colour=use_colour))
     out = [head]
     decide = item["kind"] == "decide"

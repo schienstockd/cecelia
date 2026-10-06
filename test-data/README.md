@@ -116,3 +116,13 @@ bioformats2raw --resolutions 1 --ngff-version 0.5 --tile-width 32 --tile-height 
 
 Note `shuffle=shuffle`, not `shuffle=1` (0.11.x) and not `byteshuffle` (documented by 0.12 but broken
 upstream) — see `bf2raw_shuffle_values` in `app/src/config.jl`.
+
+## `agent-runs/projects/` — Blackboard run records with reviewed sections
+
+A projects dir of its own (not under `projects/`, so nothing that lists test projects sees it) with
+one project, `RvwPrj`, holding only `blackboard/`: three agent run records (meta `agentRun`, two
+naming the guide `intravital`, one naming none) and one ordinary note. Their `sectionOutcomes` cover
+every case the weekly judge's run-review reader (`scripts/judge/run_reviews.py`) sorts: a person's
+`bad` with cause `guide`, `platform` and `agent`; a Claude proposal; a `bad` from before causes
+existed (no cause); a `good`; and a `bad` on a note's `sNN` section. JSON + Markdown only, a few KB.
+Read by `python/cecelia/tests/test_judge_run_reviews.py`.
