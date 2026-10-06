@@ -475,6 +475,42 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         @test init_object(proj.uid, img.uid).meta["TimeIncrement"] == 10.0  # ccid untouched
         rm(proj.root; recursive = true)
     end
+
+    # ── ensure_saturation_meta!: an image imported before the probe gets it on first recommend ──
+    # Real integer store (ZARRFMT/ZV2img), copied into a throwaway project — runs the import's own
+    # `saturation_run.py`, persists through the fill-only meta write, and does it only once.
+    @testset "ensure_saturation_meta! backfills via the import probe" begin
+        src = fixture_path("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+        if !have_fixture(src)
+            @test_skip "ZARRFMT fixture missing"
+        else
+            proj = create_project!(name = "sat-backfill-$(rand(1000:9999))")
+            s    = add_set!(proj; name = "set")
+            img  = add_image!(s; name = "img", meta = Dict{String,Any}("SizeT" => 1))
+            cp(src, joinpath(img_zero_dir(img), "img.ome.zarr"))
+            img.filepath["default"]            = "img.ome.zarr"
+            img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+            save!(img)
+
+            r0 = init_object(proj.uid, img.uid)
+            @test !haskey(r0.meta, "saturation")
+            # :metadata never probes
+            Cecelia.recommend_plan(r0; evidence = :metadata)
+            @test !haskey(init_object(proj.uid, img.uid).meta, "saturation")
+            # :all probes once and persists; the score is no longer absent
+            plan = Cecelia.recommend_plan(r0)
+            r1 = init_object(proj.uid, img.uid)
+            @test haskey(r1.meta, "saturation")
+            chans = r1.meta["saturation"]["channels"]
+            @test !isempty(chans) && all(ch -> haskey(ch, "zeroFrac"), chans)
+            pl = only([q for q in plan.qc_scores if q.metric == "smooth.photon_limited_frac"])
+            @test !Cecelia.qc_score_absent(pl)
+            @test r1.meta["SizeT"] == 1                          # fill-only: other meta untouched
+            # already present → no second probe
+            @test !Cecelia.ensure_saturation_meta!(r1)
+            rm(proj.root; recursive = true)
+        end
+    end
 end
 
 @testset "QC framework" begin

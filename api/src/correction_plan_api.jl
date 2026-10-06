@@ -11,7 +11,9 @@
 #   POST /api/correction-plan/mount   { projectUid, imageUid,
 #                                        overwrite? }                → { ok, name, nodeCount, created }
 #
-# The recommend endpoint is pure (no disk write). Save runs recommend AND persists to plan.json so
+# The recommend endpoint writes no plan. Its one write is a fill-only backfill of a missing
+# `meta.saturation` (the import probe, `ensure_saturation_meta!`) on an image imported before the
+# probe existed — an acquisition measure, run once, not user state. Save runs recommend AND persists to plan.json so
 # the sidecar records the user's card choice + wizard answers atomically. Get returns whether the
 # sidecar exists and whether its `saturationFingerprint` still matches the image's current meta
 # (`stale = true` means the image was re-imported since the plan was saved). The frontend uses that

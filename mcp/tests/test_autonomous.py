@@ -68,7 +68,8 @@ class Lock(unittest.TestCase):
                 c._request("GET", "/api/gating/stats", {"projectUid": "tSJpBI"})
 
     def test_write_routes_are_gating_only(self):
-        # the one non-gating POST is the correction-plan RECOMMEND, which is pure (save/mount are not here)
+        # the one non-gating POST is the correction-plan RECOMMEND: no plan write, only a one-off fill
+        # of a missing meta.saturation (save/mount are not here)
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"} - {"/api/correction-plan/recommend"}
         self.assertTrue(writes)
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
