@@ -182,6 +182,11 @@ export interface TaskDef {
                           // circuits with the note, so the picker row greys out and reads
                           // "<label> — Coming soon (…)". Set in the task JSON so a release can flip
                           // the flag off without touching Julia/TS. See docs/MODULES.md → `comingSoon`.
+  // What the task is for and when it is — and is not — the right step (docs/MODULES.md → `purpose`).
+  // Shown under the function picker and in the Guides panel's "Which step?" view; also read by the MCP.
+  purpose?: string
+  useWhen?: string[]
+  notWhen?: string[]
   comingSoonNote?: string // bespoke short reason shown after the em-dash (default: "Coming soon").
                           // Keep short — this lands in a `<select>` option label.
 }

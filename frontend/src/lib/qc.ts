@@ -107,7 +107,9 @@ export function qcSummary(img: CciaImage): QcSummary | null {
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }
-const esc = (s: string) => s.replace(/[&<>"']/g, c => HTML_ESCAPES[c])
+/** Escape text for an HTML tooltip (v-tooltip `escape: false`). Also used by `utils/taskDiscovery.ts`. */
+export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => HTML_ESCAPES[c])
+const esc = escapeHtml
 
 // Only `#rrggbb`/`#rrggbbaa` from the MODULE_COLORS palette ever reaches the style attribute below.
 // The palette is a fixed literal so this cannot currently fail — it is here so that the ONE place this
