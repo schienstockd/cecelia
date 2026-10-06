@@ -15,6 +15,10 @@ to supervise), stderr.log, record.json, decisions.json. The source project is ca
 changed or removed under it during the run is a failure (bar the bookkeeping the app rewrites when
 the user opens it — reported, not failed). After the canary, the run's record goes onto the source
 project's blackboard (`run_record.py`, AGENT_RUN_REVIEW_PLAN P1) — the one write into the source.
+
+A run the account's usage limit stopped carries `rateLimited` = {message, resetAt} in record.json and
+on its blackboard entry, and the runner exits 75 (`EX_TEMPFAIL`): what the copy holds is where the
+limit cut it off, not the agent's result.
 """
 from __future__ import annotations
 
@@ -37,6 +41,7 @@ import run_findings  # noqa: E402
 import run_record  # noqa: E402
 import score  # noqa: E402
 import trace_view  # noqa: E402
+from cecelia.effectiveness import claude_cli  # noqa: E402
 from cecelia.utils import vn_versioning  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
@@ -93,7 +98,8 @@ def summarise_trace(path: pathlib.Path, source_project: str) -> dict:
             final = e
     return {"model": model, "costUsd": final.get("cost"), "turns": final.get("turns"), "toolCalls": calls,
             "toolCallsTotal": sum(calls.values()), "toolErrors": errors,
-            "sourceProjectReads": leaks, "finalMessage": final.get("text", "")}
+            "sourceProjectReads": leaks, "finalMessage": final.get("text", ""),
+            "rateLimited": final.get("rateLimited")}
 
 
 def _get(api_url: str, path: str, params: dict):
@@ -227,10 +233,11 @@ def run(a) -> dict:
     canary["added"] = sorted(set(after["files"]) - set(before["files"]))[:20]
     canary["appBookkeeping"] = [f for f, h in before["files"].items()
                                 if any(x in f for x in APP_BOOKKEEPING) and after["files"].get(f) != h]
+    trace = summarise_trace(root / "trace.jsonl", a.source_project)
     rec = {"startedAt": stamp, "startedAtUtc": started_utc, "codeSha": code_sha, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
            "guide": a.guide or None, "checklist": a.check or [], "knowledgeOn": bool(a.knowledge), "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
-           "trace": summarise_trace(root / "trace.jsonl", a.source_project),
-           "canary": canary}
+           "trace": trace, "canary": canary,
+           "rateLimited": claude_cli.rate_limit_note(trace["rateLimited"]) if trace["rateLimited"] else None}
     rec["agent"], rec["reference"] = {}, {}
     for im in info["images"]:
         for key, (proj, img) in (("agent", (info["projectUid"], im["imageUid"])),
@@ -286,8 +293,13 @@ def main(argv=None) -> int:
     t = rec["trace"]
     print(json.dumps({"copy": rec["copy"]["projectUid"], "wallS": rec["wallS"], "costUsd": t["costUsd"],
                       "toolCalls": t["toolCallsTotal"], "toolErrors": t["toolErrors"],
-                      "canaryOk": rec["canary"]["intact"], "blackboard": rec.get("blackboard")}))
-    return 0 if rec["canary"]["intact"] and rec["exitCode"] == 0 else 1
+                      "canaryOk": rec["canary"]["intact"], "blackboard": rec.get("blackboard"),
+                      "rateLimited": rec.get("rateLimited")}))
+    if not rec["canary"]["intact"]:
+        return 1
+    if rec.get("rateLimited"):
+        return claude_cli.EX_TEMPFAIL
+    return 0 if rec["exitCode"] == 0 else 1
 
 
 if __name__ == "__main__":

@@ -180,15 +180,7 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
         raise VerifyError(f"verify agent failed: {e}") from e
     finally:
         agent_sandbox.remove_worktree(repo, dest)
-    try:
-        out = json.loads(proc.stdout or "{}")
-    except ValueError:
-        out = {}
-    if not isinstance(out, dict):
-        out = {}
-    limited = _judge.rate_limit(out)
-    if limited:
-        raise _judge.RateLimited(limited)
+    out = _judge.read_result(proc)
     answer = out.get("structured_output")
     cost = float(out.get("total_cost_usd") or 0.0)
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
@@ -276,7 +268,10 @@ def main(argv: list[str] | None = None) -> int:
         ids = set(args.only.split(","))
         bugs = [{**b, "status": "open"} for b in bugs if b["id"] in ids]
     bugs = [{k: v for k, v in b.items() if k != "verify"} for b in bugs]
-    out, summary = verify(bugs, date=_dt.date.today().isoformat(), sha=sha, cap_usd=args.cap)
+    try:
+        out, summary = verify(bugs, date=_dt.date.today().isoformat(), sha=sha, cap_usd=args.cap)
+    except _judge.RateLimited as e:
+        return _judge.limit_exit("judge-verify", e)
     print(json.dumps([{"id": b["id"], "key": b["key"], **(b.get("verify") or {})} for b in out], indent=2,
                      ensure_ascii=False))
     print(json.dumps(summary), file=sys.stderr)

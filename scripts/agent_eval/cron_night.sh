@@ -7,6 +7,10 @@
 #
 # Shares the weekly judge's lock, so it never overlaps the Tuesday pass (a busy lock = skip, exit 0).
 # Called by systemd/agent-eval-night.service; fails loudly so `systemctl --user status` shows red.
+#
+# The usage limit: a run it stops exits 75 (`EX_TEMPFAIL`) with its record written and marked
+# `rateLimited` (not scored). The record is still stored; the remaining briefs are skipped — they
+# would hit the same limit — and the night exits 75.
 
 set -euo pipefail
 
@@ -16,6 +20,8 @@ BUDGET="${CECELIA_AGENT_NIGHT_BUDGET:-5}"
 BRIEFS="${CECELIA_AGENT_NIGHT_BRIEFS:-vague guided}"
 RUN_ROOT="${CECELIA_AGENT_NIGHT_ROOT:-/tmp/cecelia-agent-night}"
 EXTRA_ARGS="${CECELIA_AGENT_NIGHT_ARGS:-}"      # e.g. --scripted-ceiling to test the wiring at $0
+
+EX_TEMPFAIL=75
 
 LOG_DIR="${CECELIA_EVAL_CRON_LOG_DIR:-$HOME/.cecelia-effectiveness/cron}"
 # beside the effectiveness log, like judge-runs/ (python/cecelia/effectiveness/judge_staleness.py)
@@ -38,9 +44,17 @@ fi
     for brief in $BRIEFS; do
         root="$RUN_ROOT/$TS-$brief"
         echo "--- $brief → $root"
-        nice -n 10 ionice -c 3 pixi run agent-eval-run --root "$root" --brief "$brief" --budget-usd "$BUDGET" $EXTRA_ARGS
+        rc=0
+        nice -n 10 ionice -c 3 pixi run agent-eval-run --root "$root" --brief "$brief" --budget-usd "$BUDGET" $EXTRA_ARGS || rc=$?
+        if [ "$rc" -ne 0 ] && [ "$rc" -ne "$EX_TEMPFAIL" ]; then
+            exit "$rc"
+        fi
         cp "$root/record.json" "$STORE/$TS-$brief.json"
         cp "$root/record.md" "$STORE/$TS-$brief.md"
+        if [ "$rc" -eq "$EX_TEMPFAIL" ]; then
+            echo "=== usage limit: $brief recorded, not scored; skipping the remaining briefs $(date -Is) ==="
+            exit "$EX_TEMPFAIL"
+        fi
     done
     echo "=== agent night finished $(date -Is) ==="
 } 2>&1 | tee -a "$LOG_FILE"
