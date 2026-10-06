@@ -16,11 +16,13 @@ function parse_flip_params(d::AbstractDict)::FlipParams
 end
 
 # Flip an image along one axis (X / Y / Z) and register the result as a NEW VERSION on the same
-# image — dims are preserved (only order along one axis reverses), so existing segmentations,
-# populations and gates that reference the source image's coordinates still line up on the flipped
-# version. Same versioned-in-place pattern as af_correct / drift_correct / smooth (`versioned_set_field!`
-# on the same image under an output value_name), NOT a new image (a rotation of 90° / 270° would swap
-# X↔Y and become a new-image / editImages task).
+# image. Dims are preserved but the content is MIRRORED: an object at x sits at W-1-x on the flipped
+# version. Labels are not touched — existing segmentations (and their populations, gates, tracks)
+# stay in the SOURCE version's coordinates and do NOT line up on the flipped one; segment after
+# flipping. (Same reason `flip_run.py` drops the valid-region box.) Same versioned-in-place pattern
+# as af_correct / drift_correct / smooth (`versioned_set_field!` on the same image under an output
+# value_name), NOT a new image (a rotation of 90° / 270° would swap X↔Y and become a new-image /
+# editImages task).
 # QC-EXEMPT: a flip is a deterministic geometric op with no measurement output and no numeric signal
 # to score — the sanctioned "no objective signal" case.
 function _run_task(task::Flip, img::CciaImage, params::Dict{String,Any};

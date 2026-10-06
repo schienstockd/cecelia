@@ -30,7 +30,7 @@
         { "label": "Y (vertical)",   "value": "Y", "help": "Mirror top/bottom — reverses Y" },
         { "label": "Z",              "value": "Z", "help": "Reverse the Z stack (top ↔ bottom slice)" }
       ],
-      "tip": "Which axis to reverse; dims are preserved so downstream artifacts still line up"
+      "tip": "Which axis to reverse; labels are not flipped — segment after flipping"
     }
   ]
 }
