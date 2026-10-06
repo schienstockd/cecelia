@@ -5,12 +5,15 @@ copy (dropped detections, broken links, scrambled states).
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -193,6 +196,66 @@ class TestRunner(unittest.TestCase):
         self.assertIsNone(h["link_recall"])
 
 
+class TestRunnerRateLimit(unittest.TestCase):
+    """A run the usage limit stopped is recorded as such — not scored, exit 75 — never as an agent
+    that did nothing. The fixture, the checkout and the scorer are stubbed: nothing spawns."""
+
+    def _run(self, stdout: str):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d) / "run"
+            fixture_dir = pathlib.Path(d) / "fixture"
+            fixture_dir.mkdir()
+            (fixture_dir / "fixture.json").write_text(json.dumps({"kind": "synthetic"}), encoding="utf-8")
+
+            def fake_setup(argv):
+                root.mkdir()
+                (root / "run.json").write_text(json.dumps({
+                    "projectUid": "P", "projectDir": d, "devDir": d, "fixtureDir": str(fixture_dir),
+                    "images": [{"uid": "img", "name": "one"}], "snapshot": {}}), encoding="utf-8")
+
+            def fake_runner(cmd, prompt, cwd, env, timeout):
+                return runner.subprocess.CompletedProcess(cmd, 1, stdout, "")
+            scored = mock.Mock(return_value={"one": {"declared": None, "byValueName": {}}})
+            a = runner.argparse.Namespace(root=str(root), images=1, seed=0, prior="none", fixture=None,
+                                          brief="vague", claude_path=sys.executable, budget_usd=1.0, model=None,
+                                          timeout_min=1, dry_run=False, scripted_ceiling=False)
+            with mock.patch.object(runner.setup, "main", fake_setup), \
+                    mock.patch.object(runner, "make_checkout", return_value=pathlib.Path(d)), \
+                    mock.patch.object(runner, "remove_checkout"), \
+                    mock.patch.object(runner, "value_names", return_value={}), \
+                    mock.patch.object(runner, "new_value_names", return_value={}), \
+                    mock.patch.object(runner, "tasks_run", return_value={}), \
+                    mock.patch.object(runner, "score_outputs", scored), \
+                    mock.patch.object(runner.score, "snapshot", return_value={}), \
+                    mock.patch.object(runner.score, "check_canary", return_value={"intact": True}):
+                rec = runner.run(a, runner=fake_runner)
+                md = (root / "record.md").read_text(encoding="utf-8")
+                with mock.patch.object(runner, "run", return_value=rec), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    code = runner.main(["--root", str(root)])
+            return rec, md, scored, code
+
+    def test_a_limited_run_is_recorded_not_scored(self):
+        rec, md, scored, code = self._run(_trace(final=_LIMITED))
+        self.assertFalse(rec["scored"])
+        self.assertEqual(rec["rateLimited"]["message"], _LIMIT)
+        self.assertIn("resetAt", rec["rateLimited"])
+        self.assertIsNone(rec["headline"])
+        scored.assert_not_called()
+        self.assertIn("RATE-LIMITED, not scored", md)
+        self.assertIn("| Scores | not scored (usage limit) |", md)
+        self.assertEqual(code, 75)
+
+    def test_a_finished_run_is_scored(self):
+        rec, md, scored, code = self._run(_trace())
+        self.assertTrue(rec["scored"])
+        self.assertIsNone(rec["rateLimited"])
+        self.assertEqual(rec["headline"]["images_scored"], 0)
+        scored.assert_called_once()
+        self.assertIn("Segmentation recall / F1", md)
+        self.assertEqual(code, 0)
+
+
 class TestCanary(unittest.TestCase):
     def test_changed_file_and_moved_active(self):
         with tempfile.TemporaryDirectory() as d:
@@ -217,8 +280,14 @@ class TestCanary(unittest.TestCase):
             self.assertIn("1/img/labels/default.zarr", score.check_canary(before, score.snapshot(root))["changed_files"])
 
 
-def _trace(*items) -> str:
-    """A stream-json trace: ("text", s) | ("call", id, name, input) | ("result", id, text, is_error)."""
+_LIMIT = "You've hit your session limit · resets 1:40am (Australia/Sydney)"
+_LIMITED = {"type": "result", "subtype": "success", "is_error": True, "total_cost_usd": 0.8, "num_turns": 4,
+            "result": _LIMIT}
+
+
+def _trace(*items, final: dict | None = None) -> str:
+    """A stream-json trace: ("text", s) | ("call", id, name, input) | ("result", id, text, is_error);
+    `final` replaces the terminal result event."""
     rows = [{"type": "system", "subtype": "init", "model": "m", "session_id": "S1", "tools": []}]
     for it in items:
         if it[0] == "text":
@@ -229,8 +298,8 @@ def _trace(*items) -> str:
         else:
             rows.append({"type": "user", "message": {"content": [
                 {"type": "tool_result", "tool_use_id": it[1], "content": it[2], "is_error": it[3]}]}})
-    rows.append({"type": "result", "subtype": "success", "total_cost_usd": 1.5, "num_turns": 9,
-                 "result": "Done."})
+    rows.append(final or {"type": "result", "subtype": "success", "total_cost_usd": 1.5, "num_turns": 9,
+                          "result": "Done."})
     return "\n".join(json.dumps(r) for r in rows)
 
 
@@ -289,10 +358,10 @@ class TestAppProject(unittest.TestCase):
 class TestRunRecord(unittest.TestCase):
     IMAGES = [{"imageUid": "cp1", "imageName": "one", "sourceImageUid": "src1"}]
 
-    def _decisions(self, *items):
+    def _decisions(self, *items, final=None):
         with tempfile.TemporaryDirectory() as d:
             path = pathlib.Path(d) / "trace.jsonl"
-            path.write_text(_trace(*items), encoding="utf-8")
+            path.write_text(_trace(*items, final=final), encoding="utf-8")
             return run_record.decisions(str(path), self.IMAGES)
 
     def test_step_of(self):
@@ -350,6 +419,77 @@ class TestRunRecord(unittest.TestCase):
         self.assertIn("### d01 · report · all · final message", md)
         self.assertIn("> because", md)
         self.assertIn("## Tool errors (unscored)\n\n- `set_gate`: Error executing tool set_gate", md)
+
+
+    def test_a_run_the_limit_stopped_says_so_and_its_refusal_is_not_the_agents_last_word(self):
+        dec = self._decisions(("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
+                              ("result", "x", "{}", False), final=_LIMITED)
+        self.assertEqual(dec["rateLimited"], _LIMIT)
+        self.assertNotIn("final message", [s["fn"] for s in dec["sections"]])
+        run = {"projectUid": "CP", "projectName": "Agent run x", "images": self.IMAGES, "source": {"projectUid": "SRC"}}
+        md = run_record.render(run, {"brief": "b", "canary": {"intact": True}}, dec, None, {})
+        self.assertTrue(md.startswith("**Stopped by the usage limit:** You've hit your session limit"))
+        self.assertIsNone(self._decisions()["rateLimited"])
+
+    def _write(self, items, final=None, ask=None):
+        """`run_record.write` as a dry run with the why asked; `ask` stands in for `ask_why`."""
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d) / "run"
+            root.mkdir()
+            (root / "trace.jsonl").write_text(_trace(*items, final=final), encoding="utf-8")
+            (root / "run.json").write_text(json.dumps({"projectUid": "CP", "projectName": "Agent run x",
+                                                       "images": self.IMAGES, "source": {"projectUid": "SRC"}}),
+                                           encoding="utf-8")
+            (root / "record.json").write_text(json.dumps({"startedAt": "2026-10-06 00:30", "wallS": 60,
+                                                          "startedAtUtc": "2026-10-05T13:30:00+00:00"}),
+                                              encoding="utf-8")
+            with mock.patch.object(run_record, "ask_why", ask or mock.Mock(return_value={})):
+                out = run_record.write(root, None, None, root / "dry", why=True, boards=False)
+            return out, (root / "dry" / "entry.md").read_text(encoding="utf-8")
+
+    def test_a_why_the_limit_refuses_is_said_not_left_blank(self):
+        gate = [("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
+                ("result", "x", "{}", False)]
+        out, md = self._write(gate, ask=mock.Mock(side_effect=run_record.claude_cli.RateLimited(_LIMIT)))
+        self.assertTrue(out["whyFailed"].startswith("not answered — usage limit: You've hit"))
+        self.assertIn("**Explained after the run:** not answered — usage limit", md)
+        out, md = self._write(gate, ask=mock.Mock(side_effect=run_record.WhyFailed("exit 1: boom")))
+        self.assertEqual(out["whyFailed"], "not answered — exit 1: boom")
+
+    def test_a_limited_run_is_marked_and_its_why_not_asked(self):
+        ask = mock.Mock(return_value={})
+        out, md = self._write([], final=_LIMITED, ask=ask)
+        ask.assert_not_called()
+        self.assertTrue(out["rateLimited"])
+        self.assertTrue(out["title"].endswith("· stopped by usage limit"))
+        self.assertIn("not asked — the run itself was stopped by the usage limit", md)
+
+    def test_ask_why_raises_on_the_limit_and_on_a_failure(self):
+        def proc(code, out):
+            return run_record.subprocess.CompletedProcess([], code, json.dumps(out), "")
+        dec = {"sections": []}
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "cwd").mkdir()
+            with mock.patch.object(run_record.subprocess, "run", return_value=proc(1, _LIMITED)):
+                with self.assertRaisesRegex(run_record.claude_cli.RateLimited, "resets 1:40am"):
+                    run_record.ask_why(root, "S1", dec)
+            with mock.patch.object(run_record.subprocess, "run",
+                                   return_value=proc(1, {"is_error": True, "result": "Overloaded"})):
+                with self.assertRaisesRegex(run_record.WhyFailed, "exit 1: Overloaded"):
+                    run_record.ask_why(root, "S1", dec)
+            with mock.patch.object(run_record.subprocess, "run",
+                                   return_value=proc(0, {"result": 'Sure. {"d01": "it looked right"}'})):
+                self.assertEqual(run_record.ask_why(root, "S1", dec), {"d01": "it looked right"})
+
+    def test_the_app_run_summary_carries_the_limit(self):
+        run_app = _load("run_app")
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "trace.jsonl"
+            path.write_text(_trace(final=_LIMITED), encoding="utf-8")
+            self.assertEqual(run_app.summarise_trace(path, "SRC")["rateLimited"], _LIMIT)
+            path.write_text(_trace(), encoding="utf-8")
+            self.assertIsNone(run_app.summarise_trace(path, "SRC")["rateLimited"])
 
 
 class TestStageBoards(unittest.TestCase):

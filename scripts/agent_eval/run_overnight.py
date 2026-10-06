@@ -9,6 +9,10 @@ a detached checkout at HEAD the agent works in (so CLAUDE.md loads as in real us
 `record.json` / `record.md`. The agent gets no MCP servers (`--strict-mcp-config`) — the observer
 would point it at the user's real app — and `CECELIA_DEV_DIR` = the fixture's isolated dev dir.
 `--dry-run` builds everything and writes the prompt without spawning.
+
+A run the account's usage limit stopped (the stream's `result` event is a 429 / limit refusal) is
+recorded with `rateLimited` = {message, resetAt} and `scored: false` — no headline, no scores, so
+it never reads as an agent that did nothing — and the runner exits 75 (`EX_TEMPFAIL`).
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ import pathlib
 import subprocess
 import sys
 
-from cecelia.effectiveness import agent_sandbox
+from cecelia.effectiveness import agent_sandbox, claude_cli
 from cecelia.utils import vn_versioning
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic
 
@@ -213,24 +217,34 @@ def headline(scores: dict) -> dict:
 
 def render_record(rec: dict) -> str:
     h, nav, c = rec["headline"], rec["navigation"], rec["canary"]
+    limited = rec.get("rateLimited")
 
     def f(v):
         return "—" if v is None else f"{v:.3f}"
-    lines = [f"# Agent run — {rec['startedAt']}", "",
+    lines = [f"# Agent run — {rec['startedAt']}" + (" — RATE-LIMITED, not scored" if limited else ""), "",
              f"Brief **{rec['brief']}** · fixture **{rec['fixtureKind']}** · {rec['claudeVersion']}"
-             f"{' · ' + rec['model'] if rec['model'] else ''} · HEAD `{rec['sha'][:8]}`", "",
-             "| | |", "|---|---|",
-             f"| Declared result | `{json.dumps(rec['declared'])}` |",
-             f"| Segmentation recall / F1 | {f(h['seg_recall'])} / {f(h['seg_f1'])} |",
-             f"| Link recall / precision | {f(h['link_recall'])} / {f(h['link_precision'])} |",
-             f"| State accuracy | {f(h['state_accuracy'])} |",
-             f"| Canary | {'intact' if c['intact'] else 'BROKEN'} |",
-             f"| Cost / turns / tool errors | ${nav['costUsd']:.2f} / {nav['turns']} / {nav['toolErrors']} |",
-             f"| Wall-clock | {nav['wallClockMin']:.1f} min · exit {nav['exitCode']} |", ""]
+             f"{' · ' + rec['model'] if rec['model'] else ''} · HEAD `{rec['sha'][:8]}`", ""]
+    if limited:
+        lines += [f"**The account's usage limit stopped this run** (lifts {limited['resetAt']}): "
+                  f"{limited['message']}", "",
+                  "Not scored — what it left is where the limit cut it off, not the agent's result. "
+                  "Leave it out of any comparison.", ""]
+        scored = ["| Scores | not scored (usage limit) |"]
+    else:
+        scored = [f"| Segmentation recall / F1 | {f(h['seg_recall'])} / {f(h['seg_f1'])} |",
+                  f"| Link recall / precision | {f(h['link_recall'])} / {f(h['link_precision'])} |",
+                  f"| State accuracy | {f(h['state_accuracy'])} |"]
+    lines += ["| | |", "|---|---|",
+              f"| Declared result | `{json.dumps(rec['declared'])}` |",
+              *scored,
+              f"| Canary | {'intact' if c['intact'] else 'BROKEN'} |",
+              f"| Cost / turns / tool errors | ${nav['costUsd']:.2f} / {nav['turns']} / {nav['toolErrors']} |",
+              f"| Wall-clock | {nav['wallClockMin']:.1f} min · exit {nav['exitCode']} |", ""]
     if not c["intact"]:
         lines += ["## Canary", "", "```json", json.dumps(c, indent=1)[:3000], "```", ""]
     lines += ["## Tasks run", ""] + [f"- `{uid}`: {', '.join(t) or '—'}" for uid, t in nav["tasksRun"].items()]
-    lines += ["", "## Final message", "", "```", (rec["finalMessage"] or "")[-3000:], "```", ""]
+    if not rec.get("rateLimited"):   # a limited run's last message is the CLI's refusal, shown above
+        lines += ["", "## Final message", "", "```", (rec["finalMessage"] or "")[-3000:], "```", ""]
     return "\n".join(lines)
 
 
@@ -280,15 +294,18 @@ def run(a, runner=default_runner) -> dict:
 
     sig = agent_sandbox.parse_stream_json(stdout)
     declared = parse_result_line(sig.final_message)
-    scores = score_outputs(state, declared)
+    # cut short by quota: what it left is not the agent's result, so it is not scored
+    scores = None if sig.rate_limited else score_outputs(state, declared)
     with open(pathlib.Path(state["fixtureDir"]) / "fixture.json", encoding="utf-8") as f:
         fixture_kind = json.load(f)["kind"]
     rec = {
-        "schemaVersion": 1, "startedAt": started.isoformat(timespec="seconds"),
+        "schemaVersion": 2, "startedAt": started.isoformat(timespec="seconds"),
         "brief": a.brief, "fixtureKind": fixture_kind, "model": a.model, "budgetUsd": a.budget_usd,
         "sha": subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip(),
         "claudeVersion": subprocess.run([cmd[0], "--version"], capture_output=True, text=True).stdout.strip(),
-        "declared": declared, "headline": headline(scores), "scores": scores,
+        "scored": not sig.rate_limited,
+        "rateLimited": claude_cli.rate_limit_note(sig.rate_limited) if sig.rate_limited else None,
+        "declared": declared, "headline": headline(scores) if scores is not None else None, "scores": scores,
         "canary": score.check_canary(state["snapshot"], score.snapshot(state["projectDir"])),
         "navigation": {"costUsd": sig.cost_usd, "turns": sig.turns, "toolCalls": len(sig.tool_calls),
                        "toolErrors": tool_errors(stdout), "exitCode": code, "wallClockMin": minutes,
@@ -299,7 +316,8 @@ def run(a, runner=default_runner) -> dict:
     with write_atomic(root / "record.md") as f:
         f.write(render_record(rec))
     print(json.dumps({"record": str(root / "record.md"), "headline": rec["headline"],
-                      "canaryIntact": rec["canary"]["intact"], "costUsd": sig.cost_usd}, default=float))
+                      "rateLimited": rec["rateLimited"], "canaryIntact": rec["canary"]["intact"],
+                      "costUsd": sig.cost_usd}, default=float))
     return rec
 
 
@@ -319,7 +337,11 @@ def main(argv=None) -> int:
     ap.add_argument("--scripted-ceiling", action="store_true",
                     help="run the ceiling pipeline instead of an agent (tests the harness, costs nothing)")
     a = ap.parse_args(argv)
-    run(a, runner=scripted_ceiling_runner if a.scripted_ceiling else default_runner)
+    rec = run(a, runner=scripted_ceiling_runner if a.scripted_ceiling else default_runner)
+    if rec.get("rateLimited"):
+        print(f"usage limit — lifts {rec['rateLimited']['resetAt']}; the run is recorded, not scored",
+              file=sys.stderr)
+        return claude_cli.EX_TEMPFAIL
     return 0
 
 

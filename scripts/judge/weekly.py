@@ -62,7 +62,7 @@ _run_reviews = _load_sibling("run_reviews")
 
 
 #: Exit code of a pass stopped by the usage limit (sysexits `EX_TEMPFAIL`): `cron_pass.sh` retries it.
-EX_TEMPFAIL = 75
+EX_TEMPFAIL = _judge.EX_TEMPFAIL
 #: A reset further off than this isn't waited for: that attempt is the last, and opens the FAILED PR.
 #: `cron_pass.sh` follows the `retry` this decides; it holds no rule of its own.
 RETRY_MAX_WAIT = _dt.timedelta(hours=8)

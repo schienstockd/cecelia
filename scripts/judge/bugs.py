@@ -517,8 +517,11 @@ def main(argv: list[str] | None = None) -> int:
     if not sha:
         print(f"judge-bugs: can't resolve {args.ref}", file=sys.stderr)
         return 1
-    bugs, cost = sweep(list(read_events()), date=date, sha=sha, previous=earlier[-1] if earlier else None,
-                       no_judge=args.no_judge, merged_prs=(lambda d: []) if args.no_stranded else None)
+    try:
+        bugs, cost = sweep(list(read_events()), date=date, sha=sha, previous=earlier[-1] if earlier else None,
+                           no_judge=args.no_judge, merged_prs=(lambda d: []) if args.no_stranded else None)
+    except _judge.RateLimited as e:
+        return _judge.limit_exit("judge-bugs", e)
     print(json.dumps(bugs, indent=2, ensure_ascii=False))
     n = {s: sum(b["status"] == s for b in bugs) for s in ("open", "unjudged")}
     print(f"{n['open']} open, {n['unjudged']} unjudged bug(s); judge ${cost:.2f}", file=sys.stderr)
