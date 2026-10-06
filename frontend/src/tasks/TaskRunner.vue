@@ -31,6 +31,7 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { discoveryTooltipHtml } from '../utils/taskDiscovery'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -94,6 +95,12 @@ const OUTPUT_EFFECT_TIP: Record<string, string> = {
   'new-version': 'A new version is written on each image; other versions are untouched',
   'in-place':    'Overwrites the selected image data; not undoable',
 }
+// What the selected task is for, under the picker; use-when / not-when on hover (task spec fields,
+// docs/MODULES.md → `purpose`). The HTML is built and escaped by `discoveryTooltipHtml`.
+const purposeTip = computed(() => {
+  const html = taskDef.value ? discoveryTooltipHtml(taskDef.value) : ''
+  return html ? { value: html, escape: false, class: 'td-tip' } : ''
+})
 const outputEffectLabel = computed(() =>
   OUTPUT_EFFECT_LABEL[taskDef.value?.outputEffect ?? ''] ?? '')
 const outputEffectTip = computed(() =>
@@ -684,7 +691,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           :key="d.task"
           :value="d.task"
           :disabled="!!gatingReasonFor(d)"
-          :title="gatingReasonFor(d) || undefined"
+          :title="gatingReasonFor(d) || d.purpose || undefined"
         >
           {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
         </option>
@@ -704,6 +711,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
       </div>
+      <p v-if="taskDef?.purpose" class="fn-purpose cc-muted cc-fs-xs"
+         v-tooltip.right="purposeTip">{{ taskDef.purpose }}</p>
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
         <i class="pi pi-info-circle" />
@@ -926,6 +935,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   margin: 0.3rem 0 0;
 }
 .fn-effect .pi { font-size: var(--cc-fs-2xs); }
+.fn-purpose { margin: 0.3rem 0 0; }
 .runner-down {
   display: flex;
   align-items: center;
