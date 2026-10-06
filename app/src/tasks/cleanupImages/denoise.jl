@@ -151,6 +151,8 @@ function _run_task(task::Denoise, img::CciaImage, params::Dict{String,Any};
     # Saturation gate (D6). Reads the `meta.saturation` block written at import time. If ALL
     # requested channels are saturated, refuse the run entirely (there is nothing left to denoise);
     # otherwise drop the saturated ones and continue with the rest, and let the QC finding say so.
+    # An image imported before that block existed gets it now (the import's probe, once).
+    ensure_saturation_meta!(img; on_log = on_log) && (raw = read_ccid_raw(ccid))
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     saturated = _denoise_saturated_channels(meta, channel_idx)
     if !isempty(saturated)
