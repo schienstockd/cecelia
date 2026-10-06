@@ -451,7 +451,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         groups.setdefault(g, []).append({**b, "code": where["code"]})
     bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
              for g in waits.values()]
-    ask = [_merge(g) for g in groups.values()]
+    # a bug a fix landed for is judged first, so the cap never holds back the re-check it waits on
+    ask = [_merge(g) for g in sorted(groups.values(), key=lambda g: not any(b.get("fix_landed") for b in g))]
     ask, waiting = ask[:MAX_ITEMS], ask[MAX_ITEMS:]
     bugs += [_not_judged(b, date, "waiting for the judge (over the per-pass cap)") for b in waiting]
     cost, answer = 0.0, {}

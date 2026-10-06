@@ -174,12 +174,14 @@ class WeeklyTest(_WeeklyFixture):
         record = self.build("2026-10-05", bugs=bugs)
         body = self.w._pr_body(record)
         # B1 is open but no agent checked it: "verified" counts only B2
-        self.assertIn("**Bugs: 2 open** (1 verified, 1 new), 1 fixed since the last pass "
-                      "(3 fix(es) landed since the last pass, 1 confirmed gone by the judge)", body)
+        # the confirmed one is among the fixed; the other two are still waiting on the judge
+        self.assertIn("**Bugs: 2 open** (1 verified, 1 new), 1 fixed since the last pass, "
+                      "2 more with a fix landed, awaiting re-check", body)
         md = self.rec.render_markdown(record)
         self.assertIn("**Fix landed:** `abcdef01` #1430 — awaiting re-check", md)
         self.assertIn("**Fix landed:** `abcdef01` — confirmed gone", md)
-        self.assertIn("3 fix(es) landed since the last pass (a commit names the bug's key), 1 confirmed gone", md)
+        self.assertIn("A fix landed for 3 bug(s) since the last pass (a commit names the bug's key): "
+                      "1 confirmed gone by the judge, 2 awaiting re-check.", md)
         self.assertIn("· `fanout-b4` — still there · fix landed `abcdef01` #1430", md)
 
     def test_a_failure_never_replaces_a_pass_record(self):

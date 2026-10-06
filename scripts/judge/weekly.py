@@ -196,8 +196,7 @@ def _pr_body(record: dict) -> str:
     landed, confirmed = _record.landed_counts(bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
              f"**Bugs: {n['open']} open** ({verified} verified, {new} new), {n['gone']} fixed since the last pass"
-             + (f" ({landed} fix(es) landed since the last pass, {confirmed} confirmed gone by the judge)"
-                if landed else "")
+             + (f", {landed - confirmed} more with a fix landed, awaiting re-check" if landed > confirmed else "")
              + (f", {n['unjudged']} waiting for the judge" if n["unjudged"] else "")
              + (f", {decide} for you to decide (`pixi run judge-review`)" if decide else "") + "."]
     failed = record["run"].get("failed") or {}
