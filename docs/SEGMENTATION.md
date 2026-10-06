@@ -85,6 +85,14 @@ Shape = image shape without the C axis. dtype = uint32.
 
 The OME-ZARR metadata includes `axes` (lowercase, no C) and per-level `coordinateTransformations` with physical scale from OME-XML (Y/X scale doubled at each pyramid level).
 
+**Every label store has as many levels as its image** — segmentation, `segment.ridges`,
+`segment.branching`, `segment.correct` and the task-preview stores alike. Levels are built by
+`zarr_utils.write_label_pyramid` (strided, so ids stay ids). The viewer reads a mask at exactly the
+level it draws the image at; a store with fewer levels answers 409 there (`label_level` in
+`api/src/viewer_api.jl`), and the viewer skips it and flags the row. Reading full resolution and
+shrinking instead is not an option on a large tilescan. Correction edits level 0 and rebuilds every
+lower level from it, so no level can still show a cell that was merged or removed.
+
 ### Stores are written staged, never in place
 
 A run does not write `{outputValueName}.zarr` directly. It streams into a `{outputValueName}.zarr.partial`

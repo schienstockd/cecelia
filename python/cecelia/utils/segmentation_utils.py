@@ -1199,12 +1199,5 @@ class SegmentationUtils:
         )
 
     def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):
-        """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint).
-        Labels have no channel axis, so pass explicit X/Y/T indices into the shared pyramid writer
-        rather than the image dim_utils."""
-        la_y = label_axes.index('Y')
-        la_x = label_axes.index('X')
-        la_t = label_axes.index('T') if 'T' in label_axes else None
-        zarr_utils.write_multiscale_pyramid(
-            g, level0, None, nscales, list(chunks),
-            x_idx=la_x, y_idx=la_y, t_idx=la_t, kind='labels')
+        """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint)."""
+        zarr_utils.write_label_pyramid(g, level0, label_axes, nscales, chunks)

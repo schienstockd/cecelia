@@ -80,7 +80,7 @@ export interface ViewerMeta {
    * pyramid metadata is unreadable — the picker leaves that one unflagged (a broken pyramid is
    * already broken in ways the picker can't fix).
    */
-  labelDims?: Record<string, { nX: number; nY: number; nZ: number }>
+  labelDims?: Record<string, { nX: number; nY: number; nZ: number; nLevels?: number }>
   /**
    * Every registered version of this image, and the one these numbers describe.
    *
@@ -460,6 +460,21 @@ export function labelDimsMismatch(
   const d = meta.labelDims?.[vn]
   if (!d) return false
   return d.nX !== meta.nX || d.nY !== meta.nY
+}
+
+/**
+ * A mask with FEWER pyramid levels than this image version: `{ nLevels, imageLevels }`, else null.
+ * The server reads a mask at exactly the level the image is drawn at (never its own deepest level —
+ * that is a full-size mask in a zoomed-out view), so at a level the mask lacks there is nothing to
+ * draw. Every writer now builds the image's levels; this catches a store written with fewer. Absent
+ * `nLevels` (old server, unreadable pyramid) → null, unflagged.
+ */
+export function labelLevelsShort(
+  meta: Pick<ViewerMeta, 'levels' | 'labelDims'>, vn: string,
+): { nLevels: number; imageLevels: number } | null {
+  const n = meta.labelDims?.[vn]?.nLevels
+  const imageLevels = Math.max(1, meta.levels?.length ?? 0)
+  return n !== undefined && n < imageLevels ? { nLevels: n, imageLevels } : null
 }
 
 /**

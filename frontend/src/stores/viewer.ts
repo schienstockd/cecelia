@@ -160,6 +160,8 @@ export interface LabelsDimMismatch {
   imageNY: number
   mismatched: string[]
   byVn: Record<string, { nX: number; nY: number }>
+  /** Masks with fewer zoom levels than the image — drawn only where they have one. */
+  shortLevels?: Record<string, { nLevels: number; imageLevels: number }>
 }
 
 /**

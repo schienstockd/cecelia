@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
+  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -492,6 +492,25 @@ describe('spatial audit — slab URL carries level/x/y, guard is level-aware', (
     expect(slabShapeError(`4,${l1ny},${l1nx}`, okBytes, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny)).toBeNull()
     expect(slabShapeError('4,3,5', 5 * 3 * 4 * 2, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny))
       .toMatch(/was asked for/)
+  })
+})
+
+describe('labelLevelsShort — a mask with fewer zoom levels than the image', () => {
+  const levels = [0, 1, 2].map(level => ({ level, nX: 8 >> level, nY: 8 >> level, chunkX: 8, chunkY: 8 }))
+  it('names both counts when the mask is shallower', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toEqual({ nLevels: 1, imageLevels: 3 })
+  })
+  it('passes a mask with the image\'s levels', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 3 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('passes a single-level mask on a single-level image (empty levels)', () => {
+    const m = meta({ levels: [], labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('leaves a mask unflagged when the server sent no level count', () => {
+    expect(labelLevelsShort(meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1 } } }), 'shg')).toBeNull()
   })
 })
 
