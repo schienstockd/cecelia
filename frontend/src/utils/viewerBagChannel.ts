@@ -11,7 +11,7 @@
 // is not shimmed — pure-logic rule, no jsdom). Extracting the switch out is the pattern
 // `lib/openProjectChannel.ts` already establishes for the same reason.
 
-export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion'
+export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
 
 export interface ViewerBagEvent {
   kind: ViewerBagKind
@@ -42,6 +42,33 @@ export function decodeViewerBagEvent(
     case 'cc.viewerBranchVisibility': return { kind: 'branchVis',    value }
     case 'cc.viewerSetPrefs':         return { kind: 'setPrefs',     value }
     case 'cc.viewerImageVersion':     return { kind: 'imageVersion', value }
+    case 'cc.viewerTrackPopHidden':   return { kind: 'trackPopHidden', value }
     default:                          return null
   }
+}
+
+/**
+ * Interpret a `storage` event as a change to one scalar preference (`cc.<name>`, written as
+ * `String(v)`), or `null` when it isn't one. The viewer's sliders (tail length / width, z tolerances,
+ * mask opacity, …) live in the popup; the main window records movies from its own copy. `current` is
+ * the receiving ref's value — the type it parses to: number (finite only), boolean, or string.
+ * Anything else (JSON bags) is not a scalar.
+ */
+export function decodeScalarPrefEvent(
+  key: string | null, newValue: string | null, names: readonly string[],
+  current: (name: string) => unknown,
+): { name: string; value: number | boolean | string } | null {
+  if (!key || newValue === null || !key.startsWith('cc.')) return null
+  const name = key.slice(3)
+  if (!names.includes(name)) return null
+  const cur = current(name)
+  if (typeof cur === 'number') {
+    const n = Number(newValue)
+    return Number.isFinite(n) ? { name, value: n } : null
+  }
+  if (typeof cur === 'boolean') {
+    return newValue === 'true' || newValue === 'false' ? { name, value: newValue === 'true' } : null
+  }
+  if (typeof cur === 'string') return { name, value: newValue }
+  return null
 }

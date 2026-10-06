@@ -26,6 +26,7 @@ import time
 
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
+from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.wsclient import api_url_to_ws
 
 PROJECT_ENV = "CECELIA_MCP_PROJECT"
@@ -47,7 +48,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
     ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
     ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
-    ("POST", "/api/correction-plan/recommend"),  # pure (no write): the recommended cleanup plan
+    ("POST", "/api/correction-plan/recommend"),  # no plan write (may backfill meta.saturation once)
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
     ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
@@ -71,12 +72,6 @@ def locked_project() -> str:
 
 def required_prefix() -> str:
     return os.environ.get(PREFIX_ENV, "").strip()
-
-
-# TASK_DISCOVERY_PLAN Decision 9: `off` = the guide-run arm without the discovery information.
-# Local stand-in until the shared MCP reader for this variable lands; swap the call for it then.
-def _discovery_off() -> bool:
-    return os.environ.get("CECELIA_MCP_DISCOVERY", "").strip().lower() == "off"
 
 
 def check_project(project_uid: str) -> None:
@@ -322,7 +317,7 @@ class AutonomousClient:
         # discovery off → the metadata-only answer, without the photon-limited rules
         plan = self._request("POST", "/api/correction-plan/recommend",
                              body={"projectUid": project_uid, "imageUid": image_uid,
-                                   "evidence": "metadata" if _discovery_off() else "all"})
+                                   "evidence": "all" if discovery_enabled() else "metadata"})
         keep = ("funName", "params", "source", "exclusionReason")
         return {"included": [{k: s.get(k) for k in keep} for s in plan.get("included") or []],
                 "excluded": [{k: s.get(k) for k in keep} for s in plan.get("excluded") or []],

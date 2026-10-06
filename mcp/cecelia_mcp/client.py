@@ -37,6 +37,7 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
+from cecelia_mcp.discovery import DISCOVERY_FIELDS, discovery_enabled, task_catalogue
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 
@@ -181,7 +182,9 @@ def _trim_param(p: dict) -> dict:
 
 
 def _trim_module_params(raw: dict) -> dict:
-    """Reduce raw task definitions to `{category: [{fun_name, label, params: [{<kept fields>}]}]}`."""
+    """Reduce raw task definitions to `{category: [{fun_name, label, purpose?, useWhen?, notWhen?,
+    params: [{<kept fields>}]}]}`. The three discovery fields are dropped when discovery is off."""
+    keep = DISCOVERY_FIELDS if discovery_enabled() else ()
     out = {}
     for category, specs in (raw or {}).items():
         out[category] = [
@@ -191,6 +194,8 @@ def _trim_module_params(raw: dict) -> dict:
                 # a FIXED output version (driftCorrected, afCorrected …) — the name the next step
                 # reads; tasks that let the user name their output carry a `namespace` param instead
                 **({"writes": spec["outputValueName"]} if spec.get("outputValueName") else {}),
+                # what the task is for, when to use it and when not (TASK_DISCOVERY_PLAN Decision 1)
+                **{k: spec[k] for k in keep if spec.get(k)},
                 "params": [_trim_param(p) for p in spec.get("params", [])],
             }
             for spec in specs
@@ -364,6 +369,10 @@ class CeceliaClient:
             out = {c: [s for s in specs if s["fun_name"] == fun_name] for c, specs in out.items()}
             out = {c: specs for c, specs in out.items() if specs}
         return out
+
+    def get_task_catalogue(self, stage: str | None = None):
+        # Every visible task's purpose / useWhen / notWhen by pipeline stage — see discovery.py.
+        return task_catalogue(self._request("GET", "/api/tasks/definitions"), stage or "")
 
     def get_available_plots(self, module: str | None = None):
         # Available plot types (chart types, data needs, scope modes), project-independent. Optional

@@ -2,6 +2,16 @@
   "task": "clusterCells",
   "fun_name": "clustPops.cluster",
   "label": "Cluster cells",
+  "purpose": "Group cells into phenotypes from many measures at once",
+  "useWhen": [
+    "Finding cell types without drawing gates two channels at a time",
+    "Comparing clusters across images: selected images are clustered together"
+  ],
+  "notWhen": [
+    "Grouping by movement over time: use Cluster tracks",
+    "Grouping by what surrounds each cell: use Cluster regions",
+    "Images with different channel orders: channels are matched by position"
+  ],
   "category": "Clustering",
   "env": ["local"],
   "resource_pool": "cpu",

@@ -1,16 +1,15 @@
 /**
  * The producer behind the Batch Movies overlay preview — a small schematic that mirrors
- * `_overlays_raw_from_config` (api/src/movie_rail.jl) + `_build_overlay_state`
+ * `_overlays_raw_from_config` (api/src/movie_rail.jl) + `viewer_overlay_closure`
  * (api/src/overlay_author.jl) so the picture can't drift from what the movie actually draws.
  *
- * **Why encode the branch rules here, not in the component.** The overlay author has three
- * exclusive branches:
- *   - `all_tracks && !showPops` → every tracked cell in default grey; ribbons uniform
- *   - showPops path → coloured points per pop; ribbons only for pops with `is_track || has_tracks`
- *   - (track poptype path — out of scope for this batch preview)
+ * **Why encode the rules here, not in the component.** The movie composes independent layers, as the
+ * viewer does (`derivedOverlayFlags`):
+ *   - pops → coloured points per pop; cell-track ribbons (the gated chip) for pops with tracks
+ *   - per-segmentation tracks → every tracked cell's tail, one colour per source
+ *   - track clusters → their own ribbons; where they draw, the other ribbons stand down
  * If the component said "toggle A shows dots, toggle B shows ribbons", it would show one thing when
- * the backend does another — the class of bug the visual-aid discipline exists to prevent. See
- * PR #751 for the rule locked here.
+ * the backend does another — the class of bug the visual-aid discipline exists to prevent.
  *
  * **Same design as `tasks/smoothVis.ts`.** Everything a test needs to pin is in this producer;
  * `components/SceneAid.vue` (the sibling of `VisualAid`) draws whatever it hands over.
@@ -100,7 +99,7 @@ export function buildOverlayScene(seed = 7): OverlayScene {
     const x = 0.08 + rnd() * 0.84
     const y = 0.08 + rnd() * 0.84
     const trackId = pops[popIdx].hasTracks ? i + 1 : null
-    // Split the scene across two pseudo-segmentations so a multi-source `showTracks && !showPops`
+    // Split the scene across two pseudo-segmentations so a multi-source `showTracks`
     // config shows two distinct colours in the frame. Real batches may have any number of tracked
     // segs; the preview always uses two — enough to see the composition without turning into a
     // legend.
@@ -127,8 +126,8 @@ export interface OverlayPreviewConfig {
    *  paths without the tree, so this mapping just makes different picks look different. */
   popsFilter?: string[]
   /** Visible track sources — `{valueName, colour}` per seg the user ticked in the batch panel's
-   *  Track sources list. Only meaningful under `showTracks && !showPops`. When present, the preview
-   *  paints all-tracks cells split across two pseudo-segmentations, each in its picked colour
+   *  Track sources list. Only meaningful under `showTracks`. When present, the preview
+   *  paints the tracked cells split across two pseudo-segmentations, each in its picked colour
    *  (schematic — the scene is fixed at two pseudo-segs regardless of how many real ones exist).
    *  Absent → single-source grey (`ALL_TRACKS_GREY`); empty → every source hidden, no tails. */
   trackSources?: Array<{ valueName: string; colour: string }>
@@ -141,22 +140,20 @@ export function previewHasMask(cfg: OverlayPreviewConfig): boolean {
   return (cfg.labelValueNames?.length ?? 0) > 0
 }
 
-/** The two derived flags the overlay author actually acts on — locked so the preview and
- *  `_overlays_raw_from_config` cannot disagree.
- *  - `allTracks = showTracks && !showPops` — pops wins when both.
- *  - `includeTracks = showTracks || showGatedTracks` — either chip pushes ribbons.
- *  - `authorRuns = showPops || showTracks` — the pop / track author runs; it draws points only for
- *    pops (`include_points = showPopulations`), tracks alone are tails.
- *  See PR #751 + the API testset "movie rail — offline overlay-config translator". */
+/** The track kinds the movie draws — locked so the preview and `_overlays_raw_from_config` /
+ *  `viewer_overlay_closure` cannot disagree. As in the viewer, only the pops are tied to one
+ *  segmentation; the track kinds stand on their own:
+ *  - `segTracks = showTracks` — per-segmentation tails, with or without the pops.
+ *  - `gatedRibbons = showGatedTracks && showPops` — the pops' cell-track ribbons ride on the pops.
+ *  - `trackclust = showTrackclust` — track-cluster ribbons, alone or with anything else; where they
+ *    draw, the plain and cell-track ribbons of that segmentation stand down.
+ *  See the API testset "movie rail — offline overlay-config translator". */
 export function derivedOverlayFlags(cfg: OverlayPreviewConfig):
-  { allTracks: boolean; includeTracks: boolean; authorRuns: boolean } {
-  const showPops = !!cfg.showPopulations
-  const showTracks = !!cfg.showTracks
-  const showGated = !!cfg.showGatedTracks
+  { segTracks: boolean; gatedRibbons: boolean; trackclust: boolean } {
   return {
-    allTracks: showTracks && !showPops,
-    includeTracks: showTracks || showGated,
-    authorRuns: showPops || showTracks,
+    segTracks: !!cfg.showTracks,
+    gatedRibbons: !!cfg.showGatedTracks && !!cfg.showPopulations,
+    trackclust: !!cfg.showTrackclust,
   }
 }
 
@@ -226,8 +223,7 @@ function trackclustRibbonPath(c: OverlayCell): Array<{ x: number; y: number }> {
  *  Overlays row surfaces (`tracks`, `trackclust`, `gated`, `pops`, `labels`) + the mask pickers,
  *  mirroring the backend `_config_overlay_pops` + `_build_overlay_state` branches. */
 export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlayScene): SceneAidRender {
-  const { allTracks, includeTracks, authorRuns } = derivedOverlayFlags(cfg)
-  const showTrackclust = !!cfg.showTrackclust
+  const { segTracks, gatedRibbons, trackclust } = derivedOverlayFlags(cfg)
   const colourLabels = !!cfg.colourLabels
   const hasMask = previewHasMask(cfg)
   const points: SceneAidPoint[] = []
@@ -240,52 +236,44 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
     showTitleChip: !!cfg.titleCard?.enabled,
   }
 
-  // Trackclust ribbons draw with the pops (`trackclust_requested`), and where they draw the pops' own
-  // cell-track ribbons stand down — trackclust colours the SAME tracks by cluster.
-  const trackclustOn = showTrackclust && !allTracks && !!cfg.showPopulations
+  // Where track clusters draw, the same tracks' plain and cell-track ribbons stand down — the
+  // preview's scene is one clustered segmentation, so the chip takes them all.
 
   // ── Pop points + cell-track ribbons ────────────────────────────────────────
-  if (authorRuns) {
-    if (allTracks) {
-      // Whole-seg branch — every tracked cell. `trackSources` splits the cells across two
-      // pseudo-segmentations and paints each in its picked colour, as the backend's multi-source
-      // composition does. Absent → uniform grey (single source); empty → every source hidden, no
-      // tails (the translator's rule). Untracked cells never drew here either (the overlay author's
-      // all_tracks branch reads `track_id`), so mirror that.
-      const srcs = cfg.trackSources
-      const multiColours = srcs?.length
-        ? [srcs[0]!.colour, srcs[Math.min(1, srcs.length - 1)]!.colour]
-        : null
-      for (const c of scene.cells) {
-        if (c.trackId === null || (srcs && !srcs.length)) continue
-        const source = multiColours ? multiColours[c.segIdx % multiColours.length]! : null
-        // one source with no colour picked: "solid" is the palette's first colour, "pop" the grey
-        const colour = tailColour(cfg.trackColourMode, c.trackId, source ?? PREVIEW_PALETTE[0]!,
-                                  source ?? ALL_TRACKS_GREY)
-        // tails only — the viewer's (and the movie's) points are its populations
-        if (includeTracks) ribbons.push({ points: ribbonPath(c), colour })
-      }
-    } else {
-      // Pops branch — per-pop colour, ribbons only for pops with `hasTracks` under includeTracks.
-      for (const c of scene.cells) {
-        if (!wantedPops.has(c.popIdx)) continue
-        const pop = scene.pops[c.popIdx]
-        points.push({ x: c.x, y: c.y, colour: pop.colour, ringed: hasMask })
-        if (includeTracks && !trackclustOn && pop.hasTracks && c.trackId !== null) {
-          ribbons.push({ points: ribbonPath(c),
-                         colour: tailColour(cfg.trackColourMode, c.trackId, PREVIEW_PALETTE[0]!, pop.colour) })
-        }
+  if (cfg.showPopulations) {
+    for (const c of scene.cells) {
+      if (!wantedPops.has(c.popIdx)) continue
+      const pop = scene.pops[c.popIdx]
+      points.push({ x: c.x, y: c.y, colour: pop.colour, ringed: hasMask })
+      if (gatedRibbons && !trackclust && pop.hasTracks && c.trackId !== null) {
+        ribbons.push({ points: ribbonPath(c),
+                       colour: tailColour(cfg.trackColourMode, c.trackId, PREVIEW_PALETTE[0]!, pop.colour) })
       }
     }
   }
 
-  // ── Trackclust ribbons — their own author call, drawn with the pops ───────
-  // The movie draws them by a second `build_overlays3d_for(pop_type = "trackclust")` merged with the
-  // pops' (`trackclust_requested`: the chip AND showPops, not whole-seg tracks). Alone the chip draws
-  // nothing — `_overlays_raw_from_config` needs one of showPops/showTracks/showGatedTracks/has_mask.
-  if (trackclustOn) {
+  // ── Per-segmentation tracks — every tracked cell, tails only ────────────────
+  // `trackSources` splits the cells across two pseudo-segmentations and paints each in its picked
+  // colour, as the backend's per-source closures do. Absent → uniform grey (single source); empty →
+  // every source hidden, no tails. Untracked cells never draw (the author reads `track_id`).
+  if (segTracks && !trackclust) {
+    const srcs = cfg.trackSources
+    const multiColours = srcs?.length
+      ? [srcs[0]!.colour, srcs[Math.min(1, srcs.length - 1)]!.colour]
+      : null
     for (const c of scene.cells) {
-      if (!wantedPops.has(c.popIdx)) continue
+      if (c.trackId === null || (srcs && !srcs.length)) continue
+      const source = multiColours ? multiColours[c.segIdx % multiColours.length]! : null
+      // one source with no colour picked: "solid" is the palette's first colour, "pop" the grey
+      const colour = tailColour(cfg.trackColourMode, c.trackId, source ?? PREVIEW_PALETTE[0]!,
+                                source ?? ALL_TRACKS_GREY)
+      ribbons.push({ points: ribbonPath(c), colour })
+    }
+  }
+
+  // ── Trackclust ribbons — every segmentation's, their own author call ─────────
+  if (trackclust) {
+    for (const c of scene.cells) {
       const pop = scene.pops[c.popIdx]
       if (!pop.hasTracks || c.trackId === null) continue
       ribbons.push({ points: trackclustRibbonPath(c), colour: pop.colour })
@@ -308,8 +296,6 @@ export function renderOverlayPreview(cfg: OverlayPreviewConfig, scene: OverlaySc
   if (points.length === 0 && ribbons.length === 0) {
     if (cfg.showGatedTracks && !cfg.showPopulations && !cfg.showTracks) {
       caption = 'cell-track ribbons need populations on'
-    } else if (showTrackclust && !cfg.showPopulations && !cfg.showTracks) {
-      caption = 'track-cluster ribbons need populations on'
     } else if (colourLabels && !hasMask) {
       caption = 'colour-labels needs a mask picked'
     } else if (cfg.showPopulations && !wantedPops.size) {

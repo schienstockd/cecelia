@@ -64,7 +64,7 @@ import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
 import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
-  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
+  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
   shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
@@ -990,6 +990,11 @@ const rampStyle = computed(() => {
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 })
 const fitDist = ref(1)
+/** Wheel-zoom band per mode, as multiples of `fitDist` — see `onWheel` for why 2D goes deeper. */
+const ZOOM_BAND = {
+  plane: { min: 0.005, max: 6 },
+  volume: { min: 0.05, max: 6 },
+} as const
 /**
  * The level the current textures were ALLOCATED for. `slabLevel` is a derived value that reacts to
  * camera zoom; when the two disagree the level watch fires `reallocate(false)` (debounced), so a wheel
@@ -3096,9 +3101,7 @@ function onWheel(e: WheelEvent) {
   // there's a genuine payoff for going deeper, whereas the pre-brick pin made a deep zoom just
   // slower for the same L5 pixels. Rotation can still lose the box off-screen; Reset view is one
   // click away.
-  const band = mode.value === 'plane'
-    ? { min: 0.005, max: 6 }
-    : { min: 0.05, max: 6 }
+  const band = ZOOM_BAND[mode.value]
   // Cursor-anchored zoom (ImageJ): 2D plane only. The 3D wheel is a dolly on the orbit and adding
   // a pan-shift under a rotated basis moves the volume sideways in a way the user did not ask for.
   let anchor: { ndcX: number; ndcY: number; aspect: number } | undefined
@@ -3683,7 +3686,7 @@ async function ensureRenderer() {
  * acquiring a new one; every caller either awaits or is fire-and-forget (the debounced pumps and the
  * chip/range handlers, all of which just want the effect to happen eventually).
  */
-async function reallocate(refit = false) {
+async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
@@ -3708,7 +3711,7 @@ async function reallocate(refit = false) {
   // would allocate the pipeline for the wrong level (or the wrong pipeline entirely).
   const c = fitNow(m)
   fitDist.value = c.dist
-  if (refit) cam.value = c
+  if (refit) cam.value = refit === true ? c : refit(c)
 
   await ensureRenderer()
 
@@ -4043,15 +4046,22 @@ watch(valueName, () => propsSink.schedule())
 watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
   if (want === null || starting.value) return
   const next: 'plane' | 'volume' = want ? 'volume' : 'plane'
-  if (mode.value !== next) { mode.value = next; reallocate(true) }
+  if (mode.value !== next) switchMode(next)
 })
+
+/** 2D↔3D keeps the place you were looking at and the zoom (`carryCamera`) — a refit here sent the
+ *  view back to the whole image and the region had to be found again. */
+function switchMode(next: 'plane' | 'volume') {
+  const from = cam.value, fromFit = fitDist.value
+  mode.value = next
+  return reallocate(fit => carryCamera(from, fromFit, fit, ZOOM_BAND[next]))
+}
 
 /** View chip handler — flip the popup's mode AND reverse-sync to the panel's per-set setting so
  *  the two stay in lockstep (`settings.getShow3D` on the panel side, the watcher above on this
  *  side). The watcher short-circuits when `mode` already matches, so this write can't loop. */
 function onModeChange(v: 'plane' | 'volume'): void {
-  mode.value = v
-  reallocate(true)
+  switchMode(v)
   if (setUid.value) settings.setShow3D(setUid.value, v === 'volume')
 }
 

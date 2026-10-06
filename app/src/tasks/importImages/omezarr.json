@@ -2,6 +2,12 @@
   "task": "omezarr",
   "fun_name": "importImages.omezarr",
   "label": "Convert to OME-ZARR",
+  "purpose": "Convert added microscope files into the app's image store",
+  "useWhen": [
+    "Images added but not converted yet: they can't be opened until then",
+    "Zoomed-out views are slow: re-import with more pyramid levels"
+  ],
+  "notWhen": ["Project from the old R Cecelia: use Migrate legacy image"],
   "category": "import",
   "env": [
     "local"

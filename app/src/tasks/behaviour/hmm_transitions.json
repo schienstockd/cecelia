@@ -2,6 +2,12 @@
   "task": "hmmTransitions",
   "fun_name": "behaviour.hmm_transitions",
   "label": "HMM transitions",
+  "purpose": "Record each cell's change of behaviour state along its track",
+  "useWhen": [
+    "After HMM states, to see how cells switch between behaviours",
+    "Combine states from several HMM runs into one hybrid state"
+  ],
+  "notWhen": ["No transitions found: check track length and the HMM states"],
   "category": "Behaviour",
   "env": ["local"],
   "resource_pool": "cpu",

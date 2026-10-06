@@ -248,27 +248,12 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     # information nothing downstream recovers, and import is the only point where the useful answer is
     # still "re-acquire with less gain". One streamed pass over the store we just wrote (~3 s/GB), in
     # the io pool alongside the conversion. Advisory: a failure here never fails the import.
-    let run_dir     = task_run_dir(img._dir),
-        result_file = joinpath(run_dir, "saturation.$(string(rand(UInt32); base = 16)).result.json")
-        ok_s = run_py("tasks/importImages/saturation_run.py",
-            (; imPath = resolved_zarr, resultPath = result_file), run_dir;
-            on_log = on_log, on_progress = on_progress, on_process = on_process)
-        if ok_s && isfile(result_file)
-            try
-                res   = JSON3.read(read(result_file, String))
-                chans = get(res, :channels, nothing)
-                if !isnothing(chans)
-                    zarr_meta["saturation"] = Dict{String,Any}(
-                        "channels" => [Dict{String,Any}(String(k) => v for (k, v) in ch) for ch in chans],
-                    )
-                    n = count(ch -> get(ch, :saturated, false) === true, chans)
-                    n > 0 && on_log("[WARN] $n channel(s) clipped at acquisition — see QC")
-                end
-            catch e
-                @warn "Could not read saturation result" exception = e
-            finally
-                rm(result_file; force = true)
-            end
+    let sat = _probe_saturation(resolved_zarr, task_run_dir(img._dir);
+                                on_log = on_log, on_progress = on_progress, on_process = on_process)
+        if !isnothing(sat)
+            zarr_meta["saturation"] = sat
+            n = count(ch -> get(ch, "saturated", false) === true, sat["channels"])
+            n > 0 && on_log("[WARN] $n channel(s) clipped at acquisition — see QC")
         end
     end
 

@@ -97,7 +97,8 @@ not photon-limited. Nothing told the agents this, and nothing would tell a user 
 `/api/correction-plan/recommend`; the autonomous MCP sends `metadata` when `CECELIA_MCP_DISCOVERY=off`.
 Bands are placeholders: `≥ 0.90` photon-limited, `< 0.50` not, between = no opinion. Smooth is never
 excluded (its `gated` statistic was built for non-photon-limited movies). The include fires only on the
-no-preset card (§3: a card outranks a score). Rule summary: CORRECTION_QC_PLAN.md → *Notes on the table*.
+no-preset card (§3: a card outranks a score). Images imported before `meta.saturation` existed get it
+on their first recommend (the import's probe, persisted fill-only). Rule summary: CORRECTION_QC_PLAN.md → *Notes on the table*.
 - In `apply_rules`, add the photon-limited include/exclude for denoise and smooth, with reasons.
   Test it on the engine's pure function, and cover the `evidence=metadata` switch.
 

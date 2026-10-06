@@ -601,6 +601,31 @@ export interface OrbitCamera {
 
 const PITCH_LIMIT = Math.PI / 2 - 0.01
 
+export type Vec3 = [number, number, number]
+
+/**
+ * The orbit camera's world-space basis — the shaders' `camera()` (`mip_common.wgsl`,
+ * `brick_common.wgsl`), the ONE TS copy. `fwd` points from the origin TOWARD the eye;
+ * `right = normalize(cross(+y, fwd))`; `up = cross(right, fwd)` (that order is the vertical flip).
+ * At pitch = ±π/2 `right` degenerates; `orbitDrag` clamps short of the poles for the same reason.
+ * Anything that maps between screen and world (the axes gizmo, `carryCamera`) goes through this, or
+ * it drifts from the pixels when the volume is rotated.
+ */
+export function cameraBasis(yaw: number, pitch: number): { fwd: Vec3; right: Vec3; up: Vec3 } {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw)
+  const cp = Math.cos(pitch), sp = Math.sin(pitch)
+  const fwd: Vec3 = [cp * sy, sp, cp * cy]
+  const rx = fwd[2], rz = -fwd[0]
+  const rl = Math.hypot(rx, rz) || 1
+  const right: Vec3 = [rx / rl, 0, rz / rl]
+  const up: Vec3 = [
+    right[1] * fwd[2] - right[2] * fwd[1],
+    right[2] * fwd[0] - right[0] * fwd[2],
+    right[0] * fwd[1] - right[1] * fwd[0],
+  ]
+  return { fwd, right, up }
+}
+
 /**
  * Half-height of the view at unit distance — the ONE framing constant, shared with the shader.
  *
@@ -662,6 +687,31 @@ export function fitCamera(
   const toNearFace = perspective ? Math.max(ez, 0) / 2 : 0
   //                            2% of breathing room ↓
   return { yaw: 0, pitch: 0, dist: (halfH / VIEW_HALF_ANGLE) * 1.02 + toNearFace, panX: 0, panY: 0 }
+}
+
+/**
+ * The camera for the OTHER mode that looks at the same place — the 2D↔3D toggle used to refit, so
+ * the view jumped back to the whole image and the region you were on had to be found again.
+ *
+ * WHERE: the world point at screen centre, `ro = right·panX + up·panY` (the shaders' `camera()`, box
+ * centre at the origin), keeps its x/y. A rotated 3D view lands on that point's x/y in 2D; z is
+ * dropped — the plane view picks z itself. The result is face-on (`yaw = pitch = 0`, basis
+ * right = +x, up = −y), the only orientation 2D has, and the one in which 3D lines up with the plane
+ * you just left.
+ *
+ * HOW CLOSE: the fit-relative zoom `dist / fromFitDist` carries over onto `to.dist` (the target
+ * mode's fit), clamped into `band` — the target mode's wheel band — so the first wheel notch after
+ * the switch does not jump. Fit-relative, not absolute, because 3D perspective's fit adds a near-face
+ * margin that 2D does not have.
+ */
+export function carryCamera(
+  cam: OrbitCamera, fromFitDist: number, to: OrbitCamera, band: { min: number; max: number },
+): OrbitCamera {
+  const { right, up } = cameraBasis(cam.yaw, cam.pitch)
+  const wx = right[0] * cam.panX + up[0] * cam.panY
+  const wy = right[1] * cam.panX + up[1] * cam.panY
+  const ratio = Math.max(band.min, Math.min(band.max, cam.dist / Math.max(fromFitDist, 1e-9)))
+  return { yaw: 0, pitch: 0, dist: to.dist * ratio, panX: wx, panY: -wy }
 }
 
 /**

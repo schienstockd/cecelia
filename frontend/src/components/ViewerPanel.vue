@@ -29,6 +29,7 @@ import CcToggle from './CcToggle.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
+import { writtenImageVersion } from '../utils/taskResultVersion'
 import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT,
          type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -838,7 +839,9 @@ function onTaskResult(data: Record<string, unknown>) {
   if (!imageUid || imageUid !== projectStore.openImageUid) return
   const meta = (data.meta ?? {}) as Record<string, unknown>
 
-  const addedValueName = meta.valueName as string | undefined
+  // `meta.valueName` alone is NOT an image version — tracking, contacts, clustering, … return their
+  // LABEL vn there. Only a pixel writer's (valueName, filename) pair is (utils/taskResultVersion).
+  const addedValueName = writtenImageVersion(meta)
   if (addedValueName && settings.viewerAutoUpdate) {
     // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
     // so setting the dropdown alone left the panel naming the new version over the old pixels.
@@ -851,6 +854,11 @@ function onTaskResult(data: Record<string, unknown>) {
     // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
     // on the same image but a different vn keeps its atlas.
     publishViewerCacheClear({ imageUid, valueName: addedValueName })
+  } else if (meta.valueName && settings.viewerAutoUpdate) {
+    // A label/analysis vn (tracks, contacts, clusters): keep the version on screen, refresh overlays
+    // only — a chain node sends no task:status, so this is its one refresh signal.
+    loadObsCols()
+    reloadViewer()
   }
 
   const labelValueName = meta.labelValueName as string | undefined
