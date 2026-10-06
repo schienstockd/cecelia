@@ -2,6 +2,16 @@
   "task": "coastalSegment",
   "fun_name": "segment.coastal",
   "label": "Optical flow segmentation",
+  "purpose": "Find cells in a movie by how they move, with a trained flow model",
+  "useWhen": [
+    "Dim, moving cells too faint to outline in any single frame",
+    "Needs a flow model trained on similar movies (Train flow model)"
+  ],
+  "notWhen": [
+    "Cells that barely move: this method relies on motion",
+    "Raw noisy input: run spatial-only Smoothing first",
+    "Label-free fibres (SHG): speckle drives the flow, so use Ridge segmentation"
+  ],
   "category": "Segment",
   "env": [
     "local"

@@ -2,6 +2,15 @@
   "task": "clusterTracks",
   "fun_name": "clustTracks.cluster",
   "label": "Cluster tracks",
+  "purpose": "Group whole tracks into behaviours by how they move",
+  "useWhen": [
+    "Tracked cells, grouped by motility plus per-track cell measures",
+    "After HMM states, to cluster on state and transition frequencies"
+  ],
+  "notWhen": [
+    "Not tracked yet: run tracking first, or use Cluster cells",
+    "Grouping cells by what they express: use Cluster cells"
+  ],
   "category": "Clustering",
   "env": ["local"],
   "resource_pool": "cpu",

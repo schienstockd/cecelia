@@ -2,6 +2,16 @@
   "task": "trainSupportDenoise",
   "fun_name": "opticalFlow.trainSupportDenoise",
   "label": "Train denoise model (SUPPORT)",
+  "purpose": "Train a SUPPORT denoise model on a set's photon-limited movies",
+  "useWhen": [
+    "Before Denoising (SUPPORT), which runs a trained model",
+    "Photon-limited channels of similar noise can share one pooled model",
+    "Train on the drift-corrected version"
+  ],
+  "notWhen": [
+    "Saturated or bright channels: there is no shot noise to learn",
+    "A weak channel collapses in pooled training: train per channel"
+  ],
   "category": "Model training",
   "env": ["local"],
   "resource_pool": "gpu",

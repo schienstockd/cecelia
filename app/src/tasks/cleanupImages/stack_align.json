@@ -2,6 +2,13 @@
   "task": "stackAlign",
   "fun_name": "cleanupImages.stackAlign",
   "label": "Within-stack alignment",
+  "purpose": "Align each timepoint's Z planes to one anchor plane",
+  "useWhen": ["Sample moved during Z acquisition, so neighbouring planes are offset"],
+  "notWhen": [
+    "Planes differ because they lie at different depths: nothing to shift",
+    "Smear within a single plane: that information is lost",
+    "Whole stack shifts between timepoints: use Drift correction"
+  ],
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "cpu",

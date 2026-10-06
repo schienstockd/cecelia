@@ -2,6 +2,15 @@
   "task": "detectAggregates",
   "fun_name": "spatialAnalysis.detectAggregates",
   "label": "Detect aggregates",
+  "purpose": "Find groups of a population's cells packed close together",
+  "useWhen": [
+    "Aggregates by centre-to-centre distance, per timepoint for movies",
+    "You need an aggregated population for later steps"
+  ],
+  "notWhen": [
+    "Grouping by measured features: use Cluster cells",
+    "Large or live cells where surfaces matter: use Detect aggregates (meshes)"
+  ],
   "category": "Spatial analysis",
   "env": ["local"],
   "resource_pool": "cpu",
