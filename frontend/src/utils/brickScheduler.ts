@@ -19,7 +19,9 @@
 import type { VirtualBrick } from './pageTable'
 import { brickKey } from './pageTable'
 import { sseDesiredLevel, sseLevelWithHysteresis } from './sseLod'
-import { VIEW_HALF_ANGLE, extentUm, type ViewerMeta, type OrbitCamera } from './volumeViewer'
+import {
+  VIEW_HALF_ANGLE, extentUm, cameraBasis, type ViewerMeta, type OrbitCamera, type Vec3,
+} from './volumeViewer'
 
 /**
  * Camera + viewport state at one instant, expressed in world µm. Everything the scheduler
@@ -33,8 +35,9 @@ export interface BrickViewport {
    *  flat-Z case (SispLk, nZ=4), the store is thin enough that any centre works — see
    *  `halfDUm` below. */
   centreUm: [number, number, number]
-  /** Half-width / half-height / half-depth of the visible frustum in world µm — an axis-aligned
-   *  bounding box at the camera plane. Rotation is not modelled in the first pass. For an
+  /** Half-extents in world x / y / z µm of the axis-aligned box the scheduler walks. From a
+   *  camera (`brickViewportFromCamera`) it is the AABB of everything the rays can sample, so it
+   *  follows rotation and perspective — not the screen rect. For an
    *  XY-only viewer over a thin store, set `halfDUm` >= store's `nZ * voxelUmZ / 2` and the
    *  z-halo reduces to "walk every z-slab" — the SispLk behaviour before this amendment. */
   halfWUm: number
@@ -224,20 +227,88 @@ export function brickWorldFromMeta(
 }
 
 /**
- * Build a `BrickViewport` from the orbit-camera + meta at one instant. Pure — the shader-side
- * conventions (VIEW_HALF_ANGLE, half-height = dist × VIEW_HALF_ANGLE) are the ONE source of
- * truth for what the camera sees, so the scheduler mirrors them here rather than re-deriving.
+ * World-axis bounding box of what the shader's rays can sample: the view volume (orthographic prism
+ * or perspective frustum, from `brick.wgsl` `fs` + `brick_common.wgsl` `camera()`) intersected with
+ * the loaded box. Box-centred world µm (the shader's frame), `null` when the view misses the box.
  *
- * Simplifications for P5c (documented so P5d can revisit):
- *   - `centreUm` is the box centre + pan offset. Pan lands as `right * panX + up * panY` in the
- *     shader; the scheduler uses the same world offset to keep its intersect list aligned with
- *     what the shader actually draws. Rotation is not modelled — the halo covers small pitch/yaw
- *     drift, and the current 3D orbit rarely fires with both yaw AND deep zoom.
- *   - `halfDUm` = whole box depth. Every z-slab is visited — matches the pre-3D-halo XY-only
- *     behaviour on thin-Z stores (SispLk nZ=4). Deep-Z stores get proper z scheduling once we
- *     have real data to eyeball.
- *   - `focalPx` = canvas height / (2 × VIEW_HALF_ANGLE) — the pinhole equivalent of the
- *     half-height rule the shader uses. Governs the SSE picker; wrong here = wrong LOD.
+ * Exact, not the face-on rect: rotated, a ray crosses the WHOLE box along `-fwd`, so the voxels a
+ * zoomed-in view needs span far more of x/y than the screen rect (at yaw 90° a thin stack is seen
+ * edge-on and every x brick is on screen). Computed as the polytope's vertices — every triple of the
+ * 11 bounding planes, kept if it satisfies all of them — which is cheap (165 3×3 solves) and has no
+ * special cases for orientation.
+ */
+export function viewFootprintAabb(
+  cam: OrbitCamera, ext: Vec3, aspect: number, ortho: boolean,
+): { min: Vec3; max: Vec3 } | null {
+  const { fwd, right, up } = cameraBasis(cam.yaw, cam.pitch)
+  const tw = VIEW_HALF_ANGLE * Math.max(aspect, 1e-3)
+  const th = VIEW_HALF_ANGLE
+  const dist = Math.max(cam.dist, 1e-3)
+  // Half-spaces n·p ≤ d.
+  const planes: Array<[Vec3, number]> = []
+  for (let i = 0; i < 3; i++) {
+    const n: Vec3 = [0, 0, 0]; n[i] = 1
+    planes.push([n, ext[i] / 2], [[-n[0], -n[1], -n[2]], ext[i] / 2])
+  }
+  const add = (a: Vec3, k: number, b: Vec3): Vec3 => [a[0] + k * b[0], a[1] + k * b[1], a[2] + k * b[2]]
+  const neg = (a: Vec3): Vec3 => [-a[0], -a[1], -a[2]]
+  if (ortho) {
+    // org = ro + right·u·hh·aspect + up·v·hh, rd = −fwd; ro·right = panX, ro·up = panY.
+    const hw = dist * tw, hh = dist * th
+    planes.push([right, cam.panX + hw], [neg(right), -(cam.panX - hw)])
+    planes.push([up, cam.panY + hh], [neg(up), -(cam.panY - hh)])
+  } else {
+    // Eye at fwd·dist + right·panX + up·panY; depth w = dist − p·fwd,
+    // |p·right − panX| ≤ w·tw, |p·up − panY| ≤ w·th.
+    planes.push([add(right, tw, fwd), cam.panX + tw * dist], [add(neg(right), tw, fwd), -cam.panX + tw * dist])
+    planes.push([add(up, th, fwd), cam.panY + th * dist], [add(neg(up), th, fwd), -cam.panY + th * dist])
+  }
+  // Both projections start their rays ON the camera plane (`t0 = max(t.x, 0)`), so nothing past
+  // it is drawn — orthographic included, which matters once `dist` is inside the box.
+  planes.push([fwd, dist])
+  const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const cross = (a: Vec3, b: Vec3): Vec3 =>
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+  const scaleTol = 1e-6 * Math.max(ext[0], ext[1], ext[2], dist, 1)
+  const min: Vec3 = [Infinity, Infinity, Infinity]
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+  let any = false
+  for (let i = 0; i < planes.length; i++) {
+    for (let j = i + 1; j < planes.length; j++) {
+      for (let k = j + 1; k < planes.length; k++) {
+        const [n1, d1] = planes[i], [n2, d2] = planes[j], [n3, d3] = planes[k]
+        const c23 = cross(n2, n3)
+        const det = dot(n1, c23)
+        if (Math.abs(det) < 1e-9) continue
+        // Cramer: p = (d1 (n2×n3) + d2 (n3×n1) + d3 (n1×n2)) / det
+        const c31 = cross(n3, n1), c12 = cross(n1, n2)
+        const pt: Vec3 = [0, 1, 2].map(a => (d1 * c23[a] + d2 * c31[a] + d3 * c12[a]) / det) as Vec3
+        if (!planes.every(([n, d]) => dot(n, pt) <= d + scaleTol)) continue
+        any = true
+        for (let a = 0; a < 3; a++) {
+          min[a] = Math.min(min[a], pt[a]); max[a] = Math.max(max[a], pt[a])
+        }
+      }
+    }
+  }
+  return any ? { min, max } : null
+}
+
+/**
+ * Build a `BrickViewport` from the orbit-camera + meta at one instant. Pure — the shader-side
+ * conventions (VIEW_HALF_ANGLE, `cameraBasis`, ortho/perspective ray construction) are the ONE
+ * source of truth for what the camera sees, so the scheduler mirrors them here.
+ *
+ * The viewport is the world-axis AABB of the view volume ∩ loaded box (`viewFootprintAabb`), so it
+ * follows rotation and perspective. Face-on orthographic it reduces to the screen rect over the
+ * whole depth (clipped to the box). Under perspective the far side of the box is seen wider than
+ * the centre plane, and the AABB includes that.
+ *
+ * When the view misses the box there is nothing to draw; the face-on rect at the aim point is kept
+ * so the grid clamp still schedules the nearest edge bricks, as before.
+ *
+ * `focalPx` = canvas height / (2 × VIEW_HALF_ANGLE) — the pinhole equivalent of the half-height rule
+ * the shader uses. Governs the SSE picker; wrong here = wrong LOD.
  */
 export function brickViewportFromCamera(
   cam: OrbitCamera,
@@ -246,26 +317,40 @@ export function brickViewportFromCamera(
   canvasHeightPx: number,
   aspect: number,
   zDepth: number,
+  ortho = true,
 ): BrickViewport {
   const [ex, ey, ez] = extentUm(meta, zDepth)
+  const focalPx = canvasHeightPx / Math.max(2 * VIEW_HALF_ANGLE, 1e-3)
+  const distanceUm = Math.max(cam.dist, 1e-3)
+  const box = viewFootprintAabb(cam, [ex, ey, ez], aspect, ortho)
+  if (box !== null) {
+    // Shader world is box-centred (`uvw = (wp + ext/2) / ext`); scheduler world has its origin at
+    // the box corner.
+    return {
+      t,
+      centreUm: [
+        (box.min[0] + box.max[0]) / 2 + ex / 2,
+        (box.min[1] + box.max[1]) / 2 + ey / 2,
+        (box.min[2] + box.max[2]) / 2 + ez / 2,
+      ],
+      halfWUm: (box.max[0] - box.min[0]) / 2,
+      halfHUm: (box.max[1] - box.min[1]) / 2,
+      halfDUm: (box.max[2] - box.min[2]) / 2,
+      focalPx,
+      distanceUm,
+    }
+  }
   const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
-  const halfW = halfH * Math.max(aspect, 1e-3)
-  // Pan shifts the CENTRE of what the shader draws. `shaders/brick_common.wgsl`, `camera()`:
-  // `c.ro = c.fwd * p.cam.z + c.right * p.pan.x + c.up * p.pan.y`, and `c.up = cross(right, fwd)`
-  // — for the default `yaw=0 pitch=0` basis (`fwd=(0,0,1)`, `right=(1,0,0)`) that resolves to
-  // `up = (0, -1, 0)`. So `up * panY` shifts world by `-panY` in Y, not `+panY`. Aim point in
-  // shader world = `(panX, -panY, 0)`; in scheduler world (origin at `(ex/2, ey/2, ez/2)`) that's
-  // `(ex/2 + panX, ey/2 - panY, ez/2)`. First-cut had `+panY` and the top half of the canvas
-  // fetched a mirrored y-region (screenshot 2026-08-29: "we still have bricks that are
-  // not being fetched" — top half of canvas black after pan).
+  const { right, up } = cameraBasis(cam.yaw, cam.pitch)
+  const aim = [0, 1, 2].map(a => right[a] * cam.panX + up[a] * cam.panY)
   return {
     t,
-    centreUm: [ex / 2 + cam.panX, ey / 2 - cam.panY, ez / 2],
-    halfWUm: halfW,
+    centreUm: [ex / 2 + aim[0], ey / 2 + aim[1], ez / 2 + aim[2]],
+    halfWUm: halfH * Math.max(aspect, 1e-3),
     halfHUm: halfH,
     halfDUm: ez / 2,
-    focalPx: canvasHeightPx / Math.max(2 * VIEW_HALF_ANGLE, 1e-3),
-    distanceUm: Math.max(cam.dist, 1e-3),
+    focalPx,
+    distanceUm,
   }
 }
 

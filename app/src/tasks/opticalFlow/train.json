@@ -2,6 +2,15 @@
   "task": "trainFlowModel",
   "fun_name": "opticalFlow.train",
   "label": "Train flow model",
+  "purpose": "Train a motion-based segmentation model on a set's movies",
+  "useWhen": [
+    "Before Optical flow segmentation, which needs a trained model",
+    "Train on the cleaned-up version you will later segment"
+  ],
+  "notWhen": [
+    "Cells have clear outlines: Cellpose segmentation needs no training",
+    "Too few timepoints for the flow window"
+  ],
   "category": "Model training",
   "env": [
     "local"

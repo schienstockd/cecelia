@@ -2,6 +2,16 @@
   "task": "bayesianTracking",
   "fun_name": "tracking.bayesian_tracking",
   "label": "Bayesian tracking",
+  "purpose": "Link segmented cells across frames into tracks",
+  "useWhen": [
+    "Time-lapse with cells segmented on every frame",
+    "Track only a gated population, e.g. with debris gated out"
+  ],
+  "notWhen": [
+    "Tracks without speed or angle: use Bayesian track + measures",
+    "Whole field moves together: run Drift correction first",
+    "Few or broken tracks: check segmentation finds each cell every frame"
+  ],
   "category": "Tracking",
   "env": [
     "local"

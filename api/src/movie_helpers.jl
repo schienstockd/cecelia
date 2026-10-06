@@ -233,33 +233,31 @@ function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{
 end
 
 # The overlay pops a movie config DRAWS, as one list of {valueName, popType, path, ribbon} (the shape
-# overlay_legend_content turns into {name, colour}), mirroring the renderer's own gates
-# (`_overlays_raw_from_config` → `build_overlays3d_for`) so the card names what the movie shows:
-#  • the shown `popType` pops (in `popsFilter`, when set) — points, and their cell-track ribbons ride
-#    on the same row, since the points ARE the pop's colour;
-#  • track-cluster ribbons (`trackclust_requested` + `trackclust_draws`) — ribbon-only rows (`ribbon`).
-# Whole-segmentation tracks are not pops — `_track_source_items` lists them.
+# overlay_legend_content turns into {name, colour}), mirroring the renderer (`_overlays_raw_from_config`
+# → `viewer_overlay_closure`) so the card names what the movie shows:
+#  • the shown `popType` pops (in `popsFilter`, when set) of the pops' segmentation — points, and their
+#    cell-track ribbons ride on the same row, since the points ARE the pop's colour;
+#  • track-cluster ribbons — every segmentation's shown trackclust pops — ribbon-only rows (`ribbon`).
+# Per-segmentation tracks are not pops — `_track_source_items` lists them.
 function _config_overlay_pops(img, config)
     out = Vector{Dict{String,Any}}()
     _has_label_props(img) || return out
-    Bool(get(config, :showPopulations, false)) || return out
-    pt = String(get(config, :popType, "flow"))
-    # The ONE segmentation the movie draws pops from (`_config_pop_segmentation`); none → none drawn.
-    pop_vn = _config_pop_segmentation(config)
-    vns_for_pops = isempty(pop_vn) ? String[] : String[pop_vn]
-    pf = get(config, :popsFilter, nothing)
-    keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
-    for vn in vns_for_pops
-        try
-            for L in resolve_pops(img, pt; value_name = vn)
+    if Bool(get(config, :showPopulations, false))
+        pt = String(get(config, :popType, "flow"))
+        # The ONE segmentation the movie draws pops from (`_config_pop_segmentation`); none → none drawn.
+        pop_vn = _config_pop_segmentation(config)
+        pf = get(config, :popsFilter, nothing)
+        keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
+        isempty(pop_vn) || try
+            for L in resolve_pops(img, pt; value_name = pop_vn)
                 (L.show && (keep === nothing || L.path in keep)) || continue
-                push!(out, Dict{String,Any}("valueName" => vn, "popType" => pt, "path" => L.path, "ribbon" => false))
+                push!(out, Dict{String,Any}("valueName" => pop_vn, "popType" => pt, "path" => L.path, "ribbon" => false))
             end
         catch
         end
     end
-    if trackclust_requested(Bool(get(config, :showTrackclust, false)), true, false)
-        for vn in vns_for_pops
+    if Bool(get(config, :showTrackclust, false))
+        for vn in trackclust_segmentations(img)
             try
                 for L in resolve_pops(img, "trackclust"; value_name = vn)
                     L.show || continue
@@ -363,24 +361,26 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
     (; colourBy = Dict{String,Any}("column" => column, "items" => cby), populations = pops)
 end
 
-# The whole-segmentation tracks a movie draws (the translator's `allTracks`), as legend rows: one per
-# visible track source, else one "tracks" row. Read through `_overlays_raw_from_config`, so the legend
-# names what the renderer draws — not every segmentation the batch could have drawn. A swatch only
-# when one colour IS what the tails are (`_build_overlay_state`): "solid" and "pop" paint a source in
-# its colour; without sources "solid" is the palette's first colour and "pop" the grey. Coloured by
-# track or speed, one swatch would name a colour the tails are not.
-function _track_source_items(config)::Vector{Dict{String,Any}}
+# The per-segmentation tracks a movie draws (the translator's `trackSegs`), as legend rows: one per
+# drawn source ("tracks" for the overlays' own segmentation). A segmentation drawing track clusters is
+# left out — its plain tracks stand down (`viewer_overlay_closure`). A swatch only when one colour IS
+# what the tails are (`_build_overlay_state`): "solid" and "pop" paint a source in its colour; coloured
+# by track or speed, one swatch would name a colour the tails are not.
+function _track_source_items(config, img = nothing)::Vector{Dict{String,Any}}
     ov = _overlays_raw_from_config(config, false)
-    (ov === nothing || !ov["allTracks"]) && return Dict{String,Any}[]
+    ov === nothing && return Dict{String,Any}[]
     mode = ov["trackColorMode"]
-    sources = get(ov, "trackSources", nothing)
-    if sources === nothing
-        swatch = mode == "solid" ? rgb_to_hex(CECELIA_TRACK_PALETTE[1]) :
-                 mode == "pop"   ? OVERLAY_GREY : nothing
-        return [Dict{String,Any}("label" => "tracks", "colour" => swatch)]
+    tc = (img !== nothing && ov["showTrackclust"]) ? Set(trackclust_segmentations(img)) : Set{String}()
+    pop_vn = String(get(ov, "valueName", ""))
+    items = Dict{String,Any}[]
+    for s in ov["trackSegs"]
+        vn = String(s["valueName"])
+        (isempty(vn) ? pop_vn : vn) in tc && continue
+        swatch = !(mode in ("solid", "pop")) ? nothing :
+                 (isempty(vn) && mode == "solid") ? rgb_to_hex(CECELIA_TRACK_PALETTE[1]) : s["colour"]
+        push!(items, Dict{String,Any}("label" => isempty(vn) ? "tracks" : "$(vn) tracks", "colour" => swatch))
     end
-    [Dict{String,Any}("label" => "$(s["valueName"]) tracks",
-                      "colour" => mode in ("solid", "pop") ? s["colour"] : nothing) for s in sources]
+    items
 end
 
 # Assemble the Julia-side title-card content for an image under a movie config (Phase H). Title = image
@@ -420,7 +420,7 @@ function _title_card_content(img, config)
                                           "colour" => (!ribbon || pop_coloured) ? p["colour"] : nothing))
         end
     end
-    append!(items, _track_source_items(config))
+    append!(items, _track_source_items(config, img))
     isempty(items) || push!(sections, Dict{String,Any}("heading" => "Populations", "items" => items))
     # Colour-by — value → pop colour + name for the colour-by measure.
     column = String(get(config, :colourBy, ""))

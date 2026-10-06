@@ -142,6 +142,29 @@ plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` 
 `segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
 thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
 
+**`purpose` / `useWhen` / `notWhen` (required on every visible task).** What the task is for, and
+when it is — and is not — the right step. `purpose` is one line; `useWhen` takes 1–3 lines and
+`notWhen` 0–3. A `hidden` task may skip them.
+
+```json
+"purpose": "Remove shot noise from photon-limited movies with a trained model",
+"useWhen": ["Photon-limited channels: sparse, low photon counts"],
+"notWhen": ["Saturated or bright channels: no shot noise left to remove"],
+```
+
+- **One source, three readers:** the module page's task picker, the Guides panel's "Which step?" view,
+  and the MCP (`get_task_catalogue`, `get_module_params`). There is no separate troubleshooting doc.
+- **Each line is a property of the method, in the user's words** — "needs photon-sparse signal",
+  "blurs cell edges". Never a channel, a percentile or a threshold for some dataset: the reader still
+  has to reason about their own data.
+- **Each line is traceable** to the task's code, its docs or a plan's measurement. Cite the source in
+  the PR that adds or changes it.
+- **A problem fixed at an earlier step says so** ("Noisy or drifting images: fix them in Cleanup
+  before tuning this"), naming the other task by its label.
+- Copy rules as for a `tip` (`docs/ui/COPY.md`): sentence case, no trailing period, one sentence,
+  at most 80 characters. Enforced by the `every visible task says what it is for` testset
+  (`app/test/suite/task_spec_ratchets.jl`). Design: `docs/todo/TASK_DISCOVERY_PLAN.md`.
+
 ### `live_outputs` (optional) — let a viewer watch the output while it's written
 
 Most tasks assemble a result and write it once, so there is nothing to look at until they finish. A task

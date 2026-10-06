@@ -118,6 +118,8 @@ recommend or exclude them. See PR moving `cleanupImages.{dtype,flip}` → `editI
   gates); `< 0.50` excludes `denoise` — "Not photon-limited — denoising would remove signal" — unless a
   card seeded it; `smooth` is never excluded. Between the bands, or absent, nothing changes. Placeholder
   bands; `evidence = :metadata` skips the rule. Code: `_apply_photon_rules!` in `app/src/correction_plan.jl`.
+  An image imported before the probe existed is probed once on its first recommend and the result
+  persisted (`ensure_saturation_meta!`), so the rule reaches old images too.
 - **Every "auto-detect" cell is `include` only for the two rules that have a real metadata field**:
   the `T`/`Z` axis gates and the denoise saturation gate. All other rules are `user-pick` because
   their preconditions live in cards or in the wizard (per 1c: only 2 auto rules, 0 pre-run pixel

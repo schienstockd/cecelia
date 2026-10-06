@@ -2,6 +2,16 @@
   "task": "dtype",
   "fun_name": "editImages.dtype",
   "label": "Bit depth",
+  "purpose": "Store an image version at another bit depth",
+  "useWhen": [
+    "A later step needs 8-bit, 16-bit or float pixels",
+    "Float keeps negative and fractional values from earlier maths"
+  ],
+  "notWhen": [
+    "To save disk: lossless compression already shrinks stores",
+    "Auto rescale stretches each channel apart, skewing channel ratios",
+    "Channels clipped at the detector stay clipped"
+  ],
   "category": "Preprocessing",
   "env": [
     "local"

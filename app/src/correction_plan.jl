@@ -499,7 +499,9 @@ end
     recommend_plan(img; card_id, wizard, evidence) -> CorrectionPlan
     recommend_plan(meta::AbstractDict; image_uid, card_id, wizard, evidence) -> CorrectionPlan
 
-Pure meta→plan for testability; the `img` method wraps it. `evidence` goes to `apply_rules`.
+Pure meta→plan for testability; the `img` method wraps it, and first backfills a missing
+`meta.saturation` (`ensure_saturation_meta!`) unless `evidence = :metadata`. `evidence` goes to
+`apply_rules`.
 `card_id` defaults to `:custom` — the no-preset fallback the plan doc names for
 `preset.card_confidence < 0.4`. A card-classifier that picks a card automatically is deferred
 (§2.1 `preset.card_confidence` needs calibration ground truth — see the plan doc's Open questions).
@@ -551,6 +553,10 @@ function recommend_plan(img::CciaImage;
                         wizard::AbstractDict = Dict{Symbol,Any}(),
                         evidence::Symbol = :all)::CorrectionPlan
     ccid = state_file(img)
+    # Images imported before the saturation/sparsity probe existed would otherwise get the
+    # metadata-only answer forever: probe once with the import's own probe and persist it. Skipped
+    # for `:metadata`, which never reads it. Advisory — a failed probe leaves the score absent.
+    evidence === :all && isfile(ccid) && ensure_saturation_meta!(img)
     isfile(ccid) || return CorrectionPlan(String(img.uid),
                                           card_id === nothing ? :custom : card_id, wizard,
                                           CorrectionStep[], CorrectionStep[], QCResult[])

@@ -17,6 +17,7 @@ import { useViewerStore } from './viewer'
 import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
+import { writtenImageVersion } from '../utils/taskResultVersion'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -587,9 +588,10 @@ export const useWsStore = defineStore('ws', () => {
           }
         }
 
-        const addedValueName = meta.valueName as string | undefined
-        const addedFilename  = meta.filename  as string | undefined
-        if (addedValueName && addedFilename) {
+        // Only a pixel writer's (valueName, filename) pair is a new image version — see utils/taskResultVersion
+        const addedValueName = writtenImageVersion(meta)
+        const addedFilename  = meta.filename as string
+        if (addedValueName) {
           const store = useProjectStore()
           for (const set of store.sets) {
             const img = set.images.find(i => i.uid === imageUid)

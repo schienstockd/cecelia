@@ -19,6 +19,8 @@ using Statistics: median
 #   ccid_sync.jl   — ccid.json ⇄ zarr-metadata bridge. `_merge_channel_names!` / `_merge_zarr_meta_into_ccid!`
 #                    reconcile a freshly-read `read_ome_metadata` result into an existing ccid.json;
 #                    `resync_ome_meta!` is the entry point routes/importer call after a metadata edit.
+#   saturation.jl  — the clipping + sparsity probe (`_probe_saturation`) import runs on every store,
+#                    and `ensure_saturation_meta!`, its on-demand backfill for older images.
 #   staging.jl     — source copying — `_stage_source!` and the yielding chunked copy underneath, so
 #                    a multi-GB import doesn't freeze the WS server. The COMPANION detector
 #                    (`_companion_files`) also lives here since the staging step is what fans it out.
@@ -28,5 +30,6 @@ using Statistics: median
 include(joinpath(@__DIR__, "omezarr", "reader.jl"))
 include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))
+include(joinpath(@__DIR__, "omezarr", "saturation.jl"))
 include(joinpath(@__DIR__, "omezarr", "staging.jl"))
 include(joinpath(@__DIR__, "omezarr", "task.jl"))

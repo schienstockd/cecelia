@@ -41,7 +41,7 @@ INTRAVITAL = {"sourceProject": "tSJpBI", "sourceSet": "k58SK7", "images": ["jV6p
 
 def _args(**kw):
     base = dict(runs=1, budget_usd=5.0, knowledge=False, at=None, ask_why=True, projects_dir=None,
-                timeout_s=600, api_url="http://127.0.0.1:1")
+                timeout_s=600, api_url="http://127.0.0.1:1", discovery="on")
     return types.SimpleNamespace(**{**base, **kw})
 
 
@@ -141,6 +141,14 @@ class TestRunAppArgs(unittest.TestCase):
         self.assertTrue(a.knowledge)
         self.assertFalse(a.ask_why)
 
+    def test_discovery_passes_through_to_both_mcp_servers(self):
+        self.assertEqual(self.parsed(self.argv()).discovery, "on")
+        a = self.parsed(self.argv(discovery="off"))
+        self.assertEqual(a.discovery, "off")
+        cfg = run_app.mcp_config("http://a", "C", "", a.discovery)["mcpServers"]
+        self.assertEqual({s["env"][run_app.DISCOVERY_ENV] for s in cfg.values()}, {"off"})
+        self.assertEqual(run_app.DISCOVERY_ENV, "CECELIA_MCP_DISCOVERY")   # the name discovery.py reads
+
 
 class _FakeProc:
     """Stands in for `run_app.py`: writes what a finished run leaves, or raises mid-run."""
@@ -204,6 +212,18 @@ class TestRunOne(_StateDir):
         [line] = self.log_lines()
         self.assertEqual((line["whyCostUsd"], line["totalCostUsd"]), (None, 2.5))
 
+    def test_discovery_is_logged(self):
+        procs = []
+
+        def popen(cmd, cwd=None):
+            procs.append(_FakeProc(cmd, pathlib.Path(cmd[cmd.index("--root") + 1])))
+            return procs[-1]
+        with mock.patch.object(guide_run.subprocess, "Popen", popen), mock.patch("builtins.print"):
+            guide_run.run_one("intravital-timelapse", INTRAVITAL, _args(discovery="off"), "P", "abc",
+                              {"discovery": "off"})
+        [line] = self.log_lines()
+        self.assertEqual(line["discovery"], "off")
+
     def test_aborted_run_is_logged_and_torn_down(self):
         with self.assertRaises(SystemExit):
             self.run_one(raise_on_wait=SystemExit(143), entry=None)
@@ -232,6 +252,7 @@ class TestBatch(_StateDir):
         popen.assert_not_called()
         [line] = self.log_lines()
         self.assertIn("not running", line["skipped"])
+        self.assertEqual(line["discovery"], "on")       # a skipped run still says which arm it was
 
     def test_stops_after_a_failed_run(self):
         root = self.state / "projects"
@@ -250,6 +271,10 @@ class TestRecordTitle(unittest.TestCase):
         rec = {"guide": "intravital-timelapse", "startedAt": "2026-10-07 02:00", "knowledgeOn": True}
         self.assertEqual(run_record.title_of({"knowledge": []}, rec, "r", "Crop"),
                          "Guide run intravital-timelapse · 2026-10-07 02:00 — Crop · with lab knowledge")
+
+    def test_title_marks_the_discovery_off_arm(self):
+        rec = {"guide": "g", "startedAt": "s", "discovery": "off"}
+        self.assertTrue(run_record.title_of({"knowledge": []}, rec, "r", "Crop").endswith(" · discovery off"))
 
     def test_older_record_reads_as_before(self):
         rec = {"startedAt": "2026-10-05 17:12"}
@@ -285,6 +310,7 @@ class TestAt(unittest.TestCase):
         self.assertNotIn("--at", fwd)
         self.assertEqual(fwd[:3], ["intravital-timelapse", "--runs", "2"])
         self.assertIn("--knowledge", fwd)
+        self.assertEqual(fwd[fwd.index("--discovery") + 1], "on")
         argv = guide_run.schedule_argv(dt.datetime(2026, 10, 7, 2, 0), "u", ["pixi", "run", "guide-run", *fwd], "/bin")
         self.assertEqual(argv[:2], ["systemd-run", "--user"])
         self.assertIn("--on-calendar=2026-10-07 02:00:00", argv)   # a full date: one shot, not daily

@@ -31,6 +31,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "set_notebook_description", "revise_notebook", "list_notebooks", "get_notebook",
             "create_chain",
             "get_guide",                    # the in-app guides + recipes as text
+            "get_task_catalogue",           # what each step is for (on unless CECELIA_MCP_DISCOVERY=off)
             "mark_tracks", "mark_cells",   # bidir point-out (BIDIR_CONTEXT_PLAN PR #4)
             "point_at_ui", "mark_freeform", # bidir point-out UI + freeform (PR #5)
             "mark_tile", "get_landscape",   # bidir landscape overlay (PR #6, Decision 14 reframe)
