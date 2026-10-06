@@ -86,7 +86,12 @@ A BUG marked `repeated agent error` is a 4xx the API answered with a reason, hit
 separate runs: the input was wrong each time, so judge the guidance, not the input. Read what an agent
 sees before and after the call (the MCP tool's description, its guidance, the error message) and say
 `fix` when it doesn't steer an agent away from the mistake or straight to a passing call, `dismiss`
-when it already does. Read the actual code: the flagged function, its callers and producers, and anything the
+when it already does. A BUG marked `run review` is a section of an autonomous run's record that a
+person marked bad with a cause: `guide` (the in-app guide the agent followed didn't say it) or
+`platform` (the information existed but the agent couldn't see it). A person set the cause, so don't
+judge whether it is real: check whether the fix is in. Find the guide's text (`mcp/cecelia_mcp/guides.json`)
+or the tool / surface the note names, and say `fix` when it still lacks what the note asks for,
+`dismiss` only when this code already has it. Read the actual code: the flagged function, its callers and producers, and anything the
 bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build or run the app.
 `git log` / `git show` / `grep` are fine.
 
@@ -130,7 +135,8 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
     seen: dict[tuple, int] = {}
     for i, b in enumerate(bugs):
         # one run's errors: one agent; a repeat spans runs, so it joins none
-        run = b.get("commit") if b.get("kind") == "agent_run" and not b.get("repeat") else None
+        run = (("review", b.get("entry")) if b.get("review") else
+               b.get("commit") if b.get("kind") == "agent_run" and not b.get("repeat") else None)
         for k in (("branch", b.get("branch")), ("file", b.get("file")), ("run", run)):
             if k[1] is None:
                 continue
@@ -152,7 +158,9 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
 def prompt_for(group: _t.Sequence[dict]) -> str:
     return _BRIEF + "\n\n".join(
         f"BUG {b['key']} ({b.get('marker') or '?'}, {_record.bug_location(b)}, "
-        + (f"hit in {b.get('runs') or 1} run(s), first at commit {(b.get('commit') or '?')[:8]}):\n"
+        + (f"cause {b.get('cause')}, run {b.get('run') or '?'}"
+           + (f", guide {b['guide']}" if b.get("guide") else "") + "):\n" if b.get("review") else
+           f"hit in {b.get('runs') or 1} run(s), first at commit {(b.get('commit') or '?')[:8]}):\n"
            if b.get("kind") == "agent_run" else f"raised on branch {b.get('branch') or '?'}):\n")
         + f"{b['desc']}\n"
         + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))

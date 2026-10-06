@@ -1,0 +1,24 @@
+{
+  "entryId": "bb-20261005T180000-cccccc",
+  "status": "open",
+  "title": "Agent run 2026-10-05 17:14 \u2014 Crop",
+  "agentRun": {
+    "run": "20261005T171234",
+    "copyProjectUid": "CpyC01",
+    "sectionIds": [
+      "d01"
+    ]
+  },
+  "sectionOutcomes": {
+    "d01": {
+      "verdict": "bad",
+      "note": "picked the wrong channel",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "agent"
+    }
+  }
+}

@@ -22,6 +22,16 @@ test whether an agent can actually use the framework.
    (`~/.cecelia-effectiveness/judge-worktree`) to it.
 2. **Owner answers.** Fold `pixi run judge-review` answers into the earlier records, so a bug
    answered `wont_fix` is not carried.
+   **Run reviews** (`run_reviews.py`). Read the agent run records: Blackboard entries with meta
+   `agentRun` in the projects dir (`CECELIA_AGENT_APP_PROJECTS`, else
+   `~/cecelia-feijoa/projects`; `--projects-dir` overrides). Each section a person marked `bad` with
+   cause `guide` (the guide didn't say it) or `platform` (the agent couldn't see it) is logged once as
+   an `agent_run_finding` with `kind: "review"`, keyed by project + entry + section. It carries the
+   run, the section, the cause, the note and the guide when the record names one (`agentRun.guide`).
+   A Claude proposal and a `bad` with no cause (marked before causes existed) are skipped. `agent`
+   causes stay on the run record; the pass's record lists them per guide under *Agent causes per
+   guide*, and flags a guide whose `agent` notes span 2+ runs as a possible guide gap. Whether two
+   notes describe the same gap is the owner's read: no judge step compares notes.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, every
    `plausible`), plus the last record's `open` / `unjudged` / `unmerged` bugs. Free checks come first:
@@ -36,6 +46,13 @@ test whether an agent can actually use the framework.
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
    above. One without has no code to excerpt: it is `open` straight away and goes to verify. A
    `wont_fix` one is carried, so a run that hits it again doesn't raise it as new.
+
+   A **run review** (`kind: "review"`, key `rev-…`) has no code to excerpt either: it is `open`
+   straight away and goes to verify. A person set its cause, so verify doesn't ask whether it is
+   real: it checks whether the fix is in (the guide's text in `mcp/cecelia_mcp/guides.json`, or the
+   tool or surface the note names). `dismiss` means this code already has it. One run's reviews go
+   to one agent. The rows are stamped a second before the pass started, so the next pass's window
+   doesn't read them again.
 
    A **repeated agent error** (`kind: "repeat"`, key `rep-…`) is the exception to "a 4xx with a
    reason is the agent's own input". One alone never reaches the judge: the emitter logs it as an
@@ -167,10 +184,11 @@ No fix runs unattended: an unattended fix agent is deferred, see
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
+| `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
+| `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
+| `pixi run judge-record D --mirror` | Re-render a stored record |
 
 On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
 (`judge-bugs: usage limit — lifts 2026-10-07T01:40+11:00: …`) and exit 75, not a traceback.
-| `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
-| `pixi run judge-record D --mirror` | Re-render a stored record |
 
 Timer install, adjust and uninstall steps: [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md).

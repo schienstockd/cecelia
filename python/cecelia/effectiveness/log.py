@@ -74,7 +74,10 @@ EVENT_TYPES = frozenset({
     #: `key`. Payload: `key` ("run-" + 10 hex), `tool`, `error`, `desc`, `run` (the run's directory
     #: name), and `file` / `line` only when a backend stacktrace names repo code. Row `commit` = the
     #: SHA the run's app was on, `branch` null. A `kind: "repeat"` row (key "rep-" + 10 hex, plus
-    #: `runs` and `template`) is a 4xx-with-reason hit in 2+ separate runs.
+    #: `runs` and `template`) is a 4xx-with-reason hit in 2+ separate runs. A `kind: "review"` row
+    #: (key "rev-" + 10 hex, `scripts/judge/run_reviews.py`, logged by the weekly pass) is a person's
+    #: `bad` verdict with cause `guide` / `platform` on a run record's section: `cause`, `note`,
+    #: `guide`, `project`, `entry`, `section`, `run`; `tool` / `file` / `line` null.
     "agent_run_finding",
     #: A 4xx the API answered with a reason, in an agent run: the agent's own input, so not a
     #: finding — an observation the emitter counts per `key` across runs to raise the repeats

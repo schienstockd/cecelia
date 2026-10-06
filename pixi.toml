@@ -358,6 +358,9 @@ judge-weekly = "python scripts/judge/weekly.py"
 judge-bugs   = "python scripts/judge/bugs.py"
 judge-verify = "python scripts/judge/verify.py"
 judge-rules  = "python scripts/judge/rules.py"
+# The agent run reviews a pass would log (guide / platform causes) and its agent causes per guide,
+# printed; reads the run harness's projects dir (`--projects-dir D`), logs nothing.
+judge-run-reviews = "python scripts/judge/run_reviews.py"
 # Re-render a stored run record's markdown (`judge-record D [--mirror]`). Spawns nothing.
 judge-record = "python scripts/judge/record.py"
 # The owner's queue for the newest run record: the bugs a verify agent sent you (`decide`). One key
