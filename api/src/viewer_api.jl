@@ -1068,6 +1068,7 @@ end
 # `ov_diag` / `mask_diag` carry the smoke test's diagnostic breadcrumbs; with `tally = true` the
 # overlay closure additionally counts points/segments/frames into refs under `ov_diag["_tally"]`.
 function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
+                                      mask_value_name::Union{Nothing,AbstractString} = nothing,
                                       tally::Bool = false,
                                       on_log::Union{Nothing,Function} = nothing)
     ov_diag = Dict{String,Any}("requested" => ov_raw !== nothing, "reason" => "")
@@ -1105,47 +1106,41 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # `look`-derived dict from `_overlays_raw_from_config` sets it explicitly, so a movie that only
     # asked for a mask stops leaking pop dots the user didn't select (reported).
     show_pops = Bool(_ov(ov_raw, :showPopulations, true))
-    include_tracks = Bool(_ov(ov_raw, :includeTracks, true))
-    # `tailLength` in FRAMES — the legacy `tail_length`, default 30, `0` hides tracks entirely
-    # (same as `includeTracks = false`). Matches the browser's `viewerTailLength` setting.
+    # `tailLength` in FRAMES — the legacy `tail_length`, default 30, `0` hides tracks entirely.
+    # Matches the browser's `viewerTailLength` setting.
     tail_length      = Int(_ov(ov_raw, :tailLength, 30))
-    # Whole-segmentation tracks: paint every tracked cell with one default colour, ignoring pops.
-    all_tracks_col   = String(_ov(ov_raw, :allTracksColour, OVERLAY_GREY))
-    # Optional multi-source track composition — `trackSources` is a list of `{valueName, colour}`
-    # entries (or the look's `{valueName => {visible, colour}}` map — `_normalise_track_sources` reads
-    # both); when present under `allTracks`, we call `build_overlays3d_for` once per source (each
-    # with its own `all_tracks_colour`) and merge the resulting closures. Without this the whole-seg
-    # branch could only draw ONE segmentation's tracks in one grey — fXgbTl (cpSAM + flowTom +
-    # coastalFg + coastalSm15 all tracked) had no way to show them together with distinct colours.
-    # A chosen-but-all-hidden `trackSources` turns `allTracks` off (`_whole_seg_track_sources`).
-    all_tracks, track_sources = _whole_seg_track_sources(Bool(_ov(ov_raw, :allTracks, false)),
-                                                         _ov(ov_raw, :trackSources, nothing);
-                                                         default_colour = all_tracks_col)
+    # The track kinds (per-segmentation, cell-track, trackclust) — `overlay_track_plan`, which also
+    # reads the legacy `allTracks` / `includeTracks` / `trackSources` keys of the smoke route.
+    plan = overlay_track_plan(ov_raw)
+    # cell-track ribbons ride on the pops — without them they are nothing to draw
+    any_tracks = !isempty(plan.segs) || (plan.gated && show_pops) || plan.trackclust
     # Same three modes the browser's viewer setting exposes: "track" | "speed" | "solid".
     track_color_mode = String(_ov(ov_raw, :trackColorMode, "track"))
     style = movie_overlay_style(k -> _ov(ov_raw, Symbol(k), nothing))
     mask_contour_px = 1
     ov_diag["valueName"] = ov_vn
     ov_diag["popType"]   = ov_pt
-    ov_diag["allTracks"] = all_tracks
+    ov_diag["trackSegs"] = [first(x) for x in plan.segs]
     # `showMask` decides the mask half INDEPENDENTLY of `showPopulations` / `allTracks`, so a
     # mask-only render (the compare grid) still draws its mask.
     show_mask = Bool(_ov(ov_raw, :showMask, false))
     all_cells = Bool(_ov(ov_raw, :allCells, false))
+    # The mask's segmentation is the one the viewer SHOWS (the request's `labelValueNames`), not the
+    # pops' — those are different segmentations as often as not (mask P14, pop manager on OTI).
+    mask_vn = something(mask_value_name, String(_ov(ov_raw, :maskValueName, "")))
+    isempty(mask_vn) && (mask_vn = ov_vn)
+    # the pops' paths mean nothing in another segmentation's tree — that mask is every cell
+    mask_vn == ov_vn || (all_cells = true)
     mask_diag["requested"] = show_mask
-    # Multi-source track composition is on when a non-empty `trackSources` arrives under `allTracks`.
-    # It relaxes the empty-ov_vn guard below (each source carries its own value_name), and switches
-    # the overlay build to the merge path further down.
-    has_multi_tracks = all_tracks && !isempty(track_sources)
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !has_multi_tracks
+    elseif isempty(ov_vn) && !(plan.trackclust || any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
-    elseif !(show_pops || all_tracks || show_mask || has_multi_tracks)
+    elseif !(show_pops || any_tracks || show_mask)
         # No overlay type asked for — skip the pop-dot / track / mask build entirely.
-        ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks + showMask all false)"
+        ov_diag["reason"] = "no overlay type requested (no pops, tracks or mask)"
     else
         d = axis_dims(caxes, ndims(arr))
         H = haskey(d, "y") ? size(arr, d["y"]) : 0
@@ -1154,57 +1149,25 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
         if H == 0 || W == 0
             ov_diag["reason"] = "could not resolve y/x axes from caxes ($(caxes))"
         else
-            if has_multi_tracks
-                # One closure per source, merged into one `t -> (points, segments)`.
-                per_source = Any[]
-                for src in track_sources
-                    src isa AbstractDict || continue
-                    vn_src  = _wstr_any(src, "valueName", :valueName)
-                    col_src = _wstr_any(src, "colour",    :colour; default = String(all_tracks_col))
-                    isempty(vn_src) && continue
-                    cl = try
-                        build_overlays3d_for(img; value_name = vn_src, pop_type = ov_pt,
-                                            include_tracks = include_tracks,
-                                            tail_length = tail_length,
-                                            all_tracks = true,
-                                            all_tracks_colour = col_src,
-                                            solid_colour = col_src,
-                                            include_points = false,
-                                            track_color_mode = track_color_mode)
-                    catch e
-                        @warn "movie overlays: multi-source author failed" value_name = vn_src exception = e
-                        nothing
-                    end
-                    cl === nothing || push!(per_source, cl)
-                end
-                inner = merge_overlay_closures(per_source)
-                inner === nothing && (ov_diag["reason"] = "no track sources resolved")
-            elseif show_pops || all_tracks
-                tc_on = trackclust_requested(Bool(_ov(ov_raw, :showTrackclust, false)), show_pops, all_tracks) &&
-                        trackclust_draws(img, ov_vn)
+            if show_pops || any_tracks
+                cb_raw = _ov(ov_raw, :colourBy, nothing)
+                cb = (cb_raw === nothing || isempty(String(cb_raw))) ? nothing : String(cb_raw)
+                co_raw = _ov(ov_raw, :colourOverrides, nothing)
                 inner = try
-                    main = build_overlays3d_for(img; value_name = ov_vn, pop_type = ov_pt,
-                                       pops_filter = ov_paths,
-                                       include_tracks = include_tracks && !tc_on,
-                                       tail_length = tail_length,
-                                       all_tracks = all_tracks,
-                                       all_tracks_colour = all_tracks_col,
-                                       # the viewer's points are its populations; tracks alone draw no dots
-                                       include_points = show_pops,
-                                       track_color_mode = track_color_mode)
-                    tc_on ? merge_overlay_closures(Any[main,
-                                build_overlays3d_for(img; value_name = ov_vn, pop_type = "trackclust",
-                                                     include_tracks = true, tail_length = tail_length,
-                                                     include_points = false,
-                                                     track_color_mode = track_color_mode)]) : main
+                    viewer_overlay_closure(img; value_name = ov_vn, pop_type = ov_pt, plan = plan,
+                                           show_pops = show_pops, pops_filter = ov_paths,
+                                           tail_length = tail_length, track_color_mode = track_color_mode,
+                                           colour_by = cb,
+                                           colour_overrides = co_raw isa AbstractDict ? co_raw : nothing)
                 catch e
                     ov_diag["reason"] = "author threw: $(sprint(showerror, e))"
                     @warn "movie overlays: author failed" value_name = ov_vn pop_type = ov_pt exception = e
                     nothing
                 end
+                inner === nothing && isempty(ov_diag["reason"]) && (ov_diag["reason"] = "nothing to draw")
             else
                 inner = nothing
-                ov_diag["reason"] = "no overlay type requested (showPopulations + allTracks both false)"
+                ov_diag["reason"] = "no overlay type requested (no pops or tracks)"
             end
             # Shared inner → overlays3d_for wrap. `inner` is set by either the multi-source or the
             # single-source branch above; either way, the tally wrapper and the "ok" reason belong
@@ -1231,7 +1194,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
             # A segmentation made on another version of this image (different pixel grid) can't be
             # drawn over this one — skip the mask, keep recording, say why. See
             # `label_geometry_mismatch`.
-            if show_mask && !mask_fits_frame(img, ov_vn, arr, caxes; on_log = on_log)
+            if show_mask && !mask_fits_frame(img, mask_vn, arr, caxes; on_log = on_log)
                 show_mask = false
                 mask_diag["reason"] = "segmented on another version of this image (geometry mismatch)"
             end
@@ -1246,7 +1209,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                             String(cb_raw_v) : nothing
                 co_raw_v = _ov(ov_raw, :colourOverrides, nothing)
                 mask_co = co_raw_v isa AbstractDict ? co_raw_v : nothing
-                mask = movie_mask(img; value_name = ov_vn, contour_px = mask_contour_px,
+                mask = movie_mask(img; value_name = mask_vn, contour_px = mask_contour_px,
                                   opacity = style.mask_opacity, pop_type = ov_pt,
                                   pops_filter = ov_paths, all_cells = all_cells,
                                   all_cells_colour = all_cells_col,
