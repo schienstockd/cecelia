@@ -57,9 +57,14 @@ COHORT_FUNS = ("segment.cellpose", "segment.measureLabels", "tracking.bayesian_t
                "tracking.track_measures", "behaviour.hmm_states", "behaviour.hmm_transitions")
 
 
-def mcp_config(api_url: str, project_uid: str, prefix: str) -> dict:
+# The MCP servers' one switch for the task-discovery information (`discovery_enabled()`,
+# mcp/cecelia_mcp/discovery.py): `off` is the arm that runs without it (TASK_DISCOVERY_PLAN Decision 9).
+DISCOVERY_ENV = "CECELIA_MCP_DISCOVERY"
+
+
+def mcp_config(api_url: str, project_uid: str, prefix: str, discovery: str = "on") -> dict:
     py = str(REPO / ".pixi" / "envs" / "default" / "bin" / "python3")
-    env = {"PYTHONPATH": str(REPO / "mcp"), "CECELIA_API_URL": api_url}
+    env = {"PYTHONPATH": str(REPO / "mcp"), "CECELIA_API_URL": api_url, DISCOVERY_ENV: discovery}
     return {"mcpServers": {
         "cecelia-observer": {"command": py, "args": ["-m", "cecelia_mcp.server"],
                              # headless: never re-pair the user's open project
@@ -202,7 +207,7 @@ def run(a) -> dict:
     info = {**app_project.build(projects_dir, a.source_project, a.image, name, a.knowledge), "projectName": name}
     write_json_atomic(root / "run.json", info, indent=2)
     mcp_path = root / "mcp.json"
-    write_json_atomic(mcp_path, mcp_config(a.api_url, info["projectUid"], a.prefix), indent=2)
+    write_json_atomic(mcp_path, mcp_config(a.api_url, info["projectUid"], a.prefix, a.discovery), indent=2)
     prompt = CONTEXT.format(name=name, n=len(info["images"]), **info) + a.brief
     workdir = root / "cwd"                               # empty: no CLAUDE.md, no repo to read
     workdir.mkdir(exist_ok=True)
@@ -235,7 +240,7 @@ def run(a) -> dict:
                                 if any(x in f for x in APP_BOOKKEEPING) and after["files"].get(f) != h]
     trace = summarise_trace(root / "trace.jsonl", a.source_project)
     rec = {"startedAt": stamp, "startedAtUtc": started_utc, "codeSha": code_sha, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
-           "guide": a.guide or None, "checklist": a.check or [], "knowledgeOn": bool(a.knowledge), "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
+           "guide": a.guide or None, "checklist": a.check or [], "knowledgeOn": bool(a.knowledge), "discovery": a.discovery, "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
            "trace": trace, "canary": canary,
            "rateLimited": claude_cli.rate_limit_note(trace["rateLimited"]) if trace["rateLimited"] else None}
     rec["agent"], rec["reference"] = {}, {}
@@ -278,6 +283,8 @@ def main(argv=None) -> int:
                     help="skip the post-run why turn (it resumes the session once)")
     ap.add_argument("--knowledge", action="store_true",
                     help="carry the source project's lab-knowledge entries into the copy (P4)")
+    ap.add_argument("--discovery", choices=("on", "off"), default="on",
+                    help="off: the MCP hides what each task is for (an arm of its own, never pooled)")
     ap.add_argument("--guide", default="", help="the guide id the brief names; goes on the run record")
     ap.add_argument("--check", action="append", help="a reviewer checklist item, shown atop the record (repeat)")
     ap.add_argument("--root", required=True)

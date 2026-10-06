@@ -276,7 +276,8 @@ def title_of(run: dict, rec: dict, root_name: str, set_name: str) -> str:
     """The entry's title: the guide (when the brief named one), the start, the source set, and knowledge."""
     head = f"Guide run {rec['guide']} · " if rec.get("guide") else "Agent run "
     return f"{head}{rec.get('startedAt') or root_name} — {set_name}" + \
-        (" · with lab knowledge" if knowledge_on(run, rec) else "")
+        (" · with lab knowledge" if knowledge_on(run, rec) else "") + \
+        (" · discovery off" if rec.get("discovery") == "off" else "")
 
 
 def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes: dict | None = None,
