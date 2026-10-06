@@ -3,6 +3,7 @@
   "fun_name": "editImages.tProject",
   "label": "T-projection",
   "category": "Edit",
+  "group": "Project",
   "env": [
     "local"
   ],

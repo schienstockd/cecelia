@@ -3,6 +3,7 @@
   "fun_name": "spatialAnalysis.aggregatesMeshes",
   "label": "Detect aggregates (meshes)",
   "category": "Spatial analysis",
+  "group": "Aggregates",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

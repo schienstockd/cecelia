@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.denoise",
   "label": "Denoising (SUPPORT)",
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "gpu",
   "outputValueName": "denoised",

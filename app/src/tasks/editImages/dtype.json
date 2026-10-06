@@ -3,6 +3,7 @@
   "fun_name": "editImages.dtype",
   "label": "Bit depth",
   "category": "Preprocessing",
+  "group": "Convert",
   "env": [
     "local"
   ],

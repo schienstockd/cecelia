@@ -140,6 +140,8 @@ export interface TaskDef {
   task: string
   label: string
   category: string
+  group?: string        // picker sub-heading — what the function is FOR ("Segment", "Measure",
+                        // "Correct", …). Presentational; see utils/taskGroups.ts + docs/MODULES.md.
   env: string[]
   params: ParamDef[]
   resource_pool?: string  // default resource profile for this task

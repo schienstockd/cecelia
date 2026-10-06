@@ -3,6 +3,7 @@
   "fun_name": "editImages.flip",
   "label": "Flip",
   "category": "Preprocessing",
+  "group": "Reshape",
   "env": [
     "local"
   ],

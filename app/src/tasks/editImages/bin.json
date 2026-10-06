@@ -3,6 +3,7 @@
   "fun_name": "editImages.bin",
   "label": "Bin (XY downsample)",
   "category": "Edit",
+  "group": "Reshape",
   "env": [
     "local"
   ],

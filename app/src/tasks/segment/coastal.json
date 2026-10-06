@@ -3,6 +3,7 @@
   "fun_name": "segment.coastal",
   "label": "Optical flow segmentation",
   "category": "Segment",
+  "group": "Segment",
   "env": [
     "local"
   ],

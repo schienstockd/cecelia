@@ -3,6 +3,7 @@
   "fun_name": "segment.correct_carryover_snapshot",
   "label": "Correct labels — snapshot obs",
   "category": "Segment",
+  "group": "Correction tools",
   "env": ["local"],
   "resource_pool": "io",
   "requires": { "scale": ["xy"] },

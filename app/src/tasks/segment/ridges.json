@@ -3,6 +3,7 @@
   "fun_name": "segment.ridges",
   "label": "Ridge segmentation",
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

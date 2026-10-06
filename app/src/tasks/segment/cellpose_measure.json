@@ -3,6 +3,7 @@
   "fun_name": "segment.cellposeMeasure",
   "label": "Cellpose segment + measure",
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",
   "composite": ["segment.cellpose", "segment.measureLabels"],

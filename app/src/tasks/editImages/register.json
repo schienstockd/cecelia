@@ -3,6 +3,7 @@
   "fun_name": "editImages.register",
   "label": "Register images (staining cycles)",
   "category": "Edit",
+  "group": "Register",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

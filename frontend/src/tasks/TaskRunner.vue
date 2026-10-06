@@ -31,6 +31,7 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { groupTaskDefs } from '../utils/taskGroups'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -79,6 +80,8 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
+// picker sub-headings (Segment / Measure / Correct …); null = render the flat list
+const fnGroups = computed(() => groupTaskDefs(props.defs))
 
 // what the task PRODUCES on disk, for the one-line note under the picker. Server-stamped from
 // `task_output_effect` (Julia); absent when the output isn't an image (segment / measure / cluster).
@@ -473,7 +476,9 @@ watch(() => props.defs, (defs) => {
   if (!defs.length) return
   if (selectedTask.value && defs.some(d => d.task === selectedTask.value)) return
   const saved = profileStorage.getItem(`cc-fn:${props.module}`)
-  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved : defs[0].task
+  // fall back to the TOP row as displayed — under headings that is the first group's first def
+  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved
+    : (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
 }, { immediate: true })
 
 // Axis gating — the frontend twin of the Julia gate. A task with `requires.axes` (e.g. tracking
@@ -679,15 +684,30 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         v-model="selectedTask"
         v-tooltip.bottom="'Select which analysis function to run on the selected images'"
       >
-        <option
-          v-for="d in defs"
-          :key="d.task"
-          :value="d.task"
-          :disabled="!!gatingReasonFor(d)"
-          :title="gatingReasonFor(d) || undefined"
-        >
-          {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
-        </option>
+        <template v-if="fnGroups">
+          <optgroup v-for="grp in fnGroups" :key="grp.title" :label="grp.title">
+            <option
+              v-for="d in grp.defs"
+              :key="d.task"
+              :value="d.task"
+              :disabled="!!gatingReasonFor(d)"
+              :title="gatingReasonFor(d) || undefined"
+            >
+              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+            </option>
+          </optgroup>
+        </template>
+        <template v-else>
+          <option
+            v-for="d in defs"
+            :key="d.task"
+            :value="d.task"
+            :disabled="!!gatingReasonFor(d)"
+            :title="gatingReasonFor(d) || undefined"
+          >
+            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+          </option>
+        </template>
       </select>
 
       <div v-if="taskDef" class="fn-meta">

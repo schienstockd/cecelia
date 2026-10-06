@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.smooth",
   "label": "Smoothing",
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "smoothed",

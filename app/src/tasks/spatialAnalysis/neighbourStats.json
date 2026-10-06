@@ -3,6 +3,7 @@
   "fun_name": "spatialAnalysis.neighbourStats",
   "label": "Interaction matrix",
   "category": "Spatial analysis",
+  "group": "Neighbourhood",
   "env": [
     "local"
   ],

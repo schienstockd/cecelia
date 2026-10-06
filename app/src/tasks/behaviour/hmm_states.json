@@ -3,6 +3,7 @@
   "fun_name": "behaviour.hmm_states",
   "label": "HMM states",
   "category": "Behaviour",
+  "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

@@ -3,6 +3,7 @@
   "fun_name": "segment.correct_measures",
   "label": "Correct labels + measures",
   "category": "Segment",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "io",
   "composite": [

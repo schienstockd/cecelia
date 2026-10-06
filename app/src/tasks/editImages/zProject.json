@@ -3,6 +3,7 @@
   "fun_name": "editImages.zProject",
   "label": "Z-projection",
   "category": "Edit",
+  "group": "Project",
   "env": [
     "local"
   ],

@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.flowRegister",
   "label": "Flow-based registration",
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "flowRegistered",

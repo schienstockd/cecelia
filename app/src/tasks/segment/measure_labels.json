@@ -3,6 +3,7 @@
   "fun_name": "segment.measureLabels",
   "label": "Measure labels",
   "category": "Segment",
+  "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
   "qcPlot": "segmentation_qc",

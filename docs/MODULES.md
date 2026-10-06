@@ -405,6 +405,7 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
   "fun_name":      "myCategory.myTask",
   "label":         "My Task",
   "category":      "My Category",
+  "group":         "Segment",
   "env":           ["local"],
   "resource_pool": "default",
   "params": []
@@ -425,6 +426,23 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 Limits are starting defaults only — each is adjustable live in the `PoolThrottle` popover (Task
 Manager, any module page, the Chain page), so throttle whenever you need (e.g. drop `io` to 1 when
 importing over a slow network share).
+
+### `group` — the sub-heading a function sits under in the picker
+
+```json
+{ "fun_name": "segment.correct", "category": "Segment", "group": "Correct" }
+```
+
+Says what the function is **for** within its module. The module page's Function select renders each
+group as an `<optgroup>` and the chain palette as a sub-heading (`utils/taskGroups.ts`
+`groupTaskDefs`). Headings appear only when a module has two or more groups; a task without `group` in
+a grouped module lands under **Other**. Group order is the workflow list `GROUP_ORDER` in that helper,
+and unknown groups go after it, alphabetically. Reuse an existing name before inventing one. The same word
+means the same thing in every module (`Measure`, `Correct`, `Correction tools`).
+
+Not `category`: `category` is the module, and the lab-log digest groups by it. `group` is
+presentational, and no backend code reads it. Design + per-module assignments:
+[`docs/todo/FUNCTION_GROUPS_PLAN.md`](todo/FUNCTION_GROUPS_PLAN.md).
 
 ### `hidden` — a registered task with no module-page entry
 

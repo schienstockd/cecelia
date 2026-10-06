@@ -3,6 +3,7 @@
   "fun_name": "tracking.staleness_report",
   "label": "Correct tracks — report stale downstream",
   "category": "Tracking",
+  "group": "Correction tools",
   "env": ["local"],
   "resource_pool": "cpu",
   "params": [

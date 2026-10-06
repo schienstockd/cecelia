@@ -3,6 +3,7 @@
   "fun_name": "tracking.bayesian_tracking",
   "label": "Bayesian tracking",
   "category": "Tracking",
+  "group": "Track",
   "env": [
     "local"
   ],

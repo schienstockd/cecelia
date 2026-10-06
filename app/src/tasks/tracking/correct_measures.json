@@ -3,6 +3,7 @@
   "fun_name": "tracking.correct_measures",
   "label": "Correct tracks + measures",
   "category": "Tracking",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "cpu",
   "composite": ["tracking.correct", "tracking.track_measures", "tracking.staleness_report"]

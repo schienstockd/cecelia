@@ -3,6 +3,7 @@
   "fun_name": "spatialAnalysis.cellContacts",
   "label": "Cell contacts (points)",
   "category": "Spatial analysis",
+  "group": "Contacts",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

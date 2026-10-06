@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.stackAlign",
   "label": "Within-stack alignment",
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "stackAligned",

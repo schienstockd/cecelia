@@ -3,6 +3,7 @@
   "fun_name": "segment.cellpose",
   "label": "Cellpose segmentation",
   "category": "Segment",
+  "group": "Segment",
   "env": [
     "local"
   ],

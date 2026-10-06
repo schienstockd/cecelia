@@ -3,6 +3,7 @@
   "fun_name": "importImages.omezarr",
   "label": "Convert to OME-ZARR",
   "category": "import",
+  "group": "Import",
   "env": [
     "local"
   ],

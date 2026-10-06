@@ -3,6 +3,7 @@
   "fun_name": "segment.coastalMeasure",
   "label": "Optical flow segment + measure",
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",
   "composite": ["segment.coastal", "segment.measureLabels"],

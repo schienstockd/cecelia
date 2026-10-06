@@ -3,6 +3,7 @@
   "fun_name": "tracking.track_measures",
   "label": "Track measures",
   "category": "Tracking",
+  "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },

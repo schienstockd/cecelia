@@ -3,6 +3,7 @@
   "fun_name": "behaviour.motif_discovery",
   "label": "Motif discovery",
   "category": "Behaviour",
+  "group": "Motifs",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

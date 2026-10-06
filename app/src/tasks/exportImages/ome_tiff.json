@@ -3,6 +3,7 @@
   "fun_name": "exportImages.ome_tiff",
   "label": "Export as OME-TIFF",
   "category": "Export",
+  "group": "Export",
   "env": ["local"],
   "resource_pool": "io",
   "outputValueName": "default",

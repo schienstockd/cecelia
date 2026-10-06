@@ -3,6 +3,7 @@
   "fun_name": "editImages.resampleZ",
   "label": "Resample Z (isotropic)",
   "category": "Edit",
+  "group": "Reshape",
   "env": [
     "local"
   ],

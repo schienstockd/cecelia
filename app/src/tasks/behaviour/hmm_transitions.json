@@ -3,6 +3,7 @@
   "fun_name": "behaviour.hmm_transitions",
   "label": "HMM transitions",
   "category": "Behaviour",
+  "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

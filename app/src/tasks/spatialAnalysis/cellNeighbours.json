@@ -3,6 +3,7 @@
   "fun_name": "spatialAnalysis.cellNeighbours",
   "label": "Neighbour graph",
   "category": "Spatial analysis",
+  "group": "Neighbourhood",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

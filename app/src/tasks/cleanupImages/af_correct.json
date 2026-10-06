@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.afCorrect",
   "label": "AF correction",
   "category": "Cleanup",
+  "group": "Autofluorescence",
   "env": [
     "local"
   ],

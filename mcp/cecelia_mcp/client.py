@@ -188,6 +188,8 @@ def _trim_module_params(raw: dict) -> dict:
             {
                 "fun_name": spec.get("fun_name", ""),
                 "label": spec.get("label", ""),
+                # what the function is FOR within its module (Segment / Measure / Correct …)
+                **({"group": spec["group"]} if spec.get("group") else {}),
                 # a FIXED output version (driftCorrected, afCorrected …) — the name the next step
                 # reads; tasks that let the user name their output carry a `namespace` param instead
                 **({"writes": spec["outputValueName"]} if spec.get("outputValueName") else {}),

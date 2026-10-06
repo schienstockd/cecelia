@@ -3,6 +3,7 @@
   "fun_name": "cleanupImages.driftCorrect",
   "label": "Drift correction",
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "driftCorrected",
