@@ -138,6 +138,23 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "One cluster holds {pct}% of {unit}",
         long  = "Check the population is really this uniform, or raise resolution to split it."),
 
+    # segmentation shape (seg_object_qc_findings, segmentation.jl) — TASK_DISCOVERY_PLAN P4. Info
+    # level, and every one points BACK a step: the `long` names the Cleanup step to check before the
+    # segmenter's own params get tuned, because tuning a segmenter on noisy input is the trap these
+    # guard against. Grounded in the lab's record, never in one dataset: noise and uneven
+    # signal split cells and a minimum size only prunes the fragments (SEG_QUALITY_PLAN Phase 1);
+    # temporal smoothing is what captured the cells on intravital data (docs/PROVENANCE.md);
+    # smoothing blurs edges, and a leak between channels adds shared signal (AF correction).
+    "seg.fragmented" => (
+        short = "Objects far smaller than the cell diameter",
+        long  = "Check Cleanup (smoothing, AF correction) before changing the diameter — fragments usually come from noisy or uneven signal, and a minimum size only hides them."),
+    "seg.merged" => (
+        short = "{pct}% of objects far larger than the cell diameter",
+        long  = "Check Cleanup (AF correction, a lighter smoothing) before changing the diameter — merged cells usually mean shared background or blurred edges joining neighbours."),
+    "seg.counts_unstable" => (
+        short = "Cell count jumps between frames",
+        long  = "Check Cleanup → Smoothing with a temporal window before tuning this step — counts that jump between frames usually mean noise that changes from frame to frame."),
+
     # skeleton branching (segment/branching.jl). These predated the catalog and were inlined at the
     # call site with the four-argument form; moved here so the wording is reviewable with the rest.
     "branching.no_branches" => (

@@ -925,5 +925,55 @@ class BriefingSliceGuardrailsTest(unittest.TestCase):
         self.assertEqual(slc["guardrails"][0]["count"], 3)
 
 
+class DiscoveryToggleQcTest(unittest.TestCase):
+    """`CECELIA_MCP_DISCOVERY=off` (TASK_DISCOVERY_PLAN Decision 9) drops the `seg.*` QC findings
+    from every tool that returns QC; anything else, and the default, passes through untouched."""
+
+    QC = {"segment.cellpose/seg": {"funName": "segment.cellpose", "metrics": {"nCells": 9},
+                                   "findings": [{"level": "info", "code": "seg.fragmented"},
+                                                {"level": "warn", "code": "segment.no_cells"}]},
+          "cleanupImages.driftCorrect/default": {"findings": [{"level": "warn", "code": "drift.jump"}]}}
+    LOG = "[INFO] Segmentation complete.\n[QC] segmented 9 cell(s).\n[QC] seg.fragmented: Objects …"
+
+    def _call(self, env, fn, *args):
+        meta = {"image": {"uid": "i1", "qc": self.QC}}
+        with unittest.mock.patch.dict("os.environ", env, clear=False), \
+             unittest.mock.patch.object(server._client, "get_image_meta", lambda *a: meta), \
+             unittest.mock.patch.object(server._client, "list_images",
+                                        lambda *a: {"images": [meta["image"]]}), \
+             unittest.mock.patch.object(server._client, "get_task_log",
+                                        lambda *a: {"exists": True, "content": self.LOG}):
+            return fn(*args)
+
+    @staticmethod
+    def _codes(qc):
+        return sorted(f["code"] for d in qc.values() for f in d["findings"])
+
+    def test_off_drops_seg_findings_everywhere(self):
+        off = {"CECELIA_MCP_DISCOVERY": "off"}
+        qc = self._call(off, server.get_qc_metrics, "p", "i1")
+        self.assertEqual(self._codes(qc), ["drift.jump", "segment.no_cells"])
+        self.assertEqual(qc["segment.cellpose/seg"]["metrics"], {"nCells": 9})   # metrics kept
+        self.assertEqual(self._codes(self._call(off, server.get_image_info, "p", "i1")["qc"]),
+                         ["drift.jump", "segment.no_cells"])
+        self.assertEqual(self._codes(self._call(off, server.list_images, "p")[0]["qc"]),
+                         ["drift.jump", "segment.no_cells"])
+        log = self._call(off, server.get_task_log, "p", "i1", "segment.cellpose")
+        self.assertNotIn("seg.fragmented", log)
+        self.assertIn("[QC] segmented 9 cell(s).", log)
+        # the source payload is not mutated (the client may cache it)
+        self.assertEqual(len(self.QC["segment.cellpose/seg"]["findings"]), 2)
+
+    def test_default_and_on_keep_them(self):
+        import os
+        for env in ({}, {"CECELIA_MCP_DISCOVERY": "on"}):
+            with unittest.mock.patch.dict("os.environ", {}, clear=False):
+                os.environ.pop("CECELIA_MCP_DISCOVERY", None)        # unset = the default (on)
+                qc = self._call(env, server.get_qc_metrics, "p", "i1")
+                log = self._call(env, server.get_task_log, "p", "i1", "segment.cellpose")
+            self.assertIn("seg.fragmented", self._codes(qc))
+            self.assertIn("seg.fragmented", log)
+
+
 if __name__ == "__main__":
     unittest.main()
