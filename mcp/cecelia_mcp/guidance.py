@@ -247,8 +247,10 @@ saying so — a revise reply's `removedMarked` lists any you did; tell the user 
 note. One-claim entries need no sections. An agent run's \
 record (an entry with `agentRun`) has one `### dNN` section per decision instead. When the user \
 reviews sections with you, `set_blackboard_section_outcome(project_uid, entry_id, section_id, \
-verdict, note)` proposes a verdict for one; it shows as your proposal, and a section the user \
-already marked stays theirs (409).
+verdict, note, cause?)` proposes a verdict for one; it shows as your proposal, and a section the user \
+already marked stays theirs (409). A `bad` on a run record needs a `cause`: `guide` (the guide \
+didn't say it), `platform` (the agent couldn't see what it needed) or `agent` (the guide and tools \
+were enough) — ask the user which when it isn't clear; `guide` and `platform` reach the weekly judge.
 
 Reach for `search_blackboard(project_uid, query, status?, limit?)` when you're about to propose \
 something and want to check "has this come up before in this project". Substring, case-insensitive, \

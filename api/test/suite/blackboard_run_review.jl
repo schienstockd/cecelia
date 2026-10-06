@@ -19,9 +19,9 @@
                                                         "content" => content, "agentRun" => run))
         @test st == 200
         eid = String(JSON3.read(body).entryId)
-        set(sid, verdict, note = ""; claude = false) = post("/api/blackboard/section-outcome",
-            Dict("projectUid" => uid, "entryId" => eid, "sectionId" => sid, "verdict" => verdict,
-                 "note" => note); claude = claude)
+        set(sid, verdict, note = "", cause = nothing; claude = false) = post("/api/blackboard/section-outcome",
+            Dict{String,Any}("projectUid" => uid, "entryId" => eid, "sectionId" => sid, "verdict" => verdict,
+                             "note" => note, (cause === nothing ? () : ("cause" => cause,))...); claude = claude)
         entry() = JSON3.read(api_blackboard_entry_get(HTTP.Request("GET",
             "/api/blackboard/entry?projectUid=$uid&entryId=$eid"))[2]).entry
         row() = only(r for r in JSON3.read(api_blackboard_list(HTTP.Request("GET",
@@ -38,12 +38,30 @@
         @test set("d01", "good"; claude = true)[1] == 200
         @test entry().sectionOutcomes.d01.by.via == "claude"
         @test row().sectionsMarked == 0                       # proposals are not counted
-        @test set("d01", "bad", "wrong channel")[1] == 200
+        # a bad on a run record names its cause (GUIDE_RUNS_PLAN Decision 2) — a closed set, bad only
+        @test set("d01", "bad", "wrong channel")[1] == 400                 # no cause
+        @test set("d01", "bad", "wrong channel", "luck")[1] == 400
+        @test set("d02", "good", "", "guide")[1] == 400
+        @test set("d02", "unsure", "", "agent")[1] == 400
+        @test set("d01", "bad", "wrong channel", "guide"; claude = true)[1] == 200   # a proposal names one too
+        @test entry().sectionOutcomes.d01.cause == "guide"
+        @test set("d01", "bad", "wrong channel", "platform")[1] == 200
         @test entry().sectionOutcomes.d01.verdict == "bad"
+        @test entry().sectionOutcomes.d01.cause == "platform" && entry().sectionOutcomes.d01.by.via == "app"
         @test set("d01", "good"; claude = true)[1] == 409
         @test set("d01", ""; claude = true)[1] == 409         # nor cleared
         @test set("d02", "unsure")[1] == 200
+        @test !haskey(entry().sectionOutcomes.d02, :cause)
         @test row().sectionsMarked == 2
+        # a bad stored before causes existed still reads, with no cause, and is not rewritten
+        mp = joinpath(tmp, uid, "blackboard", eid, "meta.json")
+        m = JSON3.read(read(mp, String), Dict{String,Any})
+        m["sectionOutcomes"]["d02"] = Dict{String,Any}("verdict" => "bad", "note" => "old", "at" => "x",
+                                                       "by" => Dict("via" => "app"))
+        write(mp, JSON3.write(m))
+        @test entry().sectionOutcomes.d02.verdict == "bad" && !haskey(entry().sectionOutcomes.d02, :cause)
+        @test row().sectionsMarked == 2
+        @test set("d02", "unsure")[1] == 200
         # other meta writes keep both fields
         @test _post(api_blackboard_status, Dict("projectUid" => uid, "entryId" => eid, "status" => "resolved"))[1] == 200
         @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
@@ -51,7 +69,7 @@
         e = entry()
         @test e.agentRun.copyProjectUid == "CP" && e.sectionOutcomes.d01.note == "wrong channel"
         @test row().sectionCount == 3                         # the miss counts once the revise lands
-        @test set("m01", "bad", "no QC gate")[1] == 200       # a miss added by revise, then marked
+        @test set("m01", "bad", "no QC gate", "guide")[1] == 200   # a miss added by revise, then marked
         @test set("d02", "")[1] == 200                        # a person clears their own
         # a revise that removes every section: no stale harness ids, no count
         @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid, "content" => "gone"))[1] == 200
@@ -111,7 +129,9 @@ end
         @test row().sectionCount == 2 && row().sectionsMarked == 0
         @test !haskey(row(), :agentRun)
         @test set("s01", "good")[1] == 200
-        @test set("s02", "bad", "it is a cell type")[1] == 200
+        @test set("s02", "bad", "it is a cell type")[1] == 200    # no cause off a run record …
+        @test _post(api_blackboard_section_outcome, Dict("projectUid" => uid, "entryId" => eid,
+            "sectionId" => "s02", "verdict" => "bad", "note" => "x", "cause" => "agent"))[1] == 400   # … and none taken
         @test set("s03", "good")[1] == 404
         @test row().sectionsMarked == 2
         # a revise drops s02: not counted, still stored, named in the reply

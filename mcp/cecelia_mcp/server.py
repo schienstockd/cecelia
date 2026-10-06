@@ -1429,13 +1429,16 @@ def set_blackboard_outcome(project_uid: str, entry_id: str, verdict: str, note: 
 
 @_tool
 def set_blackboard_section_outcome(project_uid: str, entry_id: str, section_id: str, verdict: str,
-                                   note: str = "") -> dict:
+                                   note: str = "", cause: str | None = None) -> dict:
     """PROPOSE a verdict on ONE section of a BLACKBOARD entry — a claim in a note
     (`### s02 · cluster 4 is debris`), a decision in an agent run's record
     (`### d07 · gate · yDfwP7 · …`), or a reviewer-added miss (`### m02 · …`). `section_id` is the
     heading's id (`"s02"`, `"d07"`); `verdict` is `"good"`, `"bad"` or `"unsure"`; `note` says why and is
-    REQUIRED for `"bad"`. Read the entry first (`read_blackboard_entry`: its `sectionOutcomes` holds
-    the verdicts so far).
+    REQUIRED for `"bad"`. On an agent run's record (`agentRun`) a `"bad"` also needs `cause`: `"guide"`
+    (the guide didn't say it), `"platform"` (the information existed but the agent couldn't see it)
+    or `"agent"` (the guide and tools were enough). Leave `cause` out on any other verdict or entry —
+    it is refused there (400). Read the entry first (`read_blackboard_entry`: its `sectionOutcomes`
+    holds the verdicts so far; an old `bad` may have no cause).
 
     Your verdict is stored as a PROPOSAL (stamped as from Claude): the user sees it next to their own
     and only theirs count in the "k of N marked" score. A section the user has already marked is theirs — the
@@ -1444,7 +1447,7 @@ def set_blackboard_section_outcome(project_uid: str, entry_id: str, section_id: 
     Metadata only; no snapshot."""
     note, fixed = repair_escaped_newlines(note)
     return _noting_repairs(
-        _client.set_blackboard_section_outcome(project_uid, entry_id, section_id, verdict, note),
+        _client.set_blackboard_section_outcome(project_uid, entry_id, section_id, verdict, note, cause),
         ["note"] if fixed else [])
 
 

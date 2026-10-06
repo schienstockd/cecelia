@@ -1,6 +1,7 @@
 # Guide runs — an agent follows one in-app guide, you review what it hands back
 
-**Status:** in progress (2026-10-06) — P3 `pixi run guide-run` built; its checkpoint (one reviewed intravital run) is open.
+**Status:** in progress (2026-10-06) — P1 built (`cause` on a run record's `bad` section verdict: API, GUI, MCP);
+P3 `pixi run guide-run` built, its checkpoint (one reviewed intravital run) open; P2 next.
 Reframes the app-tier runs of
 [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md) P4b. Builds on the run record and section
 verdicts of [`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) (P1, P1b, P2, P4), whose P3 score
@@ -93,6 +94,11 @@ The repeated tool errors (the mechanical part) already reach the judge.
 - The GUI offers three choices beside the note (`BlackboardModule.vue`; copy per `docs/ui/COPY.md`).
   The MCP `set_blackboard_section_outcome` passes it through, still as a proposal.
 - **Checkpoint:** you mark the three 2026-10-06 records.
+- *Built:* `_BB_SECTION_CAUSES` in `blackboard_run_review.jl` — required with `bad` on a run record
+  (meta `agentRun`), refused with `good`/`unsure` and on any other entry (an ordinary note's `sNN`
+  claims have no guide). A `bad` stored before causes has none: read as not set, never rewritten; the
+  GUI shows the three choices unselected beside its note, and picking one saves it. The add-a-miss
+  form takes a cause too (a miss is a `bad`). MCP `set_blackboard_section_outcome(…, cause)`.
 
 ### P2 — causes to the judge
 - The weekly pass reads run records (meta `agentRun`) and logs each new `guide` or `platform` verdict

@@ -29,7 +29,7 @@ import {
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
   setBlackboardStatus, setBlackboardOutcome, setSectionOutcome, setBlackboardKnowledge,
   type BlackboardEntrySummary, type BlackboardEntry,
-  type BlackboardStatus, type BlackboardVerdict, type SectionVerdict,
+  type BlackboardStatus, type BlackboardVerdict, type SectionVerdict, type SectionCause,
 } from '../utils/blackboardApi'
 import {
   filterEntries, PROFILE_ENTRY_ID,
@@ -257,23 +257,23 @@ const removedVerdicts = computed(() => {
 })
 const runImages = computed(() => selected.value?.agentRun?.images.map(i => i.sourceImageUid) ?? [])
 const savingSection = ref(false)
-async function onSectionSave(sectionId: string, verdict: SectionVerdict | '', note: string) {
+async function onSectionSave(sectionId: string, verdict: SectionVerdict | '', note: string, cause?: SectionCause) {
   if (savingSection.value || !selected.value || !projectUid.value) return
   savingSection.value = true
   try {
-    if (await setSectionOutcome(projectUid.value, selected.value.entryId, sectionId, verdict, note)) {
+    if (await setSectionOutcome(projectUid.value, selected.value.entryId, sectionId, verdict, note, cause)) {
       await loadEntry(selected.value.entryId)
     }
   } finally { savingSection.value = false }
 }
-async function onAddMiss(step: RunStep, image: string, text: string, note: string) {
+async function onAddMiss(step: RunStep, image: string, text: string, note: string, cause: SectionCause) {
   if (savingSection.value || !selected.value || !projectUid.value) return
   savingSection.value = true
   const eid = selected.value.entryId
   try {
     const { md, id } = appendMissSection(selected.value.content, step, image, text)
     if (await reviseBlackboardEntry(projectUid.value, eid, md) > 0) {
-      await setSectionOutcome(projectUid.value, eid, id, 'bad', note)
+      await setSectionOutcome(projectUid.value, eid, id, 'bad', note, cause)
       await loadEntry(eid)
     }
   } finally { savingSection.value = false }
@@ -846,7 +846,8 @@ onUnmounted(() => { mermaidRenderSeq++ })
                        ? 'proposed' : (selected.sectionOutcomes?.[part.id]?.verdict ?? 'unmarked')}`">
                   <div v-html="part.headHtml" />
                   <SectionVerdictControl :outcome="selected.sectionOutcomes?.[part.id]" :busy="savingSection"
-                                         @save="(v, n) => onSectionSave(part.id, v, n)"
+                                         :needs-cause="!!selected.agentRun"
+                                         @save="(v, n, c) => onSectionSave(part.id, v, n, c)"
                                          @promote="n => onPromote(part.id, n)" />
                   <div v-html="part.html" />
                   <div v-if="part.pics.length" class="bb-attach-strip bb-section-pics cc-row">
@@ -869,7 +870,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
               <div v-for="o in removedVerdicts" :key="o.id" class="cc-row cc-row-tight cc-fs-xs bb-removed-verdict"
                    :class="`bb-section-${o.by?.via === 'claude' ? 'proposed' : o.verdict}`">
                 <span class="cc-muted">{{ o.id }}</span>
-                <span>{{ o.by?.via === 'claude' ? 'Claude proposes ' + o.verdict : o.verdict }}<template v-if="o.note">: {{ o.note }}</template></span>
+                <span>{{ o.by?.via === 'claude' ? 'Claude proposes ' + o.verdict : o.verdict }}<template v-if="o.cause"> ({{ o.cause }})</template><template v-if="o.note">: {{ o.note }}</template></span>
                 <button class="cc-btn cc-btn-ghost cc-btn-dense" :disabled="savingSection"
                         @click="onSectionSave(o.id, '', '')" v-tooltip.top="'Clear this verdict'">
                   <i class="pi pi-times" />

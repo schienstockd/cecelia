@@ -64,21 +64,43 @@ function parseAgentRun(v: unknown): AgentRun | undefined {
  *  a chat session; only a person's (`via: 'app'`) counts in a run's score. */
 export type SectionVerdict = 'good' | 'bad' | 'unsure'
 export const SECTION_VERDICTS: readonly SectionVerdict[] = ['good', 'bad', 'unsure'] as const
+/** Why a run section is `bad` (GUIDE_RUNS_PLAN Decision 2): the guide didn't say it, the agent
+ *  couldn't see it, or the guide and tools were enough. Required with `bad` on a run record and
+ *  refused anywhere else (server: `_BB_SECTION_CAUSES`). Absent on a `bad` stored before causes
+ *  existed — "not set". */
+export type SectionCause = 'guide' | 'platform' | 'agent'
+export const SECTION_CAUSES: readonly SectionCause[] = ['guide', 'platform', 'agent'] as const
+/** The cause picker's chips (ChipSelect options) — one copy for the verdict and the add-a-miss form. */
+export const SECTION_CAUSE_OPTIONS: readonly { value: SectionCause; label: string; tip: string }[] = [
+  { value: 'guide',    label: 'Guide',    tip: "The guide didn't say it" },
+  { value: 'platform', label: 'Platform', tip: "The agent couldn't see what it needed" },
+  { value: 'agent',    label: 'Agent',    tip: 'The guide and tools were enough' },
+]
 export interface SectionOutcome {
   verdict: SectionVerdict
   note: string
+  cause?: SectionCause
   by?: AuthorStamp
   at: string
 }
-function parseSectionOutcomes(v: unknown): Record<string, SectionOutcome> | undefined {
+/** Whether a section verdict draft can be saved: `bad` needs a note, and on a run record a cause. */
+export function sectionVerdictReady(
+  verdict: SectionVerdict | null, note: string, cause: SectionCause | null, needsCause: boolean,
+): boolean {
+  if (!verdict) return false
+  if (verdict !== 'bad') return true
+  return note.trim() !== '' && (!needsCause || cause !== null)
+}
+export function parseSectionOutcomes(v: unknown): Record<string, SectionOutcome> | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
   const out: Record<string, SectionOutcome> = {}
   for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
     const o = raw as Record<string, unknown> | null
     if (!o || !SECTION_VERDICTS.includes(o.verdict as SectionVerdict)) continue
     const by = parseAuthorStamp(o.by)
+    const cause = SECTION_CAUSES.includes(o.cause as SectionCause) ? o.cause as SectionCause : undefined
     out[k] = { verdict: o.verdict as SectionVerdict, note: typeof o.note === 'string' ? o.note : '',
-               at: typeof o.at === 'string' ? o.at : '', ...(by ? { by } : {}) }
+               at: typeof o.at === 'string' ? o.at : '', ...(cause ? { cause } : {}), ...(by ? { by } : {}) }
   }
   return out
 }
@@ -317,13 +339,14 @@ export async function setBlackboardOutcome(
 
 
 /** POST /api/blackboard/section-outcome — a verdict on one section; `verdict: ''` clears it. Note
- *  required for `bad`. Returns true on success. Metadata only; no snapshot. */
+ *  required for `bad`, and on a run record a `cause`. Returns true on success. Metadata only; no
+ *  snapshot. */
 export async function setSectionOutcome(
   projectUid: string, entryId: string, sectionId: string, verdict: SectionVerdict | '', note: string,
-  apiBase = '',
+  cause?: SectionCause, apiBase = '',
 ): Promise<boolean> {
   const r = await postJson(`${apiBase}/api/blackboard/section-outcome`,
-    { projectUid, entryId, sectionId, verdict, note })
+    { projectUid, entryId, sectionId, verdict, note, ...(cause ? { cause } : {}) })
   return r?.ok === true
 }
 
