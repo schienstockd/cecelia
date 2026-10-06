@@ -12,7 +12,9 @@ What it adds to `run_app.py`:
 - each run's directory under `~/.cecelia-effectiveness/app-runs/<stamp>/`;
 - one lock, so runs never overlap: `--runs N` runs them in turn, and stops at the first that fails;
 - one line per run in `~/.cecelia-effectiveness/guide-runs.jsonl` (stamp, guide, commit, knowledge,
-  cost, wall time, exit, record id), written even when the run aborts.
+  discovery, cost, wall time, exit, record id), written even when the run aborts;
+- `--discovery off`: the agent's MCP servers get `CECELIA_MCP_DISCOVERY=off` and hide what each task is
+  for (docs/todo/TASK_DISCOVERY_PLAN.md Decision 9). A separate arm: never pool it with `on`.
 """
 from __future__ import annotations
 
@@ -96,7 +98,8 @@ def brief_for(title: str) -> str:
 
 
 def run_app_argv(guide: str, entry: dict, *, root: pathlib.Path, projects_dir: str, api_url: str,
-                 budget_usd: float, knowledge: bool, timeout_s: int, ask_why: bool) -> list[str]:
+                 budget_usd: float, knowledge: bool, timeout_s: int, ask_why: bool,
+                 discovery: str = "on") -> list[str]:
     """`run_app.py`'s arguments for one run of `guide` on its test project."""
     argv = ["--projects-dir", projects_dir, "--source-project", entry["sourceProject"],
             "--source-set", entry.get("sourceSet", "")]
@@ -105,7 +108,8 @@ def run_app_argv(guide: str, entry: dict, *, root: pathlib.Path, projects_dir: s
     for c in entry.get("checklist") or []:
         argv += ["--check", c]
     argv += ["--guide", guide, "--brief", brief_for(entry["title"]), "--root", str(root),
-             "--budget-usd", str(budget_usd), "--timeout-s", str(timeout_s), "--api-url", api_url]
+             "--budget-usd", str(budget_usd), "--timeout-s", str(timeout_s), "--api-url", api_url,
+             "--discovery", discovery]
     return argv + (["--knowledge"] if knowledge else []) + ([] if ask_why else ["--no-ask-why"])
 
 
@@ -197,7 +201,7 @@ def run_one(guide: str, entry: dict, a, projects_dir: str, commit: str | None, e
     root = runs_dir() / stamp
     argv = run_app_argv(guide, entry, root=root, projects_dir=projects_dir, api_url=a.api_url,
                         budget_usd=a.budget_usd, knowledge=a.knowledge, timeout_s=a.timeout_s,
-                        ask_why=a.ask_why)
+                        ask_why=a.ask_why, discovery=a.discovery)
     print(f"guide-run: {guide} → {root}", flush=True)
     t0, rc, proc = time.time(), None, None
     try:
@@ -241,7 +245,7 @@ def next_at(at: str, now: _dt.datetime) -> _dt.datetime:
 def forward_args(guide: str, a) -> list[str]:
     """The same command without `--at`, for the timer to run."""
     out = [guide, "--runs", str(a.runs), "--budget-usd", str(a.budget_usd), "--timeout-s", str(a.timeout_s),
-           "--api-url", a.api_url]
+           "--api-url", a.api_url, "--discovery", a.discovery]
     if a.projects_dir:
         out += ["--projects-dir", a.projects_dir]
     return out + (["--knowledge"] if a.knowledge else []) + ([] if a.ask_why else ["--no-ask-why"])
@@ -308,14 +312,15 @@ def run_batch(guide: str, entry: dict, a) -> int:
     if skip:
         append_log(log_line(stamp=time.strftime("%Y%m%dT%H%M%S"), guide=guide, commit=commit,
                             knowledge=a.knowledge, cost_usd=0, wall_s=0, exit_code=2, record_id=None,
-                            skipped=skip))
+                            discovery=a.discovery, skipped=skip))
         print(f"guide-run: {skip}", file=sys.stderr)
         return 2
     projects_dir = a.projects_dir or status.get("projectsDir") or ""
     if not (pathlib.Path(projects_dir).expanduser() / entry["sourceProject"]).is_dir():
         print(f"guide-run: source project {entry['sourceProject']} not found in {projects_dir}", file=sys.stderr)
         return 2
-    extra = {"dirty": dirty, "appCommit": status.get("commit"), "budgetUsd": a.budget_usd}
+    extra = {"dirty": dirty, "appCommit": status.get("commit"), "budgetUsd": a.budget_usd,
+             "discovery": a.discovery}
     if status.get("stale"):
         print(f"guide-run: note — the app runs {status.get('commit')}, behind its checkout; restart it "
               "to test the current code", file=sys.stderr)
@@ -338,6 +343,9 @@ def main(argv=None) -> int:
     ap.add_argument("--budget-usd", type=float, default=5.0, help="cost cap per run (default 5)")
     ap.add_argument("--knowledge", action="store_true",
                     help="carry the source project's lab-knowledge entries in: a knowledge run, reported apart")
+    ap.add_argument("--discovery", choices=("on", "off"), default="on",
+                    help="off: the agent's MCP hides what each task is for (TASK_DISCOVERY_PLAN). "
+                         "A separate arm: never pool its runs with the default's")
     ap.add_argument("--at", default=None, metavar="HH:MM",
                     help="run once at that time ('YYYY-MM-DD HH:MM' for another day) instead of now. "
                          "Linux only: a transient systemd user timer runs this same command then")
