@@ -4950,6 +4950,7 @@ onMounted(() => {
     // that channel filtered, this one didn't. Same rule now, one channel.
     if (!viewerCacheClearMatches(ev, {
       imageUid, valueName: valueName.value, labelValueName: labelName.value,
+      knownLabelNames: meta.value?.labelNames ?? [],
     })) return
     cacheClearRev.value = ev.rev
     // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
