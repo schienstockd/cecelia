@@ -1131,6 +1131,74 @@ end
         r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom))
         @test !any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
 
+        # ── photon-limited score → denoise + smooth, both ways (TASK_DISCOVERY_PLAN Decision 4)
+        _fns(steps) = [s.fun_name for s in steps]
+        not_limited = "Not photon-limited — denoising would remove signal"
+        # photon-limited, no-preset card → smooth (resonance card's params) + denoise included
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:custom))
+        sm = only([s for s in r.included if s.fun_name == "cleanupImages.smooth"])
+        @test sm.source == :computed_qc
+        @test sm.params["spatialMethod"] == "bilateral_vst"
+        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :computed_qc
+        @test !("cleanupImages.denoise" in _fns(r.excluded))
+        # ...the smooth seed is a copy — the registered card is not mutated
+        sm.params["spatialMethod"] = "x"
+        @test Cecelia.preset_by_id(:resonance).params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
+        # ...a refusal gate still wins: empty vault → denoise excluded with the vault reason, smooth stays
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, vault_present = 0.0),
+                                Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
+              "No trained denoise model in vault"
+        @test "cleanupImages.smooth" in _fns(r.included)
+        # ...all saturated → saturation reason, single row
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, sat_frac = 1.0),
+                                Cecelia.preset_by_id(:custom))
+        @test occursin("saturated", only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason)
+        # ...a named card outranks the score (§3): galvo's omission of smooth/denoise stands
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:galvo))
+        @test !("cleanupImages.smooth" in _fns(r.included))
+        @test !("cleanupImages.denoise" in _fns(r.included))
+
+        # not photon-limited → denoise excluded with the reason; smooth untouched (no row either way)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason == not_limited
+        @test !("cleanupImages.denoise" in _fns(r.included))
+        @test !("cleanupImages.smooth" in _fns(r.included)) && !("cleanupImages.smooth" in _fns(r.excluded))
+        # ...the vault reason outranks it (one row per fun)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0, vault_present = 0.0),
+                                Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
+              "No trained denoise model in vault"
+        # ...a card-seeded denoise is not removed by the score (§3: card > computed QC)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:resonance))
+        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :card
+        @test !("cleanupImages.denoise" in _fns(r.excluded))
+
+        # between the bands, and absent (NaN) → identical to the metadata-only answer
+        base = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom))
+        for pf in (0.7, Cecelia.QC_SCORE_ABSENT)
+            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom))
+            @test _fns(r.included) == _fns(base.included)
+            @test _fns(r.excluded) == _fns(base.excluded)
+        end
+
+        # evidence = :metadata skips the photon rules entirely — both directions
+        for pf in (0.95, 0.0)
+            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom);
+                                    evidence = :metadata)
+            @test _fns(r.included) == _fns(base.included)
+            @test _fns(r.excluded) == _fns(base.excluded)
+        end
+        @test_throws ArgumentError Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom);
+                                                        evidence = :pixels)
+        # ...and recommend_plan threads it through from meta
+        pl_meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 1,
+            "saturation" => Dict{String,Any}("channels" => [
+                Dict{String,Any}("index" => 0, "saturated" => false, "zeroFrac" => 0.97)]))
+        @test "cleanupImages.denoise" in _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"]).included)
+        @test !("cleanupImages.denoise" in
+                _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"], evidence = :metadata).included))
+
         # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
         r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
         sa = only([s for s in r.included if s.fun_name == "cleanupImages.stackAlign"])

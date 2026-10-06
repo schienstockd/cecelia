@@ -183,3 +183,24 @@ class GatingPicturesShared(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecommendEvidence(unittest.TestCase):
+    """TASK_DISCOVERY_PLAN Decision 9: discovery off asks the recommender for its metadata-only answer."""
+
+    def _sent_evidence(self, env: dict) -> str:
+        c = au.AutonomousClient("http://x")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01", **env}), \
+                mock.patch.object(c, "_request", return_value={"included": [], "excluded": []}) as req:
+            c.recommend_correction_plan("copy01", "img")
+        return req.call_args.kwargs["body"]["evidence"]
+
+    def test_default_sends_all(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CECELIA_MCP_DISCOVERY", None)
+            self.assertEqual(self._sent_evidence({}), "all")
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": "on"}), "all")
+
+    def test_discovery_off_sends_metadata(self):
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": "off"}), "metadata")
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": " OFF "}), "metadata")

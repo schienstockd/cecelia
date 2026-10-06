@@ -306,12 +306,20 @@ chain wiring), so the effective ladder is `wizard > card > score > default`.
 
 The engine seeds from the preset (a card is a bag of starting-point params), then structural QC
 scores force include/exclude for the two auto-rules the plan doc calls out (T→driftCorrect,
-all-channels-saturated → NO denoise), then wizard answers overwrite params + include tasks the card
-did not carry.
+all-channels-saturated → NO denoise), then the photon-limited score includes or excludes denoise and
+smooth (`_apply_photon_rules!`), then wizard answers overwrite params + include tasks the card did
+not carry.
+
+`evidence` picks which scores may drive a rule: `:all` (default) uses every score; `:metadata`
+skips the photon-limited rules, which read the import's zero-voxel measure rather than the image
+metadata — the recommender's answer before that score was wired in (TASK_DISCOVERY_PLAN Decision 9).
 """
 function apply_rules(scores::AbstractVector{QCResult},
                      preset,  # AcquisitionPreset from correction_presets.jl
-                     wizard::AbstractDict = Dict{Symbol,Any}())
+                     wizard::AbstractDict = Dict{Symbol,Any}();
+                     evidence::Symbol = :all)
+    evidence in CORRECTION_PLAN_EVIDENCE ||
+        throw(ArgumentError("evidence must be one of $(join(CORRECTION_PLAN_EVIDENCE, " | ")), got $evidence"))
     steps_by_fn = Dict{String,CorrectionStep}()
     excluded    = CorrectionStep[]
 
@@ -351,13 +359,21 @@ function apply_rules(scores::AbstractVector{QCResult},
     #     gate uses at `0.0` default).
     vault_present = _score_val(scores, "denoise.vault_model_present", 1.0)
     sat_frac      = _score_val(scores, "denoise.channel_saturated_frac", 0.0)
+    denoise_gated = true
     if vault_present < 0.5
         _mark_excluded!(steps_by_fn, excluded, "cleanupImages.denoise",
                         "No trained denoise model in vault")
     elseif !isnan(sat_frac) && sat_frac >= 1.0
         _mark_excluded!(steps_by_fn, excluded, "cleanupImages.denoise",
                         "All selected channels saturated (meta.saturation)")
+    else
+        denoise_gated = false
     end
+
+    # (d) Photon-limited score → denoise + smooth, both ways. Below the vault + saturation gates:
+    #     a refusal outranks a recommendation, and only one exclusion row per fun is emitted.
+    evidence === :all &&
+        _apply_photon_rules!(steps_by_fn, excluded, scores, preset; denoise_gated = denoise_gated)
 
     # 3. Wizard overrides (§3 tier 2, above card and score).
     _apply_wizard!(steps_by_fn, excluded, wizard, t_present, z_present)
@@ -365,6 +381,64 @@ function apply_rules(scores::AbstractVector{QCResult},
     included = collect(values(steps_by_fn))
     sort!(included, by = s -> (s.order_weight, s.fun_name))
     return (included = included, excluded = excluded)
+end
+
+# Which scores `apply_rules` may act on — see its docstring. `:metadata` is the pre-photon-rule answer.
+const CORRECTION_PLAN_EVIDENCE = (:metadata, :all)
+
+# Photon-limited bands on `smooth.photon_limited_frac` (the worst channel's exact-zero voxel fraction
+# from the import histogram). **Unvalidated placeholders**, same status as every §2 band.
+#
+# - At or above `_PHOTON_LIMITED_ZERO_FRAC` (0.90, `qc.jl`) the channel is photon-limited: the same
+#   cut-off as the import's `import.photon_limited` finding, so the QC dot and the plan never disagree.
+#   The measured photon-limited movies sit at 86-99.5% zeros per channel (SMOOTHING_PLAN.md).
+# - Below `_NOT_PHOTON_LIMITED_ZERO_FRAC` most voxels hold a count, so the background sits above the
+#   zero floor and the signal is not photon-sparse. 0.50 is the "most voxels are zero" line, read off
+#   what the measure means rather than fitted; the non-limited images measured so far read 0.0.
+# - Between the two the score says nothing, the same as an absent score: 0.90 is a deliberately
+#   conservative smoke alarm (see the `qc.jl` comment), not the line between photon-limited and dim.
+const _NOT_PHOTON_LIMITED_ZERO_FRAC = 0.50
+
+"""
+    _apply_photon_rules!(steps_by_fn, excluded, scores, preset; denoise_gated)
+
+The photon-limited include/exclude (TASK_DISCOVERY_PLAN Decision 4). An absent score changes nothing.
+
+- **Photon-limited** → include `smooth` and `denoise`, the two tasks the photon-limited (resonance)
+  card seeds, with that card's smooth params: SUPPORT denoise is the measured win on photon-limited
+  intravital data (DENOISE_INTEGRATION_PLAN.md), and smooth with `bilateral_vst` is the task built
+  for photon-starved channels (SMOOTHING_PLAN.md, `smooth.json`). Denoise only when the vault and
+  saturation gates let it through (`denoise_gated = false`).
+- **Not photon-limited** → exclude `denoise` with a reason: SUPPORT (a blind-spot model) removes
+  what a pixel's neighbours cannot predict, and on dense signal that is signal — measured useless
+  on saturated data (DENOISE_INTEGRATION_PLAN.md) and worse on the guide-run images
+  (TASK_DISCOVERY_PLAN.md → Why). `smooth` is NOT excluded: its `gated` statistic was
+  built and measured on movies that are not photon-limited (SMOOTHING_PLAN.md → "a third
+  statistic"), so it stays a user pick.
+
+§3 tie-break: a card outranks a computed score. The include fires only on the no-preset card
+(`:custom`) — a named card's omission is its decision — and the exclusion never removes a step a
+card seeded.
+"""
+function _apply_photon_rules!(steps_by_fn, excluded, scores, preset; denoise_gated::Bool)
+    zf = _score_val(scores, "smooth.photon_limited_frac")
+    isnan(zf) && return steps_by_fn
+    if zf >= _PHOTON_LIMITED_ZERO_FRAC
+        preset.id === :custom || return steps_by_fn
+        smooth_fn = "cleanupImages.smooth"
+        haskey(steps_by_fn, smooth_fn) || (steps_by_fn[smooth_fn] = CorrectionStep(smooth_fn,
+            copy(preset_by_id(:resonance).params_by_task[smooth_fn]); source = :computed_qc))
+        denoise_fn = "cleanupImages.denoise"
+        denoise_gated || haskey(steps_by_fn, denoise_fn) ||
+            (steps_by_fn[denoise_fn] = CorrectionStep(denoise_fn, Dict{String,Any}();
+                                                      source = :computed_qc))
+    elseif zf < _NOT_PHOTON_LIMITED_ZERO_FRAC && !denoise_gated
+        s = get(steps_by_fn, "cleanupImages.denoise", nothing)
+        (s === nothing || s.source !== :card) &&
+            _mark_excluded!(steps_by_fn, excluded, "cleanupImages.denoise",
+                            "Not photon-limited — denoising would remove signal")
+    end
+    return steps_by_fn
 end
 
 # W2 = stage rotated → driftEstimator = sitkRigid.
@@ -422,23 +496,24 @@ end
 
 
 """
-    recommend_plan(img; card_id, wizard) -> CorrectionPlan
-    recommend_plan(meta::AbstractDict; image_uid, card_id, wizard) -> CorrectionPlan
+    recommend_plan(img; card_id, wizard, evidence) -> CorrectionPlan
+    recommend_plan(meta::AbstractDict; image_uid, card_id, wizard, evidence) -> CorrectionPlan
 
-Pure meta→plan for testability; the `img` method wraps it. `card_id` defaults to `:custom` — the
-no-preset fallback the plan doc names for `preset.card_confidence < 0.4`. A card-classifier that
-picks a card automatically is deferred (§2.1 `preset.card_confidence` needs calibration ground
-truth — see the plan doc's Open questions).
+Pure meta→plan for testability; the `img` method wraps it. `evidence` goes to `apply_rules`.
+`card_id` defaults to `:custom` — the no-preset fallback the plan doc names for
+`preset.card_confidence < 0.4`. A card-classifier that picks a card automatically is deferred
+(§2.1 `preset.card_confidence` needs calibration ground truth — see the plan doc's Open questions).
 """
 function recommend_plan(meta::AbstractDict;
                         image_uid::AbstractString = "",
                         card_id::Union{Symbol,Nothing} = nothing,
                         wizard::AbstractDict = Dict{Symbol,Any}(),
-                        vault_models::Union{AbstractVector,Nothing} = nothing)::CorrectionPlan
+                        vault_models::Union{AbstractVector,Nothing} = nothing,
+                        evidence::Symbol = :all)::CorrectionPlan
     scores = compute_qc_scores(meta; vault_models = vault_models)
     card   = card_id === nothing ? recommend_card(scores, wizard) : card_id
     preset = preset_by_id(card)
-    res    = apply_rules(scores, preset, wizard)
+    res    = apply_rules(scores, preset, wizard; evidence = evidence)
     CorrectionPlan(String(image_uid), card, wizard,
                    res.included, res.excluded, scores;
                    saturation_fingerprint = saturation_fingerprint(meta))
@@ -473,7 +548,8 @@ end
 
 function recommend_plan(img::CciaImage;
                         card_id::Union{Symbol,Nothing} = nothing,
-                        wizard::AbstractDict = Dict{Symbol,Any}())::CorrectionPlan
+                        wizard::AbstractDict = Dict{Symbol,Any}(),
+                        evidence::Symbol = :all)::CorrectionPlan
     ccid = state_file(img)
     isfile(ccid) || return CorrectionPlan(String(img.uid),
                                           card_id === nothing ? :custom : card_id, wizard,
@@ -481,7 +557,7 @@ function recommend_plan(img::CciaImage;
     raw  = read_ccid_raw(ccid)
     meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
     recommend_plan(meta; image_uid = String(img.uid), card_id = card_id, wizard = wizard,
-                   vault_models = denoise_model_names())
+                   vault_models = denoise_model_names(), evidence = evidence)
 end
 
 

@@ -1,6 +1,6 @@
 # Task discovery — what each step is for, and when a problem points back a step
 
-**Status:** parked (2026-10-06), nothing built. Prompted by the 2026-10-05/06 guide runs
+**Status:** in progress — P3 built (2026-10-06); P1, P2, P4, P5 not built. Prompted by the 2026-10-05/06 guide runs
 ([`GUIDE_RUNS_PLAN.md`](GUIDE_RUNS_PLAN.md)). Builds on the task specs (`app/src/tasks/*/*.json`), the
 QC catalogue (`app/src/qc/text.jl`) and the correction-plan engine
 ([`CORRECTION_QC_PLAN.md`](CORRECTION_QC_PLAN.md), `app/src/correction_plan.jl`).
@@ -93,6 +93,11 @@ not photon-limited. Nothing told the agents this, and nothing would tell a user 
 - GUI: the task dropdown, and the "Which step?" view in the Guides panel, generated from the specs.
 
 ### P3 — recommender evidence
+**Built (2026-10-06).** `_apply_photon_rules!` in `app/src/correction_plan.jl`; `evidence` on
+`/api/correction-plan/recommend`; the autonomous MCP sends `metadata` when `CECELIA_MCP_DISCOVERY=off`.
+Bands are placeholders: `≥ 0.90` photon-limited, `< 0.50` not, between = no opinion. Smooth is never
+excluded (its `gated` statistic was built for non-photon-limited movies). The include fires only on the
+no-preset card (§3: a card outranks a score). Rule summary: CORRECTION_QC_PLAN.md → *Notes on the table*.
 - In `apply_rules`, add the photon-limited include/exclude for denoise and smooth, with reasons.
   Test it on the engine's pure function, and cover the `evidence=metadata` switch.
 
