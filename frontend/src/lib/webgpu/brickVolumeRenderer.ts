@@ -1042,7 +1042,7 @@ export async function createBrickVolumeRenderer(
       const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
       const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
       const view = brickViewportFromCamera(
-        camState, currentMeta, displayT, canvas.height, aspect, currentZDepth,
+        camState, currentMeta, displayT, canvas.height, aspect, currentZDepth, uniform.ortho,
       )
       const scheduled = bricksIntersectingViewport(view, world, lvl)
       for (const s of scheduled) {
@@ -1102,7 +1102,7 @@ export async function createBrickVolumeRenderer(
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
     const view = brickViewportFromCamera(
-      camState, currentMeta, t, canvas.height, aspect, currentZDepth,
+      camState, currentMeta, t, canvas.height, aspect, currentZDepth, uniform.ortho,
     )
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
     for (const s of scheduled) {
@@ -1135,7 +1135,7 @@ export async function createBrickVolumeRenderer(
     const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
     const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
     const view = brickViewportFromCamera(
-      camState, currentMeta, boundT, canvas.height, aspect, currentZDepth,
+      camState, currentMeta, boundT, canvas.height, aspect, currentZDepth, uniform.ortho,
     )
     const residentKeys = new Set(atlas.pageTable.entries().map(e => brickKey(e.brick)))
     const decRaw = scheduleBricks(view, world, residentKeys, atlas.currentLevel, levelFloor, schedulerKnobs)
@@ -1845,7 +1845,7 @@ export async function createBrickVolumeRenderer(
         const aspect = Math.max(canvas.width, 1) / Math.max(canvas.height, 1)
         const world = brickWorldFromMeta(currentMeta, atlas.layout.brickSizeVox, currentZDepth)
         const view = brickViewportFromCamera(
-          camState, currentMeta, displayT, canvas.height, aspect, currentZDepth,
+          camState, currentMeta, displayT, canvas.height, aspect, currentZDepth, uniform.ortho,
         )
         const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
         // Same viewport intersect used for both counts — geometry doesn't depend on t, only the
