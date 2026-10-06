@@ -125,7 +125,8 @@ The repeated tool errors (the mechanical part) already reach the judge.
 - Built as specified, plus: the guide → test project map (with the reviewer checklist, shown atop
   the record) is `scripts/agent_eval/guide_projects.json`; the projects dir comes from the running
   app's `/api/diagnostics`; each run (or a run skipped because the app is down or the lock is held)
-  appends one line to `~/.cecelia-effectiveness/guide-runs.jsonl`; `--runs N` stops at the first run
+  appends one line to `~/.cecelia-effectiveness/guide-runs.jsonl` (`costUsd` the run, `whyCostUsd` the
+  after-run why turn from the record's `why.json`, `totalCostUsd` both); `--runs N` stops at the first run
   that fails. The record's `agentRun` meta carries `guide`, `codeSha` and `knowledgeOn`.
 - **Checkpoint:** one intravital run started with the command, then reviewed with P1.
 
