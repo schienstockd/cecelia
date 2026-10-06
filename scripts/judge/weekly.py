@@ -41,7 +41,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.effectiveness.state import state_dir, try_lock  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
 
@@ -75,10 +75,6 @@ class JudgeRunError(RuntimeError):
 
 
 # ── deterministic steps ────────────────────────────────────────────────────────────────────────
-
-def state_dir() -> pathlib.Path:
-    return default_log_path().parent
-
 
 def ratelimit_path() -> pathlib.Path:
     """Where a pass stopped by the usage limit says when it lifts, for `cron_pass.sh`."""
@@ -345,16 +341,10 @@ def main(argv: list[str] | None = None) -> int:
                     help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
     args = ap.parse_args(argv)
 
-    lock_path = state_dir() / "judge.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock = open(lock_path, "w", encoding="utf-8")
-    if os.name == "posix":   # the timer runs on Linux; on Windows two passes simply aren't guarded
-        import fcntl
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            print("judge-weekly: another pass holds the lock; exiting", file=sys.stderr)
-            return 0
+    lock = try_lock(state_dir() / "judge.lock")   # on Windows two passes simply aren't guarded
+    if lock is None:
+        print("judge-weekly: another pass holds the lock; exiting", file=sys.stderr)
+        return 0
     state = {"stage": "start", "sha": None}
     try:
         record = weekly(ref=args.ref, worktree=args.worktree, date=args.date, persist=not args.dry_run,

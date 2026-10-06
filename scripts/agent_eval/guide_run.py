@@ -12,7 +12,8 @@ What it adds to `run_app.py`:
 - each run's directory under `~/.cecelia-effectiveness/app-runs/<stamp>/`;
 - one lock, so runs never overlap: `--runs N` runs them in turn, and stops at the first that fails;
 - one line per run in `~/.cecelia-effectiveness/guide-runs.jsonl` (stamp, guide, commit, knowledge,
-  discovery, cost, wall time, exit, record id), written even when the run aborts;
+  discovery, cost: the run, the after-run why turn and their total; wall time, exit, record id),
+  written even when the run aborts;
 - `--discovery off`: the agent's MCP servers get `CECELIA_MCP_DISCOVERY=off` and hide what each task is
   for (docs/todo/TASK_DISCOVERY_PLAN.md Decision 9). A separate arm: never pool it with `on`.
 """
@@ -37,7 +38,7 @@ sys.path.insert(0, str(HERE))
 
 import trace_view  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.effectiveness.state import state_dir, try_lock  # noqa: E402
 
 PROJECTS = HERE / "guide_projects.json"
 GUIDES = REPO / "mcp" / "cecelia_mcp" / "guides.json"
@@ -50,11 +51,6 @@ class GuideRunError(Exception):
 
 
 # ── where things go ──────────────────────────────────────────────────────────────────────────────
-
-def state_dir() -> pathlib.Path:
-    """`~/.cecelia-effectiveness/` (beside the effectiveness log, like `judge-runs/`)."""
-    return default_log_path().parent
-
 
 def runs_dir() -> pathlib.Path:
     return state_dir() / "app-runs"
@@ -144,12 +140,20 @@ def run_outcome(root: pathlib.Path) -> dict:
         record_id = (rec.get("blackboard") or {}).get("entryId")
     except (OSError, ValueError):
         pass
-    return {"costUsd": cost, "recordId": record_id}
+    try:   # the after-run why turn (`run_record.ask_why`), under its own cap and not in the trace
+        why_cost = json.loads((root / "why.json").read_text(encoding="utf-8")).get("costUsd")
+    except (OSError, ValueError, AttributeError):
+        why_cost = None
+    return {"costUsd": cost, "whyCostUsd": why_cost, "recordId": record_id}
 
 
 def log_line(*, stamp: str, guide: str, commit: str | None, knowledge: bool, cost_usd: float | None,
-             wall_s: float, exit_code: int, record_id: str | None, **extra) -> dict:
+             wall_s: float, exit_code: int, record_id: str | None, why_cost_usd: float | None = None,
+             **extra) -> dict:
+    """`costUsd` is the agent's run, `whyCostUsd` the after-run why turn, `totalCostUsd` both."""
+    total = None if cost_usd is None and why_cost_usd is None else round((cost_usd or 0) + (why_cost_usd or 0), 4)
     return {"stamp": stamp, "guide": guide, "commit": commit, "knowledge": knowledge, "costUsd": cost_usd,
+            "whyCostUsd": why_cost_usd, "totalCostUsd": total,
             "wallS": round(wall_s), "exit": exit_code, "recordId": record_id, **extra}
 
 
@@ -216,7 +220,7 @@ def run_one(guide: str, entry: dict, a, projects_dir: str, commit: str | None, e
         rc = proc.returncode if proc is not None and rc is None else rc
         got = run_outcome(root)
         line = log_line(stamp=stamp, guide=guide, commit=commit, knowledge=a.knowledge,
-                        cost_usd=got["costUsd"], wall_s=time.time() - t0,
+                        cost_usd=got["costUsd"], why_cost_usd=got["whyCostUsd"], wall_s=time.time() - t0,
                         exit_code=rc if rc is not None else -1, record_id=got["recordId"], **extra)
         append_log(line)
         print(f"guide-run: logged {json.dumps(line)}", flush=True)
@@ -288,16 +292,7 @@ def schedule(guide: str, a) -> int:
 def _lock():
     """The one-run-at-a-time lock (`app-runs/.lock`); None when another run holds it. Not guarded on
     Windows, where this dev tool isn't run."""
-    runs_dir().mkdir(parents=True, exist_ok=True)
-    f = open(runs_dir() / ".lock", "w", encoding="utf-8")
-    if os.name == "posix":
-        import fcntl
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            f.close()
-            return None
-    return f
+    return try_lock(runs_dir() / ".lock")
 
 
 def run_batch(guide: str, entry: dict, a) -> int:
