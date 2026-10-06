@@ -6,7 +6,7 @@ import {
 } from './brickScheduler'
 import { brickKey } from './pageTable'
 import type { ViewerMeta, OrbitCamera } from './volumeViewer'
-import { VIEW_HALF_ANGLE } from './volumeViewer'
+import { VIEW_HALF_ANGLE, cameraBasis } from './volumeViewer'
 
 // SispLk-shape, but rounded to make the arithmetic easy to reason about in the assertions.
 // 128 vox × 1 µm = 128 µm brick edge at L0. A 4x4x1 grid of bricks = 512x512x4 voxels total.
@@ -389,5 +389,127 @@ describe('brickViewportFromCamera', () => {
     expect(pickBrickLevel(view100, world, undefined)).toBe(0)
     const viewFar = brickViewportFromCamera({ ...cam, dist: 20000 }, META, 0, 1024, 1.0, META.nZ)
     expect(pickBrickLevel(viewFar, world, undefined)).toBe(2)
+  })
+})
+
+// ── Rotated viewport vs the shader's own rays ─────────────────────────────────────────────
+// Replays `brick.wgsl` `fs` + `brick_common.wgsl` `camera()` on the CPU: one ray per pixel of a
+// coarse screen grid, marched through the box with `hitBox`'s slab test, every sample converted to
+// scheduler world (`uvw = (wp + ext/2) / ext`). The scheduler must cover every sample — a sample
+// outside the scheduled bricks is a hole on screen.
+function shaderSamples(
+  cam: OrbitCamera, ext: [number, number, number], aspect: number, ortho: boolean, grid = 41, steps = 64,
+): Array<[number, number, number]> {
+  const { fwd, right, up } = cameraBasis(cam.yaw, cam.pitch)
+  const ro = [0, 1, 2].map(a => fwd[a] * cam.dist + right[a] * cam.panX + up[a] * cam.panY)
+  const h = ext.map(e => e / 2)
+  const out: Array<[number, number, number]> = []
+  for (let iy = 0; iy < grid; iy++) {
+    for (let ix = 0; ix < grid; ix++) {
+      const u = -1 + (2 * ix + 1) / grid, v = -1 + (2 * iy + 1) / grid   // pixel centres
+      let org = ro, rd = fwd.map(f => -f)
+      if (ortho) {
+        const hh = cam.dist * VIEW_HALF_ANGLE
+        org = ro.map((r, a) => r + right[a] * u * hh * aspect + up[a] * v * hh)
+      } else {
+        const d = [0, 1, 2].map(a => -fwd[a] + right[a] * u * VIEW_HALF_ANGLE * aspect + up[a] * v * VIEW_HALF_ANGLE)
+        const n = Math.hypot(d[0], d[1], d[2])
+        rd = d.map(x => x / n)
+      }
+      let t0 = -Infinity, t1 = Infinity
+      for (let a = 0; a < 3; a++) {
+        if (Math.abs(rd[a]) < 1e-12) {
+          if (Math.abs(org[a]) > h[a]) { t0 = Infinity; break }
+          continue
+        }
+        const ta = (-h[a] - org[a]) / rd[a], tb = (h[a] - org[a]) / rd[a]
+        t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb))
+      }
+      t0 = Math.max(t0, 0)
+      if (!(t1 > t0)) continue
+      for (let s = 0; s < steps; s++) {
+        const t = t0 + (t1 - t0) * (s + 0.5) / steps   // brick.wgsl: t0 + (s + 0.5)·dt
+        out.push([0, 1, 2].map(a => org[a] + rd[a] * t + h[a]) as [number, number, number])
+      }
+    }
+  }
+  return out
+}
+
+describe('brickViewportFromCamera — rotation follows the shader', () => {
+  // Deep enough in z that rotation matters: 512×512×40 vox at 0.5/0.5/2 µm = 256×256×80 µm.
+  const DEEP: ViewerMeta = { ...META, nZ: 40 }
+  const ext: [number, number, number] = [256, 256, 80]
+  const brick: [number, number, number] = [32, 32, 4]   // 16×16×8 µm bricks at L0
+  const world = brickWorldFromMeta(DEEP, brick, DEEP.nZ)
+  const cases: Array<[string, OrbitCamera, boolean]> = [
+    ['face-on, panned, ortho',             { yaw: 0, pitch: 0, dist: 120, panX: 40, panY: -30 }, true],
+    ['yaw 35° + pan, ortho',               { yaw: 0.61, pitch: 0, dist: 120, panX: 40, panY: -30 }, true],
+    ['yaw 90° edge-on, zoomed, ortho',     { yaw: Math.PI / 2, pitch: 0, dist: 60, panX: 10, panY: 0 }, true],
+    ['yaw −50° pitch 30° + pan, ortho',    { yaw: -0.87, pitch: 0.52, dist: 100, panX: -25, panY: 35 }, true],
+    ['yaw 40° pitch −20° + pan, persp',    { yaw: 0.7, pitch: -0.35, dist: 200, panX: 30, panY: 20 }, false],
+    ['face-on, zoomed, persp (far face wider)', { yaw: 0, pitch: 0, dist: 90, panX: 0, panY: 0 }, false],
+  ]
+
+  for (const [name, cam, ortho] of cases) {
+    it(`covers every sample the shader marches — ${name}`, () => {
+      const v = brickViewportFromCamera(cam, DEEP, 0, 1024, 1.5, DEEP.nZ, ortho)
+      const samples = shaderSamples(cam, ext, 1.5, ortho)
+      expect(samples.length).toBeGreaterThan(0)
+      const tol = 1e-6 * 256
+      for (const p of samples) {
+        expect(Math.abs(p[0] - v.centreUm[0])).toBeLessThanOrEqual(v.halfWUm + tol)
+        expect(Math.abs(p[1] - v.centreUm[1])).toBeLessThanOrEqual(v.halfHUm + tol)
+        expect(Math.abs(p[2] - v.centreUm[2])).toBeLessThanOrEqual(v.halfDUm + tol)
+      }
+      // Tight, not just conservative: each face of the AABB is reached by a sample (within the
+      // sampling grid's spacing), so the over-fetch guard is not fed a bloated box.
+      const half = [v.halfWUm, v.halfHUm, v.halfDUm]
+      for (let a = 0; a < 3; a++) {
+        const lo = Math.min(...samples.map(p => p[a])), hi = Math.max(...samples.map(p => p[a]))
+        const slack = 0.06 * ext[a]
+        expect(lo).toBeLessThanOrEqual(v.centreUm[a] - half[a] + slack)
+        expect(hi).toBeGreaterThanOrEqual(v.centreUm[a] + half[a] - slack)
+      }
+      // End to end: every brick a sample falls in is scheduled as CORE.
+      const core = new Set(bricksIntersectingViewport(v, world, 0)
+        .filter(s => s.ring === 0).map(s => `${s.brick.bx},${s.brick.by},${s.brick.bz}`))
+      for (const p of samples) {
+        // Clamped both ways: a ray grazing a face can land a hair outside in float, which the
+        // shader reads as out-of-box (0), not as a brick.
+        const k = [0, 1, 2].map(a => Math.max(0, Math.min(
+          Math.floor(p[a] / (brick[a] * DEEP.voxelUm[a])),
+          Math.ceil(world.extentVoxL0[a] / brick[a]) - 1)))
+        expect(core.has(k.join(','))).toBe(true)
+      }
+    })
+  }
+
+  it('the face-on rect it replaces misses samples once rotated + panned (the bug this guards)', () => {
+    const cam: OrbitCamera = { yaw: 0.61, pitch: 0, dist: 120, panX: 40, panY: -30 }
+    const halfH = cam.dist * VIEW_HALF_ANGLE, halfW = halfH * 1.5
+    const c = [ext[0] / 2 + cam.panX, ext[1] / 2 - cam.panY]
+    const missed = shaderSamples(cam, ext, 1.5, true)
+      .filter(p => Math.abs(p[0] - c[0]) > halfW || Math.abs(p[1] - c[1]) > halfH)
+    expect(missed.length).toBeGreaterThan(0)
+  })
+
+  it('face-on orthographic reduces to the old rect, clipped to the box', () => {
+    const cam: OrbitCamera = { yaw: 0, pitch: 0, dist: 60, panX: 20, panY: 10 }
+    const v = brickViewportFromCamera(cam, DEEP, 0, 1024, 1, DEEP.nZ, true)
+    const hh = 60 * VIEW_HALF_ANGLE
+    expect(v.centreUm[0]).toBeCloseTo(128 + 20, 6)
+    expect(v.centreUm[1]).toBeCloseTo(128 - 10, 6)
+    expect(v.centreUm[2]).toBeCloseTo(40, 6)
+    expect(v.halfWUm).toBeCloseTo(hh, 6)
+    expect(v.halfHUm).toBeCloseTo(hh, 6)
+    expect(v.halfDUm).toBeCloseTo(40, 6)
+  })
+
+  it('a view that misses the box falls back to the rect at the aim point', () => {
+    const cam: OrbitCamera = { yaw: 0, pitch: 0, dist: 10, panX: 1000, panY: 0 }
+    const v = brickViewportFromCamera(cam, DEEP, 0, 1024, 1, DEEP.nZ, true)
+    expect(v.centreUm[0]).toBeCloseTo(128 + 1000, 6)
+    expect(v.halfWUm).toBeCloseTo(10 * VIEW_HALF_ANGLE, 6)
   })
 })
