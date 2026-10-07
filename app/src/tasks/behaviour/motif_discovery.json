@@ -10,6 +10,7 @@
     "Populations from different segmentations can't share one run"
   ],
   "category": "Behaviour",
+  "group": "Motifs",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

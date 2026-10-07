@@ -9,6 +9,7 @@
     "Noisy or drifting images: fix them in Cleanup before tuning this"
   ],
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",
   "composite": ["segment.cellpose", "segment.measureLabels"],

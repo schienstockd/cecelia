@@ -9,6 +9,7 @@
   ],
   "notWhen": ["Tracks drift with the tissue: run Drift correction first"],
   "category": "Tracking",
+  "group": "Track",
   "env": ["local"],
   "resource_pool": "cpu",
   "composite": ["tracking.bayesian_tracking", "tracking.track_measures"]

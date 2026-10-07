@@ -12,6 +12,7 @@
     "Fibre channels (SHG, THG): smoothing blurs the structure"
   ],
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "smoothed",

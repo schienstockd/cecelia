@@ -14,6 +14,7 @@
     "Movies shorter than the model's temporal window"
   ],
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "gpu",
   "outputValueName": "denoised",

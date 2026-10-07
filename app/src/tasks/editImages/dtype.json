@@ -13,6 +13,7 @@
     "Channels clipped at the detector stay clipped"
   ],
   "category": "Preprocessing",
+  "group": "Convert",
   "env": [
     "local"
   ],

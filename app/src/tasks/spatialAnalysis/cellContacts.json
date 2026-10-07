@@ -9,6 +9,7 @@
   ],
   "notWhen": ["Cell surfaces matter, as in live imaging: use Cell contacts (meshes)"],
   "category": "Spatial analysis",
+  "group": "Contacts",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

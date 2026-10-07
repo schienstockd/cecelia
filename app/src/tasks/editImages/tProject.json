@@ -9,6 +9,7 @@
   ],
   "notWhen": ["Only to feed Branching analysis: it can collapse time itself"],
   "category": "Edit",
+  "group": "Project",
   "env": [
     "local"
   ],

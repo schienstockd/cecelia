@@ -10,6 +10,7 @@
     { "text": "No recorded Z step: set it in the image metadata first", "check": "!zStepSet" }
   ],
   "category": "Edit",
+  "group": "Reshape",
   "env": [
     "local"
   ],

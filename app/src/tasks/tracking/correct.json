@@ -9,6 +9,7 @@
     "Measures needed afterwards: use Correct tracks + measures"
   ],
   "category": "Tracking",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "axes": ["T"] },

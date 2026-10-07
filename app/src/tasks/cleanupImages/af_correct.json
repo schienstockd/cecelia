@@ -10,6 +10,7 @@
   ],
   "notWhen": ["Saturated channels: clipped values are already lost"],
   "category": "Cleanup",
+  "group": "Autofluorescence",
   "env": [
     "local"
   ],

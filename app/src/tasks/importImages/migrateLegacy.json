@@ -9,6 +9,7 @@
     "No R on this machine: it reads the old metadata through R"
   ],
   "category": "import",
+  "group": "Import",
   "env": ["local"],
   "resource_pool": "io",
   "params": [

@@ -10,6 +10,7 @@
     "Only for a 2D file: Export as OME-TIFF can max-project Z"
   ],
   "category": "Edit",
+  "group": "Project",
   "env": [
     "local"
   ],

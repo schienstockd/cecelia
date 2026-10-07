@@ -10,6 +10,7 @@
     { "text": "Image already segmented: labels stay on the source image", "check": "segmented" }
   ],
   "category": "Edit",
+  "group": "Reshape",
   "env": [
     "local"
   ],

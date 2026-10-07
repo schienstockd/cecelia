@@ -13,6 +13,7 @@
     "Unreliable segmentation: read anisotropy from the channel instead"
   ],
   "category": "Segment",
+  "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

@@ -12,6 +12,7 @@
     { "text": "Pixel sizes missing: set them in the image metadata first", "check": "!pixelSizeSet" }
   ],
   "category": "Export",
+  "group": "Export",
   "env": ["local"],
   "resource_pool": "io",
   "outputValueName": "default",

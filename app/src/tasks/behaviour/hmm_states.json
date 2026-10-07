@@ -9,6 +9,7 @@
     { "text": "Tracks have no speed or angle: run Track measures first", "check": "!trackMeasured" }
   ],
   "category": "Behaviour",
+  "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

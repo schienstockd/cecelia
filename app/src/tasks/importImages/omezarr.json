@@ -9,6 +9,7 @@
   ],
   "notWhen": ["Project from the old R Cecelia: use Migrate legacy image"],
   "category": "import",
+  "group": "Import",
   "env": [
     "local"
   ],

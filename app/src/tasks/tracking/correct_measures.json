@@ -6,6 +6,7 @@
   "useWhen": ["The usual way to commit track edits, so measures match the new tracks"],
   "notWhen": ["Many tracks wrong: change the tracking settings and re-track"],
   "category": "Tracking",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "cpu",
   "composite": ["tracking.correct", "tracking.track_measures", "tracking.staleness_report"]

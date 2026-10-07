@@ -12,6 +12,7 @@
     "States look wrong: check segmentation and tracking before the states"
   ],
   "category": "Behaviour",
+  "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",
