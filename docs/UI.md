@@ -176,6 +176,13 @@ launched from the docked console bar, not this panel.) Status→verb/label mappi
 unit-tested `utils/serviceStatus.ts`. Backend self-restart is planned (see
 `docs/todo/SERVICE_PANEL_PLAN.md`, Phase 3).
 
+Two launch-time preferences sit under the Application row: **Serve over HTTPS + HTTP/2** and **Use
+all CPU cores** (`/api/config/threads`, default on). The second shows what is running — `Running: Auto
+(16 threads)` when the launcher picked the count — and, when the setting no longer matches the launch,
+"Restart Cecelia to apply" with a **Restart now** that reuses `appCtl.restartBackend` (shown only when
+the server is supervised; no new shutdown path). Locked under the pixi dev/prod tasks, which always run
+`-t auto`.
+
 ---
 
 ## Button utilities

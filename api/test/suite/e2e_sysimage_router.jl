@@ -307,7 +307,7 @@ end
         "/api/projects/bundle-info", "/api/projects/bundles",
         "/api/qc/cohort", "/api/qc/cohort/runs",
         "/api/repl/api", "/api/setup/defaults",
-        "/api/setup/validate", "/api/config/tls",
+        "/api/setup/validate", "/api/config/tls", "/api/config/threads",
         "/api/storage/compressor", "/api/storage/layout", "/api/storage/keep-previous-version",
         "/api/storage/summary",
         "/api/versions",   # VN P3 chain-designer picker — union of vN across images
@@ -416,7 +416,7 @@ end
         "/api/qc/cohort/check", "/api/repl",
         "/api/repl/config", "/api/sets/create",
         "/api/sets/rename", "/api/sets/delete", "/api/setup/init",
-        "/api/config/tls/set",
+        "/api/config/tls/set", "/api/config/threads/set",
         "/api/storage/compressor/set", "/api/storage/layout/set",
         "/api/storage/keep-previous-version/set", "/api/storage/reclaim",
         "/api/versions/prune",   # VN P5 prune surface — dry-run first, then destructive
@@ -479,7 +479,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 109 && length(POST_ROUTES) == 163
+    @test length(GET_ROUTES) == 110 && length(POST_ROUTES) == 164
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

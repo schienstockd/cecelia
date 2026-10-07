@@ -269,6 +269,32 @@ end
     @test isfile(joinpath(nested, "observer-mcp.json"))
 end
 
+# ── API thread pool preference (Settings → "Use all CPU cores") ────────────────
+# The launcher (app.py) reads the same key in Python; python/cecelia/tests/test_app_threads.py
+# feeds it the literal `[server]` / `multithreaded = false` lines asserted here.
+@testset "api_multithreaded: default on, persisted, survives reload" begin
+    cfg = mktempdir()
+    try
+        withenv("CECELIA_DEV_DIR" => cfg) do
+            init_cecelia!()
+            @test api_multithreaded() == true                  # no key → on (the installed default)
+            write(custom_toml_path(), "[tls]\nenabled = false\n")
+            @test set_api_multithreaded!(false) == false
+            txt = read(custom_toml_path(), String)
+            @test occursin("[server]", txt) && occursin("multithreaded = false", txt)
+            @test occursin("[tls]", txt)                        # merged write: other keys survive
+            init_cecelia!()
+            @test api_multithreaded() == false
+            @test set_api_multithreaded!(true) == true
+            write(custom_toml_path(), "[server]\nmultithreaded = \"no\"\n")
+            init_cecelia!()
+            @test api_multithreaded() == true                  # a non-Bool reads as the default
+        end
+    finally
+        init_cecelia!()
+    end
+end
+
 # ── Release-bundle integrity ─────────────────────────────────────────────────
 # `/api/update/apply` hands the downloaded payload to the launcher, which overwrites the app
 # with it on the next restart — so a truncated or swapped asset matters, and HTTPS says nothing

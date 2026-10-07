@@ -61,7 +61,8 @@ single terminal command at install time (like Miniforge/conda itself).
 ```
 User clicks the desktop icon
   → the desktop launcher runs `app.py` (in the env)
-  → app.py spawns the Julia server (`julia --project src/server.jl`, production mode)
+  → app.py spawns the Julia server (`julia --project -t auto src/server.jl`, production mode;
+    `-t 1` when Settings → System → "Use all CPU cores" is off — see `_thread_args`)
   → Julia loads Cecelia.jl, starts HTTP + WebSocket on :8080, serves frontend/dist + /api + /ws
   → app.py polls http://localhost:8080/api/health until {ok:true}
   → app.py opens the default browser at http://localhost:8080

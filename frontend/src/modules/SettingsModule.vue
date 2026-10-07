@@ -431,6 +431,7 @@ onMounted(loadCompressor)
 onMounted(loadLayout)
 onMounted(loadKeepPrev)
 onMounted(loadTls)
+onMounted(loadThreads)
 
 // ── TLS preference (HTTPS + HTTP/2) ────────────────────────────────────────────
 // Persisted server preference (`[tls] enabled` in custom.toml) plus the effective protocol
@@ -458,6 +459,52 @@ async function tlsToggle(on: boolean) {
     }
   } catch { /* keep previous state; loadTls on next open re-syncs */ }
   finally { tlsBusy.value = false }
+}
+
+// ── API thread pool ("Use all CPU cores") ──────────────────────────────────────
+// `[server] multithreaded` in custom.toml, read by the launcher (app.py) at start: a Julia process
+// cannot change its thread count, so a flip needs a restart. `managed` is false under the pixi
+// dev/prod tasks (they always pass `-t auto`), which locks the toggle. Restart reuses the shared
+// appControl restart — no new shutdown path.
+// `launch` — what app.py applied (CECELIA_LAUNCH_THREADS); '' under the pixi dev/prod tasks.
+type ThreadsLaunch = 'auto' | '1' | 'env' | ''
+interface ThreadsCfg {
+  desired: boolean; running: number; cpus: number; launch: ThreadsLaunch
+  managed: boolean; restartRequired: boolean; canRestart: boolean
+}
+const thr = ref<ThreadsCfg | null>(null)
+const thrBusy = ref(false)
+async function loadThreads() {
+  try { thr.value = await (await fetch('/api/config/threads')).json() as ThreadsCfg }
+  catch { thr.value = null }
+}
+async function threadsToggle(on: boolean) {
+  thrBusy.value = true
+  try {
+    const res = await fetch('/api/config/threads/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on }),
+    })
+    if (res.ok) thr.value = await res.json() as ThreadsCfg
+  } catch { /* keep previous state; loadThreads on next open re-syncs */ }
+  finally { thrBusy.value = false }
+}
+// "Auto (16 threads)" when the launcher picked the count, else the plain number.
+const thrStatus = computed(() => {
+  const t = thr.value
+  if (!t) return ''
+  const n = `${t.running} thread${t.running === 1 ? '' : 's'}`
+  return t.launch === 'auto' ? `Running: Auto (${n})` : `Running: ${n}`
+})
+const thrTip = computed(() => {
+  const t = thr.value
+  if (t?.launch === 'env') return 'Set by JULIA_NUM_THREADS for this session'
+  if (t && !t.managed) return 'Fixed by the dev launcher (all cores)'
+  return 'Run Cecelia on every CPU core; off uses one. Applies on restart'
+})
+async function threadsRestart() {
+  await appRestart()
+  loadThreads(); loadDiag()
 }
 
 // ── System: service control panel ─────────────────────────────────────────────
@@ -1260,6 +1307,25 @@ async function switchWt(path: string) {
         </span>
       </div>
 
+      <!-- API thread pool. Launch-time: app.py reads the setting and passes -t auto / -t 1. -->
+      <div v-if="thr" class="field" style="margin: 0.2rem 0 0.6rem;">
+        <CcToggle class="toggle-row"
+               :disabled="thrBusy || !thr.managed"
+               :model-value="thr.desired"
+               @update:model-value="threadsToggle($event)"
+               v-tooltip.bottom="thrTip">
+          Use all CPU cores
+        </CcToggle>
+        <span class="field-hint cc-muted cc-fs-xs">
+          {{ thrStatus }}<template v-if="thr.restartRequired"> · Restart Cecelia to apply.
+            <button v-if="thr.canRestart" class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="appCtl.busy"
+                    @click="threadsRestart" v-tooltip.top="'Restart the backend now; the page reconnects'">
+              <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart now
+            </button>
+          </template>
+        </span>
+      </div>
+
       <div class="svc-row">
         <span class="svc-name">Notebooks</span>
         <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
@@ -1449,8 +1515,6 @@ async function switchWt(path: string) {
           <i class="pi pi-box" /> Packages…
         </button>
       </div>
-      <span v-if="diag && diag.threads > 1" class="field-hint cc-muted cc-fs-xs">Multithreaded API active ({{ diag.threads }} threads).</span>
-      <span v-else-if="diag" class="field-hint cc-muted cc-fs-xs">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
 
       <h3 class="cc-eyebrow subsection-title">WebGPU</h3>
       <GpuDiagnostic />

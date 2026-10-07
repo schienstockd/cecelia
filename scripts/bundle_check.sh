@@ -140,9 +140,10 @@ note "instantiating api/ (shared depot, so this downloads nothing; first run pre
 
 # `exec` matters: without it `$!` is the SUBSHELL's pid, and killing that leaves julia holding the
 # port — a rehearsal then poisons the next one ("port 8099 is already in use") and leaves a server
-# running against a deleted temp dir. With exec, the subshell IS julia.
-( cd "$INSTALL/api" && exec env CECELIA_PORT="$PORT" CECELIA_DEV_DIR="$CFG" \
-    julia --project src/server.jl >"$WORK/server.log" 2>&1 ) &
+# running against a deleted temp dir. With exec, the subshell IS julia. `-t auto` + the env var are
+# what app.py's default launch passes (`_thread_args`), so the rehearsal boots the way users do.
+( cd "$INSTALL/api" && exec env CECELIA_PORT="$PORT" CECELIA_DEV_DIR="$CFG" CECELIA_LAUNCH_THREADS=auto \
+    julia --project -t auto src/server.jl >"$WORK/server.log" 2>&1 ) &
 SERVER_PID=$!
 kill_server() {
   # **SIGTERM alone does not stop a Julia server**, and this teardown used to be exactly that
