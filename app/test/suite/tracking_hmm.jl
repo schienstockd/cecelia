@@ -312,3 +312,19 @@ end
     tr_h = collect(skipmissing(hmm_transitions(hyb, ["a", "b"]; time_col="t", include_self=true)))
     @test tr_h == ["1.1_1.1", "1.1_2.2", "2.2_2.2"]
 end
+
+# Motif discovery finds the column an HMM run actually wrote (KDIeEm, real tracked cells): the HMM
+# writer's `add_obs` lands it in obs, and the resolver reads obs — any colName, not just "movement".
+@testset "motif discovery resolves the written HMM state column (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "motif HMM column (fixture missing)"
+    else
+        td = mktempdir(); p = joinpath(td, "B.h5ad"); cp(h5, p)
+        labels = (label_props(p) |> select_cols(["track_id"]) |> as_df).label
+        col = "live.cell.hmm.state.default"
+        label_props(p) |> add_obs(DataFrame("label" => labels, col => ones(length(labels)))) |> save!
+        @test Cecelia._motif_hmm_col(String[], col_names(label_props(p); data_type = :obs)) == (col, nothing)
+        rm(td; recursive=true)
+    end
+end

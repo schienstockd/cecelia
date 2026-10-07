@@ -171,6 +171,19 @@ function _installed_dev_sha()::String
     m === nothing ? "" : lowercase(m.captures[1])
 end
 
+# Is the installed commit the branch tip? The installer writes the full sha but an in-app dev apply
+# writes the 7-char short form (`dev @ main 1a2b3c4`), so an equality test against GitHub's 40-char
+# sha never matched after the first in-app update and the badge offered the build already running.
+# Prefix match, floored at 7 chars so an empty or truncated marker never counts as "same".
+_same_commit(installed::AbstractString, tip::AbstractString)::Bool =
+    length(installed) >= 7 && startswith(lowercase(tip), lowercase(installed))
+
+# An apply/revert staged by this install but not yet swapped in — the launcher (`app.py`) does that on
+# the next restart. While one is pending the check must not re-offer the update (the files on disk are
+# still the old build, so the sha/tag comparison says "behind"); the UI shows "restart to finish".
+_pending_restart(root::AbstractString = _APP_ROOT)::Bool =
+    isfile(joinpath(root, ".pending-update")) || isfile(joinpath(root, ".pending-revert"))
+
 const _BRANCH_RE = r"^[A-Za-z0-9._/-]{1,80}$"
 _valid_branch(b::AbstractString)::Bool = occursin(_BRANCH_RE, b) && !occursin("..", b)
 
@@ -185,7 +198,7 @@ _has_previous(root::AbstractString = _APP_ROOT)::Bool =
 # releases considered (RCs are shipped as releases — see header comment).
 #
 # Dev channel: compare the installed commit (from `.cecelia-version`) against the tip of `branch`
-# via the commits API. `updateAvailable` fires whenever the installed sha != tip. A stable-installed
+# via the commits API. `updateAvailable` fires whenever the installed sha isn't the tip. A stable-installed
 # user asking for dev always sees an update available (`_installed_dev_sha()` returns ""), which is
 # the point — the toggle is "switch to tracking main".
 function api_update_check(req::HTTP.Request)
@@ -194,6 +207,7 @@ function api_update_check(req::HTTP.Request)
     branch  = get(q, "branch",  "main")
     channel == "dev" && return _check_dev(branch)
     current = _running_version()
+    pending = _pending_restart()
     releases = try
         # 100 is GitHub's per-page maximum. The winner is the max BY VERSION, but the page is
         # ordered by DATE, so a bounded page can hide a higher version that was published earlier —
@@ -206,6 +220,7 @@ function api_update_check(req::HTTP.Request)
     catch e
         return 200, JSON3.write((; current, latest = nothing, updateAvailable = false,
                                    channel = "stable", hasPrevious = _has_previous(),
+                                   pendingRestart = pending,
                                    error = "could not reach GitHub: $(sprint(showerror, e))"))
     end
     best_tag = nothing; best_ver = nothing; best_url = ""; best_body = ""; best_at = ""
@@ -222,7 +237,7 @@ function api_update_check(req::HTTP.Request)
         end
     end
     cur = _parse_ver(current)
-    avail = best_ver !== nothing && cur !== nothing && best_ver > cur
+    avail = !pending && best_ver !== nothing && cur !== nothing && best_ver > cur
     # scope tells the UI whether the user can apply in-app: only "user" installs self-update; a
     # "system" install shows an admin note, a "dev" checkout hides the control entirely.
     # releaseNotes/publishedAt are shown in the What's New modal (WHATS_NEW_PLAN.md) — the older
@@ -230,11 +245,12 @@ function api_update_check(req::HTTP.Request)
     200, JSON3.write((; current, latest = best_tag, updateAvailable = avail, url = best_url,
                         releaseNotes = best_body, publishedAt = best_at,
                         channel = "stable", scope = _install_scope(),
-                        hasPrevious = _has_previous()))
+                        hasPrevious = _has_previous(), pendingRestart = pending))
 end
 
 function _check_dev(branch::AbstractString)
     current = _installed_version_provenance()
+    pending = _pending_restart()
     _valid_branch(branch) || return 400, JSON3.write((; error = "invalid branch: $(repr(branch))"))
     resp_body = try
         resp = HTTP.get("https://api.github.com/repos/$_UPDATE_REPO/commits/$branch";
@@ -244,7 +260,7 @@ function _check_dev(branch::AbstractString)
     catch e
         return 200, JSON3.write((; current, latest = nothing, updateAvailable = false,
                                    channel = "dev", branch, hasPrevious = _has_previous(),
-                                   scope = _install_scope(),
+                                   scope = _install_scope(), pendingRestart = pending,
                                    error = "could not reach GitHub: $(sprint(showerror, e))"))
     end
     sha  = String(get(resp_body, :sha, ""))
@@ -255,10 +271,11 @@ function _check_dev(branch::AbstractString)
     installed_sha = _installed_dev_sha()
     short = length(sha) >= 7 ? sha[1:7] : sha
     latest_label = isempty(sha) ? nothing : "dev@$short"
-    avail = !isempty(sha) && installed_sha != lowercase(sha)
+    avail = !pending && !isempty(sha) && !_same_commit(installed_sha, sha)
     200, JSON3.write((; current, latest = latest_label, latestRef = sha, updateAvailable = avail,
                         url, publishedAt = date, channel = "dev", branch,
-                        scope = _install_scope(), hasPrevious = _has_previous()))
+                        scope = _install_scope(), hasPrevious = _has_previous(),
+                        pendingRestart = pending))
 end
 
 # For the dev check response, we want the on-disk provenance line ("dev @ main 1a2b3c4" or a tag) —

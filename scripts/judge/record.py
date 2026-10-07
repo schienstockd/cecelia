@@ -243,8 +243,8 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
     landed, confirmed = landed_counts(bugs)
     if landed:
-        out += [f"{landed} fix(es) landed since the last pass (a commit names the bug's key), "
-                f"{confirmed} confirmed gone by the judge.", ""]
+        out += [f"A fix landed for {landed} bug(s) since the last pass (a commit names the bug's key): "
+                f"{confirmed} confirmed gone by the judge, {landed - confirmed} awaiting re-check.", ""]
     for b in (b for b in bugs if b["status"] != "unjudged" and not b.get("muted")):
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",

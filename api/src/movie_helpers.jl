@@ -203,7 +203,27 @@ end
 function _z_slice(src)::Union{Int,Nothing}
     _show_3d(src) && return nothing
     raw = get(src, :zSlice, nothing)
-    raw === nothing ? nothing : max(0, _to_int(raw))
+    raw === nothing ? nothing : raw isa AbstractRange ? first(raw) : max(0, _to_int(raw))
+end
+
+# What a 2D movie draws in z: the max over `zRange` when the config names one (the "max" pick, or
+# Fill from view of the viewer's ±n window), else the one plane `_z_slice`. `nothing` in 3D / unset.
+function _z_planes(src)::Union{Int,UnitRange{Int},Nothing}
+    _show_3d(src) && return nothing
+    zr = _z_range(src)
+    zr === nothing && return _z_slice(src)
+    length(zr) == 1 ? first(zr) : zr
+end
+
+# The planes `[lo, hi]` an authored config names (`zRange`), as `lo:hi`, or `nothing` — for 2D the
+# planes to max over, for 3D the box to render (the viewer's Depth crop / ±n window). Clamped to each
+# image later (`_plane_window`), since one config runs across stacks of different depths.
+function _z_range(src)::Union{UnitRange{Int},Nothing}
+    src isa AbstractDict || return nothing
+    raw = get(src, :zRange, get(src, "zRange", nothing))
+    (raw isa AbstractVector && length(raw) == 2 && all(v -> v isa Real && isfinite(v), raw)) || return nothing
+    lo, hi = minmax(max(0, round(Int, raw[1])), max(0, round(Int, raw[2])))
+    lo:hi
 end
 
 # Which stretch of the timelapse a movie sweeps, as FRAME INDICES — `(t_start, t_end)`, with `nothing`

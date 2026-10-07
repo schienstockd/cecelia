@@ -80,7 +80,13 @@ export interface ViewerMeta {
    * pyramid metadata is unreadable — the picker leaves that one unflagged (a broken pyramid is
    * already broken in ways the picker can't fix).
    */
-  labelDims?: Record<string, { nX: number; nY: number; nZ: number }>
+  labelDims?: Record<string, { nX: number; nY: number; nZ: number; nLevels?: number }>
+  /**
+   * Cheap per-store fingerprints (root + metadata `stat`s, server `_store_rev`). Compared across a
+   * task-done meta refetch so the viewer reloads only when a store it SHOWS changed. Absent from an
+   * older server — `shownStoresChanged` then answers "changed", the pre-fingerprint behaviour.
+   */
+  storeRevs?: { image: string; labels: Record<string, string> }
   /**
    * Every registered version of this image, and the one these numbers describe.
    *
@@ -463,6 +469,40 @@ export function labelDimsMismatch(
 }
 
 /**
+ * A mask with FEWER pyramid levels than this image version: `{ nLevels, imageLevels }`, else null.
+ * The server reads a mask at exactly the level the image is drawn at (never its own deepest level —
+ * that is a full-size mask in a zoomed-out view), so at a level the mask lacks there is nothing to
+ * draw. Every writer now builds the image's levels; this catches a store written with fewer. Absent
+ * `nLevels` (old server, unreadable pyramid) → null, unflagged.
+ */
+export function labelLevelsShort(
+  meta: Pick<ViewerMeta, 'levels' | 'labelDims'>, vn: string,
+): { nLevels: number; imageLevels: number } | null {
+  const n = meta.labelDims?.[vn]?.nLevels
+  const imageLevels = Math.max(1, meta.levels?.length ?? 0)
+  return n !== undefined && n < imageLevels ? { nLevels: n, imageLevels } : null
+}
+
+/**
+ * After a task-done meta refetch: did anything the viewer DRAWS change — the intensity store, the
+ * shown mask's store, or the dims? `false` means the frame on screen is still right and a reload
+ * would only throw away the cache (a gating or measure task touches no pixels). Unknown
+ * fingerprints (older server) count as changed — a needless reload beats stale pixels.
+ */
+export function shownStoresChanged(
+  prev: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  next: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  shownLabel: string,
+): boolean {
+  if (prev.nX !== next.nX || prev.nY !== next.nY || prev.nZ !== next.nZ
+      || prev.nT !== next.nT || prev.nC !== next.nC) return true
+  const a = prev.storeRevs, b = next.storeRevs
+  if (!a || !b) return true
+  if (a.image !== b.image) return true
+  return !!shownLabel && a.labels[shownLabel] !== b.labels[shownLabel]
+}
+
+/**
  * Which planes to ask the slab route for, from the depth the TEXTURE actually has.
  *
  * Three answers, and the DEPTH picks between them — derived from the renderer rather than from the view
@@ -509,6 +549,30 @@ export function loadedPlanes(
   if (mode === 'plane') return [c(zPlane), c(zPlane)]
   const lo = c(zRange[0]), hi = c(zRange[1])
   return lo <= hi ? [lo, hi] : [hi, lo]
+}
+
+/**
+ * The inverse of `loadedPlanes`: the z controls that load `range` — what restoring a view state's
+ * `dims.zRange` sets. A range that IS `zPlane ± half` (clipped the same way) comes back as the window,
+ * so the Plane slider moves it as it did when captured; any other 3D range (the whole stack included)
+ * is the Depth crop; a 2D view with no window is its one plane. Clamped to the stack, so a range
+ * captured on a deeper image cannot index past this one.
+ */
+export function zControlsForLoaded(
+  mode: 'plane' | 'volume', zPlane: number, range: [number, number], nZ: number,
+): { window: { on: boolean; half: number }; depth: [number, number] | null } {
+  const maxZ = Math.max(nZ - 1, 0)
+  const c = (v: number) => Math.max(0, Math.min(maxZ, Math.round(v)))
+  const z = c(zPlane)
+  const lo = Math.min(c(range[0]), c(range[1])), hi = Math.max(c(range[0]), c(range[1]))
+  const half = Math.max(z - lo, hi - z)
+  // The whole stack in 3D is the default Depth, not a window that happens to reach both ends.
+  const whole3D = mode === 'volume' && lo === 0 && hi === maxZ
+  if (!whole3D && half > 0 && lo <= z && z <= hi) {
+    const [wl, wh] = loadedPlanes(mode, z, [lo, hi], half, nZ)
+    if (wl === lo && wh === hi) return { window: { on: true, half }, depth: null }
+  }
+  return { window: { on: false, half: 0 }, depth: mode === 'volume' ? [lo, hi] : null }
 }
 
 /**

@@ -27,7 +27,6 @@
 import { computed, ref } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ComingSoonBadge from './ComingSoonBadge.vue'
-import WhichStepSection from './WhichStepSection.vue'
 import { useGuideStore } from '../stores/guide'
 import { guidesByGroup, guideById, RECIPES, isWanted } from '../lib/guides'
 import type { WrittenRecipe } from '../lib/guides'
@@ -147,10 +146,6 @@ function firstFixable(g: GuideDef) {
         </a>
       </p>
     </section>
-
-    <!-- "Which step?" — single steps, by page: what each is for and when another is the right one.
-         Generated from the task specs (TASK_DISCOVERY_PLAN Decision 8). -->
-    <WhichStepSection />
 
     <section v-for="grp in groups" :key="grp.group" class="gd-group">
       <h3 class="gd-group-head cc-eyebrow cc-fs-2xs">{{ grp.group }}</h3>

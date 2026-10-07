@@ -60,9 +60,9 @@ end
 _motif_ranked_instances(dists_by_inst::AbstractDict{Int,Float64})::Vector{Int} =
     sort!(collect(keys(dists_by_inst)); by = iid -> (dists_by_inst[iid], iid))
 
-# Numeric feature columns whose median enters the card footer. `live.cell.hmm.state.movement` is
-# also a motif feature (see `MotifDiscoveryParams.featureCols`) but it's categorical, so its 5-num
-# summary would be meaningless — omitted here rather than silently degrade to code numbers.
+# Numeric feature columns whose median enters the card footer. The run's HMM state column is also a
+# motif feature (see `_motif_hmm_col`) but it's categorical, so its 5-num summary would be
+# meaningless — omitted here rather than silently degrade to code numbers.
 const _MOTIF_CARD_FOOTER_COLS = String["live.cell.speed", "live.cell.angle"]
 
 _mean_f64(v::AbstractVector{Float64})::Float64 =

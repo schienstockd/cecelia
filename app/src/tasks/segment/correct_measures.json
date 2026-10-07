@@ -6,6 +6,7 @@
   "useWhen": ["Saving hand corrections to labels that are already measured or tracked"],
   "notWhen": ["Many objects wrong: fix the segmentation settings or cleanup and re-run"],
   "category": "Segment",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "io",
   "composite": [

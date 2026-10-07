@@ -17,4 +17,11 @@ if [ -x "$_cecelia_juliaup/bin/julia" ]; then
     *) export PATH="$_cecelia_juliaup/bin:$PATH" ;;
   esac
 fi
+# A system-scope install also carries a shared package depot, read-only to every account but the
+# owner. Stack a per-user writable depot in front of it and keep Julia's bundled stdlib depot (the
+# trailing empty entry), or Julia dies precompiling into the read-only one. Same shape as the
+# launcher install.sh writes and `_find_julia` in app.py.
+if [ -d "$_cecelia_juliaup/depot" ]; then
+  export JULIA_DEPOT_PATH="$HOME/.cecelia/julia-depot:$_cecelia_juliaup/depot:"
+fi
 unset _cecelia_juliaup

@@ -9,6 +9,7 @@
   ],
   "notWhen": ["A movie: uses the first frame only, so use Drift correction"],
   "category": "Edit",
+  "group": "Register",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

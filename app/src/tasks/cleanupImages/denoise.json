@@ -6,7 +6,7 @@
   "useWhen": [
     "Photon-limited channels: sparse, low photon counts",
     "Needs a model from Train denoise model (SUPPORT)",
-    "After Drift correction: it compares each pixel across frames"
+    { "text": "After Drift correction: it compares each pixel across frames", "check": "driftCorrected" }
   ],
   "notWhen": [
     "Saturated or bright channels: no shot noise left to remove",
@@ -14,6 +14,7 @@
     "Movies shorter than the model's temporal window"
   ],
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "gpu",
   "outputValueName": "denoised",

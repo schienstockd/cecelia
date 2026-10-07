@@ -31,13 +31,15 @@ export interface AdapterReport {
   /**
    * Whether this looks like the discrete GPU. False means the browser handed us the integrated one.
    *
-   * Set by `classifyAdapter(name, maxTextureDimension3D)` — the adapter NAME first (Chromium normalises
-   * vendor to `"nvidia"`/`"amd"`/`"intel"`/`"apple"` for us), the LIMIT as a fallback when the browser
-   * blanks the name. Mesa's `iris` reports 16384 for Intel iGPU and Dawn/Linux reports 2048 for NVIDIA
+   * Set by `classifyAdapter(name, maxTextureDimension3D, subgroupMinSize)` — the adapter NAME first
+   * (Chromium normalises vendor to `"nvidia"`/`"amd"`/`"intel"`/`"apple"` for us), then subgroup size,
+   * then the LIMIT, when the browser blanks the name. Mesa's `iris` reports 16384 for Intel iGPU and Dawn/Linux reports 2048 for NVIDIA
    * discrete — either alone gets this wrong.
    */
   looksDiscrete: boolean
   maxTextureDimension3D: number
+  /** `adapter.info.subgroupMinSize` — the classifier's second signal when the name is blank. */
+  subgroupMinSize?: number
   /** The DEVICE's own `maxBufferSize` after we asked the adapter for its max. Dawn/Linux defaults it
    *  to 256 MB even on cards that can do 4 GB, and the tile atlas needs the higher figure — one
    *  1024² × slots × nC × 2 texture is a 800 MB buffer on a whole slide. */
@@ -90,13 +92,42 @@ export function adapterNameText(n: GpuAdapterName): string {
  * warning would be a false positive. An earlier version deferred to the limit, but Safari's WebGPU
  * reports the spec baseline (2048), which flipped Apple back into the reduced bucket — see the readout
  * `apple apple apple apple / maxTextureDimension3D 2048`. Trust the name here.
+ *
+ * Blank name → `subgroupMinSize` before the limit. Chrome 154 blanked every name field in the viewer
+ * pop-up on an RTX A4500 (Settings in the opener tab still read `nvidia ampere`) while still filling
+ * the subgroup sizes. A minimum of 32 is NVIDIA (32/32), AMD (32/64) or Apple (32/32); Intel
+ * reports 8 or 16, software rasterizers 4–8, Qualcomm 64. Only the limit is left when that is blank too.
  */
-export function classifyAdapter(name: GpuAdapterName, maxTextureDimension3D: number): boolean {
+export function classifyAdapter(
+  name: GpuAdapterName, maxTextureDimension3D: number, subgroupMinSize?: number,
+): boolean {
+  return classifyAdapterBy(name, maxTextureDimension3D, subgroupMinSize).looksDiscrete
+}
+
+/** `classifyAdapter` plus which signal decided it — for the viewer Debug panel. */
+export function classifyAdapterBy(
+  name: GpuAdapterName, maxTextureDimension3D: number, subgroupMinSize?: number,
+): { looksDiscrete: boolean, by: 'name' | 'subgroup' | 'limit' } {
   const text = adapterNameText(name).toLowerCase()
-  if (/nvidia|geforce|quadro|\brtx\b|\bgtx\b|radeon|\bamd\b|rdna/.test(text)) return true
-  if (/\bapple\b/.test(text)) return true
-  if (/\bintel\b|iris|llvmpipe|swiftshader|microsoft basic|software rasterizer/.test(text)) return false
-  return maxTextureDimension3D > 2048
+  if (/nvidia|geforce|quadro|\brtx\b|\bgtx\b|radeon|\bamd\b|rdna/.test(text)) return { looksDiscrete: true, by: 'name' }
+  if (/\bapple\b/.test(text)) return { looksDiscrete: true, by: 'name' }
+  if (/\bintel\b|iris|llvmpipe|swiftshader|microsoft basic|software rasterizer/.test(text)) return { looksDiscrete: false, by: 'name' }
+  if (subgroupMinSize !== undefined && subgroupMinSize > 0) return { looksDiscrete: subgroupMinSize === 32, by: 'subgroup' }
+  return { looksDiscrete: maxTextureDimension3D > 2048, by: 'limit' }
+}
+
+/** Short label for which signal classified the adapter — Settings "GPU type" and the viewer Debug panel. */
+export function classifiedByText(
+  name: GpuAdapterName, maxTextureDimension3D: number, subgroupMinSize?: number,
+): string {
+  const { by } = classifyAdapterBy(name, maxTextureDimension3D, subgroupMinSize)
+  return by === 'name' ? 'by name' : by === 'subgroup' ? `by subgroup size ${subgroupMinSize}` : 'by 3D limit'
+}
+
+/** `adapter.info.subgroupMinSize`, or undefined when the browser doesn't report it. */
+export function adapterSubgroupMinSize(adapter: GPUAdapter): number | undefined {
+  const v = (adapter as GPUAdapter & { info?: { subgroupMinSize?: unknown } }).info?.subgroupMinSize
+  return typeof v === 'number' ? v : undefined
 }
 
 /** True when the adapter is Apple silicon — the caller uses this to pick honest copy ("Apple GPU"
@@ -117,9 +148,11 @@ export interface GpuProbeReport {
   supported: boolean
   /** `requestAdapter({powerPreference:'high-performance'})` returned an adapter. */
   adapterFound: boolean
-  /** Discrete-vs-integrated verdict from `classifyAdapter(name, limit)` — name-first, limit as
-   *  fallback. See `classifyAdapter` for the details of both signals. */
+  /** Discrete-vs-integrated verdict from `classifyAdapter` — name first, subgroup size then limit as
+   *  fallback. See `classifyAdapter` for the details of all three signals. */
   looksDiscrete: boolean
+  /** `adapter.info.subgroupMinSize`, when reported — see `classifyAdapter`. */
+  subgroupMinSize?: number
   hasTimestamps: boolean
   /** What the adapter says it is. Empty strings when the browser gives nothing, which is the state
    *  that made the proxy above necessary in the first place. */
@@ -176,13 +209,87 @@ export async function acquireGpuDevice(): Promise<{
   const bindingArraySupported = await probeBindingArraySupport(device)
   const report: AdapterReport = {
     maxTextureDimension3D: maxDim3D,
+    subgroupMinSize: adapterSubgroupMinSize(adapter),
     maxBufferSize: device.limits.maxBufferSize,
-    looksDiscrete: classifyAdapter(name, maxDim3D),
+    looksDiscrete: classifyAdapter(name, maxDim3D, adapterSubgroupMinSize(adapter)),
     hasTimestamps: adapter.features.has('timestamp-query'),
     name,
     bindingArraySupported,
   }
   return { adapter, device, report }
+}
+
+/** One adapter as the browser hands it back for one `powerPreference`, reported raw — no
+ *  classification. `info` holds every `GPUAdapterInfo` field the browser fills (blank = said nothing). */
+export interface GpuAdapterDiag {
+  powerPreference: 'high-performance' | 'low-power' | 'default'
+  found: boolean
+  /** `adapterName(adapter)` — the same defaulted name the classifier reads. */
+  name: GpuAdapterName
+  info: Record<string, string | number | boolean>
+  features: string[]
+  limits: Record<string, number>
+}
+
+/** The page context an adapter request ran in — the browser can blank `adapter.info` per context. */
+export interface GpuPageDiag {
+  userAgent: string
+  origin: string
+  isSecureContext: boolean
+  crossOriginIsolated: boolean
+  hasOpener: boolean
+  visibility: string
+}
+
+export interface GpuDiagnostics {
+  atIso: string
+  page: GpuPageDiag
+  adapters: GpuAdapterDiag[]
+}
+
+const DIAG_INFO_KEYS = ['vendor', 'architecture', 'device', 'description',
+  'isFallbackAdapter', 'subgroupMinSize', 'subgroupMaxSize'] as const
+const DIAG_LIMIT_KEYS = ['maxTextureDimension2D', 'maxTextureDimension3D', 'maxBufferSize',
+  'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize'] as const
+
+/**
+ * Raw adapter readout for the viewer's Debug panel and bench JSON. Asks for an adapter under each
+ * `powerPreference` (no device is created) so a reader can see whether the browser returns a
+ * different adapter, or the same one with its name blanked, depending on how it is asked. Never throws.
+ */
+export async function collectGpuDiagnostics(): Promise<GpuDiagnostics> {
+  const page: GpuPageDiag = {
+    userAgent: navigator.userAgent,
+    origin: location.origin,
+    isSecureContext: window.isSecureContext,
+    crossOriginIsolated: window.crossOriginIsolated,
+    hasOpener: window.opener != null,
+    visibility: document.visibilityState,
+  }
+  const adapters: GpuAdapterDiag[] = []
+  if (!('gpu' in navigator)) return { atIso: new Date().toISOString(), page, adapters }
+  for (const pref of ['high-performance', 'low-power', 'default'] as const) {
+    let adapter: GPUAdapter | null = null
+    try {
+      adapter = await navigator.gpu.requestAdapter(pref === 'default' ? undefined : { powerPreference: pref })
+    } catch {
+      adapter = null
+    }
+    if (!adapter) { adapters.push({
+      powerPreference: pref, found: false, info: {}, features: [], limits: {},
+      name: { vendor: '', architecture: '', device: '', description: '' },
+    }); continue }
+    const raw = (adapter as GPUAdapter & { info?: Record<string, unknown> }).info
+    const info: Record<string, string | number | boolean> = {}
+    for (const k of DIAG_INFO_KEYS) {
+      const v = raw?.[k]
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') info[k] = v
+    }
+    const limits: Record<string, number> = {}
+    for (const k of DIAG_LIMIT_KEYS) limits[k] = adapter.limits[k]
+    adapters.push({ powerPreference: pref, found: true, name: adapterName(adapter), info, features: [...adapter.features].sort(), limits })
+  }
+  return { atIso: new Date().toISOString(), page, adapters }
 }
 
 /**
@@ -275,7 +382,8 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
   }
   const maxDim3D = adapter.limits.maxTextureDimension3D
   const name = adapterName(adapter)
-  const looksDiscrete = classifyAdapter(name, maxDim3D)
+  const subgroupMinSize = adapterSubgroupMinSize(adapter)
+  const looksDiscrete = classifyAdapter(name, maxDim3D, subgroupMinSize)
   const hasTimestamps = adapter.features.has('timestamp-query')
   const limits: GpuLimitsDump = {
     maxTextureDimension3D: maxDim3D,
@@ -308,7 +416,7 @@ export async function probeWebGpu(): Promise<GpuProbeReport> {
     supported: true, adapterFound: true, looksDiscrete, hasR16Uint, isApple: isAppleAdapter(name),
   })
   return {
-    supported: true, adapterFound: true, looksDiscrete, hasTimestamps,
+    supported: true, adapterFound: true, looksDiscrete, subgroupMinSize, hasTimestamps,
     name,
     limits, hasR16Uint, verdict, reason,
   }

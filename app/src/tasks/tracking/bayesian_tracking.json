@@ -13,6 +13,7 @@
     "Few or broken tracks: check segmentation finds each cell every frame"
   ],
   "category": "Tracking",
+  "group": "Track",
   "env": [
     "local"
   ],
