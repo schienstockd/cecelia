@@ -48,6 +48,9 @@ jobs:
 
       - name: Install (system scope, as ${{ matrix.how }})
         run: |
+          # Snapshot root's home: the runner image already has caches there, so compare, don't assume.
+          ROOTHOME=$( [ "$RUNNER_OS" = Linux ] && echo /root || echo /var/root )
+          sudo find "$ROOTHOME" -maxdepth 3 2>/dev/null | sort > "$RUNNER_TEMP/roothome.before"
           if [ "${{ matrix.how }}" = sudo ]; then
             sudo -E env "PATH=$PATH" sh ./install.sh
           else
@@ -67,11 +70,11 @@ jobs:
           grep -q -- '--as-is' "$DIR/cecelia-launch.sh"
           # nothing root-owned left inside (the sudo variant writes as root before handing over)
           test -z "$(sudo find "$DIR" -user root -print -quit)"
-          echo "root home:"; sudo ls -A "$ROOTHOME" || true
-          for d in .cache/rattler .cache/rattler/cache .julia .juliaup .pixi .npm; do
-            if sudo test -e "$ROOTHOME/$d"; then echo "::error::$ROOTHOME/$d exists"; exit 1; fi
-          done
-          if sudo grep -qs pixi "$ROOTHOME/.bashrc" "$ROOTHOME/.zshrc" "$ROOTHOME/.profile"; then
+          sudo find "$ROOTHOME" -maxdepth 3 2>/dev/null | sort > "$RUNNER_TEMP/roothome.after"
+          NEW="$(comm -13 "$RUNNER_TEMP/roothome.before" "$RUNNER_TEMP/roothome.after")"
+          echo "new in $ROOTHOME:"; echo "${NEW:-  (nothing)}"
+          if [ -n "$NEW" ]; then echo "::error::the install wrote into root's home"; exit 1; fi
+          if sudo grep -qs '[.]pixi/bin\|cecelia' "$ROOTHOME/.bashrc" "$ROOTHOME/.zshrc" "$ROOTHOME/.profile"; then
             echo "::error::installer edited root's shell profile"; exit 1
           fi
 
@@ -91,21 +94,25 @@ jobs:
           fi
 
       - name: Start Cecelia as alice
+        timeout-minutes: 25
         run: |
           case "$RUNNER_OS" in Linux) DIR=/opt/cecelia ;; macOS) DIR=/Applications/cecelia ;; esac
           echo "DIR=$DIR" >> "$GITHUB_ENV"
+          # Background sudo itself from this shell (alive for the poll below) — a `nohup … &` inside
+          # `sudo sh -c` dies with that sh on macOS. `sh -x` traces the launcher into the log.
           sudo -u alice -H env -i HOME="$ALICE_HOME" PATH=/usr/local/bin:/usr/bin:/bin USER=alice \
             CECELIA_PORT=18080 BROWSER=true \
-            sh -c "nohup '$DIR/cecelia-launch.sh' > /tmp/alice.log 2>&1 &"
+            sh -x "$DIR/cecelia-launch.sh" > "$RUNNER_TEMP/alice.log" 2>&1 < /dev/null &
+          echo "ALICE_LOG=$RUNNER_TEMP/alice.log" >> "$GITHUB_ENV"
           t0=$(date +%s)
           for _ in $(seq 1 180); do
-            curl -kfsS https://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
-            curl -fsS http://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
+            curl -m 10 -kfsS https://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
+            curl -m 10 -fsS http://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
             sleep 5
           done
           echo "alice's server: $(( $(date +%s) - t0 ))s to first healthy response"
-          curl -kfsS https://127.0.0.1:18080/api/health || curl -fsS http://127.0.0.1:18080/api/health \
-            || { echo "::error::alice's server never became healthy"; tail -80 /tmp/alice.log; exit 1; }
+          curl -m 10 -kfsS https://127.0.0.1:18080/api/health || curl -m 10 -fsS http://127.0.0.1:18080/api/health \
+            || { echo "::error::alice's server never became healthy"; tail -80 "$RUNNER_TEMP/alice.log"; exit 1; }
           echo; echo "alice's per-user depot:"; sudo ls -A "$ALICE_HOME/.cecelia" || true
 
       - name: Uninstaller refuses while alice runs it
@@ -137,7 +144,7 @@ jobs:
 
       - name: alice's log
         if: failure()
-        run: tail -150 /tmp/alice.log || true
+        run: tail -150 "$ALICE_LOG" || true
 
   windows:
     name: windows-latest — system install
@@ -192,13 +199,14 @@ jobs:
           if ($LASTEXITCODE) { throw 'schtasks create failed' }
 
       - name: Start Cecelia as alice
+        timeout-minutes: 25
         run: |
           schtasks /Run /TN cecelia-alice
           $t0 = Get-Date; $ok = $false
           for ($i = 0; $i -lt 180 -and -not $ok; $i++) {
             Start-Sleep 5
-            curl.exe -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-            curl.exe -fsS http://127.0.0.1:18080/api/health 2>$null;  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            curl.exe -m 10 -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            curl.exe -m 10 -fsS http://127.0.0.1:18080/api/health 2>$null;  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
           }
           "alice's server: $([int]((Get-Date) - $t0).TotalSeconds)s"
           if (Select-String -Path C:\ci\alice.log -Pattern 'ALICE-CAN-WRITE-INSTALL' -Quiet) { throw 'alice can write the install' }

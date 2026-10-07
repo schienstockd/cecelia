@@ -97,9 +97,11 @@ else
 fi
 
 # ── Fetch Cecelia (release bundle, or branch source for the dev channel) ─────
-TMP="$(mktemp -d)"
+# Under `sudo sh` the as_owner steps unpack in here, so it must be reachable by $OWNER: macOS gives
+# root a TMPDIR inside a root-only /var/folders/… dir, hence /tmp explicitly.
+if [ -n "$DELEGATE" ]; then TMP="$(mktemp -d /tmp/cecelia-install.XXXXXX)"; chown "$OWNER" "$TMP"
+else TMP="$(mktemp -d)"; fi
 trap 'rm -rf "$TMP"' EXIT
-[ -n "$DELEGATE" ] && chown "$OWNER" "$TMP"           # as_owner steps unpack in here
 
 if [ "$CHANNEL" = "dev" ]; then
   # Current GitHub state: a branch archive (source only — the frontend is built below). GitHub serves
