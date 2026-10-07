@@ -277,6 +277,18 @@ Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
 Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
 Say "Installed: $Provenance ($Scope scope)"
 
+# System scope: every file must carry the Program Files ACL (Users: read + execute; Administrators:
+# full). Pixi builds the env by HARD-LINKING from the admin's package cache, and a hard link shares the
+# file's ACL — the one from the admin's private profile — so other accounts got "Error launching
+# 'python': Access is denied". /reset replaces
+# each file's ACL with the inherited one. The cache copies gain the same read access; they are public
+# package files.
+if ($Scope -eq 'system') {
+  Say 'Granting every account read access to the shared install...'
+  icacls $InstallDir /reset /T /C /Q | Out-Null
+  if ($LASTEXITCODE) { throw "Could not reset permissions on $InstallDir (icacls exit $LASTEXITCODE)." }
+}
+
 # ── Start Menu shortcut ───────────────────────────────────────────────────────
 if ($Scope -eq 'system') {
   # A wrapper any account runs: exports the shared runtime env, then `pixi run app`. The shortcut goes

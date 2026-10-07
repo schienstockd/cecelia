@@ -361,7 +361,10 @@ export PATH="$PIXI_HOME/bin:$JULIAUP_DEPOT_PATH/bin:\$PATH"
 cd "$INSTALL_DIR" && exec "$PIXI" run --as-is app
 EOF
   chmod 755 "$LAUNCH"
-  chmod -R a+rX "$INSTALL_DIR"          # ensure every account can read/execute the shared tree
+  # Every account can read + run the shared tree; only the owner can change it. `go-w` matters: a
+  # GitHub branch archive carries group-writable modes, and a umask-002 owner makes group-writable
+  # dirs, so without it another account could alter what everyone runs.
+  chmod -R a+rX,go-w "$INSTALL_DIR"
   [ -n "$DELEGATE" ] && chown -R "$OWNER" "$INSTALL_DIR"   # catch anything root wrote above
   case "$OS" in
     Linux)

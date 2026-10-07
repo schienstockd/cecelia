@@ -71,7 +71,8 @@ jobs:
           # nothing root-owned left inside (the sudo variant writes as root before handing over)
           test -z "$(sudo find "$DIR" -user root -print -quit)"
           sudo find "$ROOTHOME" -maxdepth 3 2>/dev/null | sort > "$RUNNER_TEMP/roothome.after"
-          NEW="$(comm -13 "$RUNNER_TEMP/roothome.before" "$RUNNER_TEMP/roothome.after")"
+          # macOS daemons (dasd, …) write their own prefs under /var/root/Library — not ours.
+          NEW="$(comm -13 "$RUNNER_TEMP/roothome.before" "$RUNNER_TEMP/roothome.after" | grep -v '^/var/root/Library' || true)"
           echo "new in $ROOTHOME:"; echo "${NEW:-  (nothing)}"
           if [ -n "$NEW" ]; then echo "::error::the install wrote into root's home"; exit 1; fi
           if sudo grep -qs '[.]pixi/bin\|cecelia' "$ROOTHOME/.bashrc" "$ROOTHOME/.zshrc" "$ROOTHOME/.profile"; then
@@ -88,10 +89,13 @@ jobs:
             sudo mkdir -p /Users/alice && sudo chown alice /Users/alice
             echo "ALICE_HOME=/Users/alice" >> "$GITHUB_ENV"
           fi
-          # alice really cannot write the install
-          if sudo -u alice touch "$( [ "$RUNNER_OS" = Linux ] && echo /opt || echo /Applications)/cecelia/probe" 2>/dev/null; then
-            echo "::error::alice can write the install"; exit 1
-          fi
+          # alice really cannot write the install — anywhere in it, not just the top dir
+          D="$( [ "$RUNNER_OS" = Linux ] && echo /opt || echo /Applications)/cecelia"
+          id alice; ls -ld "$D" "$D/api" "$D/.pixi"
+          if sudo -u alice touch "$D/probe" 2>/dev/null; then echo "::error::alice can write $D"; exit 1; fi
+          W="$(sudo -u alice find "$D" -writable -print -quit 2>/dev/null || true)"
+          [ "$RUNNER_OS" = macOS ] && W="$(sudo find "$D" -perm -o+w -print -quit)"
+          if [ -n "$W" ]; then echo "::error::alice can write $W"; ls -ld "$W"; exit 1; fi
 
       - name: Start Cecelia as alice
         timeout-minutes: 25
@@ -175,6 +179,11 @@ jobs:
           $cmd = Get-Content (Join-Path $dir 'cecelia-launch.cmd') -Raw
           if ($cmd -notmatch '--as-is') { throw 'launcher lacks --as-is' }
           if ($cmd -notmatch 'julia-depot;') { throw 'launcher lacks the per-user depot' }
+          # every account must be able to run the env's python (hard links from the admin's cache
+          # used to carry a private ACL)
+          $py = Join-Path $dir '.pixi\envs\default\python.exe'
+          $acl = (icacls $py) -join "`n"; $acl
+          if ($acl -notmatch 'BUILTIN\\Users:.*\(RX\)|BUILTIN\\Users:\(I\)\(RX\)') { throw "Users cannot run $py" }
           if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Cecelia.lnk'))) { throw 'no shortcut' }
           "DIR=$dir" | Out-File -Append $env:GITHUB_ENV
 
@@ -205,6 +214,8 @@ jobs:
           $t0 = Get-Date; $ok = $false
           for ($i = 0; $i -lt 180 -and -not $ok; $i++) {
             Start-Sleep 5
+            # the launcher died (e.g. "Access is denied") — stop waiting, show why
+            if ($i -gt 2 -and (Get-ScheduledTask -TaskName cecelia-alice).State -ne 'Running') { break }
             curl.exe -m 10 -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
             curl.exe -m 10 -fsS http://127.0.0.1:18080/api/health 2>$null;  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
           }

@@ -194,7 +194,7 @@ if [ -n "$INSTALL_DIR" ]; then
     claude mcp remove cecelia-observer -s user >/dev/null 2>&1 && echo "    removed the cecelia-observer registration from Claude"
   fi
 
-  say "Removing $INSTALL_DIR…"
+  say "Removing ${INSTALL_DIR}…"
   remove_tree "$INSTALL_DIR"
   case "$OS" in
     Darwin)
