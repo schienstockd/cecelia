@@ -457,16 +457,18 @@ describe('brickViewportFromCamera — rotation follows the shader', () => {
       const samples = shaderSamples(cam, ext, 1.5, ortho)
       expect(samples.length).toBeGreaterThan(0)
       const tol = 1e-6 * 256
-      for (const p of samples) {
-        expect(Math.abs(p[0] - v.centreUm[0])).toBeLessThanOrEqual(v.halfWUm + tol)
-        expect(Math.abs(p[1] - v.centreUm[1])).toBeLessThanOrEqual(v.halfHUm + tol)
-        expect(Math.abs(p[2] - v.centreUm[2])).toBeLessThanOrEqual(v.halfDUm + tol)
-      }
+      // Same per-sample checks as one `expect` each, but collected in plain JS and asserted once:
+      // ~107k samples × 4 matcher calls per case was the whole runtime (>5 s on Windows CI), not
+      // the march. A failure still names the offending samples.
+      const half = [v.halfWUm, v.halfHUm, v.halfDUm]
+      const outside = samples.filter(p =>
+        [0, 1, 2].some(a => !(Math.abs(p[a] - v.centreUm[a]) <= half[a] + tol)))
+      expect(outside.slice(0, 5), `${outside.length} samples outside the viewport`).toEqual([])
       // Tight, not just conservative: each face of the AABB is reached by a sample (within the
       // sampling grid's spacing), so the over-fetch guard is not fed a bloated box.
-      const half = [v.halfWUm, v.halfHUm, v.halfDUm]
       for (let a = 0; a < 3; a++) {
-        const lo = Math.min(...samples.map(p => p[a])), hi = Math.max(...samples.map(p => p[a]))
+        let lo = Infinity, hi = -Infinity
+        for (const p of samples) { if (p[a] < lo) lo = p[a]; if (p[a] > hi) hi = p[a] }
         const slack = 0.06 * ext[a]
         expect(lo).toBeLessThanOrEqual(v.centreUm[a] - half[a] + slack)
         expect(hi).toBeGreaterThanOrEqual(v.centreUm[a] + half[a] - slack)
@@ -474,14 +476,16 @@ describe('brickViewportFromCamera — rotation follows the shader', () => {
       // End to end: every brick a sample falls in is scheduled as CORE.
       const core = new Set(bricksIntersectingViewport(v, world, 0)
         .filter(s => s.ring === 0).map(s => `${s.brick.bx},${s.brick.by},${s.brick.bz}`))
+      const unscheduled = new Set<string>()
       for (const p of samples) {
         // Clamped both ways: a ray grazing a face can land a hair outside in float, which the
         // shader reads as out-of-box (0), not as a brick.
         const k = [0, 1, 2].map(a => Math.max(0, Math.min(
           Math.floor(p[a] / (brick[a] * DEEP.voxelUm[a])),
-          Math.ceil(world.extentVoxL0[a] / brick[a]) - 1)))
-        expect(core.has(k.join(','))).toBe(true)
+          Math.ceil(world.extentVoxL0[a] / brick[a]) - 1))).join(',')
+        if (!core.has(k)) unscheduled.add(k)
       }
+      expect([...unscheduled], 'sampled bricks not scheduled as CORE').toEqual([])
     })
   }
 
