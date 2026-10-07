@@ -54,7 +54,7 @@ jobs:
           tar -czf out/cecelia.tar.gz \
             api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
             frontend/dist frontend/src/lib/kiwiRef.schema.json frontend/src/plots/palettes.json \
-            install.sh install.ps1 README.md LICENSE THIRD_PARTY.md docs
+            install.sh install.ps1 uninstall.sh uninstall.ps1 README.md LICENSE THIRD_PARTY.md docs
           # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
           # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
           # `out/cecelia.tar.gz` would not match a file downloaded as `cecelia.tar.gz`.
@@ -90,6 +90,8 @@ jobs:
             out/cecelia.tar.gz.sha256
             install.sh
             install.ps1
+            uninstall.sh
+            uninstall.ps1
           # The CHANGELOG section is the body (see the step above). `generate_release_notes` would
           # APPEND the PR list underneath it, which is the thing being removed.
           body_path: RELEASE_NOTES.md

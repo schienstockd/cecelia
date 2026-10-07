@@ -31,6 +31,9 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { groupTaskDefs } from '../utils/taskGroups'
+import { checkLine } from '../utils/taskDiscovery'
+import InlineNote from '../components/InlineNote.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -79,6 +82,8 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
+// picker sub-headings (Segment / Measure / Correct …); null = render the flat list
+const fnGroups = computed(() => groupTaskDefs(props.defs))
 
 // what the task PRODUCES on disk, for the one-line note under the picker. Server-stamped from
 // `task_output_effect` (Julia); absent when the output isn't an image (segment / measure / cluster).
@@ -473,13 +478,24 @@ watch(() => props.defs, (defs) => {
   if (!defs.length) return
   if (selectedTask.value && defs.some(d => d.task === selectedTask.value)) return
   const saved = profileStorage.getItem(`cc-fn:${props.module}`)
-  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved : defs[0].task
+  // fall back to the TOP row as displayed — under headings that is the first group's first def
+  selectedTask.value = (saved && defs.some(d => d.task === saved)) ? saved
+    : (groupTaskDefs(defs)?.[0].defs[0] ?? defs[0]).task
 }, { immediate: true })
 
 // Axis gating — the frontend twin of the Julia gate. A task with `requires.axes` (e.g. tracking
 // on ["T"]) is disabled in the picker + Run button unless every selected image carries those axes.
 // The backend refuses to run anyway (TaskApplicabilityError); this removes the surprise.
 const selectedImages = computed(() => paramContext.value.images)
+// What the selected task is for, and when it fits, straight under the picker (task spec fields,
+// docs/MODULES.md → `purpose`). A line naming a check is run over the selected images — ADVISORY,
+// never a gate on Run (utils/taskDiscovery.ts). The lines fold in a CollapsibleSection whose
+// open/closed state is remembered per user (open by default).
+const useLines = computed(() => (taskDef.value?.useWhen ?? []).map(l => checkLine(l, 'use', selectedImages.value)))
+const notLines = computed(() => (taskDef.value?.notWhen ?? []).map(l => checkLine(l, 'not', selectedImages.value)))
+const WHEN_OPEN_KEY = 'cc-task-about-open'
+const whenOpen = ref(profileStorage.getItem(WHEN_OPEN_KEY) !== '0')
+watch(whenOpen, v => { try { profileStorage.setItem(WHEN_OPEN_KEY, v ? '1' : '0') } catch { /* ignore */ } })
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
 // backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
@@ -679,16 +695,63 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         v-model="selectedTask"
         v-tooltip.bottom="'Select which analysis function to run on the selected images'"
       >
-        <option
-          v-for="d in defs"
-          :key="d.task"
-          :value="d.task"
-          :disabled="!!gatingReasonFor(d)"
-          :title="gatingReasonFor(d) || undefined"
-        >
-          {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
-        </option>
+        <template v-if="fnGroups">
+          <optgroup v-for="grp in fnGroups" :key="grp.title" :label="grp.title">
+            <option
+              v-for="d in grp.defs"
+              :key="d.task"
+              :value="d.task"
+              :disabled="!!gatingReasonFor(d)"
+              :title="gatingReasonFor(d) || d.purpose || undefined"
+            >
+              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+            </option>
+          </optgroup>
+        </template>
+        <template v-else>
+          <option
+            v-for="d in defs"
+            :key="d.task"
+            :value="d.task"
+            :disabled="!!gatingReasonFor(d)"
+            :title="gatingReasonFor(d) || d.purpose || undefined"
+          >
+            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+          </option>
+        </template>
       </select>
+
+      <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row. The
+           fold is a bare inline toggle (.cc-section-toggle, as ParamRenderer's group sections), not
+           CollapsibleSection: that one carries panel-rail chrome (a surface bar, its own padding) that
+           does not sit inside a padded runner section. A check's finding gets its own row under its
+           line, so a long line never shares its width with the finding. -->
+      <div v-if="taskDef?.purpose" class="fn-about">
+        <p class="fn-purpose cc-muted cc-fs-xs">{{ taskDef.purpose }}</p>
+        <template v-if="useLines.length || notLines.length">
+          <button class="fn-when-toggle cc-section-toggle cc-eyebrow cc-fs-2xs" @click="whenOpen = !whenOpen"
+                  v-tooltip.right="whenOpen ? 'Hide when this task fits' : 'Show when this task fits'">
+            <i :class="['pi', whenOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
+            When to use
+          </button>
+          <div v-if="whenOpen" class="fn-when-body">
+            <template v-for="block in [{ head: 'Use when', lines: useLines }, { head: 'Not when', lines: notLines }]"
+                      :key="block.head">
+              <div v-if="block.lines.length" class="fn-lines">
+                <span class="fn-lines-head cc-muted cc-fs-2xs">{{ block.head }}</span>
+                <ul class="fn-line-list cc-fs-xs">
+                  <li v-for="l in block.lines" :key="l.text">
+                    <span class="fn-line-text">{{ l.text }}</span>
+                    <InlineNote v-if="l.severity && l.summary" class="fn-line-check cc-fs-2xs"
+                                :short="l.summary" :severity="l.severity" />
+                    <span v-else-if="l.summary" class="fn-line-check cc-muted cc-fs-2xs">{{ l.summary }}</span>
+                  </li>
+                </ul>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
 
       <div v-if="taskDef" class="fn-meta">
         <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
@@ -926,6 +989,23 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   margin: 0.3rem 0 0;
 }
 .fn-effect .pi { font-size: var(--cc-fs-2xs); }
+.fn-about { margin-top: 0.3rem; min-width: 0; }
+.fn-purpose { margin: 0; overflow-wrap: anywhere; }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier); only the inset is ours */
+.fn-when-toggle { padding: 0.3rem 0 0.1rem; }
+/* the same indented rule as ParamRenderer's .group-section-body */
+.fn-when-body {
+  padding-left: 0.4rem;
+  border-left: 2px solid var(--cc-border);
+  margin-left: 0.1rem;
+}
+.fn-lines + .fn-lines { margin-top: 0.3rem; }
+.fn-lines-head { display: block; }
+.fn-line-list { margin: 0.1rem 0 0; padding-left: 0.9rem; line-height: 1.35; }
+.fn-line-list li { min-width: 0; overflow-wrap: anywhere; }
+.fn-line-list li + li { margin-top: 0.1rem; }
+.fn-line-text { display: block; }
+.fn-line-check { display: flex; margin-top: 0.05rem; }
 .runner-down {
   display: flex;
   align-items: center;

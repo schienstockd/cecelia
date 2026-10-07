@@ -546,10 +546,11 @@ def run(params: dict):
     # leave a registered branch-label set truncated.
     # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
     with zarr_utils.staged_store(branch_labels_out) as staging:
-        group, level0_out, _ = zarr_utils.open_multiscales_for_writing(
+        # As many levels as the image: a zoomed-out viewer draws the mask at the image's level.
+        group, level0_out, out_chunks = zarr_utils.open_multiscales_for_writing(
             staging, out_shape, np.uint32, dim_utils,
             axes=store_axes,
-            nscales=1,
+            nscales=len(im_list),
             kind='labels',
             reference_zarr=labels_path,
         )
@@ -606,6 +607,8 @@ def run(params: dict):
             # tick at the END of the timepoint so anisotropy's cost (when on) rolls into this frame's
             # tick, not the next one. For a static image t_index is None → single 1/1 tick.
             log.progress((t_index if t_index is not None else 0) + 1, total_ticks)
+
+        zarr_utils.write_label_pyramid(group, level0_out, store_axes, len(im_list), out_chunks)
 
         # Carry the IMAGE's valid box when this store still shares its geometry. Unconditional on
         # purpose: `carry_valid_box` compares only the BOXED axes, so a 3D run (which keeps Z)

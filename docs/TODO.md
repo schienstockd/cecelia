@@ -198,6 +198,17 @@ Related, and a bigger decision: **`PlutoUI` is not in `pluto/Project.toml`**. Ad
 `Button` (an in-notebook refresh) *and* sliders for a timepoint, but costs a re-resolve of all three
 manifests. Decide that separately.
 
+### Notebooks on a shared install, for accounts that don't own it
+
+A system-scope install is read-only to every account but its owner
+(`docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`). Pluto keeps state inside the install. The server
+writes `pluto/.plutosecret` at launch (`api/src/notebooks_api.jl` `_secret_path`), and the fast-plot
+build writes `pluto/deps.so`, so for those accounts notebooks most likely fail on first use. That
+has not been tested.
+- **Fix:** move the per-launch state (secret, sysimage) to a per-user location under `config_dir()`.
+  An alternative for `deps.so` is to have the installer build it.
+- **Verify:** a non-owner launch in the same `bwrap` setup the plan describes.
+
 ### Ship a prebuilt Notebooks sysimage in the bundle (release optimisation)
 Build-on-demand already covers every user: the Notebooks page's **Enable fast plots** builds
 `pluto/deps.so` in the background and re-stamps it when Julia/deps move. What is left is the

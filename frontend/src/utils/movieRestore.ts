@@ -53,6 +53,9 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const strList = (v: unknown): string[] | undefined =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined
 const num = (v: unknown): number | undefined => (typeof v === 'number' && isFinite(v) ? v : undefined)
+// a `[lo, hi]` plane pair (`zRange`); `null` stays null (no range), anything else is absent
+const zPair = (v: unknown): [number, number] | null | undefined => v === null ? null
+  : Array.isArray(v) && v.length === 2 && num(v[0]) !== undefined && num(v[1]) !== undefined ? [v[0], v[1]] : undefined
 
 /** Only assign keys whose value survived parsing — an absent field must stay absent, so the reader's
  *  own default applies rather than an `undefined` that overwrites it. */
@@ -142,6 +145,7 @@ export function lookRestore(config: Record<string, unknown> | null | undefined):
   put(cfg, 'labelContour', num(config.labelContour))
   put(cfg, 'show3D', typeof config.show3D === 'boolean' ? config.show3D : undefined)
   put(cfg, 'zSlice', config.zSlice === null ? null : num(config.zSlice))
+  put(cfg, 'zRange', zPair(config.zRange))
   put(cfg, 'compareLayout', COMPARE_LAYOUTS.includes(config.compareLayout as CompareLayout)
     ? config.compareLayout as CompareLayout : undefined)
   put(cfg, 'compareContrast', config.compareContrast === 'reference' || config.compareContrast === 'version'

@@ -20,6 +20,8 @@ import { colourForRender, channelsForRender } from '../viewerColormap'
 export interface ViewerLookInput {
   viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas'>>) | null
   channelNames: string[]
+  /** the image's z depth — tells a 3D Depth crop from the whole stack (0 = unknown) */
+  nZ?: number
   /** the image version on screen ('' = unknown → the recorder's own default) */
   version: string
   /** the segmentation whose mask is drawn ('' = none) */
@@ -63,6 +65,7 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
         ...(c.perspective ? { perspective: 1 } : {}) }
     : null
   const z = viewPlaneZ(i.viewState)
+  const zRange = lookZRange(i.viewState?.dims?.zRange, is3D, i.nZ ?? 0)
   const out: BatchMovieCfg = {
     ...seedConfigFromViewState(i.viewState, i.channelNames),
     ...(i.version ? { valueNames: [i.version] } : {}),
@@ -72,6 +75,9 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     labelContour: clampContour(i.labelContour),
     show3D: is3D,
     zSlice: z,
+    // the planes on screen when that is more than the one slice / the whole stack (±n window, Depth);
+    // null otherwise, so a fill clears a range left from an earlier one
+    zRange,
     // the 3D camera, for a batch that renders every image from the viewer's angle (Fill from view)
     ...(is3D && cam ? { camera3d: cam } : {}),
     showPopulations: popsOn,
@@ -105,6 +111,16 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   return out
 }
 
+/** The viewer's loaded planes as a movie `zRange`, or null when they say nothing a slice / 3D does not:
+ *  one plane in 2D, the whole stack in 3D. An unknown depth keeps a 3D range — losing a crop is the
+ *  bug this carries, a redundant whole-stack range is harmless. */
+function lookZRange(zr: [number, number] | undefined, is3D: boolean, nZ: number): [number, number] | null {
+  if (!Array.isArray(zr) || zr.length !== 2) return null
+  const lo = Math.max(0, Math.round(Math.min(zr[0], zr[1]))), hi = Math.max(0, Math.round(Math.max(zr[0], zr[1])))
+  if (!is3D) return hi > lo ? [lo, hi] : null
+  return nZ > 0 && lo === 0 && hi >= nZ - 1 ? null : [lo, hi]
+}
+
 /** The pop manager's current (segmentation, popType) for one image, as published to
  *  `cc.gatingCurrent` by the gating store. Empty strings = nothing selected yet. */
 export function readGatingCurrent(imageUid: string): { valueName: string; popType: string } {
@@ -120,6 +136,7 @@ export function readGatingCurrent(imageUid: string): { valueName: string; popTyp
 export interface LookImage {
   uid: string
   channelNames?: string[]
+  sizeZ?: number | null
   labels?: Record<string, unknown>
   labelPropsNames?: string[]
   activeValueName?: string
@@ -145,6 +162,7 @@ export function readViewerLook(img: LookImage, setUid: string,
   return viewerLook({
     viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
     channelNames: img.channelNames ?? [],
+    nZ: img.sizeZ ?? 0,
     version: (onImg ? viewer.openImage?.valueName : '') || img.activeValueName || '',
     maskValueName: labelNames.find(n => labelVis[n]) ?? '',
     gating,

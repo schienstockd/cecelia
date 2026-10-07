@@ -12,6 +12,7 @@
     "Large or live cells where surfaces matter: use Detect aggregates (meshes)"
   ],
   "category": "Spatial analysis",
+  "group": "Aggregates",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

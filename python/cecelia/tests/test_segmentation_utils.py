@@ -90,6 +90,43 @@ class TestCountLabels(unittest.TestCase):
         self.assertEqual(count_labels(arr), 3)
 
 
+class TestObjectStats(unittest.TestCase):
+    """`label_sizes` + `object_stats` — the raw numbers the `seg.*` QC findings are computed from
+    (thresholds live in Julia, `segmentation.jl`)."""
+
+    def test_label_sizes_matches_count_labels(self):
+        from cecelia.utils.segmentation_utils import label_sizes
+        arr = np.array([[0, 1, 1], [2, 2, 2], [0, 0, 9]], dtype=np.uint32)
+        self.assertEqual(list(label_sizes(arr)), [2, 3, 1])     # ids 1, 2, 9 in id order
+        self.assertEqual(label_sizes(arr).size, count_labels(arr))
+        self.assertEqual(label_sizes(np.zeros((3, 3), dtype=np.uint32)).size, 0)
+
+    def test_2d_equivalent_diameter_is_the_equal_area_circle(self):
+        from cecelia.utils.segmentation_utils import object_stats
+        # a 10 um circle at 0.5 um/px covers pi*25/0.25 = 314.16 px
+        area_px = np.pi * 25 / 0.25
+        s = object_stats([np.array([area_px] * 3), np.array([area_px])], (0.5, 0.5, 1.0), False)
+        self.assertEqual(s['frameCounts'], [3, 1])
+        self.assertEqual(s['nObjects'], 4)
+        self.assertEqual(len(s['eqDiameterUm']), 101)
+        self.assertAlmostEqual(s['eqDiameterUm'][50], 10.0, places=6)
+
+    def test_3d_equivalent_diameter_is_the_equal_volume_sphere(self):
+        from cecelia.utils.segmentation_utils import object_stats
+        # a 10 um sphere at 0.5 x 0.5 x 2 um voxels holds (pi/6 * 1000) / 0.5 voxels
+        vox = (np.pi / 6 * 1000) / (0.5 * 0.5 * 2.0)
+        s = object_stats([np.array([vox])], (0.5, 0.5, 2.0), True)
+        self.assertAlmostEqual(s['eqDiameterUm'][50], 10.0, places=6)
+        self.assertTrue(s['is3D'])
+
+    def test_no_objects_has_counts_but_no_sizes(self):
+        from cecelia.utils.segmentation_utils import object_stats
+        s = object_stats([np.zeros(0), np.zeros(0)], (1.0, 1.0, 1.0), False)
+        self.assertEqual(s['frameCounts'], [0, 0])
+        self.assertNotIn('eqDiameterUm', s)
+        self.assertEqual(object_stats([], (1.0, 1.0, 1.0), False)['nObjects'], 0)
+
+
 class PostProcessOnACropTest(unittest.TestCase):
     """`post_process` on a CROP — the task preview's case.
 

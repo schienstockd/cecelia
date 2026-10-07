@@ -92,7 +92,8 @@ test whether an agent can actually use the framework.
 
    Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
    `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the
-   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap) waits as
+   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap; bugs with a
+   landed fix go first, so the cap never holds back their re-check) waits as
    `unjudged`, except one the last record had `open`: it stays `open`, with its verdict, because a
    missing check is no evidence it was fixed.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only

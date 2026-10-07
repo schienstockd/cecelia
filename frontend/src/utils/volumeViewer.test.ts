@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
+  slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -443,6 +443,22 @@ describe('the request is sized by the TEXTURE, not the view mode', () => {
   })
 })
 
+describe('zControlsForLoaded — restoring a view state\'s loaded planes', () => {
+  it('a range that is plane ± n is the window, clipped at the stack ends like loadedPlanes', () => {
+    expect(zControlsForLoaded('volume', 8, [0, 16], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+    expect(zControlsForLoaded('plane', 2, [0, 10], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+    expect(zControlsForLoaded('plane', 33, [25, 34], 35)).toEqual({ window: { on: true, half: 8 }, depth: null })
+  })
+  it('any other 3D range is the Depth crop; a 2D plane is no window', () => {
+    expect(zControlsForLoaded('volume', 17, [0, 34], 35)).toEqual({ window: { on: false, half: 0 }, depth: [0, 34] })
+    expect(zControlsForLoaded('volume', 5, [10, 20], 35)).toEqual({ window: { on: false, half: 0 }, depth: [10, 20] })
+    expect(zControlsForLoaded('plane', 8, [8, 8], 35)).toEqual({ window: { on: false, half: 0 }, depth: null })
+  })
+  it('clamps a range captured on a deeper stack', () => {
+    expect(zControlsForLoaded('volume', 17, [0, 60], 20).depth).toEqual([0, 19])
+  })
+})
+
 describe('loadedPlanes — which planes the viewer loads', () => {
   it('is the single plane in 2D and the Depth range in 3D when no window is set', () => {
     expect(loadedPlanes('plane', 13, [2, 30], 0, 41)).toEqual([13, 13])
@@ -492,6 +508,25 @@ describe('spatial audit — slab URL carries level/x/y, guard is level-aware', (
     expect(slabShapeError(`4,${l1ny},${l1nx}`, okBytes, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny)).toBeNull()
     expect(slabShapeError('4,3,5', 5 * 3 * 4 * 2, m, m.nZ, m.bytesPerVoxel, l1nx, l1ny))
       .toMatch(/was asked for/)
+  })
+})
+
+describe('labelLevelsShort — a mask with fewer zoom levels than the image', () => {
+  const levels = [0, 1, 2].map(level => ({ level, nX: 8 >> level, nY: 8 >> level, chunkX: 8, chunkY: 8 }))
+  it('names both counts when the mask is shallower', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toEqual({ nLevels: 1, imageLevels: 3 })
+  })
+  it('passes a mask with the image\'s levels', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 3 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('passes a single-level mask on a single-level image (empty levels)', () => {
+    const m = meta({ levels: [], labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('leaves a mask unflagged when the server sent no level count', () => {
+    expect(labelLevelsShort(meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1 } } }), 'shg')).toBeNull()
   })
 })
 
@@ -775,5 +810,36 @@ describe('carryCamera — 2D↔3D keeps the place and the zoom', () => {
     const from = { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 }   // 0.01× fit — deep 2D zoom
     const c = carryCamera(from, 100, { yaw: 0, pitch: 0, dist: 100, panX: 0, panY: 0 }, band)
     expect(c.dist).toBeCloseTo(5, 9)         // 3D floor 0.05× fit
+  })
+})
+
+describe('shownStoresChanged', () => {
+  const revs = { image: 'i1', labels: { nuc: 'n1', cell: 'c1' } }
+
+  it('a task that touched nothing drawn keeps the frame', () => {
+    // Gating / measures / clustering on the shown image: same stores, same dims — no reload.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: revs }), 'nuc')).toBe(false)
+  })
+
+  it('a new segmentation alone is not a reload — the mask flip reloads on its own', () => {
+    const next = { image: 'i1', labels: { ...revs.labels, NSfanU: 's1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: next }), 'nuc')).toBe(false)
+  })
+
+  it('a rewrite of a store we draw reloads; of one we do not, does not', () => {
+    const relabelled = { image: 'i1', labels: { nuc: 'n2', cell: 'c1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'nuc')).toBe(true)
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'cell')).toBe(false)
+    expect(shownStoresChanged(meta({ storeRevs: revs }),
+      meta({ storeRevs: { ...revs, image: 'i2' } }), '')).toBe(true)
+  })
+
+  it('changed dims reload even with matching fingerprints', () => {
+    // Drift-correct reruns recompute the canvas — stale dims trip the slab shape guard.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ nZ: 5, storeRevs: revs }), '')).toBe(true)
+  })
+
+  it('missing fingerprints (older server) count as changed', () => {
+    expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
   })
 })

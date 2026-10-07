@@ -13,6 +13,7 @@
     "Label-free fibres (SHG): speckle drives the flow, so use Ridge segmentation"
   ],
   "category": "Segment",
+  "group": "Segment",
   "env": [
     "local"
   ],

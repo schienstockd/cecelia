@@ -12,6 +12,7 @@
     "After hand edits: use Correct labels + measures to keep tracks and clusters"
   ],
   "category": "Segment",
+  "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
   "qcPlot": "segmentation_qc",

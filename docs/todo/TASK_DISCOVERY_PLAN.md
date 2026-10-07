@@ -107,6 +107,11 @@ on their first recommend (the import's probe, persisted fill-only). Rule summary
   tasks already compute, and appear in `get_qc_metrics`, the task log and the image's QC dot.
 - **Checkpoint:** Dominik looks at the findings on the M2 crops before the thresholds count as
   calibrated.
+- *Built (2026-10-06), checkpoint open:* `seg.fragmented`, `seg.merged`, `seg.counts_unstable` (info),
+  banked by `segment.cellpose` / `segment.coastal` through `bank_segment_qc!` from object sizes +
+  per-frame counts the runner already had (`docs/SEGMENTATION.md` → *QC findings*). Bands are
+  placeholders. On the three M2 crops (cellpose, 10 µm) none fires: median size 0.72–0.98 of the
+  diameter, no tiny or oversized tail, and 1–7 cells per frame is below the count-stability floor.
 
 ### P5 — toggle + test
 - Add `guide-run --discovery on|off` (Decision 9).

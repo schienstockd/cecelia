@@ -5,13 +5,14 @@
   "purpose": "Average neighbouring pixels in space and time, with no trained model",
   "useWhen": [
     "Photon-limited channels, where single pixels are mostly noise",
-    "After Drift correction: frames must be aligned"
+    { "text": "After Drift correction: frames must be aligned", "check": "driftCorrected" }
   ],
   "notWhen": [
     "Signal is not photon-limited: smoothing changes little",
     "Fibre channels (SHG, THG): smoothing blurs the structure"
   ],
   "category": "Cleanup",
+  "group": "Denoise",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "smoothed",

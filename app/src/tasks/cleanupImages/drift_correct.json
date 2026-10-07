@@ -13,6 +13,7 @@
     "Tissue warps within a frame: use Flow-based registration"
   ],
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "driftCorrected",

@@ -12,6 +12,7 @@
     "No tracks yet: run Bayesian tracking first"
   ],
   "category": "Tracking",
+  "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },

@@ -1,5 +1,8 @@
 # Correction plan + QC — metadata-driven decision tree
 
+**Superseded in part (2026-10-07, parked):** the recommender half (cards, wizard, plan.json, mount, order
+buckets) is to be replaced by [`CLEANUP_FACTS_PLAN.md`](CLEANUP_FACTS_PLAN.md); the Q-M4 probes stay.
+
 **Status:** **in-progress** (2026-09-06). Phases A–E shipped: Q-M4 sparsity probes (PR #811),
 §2.1 metadata-derived score layer (PR #813), §1 rule table + §3 tie-break + §5 seed cards
 (PR #815), plan.json persistence + provenance (PR #819), chain mount + card recommender (PR #821 —

@@ -153,12 +153,14 @@ class TestRunAppArgs(unittest.TestCase):
 class _FakeProc:
     """Stands in for `run_app.py`: writes what a finished run leaves, or raises mid-run."""
 
-    def __init__(self, argv, root, *, rc=0, cost=2.5, entry="bb-1", raise_on_wait=None):
+    def __init__(self, argv, root, *, rc=0, cost=2.5, entry="bb-1", raise_on_wait=None, why_cost=None):
         self.root, self.returncode, self._rc, self._raise = root, None, rc, raise_on_wait
         self.terminated = False
         root.mkdir(parents=True)
         (root / "trace.jsonl").write_text(json.dumps({"type": "result", "total_cost_usd": cost}) + "\n",
                                           encoding="utf-8")
+        if why_cost is not None:   # run_record.ask_why ran
+            (root / "why.json").write_text(json.dumps({"costUsd": why_cost}), encoding="utf-8")
         if entry:
             (root / "record.json").write_text(json.dumps({"blackboard": {"entryId": entry}}), encoding="utf-8")
 
@@ -199,6 +201,16 @@ class TestRunOne(_StateDir):
                           "exit": 0, "recordId": "bb-1", "dirty": False})
         self.assertEqual(procs[0].root, self.state / "app-runs" / line["stamp"])
         self.assertIsInstance(line["wallS"], int)
+
+    def test_the_why_turn_s_cost_is_logged_apart_and_in_the_total(self):
+        self.run_one(why_cost=0.4)
+        [line] = self.log_lines()
+        self.assertEqual((line["costUsd"], line["whyCostUsd"], line["totalCostUsd"]), (2.5, 0.4, 2.9))
+
+    def test_no_why_turn_leaves_the_total_the_run_s(self):
+        self.run_one()
+        [line] = self.log_lines()
+        self.assertEqual((line["whyCostUsd"], line["totalCostUsd"]), (None, 2.5))
 
     def test_discovery_is_logged(self):
         procs = []

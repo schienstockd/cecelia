@@ -52,6 +52,23 @@ class JuliaupActivationTest(unittest.TestCase):
         self.assertEqual(depot, os.path.join(self.root, "juliaup"))
 
     @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
+    def test_system_scope_stacks_a_writable_depot_over_the_shared_one(self):
+        # Shared depot is read-only to every account but the owner: a per-user depot must come first,
+        # and the trailing empty entry keeps Julia's bundled stdlib depot (else EROFS precompiling).
+        bin_dir = os.path.join(self.root, "juliaup", "bin")
+        os.makedirs(bin_dir)
+        os.makedirs(os.path.join(self.root, "juliaup", "depot"))
+        julia = os.path.join(bin_dir, "julia")
+        open(julia, "w", encoding="utf-8").close()
+        os.chmod(julia, 0o755)
+        out = subprocess.run(
+            ["sh", "-c", '. "$1"; printf "%s" "${JULIA_DEPOT_PATH-<unset>}"', "sh", str(SCRIPT)],
+            env={"PIXI_PROJECT_ROOT": self.root, "PATH": "/usr/bin:/bin", "HOME": "/home/u"},
+            capture_output=True, text=True, check=True)
+        shared = os.path.join(self.root, "juliaup", "depot")
+        self.assertEqual(out.stdout, f"/home/u/.cecelia/julia-depot:{shared}:")
+
+    @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_dev_checkout_is_untouched(self):
         path, depot = _activated(self.root, "/usr/local/bin:/usr/bin:/bin")
         self.assertEqual(path, "/usr/local/bin:/usr/bin:/bin")

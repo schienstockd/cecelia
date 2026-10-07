@@ -9,6 +9,7 @@
   ],
   "notWhen": ["No transitions found: check track length and the HMM states"],
   "category": "Behaviour",
+  "group": "HMM",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",

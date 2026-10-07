@@ -12,6 +12,7 @@
     "Quick first look: the points version is faster"
   ],
   "category": "Spatial analysis",
+  "group": "Contacts",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

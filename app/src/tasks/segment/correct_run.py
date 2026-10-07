@@ -21,11 +21,10 @@ pixel count is what feeds the journal, and folding it away means the two ops tha
 pixel report an arbitrary split. Op-by-op is one array pass per op which is O(nOps) — fine for
 correction (a session queues 5–50 ops, not 5000).
 
-WHY SINGLE-LEVEL ONLY. Decision 2b: every label store on the dev machine today is single-level
-(`nscales` follows the image pyramid, `segmentation_utils.py:193`), and multiscale label edits need
-a paired downsample per touched frame. Multi-level correction is a `SEG_QUALITY_PLAN.md` extension,
-not a correction one — this runner errors on a multi-level input rather than silently rewriting
-level 0 and leaving stale downsamples that a viewer might still read.
+WHY THE PYRAMID IS REBUILT, NOT PATCHED. Ops apply to level 0 only; every lower level is then
+re-derived from the edited level 0, so no downsample can still show a merged or removed cell. The
+store gets as many levels as the IMAGE — a single-level input comes out pyramided, so a zoomed-out
+viewer has a level to draw.
 """
 
 import json
@@ -232,11 +231,9 @@ def run(params: dict):
     # ── Open source and derive axes ─────────────────────────────────────────
     log.log(f'>> open labels: {labels_path}')
     src_levels, _ = zarr_utils.open_as_zarr(labels_path, as_dask=False)
-    if len(src_levels) != 1:
-        raise RuntimeError(
-            f'labels store has {len(src_levels)} levels — this runner only handles single-level '
-            f'stores (Decision 2b). Multi-level correction is a SEG_QUALITY_PLAN.md extension.')
     src = src_levels[0]
+    im_levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
+    nscales = len(im_levels)
     log.log(f'>> shape: {tuple(src.shape)}  dtype: {src.dtype}')
 
     # Labels have their OWN NGFF axes; reconciling image OMEXML shape against labels shape blows
@@ -295,11 +292,10 @@ def run(params: dict):
     labels_after = set()
 
     with zarr_utils.staged_store(labels_path) as staging:
-        # Labels store is single-level (asserted above); pass nscales=1 explicitly. `kind='labels'`
-        # picks the store_compressor labels codec — Decision 3.
-        group, level0, _pchunks = zarr_utils.open_multiscales_for_writing(
-            staging, src.shape, src.dtype, dim_utils, nscales=1, kind='labels',
-            reference_zarr=labels_path)
+        # `kind='labels'` picks the store_compressor labels codec — Decision 3.
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            staging, src.shape, src.dtype, dim_utils, nscales=nscales, kind='labels',
+            axes=labels_axes, reference_zarr=labels_path)
 
         # Group ops by t so we process each frame once and apply all its ops in sequence.
         ops_by_t = {}
@@ -324,8 +320,7 @@ def run(params: dict):
             labels_after |= _unique_labels(frame)
             log.log(f'[PROGRESS] 1/1')
 
-        # No pyramid to build — nscales=1. If we ever add multi-level, this is where
-        # `write_multiscale_pyramid(group, level0, dim_utils, nscales, pchunks)` fires.
+        zarr_utils.write_label_pyramid(group, level0, labels_axes, nscales, pchunks)
 
         # Carry the source's valid box onto the staged store. A label correction never moves
         # pixels — merge rewrites `src → into`, remove writes to 0 — so the geometry of "where

@@ -10,6 +10,7 @@
     "Populations from different segmentations can't share one run"
   ],
   "category": "Behaviour",
+  "group": "Motifs",
   "env": ["local"],
   "resource_pool": "cpu",
   "scope": "set",
@@ -26,6 +27,15 @@
       "acrossSegmentations": false,
       "default": [],
       "tip": "Tracked populations from ONE segmentation (motif output columns land on that value_name)"
+    },
+    {
+      "key": "hmmState",
+      "label": "HMM state",
+      "type": "labelPropsColsSelection",
+      "multiple": true,
+      "trimPrefix": "live.cell.hmm.state.",
+      "default": [],
+      "tip": "One HMM state column; leave empty to use the only one present"
     },
     {
       "key": "windowSize",

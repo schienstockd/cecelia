@@ -15,13 +15,18 @@
 #
 # Two install scopes (CECELIA_INSTALL_SCOPE):
 #   user (default) — installs into your account only (~/.local/share/cecelia); no root needed.
-#   system         — one shared install for all users (/opt/cecelia; /Applications/cecelia on macOS);
-#                    needs root. Pixi, Juliaup and the multi-GB env are provisioned INSIDE the install
-#                    dir so every account shares one runtime — set via a launcher wrapper that exports
-#                    PIXI_HOME + JULIAUP_DEPOT_PATH. Per-user config + projects still live in
-#                    ~/.cecelia (never shared). Updates are then admin-only (re-run this as root).
+#   system         — one shared install for all users (/opt/cecelia; /Applications/cecelia on macOS),
+#                    OWNED BY THE ADMIN WHO RUNS THIS. Run it as that admin, without sudo: it asks for
+#                    sudo itself only to create the install dir and the all-users menu entry. Pixi,
+#                    Juliaup and the multi-GB env are provisioned INSIDE the install dir so every
+#                    account shares one runtime — set via a launcher wrapper. Other accounts get
+#                    read-only access; per-user config + projects still live in ~/.cecelia (never
+#                    shared). Updates: the owner re-runs this (no sudo needed once the dir exists).
+#                    `sudo sh` still works — the work is handed to $SUDO_USER, so nothing lands in /root.
 #
-#   curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh
+#   curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sh
+#
+# Remove with uninstall.sh (kept in the install dir) — see docs/INSTALL.md → Uninstall.
 #
 # Env overrides:  CECELIA_CHANNEL=stable|dev  CECELIA_VERSION=v0.1.0  CECELIA_BRANCH=main
 #                 CECELIA_INSTALL_SCOPE=user|system  CECELIA_HOME=<dir>
@@ -60,20 +65,42 @@ else
 fi
 
 # In system scope every tool + env lives under the shared install dir (so all accounts share one
-# runtime) and the write needs root. In user scope, Pixi/Juliaup keep their usual per-user homes.
+# runtime). In user scope, Pixi/Juliaup keep their usual per-user homes.
+#
+# System scope is OWNED by the admin installing it, not by root (docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md
+# D1/D2). Root is needed only to create the dir under /opt and to write /usr/share/applications.
+# Everything else runs as OWNER, so the package caches land in the owner's home, never in /root.
+OWNER=""            # set in system scope: the account that owns the install
+DELEGATE=""         # "1" when running as root but doing the work as $OWNER (the `sudo sh` case)
+as_root() { if [ "$(id -u)" = "0" ]; then "$@"; else
+  have sudo || err "This step needs root and sudo is not available: $*"; sudo "$@"; fi; }
+as_owner() { if [ -n "$DELEGATE" ]; then
+  sudo -u "$OWNER" -H env PIXI_HOME="$PIXI_HOME" PIXI_NO_PATH_UPDATE=1 \
+    JULIAUP_DEPOT_PATH="$JULIAUP_DEPOT_PATH" JULIA_DEPOT_PATH="$JULIA_DEPOT_PATH" PATH="$PATH" "$@"
+  else "$@"; fi; }
+
 if [ "$SCOPE" = "system" ]; then
-  [ "$(id -u)" = "0" ] || err "System-wide install writes to $INSTALL_DIR and needs root. Re-run:
-       curl -LsSf https://raw.githubusercontent.com/$REPO/main/install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh"
+  if [ "$(id -u)" != "0" ]; then OWNER="$(id -un)"
+  elif [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then OWNER="$SUDO_USER"; DELEGATE=1
+  else OWNER="root"                                  # a root login (cloud VM): root owns it
+  fi
   PIXI_HOME="$INSTALL_DIR/pixi"                       # Pixi installer + tools honour PIXI_HOME
   JULIAUP_DEPOT_PATH="$INSTALL_DIR/juliaup"           # shared Julia versions + juliaup state
-  JULIA_DEPOT_PATH="$INSTALL_DIR/juliaup/depot"       # shared Julia package depot (Manifest)
-  export PIXI_HOME JULIAUP_DEPOT_PATH JULIA_DEPOT_PATH
+  # Shared package depot first, then the trailing empty entry = Julia's bundled stdlib depot. Without
+  # it the stdlibs are recompiled into the shared depot (see the launcher below for the runtime side).
+  JULIA_DEPOT_PATH="$INSTALL_DIR/juliaup/depot:"
+  PIXI_NO_PATH_UPDATE=1                               # the launcher sets PATH; no ~/.bashrc edit
+  export PIXI_HOME JULIAUP_DEPOT_PATH JULIA_DEPOT_PATH PIXI_NO_PATH_UPDATE
 else
   PIXI_HOME="${PIXI_HOME:-$HOME/.pixi}"; export PIXI_HOME
+  JULIAUP_DEPOT_PATH="${JULIAUP_DEPOT_PATH:-}"; JULIA_DEPOT_PATH="${JULIA_DEPOT_PATH:-}"
 fi
 
 # ── Fetch Cecelia (release bundle, or branch source for the dev channel) ─────
-TMP="$(mktemp -d)"
+# Under `sudo sh` the as_owner steps unpack in here, so it must be reachable by $OWNER: macOS gives
+# root a TMPDIR inside a root-only /var/folders/… dir, hence /tmp explicitly.
+if [ -n "$DELEGATE" ]; then TMP="$(mktemp -d /tmp/cecelia-install.XXXXXX)"; chown "$OWNER" "$TMP"
+else TMP="$(mktemp -d)"; fi
 trap 'rm -rf "$TMP"' EXIT
 
 if [ "$CHANNEL" = "dev" ]; then
@@ -129,15 +156,29 @@ The download is corrupt or has been tampered with — not installing."
 fi
 
 say "Installing to $INSTALL_DIR"
-rm -rf "$INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
+# Make the dir exist and be the owner's. In system scope this is the one step that may need sudo: a
+# new dir under /opt, or one a previous root-run install left root-owned.
+if [ ! -d "$INSTALL_DIR" ] && ! mkdir -p "$INSTALL_DIR" 2>/dev/null; then
+  [ "$SCOPE" = "system" ] || err "Cannot create $INSTALL_DIR."
+  say "Creating $INSTALL_DIR for $OWNER (sudo may ask for your password)…"
+  as_root mkdir -p "$INSTALL_DIR"
+fi
+if [ "$SCOPE" = "system" ] && [ "$OWNER" != "root" ] \
+   && [ "$(ls -ld "$INSTALL_DIR" | awk '{print $3}')" != "$OWNER" ]; then
+  say "Handing $INSTALL_DIR to $OWNER (sudo may ask for your password)…"
+  as_root chown -R "$OWNER" "$INSTALL_DIR"
+fi
+[ -w "$INSTALL_DIR" ] || [ -n "$DELEGATE" ] || err "$INSTALL_DIR is not writable by $(id -un)."
+# Empty it rather than delete it: the owner can always empty its own dir, but removing it needs
+# write access to the parent (/opt).
+as_owner find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 # A release bundle extracts flat (api/, app/, …); a branch archive wraps everything in one
 # `<repo>-<branch>/` dir, so strip that leading component for the dev channel only. Extract BEFORE
 # provisioning tools so the shared runtime (system scope) can be placed inside INSTALL_DIR.
 if [ "$CHANNEL" = "dev" ]; then
-  tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR" --strip-components=1
+  as_owner tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR" --strip-components=1
 else
-  tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR"
+  as_owner tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR"
 fi
 
 # ── Pixi (Python env manager) ────────────────────────────────────────────────
@@ -145,7 +186,7 @@ fi
 if [ "$SCOPE" = "system" ]; then
   if [ -x "$PIXI_HOME/bin/pixi" ]; then PIXI="$PIXI_HOME/bin/pixi"; else
     say "Installing Pixi into the shared runtime ($PIXI_HOME)…"
-    curl -fsSL https://pixi.sh/install.sh | bash
+    curl -fsSL https://pixi.sh/install.sh | as_owner bash
     PIXI="$PIXI_HOME/bin/pixi"
   fi
 else
@@ -166,7 +207,7 @@ fi
 # with a bare PATH. --add-to-path=no keeps it out of the user's shell profile.
 juliaup_into() {
   curl -fsSL https://install.julialang.org \
-    | PATH=/usr/bin:/bin:/usr/sbin:/sbin sh -s -- --yes --add-to-path=no --path "$1"
+    | as_owner env PATH=/usr/bin:/bin:/usr/sbin:/sbin sh -s -- --yes --add-to-path=no --path "$1"
 }
 
 # System scope: install into the shared depot; user scope: reuse one on PATH / in ~/.juliaup.
@@ -227,8 +268,8 @@ else
   B2R_URL="https://github.com/glencoesoftware/bioformats2raw/releases/download/v$B2R_VERSION/bioformats2raw-$B2R_VERSION.zip"
   say "Fetching bioformats2raw $B2R_VERSION (image import; ~190 MB)…"
   curl -fSL "$B2R_URL" -o "$TMP/b2r.zip" || err "bioformats2raw download failed ($B2R_URL)."
-  unzip -q "$TMP/b2r.zip" -d "$TMP/b2r"
-  mv "$TMP"/b2r/bioformats2raw-*/ "$INSTALL_DIR/bioformats2raw"
+  as_owner unzip -q "$TMP/b2r.zip" -d "$TMP/b2r"
+  as_owner mv "$TMP"/b2r/bioformats2raw-*/ "$INSTALL_DIR/bioformats2raw"
   [ -x "$INSTALL_DIR/bioformats2raw/bin/bioformats2raw" ] || err "bioformats2raw missing after unpack."
   say "Installed bioformats2raw."
 fi
@@ -246,8 +287,8 @@ else
   BFT_URL="https://downloads.openmicroscopy.org/bio-formats/$BFT_VERSION/artifacts/bftools.zip"
   say "Fetching bftools $BFT_VERSION (import-wizard advisor; ~30 MB)…"
   if curl -fSL "$BFT_URL" -o "$TMP/bft.zip"; then
-    unzip -q "$TMP/bft.zip" -d "$TMP/bft"
-    mv "$TMP"/bft/bftools "$INSTALL_DIR/bftools"
+    as_owner unzip -q "$TMP/bft.zip" -d "$TMP/bft"
+    as_owner mv "$TMP"/bft/bftools "$INSTALL_DIR/bftools"
     [ -x "$INSTALL_DIR/bftools/showinf" ] || err "bftools missing after unpack."
     say "Installed bftools."
   else
@@ -267,9 +308,9 @@ fi
 # ── Provision ────────────────────────────────────────────────────────────────
 cd "$INSTALL_DIR"
 say "Installing the Python environment (downloads a few GB on first run)…"
-"$PIXI" install
+as_owner "$PIXI" install
 say "Precompiling Julia (a few minutes on first run)…"
-"$JULIA" --project=api -e 'using Pkg; Pkg.instantiate()'
+as_owner "$JULIA" --project=api -e 'using Pkg; Pkg.instantiate()'
 
 # The dev channel ships source only — build the frontend the server serves (stable already has it).
 if [ "$CHANNEL" = "dev" ]; then
@@ -281,13 +322,15 @@ if [ "$CHANNEL" = "dev" ]; then
   # Node/npm come from `pixi exec --spec nodejs` (ephemeral env, ~40 MB cached), NOT the host, so a
   # user with no system Node still gets a working install. Same reasoning as api/src/update_api.jl's
   # dev-channel apply path — see the header there for why not `nodejs` in `pixi.toml`.
-  ( cd "$INSTALL_DIR/frontend" && "$PIXI" exec --spec nodejs -- npm install && "$PIXI" exec --spec nodejs -- npm run build )
+  ( cd "$INSTALL_DIR/frontend" && as_owner "$PIXI" exec --spec nodejs -- npm install \
+      && as_owner "$PIXI" exec --spec nodejs -- npm run build )
 fi
 
 # Record what was installed (channel + tag/commit) for provenance and bug reports, plus the scope so
 # the in-app updater knows whether it may self-update (user) or must defer to an admin (system).
 printf '%s\n' "$PROVENANCE" > "$INSTALL_DIR/.cecelia-version"
 printf '%s\n' "$SCOPE"       > "$INSTALL_DIR/.cecelia-scope"
+[ -n "$DELEGATE" ] && chown "$OWNER" "$INSTALL_DIR/.cecelia-version" "$INSTALL_DIR/.cecelia-scope"
 say "Installed: $PROVENANCE ($SCOPE scope)"
 
 # ── Launcher ───────────────────────────────────────────────────────────────────
@@ -299,21 +342,35 @@ ICON="$INSTALL_DIR/frontend/dist/icons/cecelia-256.png"
 if [ "$SCOPE" = "system" ]; then
   # A wrapper any account runs: it exports the shared runtime env so `pixi run app` finds the shared
   # Pixi env + Julia depot regardless of the caller's own PATH/home. World-readable + executable.
+  #
+  # JULIA_DEPOT_PATH stacks a per-user writable depot IN FRONT of the shared one: every account but
+  # the owner sees the shared depot read-only, and Julia writes compile caches + logs to the FIRST
+  # depot. The trailing empty entry appends Julia's bundled stdlib depot — without it the stdlibs
+  # look uncompiled and Julia dies precompiling them into the read-only depot (EROFS). The per-user
+  # depot stays empty while the shared caches are current. uninstall.sh removes it.
+  # `--as-is` (= --frozen --no-install): a plain `pixi run` takes a write lock on the env prefix and
+  # dies on a read-only one ("failed to acquire install lock … os error 30"). The installer already
+  # provisioned the env; updates re-run the installer.
   LAUNCH="$INSTALL_DIR/cecelia-launch.sh"
   cat > "$LAUNCH" <<EOF
 #!/bin/sh
 export PIXI_HOME="$PIXI_HOME"
 export JULIAUP_DEPOT_PATH="$JULIAUP_DEPOT_PATH"
-export JULIA_DEPOT_PATH="$JULIA_DEPOT_PATH"
+export JULIA_DEPOT_PATH="\$HOME/.cecelia/julia-depot:$INSTALL_DIR/juliaup/depot:"
 export PATH="$PIXI_HOME/bin:$JULIAUP_DEPOT_PATH/bin:\$PATH"
-cd "$INSTALL_DIR" && exec "$PIXI" run app
+cd "$INSTALL_DIR" && exec "$PIXI" run --as-is app
 EOF
   chmod 755 "$LAUNCH"
-  chmod -R a+rX "$INSTALL_DIR"          # ensure every account can read/execute the shared tree
+  # Every account can read + run the shared tree; only the owner can change it. `go-w` matters: a
+  # GitHub branch archive carries group-writable modes, and a umask-002 owner makes group-writable
+  # dirs, so without it another account could alter what everyone runs.
+  chmod -R a+rX,go-w "$INSTALL_DIR"
+  [ -n "$DELEGATE" ] && chown -R "$OWNER" "$INSTALL_DIR"   # catch anything root wrote above
   case "$OS" in
     Linux)
-      APPS="/usr/share/applications"; mkdir -p "$APPS"
-      cat > "$APPS/cecelia.desktop" <<EOF
+      # The one other root-only write: the all-users menu entry.
+      APPS="/usr/share/applications"
+      cat > "$TMP/cecelia.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Cecelia
@@ -323,7 +380,11 @@ Icon=$ICON
 Terminal=true
 Categories=Science;Education;
 EOF
-      say "Installed a system-wide 'Cecelia' application-menu entry."
+      if as_root install -D -m 644 "$TMP/cecelia.desktop" "$APPS/cecelia.desktop"; then
+        say "Installed a system-wide 'Cecelia' application-menu entry."
+      else
+        say "Could not write $APPS/cecelia.desktop (no sudo) — other accounts can start Cecelia with: $LAUNCH"
+      fi
       ;;
     Darwin)
       # macOS is multi-user too: put the launcher at the top of /Applications (all-users, root-owned,
@@ -367,7 +428,7 @@ PLIST
       say "Installed $APP — any user can double-click to launch."
       ;;
   esac
-  say "Done (system-wide). Any user can launch Cecelia; updates are admin-only (re-run this as root)."
+  say "Done (system-wide, owned by $OWNER). Any user can launch Cecelia; $OWNER updates it by re-running this."
 else
   case "$OS" in
     Linux)

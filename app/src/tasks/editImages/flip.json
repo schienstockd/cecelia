@@ -6,6 +6,7 @@
   "useWhen": ["Image or Z stack is stored in the opposite direction"],
   "notWhen": ["Rotating by 90°: a flip only mirrors one axis"],
   "category": "Preprocessing",
+  "group": "Reshape",
   "env": [
     "local"
   ],

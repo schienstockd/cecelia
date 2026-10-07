@@ -37,7 +37,7 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
-from cecelia_mcp.discovery import DISCOVERY_FIELDS, discovery_enabled, task_catalogue
+from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 
@@ -184,18 +184,20 @@ def _trim_param(p: dict) -> dict:
 def _trim_module_params(raw: dict) -> dict:
     """Reduce raw task definitions to `{category: [{fun_name, label, purpose?, useWhen?, notWhen?,
     params: [{<kept fields>}]}]}`. The three discovery fields are dropped when discovery is off."""
-    keep = DISCOVERY_FIELDS if discovery_enabled() else ()
+    on = discovery_enabled()
     out = {}
     for category, specs in (raw or {}).items():
         out[category] = [
             {
                 "fun_name": spec.get("fun_name", ""),
                 "label": spec.get("label", ""),
+                # what the function is FOR within its module (Segment / Measure / Correct …)
+                **({"group": spec["group"]} if spec.get("group") else {}),
                 # a FIXED output version (driftCorrected, afCorrected …) — the name the next step
                 # reads; tasks that let the user name their output carry a `namespace` param instead
                 **({"writes": spec["outputValueName"]} if spec.get("outputValueName") else {}),
                 # what the task is for, when to use it and when not (TASK_DISCOVERY_PLAN Decision 1)
-                **{k: spec[k] for k in keep if spec.get(k)},
+                **(discovery_fields(spec) if on else {}),
                 "params": [_trim_param(p) for p in spec.get("params", [])],
             }
             for spec in specs

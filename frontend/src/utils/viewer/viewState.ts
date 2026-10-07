@@ -49,6 +49,10 @@ export interface ViewerViewState {
     ndisplay: 2 | 3
     current_step: number[]                  // [t, z, y, x] — matches the viewer's order (T, Z, Y, X)
     point:        number[]                  // same as current_step but floats — kept because viewer does
+    // The planes LOADED, [lo, hi] inclusive (`loadedPlanes`): the 2D plane, the ±n window, or the 3D
+    // Depth crop. What a recording of this view draws — a 2D window is the max over it, a 3D one
+    // that box only. Absent in snapshots from before it = the plane / the whole stack.
+    zRange?:      [number, number]
   }
   layers: Record<string, ViewerLayerState>
   // Canvas size the zoom is written AGAINST. The renderer takes canvas_h/canvas_w as kwargs, so
@@ -82,6 +86,8 @@ export interface BuildViewStateInput {
   meta: ViewerMeta
   t: number
   zPlane: number
+  /** `loadedPlanes` — the planes on screen, `[lo, hi]`. Omitted = not published. */
+  zLoaded?: [number, number]
   ndisplay: 2 | 3
   canvasW: number
   canvasH: number
@@ -96,7 +102,7 @@ export interface BuildViewStateInput {
 /** Build a viewer-shaped view state from the browser viewer's current camera + meta + slider
  *  positions + canvas size. Pure → testable, no DOM / no store. */
 export function buildViewState(input: BuildViewStateInput): ViewerViewState {
-  const { cam, meta, t, zPlane, ndisplay, canvasW, canvasH, viewHalfAngle, perspective = false } = input
+  const { cam, meta, t, zPlane, zLoaded, ndisplay, canvasW, canvasH, viewHalfAngle, perspective = false } = input
   const umPerL0X = meta.voxelUm?.[0] || 1
   const umPerL0Y = meta.voxelUm?.[1] || 1
 
@@ -140,7 +146,8 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
 
   return {
     camera: { center: [cz, cy, cx], zoom, angles, perspective: ndisplay === 3 && perspective ? 1 : 0 },
-    dims:   { ndisplay, current_step: [t, zPlane], point: [t, zPlane] },
+    dims:   { ndisplay, current_step: [t, zPlane], point: [t, zPlane],
+              ...(zLoaded ? { zRange: [zLoaded[0], zLoaded[1]] as [number, number] } : {}) },
     layers,
     canvas: { width: canvasW, height: canvasH },
   }
@@ -153,6 +160,8 @@ export interface AppliedViewState {
   cam: OrbitCamera
   t: number
   zPlane: number
+  /** The snapshot's loaded planes (`dims.zRange`), or null when it does not carry them. */
+  zRange: [number, number] | null
   ndisplay: 2 | 3
   channels: Array<{ name: string; lo: number; hi: number; visible: boolean }>
 }
@@ -206,6 +215,9 @@ export function applyViewStateToBrowser(input: ApplyViewStateInput): AppliedView
   const t = Number(step[0] ?? 0)
   const zPlane = Number(step[1] ?? 0)
   const ndisplay: 2 | 3 = vs.dims?.ndisplay === 3 ? 3 : 2
+  const zr = vs.dims?.zRange
+  const zRange: [number, number] | null = Array.isArray(zr) && zr.length === 2 &&
+    Number.isFinite(Number(zr[0])) && Number.isFinite(Number(zr[1])) ? [Number(zr[0]), Number(zr[1])] : null
 
   // Per-channel contrast + visibility. Colormap is null in browser-authored snapshots (see file
   // header) — skipped here so re-applying doesn't blow away the LUT the user set. If a snapshot
@@ -222,5 +234,5 @@ export function applyViewStateToBrowser(input: ApplyViewStateInput): AppliedView
     }
   })
 
-  return { cam, t, zPlane, ndisplay, channels }
+  return { cam, t, zPlane, zRange, ndisplay, channels }
 }

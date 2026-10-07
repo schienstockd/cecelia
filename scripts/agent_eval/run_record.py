@@ -438,7 +438,8 @@ def ask_why(root: pathlib.Path, session_id: str, dec: dict, claude: str = "claud
             budget_usd: float = 2.0) -> dict:
     """Resume the finished session once (no tools) and ask why for every decision. Raises
     `claude_cli.RateLimited` on the usage limit and `WhyFailed` on any other CLI failure — never an
-    empty answer that reads as "the agent had nothing to say"."""
+    empty answer that reads as "the agent had nothing to say". Its cost goes to `why.json` (`{costUsd}`)
+    beside the trace, failed or not: the trace's cost is the run's alone, and `guide_run.py` logs both."""
     prompt = WHY_PROMPT + "\n".join(heading(s).removeprefix("### ") for s in dec["sections"])
     cmd = [claude, "-p", "--resume", session_id, "--tools", "", "--strict-mcp-config",
            "--mcp-config", json.dumps({"mcpServers": {}}), "--max-budget-usd", str(budget_usd),
@@ -446,6 +447,7 @@ def ask_why(root: pathlib.Path, session_id: str, dec: dict, claude: str = "claud
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=str(root / "cwd"),
                        timeout=900, encoding="utf-8")
     out = claude_cli.read_result(r)
+    write_json_atomic(root / "why.json", {"costUsd": out.get("total_cost_usd")})
     if r.returncode != 0 or out.get("is_error"):
         raise WhyFailed(f"exit {r.returncode}: {claude_cli.failure_text(r, out)}")
     reply = out.get("result") or ""

@@ -9,6 +9,7 @@
     "Already runs inside Correct tracks + measures"
   ],
   "category": "Tracking",
+  "group": "Correction tools",
   "env": ["local"],
   "resource_pool": "cpu",
   "params": [

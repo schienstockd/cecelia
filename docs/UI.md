@@ -1786,7 +1786,9 @@ on; the two share a framing convention so the toggle does not jump. **Z controls
 range (↶ resets it to the whole stack); a **± planes** toggle in either view swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes load; the window is off on
-the 2D tile path. Changing the plane or the mode drops
+the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
+(Match viewer, keyframes, Fill from view → a batch's **max** / 3D range) and restoring a keyframe puts
+the window or Depth back (`zControlsForLoaded`). Changing the plane or the mode drops
 every cached texture (different shape, different pixels) and refetches — ~4 s for a plane movie, ~90 s
 for the volume, which is why 2D is the default rather than something you opt into.
 

@@ -9,6 +9,7 @@
   ],
   "notWhen": ["Round cells rather than fibres: use Cellpose segmentation"],
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

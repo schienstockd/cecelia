@@ -402,6 +402,8 @@ _kf_lerp(a, b, f) = f >= 1 ? b : a          # strings, symbols, anything with no
 #
 # Where things come from:
 #   * `dims.current_step[0]` → `t`; `dims.current_step[1]` → `z` (T, Z axis order).
+#   * `dims.zRange` (`[lo, hi]`, the planes the viewer has LOADED — its ±n window or 3D Depth crop)
+#     → `zrange`, and in 2D a `z` of `lo:hi` (their max) when it spans more than the one plane.
 #   * `layers` (dict keyed by channel name) → per-channel visibility + contrast_limits + colormap →
 #     an offline `specs` vector in native channel order (channels absent from the snapshot fall back
 #     to `default_specs`, so a snapshot that predates a channel — or drops one — degrades gracefully
@@ -426,6 +428,8 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
         Int[]
     t = length(step) >= 1 ? step[1] : 0
     z = length(step) >= 2 ? Int(step[2]) : nothing
+    # the planes the viewer LOADED (`dims.zRange`) — the same `[lo, hi]` reader as a config's `zRange`
+    zrange = _z_range(dims)
 
     # layers → specs. Walk the image's channel order, look up each by name in the snapshot's
     # `layers`. Missing layer → fall back to default_specs, so a keyframe with only camera + t moves
@@ -515,7 +519,9 @@ function viewstate_to_render_args(vs::AbstractDict, channel_names::AbstractVecto
             (x1 < x2 && y1 < y2) && (crop = (; x = x1:x2, y = y1:y2))
         end
     end
-    (; t, z, specs, crop, ndisplay, angles, center3d, zoom = zoom_val)
+    # A 2D window is a slab: the max over its planes, as the viewer draws it.
+    ndisplay == 2 && zrange !== nothing && length(zrange) > 1 && (z = zrange)
+    (; t, z, zrange, specs, crop, ndisplay, angles, center3d, zoom = zoom_val)
 end
 
 # The crop half of `viewstate_to_render_args`, in isolation. The one-shot record (which uses fixed
@@ -551,12 +557,13 @@ function crop_from_view_state(vs::Union{Nothing,AbstractDict}, native_h::Int, na
     (; x = x1:x2, y = y1:y2)
 end
 
-# The plane a 2D snapshot is looking at, or `nothing`. The one-shot record reads this to match the
-# viewer's ONE-plane look — a 2D viewer shows a single z, so a movie that MIPs the whole stack for
-# lack of an explicit `zSlice` diverges from what the user was watching when they hit Record.
-# Returns `nothing` for 3D snapshots (where the whole volume renders) and for anything that isn't a
-# usable 2D viewState. Read from `dims.current_step[1]` — the same field `viewstate_to_render_args`
-# reads for keyframe animations, so the two paths stay consistent.
+# The z a 2D snapshot is looking at, or `nothing`. The one-shot record reads this to match the
+# viewer's look — a 2D viewer shows a single z, so a movie that MIPs the whole stack for lack of an
+# explicit `zSlice` diverges from what the user was watching when they hit Record. With the viewer's
+# ±n window on it shows the max over `zPlane ± n` instead, and this is that range (`lo:hi`, from
+# `dims.zRange`). Returns `nothing` for 3D snapshots (`viewstate_to_render_args` carries their crop)
+# and for anything that isn't a usable 2D viewState. Same fields `viewstate_to_render_args` reads for
+# keyframe animations, so the two paths stay consistent.
 function z_from_view_state(vs::Union{Nothing,AbstractDict})
     vs isa AbstractDict || return nothing
     dims = get(vs, "dims", nothing)
@@ -564,6 +571,8 @@ function z_from_view_state(vs::Union{Nothing,AbstractDict})
     nd_raw = get(dims, "ndisplay", nothing)
     ndisplay = (nd_raw isa Real && Int(round(Float64(nd_raw))) == 3) ? 3 : 2
     ndisplay == 3 && return nothing
+    zr = _z_range(dims)
+    zr !== nothing && length(zr) > 1 && return zr
     step = get(dims, "current_step", nothing)
     (step isa AbstractVector && length(step) >= 2) || return nothing
     z_raw = step[2]
@@ -870,11 +879,17 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
         ov3d = _overlays3d_state(per_t3d, t_clamped)
         ov3d === nothing || (py_states[i]["overlays3d"] = ov3d)
         if a.ndisplay == 2
-            # The viewer's 2D view: the state's plane, and the points / tails near it.
+            # The viewer's 2D view: the state's plane (or ±n window), and the points / tails near it.
             z_range, plane_filter = _plane_window(a.z, nZ, style)
             py_states[i]["ndisplay"] = 2
             py_states[i]["zRange"] = z_range
             plane_filter === nothing || (py_states[i]["planeFilter"] = plane_filter)
+        elseif a.zrange !== nothing && (first(a.zrange) > 0 || last(a.zrange) < nZ - 1)
+            # A 3D view cropped to part of the stack (the ±n window, or Depth): only those planes,
+            # and the overlays near them — the viewer's own box and z cut.
+            z_range, plane_filter = _plane_window(a.zrange, nZ, style)
+            py_states[i]["zRange"] = z_range
+            py_states[i]["planeFilter"] = plane_filter
         end
     end
     params = Dict{String,Any}(

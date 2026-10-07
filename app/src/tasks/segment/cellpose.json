@@ -13,6 +13,7 @@
     "Fibres or networks rather than cells: use Ridge segmentation"
   ],
   "category": "Segment",
+  "group": "Segment",
   "env": [
     "local"
   ],
