@@ -9,7 +9,7 @@
 //                something. Cecelia's own observer is one of these.
 //   • account  — managed by the user's claude.ai ACCOUNT (LabArchives today: it authenticates through
 //                `/mcp` and never touches the local config). We CANNOT see whether it is connected.
-//   • cli      — Claude Code itself: on PATH, and logged in? Not an MCP server, but the precondition
+//   • cli      — Claude Code itself: installed (PATH or an installer's dir), and logged in? Not an MCP server, but the precondition
 //                for every machine row, and the state users most often have to act on. It used to be
 //                a banner in the lab-log panel; it belongs with the rest of "what Claude can reach".
 //
@@ -43,6 +43,7 @@ export interface McpRow {
   scope: string
   dismissable: boolean                    // account rows only: plenty of sites have no LabArchives
   href?: string                           // an external help link (the CLI row's setup guide)
+  recheck?: boolean                       // CLI row only: show a re-probe button (see cliRow)
   installPath?: string                    // observer only — shown so an "out of date" row names the
                                           // install it points at without needing a hover
 }
@@ -78,23 +79,27 @@ export function observerRowState(state?: string): { tone: Tone; label: string; d
 export const CLAUDE_SETUP_GUIDE = 'https://docs.anthropic.com/en/docs/claude-code/setup'
 
 /**
- * The Claude Code CLI row. `available` = on PATH; `authFailed` = a run failed with an auth error.
+ * The Claude Code CLI row. `available` = the backend found it (PATH, or an installer's own dir — see
+ * `agent_bin_path`); `authFailed` = a run failed with an auth error; `path` = where it was found.
+ * `recheck` (not-detected only) = the row offers a re-probe: the install happens outside the app, so
+ * the user needs a way to say "done" without a restart or a page change.
  *
  * The not-installed-beats-not-logged-in precedence is `observerSetupReason`'s, not a second copy of
  * it — that helper was the lab-log banner's brain, and when the banner moved here it would otherwise
  * have been left as dead code beside a re-derivation of the same rule.
  */
-export function cliRow(available: boolean, authFailed = false): McpRow {
+export function cliRow(available: boolean, authFailed = false, path = ''): McpRow {
   const base = { name: 'Claude Code', kind: 'cli' as const, scope: 'this machine', dismissable: false }
   switch (observerSetupReason(available, authFailed)) {
     case 'missing':
       return { ...base, tone: 'warn', label: 'not detected', detail: 'Install it, then run claude once',
-               hint: 'Everything below needs the Claude Code CLI on your PATH', href: CLAUDE_SETUP_GUIDE }
+               hint: 'Everything below needs the Claude Code CLI', href: CLAUDE_SETUP_GUIDE, recheck: true }
     case 'auth':
       return { ...base, tone: 'warn', label: 'not logged in', detail: 'Run claude in a terminal',
                hint: 'The CLI is installed but a run failed to authenticate', href: CLAUDE_SETUP_GUIDE }
     default:
-      return { ...base, tone: 'ok', label: 'ready', detail: '', hint: 'Claude Code is installed and logged in' }
+      return { ...base, tone: 'ok', label: 'ready', detail: '',
+               hint: path ? `Claude Code at ${path}` : 'Claude Code is installed and logged in' }
   }
 }
 
@@ -107,7 +112,7 @@ export function mcpRows(
   connections: McpConnection[] | null | undefined,
   observerState?: string,
   hiddenAccounts: string[] = [],
-  cli?: { available: boolean; authFailed?: boolean },
+  cli?: { available: boolean; authFailed?: boolean; path?: string },
 ): McpRow[] {
   const machine: McpRow[] = (connections ?? []).map(c => {
     const scope = c.scope === 'local' ? `local · ${c.dir || ''}`.trim() : 'user'
@@ -139,6 +144,6 @@ export function mcpRows(
     .map(a => ({ name: a.name, kind: 'account' as const, tone: 'idle' as Tone, label: a.label,
                  detail: a.detail, hint: a.hint, scope: 'account', dismissable: true }))
 
-  const head = cli ? [cliRow(cli.available, cli.authFailed)] : []
+  const head = cli ? [cliRow(cli.available, cli.authFailed, cli.path)] : []
   return [...head, ...machine, ...account]
 }

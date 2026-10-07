@@ -3,8 +3,9 @@
 # appends to the lab log via the cecelia-observer MCP. Phase 1 = the one-shot "give feedback" button.
 # See docs/todo/OBSERVER_INTEGRATION_PLAN.md and app/src/ai/agent_runner.jl.
 #
-#   GET  /api/observer/status    → { available } — is an assistant CLI present (drives the UI gate:
-#                                   controls render disabled-with-why when false, not hidden). Also
+#   GET  /api/observer/status    → { available, cliPath } — is an assistant CLI present, and where
+#                                   (PATH or a known install dir — see agent_bin_path; drives the UI
+#                                   gate: controls render disabled-with-why when false, not hidden). Also
 #                                   returns `mcpConfigPath`: the generated observer MCP config, so the
 #                                   info panel can hand the user a ready `claude --mcp-config <path>`
 #                                   line for their OWN terminal — no hand-registering an MCP server.
@@ -60,6 +61,9 @@ end
 # status: is an assistant CLI here, which models it offers, and is the user's own terminal set up.
 function api_observer_status(req::HTTP.Request)
     resp = Dict{String,Any}("available"    => agent_available(ClaudeAgent()),
+                            # where it was found ("" = not found) — shown in the Settings row's tooltip,
+                            # so "which claude is Cecelia using?" never needs a terminal
+                            "cliPath"       => something(agent_bin_path(observer_agent_bin()), ""),
                             "models"        => OBSERVER_MODELS,          # the picker's choices
                             "defaultModel"  => observer_default_model(), # config default (Sonnet)
                             # written here (not only on a feedback run) so the info panel can always show

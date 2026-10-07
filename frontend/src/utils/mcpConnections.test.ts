@@ -107,6 +107,18 @@ describe('cliRow — the Claude Code precondition', () => {
     expect(cliRow(true, true).tone).toBe('warn')
   })
 
+  it('offers a re-check only while not detected — the install happens outside the app', () => {
+    expect(cliRow(false).recheck).toBe(true)
+    expect(cliRow(true, true).recheck).toBeUndefined()      // a re-probe cannot clear an auth failure
+    expect(cliRow(true).recheck).toBeUndefined()
+  })
+
+  it('names where the CLI was found once ready', () => {
+    const rows = mcpRows([], 'current', [], { available: true, path: '/home/u/.local/bin/claude' })
+    expect(rows[0]!.hint).toContain('/home/u/.local/bin/claude')
+    expect(cliRow(true).hint).not.toContain('undefined')
+  })
+
   it('is omitted when the caller has no CLI state to report', () => {
     expect(mcpRows([], 'current').some(r => r.kind === 'cli')).toBe(false)
   })

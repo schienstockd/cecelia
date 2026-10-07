@@ -1,4 +1,4 @@
-// Setup-hint helpers for the in-app observer. Availability only tells us the `claude` CLI is on PATH
+// Setup-hint helpers for the in-app observer. Availability only tells us the `claude` CLI was found
 // — NOT that it's authenticated. So a run can fail purely because Claude Code was never logged in;
 // this classifies that so the panel can show "connect Claude Code" guidance instead of a raw error.
 // Kept out of the SFC so it's unit-testable.
@@ -15,7 +15,7 @@ export function isAuthError(msg?: string | null): boolean {
 export type ObserverSetupReason = 'missing' | 'auth' | null
 
 /**
- * What setup guidance (if any) to show. `available` = CLI on PATH; `lastFailedAuth` = the most recent
+ * What setup guidance (if any) to show. `available` = CLI found; `lastFailedAuth` = the most recent
  * observer pass failed with an auth-shaped error. Returns 'missing' (install), 'auth' (log in), or
  * null (all good).
  */
@@ -32,7 +32,7 @@ export function observerSetupReason(available: boolean, lastFailedAuth: boolean)
 export type TerminalCta = 'setup' | 'resync' | 'chat'
 
 /**
- * `available` = the `claude` CLI is on PATH. `state` = the backend's registration reading
+ * `available` = the `claude` CLI was found. `state` = the backend's registration reading
  * (missing/stale/shadowed/current, `terminal.state` on /api/observer/status).
  *
  * - No CLI → 'chat'. The starter prompt works with ANY MCP assistant, so we must not hide it behind a
