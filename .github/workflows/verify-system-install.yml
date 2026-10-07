@@ -121,7 +121,10 @@ jobs:
 
       - name: Uninstaller refuses while alice runs it
         run: |
-          if sh "$DIR/uninstall.sh" --yes; then echo "::error::uninstall did not refuse"; exit 1; fi
+          # must refuse BECAUSE it's running — not merely fail (a crash would also exit non-zero)
+          if OUT="$(sh "$DIR/uninstall.sh" --yes 2>&1)"; then echo "::error::uninstall did not refuse"; exit 1; fi
+          echo "$OUT"
+          echo "$OUT" | grep -q "still running" || { echo "::error::uninstall failed for another reason"; exit 1; }
           test -d "$DIR"
 
       - name: Stop alice's server
@@ -225,8 +228,11 @@ jobs:
 
       - name: Uninstaller refuses while alice runs it
         run: |
-          powershell -ExecutionPolicy Bypass -File "$env:DIR\uninstall.ps1" -Yes
+          # must refuse BECAUSE it's running — not merely fail (a parse error would also exit non-zero)
+          $out = (powershell -ExecutionPolicy Bypass -File "$env:DIR\uninstall.ps1" -Yes 2>&1) -join "`n"
+          $out
           if ($LASTEXITCODE -eq 0) { throw 'uninstall did not refuse' }
+          if ($out -notmatch 'still running') { throw 'uninstall failed for another reason' }
           if (-not (Test-Path $env:DIR)) { throw 'install removed while running' }
           exit 0   # the runner's pwsh wrapper would otherwise fail on the expected non-zero exit
 

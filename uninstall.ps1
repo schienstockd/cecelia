@@ -1,22 +1,22 @@
-# Cecelia uninstaller — Windows. The counterpart of uninstall.sh; same rules, same defaults.
+# Cecelia uninstaller - Windows. The counterpart of uninstall.sh; same rules, same defaults.
 #
 # Removes the install (app, Python env and, for a system install, its shared Pixi + Julia), the Start
 # Menu shortcut and the Claude observer registration. Your settings (%USERPROFILE%\.cecelia) and your
-# projects are KEPT unless you ask for them to go — it asks in the console.
+# projects are KEPT unless you ask for them to go - it asks in the console.
 #
 #   powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\cecelia\uninstall.ps1"
 #   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/schienstockd/cecelia/main/uninstall.ps1 | iex"
 #
-# Options — arguments with -File, or the env var for irm | iex:
+# Options - arguments with -File, or the env var for irm | iex:
 #   -WipeSettings  [CECELIA_WIPE_SETTINGS=1]  also delete %USERPROFILE%\.cecelia (settings, profiles
 #                                            incl. Claude logins, models, custom modules)
-#   -WipeProjects  [CECELIA_WIPE_PROJECTS=1]  also delete your projects — each <projects>\<uid>\ with a
+#   -WipeProjects  [CECELIA_WIPE_PROJECTS=1]  also delete your projects - each <projects>\<uid>\ with a
 #                                            project.json; anything else in that folder is left alone
 #   -DataOnly                                 keep the install, remove only your own data
 #   -Yes           [CECELIA_YES=1]            don't ask; do exactly what the flags say
 #   $env:CECELIA_HOME / $env:CECELIA_INSTALL_SCOPE='system' pick the install, as for install.ps1.
 #
-# Never removed: Pixi (~\.pixi), Julia (~\.juliaup, ~\.julia), caches and Claude (~\.claude*) — other
+# Never removed: Pixi (~\.pixi), Julia (~\.juliaup, ~\.julia), caches and Claude (~\.claude*) - other
 # software uses them. A system install (Program Files, needs an elevated shell) is removed for every
 # account; other accounts' settings and projects are never touched.
 # Design: docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md (D6).
@@ -78,11 +78,11 @@ elseif (Test-Install $SystemDefault)          { $InstallDir = $SystemDefault }
 if ($DataOnly) {
   $InstallDir = $null
 } elseif (-not $InstallDir -or -not (Test-Path -LiteralPath $InstallDir)) {
-  Say "No Cecelia install found — only your own data will be considered."
+  Say "No Cecelia install found - only your own data will be considered."
   $InstallDir = $null
 } else {
-  if (Test-Path -LiteralPath (Join-Path $InstallDir '.git')) { throw "$InstallDir is a git checkout, not an install — not removing it." }
-  if (-not (Test-Install $InstallDir)) { throw "$InstallDir does not look like a Cecelia install (no .cecelia-version) — not removing it." }
+  if (Test-Path -LiteralPath (Join-Path $InstallDir '.git')) { throw "$InstallDir is a git checkout, not an install - not removing it." }
+  if (-not (Test-Install $InstallDir)) { throw "$InstallDir does not look like a Cecelia install (no .cecelia-version) - not removing it." }
 }
 $Scope = 'user'
 if ($InstallDir) {
@@ -91,7 +91,7 @@ if ($InstallDir) {
 }
 if ($Scope -eq 'system') {
   $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  if (-not $admin) { throw "$InstallDir is a system-wide install — run this from an elevated (Administrator) PowerShell." }
+  if (-not $admin) { throw "$InstallDir is a system-wide install - run this from an elevated (Administrator) PowerShell." }
 }
 
 # ── Refuse while it runs ──────────────────────────────────────────────────────
@@ -102,12 +102,12 @@ if ($InstallDir) {
   $running = Get-Process -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) }
   if ($running) {
-    throw "Cecelia is still running from $InstallDir — quit it (Settings → Shut down) and run this again. ($(($running | ForEach-Object { "$($_.Id) $($_.ProcessName)" }) -join ', '))"
+    throw "Cecelia is still running from $InstallDir - quit it (Settings -> Shut down) and run this again. ($(($running | ForEach-Object { "$($_.Id) $($_.ProcessName)" }) -join ', '))"
   }
 }
 
 # ── Projects dir (read before settings can go) ────────────────────────────────
-# `[dirs] projects = "…"` in custom.toml; "/path/to/projects" = the setup wizard never ran.
+# `[dirs] projects = "..."` in custom.toml; "/path/to/projects" = the setup wizard never ran.
 $ProjectsDir = $null
 $toml = Join-Path $ConfigDir 'custom.toml'
 if (Test-Path -LiteralPath $toml) {
@@ -142,7 +142,7 @@ if (-not $WipeSettings -and (Test-Path -LiteralPath $ConfigDir) -and -not $Yes) 
 }
 if ($Projects.Count -gt 0 -and -not $Yes) {
   if ($WipeProjects -or (Ask "Also delete your $($Projects.Count) project(s) in ${ProjectsDir}? (No keeps them)")) {
-    $c = Read-Host "[cecelia] This permanently deletes $($Projects.Count) project(s) — analysis results, notebooks, lab logs. Type delete to confirm"
+    $c = Read-Host "[cecelia] This permanently deletes $($Projects.Count) project(s) - analysis results, notebooks, lab logs. Type delete to confirm"
     $WipeProjects = ($c -eq 'delete')
     if (-not $WipeProjects) { Say 'Projects kept.' }
   }
@@ -150,7 +150,7 @@ if ($Projects.Count -gt 0 -and -not $Yes) {
 
 # ── Remove the install ───────────────────────────────────────────────────────
 if ($InstallDir) {
-  # The observer MCP registration — only one pointing into THIS install, via the CLI as the app did.
+  # The observer MCP registration - only one pointing into THIS install, via the CLI as the app did.
   $claudeJson = Join-Path $env:USERPROFILE '.claude.json'
   if ((Get-Command claude -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $claudeJson) -and
       (Select-String -LiteralPath $claudeJson -Pattern 'cecelia-observer' -SimpleMatch -Quiet)) {
@@ -167,12 +167,12 @@ if ($InstallDir) {
 }
 
 # ── Your data ─────────────────────────────────────────────────────────────────
-Remove-Path (Join-Path $ConfigDir 'julia-depot')   # per-user Julia cache for a shared install — always
+Remove-Path (Join-Path $ConfigDir 'julia-depot')   # per-user Julia cache for a shared install - always
 if ($WipeProjects -and $Projects.Count -gt 0) {
   Say "Deleting $($Projects.Count) project(s)..."
   foreach ($p in $Projects) { Remove-Path $p.FullName }
   if (-not (Get-ChildItem -LiteralPath $ProjectsDir -Force)) { Remove-Path $ProjectsDir }
-  else { Say "Kept $ProjectsDir — it holds other files besides Cecelia projects." }
+  else { Say "Kept $ProjectsDir - it holds other files besides Cecelia projects." }
 }
 if ($WipeSettings -and (Test-Path -LiteralPath $ConfigDir)) { Say 'Deleting settings...'; Remove-Path $ConfigDir }
 
@@ -183,7 +183,7 @@ if (-not $WipeProjects -and $Projects.Count -gt 0) { Write-Host "    kept projec
 $shared = @('.pixi', '.juliaup', '.julia') | ForEach-Object { Join-Path $env:USERPROFILE $_ } |
   Where-Object { Test-Path -LiteralPath $_ }
 if ($shared) {
-  Write-Host '    Left in place — shared with other software, delete by hand if nothing else needs them:'
+  Write-Host '    Left in place - shared with other software, delete by hand if nothing else needs them:'
   foreach ($s in $shared) { Write-Host "      $s ($(SizeOf $s))" }
 }
 if ($Scope -eq 'system') { Write-Host "    Other accounts' settings and projects are untouched; each can run this with -DataOnly." }
