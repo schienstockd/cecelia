@@ -52,7 +52,8 @@ function count(n: number, total: number, phrase: string): string {
 }
 
 /** One spec line, checked against the selected images.
- *  - `use` line: holds for every image → ok; for only some → neutral, naming the ones it misses.
+ *  - `use` line: holds for every image → ok; misses any → warn, naming how many it misses (a use line
+ *    an image fails is as much a reason to look twice as a not line it meets).
  *  - `not` line: its condition holds for any image → warn, naming how many; otherwise neutral.
  *  No check, an unknown one, or no images → just the text. */
 export function checkLine(line: DiscoveryLine, kind: 'use' | 'not', images: readonly CciaImage[]): CheckedLine {
@@ -67,7 +68,7 @@ export function checkLine(line: DiscoveryLine, kind: 'use' | 'not', images: read
   const total = images.length
   if (kind === 'use') {
     return n === total ? { text, severity: 'ok', summary: count(n, total, yes) }
-                       : { text, summary: count(total - n, total, no) }
+                       : { text, severity: 'warn', summary: count(total - n, total, no) }
   }
   return n > 0 ? { text, severity: 'warn', summary: count(n, total, yes) } : { text }
 }
