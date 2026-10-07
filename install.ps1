@@ -59,6 +59,7 @@ if ($Scope -eq 'system') {
   $JuliaupDepot = Join-Path $InstallDir 'juliaup'
   $env:PIXI_HOME = $PixiHome
   $env:JULIAUP_DEPOT_PATH = $JuliaupDepot
+  $env:PIXI_NO_PATH_UPDATE = '1'   # the launcher sets PATH; don't add pixi to the admin's own PATH
   # Trailing ';' = Julia's bundled stdlib depot, so the stdlibs aren't recompiled into the shared one.
   $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot') + ';'
 } else {

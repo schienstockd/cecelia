@@ -97,10 +97,12 @@ SCOPE="user"
 # ── Refuse while it runs ──────────────────────────────────────────────────────
 # Deleting a live env corrupts whatever the server is writing. The app's processes run with their
 # working dir inside the install (`pixi run app` → python app.py → julia in api/), and their command
-# lines are relative, so match on the working dir / binary, then keep only Cecelia's runtimes — a
-# terminal that merely sits in the install dir is not "running". Linux sees other accounts' processes
-# only as root; macOS uses lsof.
-running_in() {  # pids whose cwd or binary is under $1
+# lines are mostly relative, so match on the working dir / binary, then keep only Cecelia's runtimes —
+# a terminal that merely sits in the install dir is not "running". A non-root uninstaller cannot read
+# another account's working dir, so also match command lines naming the install: on a shared install
+# the launcher runs `<install>/pixi/bin/pixi run …` and Julia from `<install>/juliaup/…`.
+running_in() {  # pids whose cwd, binary or command line is under $1
+  ps -eo pid=,args= 2>/dev/null | awk -v d="$1/" 'index($0, d) { print $1 }'
   if [ -d /proc/self ]; then
     for p in /proc/[0-9]*; do
       for l in cwd exe; do
@@ -110,12 +112,12 @@ running_in() {  # pids whose cwd or binary is under $1
     done
   elif have lsof; then
     lsof -w -d cwd,txt -Fpn 2>/dev/null | awk -v d="$1" '
-      /^p/ { pid = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == d || index(n, d "/") == 1) print pid }' | sort -u
+      /^p/ { pid = substr($0, 2) } /^n/ { n = substr($0, 2); if (n == d || index(n, d "/") == 1) print pid }'
   fi
 }
 if [ -n "$INSTALL_DIR" ]; then
   RUNNING=""
-  for pid in $(running_in "$INSTALL_DIR"); do
+  for pid in $(running_in "$INSTALL_DIR" | sort -u); do
     [ "$pid" = "$$" ] && continue
     c="$(ps -o comm= -p "$pid" 2>/dev/null || true)"
     case "${c##*/}" in julia*|python*|pixi*|node*|java*) RUNNING="$RUNNING  $pid ${c##*/}

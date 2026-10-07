@@ -1,0 +1,242 @@
+name: Verify system-wide install + uninstall
+
+# End-to-end check of the shared (system-scope) install on all three OSes — the path a lab machine
+# uses and that no other job exercises (docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md):
+#   1. install as the admin account from THIS branch (dev channel), system scope;
+#   2. check the install is the admin's (Linux/macOS), world-readable, and nothing landed in root's home;
+#   3. start it as a SECOND, non-admin account that can only read the install → /api/health;
+#   4. the uninstaller refuses while that account's server runs, then removes the install + menu entry
+#      and keeps/wipes the admin's settings + projects per its flags.
+# Heavy (full pixi env + Julia precompile, ~30 min/OS), so it runs only when the install scripts change.
+
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - uninstall.sh
+      - uninstall.ps1
+      - scripts/activate_juliaup.sh
+      - app.py
+      - .github/workflows/verify-system-install.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unix:
+    name: ${{ matrix.os }} — system install (${{ matrix.how }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        # `admin`: run as the admin, the installer calls sudo itself. `sudo`: `… | sudo sh`, which
+        # must hand the work back to $SUDO_USER.
+        how: [admin, sudo]
+    env:
+      CECELIA_INSTALL_SCOPE: system
+      CECELIA_CHANNEL: dev
+      CECELIA_BRANCH: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install (system scope, as ${{ matrix.how }})
+        run: |
+          if [ "${{ matrix.how }}" = sudo ]; then
+            sudo -E env "PATH=$PATH" sh ./install.sh
+          else
+            sh ./install.sh
+          fi
+
+      - name: Install is the admin's, readable by all, nothing in root's home
+        run: |
+          case "$RUNNER_OS" in
+            Linux) DIR=/opt/cecelia; OWNER="$(stat -c %U "$DIR")"; ROOTHOME=/root
+                   test -f /usr/share/applications/cecelia.desktop ;;
+            macOS) DIR=/Applications/cecelia; OWNER="$(stat -f %Su "$DIR")"; ROOTHOME=/var/root
+                   test -d /Applications/Cecelia.app ;;
+          esac
+          echo "owner: $OWNER"; test "$OWNER" = "$(id -un)"
+          test "$(cat "$DIR/.cecelia-scope")" = system
+          grep -q -- '--as-is' "$DIR/cecelia-launch.sh"
+          # nothing root-owned left inside (the sudo variant writes as root before handing over)
+          test -z "$(sudo find "$DIR" -user root -print -quit)"
+          echo "root home:"; sudo ls -A "$ROOTHOME" || true
+          for d in .cache/rattler .cache/rattler/cache .julia .juliaup .pixi .npm; do
+            if sudo test -e "$ROOTHOME/$d"; then echo "::error::$ROOTHOME/$d exists"; exit 1; fi
+          done
+          if sudo grep -qs pixi "$ROOTHOME/.bashrc" "$ROOTHOME/.zshrc" "$ROOTHOME/.profile"; then
+            echo "::error::installer edited root's shell profile"; exit 1
+          fi
+
+      - name: Create a second, non-admin account
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo useradd -m alice
+            echo "ALICE_HOME=/home/alice" >> "$GITHUB_ENV"
+          else
+            sudo sysadminctl -addUser alice -password 'Ce-ci-2026!' -home /Users/alice
+            sudo mkdir -p /Users/alice && sudo chown alice /Users/alice
+            echo "ALICE_HOME=/Users/alice" >> "$GITHUB_ENV"
+          fi
+          # alice really cannot write the install
+          if sudo -u alice touch "$( [ "$RUNNER_OS" = Linux ] && echo /opt || echo /Applications)/cecelia/probe" 2>/dev/null; then
+            echo "::error::alice can write the install"; exit 1
+          fi
+
+      - name: Start Cecelia as alice
+        run: |
+          case "$RUNNER_OS" in Linux) DIR=/opt/cecelia ;; macOS) DIR=/Applications/cecelia ;; esac
+          echo "DIR=$DIR" >> "$GITHUB_ENV"
+          sudo -u alice -H env -i HOME="$ALICE_HOME" PATH=/usr/local/bin:/usr/bin:/bin USER=alice \
+            CECELIA_PORT=18080 BROWSER=true \
+            sh -c "nohup '$DIR/cecelia-launch.sh' > /tmp/alice.log 2>&1 &"
+          t0=$(date +%s)
+          for _ in $(seq 1 180); do
+            curl -kfsS https://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
+            curl -fsS http://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
+            sleep 5
+          done
+          echo "alice's server: $(( $(date +%s) - t0 ))s to first healthy response"
+          curl -kfsS https://127.0.0.1:18080/api/health || curl -fsS http://127.0.0.1:18080/api/health \
+            || { echo "::error::alice's server never became healthy"; tail -80 /tmp/alice.log; exit 1; }
+          echo; echo "alice's per-user depot:"; sudo ls -A "$ALICE_HOME/.cecelia" || true
+
+      - name: Uninstaller refuses while alice runs it
+        run: |
+          if sh "$DIR/uninstall.sh" --yes; then echo "::error::uninstall did not refuse"; exit 1; fi
+          test -d "$DIR"
+
+      - name: Stop alice's server
+        if: always()
+        run: |
+          sudo pkill -TERM -u alice || true
+          sleep 10
+          sudo pkill -KILL -u alice || true
+          sleep 2
+
+      - name: Uninstall (keep settings, wipe projects)
+        run: |
+          mkdir -p "$HOME/.cecelia" "$HOME/cecelia-projects/P1"
+          printf '[dirs]\nprojects = "~/cecelia-projects"\n' > "$HOME/.cecelia/custom.toml"
+          echo '{}' > "$HOME/cecelia-projects/P1/project.json"
+          echo keep > "$HOME/cecelia-projects/notes.txt"
+          sh "$DIR/uninstall.sh" --yes --wipe-projects
+          test ! -e "$DIR"
+          test ! -e /usr/share/applications/cecelia.desktop
+          test ! -e /Applications/Cecelia.app
+          test -f "$HOME/.cecelia/custom.toml"             # settings kept
+          test ! -e "$HOME/cecelia-projects/P1"            # project wiped
+          test -f "$HOME/cecelia-projects/notes.txt"       # non-project file kept
+
+      - name: alice's log
+        if: failure()
+        run: tail -150 /tmp/alice.log || true
+
+  windows:
+    name: windows-latest — system install
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      CECELIA_INSTALL_SCOPE: system
+      CECELIA_CHANNEL: dev
+      CECELIA_BRANCH: ${{ github.head_ref || github.ref_name }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install (system scope, elevated)
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\install.ps1
+          if ($LASTEXITCODE) { throw "install.ps1 exited $LASTEXITCODE" }
+
+      - name: Install looks right
+        run: |
+          $dir = Join-Path $env:ProgramFiles 'cecelia'
+          if ((Get-Content (Join-Path $dir '.cecelia-scope') -Raw).Trim() -ne 'system') { throw 'scope' }
+          $cmd = Get-Content (Join-Path $dir 'cecelia-launch.cmd') -Raw
+          if ($cmd -notmatch '--as-is') { throw 'launcher lacks --as-is' }
+          if ($cmd -notmatch 'julia-depot;') { throw 'launcher lacks the per-user depot' }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Cecelia.lnk'))) { throw 'no shortcut' }
+          "DIR=$dir" | Out-File -Append $env:GITHUB_ENV
+
+      - name: Create a second, non-admin account
+        run: |
+          $pw = 'Ce-ci-2026!x'
+          net user alice $pw /add | Out-Null
+          # Running a scheduled task needs "log on as a batch job"; Performance Log Users has it and
+          # is not an admin group.
+          net localgroup "Performance Log Users" alice /add | Out-Null
+          New-Item -ItemType Directory -Force C:\ci | Out-Null
+          icacls C:\ci /grant 'alice:(OI)(CI)M' | Out-Null
+          @"
+          @echo off
+          echo probe > "$env:DIR\probe" 2>nul && echo ALICE-CAN-WRITE-INSTALL
+          set CECELIA_PORT=18080
+          set BROWSER=none
+          call "$env:DIR\cecelia-launch.cmd"
+          "@ -replace '(?m)^\s+', '' | Set-Content C:\ci\run-alice.cmd -Encoding ASCII
+          schtasks /Create /TN cecelia-alice /RU alice /RP $pw /SC ONCE /ST 23:59 /F `
+            /TR "cmd /c C:\ci\run-alice.cmd > C:\ci\alice.log 2>&1" | Out-Null
+          if ($LASTEXITCODE) { throw 'schtasks create failed' }
+
+      - name: Start Cecelia as alice
+        run: |
+          schtasks /Run /TN cecelia-alice
+          $t0 = Get-Date; $ok = $false
+          for ($i = 0; $i -lt 180 -and -not $ok; $i++) {
+            Start-Sleep 5
+            curl.exe -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            curl.exe -fsS http://127.0.0.1:18080/api/health 2>$null;  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+          }
+          "alice's server: $([int]((Get-Date) - $t0).TotalSeconds)s"
+          if (Select-String -Path C:\ci\alice.log -Pattern 'ALICE-CAN-WRITE-INSTALL' -Quiet) { throw 'alice can write the install' }
+          if (-not $ok) { Get-Content C:\ci\alice.log -Tail 120 -ErrorAction SilentlyContinue; throw "alice's server never became healthy" }
+
+      - name: Uninstaller refuses while alice runs it
+        run: |
+          powershell -ExecutionPolicy Bypass -File "$env:DIR\uninstall.ps1" -Yes
+          if ($LASTEXITCODE -eq 0) { throw 'uninstall did not refuse' }
+          if (-not (Test-Path $env:DIR)) { throw 'install removed while running' }
+          exit 0   # the runner's pwsh wrapper would otherwise fail on the expected non-zero exit
+
+      - name: Stop alice's server
+        if: always()
+        run: |
+          schtasks /End /TN cecelia-alice 2>$null
+          Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:DIR) } |
+            ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>$null }
+          Get-Process -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.UserName -like '*\alice' } |
+            ForEach-Object { taskkill /F /T /PID $_.Id 2>$null }
+          Start-Sleep 5
+          exit 0
+
+      - name: Uninstall (keep settings, wipe projects)
+        run: |
+          $cfg = Join-Path $env:USERPROFILE '.cecelia'; $proj = Join-Path $env:USERPROFILE 'cecelia-projects'
+          New-Item -ItemType Directory -Force $cfg, (Join-Path $proj 'P1') | Out-Null
+          Set-Content (Join-Path $cfg 'custom.toml') "[dirs]`nprojects = `"~/cecelia-projects`""
+          Set-Content (Join-Path $proj 'P1\project.json') '{}'
+          Set-Content (Join-Path $proj 'notes.txt') 'keep'
+          powershell -ExecutionPolicy Bypass -File "$env:DIR\uninstall.ps1" -Yes -WipeProjects
+          if ($LASTEXITCODE) { throw "uninstall exited $LASTEXITCODE" }
+          if (Test-Path $env:DIR) { throw 'install still there' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'Cecelia.lnk')) { throw 'shortcut still there' }
+          if (-not (Test-Path (Join-Path $cfg 'custom.toml'))) { throw 'settings were removed' }
+          if (Test-Path (Join-Path $proj 'P1')) { throw 'project not removed' }
+          if (-not (Test-Path (Join-Path $proj 'notes.txt'))) { throw 'non-project file removed' }
+
+      - name: alice's log
+        if: failure()
+        run: Get-Content C:\ci\alice.log -Tail 150 -ErrorAction SilentlyContinue
