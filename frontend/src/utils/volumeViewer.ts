@@ -172,6 +172,13 @@ export interface SlabQuery {
    */
   previewId?: number
   /**
+   * Read the labels from the STAGING store a running segmentation is filling (`live=1` — the viewer
+   * panel's "preview this run while it writes" row). `liveId` busts the HTTP cache per refresh, since
+   * the same URL returns more filled frames each time. Ignored if `preview` is set.
+   */
+  live?: boolean
+  liveId?: number
+  /**
    * Swap this channel's image slab onto the AF preview scratch store (P7.1). The worker writes one
    * store per corrected channel at
    * `{img_dir}/{previewValueName}__preview_af_ch{sourceChannel}.ome.zarr` (channel-less; geometry
@@ -221,6 +228,10 @@ export function slabUrl(q: SlabQuery): string {
   // Cache-bust identical preview URLs across re-runs. Server-side is harmless (unknown query params
   // are ignored by `try_serve_slab`), so this stays a pure client-side concern.
   if (q.labels && q.preview && q.previewId !== undefined) p.set('_pv', String(q.previewId))
+  if (q.labels && q.live && !q.preview) {
+    p.set('live', '1')
+    if (q.liveId !== undefined) p.set('_lv', String(q.liveId))
+  }
   // AF preview (P7.1): only meaningful WITHOUT `labels` (this is an image swap, not a mask swap).
   if (!q.labels && q.preview_af && q.sourceChannel !== undefined && q.previewValueName) {
     p.set('preview_af', '1')

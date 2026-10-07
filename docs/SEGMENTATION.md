@@ -1260,25 +1260,25 @@ computed. `live_outputs` therefore declares the `.partial` filenames while carry
 `value_name` alongside them, because the viewer names the layer from the value_name (`({vn})` is what
 the recolour and layer-eviction logic match on), not from the file.
 
-Three things differ from a normal labels layer, all forced bridge-side rather than trusted to the caller:
+In the browser viewer the ⚡ toggle hands the store to the viewer window through
+`viewerStore.liveLabels` (`_syncLiveLabels` in `composables/useOverlayAutoShow.ts`), and the viewer reads
+that vn's mask with `live=1` on the slab route (`live_labels_store_path`, `api/src/viewer_api.jl`). The
+server derives the `{vn}.zarr.partial` path from the vn and never takes a path from the client. It
+takes precedence over a ticked segmentation and gets the Segmentation section's opacity, outline and
+show/hide controls. A few things differ from a normal mask:
 
 - **Level 0 only.** A label store declares its whole pyramid in `.zattrs` when created, but levels 1…N
-  only exist after `_finalize_label_pyramid` runs at the end. Asking for the image's level count
-  therefore raises `KeyError: '1'`. The preview renders full-resolution at every zoom — the honest cost
-  of watching an unfinished store, and why it is a manual toggle rather than automatic.
-- **Caching off.** The point is to see bytes that changed, and the legacy viewer's `cachey` would serve the old
-  ones (see `napari_utils.add_labels` on why dask task names make that cache dangerous for re-run
-  labels specifically).
+  only exist once the run finalises it. `store_pyramid_levels` skips the missing arrays, so a
+  zoomed-out view gets the usual 409 and draws the image without the mask.
+- **Refetch on a re-stamp.** Progress ticks re-stamp `liveLabels` (at most one per 2 s, since cellpose
+  emits a tick per XY tile). Each stamp reloads the frame on screen, and its `_lv` cache-buster
+  misses the HTTP cache, because the same URL returns more filled frames each time.
 - **A refresh may find the store gone.** The finishing run renames the staging store onto the final
-  path, so a throttled refresh tick can lose the race. `refresh_labels` treats that as benign and skips
-  — the run has just finished and the task-finished handler is about to swap in the real layer.
+  path, so a fetch can lose the race. The route answers 409 ("nothing to draw"), not an error. The
+  task-finished snapshot then drops the row, and the viewer falls back to the ticked segmentation.
 
-The preview layer is namespaced `({vn}) Labels (live)` and a store holds at most one layer of its family
-at a time: adding the finished set evicts its own preview, and vice versa (`_LABEL_SUFFIXES` in
-`napari_bridge.py`). Progress ticks drive `POST /api/napari/refresh-labels`, which reassigns
-`layer.data` from a fresh view in place — throttled to one read per 2 s, since cellpose emits a tick per
-XY tile. The toggle is deliberately **not** persisted: it describes a store that exists only while one
-task runs, so restoring it later would produce a dead toggle for a layer the bridge can only skip.
+The toggle is deliberately **not** persisted: it describes a store that exists only while one task
+runs, so restoring it later would produce a dead toggle.
 
 ### Previewing params BEFORE a run (the task preview)
 
@@ -1292,7 +1292,7 @@ full run and looking at the result. Full design + every measured number:
 |---|---|---|
 | What it shows | a run in progress | what a run *would* produce |
 | Runs when | a task is running | on demand, no task submitted |
-| Layer | `({vn}) Labels (live)` | `({vn}) Preview` |
+| Viewer label | `{vn} · live` | `{vn} · preview` |
 | Backed by | the run's staging store | nothing — an in-memory block |
 | Scope | whole image, as it fills | ONE z-plane of the visible region |
 

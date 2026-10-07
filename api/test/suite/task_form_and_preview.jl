@@ -250,6 +250,46 @@ end
         # the registration guard was relaxed.
         _, lerr = label_store_path(proj.uid, img.uid, "flowKat")
         @test lerr !== nothing && occursin("no label store named", lerr)
+
+        # the vn is joined onto the labels dir, so one that walks out of it is refused
+        _, terr = preview_labels_store_path(proj.uid, img.uid, "../x")
+        @test terr == "invalid value_name"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: live labels slab resolves a RUNNING segmentation's staging store" begin
+    # The viewer panel's "preview this run while it writes" row reads `{vn}.zarr.partial` — the store a
+    # segmentation fills one frame at a time before promoting it on success (`segment_live_outputs`).
+    # The vn is unregistered on a first run, so this cannot go through `label_store_path` either.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-live-slab-vn")
+        s    = add_set!(proj; name = "s")
+        img  = add_image!(s; name = "a")
+        img.labels = Dict{String,Vector{String}}()
+        save!(img)
+
+        # Nothing writing yet (or the run just promoted its store) → err, which the route answers 409
+        _, err = live_labels_store_path(proj.uid, img.uid, "flowKat")
+        @test err !== nothing && occursin("no run is writing", err)
+
+        labels_dir = joinpath(img._dir, "labels"); mkpath(labels_dir)
+        staging = joinpath(labels_dir, "flowKat.zarr" * Cecelia.STORE_STAGING_SUFFIX); mkpath(staging)
+        zp, err = live_labels_store_path(proj.uid, img.uid, "flowKat")
+        @test err === nothing
+        @test zp == staging
+
+        # the path is derived from the vn, so a vn that walks out of the labels dir is refused
+        for bad in ("../x", "a/b", "..", "")
+            _, berr = live_labels_store_path(proj.uid, img.uid, bad)
+            @test berr == "invalid value_name"
+        end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

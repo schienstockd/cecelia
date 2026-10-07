@@ -20,6 +20,18 @@ const meta = (over: Partial<ViewerMeta> = {}): ViewerMeta => ({
 })
 
 describe('slab + meta urls', () => {
+  it('live labels: live=1 plus a per-refresh cache-buster, and preview wins over live', () => {
+    const u = new URL(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, labels: 'flowKat',
+                                live: true, liveId: 7 }), 'http://x')
+    expect(u.searchParams.get('live')).toBe('1')
+    expect(u.searchParams.get('_lv')).toBe('7')
+    const both = new URL(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, labels: 'flowKat',
+                                   preview: true, live: true }), 'http://x')
+    expect(both.searchParams.get('live')).toBeNull()
+    // no labels → no live flag (it is a mask-only mode)
+    expect(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, live: true })).not.toContain('live=')
+  })
+
   it('omits valueName when the active version is wanted', () => {
     const u = slabUrl({ projectUid: 'P', imageUid: 'I', t: 3, c: 1 })
     expect(u).toContain('t=3'); expect(u).toContain('c=1')

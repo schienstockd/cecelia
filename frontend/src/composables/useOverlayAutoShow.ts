@@ -1,6 +1,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useWsStore } from '../stores/ws'
+import { useViewerStore } from '../stores/viewer'
 import {
   createClaimRegistry,
   liveLabelPreviews, shouldRefreshPreview, type LivePreview, type TaskListEntry,
@@ -41,9 +42,9 @@ export function resetColourLegend() { colourLegend.value = {}; colourLegendLabel
 // be watched while it runs. `ccid.json` only registers the set on success, so the running task itself
 // is the source of truth for what exists (`live_outputs` → GET /api/tasks).
 //
-// The viewer `(vn) Labels (live)` layer that used to render this went with the P9 push helpers. The
-// browser viewer's own live-write preview rendering is not in this PR — the panel row's toggle now
-// only manages STATE (`previewShown`); the viewer will pick it up when that path lands.
+// The panel row's toggle sets `previewShown`; `_syncLiveLabels` hands the shown store to the browser
+// viewer through `viewerStore.liveLabels` (cross-window), which reads that vn's labels from the run's
+// staging store (`live=1` on the slab route) and refetches whenever the stamp changes.
 
 // Label stores being written right now for the open image (drives the ViewerPanel rows).
 export const livePreviews = ref<LivePreview[]>([])
@@ -59,7 +60,7 @@ const _lastRefreshAt: Record<string, number> = {}
 export async function refreshLivePreviews(): Promise<void> {
   const project  = useProjectStore()
   const imageUid = project.openImageUid
-  if (!imageUid) { livePreviews.value = []; return }
+  if (!imageUid) { livePreviews.value = []; _syncLiveLabels(); return }
   let tasks: TaskListEntry[] = []
   try {
     const res = await fetch('/api/tasks')
@@ -71,6 +72,20 @@ export async function refreshLivePreviews(): Promise<void> {
   previewShown.value = Object.fromEntries(
     Object.entries(previewShown.value).filter(([vn, on]) => on && live.has(vn)))
   livePreviews.value = next
+  _syncLiveLabels()
+}
+
+// Point the viewer at the shown live store (the viewer draws one mask, so the first shown wins), or
+// at nothing. `restamp` re-sends the same store so the viewer refetches what was written since; without
+// it an unchanged choice is left alone, so unrelated task events do not reload the viewer's frame.
+function _syncLiveLabels(restamp = false): void {
+  const viewer = useViewerStore()
+  const uid = useProjectStore().openImageUid
+  const shown = uid ? livePreviews.value.find(p => previewShown.value[p.valueName]) : undefined
+  const cur = viewer.liveLabels
+  if (!uid || !shown) { viewer.setLiveLabels(null); return }
+  if (!restamp && cur && cur.imageUid === uid && cur.valueName === shown.valueName) return
+  viewer.setLiveLabels({ imageUid: uid, valueName: shown.valueName })
 }
 
 // Show/hide one live preview. Returns the new state so the caller can reflect the choice.
@@ -78,19 +93,22 @@ export async function togglePreview(valueName: string): Promise<boolean> {
   const want = !previewShown.value[valueName]
   previewShown.value = { ...previewShown.value, [valueName]: want }
   if (want) _lastRefreshAt[valueName] = Date.now()
+  _syncLiveLabels()
   return want
 }
 
-// Progress tick → note we saw one for the shown previews. The push that used to refresh the viewer's
-// live layer went with the P9 helpers; the browser viewer's own preview refresh will read this
-// map when that path lands.
+// Progress tick → re-stamp the shown preview (throttled) so the viewer refetches the frames written
+// since its last read.
 function _onProgressTick(): void {
   const now = Date.now()
+  let due = false
   for (const p of livePreviews.value) {
     if (!previewShown.value[p.valueName]) continue
     if (!shouldRefreshPreview(_lastRefreshAt[p.valueName], now)) continue
     _lastRefreshAt[p.valueName] = now
+    due = true
   }
+  if (due) _syncLiveLabels(true)
 }
 
 // ── Opt-out for callers that restore a DIFFERENT view than the remembered toggles ───────────────

@@ -97,6 +97,19 @@ describe('brickLabelSlabUrl', () => {
     expect(url).toContain('cTo=0')
     expect(url).toContain('labels=flowTom')
   })
+
+  it('reads a preview or live mask from its own store, busted by the store stamp', () => {
+    const brick = { t: 0, level: 0, bx: 0, by: 0, bz: 0 }
+    const live = brickLabelSlabUrl({ ...base, labelStore: 'live', labelStoreId: 4 }, 'flowTom', brick, brickSize)
+    expect(live).toContain('live=1')
+    expect(live).toContain('_lv=4')
+    const prev = brickLabelSlabUrl({ ...base, labelStore: 'preview', labelStoreId: 9 }, 'flowTom', brick, brickSize)
+    expect(prev).toContain('preview=1')
+    expect(prev).toContain('_pv=9')
+    expect(prev).not.toContain('live=')
+    // the registered store's URL is unchanged
+    expect(brickLabelSlabUrl(base, 'flowTom', brick, brickSize)).not.toMatch(/preview=|live=/)
+  })
 })
 
 describe('brickShapeError', () => {

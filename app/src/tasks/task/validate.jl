@@ -83,12 +83,10 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         value isa AbstractString ||
             throw(ParamValidationError("'$key' must be a name string, got: $value"))
         v = strip(String(value))
-        isempty(v) &&
-            throw(ParamValidationError("'$key' cannot be empty — it names this task's output"))
-        (occursin('/', v) || occursin('\\', v)) &&
-            throw(ParamValidationError("'$key' cannot contain a path separator: \"$v\""))
-        (v == "." || v == "..") &&
-            throw(ParamValidationError("'$key' is not a usable name: \"$v\""))
+        why = value_name_problem(v)
+        why === nothing ||
+            throw(ParamValidationError(isempty(v) ? "'$key' cannot be empty — it names this task's output" :
+                                                    "'$key' $why: \"$v\""))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end

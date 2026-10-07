@@ -420,6 +420,17 @@ end
 # compression measured 195-208 ms per timepoint against a 330 ms read: a third of the server's time
 # spent shrinking bytes that a loopback socket moves for free. It is the remote-VM case that wants it,
 # and only the client knows which case it is in.
+# A slab refusal as a JSON `{error}` with a status, written before any body bytes (see the read-failure
+# note in `try_serve_slab`). Returns `true` — the request was handled.
+function _slab_json_error(stream::HTTP.Stream, status::Integer, msg)::Bool
+    HTTP.setstatus(stream, status)
+    HTTP.setheader(stream, "Content-Type" => "application/json")
+    HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
+    HTTP.startwrite(stream)
+    write(stream, JSON3.write((; error = msg)))
+    true
+end
+
 function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     q  = HTTP.queryparams(HTTP.URI(target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
@@ -439,11 +450,24 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # source image. `sourceChannel` is the source-image channel index the corrected store REPLACES —
     # the FE swaps channel-by-channel URLs based on which channels were corrected. `valueName` here
     # is the AF task's `outputValueName` (the write side's target version), NOT `c`.
+    #
+    # `live=1` retargets a labels request to the STAGING store a running segmentation is filling
+    # (`{vn}.zarr.partial` — see `segment_live_outputs`), for the viewer panel's "preview this run while
+    # it writes" row. A missing store is a 409, not a 404: the run promoting its store onto the final
+    # path between the panel's last task snapshot and this fetch is the ordinary end of a live preview,
+    # and 409 is what the viewer already reads as "no mask to draw" rather than as an error.
     preview_labels = get(q, "preview", "") == "1"
+    live_labels    = get(q, "live", "") == "1"
     preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
-        if preview_labels
+        if live_labels
+            zpl, lerr = live_labels_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+            if lerr !== nothing
+                return _slab_json_error(stream, 409, lerr)
+            end
+            zp = zpl
+        elseif preview_labels
             zpp, perr = preview_labels_store_path(
                 get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
             perr === nothing || return false
@@ -472,7 +496,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
             src_ch = tryparse(Int, get(q, "sourceChannel", ""))
             src_ch === nothing && return false
             af_vn = get(q, "previewValueName", "")
-            isempty(af_vn) && return false
+            Cecelia.value_name_problem(af_vn) === nothing || return false   # joined onto meta_dir
             zp = joinpath(meta_dir, "$(af_vn)__preview_af_ch$(src_ch).ome.zarr")
             # A stale AF store from a prior preview is swept on cleanup; a missing store here is a
             # normal race (the FE fetched before the worker's promote landed) and 404s so the
@@ -520,12 +544,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         label_level(zp, lvl_req)
     end
     if lvl_err !== nothing
-        HTTP.setstatus(stream, 409)
-        HTTP.setheader(stream, "Content-Type" => "application/json")
-        HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
-        HTTP.startwrite(stream)
-        write(stream, JSON3.write((; error = lvl_err)))
-        return true
+        return _slab_json_error(stream, 409, lvl_err)
     end
     enc = get(q, "enc", "identity")
 
@@ -550,12 +569,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     catch e
         msg = e isa BoundsError ? "t/c out of range for this image version" : sprint(showerror, e)
         @error "Slab read failed" zarr = zp t c exception = (e, catch_backtrace())
-        HTTP.setstatus(stream, e isa BoundsError ? 400 : 500)
-        HTTP.setheader(stream, "Content-Type" => "application/json")
-        HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
-        HTTP.startwrite(stream)
-        write(stream, JSON3.write((; error = msg)))
-        return true
+        return _slab_json_error(stream, e isa BoundsError ? 400 : 500, msg)
     end
 
     HTTP.setheader(stream, "Content-Type"   => "application/octet-stream")
@@ -643,8 +657,33 @@ function preview_labels_store_path(project_uid::AbstractString, image_uid::Abstr
     err === nothing || return (nothing, "image not found")
     vn = isempty(value_name) ? "" : String(value_name)
     isempty(vn) && return (nothing, "value_name required")
+    # joined onto the labels dir, so it must stay one path component
+    Cecelia.value_name_problem(vn) === nothing || return (nothing, "invalid value_name")
     zp = joinpath(img_labels_dir(img), "$(vn)__preview.ome.zarr")
     isdir(zp) || return (nothing, "preview labels store not on disk: $(basename(zp))")
+    (zp, nothing)
+end
+
+"""
+    live_labels_store_path(project_uid, image_uid, value_name) -> (path, err)
+
+The staging store a RUNNING segmentation is writing for `value_name` — the base type's store from
+`segment_label_files` plus the staging suffix, which is what `segment_live_outputs` declares. Built from
+the vn rather than taken from the client, so the query cannot name an arbitrary path; a vn carrying a
+path separator is refused for the same reason. Mid-run only level 0 exists (the pyramid is built at
+the end), which `store_pyramid_levels` already reports, so a zoomed-out view gets the usual 409.
+"""
+function live_labels_store_path(project_uid::AbstractString, image_uid::AbstractString,
+                                value_name::AbstractString)
+    vn = String(value_name)
+    # joined onto the labels dir, so it must stay one path component
+    Cecelia.value_name_problem(vn) === nothing || return (nothing, "invalid value_name")
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return (nothing, "image not found")
+    # the base type's store — `segment_label_files` is the one derivation of label filenames
+    base = first(Cecelia.segment_label_files(vn, nothing))
+    zp = Cecelia.staging_store_path(joinpath(img_labels_dir(img), base))
+    isdir(zp) || return (nothing, "no run is writing '$vn'")
     (zp, nothing)
 end
 

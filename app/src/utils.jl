@@ -99,6 +99,22 @@ starts, so the name has to be derived, not discovered.
 staging_store_path(path::AbstractString) = string(path, STORE_STAGING_SUFFIX)
 
 """
+    value_name_problem(v) -> Union{Nothing,String}
+
+Why `v` can't be a value name, or `nothing` if it can. A value name becomes a filename stem, a dict
+key or a column suffix, so it must be one non-empty path component: no `/` or `\\`, not `.`/`..`.
+Dots inside are fine (`flow.cyto`). Asked by the task-param validator (`valueNameInput`) and by the
+viewer slab routes that join a query vn onto a directory. `rename_value_name!` is stricter on purpose
+(no leading `.`, no surrounding whitespace) — it names a NEW key, not one that may already exist.
+"""
+function value_name_problem(v::AbstractString)::Union{Nothing,String}
+    isempty(v) && return "cannot be empty"
+    (occursin('/', v) || occursin('\\', v)) && return "cannot contain a path separator"
+    (v == "." || v == "..") && return "is not a usable name"
+    nothing
+end
+
+"""
     write_atomic(f, path) -> path
 
 Write `path` by streaming through `f(io)` into a sibling temp file, then atomically renaming it into
