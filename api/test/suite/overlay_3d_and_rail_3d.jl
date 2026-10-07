@@ -277,8 +277,8 @@ end
 end
 
 @testset "API: movie — the trackclust chip draws its ribbons, and the title card names them" begin
-    # The batch "trackclust" chip draws the segmentation's track-cluster pops as ribbons, with the
-    # pops; the pops' own cell-track ribbons stand down there (the viewer's rule), and the title card
+    # The "trackclust" chip draws every segmentation's track-cluster pops as ribbons, with or without
+    # the pops; the pops' own cell-track ribbons stand down there (the viewer's rule), and the title card
     # lists what is drawn — a ribbon-only row has a swatch only when the tails ARE the pop's colour.
     h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
     if !api_have_fixture(h5)
@@ -324,13 +324,19 @@ end
             @test card(c) == [("all", "#00ff00"), ("Scanning", nothing), ("Directed", nothing), ("Meandering", nothing)]
             c[:trackColourMode] = "pop"
             @test card(c)[2:end] == [("Scanning", "#4c78a8"), ("Directed", "#f58518"), ("Meandering", "#54a24b")]
-            # no pops → nothing drawn, nothing named
-            @test isempty(card(merge(c, Dict{Symbol,Any}(:showPopulations => false))))
+            # no pops → the track clusters still draw (not tied to the pops), and are named
+            @test card(merge(c, Dict{Symbol,Any}(:showPopulations => false))) ==
+                  [("Scanning", "#4c78a8"), ("Directed", "#f58518"), ("Meandering", "#54a24b")]
+            # ... and the chip alone draws them, in both renderers
+            tc_only = Dict{String,Any}("showTrackclust" => true, "tailLength" => 5, "trackColourMode" => "pop")
+            @test seg_colours(kf(tc_only)) == clusters
+            @test seg_colours(rail(tc_only)) == clusters
             # no popValueName: the movie's segmentation — the mask's, else none (not every segmentation)
             delete!(c, :popValueName)
             @test first.(card(merge(c, Dict{Symbol,Any}(:labelValueNames => ["B"])))) ==
                   ["all", "Scanning", "Directed", "Meandering"]
-            @test isempty(card(c))
+            # no pop segmentation → no pops named; the track clusters are every segmentation's
+            @test first.(card(c)) == ["Scanning", "Directed", "Meandering"]
             @test _config_pop_segmentation(Dict{Symbol,Any}(:labelValueNames => [" ", "M"], :valueName => "v")) == "M"
             @test _config_pop_segmentation(Dict{Symbol,Any}(:valueName => "v")) == "v"
             @test _config_pop_segmentation(Dict{Symbol,Any}(:popValueName => "P", :labelValueNames => ["M"])) == "P"

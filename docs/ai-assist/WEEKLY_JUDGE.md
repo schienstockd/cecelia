@@ -22,6 +22,16 @@ test whether an agent can actually use the framework.
    (`~/.cecelia-effectiveness/judge-worktree`) to it.
 2. **Owner answers.** Fold `pixi run judge-review` answers into the earlier records, so a bug
    answered `wont_fix` is not carried.
+   **Run reviews** (`run_reviews.py`). Read the agent run records: Blackboard entries with meta
+   `agentRun` in the projects dir (`CECELIA_AGENT_APP_PROJECTS`, else
+   `~/cecelia-feijoa/projects`; `--projects-dir` overrides). Each section a person marked `bad` with
+   cause `guide` (the guide didn't say it) or `platform` (the agent couldn't see it) is logged once as
+   an `agent_run_finding` with `kind: "review"`, keyed by project + entry + section. It carries the
+   run, the section, the cause, the note and the guide when the record names one (`agentRun.guide`).
+   A Claude proposal and a `bad` with no cause (marked before causes existed) are skipped. `agent`
+   causes stay on the run record; the pass's record lists them per guide under *Agent causes per
+   guide*, and flags a guide whose `agent` notes span 2+ runs as a possible guide gap. Whether two
+   notes describe the same gap is the owner's read: no judge step compares notes.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, every
    `plausible`), plus the last record's `open` / `unjudged` / `unmerged` bugs. Free checks come first:
@@ -36,6 +46,13 @@ test whether an agent can actually use the framework.
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
    above. One without has no code to excerpt: it is `open` straight away and goes to verify. A
    `wont_fix` one is carried, so a run that hits it again doesn't raise it as new.
+
+   A **run review** (`kind: "review"`, key `rev-…`) has no code to excerpt either: it is `open`
+   straight away and goes to verify. A person set its cause, so verify doesn't ask whether it is
+   real: it checks whether the fix is in (the guide's text in `mcp/cecelia_mcp/guides.json`, or the
+   tool or surface the note names). `dismiss` means this code already has it. One run's reviews go
+   to one agent. The rows are stamped a second before the pass started, so the next pass's window
+   doesn't read them again.
 
    A **repeated agent error** (`kind: "repeat"`, key `rep-…`) is the exception to "a 4xx with a
    reason is the agent's own input". One alone never reaches the judge: the emitter logs it as an
@@ -75,7 +92,8 @@ test whether an agent can actually use the framework.
 
    Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
    `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the
-   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap) waits as
+   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap; bugs with a
+   landed fix go first, so the cap never holds back their re-check) waits as
    `unjudged`, except one the last record had `open`: it stays `open`, with its verdict, because a
    missing check is no evidence it was fixed.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
@@ -105,7 +123,8 @@ The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bug
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug.
 
 A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,
-`judge.RateLimited`, from the sweep, verify or rules): every call after it would fail too, and on
+`RateLimited`, from the sweep, verify or rules — read by `claude_cli.rate_limit`, the one reader the
+autonomous runs share; `judge.py` re-exports it): every call after it would fail too, and on
 2026-10-05 a pass that hit one recorded a normal-looking week with nothing judged, none of the
 fixes found, and $10 of "spend" for five agents that never started.
 
@@ -166,7 +185,11 @@ No fix runs unattended: an unattended fix agent is deferred, see
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
+| `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
+
+On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
+(`judge-bugs: usage limit — lifts 2026-10-07T01:40+11:00: …`) and exit 75, not a traceback.
 
 Timer install, adjust and uninstall steps: [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md).

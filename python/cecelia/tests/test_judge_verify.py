@@ -7,10 +7,15 @@ Run with `pixi run test-py`.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
+import json
 import pathlib
 import re
+import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 _PATH = _REPO / "scripts" / "judge" / "verify.py"
@@ -168,6 +173,28 @@ class VerifyTest(unittest.TestCase):
             self.assertIn(flag, cmd)
         self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "2.5")
         self.assertEqual(calls["kw"]["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
+
+
+
+class MainLimitTest(unittest.TestCase):
+    """`pixi run judge-verify` on the usage limit: one line with the reset time, exit 75 — no traceback."""
+
+    def test_a_usage_limit_is_one_line_and_exit_75(self):
+        v = _load()
+
+        def limited(*a, **k):
+            raise v._judge.RateLimited("You've hit your session limit · resets 1:40am (Australia/Sydney)")
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "2026-10-06.json").write_text(
+                json.dumps({"run": {"sha": "abc"}, "bugs": []}), encoding="utf-8")
+            err = io.StringIO()
+            with mock.patch.object(v, "verify", limited), mock.patch.object(v, "git_output", return_value="abc"), \
+                    mock.patch.object(v._record, "store_root", return_value=pathlib.Path(d)), \
+                    contextlib.redirect_stderr(err):
+                code = v.main(["--date", "2026-10-06"])
+        self.assertEqual(code, 75)
+        self.assertRegex(err.getvalue(), r"^judge-verify: usage limit — lifts \S+: ")
+        self.assertEqual(err.getvalue().count("\n"), 1)
 
 
 if __name__ == "__main__":

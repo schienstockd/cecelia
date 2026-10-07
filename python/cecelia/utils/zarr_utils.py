@@ -1402,6 +1402,18 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
                     on_progress(i * n_t + t + 1, total)
 
 
+def write_label_pyramid(multiscales_zarr, level0, axes, nscales, chunks):
+    """`write_multiscale_pyramid` for a LABEL store: X/Y/T found by name in the label's own ``axes``
+    (no channel axis, possibly no Z/T), downsampled nearest so ids stay ids. Every label writer
+    passes the IMAGE's level count as ``nscales`` — a mask shallower than its image has no level for
+    a zoomed-out viewer to draw, and reading full-res on a large tilescan instead is not an option."""
+    axes = [str(a).upper() for a in axes]
+    write_multiscale_pyramid(
+        multiscales_zarr, level0, None, nscales, list(chunks),
+        x_idx=axes.index('X'), y_idx=axes.index('Y'),
+        t_idx=axes.index('T') if 'T' in axes else None, kind='labels')
+
+
 def backfill_label_pyramid(label_path, target_nscales, axes=None,
                            scale_for_axis=None, unit_for_axis=None, on_progress=None):
     """Bring an existing label store up to ``target_nscales`` levels with usable NGFF metadata.

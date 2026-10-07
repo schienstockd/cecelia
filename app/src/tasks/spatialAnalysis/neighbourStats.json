@@ -2,6 +2,12 @@
   "task": "neighbourStats",
   "fun_name": "spatialAnalysis.neighbourStats",
   "label": "Interaction matrix",
+  "purpose": "Score which population pairs neighbour more or less than chance",
+  "useWhen": [
+    "Testing whether two cell types associate or avoid each other",
+    { "text": "After Neighbour graph; no regions needed", "check": "neighbourGraph" }
+  ],
+  "notWhen": ["Strongly zoned tissue: the shuffle test can call weak pairs significant"],
   "category": "Spatial analysis",
   "group": "Neighbourhood",
   "env": [

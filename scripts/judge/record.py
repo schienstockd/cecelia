@@ -47,6 +47,8 @@ _BUGS_HOW_TO = (
     "An *agent run* bug is an error an autonomous run hit; with no `file:line`, start from the tool and the error. "
     "A *repeated agent error* is a 4xx with a reason that agents hit in several runs: the input was wrong each "
     "time, so the fix is the guidance (the tool's description, the MCP guidance, the error message), not the API. "
+    "A *run review* is a section of an agent run's record a person marked bad with cause `guide` (the guide didn't "
+    "say it) or `platform` (the agent couldn't see it): fix the guide or the surface the note names. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
@@ -76,15 +78,16 @@ def newly_open(bug: dict, date: str) -> bool:
 
 
 def build(date: str, *, ts: str, sha: str, bugs: _t.Sequence[dict], rules: _t.Sequence[dict],
-          proposals: _t.Sequence[dict], spend: dict) -> dict:
+          proposals: _t.Sequence[dict], spend: dict, agent_causes: _t.Sequence[dict] = ()) -> dict:
     """The record for the pass on `date`. `ts` is when the pass started: the next pass's sweep
-    window opens there."""
+    window opens there. `agent_causes`: run reviews' `agent` causes per guide (`run_reviews.py`)."""
     return {
         "schema_version": SCHEMA_VERSION, "kind": "pass", "date": date,
         "run": {"ts": ts, "sha": sha, "spend": spend},
         "bugs": list(bugs), "rules": list(rules), "proposals": list(proposals),
         # what the owner has to answer: only a bug an agent verified as `decide` this pass
         "queue": [{"kind": "bug", "ref": b["id"]} for b in bugs if owner_bug(b, date)],
+        **({"agent_causes": list(agent_causes)} if agent_causes else {}),
     }
 
 
@@ -219,6 +222,8 @@ def bug_location(b: dict) -> str:
     run's error came from when there was no stacktrace."""
     if b.get("kind") == "stranded":
         return f"PR #{b.get('pr')}"
+    if b.get("review"):
+        return f"run review · {b.get('cause') or '?'} · {b.get('section') or '?'}"
     if not b.get("file"):
         return f"{'repeated agent error' if b.get('repeat') else 'agent run'} · {b.get('tool') or '?'}"
     return f"{b['file']}:{b['line']}"
@@ -238,8 +243,8 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
     landed, confirmed = landed_counts(bugs)
     if landed:
-        out += [f"{landed} fix(es) landed since the last pass (a commit names the bug's key), "
-                f"{confirmed} confirmed gone by the judge.", ""]
+        out += [f"A fix landed for {landed} bug(s) since the last pass (a commit names the bug's key): "
+                f"{confirmed} confirmed gone by the judge, {landed - confirmed} awaiting re-check.", ""]
     for b in (b for b in bugs if b["status"] != "unjudged" and not b.get("muted")):
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
@@ -258,7 +263,11 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
         if b.get("kind") == "stranded":
             out += [f"**Commits:** {', '.join(f'`{c}`' for c in b.get('commits', []))}", ""]
             continue
-        if b.get("kind") == "agent_run":
+        if b.get("review"):
+            out += [f"**Run review** (cause `{b.get('cause')}`, run {b.get('run') or '?'}, entry `{b.get('entry')}` in "
+                    f"`{b.get('project')}`" + (f", guide `{b['guide']}`" if b.get("guide") else "")
+                    + f", first seen {b['first_seen']}): {b['desc']}", ""]
+        elif b.get("kind") == "agent_run":
             out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
                     f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
@@ -305,6 +314,23 @@ def _render_rules(record: dict) -> list[str]:
     return out
 
 
+_AGENT_CAUSES_HOW_TO = (
+    "Run review sections a person marked bad with cause `agent`: the guide and tools were enough. They stay "
+    "on the record; a guide whose notes span 2+ runs may share one gap — compare the notes, and if they "
+    "describe the same mistake, the guide needs the step.")
+
+
+def _render_agent_causes(record: dict) -> list[str]:
+    out = [_AGENT_CAUSES_HOW_TO, ""]
+    for g in record.get("agent_causes", []):
+        name = f"`{g['guide']}`" if g.get("guide") else "no guide named"
+        out += [f"### {name} — {g['runs']} run(s){' · possible guide gap' if g.get('gap') else ''}", ""]
+        out += [f"- run {n.get('run') or n['entry']} · {n['section']}"
+                + (f" · {n['heading']}" if n.get("heading") else "") + f": {n['note']}" for n in g["notes"]]
+        out.append("")
+    return out
+
+
 def render_markdown(record: dict) -> str:
     if record.get("kind") == "failure":
         run = record["run"]
@@ -330,6 +356,8 @@ def render_markdown(record: dict) -> str:
              if (run.get("failed") or {}).get("sweep") else []),
            *_render_bugs(record["bugs"]), "",
            "## Rules", "", *_render_rules(record)]
+    if record.get("agent_causes"):
+        out += ["", "## Agent causes per guide", "", *_render_agent_causes(record)]
     return "\n".join(out) + "\n"
 
 

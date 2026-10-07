@@ -2,6 +2,15 @@
   "task": "flowRegister",
   "fun_name": "cleanupImages.flowRegister",
   "label": "Flow-based registration",
+  "purpose": "Correct non-rigid tissue deformation with a per-pixel flow field",
+  "useWhen": [
+    "Sample deforms between frames beyond a simple shift",
+    "After Drift correction or Within-stack alignment"
+  ],
+  "notWhen": [
+    "Only a whole-frame shift: Drift correction is enough",
+    "Can mistake cell motion for distortion and warp it away"
+  ],
   "category": "Cleanup",
   "group": "Align",
   "env": ["local"],

@@ -2,6 +2,13 @@
   "task": "resampleZ",
   "fun_name": "editImages.resampleZ",
   "label": "Resample Z (isotropic)",
+  "purpose": "Interpolate Z so voxels are as deep as they are wide",
+  "useWhen": ["A later method needs near-isotropic voxels"],
+  "notWhen": [
+    "Interpolated planes add no real Z detail",
+    "Cell segmentation: it handles coarse Z plane by plane",
+    { "text": "No recorded Z step: set it in the image metadata first", "check": "!zStepSet" }
+  ],
   "category": "Edit",
   "group": "Reshape",
   "env": [

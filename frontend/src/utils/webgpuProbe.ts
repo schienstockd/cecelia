@@ -185,6 +185,79 @@ export async function acquireGpuDevice(): Promise<{
   return { adapter, device, report }
 }
 
+/** One adapter as the browser hands it back for one `powerPreference`, reported raw — no
+ *  classification. `info` holds every `GPUAdapterInfo` field the browser fills (blank = said nothing). */
+export interface GpuAdapterDiag {
+  powerPreference: 'high-performance' | 'low-power' | 'default'
+  found: boolean
+  /** `adapterName(adapter)` — the same defaulted name the classifier reads. */
+  name: GpuAdapterName
+  info: Record<string, string | number | boolean>
+  features: string[]
+  limits: Record<string, number>
+}
+
+/** The page context an adapter request ran in — the browser can blank `adapter.info` per context. */
+export interface GpuPageDiag {
+  userAgent: string
+  origin: string
+  isSecureContext: boolean
+  crossOriginIsolated: boolean
+  hasOpener: boolean
+  visibility: string
+}
+
+export interface GpuDiagnostics {
+  atIso: string
+  page: GpuPageDiag
+  adapters: GpuAdapterDiag[]
+}
+
+const DIAG_INFO_KEYS = ['vendor', 'architecture', 'device', 'description',
+  'isFallbackAdapter', 'subgroupMinSize', 'subgroupMaxSize'] as const
+const DIAG_LIMIT_KEYS = ['maxTextureDimension2D', 'maxTextureDimension3D', 'maxBufferSize',
+  'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize'] as const
+
+/**
+ * Raw adapter readout for the viewer's Debug panel and bench JSON. Asks for an adapter under each
+ * `powerPreference` (no device is created) so a reader can see whether the browser returns a
+ * different adapter, or the same one with its name blanked, depending on how it is asked. Never throws.
+ */
+export async function collectGpuDiagnostics(): Promise<GpuDiagnostics> {
+  const page: GpuPageDiag = {
+    userAgent: navigator.userAgent,
+    origin: location.origin,
+    isSecureContext: window.isSecureContext,
+    crossOriginIsolated: window.crossOriginIsolated,
+    hasOpener: window.opener != null,
+    visibility: document.visibilityState,
+  }
+  const adapters: GpuAdapterDiag[] = []
+  if (!('gpu' in navigator)) return { atIso: new Date().toISOString(), page, adapters }
+  for (const pref of ['high-performance', 'low-power', 'default'] as const) {
+    let adapter: GPUAdapter | null = null
+    try {
+      adapter = await navigator.gpu.requestAdapter(pref === 'default' ? undefined : { powerPreference: pref })
+    } catch {
+      adapter = null
+    }
+    if (!adapter) { adapters.push({
+      powerPreference: pref, found: false, info: {}, features: [], limits: {},
+      name: { vendor: '', architecture: '', device: '', description: '' },
+    }); continue }
+    const raw = (adapter as GPUAdapter & { info?: Record<string, unknown> }).info
+    const info: Record<string, string | number | boolean> = {}
+    for (const k of DIAG_INFO_KEYS) {
+      const v = raw?.[k]
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') info[k] = v
+    }
+    const limits: Record<string, number> = {}
+    for (const k of DIAG_LIMIT_KEYS) limits[k] = adapter.limits[k]
+    adapters.push({ powerPreference: pref, found: true, name: adapterName(adapter), info, features: [...adapter.features].sort(), limits })
+  }
+  return { atIso: new Date().toISOString(), page, adapters }
+}
+
 /**
  * Runtime probe for `binding_array<texture_3d<u32>, 4>`. Two checks — WGSL parse AND runtime
  * bindGroup — both must pass, otherwise the shader has no way to sample atlases past `[0]`.

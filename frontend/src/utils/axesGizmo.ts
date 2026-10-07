@@ -2,12 +2,11 @@
 // SFC can draw a small "which way am I looking" triad in the canvas corner. Volume mode only:
 // the plane view already has north-up-image-as-shown, and does not need it.
 //
-// The basis is derived FROM `lib/webgpu/shaders/mip_common.wgsl`'s `camera()` fn, verbatim — same
-// yaw/pitch convention, same handedness (`up = cross(right, fwd)`, `fwd = (cp*sy, sp, cp*cy)`). Anything else
-// and the gizmo would disagree with the pixels: the user would rotate the volume and the arrows
-// would drift off. Golden values in the test are cross-checked against those two expressions.
+// The basis is `cameraBasis` — the shaders' `camera()` fn. Anything else and the gizmo would
+// disagree with the pixels: the user would rotate the volume and the arrows would drift off.
+// Golden values in the test are cross-checked against the shader's expressions.
 
-import type { OrbitCamera } from './volumeViewer'
+import { cameraBasis, type OrbitCamera, type Vec3 } from './volumeViewer'
 
 export interface GizmoAxisTip {
   /** Axis id + sign — `+X`/`-X`/`+Y`/`-Y`/`+Z`/`-Z`. Callers key colour + label off this. */
@@ -33,27 +32,13 @@ export function projectAxes(
   yaw: number, pitch: number, radius: number,
   centre: { x: number; y: number } = { x: 0, y: 0 },
 ): GizmoAxisTip[] {
-  const cy = Math.cos(yaw), sy = Math.sin(yaw)
-  const cp = Math.cos(pitch), sp = Math.sin(pitch)
-  // fwd/right/up — the shader's `camera()`. `fwd` points from origin TOWARD the eye, so a world
-  // vector with a large positive `dot(v, fwd)` is on the near side of the volume.
-  const fwd: [number, number, number] = [cp * sy, sp, cp * cy]
-  // right = normalize(cross((0,1,0), fwd)). At pitch = ±π/2 it degenerates (`fwd` is ±Y), but
-  // `orbitDrag` clamps just short of the poles for the same reason, so we accept the same limit.
-  const rx = fwd[2], rz = -fwd[0]
-  const rl = Math.hypot(rx, rz) || 1
-  const right: [number, number, number] = [rx / rl, 0, rz / rl]
-  // up = cross(right, fwd)
-  const up: [number, number, number] = [
-    right[1] * fwd[2] - right[2] * fwd[1],
-    right[2] * fwd[0] - right[0] * fwd[2],
-    right[0] * fwd[1] - right[1] * fwd[0],
-  ]
+  // `fwd` points TOWARD the eye, so a world vector with a large positive `dot(v, fwd)` is on the
+  // near side of the volume.
+  const { fwd, right, up } = cameraBasis(yaw, pitch)
 
-  const dot = (a: readonly [number, number, number], b: readonly [number, number, number]) =>
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  const dot = (a: Readonly<Vec3>, b: Readonly<Vec3>) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
-  const AXES: { key: GizmoAxisTip['key']; v: [number, number, number] }[] = [
+  const AXES: { key: GizmoAxisTip['key']; v: Vec3 }[] = [
     { key: '+X', v: [1, 0, 0] }, { key: '-X', v: [-1, 0, 0] },
     { key: '+Y', v: [0, 1, 0] }, { key: '-Y', v: [0, -1, 0] },
     { key: '+Z', v: [0, 0, 1] }, { key: '-Z', v: [0, 0, -1] },

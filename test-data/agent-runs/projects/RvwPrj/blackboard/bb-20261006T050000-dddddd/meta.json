@@ -1,0 +1,16 @@
+{
+  "entryId": "bb-20261006T050000-dddddd",
+  "status": "open",
+  "title": "Findings",
+  "sectionOutcomes": {
+    "s01": {
+      "verdict": "bad",
+      "note": "it is a cell type",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00"
+    }
+  }
+}

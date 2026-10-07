@@ -105,3 +105,154 @@ function segment_qc_findings(counts::AbstractDict)
         Dict{String,Any}[]
     findings, primary
 end
+
+# ── Segmentation shape QC (`seg.*`) — findings that point back a step ─────────────────────────────
+#
+# docs/todo/TASK_DISCOVERY_PLAN.md Decision 6 / P4. A segmenter run on noisy or uneven input tends to
+# be TUNED (diameter, thresholds, minimum size) when the fix is upstream, in Cleanup. These findings
+# say so at the moment it matters, and their `long` text names the earlier step to check first
+# (qc/text.jl).
+#
+# Inputs are only what the runner already had in hand: per-object voxel counts from the `np.unique`
+# that counts the labels, summarised by `segmentation_utils.object_stats` into per-frame counts and the
+# percentiles of each object's equivalent diameter (circle of equal area in 2D, sphere of equal volume
+# in 3D). The size findings need the diameter the user GAVE (cellpose's `cellDiameter`); a segmenter
+# with no diameter param (coastal) gets only the count-stability one.
+#
+# **Every band below is an unvalidated placeholder.** They were picked from geometry (what a 2-cell
+# merge does to an equivalent diameter: ×1.26 in 3D, ×1.41 in 2D) and counting noise, NOT calibrated on
+# real data. They are `info`, never `warn`, until Dominik has looked at what fires on real crops (the
+# P4 checkpoint; CLAUDE.md → *Real-data visual validation*). Move them here, nowhere else.
+const SEG_QC_MIN_OBJECTS     = 20     # fewer objects than this → too few to say anything about sizes
+const SEG_FRAG_MEDIAN_RATIO  = 0.5    # median eq. diameter below half the given diameter → fragmented
+const SEG_TINY_RATIO         = 0.33   # an object below a third of the given diameter is "tiny"…
+const SEG_TINY_FRAC          = 0.4    # …and this share of tiny objects → fragmented
+const SEG_MERGE_RATIO        = 1.6    # an object above 1.6× the given diameter is "far larger"…
+const SEG_MERGE_FRAC         = 0.15   # …and this share of them → merged
+const SEG_UNSTABLE_MIN_FRAMES = 5     # fewer timepoints → no count-stability verdict
+const SEG_UNSTABLE_MIN_MEAN   = 10    # fewer cells per frame on average → counting noise dominates
+const SEG_UNSTABLE_STEP       = 0.2   # median frame-to-frame change above 20% of the count → unstable
+
+"""
+    _frac_below(q, x) -> Float64
+
+Share of objects whose value is below `x`, read off `q` — the 101 percentiles (0..100) banked by
+`object_stats` — by linear interpolation between neighbouring percentiles. Exact at the ends (0 below
+the minimum, 1 above the maximum), ~1% resolution in between.
+"""
+function _frac_below(q::AbstractVector{<:Real}, x::Real)::Float64
+    n = length(q)
+    n < 2 && return isempty(q) ? 0.0 : Float64(x > q[1])
+    x <= q[1] && return 0.0
+    x > q[end] && return 1.0
+    i = searchsortedlast(q, x)                      # q[i] ≤ x (ties: the LAST equal percentile)
+    # A run of equal percentiles is a point mass: everything in it is NOT below x when x sits on it.
+    q[i] == x && return (searchsortedfirst(q, x) - 1) / (n - 1)
+    (i - 1 + (x - q[i]) / (q[i + 1] - q[i])) / (n - 1)
+end
+
+"""
+    seg_object_qc_findings(stats; diameter_um = nothing) -> Vector{Dict}
+
+Pure QC helper: a runner's `objectStats` (see `segmentation_utils.object_stats`) → advisory `seg.*`
+findings. `diameter_um` is the cell diameter the user gave the segmenter, or `nothing` when the
+backend has none — then only `seg.counts_unstable` can fire. All three are `info`, with the measured
+numbers in `detail`. Bands: the `SEG_*` placeholders above.
+"""
+function seg_object_qc_findings(stats; diameter_um::Union{Nothing,Real} = nothing)
+    findings = Dict{String,Any}[]
+    stats isa AbstractDict || return findings
+    _get(k) = get(stats, k, get(stats, Symbol(k), nothing))
+
+    q = _get("eqDiameterUm")
+    n_obj = something(_get("nObjects"), 0)
+    if !isnothing(diameter_um) && diameter_um > 0 && q isa AbstractVector && length(q) >= 2 &&
+       n_obj >= SEG_QC_MIN_OBJECTS
+        qv = Float64.(collect(q))
+        d = Float64(diameter_um)
+        median_ratio = qv[cld(length(qv), 2)] / d
+        tiny_frac    = _frac_below(qv, SEG_TINY_RATIO * d)
+        large_frac   = 1.0 - _frac_below(qv, SEG_MERGE_RATIO * d)
+        detail = Dict{String,Any}("diameterUm" => d, "medianDiameterUm" => round(median_ratio * d; digits = 2),
+                                  "nObjects" => n_obj)
+        if median_ratio < SEG_FRAG_MEDIAN_RATIO || tiny_frac >= SEG_TINY_FRAC
+            push!(findings, qc_finding("info", "seg.fragmented"; detail = merge(detail,
+                Dict{String,Any}("medianRatio" => round(median_ratio; digits = 2),
+                                 "tinyFrac" => round(tiny_frac; digits = 3)))))
+        end
+        if large_frac >= SEG_MERGE_FRAC
+            push!(findings, qc_finding("info", "seg.merged"; pct = round(Int, large_frac * 100),
+                detail = merge(detail, Dict{String,Any}("largeFrac" => round(large_frac; digits = 3)))))
+        end
+    end
+
+    fc = _get("frameCounts")
+    if fc isa AbstractVector && length(fc) >= SEG_UNSTABLE_MIN_FRAMES
+        c = Float64.(collect(fc))
+        mean_c = sum(c) / length(c)
+        if mean_c >= SEG_UNSTABLE_MIN_MEAN
+            steps = [abs(c[t] - c[t - 1]) / max((c[t] + c[t - 1]) / 2, 1.0) for t in 2:length(c)]
+            med = sort(steps)[cld(length(steps), 2)]
+            med >= SEG_UNSTABLE_STEP && push!(findings, qc_finding("info", "seg.counts_unstable";
+                detail = Dict{String,Any}("medianStep" => round(med; digits = 3),
+                                          "meanPerFrame" => round(mean_c; digits = 1),
+                                          "nFrames" => length(c))))
+        end
+    end
+    findings
+end
+
+"""
+    seg_given_diameter(models) -> Union{Nothing,Float64}
+
+The cell diameter (µm) the size findings compare against: the `cellDiameter` of the `base` model
+group(s). `nothing` when there is none to compare with — no base group, a diameter ≤ 0 (cellpose's
+own-estimate mode), or stacked base passes that disagree (a second pass with a smaller diameter is
+deliberately finding smaller things, so "smaller than the diameter" would be the design, not a fault).
+A group without the key reads 15, the runner's own default (`cellpose_utils.py`).
+"""
+function seg_given_diameter(models)::Union{Nothing,Float64}
+    models isa AbstractDict || return nothing
+    ds = Float64[]
+    for (_, m) in models
+        m isa AbstractDict || continue
+        String(get(m, "matchAs", "base")) == "base" || continue
+        push!(ds, Float64(get(m, "cellDiameter", 15)))
+    end
+    (isempty(ds) || length(unique(ds)) > 1 || ds[1] <= 0) && return nothing
+    ds[1]
+end
+
+"""
+    bank_segment_qc!(img, fun_name, out_value_name, qc_out_path; diameter_um, on_log)
+
+Shared tail of every segmenter: read the runner's `qcOutPath` JSON, turn its counts + object stats
+into findings (`segment_qc_findings` + `seg_object_qc_findings`), bank them under `fun_name`, and log
+one `[QC]` line per finding. Advisory and best-effort — a failure is logged, never raised.
+"""
+function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_name::AbstractString,
+                          qc_out_path::AbstractString; diameter_um = nothing,
+                          on_log::Function = _ -> nothing)
+    isfile(qc_out_path) || return nothing
+    try
+        qmeta  = JSON3.read(read(qc_out_path, String))
+        counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
+        findings, primary = segment_qc_findings(counts)
+        stats = get(qmeta, :objectStats, nothing)
+        seg = seg_object_qc_findings(stats; diameter_um = diameter_um)
+        append!(findings, seg)
+        metrics = Dict{String,Any}("nCells" => primary, "byType" => counts)
+        isnothing(diameter_um) || (metrics["diameterUm"] = diameter_um)
+        write_qc(img, fun_name, out_value_name, findings; metrics = metrics)
+        on_log("[QC] segmented $primary cell(s)" *
+               (length(counts) > 1 ? " ($(join(["$k=$v" for (k, v) in counts], ", ")))" : "") * ".")
+        # One line per shape finding, code first: the task log is where a user (or an agent) reading
+        # the run looks, and the code prefix is what the MCP discovery toggle filters on.
+        for f in seg
+            on_log("[QC] $(f["code"]): $(f["short"]) — $(f["long"])")
+        end
+    catch e
+        on_log("[QC] could not compute segment QC: $e")
+    end
+    nothing
+end

@@ -2,6 +2,12 @@
   "task": "trackingStalenessReport",
   "fun_name": "tracking.staleness_report",
   "label": "Correct tracks — report stale downstream",
+  "purpose": "List results that predate the latest track correction",
+  "useWhen": ["After a track correction, to see which steps to re-run"],
+  "notWhen": [
+    "To clear stale results: it only reports, never deletes",
+    "Already runs inside Correct tracks + measures"
+  ],
   "category": "Tracking",
   "group": "Correction tools",
   "env": ["local"],

@@ -2,6 +2,16 @@
   "task": "driftCorrect",
   "fun_name": "cleanupImages.driftCorrect",
   "label": "Drift correction",
+  "purpose": "Remove whole-frame drift between timepoints",
+  "useWhen": [
+    "Tissue shifts as a whole from frame to frame",
+    "Before Smoothing or Denoising, which compare a pixel across frames",
+    "Breathing moves shallow and deep planes differently: use per Z-plane"
+  ],
+  "notWhen": [
+    "Planes within one stack are offset: use Within-stack alignment",
+    "Tissue warps within a frame: use Flow-based registration"
+  ],
   "category": "Cleanup",
   "group": "Align",
   "env": ["local"],

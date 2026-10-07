@@ -2,6 +2,9 @@
   "task": "flip",
   "fun_name": "editImages.flip",
   "label": "Flip",
+  "purpose": "Mirror an image left/right or top/bottom, or reverse its Z stack",
+  "useWhen": ["Image or Z stack is stored in the opposite direction"],
+  "notWhen": ["Rotating by 90°: a flip only mirrors one axis"],
   "category": "Preprocessing",
   "group": "Reshape",
   "env": [

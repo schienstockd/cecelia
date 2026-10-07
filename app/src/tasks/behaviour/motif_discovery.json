@@ -2,6 +2,13 @@
   "task": "motifDiscovery",
   "fun_name": "behaviour.motif_discovery",
   "label": "Motif discovery",
+  "purpose": "Find short movement patterns shared across tracks",
+  "useWhen": ["Recurring patterns shorter than a whole track"],
+  "notWhen": [
+    "No HMM states or track measures yet: run them first",
+    "Tracks shorter than the window are skipped",
+    "Populations from different segmentations can't share one run"
+  ],
   "category": "Behaviour",
   "group": "Motifs",
   "env": ["local"],

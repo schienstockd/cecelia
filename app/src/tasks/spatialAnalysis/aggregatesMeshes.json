@@ -2,6 +2,15 @@
   "task": "aggregatesMeshes",
   "fun_name": "spatialAnalysis.aggregatesMeshes",
   "label": "Detect aggregates (meshes)",
+  "purpose": "Find aggregates of cells whose surfaces lie close together",
+  "useWhen": [
+    "Large or live cells where surfaces matter",
+    "You need an aggregated population for later steps"
+  ],
+  "notWhen": [
+    "Grouping by measured features: use Cluster cells",
+    "Quick first look: Detect aggregates is faster"
+  ],
   "category": "Spatial analysis",
   "group": "Aggregates",
   "env": ["local"],

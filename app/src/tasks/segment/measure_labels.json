@@ -2,6 +2,15 @@
   "task": "measureLabels",
   "fun_name": "segment.measureLabels",
   "label": "Measure labels",
+  "purpose": "Measure each label's shape and channel intensities into the cell table",
+  "useWhen": [
+    "Labels with no measures yet, e.g. after a bare segmentation run",
+    "Re-measure intensities from another image version"
+  ],
+  "notWhen": [
+    "Right after segmenting: the segment + measure tasks already do it",
+    "After hand edits: use Correct labels + measures to keep tracks and clusters"
+  ],
   "category": "Segment",
   "group": "Measure",
   "env": ["local"],

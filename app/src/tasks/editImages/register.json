@@ -2,6 +2,12 @@
   "task": "register",
   "fun_name": "editImages.register",
   "label": "Register images (staining cycles)",
+  "purpose": "Align staining cycles on a shared marker and stack them as one image",
+  "useWhen": [
+    "Same tissue imaged over several staining cycles",
+    "Each cycle carries the same marker channel to align on"
+  ],
+  "notWhen": ["A movie: uses the first frame only, so use Drift correction"],
   "category": "Edit",
   "group": "Register",
   "env": ["local"],

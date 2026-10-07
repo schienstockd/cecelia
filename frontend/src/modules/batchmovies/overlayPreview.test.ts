@@ -8,30 +8,23 @@ import {
 // (`api/test/runtests.jl` → "movie rail — offline overlay-config translator"). If either drifts
 // the two fixtures move together or one of them fails, which is the point of duplicating them.
 
-describe('derivedOverlayFlags — locks the PR #751 rules', () => {
-  it('allTracks = showTracks && !showPops (pops wins when both)', () => {
-    // both on → pops wins; whole-seg grey is dropped
-    expect(derivedOverlayFlags({ showTracks: true, showPopulations: true }).allTracks).toBe(false)
-    // tracks alone → whole-seg mode active
-    expect(derivedOverlayFlags({ showTracks: true }).allTracks).toBe(true)
-    // pops alone → not whole-seg
-    expect(derivedOverlayFlags({ showPopulations: true }).allTracks).toBe(false)
-    // neither → not whole-seg
-    expect(derivedOverlayFlags({}).allTracks).toBe(false)
+describe('derivedOverlayFlags — the viewer\'s track kinds', () => {
+  it('per-segmentation tracks stand on their own — with or without the pops', () => {
+    expect(derivedOverlayFlags({ showTracks: true }).segTracks).toBe(true)
+    expect(derivedOverlayFlags({ showTracks: true, showPopulations: true }).segTracks).toBe(true)
+    expect(derivedOverlayFlags({ showPopulations: true }).segTracks).toBe(false)
   })
 
-  it('includeTracks fires under EITHER showTracks or showGatedTracks', () => {
-    expect(derivedOverlayFlags({ showTracks: true }).includeTracks).toBe(true)
-    expect(derivedOverlayFlags({ showGatedTracks: true }).includeTracks).toBe(true)
-    expect(derivedOverlayFlags({ showTracks: true, showGatedTracks: true }).includeTracks).toBe(true)
-    expect(derivedOverlayFlags({ showPopulations: true }).includeTracks).toBe(false)
+  it('cell-track ribbons ride on the pops', () => {
+    expect(derivedOverlayFlags({ showGatedTracks: true }).gatedRibbons).toBe(false)
+    expect(derivedOverlayFlags({ showGatedTracks: true, showPopulations: true }).gatedRibbons).toBe(true)
+    // the tracks chip no longer pushes ribbons onto the pops
+    expect(derivedOverlayFlags({ showTracks: true, showPopulations: true }).gatedRibbons).toBe(false)
   })
 
-  it('the author runs under showPops OR showTracks (points only for pops)', () => {
-    expect(derivedOverlayFlags({ showPopulations: true }).authorRuns).toBe(true)
-    expect(derivedOverlayFlags({ showTracks: true }).authorRuns).toBe(true)
-    expect(derivedOverlayFlags({}).authorRuns).toBe(false)
-    expect(derivedOverlayFlags({ showGatedTracks: true }).authorRuns).toBe(false)
+  it('track clusters draw alone, not only with the pops', () => {
+    expect(derivedOverlayFlags({ showTrackclust: true }).trackclust).toBe(true)
+    expect(derivedOverlayFlags({ showTrackclust: true, showTracks: true }).trackclust).toBe(true)
   })
 })
 
@@ -117,11 +110,11 @@ describe('renderOverlayPreview — the three overlay-author branches', () => {
     expect(both.ribbons.length).toBe(gated.ribbons.length)
   })
 
-  it('trackclust alone → empty + caption about needing populations', () => {
+  it('trackclust alone → its ribbons, no points (not tied to the pops, as in the viewer)', () => {
     const r = renderOverlayPreview({ showTrackclust: true }, scene)
     expect(r.points.length).toBe(0)
-    expect(r.ribbons.length).toBe(0)
-    expect(r.caption).toBe('track-cluster ribbons need populations on')
+    expect(r.ribbons.length).toBeGreaterThan(0)
+    expect(r.caption).toBeUndefined()
   })
 
   it('showGatedTracks alone → empty + caption (mirrors backend: gates need pops)', () => {

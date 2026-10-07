@@ -2,6 +2,16 @@
   "task": "branching",
   "fun_name": "segment.branching",
   "label": "Branching (skeleton) analysis",
+  "purpose": "Skeletonise a segmentation into a branch network with lengths and types",
+  "useWhen": [
+    "Fibrous or reticular structure: collagen, stromal networks, nerves",
+    "Fibre orientation and anisotropy across an image"
+  ],
+  "notWhen": [
+    "No segmentation of the structure yet: segment it first",
+    "Measuring cells: skeleton paths are not cell regions",
+    "Unreliable segmentation: read anisotropy from the channel instead"
+  ],
   "category": "Segment",
   "group": "Measure",
   "env": ["local"],

@@ -114,6 +114,14 @@ and outside `~` (the sandbox write-denies home). The agent works in a detached c
 (`--strict-mcp-config`: the observer would point it at the real app), network off, and a
 `--max-budget-usd` cap.
 
+**A run the usage limit stopped is not scored.** When the stream's terminal `result` event is a 429 /
+limit refusal (`claude_cli.rate_limit`, read by `agent_sandbox.parse_stream_json`), the record says
+`scored: false`, `rateLimited: {message, resetAt}`, `headline: null`, `scores: null`, and `record.md`
+heads with *RATE-LIMITED, not scored* — what the run left is where the limit cut it off, so it must
+not read as an agent that did nothing; leave it out of any comparison. The runner exits 75
+(`EX_TEMPFAIL`); `cron_night.sh` still stores that record, then skips the night's remaining briefs
+(they would hit the same limit) and exits 75. Record `schemaVersion` 2.
+
 ### P1 — fixture generator + ground truth + scorer — **built**
 - `scripts/agent_eval/fixture.py`: seeded 2D+t, 192×192 px at 0.8 µm/px, 40 frames at 30 s, 18 cells,
   1 channel (`cells`), two regimes (migrating 5 µm/min persistent / arrested 0.3 µm/min), ≥ 8 frames
@@ -193,7 +201,12 @@ source project, per image the copy's label sets / gates / chains next to the sou
 both sides, and a canary over the whole source project). The reviewable record is a blackboard entry
 in the SOURCE project, one section per decision (`run_record.py`,
 [`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) P1). Started with
-`pixi run guide-run` (`guide_run.py`, above); the old crontab wrapper `cron_app.sh` is gone.
+`pixi run guide-run` (`guide_run.py`, above); the old crontab wrapper `cron_app.sh` is gone. A run the
+usage limit stopped carries `rateLimited: {message, resetAt}` in `record.json`, its blackboard entry
+says so in the title (*· stopped by usage limit*), at the top and in the `agentRun` marker, the CLI's
+refusal is not shown as the agent's last message, and `run_app.py` exits 75. A post-run why the limit
+refuses (or that fails) is said in the entry (*Explained after the run: not answered — …*), never an
+empty why.
 
 **No breadcrumbs (Dominik, 2026-10-03).** The run measures autonomous reasoning in this domain, so
 the agent gets exactly what any user's install gives it — tools, their API docs, the app's own

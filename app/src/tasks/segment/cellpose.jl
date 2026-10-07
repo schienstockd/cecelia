@@ -218,20 +218,10 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     label_files = segment_label_files(p.outputValueName, models_converted)
     register_label_files!(img, p.outputValueName, label_files)
 
-    # QC (advisory): bank the objective per-type cell count the Python runner wrote (drift pattern).
-    if isfile(qc_out_path)
-        try
-            qmeta  = JSON3.read(read(qc_out_path, String))
-            counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
-            findings, primary = segment_qc_findings(counts)
-            write_qc(img, "segment.cellpose", p.outputValueName, findings;
-                     metrics = Dict{String,Any}("nCells" => primary, "byType" => counts))
-            on_log("[QC] segmented $primary cell(s)" *
-                   (length(counts) > 1 ? " ($(join(["$k=$v" for (k, v) in counts], ", ")))" : "") * ".")
-        catch e
-            on_log("[QC] could not compute segment QC: $e")
-        end
-    end
+    # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings
+    # (`bank_segment_qc!`, segmentation.jl).
+    bank_segment_qc!(img, "segment.cellpose", p.outputValueName, qc_out_path;
+                     diameter_um = seg_given_diameter(models_converted), on_log = on_log)
 
     Dict{String,Any}("outputValueName"  => p.outputValueName,
                      "labelValueName"   => p.outputValueName,

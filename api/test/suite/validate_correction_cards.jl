@@ -247,6 +247,29 @@ end
             @test st == 400
             st, _ = _mount(Dict("projectUid" => "no-such", "imageUid" => "no-such"))
             @test st == 404
+
+            # ── evidence switch (TASK_DISCOVERY_PLAN Decision 9) ──────────────────────────
+            # Bad value → 400 before any image lookup.
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                     "evidence" => "pixels"))
+            @test st == 400
+            @test occursin("evidence", String(JSON3.read(body).error))
+            # Make the (temp-copied) image photon-limited, then compare the two arms: `all` adds the
+            # score-driven smooth, `metadata` is the answer without it.
+            img_ccid = joinpath(dir, "testpr", "1", "KDIeEm", "ccid.json")
+            raw = JSON3.read(read(img_ccid, String), Dict{String,Any})
+            meta = get!(raw, "meta", Dict{String,Any}())
+            meta["saturation"] = Dict{String,Any}("channels" => [
+                Dict{String,Any}("index" => 0, "saturated" => false, "zeroFrac" => 0.97)])
+            Cecelia.write_json_atomic(img_ccid, raw)
+            _smooth(body) = [s for s in JSON3.read(body).included if String(s.funName) == "cleanupImages.smooth"]
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm"))
+            @test st == 200
+            @test String(only(_smooth(body)).source) == "computed_qc"
+            st, body = _recpost(Dict("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                     "evidence" => "metadata"))
+            @test st == 200
+            @test isempty(_smooth(body))
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

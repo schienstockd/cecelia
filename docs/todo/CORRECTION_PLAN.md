@@ -376,8 +376,9 @@ Both from `app/src/label_props.jl:657-692`:
      write, QC banking with per-op pixel counts.
   3. **✅ Python runner** — `app/src/tasks/segment/correct_run.py`: opens the labels zarr,
      applies ops op-by-op per touched frame (preserves per-op pixel accuracy vs the folded
-     rewrite), stages via `zarr_utils.staged_store` + `store_compressor('labels')`, errors on
-     multi-level input (Decision 2b lives on).
+     rewrite), stages via `zarr_utils.staged_store` + `store_compressor('labels')`, then rebuilds
+     every lower level from the edited level 0 with the image's level count (Decision 2b's
+     single-level-only restriction is retired — see `docs/SEGMENTATION.md` → *Output zarr layout*).
   4. **✅ Composite** — `segment.correct_measures` chains `segment.correct` +
      `segment.measureLabels`. Registry + cohort-metrics wired.
   5. **✅ Cockpit surface** — `frontend/src/components/correction/CorrectionCockpit.vue`

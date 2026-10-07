@@ -2,6 +2,12 @@
   "task": "cellNeighbours",
   "fun_name": "spatialAnalysis.cellNeighbours",
   "label": "Neighbour graph",
+  "purpose": "Build the neighbour graph that interaction and region steps read",
+  "useWhen": [
+    "Before Interaction matrix or Cluster regions: both need this graph",
+    "Live imaging: per timepoint links cells only within one frame"
+  ],
+  "notWhen": [],
   "category": "Spatial analysis",
   "group": "Neighbourhood",
   "env": ["local"],

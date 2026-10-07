@@ -633,19 +633,6 @@ def _layer_disk(kind, name, value_name, path, axes, full_shape, source=None):
     return out
 
 
-def _region_slice(axes, bounds):
-    """A tuple of `slice` objects placing the region within a full-shape array. Axes with no bound
-    stay whole (`slice(None)`)."""
-    out = []
-    for ax in axes:
-        b = bounds.get(ax) if bounds else None
-        if b is None:
-            out.append(slice(None))
-        else:
-            out.append(slice(int(b[0]), int(b[1])))
-    return tuple(out)
-
-
 def _sweep_preview_labels(task_dir):
     """Best-effort delete of every `*__preview.ome.zarr` (and its staging siblings) under
     `{task_dir}/labels/`. Called from the `cleanup` message, from the start of every request, and
@@ -691,8 +678,57 @@ def _atexit_sweep():
 atexit.register(_atexit_sweep)
 
 
+def _level_region(axes, full_shape, bounds, stride):
+    """``(level_shape, region, block_sub)`` for a pyramid level at XY ``stride``: the level's shape,
+    where the region lands in it, and which pixels of the region-sized block land there. Picks the
+    same source pixels as `zarr_utils.write_multiscale_pyramid` (every ``stride``-th from 0), so
+    the preview's levels match what the run's label pyramid will show."""
+    shape, region, sub = [], [], []
+    for ax, n in zip(axes, full_shape):
+        if ax not in ('Y', 'X'):
+            shape.append(n)
+            b = bounds.get(ax) if bounds else None
+            region.append(slice(None) if b is None else slice(int(b[0]), int(b[1])))
+            sub.append(slice(None))
+            continue
+        shape.append(-(-n // stride))
+        b = bounds.get(ax) if bounds else None
+        lo, hi = (0, n) if b is None else (int(b[0]), int(b[1]))
+        j0, j1 = -(-lo // stride), -(-hi // stride)       # level pixels whose source is in [lo, hi)
+        region.append(slice(j0, j1))
+        sub.append(slice(j0 * stride - lo, j1 * stride - lo, stride) if j1 > j0 else slice(0, 0))
+    return tuple(shape), tuple(region), tuple(sub)
+
+
+def _write_region_levels(staging, block, axes, full_shape, bounds, im_path, kind):
+    """Write a region-sized ``block`` into a FULL-image-sized multiscales group at ``staging``, with
+    as many levels as the source image — a zoomed-out viewer reads the preview at the image's level,
+    exactly as it reads the real store. Only the chunks the region overlaps are written; the rest
+    read back as the fill value 0.
+
+    Zarr format + separator are inherited from the source image; the codec follows ``kind``
+    (`'labels'` / `'image'`) — the same rule `_open_label_store` in segmentation_utils follows."""
+    enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
+    fmt = enc.get('zarr_format', 2)
+    separator = enc.get('separator')
+    nscales = len(zarr_utils.open_as_zarr(im_path, as_dask=False)[0]) if im_path else 1
+    full = tuple(int(x) for x in full_shape)
+    axes_up = [str(a).upper() for a in axes]
+
+    g = zarr.open_group(staging, mode='w', zarr_format=fmt)
+    zarr_utils.write_multiscales_attrs(g, zarr_utils.multiscales_metadata(axes_up, nscales), fmt)
+    for lv in range(nscales):
+        shape, region, sub = _level_region(axes_up, full, bounds, 2 ** lv)
+        # Per-plane on Y/X so writing the region touches only the chunks that overlap it.
+        chunks = tuple(min(shape[i], 512) if ax in ('Y', 'X') else 1 for i, ax in enumerate(axes_up))
+        arr = g.create_array(
+            str(lv), shape=shape, chunks=chunks, dtype=block.dtype, fill_value=0,
+            **zarr_utils._codec_kwargs(kind, fmt, separator=separator))
+        arr[region] = np.ascontiguousarray(block[sub])
+
+
 def _stage_labels_store(block, axes, full_shape, bounds, task_dir, value_name, im_path=None):
-    """Write ONE level of labels into `{task_dir}/labels/{value_name}__preview.ome.zarr`.
+    """Write the preview labels into `{task_dir}/labels/{value_name}__preview.ome.zarr`.
 
     The block is region-sized; the store is FULL-image-sized with the block placed at `bounds` and
     the rest left as the array's fill value (0 — unwritten label chunks read as background, which is
@@ -716,35 +752,15 @@ def _stage_labels_store(block, axes, full_shape, bounds, task_dir, value_name, i
     if os.path.exists(final_path):
         shutil.rmtree(final_path, ignore_errors=True)
 
-    # Inherit zarr format from the source image; labels codec is separate from that format decision
-    # (see `_open_label_store` in segmentation_utils — one rule for both label writers).
-    enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
-    fmt = enc.get('zarr_format', 2)
-    separator = enc.get('separator')
-
-    full = tuple(int(x) for x in full_shape)
-    axes_up = [str(a).upper() for a in axes]
-
     with zarr_utils.staged_store(final_path) as staging:
-        g = zarr.open_group(staging, mode='w', zarr_format=fmt)
-        ms_meta = zarr_utils.multiscales_metadata(axes_up, 1)
-        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
-
-        # Chunk per-plane on Y/X so writing the region touches only the chunks that overlap it —
-        # the rest are unwritten and read back as 0 through the labels store's fill_value.
-        chunks = tuple(min(full[i], 512) if ax in ('Y', 'X') else 1
-                       for i, ax in enumerate(axes_up))
-        level0 = g.create_array(
-            '0', shape=full, chunks=chunks, dtype=block.dtype, fill_value=0,
-            **zarr_utils._codec_kwargs('labels', fmt, separator=separator))
-        level0[_region_slice(axes_up, bounds)] = np.ascontiguousarray(block)
+        _write_region_levels(staging, block, axes, full_shape, bounds, im_path, 'labels')
 
     return final_path
 
 
 def _stage_af_image_store(block, axes, full_shape, bounds, task_dir, value_name,
                           channel_index, im_path=None):
-    """Write ONE level of a corrected image channel into
+    """Write a corrected image channel into
     `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr`.
 
     Same geometry story as `_stage_labels_store`: region-sized block placed at `bounds` inside a
@@ -769,24 +785,8 @@ def _stage_af_image_store(block, axes, full_shape, bounds, task_dir, value_name,
     if os.path.exists(final_path):
         shutil.rmtree(final_path, ignore_errors=True)
 
-    enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
-    fmt = enc.get('zarr_format', 2)
-    separator = enc.get('separator')
-
-    full = tuple(int(x) for x in full_shape)
-    axes_up = [str(a).upper() for a in axes]
-
     with zarr_utils.staged_store(final_path) as staging:
-        g = zarr.open_group(staging, mode='w', zarr_format=fmt)
-        ms_meta = zarr_utils.multiscales_metadata(axes_up, 1)
-        zarr_utils.write_multiscales_attrs(g, ms_meta, fmt)
-
-        chunks = tuple(min(full[i], 512) if ax in ('Y', 'X') else 1
-                       for i, ax in enumerate(axes_up))
-        level0 = g.create_array(
-            '0', shape=full, chunks=chunks, dtype=block.dtype, fill_value=0,
-            **zarr_utils._codec_kwargs('image', fmt, separator=separator))
-        level0[_region_slice(axes_up, bounds)] = np.ascontiguousarray(block)
+        _write_region_levels(staging, block, axes, full_shape, bounds, im_path, 'image')
 
     return final_path
 

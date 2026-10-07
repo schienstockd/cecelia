@@ -281,7 +281,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="as of this date (default: today)")
     args = ap.parse_args(argv)
-    rows, props, stats, cost = propose(list(read_events()), date=args.date or _dt.date.today().isoformat())
+    try:
+        rows, props, stats, cost = propose(list(read_events()), date=args.date or _dt.date.today().isoformat())
+    except _judge.RateLimited as e:
+        return _judge.limit_exit("judge-rules", e)
     print(json.dumps({"rules": rows, "proposals": props}, indent=2, ensure_ascii=False))
     print(f"{len(props)} proposal(s); judge ${cost:.2f}; findings "
           + " · ".join(f"{n} {b.replace('_', ' ')}" for b, n in stats.items()), file=sys.stderr)

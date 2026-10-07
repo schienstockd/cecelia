@@ -138,4 +138,24 @@ describe('viewerCacheClearMatches', () => {
       { imageUid: 'jFWePN', labelValueName: 'nuc' },
       { imageUid: 'jFWePN', valueName: 'default', labelValueName: '' })).toBe(false)
   })
+
+  it('a label vn the viewer does not know yet matches — a new segmentation', () => {
+    // NSfanU written while the viewer was open: its meta's `labelNames` predates the store, so
+    // ticking it on drew nothing until the viewer was reopened. The viewer must refetch meta.
+    expect(viewerCacheClearMatches(
+      { imageUid: 'jFWePN', labelValueName: 'NSfanU' },
+      { imageUid: 'jFWePN', valueName: 'default', labelValueName: '', knownLabelNames: ['nuc'] },
+    )).toBe(true)
+    // A KNOWN label the viewer isn't drawing is still not ours.
+    expect(viewerCacheClearMatches(
+      { imageUid: 'jFWePN', labelValueName: 'nuc' },
+      { imageUid: 'jFWePN', valueName: 'default', labelValueName: 'cell',
+        knownLabelNames: ['nuc', 'cell'] },
+    )).toBe(false)
+    // A new label on ANOTHER image is not ours either.
+    expect(viewerCacheClearMatches(
+      { imageUid: 'zolIMa', labelValueName: 'NSfanU' },
+      { imageUid: 'jFWePN', labelValueName: '', knownLabelNames: [] },
+    )).toBe(false)
+  })
 })

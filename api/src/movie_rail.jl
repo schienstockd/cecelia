@@ -240,9 +240,27 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     show_pops   = _cfg_bool(cfg, "showPopulations")
     show_tracks = _cfg_bool(cfg, "showTracks")
     show_gated  = _cfg_bool(cfg, "showGatedTracks")
-    if !(show_pops || show_tracks || show_gated || has_mask)
+    show_tc     = _cfg_bool(cfg, "showTrackclust")
+    if !(show_pops || show_tracks || show_gated || show_tc || has_mask)
         return nothing
     end
+    # Per-segmentation tracks (`showTracks`): the visible `trackSources` — the viewer look's map
+    # `{valueName => {visible, colour}}` or the batch panel's `{valueName, colour}` list
+    # (`_normalise_track_sources`). An ABSENT list is the batch's single grey source on the overlays'
+    # own segmentation (`""`). Independent of the pops: the viewer draws a segmentation's tracks
+    # whichever segmentation the pop manager is on.
+    ts_raw = get(cfg, "trackSources", nothing)
+    ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
+    segs = Dict{String,Any}[]
+    if show_tracks
+        if ts_raw isa Union{AbstractDict,AbstractVector}
+            segs = _normalise_track_sources(ts_raw)
+        else
+            segs = [Dict{String,Any}("valueName" => "", "colour" => OVERLAY_GREY)]
+        end
+    end
+    hidden_raw = get(cfg, "hiddenTrackPops", nothing)
+    hidden_raw === nothing && (hidden_raw = get(cfg, :hiddenTrackPops, nothing))
     out = Dict{String,Any}(
         "popType"          => _cfg_str(cfg, "popType", "flow"),
         # Explicit gate on the pop-dot build. Presence of the field is what stops
@@ -250,18 +268,14 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # was written, the reader defaulted `showPopulations` to true (for smoke-route back-compat)
         # and any `ov_raw` dict leaked pop dots.
         "showPopulations"  => show_pops,
-        # the "trackclust" chip — `trackclust_requested` decides whether it draws
-        "showTrackclust"   => _cfg_bool(cfg, "showTrackclust"),
-        # Ribbon eligibility in the overlay author is `include_tracks && (is_track || has_tracks)` on
-        # the pops path, and `include_tracks` alone on the all-tracks path. Both `tracks` (all-seg
-        # ribbons) and `gated` (cell-track ribbons) chips should push ribbons; before this either flag
-        # meant "yes for gated, no for all-seg" and the whole-seg chip drew dots only.
-        "includeTracks"    => show_gated || show_tracks,
-        # `allTracks` is the whole-seg grey mode — every tracked cell painted with `all_tracks_colour`,
-        # `pops_filter` ignored. When `showPops` is on the user has already narrowed to specific pops,
-        # so the all-seg override no longer matches intent; yield to the pops branch (which still gets
-        # ribbons for its own cells via `include_tracks` above).
-        "allTracks"        => show_tracks && !show_pops,
+        # The track kinds, as `overlay_track_plan` reads them (`viewer_overlay_closure` draws them):
+        # per-segmentation sources, the pops' cell-track ribbons (only with the pops — the viewer
+        # drops the pop family, ribbons included, when its pop type is off), and the trackclust chip
+        # over every segmentation.
+        "trackSegs"        => segs,
+        "gatedRibbons"     => show_gated && show_pops,
+        "hiddenTrackPops"  => hidden_raw isa AbstractVector ? String[String(x) for x in hidden_raw] : String[],
+        "showTrackclust"   => show_tc,
         # Absent → the legacy defaults. A look read off the viewer carries the viewer's own values
         # (`frontend/src/utils/viewer/viewerLook.ts`); both spellings of the colour-mode key are read,
         # since the config is British and the overlay reader (`_ov(:trackColorMode)`) is not.
@@ -280,9 +294,10 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         out["maskContourPx"]   = _cfg_int(cfg, "labelContour", 1)
         # the fill opacity a filled (contour 0) mask blends at — the viewer's `viewerLabelOpacity`
         out["maskOpacity"]     = clamp(Float64(_cfg_get(cfg, "labelOpacity", Float64(MASK_FILL_OPACITY))), 0.0, 1.0)
-        # `allCells` = whole-segmentation mask (every id painted). If neither pops nor cell tracks are
-        # on, that IS the intended mask; else the mask filters by the same pops the points would draw.
-        out["allCells"]        = !(show_pops || show_gated)
+        # `allCells` = whole-segmentation mask (every id painted). A batch with pops on filters the
+        # mask by the same pops the points draw; the viewer's mask is always every cell, so a look
+        # read off it says so (`maskAllCells`).
+        out["allCells"]        = _cfg_bool(cfg, "maskAllCells", !(show_pops || show_gated))
     end
     # colourBy / colourOverrides — same knobs the overlay author reads (`_build_overlay_state`).
     # `mask_id_colours` picks them up so a labels layer coloured by "clusters" and the pop dots
@@ -308,23 +323,6 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     # segmentation), matching the pre-picker behaviour.
     pvn = _cfg_str(cfg, "popValueName", "")
     isempty(pvn) || (out["valueName"] = pvn)
-    # `trackSources` — a list of `{valueName, colour}` entries picked in the batch panel's
-    # "Track sources" list. Only meaningful under `showTracks && !showPops` (all-tracks mode) — the
-    # batch panel hides the picker otherwise. When passed, `_resolve_movie_overlays_mask` composes
-    # ONE overlay closure per source (each `build_overlays3d_for` call has its own `all_tracks_colour`)
-    # and merges their outputs. Without this the movie draws only the mask segmentation's tracks in
-    # one grey; with two tracked segs (fXgbTl has cpSAM + flowTom + coastalFg + coastalSm15) the user
-    # can now see both, each in its own colour.
-    ts_raw = get(cfg, "trackSources", nothing)
-    ts_raw === nothing && (ts_raw = get(cfg, :trackSources, nothing))
-    all_tracks, sources = _whole_seg_track_sources(out["allTracks"], ts_raw)
-    isempty(sources) || (out["trackSources"] = sources)
-    if out["allTracks"] && !all_tracks
-        # Sources were chosen and every one is hidden: no whole-segmentation tracks — not the
-        # grey fallback an ABSENT list means (the viewer draws none).
-        out["allTracks"] = false
-        out["includeTracks"] = show_gated
-    end
     out
 end
 
@@ -430,6 +428,7 @@ function run_single_offline(task_id::String, project_uid::String, image_uid::Str
     specs = _apply_channel_picks(specs, look_cfg, img, vnn)
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                        label_value_name === nothing ? vnn : String(label_value_name);
+                                       mask_value_name = label_value_name === nothing ? nothing : String(label_value_name),
                                        tally = false,
                                        on_log = line -> ws_log(nothing, task_id, line))
 
@@ -626,6 +625,7 @@ function run_batch_offline(task_id::String, project_uid::String, image_uids::Vec
                         overlays_raw : _overlays_raw_from_config(config, has_mask)
                     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, effective_overlays,
                                                        label_vn === nothing ? vnn : label_vn;
+                                                       mask_value_name = label_vn,
                                                        tally = false,
                                                        on_log = line -> ws_log(nothing, task_id, line))
                     # Apply the batch config's channel picks on top of the props-derived specs —
@@ -802,6 +802,7 @@ function _resolve_grid_cell(pu::AbstractString, iu::AbstractString, img, cfg;
         crop_from_view_state(view_state, Int(native_h), Int(native_w)) : nothing
     ov = _resolve_movie_overlays_mask(img, nothing, arr, caxes, overlays_dict,
                                        label_vn === nothing ? vnn : label_vn;
+                                       mask_value_name = label_vn,
                                        tally = false,
                                        on_log = on_log)
     (; zp, arr, caxes, specs = effective_specs, ov, z_slice, nc, view_crop,

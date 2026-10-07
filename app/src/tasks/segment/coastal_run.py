@@ -58,7 +58,8 @@ def run(params):
 
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
-        write_json_atomic(qc_out_path, {'labelCounts': label_counts})
+        write_json_atomic(qc_out_path, {'labelCounts': label_counts,
+                                         'objectStats': getattr(cu, 'object_stats', None)})
         log.log(f'>> saved segment QC counts: {label_counts}')
 
     log.log('>> done')

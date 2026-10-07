@@ -11,6 +11,7 @@
 
 import type { Prereq } from './types'
 import { isImported } from '../../utils/inclusion'
+import { hasMeasuredTracks, isSegmented, isTimeSeries } from '../../utils/imageState'
 
 // A short label reads as the tail of "This guide needs …" — so no leading capital, no full stop.
 export const PREREQ = {
@@ -50,14 +51,14 @@ export const PREREQ = {
   timeSeries: {
     id: 'timeSeries',
     label: 'a time series (more than one frame)',
-    ok: c => c.images.some(i => (i.sizeT ?? 1) > 1),
+    ok: c => c.images.some(isTimeSeries),
   },
 
   // Segmentation is the entry point for everything downstream, and its output is what `labels` holds.
   segmented: {
     id: 'segmented',
     label: 'a segmented image',
-    ok: c => c.images.some(i => Object.keys(i.labels ?? {}).length > 0),
+    ok: c => c.images.some(isSegmented),
     fixGuide: 'segment-an-image',
   },
 
@@ -74,7 +75,7 @@ export const PREREQ = {
   tracked: {
     id: 'tracked',
     label: 'a tracked image',
-    ok: c => c.images.some(i => (i.trackValueNames ?? []).length > 0),
+    ok: c => c.images.some(hasMeasuredTracks),
     fixGuide: 'track-cells',
   },
 } satisfies Record<string, Prereq>

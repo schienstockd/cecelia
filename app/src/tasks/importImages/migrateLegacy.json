@@ -2,6 +2,12 @@
   "task": "migrateLegacy",
   "fun_name": "importImages.migrateLegacy",
   "label": "Migrate legacy image",
+  "purpose": "Bring an old R Cecelia image across with its segmentation and tracks",
+  "useWhen": ["Old R project whose segmentation and tracking you want to keep"],
+  "notWhen": [
+    "Clustering, gating or HMM states: not migrated, redo them here",
+    "No R on this machine: it reads the old metadata through R"
+  ],
   "category": "import",
   "group": "Import",
   "env": ["local"],

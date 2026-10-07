@@ -112,6 +112,14 @@ recommend or exclude them. See PR moving `cleanupImages.{dtype,flip}` → `editI
 
 ### Notes on the table
 
+- **Photon-limited rule (built, TASK_DISCOVERY_PLAN P3).** The `smooth` and `denoise` rows now have a
+  plan-time probe: `smooth.photon_limited_frac` (worst channel's import `zeroFrac`). `≥ 0.90` on the
+  no-preset card includes `smooth` (resonance-card params) and `denoise` (behind the vault + saturation
+  gates); `< 0.50` excludes `denoise` — "Not photon-limited — denoising would remove signal" — unless a
+  card seeded it; `smooth` is never excluded. Between the bands, or absent, nothing changes. Placeholder
+  bands; `evidence = :metadata` skips the rule. Code: `_apply_photon_rules!` in `app/src/correction_plan.jl`.
+  An image imported before the probe existed is probed once on its first recommend and the result
+  persisted (`ensure_saturation_meta!`), so the rule reaches old images too.
 - **Every "auto-detect" cell is `include` only for the two rules that have a real metadata field**:
   the `T`/`Z` axis gates and the denoise saturation gate. All other rules are `user-pick` because
   their preconditions live in cards or in the wizard (per 1c: only 2 auto rules, 0 pre-run pixel

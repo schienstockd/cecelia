@@ -2,6 +2,15 @@
   "task": "trackMeasures",
   "fun_name": "tracking.track_measures",
   "label": "Track measures",
+  "purpose": "Compute speed, turning angle and displacement per cell and per track",
+  "useWhen": [
+    "Tracks exist but have no motility measures yet",
+    "Re-measure in 2D when Z steps are only segmentation jitter"
+  ],
+  "notWhen": [
+    "Already ran as part of Bayesian track + measures",
+    "No tracks yet: run Bayesian tracking first"
+  ],
   "category": "Tracking",
   "group": "Measure",
   "env": ["local"],

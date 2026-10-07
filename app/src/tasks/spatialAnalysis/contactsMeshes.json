@@ -2,6 +2,15 @@
   "task": "contactsMeshes",
   "fun_name": "spatialAnalysis.contactsMeshes",
   "label": "Cell contacts (meshes)",
+  "purpose": "Measure surface-to-surface contact between two populations",
+  "useWhen": [
+    "Contact judged by cell surfaces, not cell centres",
+    "Live images where cell surfaces matter"
+  ],
+  "notWhen": [
+    "Target spread over several segmentations: use Cell contacts (points)",
+    "Quick first look: the points version is faster"
+  ],
   "category": "Spatial analysis",
   "group": "Contacts",
   "env": ["local"],

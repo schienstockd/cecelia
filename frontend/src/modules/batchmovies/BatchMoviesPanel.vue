@@ -300,9 +300,9 @@ watch(popPaths, (paths, oldPaths) => {
 const popPathOptions = computed<ChipOption[]>(() =>
   popPaths.value.map(p => ({ value: p.path, label: p.label.trim(), tip: p.path })))
 
-// ── Per-segmentation track sources — only meaningful under `showTracks && !showPops` ──
-// The backend `_resolve_movie_overlays_mask` composes one overlay closure per source when this list
-// is non-empty (multi-source path); each source gets its own `all_tracks_colour`. The tracked
+// ── Per-segmentation track sources — under `showTracks`, with or without the pops ──
+// The backend `viewer_overlay_closure` composes one overlay closure per visible source, each in its
+// own colour. The tracked
 // segmentations come from the first selected image's payload (`img.trackValueNames` — populated
 // server-side by `img_track_value_names`), so the picker offers only segs that actually have a
 // `track_id` obs column. Persisted map so an untick + re-tick restores the same colour.
@@ -622,10 +622,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <span v-else class="bm-hint cc-muted">no populations for {{ popValueName || 'this segmentation' }} / {{ popType }}</span>
         </div>
         <!-- Per-segmentation track sources — one row per tracked seg on the first selected image,
-             each with an eye toggle + colour swatch. Only shown under `showTracks && !showPops`:
-             when pops are on, ribbons draw in pop colours and per-seg picking would be a second,
-             disagreeing legend. -->
-        <template v-if="showTracks && !showPops && trackedSegs.length">
+             each with an eye toggle + colour swatch. Shown under `showTracks`: a segmentation's
+             tracks are their own layer, drawn whether or not the pops are on (as in the viewer). -->
+        <template v-if="showTracks && trackedSegs.length">
           <div class="bm-inset bm-lbl-row">
             <span class="bm-lbl cc-muted"
                   v-tooltip.left="'Which tracked segmentations to draw, and their colour'">track sources</span>

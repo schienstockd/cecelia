@@ -475,6 +475,42 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         @test init_object(proj.uid, img.uid).meta["TimeIncrement"] == 10.0  # ccid untouched
         rm(proj.root; recursive = true)
     end
+
+    # ── ensure_saturation_meta!: an image imported before the probe gets it on first recommend ──
+    # Real integer store (ZARRFMT/ZV2img), copied into a throwaway project — runs the import's own
+    # `saturation_run.py`, persists through the fill-only meta write, and does it only once.
+    @testset "ensure_saturation_meta! backfills via the import probe" begin
+        src = fixture_path("ZARRFMT", "0", "ZV2img", "ccidImage.ome.zarr")
+        if !have_fixture(src)
+            @test_skip "ZARRFMT fixture missing"
+        else
+            proj = create_project!(name = "sat-backfill-$(rand(1000:9999))")
+            s    = add_set!(proj; name = "set")
+            img  = add_image!(s; name = "img", meta = Dict{String,Any}("SizeT" => 1))
+            cp(src, joinpath(img_zero_dir(img), "img.ome.zarr"))
+            img.filepath["default"]            = "img.ome.zarr"
+            img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+            save!(img)
+
+            r0 = init_object(proj.uid, img.uid)
+            @test !haskey(r0.meta, "saturation")
+            # :metadata never probes
+            Cecelia.recommend_plan(r0; evidence = :metadata)
+            @test !haskey(init_object(proj.uid, img.uid).meta, "saturation")
+            # :all probes once and persists; the score is no longer absent
+            plan = Cecelia.recommend_plan(r0)
+            r1 = init_object(proj.uid, img.uid)
+            @test haskey(r1.meta, "saturation")
+            chans = r1.meta["saturation"]["channels"]
+            @test !isempty(chans) && all(ch -> haskey(ch, "zeroFrac"), chans)
+            pl = only([q for q in plan.qc_scores if q.metric == "smooth.photon_limited_frac"])
+            @test !Cecelia.qc_score_absent(pl)
+            @test r1.meta["SizeT"] == 1                          # fill-only: other meta untouched
+            # already present → no second probe
+            @test !Cecelia.ensure_saturation_meta!(r1)
+            rm(proj.root; recursive = true)
+        end
+    end
 end
 
 @testset "QC framework" begin
@@ -1131,6 +1167,74 @@ end
         r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom))
         @test !any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
 
+        # ── photon-limited score → denoise + smooth, both ways (TASK_DISCOVERY_PLAN Decision 4)
+        _fns(steps) = [s.fun_name for s in steps]
+        not_limited = "Not photon-limited — denoising would remove signal"
+        # photon-limited, no-preset card → smooth (resonance card's params) + denoise included
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:custom))
+        sm = only([s for s in r.included if s.fun_name == "cleanupImages.smooth"])
+        @test sm.source == :computed_qc
+        @test sm.params["spatialMethod"] == "bilateral_vst"
+        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :computed_qc
+        @test !("cleanupImages.denoise" in _fns(r.excluded))
+        # ...the smooth seed is a copy — the registered card is not mutated
+        sm.params["spatialMethod"] = "x"
+        @test Cecelia.preset_by_id(:resonance).params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
+        # ...a refusal gate still wins: empty vault → denoise excluded with the vault reason, smooth stays
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, vault_present = 0.0),
+                                Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
+              "No trained denoise model in vault"
+        @test "cleanupImages.smooth" in _fns(r.included)
+        # ...all saturated → saturation reason, single row
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, sat_frac = 1.0),
+                                Cecelia.preset_by_id(:custom))
+        @test occursin("saturated", only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason)
+        # ...a named card outranks the score (§3): galvo's omission of smooth/denoise stands
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:galvo))
+        @test !("cleanupImages.smooth" in _fns(r.included))
+        @test !("cleanupImages.denoise" in _fns(r.included))
+
+        # not photon-limited → denoise excluded with the reason; smooth untouched (no row either way)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason == not_limited
+        @test !("cleanupImages.denoise" in _fns(r.included))
+        @test !("cleanupImages.smooth" in _fns(r.included)) && !("cleanupImages.smooth" in _fns(r.excluded))
+        # ...the vault reason outranks it (one row per fun)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0, vault_present = 0.0),
+                                Cecelia.preset_by_id(:custom))
+        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
+              "No trained denoise model in vault"
+        # ...a card-seeded denoise is not removed by the score (§3: card > computed QC)
+        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:resonance))
+        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :card
+        @test !("cleanupImages.denoise" in _fns(r.excluded))
+
+        # between the bands, and absent (NaN) → identical to the metadata-only answer
+        base = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom))
+        for pf in (0.7, Cecelia.QC_SCORE_ABSENT)
+            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom))
+            @test _fns(r.included) == _fns(base.included)
+            @test _fns(r.excluded) == _fns(base.excluded)
+        end
+
+        # evidence = :metadata skips the photon rules entirely — both directions
+        for pf in (0.95, 0.0)
+            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom);
+                                    evidence = :metadata)
+            @test _fns(r.included) == _fns(base.included)
+            @test _fns(r.excluded) == _fns(base.excluded)
+        end
+        @test_throws ArgumentError Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom);
+                                                        evidence = :pixels)
+        # ...and recommend_plan threads it through from meta
+        pl_meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 1,
+            "saturation" => Dict{String,Any}("channels" => [
+                Dict{String,Any}("index" => 0, "saturated" => false, "zeroFrac" => 0.97)]))
+        @test "cleanupImages.denoise" in _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"]).included)
+        @test !("cleanupImages.denoise" in
+                _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"], evidence = :metadata).included))
+
         # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
         r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
         sa = only([s for s in r.included if s.fun_name == "cleanupImages.stackAlign"])
@@ -1560,6 +1664,66 @@ end
         # no explicit "base" key → primary falls back to the sole type's count
         _, pf = Cecelia.segment_qc_findings(Dict("nuc" => 5))
         @test pf == 5
+
+        # ── seg.* shape findings (TASK_DISCOVERY_PLAN P4) on synthetic object stats ──────────────
+        # `eqDiameterUm` is 101 percentiles; a linear ramp lo..hi is a uniform size distribution.
+        ramp(lo, hi) = collect(range(lo, hi; length = 101))
+        st(q; n = 200, fc = nothing) = Dict{String,Any}("eqDiameterUm" => q, "nObjects" => n,
+                                                        "frameCounts" => something(fc, Int[]))
+        scodes(fs) = [f["code"] for f in fs]
+        @test Cecelia._frac_below(ramp(0, 100), 25) ≈ 0.25
+        @test Cecelia._frac_below(ramp(0, 100), -1) == 0.0 && Cecelia._frac_below(ramp(0, 100), 101) == 1.0
+        @test Cecelia._frac_below(fill(5.0, 101), 5.0) == 0.0   # point mass: nothing is BELOW it
+        # sizes around the given diameter → quiet
+        @test isempty(Cecelia.seg_object_qc_findings(st(ramp(7, 13)); diameter_um = 10))
+        # median far below the diameter → fragmented (info, points back at Cleanup)
+        fr = Cecelia.seg_object_qc_findings(st(ramp(1, 6)); diameter_um = 10)
+        @test scodes(fr) == ["seg.fragmented"] && fr[1]["level"] == "info"
+        @test occursin("Cleanup", fr[1]["long"]) && fr[1]["detail"]["medianRatio"] < 0.5
+        # median fine but a large tiny tail (≥40% below a third of the diameter) → fragmented too
+        tail = vcat(ramp(1, 3)[1:45], ramp(9, 12)[1:56])
+        @test scodes(Cecelia.seg_object_qc_findings(st(sort(tail)); diameter_um = 10)) == ["seg.fragmented"]
+        # a big share far above the diameter → merged, with the share in the short
+        mg = Cecelia.seg_object_qc_findings(st(ramp(8, 30)); diameter_um = 10)
+        @test scodes(mg) == ["seg.merged"] && occursin("%", mg[1]["short"])
+        # no diameter (coastal), a non-positive one, or too few objects → no size verdict
+        @test isempty(Cecelia.seg_object_qc_findings(st(ramp(1, 6))))
+        @test isempty(Cecelia.seg_object_qc_findings(st(ramp(1, 6)); diameter_um = 0))
+        @test isempty(Cecelia.seg_object_qc_findings(st(ramp(1, 6); n = 5); diameter_um = 10))
+        @test isempty(Cecelia.seg_object_qc_findings(nothing; diameter_um = 10))
+        # counts per frame: steady (±5%) quiet; flickering (±40%) fires; too few frames/cells quiet
+        steady  = [100, 104, 99, 102, 97, 101, 103]
+        flicker = [100, 60, 105, 55, 110, 58, 100]
+        @test isempty(Cecelia.seg_object_qc_findings(st(Float64[]; n = 0, fc = steady)))
+        un = Cecelia.seg_object_qc_findings(st(Float64[]; n = 0, fc = flicker))
+        @test scodes(un) == ["seg.counts_unstable"] && un[1]["detail"]["nFrames"] == 7
+        @test isempty(Cecelia.seg_object_qc_findings(st(Float64[]; n = 0, fc = flicker[1:4])))
+        @test isempty(Cecelia.seg_object_qc_findings(st(Float64[]; n = 0, fc = [6, 2, 7, 1, 8, 2])))
+        # JSON3 (Symbol keys), the shape the runner's file is read back as
+        js = JSON3.read(JSON3.write(st(ramp(1, 6))))
+        @test scodes(Cecelia.seg_object_qc_findings(js; diameter_um = 10)) == ["seg.fragmented"]
+
+        # the diameter compared against: the base group's; ambiguous or own-estimate → nothing
+        @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12))) == 12.0
+        @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12),
+                                              "1" => Dict("matchAs" => "nuc", "cellDiameter" => 6))) == 12.0
+        @test isnothing(Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12),
+                                                        "1" => Dict("matchAs" => "base", "cellDiameter" => 5))))
+        @test isnothing(Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 0))))
+        @test isnothing(Cecelia.seg_given_diameter(nothing))
+
+        # end to end through the shared tail: runner file → banked sidecar + `[QC] seg.*` log lines
+        let img = CciaImage(; dir = mktempdir()), logs = String[]
+            qp = joinpath(img._dir, "segment_counts.json")
+            write(qp, JSON3.write(Dict("labelCounts" => Dict("base" => 200),
+                                       "objectStats" => st(ramp(1, 6); fc = flicker))))
+            Cecelia.bank_segment_qc!(img, "segment.cellpose", "seg", qp; diameter_um = 10.0,
+                                     on_log = l -> push!(logs, l))
+            doc = read_qc(img, "segment.cellpose", "seg")
+            @test sort(scodes(doc["findings"])) == ["seg.counts_unstable", "seg.fragmented"]
+            @test doc["metrics"]["nCells"] == 200 && doc["metrics"]["diameterUm"] == 10.0
+            @test count(l -> startswith(l, "[QC] seg."), logs) == 2
+        end
 
         # metadata calibration findings (port of the old frontend fieldIssues) — codes + field
         codes(fs) = [f["code"] for f in fs]; fields(fs) = [f["detail"]["field"] for f in fs]

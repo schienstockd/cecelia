@@ -2,6 +2,16 @@
   "task": "cellposeSegment",
   "fun_name": "segment.cellpose",
   "label": "Cellpose segmentation",
+  "purpose": "Find cells by their appearance, one frame at a time",
+  "useWhen": [
+    "Cells with a visible outline in each frame",
+    "Nucleus-anchored cells: pair a cell and a nucleus model"
+  ],
+  "notWhen": [
+    "Dim movie cells with no clear outline: use Optical flow segmentation",
+    "Noisy or drifting images: fix them in Cleanup before tuning this",
+    "Fibres or networks rather than cells: use Ridge segmentation"
+  ],
   "category": "Segment",
   "group": "Segment",
   "env": [

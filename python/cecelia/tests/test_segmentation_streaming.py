@@ -93,6 +93,7 @@ def _run(tmp, sizes, arr_shape, cls=_StubSeg):
     }
     seg = cls(params, du)
     counts = seg.predict_from_zarr([im0])
+    _run.last_seg = seg                    # for the object-stats test below; the return stays as is
 
     labels_dir = os.path.join(tmp, 'labels')
     base = zarr.open_group(os.path.join(labels_dir, 'stub.zarr'), mode='r')['0'][:]
@@ -129,6 +130,21 @@ class PredictFromZarrTest(unittest.TestCase):
         self.assertEqual(counts, {'base': 9, 'nuc': 9})
         self.assertEqual(_fingerprint(base), gold)
         self.assertEqual(_fingerprint(nuc), gold)
+
+    def test_object_stats_ride_along_with_the_counts(self):
+        # The `seg.*` QC inputs come from the same per-frame `np.unique` that counts the labels:
+        # per-frame counts of the PRIMARY (base) type summing to its count, one size per object.
+        d = tempfile.mkdtemp()
+        try:
+            counts, _, _ = _run(d, *_CASE_2D)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        stats = _run.last_seg.object_stats
+        self.assertEqual(stats['frameCounts'], [3, 3, 3])
+        self.assertEqual(sum(stats['frameCounts']), counts['base'])
+        self.assertEqual(stats['nObjects'], counts['base'])
+        self.assertEqual(len(stats['eqDiameterUm']), 101)
+        self.assertFalse(stats['is3D'])
 
 
 class FailedRerunTest(unittest.TestCase):

@@ -85,6 +85,14 @@ Shape = image shape without the C axis. dtype = uint32.
 
 The OME-ZARR metadata includes `axes` (lowercase, no C) and per-level `coordinateTransformations` with physical scale from OME-XML (Y/X scale doubled at each pyramid level).
 
+**Every label store has as many levels as its image** — segmentation, `segment.ridges`,
+`segment.branching`, `segment.correct` and the task-preview stores alike. Levels are built by
+`zarr_utils.write_label_pyramid` (strided, so ids stay ids). The viewer reads a mask at exactly the
+level it draws the image at; a store with fewer levels answers 409 there (`label_level` in
+`api/src/viewer_api.jl`), and the viewer skips it and flags the row. Reading full resolution and
+shrinking instead is not an option on a large tilescan. Correction edits level 0 and rebuilds every
+lower level from it, so no level can still show a cell that was merged or removed.
+
 ### Stores are written staged, never in place
 
 A run does not write `{outputValueName}.zarr` directly. It streams into a `{outputValueName}.zarr.partial`
@@ -159,6 +167,8 @@ its own param translation, and nothing else:
 | `register_label_files!(img, vn, files)` | recording the finished set in `ccid.json` `labels` |
 | `segment_live_outputs(params)` | the live-preview declaration (below) |
 | `segment_qc_findings(counts)` | per-type counts → advisory QC findings |
+| `seg_object_qc_findings(stats; diameter_um)` | object sizes + per-frame counts → the `seg.*` findings (*QC findings* below) |
+| `bank_segment_qc!(img, fun, vn, qc_out_path; …)` | the shared QC tail every segmenter calls: read the runner's file, bank, log |
 
 What stays in the task's own `.jl`: resolving the input image, translating params for the backend, and
 any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose_model_path`).
@@ -1169,6 +1179,44 @@ segmentation parameter. Reproduced by `docs/todo/flow-seg-experiments/first_task
 
 Design record: [`docs/todo/COASTAL_SEGMENTATION_PLAN.md`](todo/COASTAL_SEGMENTATION_PLAN.md);
 evidence and dead ends: [`docs/todo/SEGMENTATION_OPEN_PROBLEM.md`](todo/SEGMENTATION_OPEN_PROBLEM.md).
+
+---
+
+## QC findings
+
+Cellpose and coastal bank `qc/segment.<backend>/<vn>.json` through `bank_segment_qc!` (`segmentation.jl`):
+the per-type count as `metrics.nCells`/`byType`, a `warn` `segment.no_cells` when the base count is 0,
+and three `info` **`seg.*`** findings that point back a step
+([`TASK_DISCOVERY_PLAN.md`](todo/TASK_DISCOVERY_PLAN.md) P4). They show wherever QC shows — the image's
+QC dot, `get_qc_metrics`, and one `[QC] seg.<code>: …` line each in the task log.
+
+**Inputs cost nothing extra.** The runner already ran `np.unique` per frame to count labels;
+`label_sizes` keeps the counts it returns, and `object_stats` summarises them into `frameCounts`
+(objects per timepoint) and `eqDiameterUm` (101 percentiles of each object's equivalent diameter —
+the equal-area circle in 2D, the equal-volume sphere in 3D). Both ride in the runner's `qcOutPath`
+JSON as `objectStats`, beside `labelCounts`. Thresholds live only in Julia.
+
+| Code | Fires when (placeholder band) | Needs |
+|---|---|---|
+| `seg.fragmented` | median equivalent diameter < 0.5 × the given diameter, or ≥ 40% of objects < 0.33 × it | a diameter, ≥ 20 objects |
+| `seg.merged` | ≥ 15% of objects > 1.6 × the given diameter | a diameter, ≥ 20 objects |
+| `seg.counts_unstable` | median frame-to-frame change in the count ≥ 20% of it | ≥ 5 frames, ≥ 10 objects per frame on average |
+
+The "given diameter" is cellpose's `cellDiameter` for the `base` group. Coastal has no diameter
+param, so only `seg.counts_unstable` can fire there; stacked `base` passes with different diameters,
+or a diameter ≤ 0, skip the size findings, because "smaller than the diameter" is then the design.
+
+Each finding's `long` names the **Cleanup** step to check before tuning the segmenter — smoothing and
+AF correction for fragments and merges, temporal smoothing for unstable counts — because tuning the
+segmenter on noisy input is the common trap. The copy is in `app/src/qc/text.jl`.
+
+> **The bands are placeholders, not calibrations.** They come from geometry (a two-cell merge raises
+> the equivalent diameter ×1.26 in 3D, ×1.41 in 2D) and counting noise, not from real data. They stay
+> `info` until they have been looked at on real crops (`SEG_*` constants in `segmentation.jl`).
+
+**Discovery toggle.** With `CECELIA_MCP_DISCOVERY=off` the observer MCP drops `seg.*` findings from
+`get_qc_metrics`, `get_image_info`, `list_images` and the `[QC] seg.` lines of `get_task_log`, so a
+guide run can be measured without them (TASK_DISCOVERY_PLAN Decision 9).
 
 ---
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { decodeViewerBagEvent } from './viewerBagChannel'
+import { decodeViewerBagEvent, decodeScalarPrefEvent } from './viewerBagChannel'
 
 describe('decodeViewerBagEvent', () => {
   it('decodes label visibility', () => {
@@ -54,5 +54,30 @@ describe('decodeViewerBagEvent', () => {
     // A window that hasn't opened any image writes '{}' — a legal state, not "nothing to say".
     expect(decodeViewerBagEvent('cc.viewerLabelVisibility', '{}'))
       .toEqual({ kind: 'labelVis', value: {} })
+  })
+})
+
+describe('decodeViewerBagEvent — track-pop ribbon hides', () => {
+  it('the viewer\'s per-pop ribbon eye reaches the recording window', () => {
+    expect(decodeViewerBagEvent('cc.viewerTrackPopHidden', '{"img":{"OTI":["/a"]}}'))
+      .toEqual({ kind: 'trackPopHidden', value: { img: { OTI: ['/a'] } } })
+  })
+})
+
+describe('decodeScalarPrefEvent', () => {
+  const names = ['viewerTailLength', 'viewerScaleBar', 'viewProfile'] as const
+  const cur: Record<string, unknown> = { viewerTailLength: 30, viewerScaleBar: true, viewProfile: 'a' }
+  const dec = (k: string | null, v: string | null) => decodeScalarPrefEvent(k, v, names, n => cur[n])
+  it('parses to the receiving ref\'s type', () => {
+    expect(dec('cc.viewerTailLength', '10')).toEqual({ name: 'viewerTailLength', value: 10 })
+    expect(dec('cc.viewerScaleBar', 'false')).toEqual({ name: 'viewerScaleBar', value: false })
+    expect(dec('cc.viewProfile', 'b')).toEqual({ name: 'viewProfile', value: 'b' })
+  })
+  it('ignores other keys, removals and garbage', () => {
+    expect(dec('cc.somethingElse', '1')).toBeNull()
+    expect(dec('viewerTailLength', '1')).toBeNull()
+    expect(dec('cc.viewerTailLength', null)).toBeNull()
+    expect(dec('cc.viewerTailLength', 'abc')).toBeNull()
+    expect(dec('cc.viewerScaleBar', 'yes')).toBeNull()
   })
 })

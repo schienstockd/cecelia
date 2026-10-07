@@ -42,6 +42,8 @@ export interface AgentRun {
   startedAt?: string
   images: { sourceImageUid: string; imageUid: string }[]
   sectionIds: string[]
+  /** The run was stopped by the account's usage limit: not comparable with a finished run. */
+  rateLimited?: { message: string; resetAt: string }
 }
 function parseAgentRun(v: unknown): AgentRun | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
@@ -57,6 +59,10 @@ function parseAgentRun(v: unknown): AgentRun | undefined {
     ...(typeof o.startedAt === 'string' ? { startedAt: o.startedAt } : {}),
     images,
     sectionIds: Array.isArray(o.sectionIds) ? (o.sectionIds as unknown[]).filter((x): x is string => typeof x === 'string') : [],
+    ...(o.rateLimited && typeof o.rateLimited === 'object' ? { rateLimited: {
+      message: String((o.rateLimited as Record<string, unknown>).message ?? ''),
+      resetAt: String((o.rateLimited as Record<string, unknown>).resetAt ?? ''),
+    } } : {}),
   }
 }
 

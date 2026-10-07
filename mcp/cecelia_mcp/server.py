@@ -34,6 +34,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
+from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
@@ -59,6 +60,58 @@ _monitor = SessionMonitor()
 mcp = MCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
 
 
+# ── Discovery toggle (TASK_DISCOVERY_PLAN Decision 9) ────────────────────────────────────────────
+# `CECELIA_MCP_DISCOVERY=off` runs the agent WITHOUT the discovery information, so a guide run can
+# measure what it changes. For QC that means the `seg.*` findings (segmentation results that point
+# back to Cleanup) are dropped from everything this server returns. Read per call, not at import.
+def _discovery_on() -> bool:
+    return discovery_enabled()
+
+
+_DISCOVERY_QC_PREFIX = "seg."
+
+
+def _strip_discovery_qc(qc):
+    """An image payload's `qc` (`{"fun/valueName": {findings: [...], ...}}`) with the `seg.*`
+    findings removed when discovery is off; unchanged (same object) when it is on."""
+    if _discovery_on() or not isinstance(qc, dict):
+        return qc
+    out = {}
+    for key, doc in qc.items():
+        if isinstance(doc, dict) and isinstance(doc.get("findings"), list):
+            doc = {**doc, "findings": [f for f in doc["findings"]
+                                       if not str((f or {}).get("code", "")).startswith(_DISCOVERY_QC_PREFIX)]}
+        out[key] = doc
+    return out
+
+
+def _strip_discovery_image(img):
+    """An image payload with its `qc` passed through `_strip_discovery_qc`."""
+    if _discovery_on() or not isinstance(img, dict) or "qc" not in img:
+        return img
+    return {**img, "qc": _strip_discovery_qc(img["qc"])}
+
+
+def _strip_discovery_log(text: str) -> str:
+    """A task log without the `[QC] seg.…` lines the segmenters write (`bank_segment_qc!`)."""
+    if _discovery_on() or not text:
+        return text
+    return "\n".join(l for l in text.split("\n")
+                     if not l.lstrip().startswith("[QC] " + _DISCOVERY_QC_PREFIX))
+
+
+_DISCOVERY_DOC = (" Each task also carries `purpose` (what it is for) and `useWhen` / `notWhen`"
+                  " (properties of the method that decide whether it is the right step at all) — read"
+                  " them before tuning a parameter.")
+
+
+def _fill_discovery_slot(fn) -> None:
+    """Fill a tool docstring's `{discovery}` slot — empty in the `--discovery off` arm, so the tool text
+    does not describe fields that arm never receives."""
+    if fn.__doc__ and "{discovery}" in fn.__doc__:
+        fn.__doc__ = fn.__doc__.replace("{discovery}", _DISCOVERY_DOC if discovery_enabled() else "")
+
+
 def _tool(fn):
     """`@mcp.tool()`, with the client's anticipated failures passed to the model as `ToolError`.
 
@@ -66,6 +119,7 @@ def _tool(fn):
     hide the client's messages written for it ("cannot reach Cecelia API … Is `pixi run dev`
     running?", the API's own `{error: …}`, a disallowed route). A genuine crash still stays opaque.
     """
+    _fill_discovery_slot(fn)
     @functools.wraps(fn)
     def wrapped(*args, **kwargs):
         try:
@@ -73,6 +127,12 @@ def _tool(fn):
         except (ApiError, DisallowedRoute) as e:
             raise ToolError(str(e)) from e
     return mcp.tool()(wrapped)
+
+
+def _tool_if(enabled: bool):
+    """`@_tool`, registered only when `enabled`. For a tool an experiment arm must not see at all — not
+    see fail (the `--discovery off` guide-run arm; TASK_DISCOVERY_PLAN Decision 9)."""
+    return _tool if enabled else (lambda fn: fn)
 
 
 def _noting_repairs(out, repaired: list[str]):
@@ -161,13 +221,13 @@ def list_images(project_uid: str) -> list:
     Use `attr` to size the groups before choosing a cross-image plot: get_image_attributes says what you
     MAY group by, this says how many images land in each group once the excluded ones are dropped. A
     group of one is not a comparison."""
-    return _client.list_images(project_uid).get("images", [])
+    return [_strip_discovery_image(i) for i in _client.list_images(project_uid).get("images", [])]
 
 
 @_tool
 def get_image_info(project_uid: str, image_uid: str) -> dict:
     """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log, note."""
-    return _client.get_image_meta(project_uid, image_uid).get("image", {})
+    return _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
 
 
 @_tool
@@ -183,7 +243,7 @@ def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
     outlier vs the rest of the set?", use get_cohort_qc instead — a single image's number means little
     without the cohort."""
     img = _client.get_image_meta(project_uid, image_uid).get("image", {})
-    return img.get("qc", {}) or {}
+    return _strip_discovery_qc(img.get("qc", {}) or {})
 
 
 @_tool
@@ -235,7 +295,7 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
 def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
     """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run."""
     r = _client.get_task_log(project_uid, image_uid, fun)
-    return r.get("content", "") if r.get("exists") else ""
+    return _strip_discovery_log(r.get("content", "")) if r.get("exists") else ""
 
 
 @_tool
@@ -271,7 +331,7 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
     suggesting a parameter change, so the suggestion is IN RANGE and names the real param `key`.
 
     Returns `{category: [{fun_name, label, params: [{key, label, type, default, tip}]}]}` — trimmed to
-    the suggestion-relevant fields (UI-widget plumbing is stripped). Numeric knobs (`type` int/float)
+    the suggestion-relevant fields (UI-widget plumbing is stripped).{discovery} Numeric knobs (`type` int/float)
     also carry `min`/`max`/`step`. Pass `category` (the part before the dot in a fun_name — e.g.
     "tracking" for "tracking.bayesian_tracking") to get just that module; omit it for all modules.
     Pass `fun_name` (e.g. "segment.cellpose") for ONE task — a whole module can be too large to read.
@@ -303,6 +363,22 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
     say so. Project-independent; static package specs (plus any user drop-in modules). Suggest, cite the
     current value + range + QC; the user runs it — you don't."""
     return _client.get_module_params(category or None, fun_name or None)
+
+
+@_tool_if(discovery_enabled())
+def get_task_catalogue(stage: str = "") -> dict:
+    """WHICH STEP? Every task's one-line `purpose` plus `useWhen` / `notWhen`, grouped by pipeline stage
+    (import → cleanup → edit → train → segment → track → behaviour → cluster → spatial → export).
+
+    Returns `{stages: [{stage, tasks: [{fun_name, label, purpose, useWhen, notWhen}]}]}` — small enough
+    to read whole. Read it BEFORE choosing a step, and again when a result looks wrong: a problem at one
+    step (fragmented cells, noisy objects) is often fixed at an EARLIER one, and this is where that is
+    said. Pass `stage` (e.g. "cleanup") for one stage. Then get_module_params(fun_name=…) for the
+    chosen task's parameters. Project-independent; read-only."""
+    try:
+        return _client.get_task_catalogue(stage or None)
+    except ValueError as e:
+        raise ToolError(str(e)) from e
 
 
 @_tool

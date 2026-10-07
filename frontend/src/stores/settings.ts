@@ -4,7 +4,7 @@ import { TITLE_CARD_DEFAULT, RENDER_QUALITY_DEFAULT, type TitleCardCfg, type Bat
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from '../utils/movieCompare'
 import { parseMovieEndMode, type MovieChannelMode, type MovieEndMode } from '../utils/movies'
-import { decodeViewerBagEvent } from '../utils/viewerBagChannel'
+import { decodeViewerBagEvent, decodeScalarPrefEvent } from '../utils/viewerBagChannel'
 import { LABEL_OPACITY, OVERLAY_Z_TOL } from '../utils/viewerLabels'
 import { debouncedSave } from '../utils/debouncedSave'
 import { fetchProfileSettings, patchProfileSettings,
@@ -780,6 +780,7 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'branchVis':    _branchVisStore.value    = ev.value as Record<string, Record<string, boolean>>; break
         case 'setPrefs':     _setPrefs.value          = ev.value as Record<string, ViewerSetPrefs>; break
         case 'imageVersion': _imageVersionStore.value = ev.value as Record<string, string>; break
+        case 'trackPopHidden': _trackPopHiddenStore.value = ev.value as Record<string, Record<string, string[]>>; break
       }
     })
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
@@ -849,6 +850,21 @@ export const useSettingsStore = defineStore('settings', () => {
     const refX = _profileRefs[key]
     if (!refX) continue
     watch(refX, () => { _dirtyKeys.add(key); _autosave.schedule() })
+  }
+
+  // Cross-window sync for the scalar preferences. The popup viewer's sliders (tail length / width,
+  // z tolerances, mask opacity / outline, point size…) write `cc.<name>` in ITS store; this window's
+  // copy stayed at the value it loaded with, so a movie recorded from here drew the old tails.
+  // Applied with the autosave suppressed — the writing window already PATCHed the profile.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', e => {
+      const ev = decodeScalarPrefEvent(e.key, e.newValue, PROFILE_KEYS,
+                                       n => _profileRefs[n as ProfileKey]?.value)
+      if (!ev) return
+      const refX = _profileRefs[ev.name as ProfileKey]
+      if (!refX || refX.value === ev.value) return
+      _autosave.duringRestore(() => { refX.value = ev.value as ProfileSettingsValue })
+    })
   }
 
   // Best-effort flush on tab close — a toggle flipped within the debounce window would otherwise

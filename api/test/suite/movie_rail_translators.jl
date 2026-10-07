@@ -23,22 +23,30 @@
     @test ov isa AbstractDict
     @test ov["popType"] == "flow"
     @test ov["pointSizePx"] == 8
-    @test ov["allTracks"] === false
-    @test ov["includeTracks"] === false
-    # showTracks = whole-segmentation tracks. Ribbon-eligible (`includeTracks`) — else the
-    # `pi-directions` chip alone drew grey dots without ribbons.
+    @test isempty(ov["trackSegs"])
+    @test ov["gatedRibbons"] === false
+    @test ov["showTrackclust"] === false
+    # showTracks = per-segmentation tracks; no `trackSources` = the overlays' own segmentation in grey.
     ov_all = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
-    @test ov_all["allTracks"] === true
-    @test ov_all["includeTracks"] === true
-    # showPops overrides showTracks — an explicit pop selection means "these pops", not "every cell
-    # in the seg". Without this fix, `showPops + showTracks` painted every cell in default grey and
-    # ignored the popsFilter entirely.
+    @test ov_all["trackSegs"] == [Dict{String,Any}("valueName" => "", "colour" => OVERLAY_GREY)]
+    # The track kinds are not tied to the pops (the viewer draws a segmentation's tracks whichever
+    # segmentation the pop manager is on): pops + tracks draws BOTH, and the tracks chip no longer
+    # turns into ribbons on the pops.
     ov_both = _overlays_raw_from_config(
         Dict{String,Any}("showTracks" => true, "showPopulations" => true), false)
-    @test ov_both["allTracks"] === false
+    @test ov_both["trackSegs"] == [Dict{String,Any}("valueName" => "", "colour" => OVERLAY_GREY)]
     @test ov_both["showPopulations"] === true
-    # ribbons still push in the pops branch (via `include_tracks && (is_track || has_tracks)`)
-    @test ov_both["includeTracks"] === true
+    @test ov_both["gatedRibbons"] === false
+    # cell-track ribbons ride on the pops — the viewer drops the pop family, ribbons included, when
+    # its pop type is off
+    @test _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true, "showPopulations" => true),
+                                    false)["gatedRibbons"] === true
+    # track clusters alone draw (they used to need the pops on — and then only the pops' segmentation)
+    ov_tc = _overlays_raw_from_config(Dict{String,Any}("showTrackclust" => true), false)
+    @test ov_tc !== nothing && ov_tc["showTrackclust"] === true
+    # the viewer's hidden ribbon eyes pass through; absent = none
+    @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true,
+                                                     "hiddenTrackPops" => ["/a"]), false)["hiddenTrackPops"] == ["/a"]
     # A mask fills the mask branch AND flips `allCells` on when there are no pops/gated to filter by.
     ov_mask = _overlays_raw_from_config(Dict{String,Any}("labelContour" => 3), true)
     @test ov_mask["showMask"] === true
@@ -63,8 +71,10 @@
     @test _single_record_look(nothing, 4) === nothing
     # Gated tracks ON → the mask filters by those pops rather than showing every cell.
     ov_gated = _overlays_raw_from_config(Dict{String,Any}("showGatedTracks" => true), true)
-    @test ov_gated["includeTracks"] === true
     @test ov_gated["allCells"] === false
+    # ... unless the look says the mask is every cell (the viewer's mask, whatever the pops)
+    @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => true),
+                                    true)["allCells"] === true
 
     # `popsFilter` on the config surfaces as `popPaths` on the overlay dict — the batch picker's
     # per-image subset, forwarded to `build_overlays3d_for` / `mask_id_colours` via
@@ -90,29 +100,27 @@
         Dict{String,Any}("showPopulations" => true, "popValueName" => "flowTom"), false)
     @test ov_vn["valueName"] == "flowTom"
 
-    # `trackSources` — multi-segmentation composition for showTracks && !showPops. When present +
-    # non-empty, `_resolve_movie_overlays_mask` composes one overlay closure per source, each with
-    # its own `all_tracks_colour`. Absent → single-source `allTracks` grey (legacy).
+    # `trackSources` → `trackSegs`: one overlay closure per visible source, each in its own colour
+    # (`viewer_overlay_closure`). Absent → the single grey source.
     ov_no_ts = _overlays_raw_from_config(Dict{String,Any}("showTracks" => true), false)
-    @test !haskey(ov_no_ts, "trackSources") && ov_no_ts["allTracks"]
-    # Empty = every source hidden: no whole-segmentation tracks at all, as the viewer draws.
+    @test ov_no_ts["trackSegs"] == [Dict{String,Any}("valueName" => "", "colour" => OVERLAY_GREY)]
+    # Empty = every source hidden: no per-segmentation tracks at all, as the viewer draws.
     ov_empty_ts = _overlays_raw_from_config(
         Dict{String,Any}("showTracks" => true, "trackSources" => []), false)
-    @test !haskey(ov_empty_ts, "trackSources")
-    @test !ov_empty_ts["allTracks"] && !ov_empty_ts["includeTracks"]
+    @test isempty(ov_empty_ts["trackSegs"])
     # ... while cell-track ribbons asked for alongside keep their tails
     @test _overlays_raw_from_config(Dict{String,Any}("showTracks" => true, "showGatedTracks" => true,
-                                                     "trackSources" => []), false)["includeTracks"]
+                                                     "showPopulations" => true, "trackSources" => []), false)["gatedRibbons"]
     ov_ts = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
         "trackSources" => [
             Dict("valueName" => "cpSAM",   "colour" => "#ff6b6b"),
             Dict("valueName" => "flowTom", "colour" => "#4ecdc4"),
         ]), false)
-    @test length(ov_ts["trackSources"]) == 2
-    @test ov_ts["trackSources"][1]["valueName"] == "cpSAM"
-    @test ov_ts["trackSources"][1]["colour"]    == "#ff6b6b"
-    @test ov_ts["trackSources"][2]["valueName"] == "flowTom"
+    @test length(ov_ts["trackSegs"]) == 2
+    @test ov_ts["trackSegs"][1]["valueName"] == "cpSAM"
+    @test ov_ts["trackSegs"][1]["colour"]    == "#ff6b6b"
+    @test ov_ts["trackSegs"][2]["valueName"] == "flowTom"
     # The viewer's look keeps them as a map `{valueName: {visible, colour}}` — same entries, hidden
     # ones dropped.
     ov_map = _overlays_raw_from_config(Dict{String,Any}(
@@ -120,20 +128,20 @@
         "trackSources" => Dict{String,Any}(
             "flowTom" => Dict{String,Any}("visible" => true,  "colour" => "#AA1F5E"),
             "cpSAM"   => Dict{String,Any}("visible" => false, "colour" => "#ff6b6b"))), false)
-    @test ov_map["trackSources"] == [Dict{String,Any}("valueName" => "flowTom", "colour" => "#AA1F5E")]
+    @test ov_map["trackSegs"] == [Dict{String,Any}("valueName" => "flowTom", "colour" => "#AA1F5E")]
     # An entry with no colour falls back to the neutral grey, so a caller can send half-filled
     # entries without breaking the multi-source path.
     ov_ts_default = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
         "trackSources" => [Dict("valueName" => "cpSAM")]), false)
-    @test ov_ts_default["trackSources"][1]["colour"] == "#9ca3af"
+    @test ov_ts_default["trackSegs"][1]["colour"] == "#9ca3af"
     # A blank valueName is dropped (can't render tracks against no seg) — never sent to the author.
     ov_ts_blank = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
         "trackSources" => [Dict("valueName" => "", "colour" => "#ff6b6b"),
                             Dict("valueName" => "cpSAM", "colour" => "#4ecdc4")]), false)
-    @test length(ov_ts_blank["trackSources"]) == 1
-    @test ov_ts_blank["trackSources"][1]["valueName"] == "cpSAM"
+    @test length(ov_ts_blank["trackSegs"]) == 1
+    @test ov_ts_blank["trackSegs"][1]["valueName"] == "cpSAM"
     # `_normalise_track_sources` — the one reader of both shapes, shared by the translator and both
     # overlay readers (so a prebuilt `overlays` dict that skips the translator keeps its map).
     @test _normalise_track_sources(Any[Dict("valueName" => "cpSAM", "colour" => "#ff6b6b"),
@@ -412,8 +420,9 @@ end
                                                     :trackColourMode => "pop")))["colour"] == OVERLAY_GREY
     @test only(_track_source_items(Dict{Symbol,Any}(:showTracks => true)))["colour"] === nothing
     @test rgb_to_hex(hex_to_rgb("#9CA3AF")) == "#9ca3af"
-    # tracks following populations are the pops' colours — the pop rows already name them
-    @test isempty(_track_source_items(Dict{Symbol,Any}(:showTracks => true, :showPopulations => true)))
+    # tracks drawn alongside the pops are their own layer (not the pops' ribbons) — listed
+    @test [r["label"] for r in _track_source_items(Dict{Symbol,Any}(:showTracks => true,
+                                                                    :showPopulations => true))] == ["tracks"]
     @test isempty(_track_source_items(Dict{Symbol,Any}()))
 end
 
