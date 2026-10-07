@@ -60,7 +60,7 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
+import { adapterNameText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -175,6 +175,9 @@ const bricksOverride = String(route.query.bricks ?? '')
  * The hardware doesn't change under a running tab.
  */
 const stableAdapterReport = ref<AdapterReport | null>(null)
+/** Raw adapter readout (every `powerPreference`, plus page context) for the Debug panel's GPU block and
+ *  the bench JSON — the evidence for WHY `stableAdapterReport.looksDiscrete` came out the way it did. */
+const gpuDiag = ref<GpuDiagnostics | null>(null)
 /**
  * Which renderer kind currently backs `renderer.value` / `tileRenderer.value`. Consulted inside
  * `ensureRenderer` to decide "reuse vs. destroy+recreate" atomically, so a `bricksEnabled` flip
@@ -357,6 +360,12 @@ function benchSave() {
   // Full Debug-panel snapshot — everything else the panel currently shows, so the saved blob is
   // self-contained rather than "here are numbers, ask the user what they were looking at".
   const debug: Record<string, unknown> = {
+    gpu: {
+      // What the cache/renderer decisions used, then the raw per-powerPreference readout.
+      stable: stableAdapterReport.value,
+      active: activeAdapter.value,
+      diag: gpuDiag.value,
+    },
     shader: shader.value,
     bricks: br ?? null,
     imageInfo: {
@@ -1279,25 +1288,31 @@ const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip:
   { value: '12288', label: '12 GB', mb: 12288, tip: 'Three atlases — workstation-class VRAM' },
   { value: '16384', label: '16 GB', mb: 16384, tip: 'Four atlases — MAX_ATLASES ceiling' },
 ]
+/** One atlas in whole MiB. Chromium reports `maxBufferSize` as 2³² − 4 B, so a plain floor read it
+ *  as 4095 MiB and the 16 GB chip (4 × 4096) came out 4 MiB over the ceiling and disabled. The
+ *  picker caps each atlas at `maxBufferSize` anyway, so rounding to the nearest MiB can't
+ *  over-allocate. */
+const perAtlasMB = computed(() => {
+  const a = stableAdapterReport.value
+  return a ? Math.max(1, Math.round(a.maxBufferSize / (1024 * 1024))) : 0
+})
 /** Hard cap for the cache chips: `MAX_ATLASES × maxBufferSize`. No VRAM_SAFETY here —
  *  the safety margin only exists for AUTO's conservative default (leave VRAM for other apps);
  *  a user explicitly picking a chip should be able to hit the full multi-atlas ceiling.
  *  Renderers still self-guard against actual OOM at texture allocation. */
 const cacheHardCapMB = computed(() => {
   const a = stableAdapterReport.value
-  return a ? Math.floor((a.maxBufferSize * MAX_ATLASES) / (1024 * 1024)) : Infinity
+  return a ? perAtlasMB.value * MAX_ATLASES : Infinity
 })
-/** How many atlases the picker will allocate for this budget on this hardware. Approximation:
- *  ceil(budgetBytes / maxBufferSize), capped at MAX_ATLASES. The real picker in
+/** How many atlases the picker will allocate for this budget on this hardware. Mirrors the picker:
+ *  floor(budget / one atlas), capped at MAX_ATLASES — the picker never allocates a partial atlas,
+ *  so a ceil here labelled 12 GB "4×" when the picker builds 3. The real picker in
  *  `frontend/src/utils/brickAtlas.ts` can return fewer if a single brick already exceeds the
  *  per-atlas budget (pathological cases only) — for the chip strip this budget-only estimate
  *  is close enough, and doesn't depend on which image is loaded. */
 function estimateAtlasesForBudget(budgetMB: number): number {
-  const a = stableAdapterReport.value
-  if (!a || budgetMB <= 0) return 1
-  const budgetBytes = budgetMB * 1024 * 1024
-  const perAtlas = Math.max(1, a.maxBufferSize)
-  return Math.max(1, Math.min(MAX_ATLASES, Math.ceil(budgetBytes / perAtlas)))
+  if (perAtlasMB.value <= 0 || budgetMB <= 0) return 1
+  return Math.max(1, Math.min(MAX_ATLASES, Math.floor(budgetMB / perAtlasMB.value)))
 }
 const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
   const overCap = o.mb > 0 && o.mb > cacheHardCapMB.value
@@ -1317,7 +1332,7 @@ const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
     label,
     disabled: overCap,
     tip: overCap
-      ? `Would need ${estimateAtlasesForBudget(o.mb)} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
+      ? `Would need ${Math.ceil(o.mb / Math.max(1, perAtlasMB.value))} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
       : o.tip,
   }
 }))
@@ -4377,6 +4392,13 @@ async function start() {
       return
     }
     if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
+    void collectGpuDiagnostics().then(d => {
+      gpuDiag.value = d
+      const names = d.adapters.map(a => `${a.powerPreference}: ${a.found
+        ? (adapterNameText(a.name) || '(blank name)')
+        : 'none'}`).join(' · ')
+      vlog('info', 'Viewer GPU adapters — ' + names, JSON.stringify(d))
+    })
     // Prime `stableAdapterReport` from the probe BEFORE any renderer is constructed. Without this,
     // `bricksEnabled`'s first classification uses the static-floor budget (1.5 GB), which said
     // "brick" for ldYr8J-plane's 1.75 GB working set — and once the brick renderer was up, the
@@ -6084,6 +6106,27 @@ onUnmounted(() => {
             </template>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+          </div>
+
+          <!-- ── GPU — what the viewer classified this adapter as, and the raw readout behind it. -->
+          <div class="cc-eyebrow cc-fs-2xs vw-debug-head">GPU</div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <template v-if="stableAdapterReport">
+              <span class="cc-muted" v-tooltip.left="'Name first; the 3D texture limit only when the name is blank'">Classified</span>
+              <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }}
+                ({{ adapterNameText(stableAdapterReport.name) ? 'by name' : 'by limit — blank name' }})</span>
+            </template>
+            <template v-for="a in gpuDiag?.adapters ?? []" :key="a.powerPreference">
+              <span class="cc-muted">{{ a.powerPreference }}</span>
+              <span v-if="a.found">{{ adapterNameText(a.name) || '(blank name)' }}
+                · 3D {{ a.limits.maxTextureDimension3D }} · buf {{ (a.limits.maxBufferSize / 2 ** 30).toFixed(1) }} GiB<template
+                  v-if="a.info.isFallbackAdapter"> · fallback</template></span>
+              <span v-else>no adapter</span>
+            </template>
+            <template v-if="gpuDiag">
+              <span class="cc-muted">Page</span>
+              <span>{{ gpuDiag.page.origin }} · {{ gpuDiag.page.isSecureContext ? 'secure' : 'insecure' }}{{ gpuDiag.page.hasOpener ? ' · popup' : '' }}</span>
+            </template>
           </div>
 
           <!-- ── Play health — shown when the rolling window has samples, whether or not playback
