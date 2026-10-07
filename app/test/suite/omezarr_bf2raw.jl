@@ -169,6 +169,32 @@ end
     end
 end
 
+@testset "store_rev moves on a staged swap, stays put otherwise" begin
+    # The viewer reloads on a task-done only when `store_rev` of a shown store moved
+    # (`/api/viewer/meta` → `storeRevs`). Every pixel rewrite is a `staged_store` rename swap, so a
+    # swap MUST move it, and an untouched store must not (or every gating task reloads the viewer).
+    for fmt in ("ZV2img", "ZV3img")
+        src = fixture_path("ZARRFMT", "0", fmt, "ccidImage.ome.zarr")
+        if !have_fixture(src)
+            @test_skip "zarr format fixtures missing"
+            continue
+        end
+        mktempdir() do d
+            a = joinpath(d, "s.ome.zarr")
+            cp(src, a)
+            r1 = store_rev(a)
+            @test !isempty(r1)
+            # series layout: the nested `0/` metadata is part of the fingerprint, not just the root
+            @test count('|', r1) + 1 > 3
+            @test store_rev(a) == r1                          # untouched → identical
+            cp(src, a * ".partial"); mv(a, a * ".superseded")
+            mv(a * ".partial", a); rm(a * ".superseded"; recursive = true)
+            @test store_rev(a) != r1                          # staged swap → moved
+        end
+    end
+    @test store_rev(joinpath(tempdir(), "no-such-store.zarr")) == ""
+end
+
 @testset "bioformats2raw chunk flags" begin
     # These flags were the bug: `chunkSizeX`/`chunkSizeY` existed in omezarr.json and were read by
     # NOTHING — no tile flag ever reached the CLI, so a user who chose 512 still got bioformats2raw's

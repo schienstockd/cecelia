@@ -31,6 +31,9 @@ export interface ViewerCacheClearScope {
   valueName?: string
   /** The label vn whose store was rewritten. Absent = any label vn on `imageUid`. */
   labelValueName?: string
+  /** Reload even if nothing the viewer draws looks changed — the manual resync's "bust the HTTP
+   *  cache" ask. Without it a task-done reloads only when a shown store's fingerprint moved. */
+  force?: boolean
 }
 
 /** The full payload a subscriber receives — the rev to thread into `sourceId` + the scope. */
@@ -42,8 +45,9 @@ export interface ViewerCacheClearEvent extends ViewerCacheClearScope {
  * Publish a fresh revision. Fires in this window AND every other window on this origin.
  *
  * Pass a scope naming what changed — `{imageUid}` on any task done, plus `valueName` or
- * `labelValueName` when the task result names the specific store. Scope-less publish is a broadcast
- * and forces every viewer to reallocate; only use it when the caller genuinely doesn't know.
+ * `labelValueName` when the task result names the specific store. A matched viewer reloads only if
+ * the event names a store it draws or a shown store's fingerprint moved (meta `storeRevs`) — a
+ * scope-less broadcast just makes every viewer re-check. `force` reloads regardless.
  */
 export function publishViewerCacheClear(scope: ViewerCacheClearScope = {}): void {
   const ev: ViewerCacheClearEvent = { rev: String(Date.now()), ...scope }
@@ -80,6 +84,7 @@ function parseEventPayload(raw: string): ViewerCacheClearEvent | null {
     if (typeof p.imageUid === 'string') ev.imageUid = p.imageUid
     if (typeof p.valueName === 'string') ev.valueName = p.valueName
     if (typeof p.labelValueName === 'string') ev.labelValueName = p.labelValueName
+    if (p.force === true) ev.force = true
     return ev
   } catch { return null }
 }

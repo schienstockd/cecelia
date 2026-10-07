@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
   fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, LABEL_BPV,
+  slabZ, loadedPlanes, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -794,5 +794,36 @@ describe('carryCamera — 2D↔3D keeps the place and the zoom', () => {
     const from = { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 }   // 0.01× fit — deep 2D zoom
     const c = carryCamera(from, 100, { yaw: 0, pitch: 0, dist: 100, panX: 0, panY: 0 }, band)
     expect(c.dist).toBeCloseTo(5, 9)         // 3D floor 0.05× fit
+  })
+})
+
+describe('shownStoresChanged', () => {
+  const revs = { image: 'i1', labels: { nuc: 'n1', cell: 'c1' } }
+
+  it('a task that touched nothing drawn keeps the frame', () => {
+    // Gating / measures / clustering on the shown image: same stores, same dims — no reload.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: revs }), 'nuc')).toBe(false)
+  })
+
+  it('a new segmentation alone is not a reload — the mask flip reloads on its own', () => {
+    const next = { image: 'i1', labels: { ...revs.labels, NSfanU: 's1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: next }), 'nuc')).toBe(false)
+  })
+
+  it('a rewrite of a store we draw reloads; of one we do not, does not', () => {
+    const relabelled = { image: 'i1', labels: { nuc: 'n2', cell: 'c1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'nuc')).toBe(true)
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'cell')).toBe(false)
+    expect(shownStoresChanged(meta({ storeRevs: revs }),
+      meta({ storeRevs: { ...revs, image: 'i2' } }), '')).toBe(true)
+  })
+
+  it('changed dims reload even with matching fingerprints', () => {
+    // Drift-correct reruns recompute the canvas — stale dims trip the slab shape guard.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ nZ: 5, storeRevs: revs }), '')).toBe(true)
+  })
+
+  it('missing fingerprints (older server) count as changed', () => {
+    expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
   })
 })

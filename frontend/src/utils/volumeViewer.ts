@@ -82,6 +82,12 @@ export interface ViewerMeta {
    */
   labelDims?: Record<string, { nX: number; nY: number; nZ: number; nLevels?: number }>
   /**
+   * Cheap per-store fingerprints (root + metadata `stat`s, server `_store_rev`). Compared across a
+   * task-done meta refetch so the viewer reloads only when a store it SHOWS changed. Absent from an
+   * older server — `shownStoresChanged` then answers "changed", the pre-fingerprint behaviour.
+   */
+  storeRevs?: { image: string; labels: Record<string, string> }
+  /**
    * Every registered version of this image, and the one these numbers describe.
    *
    * Both come from the server because the viewer is a pop-out with no project open — it cannot look
@@ -475,6 +481,25 @@ export function labelLevelsShort(
   const n = meta.labelDims?.[vn]?.nLevels
   const imageLevels = Math.max(1, meta.levels?.length ?? 0)
   return n !== undefined && n < imageLevels ? { nLevels: n, imageLevels } : null
+}
+
+/**
+ * After a task-done meta refetch: did anything the viewer DRAWS change — the intensity store, the
+ * shown mask's store, or the dims? `false` means the frame on screen is still right and a reload
+ * would only throw away the cache (a gating or measure task touches no pixels). Unknown
+ * fingerprints (older server) count as changed — a needless reload beats stale pixels.
+ */
+export function shownStoresChanged(
+  prev: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  next: Pick<ViewerMeta, 'nX' | 'nY' | 'nZ' | 'nT' | 'nC' | 'storeRevs'>,
+  shownLabel: string,
+): boolean {
+  if (prev.nX !== next.nX || prev.nY !== next.nY || prev.nZ !== next.nZ
+      || prev.nT !== next.nT || prev.nC !== next.nC) return true
+  const a = prev.storeRevs, b = next.storeRevs
+  if (!a || !b) return true
+  if (a.image !== b.image) return true
+  return !!shownLabel && a.labels[shownLabel] !== b.labels[shownLabel]
 }
 
 /**

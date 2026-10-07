@@ -11,6 +11,8 @@ using Statistics: median
 #                    `bf2raw_series_subdir`, `ngff_attrs`, `ngff_multiscales`, `ngff_version`,
 #                    `zarr_array_meta`), and `read_ome_metadata` — the single flat-Dict reader
 #                    every consumer (api/image_geometry.jl, qc.jl, coastal, this task) shares.
+#   fingerprint.jl — `store_rev`, a stat-only "did this store change" fingerprint (the viewer's
+#                    reload-only-on-change gate, `/api/viewer/meta` → `storeRevs`).
 #   calibration.jl — metadata WRITERS. `update_ome_scale!` (NGFF axis scale + unit) and
 #                    `update_ome_xml_pixels!` (OME-XML `Pixels` attrs) — kept together because a
 #                    calibration edit must land in BOTH halves or the store disagrees with itself.
@@ -28,6 +30,7 @@ using Statistics: median
 #                    `parse_import_omezarr_params`, and the `_run_task` that stitches everything above
 #                    together.
 include(joinpath(@__DIR__, "omezarr", "reader.jl"))
+include(joinpath(@__DIR__, "omezarr", "fingerprint.jl"))
 include(joinpath(@__DIR__, "omezarr", "calibration.jl"))
 include(joinpath(@__DIR__, "omezarr", "ccid_sync.jl"))
 include(joinpath(@__DIR__, "omezarr", "saturation.jl"))
