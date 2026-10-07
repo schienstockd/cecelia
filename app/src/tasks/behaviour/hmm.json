@@ -8,7 +8,7 @@
     "Before Cluster tracks, which can read states and transitions"
   ],
   "notWhen": [
-    "Tracks have no speed or angle: run Track measures first",
+    { "text": "Tracks have no speed or angle: run Track measures first", "check": "!trackMeasured" },
     "States look wrong: check segmentation and tracking before the states"
   ],
   "category": "Behaviour",

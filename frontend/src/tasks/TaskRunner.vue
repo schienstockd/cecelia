@@ -31,7 +31,9 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
-import { discoveryTooltipHtml } from '../utils/taskDiscovery'
+import { checkLine } from '../utils/taskDiscovery'
+import InlineNote from '../components/InlineNote.vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -95,12 +97,6 @@ const OUTPUT_EFFECT_TIP: Record<string, string> = {
   'new-version': 'A new version is written on each image; other versions are untouched',
   'in-place':    'Overwrites the selected image data; not undoable',
 }
-// What the selected task is for, under the picker; use-when / not-when on hover (task spec fields,
-// docs/MODULES.md → `purpose`). The HTML is built and escaped by `discoveryTooltipHtml`.
-const purposeTip = computed(() => {
-  const html = taskDef.value ? discoveryTooltipHtml(taskDef.value) : ''
-  return html ? { value: html, escape: false, class: 'td-tip' } : ''
-})
 const outputEffectLabel = computed(() =>
   OUTPUT_EFFECT_LABEL[taskDef.value?.outputEffect ?? ''] ?? '')
 const outputEffectTip = computed(() =>
@@ -487,6 +483,12 @@ watch(() => props.defs, (defs) => {
 // on ["T"]) is disabled in the picker + Run button unless every selected image carries those axes.
 // The backend refuses to run anyway (TaskApplicabilityError); this removes the surprise.
 const selectedImages = computed(() => paramContext.value.images)
+// What the selected task is for, and when it fits, straight under the picker (task spec fields,
+// docs/MODULES.md → `purpose`). A line naming a check is run over the selected images — ADVISORY,
+// never a gate on Run (utils/taskDiscovery.ts). The lines fold in a CollapsibleSection whose
+// open/closed state is remembered per user (open by default).
+const useLines = computed(() => (taskDef.value?.useWhen ?? []).map(l => checkLine(l, 'use', selectedImages.value)))
+const notLines = computed(() => (taskDef.value?.notWhen ?? []).map(l => checkLine(l, 'not', selectedImages.value)))
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
 // backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
@@ -697,6 +699,32 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </option>
       </select>
 
+      <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row -->
+      <div v-if="taskDef?.purpose" class="fn-about">
+        <p class="fn-purpose cc-muted cc-fs-xs">{{ taskDef.purpose }}</p>
+        <CollapsibleSection v-if="useLines.length || notLines.length" class="fn-when" label="When to use"
+                            tip="Show or hide when this task fits" storage-key="cc-task-about-open"
+                            max-height="none">
+          <template v-for="block in [{ head: 'Use when', lines: useLines }, { head: 'Not when', lines: notLines }]"
+                    :key="block.head">
+            <div v-if="block.lines.length" class="fn-lines">
+              <span class="fn-lines-head cc-eyebrow cc-fs-2xs">{{ block.head }}</span>
+              <ul class="fn-line-list cc-fs-xs">
+                <li v-for="l in block.lines" :key="l.text">
+                  <InlineNote v-if="l.severity" :short="l.text" :severity="l.severity">
+                    <span class="fn-line-summary cc-muted">· {{ l.summary }}</span>
+                  </InlineNote>
+                  <template v-else>
+                    <span>{{ l.text }}</span>
+                    <span v-if="l.summary" class="fn-line-summary cc-muted"> · {{ l.summary }}</span>
+                  </template>
+                </li>
+              </ul>
+            </div>
+          </template>
+        </CollapsibleSection>
+      </div>
+
       <div v-if="taskDef" class="fn-meta">
         <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
         <span class="env-badge"
@@ -711,8 +739,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
       </div>
-      <p v-if="taskDef?.purpose" class="fn-purpose cc-muted cc-fs-xs"
-         v-tooltip.right="purposeTip">{{ taskDef.purpose }}</p>
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
         <i class="pi pi-info-circle" />
@@ -935,7 +961,12 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   margin: 0.3rem 0 0;
 }
 .fn-effect .pi { font-size: var(--cc-fs-2xs); }
-.fn-purpose { margin: 0.3rem 0 0; }
+.fn-about { margin-top: 0.3rem; }
+.fn-purpose { margin: 0; }
+.fn-when { margin-top: 0.25rem; }
+.fn-lines { margin-top: 0.25rem; }
+.fn-lines-head { display: block; }
+.fn-line-list { margin: 0.1rem 0 0; padding-left: 1rem; line-height: 1.35; }
 .runner-down {
   display: flex;
   align-items: center;

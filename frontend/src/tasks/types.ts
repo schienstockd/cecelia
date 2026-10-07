@@ -183,10 +183,11 @@ export interface TaskDef {
                           // "<label> — Coming soon (…)". Set in the task JSON so a release can flip
                           // the flag off without touching Julia/TS. See docs/MODULES.md → `comingSoon`.
   // What the task is for and when it is — and is not — the right step (docs/MODULES.md → `purpose`).
-  // Shown under the function picker and in the Guides panel's "Which step?" view; also read by the MCP.
+  // Shown under the function picker (utils/taskDiscovery.ts); also read by the MCP. A line may carry
+  // an advisory `check` id, run against the selected images.
   purpose?: string
-  useWhen?: string[]
-  notWhen?: string[]
+  useWhen?: import('../utils/taskDiscovery').DiscoveryLine[]
+  notWhen?: import('../utils/taskDiscovery').DiscoveryLine[]
   comingSoonNote?: string // bespoke short reason shown after the em-dash (default: "Coming soon").
                           // Keep short — this lands in a `<select>` option label.
 }

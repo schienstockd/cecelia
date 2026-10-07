@@ -4,7 +4,7 @@
   "label": "T-projection",
   "purpose": "Collapse time into one frame with a per-pixel statistic",
   "useWhen": [
-    "A steady background or structure image from a movie",
+    { "text": "A steady background or structure image from a movie", "check": "timeSeries" },
     "A map of where signal changes over time"
   ],
   "notWhen": ["Only to feed Branching analysis: it can collapse time itself"],

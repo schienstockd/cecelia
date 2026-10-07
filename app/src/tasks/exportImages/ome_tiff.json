@@ -9,7 +9,7 @@
   ],
   "notWhen": [
     "Moving a whole project: use project Export instead",
-    "Pixel sizes missing: set them in the image metadata first"
+    { "text": "Pixel sizes missing: set them in the image metadata first", "check": "!pixelSizeSet" }
   ],
   "category": "Export",
   "env": ["local"],
