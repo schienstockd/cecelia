@@ -196,10 +196,11 @@ def run(params):
         # matches the LABEL rank (no C, no Z when Z-MIPped) — same discipline as `create_multiscales`
         # already has (finding A8: a positional scale reader gave Y the Z step). `kind='labels'`
         # picks the label compressor per CLAUDE.md.
-        group, level0_out, _ = zarr_utils.open_multiscales_for_writing(
+        # As many levels as the image: a zoomed-out viewer draws the mask at the image's level.
+        group, level0_out, out_chunks = zarr_utils.open_multiscales_for_writing(
             staging, out_shape, np.uint32, dim_utils,
             axes=kept_axes,
-            nscales=1,
+            nscales=len(im_list),
             reference_zarr=im_path,   # inherit source zarr format (ZARR_V3_PLAN D9)
             kind='labels',
         )
@@ -242,7 +243,7 @@ def run(params):
                 level0_out[:] = lab
             log.progress(t + 1, total_frames)
 
-        # nscales=1, so no pyramid to build — the level-0 store above is complete.
+        zarr_utils.write_label_pyramid(group, level0_out, kept_axes, len(im_list), out_chunks)
 
         # Ridges is per-pixel-per-frame — it doesn't move pixels, only picks the ridge ones — so
         # the source's valid box (if any) applies unchanged. `carry_valid_box` refuses when the

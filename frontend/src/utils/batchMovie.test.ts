@@ -54,13 +54,14 @@ describe('buildBatchMovieConfig', () => {
       .toEqual([])
   })
 
-  it('trackSources: what the panel shows ticked, only under showTracks && !showPops', () => {
-    // Not showTracks → not sent; showTracks + showPops → not sent (tracks follow the pops' colours)
+  it('trackSources: what the panel shows ticked, under showTracks (with or without the pops)', () => {
+    // Not showTracks → not sent; showTracks + showPops → still sent (a segmentation's tracks are
+    // their own layer, as in the viewer)
     expect(buildBatchMovieConfig({}, [], {}, ['cpSAM']).trackSources).toBeUndefined()
     expect(buildBatchMovieConfig({
       showTracks: true, showPopulations: true,
       trackSources: { cpSAM: { visible: true, colour: '#ff6b6b' } },
-    }, [], {}, ['cpSAM']).trackSources).toBeUndefined()
+    }, [], {}, ['cpSAM']).trackSources).toEqual([{ valueName: 'cpSAM', colour: '#ff6b6b' }])
     // Visible entries, in the tracked order, in their colours
     expect(buildBatchMovieConfig({
       showTracks: true,

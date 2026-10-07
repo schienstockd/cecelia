@@ -2,6 +2,12 @@
   "task": "cropImage",
   "fun_name": "editImages.cropImage",
   "label": "Crop image",
+  "purpose": "Keep an XY box, Z range and time window as a new image",
+  "useWhen": ["Only part of the field, depth or time is of interest"],
+  "notWhen": [
+    "Only to drop drift-correction padding: segmentation skips it per frame",
+    { "text": "Image already segmented: labels stay on the source image", "check": "segmented" }
+  ],
   "category": "Edit",
   "env": [
     "local"

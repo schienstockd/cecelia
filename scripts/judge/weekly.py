@@ -7,7 +7,9 @@ Python does everything deterministic: the lock, pinning `origin/main`, the persi
 record and the PR. `claude -p` is used three ways, each capped: the bug sweep's one tool-less call
 (`bugs.py`), read-only verify agents in a sandbox (`verify.py`), and the finding→rule mapping
 (`rules.py`). The owner's answers since the last pass (`pixi run judge-review`) are folded into the
-previous record first, so a `wont_fix` bug is not carried.
+previous record first, so a `wont_fix` bug is not carried. Then the agent run records' reviews
+(`run_reviews.py`): each new `guide` / `platform` cause a person set is logged as an
+`agent_run_finding`, so the sweep opens it; `agent` causes are listed per guide in the record.
 
 A crash at any stage still writes a failure record, so a missing week is visible rather than silent.
 So does a usage limit (`judge.RateLimited`): no later call could run, and a record where nothing
@@ -39,7 +41,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import default_log_path  # noqa: E402
+from cecelia.effectiveness.state import state_dir, try_lock  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
 
@@ -56,10 +58,11 @@ _bugs = _load_sibling("bugs")
 _verify = _load_sibling("verify")
 _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
+_run_reviews = _load_sibling("run_reviews")
 
 
 #: Exit code of a pass stopped by the usage limit (sysexits `EX_TEMPFAIL`): `cron_pass.sh` retries it.
-EX_TEMPFAIL = 75
+EX_TEMPFAIL = _judge.EX_TEMPFAIL
 #: A reset further off than this isn't waited for: that attempt is the last, and opens the FAILED PR.
 #: `cron_pass.sh` follows the `retry` this decides; it holds no rule of its own.
 RETRY_MAX_WAIT = _dt.timedelta(hours=8)
@@ -72,10 +75,6 @@ class JudgeRunError(RuntimeError):
 
 
 # ── deterministic steps ────────────────────────────────────────────────────────────────────────
-
-def state_dir() -> pathlib.Path:
-    return default_log_path().parent
-
 
 def ratelimit_path() -> pathlib.Path:
     """Where a pass stopped by the usage limit says when it lifts, for `cron_pass.sh`."""
@@ -193,8 +192,7 @@ def _pr_body(record: dict) -> str:
     landed, confirmed = _record.landed_counts(bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
              f"**Bugs: {n['open']} open** ({verified} verified, {new} new), {n['gone']} fixed since the last pass"
-             + (f" ({landed} fix(es) landed since the last pass, {confirmed} confirmed gone by the judge)"
-                if landed else "")
+             + (f", {landed - confirmed} more with a fix landed, awaiting re-check" if landed > confirmed else "")
              + (f", {n['unjudged']} waiting for the judge" if n["unjudged"] else "")
              + (f", {decide} for you to decide (`pixi run judge-review`)" if decide else "") + "."]
     failed = record["run"].get("failed") or {}
@@ -252,11 +250,13 @@ def _now() -> str:
 def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, date: str | None = None,
            live: bool = True, persist: bool = True, bug_judge: _t.Callable | None = None,
            merged_prs: _t.Callable | None = None, verifier: _t.Callable | None = None,
-           assign: _t.Callable | None = None, state: dict | None = None) -> dict:
+           assign: _t.Callable | None = None, state: dict | None = None,
+           projects: pathlib.Path | None = None) -> dict:
     """Run one pass; returns its record, unwritten.
 
     `live=False` checks the local `ref` without fetching or preparing the worktree (a re-run, a test).
-    `persist=False` (a dry run) leaves the earlier records in the store untouched. `state` is
+    `persist=False` (a dry run) leaves the earlier records in the store and the log untouched.
+    `projects`: where the agent run records are (default: `run_reviews.projects_dir()`). `state` is
     updated as it goes (`stage`, `sha`), so a crash can say where it stopped.
     """
     state = state if state is not None else {}
@@ -283,6 +283,10 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
         history.append(applied)
     previous = history[-1] if history else None
     events = list(read_events())
+    # a person's causes on run records: new `guide` / `platform` ones join the log the sweep reads
+    state["stage"] = "run reviews"
+    reviewed = _run_reviews.scan(projects)
+    events += _run_reviews.log_new(reviewed, events, pass_ts=ts, write=persist)
     state["stage"] = "bugs"
     sweep_tokens: dict = {}
     failed: dict = {}   # step → why its judge didn't run; a usage limit raises instead
@@ -302,7 +306,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
              "total_usd": round(sweep_usd + verified["usd"] + rules_usd, 4), "verify": verified,
              "tokens": {**steps, "total": total},
              "finding_bins": bins}
-    record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend)
+    record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
+                           agent_causes=_run_reviews.agent_causes(reviewed))
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
                          **({"failed": failed} if failed else {}))
     return record
@@ -331,22 +336,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="record date (default: today, UTC)")
     ap.add_argument("--dry-run", action="store_true", help="print the record's markdown; write nothing")
     ap.add_argument("--no-pr", action="store_true", help="write the record; don't commit, push or open a PR")
+    ap.add_argument("--projects-dir", type=pathlib.Path,
+                    help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
     args = ap.parse_args(argv)
 
-    lock_path = state_dir() / "judge.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock = open(lock_path, "w", encoding="utf-8")
-    if os.name == "posix":   # the timer runs on Linux; on Windows two passes simply aren't guarded
-        import fcntl
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            print("judge-weekly: another pass holds the lock; exiting", file=sys.stderr)
-            return 0
+    lock = try_lock(state_dir() / "judge.lock")   # on Windows two passes simply aren't guarded
+    if lock is None:
+        print("judge-weekly: another pass holds the lock; exiting", file=sys.stderr)
+        return 0
     state = {"stage": "start", "sha": None}
     try:
         record = weekly(ref=args.ref, worktree=args.worktree, date=args.date, persist=not args.dry_run,
-                        state=state)
+                        state=state, projects=args.projects_dir.expanduser() if args.projects_dir else None)
         if args.dry_run:
             print(_record.render_markdown(record))
             return 0

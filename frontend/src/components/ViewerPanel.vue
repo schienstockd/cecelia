@@ -29,6 +29,7 @@ import CcToggle from './CcToggle.vue'
 import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, lookForRender } from '../utils/viewer/viewerLook'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
+import { writtenImageVersion } from '../utils/taskResultVersion'
 import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT,
          type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
@@ -145,6 +146,7 @@ const labelRows = computed(() => {
     masked: labelNames.value.includes(valueName),
     live: live.has(valueName),
     dimMismatch: mismatchedMaskVns.value.has(valueName),
+    shortLevels: !!dimMismatchInfo.value?.shortLevels?.[valueName],
   }))
 })
 const hasLabelRows = computed(() => labelRows.value.length > 0)
@@ -765,6 +767,13 @@ function mismatchTooltip(vn: string): string {
   return `Mask is ${d.nX}×${d.nY}, image version is ${info.imageNX}×${info.imageNY} — pick a matching version, or re-segment`
 }
 
+/** Tooltip for a mask with fewer zoom levels than the image: it draws only where it has a level. */
+function shortLevelsTooltip(vn: string): string {
+  const d = dimMismatchInfo.value?.shortLevels?.[vn]
+  const n = d ? `${d.nLevels} of ${d.imageLevels}` : 'too few'
+  return `Mask has ${n} zoom levels — zoom in to see it, or re-run the task that made it`
+}
+
 function toggleLabel(valueName: string) {
   // Write the settings bag; the WebGPU viewer reads it via `storage` events.
   //
@@ -831,7 +840,7 @@ function reloadViewer() {
 function forceViewerResync() {
   const uid = projectStore.openImageUid
   if (!uid) return
-  publishViewerCacheClear({ imageUid: uid })
+  publishViewerCacheClear({ imageUid: uid, force: true })
 }
 
 function onTaskResult(data: Record<string, unknown>) {
@@ -839,7 +848,9 @@ function onTaskResult(data: Record<string, unknown>) {
   if (!imageUid || imageUid !== projectStore.openImageUid) return
   const meta = (data.meta ?? {}) as Record<string, unknown>
 
-  const addedValueName = meta.valueName as string | undefined
+  // `meta.valueName` alone is NOT an image version — tracking, contacts, clustering, … return their
+  // LABEL vn there. Only a pixel writer's (valueName, filename) pair is (utils/taskResultVersion).
+  const addedValueName = writtenImageVersion(meta)
   if (addedValueName && settings.viewerAutoUpdate) {
     // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
     // so setting the dropdown alone left the panel naming the new version over the old pixels.
@@ -852,6 +863,11 @@ function onTaskResult(data: Record<string, unknown>) {
     // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
     // on the same image but a different vn keeps its atlas.
     publishViewerCacheClear({ imageUid, valueName: addedValueName })
+  } else if (meta.valueName && settings.viewerAutoUpdate) {
+    // A label/analysis vn (tracks, contacts, clusters): keep the version on screen, refresh overlays
+    // only — a chain node sends no task:status, so this is its one refresh signal.
+    loadObsCols()
+    reloadViewer()
   }
 
   const labelValueName = meta.labelValueName as string | undefined
@@ -973,6 +989,9 @@ onUnmounted(() => {
             <i v-if="row.dimMismatch"
                class="pi pi-exclamation-triangle viewer-label-warn"
                v-tooltip.right="mismatchTooltip(row.valueName)" />
+            <i v-else-if="row.shortLevels"
+               class="pi pi-exclamation-triangle viewer-label-warn"
+               v-tooltip.right="shortLevelsTooltip(row.valueName)" />
             <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
                  toggle stays visible so you can see what's shown without hovering -->
             <!-- The live-preview toggle is NOT hover-hidden: it exists only while the run does, so a

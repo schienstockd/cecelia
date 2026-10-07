@@ -1,0 +1,25 @@
+{
+  "entryId": "bb-20261006T040000-bbbbbb",
+  "status": "open",
+  "title": "Agent run 2026-10-06 02:52 \u2014 Crop",
+  "agentRun": {
+    "run": "20261006T025058",
+    "guide": "intravital",
+    "copyProjectUid": "CpyB01",
+    "sectionIds": [
+      "d02"
+    ]
+  },
+  "sectionOutcomes": {
+    "d02": {
+      "verdict": "bad",
+      "note": "tracked before gating out debris",
+      "by": {
+        "profile": "default",
+        "via": "app"
+      },
+      "at": "2026-10-06T09:00:00",
+      "cause": "agent"
+    }
+  }
+}

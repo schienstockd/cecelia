@@ -351,8 +351,9 @@ export const trainFlowModelGuide = moduleTaskGuide({
 
 // A denoise model is a peer of the flow model on the same page: same layout, same rail, different
 // function. Trained once per set (channels pool into one model) and reused wherever that channel mix
-// shows up. Deliberately no `driftCorrected` prereq — the picker only checks state the frontend
-// already holds; the "run drift correction first" note lives in the copy.
+// shows up. No `driftCorrected` prereq, although the frontend can tell (`isDriftCorrected`,
+// utils/imageState.ts): a prereq is set-wide and blocks-by-warning, while drift-first is advice for the
+// selected images — it is a checked line on the task spec, shown under the function picker.
 export const trainDenoiseModelGuide = moduleTaskGuide({
   id: 'train-denoise-model',
   title: 'Train a denoise model',

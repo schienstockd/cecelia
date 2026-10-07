@@ -215,7 +215,10 @@ def _marker_text(payload: dict) -> str:
 
 
 def _where_of(payload: dict) -> str:
-    """`file:line`, or the tool an agent-run finding hit when no stacktrace named repo code."""
+    """`file:line`, the tool an agent-run finding hit when no stacktrace named repo code, or a run
+    review's cause and section (`scripts/judge/run_reviews.py`)."""
+    if payload.get("kind") == "review":
+        return f"{payload.get('cause', '?')} · {payload.get('section', '?')}"
     if "file" not in payload and "tool" in payload:
         return payload["tool"]
     return f"{payload.get('file', '?')}:{payload.get('line', '?')}"

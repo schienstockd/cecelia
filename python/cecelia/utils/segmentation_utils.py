@@ -31,6 +31,42 @@ def count_labels(arr):
     return int(np.unique(arr[arr > 0]).size)
 
 
+def label_sizes(arr):
+    """Voxel (pixel, in 2D) count of every distinct non-zero label in `arr`, in label-id order.
+    `label_sizes(arr).size == count_labels(arr)` — it is the same `np.unique` with the counts kept,
+    so the segmentation QC gets object sizes for free from the call that already counted them."""
+    _, sizes = np.unique(arr[arr > 0], return_counts=True)
+    return sizes
+
+
+def object_stats(frame_sizes, voxel_size_um, is_3d):
+    """Summary of a run's objects for the segmentation QC (`seg.*` findings, `segmentation.jl`).
+
+    `frame_sizes` is one array of per-object voxel counts per timepoint (`label_sizes`, in frame
+    order); `voxel_size_um` is `(x, y, z)` in microns. Returns the raw numbers ONLY — every threshold
+    lives in Julia (`seg_object_qc_findings`), so a band can move without touching the runner:
+
+      frameCounts    - objects per timepoint
+      nObjects       - total objects
+      eqDiameterUm   - 101 percentiles (0..100) of each object's equivalent diameter in microns:
+                       the circle of the same AREA in 2D, the sphere of the same VOLUME in 3D. That
+                       is what `cellDiameter` is compared against; 101 numbers are enough to read any
+                       fraction to ~1% without banking one number per object.
+    """
+    frame_counts = [int(np.asarray(s).size) for s in frame_sizes]
+    sizes = (np.concatenate([np.asarray(s, dtype=np.float64) for s in frame_sizes])
+             if frame_sizes else np.zeros(0))
+    px, py, pz = (float(v) for v in voxel_size_um)
+    if is_3d:
+        eq = np.cbrt(6.0 * sizes * px * py * pz / np.pi)
+    else:
+        eq = 2.0 * np.sqrt(sizes * px * py / np.pi)
+    out = {'frameCounts': frame_counts, 'nObjects': int(sizes.size), 'is3D': bool(is_3d)}
+    if sizes.size:
+        out['eqDiameterUm'] = [float(v) for v in np.percentile(eq, np.arange(101))]
+    return out
+
+
 
 class TemporalWindow(typing.NamedTuple):
     """The tile through time, plus everything a subclass needs to know about where it came from.
@@ -299,6 +335,10 @@ class SegmentationUtils:
             return os.path.join(labels_dir, name)
 
         counts = {ma: 0 for ma in match_as_list}
+        # Per-timepoint object sizes of the PRIMARY type ('base' when present), for `object_stats`.
+        # Kept from the `np.unique` that counts the labels anyway, so the QC costs no extra pass.
+        stats_type = 'base' if 'base' in match_as_list else match_as_list[0]
+        frame_sizes = []
 
         # Every timepoint's valid span, resolved UP FRONT rather than inside the loop. Two things
         # need it early: the XY span decides how many tiles a frame is cut into, and the progress
@@ -507,7 +547,10 @@ class SegmentationUtils:
                                slice(x0, x1) if i == store_la_x else
                                slice(None) for i in range(level0.ndim))
                     level0[sl] = frame[ma]
-                    counts[ma] += count_labels(frame[ma])
+                    sizes = label_sizes(frame[ma])
+                    counts[ma] += int(sizes.size)
+                    if ma == stats_type:
+                        frame_sizes.append(sizes)
 
             # The label store inherits the same fact about itself: outside these spans it is zero
             # because nothing was segmented there, not because nothing was found. Recording it means
@@ -542,6 +585,15 @@ class SegmentationUtils:
             for ma in match_as_list:
                 g, level0, chunks = stores[ma]
                 self._finalize_label_pyramid(g, level0, label_axes, nscales, chunks)
+
+        # Object sizes + per-frame counts for the `seg.*` findings — an attribute rather than a second
+        # return value so every caller of `predict_from_zarr` keeps its contract. The runners bank it
+        # beside `labelCounts`.
+        self.object_stats = object_stats(
+            frame_sizes,
+            (self.phys_size_x, self.phys_size_y,
+             dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
+            is_3d)
 
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
         return counts
@@ -1199,12 +1251,5 @@ class SegmentationUtils:
         )
 
     def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):
-        """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint).
-        Labels have no channel axis, so pass explicit X/Y/T indices into the shared pyramid writer
-        rather than the image dim_utils."""
-        la_y = label_axes.index('Y')
-        la_x = label_axes.index('X')
-        la_t = label_axes.index('T') if 'T' in label_axes else None
-        zarr_utils.write_multiscale_pyramid(
-            g, level0, None, nscales, list(chunks),
-            x_idx=la_x, y_idx=la_y, t_idx=la_t, kind='labels')
+        """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint)."""
+        zarr_utils.write_label_pyramid(g, level0, label_axes, nscales, chunks)

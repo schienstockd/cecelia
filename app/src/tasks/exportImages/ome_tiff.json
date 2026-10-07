@@ -2,6 +2,15 @@
   "task": "exportOmeTiff",
   "fun_name": "exportImages.ome_tiff",
   "label": "Export as OME-TIFF",
+  "purpose": "Write one image version to an OME-TIFF that keeps its calibration",
+  "useWhen": [
+    "Rendering figures in Imaris or another Bio-Formats reader",
+    "Sharing one image, channel subset, frame or Z max outside the app"
+  ],
+  "notWhen": [
+    "Moving a whole project: use project Export instead",
+    { "text": "Pixel sizes missing: set them in the image metadata first", "check": "!pixelSizeSet" }
+  ],
   "category": "Export",
   "env": ["local"],
   "resource_pool": "io",

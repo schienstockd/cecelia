@@ -144,6 +144,17 @@ export const TASK_PAGES: Record<string, { path: string; module: string }> = {
   spatialAnalysis: { path: '/spatial',        module: 'spatialAnalysis' },
 }
 
+/** Where a task runs and what pre-selects it there — THE one fun_name → (page, `cc-fn:<module>` value)
+ *  rule, for every "open this page with a task selected" link (Kiwi task chips today). TaskRunner remembers `def.task` (the spec's `task` key), which is NOT the fun_name
+ *  suffix for ~20 built-ins (`segment.cellpose` → `cellposeSegment`), so pass the def when you have it;
+ *  without one the suffix is the best guess. `null` = no built-in page (a custom module's category). */
+export function taskLanding(funName: string, def?: { task: string }):
+    { path: string; module: string; task: string } | null {
+  const [category, ...rest] = funName.split('.')
+  const page = TASK_PAGES[category]
+  return page ? { ...page, task: def?.task ?? rest.join('.') } : null
+}
+
 export type PointTarget =
   | { action: 'viewer'; imageUid: string; t?: number; z?: number;
       tracks?: { valueName: string; ids: number[] }; cells?: { valueName: string; ids: number[] } }
@@ -156,8 +167,9 @@ export type PointTarget =
   | { action: 'proposedPlot' }
   | { action: 'none'; why: string }
 
-/** What clicking this ref should do. Pure: the composable performs it. */
-export function pointTarget(ref: KiwiRef): PointTarget {
+/** What clicking this ref should do. Pure: the composable performs it. `taskDefs` (fun_name → def)
+ *  lets a task chip pre-select the right function — see `taskLanding`. */
+export function pointTarget(ref: KiwiRef, taskDefs?: ReadonlyMap<string, { task: string }>): PointTarget {
   switch (ref.kind) {
     case 'project':    return { action: 'route', path: '/manage-images' }
     case 'set':        return { action: 'set', setUid: ref.setUid }
@@ -178,11 +190,10 @@ export function pointTarget(ref: KiwiRef): PointTarget {
     case 'ui':         return { action: 'ui', anchor: ref.anchor }
     case 'blackboard': return { action: 'route', path: '/blackboard', query: { entry: ref.entryId } }
     case 'task': {
+      const land = taskLanding(ref.funName, taskDefs?.get(ref.funName))
+      if (land) return { action: 'route', path: land.path, rememberFn: { module: land.module, task: land.task } }
       const [category, ...rest] = ref.funName.split('.')
-      const task = rest.join('.')
-      const page = TASK_PAGES[category]
-      if (page) return { action: 'route', path: page.path, rememberFn: { module: page.module, task } }
-      return task ? { action: 'route', path: `/custom/${category}` } : { action: 'none', why: 'Unknown task' }
+      return rest.length ? { action: 'route', path: `/custom/${category}` } : { action: 'none', why: 'Unknown task' }
     }
     case 'tile':       return { action: 'none', why: 'Tile — nothing to open yet' }
     case 'proposedPlot': return { action: 'proposedPlot' }

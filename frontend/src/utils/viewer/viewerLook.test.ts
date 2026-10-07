@@ -15,6 +15,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   trackVisible: {},
   trackSourceColours: {},
   showGatedTracks: false,
+  hiddenTrackPops: [],
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   trackColourMode: 'speed', colourBy: '', colourOverrides: {},
   ...over,
@@ -92,6 +93,14 @@ describe('viewerLook', () => {
     expect([l.pointBorder, l.labelOpacity, l.pointZTol, l.trackZTol]).toEqual([2, 0.4, 1, 3])
     expect(l.colourBy).toBe('clusters')
     expect(l.colourOverrides).toEqual({ '1': '#00ff00' })
+  })
+
+  it('track clusters, hidden ribbons and the all-cells mask ride along', () => {
+    const l = viewerLook(base({ popVisible: pt => pt === 'trackclust', hiddenTrackPops: ['/a'] }))
+    expect(l.showTrackclust).toBe(true)
+    expect(l.hiddenTrackPops).toEqual(['/a'])
+    expect(l.maskAllCells).toBe(true)
+    expect(viewerLook(base()).hiddenTrackPops).toBeUndefined()
   })
 
   it('no popType published → flow', () => {

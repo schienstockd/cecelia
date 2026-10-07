@@ -85,14 +85,18 @@ export interface BatchMovieCfg {
   // for the selected segmentation, which is the pre-picker behaviour every batch already had. The
   // backend `_overlays_raw_from_config` forwards this as `popPaths` (see `_resolve_movie_overlays_mask`).
   popsFilter?: string[]
-  // Per-segmentation whole-seg track visibility + colour, active only when `showTracks && !showPops`.
-  // The batch panel enumerates every tracked segmentation on the first selected image and lets the
-  // user pick which to draw and what colour each gets; one it does not name is drawn, in the palette
-  // (`resolveTrackSources`). Backend:
-  // `_resolve_movie_overlays_mask` composes one `build_overlays3d_for` closure per visible source
-  // (each with its own `all_tracks_colour`) and merges their outputs, so a fXgbTl movie with cpSAM
-  // + flowTom + coastalFg all ticked draws all three simultaneously, each in its own colour.
+  // Per-segmentation track visibility + colour, active under `showTracks` (with or without the pops —
+  // as in the viewer, a segmentation's tracks are their own layer). The batch panel enumerates every
+  // tracked segmentation on the first selected image and lets the user pick which to draw and what
+  // colour each gets; one it does not name is drawn, in the palette (`resolveTrackSources`). Backend:
+  // `viewer_overlay_closure` composes one `build_overlays3d_for` closure per visible source and merges
+  // their outputs, so cpSAM + flowTom + coastalFg all ticked draw together, each in its own colour.
   trackSources?: Record<string, { visible: boolean; colour: string }>
+  // Pop paths whose cell-track ribbon the viewer hides (its per-pop ribbon eye) — dots still draw.
+  hiddenTrackPops?: string[]
+  // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
+  // with pops on).
+  maskAllCells?: boolean
   colourLabels?: boolean
   tailWidth?: number
   // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop').
@@ -152,13 +156,17 @@ export interface BatchMovieRequestConfig {
   trackColourMode: string
   showGatedTracks: boolean
   showTrackclust: boolean
+  /** pop paths whose cell-track ribbon is hidden (a look filled from the viewer) */
+  hiddenTrackPops?: string[]
+  /** the mask paints every cell, as the viewer's does */
+  maskAllCells?: boolean
   showPopulations: boolean
   popType: string
   popValueName: string
   popsFilter: string[]
-  /** The whole-seg-tracks path's sources (`resolveTrackSources`) — empty means none is drawn. Absent
-   *  when tracks follow the pops, or nothing is known to choose from: the backend then draws the
-   *  overlay segmentation's tracks in grey. */
+  /** The per-segmentation tracks' sources (`resolveTrackSources`) — empty means none is drawn. Absent
+   *  when tracks are off, or nothing is known to choose from: the backend then draws the overlay
+   *  segmentation's tracks in grey. */
   trackSources?: TrackSource[]
   pointsSize: number
   pointBorder: number
@@ -204,11 +212,12 @@ export function resolveTrackSources(
                   colour: m[vn]?.colour || defaultTrackSourceColour(Math.max(0, tracked.indexOf(vn))) }))
 }
 
-/** The request's `trackSources` — `resolveTrackSources` under `showTracks && !showPops`, else
- *  `undefined` (tracks follow the pops, or there is nothing to choose from: the backend's grey). An
- *  empty list draws no whole-segmentation tracks. The panel's preview reads the same value. */
+/** The request's `trackSources` — `resolveTrackSources` under `showTracks` (with or without the pops:
+ *  per-segmentation tracks are their own layer, as in the viewer), else `undefined` (nothing to choose
+ *  from: the backend's grey). An empty list draws no per-segmentation tracks. The panel's preview
+ *  reads the same value. */
 export function batchTrackSources(cfg: BatchMovieCfg, trackedSegs: string[]): TrackSource[] | undefined {
-  return cfg.showTracks && !cfg.showPopulations && (trackedSegs.length || cfg.trackSources)
+  return cfg.showTracks && (trackedSegs.length || cfg.trackSources)
     ? resolveTrackSources(cfg.trackSources, trackedSegs) : undefined
 }
 
@@ -254,6 +263,9 @@ export function buildBatchMovieConfig(
     trackColourMode: cfg.trackColourMode ?? 'track',
     showGatedTracks: !!cfg.showGatedTracks,
     showTrackclust: !!cfg.showTrackclust,
+    // a look filled from the viewer: its hidden ribbon eyes, and its every-cell mask
+    ...(cfg.hiddenTrackPops?.length ? { hiddenTrackPops: cfg.hiddenTrackPops } : {}),
+    ...(cfg.maskAllCells ? { maskAllCells: true } : {}),
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',
     // Which segmentation the popsFilter paths belong to. Empty → the batch's first mask column,

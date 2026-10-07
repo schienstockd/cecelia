@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verdictFrom, classifyAdapter, isAppleAdapter, adapterNameText } from './webgpuProbe'
+import { verdictFrom, classifyAdapter, classifyAdapterBy, classifiedByText, isAppleAdapter, adapterNameText } from './webgpuProbe'
 
 const noName = { vendor: '', architecture: '', device: '', description: '' }
 
@@ -32,6 +32,20 @@ describe('classifyAdapter', () => {
     // Firefox has historically blanked adapter.info entirely; the limit is the only tell.
     expect(classifyAdapter(noName, 16384)).toBe(true)
     expect(classifyAdapter(noName, 2048)).toBe(false)
+  })
+
+  it('uses subgroupMinSize before the limit when the name is blank', () => {
+    // Chrome 154 viewer pop-up on an RTX A4500: every name field blank, 3D limit 2048,
+    // subgroup 32/32 (bench-O4vLab-flat-2026-10-07). The limit alone said "integrated".
+    expect(classifyAdapter(noName, 2048, 32)).toBe(true)
+    expect(classifyAdapter(noName, 16384, 8)).toBe(false)    // Intel via Mesa iris
+    expect(classifyAdapter(noName, 16384, 4)).toBe(false)    // software rasterizer
+    expect(classifyAdapter(noName, 2048, 64)).toBe(false)    // Qualcomm Adreno
+    expect(classifyAdapter({ ...noName, vendor: 'intel' }, 2048, 32)).toBe(false)  // name still wins
+    expect(classifyAdapterBy(noName, 2048, 32).by).toBe('subgroup')
+    expect(classifyAdapterBy(noName, 2048).by).toBe('limit')
+    expect(classifiedByText(noName, 2048, 32)).toBe('by subgroup size 32')
+    expect(classifiedByText({ ...noName, vendor: 'nvidia' }, 2048, 32)).toBe('by name')
   })
 
   it('tags Apple as NOT integrated regardless of the limit', () => {

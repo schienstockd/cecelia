@@ -68,7 +68,8 @@ class Lock(unittest.TestCase):
                 c._request("GET", "/api/gating/stats", {"projectUid": "tSJpBI"})
 
     def test_write_routes_are_gating_only(self):
-        # the one non-gating POST is the correction-plan RECOMMEND, which is pure (save/mount are not here)
+        # the one non-gating POST is the correction-plan RECOMMEND: no plan write, only a one-off fill
+        # of a missing meta.saturation (save/mount are not here)
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"} - {"/api/correction-plan/recommend"}
         self.assertTrue(writes)
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
@@ -183,3 +184,24 @@ class GatingPicturesShared(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RecommendEvidence(unittest.TestCase):
+    """TASK_DISCOVERY_PLAN Decision 9: discovery off asks the recommender for its metadata-only answer."""
+
+    def _sent_evidence(self, env: dict) -> str:
+        c = au.AutonomousClient("http://x")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01", **env}), \
+                mock.patch.object(c, "_request", return_value={"included": [], "excluded": []}) as req:
+            c.recommend_correction_plan("copy01", "img")
+        return req.call_args.kwargs["body"]["evidence"]
+
+    def test_default_sends_all(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CECELIA_MCP_DISCOVERY", None)
+            self.assertEqual(self._sent_evidence({}), "all")
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": "on"}), "all")
+
+    def test_discovery_off_sends_metadata(self):
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": "off"}), "metadata")
+        self.assertEqual(self._sent_evidence({"CECELIA_MCP_DISCOVERY": " OFF "}), "metadata")

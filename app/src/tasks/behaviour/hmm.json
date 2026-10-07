@@ -2,6 +2,15 @@
   "task": "hmm",
   "fun_name": "behaviour.hmm",
   "label": "HMM (states + transitions)",
+  "purpose": "Run HMM states, then HMM transitions",
+  "useWhen": [
+    "The usual way to give each cell a behaviour state per timepoint",
+    "Before Cluster tracks, which can read states and transitions"
+  ],
+  "notWhen": [
+    { "text": "Tracks have no speed or angle: run Track measures first", "check": "!trackMeasured" },
+    "States look wrong: check segmentation and tracking before the states"
+  ],
   "category": "Behaviour",
   "env": ["local"],
   "resource_pool": "cpu",

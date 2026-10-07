@@ -60,13 +60,13 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import { adapterNameText, probeWebGpu } from '../utils/webgpuProbe'
+import { adapterNameText, classifiedByText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
-  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
+  metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -145,6 +145,8 @@ const kiwiStore = useKiwiStore()
 // more field. Reallocate() is called from the subscribe callback, so the atlas drops on the next
 // tick. Read at mount so a viewer opened AFTER a publish still starts on the current rev.
 const cacheClearRev = ref(readViewerCacheClearRev())
+/** Last cache-clear event handled — dedupes events that matched but didn't need a reload. */
+let seenClearRev = ''
 /**
  * `?bricks=1` — swap the flat-3D volume renderer for the brick-atlas one
  * (`docs/todo/KILN_BRICK_PLAN.md`). URL-scoped rather than a setting so the two paths can be
@@ -175,6 +177,14 @@ const bricksOverride = String(route.query.bricks ?? '')
  * The hardware doesn't change under a running tab.
  */
 const stableAdapterReport = ref<AdapterReport | null>(null)
+/** Raw adapter readout (every `powerPreference`, plus page context) for the Debug panel's GPU block and
+ *  the bench JSON — the evidence for WHY `stableAdapterReport.looksDiscrete` came out the way it did. */
+const gpuDiag = ref<GpuDiagnostics | null>(null)
+/** Which signal decided `stableAdapterReport.looksDiscrete` — the Debug panel's "Classified" row. */
+const classifiedByLabel = computed(() => {
+  const a = stableAdapterReport.value
+  return a ? classifiedByText(a.name, a.maxTextureDimension3D, a.subgroupMinSize) : ''
+})
 /**
  * Which renderer kind currently backs `renderer.value` / `tileRenderer.value`. Consulted inside
  * `ensureRenderer` to decide "reuse vs. destroy+recreate" atomically, so a `bricksEnabled` flip
@@ -357,6 +367,12 @@ function benchSave() {
   // Full Debug-panel snapshot — everything else the panel currently shows, so the saved blob is
   // self-contained rather than "here are numbers, ask the user what they were looking at".
   const debug: Record<string, unknown> = {
+    gpu: {
+      // What the cache/renderer decisions used, then the raw per-powerPreference readout.
+      stable: stableAdapterReport.value,
+      active: activeAdapter.value,
+      diag: gpuDiag.value,
+    },
     shader: shader.value,
     bricks: br ?? null,
     imageInfo: {
@@ -830,12 +846,16 @@ watch(colourBy, () => { void loadOverlays() })
  * panel has more than one ticked, the first one wins deterministically. This is the visible
  * limitation the row hint below spells out.
  */
-const labelName = computed(() => {
-  const names = meta.value?.labelNames ?? []
+/** The `labelName` the latest `reallocate()` started with — see the `labelName` watcher. */
+let allocatedLabel: string | null = null
+/** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
+let allocatedBricks: boolean | null = null
+function pickLabelName(names: string[]): string {
   if (!imageUid || !names.length) return ''
   const vis = settings.getLabelVisibility(imageUid, names)
   return names.find(n => vis[n]) ?? ''
-})
+}
+const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 //
@@ -843,7 +863,11 @@ const labelName = computed(() => {
 // different image can have a different first-visible label), and loadVersion is about to run its
 // own primary reallocate that reads `labelName.value` at call time. A watcher-driven reallocate
 // here would race that primary one — same Vulkan OOM shape as the show3D racer below.
-watch(labelName, () => { if (starting.value) return; reallocate() })
+//
+// `allocatedLabel` guard: a meta refresh that flips `labelName` (a new segmentation becoming
+// known) already calls `reallocate()` itself, which reads the new name — the watcher's own
+// reallocate would be a second full reload of the same frame.
+watch(labelName, n => { if (starting.value || n === allocatedLabel) return; reallocate() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -855,8 +879,10 @@ watch(labelName, () => { if (starting.value) return; reallocate() })
 // loadVersion, and loadVersion's own reallocate reads `bricksEnabled.value` at ensureRenderer
 // time. A watcher-driven reallocate here would race that primary one — same Vulkan OOM shape
 // as the show3D racer below.
-watch(bricksEnabled, () => {
-  if (meta.value === null || starting.value) return
+// `allocatedBricks`: same guard as `allocatedLabel` — a cache-clear meta refresh that changes dims
+// enough to flip this already reallocates itself, reading the new value.
+watch(bricksEnabled, b => {
+  if (meta.value === null || starting.value || b === allocatedBricks) return
   reallocate()
 })
 // Self-healing for the OOM-fallback flags. During a two-way oscillation at startup (auto pick →
@@ -990,6 +1016,11 @@ const rampStyle = computed(() => {
 
 const cam = ref<OrbitCamera>({ yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 })
 const fitDist = ref(1)
+/** Wheel-zoom band per mode, as multiples of `fitDist` — see `onWheel` for why 2D goes deeper. */
+const ZOOM_BAND = {
+  plane: { min: 0.005, max: 6 },
+  volume: { min: 0.05, max: 6 },
+} as const
 /**
  * The level the current textures were ALLOCATED for. `slabLevel` is a derived value that reacts to
  * camera zoom; when the two disagree the level watch fires `reallocate(false)` (debounced), so a wheel
@@ -1274,25 +1305,31 @@ const BASE_CACHE_OPTIONS: Array<{ value: string; label: string; mb: number; tip:
   { value: '12288', label: '12 GB', mb: 12288, tip: 'Three atlases — workstation-class VRAM' },
   { value: '16384', label: '16 GB', mb: 16384, tip: 'Four atlases — MAX_ATLASES ceiling' },
 ]
+/** One atlas in whole MiB. Chromium reports `maxBufferSize` as 2³² − 4 B, so a plain floor read it
+ *  as 4095 MiB and the 16 GB chip (4 × 4096) came out 4 MiB over the ceiling and disabled. The
+ *  picker caps each atlas at `maxBufferSize` anyway, so rounding to the nearest MiB can't
+ *  over-allocate. */
+const perAtlasMB = computed(() => {
+  const a = stableAdapterReport.value
+  return a ? Math.max(1, Math.round(a.maxBufferSize / (1024 * 1024))) : 0
+})
 /** Hard cap for the cache chips: `MAX_ATLASES × maxBufferSize`. No VRAM_SAFETY here —
  *  the safety margin only exists for AUTO's conservative default (leave VRAM for other apps);
  *  a user explicitly picking a chip should be able to hit the full multi-atlas ceiling.
  *  Renderers still self-guard against actual OOM at texture allocation. */
 const cacheHardCapMB = computed(() => {
   const a = stableAdapterReport.value
-  return a ? Math.floor((a.maxBufferSize * MAX_ATLASES) / (1024 * 1024)) : Infinity
+  return a ? perAtlasMB.value * MAX_ATLASES : Infinity
 })
-/** How many atlases the picker will allocate for this budget on this hardware. Approximation:
- *  ceil(budgetBytes / maxBufferSize), capped at MAX_ATLASES. The real picker in
+/** How many atlases the picker will allocate for this budget on this hardware. Mirrors the picker:
+ *  floor(budget / one atlas), capped at MAX_ATLASES — the picker never allocates a partial atlas,
+ *  so a ceil here labelled 12 GB "4×" when the picker builds 3. The real picker in
  *  `frontend/src/utils/brickAtlas.ts` can return fewer if a single brick already exceeds the
  *  per-atlas budget (pathological cases only) — for the chip strip this budget-only estimate
  *  is close enough, and doesn't depend on which image is loaded. */
 function estimateAtlasesForBudget(budgetMB: number): number {
-  const a = stableAdapterReport.value
-  if (!a || budgetMB <= 0) return 1
-  const budgetBytes = budgetMB * 1024 * 1024
-  const perAtlas = Math.max(1, a.maxBufferSize)
-  return Math.max(1, Math.min(MAX_ATLASES, Math.ceil(budgetBytes / perAtlas)))
+  if (perAtlasMB.value <= 0 || budgetMB <= 0) return 1
+  return Math.max(1, Math.min(MAX_ATLASES, Math.floor(budgetMB / perAtlasMB.value)))
 }
 const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
   const overCap = o.mb > 0 && o.mb > cacheHardCapMB.value
@@ -1312,7 +1349,7 @@ const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
     label,
     disabled: overCap,
     tip: overCap
-      ? `Would need ${estimateAtlasesForBudget(o.mb)} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
+      ? `Would need ${Math.ceil(o.mb / Math.max(1, perAtlasMB.value))} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
       : o.tip,
   }
 }))
@@ -2041,6 +2078,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
             && m.labelDims && labelDimsMismatch(m, vn)) {
           return null
         }
+        // A mask with fewer levels than the image has nothing at this zoom — skip it so the image
+        // still draws; the sidebar flags the row. The server refuses the read (409) either way.
+        const short = labelLevelsShort(m, vn)
+        if (short && lvl >= short.nLevels) return null
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
@@ -2057,7 +2098,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
           rev: cacheClearRev.value || undefined,
         })
         const res = await fetch(url, { cache: 'default', signal: ac.signal })
-        if (!res.ok) throw new Error(`Mask failed: ${res.status}`)
+        if (res.status === 409) return null
+        if (!res.ok) throw new Error(`Mask "${vn}" could not be loaded (${res.status})`)
         const buf = await res.arrayBuffer()
         // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
         // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
@@ -2065,7 +2107,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
         const bad = slabShapeError(
           res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
-        if (bad) throw new Error('Mask: ' + bad)
+        if (bad) throw new Error(`Mask "${vn}" could not be loaded (${bad})`)
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return widenLabelSlab(buf, bpv)
       })(),
@@ -2848,6 +2890,9 @@ function onUp(e: PointerEvent) {
   }
 }
 
+/** A pick on a mask with no level at this zoom (409) — the cell can't be read where it's drawn. */
+const MASK_ZOOM_IN = 'This mask has no level at this zoom — zoom in to pick cells'
+
 /**
  * Send a pick request to the server for the pixel under the pointer. The gating store's `popmap`
  * broadcast lights up the transient pop on the plots — this window never touches the gating store
@@ -2888,6 +2933,7 @@ async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
     if (!res.ok) { vlog('warn', `Pick failed: ${res.status}`); return }
     // `/Pick selection` membership changed on the server — wake same-window (Pinia ref) and
     // cross-window (localStorage) subscribers. The correction cockpit watches this to re-fetch
@@ -2963,6 +3009,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
+    if (res.status === 409) { vlog('warn', MASK_ZOOM_IN); return }
     if (!res.ok) { vlog('warn', `Rect pick failed: ${res.status}`); return }
     viewerStore.bumpPickSelectionTick()  // see the note on the pick-cell twin
     const j = await res.json() as { nLabels?: number; nSelected?: number }
@@ -3096,9 +3143,7 @@ function onWheel(e: WheelEvent) {
   // there's a genuine payoff for going deeper, whereas the pre-brick pin made a deep zoom just
   // slower for the same L5 pixels. Rotation can still lose the box off-screen; Reset view is one
   // click away.
-  const band = mode.value === 'plane'
-    ? { min: 0.005, max: 6 }
-    : { min: 0.05, max: 6 }
+  const band = ZOOM_BAND[mode.value]
   // Cursor-anchored zoom (ImageJ): 2D plane only. The 3D wheel is a dolly on the orbit and adding
   // a pan-shift under a rotated basis moves the volume sideways in a way the user did not ask for.
   let anchor: { ndcX: number; ndcY: number; aspect: number } | undefined
@@ -3683,9 +3728,11 @@ async function ensureRenderer() {
  * acquiring a new one; every caller either awaits or is fire-and-forget (the debounced pumps and the
  * chip/range handlers, all of which just want the effect to happen eventually).
  */
-async function reallocate(refit = false) {
+async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
+  allocatedLabel = labelName.value
+  allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
   // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
@@ -3708,7 +3755,7 @@ async function reallocate(refit = false) {
   // would allocate the pipeline for the wrong level (or the wrong pipeline entirely).
   const c = fitNow(m)
   fitDist.value = c.dist
-  if (refit) cam.value = c
+  if (refit) cam.value = refit === true ? c : refit(c)
 
   await ensureRenderer()
 
@@ -4043,15 +4090,22 @@ watch(valueName, () => propsSink.schedule())
 watch(() => setUid.value ? settings.getShow3D(setUid.value) : null, want => {
   if (want === null || starting.value) return
   const next: 'plane' | 'volume' = want ? 'volume' : 'plane'
-  if (mode.value !== next) { mode.value = next; reallocate(true) }
+  if (mode.value !== next) switchMode(next)
 })
+
+/** 2D↔3D keeps the place you were looking at and the zoom (`carryCamera`) — a refit here sent the
+ *  view back to the whole image and the region had to be found again. */
+function switchMode(next: 'plane' | 'volume') {
+  const from = cam.value, fromFit = fitDist.value
+  mode.value = next
+  return reallocate(fit => carryCamera(from, fromFit, fit, ZOOM_BAND[next]))
+}
 
 /** View chip handler — flip the popup's mode AND reverse-sync to the panel's per-set setting so
  *  the two stay in lockstep (`settings.getShow3D` on the panel side, the watcher above on this
  *  side). The watcher short-circuits when `mode` already matches, so this write can't loop. */
 function onModeChange(v: 'plane' | 'volume'): void {
-  mode.value = v
-  reallocate(true)
+  switchMode(v)
   if (setUid.value) settings.setShow3D(setUid.value, v === 'volume')
 }
 
@@ -4064,7 +4118,9 @@ function onModeChange(v: 'plane' | 'volume'): void {
 // so `ViewerPanel` can flag the offending rows in the segmentation list — the fix from #814 does
 // not cover this case (a version SWITCH has a different URL, so the cache-bust never fires) and
 // resample-to-fit would render a spatially-shifted overlay (see commit message).
-watch(meta, m => {
+// Also keyed on `labelDims` itself: a task-done that changed nothing drawn swaps it in place (no
+// new `meta.value`), and a new segmentation from another version must still be flagged.
+watch([meta, () => meta.value?.labelDims], ([m]) => {
   if (!m || !imageUid) return
   const dims = m.labelDims ?? {}
   const mismatched: string[] = []
@@ -4075,9 +4131,14 @@ watch(meta, m => {
       byVn[vn] = { nX: d.nX, nY: d.nY }
     }
   }
+  const shortLevels: Record<string, { nLevels: number; imageLevels: number }> = {}
+  for (const vn of Object.keys(dims)) {
+    const short = labelLevelsShort(m, vn)
+    if (short) shortLevels[vn] = short
+  }
   viewerStore.setLabelsDimMismatch({
     imageUid, valueName: valueName.value || (m.valueName ?? ''),
-    imageNX: m.nX, imageNY: m.nY, mismatched, byVn,
+    imageNX: m.nX, imageNY: m.nY, mismatched, byVn, shortLevels,
   })
 }, { immediate: true })
 
@@ -4374,6 +4435,13 @@ async function start() {
       return
     }
     if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
+    void collectGpuDiagnostics().then(d => {
+      gpuDiag.value = d
+      const names = d.adapters.map(a => `${a.powerPreference}: ${a.found
+        ? (adapterNameText(a.name) || '(blank name)')
+        : 'none'}`).join(' · ')
+      vlog('info', 'Viewer GPU adapters — ' + names, JSON.stringify(d))
+    })
     // Prime `stableAdapterReport` from the probe BEFORE any renderer is constructed. Without this,
     // `bricksEnabled`'s first classification uses the static-floor budget (1.5 GB), which said
     // "brick" for ldYr8J-plane's 1.75 GB working set — and once the brick renderer was up, the
@@ -4388,6 +4456,7 @@ async function start() {
         maxTextureDimension3D: probe.limits.maxTextureDimension3D,
         maxBufferSize: probe.limits.maxBufferSize,
         looksDiscrete: probe.looksDiscrete,
+        subgroupMinSize: probe.subgroupMinSize,
         hasTimestamps: probe.hasTimestamps,
         name: probe.name,
         // The Settings-diagnostic probe doesn't have a device to test binding_array against —
@@ -4966,14 +5035,19 @@ onMounted(() => {
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
   stopCacheClearWatch = onViewerCacheClear(async (ev) => {
-    if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
+    if (ev.rev === cacheClearRev.value || ev.rev === seenClearRev) return   // duplicate double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
     // us. Was the whole reason the labels-only `cc.viewerSlabsTick` existed alongside the rev —
     // that channel filtered, this one didn't. Same rule now, one channel.
     if (!viewerCacheClearMatches(ev, {
       imageUid, valueName: valueName.value, labelValueName: labelName.value,
+      knownLabelNames: meta.value?.labelNames ?? [],
     })) return
-    cacheClearRev.value = ev.rev
+    seenClearRev = ev.rev
+    // The task's result NAMED a store we draw (it wrote it), or the manual resync forces it — reload.
+    const named = ev.force === true
+      || (ev.valueName !== undefined && ev.valueName === valueName.value)
+      || (ev.labelValueName !== undefined && ev.labelValueName === labelName.value)
     // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
     // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
     // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard with
@@ -4986,6 +5060,18 @@ onMounted(() => {
       const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
       const m = await readJson<ViewerMeta>(res, 'Metadata')
       const prev = meta.value
+      // Most task-dones (gating, measures, clustering) touch nothing we draw: take the new store
+      // list in place — a new segmentation becomes tickable — and keep the cache and the frame.
+      // A changed shown mask (`labelName` flipping) reloads through its own watcher.
+      if (!named && prev && !shownStoresChanged(prev, m, pickLabelName(m.labelNames ?? []))) {
+        prev.labelNames = m.labelNames
+        prev.labelDims = m.labelDims
+        prev.storeRevs = m.storeRevs
+        prev.valueNames = m.valueNames
+        prev.activeValueName = m.activeValueName
+        return
+      }
+      cacheClearRev.value = ev.rev
       if (prev && prev.channels.length === m.channels.length) {
         for (let i = 0; i < m.channels.length; i++) {
           m.channels[i].lo = prev.channels[i].lo
@@ -5003,6 +5089,7 @@ onMounted(() => {
       zPlane.value = Math.min(zPlane.value, maxZ)
       zRange.value = [Math.min(zRange.value[0], maxZ), Math.min(zRange.value[1], maxZ)]
     } catch (e) {
+      cacheClearRev.value = ev.rev   // can't tell what changed — reload, the pre-fingerprint answer
       vlog('warn', 'Meta refresh on cache-clear failed: '
         + (e instanceof Error ? e.message : String(e)))
     }
@@ -6080,6 +6167,26 @@ onUnmounted(() => {
             </template>
             <span class="cc-muted">Bytes</span>
             <span>{{ (benchBytes / 1e6).toFixed(1) }} MB</span>
+          </div>
+
+          <!-- ── GPU — what the viewer classified this adapter as, and the raw readout behind it. -->
+          <div class="cc-eyebrow cc-fs-2xs vw-debug-head">GPU</div>
+          <div class="vw-bench-grid cc-fs-3xs">
+            <template v-if="stableAdapterReport">
+              <span class="cc-muted" v-tooltip.left="'Name first; subgroup size, then the 3D texture limit, when the name is blank'">Classified</span>
+              <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }} ({{ classifiedByLabel }})</span>
+            </template>
+            <template v-for="a in gpuDiag?.adapters ?? []" :key="a.powerPreference">
+              <span class="cc-muted">{{ a.powerPreference }}</span>
+              <span v-if="a.found">{{ adapterNameText(a.name) || '(blank name)' }}
+                · 3D {{ a.limits.maxTextureDimension3D }} · buf {{ (a.limits.maxBufferSize / 2 ** 30).toFixed(1) }} GiB<template
+                  v-if="a.info.isFallbackAdapter"> · fallback</template></span>
+              <span v-else>no adapter</span>
+            </template>
+            <template v-if="gpuDiag">
+              <span class="cc-muted">Page</span>
+              <span>{{ gpuDiag.page.origin }} · {{ gpuDiag.page.isSecureContext ? 'secure' : 'insecure' }}{{ gpuDiag.page.hasOpener ? ' · popup' : '' }}</span>
+            </template>
           </div>
 
           <!-- ── Play health — shown when the rolling window has samples, whether or not playback

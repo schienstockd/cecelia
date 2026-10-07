@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   slabUrl, metaUrl, parseSlabShape, slabShapeError, extentUm, lutTextureBytes, sampleLut,
-  fitCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
-  slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, LABEL_BPV,
+  fitCamera, carryCamera, orbitDrag, orbitZoom, contrastFromSlab, slabMax, slabView, contrastCeiling,
+  slabZ, loadedPlanes, zControlsForLoaded, visibleExtentUm, pickTileLevel, pickVolumeLevel, labelDimsMismatch, labelLevelsShort, shownStoresChanged, LABEL_BPV,
   shouldUseBricks, CACHE_BUDGET_BYTES,
   MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, TILE_LOD_HYST_LOG2,
   type ViewerMeta,
@@ -511,6 +511,25 @@ describe('spatial audit — slab URL carries level/x/y, guard is level-aware', (
   })
 })
 
+describe('labelLevelsShort — a mask with fewer zoom levels than the image', () => {
+  const levels = [0, 1, 2].map(level => ({ level, nX: 8 >> level, nY: 8 >> level, chunkX: 8, chunkY: 8 }))
+  it('names both counts when the mask is shallower', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toEqual({ nLevels: 1, imageLevels: 3 })
+  })
+  it('passes a mask with the image\'s levels', () => {
+    const m = meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 3 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('passes a single-level mask on a single-level image (empty levels)', () => {
+    const m = meta({ levels: [], labelDims: { shg: { nX: 8, nY: 8, nZ: 1, nLevels: 1 } } })
+    expect(labelLevelsShort(m, 'shg')).toBeNull()
+  })
+  it('leaves a mask unflagged when the server sent no level count', () => {
+    expect(labelLevelsShort(meta({ levels, labelDims: { shg: { nX: 8, nY: 8, nZ: 1 } } }), 'shg')).toBeNull()
+  })
+})
+
 describe('labelDimsMismatch — flag masks whose L0 doesn\'t fit this image version', () => {
   const m = (over: Partial<ViewerMeta> = {}) => meta({ nX: 434, nY: 418, ...over })
   it('flags a mask whose (nX, nY) differ from the image version', () => {
@@ -755,5 +774,72 @@ describe('the scale bar is drawn against what is on screen', () => {
     const [wide] = visibleExtentUm(1000, 1)
     const [close] = visibleExtentUm(500, 1)
     expect(close).toBeCloseTo(wide / 2)
+  })
+})
+
+describe('carryCamera — 2D↔3D keeps the place and the zoom', () => {
+  // The shaders' camera() written out literally (brick_common.wgsl / mip_common.wgsl), so the helper's
+  // closed-form basis is checked against the WGSL construction rather than against itself.
+  const cross = (a: number[], b: number[]) =>
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+  const centreWorld = (c: { yaw: number; pitch: number; panX: number; panY: number }) => {
+    const fwd = [Math.cos(c.pitch) * Math.sin(c.yaw), Math.sin(c.pitch), Math.cos(c.pitch) * Math.cos(c.yaw)]
+    const r0 = cross([0, 1, 0], fwd), n = Math.hypot(...r0)
+    const right = r0.map(v => v / n), up = cross(right, fwd)
+    return [0, 1].map(i => right[i] * c.panX + up[i] * c.panY)
+  }
+  const band = { min: 0.05, max: 6 }
+
+  it('face-on: pan and fit-relative zoom carry over unchanged', () => {
+    const from = { yaw: 0, pitch: 0, dist: 30, panX: 12, panY: -7 }
+    const to = { yaw: 0, pitch: 0, dist: 200, panX: 0, panY: 0 }
+    const c = carryCamera(from, 100, to, band)
+    expect(c.panX).toBeCloseTo(12, 9); expect(c.panY).toBeCloseTo(-7, 9)
+    expect(c.dist).toBeCloseTo(60, 9)        // 0.3× fit in → 0.3× fit out
+  })
+
+  it('rotated 3D → 2D lands on the world x/y at screen centre, face-on', () => {
+    const from = { yaw: 0.7, pitch: -0.4, dist: 50, panX: 9, panY: 5 }
+    const c = carryCamera(from, 50, { yaw: 0, pitch: 0, dist: 50, panX: 0, panY: 0 }, band)
+    expect(c.yaw).toBe(0); expect(c.pitch).toBe(0)
+    const [wx, wy] = centreWorld(from), [cx, cy] = centreWorld(c)
+    expect(cx).toBeCloseTo(wx, 9); expect(cy).toBeCloseTo(wy, 9)
+  })
+
+  it('zoom is clamped into the target mode\'s wheel band', () => {
+    const from = { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 }   // 0.01× fit — deep 2D zoom
+    const c = carryCamera(from, 100, { yaw: 0, pitch: 0, dist: 100, panX: 0, panY: 0 }, band)
+    expect(c.dist).toBeCloseTo(5, 9)         // 3D floor 0.05× fit
+  })
+})
+
+describe('shownStoresChanged', () => {
+  const revs = { image: 'i1', labels: { nuc: 'n1', cell: 'c1' } }
+
+  it('a task that touched nothing drawn keeps the frame', () => {
+    // Gating / measures / clustering on the shown image: same stores, same dims — no reload.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: revs }), 'nuc')).toBe(false)
+  })
+
+  it('a new segmentation alone is not a reload — the mask flip reloads on its own', () => {
+    const next = { image: 'i1', labels: { ...revs.labels, NSfanU: 's1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: next }), 'nuc')).toBe(false)
+  })
+
+  it('a rewrite of a store we draw reloads; of one we do not, does not', () => {
+    const relabelled = { image: 'i1', labels: { nuc: 'n2', cell: 'c1' } }
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'nuc')).toBe(true)
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ storeRevs: relabelled }), 'cell')).toBe(false)
+    expect(shownStoresChanged(meta({ storeRevs: revs }),
+      meta({ storeRevs: { ...revs, image: 'i2' } }), '')).toBe(true)
+  })
+
+  it('changed dims reload even with matching fingerprints', () => {
+    // Drift-correct reruns recompute the canvas — stale dims trip the slab shape guard.
+    expect(shownStoresChanged(meta({ storeRevs: revs }), meta({ nZ: 5, storeRevs: revs }), '')).toBe(true)
+  })
+
+  it('missing fingerprints (older server) count as changed', () => {
+    expect(shownStoresChanged(meta(), meta({ storeRevs: revs }), '')).toBe(true)
   })
 })

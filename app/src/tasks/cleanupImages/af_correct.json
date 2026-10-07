@@ -2,6 +2,13 @@
   "task": "afCorrect",
   "fun_name": "cleanupImages.afCorrect",
   "label": "AF correction",
+  "purpose": "Remove autofluorescence and bleedthrough shared across channels",
+  "useWhen": [
+    "Broadband autofluorescent objects show up in several channels",
+    "One fluorophore leaks into another channel's detector",
+    "You know which channels share signal in this specimen"
+  ],
+  "notWhen": ["Saturated channels: clipped values are already lost"],
   "category": "Cleanup",
   "env": [
     "local"

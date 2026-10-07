@@ -31,6 +31,9 @@ export interface ViewerCacheClearScope {
   valueName?: string
   /** The label vn whose store was rewritten. Absent = any label vn on `imageUid`. */
   labelValueName?: string
+  /** Reload even if nothing the viewer draws looks changed — the manual resync's "bust the HTTP
+   *  cache" ask. Without it a task-done reloads only when a shown store's fingerprint moved. */
+  force?: boolean
 }
 
 /** The full payload a subscriber receives — the rev to thread into `sourceId` + the scope. */
@@ -42,8 +45,9 @@ export interface ViewerCacheClearEvent extends ViewerCacheClearScope {
  * Publish a fresh revision. Fires in this window AND every other window on this origin.
  *
  * Pass a scope naming what changed — `{imageUid}` on any task done, plus `valueName` or
- * `labelValueName` when the task result names the specific store. Scope-less publish is a broadcast
- * and forces every viewer to reallocate; only use it when the caller genuinely doesn't know.
+ * `labelValueName` when the task result names the specific store. A matched viewer reloads only if
+ * the event names a store it draws or a shown store's fingerprint moved (meta `storeRevs`) — a
+ * scope-less broadcast just makes every viewer re-check. `force` reloads regardless.
  */
 export function publishViewerCacheClear(scope: ViewerCacheClearScope = {}): void {
   const ev: ViewerCacheClearEvent = { rev: String(Date.now()), ...scope }
@@ -80,6 +84,7 @@ function parseEventPayload(raw: string): ViewerCacheClearEvent | null {
     if (typeof p.imageUid === 'string') ev.imageUid = p.imageUid
     if (typeof p.valueName === 'string') ev.valueName = p.valueName
     if (typeof p.labelValueName === 'string') ev.labelValueName = p.labelValueName
+    if (p.force === true) ev.force = true
     return ev
   } catch { return null }
 }
@@ -119,7 +124,9 @@ export function viewerCacheClearFromStorageEvent(
  */
 export function viewerCacheClearMatches(
   ev: ViewerCacheClearScope,
-  current: { imageUid: string; valueName?: string; labelValueName?: string },
+  current: { imageUid: string; valueName?: string; labelValueName?: string;
+             /** Label vns the viewer knows exist on this image (its meta's `labelNames`). */
+             knownLabelNames?: readonly string[] },
 ): boolean {
   // Broadcast (no field named) is a "we don't know what changed" — matches every viewer.
   if (ev.imageUid === undefined && ev.valueName === undefined && ev.labelValueName === undefined) {
@@ -129,7 +136,12 @@ export function viewerCacheClearMatches(
   // A vn named in the event that we don't render is not for us. A vn unnamed (undefined) in the
   // event means "any vn on this image" — matches. A vn named that we render at, matches.
   if (ev.valueName !== undefined && ev.valueName !== (current.valueName ?? '')) return false
-  if (ev.labelValueName !== undefined && ev.labelValueName !== (current.labelValueName ?? '')) return false
+  if (ev.labelValueName !== undefined && ev.labelValueName !== (current.labelValueName ?? '')) {
+    // A label vn the viewer has never heard of is a NEW segmentation on this image — the viewer has
+    // to refetch meta to learn it exists, or ticking it on in the panel draws nothing until reopen.
+    return current.knownLabelNames !== undefined
+      && !current.knownLabelNames.includes(ev.labelValueName)
+  }
   return true
 }
 
@@ -140,10 +152,16 @@ export function viewerCacheClearMatches(
  * live values at reallocate time, not whatever was current at subscribe time.
  */
 export function onViewerCacheClear(cb: (ev: ViewerCacheClearEvent) => void): () => void {
+  // The rev THIS subscriber last acted on. Not `readViewerCacheClearRev()` at event time: by the
+  // time a `storage` event fires, this window's localStorage already holds `newValue`, so that read
+  // equals the incoming rev and every cross-window clear was dropped — the pop-out viewer never
+  // heard a task finish.
+  let heldRev = readViewerCacheClearRev()
   const onStorage = (e: StorageEvent) => {
-    // Reads localStorage inside the callback so we always see the latest, no need to thread state.
-    const decision = viewerCacheClearFromStorageEvent(e, readViewerCacheClearRev())
-    if (decision !== null) cb(decision)
+    const decision = viewerCacheClearFromStorageEvent(e, heldRev)
+    if (decision === null) return
+    heldRev = decision.rev
+    cb(decision)
   }
   const onCustom = (e: Event) => {
     const detail = (e as CustomEvent).detail

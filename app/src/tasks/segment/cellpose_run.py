@@ -72,7 +72,8 @@ def run(params):
     # sidecar — same qcOutPath pattern as drift_correct_run.py). Best-effort; never fails the task.
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:
-        write_json_atomic(qc_out_path, {'labelCounts': label_counts})
+        write_json_atomic(qc_out_path, {'labelCounts': label_counts,
+                                         'objectStats': getattr(cp, 'object_stats', None)})
         log.log(f'>> saved segment QC counts: {label_counts}')
 
     log.log('>> done')

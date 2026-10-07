@@ -33,6 +33,8 @@ export interface ViewerLookInput {
   trackVisible: Record<string, boolean>
   trackSourceColours: Record<string, string>
   showGatedTracks: boolean
+  /** the pop manager's pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
+  hiddenTrackPops: string[]
   pointSize: number
   pointBorder: number
   labelOpacity: number
@@ -68,6 +70,8 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...seedConfigFromViewState(i.viewState, i.channelNames),
     ...(i.version ? { valueNames: [i.version] } : {}),
     labelValueNames: i.maskValueName ? [i.maskValueName] : [],
+    // the viewer's mask is every cell of its segmentation, whatever the pops
+    maskAllCells: true,
     labelContour: clampContour(i.labelContour),
     show3D: is3D,
     zSlice: z,
@@ -78,10 +82,13 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...(is3D && cam ? { camera3d: cam } : {}),
     showPopulations: popsOn,
     popType,
-    // The segmentation the overlays are drawn from: the pop manager's while pops are on; with only
-    // tracks ticked, the first tracked one (the renderers take one segmentation for pops + tracks).
+    // The pops' segmentation: the pop manager's while pops are on, else the first tracked one. The
+    // track kinds name their own segmentations (`trackSources`, track clusters on every one).
     ...(popSeg ? { popValueName: popSeg } : {}),
     showGatedTracks: i.showGatedTracks,
+    ...(i.hiddenTrackPops.length ? { hiddenTrackPops: i.hiddenTrackPops } : {}),
+    // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
+    // `loadTracks` fetches them for every trackable one)
     showTrackclust: i.popVisible('trackclust'),
     showTracks: tracked.length > 0,
     // every tracked segmentation the viewer knows, hidden ones too — a source the map does not name is
@@ -151,17 +158,19 @@ export function readViewerLook(img: LookImage, setUid: string,
   // The viewer draws ONE mask: the first ticked segmentation (ViewerWindow `labelName`).
   const labelVis = settings.getLabelVisibility(img.uid, labelNames)
   const colourBy = setUid ? settings.getColourBy(setUid) : ''
+  const gating = readGatingCurrent(img.uid)
   return viewerLook({
     viewState: (viewer.viewState ?? null) as unknown as ViewerLookInput['viewState'],
     channelNames: img.channelNames ?? [],
     nZ: img.sizeZ ?? 0,
     version: (onImg ? viewer.openImage?.valueName : '') || img.activeValueName || '',
     maskValueName: labelNames.find(n => labelVis[n]) ?? '',
-    gating: readGatingCurrent(img.uid),
+    gating,
     popVisible: pt => setUid ? settings.getPopVisible(setUid, pt) : false,
     trackVisible: settings.getTrackVisibility(img.uid, trackableValueNames(img)),
     trackSourceColours: setUid ? settings.getTrackSourceColours(setUid) : {},
     showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
+    hiddenTrackPops: [...settings.getTrackPopHidden(img.uid, gating.valueName)],
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
     pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
     labelOpacity: settings.viewerLabelOpacity,

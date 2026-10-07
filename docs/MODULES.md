@@ -142,6 +142,38 @@ plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` 
 `segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
 thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
 
+**`purpose` / `useWhen` / `notWhen` (required on every visible task).** What the task is for, and
+when it is — and is not — the right step. `purpose` is one line; `useWhen` takes 1–3 lines and
+`notWhen` 0–3. A `hidden` task may skip them.
+
+```json
+"purpose": "Remove shot noise from photon-limited movies with a trained model",
+"useWhen": ["Photon-limited channels: sparse, low photon counts"],
+"notWhen": ["Saturated or bright channels: no shot noise left to remove"],
+```
+
+- **One source, two readers:** the module page (the purpose and the lines sit under the function
+  picker) and the MCP (`get_task_catalogue`, `get_module_params`, which always get plain text). There
+  is no separate troubleshooting doc.
+- **A line may carry an advisory check:** `{ "text": "After Drift correction: …", "check":
+  "driftCorrected" }`. The task page runs it over the selected images: a `useWhen` line that holds for
+  all of them shows ok, a `notWhen` line whose condition holds for any shows a warning, with a count
+  ("2 of 3 images not drift-corrected"). `!id` negates (`"!pixelSizeSet"` for "Pixel sizes missing").
+  Ids live in `TASK_CHECKS` (`frontend/src/utils/taskDiscovery.ts`), answered from the image the
+  store already holds — no request; an unknown id fails `taskDiscovery.test.ts`. A check never blocks
+  Run (a hard prerequisite is a `required` param), and attach one only where it truly answers the
+  line. A line without one stays neutral.
+- **Each line is a property of the method, in the user's words** — "needs photon-sparse signal",
+  "blurs cell edges". Never a channel, a percentile or a threshold for some dataset: the reader still
+  has to reason about their own data.
+- **Each line is traceable** to the task's code, its docs or a plan's measurement. Cite the source in
+  the PR that adds or changes it.
+- **A problem fixed at an earlier step says so** ("Noisy or drifting images: fix them in Cleanup
+  before tuning this"), naming the other task by its label.
+- Copy rules as for a `tip` (`docs/ui/COPY.md`): sentence case, no trailing period, one sentence,
+  at most 80 characters. Enforced by the `every visible task says what it is for` testset
+  (`app/test/suite/task_spec_ratchets.jl`). Design: `docs/todo/TASK_DISCOVERY_PLAN.md`.
+
 ### `live_outputs` (optional) — let a viewer watch the output while it's written
 
 Most tasks assemble a result and write it once, so there is nothing to look at until they finish. A task

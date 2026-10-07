@@ -2,6 +2,12 @@
   "task": "hmmStates",
   "fun_name": "behaviour.hmm_states",
   "label": "HMM states",
+  "purpose": "Fit behaviour states to track measures, one state per cell per timepoint",
+  "useWhen": ["Comparing states across images: one model fits all selected images"],
+  "notWhen": [
+    "Short or broken tracks: fix tracking before fitting states",
+    { "text": "Tracks have no speed or angle: run Track measures first", "check": "!trackMeasured" }
+  ],
   "category": "Behaviour",
   "env": ["local"],
   "resource_pool": "cpu",

@@ -2,6 +2,12 @@
   "task": "cellposeMeasure",
   "fun_name": "segment.cellposeMeasure",
   "label": "Cellpose segment + measure",
+  "purpose": "Run Cellpose segmentation, then Measure labels",
+  "useWhen": ["The usual choice: labels alone leave nothing to gate, track or cluster"],
+  "notWhen": [
+    "Dim movie cells with no clear outline: use Optical flow segment + measure",
+    "Noisy or drifting images: fix them in Cleanup before tuning this"
+  ],
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",

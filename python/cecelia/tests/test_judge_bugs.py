@@ -7,12 +7,15 @@ Run with `pixi run test-py`.
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import re
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 _BUGS_PATH = _REPO / "scripts" / "judge" / "bugs.py"
@@ -231,6 +234,18 @@ class SweepTest(_Repo):
                              judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
         self.assertEqual({b["status"] for b in later}, {"open"})
         self.assertEqual(sum(b["why"].startswith("still open; waiting for the judge") for b in later), 2)
+
+    def test_a_bug_with_a_landed_fix_is_judged_before_the_cap(self):
+        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
+        bugs, _ = self.sweep(events)
+        for b in bugs:
+            b.update(status="open", opened="2026-10-05")
+        last = {f"fanout-{i:08x}" for i in (self.b.MAX_ITEMS, self.b.MAX_ITEMS + 1)}   # what the cap held back
+        fix = [{"commit": "abcdef0123", "subject": "fix", "pr": 1}]
+        with mock.patch.object(self.b, "landed_fixes", return_value={k: fix for k in last}):
+            later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
+                                 judge=self.judge("gone"), merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual({b["key"]: b["status"] for b in later if b["key"] in last}, dict.fromkeys(last, "gone"))
 
     def test_no_judge_makes_no_call(self):
         bugs, cost = self.sweep([_finding("fanout-00000001")], no_judge=True)
@@ -584,6 +599,26 @@ class OwnerAnswerTest(unittest.TestCase):
         self.assertEqual(review.describe({**record, "bugs": [{
             "id": "B1", "key": "fanout-1", "status": "open", "file": "a.py", "line": 2, "desc": "d", "why": "w"}]},
             {"kind": "bug", "ref": "B1"}, use_colour=False)[0], "  open  a.py:2  ? · fanout-1")
+
+
+
+class MainLimitTest(unittest.TestCase):
+    """`pixi run judge-bugs` on the usage limit: one line with the reset time, exit 75 — no traceback."""
+
+    def test_a_usage_limit_is_one_line_and_exit_75(self):
+        b = _load_bugs()
+
+        def limited(*a, **k):
+            raise b._judge.RateLimited("You've hit your session limit · resets 1:40am (Australia/Sydney)")
+        review = mock.Mock(applied_pass_records=lambda before: [])
+        err = io.StringIO()
+        with mock.patch.object(b, "sweep", limited), mock.patch.object(b, "read_events", return_value=[]), \
+                mock.patch.object(b, "git_output", return_value="abc"), \
+                mock.patch.object(b, "_load_sibling", return_value=review), contextlib.redirect_stderr(err):
+            code = b.main(["--date", "2026-10-06"])
+        self.assertEqual(code, 75)
+        self.assertRegex(err.getvalue(), r"^judge-bugs: usage limit — lifts \S+: You've hit your session limit")
+        self.assertNotIn("Traceback", err.getvalue())
 
 
 if __name__ == "__main__":

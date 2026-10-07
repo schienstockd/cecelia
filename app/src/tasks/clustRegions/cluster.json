@@ -2,6 +2,15 @@
   "task": "clusterRegions",
   "fun_name": "clustRegions.cluster",
   "label": "Cluster regions",
+  "purpose": "Group cells into regions by the mix of cell types around them",
+  "useWhen": [
+    "Finding tissue niches from neighbourhood composition",
+    { "text": "After Neighbour graph: this step reads that graph", "check": "neighbourGraph" }
+  ],
+  "notWhen": [
+    "Grouping cells by their own measures: use Cluster cells",
+    "Only one population: a neighbourhood mix needs at least two"
+  ],
   "category": "Spatial analysis",
   "env": ["local"],
   "resource_pool": "cpu",

@@ -3,14 +3,17 @@
 # Five endpoints:
 #   GET  /api/correction-plan/presets                                → [{id,name,description,orderHints,validationStatus}, …]
 #   POST /api/correction-plan/recommend { projectUid, imageUid,
-#                                        cardId?, wizard? }          → plan dict (`_plan_to_dict`)
+#                                        cardId?, wizard?,
+#                                        evidence? }                 → plan dict (`_plan_to_dict`)
 #   GET  /api/correction-plan/get?projectUid=&imageUid=              → { plan | null, exists, stale }
 #   POST /api/correction-plan/save    { projectUid, imageUid,
 #                                        cardId?, wizard? }          → plan dict (side-effect: writes plan.json)
 #   POST /api/correction-plan/mount   { projectUid, imageUid,
 #                                        overwrite? }                → { ok, name, nodeCount, created }
 #
-# The recommend endpoint is pure (no disk write). Save runs recommend AND persists to plan.json so
+# The recommend endpoint writes no plan. Its one write is a fill-only backfill of a missing
+# `meta.saturation` (the import probe, `ensure_saturation_meta!`) on an image imported before the
+# probe existed — an acquisition measure, run once, not user state. Save runs recommend AND persists to plan.json so
 # the sidecar records the user's card choice + wizard answers atomically. Get returns whether the
 # sidecar exists and whether its `saturationFingerprint` still matches the image's current meta
 # (`stale = true` means the image was re-imported since the plan was saved). The frontend uses that
@@ -70,15 +73,28 @@ function _pick_card_and_wizard(body)
     return card_id, wizard
 end
 
+# `evidence` = `metadata` | `all` (default) — which scores the rules may act on; see `apply_rules`.
+# `metadata` is the answer before the photon-limited rules (the discovery-off arm of a guide run).
+function _pick_evidence(body)
+    e = get(body, :evidence, nothing)
+    (e === nothing || (e isa AbstractString && isempty(e))) && return :all, nothing
+    ev = Symbol(string(e))
+    ev in Cecelia.CORRECTION_PLAN_EVIDENCE && return ev, nothing
+    return nothing, _gerr(400, "evidence must be one of: " *
+                               join(Cecelia.CORRECTION_PLAN_EVIDENCE, ", ") * " (got '$e')")
+end
+
 function api_correction_plan_recommend(req::HTTP.Request, body_bytes::Vector{UInt8})
     body, err = _parse_recommend_body(body_bytes)
     body === nothing && return err
+    evidence, eerr = _pick_evidence(body)
+    evidence === nothing && return eerr
     img, gerr = _gating_image(_wstr(body, :projectUid),
                               _wstr(body, :imageUid))
     img === nothing && return gerr
 
     card_id, wizard = _pick_card_and_wizard(body)
-    plan = Cecelia.recommend_plan(img; card_id = card_id, wizard = wizard)
+    plan = Cecelia.recommend_plan(img; card_id = card_id, wizard = wizard, evidence = evidence)
     return 200, JSON3.write(Cecelia._plan_to_dict(plan))
 end
 
