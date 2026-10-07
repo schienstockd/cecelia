@@ -328,6 +328,12 @@ function api_viewer_meta(req::HTTP.Request)
         catch
             (String[], Dict{String, Any}())
         end
+        label_revs = try
+            img = init_object(pu, iu)
+            Dict{String, String}(v => store_rev(img_labels_path(img, v)) for v in label_names)
+        catch
+            Dict{String, String}()
+        end
         # Which VERSIONS this image has, and which one these numbers describe. The viewer window is a
         # pop-out with no project open, so it can look up neither — and without the second field a
         # version picker cannot show what it is already on. `resolve_image_version(.., nothing)` picks
@@ -363,6 +369,9 @@ function api_viewer_meta(req::HTTP.Request)
                             name = image_name, setUid = set_uid,
                             labelNames = label_names,
                             labelDims  = label_dims,
+                            # Per-store fingerprints (`store_rev`) — the viewer reloads on a task
+                            # done only when the store it shows changed, not on every task.
+                            storeRevs  = (; image = store_rev(zp), labels = label_revs),
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say

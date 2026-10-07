@@ -839,7 +839,7 @@ function reloadViewer() {
 function forceViewerResync() {
   const uid = projectStore.openImageUid
   if (!uid) return
-  publishViewerCacheClear({ imageUid: uid })
+  publishViewerCacheClear({ imageUid: uid, force: true })
 }
 
 function onTaskResult(data: Record<string, unknown>) {

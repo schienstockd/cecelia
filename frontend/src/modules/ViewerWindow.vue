@@ -66,7 +66,7 @@ import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '..
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
   slabMax, slabView, contrastCeiling, stridedSamples, slabZ, loadedPlanes, visibleExtentUm, lutFromHex, pickVolumeLevel, pickTileLevel,
-  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort,
+  shouldUseBricks, CACHE_BUDGET_BYTES, VRAM_SAFETY, labelDimsMismatch, labelLevelsShort, shownStoresChanged,
   VIEW_HALF_ANGLE, MAX_CHANNELS,
   type ViewerMeta, type OrbitCamera,
 } from '../utils/volumeViewer'
@@ -145,6 +145,8 @@ const kiwiStore = useKiwiStore()
 // more field. Reallocate() is called from the subscribe callback, so the atlas drops on the next
 // tick. Read at mount so a viewer opened AFTER a publish still starts on the current rev.
 const cacheClearRev = ref(readViewerCacheClearRev())
+/** Last cache-clear event handled — dedupes events that matched but didn't need a reload. */
+let seenClearRev = ''
 /**
  * `?bricks=1` — swap the flat-3D volume renderer for the brick-atlas one
  * (`docs/todo/KILN_BRICK_PLAN.md`). URL-scoped rather than a setting so the two paths can be
@@ -839,12 +841,16 @@ watch(colourBy, () => { void loadOverlays() })
  * panel has more than one ticked, the first one wins deterministically. This is the visible
  * limitation the row hint below spells out.
  */
-const labelName = computed(() => {
-  const names = meta.value?.labelNames ?? []
+/** The `labelName` the latest `reallocate()` started with — see the `labelName` watcher. */
+let allocatedLabel: string | null = null
+/** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
+let allocatedBricks: boolean | null = null
+function pickLabelName(names: string[]): string {
   if (!imageUid || !names.length) return ''
   const vis = settings.getLabelVisibility(imageUid, names)
   return names.find(n => vis[n]) ?? ''
-})
+}
+const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 //
@@ -852,7 +858,11 @@ const labelName = computed(() => {
 // different image can have a different first-visible label), and loadVersion is about to run its
 // own primary reallocate that reads `labelName.value` at call time. A watcher-driven reallocate
 // here would race that primary one — same Vulkan OOM shape as the show3D racer below.
-watch(labelName, () => { if (starting.value) return; reallocate() })
+//
+// `allocatedLabel` guard: a meta refresh that flips `labelName` (a new segmentation becoming
+// known) already calls `reallocate()` itself, which reads the new name — the watcher's own
+// reallocate would be a second full reload of the same frame.
+watch(labelName, n => { if (starting.value || n === allocatedLabel) return; reallocate() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -864,8 +874,10 @@ watch(labelName, () => { if (starting.value) return; reallocate() })
 // loadVersion, and loadVersion's own reallocate reads `bricksEnabled.value` at ensureRenderer
 // time. A watcher-driven reallocate here would race that primary one — same Vulkan OOM shape
 // as the show3D racer below.
-watch(bricksEnabled, () => {
-  if (meta.value === null || starting.value) return
+// `allocatedBricks`: same guard as `allocatedLabel` — a cache-clear meta refresh that changes dims
+// enough to flip this already reallocates itself, reading the new value.
+watch(bricksEnabled, b => {
+  if (meta.value === null || starting.value || b === allocatedBricks) return
   reallocate()
 })
 // Self-healing for the OOM-fallback flags. During a two-way oscillation at startup (auto pick →
@@ -3714,6 +3726,8 @@ async function ensureRenderer() {
 async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
+  allocatedLabel = labelName.value
+  allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
   // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
@@ -4099,7 +4113,9 @@ function onModeChange(v: 'plane' | 'volume'): void {
 // so `ViewerPanel` can flag the offending rows in the segmentation list — the fix from #814 does
 // not cover this case (a version SWITCH has a different URL, so the cache-bust never fires) and
 // resample-to-fit would render a spatially-shifted overlay (see commit message).
-watch(meta, m => {
+// Also keyed on `labelDims` itself: a task-done that changed nothing drawn swaps it in place (no
+// new `meta.value`), and a new segmentation from another version must still be flagged.
+watch([meta, () => meta.value?.labelDims], ([m]) => {
   if (!m || !imageUid) return
   const dims = m.labelDims ?? {}
   const mismatched: string[] = []
@@ -4991,7 +5007,7 @@ onMounted(() => {
   window.addEventListener('focus', publishViewerFocus)
   publishViewerFocus()
   stopCacheClearWatch = onViewerCacheClear(async (ev) => {
-    if (ev.rev === cacheClearRev.value) return   // duplicate from same-window + storage double-fire
+    if (ev.rev === cacheClearRev.value || ev.rev === seenClearRev) return   // duplicate double-fire
     // Scope filter: an event named for a different image, or for a vn we don't render, isn't for
     // us. Was the whole reason the labels-only `cc.viewerSlabsTick` existed alongside the rev —
     // that channel filtered, this one didn't. Same rule now, one channel.
@@ -4999,7 +5015,11 @@ onMounted(() => {
       imageUid, valueName: valueName.value, labelValueName: labelName.value,
       knownLabelNames: meta.value?.labelNames ?? [],
     })) return
-    cacheClearRev.value = ev.rev
+    seenClearRev = ev.rev
+    // The task's result NAMED a store we draw (it wrote it), or the manual resync forces it — reload.
+    const named = ev.force === true
+      || (ev.valueName !== undefined && ev.valueName === valueName.value)
+      || (ev.labelValueName !== undefined && ev.labelValueName === labelName.value)
     // A same-store rewrite from a task can change output DIMS (drift correct's canvas expansion
     // recomputes per run, stackAlign, crop), so refetch meta before reallocating — otherwise the
     // renderer resizes against stale nX/nY/nZ and every slab trips the shape guard with
@@ -5012,6 +5032,18 @@ onMounted(() => {
       const res = await fetch(metaUrl({ projectUid, imageUid, valueName: valueName.value }))
       const m = await readJson<ViewerMeta>(res, 'Metadata')
       const prev = meta.value
+      // Most task-dones (gating, measures, clustering) touch nothing we draw: take the new store
+      // list in place — a new segmentation becomes tickable — and keep the cache and the frame.
+      // A changed shown mask (`labelName` flipping) reloads through its own watcher.
+      if (!named && prev && !shownStoresChanged(prev, m, pickLabelName(m.labelNames ?? []))) {
+        prev.labelNames = m.labelNames
+        prev.labelDims = m.labelDims
+        prev.storeRevs = m.storeRevs
+        prev.valueNames = m.valueNames
+        prev.activeValueName = m.activeValueName
+        return
+      }
+      cacheClearRev.value = ev.rev
       if (prev && prev.channels.length === m.channels.length) {
         for (let i = 0; i < m.channels.length; i++) {
           m.channels[i].lo = prev.channels[i].lo
@@ -5029,6 +5061,7 @@ onMounted(() => {
       zPlane.value = Math.min(zPlane.value, maxZ)
       zRange.value = [Math.min(zRange.value[0], maxZ), Math.min(zRange.value[1], maxZ)]
     } catch (e) {
+      cacheClearRev.value = ev.rev   // can't tell what changed — reload, the pre-fingerprint answer
       vlog('warn', 'Meta refresh on cache-clear failed: '
         + (e instanceof Error ? e.message : String(e)))
     }
