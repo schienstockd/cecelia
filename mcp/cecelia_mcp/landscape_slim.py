@@ -13,7 +13,10 @@ lossless for anything a reader needs:
   Prelude:
     channelNames: [str, …]            union of channel names across tiles, first-seen
                                        order. Positional index into per-tile channels.
-    popMap: {"<key>": {path, name}}    union of (path, name) tuples across tiles.
+    popMap: {"<key>": {path, name,     union of the pops across tiles. A fat tile pop's `layer`
+             valueName?, popType?}}    indexes `sourceRun.pops`; it resolves here to that
+                                       layer's segmentation + pop type, so `/qc` on two
+                                       segmentations is two entries.
                                        Key is a stable stringified sequence id.
 
   Per-tile:
@@ -59,7 +62,7 @@ def slim_landscape_for_mcp(envelope: dict) -> dict:
     channel_names: list[str] = []
     channel_name_index: dict[str, int] = {}
     pop_map: dict[str, dict[str, str]] = {}
-    pop_key_index: dict[tuple[str, str], str] = {}
+    pop_key_index: dict[tuple[str, str, str, str], str] = {}
 
     def _channel_index(name: str) -> int:
         # Preserve first-seen order across tiles so a downstream reader's channelNames
@@ -71,18 +74,35 @@ def slim_landscape_for_mcp(envelope: dict) -> dict:
         channel_name_index[name] = i
         return i
 
-    def _pop_key(path: str, name: str) -> str:
+    def _pop_key(path: str, name: str, value_name: str = "", pop_type: str = "") -> str:
         # Stable string keys (JSON dicts don't guarantee int-key round-trip). Numeric
-        # ordering by first-seen sequence keeps the prelude legible.
-        key_tuple = (path, name)
+        # ordering by first-seen sequence keeps the prelude legible. The layer is part of the
+        # key — every segmentation's pops are counted, and their paths collide.
+        key_tuple = (value_name, pop_type, path, name)
         if key_tuple in pop_key_index:
             return pop_key_index[key_tuple]
         k = str(len(pop_map))
-        pop_map[k] = {"path": path, "name": name}
+        entry = {"path": path, "name": name}
+        if value_name:
+            entry["valueName"] = value_name
+        if pop_type:
+            entry["popType"] = pop_type
+        pop_map[k] = entry
         pop_key_index[key_tuple] = k
         return k
 
-    slim_tiles = [_slim_tile(t, _channel_index, _pop_key) for t in tiles]
+    # a tile pop's `layer` → its (valueName, popType), from `sourceRun.pops` (a list since every
+    # segmentation's pops are counted; one object on older captures, whose pops carry no `layer`)
+    src = landscape.get("sourceRun")
+    runs = src.get("pops") if isinstance(src, dict) else None
+    layers = runs if isinstance(runs, list) else []
+
+    def _layer(i: Any) -> tuple[str, str]:
+        if isinstance(i, int) and 0 <= i < len(layers) and isinstance(layers[i], dict):
+            return str(layers[i].get("valueName") or ""), str(layers[i].get("popType") or "")
+        return "", ""
+
+    slim_tiles = [_slim_tile(t, _channel_index, _pop_key, _layer) for t in tiles]
 
     new_landscape: dict[str, Any] = {}
     # Preserve prelude fields verbatim — grid/legend/schemaVersion/sourceRun/viewport
@@ -103,7 +123,7 @@ def slim_landscape_for_mcp(envelope: dict) -> dict:
     return new_env
 
 
-def _slim_tile(tile: Any, channel_index, pop_key) -> dict:
+def _slim_tile(tile: Any, channel_index, pop_key, layer=lambda _i: ("", "")) -> dict:
     if not isinstance(tile, dict):
         return tile
     out: dict[str, Any] = {}
@@ -140,7 +160,7 @@ def _slim_tile(tile: Any, channel_index, pop_key) -> dict:
             path = str(p.get("path", ""))
             name = str(p.get("name", ""))
             count = p.get("count", 0)
-            packed_pops.append([pop_key(path, name), count])
+            packed_pops.append([pop_key(path, name, *layer(p.get("layer"))), count])
         if packed_pops:
             out["pops"] = packed_pops
     return out

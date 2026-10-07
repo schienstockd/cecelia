@@ -216,3 +216,18 @@ end
     @test_throws ArgumentError _track_summary_from_binned([Set([1])], Float64[0.0, 0.0],
                                                           Int[1], Dict{Int,Int}())
 end
+
+@testset "API: landscape pop layers — every segmentation × pop type the viewer draws" begin
+    b(s) = JSON3.read(s)
+    L = _landscape_pop_layers(b("""{"popLayers": [
+            {"valueName": "OTI", "popType": "flow", "paths": ["/qc"]},
+            {"valueName": "P14", "popType": "clust"},
+            {"valueName": "", "popType": "flow"}],
+        "popValueName": "ignored", "popType": "flow"}"""))
+    @test [(l.valueName, l.popType) for l in L] == [("OTI", "flow"), ("P14", "clust")]
+    @test L[1].paths == ["/qc"] && L[2].paths === nothing   # no paths = the manager's `.show`
+    # an older caller: the pop manager's one (vn, popType)
+    @test [(l.valueName, l.popType) for l in _landscape_pop_layers(b("""{"popValueName": "OTI", "popType": "flow"}"""))] ==
+          [("OTI", "flow")]
+    @test isempty(_landscape_pop_layers(b("""{"popValueName": "OTI"}""")))
+end
