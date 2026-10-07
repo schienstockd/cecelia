@@ -1,6 +1,6 @@
 # Viewer overlay parity — populations from every segmentation, movies that match
 
-Status: P1–P4 BUILT 2026-10-07 in `viewer-pops-all-segs`, awaiting a visual pass in the viewer. Follows #1477 (movies draw the
+Status: P1–P5 BUILT 2026-10-07 in `viewer-pops-all-segs`, remaining: a visual pass in the viewer. Follows #1477 (movies draw the
 viewer's tracks, not one segmentation's).
 
 ## Problem
@@ -65,15 +65,26 @@ reading for this plan):
   build every source's state first, one range, then colour); default + override colours from the
   source index / overrides map.
 - **P4 mask.** `maskColourBy` from `colourLabels`; resolvers pass colour-by to the mask only then.
+- **P5 colour-by scale.** Each payload carried its own table's levels / range, so with several
+  segmentations drawn the same value took a different colour on each (OTI speeds top out at 47.8 µm/min,
+  gBT's at 76.5 — on yDfwP7). One scale over every layer: `pooledColourScale` (viewer points + legend)
+  and `_cb_scale` (movie). The movie's ramp-or-palette call moves from the column's dtype to
+  `_is_categorical_col` (the viewer's `valueKind`), and a zero-width range shades mid-ramp as the viewer.
+  The viewer's overlays route reads its levels / range through the same `_cb_scale_of`.
 
 ## Not in scope
 
 - The landscape tile summary still takes ONE pop layer (the pop manager's, when its type is on) —
   its backend computes one pops summary per tile.
-- The colour-by legend shows the first layer's range; each segmentation's numeric range is its own.
 - `hiddenTrackPops` keys by path within a segmentation, so the same path under two pop types of one
   segmentation shares a ribbon eye.
 
+- Categorical colour-by: the viewer indexes the cecelia palette by level and ignores the per-set
+  colour overrides; the movie (and the legend captures) use Okabe-Ito / a pop's donated colour / the
+  overrides — and a pop's donated colour is per segmentation, so a donated level is that colour on
+  its own segmentation only. Which rule is canonical is a call to make, not a bug fix.
+- A mask recoloured by colour-by (`colourLabels`) uses its own table's scale, not a pooled one. Not
+  reachable today: only a batch sets `colourLabels`, and a batch draws one segmentation's pops.
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.

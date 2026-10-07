@@ -83,7 +83,7 @@ import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
-  overlaysUrl, buildPointBufferLayers, timepointRange, overlayLayersSummary,
+  overlaysUrl, buildPointBufferLayers, pooledColourScale, timepointRange, overlayLayersSummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
   type OverlayPayload, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
@@ -1023,9 +1023,9 @@ const trackDrawablePops = computed(() =>
 const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
 const popLayerSegs = computed(() => new Set(listedPopLayers.value.map(l => l.vn)).size)
 const popLayerTypes = computed(() => new Set(listedPopLayers.value.map(l => l.popType)).size)
-/** The colour-by legend: the first layer's — each segmentation's server range is its own; the column
- *  and its kind are the same across them. */
-const colourLegend = computed(() => listedPopLayers.value[0]?.payload ?? null)
+/** The colour-by legend: the one scale every layer's points are shaded with (`pooledColourScale`,
+ *  as `buildPointBufferLayers`) — levels and range over every segmentation drawn. */
+const colourLegend = computed(() => pooledColourScale(popLayers.value.map(l => l.payload)))
 /** The ramp as a CSS gradient, from the same 256-entry lookup the points are shaded with — a legend
  *  built from a different set of stops would be a second answer about the same scale. */
 const rampStyle = computed(() => {
@@ -5927,15 +5927,15 @@ onUnmounted(() => {
               </div>
               <!-- The legend says which SCALE is in use, because that is the server's decision (the same
                    rule the plots use) and the two kinds look nothing alike. -->
-              <div v-if="colourLegend?.colourBy && colourLegend.valueKind === 'numeric'"
+              <div v-if="colourLegend?.kind === 'numeric'"
                    class="cc-row cc-row-tight cc-fs-3xs">
-                <span class="cc-muted">{{ (colourLegend.valueRange?.[0] ?? 0).toPrecision(3) }}</span>
+                <span class="cc-muted">{{ (colourLegend.range?.[0] ?? 0).toPrecision(3) }}</span>
                 <span class="vw-ramp" :style="rampStyle" />
-                <span class="cc-muted">{{ (colourLegend.valueRange?.[1] ?? 1).toPrecision(3) }}</span>
+                <span class="cc-muted">{{ (colourLegend.range?.[1] ?? 1).toPrecision(3) }}</span>
               </div>
-              <div v-else-if="colourLegend?.colourBy && colourLegend.valueKind === 'categorical'"
+              <div v-else-if="colourLegend?.kind === 'categorical'"
                    class="cc-muted cc-fs-3xs">
-                {{ colourLegend.valueLevels?.length ?? 0 }} levels
+                {{ colourLegend.levels.length }} levels
               </div>
 
               <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">

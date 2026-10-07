@@ -167,6 +167,8 @@ export function buildPointBufferLayers(
 ): PointBuffer {
   if (!meta || !layers.length) return EMPTY
   const vz = meta.voxelUm[2] || 1
+  // one colour-by scale over every layer — the same value is the same colour on every segmentation
+  const scale = pooledColourScale(layers.map(l => l.payload))
 
   // Emit (layer, row, colour) triples first, so the sort has something small to work on.
   const lay: number[] = []
@@ -178,7 +180,7 @@ export function buildPointBufferLayers(
     if (!label || !x || !y || label.length === 0) continue
     const row = new Map<number, number>()
     for (let i = 0; i < label.length; i++) row.set(label[i], i)
-    const byValue = colourByValue(payload, palette)
+    const byValue = colourByValue(payload, palette, scale)
     for (const pop of payload.pops) {
       // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
       // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
@@ -761,13 +763,14 @@ export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
  * for the same reasons; that convergence is why sharing the ramp is right.)
  */
 export function colourByValue(
-  payload: OverlayPayload, palette: readonly string[] = [],
+  payload: OverlayPayload, palette: readonly string[] = [], scale: ColourScale | null = null,
 ): ((row: number) => [number, number, number]) | null {
   const vals = payload.values
   if (!payload.colourBy || !vals || vals.length === 0) return null
+  const s = scale ?? pooledColourScale([payload])
 
-  if (payload.valueKind === 'categorical') {
-    const levels = payload.valueLevels ?? []
+  if (s?.kind === 'categorical') {
+    const levels = s.levels
     const index = new Map<string, number>()
     levels.forEach((v, i) => index.set(String(v), i))
     const pal = palette.length ? palette : ['#ffffff']
@@ -780,13 +783,44 @@ export function colourByValue(
     }
   }
 
-  const [lo, hi] = payload.valueRange ?? [0, 1]
+  const [lo, hi] = s?.range ?? [0, 1]
   const span = hi - lo
   return (r: number) => {
     const v = vals[r]
     if (v === null || v === undefined || typeof v !== 'number') return NO_VALUE_RGB
     return heatUnit(span > 0 ? (v - lo) / span : 0.5)
   }
+}
+
+/** How colour-by maps a value: the levels a palette indexes, or the range the ramp spans. */
+export interface ColourScale {
+  kind: 'categorical' | 'numeric'
+  levels: (number | string)[]
+  range: [number, number] | null
+}
+
+/**
+ * One colour-by scale over several payloads — the populations of several segmentations draw at once,
+ * and each payload's levels / range are its own table's. Coloured per payload, cluster 2 or a speed
+ * of 5 µm/min would be one colour on one segmentation and another beside it. Levels are the union,
+ * sorted the server's way (`sort(…; by = string)`); the range spans every payload's. The kind is the
+ * first coloured payload's — the server decides it per table, and one column name is one kind.
+ */
+export function pooledColourScale(payloads: readonly (OverlayPayload | null | undefined)[]): ColourScale | null {
+  const coloured = payloads.filter((p): p is OverlayPayload => !!p?.colourBy && !!p.values?.length)
+  if (!coloured.length) return null
+  const kindOf = (p: OverlayPayload) => (p.valueKind === 'categorical' ? 'categorical' : 'numeric')
+  const kind = kindOf(coloured[0])
+  const same = coloured.filter(p => kindOf(p) === kind)
+  if (kind === 'categorical') {
+    if (same.length === 1) return { kind, levels: same[0].valueLevels ?? [], range: null }
+    const seen = new Map<string, number | string>()
+    for (const p of same) for (const v of p.valueLevels ?? []) if (!seen.has(String(v))) seen.set(String(v), v)
+    const keys = [...seen.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    return { kind, levels: keys.map(k => seen.get(k)!), range: null }
+  }
+  const rs = same.map(p => p.valueRange).filter((r): r is [number, number] => !!r)
+  return { kind, levels: [], range: rs.length ? [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))] : null }
 }
 
 /** The house ramp at `t` in 0..1, as three floats — the GPU wants 0..1, `heatCss` returns a CSS string

@@ -730,14 +730,7 @@ function api_viewer_overlays(req::HTTP.Request)
         # cells than the table holds is the kind of thing that reads as a segmentation problem.
         fin(v) = !ismissing(v) && isfinite(Float64(v))
         need = vcat(String["centroid_$a" for a in axes], has("centroid_t") ? ["centroid_t"] : String[])
-        keep = trues(n)
-        for c in need
-            v = df[!, c]
-            for i in 1:n
-                keep[i] = keep[i] && fin(v[i])
-            end
-        end
-        idx = findall(keep)
+        idx = findall(_finite_rows(df, need))
         col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
         # "" rather than null for "no track source": one sentinel the client tests, and it stays a
         # String[] so JSON3 serialises it without missings. Both "no track_id column" AND "column
@@ -797,15 +790,13 @@ function api_viewer_overlays(req::HTTP.Request)
         # stored as 0/1). Re-deriving that in TypeScript would be a second answer that disagrees with
         # the plots about the same column, which is the class of bug this codebase keeps paying for.
         # Reaching for the underscore name is deliberate: same rule, one owner.
-        kind = used === nothing ? nothing :
-               (Cecelia._is_categorical_col(df[!, used], used) ? "categorical" : "numeric")
         # The levels (categorical) or the range (numeric) the client maps onto — computed here for the
-        # same reason, so the legend agrees with what a plot of this column would show.
-        levels = kind == "categorical" ?
-                 sort(unique(Any[v for v in vals if v !== nothing]); by = string) : nothing
-        finite = kind == "numeric" ? Float64[Float64(v) for v in vals if v isa Real] : Float64[]
-        range_ = (kind == "numeric" && !isempty(finite)) ?
-                 [minimum(finite), maximum(finite)] : nothing
+        # same reason, so the legend agrees with what a plot of this column would show. The movie
+        # reads a column's scale through the same `_cb_scale_of`.
+        scale = used === nothing ? nothing : _cb_scale_of([vals], used; kind_col = df[!, used])
+        kind = scale === nothing ? nothing : (scale.continuous ? "numeric" : "categorical")
+        levels = kind == "categorical" ? scale.levels : nothing
+        range_ = (kind == "numeric" && scale.range !== nothing) ? collect(scale.range) : nothing
         200, JSON3.write((; nCells = length(idx), nDropped = n - length(idx),
                             axes, hasT = has("centroid_t"), cells, pops,
                             colourColumns = obs, colourBy = used, valueKind = kind,

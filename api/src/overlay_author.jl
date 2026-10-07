@@ -274,26 +274,81 @@ end
 _prep_overrides(colour_overrides) = colour_overrides === nothing ? nothing :
     Dict{String,RGB{N0f8}}(String(k) => hex_to_rgb(String(v)) for (k, v) in colour_overrides)
 
+# The scale a colour-by column maps onto: `continuous` → the heat ramp over `range` (`nothing` = no
+# finite value); else the categorical `levels`, sorted by `string`. Decided by `_is_categorical_col`
+# on `kind_col` (the whole column — what a plot of it decides) — the rule the plots use, so a column is
+# a ramp or a palette the same way in the movie, the viewer's payload (`valueKind`) and a plot.
+# Several columns = several segmentations' tables, pooled as the viewer's `pooledColourScale`: the
+# levels' union and the ranges' span, so a value is one colour on every segmentation drawn. The kind
+# is the first table's. `nothing` / `missing` entries are "no value".
+function _cb_scale_of(cols::AbstractVector, cb_col::AbstractString; kind_col = nothing)
+    isempty(cols) && return nothing
+    continuous = !Cecelia._is_categorical_col(something(kind_col, cols[1]), cb_col)
+    if continuous
+        vals = Float64[Float64(v) for c in cols for v in c if v isa Real && isfinite(Float64(v))]
+        return (; continuous, range = isempty(vals) ? nothing : (minimum(vals), maximum(vals)),
+                  levels = Any[])
+    end
+    present(c) = (v for v in c if !(v === nothing || ismissing(v)))
+    # a table storing the column as text and another as numbers do not pool — their values could not
+    # be sorted together; the other kind's values fall to the pop colour
+    textual(c) = (f = iterate(present(c)); f === nothing ? nothing : f[1] isa AbstractString)
+    kinds = filter(!isnothing, map(textual, cols))
+    want = isempty(kinds) ? nothing : first(kinds)
+    levels = sort(unique(Any[v for c in cols if textual(c) === want for v in present(c)]); by = string)
+    (; continuous, range = nothing, levels)
+end
+
+# The rows whose every `cols` value is a finite number — the cells the viewer can draw (its overlays
+# payload sends only those) when `cols` are the centroid columns.
+_finite_rows(df, cols) = BitVector([all(c -> (v = df[i, c]; v isa Real && isfinite(Float64(v))), cols)
+                                    for i in 1:size(df, 1)])
+
+"""
+    _cb_scale(img, value_names, colour_by) -> scale | nothing
+
+One colour-by scale over the cell tables of `value_names` (`_cb_scale_of`), over the cells the viewer
+can draw — a finite centroid on every axis, as its overlays payload. `nothing` when there is no
+colour-by or no table holds the column — `_cb_prepare` then reads its own table's.
+"""
+function _cb_scale(img, value_names, colour_by)
+    (colour_by === nothing || isempty(String(colour_by))) && return nothing
+    cb_col = String(colour_by)
+    cols = Any[]; kind_col = nothing
+    for v in unique(String.(value_names))
+        try
+            lp = label_props(img; value_name = v)
+            cb_col in col_names(lp; data_type = :obs) || continue
+            view_centroid_cols(lp)
+            select_cols(lp, [cb_col])
+            df = as_df(lp)
+            keep = _finite_rows(df, [c for c in String.(propertynames(df)) if startswith(c, "centroid_")])
+            kind_col === nothing && (kind_col = df[!, cb_col])
+            push!(cols, df[keep, cb_col])
+        catch e
+            @warn "colour-by scale: column read failed" value_name = v colour_by exception = e
+        end
+    end
+    isempty(cols) ? nothing : _cb_scale_of(cols, cb_col; kind_col)
+end
+
 # Given a df that has the `colour_by` column present, return a per-row resolver
 # `(default_col::RGB, i::Int) -> RGB`. `nothing` means colourBy is disabled OR the
 # column is absent — the caller falls back to the pop's own colour. `pop_map`
 # supplies the user-pop colour donation for categorical values (`nothing` for the
-# `all_tracks` path — no pop map means Okabe-Ito by sorted position).
+# `all_tracks` path — no pop map means Okabe-Ito by sorted position). `scale` (`_cb_scale`) is the
+# one shared over every segmentation drawn; `nothing` = this table's own.
 function _cb_prepare(df, cb_col::Union{Nothing,String},
                      cb_overrides::Union{Nothing,Dict{String,RGB{N0f8}}},
-                     pop_map)
+                     pop_map; scale = nothing)
     cb_col === nothing && return nothing
     sym = Symbol(cb_col)
     sym in propertynames(df) || return nothing
     col = df[!, sym]
-    # Categorical vs continuous — decided by column dtype. `AbstractFloat` → continuous
-    # (viridis-ish heat ramp), everything else → categorical. Integer columns (cluster
-    # ids, HMM states) stay categorical, which matches napari.
-    is_continuous = eltype(col) <: AbstractFloat
-    if is_continuous
-        vals = Float64[Float64(v) for v in col if v isa Real && isfinite(Float64(v))]
-        (lo, hi) = isempty(vals) ? (0.0, 1.0) : (minimum(vals), maximum(vals))
-        span = hi > lo ? (hi - lo) : 1.0
+    scale = something(scale, _cb_scale_of([col], cb_col))
+    if scale.continuous
+        (lo, hi) = something(scale.range, (0.0, 1.0))
+        span = hi - lo
         return (default, i) -> begin
             v = col[i]
             (v isa Real && isfinite(Float64(v))) || return default
@@ -308,10 +363,11 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
                     haskey(cb_overrides, ki) && return cb_overrides[ki]
                 end
             end
-            _heat_ramp(clamp((Float64(v) - lo) / span, 0.0, 1.0))
+            # a zero-width range shades at the ramp's middle, as the viewer's `colourByValue`
+            _heat_ramp(span > 0 ? clamp((Float64(v) - lo) / span, 0.0, 1.0) : 0.5)
         end
     else
-        uniq = unique(collect(skipmissing(col)))
+        uniq = scale.levels
         hexes = pop_map === nothing ?
             Dict{Any,String}(v => OKABE_ITO[mod1(k, length(OKABE_ITO))]
                               for (k, v) in enumerate(sort(uniq; by = string))) :
@@ -353,11 +409,15 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                         all_tracks::Bool = false,
                         all_tracks_colour::AbstractString = OVERLAY_GREY,
                         colour_by::Union{Nothing,AbstractString} = nothing,
-                        colour_overrides::Union{Nothing,AbstractDict} = nothing)
+                        colour_overrides::Union{Nothing,AbstractDict} = nothing,
+                        cb_scale = nothing)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
     pt = string(pop_type)
     vn = String(value_name)
+    # the scale is the whole table's drawable cells (as the viewer's payload), never the subset a
+    # pop-filtered read holds
+    cb_col === nothing || cb_scale !== nothing || (cb_scale = _cb_scale(img, [vn], cb_col))
     is_track_pt = is_track_grained(pt)
 
     lp   = label_props(img; value_name = vn)
@@ -395,7 +455,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             default_col = hex_to_rgb(String(all_tracks_colour))
             # No pop map for the whole-segmentation path — categorical values fall to Okabe-Ito by
             # sorted position (napari does the same for a `color_by` on an unpopulated track store).
-            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, nothing)
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, nothing; scale = cb_scale)
             @inbounds for i in 1:size(df, 1)
                 px = df[i, :centroid_x]; py = df[i, :centroid_y]
                 (px isa Real && py isa Real) || continue
@@ -444,7 +504,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
         # (JSON parse). `nothing` if the sidecar is missing → Okabe-Ito by sorted position.
         cb_pop_map = cb_col === nothing ? nothing :
             try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
-        cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map)
+        cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map; scale = cb_scale)
         for p in pops
             Bool(get(p, :show, true)) || continue
             default_col = hex_to_rgb(String(p.colour))
@@ -520,7 +580,7 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 has_z = col_exists("centroid_z")
                 # `pop_df(include_obs=true)` already surfaced every obs column — colour_by is
                 # already present in the df, no extra select_cols round-trip needed.
-                cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, m)
+                cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, m; scale = cb_scale)
                 @inbounds for i in 1:size(df, 1)
                     (col_exists("centroid_x") && col_exists("centroid_y")) || break
                     px = df[i, :centroid_x]; py = df[i, :centroid_y]
@@ -812,10 +872,12 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
             [(lvn, lpt, nothing) for lvn in _overlay_segmentations(img)
                                  for lpt in (isempty(plan.pop_types) ? [String(pop_type)] : plan.pop_types)] :
             (isempty(vn) ? Tuple{String,String,Any}[] : [(vn, String(pop_type), pops_filter)])
+    # one colour-by scale over every segmentation's dots (the viewer's `pooledColourScale`)
+    cb_scale = _cb_scale(img, unique(first.(layers)), colour_by)
     for (lvn, lpt, lf) in layers
         ribbons = plan.gated && !(lvn in tc_vns)
         parts = _overlay_parts(img; value_name = lvn, pop_type = lpt, pops_filter = lf,
-                               include_tracks = ribbons, colour_by, colour_overrides)
+                               include_tracks = ribbons, colour_by, colour_overrides, cb_scale)
         has_t |= parts.hasT
         add_points!(parts.pts_by_t)
         ribbons || continue
@@ -1073,7 +1135,8 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
             else
                 try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
             end
-            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map)
+            cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map;
+                                     scale = _cb_scale(img, [vn], cb_col))
             if cb_resolve !== nothing
                 @inbounds for i in 1:size(df, 1)
                     lab = df[i, :label]
