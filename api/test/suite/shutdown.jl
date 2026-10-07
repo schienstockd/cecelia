@@ -57,10 +57,13 @@
     @test cancel_at !== nothing
     @test !occursin("if stop_runner", body[1:cancel_at[1]])
     # …and both restart paths opt out. Two call sites, asserted separately: a single count would pass
-    # if one of them were changed to stop it.
+    # if one of them were changed to stop it. The restart route stops the runner only when the body
+    # asks (`stopRunner`, the "restart to finish an update" path); `_wbool` defaults that to false.
     restart = src[findfirst("function api_app_restart(", src)[1]:end]
-    @test occursin("_stop_children_for_exit(; stop_runner = false)",
-                   restart[1:findfirst("\nend", restart)[1]])
+    restart = restart[1:findfirst("\nend", restart)[1]]
+    @test occursin("stop_runner = _wbool(body, :stopRunner) || _pending_restart()", restart)
+    @test occursin("_stop_children_for_exit(; stop_runner)", restart)
+    @test _wbool(Dict{String,Any}(), :stopRunner) === false
     switch = src[findfirst("function api_app_switch_worktree(", src)[1]:end]
     @test occursin("_stop_children_for_exit(; stop_runner = false)",
                    switch[1:findfirst("\nend", switch)[1]])

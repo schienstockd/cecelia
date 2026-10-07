@@ -134,6 +134,9 @@ export const useAppControlStore = defineStore('appControl', () => {
   const updateDismissed = ref(false)                               // header badge "remind me later" (session)
   const updateHasPrevious = ref(false)                             // Revert button visibility
   const updateRevertBusy  = ref(false)
+  // An update/revert is staged on disk; the launcher swaps it in on the next restart. Drives the
+  // header's "Restart to update" chip and the Settings/What's New restart button.
+  const updatePending     = ref(false)
   // Release-notes surfacing (What's New modal — WHATS_NEW_PLAN.md). The older header badge +
   // Settings panel don't read these; they're only for the modal.
   const updateUrl       = ref('')
@@ -162,6 +165,7 @@ export const useAppControlStore = defineStore('appControl', () => {
       updateNotes.value       = d.releaseNotes ?? ''
       updatePublished.value   = d.publishedAt ?? ''
       updateHasPrevious.value = !!d.hasPrevious
+      updatePending.value     = !!d.pendingRestart
       if (d.error) updateMsg.value = d.error
     } catch { updateMsg.value = 'Could not reach the update server.' }
     finally { updateChecking.value = false }
@@ -176,7 +180,7 @@ export const useAppControlStore = defineStore('appControl', () => {
       const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
       updateMsg.value = res.ok ? (d.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`)
                                : (d.error ?? 'Update failed.')
-      if (res.ok) { updateAvailable.value = false; updateHasPrevious.value = true }
+      if (res.ok) { updateAvailable.value = false; updateHasPrevious.value = true; updatePending.value = true }
     } catch { updateMsg.value = 'Update failed (could not reach the server).' }
     finally { updateBusy.value = false }
   }
@@ -189,12 +193,25 @@ export const useAppControlStore = defineStore('appControl', () => {
       const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
       updateMsg.value = res.ok ? (d.message ?? 'Revert staged — restart Cecelia to finish.')
                                : (d.error ?? 'Revert failed.')
-      if (res.ok) updateHasPrevious.value = false
+      if (res.ok) { updateHasPrevious.value = false; updateAvailable.value = false; updatePending.value = true }
     } catch { updateMsg.value = 'Revert failed (could not reach the server).' }
     finally { updateRevertBusy.value = false }
   }
 
   function dismissUpdate() { updateDismissed.value = true }
+
+  // Finish a staged update: restart under the launcher (`app.py`), which swaps the files in and
+  // re-provisions the env before relaunching — minutes on a dependency change, hence the long wait.
+  // `stopRunner` so the task runner comes back on the new code too (callers gate on no running task).
+  // Reload at the end: the new build may ship a different frontend.
+  async function restartToUpdate() {
+    if (busy.value) return
+    busy.value = true; updateMsg.value = 'Restarting to install the update…'
+    const err = await _restart({ stopRunner: true }, 20 * 60_000,
+      () => { updateMsg.value = 'Installing the update — this can take a few minutes…' })
+    if (err) { busy.value = false; updateMsg.value = `${err} Quit Cecelia and start it again to finish.`; return }
+    location.reload()
+  }
   async function refreshWorktrees() {
     try {
       const d = await (await fetch('/api/app/worktrees')).json() as {
@@ -216,17 +233,24 @@ export const useAppControlStore = defineStore('appControl', () => {
   // Returns an error string if the server refused (e.g. not supervised), else null.
   async function restartBackend(): Promise<string | null> {
     busy.value = true; message.value = 'Backend restarting…'
+    const err = await _restart({}, 60000, () => { message.value = 'Backend restarting — reconnecting…' })
+    busy.value = false; message.value = err ?? 'Backend restarted.'
+    return err
+  }
+
+  // The one restart sequence: ask the supervisor to relaunch, then wait for /api/health. Returns the
+  // server's refusal (e.g. not supervised) or null once it's back. `onExiting` fires once accepted.
+  async function _restart(body: Record<string, unknown>, timeoutMs: number,
+                          onExiting: () => void): Promise<string | null> {
     try {
-      const res = await _post('/api/app/restart')
+      const res = await _post('/api/app/restart', body)
       if (!res.ok) {
         const d = await res.json().catch(() => ({} as { error?: string }))
-        busy.value = false; message.value = d.error ?? 'Restart failed.'
-        return message.value
+        return d.error ?? 'Restart failed.'
       }
     } catch { /* connection dropped as it exits — expected */ }
-    message.value = 'Backend restarting — reconnecting…'
-    await _waitForBackend()
-    busy.value = false; message.value = 'Backend restarted.'
+    onExiting()
+    await _waitForBackend(timeoutMs)
     return null
   }
 
@@ -264,8 +288,8 @@ export const useAppControlStore = defineStore('appControl', () => {
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, canApplyUpdate,
-           updateHasPrevious, updateRevertBusy,
-           checkUpdate, applyUpdate, revertUpdate, dismissUpdate,
+           updateHasPrevious, updateRevertBusy, updatePending,
+           checkUpdate, applyUpdate, revertUpdate, dismissUpdate, restartToUpdate,
            refreshDev, refreshStartup, completeSetup, completeProfilePick, markProfileJustPicked,
            refreshWorktrees, quit, restartBackend, switchWorktree }
 })

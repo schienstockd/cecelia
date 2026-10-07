@@ -191,6 +191,12 @@ def _apply_pending_update() -> None:
     except Exception as e:  # noqa: BLE001 — never block launch on a failed update
         print(f"Update could not be applied ({e}); continuing with the current version.",
               file=sys.stderr)
+        # Drop the marker so the app re-offers the update instead of "Restart to update" forever
+        # (the server reads a present marker as "staged, waiting for restart").
+        try:
+            os.remove(pending)
+        except OSError:
+            pass
 
 
 def _apply_pending_revert() -> None:
@@ -223,6 +229,10 @@ def _apply_pending_revert() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"Revert could not be applied ({e}); continuing with the current version.",
               file=sys.stderr)
+        try:
+            os.remove(pending)   # same reason as the apply: a stuck marker reads as "restart to finish"
+        except OSError:
+            pass
 
 
 # The server exits with this code to ask its supervisor (us) to relaunch it — Settings → System →
