@@ -550,10 +550,26 @@ end
     end
     let p = Cecelia.parse_motif_discovery_params(Dict{String,Any}())
         @test p.pops == String[]
+        @test p.hmmState == String[]
         @test p.windowSize === 8
         @test p.topK === 100
         @test p.numClasses === 3
         @test p.resolutionLocked === false
+    end
+    # The HMM state column is resolved, not hardcoded: `behaviour.hmm_states` writes
+    # `live.cell.hmm.state.<colName>` with colName defaulting to "default", and motif discovery used to
+    # read only `….movement` — so a default HMM run was refused as "run HMM states first".
+    let hmm_default = only(String(p["default"]) for p in
+                           JSON3.read(read(Cecelia._spec_path(Cecelia.HmmStates()), String))["params"]
+                           if p["key"] == "colName")
+        written = "live.cell.hmm.state.$(hmm_default)"
+        @test Cecelia._motif_hmm_col(String[], ["live.cell.speed", written]) == (written, nothing)
+        @test Cecelia._motif_hmm_col(["live.cell.hmm.state.b"], ["live.cell.hmm.state.a"]) ==
+              ("live.cell.hmm.state.b", nothing)                       # an explicit pick wins
+        @test Cecelia._motif_hmm_col(String[], ["live.cell.speed"])[1] === nothing           # none
+        @test Cecelia._motif_hmm_col(String[], ["live.cell.hmm.state.a", "live.cell.hmm.state.b"])[1] === nothing
+        @test Cecelia._motif_hmm_col(["a", "b"], String[])[1] === nothing                    # two picked
+        @test Cecelia.parse_motif_discovery_params(Dict{String,Any}("hmmState" => written)).hmmState == [written]
     end
     # Spec-level validation: windowSize=0 is below the JSON spec's min=3, so validate_params
     # rejects it as ParamValidationError before the handler ever runs.

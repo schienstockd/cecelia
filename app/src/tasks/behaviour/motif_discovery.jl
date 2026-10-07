@@ -35,9 +35,20 @@ import Dates
 
 struct MotifDiscovery <: CciaTask end
 
-# Fixed 3-channel feature set for the POC (MOTIF_DISCOVERY_PLAN §P1 Feature set).
-const _MOTIF_FEATURE_COLS = String["live.cell.speed", "live.cell.angle",
-                                   "live.cell.hmm.state.movement"]
+# Features (MOTIF_DISCOVERY_PLAN §P1): speed, angle + ONE HMM state column — whatever
+# `behaviour.hmm_states` wrote (`live.cell.hmm.state.<colName>`, colName default "default").
+const _MOTIF_MOTION_COLS = String["live.cell.speed", "live.cell.angle"]
+
+# The HMM state column: the one picked, else the only one in `available` (the seg's obs columns).
+# `(col, nothing)` or `(nothing, error)`. Prefix + scan are `analysis_runs.jl`'s.
+function _motif_hmm_col(picked::Vector{String}, available::Vector{String})
+    length(picked) > 1 && return (nothing, "pick ONE HMM state column (got $(picked))")
+    length(picked) == 1 && return (only(picked), nothing)
+    found = sort([_HMM_STATE_PREFIX * s for s in _obs_suffixes(available, _HMM_STATE_PREFIX)])
+    isempty(found) && return (nothing, "no HMM state column — run HMM states first")
+    length(found) > 1 && return (nothing, "several HMM state columns $(found) — pick one under HMM state")
+    (only(found), nothing)
+end
 
 # Per-cell / per-track obs column names on the value_name's h5ad. UNSUFFIXED — matches the HMM
 # convention (`live.cell.hmm.state.movement` in every `{vn}.h5ad`), so B+T pops co-plot on one
@@ -63,6 +74,7 @@ _legacy_motif_track_cols(vn::AbstractString) = String["$(MOTIF_SEQUENCE_COL).$(v
 # Typed shape of what `_run_task(::MotifDiscovery, …)` reads from `params`.
 Base.@kwdef struct MotifDiscoveryParams
     pops::Vector{String}   = String[]
+    hmmState::Vector{String} = String[]   # empty → the only `live.cell.hmm.state.*` column present
     windowSize::Int        = 8
     topK::Int              = 100
     numClasses::Int        = 3
@@ -78,6 +90,7 @@ end
 function parse_motif_discovery_params(d::AbstractDict)::MotifDiscoveryParams
     MotifDiscoveryParams(;
         pops              = _motif_pops(d),
+        hmmState          = _str_list(d, "hmmState"),
         windowSize        = Int(get(d, "windowSize", 8)),
         topK              = Int(get(d, "topK", 100)),
         numClasses        = Int(get(d, "numClasses", 3)),
@@ -146,13 +159,19 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
     isnothing(tcol) &&
         (on_log("[ERROR] No temporal column in the selected segmentation(s) — motif discovery needs a timecourse"); return nothing)
 
+    hmm_col, err = _motif_hmm_col(p.hmmState,
+                                  col_names(label_props(img_label_props_path(imgs[1], vn0)); data_type = :obs))
+    isnothing(hmm_col) && (on_log("[ERROR] Motif discovery: $err"); return nothing)
+    on_log("[INFO] Motif discovery: HMM state column $(hmm_col)")
+    feature_cols = vcat(_MOTIF_MOTION_COLS, [hmm_col])
+
     uids     = [img.uid for img in imgs]
-    pop_cols = unique(vcat(_MOTIF_FEATURE_COLS, ["track_id", tcol]))
+    pop_cols = unique(vcat(feature_cols, ["track_id", tcol]))
     # mixed-type read: every pop the picker `accepts` (`_tracked`, track gates, track clusters)
     # resolves to its member cells
     df = pop_df_multi(imgs, uids, p.pops; pop_cols=pop_cols, granularity=:cell)
     nrow(df) == 0 && (on_log("[ERROR] Motif discovery: no cells for pops=$(p.pops)"); return nothing)
-    missing_cols = setdiff(_MOTIF_FEATURE_COLS, names(df))
+    missing_cols = setdiff(feature_cols, names(df))
     isempty(missing_cols) ||
         (on_log("[ERROR] Motif discovery: pooled frame is missing $(missing_cols) — run HMM states / track measures first"); return nothing)
     on_log("[INFO] Pooled $(nrow(df)) cells across the set")
@@ -167,7 +186,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
         "topK"         => p.topK,
         "numClasses"   => p.numClasses,
         "resolution"   => 0.5,
-        "featureCols"  => _MOTIF_FEATURE_COLS,
+        "featureCols"  => feature_cols,
         "timeCol"      => tcol,
         "uIDs"         => String[string(x) for x in df.uID],
         "valueNames"   => String[string(x) for x in df.value_name],
@@ -176,7 +195,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
         "ts"           => [_nanless(x) for x in df[!, tcol]],
         "speed"        => [_nanless(x) for x in df[!, "live.cell.speed"]],
         "angle"        => [_nanless(x) for x in df[!, "live.cell.angle"]],
-        "hmmState"     => [_nanless(x) for x in df[!, "live.cell.hmm.state.movement"]],
+        "hmmState"     => [_nanless(x) for x in df[!, hmm_col]],
         "randomState"  => 0)
 
     task_dir     = task_run_dir(imgs[1]._dir)
@@ -247,7 +266,7 @@ function _run_task(::MotifDiscovery, imgs::Vector{CciaImage}, params::Dict{Strin
                 drop = vcat([class_col], String["$(class_col).$(vn)"]),
                 on_log = on_log, on_process = on_process)
             ok_cat || (on_log("[WARN] categorical class write failed: $(img.uid)/$vn"); continue)
-            _write_motif_features!(cell_props_path, suffix, _MOTIF_FEATURE_COLS, uids;
+            _write_motif_features!(cell_props_path, suffix, feature_cols, uids;
                                    resolution_locked_at = resolved_at)
 
             # per-track sequence: order each track's cells by t, drop unassigned, join with "_".
