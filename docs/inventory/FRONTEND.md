@@ -225,7 +225,7 @@
   behind them; a change to either the shader or the projection has to land in the same PR (the
   golden-value test in `axesGizmo.test.ts` fails otherwise).
 - **Volume-viewer overlays (h5ad-derived points/tracks)**: `frontend/src/utils/viewerOverlays.ts`
-  (pure: `overlaysUrl`, `buildPointBuffer`, `timepointRange`, `hexToUnit`, `overlaySummary`,
+  (pure: `overlaysUrl`, `buildPointBuffer` / `buildPointBufferLayers` (every segmentation × pop type in one buffer), `timepointRange`, `hexToUnit`, `overlaySummary` / `overlayLayersSummary`,
   `POINT_STRIDE`) + the points pass in `lib/webgpu/shaders/mip_points.wgsl` (`POINTS_WGSL`) and
   `setOverlayPoints`/`setOverlayDraw` on the renderer. Reads `/api/viewer/overlays` ONCE for the whole
   movie (measured: 2.0 MB for the largest cell table in the dev projects, 0.13 MB typical, against

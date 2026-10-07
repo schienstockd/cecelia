@@ -89,7 +89,14 @@ export interface BatchMovieCfg {
   // their outputs, so cpSAM + flowTom + coastalFg all ticked draw together, each in its own colour.
   trackSources?: Record<string, { visible: boolean; colour: string }>
   // Pop paths whose cell-track ribbon the viewer hides (its per-pop ribbon eye) — dots still draw.
-  hiddenTrackPops?: string[]
+  // Per segmentation from a viewer look; a bare list = the pops' segmentation.
+  hiddenTrackPops?: string[] | Record<string, string[]>
+  // A viewer look: its population layers are these cell pop types on EVERY segmentation (the
+  // recorder's `popAllSegmentations`); a batch draws its one `popValueName` / `popType`.
+  popTypes?: string[]
+  popAllSegmentations?: boolean
+  // The viewer's Tracks-legend colours, keyed as its ribbon sources (`vn`, `vn::path`, …).
+  trackSourceColours?: Record<string, string>
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
   // with pops on).
   maskAllCells?: boolean
@@ -151,8 +158,10 @@ export interface BatchMovieRequestConfig {
   trackColourMode: string
   showGatedTracks: boolean
   showTrackclust: boolean
-  /** pop paths whose cell-track ribbon is hidden (a look filled from the viewer) */
-  hiddenTrackPops?: string[]
+  /** pop paths whose cell-track ribbon is hidden (a look filled from the viewer), per segmentation */
+  hiddenTrackPops?: string[] | Record<string, string[]>
+  /** the viewer's Tracks-legend colours (a look filled from the viewer) */
+  trackSourceColours?: Record<string, string>
   /** the mask paints every cell, as the viewer's does */
   maskAllCells?: boolean
   showPopulations: boolean
@@ -258,7 +267,9 @@ export function buildBatchMovieConfig(
     showGatedTracks: !!cfg.showGatedTracks,
     showTrackclust: !!cfg.showTrackclust,
     // a look filled from the viewer: its hidden ribbon eyes, and its every-cell mask
-    ...(cfg.hiddenTrackPops?.length ? { hiddenTrackPops: cfg.hiddenTrackPops } : {}),
+    ...(cfg.hiddenTrackPops && Object.keys(cfg.hiddenTrackPops).length ? { hiddenTrackPops: cfg.hiddenTrackPops } : {}),
+    ...(cfg.trackSourceColours && Object.keys(cfg.trackSourceColours).length
+      ? { trackSourceColours: cfg.trackSourceColours } : {}),
     ...(cfg.maskAllCells ? { maskAllCells: true } : {}),
     showPopulations: !!cfg.showPopulations,
     popType: cfg.popType ?? 'flow',

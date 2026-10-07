@@ -340,26 +340,22 @@ end
 #   * `all_tracks = true`  → whole-segmentation ribbons (every cell with `track_id > 0`)
 #   * cell pop_types       → `resolve_pops` + centroid table
 #   * track pop_types      → `pop_df(...; granularity=:cell)` (gates live on `track_props`)
-# All three funnel into the SAME `_push_point!` / `_push_track!` and the same segment build
-# (`track_color_mode` + tail-length). If any of these behaviours are wrong here, every
-# downstream author is wrong the same way — which is the drift guarantee.
-function _build_overlay_state(img; value_name::AbstractString, pop_type::PopTypeArg,
-                              pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                              include_tracks::Bool = true,
-                              tail_length::Int = 30,
-                              all_tracks::Bool = false,
-                              all_tracks_colour::AbstractString = OVERLAY_GREY,
-                              track_color_mode::AbstractString = "track",
-                              solid_colour::Union{Nothing,AbstractString} = nothing,
-                              colour_by::Union{Nothing,AbstractString} = nothing,
-                              colour_overrides::Union{Nothing,AbstractDict} = nothing)
+# All three funnel into the SAME `_push_point!` / `_push_track!`, and every track colour goes through
+# ONE hop colouring (`_colour_hops`). If any of these behaviours are wrong here, every downstream
+# author is wrong the same way — which is the drift guarantee.
+#
+# `_overlay_parts` is the read: points (coloured) and the raw track histories, keyed
+# `(track id, cell colour, group)` — the group is the pop path a ribbon belongs to (`""` for whole
+# segmentation tracks), so a caller can make each pop its own ribbon source, as the viewer does.
+function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
+                        pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                        include_tracks::Bool = true,
+                        all_tracks::Bool = false,
+                        all_tracks_colour::AbstractString = OVERLAY_GREY,
+                        colour_by::Union{Nothing,AbstractString} = nothing,
+                        colour_overrides::Union{Nothing,AbstractDict} = nothing)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
-    # When colourBy is on, tracks paint in the arriving-cell colour (the legacy viewer's `color_by`
-    # semantics on the tracks layer). "track"/"speed" would ignore what we resolved. Since the two
-    # per-source modes diverged, the target is "pop" (uses `col`, i.e. the colour_by result), not
-    # "solid" (uniform palette[0]) — see the docstring above `_prep_overrides`.
-    effective_tcm = cb_col === nothing ? String(track_color_mode) : "pop"
     pt = string(pop_type)
     vn = String(value_name)
     is_track_pt = is_track_grained(pt)
@@ -372,7 +368,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
     pts_by_t   = Dict{Int,NamedTuple{(:x, :y, :z, :colour),
                         Tuple{Vector{Float64},Vector{Float64},
                               Vector{Float64},Vector{RGB{N0f8}}}}}()
-    track_hist = Dict{Tuple{Int,RGB{N0f8}},Vector{Tuple{Int,Float64,Float64,Float64}}}()
+    track_hist = Dict{Tuple{Int,RGB{N0f8},String},Vector{Tuple{Int,Float64,Float64,Float64}}}()
     _push_point!(t, xyz, colour) = begin
         bag = get!(pts_by_t, t) do
             (; x = Float64[], y = Float64[], z = Float64[], colour = RGB{N0f8}[])
@@ -380,8 +376,8 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
         push!(bag.x, xyz[1]); push!(bag.y, xyz[2]); push!(bag.z, xyz[3])
         push!(bag.colour, colour)
     end
-    _push_track!(kid, colour, t, xyz) = begin
-        hist = get!(track_hist, (kid, colour), Tuple{Int,Float64,Float64,Float64}[])
+    _push_track!(kid, colour, t, xyz, group::AbstractString = "") = begin
+        hist = get!(track_hist, (kid, colour, String(group)), Tuple{Int,Float64,Float64,Float64}[])
         push!(hist, (t, xyz[1], xyz[2], xyz[3]))
     end
     _z_of(df, i, has_z) = has_z ?
@@ -431,6 +427,10 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
         end
         view_centroid_cols(lp; order = [:x, :y, :z])
         hasK && select_cols(lp, ["track_id"])
+        # the run that authored each cell's track (MULTI_POP_TRACKING_ORPHANS_PLAN.md) — a pop's ribbon
+        # keeps its own tracks and unattributed ones, as the viewer's `filterPayloadByTrackSource`
+        hasTS = hasK && "track_source" in obs
+        hasTS && select_cols(lp, ["track_source"])
         cb_col === nothing || select_cols(lp, [cb_col])
         df = as_df(lp)
         has_z = "centroid_z" in names(df)
@@ -454,6 +454,7 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
             # actually having a track_id column at all. See MULTI_POP_TRACKING_PLAN.md Decision 2.
             is_track_pop = (Bool(get(p, :is_track, false)) ||
                             Bool(get(p, :has_tracks, false))) && hasK
+            uid = String(something(get(p, :uid, nothing), ""))
             for L in p.labels
                 i = get(row_of, Int(L), 0)
                 i == 0 && continue
@@ -470,7 +471,12 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
                     (traw isa Real && isfinite(Float64(traw))) || continue
                     kid = Int(round(Float64(traw)))
                     kid > 0 || continue
-                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
+                    if hasTS && !isempty(uid)
+                        ts = df[i, :track_source]
+                        tsv = ts isa AbstractString ? String(ts) : ""
+                        (isempty(tsv) || tsv == Cecelia.WHOLE_SEG_TRACK_SOURCE || tsv == uid) || continue
+                    end
+                    _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz), String(p.path))
                 end
             end
         end
@@ -534,108 +540,182 @@ function _build_overlay_state(img; value_name::AbstractString, pop_type::PopType
                         (traw isa Real && isfinite(Float64(traw))) || continue
                         kid = Int(round(Float64(traw)))
                         kid > 0 || continue
-                        _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz))
+                        _push_track!(kid, colour, ti, (Float64(px), Float64(py), pz), pop_path)
                     end
                 end
             end
         end
     end
+    (; pts_by_t, track_hist, hasT)
+end
 
-    # ── Segment build — SAME `track_color_mode` semantics as the pre-refactor 2D/3D authors.
-    # Speed² uses native-voxel (x, y) only (matching the browser's speedSq); z is threaded through
-    # the segment but does NOT enter the speed metric — the 2D still and the 3D animation of the
-    # same experiment must share track heat.
-    segs_by_end = Dict{Int,NamedTuple{(:x0, :y0, :z0, :x1, :y1, :z1, :colour),
-                        Tuple{Vector{Float64},Vector{Float64},Vector{Float64},
-                              Vector{Float64},Vector{Float64},Vector{Float64},
-                              Vector{RGB{N0f8}}}}}()
-    tracks_active = include_tracks && hasT && tail_length > 0
-    tcm = effective_tcm
-    tcm in TRACK_COLOR_MODES ||
-        (@warn "_build_overlay_state: unknown track_color_mode, falling back to \"track\"" mode = tcm;
-         tcm = "track")
 
-    if tracks_active
-        raw = Tuple{Int,Float64,Float64,Float64,Float64,Float64,Float64,Int,Float64,RGB{N0f8}}[]
-        s_min = Inf; s_max = -Inf
-        for ((kid, col), hist) in track_hist
-            length(hist) >= 2 || continue
-            sort!(hist; by = first)
-            for k in 1:(length(hist) - 1)
-                t0, x0, y0, z0 = hist[k]
-                t1, x1, y1, z1 = hist[k + 1]
-                t1 > t0 || continue
-                dx = x1 - x0; dy = y1 - y0
-                sp2 = (dx * dx + dy * dy) / max(1, (t1 - t0))^2
-                s_min = min(s_min, sp2); s_max = max(s_max, sp2)
-                push!(raw, (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col))
-            end
+# One hop of a track: arrival frame, track id, the two ends (native voxels), the arriving cell's colour.
+const _Hop = Tuple{Int,Int,Float64,Float64,Float64,Float64,Float64,Float64,RGB{N0f8}}
+
+const _SegBag = NamedTuple{(:x0, :y0, :z0, :x1, :y1, :z1, :colour),
+                           Tuple{Vector{Float64},Vector{Float64},Vector{Float64},
+                                 Vector{Float64},Vector{Float64},Vector{Float64},Vector{RGB{N0f8}}}}
+
+"""
+    _hops_of(track_hist; group = nothing) -> Vector{_Hop}
+
+A track history's hops — one per pair of CONSECUTIVE frames: a tracker gap is not drawn across, as in
+the viewer (`buildMultiTrackBuffer`). `group` keeps one pop's ribbon (`nothing` = all).
+"""
+function _hops_of(track_hist; group::Union{Nothing,AbstractString} = nothing)
+    out = _Hop[]
+    for ((kid, col, g), hist) in track_hist
+        (group === nothing || g == group) || continue
+        length(hist) >= 2 || continue
+        sort!(hist; by = first)
+        for k in 1:(length(hist) - 1)
+            t0, x0, y0, z0 = hist[k]
+            t1, x1, y1, z1 = hist[k + 1]
+            t1 - t0 == 1 || continue
+            push!(out, (t1, kid, x0, y0, z0, x1, y1, z1, col))
         end
-        s_span = (isfinite(s_min) && isfinite(s_max) && s_max > s_min) ? (s_max - s_min) : 0.0
-        # "solid" collapses to ONE colour for every ribbon in this author call — there is only ever
-        # one (value_name, pop_type) source per _build_overlay_state. That is the source's own colour
-        # when the caller has one (`solid_colour`, the viewer's per-source picker), else palette[0]:
-        # the browser's `solidRgb`. "pop" keeps `col` — the pop's own swatch that was baked into
-        # track_hist's key upstream. This is the Julia mirror of the browser's split.
-        solid_col = solid_colour === nothing ? CECELIA_TRACK_PALETTE[1] : hex_to_rgb(String(solid_colour))
-        for (t1, x0, y0, z0, x1, y1, z1, kid, sp2, col) in raw
-            colour = if tcm == "track"
-                CECELIA_TRACK_PALETTE[mod1(abs(kid), length(CECELIA_TRACK_PALETTE))]
-            elseif tcm == "speed"
-                s_span > 0 ? _heat_ramp((sp2 - s_min) / s_span) : RGB{N0f8}(0.9, 0.9, 0.9)
-            elseif tcm == "solid"
-                solid_col
-            else
-                # "pop" (and any other future mode that falls through here): the resolved per-cell
-                # colour, which is the pop's own swatch for gated tracks and `all_tracks_colour`
-                # in the whole-segmentation path.
-                col
-            end
-            bag = get!(segs_by_end, t1) do
+    end
+    out
+end
+
+"""
+    _colour_hops(sources, mode; um = (1.0, 1.0, 1.0)) -> Dict{Int,_SegBag}
+
+Colour every ribbon source's hops by the viewer's rule (`buildMultiTrackBuffer` — keep the two in
+step) and bucket them by arrival frame. `sources` is `[(; hops, solid, pop)]` in the viewer's source
+order; source `i`'s fallback colour is the palette's `i`-th, as there.
+  * "track" — `palette[|track id| % n]`, the track's own colour whatever its source;
+  * "speed" — the hop's length in µm (x, y, z — `um` is µm per native voxel), on the heat ramp over
+    the range of EVERY source's hops, so one speed is one colour across the frame;
+  * "solid" — the source's colour (`solid`: its Tracks-legend colour), else the palette's `i`-th;
+  * "pop"   — the source's population colour (`pop`), else the palette's `i`-th;
+  * "cell"  — each hop's arriving-cell colour (a colour-by column), the legacy author's tracks.
+"""
+function _colour_hops(sources, mode::AbstractString; um = (1.0, 1.0, 1.0))
+    pal = CECELIA_TRACK_PALETTE; n = length(pal)
+    len(h) = sqrt(((h[6] - h[3]) * um[1])^2 + ((h[7] - h[4]) * um[2])^2 + ((h[8] - h[5]) * um[3])^2)
+    lo = Inf; hi = -Inf
+    if mode == "speed"
+        for s in sources, h in s.hops
+            v = len(h); lo = min(lo, v); hi = max(hi, v)
+        end
+    end
+    span = (isfinite(lo) && hi > 0 && hi > lo) ? hi - lo : 0.0
+    grey = RGB{N0f8}(0.9, 0.9, 0.9)
+    segs = Dict{Int,_SegBag}()
+    for (i, s) in enumerate(sources)
+        own = pal[mod(i - 1, n) + 1]
+        solid = something(s.solid, own); popc = something(s.pop, own)
+        for h in s.hops
+            colour = mode == "speed" ? (span > 0 ? _heat_ramp((len(h) - lo) / span) : grey) :
+                     mode == "solid" ? solid :
+                     mode == "pop"   ? popc :
+                     mode == "cell"  ? h[9] :
+                     pal[mod(abs(h[2]), n) + 1]
+            bag = get!(segs, h[1]) do
                 (; x0 = Float64[], y0 = Float64[], z0 = Float64[],
                    x1 = Float64[], y1 = Float64[], z1 = Float64[], colour = RGB{N0f8}[])
             end
-            push!(bag.x0, x0); push!(bag.y0, y0); push!(bag.z0, z0)
-            push!(bag.x1, x1); push!(bag.y1, y1); push!(bag.z1, z1)
+            push!(bag.x0, h[3]); push!(bag.y0, h[4]); push!(bag.z0, h[5])
+            push!(bag.x1, h[6]); push!(bag.y1, h[7]); push!(bag.z1, h[8])
             push!(bag.colour, colour)
         end
     end
+    segs
+end
 
-    OverlayState(pts_by_t, segs_by_end, hasT, tail_length, tracks_active)
+# µm per native voxel, (x, y, z) — the speed colouring's metric (the viewer's payload is in µm).
+function _voxel_um(img)
+    try
+        sizes = first(img_physical_sizes(img))
+        (physical_size_for_axis(sizes, :x), physical_size_for_axis(sizes, :y), physical_size_for_axis(sizes, :z))
+    catch
+        (1.0, 1.0, 1.0)
+    end
+end
+
+_track_mode(mode::AbstractString) = mode in TRACK_COLOR_MODES ? String(mode) :
+    (@warn "unknown track_color_mode, falling back to \"track\"" mode = mode; "track")
+
+# One (segmentation, pop type) read as ONE ribbon source — `build_overlays3d_for`. A colour-by column
+# colours the tracks by the arriving cell ("cell"); "pop" is each cell's own pop / source colour.
+function _build_overlay_state(img; value_name::AbstractString, pop_type::PopTypeArg,
+                              pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                              include_tracks::Bool = true,
+                              tail_length::Int = 30,
+                              all_tracks::Bool = false,
+                              all_tracks_colour::AbstractString = OVERLAY_GREY,
+                              track_color_mode::AbstractString = "track",
+                              solid_colour::Union{Nothing,AbstractString} = nothing,
+                              colour_by::Union{Nothing,AbstractString} = nothing,
+                              colour_overrides::Union{Nothing,AbstractDict} = nothing)
+    parts = _overlay_parts(img; value_name, pop_type, pops_filter, include_tracks, all_tracks,
+                           all_tracks_colour, colour_by, colour_overrides)
+    tracks_active = include_tracks && parts.hasT && tail_length > 0
+    cb_on = colour_by !== nothing && !isempty(String(colour_by))
+    mode = _track_mode(track_color_mode)
+    mode = (cb_on || mode == "pop") ? "cell" : mode
+    src = (; hops = tracks_active ? _hops_of(parts.track_hist) : _Hop[],
+             solid = solid_colour === nothing ? nothing : hex_to_rgb(String(solid_colour)), pop = nothing)
+    OverlayState(parts.pts_by_t, _colour_hops([src], mode; um = _voxel_um(img)), parts.hasT,
+                 tail_length, tracks_active)
 end
 
 # ── The viewer's overlays, as one plan ─────────────────────────────────────────────
-# What the browser viewer draws (`ViewerWindow.vue` → `rebuildOverlays`), and so what a movie of it
-# must draw. Only the POPULATIONS are bound to one segmentation (the pop manager's); the track kinds
-# are not:
-#   • pop dots — the pop manager's (segmentation, popType) shown pops;
-#   • cell-track ribbons — those pops' tracks ("Show cell-track ribbons"), minus the pops whose ribbon
-#     eye is off (`hiddenTrackPops`);
-#   • per-segmentation tracks — every segmentation whose track eye is on, each in its own colour;
+# What the browser viewer draws (`ViewerWindow.vue` → `loadOverlays` + `rebuildOverlays`), and so
+# what a movie of it must draw. Only the MASK is one segmentation at a time; nothing else is a property
+# of the shown segmentation (docs/todo/VIEWER_OVERLAY_PARITY_PLAN.md):
+#   • pop dots — every segmentation's shown pops, of every cell pop type that is on;
+#   • cell-track ribbons — those pops' tracks ("Show cell-track ribbons"), one ribbon source per pop,
+#     minus the pops whose ribbon eye is off (`hiddenTrackPops`, per segmentation);
+#   • per-segmentation tracks — every segmentation whose track eye is on;
 #   • track-cluster ribbons — the shown trackclust pops of EVERY segmentation.
 # A segmentation with track-cluster pops draws only those while the chip is on: its plain and
 # cell-track ribbons stand down (trackclust colours the SAME tracks by cluster — both would stack two
-# ribbons per track).
+# ribbons per track). Every ribbon is coloured by ONE rule (`_colour_hops`) over all of them.
 
 """
-    overlay_track_plan(ov) -> (; segs, gated, hidden_track_pops, trackclust)
+    overlay_track_plan(ov) -> (; segs, gated, hidden_track_pops, trackclust, pop_types,
+                                 pop_all_segs, track_colours)
 
-The track half of an overlays dict (`_overlays_raw_from_config`, either key spelling): `segs` the
-per-segmentation sources `[(valueName, colour)]` (`""` = the overlays' own segmentation), `gated` the
-cell-track ribbons, `trackclust` the chip. A dict without `trackSegs` (the smoke route, older callers)
-reads the legacy `allTracks` / `includeTracks` / `trackSources` keys the same way they always drew.
+The plan half of an overlays dict (`_overlays_raw_from_config`, either key spelling):
+  * `segs` — per-segmentation sources `[(valueName, colour)]`; `""` valueName = the overlays' own
+    segmentation, `""` colour = the viewer's default (the palette by source position);
+  * `gated` — cell-track ribbons; `trackclust` — the chip;
+  * `hidden_track_pops` — `{valueName => paths}` whose ribbon eye is off (`""` = the pops' segmentation);
+  * `pop_types` / `pop_all_segs` — the pop layers: these cell pop types on every segmentation (a
+    viewer look), else the caller's one `(valueName, popType)` (a batch);
+  * `track_colours` — the viewer's Tracks-legend colours, keyed as its sources are (`vn`,
+    `vn::path`, `vn::popType::path`, `vn::trackclust::path`).
+A dict without `trackSegs` (the smoke route, older callers) reads the legacy `allTracks` /
+`includeTracks` / `trackSources` keys the same way they always drew.
 """
 function overlay_track_plan(ov)
     g(k, d) = (v = get(ov, Symbol(k), nothing); v === nothing ? get(ov, String(k), d) : v)
     hidden = g("hiddenTrackPops", nothing)
-    hidden_paths = hidden isa AbstractVector ? String[String(x) for x in hidden] : String[]
+    hidden_track_pops = Dict{String,Vector{String}}()
+    if hidden isa AbstractDict
+        for (k, v) in hidden
+            v isa AbstractVector && (hidden_track_pops[String(k)] = String[String(x) for x in v])
+        end
+    elseif hidden isa AbstractVector
+        hidden_track_pops[""] = String[String(x) for x in hidden]
+    end
     trackclust = Bool(g("showTrackclust", false))
+    pts_raw = g("popTypes", nothing)
+    pop_types = pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[]
+    pop_all_segs = Bool(g("popAllSegmentations", false))
+    tc_raw = g("trackSourceColours", nothing)
+    track_colours = tc_raw isa AbstractDict ?
+        Dict{String,String}(String(k) => String(v) for (k, v) in tc_raw if v isa AbstractString && !isempty(v)) :
+        Dict{String,String}()
+    rest = (; hidden_track_pops, trackclust, pop_types, pop_all_segs, track_colours)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
-        segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName),
-                                     _wstr_any(s, "colour", :colour; default = OVERLAY_GREY))
+        segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
                                     for s in segs_raw if s isa AbstractDict]
-        return (; segs, gated = Bool(g("gatedRibbons", false)), hidden_track_pops = hidden_paths, trackclust)
+        return (; segs, gated = Bool(g("gatedRibbons", false)), rest...)
     end
     inc = Bool(g("includeTracks", true))
     col = String(g("allTracksColour", OVERLAY_GREY))
@@ -644,21 +724,24 @@ function overlay_track_plan(ov)
     segs = !(all_tracks && inc) ? Tuple{String,String}[] :
            isempty(sources) ? [("", col)] : [(s["valueName"], s["colour"]) for s in sources]
     # the pops' ribbons were the non-`allTracks` mode — sources all hidden do not make them one
-    (; segs, gated = inc && !asked, hidden_track_pops = hidden_paths, trackclust)
+    (; segs, gated = inc && !asked, rest...)
 end
 
-# The segmentations an image has cells for — what the viewer offers track eyes / trackclust for.
+# The segmentations overlays draw from — every one with a cell table, mask or not (an imported track
+# set has a table and no mask), in the image's order. The viewer's `meta.cellTableNames` is this list;
+# pops, per-segmentation tracks and track clusters all iterate it, on both sides.
 _overlay_segmentations(img) = String[vn for vn in img_value_names(img) if !is_reserved_value_name(vn)]
 
-# The pop paths of one (segmentation, popType) — `resolve_pops`, the list the viewer's pop payload
-# carries (shown or not). `String[]` when it can't be read.
-function _overlay_pop_paths(img, vn::AbstractString, pt)
+# The pops of one (segmentation, popType) — `resolve_pops`, the list the viewer's pop payload carries
+# (shown or not), in its order. Empty when it can't be read.
+function _overlay_pops(img, vn::AbstractString, pt)
     try
-        String[String(L.path) for L in resolve_pops(img, pt; value_name = vn)]
+        resolve_pops(img, pt; value_name = vn)
     catch
-        String[]
+        NamedTuple[]
     end
 end
+_overlay_pop_paths(img, vn::AbstractString, pt) = String[String(L.path) for L in _overlay_pops(img, vn, pt)]
 
 """
     trackclust_segmentations(img) -> Vector{String}
@@ -669,14 +752,25 @@ other ribbons stand down (the viewer keys this on its payload listing pops, show
 trackclust_segmentations(img) =
     String[vn for vn in _overlay_segmentations(img) if !isempty(_overlay_pop_paths(img, vn, "trackclust"))]
 
+# The per-segmentation sources in the viewer's order (`meta.cellTableNames`) — a source's position is
+# its palette colour. `""` is the overlays' own segmentation; a name the image doesn't list goes last.
+function _ordered_segs(img, segs, vn::AbstractString)
+    pos = Dict(v => i for (i, v) in enumerate(_overlay_segmentations(img)))
+    sort(collect(segs); by = s -> get(pos, isempty(first(s)) ? vn : first(s), typemax(Int)))
+end
+
+# The Tracks-legend key of a pop's cell-track ribbon — the viewer's `trackPopSourceKey`.
+_track_pop_key(vn, pt, path) = pt == "flow" ? "$(vn)::$(path)" : "$(vn)::$(pt)::$(path)"
+
 """
     viewer_overlay_closure(img; value_name, pop_type, plan, show_pops, …) -> closure | nothing
 
 The viewer's overlays (see the block comment above) as ONE `t -> (points, segments)` closure in native
-voxel coordinates — the 2D rail and the keyframe renderer both draw through this, so neither binds the
-track kinds to the pop manager's segmentation. `value_name` is the pops' segmentation (and the one a
-`""` track source means); `plan` is `overlay_track_plan`. `colour_by` colours the pops (dots and their
-ribbons), as the viewer's pop payload does; per-segmentation and trackclust tracks are not coloured by it.
+voxel coordinates — the 2D rail and the keyframe renderer both draw through this. `value_name` /
+`pop_type` / `pops_filter` are the one pop layer of a batch (and the segmentation a `""` track source
+means); a viewer look's `plan.pop_all_segs` draws every segmentation's pops of `plan.pop_types`
+instead. `colour_by` colours the pop DOTS, as the viewer's pop payload does — its ribbons, like every
+ribbon, are coloured by `track_color_mode` (`_colour_hops`).
 """
 function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTypeArg = "flow",
                                 plan, show_pops::Bool = false,
@@ -686,43 +780,84 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
                                 colour_overrides::Union{Nothing,AbstractDict} = nothing)
     vn = String(value_name)
     tc_vns = plan.trackclust ? trackclust_segmentations(img) : String[]
-    closures = Any[]
-    if show_pops && !isempty(vn)
-        pop_kw = (; value_name = vn, pop_type = pop_type, tail_length = tail_length,
-                    track_color_mode = track_color_mode, colour_by = colour_by,
-                    colour_overrides = colour_overrides)
-        ribbons = plan.gated && !(vn in tc_vns)
-        if ribbons && !isempty(plan.hidden_track_pops)
-            # dots for every shown pop, ribbons only for the pops whose ribbon eye is on
-            push!(closures, build_overlays3d_for(img; pop_kw..., pops_filter = pops_filter,
-                                                 include_tracks = false))
-            hidden = Set(plan.hidden_track_pops)
-            keep = String[p for p in _overlay_pop_paths(img, vn, pop_type)
-                          if !(p in hidden) && (pops_filter === nothing || p in pops_filter)]
-            isempty(keep) || push!(closures, build_overlays3d_for(img; pop_kw..., pops_filter = keep,
-                                                                  include_tracks = true, include_points = false))
-        else
-            push!(closures, build_overlays3d_for(img; pop_kw..., pops_filter = pops_filter,
-                                                 include_tracks = ribbons))
+    rgb(hex) = (hex === nothing || isempty(hex)) ? nothing : hex_to_rgb(String(hex))
+    pts = Dict{Int,NamedTuple{(:x, :y, :z, :colour),
+                   Tuple{Vector{Float64},Vector{Float64},Vector{Float64},Vector{RGB{N0f8}}}}}()
+    add_points!(bags) = for (t, b) in bags
+        acc = get!(pts, t) do
+            (; x = Float64[], y = Float64[], z = Float64[], colour = RGB{N0f8}[])
         end
+        append!(acc.x, b.x); append!(acc.y, b.y); append!(acc.z, b.z); append!(acc.colour, b.colour)
     end
-    for (src, col) in plan.segs
+    has_t = false
+    seg_srcs = Any[]; gated_srcs = Any[]; tc_srcs = Any[]
+
+    # Per-segmentation tracks — the viewer's first sources, so the palette fallback counts them first,
+    # in its order (the cell tables').
+    for (src, col) in _ordered_segs(img, plan.segs, vn)
         svn = isempty(src) ? vn : src
         (isempty(svn) || svn in tc_vns) && continue
-        # a named source's colour is its "solid" colour, as in the viewer; the unnamed grey source
-        # keeps the palette's first colour for "solid" (`_build_overlay_state`)
-        push!(closures, build_overlays3d_for(img; value_name = svn, pop_type = pop_type,
-                                             all_tracks = true, all_tracks_colour = col,
-                                             solid_colour = isempty(src) ? nothing : col,
-                                             include_tracks = true, include_points = false,
-                                             tail_length = tail_length, track_color_mode = track_color_mode))
+        parts = _overlay_parts(img; value_name = svn, pop_type = "flow", all_tracks = true)
+        has_t |= parts.hasT
+        # a named source: its colour (the look's, else its Tracks-legend one) is its "solid" colour,
+        # its "pop" colour the palette's; the unnamed batch source draws "pop" in its grey
+        solid = isempty(src) ? nothing : rgb(isempty(col) ? get(plan.track_colours, svn, nothing) : col)
+        push!(seg_srcs, (; hops = _hops_of(parts.track_hist), solid,
+                           pop = isempty(src) ? rgb(col) : nothing))
     end
+
+    # Pop layers: dots (coloured by colour-by) + one cell-track ribbon source per pop.
+    layers = !show_pops ? Tuple{String,String,Any}[] :
+        plan.pop_all_segs ?
+            [(lvn, lpt, nothing) for lvn in _overlay_segmentations(img)
+                                 for lpt in (isempty(plan.pop_types) ? [String(pop_type)] : plan.pop_types)] :
+            (isempty(vn) ? Tuple{String,String,Any}[] : [(vn, String(pop_type), pops_filter)])
+    for (lvn, lpt, lf) in layers
+        ribbons = plan.gated && !(lvn in tc_vns)
+        parts = _overlay_parts(img; value_name = lvn, pop_type = lpt, pops_filter = lf,
+                               include_tracks = ribbons, colour_by, colour_overrides)
+        has_t |= parts.hasT
+        add_points!(parts.pts_by_t)
+        ribbons || continue
+        hidden = Set(vcat(get(plan.hidden_track_pops, lvn, String[]),
+                          lvn == vn ? get(plan.hidden_track_pops, "", String[]) : String[]))
+        for L in _overlay_pops(img, lvn, lpt)
+            (L.show && !(L.path in hidden)) || continue
+            lf === nothing || L.path in lf || continue
+            hops = _hops_of(parts.track_hist; group = String(L.path))
+            isempty(hops) && continue
+            key = _track_pop_key(lvn, lpt, L.path)
+            push!(gated_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
+                                 pop = rgb(String(L.colour))))
+        end
+    end
+
+    # Track-cluster ribbons — every segmentation's, one source per shown pop.
     for tvn in tc_vns
-        push!(closures, build_overlays3d_for(img; value_name = tvn, pop_type = "trackclust",
-                                             include_tracks = true, include_points = false,
-                                             tail_length = tail_length, track_color_mode = track_color_mode))
+        parts = _overlay_parts(img; value_name = tvn, pop_type = "trackclust", include_tracks = true)
+        has_t |= parts.hasT
+        for L in _overlay_pops(img, tvn, "trackclust")
+            L.show || continue
+            hops = _hops_of(parts.track_hist; group = String(L.path))
+            isempty(hops) && continue
+            key = "$(tvn)::trackclust::$(L.path)"
+            push!(tc_srcs, (; hops, solid = rgb(get(plan.track_colours, key, String(L.colour))),
+                              pop = rgb(String(L.colour))))
+        end
     end
-    merge_overlay_closures(closures)
+
+    sources = vcat(seg_srcs, gated_srcs, tc_srcs)
+    (isempty(pts) && all(s -> isempty(s.hops), sources)) && return nothing
+    tracks_active = has_t && tail_length > 0 && !isempty(sources)
+    segs = tracks_active ? _colour_hops(sources, _track_mode(track_color_mode); um = _voxel_um(img)) :
+           Dict{Int,_SegBag}()
+    state = OverlayState(pts, segs, has_t, tail_length, tracks_active)
+    return function(t::Int)
+        p, sg = _state_at(state, t)
+        (p === nothing || isempty(p.x)) && (p = nothing)
+        (sg === nothing || isempty(sg.x0)) && (sg = nothing)
+        (p, sg)
+    end
 end
 
 """

@@ -372,6 +372,9 @@ function api_viewer_meta(req::HTTP.Request)
                             # Per-store fingerprints (`store_rev`) — the viewer reloads on a task
                             # done only when the store it shows changed, not on every task.
                             storeRevs  = (; image = store_rev(zp), labels = label_revs),
+                            # the segmentations with a CELL TABLE — what populations, tracks and track
+                            # clusters draw from, mask or not (`_overlay_segmentations`, the movie's list)
+                            cellTableNames = try _overlay_segmentations(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -1167,7 +1170,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !(plan.trackclust || any(x -> !isempty(first(x)), plan.segs))
+    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
@@ -1235,9 +1238,9 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 all_cells_col = String(_ov(ov_raw, :allCellsColour, OVERLAY_GREY))
                 mask_contour_px = Int(_ov(ov_raw, :maskContourPx, mask_contour_px))
                 # colourBy / colourOverrides ride on `ov_raw` (from `_overlays_raw_from_config`) —
-                # nothing to do here beyond forwarding; the author does the actual recolour. Empty
-                # / missing → pop-derived colours (pre-P5.5 behaviour).
-                cb_raw_v = _ov(ov_raw, :colourBy, nothing)
+                # the mask takes them only when asked (`maskColourBy`: the batch's `colourLabels`);
+                # else the per-id palette, as the viewer's mask. Absent (a prebuilt dict) = asked.
+                cb_raw_v = Bool(_ov(ov_raw, :maskColourBy, true)) ? _ov(ov_raw, :colourBy, nothing) : nothing
                 mask_cb = (cb_raw_v isa AbstractString && !isempty(String(cb_raw_v))) ?
                             String(cb_raw_v) : nothing
                 co_raw_v = _ov(ov_raw, :colourOverrides, nothing)

@@ -14,7 +14,7 @@ import { seedConfigFromViewState, clampContour, type BatchMovieCfg, type ViewSta
 import { viewPlaneZ, type ViewerViewState } from './viewState'
 import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
-import { trackableValueNames } from '../overlayAutoShow'
+import { trackableValueNames, CELL_POP_TYPES } from '../overlayAutoShow'
 import { colourForRender, channelsForRender } from '../viewerColormap'
 
 export interface ViewerLookInput {
@@ -31,8 +31,8 @@ export interface ViewerLookInput {
   trackVisible: Record<string, boolean>
   trackSourceColours: Record<string, string>
   showGatedTracks: boolean
-  /** the pop manager's pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
-  hiddenTrackPops: string[]
+  /** per segmentation, the pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
+  hiddenTrackPops: Record<string, string[]>
   pointSize: number
   pointBorder: number
   labelOpacity: number
@@ -46,14 +46,14 @@ export interface ViewerLookInput {
   colourOverrides: Record<string, string>
 }
 
-/** Default colour for a track source with no override — the viewer's own grey. */
-const TRACK_SOURCE_GREY = '#9ca3af'
-
 export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const popType = i.gating.popType || 'flow'
   const tracked = Object.keys(i.trackVisible).filter(vn => i.trackVisible[vn])
-  const popsOn = i.popVisible(popType)
+  // Every cell pop type that is on, on every segmentation — the viewer's population layers.
+  const popTypes = CELL_POP_TYPES.filter(pt => i.popVisible(pt))
+  const popsOn = popTypes.length > 0
   const popSeg = (popsOn ? i.gating.valueName : '') || tracked[0] || i.gating.valueName || i.maskValueName
+  const hidden = Object.fromEntries(Object.entries(i.hiddenTrackPops).filter(([, v]) => v.length))
   const is3D = i.viewState?.dims?.ndisplay === 3
   const c = i.viewState?.camera
   const canvas = i.viewState?.canvas
@@ -75,20 +75,25 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     // the 3D camera, for a batch that renders every image from the viewer's angle (Fill from view)
     ...(is3D && cam ? { camera3d: cam } : {}),
     showPopulations: popsOn,
+    // the pops are every segmentation's, of these types (`popAllSegmentations`); `popType` /
+    // `popValueName` stay the pop manager's — what a batch filled from this view picks
+    popTypes,
+    popAllSegmentations: true,
     popType,
-    // The pops' segmentation: the pop manager's while pops are on, else the first tracked one. The
-    // track kinds name their own segmentations (`trackSources`, track clusters on every one).
     ...(popSeg ? { popValueName: popSeg } : {}),
     showGatedTracks: i.showGatedTracks,
-    ...(i.hiddenTrackPops.length ? { hiddenTrackPops: i.hiddenTrackPops } : {}),
+    ...(Object.keys(hidden).length ? { hiddenTrackPops: hidden } : {}),
     // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
     // `loadTracks` fetches them for every trackable one)
     showTrackclust: i.popVisible('trackclust'),
     showTracks: tracked.length > 0,
     // every tracked segmentation the viewer knows, hidden ones too — a source the map does not name is
     // drawn (`resolveTrackSources`)
+    // (no colour = the viewer's default for it: the palette by its position among the drawn sources)
     trackSources: Object.fromEntries(Object.keys(i.trackVisible).map(vn =>
-      [vn, { visible: !!i.trackVisible[vn], colour: i.trackSourceColours[vn] || TRACK_SOURCE_GREY }])),
+      [vn, { visible: !!i.trackVisible[vn], colour: i.trackSourceColours[vn] ?? '' }])),
+    // the Tracks-legend colours of every ribbon source (`vn`, `vn::path`, `vn::trackclust::path`)
+    ...(Object.keys(i.trackSourceColours).length ? { trackSourceColours: i.trackSourceColours } : {}),
     pointsSize: i.pointSize,
     pointBorder: i.pointBorder,
     labelOpacity: i.labelOpacity,
@@ -152,7 +157,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     trackVisible: settings.getTrackVisibility(img.uid, trackableValueNames(img)),
     trackSourceColours: setUid ? settings.getTrackSourceColours(setUid) : {},
     showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
-    hiddenTrackPops: [...settings.getTrackPopHidden(img.uid, gating.valueName)],
+    hiddenTrackPops: Object.fromEntries(trackableValueNames(img).map(vn =>
+      [vn, [...settings.getTrackPopHidden(img.uid, vn)]])),
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
     pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
     labelOpacity: settings.viewerLabelOpacity,

@@ -148,33 +148,53 @@ export function buildPointBuffer(
   payload: OverlayPayload | null, meta: ViewerMeta | null, hidden: ReadonlySet<string> = new Set(),
   palette: readonly string[] = [],
 ): PointBuffer {
-  if (!payload || !meta) return EMPTY
-  const { label, t, x, y, z } = payload.cells
-  if (!label || !x || !y || label.length === 0) return EMPTY
+  return payload ? buildPointBufferLayers([{ payload, hidden }], meta, palette) : EMPTY
+}
 
+/** One population layer — a (segmentation, pop type) payload and the pop paths hidden in it. */
+export interface PointLayer {
+  payload: OverlayPayload
+  hidden?: ReadonlySet<string>
+}
+
+/**
+ * Every layer's points in ONE instance buffer, ordered by timepoint. The viewer draws the
+ * populations of every segmentation and every pop type that is on at once — a layer per
+ * (segmentation, pop type) — and the renderer has one points buffer, so they merge here.
+ */
+export function buildPointBufferLayers(
+  layers: readonly PointLayer[], meta: ViewerMeta | null, palette: readonly string[] = [],
+): PointBuffer {
+  if (!meta || !layers.length) return EMPTY
   const vz = meta.voxelUm[2] || 1
-  const row = new Map<number, number>()
-  for (let i = 0; i < label.length; i++) row.set(label[i], i)
 
-  const byValue = colourByValue(payload, palette)
-
-  // Emit (row, colour) pairs first, so the sort has something small to work on.
+  // Emit (layer, row, colour) triples first, so the sort has something small to work on.
+  const lay: number[] = []
   const rows: number[] = []
   const cols: number[] = []
-  for (const pop of payload.pops) {
-    // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
-    // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
-    // user switched on in the viewer still drew nothing, with a toggle that says it is on.
-    if (hidden.has(pop.path)) continue
-    const popRgb = hexToUnit(pop.colour)
-    for (const l of pop.labels) {
-      const r = row.get(l)
-      if (r === undefined) continue          // membership can name a cell the table no longer holds
-      rows.push(r)
-      // Colour-by wins over the population colour when it is on, which is what makes it useful: the
-      // populations are still what SELECTS the cells, the column is what shades them.
-      const rgb = byValue ? byValue(r) : popRgb
-      cols.push(rgb[0], rgb[1], rgb[2])
+  for (let li = 0; li < layers.length; li++) {
+    const { payload, hidden } = layers[li]
+    const { label, x, y } = payload.cells
+    if (!label || !x || !y || label.length === 0) continue
+    const row = new Map<number, number>()
+    for (let i = 0; i < label.length; i++) row.set(label[i], i)
+    const byValue = colourByValue(payload, palette)
+    for (const pop of payload.pops) {
+      // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
+      // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
+      // user switched on in the viewer still drew nothing, with a toggle that says it is on.
+      if (hidden?.has(pop.path)) continue
+      const popRgb = hexToUnit(pop.colour)
+      for (const l of pop.labels) {
+        const r = row.get(l)
+        if (r === undefined) continue          // membership can name a cell the table no longer holds
+        lay.push(li)
+        rows.push(r)
+        // Colour-by wins over the population colour when it is on, which is what makes it useful: the
+        // populations are still what SELECTS the cells, the column is what shades them.
+        const rgb = byValue ? byValue(r) : popRgb
+        cols.push(rgb[0], rgb[1], rgb[2])
+      }
     }
   }
   if (rows.length === 0) return EMPTY
@@ -188,7 +208,10 @@ export function buildPointBuffer(
   // populations. Once, when the overlays are fetched; never per frame. A worker would move a single
   // dropped frame off the main thread and add a transfer, a copy and a lifecycle to own.
   const order = rows.map((_, i) => i)
-  const tp = (i: number) => (t && t.length ? Math.round(t[rows[i]]) : 0)
+  const tp = (i: number) => {
+    const t = layers[lay[i]].payload.cells.t
+    return t && t.length ? Math.round(t[rows[i]]) : 0
+  }
   order.sort((a, b) => tp(a) - tp(b) || a - b)
 
   const data = new Float32Array(order.length * POINT_STRIDE)
@@ -197,9 +220,10 @@ export function buildPointBuffer(
   for (let n = 0; n < order.length; n++) {
     const i = order[n]
     const r = rows[i]
+    const { x, y, z } = layers[lay[i]].payload.cells
     const o = n * POINT_STRIDE
-    data[o] = x[r]
-    data[o + 1] = y[r]
+    data[o] = x![r]
+    data[o + 1] = y![r]
     data[o + 2] = z && z.length ? z[r] : 0
     data[o + 3] = cols[i * 3]
     data[o + 4] = cols[i * 3 + 1]
@@ -251,6 +275,26 @@ export function overlaySummary(p: OverlayPayload | null): {
     tracked,
     dropped: p.nDropped ?? 0,
   }
+}
+
+/** `overlaySummary` over several population layers. A segmentation's cells count once, however many
+ *  of its pop types are on (each layer carries the same cell table). */
+export function overlayLayersSummary(layers: readonly { vn: string; payload: OverlayPayload }[]): {
+  cells: number; pops: number; visible: number; tracked: number; dropped: number
+} {
+  const out = { cells: 0, pops: 0, visible: 0, tracked: 0, dropped: 0 }
+  const seen = new Set<string>()
+  for (const { vn, payload } of layers) {
+    const one = overlaySummary(payload)
+    out.pops += one.pops
+    out.visible += one.visible
+    if (seen.has(vn)) continue
+    seen.add(vn)
+    out.cells += one.cells
+    out.tracked += one.tracked
+    out.dropped += one.dropped
+  }
+  return out
 }
 
 // ── Filtering ────────────────────────────────────────────────────────────────────
@@ -533,7 +577,7 @@ export function buildMultiTrackBuffer(
   // Per-payload row grouping: (namespaced track id) → row indices. Group first so the O(N log N)
   // per-track sort stays inside a track. Rows are stored as flat records so the segment build below
   // is one linear pass over all payloads, not one per vn.
-  interface Row { t: number; x: number; y: number; z: number; id: number; source: number }
+  interface Row { t: number; x: number; y: number; z: number; id: number; raw: number; source: number }
   const rows: Row[] = []
   const perSource = payloads.map(() => 0)
   for (let i = 0; i < payloads.length; i++) {
@@ -543,7 +587,7 @@ export function buildMultiTrackBuffer(
     for (let j = 0; j < n; j++) {
       const raw = ctr[j]; if (raw <= 0) continue
       rows.push({ t: ct[j], x: cx[j], y: cy[j], z: cz.length ? cz[j] : 0,
-                  id: raw + (i + 1) * OFFSET, source: i })
+                  id: raw + (i + 1) * OFFSET, raw, source: i })
     }
   }
   if (!rows.length) return EMPTY_MULTI
@@ -598,8 +642,10 @@ export function buildMultiTrackBuffer(
   const popCache: [number, number, number][] = payloads.map((p, i) =>
     hexToUnit(p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
   const popRgb = (src: number): [number, number, number] => popCache[src] ?? [0.9, 0.9, 0.9]
+  // By the track's OWN id — not the source-namespaced grouping key — so a track keeps its colour
+  // whatever order the sources come in, and the movie (`_build_overlay_state`) can use the same rule.
   const trackRgb = (id: number): [number, number, number] =>
-    hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
+    hexToUnit(palette.length ? palette[Math.abs(Math.round(id)) % palette.length] : '#ffffff')
   const speedRgb = (speedSq: number): [number, number, number] => {
     if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
     const s = Math.sqrt(speedSq)
@@ -614,7 +660,7 @@ export function buildMultiTrackBuffer(
     const rgb = mode === 'speed' ? speedRgb(s.speedSq)
               : mode === 'solid' ? solidRgb(s.source)
               : mode === 'pop' ? popRgb(s.source)
-              : trackRgb(a.id)
+              : trackRgb(a.raw)
     const o = n * SEG_STRIDE
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
     data[o + 3] = b.x; data[o + 4] = b.y; data[o + 5] = b.z

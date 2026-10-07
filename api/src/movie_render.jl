@@ -634,7 +634,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
     end
     # The mask's segmentation, when the caller names it apart from the overlays' (`maskValueName`).
     mask_vn = _ov_str(overlays_config, "maskValueName", vn)
-    isempty(vn) && isempty(mask_vn) && !plan.trackclust && return (nothing, nothing)
+    isempty(vn) && isempty(mask_vn) && !plan.trackclust && !plan.pop_all_segs && return (nothing, nothing)
     isempty(vn) && (vn = mask_vn)
     # `frame` = the recorded version's `(arr, caxes)` — a mask from another version's grid is skipped.
     show_mask && frame !== nothing && !mask_fits_frame(img, mask_vn, frame...; on_log = on_log) &&
@@ -670,7 +670,10 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
                    # the pops' paths mean nothing in another segmentation's tree — that mask is every cell
                    all_cells = _ov_bool(overlays_config, "allCells", false) || mask_vn != vn,
                    all_cells_colour = _ov_str(overlays_config, "allCellsColour", OVERLAY_GREY),
-                   colour_by = colour_by, colour_overrides = colour_overrides)
+                   # colour-by only when asked (`maskColourBy`, the batch's `colourLabels`) — else
+                   # the per-id palette, as the viewer's mask
+                   colour_by = _ov_bool(overlays_config, "maskColourBy", true) ? colour_by : nothing,
+                   colour_overrides = colour_overrides)
     (per_t3d, mask)
 end
 

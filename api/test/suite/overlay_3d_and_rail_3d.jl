@@ -399,3 +399,31 @@ end
         @test n(paired) == 2 * n(alone)
     end
 end
+
+@testset "API: ribbon colours — one rule with the viewer (`_colour_hops` ≡ buildMultiTrackBuffer)" begin
+    pal = CECELIA_TRACK_PALETTE; n = length(pal)
+    c = RGB{N0f8}(0, 0, 0)
+    # a tracker gap is not drawn across, as in the viewer
+    hist = Dict((7, c, "") => [(0, 0.0, 0.0, 0.0), (1, 1.0, 0.0, 0.0), (3, 2.0, 0.0, 0.0), (4, 4.0, 0.0, 0.0)])
+    hops = _hops_of(hist)
+    @test sort([h[1] for h in hops]) == [1, 4]
+    @test isempty(_hops_of(hist; group = "/other"))
+    # by track: the track's own id, whatever source it is in
+    one = (; hops, solid = nothing, pop = nothing)
+    empty = (; hops = _Hop[], solid = nothing, pop = nothing)
+    col(segs) = unique(c for b in values(segs) for c in b.colour)
+    @test col(_colour_hops([one], "track")) == [pal[7 % n + 1]]
+    @test col(_colour_hops([empty, one], "track")) == [pal[7 % n + 1]]
+    # solid / pop: the source's own colour, else the palette's by position
+    @test col(_colour_hops([empty, one], "solid")) == [pal[2]]
+    @test col(_colour_hops([(; hops, solid = RGB{N0f8}(1, 0, 0), pop = nothing)], "solid")) == [RGB{N0f8}(1, 0, 0)]
+    @test col(_colour_hops([(; hops, solid = RGB{N0f8}(1, 0, 0), pop = RGB{N0f8}(0, 1, 0))], "pop")) == [RGB{N0f8}(0, 1, 0)]
+    # speed: µm hop length, over EVERY source's range — the slow source's hop is the ramp's low end
+    slow = (; hops = [(1, 1, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, c)], solid = nothing, pop = nothing)
+    fast = (; hops = [(1, 2, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, c)], solid = nothing, pop = nothing)
+    segs = _colour_hops([slow, fast], "speed")
+    @test Set(segs[1].colour) == Set([_heat_ramp(0.0), _heat_ramp(1.0)])
+    # ... and z counts, in µm (`um` = µm per voxel, x y z)
+    upz = (; hops = [(1, 3, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, c)], solid = nothing, pop = nothing)
+    @test _colour_hops([slow, upz], "speed"; um = (1.0, 1.0, 3.0))[1].colour[2] == _heat_ramp(1.0)
+end
