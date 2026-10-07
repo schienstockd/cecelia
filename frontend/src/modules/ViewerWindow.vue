@@ -60,7 +60,7 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import { adapterNameText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
+import { adapterNameText, classifiedByText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -178,6 +178,11 @@ const stableAdapterReport = ref<AdapterReport | null>(null)
 /** Raw adapter readout (every `powerPreference`, plus page context) for the Debug panel's GPU block and
  *  the bench JSON — the evidence for WHY `stableAdapterReport.looksDiscrete` came out the way it did. */
 const gpuDiag = ref<GpuDiagnostics | null>(null)
+/** Which signal decided `stableAdapterReport.looksDiscrete` — the Debug panel's "Classified" row. */
+const classifiedByLabel = computed(() => {
+  const a = stableAdapterReport.value
+  return a ? classifiedByText(a.name, a.maxTextureDimension3D, a.subgroupMinSize) : ''
+})
 /**
  * Which renderer kind currently backs `renderer.value` / `tileRenderer.value`. Consulted inside
  * `ensureRenderer` to decide "reuse vs. destroy+recreate" atomically, so a `bricksEnabled` flip
@@ -4413,6 +4418,7 @@ async function start() {
         maxTextureDimension3D: probe.limits.maxTextureDimension3D,
         maxBufferSize: probe.limits.maxBufferSize,
         looksDiscrete: probe.looksDiscrete,
+        subgroupMinSize: probe.subgroupMinSize,
         hasTimestamps: probe.hasTimestamps,
         name: probe.name,
         // The Settings-diagnostic probe doesn't have a device to test binding_array against —
@@ -6112,9 +6118,8 @@ onUnmounted(() => {
           <div class="cc-eyebrow cc-fs-2xs vw-debug-head">GPU</div>
           <div class="vw-bench-grid cc-fs-3xs">
             <template v-if="stableAdapterReport">
-              <span class="cc-muted" v-tooltip.left="'Name first; the 3D texture limit only when the name is blank'">Classified</span>
-              <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }}
-                ({{ adapterNameText(stableAdapterReport.name) ? 'by name' : 'by limit — blank name' }})</span>
+              <span class="cc-muted" v-tooltip.left="'Name first; subgroup size, then the 3D texture limit, when the name is blank'">Classified</span>
+              <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }} ({{ classifiedByLabel }})</span>
             </template>
             <template v-for="a in gpuDiag?.adapters ?? []" :key="a.powerPreference">
               <span class="cc-muted">{{ a.powerPreference }}</span>
