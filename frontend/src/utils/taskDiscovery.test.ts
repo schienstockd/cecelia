@@ -14,9 +14,11 @@ describe('checkLine', () => {
     expect(checkLine(after, 'use', [drifted, drifted])).toEqual(
       { text: 'After Drift correction', severity: 'ok', summary: '2 of 2 images drift-corrected' })
   })
-  it('a use line met on only some stays neutral and names the misses', () => {
+  it('a use line missed on any image warns and names the misses', () => {
     expect(checkLine(after, 'use', [drifted, raw, raw])).toEqual(
-      { text: 'After Drift correction', summary: '2 of 3 images not drift-corrected' })
+      { text: 'After Drift correction', severity: 'warn', summary: '2 of 3 images not drift-corrected' })
+    expect(checkLine(after, 'use', [raw])).toEqual(
+      { text: 'After Drift correction', severity: 'warn', summary: 'Selected image not drift-corrected' })
   })
   it('a not line whose condition holds warns; otherwise neutral', () => {
     const bare = img(), calibrated = img({ physicalSizeX: 0.5, physicalSizeY: 0.5 })

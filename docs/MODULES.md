@@ -156,8 +156,9 @@ when it is — and is not — the right step. `purpose` is one line; `useWhen` t
   picker) and the MCP (`get_task_catalogue`, `get_module_params`, which always get plain text). There
   is no separate troubleshooting doc.
 - **A line may carry an advisory check:** `{ "text": "After Drift correction: …", "check":
-  "driftCorrected" }`. The task page runs it over the selected images: a `useWhen` line that holds for
-  all of them shows ok, a `notWhen` line whose condition holds for any shows a warning, with a count
+  "driftCorrected" }`. The task page runs it over the selected images: a `useWhen` line shows ok when
+  it holds for all of them and a warning when any misses it; a `notWhen` line warns when its condition
+  holds for any. Each finding carries a count
   ("2 of 3 images not drift-corrected"). `!id` negates (`"!pixelSizeSet"` for "Pixel sizes missing").
   Ids live in `TASK_CHECKS` (`frontend/src/utils/taskDiscovery.ts`), answered from the image the
   store already holds — no request; an unknown id fails `taskDiscovery.test.ts`. A check never blocks
