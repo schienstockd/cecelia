@@ -28,6 +28,18 @@ _cell_cards_dir(img_dir::String) = joinpath(img_dir, "analysis", "cell_cards")
 _cell_cards_sidecar(img_dir::String, value_name::String, suffix::String) =
     joinpath(_cell_cards_dir(img_dir), "$(value_name)__$(suffix).json")
 
+# Why a request's `valueName` / `suffix` can't name a file stem, or `nothing`. Both are joined onto
+# `labelProps/` (the clustfeatures lookup) and `analysis/cell_cards/` (the sidecar write), so each must
+# be one path component: `../labelProps/B` or an absolute `/…/labelProps/B` resolves to a real run and
+# writes the sidecar outside `cell_cards/`. Same rule as `Cecelia.value_name_problem` (#1510) —
+# switch to it once that lands.
+function _cell_cards_name_problem(v::AbstractString)::Union{Nothing,String}
+    isempty(v) && return "cannot be empty"
+    (occursin('/', v) || occursin('\\', v)) && return "cannot contain a path separator"
+    (v == "." || v == "..") && return "is not a usable name"
+    nothing
+end
+
 # mtime of the `clusters.{suffix}` writer's most recent output on this pool member — used as the
 # cheap staleness key. Uses the tracks h5ad's own mtime (the cluster column lives there, so a
 # clustering run rewrites it). Non-existent path → 0.0 so a stale-then-missing degrades to "always
@@ -110,6 +122,11 @@ function api_cell_cards(body_bytes::Vector{UInt8})
     suffix   = _wstr(data, :suffix)
     (isempty(pu) || isempty(root_uid) || isempty(suffix)) &&
         return 400, JSON3.write((; error = "projectUid, rootUid, suffix required"))
+    for (field, v) in (("valueName", vn), ("suffix", suffix))
+        isempty(v) && continue   # an absent valueName is derived from disk below
+        prob = _cell_cards_name_problem(v)
+        prob === nothing || return 400, JSON3.write((; error = "$field $prob"))
+    end
 
     pops_raw = get(data, :pops, nothing)
     pops_raw isa AbstractVector ||
