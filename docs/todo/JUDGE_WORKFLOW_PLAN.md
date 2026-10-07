@@ -43,7 +43,8 @@ corrects one of that brief's premises (below).
 ### D1. Batch the sweep until the queue is empty, under a dollar budget
 
 The sweep judges 40 items per call, and calls again until nothing is left or `SWEEP_USD` is spent.
-Proposed default: **$4**, about 200 items, twice the measured weekly inflow. Order:
+Default: **$4**. A call starts only while what's spent plus its whole $1.50 budget fits, so the cap
+holds: four calls, 160 items, against a measured inflow of about 100 a week. Order:
 1. bugs with a landed fix (shipped in #1490);
 2. carried `open` bugs;
 3. oldest first.
