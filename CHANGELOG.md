@@ -33,7 +33,9 @@ _Changes on `main` that have not yet been tagged in a release._
 
 - **Other accounts can start a shared install.** Julia used to fail for any account except the one
   that installed it, while trying to write into the shared, read-only package folder. Each account
-  now gets its own small writable Julia folder.
+  now gets its own small writable Julia folder. On Windows, other accounts also couldn't run the
+  installed Python ("Access is denied"). On Linux, other accounts could write into the shared folder.
+  Both are fixed, and every OS is now tested in CI with a second, non-admin account.
 
 ## [0.2.10] — 2026-10-02
 

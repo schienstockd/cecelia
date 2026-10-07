@@ -224,7 +224,9 @@ curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.s
 
 `… | sudo sh` also works: the installer hands the work to the account that ran `sudo`. The install
 has to live outside a home directory, because Ubuntu's home dirs are private (`750`) and other
-accounts couldn't reach it there. On Windows, run an elevated PowerShell. See `docs/SHIPPING.md` →
+accounts couldn't reach it there. On Windows, run an elevated PowerShell. The install then belongs to
+the Administrators group, the Windows convention for Program Files: every account can run it, and
+an administrator updates it by re-running the installer elevated. See `docs/SHIPPING.md` →
 *Install scope* for the full model and its verification status.
 
 ## Uninstall

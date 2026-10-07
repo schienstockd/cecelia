@@ -369,23 +369,31 @@ reports it, `/api/update/apply` returns 403 for a `system` scope, and Settings �
 header badge) show an "updates must be run by an administrator (re-run the install-system script)"
 note instead of the Update button. Re-running `install.sh` as root updates the shared install.
 
-> **Verification status (2026-10-06).** Linux system scope was verified end to end in a `bwrap`
-> sandbox:
-> - a full install of v0.2.10 as a non-root owner, with a fake `/opt`;
-> - the server launched as a different uid against the read-only install, reaching `/api/health`
->   in 10 s.
+> **Verification status (2026-10-07).** The system scope on all three OSes is verified end to end in
+> CI by `.github/workflows/verify-system-install.yml`, which runs whenever the install scripts
+> change. It installs from the branch as:
+> - the admin on Ubuntu and macOS, both ways: as the admin, and via `| sudo sh`;
+> - an elevated admin on Windows.
 >
-> The control launch with the old `JULIA_DEPOT_PATH` died with `EROFS`. Not covered there: the
-> `sudo sh` → `$SUDO_USER` hand-over (sudo can't run in the sandbox), Pluto notebooks for non-owners,
-> and real OS permissions as opposed to a read-only bind.
+> It then checks:
+> 1. ownership, and that nothing landed in root's home;
+> 2. that a second, non-admin account can start the app against the install it cannot write, reaching
+>    `/api/health` (23–53 s);
+> 3. that the uninstaller refuses while that account is running it;
+> 4. the uninstall itself: install and menu entry gone, settings kept, projects wiped.
 >
-> Earlier status: the user-scope path is verified on Linux. The **system-scope path is otherwise
-> not yet verified on a real multi-user box — Linux, macOS, or Windows.** All three
-> are multi-user, and macOS is the *primary* target, so this matters most there. Unverified in
-> particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, the juliaup
-> `--path`, and the portable juliaup on Windows), whether a non-admin account can `pixi run` a root-owned read-only env, and the
-> all-users launchers (`/usr/share/applications`, `/Applications/Cecelia.command`, the CommonPrograms
-> shortcut). First real test is a shared account on each OS.
+> **Bugs the workflow found and fixed:**
+> - The pixi env lock on a read-only env.
+> - The unstacked Julia depot (EROFS).
+> - A group-writable shared tree on Linux.
+> - Root-only `TMPDIR` under `sudo` on macOS.
+> - Hard-linked env files carrying the admin's private ACL on Windows (fixed with `icacls /reset`).
+> - Two script-encoding traps: bash 3.2's `$VAR…`, and PowerShell 5.1 reading `.ps1` as Windows-1252.
+>
+> `test_shell_var_unicode_convention.py` guards the last two.
+>
+> **Still unverified:** Pluto notebooks for non-owners (`docs/TODO.md`), and real-hardware GPU
+> paths, which CI runners can't cover.
 
 ---
 

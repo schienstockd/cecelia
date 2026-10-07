@@ -1,6 +1,6 @@
 # System install owned by the admin account + a complete uninstaller
 
-Status: building (2026-10-06) · branch `feat/install-scope-uninstall`
+Status: built, CI-verified on Linux/macOS/Windows (2026-10-07) · branch `feat/install-scope-uninstall`
 
 Two asks from the first real system-scope install (Ubuntu, admin account `cecelia`):
 
@@ -118,6 +118,32 @@ owner stage one through the app would leave it half-applied for everyone else.
   projects dir surviving, refusal with no terminal, refusal while running, refusal on a git checkout.
 - **`uninstall.ps1`:** the same cases under pwsh on Linux, with fake profile dirs.
 
+## Verified in CI on all three OSes (2026-10-07)
+
+`.github/workflows/verify-system-install.yml` performs a real system install from the branch:
+- on Ubuntu and macOS, run as the admin and via `| sudo sh`;
+- on Windows, elevated.
+
+It then starts the app as a second, non-admin account and runs the uninstall checks. Five bugs
+surfaced along the way, none of them visible in the sandbox:
+- **macOS root `TMPDIR` is root-only.** The `sudo` hand-over now uses `/tmp`.
+- **The shared tree was group-writable on Linux.** The installer now applies `go-w`.
+- **Windows hard links shared the admin's private ACL.** `icacls /reset` now runs after a system
+  install. The cause: pixi hard-links env files from the admin's cache, and on NTFS a hard link
+  shares the file's ACL.
+- **`$INSTALL_DIR…` under bash 3.2** (macOS `/bin/sh`) read the `…` byte into the variable name.
+- **Windows PowerShell 5.1 reads a BOM-less `.ps1` as Windows-1252,** so a `—` inside a string broke
+  the parse.
+
+The last two are guarded by `test_shell_var_unicode_convention.py`.
+
+**D7 (Windows ownership).** Windows keeps the platform convention:
+- the install belongs to Administrators, under Program Files;
+- updates and uninstall run in an elevated shell.
+
+An elevated admin process runs as that admin, so the caches land in their profile rather than a
+root-like account. That is the same outcome D1 achieves on Linux/macOS.
+
 ## Not verified here
 
 - Pluto notebooks for a non-owner of a shared install. Notebook setup and the sysimage build write
@@ -125,6 +151,5 @@ owner stage one through the app would leave it half-applied for everyone else.
   everyone but the owner. Optional pixi envs (Settings → System) are now refused with a 403 for
   non-owners (`api/src/system_api.jl`).
 
-- macOS and Windows: there is no box. `uninstall.ps1` is authored and parse-checked only.
-- The sudo/`SUDO_USER` hand-over, because `sudo` cannot run inside the sandbox. The non-root path it
-  delegates to is the one that gets verified.
+- Real lab hardware: GPU paths, and a macOS `.app` double-click by a non-admin. CI starts the
+  launcher from a shell.
