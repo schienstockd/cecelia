@@ -11,6 +11,7 @@ import { openColorLegend } from '../lib/colorLegendOpen'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 import { shortVersionLabel } from '../utils/versionLabel'
+import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -30,6 +31,7 @@ function openTips() { openWhatsNew({ withTip: true }) }
 // Compact form of appCtl.updateCurrent for the header chip; long dev-provenance line collapses to
 // `dev@<sha7>` (or `<branch>@<sha7>` off-main). Full string stays in the tooltip.
 const versionShort = computed(() => shortVersionLabel(appCtl.updateCurrent))
+const restartUpd = useRestartToUpdate()
 
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
@@ -137,6 +139,14 @@ const statusTip: Record<string, string> = {
               v-tooltip.bottom="'Remind me later'" aria-label="Dismiss update notice">
         <i class="pi pi-times" />
       </button>
+    </span>
+    <!-- Update downloaded but not installed yet: it lands on the next restart, so say so here
+         rather than leaving the user to guess. -->
+    <span v-else-if="restartUpd.show.value" class="update-badge"
+          :class="{ 'update-blocked': restartUpd.blocked.value }"
+          v-tooltip.bottom="restartUpd.tip.value" @click="restartUpd.restart">
+      <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+      {{ appCtl.busy ? 'Updating…' : 'Restart to update' }}
     </span>
 
     <!-- Active profile chip (USER_PROFILE_PLAN Phase 4). Shows who is driving so every window
@@ -293,6 +303,7 @@ const statusTip: Record<string, string> = {
 .update-txt { display: inline-flex; align-items: center; gap: 0.35rem; }
 .update-badge:hover { background: color-mix(in srgb, var(--cc-accent) 34%, transparent); }
 .update-badge .pi-arrow-circle-up { font-size: var(--cc-fs-md); }
+.update-blocked { opacity: 0.6; cursor: default; }
 .update-x { color: inherit; opacity: 0.7; }   /* + cc-btn cc-btn-bare cc-btn-icon */
 .update-x:hover { opacity: 1; }
 </style>
