@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
-import { probeWebGpu, adapterNameText, isAppleAdapter, type GpuProbeReport } from '../utils/webgpuProbe'
+import { probeWebGpu, adapterNameText, classifiedByText, isAppleAdapter, type GpuProbeReport } from '../utils/webgpuProbe'
 import { SEVERITY, type Severity } from '../lib/severity'
 
 const report  = ref<GpuProbeReport | null>(null)
@@ -30,6 +30,11 @@ const severity = computed<Severity>(() => {
 const sevStyle = computed(() => SEVERITY[severity.value])
 const adapterText = computed(() => report.value ? adapterNameText(report.value.name) : '')
 const isApple = computed(() => !!report.value && isAppleAdapter(report.value.name))
+/** Which fallback classified a blank-name adapter — subgroup size when reported, else the 3D limit. */
+const blankNameBasis = computed(() => {
+  const r = report.value
+  return r?.limits ? classifiedByText(r.name, r.limits.maxTextureDimension3D, r.subgroupMinSize) : 'by 3D limit'
+})
 const gpuTypeLabel = computed(() => {
   if (!report.value) return ''
   if (isApple.value) return 'Apple GPU (unified memory)'
@@ -105,7 +110,7 @@ function fmt(n: number | undefined | null): string {
 
         <span>GPU type</span>
         <span>{{ gpuTypeLabel }}<template
-          v-if="!adapterText"> (from limits — the browser gives no adapter name)</template></span>
+          v-if="!adapterText"> ({{ blankNameBasis }} — the browser gives no adapter name)</template></span>
 
         <span>Ready</span>
         <span v-if="report.hasR16Uint === true">Yes</span>
