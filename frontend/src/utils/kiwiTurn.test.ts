@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { refKey, refLabel, chipState, pointTarget, draftAdd, draftRemove, parseDraft, upsertTurn,
          turnMeta, searchRefs, viewerRefFor, kindLabel, claimText, plainError, attachmentRows, claimRows,
-         TASK_PAGES, type KiwiTurn } from './kiwiTurn'
+         TASK_PAGES, taskLanding, type KiwiTurn } from './kiwiTurn'
+
+// The built-in task specs, read raw (Vite glob — this tsconfig has no node types for `fs`).
+const TASK_SPECS = import.meta.glob('../../../app/src/tasks/**/*.json',
+                                    { import: 'default', eager: true }) as
+  Record<string, { fun_name?: string; task?: string } | undefined>
 import { KIWI_REF_KINDS, type KiwiRef } from './kiwiRef'
 
 const img: KiwiRef = { kind: 'image', imageUid: 'KDIeEm' }
@@ -50,6 +55,25 @@ describe('pointTarget', () => {
     expect(pointTarget({ kind: 'task', funName: 'cleanupImages.driftCorrect' }))
       .toEqual({ action: 'route', path: '/cleanup', rememberFn: { module: 'cleanup', task: 'driftCorrect' } })
     expect(pointTarget({ kind: 'task', funName: 'myCat.thing' })).toEqual({ action: 'route', path: '/custom/myCat' })
+  })
+  it('a task chip pre-selects the spec\'s task key, not the fun_name suffix', () => {
+    const defs = new Map([['segment.cellpose', { task: 'cellposeSegment' }]])
+    expect(pointTarget({ kind: 'task', funName: 'segment.cellpose' }, defs))
+      .toEqual({ action: 'route', path: '/segment', rememberFn: { module: 'segment', task: 'cellposeSegment' } })
+  })
+  it('lands every real built-in task on the key TaskRunner remembers (def.task)', () => {
+    // The real specs: TaskRunner stores `def.task`, which differs from the fun_name suffix for ~20
+    // of them — a chip that remembered the suffix opened the right page with the wrong function.
+    const specs = Object.values(TASK_SPECS).filter(
+      (s): s is { fun_name: string; task: string } => typeof s?.fun_name === 'string' && typeof s?.task === 'string')
+    expect(specs.length).toBeGreaterThan(40)
+    const defs = new Map(specs.map(s => [s.fun_name, s]))
+    const differ = specs.filter(s => s.fun_name.split('.').slice(1).join('.') !== s.task && taskLanding(s.fun_name))
+    expect(differ.length).toBeGreaterThan(10)                    // the case this guards is real
+    for (const s of specs) {
+      const t = pointTarget({ kind: 'task', funName: s.fun_name }, defs)
+      if (t.action === 'route' && t.rememberFn) expect(t.rememberFn.task).toBe(s.task)
+    }
   })
   it('every task page is a route the app has', () => {
     for (const p of Object.values(TASK_PAGES)) expect(p.path).toMatch(/^\/[a-z-]+$/)
