@@ -37,6 +37,7 @@ import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
+import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
 
@@ -874,8 +875,14 @@ const paletteCategories = computed(() => {
     const cat = def.category || def.fun_name.split('.')[0]
     ;(byCategory[cat] ??= []).push(def)
   }
+  // same sub-headings as the module page's Function picker; one untitled section when headings
+  // wouldn't help (fewer than two groups)
   return Object.entries(byCategory).sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, defs]) => ({ name, defs }))
+    .map(([name, defs]) => ({
+      name,
+      sections: groupTaskDefs(defs)
+        ?? [{ title: '', defs: [...defs].sort((x, y) => x.label.localeCompare(y.label)) }] as TaskGroup[],
+    }))
 })
 
 // ── Drag-and-drop from palette ─────────────────────────────────────────────
@@ -1543,22 +1550,25 @@ onActivated(async () => {
               class="palette-category"
             >
               <div class="palette-cat-heading cc-eyebrow cc-fs-2xs">{{ cat.name }}</div>
-              <div
-                v-for="def in cat.defs"
-                :key="def.fun_name"
-                class="palette-item"
-                draggable="true"
-                @dragstart="onPaletteDragStart($event, def)"
-                v-tooltip.top="paletteTooltip(def)"
-              >
-                <i class="pi pi-ellipsis-v drag-grip" />
-                <span class="palette-item-label">{{ def.label }}</span>
-                <span
-                  v-for="ax in requiredAxesFor(def)"
-                  :key="ax"
-                  class="palette-axis-badge"
-                >{{ ax }}</span>
-              </div>
+              <template v-for="sec in cat.sections" :key="sec.title">
+                <div v-if="sec.title" class="palette-subheading cc-muted cc-fs-2xs">{{ sec.title }}</div>
+                <div
+                  v-for="def in sec.defs"
+                  :key="def.fun_name"
+                  class="palette-item"
+                  draggable="true"
+                  @dragstart="onPaletteDragStart($event, def)"
+                  v-tooltip.top="paletteTooltip(def)"
+                >
+                  <i class="pi pi-ellipsis-v drag-grip" />
+                  <span class="palette-item-label">{{ def.label }}</span>
+                  <span
+                    v-for="ax in requiredAxesFor(def)"
+                    :key="ax"
+                    class="palette-axis-badge"
+                  >{{ ax }}</span>
+                </div>
+              </template>
             </div>
 
             <div v-if="!paletteCategories.length" class="palette-hint palette-hint-retry cc-muted">
@@ -2019,6 +2029,7 @@ onActivated(async () => {
 .palette-category { margin-bottom: 0.25rem; }
 
 .palette-cat-heading { padding: 0.5rem 0.65rem 0.2rem; }   /* + .cc-eyebrow .cc-fs-2xs */
+.palette-subheading { padding: 0.25rem 0.65rem 0.1rem 1rem; }   /* + .cc-muted .cc-fs-2xs */
 
 .palette-item {
   display: flex;

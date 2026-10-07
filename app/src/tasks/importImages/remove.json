@@ -3,6 +3,7 @@
   "fun_name": "importImages.remove",
   "label": "Remove image data",
   "category": "Manage images",
+  "group": "Manage",
   "env": ["local"],
   "hidden": true,
   "resource_pool": "cpu",

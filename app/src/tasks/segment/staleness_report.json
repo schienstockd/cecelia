@@ -6,6 +6,7 @@
   "useWhen": ["After a label correction, to see what needs re-running"],
   "notWhen": ["To clear stale results: it only reports, never deletes"],
   "category": "Segment",
+  "group": "Correction tools",
   "env": ["local"],
   "resource_pool": "io",
   "params": [

@@ -6,6 +6,7 @@
   "useWhen": ["Replay or audit hand corrections from a chain or the REPL"],
   "notWhen": ["Measures needed afterwards: use Correct labels + measures"],
   "category": "Segment",
+  "group": "Correct",
   "env": ["local"],
   "resource_pool": "io",
   "qcPlot": "segmentation_qc",

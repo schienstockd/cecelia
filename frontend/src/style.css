@@ -206,14 +206,6 @@ body {
 .qc-tip .qcf-a::before { content: '→ '; }
 .qc-tip .cc-module-tag { margin-right: 0.35rem; }
 
-/* Use-when / not-when behind the purpose line under TaskRunner's function picker
-   (utils/taskDiscovery.ts discoveryTooltipHtml). Structured like `.qc-tip`, scoped the same way. */
-.cc-tooltip.td-tip { max-width: min(340px, calc(100vw - 1rem)); }
-.td-tip .cc-tooltip-text { text-align: left; }
-.td-tip .td-head { color: var(--cc-text-dim); font-weight: 600; }
-.td-tip .td-not { margin-top: 0.4rem; }
-.td-tip .td-line::before { content: '· '; color: var(--cc-text-dim); }
-
 /* Per-run breakdown behind the image table's module status badge, shown only when an image has more
    than one run in that module (ImageTable's `imageModuleStatusTip`). Plain text — this exists purely
    so the newlines survive, and stays scoped so the ~200 phrase tooltips keep collapsing theirs. */

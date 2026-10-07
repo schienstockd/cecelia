@@ -12,6 +12,7 @@
     "Can mistake cell motion for distortion and warp it away"
   ],
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "flowRegistered",

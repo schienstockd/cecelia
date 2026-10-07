@@ -16,6 +16,7 @@ import { movieAxisPlaceholder, parseMovieAxis } from '../utils/movieSize'
 import { useFieldDraft } from '../composables/useFieldDraft'
 import SuggestInput from './SuggestInput.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import RangeSlider from './RangeSlider.vue'
 import { RENDER_QUALITIES, type RenderQuality } from '../utils/batchMovie'
 
 const props = withDefaults(defineProps<{
@@ -51,6 +52,9 @@ const props = withDefaults(defineProps<{
   // the form shows the plane the user is already looking at rather than plane 0. Null = no fallback
   // (batch surface has no single viewer to inherit from).
   defaultZ?: number | null
+  // A range of planes `[lo, hi]`: 2D the max over them ("max"), 3D the box rendered. Pass it (null =
+  // none) and both appear; omit it and the row is slice / 3D only, as on the viewer recorder.
+  zRange?: [number, number] | null
   // 3D ray-cast sample density (the 3D renderer's one quality knob — it always reads the full-res
   // volume). Pass it and the row appears while 3D is picked; omit it and the row is absent.
   renderQuality?: RenderQuality | null
@@ -67,6 +71,7 @@ const emit = defineEmits<{
   (e: 'update:scaleBar', v: boolean): void
   (e: 'update:show3D', v: boolean): void
   (e: 'update:zSlice', v: number): void
+  (e: 'update:zRange', v: [number, number] | null): void
   (e: 'update:renderQuality', v: RenderQuality): void
 }>()
 
@@ -78,6 +83,31 @@ const Z_OPTIONS: ChipOption[] = [
   { value: '3d', label: '3D' },
   { value: 'slice', label: 'slice' },
 ]
+// "max" — the max over a range of slices, the viewer's ±n window in 2D.
+const Z_OPTIONS_RANGE: ChipOption[] = [...Z_OPTIONS, { value: 'max', label: 'max' }]
+const hasZRange = computed(() => props.zRange !== undefined)
+const zMax = computed(() => Math.max((props.sizeZ ?? 1) - 1, 0))
+const zMode = computed(() => props.show3D ? '3d' : props.zRange ? 'max' : 'slice')
+// The range on the sliders: the authored one, else the whole stack (3D) / two either side of the
+// slice ("max"), clamped to the shallowest stack.
+const zPair = computed<[number, number]>(() => {
+  const c = (v: number) => Math.max(0, Math.min(zMax.value, Math.round(v)))
+  if (props.zRange) return [c(props.zRange[0]), c(props.zRange[1])]
+  if (props.show3D) return [0, zMax.value]
+  const z = props.zSlice ?? props.defaultZ ?? 0
+  return [c(z - 2), c(z + 2)]
+})
+function setZMode(v: string) {
+  emit('update:show3D', v === '3d')
+  if (!hasZRange.value) return
+  // "slice" drops the range; "max" starts from the planes around the slice; 3D keeps a range it has
+  if (v === 'slice') emit('update:zRange', null)
+  else if (v === 'max' && !props.zRange) emit('update:zRange', zPair.value)
+}
+// The whole stack in 3D is no range at all — so a batch over deeper stacks renders all of each.
+function setZPair(lo: number, hi: number) {
+  emit('update:zRange', props.show3D && lo <= 0 && hi >= zMax.value ? null : [lo, hi])
+}
 // one multi-select row, ON = burnt into the movie. No per-option tips: the row carries one tooltip
 // for the whole control, and a second one on the chip renders on top of it.
 const OVERLAY_OPTIONS: ChipOption[] = [
@@ -154,11 +184,18 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
          volumetric render. Hidden entirely for an image with no z depth. -->
     <span v-if="(sizeZ ?? 0) > 1" class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs">z</span>
-      <ChipSelect variant="segmented" :options="Z_OPTIONS" :model-value="show3D ? '3d' : 'slice'"
+      <ChipSelect variant="segmented" :options="hasZRange ? Z_OPTIONS_RANGE : Z_OPTIONS" :model-value="zMode"
                   aria-label="How much of the z stack to record"
-                  v-tooltip.bottom="'Record the whole stack in 3D, or one z slice'"
-                  @update:model-value="$emit('update:show3D', $event === '3d')" />
-      <template v-if="!show3D">
+                  v-tooltip.bottom="hasZRange ? 'Record in 3D, one z slice, or the max over a range of slices'
+                                              : 'Record the whole stack in 3D, or one z slice'"
+                  @update:model-value="setZMode(String($event))" />
+      <template v-if="hasZRange && (zMode === 'max' || show3D)">
+        <RangeSlider class="mo-range" :lo="zPair[0]" :hi="zPair[1]" :min="0" :max="zMax" :step="1"
+                     v-tooltip.bottom="show3D ? 'Slices to render' : 'Slices to take the max over'"
+                     @update:lo="v => setZPair(v, zPair[1])" @update:hi="v => setZPair(zPair[0], v)" />
+        <span class="mo-val cc-readout">{{ zPair[0] }}–{{ zPair[1] }}</span>
+      </template>
+      <template v-else-if="!show3D">
         <input type="range" min="0" :max="(sizeZ ?? 1) - 1" step="1" class="mo-range"
                :value="zSlice ?? defaultZ ?? 0" v-tooltip.bottom="'Which z slice to record'"
                @input="$emit('update:zSlice', ($event.target as HTMLInputElement).valueAsNumber)" />

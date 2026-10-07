@@ -67,6 +67,7 @@ def _ridge_field(shape_yx, seed=1):
 @unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
 class RidgesRunnerTest(unittest.TestCase):
     SHAPE = dict(size_t=3, size_z=1, size_c=2, size_y=20, size_x=24)
+    NSCALES = 1
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -90,9 +91,10 @@ class RidgesRunnerTest(unittest.TestCase):
                                     0, np.iinfo(np.uint16).max).astype(np.uint16)
 
         self.in_path = os.path.join(self.dir, 'in.ome.zarr')
-        _, level0, _ = zarr_utils.open_multiscales_for_writing(
-            self.in_path, tuple(shape), np.uint16, du, nscales=1)
+        group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+            self.in_path, tuple(shape), np.uint16, du, nscales=self.NSCALES)
         level0[:] = data
+        zarr_utils.write_multiscale_pyramid(group, level0, du, self.NSCALES, list(pchunks))
         ome_xml_utils.save_meta_in_zarr(self.in_path, omexml=omexml)
         self.du, self.shape, self.data = du, shape, data
 
@@ -105,6 +107,7 @@ class RidgesRunnerTest(unittest.TestCase):
                       outputValueName='ridges')
         params.update(over)
         self.runner.run(params)
+        self.out_path = out
         return np.asarray(zarr_utils.open_as_zarr(out, as_dask=False)[0][0][:])
 
     def test_all_three_filters_produce_a_label_store_with_ridge_pixels(self):
@@ -152,3 +155,18 @@ class RidgesRunnerTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RidgesRunnerPyramidTest(RidgesRunnerTest):
+    """The mask gets as many levels as the image. A shallower mask has nothing to draw when the
+    viewer zooms out on a pyramided image — and reading full-res instead does not scale to a
+    tilescan."""
+    NSCALES = 3
+
+    def test_mask_has_the_image_s_levels_downsampled_nearest(self):
+        labels0 = self._run()
+        levels, _ = zarr_utils.open_as_zarr(self.out_path, as_dask=False)
+        self.assertEqual(len(levels), self.NSCALES)
+        # Nearest (strided), so every id at a lower level is a real id of level 0 — never a blend.
+        np.testing.assert_array_equal(np.asarray(levels[1][:]), labels0[:, ::2, ::2])
+        np.testing.assert_array_equal(np.asarray(levels[2][:]), labels0[:, ::4, ::4])

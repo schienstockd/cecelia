@@ -337,6 +337,24 @@ end
     end
 end
 
+@testset "API: viewer — a mask is read at the exact level, never clamped to its own depth" begin
+    # Clamped, a zoomed-out viewer got the mask's full-size L0 for an L1 request — a shape-guard error
+    # for the overlay and a wrong cell for a pick. The gap is now a refusal the client can act on.
+    mktempdir() do d
+        p = joinpath(d, "mask.zarr")
+        ds = [Dict("path" => "0"), Dict("path" => "1")]
+        g = zgroup(Zarr.DirectoryStore(p); attrs = Dict("multiscales" => [Dict(
+            "axes" => [Dict("name" => n) for n in ("y", "x")], "datasets" => ds)]))
+        zcreate(UInt32, g, "0", 8, 6; chunks = (8, 6))
+        zcreate(UInt32, g, "1", 4, 3; chunks = (4, 3))
+        @test label_level(p, 0) == (0, nothing)
+        @test label_level(p, 1) == (1, nothing)
+        lvl, err = label_level(p, 2)
+        @test err == "mask has 2 levels; the view needs level 2"
+        @test label_level(p, -1) == (0, nothing)
+    end
+end
+
 @testset "API: viewer meta — per-level shapes (spatial audit LOD)" begin
     # `api_viewer_meta` grew a `levels` field so the CLIENT can pick a pyramid level from its viewport
     # zoom without asking the server. Same store the tile testset builds, exposed through the meta route

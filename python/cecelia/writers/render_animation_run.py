@@ -26,9 +26,10 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
         ``overlays3d`` : optional ``{points: {x, y, z, colour}, segments: {x0, y0, z0, x1, y1, z1,
                          colour}}`` in native voxel coordinates, colours as ``[r, g, b]`` in 0..1
         ``ndisplay``   : 2 or 3 (default 3)
-        ``zRange``     : 2D only — the level-0 planes ``[lo, hi]`` shown (default: all)
-        ``planeFilter``: 2D only — ``{points: [lo, hi], tracks: [lo, hi]}``, the planes whose points /
-                         tail ends are drawn (the viewer's z tolerances); absent = all
+        ``zRange``     : the level-0 planes ``[lo, hi]`` shown (default: all) — a 2D frame's slab, or
+                         a 3D view cropped to part of the stack (the viewer's ±n window / Depth)
+        ``planeFilter``: ``{points: [lo, hi], tracks: [lo, hi]}``, the planes whose points / tail ends
+                         are drawn (the viewer's z tolerances around ``zRange``); absent = all
     ``canvasH``/``canvasW`` : output frame size
     ``zAniso``         : physical_z / physical_x
     ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — 128 / 256 / 512 ray steps; the viewer's
@@ -208,9 +209,9 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
     is what the camera, the extents and the overlays are measured in (``meta.nX`` / ``voxelUm`` in
     the viewer). A coarser level covers the same µm with fewer voxels, so only ``dims`` changes.
 
-    ``z_range`` = the level-0 planes ``(lo, hi)`` the texture holds — a 2D frame's slab, as the
-    viewer's ``setImage`` / ``setZPlane`` place it (``ext.z`` = its depth, ``zOriginUm`` = its first
-    plane). ``None`` = the whole stack. A 2D frame is head-on and orthographic, as in the viewer."""
+    ``z_range`` = the level-0 planes ``(lo, hi)`` the texture holds — a 2D frame's slab or a cropped
+    3D box, as the viewer's ``setImage`` / ``setZPlane`` place it (``ext.z`` = its depth,
+    ``zOriginUm`` = its first plane). ``None`` = the whole stack. A 2D frame is head-on and orthographic, as in the viewer."""
     nc, nz, ny, nx = dims_czyx
     nz0, ny0, nx0 = l0_zyx
     vx, vy, vz = voxel_um
@@ -340,6 +341,10 @@ def render_frames(params, host, log):
             frame_state = _in_region(state, origin, l0_zyx)
             frame_l0 = (l0_zyx[0], origin[2], origin[3])
             origin_yx = origin[:2]
+        elif state.get('zRange'):
+            # 3D cropped to part of the stack: that box only, placed where it sits (`ext.zOriginUm`).
+            zr = state['zRange']
+            z_range = (int(zr[0]), int(zr[1]))
         key = (t_idx, z_range, None if yx is None else (yx[0].start, yx[0].stop, yx[1].start, yx[1].stop))
         if cached != key:
             zs = _level_z(z_range, nz_level, l0_zyx[0]) if z_range else None

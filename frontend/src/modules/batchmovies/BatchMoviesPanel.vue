@@ -124,6 +124,8 @@ const renderQuality = computed<RenderQuality>({
   get: () => cfg.value.renderQuality ?? RENDER_QUALITY_DEFAULT, set: v => patch({ renderQuality: v }) })
 const zSlice = computed<number | null>({
   get: () => cfg.value.zSlice ?? null, set: v => patch({ zSlice: v }) })
+const zRange = computed<[number, number] | null>({
+  get: () => cfg.value.zRange ?? null, set: v => patch({ zRange: v }) })
 // the shallowest stack in the selection — a slice index deeper than that would not exist on every image
 const zDepth = computed(() => {
   const zs = imgs.value.map(i => i.sizeZ ?? 1).filter(n => n > 1)
@@ -669,7 +671,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
         <MovieOutputControls :suffix-options="movieSuffixes" v-model:fps="fps" v-model:sizeX="sizeX" v-model:sizeY="sizeY"
                              v-model:suffix="suffix" :canvas-x="canvasSizeX" :canvas-y="canvasSizeY"
                              v-model:timestamp="movieTimestamp" v-model:scale-bar="movieScaleBar"
-                             :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice"
+                             :size-z="zDepth" v-model:show3D="show3D" v-model:zSlice="zSlice" v-model:zRange="zRange"
                              v-model:renderQuality="renderQuality" />
         <!-- Only when there is a timelapse to trim. The bound is the LONGEST in the selection — the
              backend clamps each image to its own length, so a shorter one records to its end. -->

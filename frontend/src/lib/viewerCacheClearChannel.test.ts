@@ -41,6 +41,13 @@ describe('viewerCacheClearFromStorageEvent', () => {
     })
   })
 
+  it('carries the manual resync\'s force flag through', () => {
+    // Without it the viewer's fingerprint gate would swallow the resync on an unchanged store.
+    expect(viewerCacheClearFromStorageEvent(
+      { key: 'cc.viewerCacheClearRev', newValue: JSON.stringify({ rev: 'r1', imageUid: 'i', force: true }) }, '',
+    )).toEqual({ rev: 'r1', imageUid: 'i', force: true })
+  })
+
   it('accepts the legacy bare-rev payload as a scope-less broadcast', () => {
     // A rev written by an older tab in the same origin — parses the plain string, and the missing
     // scope becomes a broadcast at the match layer. Kept so a mid-session upgrade doesn't drop the

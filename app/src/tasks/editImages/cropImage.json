@@ -6,9 +6,10 @@
   "useWhen": ["Only part of the field, depth or time is of interest"],
   "notWhen": [
     "Only to drop drift-correction padding: segmentation skips it per frame",
-    "Image already segmented: labels stay on the source image"
+    { "text": "Image already segmented: labels stay on the source image", "check": "segmented" }
   ],
   "category": "Edit",
+  "group": "Reshape",
   "env": [
     "local"
   ],

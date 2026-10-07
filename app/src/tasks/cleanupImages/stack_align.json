@@ -10,6 +10,7 @@
     "Whole stack shifts between timepoints: use Drift correction"
   ],
   "category": "Cleanup",
+  "group": "Align",
   "env": ["local"],
   "resource_pool": "cpu",
   "outputValueName": "stackAligned",

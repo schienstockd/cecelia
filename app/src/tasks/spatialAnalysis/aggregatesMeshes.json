@@ -12,6 +12,7 @@
     "Quick first look: Detect aggregates is faster"
   ],
   "category": "Spatial analysis",
+  "group": "Aggregates",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

@@ -119,6 +119,23 @@ describe('buildViewState', () => {
     })
     expect(vs.canvas).toEqual({ width: 640, height: 480 })
   })
+
+  it('publishes the loaded planes — what a recording of a ±n window or Depth crop draws', () => {
+    const base = { cam: fakeCam(), meta: fakeMeta(), t: 0, zPlane: 8, canvasW: 640, canvasH: 480,
+                   viewHalfAngle: VIEW_HALF_ANGLE }
+    expect(buildViewState({ ...base, ndisplay: 3, zLoaded: [0, 9] }).dims.zRange).toEqual([0, 9])
+    expect(buildViewState({ ...base, ndisplay: 2, zLoaded: [6, 9] }).dims.zRange).toEqual([6, 9])
+    expect(buildViewState({ ...base, ndisplay: 2 }).dims.zRange).toBeUndefined()
+  })
+
+  it('round-trips the loaded planes; a snapshot without them restores none', () => {
+    const base = { cam: fakeCam(), meta: fakeMeta(), t: 0, zPlane: 8, canvasW: 640, canvasH: 480,
+                   viewHalfAngle: VIEW_HALF_ANGLE }
+    const apply = (vs: ReturnType<typeof buildViewState>) => applyViewStateToBrowser(
+      { vs, meta: fakeMeta(), currentCam: fakeCam(), canvasH: 480, viewHalfAngle: VIEW_HALF_ANGLE })
+    expect(apply(buildViewState({ ...base, ndisplay: 3, zLoaded: [6, 9] })).zRange).toEqual([6, 9])
+    expect(apply(buildViewState({ ...base, ndisplay: 3 })).zRange).toBeNull()
+  })
 })
 
 describe('applyViewStateToBrowser (round-trip)', () => {

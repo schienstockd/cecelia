@@ -9,6 +9,7 @@
   ],
   "notWhen": [],
   "category": "Spatial analysis",
+  "group": "Neighbourhood",
   "env": ["local"],
   "resource_pool": "cpu",
   "requires": { "scale": ["xy"] },

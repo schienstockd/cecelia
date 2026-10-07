@@ -6,6 +6,7 @@
   "useWhen": ["The usual choice when segmenting by motion: labels alone have no measures"],
   "notWhen": ["No trained flow model yet: run Train flow model first"],
   "category": "Segment",
+  "group": "Segment",
   "env": ["local"],
   "resource_pool": "gpu",
   "composite": ["segment.coastal", "segment.measureLabels"],

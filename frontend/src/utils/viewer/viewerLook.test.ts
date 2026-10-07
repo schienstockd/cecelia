@@ -58,6 +58,17 @@ describe('viewerLook', () => {
     expect(l.zSlice).toBeNull()
   })
 
+  it('the viewer’s loaded planes → zRange: a 2D ±n window, a 3D Depth crop; null for one plane / whole stack', () => {
+    const vs = (ndisplay: 2 | 3, zRange: [number, number]) =>
+      ({ layers: {}, dims: { ndisplay, current_step: [0, 8], point: [0, 8], zRange } })
+    expect(viewerLook(base({ viewState: vs(2, [0, 16]) })).zRange).toEqual([0, 16])
+    expect(viewerLook(base({ viewState: vs(2, [8, 8]) })).zRange).toBeNull()
+    expect(viewerLook(base({ viewState: vs(3, [0, 16]), nZ: 35 })).zRange).toEqual([0, 16])
+    expect(viewerLook(base({ viewState: vs(3, [0, 34]), nZ: 35 })).zRange).toBeNull()
+    // always present, so Fill from view clears a range an earlier fill left
+    expect(viewerLook(base())).toHaveProperty('zRange', null)
+  })
+
   it('pops on → the pop manager’s segmentation and popType', () => {
     const l = viewerLook(base({ popVisible: pt => pt === 'clust' }))
     expect(l.showPopulations).toBe(true)

@@ -4,22 +4,25 @@ import type { TaskDef } from '../tasks/types'
 
 export const useTaskDefsStore = defineStore('taskDefs', () => {
   const byFn  = ref(new Map<string, TaskDef>())
-  let loading = false
+  // the in-flight load — a second caller awaits it instead of returning before the defs exist
+  let loading: Promise<void> | null = null
 
   async function ensureLoaded() {
-    if (byFn.value.size > 0 || loading) return
-    loading = true
-    try {
-      const res = await fetch('/api/tasks/definitions')
-      if (!res.ok) return
-      const data = await res.json() as Record<string, TaskDef[]>
-      const map = new Map<string, TaskDef>()
-      for (const [cat, defs] of Object.entries(data)) {
-        for (const def of defs) map.set(def.fun_name, { ...def, category: cat })
-      }
-      byFn.value = map
-    } catch { /* ignore — caller falls back to fn name */ }
-    finally { loading = false }
+    if (byFn.value.size > 0) return
+    loading ??= (async () => {
+      try {
+        const res = await fetch('/api/tasks/definitions')
+        if (!res.ok) return
+        const data = await res.json() as Record<string, TaskDef[]>
+        const map = new Map<string, TaskDef>()
+        for (const [cat, defs] of Object.entries(data)) {
+          for (const def of defs) map.set(def.fun_name, { ...def, category: cat })
+        }
+        byFn.value = map
+      } catch { /* ignore — caller falls back to fn name */ }
+      finally { loading = null }
+    })()
+    return loading
   }
 
   function labelFor(fn: string): string {

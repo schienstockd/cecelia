@@ -138,6 +138,12 @@ describe('lookRestore — tolerance (Decision 6)', () => {
     expect(r.cfg.zSlice).toBeNull()
   })
 
+  it('restores the plane range a windowed recording drew; null clears the look’s', () => {
+    expect(lookRestore({ zSlice: 8, zRange: [0, 16] })!.cfg.zRange).toEqual([0, 16])
+    expect(lookRestore({ look: { zRange: [2, 4] }, zRange: null })!.cfg.zRange).toBeNull()
+    expect('zRange' in lookRestore({ zRange: [1] })!.cfg).toBe(false)
+  })
+
   it('drops an unknown layout rather than sending it on', () => {
     expect(lookRestore({ compareLayout: 'diagonal' })!.cfg).not.toHaveProperty('compareLayout')
     // …but every layout the picker offers restores, since both read `COMPARE_LAYOUTS`

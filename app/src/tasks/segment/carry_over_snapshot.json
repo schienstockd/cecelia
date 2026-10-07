@@ -6,6 +6,7 @@
   "useWhen": ["Runs inside Correct labels + measures, before the re-measure"],
   "notWhen": ["On its own: run Correct labels + measures instead"],
   "category": "Segment",
+  "group": "Correction tools",
   "env": ["local"],
   "resource_pool": "io",
   "requires": { "scale": ["xy"] },

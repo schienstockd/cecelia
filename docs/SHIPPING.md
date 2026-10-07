@@ -291,6 +291,7 @@ root). This is the only structural difference between the two paths.
 | Console | `pixi run update` → `pixi update` (refreshes deps within `pixi.toml` constraints, rewrites `pixi.lock`) |
 | In-app — stable | Settings → Software → *Update to vX.Y.Z*. `/api/update/check` picks the newest GitHub release; `/api/update/apply` downloads `cecelia.tar.gz`, verifies it against the published `.sha256`, and stages it. Launcher applies the staged bundle on the next restart. |
 | In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API; apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `pixi exec --spec nodejs -- npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Node/npm come from an ephemeral pixi env, no host Node required. |
+| In-app — finishing | A staged apply/revert sets `pendingRestart` on `/api/update/check`, which suppresses `updateAvailable` (the files on disk are still the old build) and swaps the header badge for *Restart to update*. That button (also in What's New + Settings) calls `/api/app/restart` with `stopRunner: true` so the task runner comes back on the new code; it is disabled while a task runs. The dev-channel "at tip" test is a ≥7-char prefix match: in-app apply writes a short sha, `install.sh` a full one. |
 | In-app — revert | Settings → Software → *Revert to previous version*. Each apply snapshots the files it's about to overwrite into `.previous-release/payload/`; revert stages a `.pending-revert` marker and the launcher moves them back on the next restart. Only ONE step of history is kept — a second apply discards the earlier snapshot. |
 
 **Safety model.** The running server NEVER overwrites its own files. Apply and revert both write a
@@ -327,7 +328,7 @@ install *script* is identical; only the location, the runtime home, and the shor
 | `system` | `/opt/cecelia` | `/Applications/cecelia` | `%ProgramFiles%\cecelia` | root / Administrator |
 
 ```
-curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh      # Linux/macOS
+curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sh              # Linux/macOS, as the admin
 # Windows: run an elevated PowerShell, then set $env:CECELIA_INSTALL_SCOPE='system' before irm|iex
 ```
 
@@ -340,19 +341,60 @@ always `~/.cecelia/custom.toml` + the wizard-chosen projects dir — because `co
 on install scope (see `docs/todo/ONBOARDING_PLAN.md` D1). So a shared workstation needs no per-user
 setup beyond each user running the first-launch wizard once.
 
-**Updates on a system install are admin-only.** The app files are root-owned, so the in-app updater
+**Owned by the installing admin, not root** (Linux/macOS — `docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`).
+The installer runs as the admin. It uses `sudo` only to create the install dir (then `chown`s it to
+the admin) and to write `/usr/share/applications/cecelia.desktop`. Under `sudo sh` it hands every
+download and provisioning step to `$SUDO_USER`. Package caches therefore stay in the admin's home,
+and nothing lands in `/root`. `PIXI_NO_PATH_UPDATE=1` keeps the admin's shell rc untouched. The
+admin updates by re-running the installer, with no sudo once the dir exists.
+
+**Every other account sees the install read-only — Julia's depot is stacked for that.** The launcher
+(and `scripts/activate_juliaup.sh`, and `_find_julia` in `app.py`) sets
+`JULIA_DEPOT_PATH=~/.cecelia/julia-depot:<install>/juliaup/depot:`. Each piece is load-bearing:
+- the per-user writable depot comes first, because Julia writes compile caches and logs to the first
+  depot;
+- the shared depot follows;
+- the trailing empty entry keeps Julia's bundled stdlib depot. Without it the stdlibs look
+  uncompiled, and Julia dies precompiling them into the read-only depot
+  (`EROFS … .ji.pidfile`, reproduced in a `bwrap` sandbox).
+
+**The launcher runs `pixi run --as-is app`.** A plain `pixi run` takes a write lock on the env
+prefix. On an install another account owns, it fails with `failed to acquire install lock …
+Read-only file system`, before any Python runs. That broke the old root-owned layout too.
+`--as-is` (= `--frozen --no-install`) skips the lock. The env was provisioned by the installer, and
+updates re-run the installer.
+
+**Updates on a system install are admin-only.** The app files are not the user's, so the in-app updater
 refuses to self-update: the installer writes `.cecelia-scope` at the install root, `/api/update/check`
 reports it, `/api/update/apply` returns 403 for a `system` scope, and Settings → Software (plus the
 header badge) show an "updates must be run by an administrator (re-run the install-system script)"
 note instead of the Update button. Re-running `install.sh` as root updates the shared install.
 
-> **Verification status.** The user-scope path is verified on Linux. The **system-scope path is
-> authored but not yet verified on any real multi-user box — Linux, macOS, or Windows.** All three
-> are multi-user, and macOS is the *primary* target, so this matters most there. Unverified in
-> particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, the juliaup
-> `--path`, and the portable juliaup on Windows), whether a non-admin account can `pixi run` a root-owned read-only env, and the
-> all-users launchers (`/usr/share/applications`, `/Applications/Cecelia.command`, the CommonPrograms
-> shortcut). First real test is a shared account on each OS.
+> **Verification status (2026-10-07).** The system scope on all three OSes is verified end to end in
+> CI by `.github/workflows/verify-system-install.yml`, which runs whenever the install scripts
+> change. It installs from the branch as:
+> - the admin on Ubuntu and macOS, both ways: as the admin, and via `| sudo sh`;
+> - an elevated admin on Windows.
+>
+> It then checks:
+> 1. ownership, and that nothing landed in root's home;
+> 2. that a second, non-admin account can start the app against the install it cannot write, reaching
+>    `/api/health` (23–53 s);
+> 3. that the uninstaller refuses while that account is running it;
+> 4. the uninstall itself: install and menu entry gone, settings kept, projects wiped.
+>
+> **Bugs the workflow found and fixed:**
+> - The pixi env lock on a read-only env.
+> - The unstacked Julia depot (EROFS).
+> - A group-writable shared tree on Linux.
+> - Root-only `TMPDIR` under `sudo` on macOS.
+> - Hard-linked env files carrying the admin's private ACL on Windows (fixed with `icacls /reset`).
+> - Two script-encoding traps: bash 3.2's `$VAR…`, and PowerShell 5.1 reading `.ps1` as Windows-1252.
+>
+> `test_shell_var_unicode_convention.py` guards the last two.
+>
+> **Still unverified:** Pluto notebooks for non-owners (`docs/TODO.md`), and real-hardware GPU
+> paths, which CI runners can't cover.
 
 ---
 

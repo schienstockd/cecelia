@@ -60,6 +60,23 @@ def stage_of(category: str) -> str:
     return _STAGE_OF.get(category, category)
 
 
+def discovery_lines(lines) -> list[str]:
+    """A spec's `useWhen` / `notWhen` as plain text. A line may be `{text, check}` — `check` names an
+    advisory GUI check over the selected images (frontend/src/utils/taskDiscovery.ts) and means nothing
+    to a reader without that selection, so only the text leaves the MCP."""
+    return [l.get("text", "") if isinstance(l, dict) else l for l in (lines or [])]
+
+
+def discovery_fields(spec: dict) -> dict:
+    """The spec's discovery fields present and non-empty, lines as plain text."""
+    out = {}
+    for k in DISCOVERY_FIELDS:
+        v = spec.get(k)
+        if v:
+            out[k] = v if k == "purpose" else discovery_lines(v)
+    return out
+
+
 def task_catalogue(definitions: dict, stage: str = "") -> dict:
     """`{stages: [{stage, tasks: [{fun_name, label, purpose, useWhen, notWhen}]}]}` in pipeline order.
 
@@ -75,8 +92,8 @@ def task_catalogue(definitions: dict, stage: str = "") -> dict:
                 "fun_name": spec["fun_name"],
                 "label": spec.get("label", ""),
                 "purpose": spec.get("purpose", ""),
-                "useWhen": list(spec.get("useWhen") or []),
-                "notWhen": list(spec.get("notWhen") or []),
+                "useWhen": discovery_lines(spec.get("useWhen")),
+                "notWhen": discovery_lines(spec.get("notWhen")),
             })
     order = [s for s in STAGE_ORDER if s in grouped] + sorted(s for s in grouped if s not in STAGE_ORDER)
     if stage:

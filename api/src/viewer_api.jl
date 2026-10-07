@@ -317,7 +317,7 @@ function api_viewer_meta(req::HTTP.Request)
                         lnx = s[n]
                         lny = s[n - 1]
                         lnz = n >= 3 ? s[n - 2] : 1
-                        dims[v] = (; nX = lnx, nY = lny, nZ = lnz)
+                        dims[v] = (; nX = lnx, nY = lny, nZ = lnz, nLevels = length(lvls))
                     end
                 catch
                     # unreadable pyramid → leave this vn out of `label_dims`; the client
@@ -327,6 +327,12 @@ function api_viewer_meta(req::HTTP.Request)
             (names, dims)
         catch
             (String[], Dict{String, Any}())
+        end
+        label_revs = try
+            img = init_object(pu, iu)
+            Dict{String, String}(v => store_rev(img_labels_path(img, v)) for v in label_names)
+        catch
+            Dict{String, String}()
         end
         # Which VERSIONS this image has, and which one these numbers describe. The viewer window is a
         # pop-out with no project open, so it can look up neither — and without the second field a
@@ -363,6 +369,9 @@ function api_viewer_meta(req::HTTP.Request)
                             name = image_name, setUid = set_uid,
                             labelNames = label_names,
                             labelDims  = label_dims,
+                            # Per-store fingerprints (`store_rev`) — the viewer reloads on a task
+                            # done only when the store it shows changed, not on every task.
+                            storeRevs  = (; image = store_rev(zp), labels = label_revs),
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -504,8 +513,20 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # Clamped against the multiscales datasets list so a hand-edited URL cannot reach `open_level`'s
     # KeyError path. `store_pyramid_levels` is metadata-only (JSON on disk); the read is cheap.
     lvl_req = something(tryparse(Int, get(q, "level", "0")), 0)
-    nlvl    = something(let l = store_pyramid_levels(zp); l === nothing ? nothing : length(l) end, 1)
-    level   = clamp(lvl_req, 0, nlvl - 1)
+    level, lvl_err = if isempty(lbl)
+        nlvl = something(let l = store_pyramid_levels(zp); l === nothing ? nothing : length(l) end, 1)
+        (clamp(lvl_req, 0, nlvl - 1), nothing)
+    else
+        label_level(zp, lvl_req)
+    end
+    if lvl_err !== nothing
+        HTTP.setstatus(stream, 409)
+        HTTP.setheader(stream, "Content-Type" => "application/json")
+        HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
+        HTTP.startwrite(stream)
+        write(stream, JSON3.write((; error = lvl_err)))
+        return true
+    end
     enc = get(q, "enc", "identity")
 
     # A read failure has to arrive as a STATUS, not as an exception. This runs before `startwrite`, so
@@ -589,6 +610,21 @@ function label_store_path(project_uid::AbstractString, image_uid::AbstractString
     zp = img_labels_path(img, vn)
     isdir(zp) || return (nothing, "label store not on disk: $(basename(zp))")
     (zp, nothing)
+end
+
+"""
+    label_level(label_zp, lvl_req) -> (level, err)
+
+The level of a MASK store that answers a viewer drawing the image at `lvl_req`. Exact, never clamped
+to the mask's own depth: the mask level is read with image-level coordinates, so a clamped read hands a
+zoomed-out viewer a full-size mask (a shape-guard failure) and a pick the wrong cell. Every label writer
+builds as many levels as its image (`zarr_utils.write_label_pyramid`); `err` names the gap for a store
+with fewer, and the caller answers 409 rather than the wrong pixels.
+"""
+function label_level(label_zp::AbstractString, lvl_req::Integer)
+    nlvl = something(let l = store_pyramid_levels(label_zp); l === nothing ? nothing : length(l) end, 1)
+    lvl_req < nlvl && return (max(Int(lvl_req), 0), nothing)
+    (nlvl - 1, "mask has $nlvl level$(nlvl == 1 ? "" : "s"); the view needs level $lvl_req")
 end
 
 """
@@ -866,11 +902,9 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     yint = _to_int(get(body, "y", 0))
     # `level` matches the LOD the viewer is DISPLAYING (client sends `slabLevel.value`). Label
     # downsampling is nearest, so reading L0 while the user sees L1 picks a NEIGHBOUR of the visible
-    # cell — reads as "the wrong cell was highlighted". Clamped against the store's pyramid depth so a
-    # stale client cannot reach `open_level`'s KeyError path (mirrors `try_serve_slab`).
-    lvl_req = _to_int(get(body, "level", 0))
-    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
-    lvl     = clamp(lvl_req, 0, nlvl - 1)
+    # cell — reads as "the wrong cell was highlighted".
+    lvl, lvl_err = label_level(String(zp), _to_int(get(body, "level", 0)))
+    lvl_err === nothing || return 409, JSON3.write((; error = lvl_err))
     label = try
         vol, _, _, _ = read_slab(String(zp), tint, 0; z = zint, x = xint:xint, y = yint:yint, level = lvl)
         Int(first(vol))
@@ -932,9 +966,8 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     xlo = min(x1, x2); xhi = max(x1, x2)
     ylo = min(y1, y2); yhi = max(y1, y2)
     # `level` matches the LOD the viewer is DISPLAYING — see the pick-cell endpoint's note.
-    lvl_req = _to_int(get(body, "level", 0))
-    nlvl    = something(let l = store_pyramid_levels(String(zp)); l === nothing ? nothing : length(l) end, 1)
-    lvl     = clamp(lvl_req, 0, nlvl - 1)
+    lvl, lvl_err = label_level(String(zp), _to_int(get(body, "level", 0)))
+    lvl_err === nothing || return 409, JSON3.write((; error = lvl_err))
     # Z range: an Int for one plane, or a UnitRange for `slice ± N`. Clamp to `[0, nZ - 1]` after
     # reading the store's z dim — a stale client sending a range past the top of the stack would
     # otherwise land on `read_slab`'s error path. `nZ` is available via `open_level` here but we

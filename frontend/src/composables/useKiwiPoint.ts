@@ -19,6 +19,7 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { pointTarget, refLabel, openProposedPlot } from '../utils/kiwiTurn'
 import { pickBoardTab } from '../utils/boardNav'
 import { useKiwiStore } from '../stores/kiwi'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import { revealPlots } from '../utils/sectionOpen'
 import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
 import { resolveAnchor } from '../utils/guideAnchor'
@@ -35,6 +36,7 @@ export function useKiwiPoint() {
   const plots = usePlotRegistryStore()
   const { focusCapture } = useCaptureFocus()
   const kiwi = useKiwiStore()
+  const taskDefs = useTaskDefsStore()
 
   /** Point at `ref`. Resolves to a short reason when there was nothing to do, else ''. No toast for that
    *  (user, 2026-09-24: "that's an error message") — a ref that can't be shown already says why on
@@ -43,7 +45,9 @@ export function useKiwiPoint() {
   async function pointAt(ref: KiwiRef, label = '', result?: KiwiRefResult): Promise<string> {
     const puid = pm.current?.uid ?? ''
     if (!puid) return 'No project open'
-    const tgt = pointTarget(ref)
+    // a task chip needs the defs to pre-select the right function (`taskLanding`)
+    if (ref.kind === 'task') await taskDefs.ensureLoaded()
+    const tgt = pointTarget(ref, taskDefs.byFn)
     // the resolver's label when there is one — a claim row passes no label, and "plot" alone said nothing
     const caption = label || (result?.ok && result.label ? result.label : '') || refLabel(ref)
     switch (tgt.action) {
