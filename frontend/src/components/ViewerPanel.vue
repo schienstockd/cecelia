@@ -572,7 +572,8 @@ async function recordViewerMatch(uid: string, projectUid: string) {
         labelValueNames: look.labelValueNames ?? [],
         branchValueNames: movieBranchValueNames.value.slice(0, 1),
         labelContour: look.labelContour ?? 0,
-        show3D: false, zSlice: look.zSlice ?? null,
+        // the plane, and with the ±n window on its planes (a range wins: the max over them)
+        show3D: false, zSlice: look.zSlice ?? null, zRange: look.zRange ?? null,
         tStart: movieTStart.value, tEnd: movieTEnd.value,
         viewState: hexViewState(snapshot),
         ...movieSizeParams(movieSizeX.value, movieSizeY.value) })
