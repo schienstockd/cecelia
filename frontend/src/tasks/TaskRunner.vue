@@ -33,7 +33,6 @@ import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
 import { checkLine } from '../utils/taskDiscovery'
 import InlineNote from '../components/InlineNote.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -489,6 +488,9 @@ const selectedImages = computed(() => paramContext.value.images)
 // open/closed state is remembered per user (open by default).
 const useLines = computed(() => (taskDef.value?.useWhen ?? []).map(l => checkLine(l, 'use', selectedImages.value)))
 const notLines = computed(() => (taskDef.value?.notWhen ?? []).map(l => checkLine(l, 'not', selectedImages.value)))
+const WHEN_OPEN_KEY = 'cc-task-about-open'
+const whenOpen = ref(profileStorage.getItem(WHEN_OPEN_KEY) !== '0')
+watch(whenOpen, v => { try { profileStorage.setItem(WHEN_OPEN_KEY, v ? '1' : '0') } catch { /* ignore */ } })
 // ── Task runner down ──────────────────────────────────────────────────────────
 // Only when it is ENABLED but not answering — you turned it on, so a run silently falling back to the
 // backend is a surprise: it works, but it dies with the next Restart, which is the one thing you
@@ -699,30 +701,36 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </option>
       </select>
 
-      <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row -->
+      <!-- what it is for, then when it fits: directly under the picker, above the Kiwi/env row. The
+           fold is a bare inline toggle (.cc-section-toggle, as ParamRenderer's group sections), not
+           CollapsibleSection: that one carries panel-rail chrome (a surface bar, its own padding) that
+           does not sit inside a padded runner section. A check's finding gets its own row under its
+           line, so a long line never shares its width with the finding. -->
       <div v-if="taskDef?.purpose" class="fn-about">
         <p class="fn-purpose cc-muted cc-fs-xs">{{ taskDef.purpose }}</p>
-        <CollapsibleSection v-if="useLines.length || notLines.length" class="fn-when" label="When to use"
-                            tip="Show or hide when this task fits" storage-key="cc-task-about-open"
-                            max-height="none">
-          <template v-for="block in [{ head: 'Use when', lines: useLines }, { head: 'Not when', lines: notLines }]"
-                    :key="block.head">
-            <div v-if="block.lines.length" class="fn-lines">
-              <span class="fn-lines-head cc-eyebrow cc-fs-2xs">{{ block.head }}</span>
-              <ul class="fn-line-list cc-fs-xs">
-                <li v-for="l in block.lines" :key="l.text">
-                  <InlineNote v-if="l.severity" :short="l.text" :severity="l.severity">
-                    <span class="fn-line-summary cc-muted">· {{ l.summary }}</span>
-                  </InlineNote>
-                  <template v-else>
-                    <span>{{ l.text }}</span>
-                    <span v-if="l.summary" class="fn-line-summary cc-muted"> · {{ l.summary }}</span>
-                  </template>
-                </li>
-              </ul>
-            </div>
-          </template>
-        </CollapsibleSection>
+        <template v-if="useLines.length || notLines.length">
+          <button class="fn-when-toggle cc-section-toggle cc-eyebrow cc-fs-2xs" @click="whenOpen = !whenOpen"
+                  v-tooltip.right="whenOpen ? 'Hide when this task fits' : 'Show when this task fits'">
+            <i :class="['pi', whenOpen ? 'pi-chevron-down' : 'pi-chevron-right']" />
+            When to use
+          </button>
+          <div v-if="whenOpen" class="fn-when-body">
+            <template v-for="block in [{ head: 'Use when', lines: useLines }, { head: 'Not when', lines: notLines }]"
+                      :key="block.head">
+              <div v-if="block.lines.length" class="fn-lines">
+                <span class="fn-lines-head cc-muted cc-fs-2xs">{{ block.head }}</span>
+                <ul class="fn-line-list cc-fs-xs">
+                  <li v-for="l in block.lines" :key="l.text">
+                    <span class="fn-line-text">{{ l.text }}</span>
+                    <InlineNote v-if="l.severity && l.summary" class="fn-line-check cc-fs-2xs"
+                                :short="l.summary" :severity="l.severity" />
+                    <span v-else-if="l.summary" class="fn-line-check cc-muted cc-fs-2xs">{{ l.summary }}</span>
+                  </li>
+                </ul>
+              </div>
+            </template>
+          </div>
+        </template>
       </div>
 
       <div v-if="taskDef" class="fn-meta">
@@ -961,12 +969,23 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   margin: 0.3rem 0 0;
 }
 .fn-effect .pi { font-size: var(--cc-fs-2xs); }
-.fn-about { margin-top: 0.3rem; }
-.fn-purpose { margin: 0; }
-.fn-when { margin-top: 0.25rem; }
-.fn-lines { margin-top: 0.25rem; }
+.fn-about { margin-top: 0.3rem; min-width: 0; }
+.fn-purpose { margin: 0; overflow-wrap: anywhere; }
+/* + cc-section-toggle (row) + cc-eyebrow (label tier); only the inset is ours */
+.fn-when-toggle { padding: 0.3rem 0 0.1rem; }
+/* the same indented rule as ParamRenderer's .group-section-body */
+.fn-when-body {
+  padding-left: 0.4rem;
+  border-left: 2px solid var(--cc-border);
+  margin-left: 0.1rem;
+}
+.fn-lines + .fn-lines { margin-top: 0.3rem; }
 .fn-lines-head { display: block; }
-.fn-line-list { margin: 0.1rem 0 0; padding-left: 1rem; line-height: 1.35; }
+.fn-line-list { margin: 0.1rem 0 0; padding-left: 0.9rem; line-height: 1.35; }
+.fn-line-list li { min-width: 0; overflow-wrap: anywhere; }
+.fn-line-list li + li { margin-top: 0.1rem; }
+.fn-line-text { display: block; }
+.fn-line-check { display: flex; margin-top: 0.05rem; }
 .runner-down {
   display: flex;
   align-items: center;
