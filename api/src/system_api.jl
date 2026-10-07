@@ -86,6 +86,10 @@ function api_system_envs_install(body_bytes)
         error = "env $name is not supported on this platform ($plat) — supported: $(join(meta.supported_platforms, ", "))"))
 
     _env_installed(name) && return 200, JSON3.write((; installed = true, alreadyPresent = true, env = name))
+    # A shared (system-scope) install is read-only to every account but the one that installed it,
+    # and `pixi install` dies on the env lock there — refuse up front instead of streaming that error.
+    _dir_writable(_SYSTEM_APP_ROOT) || return 403, JSON3.write((;
+        error = "Shared installation — only the account that installed Cecelia can add $name."))
 
     pixi = _pixi_bin_path()
     isempty(pixi) && return 500, JSON3.write((;

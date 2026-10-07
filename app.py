@@ -37,11 +37,19 @@ def _find_julia() -> str:
     A juliaup inside the install (`<root>/juliaup`) wins. install.sh puts one there for system scope,
     and on Apple Silicon when the Julia it found was an Intel build. That juliaup keeps its own state,
     so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`.
-    Every `pixi run` already gets this from scripts/activate_juliaup.sh; this covers a launch that bypasses pixi."""
+    Every `pixi run` already gets this from scripts/activate_juliaup.sh; this covers a launch that bypasses pixi.
+
+    A system-scope install also has a shared package depot (`<root>/juliaup/depot`), read-only to every
+    account but the owner. A per-user writable depot goes in front of it, and the trailing empty entry
+    keeps Julia's bundled stdlib depot — without both, Julia precompiles into the read-only depot and dies."""
     private = os.path.join(ROOT, "juliaup")
     bin_dir = os.path.join(private, "bin")
     if os.path.exists(os.path.join(bin_dir, _exe("julia"))):
         os.environ["JULIAUP_DEPOT_PATH"] = private
+        shared = os.path.join(private, "depot")
+        if os.path.isdir(shared):
+            user_depot = os.path.join(os.path.expanduser("~"), ".cecelia", "julia-depot")
+            os.environ["JULIA_DEPOT_PATH"] = os.pathsep.join([user_depot, shared, ""])
         if not os.environ.get("PATH", "").startswith(bin_dir + os.pathsep):
             os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
         return os.path.join(bin_dir, _exe("julia"))

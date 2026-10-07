@@ -59,7 +59,9 @@ if ($Scope -eq 'system') {
   $JuliaupDepot = Join-Path $InstallDir 'juliaup'
   $env:PIXI_HOME = $PixiHome
   $env:JULIAUP_DEPOT_PATH = $JuliaupDepot
-  $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot')
+  $env:PIXI_NO_PATH_UPDATE = '1'   # the launcher sets PATH; don't add pixi to the admin's own PATH
+  # Trailing ';' = Julia's bundled stdlib depot, so the stdlibs aren't recompiled into the shared one.
+  $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot') + ';'
 } else {
   $PixiHome = if ($env:PIXI_HOME) { $env:PIXI_HOME } else { Join-Path $env:USERPROFILE '.pixi' }
   $env:PIXI_HOME = $PixiHome
@@ -275,18 +277,33 @@ Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
 Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
 Say "Installed: $Provenance ($Scope scope)"
 
+# System scope: every file must carry the Program Files ACL (Users: read + execute; Administrators:
+# full). Pixi builds the env by HARD-LINKING from the admin's package cache, and a hard link shares the
+# file's ACL — the one from the admin's private profile — so other accounts got "Error launching
+# 'python': Access is denied". /reset replaces
+# each file's ACL with the inherited one. The cache copies gain the same read access; they are public
+# package files.
+if ($Scope -eq 'system') {
+  Say 'Granting every account read access to the shared install...'
+  icacls $InstallDir /reset /T /C /Q | Out-Null
+  if ($LASTEXITCODE) { throw "Could not reset permissions on $InstallDir (icacls exit $LASTEXITCODE)." }
+}
+
 # ── Start Menu shortcut ───────────────────────────────────────────────────────
 if ($Scope -eq 'system') {
   # A wrapper any account runs: exports the shared runtime env, then `pixi run app`. The shortcut goes
-  # in the All-Users Start Menu (CommonPrograms).
+  # in the All-Users Start Menu (CommonPrograms). JULIA_DEPOT_PATH puts a per-user writable depot in
+  # front of the shared one (read-only to non-admins) and keeps Julia's bundled stdlib depot (the
+  # trailing empty entry) — same shape and reason as install.sh's launcher. `--as-is` because a plain
+  # `pixi run` takes a write lock on the env, which non-admins can't (also as in install.sh).
   $Launch = Join-Path $InstallDir 'cecelia-launch.cmd'
   @"
 @echo off
 set "PIXI_HOME=$PixiHome"
 set "JULIAUP_DEPOT_PATH=$JuliaupDepot"
-set "JULIA_DEPOT_PATH=$JuliaupDepot\depot"
+set "JULIA_DEPOT_PATH=%USERPROFILE%\.cecelia\julia-depot;$JuliaupDepot\depot;"
 set "PATH=$PixiHome\bin;$JuliaupDepot\bin;%PATH%"
-cd /d "$InstallDir" && "$Pixi" run app
+cd /d "$InstallDir" && "$Pixi" run --as-is app
 "@ | Set-Content -Path $Launch -Encoding ASCII
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
   $Lnk = Join-Path $Programs 'Cecelia.lnk'
