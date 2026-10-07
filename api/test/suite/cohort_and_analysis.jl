@@ -91,6 +91,18 @@
         ll = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$(proj.uid)"))[2]).content
         @test occursin("Cohort check", ll) && occursin("clustTracks.cluster (B)", ll)
         @test occursin("$(i1) — nTracks", ll) && occursin("cohort median", ll)   # image UID (refs are uid-based) + detail
+        # valueName is joined onto the set's cohort/ dir (and each image's qc/ dir) and WRITTEN, so a
+        # name that isn't one path component is a 400 — not a sidecar outside the project
+        escape = joinpath(tmp, "escaped.json")
+        for bad in ("../../../../../../escaped", "a/b", "a\\b", "..", ".")
+            st, b = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels",
+                             valueName = bad))
+            @test st == 400 && JSON3.read(b).code == "invalid-value-name"
+            @test _qc("$base&funName=segment.measureLabels&valueName=$(HTTP.escapeuri(bad))")[1] == 400
+        end
+        @test !isfile(escape)
+        @test _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels",
+                       valueName = "flow.cyto"))[1] == 200                    # dots inside are fine
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

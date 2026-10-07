@@ -277,6 +277,44 @@ end
     end
 end
 
+@testset "API: preview refuses a client path it would write or delete under" begin
+    # The worker removes and rewrites `{taskDir}/labels/{vn}__preview.ome.zarr`, and on stop deletes
+    # every preview store under `{taskDir}`. So the vn must be one path component (400 before anything
+    # else is looked at), and the stop sweep only honours a taskDir that IS an image meta dir.
+    _region() = Dict("xy" => Dict("X" => [0, 32], "Y" => [0, 32]), "z" => 0, "t" => 0, "ndisplay" => 2)
+    for bad in ("../../x", "a/b", "a\\b", "..", ".")
+        st, body = _post(api_preview_run, Dict("projectUid" => "p", "imageUid" => "i", "valueName" => bad,
+                                               "params" => Dict(), "region" => _region(),
+                                               "zarrPath" => "/z", "taskDir" => "/t"))
+        @test st == 400 && JSON3.read(body).code == "invalid-value-name"
+    end
+
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name = "api-preview-taskdir")
+        img  = add_image!(add_set!(proj; name = "s"); name = "a")
+        meta = joinpath(tmp, proj.uid, "1", img.uid)
+        @test _preview_task_dir(meta) == normpath(meta)
+        @test _preview_task_dir(meta * "/") == normpath(meta)
+        @test _preview_task_dir(joinpath(meta, "labels", "..")) == normpath(meta)
+        @test _preview_task_dir("") === nothing
+        @test _preview_task_dir(tmp) === nothing                                    # projects root
+        @test _preview_task_dir(joinpath(tmp, proj.uid)) === nothing                # project dir
+        @test _preview_task_dir(joinpath(tmp, proj.uid, "0", img.uid)) === nothing  # data side
+        @test _preview_task_dir(joinpath(tmp, proj.uid, "1", "nope")) === nothing   # no ccid.json
+        @test _preview_task_dir(joinpath(meta, "..", "..", "..", "..")) === nothing # outside
+        @test _preview_task_dir(mktempdir()) === nothing
+        # an unrecognised taskDir still stops the worker (that is what frees the VRAM)
+        st, body = _post(api_preview_stop, Dict("taskDir" => "/"))
+        @test st == 200 && JSON3.read(body).stopped == true
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: a built preview request is always sent" begin
     # `preview_request` BUILDS a request; `send(w, …)` runs it. Returning the request instead is a
     # 200 full of plausible-looking JSON — right imPath, right params, right funName — that simply
