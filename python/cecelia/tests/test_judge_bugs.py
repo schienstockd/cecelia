@@ -235,6 +235,18 @@ class SweepTest(_Repo):
         self.assertEqual({b["status"] for b in later}, {"open"})
         self.assertEqual(sum(b["why"].startswith("still open; waiting for the judge") for b in later), 2)
 
+    def test_a_bug_with_a_landed_fix_is_judged_before_the_cap(self):
+        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
+        bugs, _ = self.sweep(events)
+        for b in bugs:
+            b.update(status="open", opened="2026-10-05")
+        last = {f"fanout-{i:08x}" for i in (self.b.MAX_ITEMS, self.b.MAX_ITEMS + 1)}   # what the cap held back
+        fix = [{"commit": "abcdef0123", "subject": "fix", "pr": 1}]
+        with mock.patch.object(self.b, "landed_fixes", return_value={k: fix for k in last}):
+            later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
+                                 judge=self.judge("gone"), merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual({b["key"]: b["status"] for b in later if b["key"] in last}, dict.fromkeys(last, "gone"))
+
     def test_no_judge_makes_no_call(self):
         bugs, cost = self.sweep([_finding("fanout-00000001")], no_judge=True)
         self.assertEqual(([b["status"] for b in bugs], cost, self.prompts), (["unjudged"], 0.0, []))
