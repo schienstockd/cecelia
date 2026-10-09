@@ -408,6 +408,21 @@ end
             @test keys_after["/Scanning"] == keys_before["/Scanning"]
             @test keys_after["/Directed"] != keys_before["/Directed"]
 
+            # valueName / suffix are joined onto labelProps/ and analysis/cell_cards/, so each must be
+            # one path component. Unguarded, `../labelProps/B` and the absolute path both resolved to
+            # the real run (200) and wrote the sidecar to analysis/labelProps/ and labelProps/.
+            img_dir = joinpath(dir, "testpr", "1", "KDIeEm")
+            for (field, bad) in (("valueName", "../labelProps/B"),
+                                 ("valueName", joinpath(img_dir, "labelProps", "B")),
+                                 ("valueName", ".."), ("suffix", "../movement"),
+                                 ("suffix", "a\\b"))
+                st_bad, body_bad = call(merge(req, Dict{String,Any}(field => bad)))
+                @test st_bad == 400
+                @test occursin(field, String(JSON3.read(body_bad).error))
+            end
+            @test !isdir(joinpath(img_dir, "analysis", "labelProps"))
+            @test !isfile(joinpath(img_dir, "labelProps", "B__movement.json"))
+
             # Bad body → 400.
             st3, _ = api_cell_cards(Vector{UInt8}("{not json"))
             @test st3 == 400
