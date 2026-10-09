@@ -16,6 +16,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import type { VisibleRegion } from '../utils/viewer/visibleRegion'
+import type { L0Rect } from '../utils/viewerPick'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
@@ -43,6 +44,15 @@ const K_LIVE_LABELS      = 'cc.viewer.liveLabels'
 const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
 const K_LABELS_DIM_MISMATCH = 'cc.viewer.labelsDimMismatch'
 const K_PICK_HIGHLIGHT   = 'cc.viewer.pickHighlight'
+const K_PREVIEW_BOX      = 'cc.viewer.previewBox'
+
+/** The task preview's region as a box the user owns (`utils/viewer/previewBox.ts`), in L0 px of
+ *  `imageUid`. The viewer seeds it from the first preview and publishes it as the region from then on;
+ *  the task-preview store clears it when the preview is switched off or the image changes. Bridged
+ *  like `visibleRegion`, since the clear happens in the module page's window. */
+export interface PreviewBox extends L0Rect {
+  imageUid: string
+}
 
 /** What the `<vn>__preview.ome.zarr` scratch store contains — set by taskPreview after a run, read
  *  by ViewerWindow to flip its labels slab request onto the preview path. Lives HERE (not in
@@ -270,6 +280,7 @@ export const useViewerStore = defineStore('viewer', () => {
   // state, not `null` until the next pan.
   const openImage     = ref<OpenImage | null>(_readJson<OpenImage>(K_OPEN_IMAGE))
   const visibleRegion = ref<VisibleRegion | null>(_readJson<VisibleRegion>(K_VISIBLE_REGION))
+  const previewBox    = ref<PreviewBox | null>(_readJson<PreviewBox>(K_PREVIEW_BOX))
   const viewState        = ref<ViewerViewState | null>(_readJson<ViewerViewState>(K_VIEW_STATE))
   // Seeded from localStorage: `openViewerWindow` handoffs (analysis-strip zoom-to-source) may write
   // the pending BEFORE the popup mounts, and a popup that started null would never see it.
@@ -307,6 +318,13 @@ export const useViewerStore = defineStore('viewer', () => {
   function setVisibleRegion(next: VisibleRegion | null) {
     visibleRegion.value = next
     _writeJson(K_VISIBLE_REGION, next)
+  }
+
+  /** ViewerWindow sets it (seed, move, resize, draw); taskPreview clears it (preview off, image change). */
+  function setPreviewBox(next: PreviewBox | null) {
+    if (!next && !previewBox.value) return
+    previewBox.value = next
+    _writeJson(K_PREVIEW_BOX, next)
   }
 
   /** ViewerWindow calls this on every pan/zoom/z/t/ndisplay/channel change — same debounced sink as
@@ -508,11 +526,13 @@ export const useViewerStore = defineStore('viewer', () => {
         labelsDimMismatch.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PICK_HIGHLIGHT) {
         pickHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_PREVIEW_BOX) {
+        previewBox.value = e.newValue ? JSON.parse(e.newValue) : null
       }
     })
   }
 
-  return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
+  return { openImage, visibleRegion, previewBox, setPreviewBox, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
            uiMarks, freeformMarks, plotMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
