@@ -63,6 +63,45 @@ def rules(repo: pathlib.Path = _REPO) -> list[str]:
     return out
 
 
+def section_edits(rule_list: _t.Sequence[str], git: GitRun) -> dict[str, str]:
+    """rule → when its section last changed (`%cI`), from `git log -L` over the section's lines at HEAD,
+    so a deleted sentence counts too. A rule git can't place is left out: all its findings count."""
+    out: dict[str, str] = {}
+    texts: dict[str, list[str]] = {}
+    for rule in rule_list:
+        m = re.fullmatch(r"(.+?) → \*(.+)\*", rule)
+        if not m:
+            continue
+        name, heading = m.groups()
+        if name not in texts:
+            texts[name] = (git("show", f"HEAD:{name}") or "").splitlines()
+        lines = texts[name]
+        start = next((i for i, ln in enumerate(lines, 1) if ln.startswith("## ") and ln[3:].strip() == heading), None)
+        if start is None:
+            continue
+        end = next((i for i, ln in enumerate(lines[start:], start + 1) if ln.startswith("## ")), len(lines) + 1) - 1
+        when = (git("log", "-1", "--no-patch", "--format=%cI", "-L", f"{start},{end}:{name}", "HEAD") or "").strip()
+        if when:
+            out[rule] = when.splitlines()[0]
+    return out
+
+
+def _utc(ts: str) -> _dt.datetime:
+    t = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=_dt.timezone.utc)
+
+
+def since_edit(findings: _t.Sequence[dict], assignments: _t.Iterable[dict],
+               edited: _t.Mapping[str, str]) -> list[dict]:
+    """The assignments whose finding was logged after its rule's section last changed. A finding from
+    before the edit is about the old wording: once the owner tightens a section, its proposal stops
+    rather than recurring from the old findings for the rest of the window."""
+    ts = {f["payload"]["slug"]: f.get("ts") or "" for f in findings}
+    return [a for a in assignments
+            if a.get("rule") not in edited or not ts.get(a.get("slug"))
+            or _utc(ts[a["slug"]]) > _utc(edited[a["rule"]])]
+
+
 def recent_findings(events: _t.Iterable[dict], *, today: _dt.date, days: int = WINDOW_DAYS) -> list[dict]:
     """Finding rows in the window, one per slug (a re-run recital logs a slug again)."""
     since = (today - _dt.timedelta(days=days)).isoformat()
@@ -252,11 +291,15 @@ def proposals_from(rows: _t.Sequence[dict], *, min_sessions: int = MIN_SESSIONS)
 
 def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None = None,
             repo: pathlib.Path = _REPO, git: GitRun | None = None, meter: dict | None = None,
-            failures: dict | None = None) -> tuple[list[dict], list[dict], dict, float]:
+            failures: dict | None = None,
+            edited: _t.Callable[[_t.Sequence[str]], _t.Mapping[str, str]] | None = None
+            ) -> tuple[list[dict], list[dict], dict, float]:
     """(rule rows, proposals, finding counts per bin, judge cost). A failed judge call leaves both
-    lists empty and says why in `failures["rules"]`; a `judge.RateLimited` propagates."""
+    lists empty and says why in `failures["rules"]`; a `judge.RateLimited` propagates. `edited`: rule
+    → when its section last changed (default `section_edits` by git); older findings don't count."""
     findings = recent_findings(events, today=_dt.date.fromisoformat(date))
-    bins = bin_findings(findings, git=git or _git_in(repo))
+    git = git or _git_in(repo)
+    bins = bin_findings(findings, git=git)
     stats = {b: sum(v == b for v in bins.values()) for b in BINS}
     if not findings:
         return [], [], stats, 0.0
@@ -272,7 +315,9 @@ def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None 
         if failures is not None:
             failures["rules"] = str(e)
         return [], [], stats, 0.0
-    rows = tally(findings, verdict.get("assignments", []), bins, rule_list)
+    assignments = since_edit(findings, verdict.get("assignments", []),
+                             (edited or (lambda rl: section_edits(rl, git)))(rule_list))
+    rows = tally(findings, assignments, bins, rule_list)
     props = proposals_from(rows)
     return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows], props, stats, cost
 

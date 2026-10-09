@@ -2,8 +2,9 @@
 
 The weekly pass writes one run record per pass to `judge-runs/` beside the effectiveness log
 (`scripts/judge/record.py`). A stopped timer or a pass that keeps failing is otherwise silent, so
-the console says so. So is a backlog the sweep budget no longer covers: candidates waiting for the
-judge that grew two passes in a row. It warns, never blocks. Design: docs/ai-assist/WEEKLY_JUDGE.md.
+the console says so; so is a pass whose issue mirror or status comment failed on `gh`, and a backlog
+the sweep budget no longer covers: candidates waiting for the judge that grew two passes in a row.
+It warns, never blocks. Design: docs/ai-assist/WEEKLY_JUDGE.md.
 """
 from __future__ import annotations
 
@@ -55,6 +56,11 @@ def judge_record_warning(store: pathlib.Path | None = None, *, today: _dt.date |
     steps = sorted((record.get("run") or {}).get("failed") or {})
     if steps:
         return f"Weekly judge: the {newest} pass ran, but its {' and '.join(steps)} judge failed; see {path}"
+    # the issue layout: a gh failure leaves the pass good but GitHub behind it
+    gh = [what for what, key in (("issue mirror", "issues"), ("status comment", "status_comment"))
+          if isinstance((record.get("run") or {}).get(key), dict) and "error" in record["run"][key]]
+    if gh:
+        return f"Weekly judge: the {newest} pass ran, but its {' and '.join(gh)} failed; see {path}"
     return backlog_warning([p for _, p in sorted(dated)])
 
 

@@ -38,6 +38,13 @@ class _WeeklyFixture(_Fixture):
         env = mock.patch.dict(os.environ, {"CECELIA_AGENT_APP_PROJECTS": str(self.tmp / "no-projects")})
         env.start()
         self.addCleanup(env.stop)
+        # never the real `gh`: the issue layout is the default, and a test that reached it would file,
+        # close and comment on the real repo. A test that wants issues passes a fake `Gh`
+        def no_gh(args, input):
+            raise AssertionError(f"a test reached the real gh: gh {' '.join(args[:3])}")
+        guard = mock.patch.object(self.w._issues, "_default_run", no_gh)
+        guard.start()
+        self.addCleanup(guard.stop)
         self.swept = {}
 
         self.fail_steps: dict = {}   # step → error its judge "failed" with
@@ -103,13 +110,21 @@ class WeeklyTest(_WeeklyFixture):
         self.run_pass()
         self.assertEqual(self.rec.load(stored)["bugs"][0]["status"], "wont_fix")
 
+    def test_an_answer_to_an_older_record_given_after_the_last_pass_reaches_its_bug(self):
+        self.rec.write(self.build("2026-09-21", bugs=[_bug("B1")]))
+        self.rec.write(self.build("2026-09-28", bugs=[_bug("B3", key="fanout-b1")]))
+        self.w._review.append_review("bug_status", "2026-09-21", "B1", "wont_fix")   # now: after 09-28's pass
+        self.assertEqual(self.w._review.applied_pass_records()[-1]["bugs"][0]["status"], "wont_fix")   # judge-review's view
+        self.run_pass()
+        self.assertEqual(self.swept["previous"]["bugs"][0]["status"], "wont_fix")
+
     def test_a_crash_still_writes_a_failure_record_and_its_pr(self):
         def crash(**kwargs):
             kwargs["state"].update(stage="verify", sha="abc123")
             raise RuntimeError("agent down")
         with mock.patch.object(self.w, "weekly", crash), \
                 mock.patch.object(self.w, "publish", return_value="url") as publish:
-            self.assertEqual(self.w.main(["--date", "2026-10-05"]), 1)
+            self.assertEqual(self.w.main(["--no-issues", "--date", "2026-10-05"]), 1)
         self.assertEqual(publish.call_args.args[0]["kind"], "failure")
         rec = self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")
         self.assertEqual((rec["kind"], rec["run"]["stage"], rec["run"]["sha"]), ("failure", "verify", "abc123"))
@@ -118,7 +133,7 @@ class WeeklyTest(_WeeklyFixture):
         self.fail_steps["sweep"] = self.w._judge.RateLimited(message)
         with mock.patch.dict(os.environ, {"JUDGE_RETRY_LEFT": str(retry_left)}), \
                 mock.patch.object(self.w, "publish", return_value="url") as publish:
-            code = self.w.main(["--date", "2026-10-05"])
+            code = self.w.main(["--no-issues", "--date", "2026-10-05"])
         return code, publish, json.loads(self.w.ratelimit_path().read_text(encoding="utf-8"))
 
     def test_a_usage_limit_fails_the_pass_instead_of_recording_nothing_judged(self):
@@ -216,7 +231,7 @@ class WeeklyTest(_WeeklyFixture):
         self.rec.write(self.build("2026-10-05"))
         with mock.patch.object(self.w, "weekly", side_effect=RuntimeError("boom")), \
                 mock.patch.object(self.w, "publish") as publish:
-            self.assertEqual(self.w.main(["--date", "2026-10-05"]), 1)
+            self.assertEqual(self.w.main(["--no-issues", "--date", "2026-10-05"]), 1)
         publish.assert_not_called()
         self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["kind"], "pass")
 
@@ -225,23 +240,26 @@ class WeeklyTest(_WeeklyFixture):
         self.rec.write(record)
         with mock.patch.object(self.w, "weekly", return_value=record), \
                 mock.patch.object(self.w, "publish", return_value="url"):
-            self.assertEqual(self.w.main([]), 0)
-            self.assertEqual(self.w.main(["--no-pr"]), 0)
+            self.assertEqual(self.w.main(["--no-issues"]), 0)
+            self.assertEqual(self.w.main(["--no-issues", "--no-pr"]), 0)
 
 
 class IssueLayoutTest(_WeeklyFixture):
-    """`--issues` / `JUDGE_ISSUES=1` (plan P4): issues + a status comment, a PR only for rules."""
+    """The issue layout, the default (plan P4): issues + a status comment, a PR only for rules."""
 
     def _main(self, argv, *, proposals=True, env=None):
         record = self.run_pass()
         if not proposals:
             record["proposals"] = []
-        with mock.patch.dict(os.environ, env or {}), \
+        env = env or {}
+        with mock.patch.dict(os.environ, env), \
                 mock.patch.object(self.w, "weekly", return_value=record), \
                 mock.patch.object(self.w, "mirror_issues", return_value={"filed": []}) as mirror, \
                 mock.patch.object(self.w, "publish", return_value="pr-url") as publish, \
                 mock.patch.object(self.w, "close_run_prs", return_value=[]) as close, \
                 mock.patch.object(self.w, "post_status", return_value="status") as status:
+            if "JUDGE_ISSUES" not in env:   # the default, whatever the shell running the tests set
+                os.environ.pop("JUDGE_ISSUES", None)
             code = self.w.main(argv)
         return code, mirror, publish, close, status
 
@@ -257,16 +275,21 @@ class IssueLayoutTest(_WeeklyFixture):
         _, _, publish, close, status = self._main(["--issues"], proposals=False)
         publish.assert_not_called()
         close.assert_called_once()
+        self.assertTrue(close.call_args.kwargs["records_only"])   # an open rules PR still carries its rollup
         self.assertIsNone(status.call_args.kwargs["pr"])
 
-    def test_the_timer_turns_it_on_through_the_environment(self):
-        _, mirror, publish, _, _ = self._main([], env={"JUDGE_ISSUES": "1"})
-        mirror.assert_called_once()
-        self.assertTrue(publish.call_args.kwargs["rules_only"])
-        _, mirror, publish, _, status = self._main([])
-        mirror.assert_not_called()
-        status.assert_not_called()
-        self.assertNotIn("rules_only", publish.call_args.kwargs)
+    def test_it_is_the_default_and_only_no_issues_or_judge_issues_0_turn_it_off(self):
+        for argv, env in (([], {}), ([], {"JUDGE_ISSUES": "1"}), (["--issues"], {})):
+            with self.subTest(argv=argv, env=env):
+                _, mirror, publish, _, _ = self._main(argv, env=env)
+                mirror.assert_called_once()
+                self.assertTrue(publish.call_args.kwargs["rules_only"])
+        for argv, env in ((["--no-issues"], {}), ([], {"JUDGE_ISSUES": "0"})):
+            with self.subTest(argv=argv, env=env):
+                _, mirror, publish, _, status = self._main(argv, env=env)
+                mirror.assert_not_called()
+                status.assert_not_called()
+                self.assertNotIn("rules_only", publish.call_args.kwargs)
 
     def test_a_failed_pass_comments_on_the_status_issue_instead_of_a_failed_pr(self):
         def crash(**kwargs):
@@ -287,6 +310,17 @@ class IssueLayoutTest(_WeeklyFixture):
         line = self.w.post_status(record, {"filed": []}, gh=self.w._issues.Gh(REPO, github))
         self.assertEqual(line, f"status comment on https://github.com/{REPO}/issues/1")
         self.assertIn("**Pass 2026-10-05**", github.issues[1]["comments"][0])
+
+    def test_a_failed_status_comment_is_kept_on_the_record(self):
+        from cecelia.tests.test_judge_issues import REPO, FakeGitHub
+        record = self.run_pass()
+        self.rec.write(record)
+        github = FakeGitHub()
+        github.crash_on = ["api", "user"]
+        line = self.w.post_status(record, {"filed": []}, gh=self.w._issues.Gh(REPO, github))
+        self.assertTrue(line.startswith("status comment failed"))
+        stored = self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")
+        self.assertEqual(stored["run"]["status_comment"], {"error": "RuntimeError: pass died"})
 
     def test_the_record_is_rendered_beside_its_json(self):
         self.rec.write(self.run_pass())
@@ -342,6 +376,22 @@ class PublishTest(_WeeklyFixture):
         self.assertNotIn("**Bugs:", body)
         self.assertFalse((wt / "docs" / "ai-assist" / "judge-runs").exists())
         self.assertEqual([c[3] for c, _ in self.cmds if c[1:3] == ["pr", "close"]], ["5"])
+
+    def test_a_pass_without_proposals_leaves_the_open_rules_pr_alone(self):
+        prs = [{"number": 5, "headRefName": "judge-run/2026-09-28", "title": "judge: run record 2026-09-28 (3 open bugs)"},
+               {"number": 6, "headRefName": "judge-run/2026-10-05", "title": "judge: rule proposals 2026-10-05 (1)"}]
+        run = self._fake_run(prs)
+        self.assertEqual(self.w.close_run_prs("superseded", run=run, records_only=True), [5])
+        self.assertEqual(self.w.close_run_prs("superseded", run=run), [5, 6])   # with proposals: a new one replaces it
+        self.assertIn("title", next(c for c, _ in self.cmds if c[1:3] == ["pr", "list"])[-1])
+
+    def test_the_pr_says_bugs_waiting_for_verify(self):
+        record = self.run_pass()
+        record["run"]["spend"]["verify"].update(waiting=2, cap_usd=10.0)
+        self.assertIn("**Verify:** 2 waiting for verify (over the $10 verify cap)", self.w._pr_body(record))
+        self.assertIn("| Verify | 2 waiting for verify (over the $10 verify cap) |", self.rec.render_markdown(record))
+        record["run"]["spend"]["verify"]["waiting"] = 0
+        self.assertNotIn("waiting for verify", self.w._pr_body(record) + self.rec.render_markdown(record))
 
     def test_a_rerun_of_the_same_date_reuses_its_pr(self):
         self.w.publish(self.run_pass(), worktree=self.tmp / "wt", run=self._fake_run(

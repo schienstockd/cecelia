@@ -21,7 +21,8 @@ test whether an agent can actually use the framework.
 1. **Pin.** Fetch, resolve `origin/main` to a SHA, and reset the persistent worktree
    (`~/.cecelia-effectiveness/judge-worktree`) to it.
 2. **Owner answers.** Fold `pixi run judge-review` answers into the earlier records, so a bug
-   answered `wont_fix` is not carried.
+   answered `wont_fix` is not carried. An answer given to an older record after the last pass
+   started applies to the last record's bug with the same key: the latest answer per bug wins.
    **Run reviews** (`run_reviews.py`). Read the agent run records: Blackboard entries with meta
    `agentRun` in the projects dir (`CECELIA_AGENT_APP_PROJECTS`, else
    `~/cecelia-feijoa/projects`; `--projects-dir` overrides). Each section a person marked `bad` with
@@ -107,7 +108,9 @@ test whether an agent can actually use the framework.
    Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the judge gives
    no verdict for (a call failed, or the budget ran out before it) waits as `unjudged`, except one the
    last record had `open`: it stays `open`, with its verdict, because a missing check is no evidence
-   it was fixed.
+   it was fixed. A `not_a_bug` on a carried bug verify called `fix` or `decide` doesn't dismiss it:
+   the excerpt judge has no tools, so the bug stays `open` with its verdict dropped and verify,
+   which traced the code, checks it again in the same pass.
 
    The `unjudged` count is the **backlog**. The record's *Backlog* row and the PR say it against the
    last pass (`N waiting for the judge (last pass M)`), and the recital console warns when it grew
@@ -131,21 +134,24 @@ test whether an agent can actually use the framework.
    - `ratchet`: older code keeps the shape alive. Add a test that bans it.
 
    The count is sessions, not findings: one session's fanout can raise ten findings about a single
-   pattern.
+   pattern. A finding logged before its section last changed (`git log -L` over the section) doesn't
+   count: once a section is tightened, its proposal doesn't recur from the old findings.
 6. **Record.** Write `~/.cecelia-effectiveness/judge-runs/<date>.json` and, beside it, its rendered
    `<date>.md`. The JSON is the only source; every reader (`judge-review`, fix sessions, the next
    pass) reads it.
 7. **Publish**, one of two layouts:
-   - **Issues** (`--issues`, or `JUDGE_ISSUES=1` in the timer's unit: *Turning on issues* in
-     [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md)). The bugs go to
+   - **Issues** (the default). The bugs go to
      GitHub issues (step 8). The pinned **Judge status** issue (label `judge-status`, filed, locked
      and pinned by the first pass) gets one comment: the bugs filed, closed, reopened and held,
      the backlog and its warning, any step whose judge failed, the rules PR, and spend. A PR is
      opened only when there are rule proposals: it carries `EFFECTIVENESS.md` (`pixi run
-     audit-rollup`) to main and lists the proposals. A pass without proposals closes any record PR
-     left from before the switch. A failed pass comments on the status issue instead of opening
-     a PR.
-   - **Record PR** (the default until issues are turned on). Mirror the record with its markdown to
+     audit-rollup`) to main and lists the proposals, and supersedes the last one. A pass without
+     proposals closes any record PR left from before the switch, and leaves an open rules PR alone.
+     A failed pass comments on the status issue instead of opening a PR. A failed mirror or status
+     comment is kept on the record (`run.issues.error`, `run.status_comment.error`) and the recital
+     console warns about it.
+   - **Record PR** (`--no-issues`, or `JUDGE_ISSUES=0` in the timer's unit: *Issues are the default*
+     in [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md)). Mirror the record with its markdown to
      `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital, and open the PR.
      Each new PR closes the previous one. A failure's PR closes none: the last pass's record is
      still the work list.
@@ -153,7 +159,10 @@ test whether an agent can actually use the framework.
    verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
    - closed as completed when the judge confirms it `gone`;
-   - closed as not planned when it's `dismissed`, `wont_fix` or `parked`;
+   - closed as not planned when it's `dismissed` (the comment says by whom: the owner, verify or the
+     judge), `wont_fix` or `parked`;
+   - closed too when GitHub still lists it open but the record no longer has its bug live, whatever
+     pass dropped it: the mirror reads the open judge issues, not just the last record;
    - reopened when it's live again, a `fixes #N` close included;
    - labelled `fix-landed`, with one comment, when a commit names its key.
 
@@ -222,7 +231,9 @@ than the screen, and a resize repaints it at once:
 record; `judge-review` never calls GitHub. The fix brief names the issue, says not to read it, and
 asks for `Refs #N` in the commit, never `fixes` / `closes`: the judge closes it when it confirms the
 fix. Your answers reach the issue at the next pass: `[w]` closes it as not planned, `[o]` / `[a]`
-add one comment (your words, defused like a body), and `[f]` labels it `in-progress`.
+add one comment (your words, defused like a body; on a bug filed that pass, right after the
+create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
+*issue not filed yet*.
 
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
@@ -238,7 +249,7 @@ No fix runs unattended: an unattended fix agent is deferred, see
 
 | | |
 |---|---|
-| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it, `-- --issues` publishes the issue layout |
+| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it, `-- --no-issues` publishes the old record-PR layout |
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |

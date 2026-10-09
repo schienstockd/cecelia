@@ -386,6 +386,11 @@ def _not_judged(b: dict, date: str, why: str) -> dict:
     return {**_strip(b), "status": "unjudged", "why": why}
 
 
+def _verified_live(b: dict) -> bool:
+    """A carried `open` bug verify called `fix` or `decide`: the sweep's judge alone can't dismiss it."""
+    return b.get("was") == "open" and (b.get("verify") or {}).get("verdict") in ("fix", "decide")
+
+
 def _opened(b: dict, date: str) -> str:
     """When this bug became `open`: kept while it stays open, else this pass (so it gets queued).
     Records from before `opened` existed queued an open bug on its `first_seen`."""
@@ -473,8 +478,12 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
     # `fix_landed` is found afresh, except on a parked bug still waiting for a re-check slot
     # (`recheck`): its fix landed before `previous sha`, so only the record still knows it. One verify
-    # parked again drops it, or the same landed fix would send it back every pass
-    carried = {b["key"]: {**{k: v for k, v in _strip(b).items() if k != "fix_landed" or b.get("recheck")},
+    # parked again drops it, or the same landed fix would send it back every pass. A fix session
+    # started before the previous pass had that whole pass to land its fix: it's dropped, so the
+    # issue's `in-progress` label lasts one pass
+    last_ts = (previous or {}).get("run", {}).get("ts") or ""
+    carried = {b["key"]: {**{k: v for k, v in _strip(b).items()
+                             if (k != "fix_landed" or b.get("recheck")) and (k != "fix_session" or v >= last_ts)},
                           "carried": True, "was": b.get("status"),
                           **({"closed_runs": b.get("closed_runs") or b.get("runs") or 1}
                              if b.get("repeat") and b.get("status") == "dismissed" else {})}
@@ -569,6 +578,11 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                    "not judged (the judge failed)" if broke else
                    f"waiting for the judge (over the ${SWEEP_USD:g} sweep budget)")
             bugs.append(_not_judged(b, date, why))
+        elif v["verdict"] == "not_a_bug" and _verified_live(b):
+            # the excerpt judge has no tools; verify's agent traced the code: it checks again, this pass
+            bugs.append({**_strip({k: x for k, x in b.items() if k != "verify"}), "status": "open",
+                         "opened": _opened(b, date),
+                         "why": f"the excerpt judge disagreed ({v['why']}); back to verify"})
         elif v["verdict"] != "gone" or b.get("carried"):   # fixed before it was ever listed: nothing to say
             status = _VERDICT_STATUS[v["verdict"]]
             bugs.append({**_strip(b), "status": status, "why": v["why"],
