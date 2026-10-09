@@ -39,6 +39,7 @@ const K_VIEW_STATE       = 'cc.viewer.viewState'
 const K_PENDING_VIEW     = 'cc.viewer.pendingViewState'
 const K_PREVIEW_LABELS   = 'cc.viewer.previewLabels'
 const K_PREVIEW_IMAGES   = 'cc.viewer.previewImages'
+const K_LIVE_LABELS      = 'cc.viewer.liveLabels'
 const K_TRACK_HIGHLIGHT  = 'cc.viewer.trackHighlight'
 const K_LABELS_DIM_MISMATCH = 'cc.viewer.labelsDimMismatch'
 const K_PICK_HIGHLIGHT   = 'cc.viewer.pickHighlight'
@@ -92,6 +93,17 @@ export interface PendingViewState {
   overlay?: { captureId: string; marks: unknown[] }     // marks: OverlayMark[], opaque here
   /** Optional filter — apply only when the popup is on this image. */
   imageUid?: string
+  updateId: number
+}
+
+/** The label store a RUNNING segmentation is writing, which the user asked to watch (ViewerPanel's
+ *  "preview this run while it writes" row). Set by the main window's overlay glue
+ *  (`useOverlayAutoShow`), read by ViewerWindow to read that vn's labels slab from the staging store.
+ *  Re-stamped on throttled progress ticks — a new `updateId` is what makes the viewer refetch the
+ *  frames written since. */
+export interface LiveLabels {
+  imageUid: string
+  valueName: string
   updateId: number
 }
 
@@ -262,6 +274,7 @@ export const useViewerStore = defineStore('viewer', () => {
   const pendingViewState = ref<PendingViewState | null>(_readJson<PendingViewState>(K_PENDING_VIEW))
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
+  const liveLabels       = ref<LiveLabels | null>(_readJson<LiveLabels>(K_LIVE_LABELS))
   const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
   const labelsDimMismatch = ref<LabelsDimMismatch | null>(_readJson<LabelsDimMismatch>(K_LABELS_DIM_MISMATCH))
   const pickHighlight    = ref<PickHighlight | null>(_readJson<PickHighlight>(K_PICK_HIGHLIGHT))
@@ -343,6 +356,16 @@ export const useViewerStore = defineStore('viewer', () => {
     const stamped: PreviewLabels | null = next ? { ...next, updateId: ++_updateIdSeq } : null
     previewLabels.value = stamped
     _writeJson(K_PREVIEW_LABELS, stamped)
+  }
+
+  /** `next` non-null points the viewer at a running task's staging labels store; `null` when no
+   *  live preview is shown. Stamped on every call so a refresh with the same identity still wakes the
+   *  popup (same reason as `setPreviewLabels`). */
+  function setLiveLabels(next: Omit<LiveLabels, 'updateId'> | null) {
+    if (!next && !liveLabels.value) return
+    const stamped: LiveLabels | null = next ? { ...next, updateId: ++_updateIdSeq } : null
+    liveLabels.value = stamped
+    _writeJson(K_LIVE_LABELS, stamped)
   }
 
   /** taskPreview calls this after an AF run: `next` non-null flips each corrected channel's slab
@@ -471,6 +494,8 @@ export const useViewerStore = defineStore('viewer', () => {
         previewLabels.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_PREVIEW_IMAGES) {
         previewImages.value = e.newValue ? JSON.parse(e.newValue) : null
+      } else if (e.key === K_LIVE_LABELS) {
+        liveLabels.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_TRACK_HIGHLIGHT) {
         trackHighlight.value = e.newValue ? JSON.parse(e.newValue) : null
       } else if (e.key === K_LABELS_DIM_MISMATCH) {
@@ -481,11 +506,11 @@ export const useViewerStore = defineStore('viewer', () => {
     })
   }
 
-  return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages,
+  return { openImage, visibleRegion, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
            uiMarks, freeformMarks, plotMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
-           consumePendingViewState, setPreviewLabels, setPreviewImages, setTrackHighlight,
+           consumePendingViewState, setPreviewLabels, setPreviewImages, setLiveLabels, setTrackHighlight,
            setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick,
            pushUiMark, dismissUiMark, pushFreeformMark, dismissFreeformMark,
            pushPlotMark, dismissPlotMark }

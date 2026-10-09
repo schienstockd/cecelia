@@ -872,7 +872,7 @@ watch(colourBy, () => { void loadOverlays() })
  * panel has more than one ticked, the first one wins deterministically. This is the visible
  * limitation the row hint below spells out.
  */
-/** The `labelName` the latest `reallocate()` started with — see the `labelName` watcher. */
+/** The `maskName` the latest `reallocate()` started with — see the `labelName` watcher. */
 let allocatedLabel: string | null = null
 /** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
 let allocatedBricks: boolean | null = null
@@ -882,6 +882,23 @@ function pickLabelName(names: string[]): string {
   return names.find(n => vis[n]) ?? ''
 }
 const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
+// The task preview's mask for THIS image, '' when none. It wins over the ticked mask while it exists:
+// a preview is "show me what these params do, here", and losing it under a ticked segmentation made it
+// look like it never ran. Clearing the preview falls back to the ticked one (`previewLabelsKey`).
+const previewVn = computed(() => {
+  const p = viewerStore.previewLabels
+  return p && p.imageUid === imageUid ? p.valueName : ''
+})
+// A running segmentation's store the user asked to watch from the viewer panel ("preview this run
+// while it writes") — read from the run's staging store, refetched on each re-stamp (`liveLabelsKey`).
+const liveVn = computed(() => {
+  const l = viewerStore.liveLabels
+  return l && l.imageUid === imageUid ? l.valueName : ''
+})
+const maskName = computed(() => previewVn.value || liveVn.value || labelName.value)
+// Session-only on/off for the mask on screen, so it can be compared against the signal it was drawn
+// from. Display state only — the mask stays loaded, so flipping it is a redraw, not a refetch.
+const maskHidden = ref(false)
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 //
@@ -893,7 +910,9 @@ const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
 // `allocatedLabel` guard: a meta refresh that flips `labelName` (a new segmentation becoming
 // known) already calls `reallocate()` itself, which reads the new name — the watcher's own
 // reallocate would be a second full reload of the same frame.
-watch(labelName, n => { if (starting.value || n === allocatedLabel) return; reallocate() })
+// Keyed on the DRAWN mask: ticking another segmentation while a preview/live mask wins changes nothing
+// on screen, so it must not reload the frame.
+watch(labelName, () => { if (starting.value || maskName.value === allocatedLabel) return; reallocate() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -952,7 +971,14 @@ const previewLabelsKey = computed(() => {
   const p = viewerStore.previewLabels
   return p && p.imageUid === imageUid ? p.updateId : 0
 })
-watch(previewLabelsKey, () => reallocate())
+// A fresh preview result is shown even if the last one was hidden — that is what was asked for.
+watch(previewLabelsKey, () => { maskHidden.value = false; reallocate() })
+// Same for the live store: every re-stamp means more frames are written, so reload the frame on screen.
+const liveLabelsKey = computed(() => {
+  const l = viewerStore.liveLabels
+  return l && l.imageUid === imageUid ? l.updateId : 0
+})
+watch(liveLabelsKey, () => reallocate())
 
 // P7.1: refetch whenever the AF preview for THIS image changes — a new AF run, a parameter edit or
 // a toggle-off. Every entry in the array shares one `updateId` (the store stamps them together), so
@@ -1521,8 +1547,7 @@ const frame = usePlotResize(canvas, () => {
   // has to be complete.
   // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
-  const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
-    viewerStore.previewLabels?.imageUid === imageUid)
+  const showLabels = !!maskName.value && !maskHidden.value
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
   // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
@@ -2041,11 +2066,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
     // cannot label this response with a different segmentation's name.
-    // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
-    // has not picked one — a first-time segmentation preview must render even without a picker entry.
-    const previewMatches = !!viewerStore.previewLabels &&
-      viewerStore.previewLabels?.imageUid === imageUid
-    const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
+    // P7: the preview's vn when a task-preview is showing labels for THIS image (see `maskName`) — a
+    // first-time segmentation preview must render even without a picker entry.
+    const vn = maskName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         // P7.1: when an AF preview run has this channel in its corrected set, retarget its slab onto
@@ -2088,9 +2111,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
         // current image dims by construction (the worker uses the open image), so bypass this
         // check for previews.
-        if (!(!!viewerStore.previewLabels &&
-              viewerStore.previewLabels?.valueName === vn &&
-              viewerStore.previewLabels?.imageUid === imageUid)
+        if (vn !== previewVn.value && vn !== liveVn.value
             && m.labelDims && labelDimsMismatch(m, vn)) {
           return null
         }
@@ -2101,15 +2122,16 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
-        const usePreview = !!viewerStore.previewLabels &&
-          viewerStore.previewLabels?.valueName === vn &&
-          viewerStore.previewLabels?.imageUid === imageUid
+        const usePreview = vn === previewVn.value
+        const useLive = !usePreview && vn === liveVn.value
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
           preview: usePreview,
           // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
           // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
           previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
+          live: useLive,
+          liveId: useLive ? viewerStore.liveLabels?.updateId : undefined,
           // Same cache-buster for the durable labels store's own rewrites.
           rev: cacheClearRev.value || undefined,
         })
@@ -2917,6 +2939,9 @@ const MASK_ZOOM_IN = 'This mask has no level at this zoom — zoom in to pick ce
 async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
+  // A preview or live mask on screen has no cell table to pick from, and picking under the ticked
+  // store would outline whichever preview cell happens to share the id. Nothing to pick until it's gone.
+  if (previewVn.value || liveVn.value) return
   const rect = c.getBoundingClientRect()
   const cx = e.clientX - rect.left
   const cy = e.clientY - rect.top
@@ -2973,6 +2998,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
                           pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
+  if (previewVn.value || liveVn.value) return   // same as `pickCellAt`
   const lvl = slabLevel.value
   const nx = renderNX.value, ny = renderNY.value
   const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
@@ -3747,7 +3773,7 @@ async function ensureRenderer() {
 async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
-  allocatedLabel = labelName.value
+  allocatedLabel = maskName.value
   allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
@@ -3798,8 +3824,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     if (!r) return
     // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
-    const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
-      viewerStore.previewLabels?.imageUid === imageUid)
+    const wantLabels = !!maskName.value
     // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
@@ -3819,11 +3844,17 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     r.setBrickSource?.({
       projectUid, imageUid,
       valueName: valueName.value || undefined,
-      // Fire label brick fetches when the picker or the preview marks THIS image as showing
-      // labels — same predicate `wantLabels` above uses to decide whether the texture is
-      // allocated. `undefined` when no mask is picked, which lets the brick loader skip label
+      // Fire label brick fetches for the mask on screen (`maskName`: preview, live store or the
+      // ticked one) — same predicate `wantLabels` above uses to decide whether the texture is
+      // allocated. `undefined` when no mask is shown, which lets the brick loader skip label
       // requests entirely on projects with no segmentation.
-      labelName: wantLabels ? (labelName.value || undefined) : undefined,
+      labelName: wantLabels ? maskName.value : undefined,
+      labelStore: !wantLabels ? undefined
+        : maskName.value === previewVn.value ? 'preview'
+        : maskName.value === liveVn.value ? 'live' : undefined,
+      labelStoreId: !wantLabels ? undefined
+        : maskName.value === previewVn.value ? viewerStore.previewLabels?.updateId
+        : maskName.value === liveVn.value ? viewerStore.liveLabels?.updateId : undefined,
       // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
       // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
       // `setBrickSource`'s compare treats a rev change as a full source switch and drops the
@@ -5860,15 +5891,23 @@ onUnmounted(() => {
                Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
                the viewer panel" using .cc-empty-inline, so the three sections read coherently
 . -->
-          <template v-if="labelName">
+          <template v-if="maskName">
+            <!-- The task preview's mask counts as shown too: it gets the same opacity + outline, and
+                 the toggle flips whichever mask is on screen so it can be checked against the signal. -->
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <span class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
+              <span class="cc-fs-2xs vw-grow" :title="maskName">
+                {{ maskName }}<span v-if="previewVn || liveVn" class="cc-muted">
+                  · {{ previewVn ? 'preview' : 'live' }}</span>
+              </span>
+              <CcToggle :model-value="!maskHidden" @update:model-value="v => { maskHidden = !v; frame.redraw() }"
+                        aria-label="Show mask"
+                        v-tooltip.bottom="maskHidden ? 'Show the mask' : 'Hide the mask'" />
             </div>
             <!-- More than one ticked: only the first renders because the compositor's bind group has
                  one label slot. Multi-mask rendering is a later phase; naming the limit here is the
                  alternative to silently dropping the others. -->
-            <div v-if="shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
+            <div v-if="!previewVn && !liveVn && shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
               {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
             </div>
             <div class="cc-row cc-row-tight">
