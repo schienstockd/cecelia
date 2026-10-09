@@ -304,9 +304,11 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     parked = [b for b in bugs if b["status"] == "parked"]
     if parked:
         out += ["### Parked", "", "Verified `guard`: the flaw is there, but nothing reachable triggers it. "
-                "Each goes back to verify when a commit touches its file.", ""]
+                "Each goes back to verify when a commit touches its file or names its key, a few a pass; "
+                "one marked *re-check due* waits for the next slot.", ""]
         out += [f"- {b['id']} · {_bug_where(b)} · `{b['key']}` — {(b.get('verify') or {}).get('effect') or b['desc']}"
                 + (f" Live once: {b['verify']['trigger']}" if (b.get("verify") or {}).get("trigger") else "")
+                + (f" · *re-check due:* {b['recheck']}" if b.get("recheck") else "")
                 for b in parked]
         out.append("")
     waiting = [b for b in bugs if b["status"] == "unjudged"]

@@ -191,10 +191,12 @@ def _pr_body(record: dict) -> str:
     decide = len(record["queue"])
     landed, confirmed = _record.landed_counts(bugs)
     # fixed: what the judge called gone, and a landed fix verify dismissed (`landed_counts` confirms both)
+    due = sum(b["status"] == "parked" and bool(b.get("recheck")) for b in bugs)
     fixed = n["gone"] + sum(b["status"] == "dismissed" and bool(b.get("fix_landed")) for b in bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
              f"**Bugs: {n['open']} open** ({verified} verified, {new} new)"
-             + (f", {n['parked']} parked (can't happen yet)" if n["parked"] else "")
+             + (f", {n['parked']} parked (can't happen yet" + (f"; {due} due a re-check" if due else "") + ")"
+                if n["parked"] else "")
              + f", {fixed} fixed since the last pass"
              + (f", {landed - confirmed} more with a fix landed, awaiting re-check" if landed > confirmed else "")
              + f", {_record.backlog_line(record)}"
