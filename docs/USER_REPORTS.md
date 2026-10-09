@@ -50,10 +50,20 @@ One issue per item, following [`bug_report.yml`](../.github/ISSUE_TEMPLATE/bug_r
 - **Separate the evidence:** what the reporter saw (error text, logs) / what triage verified on
   `main` (with `file:line`) / the reporter's diagnosis, labelled *unverified* if triage didn't
   confirm it.
-- Write the issue number back into `index.md`, status `open`.
+- **Footer:** every issue ends with this, filled in (version, SHA, the model actually writing it):
 
-Issues are public and posted under Dominik's account — the attribution rule in
-[`DEV.md`](DEV.md) → *Agent-authored public replies are attributed* applies.
+  ```markdown
+  ---
+  📨 *From a user report against v<version> (the report itself is kept private). The symptom is
+  the user's; cause, `file:line` references and fix were traced on `main` @ <sha> by Claude Code
+  (<model>) on @schienstockd's behalf — anything marked unverified wasn't. Decisions here are his.*
+  ```
+
+  It carries provenance (a user hit this, not our own review — the judge's ⚖️ footer is the other
+  source), what was verified, and the attribution [`DEV.md`](DEV.md) → *Agent-authored public
+  replies are attributed* requires for anything posted under Dominik's account. Drop the Claude
+  part if a person triaged it.
+- Write the issue number back into `index.md`, status `open`.
 
 ## 4. Fix
 
