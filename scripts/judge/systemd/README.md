@@ -42,6 +42,27 @@ journalctl --user -u weekly-judge.service -f
 Won't fire on battery (`ConditionACPower=true`), and won't fire on boot for a missed Tuesday
 (`Persistent=` omitted): the next pass sweeps from the last record, so nothing is lost.
 
+## Turning on issues
+
+Until this is set, the pass opens a record PR each week. To switch to bugs as GitHub issues, a pinned
+*Judge status* issue, and a PR only for rule proposals ([`WEEKLY_JUDGE.md`](../../../docs/ai-assist/WEEKLY_JUDGE.md)
+step 7), read what it would file first:
+
+```bash
+pixi run judge-issues            # every planned issue and body, for the newest record; reads only
+```
+
+Then set the switch in your local unit (not the repo's copy):
+
+```bash
+systemctl --user edit weekly-judge.service   # add the two lines below
+#   [Service]
+#   Environment=JUDGE_ISSUES=1
+```
+
+Remove those lines to switch back. `pixi run judge-issues -- --apply` files for the newest record
+now, without waiting for the next pass.
+
 **The usage limit.** A pass that hits it exits 75. `cron_pass.sh` sleeps until 5 min after the reset
 the CLI names and reruns the pass (3 attempts at most, a reset at most 8h off), holding the cron lock,
 so that night's agent run is skipped. That is why `TimeoutStartSec` is 12h. Each wait is in the cron

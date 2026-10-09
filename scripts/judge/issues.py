@@ -55,9 +55,11 @@ _record = _load_sibling("record")
 _run_reviews = _load_sibling("run_reviews")
 
 LABEL = "judge-bug"
+#: The one pinned issue each pass comments on (D12): found by this label + title + creator.
+STATUS_LABEL, STATUS_TITLE = "judge-status", "Judge status"
 #: Every label the mirror sets, created on first use (`gh label create --force` is idempotent).
 LABELS = {LABEL: "5319e7", "fix": "d73a4a", "decide": "fbca04", "fix-landed": "0e8a16", "parked": "c5def5",
-          "in-progress": "1d76db"}
+          "in-progress": "1d76db", STATUS_LABEL: "bfdadc"}
 #: Issues created per pass, and the gap between creates. More are reported and filed next pass.
 MAX_CREATES = 20
 CREATE_GAP_S = 1.0
@@ -78,7 +80,7 @@ class GhError(RuntimeError):
 
 
 _ALLOWED = {("issue", "create"), ("issue", "edit"), ("issue", "close"), ("issue", "reopen"),
-            ("issue", "comment"), ("issue", "lock"), ("label", "create")}
+            ("issue", "comment"), ("issue", "lock"), ("issue", "pin"), ("label", "create")}
 
 
 def allowed(args: _t.Sequence[str], repo: str) -> bool:
@@ -126,13 +128,13 @@ class Gh:
     def login(self) -> str:
         return json.loads(self("api", "user"))["login"]
 
-    def judge_issues(self, owner: str) -> dict[int, dict]:
-        """Every issue labelled `judge-bug` that `owner` opened, by number: `{state, title}`. The REST
+    def judge_issues(self, owner: str, label: str = LABEL) -> dict[int, dict]:
+        """Every issue labelled `label` that `owner` opened, by number: `{state, title}`. The REST
         list, not search (which lags), and each one's author checked again."""
         out: dict[int, dict] = {}
         page = 1
         while True:
-            batch = json.loads(self("api", f"repos/{self.repo}/issues?labels={LABEL}&creator={owner}"
+            batch = json.loads(self("api", f"repos/{self.repo}/issues?labels={label}&creator={owner}"
                                            f"&state=all&per_page={_PAGE}&page={page}") or "[]")
             for i in batch:
                 if "pull_request" not in i and (i.get("user") or {}).get("login") == owner:
@@ -427,6 +429,84 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
             b["issue"] = issue
     save()
     return report
+
+
+# ── the status issue (D12) ─────────────────────────────────────────────────────────────────────
+
+_STATUS_BODY = ("The weekly judge comments here once a pass: the bugs it filed, closed and reopened as "
+                "issues (label `judge-bug`), the backlog, spend, and a failed pass. Written by the judge, "
+                "never read back.\n")
+
+
+def status_issue(gh: Gh, owner: str) -> int | None:
+    """The pinned Judge status issue's number: the owner's oldest one, else filed, locked and pinned
+    now. None in a dry run that would file it."""
+    found = sorted(n for n, i in gh.judge_issues(owner, STATUS_LABEL).items() if i["title"] == STATUS_TITLE)
+    if found:
+        return found[0]
+    gh("label", "create", STATUS_LABEL, "--color", LABELS[STATUS_LABEL], "--force")
+    out = gh("issue", "create", "--title", STATUS_TITLE, "--body-file", "-", "--label", STATUS_LABEL, input=_STATUS_BODY)
+    if gh.dry:
+        return None
+    n = int(out.strip().rstrip("/").rsplit("/", 1)[-1])
+    gh("issue", "lock", str(n))
+    gh("issue", "pin", str(n))
+    return n
+
+
+def _keys(record: dict, keys: _t.Sequence[str], repo: str) -> str:
+    """Bug keys, each linked to its issue when the record maps one."""
+    nums = {b["key"]: (b.get("issue") or {}).get("number") for b in record.get("bugs", [])}
+    return ", ".join(f"[`{k}`]({issue_url(repo, nums[k])})" if nums.get(k) else f"`{k}`" for k in keys)
+
+
+def status_text(record: dict, report: dict | None, *, repo: str, pr: str | None = None,
+                warning: str | None = None) -> str:
+    """One pass's status comment, from structured fields only: no finding text, no error text (a
+    failure points at the record and the cron log, which hold it)."""
+    if record.get("kind") == "failure":
+        return (f"**Pass {record['date']} failed** at `{record['run']['stage']}`. Nothing changed on the "
+                "issues: the last pass's bugs stay the work list. The record and the cron log "
+                "(`~/.cecelia-effectiveness/cron/`) have the error.\n")
+    bugs = record["bugs"]
+    n = {s: sum(b["status"] == s for b in bugs) for s in ("open", "parked")}
+    lines = [f"**Pass {record['date']}** at `{record['run']['sha'][:8]}`: {n['open']} open, {n['parked']} parked, "
+             f"{_record.backlog_line(record)}.", ""]
+    if report is None:
+        lines.append("- Issues: not mirrored this pass.")
+    elif "error" in report:
+        lines.append("- Issues: **the mirror failed**; the record's `run.issues` and the cron log say why. "
+                     "The next pass catches up.")
+    else:
+        for k, label in (("filed", "Filed"), ("reopened", "Reopened"), ("closed", "Closed"), ("updated", "Updated")):
+            if report.get(k):
+                lines.append(f"- {label}: {_keys(record, report[k], repo)}")
+        if report.get("held"):
+            lines.append(f"- **Held** by the body backstop, not filed: {_keys(record, [h['key'] for h in report['held']], repo)}"
+                         " (the record's `run.issues` says what each still carried)")
+        if report.get("over_cap"):
+            lines.append(f"- Over the {MAX_CREATES}-a-pass cap, filed next pass: {len(report['over_cap'])}")
+        if report.get("missing"):
+            lines.append(f"- **Issue missing** (mapped, but not an issue the judge opened): {_keys(record, report['missing'], repo)}")
+        if not any(report.get(k) for k in report):
+            lines.append("- Issues: no change.")
+    failed = sorted((record["run"].get("failed") or {}))
+    if failed:
+        lines.append(f"- **Judge failed** for: {', '.join(failed)}. That step didn't run this pass.")
+    if warning:
+        lines.append(f"- **{warning}**")
+    props = record.get("proposals") or []
+    lines.append(f"- Rules: {len(props)} proposal(s) in {pr}" if props and pr else
+                 f"- Rules: {len(props)} proposal(s); no PR was opened" if props else "- Rules: no proposals.")
+    lines.append(f"- Spend (list price): {_record.spend_line(record['run']['spend'])}")
+    return "\n".join(lines) + "\n"
+
+
+def post_status(gh: Gh, text: str) -> int | None:
+    """Comment `text` on the status issue (filing it first if there is none); its number."""
+    n = status_issue(gh, gh.login())
+    gh("issue", "comment", str(n) if n else "<new>", "--body-file", "-", input=text)
+    return n
 
 
 def report_lines(report: dict) -> list[str]:

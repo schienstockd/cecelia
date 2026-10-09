@@ -62,6 +62,8 @@ class FakeGitHub:
         i = self.issues[int(args[2])]
         if args[1] == "lock":
             i["locked"] = True
+        elif args[1] == "pin":
+            i["pinned"] = True
         elif args[1] == "edit":
             i["labels"] |= set(opts.get("--add-label", []))
             i["labels"] -= set(opts.get("--remove-label", []))
@@ -274,6 +276,35 @@ class BodyTest(_IssuesFixture):
         self.assertIn("`get_cohort_qc` failed with HTTP 400: No cohort metrics for fun, in 4 separate runs", text)
         self.assertNotIn("abcDEF", text)
         self.assertEqual(self.i.title(b), "[fanout-b1] open: repeated agent error in get_cohort_qc")
+
+
+class StatusTest(_IssuesFixture):
+    def test_the_status_issue_is_filed_locked_and_pinned_once_and_a_forged_one_ignored(self):
+        self.github.add("Judge status", user="stranger", labels=("judge-status",))
+        gh = self.gh()
+        first = self.i.post_status(gh, "pass 1\n")
+        second = self.i.post_status(gh, "pass 2\n")
+        self.assertEqual((first, second), (2, 2))
+        status = self.github.issues[2]
+        self.assertEqual((status["title"], status["locked"], status.get("pinned")), ("Judge status", True, True))
+        self.assertEqual(status["comments"], ["pass 1\n", "pass 2\n"])
+
+    def test_the_comment_holds_no_finding_or_error_text(self):
+        record = self.build(bugs=[_fix("B1", desc="see @someone in #3", issue={"number": 4}), _fix("B2")])
+        record["run"].update(backlog_last=2, failed={"rules": "claude said /home/me/x"})
+        report = {"filed": ["fanout-b1"], "held": [{"key": "fanout-b2", "why": "mention @someone"}],
+                  "closed": [], "reopened": [], "updated": [], "over_cap": [], "missing": []}
+        text = self.i.status_text(record, report, repo=REPO, pr="https://github.com/owner/repo/pull/9",
+                                  warning="Weekly judge: the backlog grew 2 passes in a row (1 → 2 → 3 waiting)")
+        self.assertIn(f"- Filed: [`fanout-b1`](https://github.com/{REPO}/issues/4)", text)
+        self.assertIn("**Held** by the body backstop, not filed: `fanout-b2`", text)
+        self.assertIn("**Judge failed** for: rules", text)
+        self.assertIn("backlog grew 2 passes in a row", text)
+        self.assertEqual(self.i.leaks(text), [])
+        failed = self.rec.failure_record("2026-10-05", stage="bugs", error="boom at /home/me/x @someone", sha="abc")
+        text = self.i.status_text(failed, None, repo=REPO)
+        self.assertIn("**Pass 2026-10-05 failed** at `bugs`", text)
+        self.assertEqual(self.i.leaks(text), [])
 
 
 class AllowlistTest(_IssuesFixture):

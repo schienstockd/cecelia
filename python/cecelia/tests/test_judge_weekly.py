@@ -229,6 +229,70 @@ class WeeklyTest(_WeeklyFixture):
             self.assertEqual(self.w.main(["--no-pr"]), 0)
 
 
+class IssueLayoutTest(_WeeklyFixture):
+    """`--issues` / `JUDGE_ISSUES=1` (plan P4): issues + a status comment, a PR only for rules."""
+
+    def _main(self, argv, *, proposals=True, env=None):
+        record = self.run_pass()
+        if not proposals:
+            record["proposals"] = []
+        with mock.patch.dict(os.environ, env or {}), \
+                mock.patch.object(self.w, "weekly", return_value=record), \
+                mock.patch.object(self.w, "mirror_issues", return_value={"filed": []}) as mirror, \
+                mock.patch.object(self.w, "publish", return_value="pr-url") as publish, \
+                mock.patch.object(self.w, "close_run_prs", return_value=[]) as close, \
+                mock.patch.object(self.w, "post_status", return_value="status") as status:
+            code = self.w.main(argv)
+        return code, mirror, publish, close, status
+
+    def test_proposals_get_a_rules_only_pr_and_every_pass_a_status_comment(self):
+        code, mirror, publish, close, status = self._main(["--issues"])
+        self.assertEqual(code, 0)
+        mirror.assert_called_once()
+        self.assertTrue(publish.call_args.kwargs["rules_only"])
+        self.assertEqual(status.call_args.kwargs["pr"], "pr-url")
+        close.assert_not_called()   # publish closes the older ones itself
+
+    def test_no_proposals_no_pr_and_the_old_record_prs_are_closed(self):
+        _, _, publish, close, status = self._main(["--issues"], proposals=False)
+        publish.assert_not_called()
+        close.assert_called_once()
+        self.assertIsNone(status.call_args.kwargs["pr"])
+
+    def test_the_timer_turns_it_on_through_the_environment(self):
+        _, mirror, publish, _, _ = self._main([], env={"JUDGE_ISSUES": "1"})
+        mirror.assert_called_once()
+        self.assertTrue(publish.call_args.kwargs["rules_only"])
+        _, mirror, publish, _, status = self._main([])
+        mirror.assert_not_called()
+        status.assert_not_called()
+        self.assertNotIn("rules_only", publish.call_args.kwargs)
+
+    def test_a_failed_pass_comments_on_the_status_issue_instead_of_a_failed_pr(self):
+        def crash(**kwargs):
+            kwargs["state"].update(stage="verify", sha="abc123")
+            raise RuntimeError("agent down")
+        with mock.patch.object(self.w, "weekly", crash), \
+                mock.patch.object(self.w, "publish") as publish, \
+                mock.patch.object(self.w, "post_status", return_value="status") as status:
+            self.assertEqual(self.w.main(["--issues", "--date", "2026-10-05"]), 1)
+        publish.assert_not_called()
+        self.assertEqual(status.call_args.args[0]["kind"], "failure")
+
+    def test_the_status_comment_goes_through_the_issue_mirror(self):
+        from cecelia.tests.test_judge_issues import REPO, FakeGitHub
+        record = self.run_pass()
+        self.rec.write(record)
+        github = FakeGitHub()
+        line = self.w.post_status(record, {"filed": []}, gh=self.w._issues.Gh(REPO, github))
+        self.assertEqual(line, f"status comment on https://github.com/{REPO}/issues/1")
+        self.assertIn("**Pass 2026-10-05**", github.issues[1]["comments"][0])
+
+    def test_the_record_is_rendered_beside_its_json(self):
+        self.rec.write(self.run_pass())
+        self.assertTrue((self.tmp / "judge-runs" / "2026-10-05.md").read_text(encoding="utf-8").startswith("# Weekly judge"))
+
+
 class PublishTest(_WeeklyFixture):
     def _fake_run(self, open_prs):
         self.cmds = []
@@ -265,6 +329,19 @@ class PublishTest(_WeeklyFixture):
         closed = [c for c, _ in self.cmds if c[1:3] == ["pr", "close"]]
         self.assertEqual([c[3] for c in closed], ["5"])             # never the unrelated PR
         self.assertTrue((wt / "docs" / "ai-assist" / "judge-runs" / "2026-10-05.md").is_file())
+
+    def test_a_rules_only_pr_carries_the_rollup_not_the_record(self):
+        wt = self.tmp / "wt"
+        self.w.publish(self.run_pass(), worktree=wt, rules_only=True, run=self._fake_run(
+            [{"number": 5, "headRefName": "judge-run/2026-09-28", "url": "u5"}]))
+        commit = next((c, i) for c, i in self.cmds if c[1] == "commit")
+        self.assertIn("--allow-empty", commit[0])
+        self.assertTrue(commit[1].startswith("judge: rule proposals 2026-10-05 (1)"))
+        body = next(i for c, i in self.cmds if c[1:3] == ["pr", "create"])
+        self.assertIn("P1 · tighten", body)
+        self.assertNotIn("**Bugs:", body)
+        self.assertFalse((wt / "docs" / "ai-assist" / "judge-runs").exists())
+        self.assertEqual([c[3] for c, _ in self.cmds if c[1:3] == ["pr", "close"]], ["5"])
 
     def test_a_rerun_of_the_same_date_reuses_its_pr(self):
         self.w.publish(self.run_pass(), worktree=self.tmp / "wt", run=self._fake_run(
