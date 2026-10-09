@@ -133,6 +133,10 @@ test whether an agent can actually use the framework.
    - `tighten`: agents keep missing the rule. Reword it, or turn it into a mechanical check.
    - `ratchet`: older code keeps the shape alive. Add a test that bans it.
 
+   A finding counts only if it came after the section's last edit and after your last answer to a
+   proposal for that rule in `judge-review`. So a rule you tightened, or a proposal you rejected,
+   comes back only if sessions keep breaking it.
+
    The count is sessions, not findings: one session's fanout can raise ten findings about a single
    pattern. A finding logged before its section last changed (`git log -L` over the section) doesn't
    count: once a section is tightened, its proposal doesn't recur from the old findings.
@@ -224,6 +228,10 @@ than the screen, and a resize repaints it at once:
    work it (confirm on `origin/main`, its own worktree from `pixi run bootstrap-worktree fix-<key>`,
    sibling call sites, a failing test, recital, the bug key in the commit). You're in that session as usual; the queue comes back when
    you exit it. `[w] won't fix` closes a bug you don't want.
+3. **Rules.** The pass's rule proposals, one per screen: the section, what to do (`tighten` or
+   `ratchet`), and the findings that broke it. `[e] edit the rule` starts a session briefed on them,
+   in its own worktree (`rule-<id>-<date>`); it first says what the findings share, and stops if a
+   rule can't fix it. `[r] reject` drops the proposal. Either answer resets the count (step 5).
 
 **Issues.** Once the mirror runs (step 8), each card names the bug's issue under its title: the link,
 *issue pending* (a pass stopped while filing it; the next adopts or files it), or *issue missing*
@@ -239,8 +247,8 @@ A bug you started a fix session for isn't offered again. The next pass marks it 
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.
 
-**Rules.** Take a `tighten` or `ratchet` proposal like any other change. Every finding it cites is
-listed under *Sources*.
+The rules-only PR only carries `EFFECTIVENESS.md` to main: merge it whenever, and answer its
+proposals in `judge-review`.
 
 No fix runs unattended: an unattended fix agent is deferred, see
 [`../FUTURE.md`](../FUTURE.md) → *Unattended fix agent for the weekly judge*.
@@ -254,7 +262,7 @@ No fix runs unattended: an unattended fix agent is deferred, see
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
-| `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
+| `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
 

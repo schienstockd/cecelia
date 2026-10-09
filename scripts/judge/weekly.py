@@ -245,8 +245,9 @@ def _rules_body(record: dict) -> str:
              "broken in enough different sessions. The bugs are issues (label `judge-bug`); the pinned "
              "*Judge status* issue has this pass's summary.", ""]
     lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in record["proposals"]]
-    lines += ["", "This PR carries `docs/ai-assist/EFFECTIVENESS.md` (`pixi run audit-rollup`), so the rollup "
-              "reaches main when it merges. The full record, with each proposal's sources, is "
+    lines += ["", "Answer them in `pixi run judge-review`, after the bugs: *edit the rule* starts a session on "
+              "it, *reject* drops it. This PR only carries `docs/ai-assist/EFFECTIVENESS.md` (`pixi run "
+              "audit-rollup`) to main; merge it whenever. The full record, with each proposal's sources, is "
               f"`~/.cecelia-effectiveness/judge-runs/{record['date']}.md`.", "", _PR_FOOTER]
     return "\n".join(lines) + "\n"
 
@@ -358,7 +359,8 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     state["stage"] = "rules"
     rules_tokens: dict = {}
     rows, proposals, bins, rules_usd = _rules.propose(events, date=date, assign=assign, meter=rules_tokens,
-                                                      failures=failed)
+                                                      failures=failed,
+                                                      answered=_review.rule_answers(history, reviews))
     steps = {"sweep": sweep_tokens, "verify": verified.get("tokens") or {}, "rules": rules_tokens}
     total: dict = {}
     for t in steps.values():

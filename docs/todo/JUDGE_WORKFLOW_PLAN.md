@@ -3,7 +3,9 @@
 **Status:** decisions locked (2026-10-07, Dominik); a concerns review folded in (2026-10-09: D14, D15
 and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2–P4 built and on: the
 2026-10-09 pass ran in the issue layout, which is now the default (`--no-issues` / `JUDGE_ISSUES=0`
-for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5).
+for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5). Rule proposals are answered
+in `judge-review` after the bugs (Dominik, 2026-10-09: "I will probably forget otherwise"); the
+rules-only PR only carries `EFFECTIVENESS.md`.
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan

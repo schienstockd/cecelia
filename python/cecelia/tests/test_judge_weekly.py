@@ -62,7 +62,8 @@ class _WeeklyFixture(_Fixture):
             return bugs, {"groups": 1, "verified": 1, "failed": 0, "waiting": 0, "usd": 2.0,
                           "tokens": {"input": 5, "cache_write": 1000, "cache_read": 50000, "output": 4000}}
 
-        def propose(events, *, date, assign=None, meter=None, failures=None):
+        def propose(events, *, date, assign=None, meter=None, failures=None, answered=None):
+            self.answered = answered
             if self.fail_steps.get("rules"):
                 failures["rules"] = self.fail_steps["rules"]
                 return [], [], {"agent_made": 0, "legacy": 0, "unknown": 0}, 0.0
@@ -117,6 +118,14 @@ class WeeklyTest(_WeeklyFixture):
         self.assertEqual(self.w._review.applied_pass_records()[-1]["bugs"][0]["status"], "wont_fix")   # judge-review's view
         self.run_pass()
         self.assertEqual(self.swept["previous"]["bugs"][0]["status"], "wont_fix")
+
+    def test_an_answer_to_a_rule_proposal_reaches_the_rules_step(self):
+        rule = "CLAUDE.md → *Testing*"
+        self.rec.write(self.build("2026-09-28", proposals=[
+            {"id": "P1", "kind": "tighten", "rule": rule, "summary": "s", "sources": ["a"]}]))
+        row = self.w._review.append_review("rule_status", "2026-09-28", "P1", "rejected")
+        self.run_pass()
+        self.assertEqual(self.answered, {rule: row["ts"]})
 
     def test_a_crash_still_writes_a_failure_record_and_its_pr(self):
         def crash(**kwargs):
