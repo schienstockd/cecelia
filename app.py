@@ -11,6 +11,7 @@ analysis stack the server spawns all resolve to that env. See docs/SHIPPING.md.
 
 Close this window (or Ctrl-C) to stop the server.
 """
+import hashlib
 import os
 import shutil
 import ssl
@@ -63,6 +64,73 @@ def _find_julia() -> str:
 def _find_pixi() -> str:
     """Resolve the Pixi binary: PATH first, else Pixi's default per-user install location."""
     return shutil.which("pixi") or os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+
+
+def _config_dir() -> str:
+    """The per-user dir holding `custom.toml`: the Python twin of `config_dir` in app/src/config.jl,
+    same order — `CECELIA_DEV_DIR` env, then `CECELIA_DEV_DIR` in `<root>/.env`, then `~/.cecelia`
+    (the installed app has neither, so it lands there)."""
+    val = os.environ.get("CECELIA_DEV_DIR")
+    if not val:
+        try:
+            with open(os.path.join(ROOT, ".env"), encoding="utf-8") as f:
+                for line in f:
+                    key, sep, rest = line.strip().partition("=")
+                    if sep and key == "CECELIA_DEV_DIR":
+                        val = rest.strip()
+        except OSError:
+            pass
+    # normpath: `~/x` expands to `C:\Users\u/x` on Windows; Julia's `expand_user` canonicalises it.
+    return os.path.normpath(os.path.expanduser(val or os.path.join("~", ".cecelia")))
+
+
+def _multithreaded_setting() -> bool:
+    """`[server] multithreaded` in custom.toml — Settings → System → "Use all CPU cores". Default ON.
+    Julia owns the write (`set_api_multithreaded!`, app/src/config/server_threads.jl); this is the
+    launch-time read, because a Julia process cannot change its thread count once started. An
+    unreadable file never blocks a launch: it reads as the default."""
+    try:
+        import tomllib
+        with open(os.path.join(_config_dir(), "custom.toml"), "rb") as f:
+            val = tomllib.load(f).get("server", {}).get("multithreaded", True)
+        return val if isinstance(val, bool) else True
+    except Exception:  # noqa: BLE001 — missing file, bad TOML, no tomllib: all mean "default"
+        return True
+
+
+def _thread_args() -> tuple:
+    """The `-t` flag for the server, and what was applied (`auto` / `1` / `env`).
+
+    The applied value is handed to the server as `CECELIA_LAUNCH_THREADS`, so Settings can tell
+    "the setting says X but this process started with Y — restart to apply" without guessing from
+    `Threads.nthreads()` (a 1-core box running `-t auto` also has one thread). An explicit
+    `JULIA_NUM_THREADS` wins over the setting: no `-t`, so Julia reads the env var itself."""
+    if os.environ.get("JULIA_NUM_THREADS"):
+        return [], "env"
+    return (["-t", "auto"], "auto") if _multithreaded_setting() else (["-t", "1"], "1")
+
+
+def _file_digest(path: str) -> bytes:
+    try:
+        with open(path, "rb") as f:
+            return hashlib.sha256(f.read()).digest()
+    except OSError:
+        return b""
+
+
+def _reexec_if_launcher_changed(before: bytes, browser_opened: bool) -> None:
+    """An update or revert can replace THIS file. Without a re-exec the old launcher keeps running
+    until the next full relaunch, so a launcher fix (e.g. the thread flag) would not land on the
+    in-app Restart that finishes an update. POSIX only: `os.execv` keeps the PID, so `pixi run`
+    and the desktop shortcut still own us; on Windows it spawns a detached copy instead, so there
+    the new launcher waits for the next launch."""
+    if sys.platform == "win32" or _file_digest(os.path.abspath(__file__)) == before:
+        return
+    print("Launcher updated — reloading it…")
+    if browser_opened:
+        os.environ["CECELIA_LAUNCHER_NO_BROWSER"] = "1"
+    sys.stdout.flush(); sys.stderr.flush()
+    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), *sys.argv[1:]])
 
 
 PORT = os.environ.get("CECELIA_PORT", "8080")
@@ -272,18 +340,23 @@ def main() -> int:
     # backend restart is available (we relaunch it on RESTART_EXIT_CODE). Resolve Julia first: it can
     # set JULIAUP_DEPOT_PATH + PATH, and the server's env is copied from os.environ here.
     julia = _find_julia()
-    env = {**os.environ, "CECELIA_SUPERVISED": "1"}
-    first = True
+    # A re-exec after an update (`_reexec_if_launcher_changed`) arrives with the browser already open.
+    first = os.environ.pop("CECELIA_LAUNCHER_NO_BROWSER", "") != "1"
     crashes: list[float] = []          # fault timestamps inside CRASH_WINDOW — the loop breaker
     while True:
         # Apply staged updates every iteration, not just at first launch — Settings → System Restart
         # re-enters this loop with the Julia backend down, which is the one moment we can swap
         # api/src/*.jl without a running process locking them. Revert runs FIRST so a user who
         # somehow stacked a revert on top of an unrelated apply gets what they asked for.
+        launcher = _file_digest(os.path.abspath(__file__))
         _apply_pending_revert()
         _apply_pending_update()
+        _reexec_if_launcher_changed(launcher, browser_opened=not first)
+        # Read per iteration, so Settings → "Use all CPU cores" lands on the in-app Restart.
+        targs, applied = _thread_args()
+        env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied}
         proc = subprocess.Popen(
-            [julia, "--project", "src/server.jl"],
+            [julia, "--project", *targs, "src/server.jl"],
             cwd=os.path.join(ROOT, "api"),
             env=env,
         )

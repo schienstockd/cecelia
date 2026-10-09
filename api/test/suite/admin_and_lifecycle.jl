@@ -1,6 +1,7 @@
 # Admin + install/update + app-lifecycle API testsets — extracted from api/test/runtests.jl.
 #
-# 13 testsets covering the server-admin / install / update / lifecycle surface: diagnostics,
+# 14 testsets covering the server-admin / install / update / lifecycle surface: diagnostics,
+# the API thread-pool preference,
 # pool-limit set guards, task thread budget (reports where the number came from), maintenance
 # patches, system envs (probe + install guards), running-version (prefers dev marker over
 # stale VERSION), _find_pixi (falls back past PATH), update scope, update version ordering
@@ -24,6 +25,28 @@
     @test haskey(d, :version) && !isempty(String(d.version))
     # first-launch setup flag drives the frontend /setup redirect
     @test haskey(d, :setupRequired) && d.setupRequired isa Bool
+end
+
+@testset "API: thread pool preference — restart needed only when the launcher applied otherwise" begin
+    # Read-only (the write path is pinned in app/test/suite/config.jl against a temp config dir).
+    # `launch` is what app.py applied; the pixi dev/prod tasks set nothing → not managed, no restart.
+    get_threads() = JSON3.read(api_threads_get(HTTP.Request("GET", "/api/config/threads"))[2])
+    want = Cecelia.api_multithreaded()
+    withenv("CECELIA_LAUNCH_THREADS" => nothing) do
+        d = get_threads()
+        @test d.managed == false && d.restartRequired == false && d.running == Threads.nthreads()
+    end
+    withenv("CECELIA_LAUNCH_THREADS" => (want ? "auto" : "1")) do
+        @test get_threads().managed && !get_threads().restartRequired      # launched as configured
+    end
+    withenv("CECELIA_LAUNCH_THREADS" => (want ? "1" : "auto")) do
+        @test get_threads().restartRequired                                  # setting moved since launch
+    end
+    withenv("CECELIA_LAUNCH_THREADS" => "env") do                            # JULIA_NUM_THREADS won
+        @test !get_threads().managed && !get_threads().restartRequired
+    end
+    st, _ = _post(api_threads_set, Dict("on" => "yes"))                     # non-Bool rejected, nothing written
+    @test st == 400
 end
 
 @testset "API: pool limit set — guards" begin

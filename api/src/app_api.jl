@@ -116,7 +116,8 @@ end
 # RESTART_EXIT_CODE — the `dev.jl` loop in dev, or `app.py` in prod. Both set CECELIA_SUPERVISED so we
 # never "exit to nowhere" on a bare launch (`julia src/server.jl` directly). This replaces the earlier
 # detached-relauncher approach, which couldn't reattach a new server to a foreground terminal and
-# depended on `pixi` being on PATH. The UI offers restart dev-only (button gated on `diag.dev`).
+# depended on `pixi` being on PATH. The UI offers restart dev-only (button gated on `diag.dev`), plus
+# a "Restart now" beside a launch-time setting that needs one (Settings → "Use all CPU cores").
 const RESTART_EXIT_CODE = 42
 _can_restart()::Bool = haskey(ENV, "CECELIA_SUPERVISED")
 

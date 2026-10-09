@@ -786,6 +786,34 @@ function api_tls_set(body_bytes)
     ))
 end
 
+# ── API thread pool (Settings → System → "Use all CPU cores") ─────────────────────
+# GET → { desired, running, cpus, launch, managed, restartRequired, canRestart }.
+# `desired` is the persisted preference (`[server] multithreaded`); `launch` is what the launcher
+# actually applied (`CECELIA_LAUNCH_THREADS`, set by app.py: "auto" / "1" / "env"; "" under the dev
+# and `prod` pixi tasks, which always pass `-t auto`). Only an app.py launch honours the toggle, so
+# `managed` is false otherwise and the UI locks it. Thread count is fixed at start: a change needs a
+# restart — `canRestart` says whether the in-app one (POST /api/app/restart) is available.
+const _LAUNCH_THREADS_MANAGED = ("auto", "1")   # the values app.py derives from the setting (+ "env")
+
+function _api_threads_payload()
+    launch  = get(ENV, "CECELIA_LAUNCH_THREADS", "")
+    desired = Cecelia.api_multithreaded()
+    managed = launch in _LAUNCH_THREADS_MANAGED
+    (; desired, running = Threads.nthreads(), cpus = Cecelia.usable_cpus(), launch, managed,
+       restartRequired = managed && desired != (launch == "auto"), canRestart = _can_restart())
+end
+
+api_threads_get(_req) = (200, JSON3.write(_api_threads_payload()))
+
+function api_threads_set(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
+    on = get(data, :on, nothing)
+    (on === true || on === false) || return 400, JSON3.write((; error = "on (bool) required"))
+    Cecelia.set_api_multithreaded!(on)
+    200, JSON3.write(_api_threads_payload())
+end
+
 # ── Store LAYOUT defaults (zarr format + chunk separator) ─────────────────────────
 # GET → { current, default, measuredOn, choices: [...] }. Shaped like the compressor endpoint on
 # purpose: it is the same kind of decision and Settings renders it the same way, as a TABLE with the
