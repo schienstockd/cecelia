@@ -9,6 +9,7 @@ Run under the DEFAULT env (v4 cellpose is present); the branch decision reads
 `cecelia.utils.cellpose_utils._CELLPOSE_MAJOR`, which we monkey-patch to `3` here — no real cellpose
 3 import, since neither env has both versions. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 """
+import os
 import unittest
 from unittest import mock
 
@@ -96,11 +97,22 @@ class TestCellposeV3CallPath(unittest.TestCase):
 
 class TestCellposeMajorVersion(unittest.TestCase):
 
-    def test_major_version_is_an_int(self):
-        # The whole branching decision hangs off this — a bad parse must never silently take the
-        # wrong path. The fallback in _cellpose_major_version is 4 (default env), so under any
-        # sane env this is 3 or 4.
-        self.assertIn(cpu._cellpose_major_version(), (3, 4))
+    def test_detects_the_installed_major(self):
+        # No monkeypatch: the real detection against the env this runs in. `pixi run` sets
+        # PIXI_ENVIRONMENT_NAME; only the opt-in `cellpose-v3` env carries cellpose 3.
+        expected = 3 if os.environ.get('PIXI_ENVIRONMENT_NAME') == 'cellpose-v3' else 4
+        self.assertEqual(cpu._cellpose_major_version(), expected)
+
+    def test_v3_package_metadata_selects_the_v3_branch(self):
+        # What the Mac opt-in env reports (cellpose 3.1.1.3 has no `__version__` either).
+        with mock.patch.object(cpu.importlib.metadata, 'version', return_value='3.1.1.3') as v:
+            self.assertEqual(cpu._cellpose_major_version(), 3)
+        v.assert_called_with('cellpose')
+
+    def test_unreadable_metadata_falls_back_to_4(self):
+        with mock.patch.object(cpu.importlib.metadata, 'version',
+                               side_effect=cpu.importlib.metadata.PackageNotFoundError('cellpose')):
+            self.assertEqual(cpu._cellpose_major_version(), 4)
 
     def test_v3_builtins_are_the_two_we_ship(self):
         # If the picker adds a v3 name, add it here too — the _get_model guard reads this set.
