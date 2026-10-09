@@ -199,6 +199,19 @@ class WeeklyTest(_WeeklyFixture):
         self.assertIn("**Bugs: 2 open** (1 verified, 2 new), 2 parked (can't happen yet; 1 due a re-check), 0 fixed since the last pass, "
                       "0 waiting for the judge (last pass 3)", self.w._pr_body(record))
 
+    def test_the_issue_mirror_reports_on_the_record_and_never_fails_the_pass(self):
+        from cecelia.tests.test_judge_issues import REPO, FakeGitHub
+        record = self.run_pass()
+        self.rec.write(record)
+        github = FakeGitHub()
+        report = self.w.mirror_issues(record, gh=self.w._issues.Gh(REPO, github))
+        self.assertEqual(report["filed"], ["fanout-b2"])   # B2 is `decide`; B1 has no verdict yet
+        self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["run"]["issues"], report)
+        github.crash_on = ["api", "user"]
+        broken = self.w.mirror_issues(record, gh=self.w._issues.Gh(REPO, github))
+        self.assertEqual(broken, {"error": "RuntimeError: pass died"})
+        self.assertEqual(self.rec.load(self.tmp / "judge-runs" / "2026-10-05.json")["run"]["issues"], broken)
+
     def test_a_failure_never_replaces_a_pass_record(self):
         self.rec.write(self.build("2026-10-05"))
         with mock.patch.object(self.w, "weekly", side_effect=RuntimeError("boom")), \

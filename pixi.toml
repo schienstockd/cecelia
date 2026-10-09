@@ -367,6 +367,10 @@ judge-record = "python scripts/judge/record.py"
 # per answer (open / wont_fix); answers are append-only events in ~/.cecelia-effectiveness/review.jsonl,
 # applied by the next pass. `--date D` for another record.
 judge-review = "python scripts/judge/review.py"
+# The GitHub issue mirror for the newest run record (docs/todo/JUDGE_WORKFLOW_PLAN.md D7): what it
+# would file, close and reopen, printed with every body; reads only the judge issues' numbers and
+# states. `-- --apply` does it and records the issue numbers. The weekly pass runs it with `--issues`.
+judge-issues = "python scripts/judge/issues.py"
 
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that
 # everything the running app loads is in there. `--launch` also boots the API server from the

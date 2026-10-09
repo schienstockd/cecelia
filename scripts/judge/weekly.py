@@ -22,6 +22,7 @@ Usage:
     pixi run judge-weekly                  # pin origin/main, sweep, verify, record, open the PR
     pixi run judge-weekly -- --no-pr       # write the record only
     pixi run judge-weekly -- --dry-run     # print the record; write nothing
+    pixi run judge-weekly -- --issues      # also mirror the open bugs to GitHub issues (`issues.py`)
 """
 from __future__ import annotations
 
@@ -59,6 +60,7 @@ _verify = _load_sibling("verify")
 _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
 _run_reviews = _load_sibling("run_reviews")
+_issues = _load_sibling("issues")
 
 
 #: Exit code of a pass stopped by the usage limit (sysexits `EX_TEMPFAIL`): `cron_pass.sh` retries it.
@@ -320,6 +322,21 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     return record
 
 
+def mirror_issues(record: dict, gh: "_issues.Gh | None" = None) -> dict:
+    """The issue mirror for this pass's record, its report kept on `run.issues`. A failure is said
+    there and on stderr, never fails the pass: the record is written, and the next pass catches up."""
+    earlier = _record.pass_records(before=record["date"])
+    try:
+        gh = gh or _issues.Gh(_issues.repo_slug())
+        report = _issues.mirror(record, gh=gh, previous=earlier[-1] if earlier else None,
+                                uids=_issues.known_uids(), persist=lambda r: _record.write(r, force=True))
+    except Exception as e:  # noqa: BLE001 — the record stands; the mirror reports what stopped it
+        report = {"error": f"{type(e).__name__}: {e}"}
+    record["run"]["issues"] = report
+    _record.write(record, force=True)
+    return report
+
+
 def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> dict | None:
     """Write the failure record, unless that date already has a pass record: never replace data."""
     date = date or _now()[:10]
@@ -343,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="record date (default: today, UTC)")
     ap.add_argument("--dry-run", action="store_true", help="print the record's markdown; write nothing")
     ap.add_argument("--no-pr", action="store_true", help="write the record; don't commit, push or open a PR")
+    ap.add_argument("--issues", action="store_true",
+                    help="mirror the record's open bugs to GitHub issues after writing it (issues.py)")
     ap.add_argument("--projects-dir", type=pathlib.Path,
                     help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
     args = ap.parse_args(argv)
@@ -363,6 +382,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{record['date']}: {n} open bug(s), {len(record['proposals'])} rule proposal(s)\n"
               f"  tokens: {_record.tokens_line(record['run']['spend'])}\n"
               f"  spend (list price): {_record.spend_line(record['run']['spend'])}\n  wrote {path}")
+        if args.issues:
+            state["stage"] = "issues"
+            report = mirror_issues(record)
+            print("  issues: " + ("failed: " + report["error"] if "error" in report else
+                                  "; ".join(_issues.report_lines(report))), file=sys.stderr)
         if not args.no_pr:
             state["stage"] = "publish"
             print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")

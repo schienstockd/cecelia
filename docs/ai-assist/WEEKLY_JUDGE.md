@@ -136,6 +136,23 @@ test whether an agent can actually use the framework.
    rendered markdown to `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital,
    and open the PR. Each new PR closes the previous one. A failure's PR closes none: the last
    pass's record is still the work list.
+7. **Issues** (`issues.py`, only with `--issues`; the timer doesn't pass it yet). Each open bug
+   verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
+   titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
+   - closed as completed when the judge confirms it `gone`;
+   - closed as not planned when it's `dismissed`, `wont_fix` or `parked`;
+   - reopened when it's live again, a `fixes #N` close included;
+   - labelled `fix-landed`, with one comment, when a commit names its key.
+
+   It is a write-only mirror. The record is the only source, and the one thing read back is each
+   judge issue's number, title and open/closed state: labelled `judge-bug`, opened by the `gh`
+   user, and mapped to that number in the record (`bug.issue`). A forged issue with a copied key is
+   ignored; an edited one is rewritten at the bug's next change. Bodies come from the record's
+   fields; in the prose ones `@name` and `#N` go inside code spans, home paths become `~` and
+   project/image uids `<uid>`, and a body that still carries any of those isn't filed (*held*).
+   `gh` is allowlisted to the issue subcommands this needs. At most 20 creates a pass, one a
+   second; the rest wait. A mirror that fails says so on `run.issues` and leaves the pass standing.
+   Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
 
 The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
@@ -200,13 +217,14 @@ No fix runs unattended: an unattended fix agent is deferred, see
 
 | | |
 |---|---|
-| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it |
+| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it, `-- --issues` also mirrors to issues |
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, then work the open bugs (`[f] fix now` opens a briefed session) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
+| `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
 
 On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
 (`judge-bugs: usage limit — lifts 2026-10-07T01:40+11:00: …`) and exit 75, not a traceback.
