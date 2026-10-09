@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchProfiles, profileDisplayName } from '../utils/profileApi'
+import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
@@ -26,9 +26,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   // Display alias for the magic `default` profile — routed through the same helper the picker
   // uses (single source of truth for the alias). Header chip + any UI that reads the active
   // identity should show this, not the raw API name.
-  const activeProfileDisplayName = computed(() =>
-    profileDisplayName({ name: activeProfileName.value,
-                         isDefault: activeProfileName.value === 'default' }))
+  const activeProfileDisplayName = computed(() => profileNameLabel(activeProfileName.value))
   const profileCount = ref<number>(1)
 
   const _post = (url: string, body: unknown = {}) =>
