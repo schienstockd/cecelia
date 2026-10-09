@@ -80,7 +80,8 @@ def _config_dir() -> str:
                         val = rest.strip()
         except OSError:
             pass
-    return os.path.expanduser(val or "~/.cecelia")
+    # normpath: `~/x` expands to `C:\Users\u/x` on Windows; Julia's `expand_user` canonicalises it.
+    return os.path.normpath(os.path.expanduser(val or os.path.join("~", ".cecelia")))
 
 
 def _multithreaded_setting() -> bool:
