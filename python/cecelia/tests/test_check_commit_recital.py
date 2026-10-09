@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import pathlib
+import shlex
 import tempfile
 import unittest
 from unittest import mock
@@ -640,6 +641,23 @@ class GuardScopeTest(unittest.TestCase):
         marker.write_text("", encoding="utf-8")
         (self.root / "cecelia" / "sub").mkdir()
         self.cecelia, self.other = str(self.root / "cecelia"), str(self.root / "other")
+        # Quoted as a real shell command must carry them: an unquoted Windows `C:\…` loses its
+        # backslashes in bash (and in shlex), so it would name a different, nonexistent dir.
+        self.sh_cecelia, self.sh_other, self.sh_root = map(
+            shlex.quote, (self.cecelia, self.other, str(self.root)))
+
+    def test_git_bash_drive_paths_map_to_windows_drives(self):
+        self.assertEqual(self.hook._native_path("/c/Users/x", windows=True), "C:/Users/x")
+        self.assertEqual(self.hook._native_path("/d", windows=True), "D:/")
+        self.assertEqual(self.hook._native_path("/cc/x", windows=True), "/cc/x")
+        self.assertEqual(self.hook._native_path("/c/Users/x", windows=False), "/c/Users/x")
+
+    @unittest.skipUnless(os.name == "nt", "`/c/…` is an ordinary absolute path off Windows")
+    def test_git_bash_drive_path_in_command(self):
+        drive, rest = os.path.splitdrive(pathlib.Path(self.cecelia).resolve().as_posix())
+        msys = f"/{drive[0].lower()}{rest}"
+        self.assertIsNotNone(self.hook.guard(f"cd {shlex.quote(msys)} && git commit -m x", cwd=self.other))
+        self.assertIsNotNone(self.hook.guard(f"git -C {shlex.quote(msys)} commit -m x", cwd=self.other))
 
     def test_other_repo_commit_allowed(self):
         self.assertIsNone(self.hook.guard("git add x && git commit -m x && git push", cwd=self.other))
@@ -657,26 +675,26 @@ class GuardScopeTest(unittest.TestCase):
 
     def test_cd_into_other_repo_is_allowed(self):
         # The reported case: session cwd is a cecelia checkout, the commit isn't.
-        self.assertIsNone(self.hook.guard(f"cd {self.other} && git commit -m x", cwd=self.cecelia))
+        self.assertIsNone(self.hook.guard(f"cd {self.sh_other} && git commit -m x", cwd=self.cecelia))
         self.assertIsNone(self.hook.guard("cd ../other && git commit -m x", cwd=self.cecelia))
 
     def test_cd_into_cecelia_blocks(self):
-        self.assertIsNotNone(self.hook.guard(f"cd '{self.cecelia}' && git commit -m x", cwd=self.other))
+        self.assertIsNotNone(self.hook.guard(f"cd {self.sh_cecelia} && git commit -m x", cwd=self.other))
         self.assertIsNotNone(self.hook.guard("cd ../cecelia; cd sub && git commit -m x", cwd=self.other))
 
     def test_git_dash_c(self):
-        self.assertIsNone(self.hook.guard(f"git -C {self.other} commit -m x", cwd=self.cecelia))
-        self.assertIsNotNone(self.hook.guard(f"git -C {self.cecelia} commit -m x", cwd=self.other))
+        self.assertIsNone(self.hook.guard(f"git -C {self.sh_other} commit -m x", cwd=self.cecelia))
+        self.assertIsNotNone(self.hook.guard(f"git -C {self.sh_cecelia} commit -m x", cwd=self.other))
         # Relative `-C` composes on top of a preceding `cd`.
-        self.assertIsNotNone(self.hook.guard(f"cd {self.root} && git -C cecelia commit -m x",
+        self.assertIsNotNone(self.hook.guard(f"cd {self.sh_root} && git -C cecelia commit -m x",
                                              cwd=self.other))
 
     def test_global_c_option_naming_commit_is_not_the_subcommand(self):
         self.assertIsNone(self.hook.guard(
-            f"git -c commit.gpgsign=false -C {self.other} commit -m x", cwd=self.cecelia))
+            f"git -c commit.gpgsign=false -C {self.sh_other} commit -m x", cwd=self.cecelia))
 
     def test_each_commit_in_a_chain_is_judged_on_its_own_dir(self):
-        cmd = f"git -C {self.other} commit -m x && git -C {self.cecelia} commit -m y"
+        cmd = f"git -C {self.sh_other} commit -m x && git -C {self.sh_cecelia} commit -m y"
         self.assertIsNotNone(self.hook.guard(cmd, cwd=self.other))
 
     def test_unresolvable_dir_falls_back_to_session_cwd(self):

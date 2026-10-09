@@ -370,8 +370,8 @@ any slug is duplicated (the same finding can't have two outcomes), and writes re
 for each slug-paired outcome. **Activate once per clone: `pixi run install-git-hooks`** — the
 Claude Code Bash guard (`.claude/settings.json` PreToolUse) blocks `git commit` into a cecelia
 checkout until it's set, and blocks `--no-verify` / `-n` (commits into other repos pass).
-**An agent's commit (`CLAUDECODE=1`, set by Claude Code) is blocked unless recital actually ran for this change** — findings or not; never copy another
-commit's check trailer. A throwaway WIP commit uses `CECELIA_SKIP_RECITAL_CHECK=1`. It doesn't validate the
+**An agent's commit (`CLAUDECODE=1`, set by Claude Code) is blocked unless recital actually ran
+for this change** — findings or not; never copy another commit's check trailer. A throwaway WIP commit uses `CECELIA_SKIP_RECITAL_CHECK=1`. It doesn't validate the
 outcome itself — a wrong `false_positive` still passes, until the weekly bug sweep checks it —
 but the disclosure step can't be silently skipped. That's what turns advisory into "advisory-with-teeth" for autonomous mode:
 findings in the log become gradeable later (did shipped-anyway correlate with real bugs?)

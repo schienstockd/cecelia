@@ -480,7 +480,14 @@ def _static_path(arg: str, base: str) -> str | None:
     path = os.path.expandvars(os.path.expanduser(words[0]))
     if "$" in path or "`" in path:
         return None
-    return os.path.normpath(os.path.join(base, path))
+    return os.path.normpath(os.path.join(base, _native_path(path)))
+
+
+def _native_path(path: str, windows: bool = os.name == "nt") -> str:
+    """Git Bash (Claude Code's shell on Windows) spells `C:\\x` as `/c/x`; Python would read that
+    as `\\c\\x` on the current drive. Map the drive prefix back; elsewhere `/c/x` is a real path."""
+    m = re.match(r"/([A-Za-z])(?=/|$)", path)
+    return f"{m.group(1).upper()}:/{path[3:]}" if windows and m else path
 
 
 def _commit_target(command: str, start: int, segment: str, cwd: str | None) -> str | None:
