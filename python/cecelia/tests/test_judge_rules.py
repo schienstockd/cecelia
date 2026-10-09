@@ -122,6 +122,26 @@ class ProposeTest(unittest.TestCase):
         rows, props, _, _ = self._three_sessions(lambda rl: {"CLAUDE.md → *Testing*": "2026-09-22T11:00:00+11:00"})
         self.assertEqual((rows[0]["findings"], props), (1, []))
 
+    def test_an_answer_to_a_proposal_cuts_like_an_edit_and_the_later_of_the_two_wins(self):
+        def run(edited, answered):
+            ev = [_finding_event(x, ts=f"2026-09-2{i}T00:00:00Z") for i, x in enumerate("abc", 1)]
+            assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+            with tempfile.TemporaryDirectory() as d:
+                (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
+                return self.r.propose(ev, date="2026-10-02", assign=assign, repo=pathlib.Path(d),
+                                      git=lambda *a: None, edited=lambda rl: edited, answered=answered)
+        rule = "CLAUDE.md → *Testing*"
+        # rejected on 09-21 12:00 UTC: only b and c are after it, below the 3 sessions a proposal needs
+        rows, props, _, _ = run({}, {rule: "2026-09-21T12:00:00Z"})
+        self.assertEqual((rows[0]["findings"], props), (2, []))
+        # an older answer than the edit: the edit cuts
+        self.assertEqual(run({rule: "2026-09-22T12:00:00Z"}, {rule: "2026-09-20T00:00:00Z"})[0][0]["findings"], 1)
+        # 11:00 Sydney is 00:00 UTC: compared as instants, not strings
+        self.assertEqual(self.r.latest({rule: "2026-09-22T11:00:00+11:00"}, {rule: "2026-09-21T23:00:00Z"}),
+                         {rule: "2026-09-22T11:00:00+11:00"})
+        self.assertEqual(self.r.latest({rule: "2026-09-22T11:00:00+11:00"}, {rule: "2026-09-22T01:00:00Z"}),
+                         {rule: "2026-09-22T01:00:00Z"})
+
     def test_since_edit_keeps_rules_git_cant_place_and_findings_with_no_time(self):
         f = [_finding_event("a", ts="2026-09-21T00:00:00Z"), {**_finding_event("b"), "ts": ""}]
         out = self.r.since_edit(f, [{"slug": "a", "rule": "X"}, {"slug": "a", "rule": "Y"}, {"slug": "b", "rule": "X"}],

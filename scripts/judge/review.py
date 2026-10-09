@@ -8,6 +8,10 @@ interactive Claude Code session where the owner starts sessions (the folder hold
 briefed on that bug and told to make its own worktree; the queue resumes when it exits. Every answer is an append-only event in `~/.cecelia-effectiveness/review.jsonl`; an undo is a
 correcting event, never an edit. The weekly pass applies the events at the start of the next pass.
 
+Last, the record's rule proposals: `edit the rule` starts a session briefed on the CLAUDE.md section
+and the findings that broke it; `reject` drops it. Either way the next pass counts only the findings
+made after the answer, so a rule is proposed again only if sessions keep breaking it.
+
 Usage:
     pixi run judge-review                # the newest record
     pixi run judge-review --date 2026-10-06
@@ -48,6 +52,7 @@ def _load_sibling(name: str):
 
 _record = _load_sibling("record")
 _issues = _load_sibling("issues")
+_rules = _load_sibling("rules")
 
 REVIEW_SCHEMA_VERSION = 1
 
@@ -56,8 +61,9 @@ REVIEW_SCHEMA_VERSION = 1
 ANSWERS: dict[str, dict[str, tuple[str, str]]] = {
     "decide": {"w": ("bug_status", "wont_fix"), "o": ("bug_status", "open"), "a": ("bug_status", "open")},
     "work": {"f": ("bug_work", "fix_session"), "w": ("bug_status", "wont_fix")},
+    "rule": {"e": ("rule_status", "accepted"), "r": ("rule_status", "rejected")},
 }
-REVIEW_EVENTS = ("bug_status", "bug_work")
+REVIEW_EVENTS = ("bug_status", "bug_work", "rule_status")
 _CONTROL = {"n": "skip", "z": "undo", "q": "quit"}
 
 
@@ -184,16 +190,22 @@ def work_items(record: dict) -> list[dict]:
 
 
 def items_of(record: dict) -> list[dict]:
-    """The whole queue: the record's decide items, then the work list."""
-    return [{"kind": "decide", "ref": item["ref"]} for item in record.get("queue", [])] + work_items(record)
+    """The whole queue: the record's decide items, the work list, then its rule proposals."""
+    return ([{"kind": "decide", "ref": item["ref"]} for item in record.get("queue", [])] + work_items(record)
+            + [{"kind": "rule", "ref": p["id"]} for p in record.get("proposals", [])])
 
 
 def pending(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = ()) -> list[dict]:
     """The queue's items with no live answer yet, in queue order. An answer given to an `older`
     record after this one's pass started counts too (`apply_reviews`)."""
+    reviews = list(reviews)
     now = current(reviews)
     late = late_answers(record, now, older)
     keys = {b["id"]: b.get("key") for b in record.get("bugs", [])}
+    start = (record.get("run") or {}).get("ts") or ""
+    # a rule answered on an older record after this pass proposed it again: the answer covers this one too
+    late_rules = {rule for rule, ts in rule_answers(older, reviews).items() if start and _rules._utc(ts) > _rules._utc(start)}
+    rule_of = {p["id"]: p["rule"] for p in record.get("proposals", [])}
 
     def live(event: str, ref: str) -> str | None:
         row = now.get((record["date"], event, ref))
@@ -202,6 +214,9 @@ def pending(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] =
         return (late.get((event, keys.get(ref))) or {}).get("value")
 
     def answered(item: dict) -> bool:
+        if item["kind"] == "rule":
+            return ((now.get((record["date"], "rule_status", item["ref"])) or {}).get("value") is not None
+                    or rule_of.get(item["ref"]) in late_rules)
         if item["kind"] == "decide":
             return live("bug_status", item["ref"]) is not None
         # a work item is done once a fix session was started or it was answered won't-fix; a decide
@@ -255,6 +270,56 @@ def fix_brief(record: dict, bug: dict) -> str:
     return "\n".join(lines)
 
 
+def rule_answers(records: _t.Iterable[dict], reviews: _t.Iterable[dict]) -> dict[str, str]:
+    """rule → when the owner last accepted or rejected a proposal for it, over every record. The
+    rules step counts only the findings after it, as after an edit of the section (`rules.since_edit`)."""
+    now = current(reviews)
+    out: dict[str, str] = {}
+    for r in records:
+        rules = {p["id"]: p["rule"] for p in r.get("proposals", [])}
+        for (date, event, ref), row in now.items():
+            if event == "rule_status" and date == r.get("date") and ref in rules and row.get("value") is not None:
+                out = _rules.latest(out, {rules[ref]: row.get("ts", "")})
+    return out
+
+
+_RULE_HOW = {"tighten": "Agents keep breaking it in code they wrote. Reword the rule so the next agent can't "
+                        "miss it, or turn it into a mechanical check (a test, a lint, a recital step).",
+             "ratchet": "Older code keeps the shape alive, and new code copies it. Add a test that bans the "
+                        "shape, with the existing sites as an allow-list that may only shrink."}
+
+
+def source_findings(slugs: _t.Iterable[str], events: _t.Iterable[dict] | None = None) -> list[dict]:
+    """The finding rows a proposal cites, from the effectiveness log, in `slugs` order."""
+    want = list(slugs)
+    found: dict[str, dict] = {}
+    for e in (read_events() if events is None else events):
+        slug = (e.get("payload") or {}).get("slug")
+        if slug in want and e.get("event") in _rules._FINDING_EVENTS:
+            found[slug] = e["payload"]
+    return [found[s] for s in want if s in found]
+
+
+def rule_brief(record: dict, p: dict, findings: _t.Sequence[dict]) -> str:
+    """The opening prompt of a rule session: the section, why the judge proposes it, and its sources."""
+    main = main_checkout()
+    file, _, heading = p["rule"].partition(" → ")
+    lines = [f"Work rule proposal {p['id']} from the weekly judge record of {record['date']} "
+             f"(`{_record.store_root() / (record['date'] + '.md')}`, section *Rules*).", "",
+             f"Rule: `{file}` → section {heading}. Proposal ({p['kind']}): {_why(p)}.",
+             _RULE_HOW[p["kind"]], "", f"The findings that broke it ({len(p['sources'])}):"]
+    lines += [f"- `{f.get('slug')}` {f.get('file') or ''}: {f.get('desc', '')[:400]}" for f in findings]
+    lines += [f"- `{s}` (not in the log any more)" for s in p["sources"][len(findings):]
+              if s not in {f.get("slug") for f in findings}]
+    lines += ["", "Read the section and the findings, then say in two or three sentences what the findings have "
+              "in common and why the rule didn't stop them. If they don't share a cause the rule can fix, say so "
+              "and stop. Otherwise work in your own worktree: from "
+              f"`{main}`, run `pixi run bootstrap-worktree rule-{p['id'].lower()}-{record['date']}` and work in "
+              f"the worktree it creates, never in `{main}` itself. Keep the rule as short as it is now or shorter; "
+              "a mechanical check beats more words. Run recital and ask before committing, as usual."]
+    return "\n".join(lines)
+
+
 def main_checkout(repo: pathlib.Path = _REPO) -> pathlib.Path:
     return git_context.main_checkout(str(repo)) or repo
 
@@ -282,7 +347,7 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 
 #: How each answer reads on the prompt and after it, and its colour.
 _LABELS = {"w": ("won't fix", VERMILLION), "o": ("keep open", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
-           "f": ("fix now", BLUE)}
+           "f": ("fix now", BLUE), "e": ("edit the rule", BLUE), "r": ("reject", VERMILLION)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
 _SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Your answer", REDDISH_PURPLE),
@@ -321,9 +386,47 @@ def _paragraph(text: str, *, width: int, use_colour: bool, bullets: bool = False
     return out
 
 
+_FINDINGS: dict[tuple, list[dict]] = {}
+_CARD_FINDINGS = 8   # a card shows the first few; the brief carries every one
+
+
+def _why(p: dict) -> str:
+    """The proposal's summary without the rule it starts with: "Agents broke it in 4 sessions (5 findings)"."""
+    why = p["summary"].removeprefix(p["rule"] + ": ")
+    return why[:1].upper() + why[1:]
+
+
+def describe_rule(record: dict, p: dict, findings: _t.Sequence[dict], *, width: int = _MAX_WIDTH,
+                  use_colour: bool = True) -> list[str]:
+    """The card for one rule proposal: the section, what to do about it, and the findings behind it."""
+    file, _, heading = p["rule"].partition(" → ")
+    out = [f"  {_col(ORANGE, p['kind'], use_colour=use_colour)}  {_col(_BOLD, file + ' → ' + heading, use_colour=use_colour)}",
+           "", "  " + _col(SKY_BLUE, "Proposal", use_colour=use_colour)]
+    out += _paragraph(f"{_why(p)}. {_RULE_HOW[p['kind']]}", width=width, use_colour=use_colour)
+    out += ["", "  " + _col(GREY, f"Findings ({len(p['sources'])})", use_colour=use_colour)]
+    for f in findings[:_CARD_FINDINGS]:
+        wrapped = [_highlight(ln, use_colour=use_colour) for ln in _wrap_desc(
+            f"{f.get('file') or f.get('slug')}: {' '.join(str(f.get('desc', '')).split())[:300]}",
+            width=width, indent="      ", first_prefix="    • ").splitlines()]
+        if wrapped:
+            wrapped[0] = "    " + _col(_DIM, "•", use_colour=use_colour) + wrapped[0][5:]
+        out += wrapped
+    if len(findings) > _CARD_FINDINGS:
+        out.append("    " + _col(_DIM, f"… {len(findings) - _CARD_FINDINGS} more; the session gets them all",
+                                 use_colour=use_colour))
+    return out
+
+
 def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: bool = True) -> list[str]:
     """The card for one bug: where it is, then the agent's question (a decide item) or the bug and what
-    verify found (a work item), the answer or recommendation, and the evidence."""
+    verify found (a work item), the answer or recommendation, and the evidence. A rule item's card is
+    `describe_rule`'s."""
+    if item["kind"] == "rule":
+        p = next(p for p in record.get("proposals", []) if p["id"] == item["ref"])
+        key = tuple(p["sources"])
+        if key not in _FINDINGS:   # a repaint (scroll, resize) doesn't re-read the log
+            _FINDINGS[key] = source_findings(p["sources"])
+        return describe_rule(record, p, _FINDINGS[key], width=width, use_colour=use_colour)
     b = next(b for b in record.get("bugs", []) if b["id"] == item["ref"])
     v = b.get("verify") or {}
     where = _record.bug_location(b)
@@ -426,13 +529,13 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
 
     skipped: set[tuple[str, str]] = set()
     rec, items, total = state()
-    decide_n = sum(it["kind"] == "decide" for it in items)
+    counts = {k: sum(it["kind"] == k for it in items) for k in ANSWERS}
     title = (_col(_BOLD, "Weekly judge review", use_colour=use_colour) + "  "
-             + _col(_DIM, f"{record['date']} · {decide_n} to decide · {len(items) - decide_n} to work",
-                    use_colour=use_colour))
+             + _col(_DIM, f"{record['date']} · {counts['decide']} to decide · {counts['work']} to work"
+                    + (f" · {counts['rule']} rule proposal(s)" if counts["rule"] else ""), use_colour=use_colour))
     if not items:
         print(title, file=out)
-        print(_col(BLUISH_GREEN, "  nothing to review: every open bug is answered", use_colour=use_colour), file=out)
+        print(_col(BLUISH_GREEN, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)
         return 0
     done: list[tuple[dict, str]] = []   # (event row, key) answered this session, for undo
     status = ""   # the last answer, shown under the title of the next card
@@ -458,7 +561,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
         while items:
             item = items[0]
             keys = ANSWERS[item["kind"]]
-            kind = "decide" if item["kind"] == "decide" else "work"
+            kind = item["kind"]
 
             def card(w: int) -> list[str]:
                 return [_hr(f"{item['ref']} · {kind} · {len(items)} left", w, use_colour=use_colour),
@@ -500,19 +603,24 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                                 + f" {_col(_BOLD, '›', use_colour=use_colour)} ").strip()
                 if key == "a" and not note:
                     status = _col(YELLOW, "  empty answer: nothing recorded", use_colour=use_colour)
-                elif key == "f":
-                    bug = next(b for b in rec["bugs"] if b["id"] == item["ref"])
+                elif key in ("f", "e"):
+                    if key == "f":
+                        brief = fix_brief(rec, next(b for b in rec["bugs"] if b["id"] == item["ref"]))
+                    else:
+                        p = next(p for p in rec["proposals"] if p["id"] == item["ref"])
+                        brief = rule_brief(rec, p, source_findings(p["sources"]))
                     if fullscreen:   # the session gets the real screen; the queue comes back after
                         out.write(_LEAVE)
                         out.flush()
-                    failed = launch(fix_brief(rec, bug), cwd or workspace())
+                    failed = launch(brief, cwd or workspace())
                     if fullscreen:
                         out.write(_ENTER)
                     if failed:
                         status = _col(YELLOW, f"  {failed}", use_colour=use_colour)
                     else:
                         done.append((append_review(event, record["date"], item["ref"], value, path=path), key))
-                        status = _col(BLUE, f"  ✓ {item['ref']} → fix session ended", use_colour=use_colour)
+                        status = _col(BLUE, f"  ✓ {item['ref']} → {'fix' if key == 'f' else 'rule'} session ended",
+                                      use_colour=use_colour)
                 else:
                     done.append((append_review(event, record["date"], item["ref"], value, note=note, path=path), key))
                     label, colour = _LABELS[key]

@@ -173,7 +173,7 @@ class QueueTest(_ReviewFixture):
         self.assertIn("0 answered this session · 3 left", out)
         self.queue("w", "w", "w")
         _, out = self.queue()
-        self.assertIn("nothing to review: every open bug is answered", out)
+        self.assertIn("nothing to review: every open bug and rule proposal is answered", out)
 
 
 class WorkTest(_ReviewFixture):
@@ -219,6 +219,81 @@ class WorkTest(_ReviewFixture):
         self.queue("w")
         self.assertEqual(self.rv.apply_reviews(self.record, self.rv.read_reviews(self.log))["bugs"][0]["status"],
                          "wont_fix")
+
+
+class RuleTest(_ReviewFixture):
+    RULE = "CLAUDE.md → *Testing*"
+
+    def setUp(self):
+        super().setUp()
+        self.record = self.build(bugs=[_bug("B1", status="gone")], proposals=[
+            {"id": "P1", "kind": "tighten", "rule": self.RULE, "sources": ["fanout-x", "fanout-gone"],
+             "summary": f"{self.RULE}: agents broke it in 3 sessions (4 findings)"}])
+        events = [{"event": "fanout_audit_finding", "payload": {"slug": "fanout-x", "file": "a.py", "desc": "no test"}},
+                  {"event": "fanout_audit_run", "payload": {"slug": "fanout-x"}}]
+        real = self.rv.read_events   # the review log still reads; only the effectiveness log is scripted
+        patch = mock.patch.object(self.rv, "read_events", lambda path=None: real(path) if path else iter(events))
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.rv._FINDINGS.clear()
+
+    def test_a_proposal_comes_after_the_bugs_with_its_findings(self):
+        self.assertEqual([(i["kind"], i["ref"]) for i in self.rv.pending(self.record, [])], [("rule", "P1")])
+        _, out = self.queue("q")
+        self.assertIn("1 rule proposal(s)", out)
+        self.assertIn("tighten  CLAUDE.md → *Testing*", out)
+        self.assertIn("• a.py: no test", out)
+
+    def test_a_card_shows_the_first_findings_and_the_brief_all_of_them(self):
+        p = self.record["proposals"][0]
+        many = [{"slug": f"s{i}", "file": f"f{i}.py", "desc": "d"} for i in range(self.rv._CARD_FINDINGS + 2)]
+        card = "\n".join(self.rv.describe_rule(self.record, p, many, use_colour=False))
+        self.assertIn("Agents broke it in 3 sessions (4 findings).", card)
+        self.assertNotIn("f9.py", card)
+        self.assertIn("… 2 more; the session gets them all", card)
+        self.assertIn("f9.py", self.rv.rule_brief(self.record, p, many))
+
+    def test_edit_the_rule_briefs_a_session_and_reject_drops_it(self):
+        n, out = self.queue("e")
+        self.assertEqual(n, 1)
+        self.assertIn("✓ P1 → rule session ended", out)
+        brief = self.launched[0]
+        self.assertIn("Rule: `CLAUDE.md` → section *Testing*. Proposal (tighten)", brief)
+        self.assertIn("- `fanout-x` a.py: no test", brief)
+        self.assertIn("- `fanout-gone` (not in the log any more)", brief)
+        self.assertIn("pixi run bootstrap-worktree rule-p1-2026-10-05", brief)
+        self.assertEqual(self.rv.pending(self.record, self.rv.read_reviews(self.log)), [])
+        self.log.unlink()
+        self.queue("r")
+        self.assertEqual([(r["event"], r["value"]) for r in self.rv.read_reviews(self.log)],
+                         [("rule_status", "rejected")])
+        self.assertEqual(self.launched, [])
+
+    def test_an_answer_on_an_older_record_after_this_pass_clears_the_same_rule_here(self):
+        later = self.build(date="2026-10-12", proposals=[dict(self.record["proposals"][0], id="P2")])
+        self.assertEqual([i["ref"] for i in self.rv.pending(later, [], older=[self.record])], ["P2"])
+        row = {"schema_version": 1, "event": "rule_status", "record": "2026-10-05", "ref": "P1", "value": "rejected"}
+        before, after = dict(row, ts="2026-10-12T13:00:00Z"), dict(row, ts="2026-10-12T15:00:00Z")   # pass at 13:59
+        self.assertEqual([i["ref"] for i in self.rv.pending(later, [before], older=[self.record])], ["P2"])
+        self.assertEqual(self.rv.pending(later, [after], older=[self.record]), [])
+        self.assertEqual([i["ref"] for i in self.rv.pending(later, [after])], ["P2"])
+
+    def test_answers_are_compared_as_instants_not_strings(self):
+        # 09:00 Sydney on the 13th is 22:00 UTC on the 12th: before 23:00Z, though it sorts after as a string
+        later = self.build(date="2026-10-12", proposals=[dict(self.record["proposals"][0])])
+        rows = [{"schema_version": 1, "event": "rule_status", "record": d, "ref": "P1", "value": "rejected", "ts": ts}
+                for d, ts in (("2026-10-05", "2026-10-13T09:00:00+11:00"), ("2026-10-12", "2026-10-12T23:00:00Z"))]
+        self.assertEqual(self.rv.rule_answers([self.record, later], rows), {self.RULE: "2026-10-12T23:00:00Z"})
+
+    def test_the_latest_answer_per_rule_reaches_the_next_pass_and_an_undo_does_not(self):
+        later = self.build(date="2026-10-12", proposals=[dict(self.record["proposals"][0])])
+        self.rv.append_review("rule_status", "2026-10-05", "P1", "rejected", path=self.log)
+        row = self.rv.append_review("rule_status", "2026-10-12", "P1", "accepted", path=self.log)
+        answers = self.rv.rule_answers([self.record, later], self.rv.read_reviews(self.log))
+        self.assertEqual(answers, {self.RULE: row["ts"]})
+        self.rv.append_review("rule_status", "2026-10-12", "P1", None, corrects=row["id"], path=self.log)
+        self.rv.append_review("rule_status", "2026-10-05", "P1", None, corrects="x", path=self.log)
+        self.assertEqual(self.rv.rule_answers([self.record, later], self.rv.read_reviews(self.log)), {})
 
 
 class WorkspaceTest(unittest.TestCase):

@@ -102,6 +102,17 @@ def since_edit(findings: _t.Sequence[dict], assignments: _t.Iterable[dict],
             or _utc(ts[a["slug"]]) > _utc(edited[a["rule"]])]
 
 
+def latest(*maps: _t.Mapping[str, str]) -> dict[str, str]:
+    """rule → the latest of its times across `maps`: the section's last edit and the owner's last answer
+    to a proposal for it (`review.rule_answers`) both mean "count only the findings after this"."""
+    out: dict[str, str] = {}
+    for m in maps:
+        for rule, ts in m.items():
+            if ts and (rule not in out or _utc(ts) > _utc(out[rule])):
+                out[rule] = ts
+    return out
+
+
 def recent_findings(events: _t.Iterable[dict], *, today: _dt.date, days: int = WINDOW_DAYS) -> list[dict]:
     """Finding rows in the window, one per slug (a re-run recital logs a slug again)."""
     since = (today - _dt.timedelta(days=days)).isoformat()
@@ -292,11 +303,12 @@ def proposals_from(rows: _t.Sequence[dict], *, min_sessions: int = MIN_SESSIONS)
 def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None = None,
             repo: pathlib.Path = _REPO, git: GitRun | None = None, meter: dict | None = None,
             failures: dict | None = None,
-            edited: _t.Callable[[_t.Sequence[str]], _t.Mapping[str, str]] | None = None
-            ) -> tuple[list[dict], list[dict], dict, float]:
+            edited: _t.Callable[[_t.Sequence[str]], _t.Mapping[str, str]] | None = None,
+            answered: _t.Mapping[str, str] | None = None) -> tuple[list[dict], list[dict], dict, float]:
     """(rule rows, proposals, finding counts per bin, judge cost). A failed judge call leaves both
     lists empty and says why in `failures["rules"]`; a `judge.RateLimited` propagates. `edited`: rule
-    → when its section last changed (default `section_edits` by git); older findings don't count."""
+    → when its section last changed (default `section_edits` by git); older findings don't count.
+    `answered`: rule → when the owner last accepted or rejected a proposal for it; the same cut."""
     findings = recent_findings(events, today=_dt.date.fromisoformat(date))
     git = git or _git_in(repo)
     bins = bin_findings(findings, git=git)
@@ -316,7 +328,7 @@ def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None 
             failures["rules"] = str(e)
         return [], [], stats, 0.0
     assignments = since_edit(findings, verdict.get("assignments", []),
-                             (edited or (lambda rl: section_edits(rl, git)))(rule_list))
+                             latest((edited or (lambda rl: section_edits(rl, git)))(rule_list), answered or {}))
     rows = tally(findings, assignments, bins, rule_list)
     props = proposals_from(rows)
     return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows], props, stats, cost
@@ -327,7 +339,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="as of this date (default: today)")
     args = ap.parse_args(argv)
     try:
-        rows, props, stats, cost = propose(list(read_events()), date=args.date or _dt.date.today().isoformat())
+        date = args.date or _dt.date.today().isoformat()
+        review = _load_sibling("review")   # lazily: review loads this module
+        answered = review.rule_answers(review._record.pass_records(before=args.date), review.read_reviews())
+        rows, props, stats, cost = propose(list(read_events()), date=date, answered=answered)
     except _judge.RateLimited as e:
         return _judge.limit_exit("judge-rules", e)
     print(json.dumps({"rules": rows, "proposals": props}, indent=2, ensure_ascii=False))
