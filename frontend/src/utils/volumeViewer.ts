@@ -72,6 +72,9 @@ export interface ViewerMeta {
    * directory and this list is the answer.
    */
   labelNames?: string[]
+  /** The segmentations with a cell table, mask or not — what populations, tracks and track clusters
+   *  draw from (the movie's `_overlay_segmentations`, same order). Absent on an older server. */
+  cellTableNames?: string[]
   /**
    * Per-vn (nX, nY, nZ) of each mask store's L0. Lets the client flag a mask that was segmented on a
    * DIFFERENT image version whose spatial dims no longer match this image version's — overlaying such

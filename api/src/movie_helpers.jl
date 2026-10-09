@@ -264,16 +264,21 @@ function _config_overlay_pops(img, config)
     _has_label_props(img) || return out
     if Bool(get(config, :showPopulations, false))
         pt = String(get(config, :popType, "flow"))
-        # The ONE segmentation the movie draws pops from (`_config_pop_segmentation`); none → none drawn.
-        pop_vn = _config_pop_segmentation(config)
         pf = get(config, :popsFilter, nothing)
         keep = (pf isa AbstractVector && !isempty(pf)) ? Set(String.(pf)) : nothing
-        isempty(pop_vn) || try
-            for L in resolve_pops(img, pt; value_name = pop_vn)
-                (L.show && (keep === nothing || L.path in keep)) || continue
-                push!(out, Dict{String,Any}("valueName" => pop_vn, "popType" => pt, "path" => L.path, "ribbon" => false))
-            end
-        catch
+        # A viewer look: these pop types on every segmentation. Else the ONE segmentation the movie
+        # draws pops from (`_config_pop_segmentation`); none → none drawn.
+        pts_raw = get(config, :popTypes, nothing)
+        layers = if Bool(get(config, :popAllSegmentations, false))
+            [(vn, String(p)) for vn in _overlay_segmentations(img)
+                             for p in (pts_raw isa AbstractVector && !isempty(pts_raw) ? pts_raw : [pt])]
+        else
+            pop_vn = _config_pop_segmentation(config)
+            isempty(pop_vn) ? Tuple{String,String}[] : [(pop_vn, pt)]
+        end
+        for (vn, lpt) in layers, L in _overlay_pops(img, vn, lpt)
+            (L.show && (keep === nothing || L.path in keep)) || continue
+            push!(out, Dict{String,Any}("valueName" => vn, "popType" => lpt, "path" => L.path, "ribbon" => false))
         end
     end
     if Bool(get(config, :showTrackclust, false))
@@ -384,20 +389,25 @@ end
 # The per-segmentation tracks a movie draws (the translator's `trackSegs`), as legend rows: one per
 # drawn source ("tracks" for the overlays' own segmentation). A segmentation drawing track clusters is
 # left out — its plain tracks stand down (`viewer_overlay_closure`). A swatch only when one colour IS
-# what the tails are (`_build_overlay_state`): "solid" and "pop" paint a source in its colour; coloured
-# by track or speed, one swatch would name a colour the tails are not.
+# what the tails are (`_colour_hops`): "solid" is the source's colour (else the palette's by position),
+# "pop" the palette's by position (the unnamed batch source: its grey); by track or speed, none.
 function _track_source_items(config, img = nothing)::Vector{Dict{String,Any}}
     ov = _overlays_raw_from_config(config, false)
     ov === nothing && return Dict{String,Any}[]
     mode = ov["trackColorMode"]
     tc = (img !== nothing && ov["showTrackclust"]) ? Set(trackclust_segmentations(img)) : Set{String}()
     pop_vn = String(get(ov, "valueName", ""))
+    colours = ov["trackSourceColours"]
     items = Dict{String,Any}[]
-    for s in ov["trackSegs"]
-        vn = String(s["valueName"])
+    i = 0
+    segs = [(String(s["valueName"]), String(s["colour"])) for s in ov["trackSegs"]]
+    img === nothing || (segs = _ordered_segs(img, segs, pop_vn))
+    for (vn, col) in segs
         (isempty(vn) ? pop_vn : vn) in tc && continue
-        swatch = !(mode in ("solid", "pop")) ? nothing :
-                 (isempty(vn) && mode == "solid") ? rgb_to_hex(CECELIA_TRACK_PALETTE[1]) : s["colour"]
+        i += 1
+        own = rgb_to_hex(CECELIA_TRACK_PALETTE[mod(i - 1, length(CECELIA_TRACK_PALETTE)) + 1])
+        swatch = mode == "solid" ? (isempty(vn) ? own : !isempty(col) ? col : get(colours, vn, own)) :
+                 mode == "pop"   ? (isempty(vn) ? col : own) : nothing
         push!(items, Dict{String,Any}("label" => isempty(vn) ? "tracks" : "$(vn) tracks", "colour" => swatch))
     end
     items

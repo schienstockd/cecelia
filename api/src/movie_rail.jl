@@ -258,13 +258,21 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
     segs = Dict{String,Any}[]
     if show_tracks
         if ts_raw isa Union{AbstractDict,AbstractVector}
-            segs = _normalise_track_sources(ts_raw)
+            # no colour = the viewer's default for that source (the palette by position)
+            segs = _normalise_track_sources(ts_raw; default_colour = "")
         else
             segs = [Dict{String,Any}("valueName" => "", "colour" => OVERLAY_GREY)]
         end
     end
     hidden_raw = get(cfg, "hiddenTrackPops", nothing)
     hidden_raw === nothing && (hidden_raw = get(cfg, :hiddenTrackPops, nothing))
+    # `{valueName => paths}` (a viewer look: every segmentation's ribbon eyes) or a bare list (the
+    # pops' segmentation)
+    hidden = hidden_raw isa AbstractDict ?
+        Dict{String,Any}(String(k) => String[String(x) for x in v] for (k, v) in hidden_raw if v isa AbstractVector) :
+        hidden_raw isa AbstractVector ? String[String(x) for x in hidden_raw] : String[]
+    pts_raw = something(get(cfg, :popTypes, nothing), get(cfg, "popTypes", nothing), Some(nothing))
+    tsc_raw = something(get(cfg, :trackSourceColours, nothing), get(cfg, "trackSourceColours", nothing), Some(nothing))
     out = Dict{String,Any}(
         "popType"          => _cfg_str(cfg, "popType", "flow"),
         # Explicit gate on the pop-dot build. Presence of the field is what stops
@@ -278,8 +286,16 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # over every segmentation.
         "trackSegs"        => segs,
         "gatedRibbons"     => show_gated && show_pops,
-        "hiddenTrackPops"  => hidden_raw isa AbstractVector ? String[String(x) for x in hidden_raw] : String[],
+        "hiddenTrackPops"  => hidden,
         "showTrackclust"   => show_tc,
+        # The pop layers: a viewer look draws these cell pop types on EVERY segmentation (populations
+        # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
+        "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],
+        "popAllSegmentations" => _cfg_bool(cfg, "popAllSegmentations"),
+        # the viewer's Tracks-legend colours, keyed as its ribbon sources are
+        "trackSourceColours" => tsc_raw isa AbstractDict ?
+            Dict{String,String}(String(k) => String(v) for (k, v) in tsc_raw if v isa AbstractString) :
+            Dict{String,String}(),
         # Absent → the legacy defaults. A look read off the viewer carries the viewer's own values
         # (`frontend/src/utils/viewer/viewerLook.ts`); both spellings of the colour-mode key are read,
         # since the config is British and the overlay reader (`_ov(:trackColorMode)`) is not.
@@ -302,6 +318,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # mask by the same pops the points draw; the viewer's mask is always every cell, so a look
         # read off it says so (`maskAllCells`).
         out["allCells"]        = _cfg_bool(cfg, "maskAllCells", !(show_pops || show_gated))
+        # The mask takes the colour-by column only when asked (`colourLabels`, the batch chip); else
+        # the per-id palette — the viewer's mask, which colour-by never recolours.
+        out["maskColourBy"]    = _cfg_bool(cfg, "colourLabels")
     end
     # colourBy / colourOverrides — same knobs the overlay author reads (`_build_overlay_state`).
     # `mask_id_colours` picks them up so a labels layer coloured by "clusters" and the pop dots

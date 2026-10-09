@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  overlaysUrl, buildPointBuffer, timepointRange, hexToUnit, overlaySummary,
-  buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, heatUnit, NO_VALUE_RGB,
+  overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
+  buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
@@ -457,6 +457,43 @@ describe('colourByValue', () => {
   })
 })
 
+describe('pooledColourScale — one colour-by scale over every segmentation', () => {
+  const cat = (levels: (number | string)[], values: (number | string | null)[]): OverlayPayload => ({
+    ...payload(), colourBy: 'clusters.leiden', valueKind: 'categorical', valueLevels: levels, values,
+  })
+  const num = (range: [number, number], values: number[]): OverlayPayload => ({
+    ...payload(), colourBy: 'live.cell.speed', valueKind: 'numeric', valueRange: range, values,
+  })
+
+  it('unions the levels, so a level is one colour on every segmentation', () => {
+    const a = cat([2, 3], [2, 3]), b = cat([1, 2], [1, 2])
+    const s = pooledColourScale([a, b])!
+    expect(s.levels).toEqual([1, 2, 3])
+    const pal = ['#ff0000', '#00ff00', '#0000ff']
+    // level 2 is row 0 of A and row 1 of B — per payload it would be palette[0] on A, palette[1] on B
+    expect(colourByValue(a, pal, s)!(0)).toEqual(colourByValue(b, pal, s)!(1))
+  })
+
+  it('spans every range, so a value is one shade on every segmentation', () => {
+    const a = num([0, 5], [5, 5, 5, 5]), b = num([5, 20], [5, 5, 5, 5])
+    const s = pooledColourScale([a, b])!
+    expect(s.range).toEqual([0, 20])
+    expect(colourByValue(a, [], s)!(0)).toEqual(colourByValue(b, [], s)!(0))
+    // and through the buffer: every value-5 cell of both layers is one colour (per payload, A's would
+    // be the top of the ramp and B's the bottom)
+    const buf = buildPointBufferLayers([{ payload: a }, { payload: b }], meta())
+    const rgbs = new Set(Array.from({ length: buf.count }, (_, i) =>
+      Array.from(buf.data.slice(i * POINT_STRIDE + 3, i * POINT_STRIDE + 6)).join()))
+    expect(buf.count).toBe(8)
+    expect(rgbs.size).toBe(1)
+  })
+
+  it('is null with no colour-by, and one payload keeps the server’s level order', () => {
+    expect(pooledColourScale([payload(), null])).toBeNull()
+    expect(pooledColourScale([cat(['b', 'a'], ['a'])])!.levels).toEqual(['b', 'a'])
+  })
+})
+
 describe('the house ramp', () => {
   it('is the SAME lookup the gating plots use, so a dot and a marker agree', () => {
     // Reversal worth recording: this started with a generated viridis table, on the reasoning that no
@@ -471,5 +508,41 @@ describe('the house ramp', () => {
   })
   it('survives a non-finite input, which is what an unmeasured cell would give it', () => {
     expect(heatUnit(NaN).every(Number.isFinite)).toBe(true)
+  })
+})
+
+describe('population layers — every segmentation × pop type at once', () => {
+  it('merges the layers into one buffer, ordered by timepoint, each hiding its own paths', () => {
+    const a = payload()
+    const b = payload({ pops: [{ path: '/A', name: 'A', colour: '#0000ff', show: true, isTrack: false,
+                                 labels: [10, 12] }] })
+    // the same path on another segmentation is a different pop — hiding one leaves the other
+    const buf = buildPointBufferLayers([{ payload: a, hidden: new Set(['/A']) }, { payload: b }], meta())
+    expect(buf.count).toBe(2 + 2)
+    expect(timepointRange(buf, 0)).toEqual([0, 3])     // /B's 12, b's 10 + 12
+    expect(timepointRange(buf, 1)).toEqual([3, 1])     // /B's 13
+    expect(buildPointBuffer(a, meta()).count).toBe(buildPointBufferLayers([{ payload: a }], meta()).count)
+  })
+  it('summary counts a segmentation\'s cells once, however many of its pop types are on', () => {
+    const p = payload()
+    expect(overlayLayersSummary([{ vn: 'OTI', payload: p }, { vn: 'OTI', payload: p },
+                                 { vn: 'P14', payload: p }]))
+      .toEqual({ cells: 8, pops: 6, visible: 6, tracked: 6, dropped: 0 })
+  })
+})
+
+describe('buildMultiTrackBuffer — a track keeps its colour whatever its source', () => {
+  it('colours by the track id alone (the movie uses the same rule)', () => {
+    const PAL = ['#ff0000', '#00ff00', '#0000ff']
+    const p = payload({ cells: { label: [1, 2], t: [0, 1], x: [0, 1], y: [0, 0], z: [0, 0], track: [4, 4] } })
+    const rgbOf = (srcs: { vn: string; payload: OverlayPayload }[]) => {
+      const r = buildMultiTrackBuffer(srcs, meta(), PAL, 'track')
+      return Array.from(r.segments.data.slice(6, 9))
+    }
+    const alone = rgbOf([{ vn: 'b', payload: p }])
+    const second = rgbOf([{ vn: 'a', payload: payload({ cells: { label: [], t: [], x: [], y: [], z: [], track: [] } }) },
+                          { vn: 'b', payload: p }])
+    expect(alone).toEqual(hexToUnit(PAL[4 % 3]))
+    expect(second).toEqual(alone)
   })
 })

@@ -148,33 +148,55 @@ export function buildPointBuffer(
   payload: OverlayPayload | null, meta: ViewerMeta | null, hidden: ReadonlySet<string> = new Set(),
   palette: readonly string[] = [],
 ): PointBuffer {
-  if (!payload || !meta) return EMPTY
-  const { label, t, x, y, z } = payload.cells
-  if (!label || !x || !y || label.length === 0) return EMPTY
+  return payload ? buildPointBufferLayers([{ payload, hidden }], meta, palette) : EMPTY
+}
 
+/** One population layer — a (segmentation, pop type) payload and the pop paths hidden in it. */
+export interface PointLayer {
+  payload: OverlayPayload
+  hidden?: ReadonlySet<string>
+}
+
+/**
+ * Every layer's points in ONE instance buffer, ordered by timepoint. The viewer draws the
+ * populations of every segmentation and every pop type that is on at once — a layer per
+ * (segmentation, pop type) — and the renderer has one points buffer, so they merge here.
+ */
+export function buildPointBufferLayers(
+  layers: readonly PointLayer[], meta: ViewerMeta | null, palette: readonly string[] = [],
+): PointBuffer {
+  if (!meta || !layers.length) return EMPTY
   const vz = meta.voxelUm[2] || 1
-  const row = new Map<number, number>()
-  for (let i = 0; i < label.length; i++) row.set(label[i], i)
+  // one colour-by scale over every layer — the same value is the same colour on every segmentation
+  const scale = pooledColourScale(layers.map(l => l.payload))
 
-  const byValue = colourByValue(payload, palette)
-
-  // Emit (row, colour) pairs first, so the sort has something small to work on.
+  // Emit (layer, row, colour) triples first, so the sort has something small to work on.
+  const lay: number[] = []
   const rows: number[] = []
   const cols: number[] = []
-  for (const pop of payload.pops) {
-    // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
-    // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
-    // user switched on in the viewer still drew nothing, with a toggle that says it is on.
-    if (hidden.has(pop.path)) continue
-    const popRgb = hexToUnit(pop.colour)
-    for (const l of pop.labels) {
-      const r = row.get(l)
-      if (r === undefined) continue          // membership can name a cell the table no longer holds
-      rows.push(r)
-      // Colour-by wins over the population colour when it is on, which is what makes it useful: the
-      // populations are still what SELECTS the cells, the column is what shades them.
-      const rgb = byValue ? byValue(r) : popRgb
-      cols.push(rgb[0], rgb[1], rgb[2])
+  for (let li = 0; li < layers.length; li++) {
+    const { payload, hidden } = layers[li]
+    const { label, x, y } = payload.cells
+    if (!label || !x || !y || label.length === 0) continue
+    const row = new Map<number, number>()
+    for (let i = 0; i < label.length; i++) row.set(label[i], i)
+    const byValue = colourByValue(payload, palette, scale)
+    for (const pop of payload.pops) {
+      // `hidden` is the ONLY authority here. The payload's `show` is the gating manager's flag, and it
+      // seeds `hidden` once when the overlays are fetched — testing it again would mean a population the
+      // user switched on in the viewer still drew nothing, with a toggle that says it is on.
+      if (hidden?.has(pop.path)) continue
+      const popRgb = hexToUnit(pop.colour)
+      for (const l of pop.labels) {
+        const r = row.get(l)
+        if (r === undefined) continue          // membership can name a cell the table no longer holds
+        lay.push(li)
+        rows.push(r)
+        // Colour-by wins over the population colour when it is on, which is what makes it useful: the
+        // populations are still what SELECTS the cells, the column is what shades them.
+        const rgb = byValue ? byValue(r) : popRgb
+        cols.push(rgb[0], rgb[1], rgb[2])
+      }
     }
   }
   if (rows.length === 0) return EMPTY
@@ -188,7 +210,10 @@ export function buildPointBuffer(
   // populations. Once, when the overlays are fetched; never per frame. A worker would move a single
   // dropped frame off the main thread and add a transfer, a copy and a lifecycle to own.
   const order = rows.map((_, i) => i)
-  const tp = (i: number) => (t && t.length ? Math.round(t[rows[i]]) : 0)
+  const tp = (i: number) => {
+    const t = layers[lay[i]].payload.cells.t
+    return t && t.length ? Math.round(t[rows[i]]) : 0
+  }
   order.sort((a, b) => tp(a) - tp(b) || a - b)
 
   const data = new Float32Array(order.length * POINT_STRIDE)
@@ -197,9 +222,10 @@ export function buildPointBuffer(
   for (let n = 0; n < order.length; n++) {
     const i = order[n]
     const r = rows[i]
+    const { x, y, z } = layers[lay[i]].payload.cells
     const o = n * POINT_STRIDE
-    data[o] = x[r]
-    data[o + 1] = y[r]
+    data[o] = x![r]
+    data[o + 1] = y![r]
     data[o + 2] = z && z.length ? z[r] : 0
     data[o + 3] = cols[i * 3]
     data[o + 4] = cols[i * 3 + 1]
@@ -251,6 +277,26 @@ export function overlaySummary(p: OverlayPayload | null): {
     tracked,
     dropped: p.nDropped ?? 0,
   }
+}
+
+/** `overlaySummary` over several population layers. A segmentation's cells count once, however many
+ *  of its pop types are on (each layer carries the same cell table). */
+export function overlayLayersSummary(layers: readonly { vn: string; payload: OverlayPayload }[]): {
+  cells: number; pops: number; visible: number; tracked: number; dropped: number
+} {
+  const out = { cells: 0, pops: 0, visible: 0, tracked: 0, dropped: 0 }
+  const seen = new Set<string>()
+  for (const { vn, payload } of layers) {
+    const one = overlaySummary(payload)
+    out.pops += one.pops
+    out.visible += one.visible
+    if (seen.has(vn)) continue
+    seen.add(vn)
+    out.cells += one.cells
+    out.tracked += one.tracked
+    out.dropped += one.dropped
+  }
+  return out
 }
 
 // ── Filtering ────────────────────────────────────────────────────────────────────
@@ -533,7 +579,7 @@ export function buildMultiTrackBuffer(
   // Per-payload row grouping: (namespaced track id) → row indices. Group first so the O(N log N)
   // per-track sort stays inside a track. Rows are stored as flat records so the segment build below
   // is one linear pass over all payloads, not one per vn.
-  interface Row { t: number; x: number; y: number; z: number; id: number; source: number }
+  interface Row { t: number; x: number; y: number; z: number; id: number; raw: number; source: number }
   const rows: Row[] = []
   const perSource = payloads.map(() => 0)
   for (let i = 0; i < payloads.length; i++) {
@@ -543,7 +589,7 @@ export function buildMultiTrackBuffer(
     for (let j = 0; j < n; j++) {
       const raw = ctr[j]; if (raw <= 0) continue
       rows.push({ t: ct[j], x: cx[j], y: cy[j], z: cz.length ? cz[j] : 0,
-                  id: raw + (i + 1) * OFFSET, source: i })
+                  id: raw + (i + 1) * OFFSET, raw, source: i })
     }
   }
   if (!rows.length) return EMPTY_MULTI
@@ -598,8 +644,10 @@ export function buildMultiTrackBuffer(
   const popCache: [number, number, number][] = payloads.map((p, i) =>
     hexToUnit(p.popColour ?? (palette.length ? palette[i % palette.length] : '#ffffff')))
   const popRgb = (src: number): [number, number, number] => popCache[src] ?? [0.9, 0.9, 0.9]
+  // By the track's OWN id — not the source-namespaced grouping key — so a track keeps its colour
+  // whatever order the sources come in, and the movie (`_build_overlay_state`) can use the same rule.
   const trackRgb = (id: number): [number, number, number] =>
-    hexToUnit(palette.length ? palette[Math.abs(id) % palette.length] : '#ffffff')
+    hexToUnit(palette.length ? palette[Math.abs(Math.round(id)) % palette.length] : '#ffffff')
   const speedRgb = (speedSq: number): [number, number, number] => {
     if (!speedRange || speedSpan <= 0) return [0.9, 0.9, 0.9]
     const s = Math.sqrt(speedSq)
@@ -614,7 +662,7 @@ export function buildMultiTrackBuffer(
     const rgb = mode === 'speed' ? speedRgb(s.speedSq)
               : mode === 'solid' ? solidRgb(s.source)
               : mode === 'pop' ? popRgb(s.source)
-              : trackRgb(a.id)
+              : trackRgb(a.raw)
     const o = n * SEG_STRIDE
     data[o] = a.x; data[o + 1] = a.y; data[o + 2] = a.z
     data[o + 3] = b.x; data[o + 4] = b.y; data[o + 5] = b.z
@@ -715,13 +763,14 @@ export const NO_VALUE_RGB: [number, number, number] = [0.45, 0.45, 0.45]
  * for the same reasons; that convergence is why sharing the ramp is right.)
  */
 export function colourByValue(
-  payload: OverlayPayload, palette: readonly string[] = [],
+  payload: OverlayPayload, palette: readonly string[] = [], scale: ColourScale | null = null,
 ): ((row: number) => [number, number, number]) | null {
   const vals = payload.values
   if (!payload.colourBy || !vals || vals.length === 0) return null
+  const s = scale ?? pooledColourScale([payload])
 
-  if (payload.valueKind === 'categorical') {
-    const levels = payload.valueLevels ?? []
+  if (s?.kind === 'categorical') {
+    const levels = s.levels
     const index = new Map<string, number>()
     levels.forEach((v, i) => index.set(String(v), i))
     const pal = palette.length ? palette : ['#ffffff']
@@ -734,13 +783,44 @@ export function colourByValue(
     }
   }
 
-  const [lo, hi] = payload.valueRange ?? [0, 1]
+  const [lo, hi] = s?.range ?? [0, 1]
   const span = hi - lo
   return (r: number) => {
     const v = vals[r]
     if (v === null || v === undefined || typeof v !== 'number') return NO_VALUE_RGB
     return heatUnit(span > 0 ? (v - lo) / span : 0.5)
   }
+}
+
+/** How colour-by maps a value: the levels a palette indexes, or the range the ramp spans. */
+export interface ColourScale {
+  kind: 'categorical' | 'numeric'
+  levels: (number | string)[]
+  range: [number, number] | null
+}
+
+/**
+ * One colour-by scale over several payloads — the populations of several segmentations draw at once,
+ * and each payload's levels / range are its own table's. Coloured per payload, cluster 2 or a speed
+ * of 5 µm/min would be one colour on one segmentation and another beside it. Levels are the union,
+ * sorted the server's way (`sort(…; by = string)`); the range spans every payload's. The kind is the
+ * first coloured payload's — the server decides it per table, and one column name is one kind.
+ */
+export function pooledColourScale(payloads: readonly (OverlayPayload | null | undefined)[]): ColourScale | null {
+  const coloured = payloads.filter((p): p is OverlayPayload => !!p?.colourBy && !!p.values?.length)
+  if (!coloured.length) return null
+  const kindOf = (p: OverlayPayload) => (p.valueKind === 'categorical' ? 'categorical' : 'numeric')
+  const kind = kindOf(coloured[0])
+  const same = coloured.filter(p => kindOf(p) === kind)
+  if (kind === 'categorical') {
+    if (same.length === 1) return { kind, levels: same[0].valueLevels ?? [], range: null }
+    const seen = new Map<string, number | string>()
+    for (const p of same) for (const v of p.valueLevels ?? []) if (!seen.has(String(v))) seen.set(String(v), v)
+    const keys = [...seen.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    return { kind, levels: keys.map(k => seen.get(k)!), range: null }
+  }
+  const rs = same.map(p => p.valueRange).filter((r): r is [number, number] => !!r)
+  return { kind, levels: [], range: rs.length ? [Math.min(...rs.map(r => r[0])), Math.max(...rs.map(r => r[1]))] : null }
 }
 
 /** The house ramp at `t` in 0..1, as three floats — the GPU wants 0..1, `heatCss` returns a CSS string

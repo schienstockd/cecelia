@@ -15,7 +15,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   trackVisible: {},
   trackSourceColours: {},
   showGatedTracks: false,
-  hiddenTrackPops: [],
+  hiddenTrackPops: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
   trackColourMode: 'speed', colourBy: '', colourOverrides: {},
   ...over,
@@ -76,6 +76,14 @@ describe('viewerLook', () => {
     expect(l.popValueName).toBe('flowTom')
   })
 
+  it('pops are every segmentation’s, of every cell pop type that is on', () => {
+    const l = viewerLook(base({ gating: { valueName: 'flowTom', popType: 'flow' },
+                                popVisible: pt => pt === 'clust' || pt === 'region' }))
+    expect(l.showPopulations).toBe(true)
+    expect(l.popTypes).toEqual(['clust', 'region'])
+    expect(l.popAllSegmentations).toBe(true)
+  })
+
   it('tracks only → the first tracked segmentation, with its source colour', () => {
     const l = viewerLook(base({ trackVisible: { cpSAM: true, other: false },
                                 trackSourceColours: { cpSAM: '#ff0000' } }))
@@ -85,6 +93,9 @@ describe('viewerLook', () => {
     // the hidden one is named too — a source the map leaves out would be drawn
     expect(l.trackSources?.cpSAM).toEqual({ visible: true, colour: '#ff0000' })
     expect(l.trackSources?.other?.visible).toBe(false)
+    // no colour picked = the viewer's default (the palette by position), not a grey
+    expect(l.trackSources?.other?.colour).toBe('')
+    expect(l.trackSourceColours).toEqual({ cpSAM: '#ff0000' })
   })
 
   it('carries the overlay sizes, colour mode and colour-by', () => {
@@ -96,9 +107,10 @@ describe('viewerLook', () => {
   })
 
   it('track clusters, hidden ribbons and the all-cells mask ride along', () => {
-    const l = viewerLook(base({ popVisible: pt => pt === 'trackclust', hiddenTrackPops: ['/a'] }))
+    const l = viewerLook(base({ popVisible: pt => pt === 'trackclust',
+                                hiddenTrackPops: { OTI: ['/a'], P14: [] } }))
     expect(l.showTrackclust).toBe(true)
-    expect(l.hiddenTrackPops).toEqual(['/a'])
+    expect(l.hiddenTrackPops).toEqual({ OTI: ['/a'] })
     expect(l.maskAllCells).toBe(true)
     expect(viewerLook(base()).hiddenTrackPops).toBeUndefined()
   })
