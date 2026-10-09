@@ -267,6 +267,13 @@ class SegmentationUtils:
         H = dim_utils.dim_val('Y')
         W = dim_utils.dim_val('X')
         is_3d = dim_utils.is_3D()
+        # Dimensionality is decided HERE, once, from the metadata. A single-plane image still has a
+        # length-1 Z axis whenever its source did, and handing that `[C,1,Y,X]` tile on let every
+        # engine guess 3D from `tile.ndim` while this method cropped and post-processed as 2D — a
+        # crash on any image bigger than one tile. So the singleton Z is dropped at read time:
+        # engines see `[C,Y,X]`, the frame buffer is `[Y,X]`, and only the store write puts the axis
+        # back. Same rule as `branching_run.py`: everything downstream sees 2D frames.
+        drop_z = 'Z' in dim_utils.im_dim_order and not is_3d
 
         # On-disk label store shape/axes: image shape without C (may include T)
         label_axes = [ax for ax in dim_utils.im_dim_order if ax != 'C']
@@ -274,15 +281,20 @@ class SegmentationUtils:
         store_la_t = label_axes.index('T') if 'T' in label_axes else None
 
         # Per-FRAME label buffer: label axes without T (the unit we hold in RAM and process at a time)
-        frame_axes = [ax for ax in label_axes if ax != 'T']
-        frame_shape = [label_shape[i] for i, ax in enumerate(label_axes) if ax != 'T']
+        frame_axes = [ax for ax in label_axes if ax != 'T' and not (drop_z and ax == 'Z')]
+        frame_shape = [label_shape[i] for i, ax in enumerate(label_axes)
+                       if ax != 'T' and not (drop_z and ax == 'Z')]
         fa_y = frame_axes.index('Y')
         fa_x = frame_axes.index('X')
         fa_z = frame_axes.index('Z') if 'Z' in frame_axes else None
 
         # Input-image frame axes = image axes without T — KEEPS the channel axis, so its Y/X indices
         # differ from the (channel-less) label frame's. Used to tile the in-RAM input frame.
-        in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
+        # `read_axes` is what `read_timepoint` returns; `in_axes` is that after the singleton Z goes.
+        read_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
+        read_z = read_axes.index('Z') if drop_z else None
+        in_axes = [ax for ax in read_axes if not (drop_z and ax == 'Z')]
+        tile_rank = len(in_axes)
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
         ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
@@ -411,6 +423,8 @@ class SegmentationUtils:
                 # tile — the over-read the old whole-level fortify() worked around. See
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
                 frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+                if drop_z:
+                    frame_in = np.squeeze(frame_in, axis=read_z)
 
                 # Narrow to the region that holds data. Everything below — tiling, cellpose, post-
                 # processing, nuc/cyto matching — then runs on the reduced frame unchanged; only the
@@ -468,6 +482,9 @@ class SegmentationUtils:
                                                c_idx=ia_c if ctx_channels else None,
                                                c=ctx_channels)
                             for t2 in range(lo, hi + 1)])
+                        if drop_z:
+                            # the window is the tile through time, so it is 2D like the tile
+                            frames = np.squeeze(frames, axis=1 + read_z)
                         self._context_counter += 1
                         window = TemporalWindow(
                             frames=frames, index=t - lo, start=lo,
@@ -482,6 +499,7 @@ class SegmentationUtils:
 
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
+                        self.check_rank(tile, tile_rank, is_3d, 'tile')
 
                         if window is not None:
                             # Narrowed to THIS timepoint's span, like the tile — the window is the
@@ -494,6 +512,8 @@ class SegmentationUtils:
                         else:
                             # unchanged call for every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)
+                        self.check_rank(masks, 3 if is_3d else 2, is_3d,
+                                        f'{type(self).__name__}.predict_slice masks')
 
                         # Every group's write takes the next block of ids off one monotonic
                         # counter, so the block IS the record of which pass produced them —
@@ -542,7 +562,7 @@ class SegmentationUtils:
                 for ma in match_as_list:
                     _, level0, _ = stores[ma]
                     sl = tuple(t if i == store_la_t else
-                               slice(z0, z1) if i == store_la_z else
+                               (0 if drop_z else slice(z0, z1)) if i == store_la_z else
                                slice(y0, y1) if i == store_la_y else
                                slice(x0, x1) if i == store_la_x else
                                slice(None) for i in range(level0.ndim))
@@ -653,6 +673,18 @@ class SegmentationUtils:
         if c_idx is not None and c is not None:
             idx[c_idx] = list(c)
         return np.asarray(im_data[tuple(idx)])
+
+    @staticmethod
+    def check_rank(arr, rank, is_3d, what):
+        """Raise unless `arr` has `rank` axes — the dimensionality decided from the metadata.
+
+        A tile or mask of the wrong rank does not fail where it is made: it fails as a broadcast or
+        axis error several calls later (`_crop_masks`, `split_z_gaps`), naming neither the cause nor
+        the engine. This makes the drift fail at the source instead."""
+        if arr.ndim != rank:
+            kind = '3D stack' if is_3d else 'single-plane image'
+            raise ValueError(f'{what} has shape {tuple(arr.shape)}; a {kind} needs {rank} axes '
+                             f'(see SegmentationUtils.predict_from_zarr → drop_z)')
 
     def _crop_masks(self, masks, crop_yx, is_3d):
         """Remove overlap padding from predictions. crop_yx=(top, bottom, left, right)."""
