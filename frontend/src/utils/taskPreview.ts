@@ -195,11 +195,25 @@ const ERROR_SHORT: Record<string, string> = {
 }
 
 /**
+ * The preview toggle's icon and tooltip. During the warm-up it is CANCEL — the click stops a worker that
+ * is still starting (`toggle` → stop), so the face says that rather than looking like "press again".
+ */
+export function previewToggleFace(s: { enabled: boolean; starting: boolean; busy: boolean }):
+    { icon: string; tip: string } {
+  if (s.enabled && s.starting) return { icon: 'pi-times', tip: 'Cancel starting the preview' }
+  return {
+    icon: s.busy ? 'pi-spinner pi-spin' : 'pi-bolt',
+    tip: s.enabled ? 'Stop previewing (frees the GPU model)'
+                   : 'Preview these params on the region viewer is showing',
+  }
+}
+
+/**
  * The readout while the worker warms. A cellpose 3 model runs in its own env, so picking one after a
  * cellpose 4 preview restarts the worker — said, so the second warm-up does not read as a hang.
  */
 export function startingLabel(status: Pick<PreviewStatus, 'env'> | null): string {
-  return status?.env === CELLPOSE_V3_ENV_NAME ? 'Starting cellpose 3…' : 'Starting…'
+  return status?.env === CELLPOSE_V3_ENV_NAME ? 'Starting cellpose 3…' : 'Starting preview…'
 }
 
 /**

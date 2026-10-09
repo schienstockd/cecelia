@@ -624,6 +624,37 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test occursin("protocol == PREVIEW_PROTOCOL && env_ok", launch_body)
     end
 
+    @testset "stopping a worker mid-launch is a clean cancel (#1559)" begin
+        # THE REPORTED BUG: a second click on the bolt during the ~18 s warm-up stopped the worker while
+        # `launch!` was still polling it; `close!` set `w.proc = nothing` and the poll's
+        # `process_running(::Nothing)` raised a MethodError, logged as "Preview worker failed to start".
+        # A real worker on a free port (never :7656, where the developer's own may be running).
+        port = 17656 + rand(0:999)
+        w = Cecelia.PreviewWorker(; port = port)
+        @test_throws Exception Cecelia.send(w, Dict("type" => "ping"))   # nobody there yet
+        @test w.state === Cecelia.PREVIEW_IDLE
+        t = @async try Cecelia.launch!(w) catch e; e end
+        for _ in 1:100                                 # until the process exists
+            (w.state === Cecelia.PREVIEW_STARTING && w.proc !== nothing) && break
+            sleep(0.05)
+        end
+        @test w.state === Cecelia.PREVIEW_STARTING
+        sleep(0.5)                                     # inside the poll loop
+        Cecelia.close!(w)
+        r = fetch(t)
+        @test r === w                                  # returned, not raised
+        @test w.state === Cecelia.PREVIEW_STOPPED
+        @test !Cecelia.preview_alive(w)
+
+        # The task runner's launch had the same race (`runner_stop!` clears `h.proc` under its poll).
+        # Source-level: exercising it means launching a Julia runner, minutes cold.
+        rsrc = read(joinpath(_SUITE_APP_SRC, "runner", "client.jl"), String)
+        rbody = rsrc[findfirst("function runner_launch!(", rsrc)[1]:end]
+        rbody = rbody[1:findfirst("\nend", rbody)[1]]
+        @test !occursin("process_running(h.proc)", rbody)
+        @test occursin("h.proc === proc || return h", rbody)
+    end
+
     @testset "a stale preview worker is stopped by port, not by handle" begin
         # THE BUG THIS PINS. On a protocol mismatch the backend must remove the worker holding :7656.
         # It only ever PINGED that process, so the handle it has is a bare `PreviewWorker()` with no

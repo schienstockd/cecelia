@@ -11,7 +11,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useTaskPreviewStore } from '../stores/taskPreview'
 import InlineNote from './InlineNote.vue'
-import { startingLabel, type PreviewContext } from '../utils/taskPreview'
+import { startingLabel, previewToggleFace, type PreviewContext } from '../utils/taskPreview'
 
 const props = defineProps<{
   projectUid: string
@@ -33,6 +33,8 @@ const ctx = computed<PreviewContext>(() => ({
 watch(ctx, c => preview.setContext(c), { deep: true, immediate: true })
 onMounted(() => { void preview.refreshStatus() })
 
+const toggleFace = computed(() => previewToggleFace(preview))
+
 const label = computed(() => {
   if (preview.starting) return startingLabel(preview.status)
   if (preview.runState !== 'idle') return 'Previewing…'
@@ -51,11 +53,9 @@ const label = computed(() => {
       :class="{ 'cc-btn-on cc-btn-on-tint': preview.enabled }"
       :disabled="preview.busy && !preview.enabled"
       @click="preview.toggle()"
-      v-tooltip.left="preview.enabled
-        ? 'Stop previewing (frees the GPU model)'
-        : 'Preview these params on the region viewer is showing'"
+      v-tooltip.left="toggleFace.tip"
     >
-      <i class="pi" :class="preview.busy ? 'pi-spinner pi-spin' : 'pi-bolt'" />
+      <i class="pi" :class="toggleFace.icon" />
     </button>
 
     <template v-if="preview.enabled">
