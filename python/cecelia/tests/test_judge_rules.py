@@ -108,6 +108,40 @@ class ProposeTest(unittest.TestCase):
         with self.assertRaises(self.r._judge.RateLimited):
             self.r.propose([_finding_event("y")], date="2026-10-02", assign=limited, git=lambda *a: None)
 
+    def _three_sessions(self, edited=None):
+        ev = [_finding_event(x, ts=f"2026-09-2{i}T00:00:00Z") for i, x in enumerate("abc", 1)]
+        assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
+            return self.r.propose(ev, date="2026-10-02", assign=assign, repo=pathlib.Path(d), git=lambda *a: None,
+                                  edited=edited)
+
+    def test_findings_from_before_the_sections_last_edit_dont_count(self):
+        self.assertEqual([p["kind"] for p in self._three_sessions()[1]], ["tighten"])
+        # tightened on 09-22, 11:00 Sydney = 09-22 00:00 UTC: findings a and b predate it, c is after
+        rows, props, _, _ = self._three_sessions(lambda rl: {"CLAUDE.md → *Testing*": "2026-09-22T11:00:00+11:00"})
+        self.assertEqual((rows[0]["findings"], props), (1, []))
+
+    def test_since_edit_keeps_rules_git_cant_place_and_findings_with_no_time(self):
+        f = [_finding_event("a", ts="2026-09-21T00:00:00Z"), {**_finding_event("b"), "ts": ""}]
+        out = self.r.since_edit(f, [{"slug": "a", "rule": "X"}, {"slug": "a", "rule": "Y"}, {"slug": "b", "rule": "X"}],
+                                {"X": "2026-09-22T00:00:00Z"})
+        self.assertEqual(out, [{"slug": "a", "rule": "Y"}, {"slug": "b", "rule": "X"}])
+
+    def test_section_edits_asks_git_for_the_sections_own_lines(self):
+        text = "# T\n\n## Image / OME-ZARR (`zarr_utils`) [x]\nbody\n\n## Testing\nrun it\n"
+        calls = []
+
+        def git(*args):
+            calls.append(args)
+            return text if args[0] == "show" else "2026-09-22T11:00:00+11:00\n\ndiff --git a/CLAUDE.md"
+        out = self.r.section_edits(["CLAUDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*", "CLAUDE.md → *Testing*",
+                                    "CLAUDE.md → *Gone*"], git)
+        self.assertEqual(out, {"CLAUDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*": "2026-09-22T11:00:00+11:00",
+                               "CLAUDE.md → *Testing*": "2026-09-22T11:00:00+11:00"})
+        self.assertEqual([c[c.index("-L") + 1] for c in calls if c[0] == "log"], ["3,5:CLAUDE.md", "6,7:CLAUDE.md"])
+        self.assertEqual(sum(c[0] == "show" for c in calls), 1)   # one read per file
+
     def test_red_team_old_and_repeated_findings_are_not_counted(self):
         events = [_finding_event("fanout-c8482224"), _finding_event("x", ts="2026-08-01T00:00:00Z"),
                   _finding_event("y"), _finding_event("y")]

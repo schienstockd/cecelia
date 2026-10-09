@@ -229,9 +229,10 @@ def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
     if b.get("kind") == "stranded":
         lines += [f"**Where:** commits pushed to `{b.get('branch')}` after https://github.com/{repo}/pull/{b.get('pr')} "
                   "merged, which never reached main: " + ", ".join(f"`{c[:8]}`" for c in b.get("commits", [])), ""]
-    elif b.get("file"):
-        lines += [f"**Where:** [`{b['file']}:{b['line']}`](https://github.com/{repo}/blob/{sha}/{b['file']}#L{b['line']})"
-                  f" at `{sha[:8]}`", ""]
+    elif b.get("file"):   # the line number is the finding's, so it links at the finding's commit
+        at = b.get("commit") or sha
+        lines += [f"**Where:** [`{b['file']}:{b['line']}`](https://github.com/{repo}/blob/{at}/{b['file']}#L{b['line']})"
+                  f" at `{at[:8]}`", ""]
     else:
         lines += [f"**Where:** {_agent_error(b)}", ""]
     lines += [f"**Effect:** {d(v['effect'])}", ""] if v.get("effect") else []
@@ -264,9 +265,16 @@ def _closing(b: dict, uids: _t.Collection[str] = ()) -> tuple[str, str] | None:
     if b["status"] == "gone":
         return "completed", safe(f"Confirmed gone by the judge: {defuse(b.get('why') or '', uids)}",
                                  "Confirmed gone by the judge.", uids)
-    if b["status"] == "dismissed":
-        return "not planned", safe("Dismissed by verify" + (f": {defuse(v['effect'], uids)}" if v.get("effect") else "."),
-                                   "Dismissed by verify.", uids)
+    if b["status"] == "dismissed":   # said by whoever dismissed it: the owner, verify, or the sweep's judge
+        if b.get("owner_decision") == "dismissed":
+            return "not planned", safe("Dismissed by the owner" + (f": {defuse(b['owner_answer'], uids)}"
+                                                                   if b.get("owner_answer") else "."),
+                                       "Dismissed by the owner.", uids)
+        if v.get("verdict") in ("dismiss", "not_a_bug"):
+            return "not planned", safe("Dismissed by verify" + (f": {defuse(v['effect'], uids)}" if v.get("effect") else "."),
+                                       "Dismissed by verify.", uids)
+        return "not planned", safe("Dismissed by the judge" + (f": {defuse(b['why'], uids)}" if b.get("why") else "."),
+                                   "Dismissed by the judge.", uids)
     if b["status"] == "wont_fix":
         return "not planned", "Closed as won't fix in `pixi run judge-review`."
     if b["status"] == "parked":
@@ -291,15 +299,17 @@ def issue_url(repo: str, n: int) -> str:
 
 def issue_note(record: dict, b: dict, repo: str | None) -> str | None:
     """A bug's issue in one line, from the record alone (never GitHub): its link, `pending` (a pass
-    died filing it), or `missing` (the record maps it to a number that isn't an owner-filed judge
-    issue). None when it has none."""
-    i = b.get("issue") or {}
-    if b["key"] in ((record.get("run") or {}).get("issues") or {}).get("missing", []):
+    died filing it), `missing` (the record maps it to a number that isn't an owner-filed judge
+    issue), or not filed yet (over the pass's create cap). None when it has none."""
+    i, report = b.get("issue") or {}, (record.get("run") or {}).get("issues") or {}
+    if b["key"] in report.get("missing", []):
         return f"issue missing: #{i.get('number')} isn't a judge issue you opened; nothing is read from it"
     if i.get("number"):
         return issue_url(repo, i["number"]) if repo else f"issue #{i['number']}"
     if i.get("status") == "pending":
         return "issue pending: the last pass stopped while filing it; the next one adopts or files it"
+    if b["key"] in report.get("over_cap", []):
+        return "issue not filed yet: over this pass's cap; the next pass files it"
     return None
 
 
@@ -311,8 +321,9 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
     Each bug's issue is `bug["issue"] = {number, state, labels, body, landed}`, carried with the bug.
     Before a create the bug is marked `{"status": "pending"}` and `persist`ed; a pass that dies before
     the number is recorded is recovered by the next one, which finds the issue by the key in its title
-    (D10). A bug in `previous` that this record no longer lists (a `wont_fix`, say) has its open
-    issue closed too.
+    (D10). Closing follows the issues GitHub lists, not `previous`: an open judge issue whose key isn't
+    a live bug in `record` (a `wont_fix`, say, or one a pass that skipped the mirror stopped carrying)
+    is closed, with the reason `record` gives, else `previous`, else a generic one.
     """
     owner = gh.login()
     listed = gh.judge_issues(owner)
@@ -332,10 +343,25 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                 gh("label", "create", n, "--color", LABELS[n], "--force")
                 labels_made.add(n)
 
-    lead = {k: b["key"] for b in record["bugs"] for k in (b.get("sources") or [b["key"]])}
-    dropped = [b for b in (previous or {}).get("bugs", [])
-               if b["key"] not in {x["key"] for x in record["bugs"]} and (b.get("issue") or {}).get("number")]
-    for b, gone_from_record in [*((b, False) for b in record["bugs"]), *((b, True) for b in dropped)]:
+    def close(n: str, key: str, b: dict | None, reason: str, comment: str) -> None:
+        if b and b["status"] == "parked":
+            label(["parked"])
+            gh("issue", "edit", n, "--add-label", "parked")
+        gh("issue", "close", n, "--reason", reason, "--comment", comment)
+        if n != "<new>":
+            listed[int(n)]["state"] = "closed"
+        report["closed"].append(key)
+
+    def answer(n: str, b: dict, issue: dict) -> None:
+        if b.get("owner_decision") == "open" and not issue.get("answered"):
+            text = (safe(f"Your answer: {defuse(b['owner_answer'], uids)}",
+                         "Answered in `pixi run judge-review` (the answer isn't shown here).", uids)
+                    if b.get("owner_answer") else
+                    "Kept open in `pixi run judge-review`: a fix session follows verify's recommendation.")
+            gh("issue", "comment", n, "--body-file", "-", input=text + "\n")
+            issue["answered"] = True
+
+    for b in record["bugs"]:
         issue = dict(b.get("issue") or {})
         n = issue.get("number")
         if not n and (issue.get("status") == "pending" or filed(b)):
@@ -344,14 +370,6 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                 issue = {"number": n, "state": listed[n]["state"], "labels": [LABEL], "adopted": True}
         if n and n not in listed:      # deleted, relabelled, or never the owner's: never touched
             report["missing"].append(b["key"])
-            continue
-        if gone_from_record:           # a `wont_fix`, or merged into another bug this pass
-            if listed[n]["state"] == "open":
-                why = ("Closed as won't fix in `pixi run judge-review`." if b["status"] == "wont_fix" else
-                       f"Merged into the judge's bug `{lead[b['key']]}`." if b["key"] in lead else
-                       "No longer tracked by the judge.")
-                gh("issue", "close", str(n), "--reason", "not planned", "--comment", why)
-                report["closed"].append(b["key"])
             continue
         if not n:
             if not filed(b):
@@ -373,31 +391,27 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                 save()
             out = gh("issue", "create", "--title", head, "--body-file", "-",
                      *[a for lb in _labels(b) for a in ("--label", lb)], input=text)
-            if gh.dry:
-                gh("issue", "lock", "<new>")
-                report["filed"].append(b["key"])
-                continue
-            n = int(out.strip().rstrip("/").rsplit("/", 1)[-1])
+            n = "<new>" if gh.dry else int(out.strip().rstrip("/").rsplit("/", 1)[-1])
             gh("issue", "lock", str(n))
-            b["issue"] = {"number": n, "state": "open", "labels": _labels(b), "body": _sha(text),
-                          "landed": [c["commit"] for c in b.get("fix_landed", [])]}
-            save()
+            issue = {"number": n, "state": "open", "labels": _labels(b), "body": _sha(text),
+                     "landed": [c["commit"] for c in b.get("fix_landed", [])]}
             report["filed"].append(b["key"])
+            answer(str(n), b, issue)   # an answer given before its issue existed goes on it now
+            if not gh.dry:
+                b["issue"] = issue
+                save()
             continue
         state = listed[n]["state"]
-        close = _closing(b, uids)
-        if close and state == "open":
-            reason, comment = close
+        closing = _closing(b, uids)
+        if closing and state == "open":
             if b["status"] == "parked":
-                label(["parked"])
-                gh("issue", "edit", str(n), "--add-label", "parked")
                 issue["labels"] = [*(issue.get("labels") or []), "parked"]
-            gh("issue", "close", str(n), "--reason", reason, "--comment", comment)
+            close(str(n), b["key"], b, *closing)
             issue.update(state="closed")
-            report["closed"].append(b["key"])
         elif filed(b) and state == "closed":
             gh("issue", "reopen", str(n), "--comment", safe(f"Reopened by the judge: live again ({defuse(b.get('why') or '', uids)}).",
                                                         "Reopened by the judge: live again.", uids))
+            listed[n]["state"] = "open"
             issue.update(state="open")
             report["reopened"].append(b["key"])
         if filed(b):
@@ -413,13 +427,7 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                    *[a for lb in have if lb not in want for a in ("--remove-label", lb)], input=text)
                 issue.update(body=_sha(text), labels=want)
                 report["updated"].append(b["key"])
-            if b.get("owner_decision") == "open" and not issue.get("answered"):
-                answer = (safe(f"Your answer: {defuse(b['owner_answer'], uids)}",
-                               "Answered in `pixi run judge-review` (the answer isn't shown here).", uids)
-                          if b.get("owner_answer") else
-                          "Kept open in `pixi run judge-review`: a fix session follows verify's recommendation.")
-                gh("issue", "comment", str(n), "--body-file", "-", input=answer + "\n")
-                issue["answered"] = True
+            answer(str(n), b, issue)
             new = [c for c in b.get("fix_landed", []) if c["commit"] not in issue.get("landed", [])]
             if new:
                 gh("issue", "comment", str(n), "--body-file", "-", input="A commit naming this bug's key landed: "
@@ -429,6 +437,19 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                 issue["landed"] = [*issue.get("landed", []), *(c["commit"] for c in new)]
         if not gh.dry:
             b["issue"] = issue
+    # what's still open on GitHub for a key this record no longer has live: whatever pass dropped it,
+    # mirrored or not, it closes now
+    mine, before = {b["key"]: b for b in record["bugs"]}, {b["key"]: b for b in (previous or {}).get("bugs", [])}
+    lead = {k: b["key"] for b in record["bugs"] for k in (b.get("sources") or [b["key"]]) if k != b["key"]}
+    for n, i in sorted(listed.items()):
+        k = (m := _TITLE_KEY.match(i["title"])) and m[1]
+        if not k or i["state"] != "open" or k in mine and not _closing(mine[k], uids) and k not in lead:
+            continue
+        b = mine.get(k) or before.get(k)
+        closing = (_closing(b, uids) if b else None) or (
+            ("not planned", f"Merged into the judge's bug `{lead[k]}`.") if k in lead else
+            ("not planned", "No longer tracked by the judge."))
+        close(str(n), k, b, *closing)
     save()
     return report
 
@@ -499,6 +520,8 @@ def status_text(record: dict, report: dict | None, *, repo: str, pr: str | None 
     props = record.get("proposals") or []
     lines.append(f"- Rules: {len(props)} proposal(s) in {pr}" if props and pr else
                  f"- Rules: {len(props)} proposal(s); no PR was opened" if props else "- Rules: no proposals.")
+    waiting = _record.verify_waiting(record["run"]["spend"])
+    lines += [f"- Verify: {waiting}; the next pass verifies them."] if waiting else []
     lines.append(f"- Spend (list price): {_record.spend_line(record['run']['spend'])}")
     return "\n".join(lines) + "\n"
 
@@ -527,7 +550,9 @@ def main(argv: list[str] | None = None) -> int:
     if not records:
         print("judge-issues: no pass record in the store", file=sys.stderr)
         return 1
-    record, previous = records[-1], (records[-2] if len(records) > 1 else None)
+    # `previous` with the owner's answers in, as the weekly pass has it: a dropped bug's close says why
+    earlier = _load_sibling("review").applied_pass_records(before=records[-1]["date"])
+    record, previous = records[-1], (earlier[-1] if earlier else None)
     gh = Gh(repo_slug(), dry=not args.apply)
     report = mirror(record, gh=gh, previous=previous, uids=known_uids(),
                     persist=lambda r: _record.write(r, force=True))

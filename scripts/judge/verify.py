@@ -248,7 +248,7 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
             out.append({**b, "verify": v, "status": "parked", "why": _record.parked_why(v)})
         else:
             out.append({**b, "verify": v})
-    summary = {"groups": ran, "verified": len(verdicts), "failed": failed, "waiting": waiting,
+    summary = {"groups": ran, "verified": len(verdicts), "failed": failed, "waiting": waiting, "cap_usd": cap_usd,
                "usd": round(spent, 4), "reserved_usd": round(reserved, 4), "group_usd": costs, "tokens": meter, "precision": precision(out)}
     return out, summary
 

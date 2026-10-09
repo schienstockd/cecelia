@@ -196,6 +196,27 @@ class SweepTest(_Repo):
         self.assertTrue(by["fanout-00000001"]["why"].startswith("still open; not judged"))
         self.assertEqual(failures, {"sweep": "judge failed (exit 1): overloaded"})
 
+    def test_the_excerpt_judge_cant_dismiss_a_bug_verify_found_live(self):
+        bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
+        bugs[0]["verify"] = {"verdict": "fix", "date": "2026-10-05", "effect": "it breaks"}
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs}
+        again, _ = self.sweep([], previous=previous, judge=self.judge("not_a_bug"))
+        by = {b["key"]: b for b in again}
+        # verify traced it: back to verify (no verdict, so `eligible`), not dismissed
+        self.assertEqual((by["fanout-00000001"]["status"], by["fanout-00000001"].get("verify")), ("open", None))
+        self.assertIn("the excerpt judge disagreed (w); back to verify", by["fanout-00000001"]["why"])
+        self.assertEqual(by["fanout-00000002"]["status"], "dismissed")   # unverified: the judge still decides
+        self.assertEqual(self.sweep([], previous=previous, judge=self.judge("gone"))[0][0]["status"], "gone")
+
+    def test_a_fix_session_is_carried_one_pass(self):
+        bugs, _ = self.sweep([_finding("fanout-00000001")])
+        bugs[0]["fix_session"] = "2026-10-06T01:00:00Z"   # started after this pass
+        nxt, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs})
+        self.assertEqual(nxt[0]["fix_session"], "2026-10-06T01:00:00Z")
+        # the pass after: the session had a whole pass to land its fix, so `in-progress` comes off
+        later, _ = self.sweep([], previous={"run": {"ts": "2026-10-12T00:00:00Z"}, "bugs": nxt})
+        self.assertNotIn("fix_session", later[0])
+
     def test_a_usage_limit_is_not_swallowed(self):
         def limited(prompt):
             raise self.b._judge.RateLimited("You've hit your session limit")
@@ -716,6 +737,30 @@ class OwnerAnswerTest(unittest.TestCase):
         self.assertEqual(review.describe({**record, "bugs": [{
             "id": "B1", "key": "fanout-1", "status": "open", "file": "a.py", "line": 2, "desc": "d", "why": "w"}]},
             {"kind": "bug", "ref": "B1"}, use_colour=False)[0], "  open  a.py:2  ? · fanout-1")
+
+    def test_an_answer_to_an_older_record_given_after_the_pass_started_lands_on_the_same_key(self):
+        spec = importlib.util.spec_from_file_location("review", _REPO / "scripts" / "judge" / "review.py")
+        review = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(review)
+        older = {"date": "2026-09-28", "run": {"ts": "2026-09-28T02:00:00Z"},
+                 "bugs": [{"id": "B4", "key": "fanout-1", "status": "open"}, {"id": "B5", "key": "fanout-2", "status": "open"}]}
+        prev = {"date": "2026-10-05", "run": {"ts": "2026-10-05T02:00:00Z"},
+                "bugs": [{"id": "B1", "key": "fanout-1", "status": "open"}, {"id": "B2", "key": "fanout-2", "status": "open"}]}
+        rows = [  # the owner was still on the older record when the 10-05 pass ran
+            {"record": "2026-09-28", "event": "bug_status", "ref": "B4", "value": "wont_fix", "ts": "2026-10-05T03:00:00Z"},
+            {"record": "2026-09-28", "event": "bug_work", "ref": "B4", "value": "fix_session", "ts": "2026-10-05T03:01:00Z"},
+            {"record": "2026-09-28", "event": "bug_status", "ref": "B5", "value": "wont_fix", "ts": "2026-10-04T00:00:00Z"},
+            {"record": "2026-10-05", "event": "bug_status", "ref": "B2", "value": "open", "ts": "2026-10-06T00:00:00Z"}]
+        bugs = review.apply_reviews(prev, rows, older=[older])["bugs"]
+        self.assertEqual([(b["status"], b.get("fix_session")) for b in bugs],
+                         [("wont_fix", "2026-10-05T03:01:00Z"), ("open", None)])   # B5's came before: already applied
+        self.assertEqual(review.apply_reviews(prev, rows)["bugs"][0]["status"], "open")   # without `older`: lost
+        late = rows + [{"record": "2026-10-05", "event": "bug_status", "ref": "B1", "value": "open", "ts": "2026-10-05T04:00:00Z"}]
+        self.assertEqual(review.apply_reviews(prev, late, older=[older])["bugs"][0]["status"], "open")   # the latest wins
+        # judge-review doesn't offer it again either
+        queued = {**prev, "queue": [{"kind": "bug", "ref": "B1"}]}
+        self.assertEqual([(i["kind"], i["ref"]) for i in review.pending(queued, rows, older=[older])], [("work", "B2")])
+        self.assertEqual(len(review.pending(queued, rows)), 2)
 
 
 

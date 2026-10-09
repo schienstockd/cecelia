@@ -1,10 +1,9 @@
 # Weekly judge — draining the backlog, and bugs as GitHub issues
 
 **Status:** decisions locked (2026-10-07, Dominik); a concerns review folded in (2026-10-09: D14, D15
-and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2 built, off until
-Dominik reads its dry run (`pixi run judge-issues`) and turns it on (`JUDGE_ISSUES=1`, see
-`scripts/judge/systemd/README.md`). P3 and P4 built behind the same switch. Next: P5, after a pass
-in the issue layout.
+and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2–P4 built and on: the
+2026-10-09 pass ran in the issue layout, which is now the default (`--no-issues` / `JUDGE_ISSUES=0`
+for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5).
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan
@@ -316,6 +315,19 @@ issue (ignored).
 Once P1–P4 are in: one audit of the pass end to end, against real records and a real pass. It covers
 sweep, verify, parking, the issue mirror, `judge-review` and the status issue. It looks for what the
 phases broke between them, not inside any one.
+
+**Outcome:** audited 2026-10-09 against the 2026-10-09 pass. Fixed: issue bodies link the bug's own
+commit (the run SHA churned every body weekly and pointed 12 of 19 links at the wrong line); closing
+follows the open judge issues GitHub lists, so a pass that skipped the mirror leaves nothing open; the
+excerpt judge's `not_a_bug` sends a verified `fix`/`decide` bug back to verify instead of dismissing
+it; a close comment names who dismissed; bugs held back by verify's cap are said in the status
+comment, record and PR; answers given to an older record mid-pass apply; the issue layout is the
+default; a failed mirror or status comment warns in the recital console; an over-cap bug says so and
+gets its answer comment when filed; `in-progress` lasts one pass; a pass without proposals leaves the
+open rules PR alone; a rule's findings count only after its section's last edit.
+Left alone: `fix-landed` coming off a week later is intended (a re-verified open bug means the fix
+didn't fix it); a key the sweep judge never answers stays `unjudged` with no repeat yet, revisited if
+the same key goes unanswered twice.
 
 ## Rejected
 

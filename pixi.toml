@@ -350,8 +350,9 @@ guide-run          = "python scripts/agent_eval/guide_run.py"
 
 # The weekly judge (docs/ai-assist/WEEKLY_JUDGE.md): pin origin/main, sweep the reviewer findings
 # nobody fixed, verify the open ones with sandboxed read-only agents, tally which CLAUDE.md rules
-# keep breaking, write the run record and open its PR. Real API spend, capped (~$14). The Tuesday
-# timer runs it; `-- --no-pr` writes the record only, `-- --dry-run` prints it.
+# keep breaking, write the run record, mirror the bugs to issues and comment on the status issue (a PR
+# only for rule proposals; `-- --no-issues` for the old record PR). Real API spend, capped (~$14). The
+# Tuesday timer runs it; `-- --no-pr` skips the PR, `-- --dry-run` prints the record.
 judge-weekly = "python scripts/judge/weekly.py"
 # The pieces on their own, printed, never written: the bug sweep (one judge call; `--no-judge` is
 # free), verify a record's bugs (`--date D`, spends up to `--cap`), the rule tally (one judge call).
@@ -369,7 +370,7 @@ judge-record = "python scripts/judge/record.py"
 judge-review = "python scripts/judge/review.py"
 # The GitHub issue mirror for the newest run record (docs/todo/JUDGE_WORKFLOW_PLAN.md D7): what it
 # would file, close and reopen, printed with every body; reads only the judge issues' numbers and
-# states. `-- --apply` does it and records the issue numbers. The weekly pass runs it with `--issues`.
+# states. `-- --apply` does it and records the issue numbers. The weekly pass runs it unless `--no-issues`.
 judge-issues = "python scripts/judge/issues.py"
 
 # Rehearse a release bundle: pack what release.yml packs, extract it to a temp dir, and check that

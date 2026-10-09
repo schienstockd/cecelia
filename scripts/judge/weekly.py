@@ -19,17 +19,16 @@ was judged would read like a quiet week. That one exits `EX_TEMPFAIL` and leaves
 and the record and PR say which step didn't run (`run.failed`).
 
 Usage:
-    pixi run judge-weekly                  # pin origin/main, sweep, verify, record, open the PR
-    pixi run judge-weekly -- --no-pr       # write the record only
+    pixi run judge-weekly                  # pin origin/main, sweep, verify, record, issues + status comment
+    pixi run judge-weekly -- --no-pr       # write the record and mirror the issues; no rules PR
     pixi run judge-weekly -- --dry-run     # print the record; write nothing
-    pixi run judge-weekly -- --issues      # bugs as GitHub issues, a status comment, a PR only for rules
+    pixi run judge-weekly -- --no-issues   # the old layout: the record in a PR, no issues
 
-`--issues` (or `JUDGE_ISSUES=1`, which is how the timer gets it) switches the pass to the issue
-layout (docs/todo/JUDGE_WORKFLOW_PLAN.md D7–D12): the open bugs are mirrored to issues
-(`issues.py`), the pinned *Judge status* issue gets one comment, and a PR is opened only when there
-are rule proposals, holding `EFFECTIVENESS.md`. The record isn't committed; its rendered markdown
-sits beside the JSON in the store. A failed pass comments on the status issue instead of opening a
-FAILED PR. Without it, the pass opens the record PR as before.
+The issue layout is the default (docs/todo/JUDGE_WORKFLOW_PLAN.md D7–D12): the open bugs are
+mirrored to issues (`issues.py`), the pinned *Judge status* issue gets one comment, and a PR is
+opened only when there are rule proposals, holding `EFFECTIVENESS.md`. The record isn't committed;
+its rendered markdown sits beside the JSON in the store. A failed pass comments on the status issue
+instead of opening a FAILED PR. `--no-issues` (or `JUDGE_ISSUES=0`) opens the record PR instead.
 """
 from __future__ import annotations
 
@@ -218,6 +217,9 @@ def _pr_body(record: dict) -> str:
     agents = (record["run"]["spend"].get("verify") or {}).get("failed")
     if agents:
         lines += ["", f"**Verify:** {agents} bug(s) unverified, their agent failed (the cron log has why)."]
+    waiting = _record.verify_waiting(record["run"]["spend"])
+    if waiting:
+        lines += ["", f"**Verify:** {waiting}; the next pass verifies them."]
     props = record["proposals"]
     lines += ["", f"**Rules: {len(props)} proposal(s).**" if props else
               f"**Rules: the judge failed** (`{_record.one_line(failed['rules'])}`), nothing tallied."
@@ -228,9 +230,13 @@ def _pr_body(record: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+#: How a rules-only PR's title starts: what tells it from a full-record PR on the same `judge-run/*` branches.
+_RULES_PREFIX = "judge: rule proposals "
+
+
 def _rules_title(record: dict) -> str:
     n = len(record["proposals"])
-    return f"judge: rule proposals {record['date']} ({n})"
+    return f"{_RULES_PREFIX}{record['date']} ({n})"
 
 
 def _rules_body(record: dict) -> str:
@@ -267,7 +273,7 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
     run(["git", "commit", "--quiet", *(["--allow-empty"] if rules_only else []), "-F", "-"],
         input=f"{title}\n\n{recital.strip()}\n\n{_ATTRIBUTION}\n")
     run(["git", "push", "--quiet", "--force", "-u", "origin", branch])
-    existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,url"]).stdout)
+    existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,title,url"]).stdout)
     mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)
     url = mine or run([gh, "pr", "create", "--base", "main", "--head", branch,
                        "--title", title, "--body-file", "-"], input=body).stdout.strip()
@@ -278,13 +284,16 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
 
 
 def close_run_prs(comment: str, *, keep: str | None = None, run: _t.Callable[..., subprocess.CompletedProcess] = None,
-                  existing: list[dict] | None = None) -> list[int]:
-    """Close every open `judge-run/*` PR but `keep`'s, with `comment`; their numbers."""
+                  existing: list[dict] | None = None, records_only: bool = False) -> list[int]:
+    """Close every open `judge-run/*` PR but `keep`'s, with `comment`; their numbers. `records_only`
+    leaves a rules-only PR open: a pass with no proposals has nothing to supersede it, and its
+    `EFFECTIVENESS.md` still has to reach main."""
     run = run or (lambda cmd, **kw: _run(cmd, cwd=_REPO, stage="publish", **kw))
     gh = shutil.which("gh") or "gh"
     if existing is None:
-        existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,url"]).stdout)
-    closed = [p["number"] for p in existing if p["headRefName"].startswith("judge-run/") and p["headRefName"] != keep]
+        existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,title,url"]).stdout)
+    closed = [p["number"] for p in existing if p["headRefName"].startswith("judge-run/") and p["headRefName"] != keep
+              and not (records_only and (p.get("title") or "").startswith(_RULES_PREFIX))]
     for n in closed:
         run([gh, "pr", "close", str(n), "--comment", comment])
     return closed
@@ -321,12 +330,15 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
         if not sha:
             raise JudgeRunError("pin", f"can't resolve {ref!r}")
     # the owner's answers since the last pass go into the earlier records first, so a `wont_fix`
-    # bug is not carried
+    # bug is not carried. The previous record also takes answers given to an older one after it
+    # started: the owner was still working that one, and its next chance to apply is now
     state["stage"] = "reviews"
     reviews = _review.read_reviews()
     history = []
-    for earlier in _record.pass_records(before=date):
-        applied = _review.apply_reviews(earlier, reviews)
+    earlier_records = _record.pass_records(before=date)
+    for i, earlier in enumerate(earlier_records):
+        last = i == len(earlier_records) - 1
+        applied = _review.apply_reviews(earlier, reviews, older=earlier_records[:i] if last else ())
         if persist and applied != earlier:
             _record.write(applied, force=True)
         history.append(applied)
@@ -366,7 +378,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
 def mirror_issues(record: dict, gh: "_issues.Gh | None" = None) -> dict:
     """The issue mirror for this pass's record, its report kept on `run.issues`. A failure is said
     there and on stderr, never fails the pass: the record is written, and the next pass catches up."""
-    earlier = _record.pass_records(before=record["date"])
+    earlier = _review.applied_pass_records(before=record["date"])   # a dropped bug's close says the owner's answer
     try:
         gh = gh or _issues.Gh(_issues.repo_slug())
         report = _issues.mirror(record, gh=gh, previous=earlier[-1] if earlier else None,
@@ -379,13 +391,15 @@ def mirror_issues(record: dict, gh: "_issues.Gh | None" = None) -> dict:
 
 
 def issues_on(args: argparse.Namespace) -> bool:
-    """The issue layout: `--issues`, or `JUDGE_ISSUES=1` (how the timer's unit turns it on)."""
-    return bool(args.issues) or os.environ.get("JUDGE_ISSUES") == "1"
+    """The issue layout, the default: off only with `--no-issues` or `JUDGE_ISSUES=0`. `--issues` /
+    `JUDGE_ISSUES=1` (how the timer's unit turned it on before it was the default) still say on."""
+    return bool(args.issues) or not args.no_issues and os.environ.get("JUDGE_ISSUES") != "0"
 
 
 def post_status(record: dict, report: dict | None, *, pr: str | None = None,
                 gh: "_issues.Gh | None" = None) -> str:
-    """The pass's comment on the pinned Judge status issue; one line saying what happened."""
+    """The pass's comment on the pinned Judge status issue; one line saying what happened. A failed
+    comment is kept on the record too (`run.status_comment`), so the recital console says so."""
     try:
         gh = gh or _issues.Gh(_issues.repo_slug())
         paths = sorted(_record.store_root().glob("*.json"))
@@ -393,6 +407,11 @@ def post_status(record: dict, report: dict | None, *, pr: str | None = None,
         n = _issues.post_status(gh, _issues.status_text(record, report, repo=gh.repo, pr=pr, warning=warning))
         return f"status comment on {_issues.issue_url(gh.repo, n)}" if n else "status comment (dry run)"
     except Exception as e:  # noqa: BLE001 — the record stands; the cron log has why
+        record["run"]["status_comment"] = {"error": f"{type(e).__name__}: {e}"}
+        try:
+            _record.write(record, force=True)
+        except (OSError, ValueError) as w:
+            print(f"  status comment failure not recorded: {w}", file=sys.stderr)
         return f"status comment failed: {type(e).__name__}: {e}"
 
 
@@ -419,8 +438,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="record date (default: today, UTC)")
     ap.add_argument("--dry-run", action="store_true", help="print the record's markdown; write nothing")
     ap.add_argument("--no-pr", action="store_true", help="write the record; don't commit, push or open a PR")
-    ap.add_argument("--issues", action="store_true",
-                    help="mirror the record's open bugs to GitHub issues after writing it (issues.py)")
+    ap.add_argument("--issues", action="store_true", help="the issue layout (the default; kept for old units)")
+    ap.add_argument("--no-issues", action="store_true",
+                    help="the old layout: the record in a PR, no issues or status comment (also JUDGE_ISSUES=0)")
     ap.add_argument("--projects-dir", type=pathlib.Path,
                     help=f"where the agent run records are (default {_run_reviews.projects_dir()})")
     args = ap.parse_args(argv)
@@ -453,7 +473,8 @@ def main(argv: list[str] | None = None) -> int:
                     pr = publish(record, worktree=args.worktree or default_worktree(), rules_only=True)
                     print(f"  PR {pr}")
                 else:   # the record PRs from before the switch: the status issue replaces them
-                    close_run_prs("Superseded by the pinned Judge status issue (label `judge-status`).")
+                    close_run_prs("Superseded by the pinned Judge status issue (label `judge-status`).",
+                                  records_only=True)
             print(f"  {post_status(record, report, pr=pr)}", file=sys.stderr)
         elif not args.no_pr:
             state["stage"] = "publish"

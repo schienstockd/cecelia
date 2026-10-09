@@ -72,7 +72,7 @@ main() {
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 print("1" if d.get("retry") else "0", d.get("reset") or "")' "$LIMIT_FILE") || retry=0
         if [ "$retry" != 1 ] || [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
-            log "usage limit, lifts ${reset:-?}: no retry (attempt $attempt/$MAX_ATTEMPTS); the FAILED PR is open"
+            log "usage limit, lifts ${reset:-?}: no retry (attempt $attempt/$MAX_ATTEMPTS); the failure is on the status issue (or a FAILED PR)"
             return "$rc"
         fi
         reset_s=$(date -d "$reset" +%s 2>/dev/null) || reset_s=$(( $(date +%s) + 3600 ))   # unreadable: an hour

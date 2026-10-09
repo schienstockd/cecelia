@@ -195,6 +195,59 @@ class MirrorTest(_IssuesFixture):
         self.assertEqual(self.mirror(self.build("2026-10-12"), previous=record)["closed"], ["fanout-b1"])
         self.assertEqual(self.github.issues[1]["reason"], "not planned")
 
+    def test_an_issue_a_skipped_pass_dropped_is_closed_by_the_next_mirror(self):
+        record = self.build(bugs=[_fix("B1"), _fix("B2")])
+        self.mirror(record)
+        record["bugs"][0]["status"] = "wont_fix"   # answered; the next pass doesn't carry it
+        skipped = self.build("2026-10-12", bugs=[record["bugs"][1]])   # that pass never ran the mirror
+        report = self.mirror(self.build("2026-10-19", bugs=[record["bugs"][1]]), previous=skipped)
+        self.assertEqual((report["closed"], self.github.issues[1]["state"], self.github.issues[2]["state"]),
+                         (["fanout-b1"], "closed", "open"))
+        self.assertEqual(self.github.issues[1]["comments"], ["No longer tracked by the judge."])
+        self.assertEqual(self.mirror(self.build("2026-10-19", bugs=[record["bugs"][1]]))["closed"], [])   # once
+
+    def test_a_dropped_issue_closes_with_the_reason_the_records_still_give(self):
+        record = self.build(bugs=[_fix("B1"), _fix("B2"), _fix("B3")])
+        self.mirror(record)
+        gone = {**record["bugs"][0], "issue": {}, "status": "gone", "why": "fixed in b.py"}   # the mapping lost
+        record["bugs"][1]["status"] = "wont_fix"
+        lead = {**record["bugs"][2], "sources": ["fanout-b3", "fanout-b9"]}
+        self.github.add("[fanout-b9] fix: a.py:4", labels=("judge-bug",))
+        self.assertEqual(self.mirror(self.build("2026-10-12", bugs=[gone, lead]), previous=record)["closed"],
+                         ["fanout-b1", "fanout-b2", "fanout-b9"])
+        self.assertEqual([self.github.issues[n]["comments"][-1] for n in (1, 2, 4)],
+                         ["Confirmed gone by the judge: fixed in b.py",
+                          "Closed as won't fix in `pixi run judge-review`.",
+                          "Merged into the judge's bug `fanout-b3`."])
+        self.assertEqual(self.github.issues[3]["state"], "open")
+
+    def test_an_open_bug_waiting_for_verify_keeps_its_issue(self):
+        record = self.build(bugs=[_fix("B1")])
+        self.mirror(record)
+        back = {k: v for k, v in record["bugs"][0].items() if k != "verify"}   # sent back to verify, over its cap
+        self.assertEqual(self.mirror(self.build("2026-10-12", bugs=[back]), previous=record)["closed"], [])
+        self.assertEqual(self.github.issues[1]["state"], "open")
+
+    def test_a_close_comment_names_who_dismissed_it(self):
+        record = self.build(bugs=[_fix("B1"), _fix("B2"), _fix("B3")])
+        self.mirror(record)
+        later = self.build("2026-10-12", bugs=[
+            {**record["bugs"][0], "status": "dismissed", "owner_decision": "dismissed", "owner_answer": "ask @x"},
+            {**record["bugs"][1], "status": "dismissed", "verify": {"verdict": "dismiss", "effect": "nothing breaks"}},
+            {**record["bugs"][2], "status": "dismissed", "why": "the caller checks it"}])
+        self.mirror(later, previous=record)
+        self.assertEqual([self.github.issues[n]["comments"][-1] for n in (1, 2, 3)],
+                         ["Dismissed by the owner: ask `@x`", "Dismissed by verify: nothing breaks",
+                          "Dismissed by the judge: the caller checks it"])
+
+    def test_a_bug_answered_before_its_issue_existed_gets_the_answer_when_filed(self):
+        record = self.build(bugs=[_bug("B1", verify={"verdict": "decide", "date": "x"}, owner_decision="open",
+                                       owner_answer="keep the guard")])
+        self.mirror(record)
+        self.assertEqual(self.github.issues[1]["comments"], ["Your answer: keep the guard\n"])
+        self.mirror(record)
+        self.assertEqual(len(self.github.issues[1]["comments"]), 1)
+
     def test_a_landed_fix_labels_and_comments_once(self):
         record = self.build(bugs=[_fix("B1")])
         self.mirror(record)
@@ -236,6 +289,13 @@ class MirrorTest(_IssuesFixture):
         report = self.mirror(record, max_creates=3)
         self.assertEqual((len(report["filed"]), len(report["over_cap"]), len(self.slept)), (3, 2, 2))
 
+    def test_an_over_cap_bug_says_it_isnt_filed_yet(self):
+        record = self.build(bugs=[_fix("B1"), _fix("B2")])
+        record["run"]["issues"] = self.mirror(record, max_creates=1)
+        self.assertEqual(self.i.issue_note(record, record["bugs"][1], REPO),
+                         "issue not filed yet: over this pass's cap; the next pass files it")
+        self.assertEqual(self.i.issue_note(record, record["bugs"][0], REPO), f"https://github.com/{REPO}/issues/1")
+
     def test_a_dry_run_reads_but_writes_nothing(self):
         record = self.build(bugs=[_fix("B1")])
         gh = self.gh(dry=True)
@@ -268,6 +328,16 @@ class BodyTest(_IssuesFixture):
         self.assertIn("> see `@primeuix` and `#2`", text)
         self.assertTrue(text.endswith("---\n" + self.i.FOOTER + "\n"))
         self.assertEqual(self.i.leaks(text), [])
+
+    def test_the_link_is_at_the_bugs_own_commit_so_a_new_pass_changes_nothing(self):
+        b = _fix("B1", commit="c" * 40)
+        text = self.i.body(b, repo=REPO, sha="a" * 40)
+        self.assertEqual(text, self.i.body(b, repo=REPO, sha="b" * 40))
+        self.assertIn(f"(https://github.com/{REPO}/blob/{'c' * 40}/a.py#L3) at `cccccccc`", text)
+        record = self.build(bugs=[b])
+        self.mirror(record)
+        record["run"]["sha"] = "b" * 40   # the next pass
+        self.assertEqual(self.mirror(record)["updated"], [])
 
     def test_an_agent_error_shows_its_form_not_its_message(self):
         b = _bug("B1", kind="agent_run", file=None, line=None, tool="get_cohort_qc", repeat=True, runs=4,
@@ -302,6 +372,9 @@ class StatusTest(_IssuesFixture):
         self.assertIn("**Judge failed** for: rules", text)
         self.assertIn("backlog grew 2 passes in a row", text)
         self.assertEqual(self.i.leaks(text), [])
+        record["run"]["spend"]["verify"] = {"waiting": 2, "cap_usd": 10.0}
+        self.assertIn("- Verify: 2 waiting for verify (over the $10 verify cap)",
+                      self.i.status_text(record, report, repo=REPO))
         failed = self.rec.failure_record("2026-10-05", stage="bugs", error="boom at /home/me/x @someone", sha="abc")
         text = self.i.status_text(failed, None, repo=REPO)
         self.assertIn("**Pass 2026-10-05 failed** at `bugs`", text)

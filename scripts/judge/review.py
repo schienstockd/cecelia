@@ -97,9 +97,10 @@ def read_reviews(path: pathlib.Path | None = None) -> list[dict]:
 
 def applied_pass_records(before: str | None = None) -> list[dict]:
     """`record.pass_records` with the owner's answers folded in: the view every reader of the
-    history wants."""
+    history wants, late answers to an older record included (as the weekly pass applies them)."""
     reviews = read_reviews()
-    return [apply_reviews(r, reviews) for r in _record.pass_records(before=before)]
+    records = _record.pass_records(before=before)
+    return [apply_reviews(r, reviews, older=records[:i]) for i, r in enumerate(records)]
 
 
 def current(reviews: _t.Iterable[dict]) -> dict[tuple[str, str, str], dict]:
@@ -110,20 +111,45 @@ def current(reviews: _t.Iterable[dict]) -> dict[tuple[str, str, str], dict]:
     return out
 
 
-def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
+def late_answers(record: dict, now: dict[tuple[str, str, str], dict],
+                 older: _t.Sequence[dict]) -> dict[tuple[str, str], dict]:
+    """(event, bug key) → the latest answer given to an `older` record after `record`'s pass started."""
+    start = (record.get("run") or {}).get("ts") or ""
+    late: dict[tuple[str, str], dict] = {}
+    for r in older:
+        keys = {b["id"]: b["key"] for b in r.get("bugs", [])}
+        for (date, event, ref), row in now.items():
+            if date == r["date"] and ref in keys and row.get("ts", "") > start and row.get("value") is not None:
+                if row["ts"] > late.get((event, keys[ref]), {}).get("ts", ""):
+                    late[(event, keys[ref])] = row
+    return late
+
+
+def apply_reviews(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = ()) -> dict:
     """`record` with the owner's bug answers folded in. What the weekly pass does to the previous
     record before it carries its bugs: a status answer sets `status` / `owner_decision` /
-    `owner_answer`, a fix session sets `fix_session` (its time; the issue mirror labels it)."""
+    `owner_answer`, a fix session sets `fix_session` (its time; the issue mirror labels it).
+
+    `older`: earlier records whose answers came after `record`'s pass started. The owner was still
+    working the older record then, so those answers apply here too, matched by bug key; the latest
+    answer per bug wins."""
     now = current(reviews)
     record = json.loads(json.dumps(record))   # deep copy; the caller's record is left alone
+    late = late_answers(record, now, older)
+
+    def answer(event: str, b: dict) -> dict | None:
+        rows = [r for r in (now.get((record["date"], event, b["id"])), late.get((event, b.get("key"))))
+                if r and r.get("value") is not None]
+        return max(rows, key=lambda r: r.get("ts") or "") if rows else None
+
     for b in record.get("bugs", []):
-        row = now.get((record["date"], "bug_status", b["id"]))
+        row = answer("bug_status", b)
         if row and row.get("value") in _record.BUG_STATUSES:
             b["status"] = row["value"]
             b["owner_decision"] = row["value"]   # a `decide` bug kept open joins the work list
             if row.get("note"):
                 b["owner_answer"] = row["note"]
-        work = now.get((record["date"], "bug_work", b["id"]))
+        work = answer("bug_work", b)
         if work and work.get("value") == "fix_session":
             b["fix_session"] = work["ts"]
     return record
@@ -162,13 +188,18 @@ def items_of(record: dict) -> list[dict]:
     return [{"kind": "decide", "ref": item["ref"]} for item in record.get("queue", [])] + work_items(record)
 
 
-def pending(record: dict, reviews: _t.Iterable[dict]) -> list[dict]:
-    """The queue's items with no live answer yet, in queue order."""
+def pending(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = ()) -> list[dict]:
+    """The queue's items with no live answer yet, in queue order. An answer given to an `older`
+    record after this one's pass started counts too (`apply_reviews`)."""
     now = current(reviews)
+    late = late_answers(record, now, older)
+    keys = {b["id"]: b.get("key") for b in record.get("bugs", [])}
 
     def live(event: str, ref: str) -> str | None:
         row = now.get((record["date"], event, ref))
-        return row.get("value") if row else None
+        if row and row.get("value") is not None:
+            return row["value"]
+        return (late.get((event, keys.get(ref))) or {}).get("value")
 
     def answered(item: dict) -> bool:
         if item["kind"] == "decide":
@@ -368,8 +399,9 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
               press: _t.Callable[[str], str] | None = None, out: _t.TextIO = sys.stdout,
               path: pathlib.Path | None = None, use_colour: bool = True, width: int | None = None,
               fullscreen: bool = False, launch: _t.Callable[[str, pathlib.Path], str | None] = default_launch,
-              cwd: pathlib.Path | None = None) -> int:
-    """Walk the queue; returns how many answers were recorded this session (net of undos).
+              cwd: pathlib.Path | None = None, older: _t.Sequence[dict] = ()) -> int:
+    """Walk the queue; returns how many answers were recorded this session (net of undos). `older`:
+    the records before this one, whose late answers count as answers here (`apply_reviews`).
 
     The queue is re-read after every answer, so a decide bug kept open joins the work list at once.
     `fullscreen` (a terminal) repaints one card per screen, like `pixi run recital-console`; off, the
@@ -388,8 +420,8 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     base = record
 
     def state() -> tuple[dict, list[dict], int]:
-        rec = apply_reviews(base, read_reviews(path))
-        left = [it for it in pending(rec, read_reviews(path)) if (it["kind"], it["ref"]) not in skipped]
+        rec = apply_reviews(base, read_reviews(path), older)
+        left = [it for it in pending(rec, read_reviews(path), older) if (it["kind"], it["ref"]) not in skipped]
         return rec, left, len(items_of(rec))
 
     skipped: set[tuple[str, str]] = set()
@@ -490,7 +522,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
         if fullscreen:
             out.write(_LEAVE)
             out.flush()
-    left_n = len(pending(apply_reviews(base, read_reviews(path)), read_reviews(path)))
+    left_n = len(pending(apply_reviews(base, read_reviews(path), older), read_reviews(path), older))
     if fullscreen:   # the alternate screen is gone; leave the outcome in the shell
         print(title, file=out)
     elif status:
@@ -507,13 +539,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         if args.date:
-            record = apply_reviews(_record.load(_record.store_root() / f"{args.date}.json"), read_reviews())
+            older = _record.pass_records(before=args.date)
+            record = apply_reviews(_record.load(_record.store_root() / f"{args.date}.json"), read_reviews(), older)
         else:
             records = applied_pass_records()
             if not records:
                 print(f"judge-review: no run records in {_record.store_root()}", file=sys.stderr)
                 return 1
-            record = records[-1]
+            record, older = records[-1], records[:-1]
     except _record.RecordError as e:
         print(f"judge-review: {e}", file=sys.stderr)
         return 1
@@ -521,7 +554,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"judge-review: {record['date']} is a failure record; nothing to review", file=sys.stderr)
         return 1
     tty = sys.stdout.isatty()
-    run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty)
+    run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty,
+              older=older)
     return 0
 
 

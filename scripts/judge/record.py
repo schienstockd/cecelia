@@ -63,6 +63,15 @@ def backlog_line(record: dict) -> str:
     """`N waiting for the judge (last pass M)`; the trend is the point, so it's said even at 0."""
     last = record["run"].get("backlog_last")
     return f"{backlog(record['bugs'])} waiting for the judge" + (f" (last pass {last})" if last is not None else "")
+def verify_waiting(spend: dict) -> str | None:
+    """`N waiting for verify (over the $X verify cap)`: open bugs verify's cap held back this pass,
+    unverified and so unfiled; None when there are none."""
+    v = spend.get("verify") or {}
+    if not v.get("waiting"):
+        return None
+    return f"{v['waiting']} waiting for verify (over the " + (f"${v['cap_usd']:g} " if v.get("cap_usd") else "") + "verify cap)"
+
+
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
     "*Agent's code* is a mistake in the reviewed diff; *older code* was there before it. A proposal "
@@ -377,6 +386,7 @@ def render_markdown(record: dict) -> str:
            f"| Spend (list price) | {spend_line(run['spend'])} |",
            f"| Owner queue | {len(record['queue'])} (`pixi run judge-review`) |",
            f"| Backlog | {backlog_line(record)} |",
+           *([f"| Verify | {verify_waiting(run['spend'])} |"] if verify_waiting(run["spend"]) else []),
            *(f"| Failed | {step}: `{_cell(one_line(why))}` |" for step, why in (run.get("failed") or {}).items()),
            "",
            "## Bugs", "",

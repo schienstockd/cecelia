@@ -41,6 +41,16 @@ class JudgeStalenessTest(unittest.TestCase):
         msg = judge_record_warning(self.store, today=dt.date(2026, 9, 9))
         self.assertIn("its rules and sweep judge failed", msg)
 
+    def test_a_pass_whose_gh_failed_says_so(self):
+        for run, what in (({"issues": {"error": "GhError: gh api exited 1"}}, "its issue mirror failed"),
+                          ({"status_comment": {"error": "GhError: x"}}, "its status comment failed")):
+            with self.subTest(what=what):
+                (self.store / "2026-09-08.json").write_text(json.dumps({"kind": "pass", "run": run}), encoding="utf-8")
+                self.assertIn(what, judge_record_warning(self.store, today=dt.date(2026, 9, 9)))
+        (self.store / "2026-09-08.json").write_text(json.dumps(
+            {"kind": "pass", "run": {"issues": {"filed": []}}}), encoding="utf-8")
+        self.assertIsNone(judge_record_warning(self.store, today=dt.date(2026, 9, 9)))
+
     def _pass(self, date, waiting):
         (self.store / f"{date}.json").write_text(json.dumps(
             {"kind": "pass", "bugs": [{"status": "unjudged"}] * waiting + [{"status": "open"}]}), encoding="utf-8")
