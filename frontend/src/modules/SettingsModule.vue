@@ -21,7 +21,7 @@ import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchComp
          type KeepPrevVersionSettings, type VersionsInventory,
          type PruneSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
-import { quitConfirmTooltip, quitConfirmLabel } from '../utils/quitWarning'
+import { quitConfirmTooltip, quitConfirmLabel, quitTaskPhrase } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import { useObserverStore } from '../stores/observer'
@@ -504,7 +504,13 @@ const thrTip = computed(() => {
   if (t && !t.managed) return 'Fixed by the dev launcher (all cores)'
   return 'Run Cecelia on every CPU core; off uses one. Applies on restart'
 })
+// In the installed app tasks run inside the server, so a restart would drop them — refuse, like
+// "Restart to update" (useRestartToUpdate) does. The click re-asks the backend for the count.
+const thrMsg = ref('')
 async function threadsRestart() {
+  const n = await runningTaskCount()
+  if (n > 0) { thrMsg.value = `${quitTaskPhrase(n)} — finish or cancel them, then restart`; return }
+  thrMsg.value = ''
   await appRestart()
   loadThreads(); loadDiag()
 }
@@ -1329,11 +1335,12 @@ async function switchWt(path: string) {
         </CcToggle>
         <span class="field-hint cc-muted cc-fs-xs">
           {{ thrStatus }}<template v-if="thr.restartRequired"> · Restart Cecelia to apply.
-            <button v-if="thr.canRestart" class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="appCtl.busy"
-                    @click="threadsRestart" v-tooltip.top="'Restart the backend now; the page reconnects'">
+            <button v-if="thr.canRestart" class="cc-btn cc-btn-ghost cc-btn-micro" :disabled="appCtl.busy || taskStore.running().length > 0"
+                    @click="threadsRestart" v-tooltip.top="taskStore.running().length > 0 ? 'Finish or cancel running tasks first' : 'Restart the backend now; the page reconnects'">
               <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart now
             </button>
           </template>
+          <template v-if="thrMsg"> · {{ thrMsg }}</template>
         </span>
       </div>
 
