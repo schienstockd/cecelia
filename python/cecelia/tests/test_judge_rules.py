@@ -129,17 +129,18 @@ class ProposeTest(unittest.TestCase):
         self.assertEqual(out, [{"slug": "a", "rule": "Y"}, {"slug": "b", "rule": "X"}])
 
     def test_section_edits_asks_git_for_the_sections_own_lines(self):
+        # GUIDE.md, not CLAUDE.md: the doc-pointer check would flag pointers to these made-up sections
         text = "# T\n\n## Image / OME-ZARR (`zarr_utils`) [x]\nbody\n\n## Testing\nrun it\n"
         calls = []
 
         def git(*args):
             calls.append(args)
             return text if args[0] == "show" else "2026-09-22T11:00:00+11:00\n\ndiff --git a/CLAUDE.md"
-        out = self.r.section_edits(["CLAUDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*", "CLAUDE.md → *Testing*",
-                                    "CLAUDE.md → *Gone*"], git)
-        self.assertEqual(out, {"CLAUDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*": "2026-09-22T11:00:00+11:00",
-                               "CLAUDE.md → *Testing*": "2026-09-22T11:00:00+11:00"})
-        self.assertEqual([c[c.index("-L") + 1] for c in calls if c[0] == "log"], ["3,5:CLAUDE.md", "6,7:CLAUDE.md"])
+        out = self.r.section_edits(["GUIDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*", "GUIDE.md → *Testing*",
+                                    "GUIDE.md → *Gone*"], git)
+        self.assertEqual(out, {"GUIDE.md → *Image / OME-ZARR (`zarr_utils`) [x]*": "2026-09-22T11:00:00+11:00",
+                               "GUIDE.md → *Testing*": "2026-09-22T11:00:00+11:00"})
+        self.assertEqual([c[c.index("-L") + 1] for c in calls if c[0] == "log"], ["3,5:GUIDE.md", "6,7:GUIDE.md"])
         self.assertEqual(sum(c[0] == "show" for c in calls), 1)   # one read per file
 
     def test_red_team_old_and_repeated_findings_are_not_counted(self):
