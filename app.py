@@ -62,8 +62,23 @@ def _find_julia() -> str:
 
 
 def _find_pixi() -> str:
-    """Resolve the Pixi binary: PATH first, else Pixi's default per-user install location."""
-    return shutil.which("pixi") or os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+    """Resolve the Pixi binary — same order as `_find_pixi` in api/src/pixi_bin.jl: `PIXI_EXE`
+    (exported by `pixi run`), PATH, then install.sh's locations (system scope `<root>/pixi/bin`,
+    `$PIXI_HOME/bin`, `~/.pixi/bin`). Nothing found → the `~/.pixi` path, so the caller's error names it."""
+    from_run = os.environ.get("PIXI_EXE", "").strip()
+    if from_run and os.path.isfile(from_run):
+        return from_run
+    found = shutil.which("pixi")
+    if found:
+        return found
+    pixi_home = os.environ.get("PIXI_HOME", "")
+    user = os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+    for cand in (os.path.join(ROOT, "pixi", "bin", _exe("pixi")),
+                 os.path.join(pixi_home, "bin", _exe("pixi")) if pixi_home else "",
+                 user):
+        if cand and os.path.isfile(cand):
+            return cand
+    return user
 
 
 def _config_dir() -> str:
