@@ -258,7 +258,9 @@ Revisit if the store is ever lost for real.
 
 ## Phases
 
-Each phase ships alone, P1 first, because it's the problem that bites now.
+Each phase ships alone, P1 first, because it's the problem that bites now. Every phase also checks
+that `pixi run judge-review` still offers the right work list on a real record and a `--no-judge`
+pass, and extends it in the same PR if not.
 
 ### P1 — drain and park (Part 1)
 
@@ -301,6 +303,12 @@ issue (ignored).
 ### P4 — PR only for rules, status issue (D12)
 
 `WEEKLY_JUDGE.md` is rewritten at this phase.
+
+### P5 — audit the whole loop (Dominik, 2026-10-09)
+
+Once P1–P4 are in: one audit of the pass end to end, against real records and a real pass. It covers
+sweep, verify, parking, the issue mirror, `judge-review` and the status issue. It looks for what the
+phases broke between them, not inside any one.
 
 ## Rejected
 
