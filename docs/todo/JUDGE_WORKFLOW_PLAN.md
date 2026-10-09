@@ -1,7 +1,8 @@
 # Weekly judge — draining the backlog, and bugs as GitHub issues
 
 **Status:** decisions locked (2026-10-07, Dominik); a concerns review folded in (2026-10-09: D14, D15
-and amendments to D2, D4, D9, D11). P1 merged (#1513). Next: P1b, then P2.
+and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2 built, off until
+Dominik reads its dry run (`pixi run judge-issues`) and the timer gets `--issues`. Next: P3.
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan
@@ -192,12 +193,14 @@ whole. The finding's free-text description is the one prose field. It sits in a 
 as reviewer output.
 
 **Defused in every prose field:** `@name` and `#N` go inside a code span, where GitHub neither
-notifies nor cross-links. Absolute paths (`/home/…`, `C:\…`), project and image uids, and text from
-agent transcripts are stripped. Agent-run errors carry the tool + HTTP status + the error's template
+notifies nor cross-links. Home paths (`/home/<user>`, `/Users/<user>`, `C:\Users\<user>`) become
+`~`; a system path such as `/opt/homebrew/bin` stays, since it names no one and is often the point
+of the finding. Project and image uids (the ones on this machine) become `<uid>`, and text from
+agent transcripts is left out. Agent-run errors carry the tool + HTTP status + the error's template
 (the repeat key's form), not the raw message.
 
 **Backstop:** after the template is filled, a regex pass looks for a bare `@name`, a bare `#N`, an
-absolute path or a uid. A hit means the bug is **not filed**; the status comment reports it. A
+home path or a uid. A hit means the bug is **not filed**; the status comment reports it. A
 backstop that only logs would let the one it missed through.
 
 **Transport:** bodies reach `gh` through `--body-file`, never argv.
@@ -227,7 +230,9 @@ once and throttled. `unjudged` bugs are never backfilled. D1 judges them, and th
 ### D14. The `gh` runner allows a fixed list
 
 The injectable runner (P2) passes through only `issue create`, `issue edit`, `issue close`,
-`issue reopen`, `issue comment`, `issue lock` and `issue list`. Anything else raises and fails the
+`issue reopen`, `issue comment`, `issue lock`, `label create`, and a bare-path GET of `user` or this
+repo's issue list (the REST list D7 reads; `gh issue list` with an author filter goes through
+search, which lags). Anything else raises and fails the
 pass's issue step, loudly, the same way a failed judge call is reported. The token is the owner's
 full-scope one (D8), so the allowlist is what bounds what the pass can do.
 
