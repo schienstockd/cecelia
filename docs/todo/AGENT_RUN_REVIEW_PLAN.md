@@ -58,9 +58,11 @@ Corrections become lab knowledge for later runs only after a person rewrites the
    cannot leave out the decision it got wrong, and the agent's instructions do not change (the
    no-breadcrumbs rule holds). Its own words appear verbatim as *said before acting*.
 4. **The why is asked after the run, and labelled so.** The harness resumes the finished session once
-   (`claude -p --resume`, budget-capped) with the extracted decision list and asks for one line per
+   (`claude -p --resume`) with the extracted decision list and asks for one line per
    decision. The run is over and its record frozen first, so this cannot change what it did; the
-   answer shows as *explained after the run*.
+   answer shows as *explained after the run*. **Opt-in (`--ask-why`) since 2026-10-09:** the resume
+   re-reads the whole session in its first turn, which the budget cap does not bound (~$6 a run), and
+   1 of 11 runs got an answer.
 5. **The record lives in the SOURCE project and is self-contained.** One blackboard entry per run, in
    your project, so marking happens in one place and survives deleting the copy:
    - the decision text, params and counts are in the entry body;

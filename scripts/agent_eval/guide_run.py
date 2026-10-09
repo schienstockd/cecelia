@@ -12,7 +12,7 @@ What it adds to `run_app.py`:
 - each run's directory under `~/.cecelia-effectiveness/app-runs/<stamp>/`;
 - one lock, so runs never overlap: `--runs N` runs them in turn, and stops at the first that fails;
 - one line per run in `~/.cecelia-effectiveness/guide-runs.jsonl` (stamp, guide, commit, knowledge,
-  discovery, cost: the run, the after-run why turn and their total; wall time, exit, record id),
+  discovery, cost: the run, the after-run why turn (`--ask-why`) and their total; wall time, exit, record id),
   written even when the run aborts;
 - `--discovery off`: the agent's MCP servers get `CECELIA_MCP_DISCOVERY=off` and hide what each task is
   for (docs/todo/TASK_DISCOVERY_PLAN.md Decision 9). A separate arm: never pool it with `on`.
@@ -106,7 +106,7 @@ def run_app_argv(guide: str, entry: dict, *, root: pathlib.Path, projects_dir: s
     argv += ["--guide", guide, "--brief", brief_for(entry["title"]), "--root", str(root),
              "--budget-usd", str(budget_usd), "--timeout-s", str(timeout_s), "--api-url", api_url,
              "--discovery", discovery]
-    return argv + (["--knowledge"] if knowledge else []) + ([] if ask_why else ["--no-ask-why"])
+    return argv + (["--knowledge"] if knowledge else []) + (["--ask-why"] if ask_why else [])
 
 
 # ── the app, the code, the outcome ───────────────────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def run_outcome(root: pathlib.Path) -> dict:
         record_id = (rec.get("blackboard") or {}).get("entryId")
     except (OSError, ValueError):
         pass
-    try:   # the after-run why turn (`run_record.ask_why`), under its own cap and not in the trace
+    try:   # the after-run why turn (`run_record.ask_why`, opt-in), not in the trace
         why_cost = json.loads((root / "why.json").read_text(encoding="utf-8")).get("costUsd")
     except (OSError, ValueError, AttributeError):
         why_cost = None
@@ -252,7 +252,7 @@ def forward_args(guide: str, a) -> list[str]:
            "--api-url", a.api_url, "--discovery", a.discovery]
     if a.projects_dir:
         out += ["--projects-dir", a.projects_dir]
-    return out + (["--knowledge"] if a.knowledge else []) + ([] if a.ask_why else ["--no-ask-why"])
+    return out + (["--knowledge"] if a.knowledge else []) + (["--ask-why"] if a.ask_why else [])
 
 
 def schedule_argv(when: _dt.datetime, unit: str, command: list[str], path_env: str,
@@ -344,8 +344,9 @@ def main(argv=None) -> int:
     ap.add_argument("--at", default=None, metavar="HH:MM",
                     help="run once at that time ('YYYY-MM-DD HH:MM' for another day) instead of now. "
                          "Linux only: a transient systemd user timer runs this same command then")
-    ap.add_argument("--no-ask-why", dest="ask_why", action="store_false",
-                    help="skip the post-run why turn")
+    ap.add_argument("--ask-why", action="store_true",
+                    help="after the run, resume the whole session to ask why: ~$6 a run, since its first turn "
+                         "re-reads the session and the budget cap only applies after it")
     ap.add_argument("--projects-dir", default=None, help="default: the running app's projects dir")
     ap.add_argument("--timeout-s", type=int, default=3 * 3600)
     ap.add_argument("--api-url", default=DEFAULT_API)

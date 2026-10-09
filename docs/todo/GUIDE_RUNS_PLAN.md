@@ -127,7 +127,8 @@ The repeated tool errors (the mechanical part) already reach the judge.
   app's `/api/diagnostics`; each run (or a run skipped because the app is down or the lock is held)
   appends one line to `~/.cecelia-effectiveness/guide-runs.jsonl` (`costUsd` the run, `whyCostUsd` the
   after-run why turn from the record's `why.json`, `totalCostUsd` both); `--runs N` stops at the first run
-  that fails. The record's `agentRun` meta carries `guide`, `codeSha` and `knowledgeOn`.
+  that fails. The why turn is opt-in (`--ask-why`): it resumes the whole session, ~$6 a run, and
+  1 of 11 runs got an answer (2026-10-09). The record's `agentRun` meta carries `guide`, `codeSha` and `knowledgeOn`.
 - **Checkpoint:** one intravital run started with the command, then reviewed with P1.
 
 ## What would change this plan
