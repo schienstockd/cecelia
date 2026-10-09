@@ -29,7 +29,7 @@ A bug verify called `guard` (the flaw is there, nothing reachable triggers it) i
 off the work list, and not judged again. Each pass checks for free whether a commit names its key
 (`fix_landed`) or one since its verify SHA touched its file (an agent-run error with no file: whether
 a run hit it again); if so, it goes back to `open` with its verdict cleared, so verify looks at it
-again.
+again: at most `PARKED_RECHECK` a pass, the rest wait parked for a slot.
 
 A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
 gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
@@ -119,6 +119,10 @@ CALL_USD = 1.50
 #: holds even if that call spends its budget: $4 is four calls, 160 findings, against a measured
 #: inflow of about 100 a week.
 SWEEP_USD = 4.0
+#: Parked bugs sent back to verify per pass. Their re-check is a proxy (their file changed), and a busy
+#: file would otherwise send its every parked bug back each week, out of verify's budget. Over the
+#: cap a bug stays parked and goes first next pass: a landed fix ahead, then the oldest parking.
+PARKED_RECHECK = 3
 
 JUDGE_SCHEMA = {
     "type": "object",
@@ -370,7 +374,7 @@ def default_judge(prompt: str) -> tuple[dict, float, dict]:
 
 def _strip(b: dict) -> dict:
     return {k: v for k, v in b.items()
-            if k not in ("id", "status", "why", "code", "symbol", "carried", "was", "muted")}
+            if k not in ("id", "status", "why", "code", "symbol", "carried", "was", "muted", "recheck")}
 
 
 def _not_judged(b: dict, date: str, why: str) -> dict:
@@ -411,6 +415,24 @@ def _touched(b: dict, sha: str, repo: pathlib.Path) -> str | None:
             if commits else None)
 
 
+def _unpark(fired: list[tuple[dict, str]], date: str) -> list[dict]:
+    """Parked bugs whose re-check fired: the first PARKED_RECHECK go back to verify as `open` with no
+    verdict (`eligible` takes those), a landed fix first, then the oldest parking; the rest stay
+    parked, `recheck` saying why one is due, and wait for a slot."""
+    fired = sorted(fired, key=lambda f: (not f[0].get("fix_landed"), (f[0].get("verify") or {}).get("date") or ""))
+    out = []
+    for i, (b, back) in enumerate(fired):
+        v = b.get("verify") or {}
+        said = f"parked {v.get('date') or '?'} as guard; {back}"
+        if i < PARKED_RECHECK:
+            out.append({**_strip({k: x for k, x in b.items() if k != "verify"}), "status": "open", "opened": date,
+                        "why": f"{said}, so verify checks it again"})
+        else:
+            out.append({**_strip(b), "status": "parked", "recheck": back,
+                        "why": f"{said}; waiting for a re-check slot ({PARKED_RECHECK} a pass)"})
+    return out
+
+
 def _prompt(batch: _t.Sequence[dict]) -> str:
     return _BRIEF + "\n\n".join(
         f"FINDING {b['key']} ({b['marker']}, {b['file']}:{b['line']}, branch {b.get('branch') or '?'}):\n"
@@ -444,12 +466,15 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
     answer for (failed, or over the budget) waits `unjudged`, except a carried `open` one, which stays
     open. A carried `parked` bug skips the judge: it stays parked unless its file changed since it
-    was verified. A failed judge call is said in `failures["sweep"]` and ends the sweep; a
+    was verified, and then only up to `PARKED_RECHECK` a pass go back to verify. A failed judge call is said in `failures["sweep"]` and ends the sweep; a
     `judge.RateLimited` propagates.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
-    carried = {b["key"]: {**{k: v for k, v in _strip(b).items() if k != "fix_landed"},   # found afresh
+    # `fix_landed` is found afresh, except on a parked bug still waiting for a re-check slot
+    # (`recheck`): its fix landed before `previous sha`, so only the record still knows it. One verify
+    # parked again drops it, or the same landed fix would send it back every pass
+    carried = {b["key"]: {**{k: v for k, v in _strip(b).items() if k != "fix_landed" or b.get("recheck")},
                           "carried": True, "was": b.get("status"),
                           **({"closed_runs": b.get("closed_runs") or b.get("runs") or 1}
                              if b.get("repeat") and b.get("status") == "dismissed" else {})}
@@ -470,6 +495,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     bugs: list[dict] = []
     groups: dict[tuple, list[dict]] = {}
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
+    unpark: list[tuple[dict, str]] = []   # parked bugs whose re-check fired, and why
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
         if b.get("was") in MUTED:
             bugs.append({**_strip(b), "status": b["was"], "muted": True,
@@ -489,11 +515,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             continue
         if _parked(b):
             back = _touched(b, sha, repo)
-            if back:   # verified afresh: `eligible` takes an open bug with no verdict
-                was = b.get("verify") or {}
-                b = {k: v for k, v in b.items() if k != "verify"}
-                bugs.append({**_strip(b), "status": "open", "opened": date,
-                             "why": f"parked {was.get('date') or '?'} as guard; {back}, so verify checks it again"})
+            if back:
+                unpark.append((b, back))
             else:
                 bugs.append({**_strip(b), "status": "parked", "why": _record.parked_why(b.get("verify") or {})})
             continue
@@ -517,6 +540,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
              # never merged: its run count and a `wont_fix` are carried by its own key
              b["key"] if b.get("kind") == "agent_run" else None)
         groups.setdefault(g, []).append({**b, "code": where["code"]})
+    bugs += _unpark(unpark, date)
     bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
              for g in waits.values()]
     ask = [_merge(g) for g in sorted(groups.values(), key=_queue_order)]

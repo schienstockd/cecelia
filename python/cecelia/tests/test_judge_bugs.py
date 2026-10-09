@@ -325,6 +325,34 @@ class SweepTest(_Repo):
         self.assertIn("a commit naming its key landed", later[0]["why"])
         self.assertEqual(later[0]["fix_landed"][0]["commit"], sha)
 
+    def test_parked_rechecks_are_capped_a_landed_fix_then_the_oldest_first(self):
+        one = self._guarded()["bugs"][0]
+        bugs = [{**one, "key": f"fanout-0000000{i}", "sources": [f"fanout-0000000{i}"],
+                 "verify": {**one["verify"], "date": f"2026-10-0{i}"}} for i in range(1, 6)]
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+        sha = self.commit("a.py", "".join(f"line {i}\n" for i in range(1, 62)), msg="fix: (fanout-00000005)")
+        with mock.patch.object(self.b, "PARKED_RECHECK", 3):
+            later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                                 merged_prs=lambda since: [], repo=self.repo)[0]
+        status = {b["key"]: b["status"] for b in later}
+        self.assertEqual(status, {"fanout-00000005": "open", "fanout-00000001": "open", "fanout-00000002": "open",
+                                  "fanout-00000003": "parked", "fanout-00000004": "parked"})
+        waiting = next(b for b in later if b["key"] == "fanout-00000003")
+        self.assertIn("waiting for a re-check slot (3 a pass)", waiting["why"])
+        self.assertIn("`a.py` changed since it was verified", waiting["recheck"])
+        self.assertEqual(waiting["verify"]["verdict"], "guard")   # kept: still parked, verdict and all
+        # next pass, no new commits: a held-back bug whose fix landed keeps that, and goes first;
+        # one verify parked again after its fix landed stays parked
+        held = {**later[0], "key": "fanout-00000009", "sources": ["fanout-00000009"], "status": "parked",
+                "fix_landed": [{"commit": sha}], "verify": {**one["verify"], "sha": sha}, "recheck": "a fix landed"}
+        reparked = {**held, "key": "fanout-00000008", "sources": ["fanout-00000008"]}
+        del reparked["recheck"]
+        nxt = self.b.sweep([], date="2026-10-19", sha=sha, previous={"run": {"ts": "2026-10-12T00:00:00Z", "sha": sha},
+                           "bugs": [held, reparked]}, judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([(b["key"], b["status"]) for b in nxt],
+                         [("fanout-00000009", "open"), ("fanout-00000008", "parked")])
+        self.assertIn("a commit naming its key landed", nxt[0]["why"])
+
     def test_a_parked_run_error_goes_back_when_a_run_hits_it_again(self):
         bugs, _ = self.sweep([_run_error("run-00000001", ts="2026-10-04T00:30:00Z")])
         bugs[0].update(status="parked", verify={"verdict": "guard", "date": "2026-10-05", "sha": self.sha})

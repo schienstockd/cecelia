@@ -194,8 +194,9 @@ class WeeklyTest(_WeeklyFixture):
         self.rec.write(self.build("2026-09-28", bugs=[_bug(f"B{i}", status="unjudged") for i in range(1, 4)]))
         record = self.run_pass()
         self.assertEqual(record["run"]["backlog_last"], 3)
-        record["bugs"].append(_bug("B9", status="parked", verify={"verdict": "guard", "date": "2026-10-05"}))
-        self.assertIn("**Bugs: 2 open** (1 verified, 2 new), 1 parked (can't happen yet), 0 fixed since the last pass, "
+        record["bugs"] += [_bug("B9", status="parked", verify={"verdict": "guard", "date": "2026-10-05"}),
+                           _bug("B10", status="parked", verify={"verdict": "guard", "date": "2026-10-05"}, recheck="x")]
+        self.assertIn("**Bugs: 2 open** (1 verified, 2 new), 2 parked (can't happen yet; 1 due a re-check), 0 fixed since the last pass, "
                       "0 waiting for the judge (last pass 3)", self.w._pr_body(record))
 
     def test_a_failure_never_replaces_a_pass_record(self):

@@ -46,7 +46,9 @@ test whether an agent can actually use the framework.
      names its key (*Landed fixes* below: the guard may have gone in elsewhere) or one since its
      verify SHA touched its file (an agent-run error with no file: unless a run hit it again after it
      was verified). Then it goes back to `open` with its verdict cleared, and verify looks at
-     it again. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
+     it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
+     the check is a proxy, and a busy file would otherwise send its every parked bug back each
+     week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
    Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
@@ -137,7 +139,7 @@ test whether an agent can actually use the framework.
 
 The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
-parked count, what was fixed since the last pass, and the backlog against the last pass.
+parked count (and how many of them are due a re-check), what was fixed since the last pass, and the backlog against the last pass.
 
 A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,
 `RateLimited`, from the sweep, verify or rules — read by `claude_cli.rate_limit`, the one reader the

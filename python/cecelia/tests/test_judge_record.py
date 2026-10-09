@@ -123,13 +123,16 @@ class RenderTest(_Fixture):
         guard = {"verdict": "guard", "date": "2026-10-05", "effect": "no caller passes None",
                  "trigger": "a caller passing None"}
         record = self.build(bugs=[_bug("B1"), _bug("B2", status="parked", verify=guard),
-                                  _bug("B3", status="unjudged")])
+                                  _bug("B3", status="unjudged"),
+                                  _bug("B4", status="parked", verify=guard, recheck="`a.py` changed since it was verified")])
         record["run"]["backlog_last"] = 64
         md = self.rec.render_markdown(record)
-        self.assertIn("1 open · 1 unjudged · 1 parked", md)
+        self.assertIn("1 open · 1 unjudged · 2 parked", md)
         self.assertNotIn("### B2", md)
         self.assertIn("### Parked", md)
         self.assertIn("- B2 · `a.py:3` · `fanout-b2` — no caller passes None Live once: a caller passing None", md)
+        self.assertIn("- B4 · `a.py:3` · `fanout-b4` — no caller passes None Live once: a caller passing None"
+                      " · *re-check due:* `a.py` changed since it was verified", md)
         self.assertIn("| Backlog | 1 waiting for the judge (last pass 64) |", md)
         self.assertEqual(self.rec.validate(record), [])
 
