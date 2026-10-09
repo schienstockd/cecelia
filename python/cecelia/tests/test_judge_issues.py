@@ -266,6 +266,7 @@ class BodyTest(_IssuesFixture):
         text = self.i.body(b, repo=REPO, sha="a" * 40)
         self.assertIn(f"[`a.py:3`](https://github.com/{REPO}/blob/{'a' * 40}/a.py#L3)", text)
         self.assertIn("> see `@primeuix` and `#2`", text)
+        self.assertTrue(text.endswith("---\n" + self.i.FOOTER + "\n"))
         self.assertEqual(self.i.leaks(text), [])
 
     def test_an_agent_error_shows_its_form_not_its_message(self):
