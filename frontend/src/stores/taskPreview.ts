@@ -22,7 +22,7 @@ import {
   type PreviewContext, type PreviewStatus, type PreviewBlocker, type PreviewPass,
   previewFailureLog } from '../utils/taskPreview'
 import { useLogStore } from './log'
-import { useViewerStore } from './viewer'
+import { useViewerStore, type PreviewImage } from './viewer'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
@@ -180,13 +180,15 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // Goes on the VIEWER STORE (bridged across windows), because the run completes in the module
     // page's Pinia and the render happens in the popup viewer's Pinia — a plain ref here would never
     // reach it.
+    // The region rides along so the viewer can outline what was previewed when the cap cut it down.
     viewerStore.setPreviewLabels(
-      res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
+      res?.previewLabels && typeof res.previewLabels === 'object' ? { ...res.previewLabels, region } : null)
     // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
     // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
     // cross-window story as previewLabels.
     viewerStore.setPreviewImages(
-      Array.isArray(res?.previewImages) ? res.previewImages : null)
+      Array.isArray(res?.previewImages)
+        ? res.previewImages.map((p: Omit<PreviewImage, 'updateId'>) => ({ ...p, region })) : null)
     error.value = ''
     errorCode.value = ''
   }, {

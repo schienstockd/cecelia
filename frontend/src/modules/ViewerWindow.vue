@@ -33,7 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
-import { visibleRegion as computeVisibleRegion } from '../utils/viewer/visibleRegion'
+import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -79,7 +79,7 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
-import { screenToImagePx } from '../utils/viewerPick'
+import { screenToImagePx, cameraViewL0, l0RectToScreen } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
@@ -896,6 +896,16 @@ const liveVn = computed(() => {
   return l && l.imageUid === imageUid ? l.valueName : ''
 })
 const maskName = computed(() => previewVn.value || liveVn.value || labelName.value)
+// The region the task preview last segmented, when the region budget (`PREVIEW_REGION_MAX_SIDE`) cut it
+// down from the view — outlined on the canvas so a mask covering part of the screen reads as "this box
+// was previewed", not as "no cells out there". Plane view only: a 3D view has no screen rect for it.
+const previewedRegion = computed(() => {
+  const own = (r: { imageUid: string; region?: VisibleRegion } | null | undefined) =>
+    r && r.imageUid === imageUid ? r.region : undefined
+  const reg = own(viewerStore.previewLabels)
+    ?? own(viewerStore.previewImages?.find(p => p.imageUid === imageUid))
+  return reg?.capped && reg.ndisplay === 2 ? reg : null
+})
 // Session-only on/off for the mask on screen, so it can be compared against the signal it was drawn
 // from. Display state only — the mask stays loaded, so flipping it is a redraw, not a refetch.
 const maskHidden = ref(false)
@@ -2351,24 +2361,8 @@ function computeViewportL0(): ViewportL0 | null {
   const m = meta.value
   const el = canvas.value
   if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
-  const asp = canvasAspect()
-  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
-  const halfWUm = halfHUm * asp
-  const vx = m.voxelUm[0] || 1
-  const vy = m.voxelUm[1] || 1
-  // Image origin (top-left) sits at (-ex/2, -ey/2) in world µm (matches the volume renderer's box).
-  // The camera centre in image µm is (panX + ex/2, -panY + ey/2) — screen up is -y world, so a
-  // positive panY points the camera at a SMALLER image_y (i.e. higher rows).
-  const ex = m.nX * vx
-  const ey = m.nY * vy
-  const cxImg = cam.value.panX + ex / 2
-  const cyImg = -cam.value.panY + ey / 2
-  return {
-    x0: Math.floor((cxImg - halfWUm) / vx),
-    y0: Math.floor((cyImg - halfHUm) / vy),
-    x1: Math.ceil((cxImg + halfWUm) / vx),
-    y1: Math.ceil((cyImg + halfHUm) / vy),
-  }
+  const v = cameraViewL0(cam.value, m, el.clientWidth, el.clientHeight)
+  return { x0: Math.floor(v.x0), y0: Math.floor(v.y0), x1: Math.ceil(v.x1), y1: Math.ceil(v.y1) }
 }
 
 /** Tiles the tile renderer needs BUT DOES NOT YET HAVE, in fetch order — visible first, then halo.
@@ -3393,24 +3387,24 @@ const canvasPartial = computed(() =>
 /** Fractional viewport rect within the image, clamped to [0, 1]. Reads from `cam` and `meta`, so
  *  it re-derives every time either changes without a separate signal. Empty when the viewport is
  *  degenerate — the SVG then draws just the outer frame. */
+/** `previewedRegion` in canvas CSS px — follows pan and zoom, since the box is anchored to the image. */
+const previewedBox = computed(() => {
+  const r = previewedRegion.value, m = meta.value, el = canvas.value
+  if (!r || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
+  return l0RectToScreen({ x0: r.xy.X[0], x1: r.xy.X[1], y0: r.xy.Y[0], y1: r.xy.Y[1] },
+                        cam.value, m, el.clientWidth, el.clientHeight)
+})
 const overviewRect = computed(() => {
   const m = meta.value
   const el = canvas.value
   if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
-  const asp = canvasAspect()
-  const halfHUm = cam.value.dist * VIEW_HALF_ANGLE
-  const halfWUm = halfHUm * asp
-  const vx = m.voxelUm[0] || 1
-  const vy = m.voxelUm[1] || 1
-  const ex = m.nX * vx
-  const ey = m.nY * vy
-  const cxImg = cam.value.panX + ex / 2
-  const cyImg = -cam.value.panY + ey / 2
+  const v = cameraViewL0(cam.value, m, el.clientWidth, el.clientHeight)
+  const nX = Math.max(m.nX, 1), nY = Math.max(m.nY, 1)
   return {
-    x: Math.max(0, Math.min(1, (cxImg - halfWUm) / ex)),
-    y: Math.max(0, Math.min(1, (cyImg - halfHUm) / ey)),
-    w: Math.max(0, Math.min(1, (halfWUm * 2) / ex)),
-    h: Math.max(0, Math.min(1, (halfHUm * 2) / ey)),
+    x: Math.max(0, Math.min(1, v.x0 / nX)),
+    y: Math.max(0, Math.min(1, v.y0 / nY)),
+    w: Math.max(0, Math.min(1, (v.x1 - v.x0) / nX)),
+    h: Math.max(0, Math.min(1, (v.y1 - v.y0) / nY)),
   }
 })
 /** Fixed height in CSS px; the width follows the image aspect so the fractional rect maps 1:1. */
@@ -4201,21 +4195,8 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
   const m = meta.value
   const c = canvas.value
   if (!m || !c) { viewerStore.setVisibleRegion(null); return }
-  // The volume camera's basis is µm-across-the-screen; the visibleRegion helper wants image-pixel
-  // pan/zoom. Convert here so the helper stays pure and testable.
-  const umPerL0X = m.voxelUm?.[0] || 1
-  const umPerL0Y = m.voxelUm?.[1] || 1
-  const canvasW = Math.max(1, c.clientWidth)
-  const canvasH = Math.max(1, c.clientHeight)
-  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
-  const visibleL0H = visibleHeightUm / umPerL0Y
-  // Zoom in this helper's units: >1 = zoomed in (visible window shrinks). A "fit" camera shows the
-  // whole image height in `visibleL0H` L0 pixels, so `zoom = m.nY / visibleL0H`.
-  const zoom = (m.nY || 1) / Math.max(1, visibleL0H)
   const region = computeVisibleRegion({
-    panX: cam.value.panX / umPerL0X,
-    panY: -cam.value.panY / umPerL0Y,     // screen-up is negative image-Y (see panDrag)
-    zoom, canvasW, canvasH,
+    view: cameraViewL0(cam.value, m, Math.max(1, c.clientWidth), Math.max(1, c.clientHeight)),
     imageW: m.nX, imageH: m.nY,
     // The ±n window's centre in 3D too — it IS where the user is looking, unlike mid-stack.
     currentZ: mode.value === 'plane' || zWindowActive.value ? zPlane.value : Math.floor((m.nZ - 1) / 2),
@@ -4269,7 +4250,11 @@ watch(() => meta.value?.channels?.map(ch => `${ch.name}|${ch.visible}|${ch.lo}|$
 let publishResizeObs: ResizeObserver | null = null
 onMounted(() => {
   if (!canvas.value || typeof ResizeObserver === 'undefined') return
-  publishResizeObs = new ResizeObserver(() => publishViewStateSink.schedule(undefined))
+  // The preview region too: it is the canvas's rectangle of the image, so a resize changes it.
+  publishResizeObs = new ResizeObserver(() => {
+    publishViewStateSink.schedule(undefined)
+    publishRegionSink.schedule(undefined)
+  })
   publishResizeObs.observe(canvas.value)
 })
 onUnmounted(() => { publishResizeObs?.disconnect(); publishResizeObs = null })
@@ -5175,6 +5160,10 @@ onUnmounted(() => {
       <div v-if="dragRect" class="vw-select-rect"
            :style="{ left: dragRect.x + 'px', top: dragRect.y + 'px',
                      width: dragRect.w + 'px', height: dragRect.h + 'px' }" />
+      <!-- The task preview's region when the budget cut it smaller than the view (see `previewedRegion`). -->
+      <div v-if="previewedBox" class="vw-preview-box"
+           :style="{ left: previewedBox.x + 'px', top: previewedBox.y + 'px',
+                     width: previewedBox.w + 'px', height: previewedBox.h + 'px' }" />
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
            35 px label that also changes size as you zoom. The bar's LENGTH is physical either way. -->
       <StillOverlay
@@ -6431,6 +6420,10 @@ onUnmounted(() => {
 /* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
    but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
    the pointerup that ends the gesture (that would strand the drag). */
+.vw-preview-box {
+  position: absolute; pointer-events: none;
+  border: 1px dashed var(--cc-accent-strong);
+}
 .vw-select-rect {
   position: absolute; pointer-events: none;
   border: 1px solid var(--cc-accent-strong);

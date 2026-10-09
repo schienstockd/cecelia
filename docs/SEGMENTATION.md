@@ -1294,7 +1294,13 @@ full run and looking at the result. Full design + every measured number:
 | Runs when | a task is running | on demand, no task submitted |
 | Viewer label | `{vn} · live` | `{vn} · preview` |
 | Backed by | the run's staging store | nothing — an in-memory block |
-| Scope | whole image, as it fills | ONE z-plane of the visible region |
+| Scope | whole image, as it fills | ONE z-plane of the visible region, at most 1024² L0 px |
+
+**The region budget.** The region is what is on screen, capped at `PREVIEW_REGION_MAX_SIDE` (1024) L0
+pixels per axis and centred on the view (`frontend/src/utils/viewer/visibleRegion.ts`). 1024² is four
+512² model tiles — ~17 s on Apple MPS with Cellpose-SAM, inside the browser's 90 s request timeout;
+2048² (~70 s) is not. When the cap applies, the viewer outlines the previewed box so a mask that covers
+part of the screen reads as a box, not as "no cells there".
 
 **Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
 legacy bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
