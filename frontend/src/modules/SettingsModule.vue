@@ -4,6 +4,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
@@ -199,6 +200,7 @@ async function pruneConfirm(imageUid: string, valueName: string, version: string
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const appCtl      = useAppControlStore()
+const restartUpd  = useRestartToUpdate()
 const customModules = useCustomModulesStore()
 
 // ── View profiles ────────────────────────────────────────────────────────────
@@ -799,7 +801,7 @@ async function switchWt(path: string) {
             {{ appCtl.updateChecking ? 'Checking…' : 'Check' }}
           </button>
         </div>
-        <span v-if="!appCtl.updateAvailable && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">
+        <span v-if="!appCtl.updateAvailable && !appCtl.updatePending && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint cc-muted cc-fs-xs">
           You're on the latest version.
         </span>
       </div>
@@ -811,8 +813,17 @@ async function switchWt(path: string) {
           v-tooltip.bottom="'Track main HEAD instead of tagged releases; source build, needs Node.js'" />
       </div>
 
+      <!-- staged update: installs on the next restart -->
+      <div v-if="restartUpd.show.value" class="field">
+        <button class="cc-btn cc-btn-primary cc-btn-dense" :disabled="restartUpd.blocked.value" @click="restartUpd.restart"
+                v-tooltip.right="restartUpd.tip.value">
+          <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+          {{ appCtl.busy ? 'Updating…' : 'Restart to finish updating' }}
+        </button>
+      </div>
+
       <!-- per-user install: in-app update -->
-      <div v-if="appCtl.updateAvailable && appCtl.canApplyUpdate" class="field">
+      <div v-else-if="appCtl.updateAvailable && appCtl.canApplyUpdate" class="field">
         <button
           class="save-btn"
           :disabled="appCtl.updateBusy"

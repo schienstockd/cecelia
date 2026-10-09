@@ -91,7 +91,9 @@ export function useUpdateCard(): ComputedRef<WhatNewCard | null> {
   const app = useAppControlStore()
   return computed(() => {
     if (!app.updateLatest) return null
-    const description = app.updateAvailable
+    const description = app.updatePending
+      ? 'Downloaded — restart Cecelia to finish installing.'
+      : app.updateAvailable
       ? (app.updateCurrent ? `You're running ${app.updateCurrent}.` : undefined)
       : (app.updateCurrent ? `You're up to date (${app.updateCurrent}).` : undefined)
     return {

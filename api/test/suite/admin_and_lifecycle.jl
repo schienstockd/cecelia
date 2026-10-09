@@ -268,6 +268,25 @@ end
     @test _apply_precheck("0"^40; scope = "dev",    installed = false, channel = "dev")[1] == 400
 end
 
+@testset "API: dev-channel 'already at tip' + pending restart" begin
+    tip = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"
+    # In-app dev apply writes the 7-char short sha; the installer writes the full one. Both are "at tip".
+    @test _same_commit("1a2b3c4", tip)
+    @test _same_commit(tip, tip)
+    @test _same_commit("1A2B3C4", tip)
+    @test !_same_commit("deadbee", tip)
+    @test !_same_commit("", tip)               # stable install asking for dev → always an update
+    @test !_same_commit("1a2b3c", tip)         # under 7 chars never counts as a match
+    mktempdir() do root
+        @test !_pending_restart(root)
+        write(joinpath(root, ".pending-update"), "dev@" * tip)
+        @test _pending_restart(root)
+        rm(joinpath(root, ".pending-update"))
+        write(joinpath(root, ".pending-revert"), "")
+        @test _pending_restart(root)
+    end
+end
+
 @testset "API: setup wizard" begin
     st, body = api_setup_defaults(HTTP.Request("GET", "/api/setup/defaults"))
     @test st == 200
