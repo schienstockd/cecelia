@@ -47,6 +47,7 @@ def _load_sibling(name: str):
 
 
 _record = _load_sibling("record")
+_issues = _load_sibling("issues")
 
 REVIEW_SCHEMA_VERSION = 1
 
@@ -111,7 +112,8 @@ def current(reviews: _t.Iterable[dict]) -> dict[tuple[str, str, str], dict]:
 
 def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
     """`record` with the owner's bug answers folded in. What the weekly pass does to the previous
-    record before it carries its bugs."""
+    record before it carries its bugs: a status answer sets `status` / `owner_decision` /
+    `owner_answer`, a fix session sets `fix_session` (its time; the issue mirror labels it)."""
     now = current(reviews)
     record = json.loads(json.dumps(record))   # deep copy; the caller's record is left alone
     for b in record.get("bugs", []):
@@ -121,7 +123,23 @@ def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
             b["owner_decision"] = row["value"]   # a `decide` bug kept open joins the work list
             if row.get("note"):
                 b["owner_answer"] = row["note"]
+        work = now.get((record["date"], "bug_work", b["id"]))
+        if work and work.get("value") == "fix_session":
+            b["fix_session"] = work["ts"]
     return record
+
+
+_REPO_SLUG: list = []
+
+
+def repo_slug() -> str | None:
+    """This repo's `owner/name` for issue links, once; None when origin isn't GitHub."""
+    if not _REPO_SLUG:
+        try:
+            _REPO_SLUG.append(_issues.repo_slug())
+        except _issues.GhError:
+            _REPO_SLUG.append(None)
+    return _REPO_SLUG[0]
 
 
 #: Work-list order: what is known live first, then what the owner already decided, then the rest.
@@ -189,6 +207,11 @@ def fix_brief(record: dict, bug: dict) -> str:
         lines.append(f"Live once: {v['trigger']}")
     if v.get("evidence"):
         lines.append(f"Evidence: {v['evidence']}")
+    issue = (bug.get("issue") or {}).get("number")
+    if issue:
+        lines.append(f"Tracked as issue #{issue}. Don't read it: this brief is the whole task, and the issue "
+                     f"is a mirror of the record. Say `Refs #{issue}` in the commit message, never `fixes` or "
+                     "`closes`: the judge closes it once it confirms the fix.")
     if bug.get("kind") == "stranded":
         lines += ["", "These commits were pushed to the PR's branch after it merged: "
                   + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
@@ -279,6 +302,9 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
             + _col(_DIM, f"{b.get('branch') or ('run ' + str(b.get('run') or '?') if b.get('review') else str(b.get('runs') or 1) + ' agent run(s)' if b.get('kind') == 'agent_run' else '?')}"
                          f" · {b['key']}", use_colour=use_colour))
     out = [head]
+    note = _issues.issue_note(record, b, repo_slug())
+    if note:
+        out.append("  " + _col(_DIM, note, use_colour=use_colour))
     decide = item["kind"] == "decide"
     texts = {"Question": (v.get("question") or b["desc"]) if decide else None,
              "Bug": None if decide else b["desc"], "Verified": None if decide else v.get("effect"),

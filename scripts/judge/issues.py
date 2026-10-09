@@ -10,7 +10,9 @@ so an outsider's text can't reach an agent, and an edit is overwritten at the bu
 What gets an issue: an `open` bug verify called `fix` or `decide`, stranded commits, and a repeated
 agent error. A filed issue then follows its bug: closed when it is `gone` (completed) or `dismissed`
 / `wont_fix` / `parked` (not planned), reopened when it is live again, labelled `fix-landed` when a
-commit names its key. Every issue is locked once filed, so only collaborators can comment on it.
+commit names its key, `in-progress` once a fix session started from `judge-review`, and a comment
+with the owner's answer to a `decide` bug. Every issue is locked once filed, so only collaborators
+can comment on it.
 
 Bodies are built from the record's structured fields (D11); the prose fields are defused (`@name`
 and `#N` into code spans), home paths and project/image uids are stripped, and a backstop refuses
@@ -54,7 +56,8 @@ _run_reviews = _load_sibling("run_reviews")
 
 LABEL = "judge-bug"
 #: Every label the mirror sets, created on first use (`gh label create --force` is idempotent).
-LABELS = {LABEL: "5319e7", "fix": "d73a4a", "decide": "fbca04", "fix-landed": "0e8a16", "parked": "c5def5"}
+LABELS = {LABEL: "5319e7", "fix": "d73a4a", "decide": "fbca04", "fix-landed": "0e8a16", "parked": "c5def5",
+          "in-progress": "1d76db"}
 #: Issues created per pass, and the gap between creates. More are reported and filed next pass.
 MAX_CREATES = 20
 CREATE_GAP_S = 1.0
@@ -227,6 +230,7 @@ def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
         lines += [f"**Where:** {_agent_error(b)}", ""]
     lines += [f"**Effect:** {d(v['effect'])}", ""] if v.get("effect") else []
     lines += [f"**Question:** {d(v['question'])}", ""] if v.get("question") else []
+    lines += [f"**Recommendation:** {d(v['recommendation'])}", ""] if v.get("recommendation") else []
     lines += [f"**Evidence:** {d(v['evidence'])}", ""] if v.get("evidence") else []
     if b.get("file") and b.get("desc"):   # an agent error's text is its raw message: not quoted (D11)
         lines += ["**Finding** (reviewer output, quoted):", ""] + [f"> {ln}" if ln else ">" for ln in d(b["desc"]).splitlines()] + [""]
@@ -273,7 +277,26 @@ def _labels(b: dict) -> list[str]:
     out += [_verdict(b)] if _verdict(b) in FILED_VERDICTS else []
     out += ["fix-landed"] if b.get("fix_landed") else []
     out += ["parked"] if b["status"] == "parked" else []
+    out += ["in-progress"] if b.get("fix_session") and b["status"] == "open" else []
     return out
+
+
+def issue_url(repo: str, n: int) -> str:
+    return f"https://github.com/{repo}/issues/{n}"
+
+
+def issue_note(record: dict, b: dict, repo: str | None) -> str | None:
+    """A bug's issue in one line, from the record alone (never GitHub): its link, `pending` (a pass
+    died filing it), or `missing` (the record maps it to a number that isn't an owner-filed judge
+    issue). None when it has none."""
+    i = b.get("issue") or {}
+    if b["key"] in ((record.get("run") or {}).get("issues") or {}).get("missing", []):
+        return f"issue missing: #{i.get('number')} isn't a judge issue you opened; nothing is read from it"
+    if i.get("number"):
+        return issue_url(repo, i["number"]) if repo else f"issue #{i['number']}"
+    if i.get("status") == "pending":
+        return "issue pending: the last pass stopped while filing it; the next one adopts or files it"
+    return None
 
 
 def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Callable[[dict], None] | None = None,
@@ -386,6 +409,13 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
                    *[a for lb in have if lb not in want for a in ("--remove-label", lb)], input=text)
                 issue.update(body=_sha(text), labels=want)
                 report["updated"].append(b["key"])
+            if b.get("owner_decision") == "open" and not issue.get("answered"):
+                answer = (safe(f"Your answer: {defuse(b['owner_answer'], uids)}",
+                               "Answered in `pixi run judge-review` (the answer isn't shown here).", uids)
+                          if b.get("owner_answer") else
+                          "Kept open in `pixi run judge-review`: a fix session follows verify's recommendation.")
+                gh("issue", "comment", str(n), "--body-file", "-", input=answer + "\n")
+                issue["answered"] = True
             new = [c for c in b.get("fix_landed", []) if c["commit"] not in issue.get("landed", [])]
             if new:
                 gh("issue", "comment", str(n), "--body-file", "-", input="A commit naming this bug's key landed: "

@@ -79,6 +79,44 @@ class EventLogTest(_ReviewFixture):
         self.assertEqual(self.record["bugs"][1]["status"], "open")
 
 
+class IssueTest(_ReviewFixture):
+    """`judge-review` on the issue mirror (plan P3): a bug's issue comes from the record alone."""
+
+    def setUp(self):
+        super().setUp()
+        self.rv._REPO_SLUG[:] = ["owner/repo"]
+        never = mock.patch.object(self.rv._issues, "_default_run", side_effect=AssertionError("gh was called"))
+        never.start()
+        self.addCleanup(never.stop)
+
+    def card(self, **issue_fields):
+        self.record["bugs"][2].update(issue_fields)
+        return "\n".join(self.rv.describe(self.record, {"kind": "work", "ref": "B3"}, use_colour=False))
+
+    def test_a_filed_bug_shows_its_link_from_the_mapping(self):
+        self.assertIn("https://github.com/owner/repo/issues/7", self.card(issue={"number": 7, "state": "open"}))
+
+    def test_an_issue_the_mirror_couldnt_find_is_flagged_missing_never_read(self):
+        self.record["run"]["issues"] = {"missing": ["fanout-b3"]}
+        self.assertIn("issue missing: #7 isn't a judge issue you opened", self.card(issue={"number": 7}))
+
+    def test_a_pending_issue_says_so_and_none_says_nothing(self):
+        self.assertIn("issue pending", self.card(issue={"status": "pending"}))
+        self.assertFalse(any(ln.strip().startswith(("issue", "http")) for ln in self.card(issue={}).splitlines()))
+
+    def test_the_fix_brief_refs_the_issue_and_never_closes_it(self):
+        bug = {**self.record["bugs"][2], "issue": {"number": 7}}
+        brief = self.rv.fix_brief(self.record, bug)
+        self.assertIn("Say `Refs #7` in the commit message, never `fixes` or `closes`", brief)
+        self.assertIn("Don't read it", brief)
+        self.assertIn("name `fanout-b3` in the commit message", brief)   # landed-fix detection still needs it
+
+    def test_a_fix_session_is_folded_in_for_the_mirror(self):
+        row = self.rv.append_review("bug_work", "2026-10-05", "B3", "fix_session", path=self.log)
+        applied = self.rv.apply_reviews(self.record, self.rv.read_reviews(self.log))
+        self.assertEqual(applied["bugs"][2]["fix_session"], row["ts"])
+
+
 class QueueTest(_ReviewFixture):
     def test_the_queue_is_the_decide_bugs_then_the_work_list(self):
         self.assertEqual([(i["kind"], i["ref"]) for i in self.rv.pending(self.record, [])],

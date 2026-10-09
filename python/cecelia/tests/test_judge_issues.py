@@ -203,6 +203,27 @@ class MirrorTest(_IssuesFixture):
         self.assertEqual(len(self.github.issues[1]["comments"]), 1)
         self.assertIn(f"https://github.com/{REPO}/pull/7", self.github.issues[1]["comments"][0])
 
+    def test_a_fix_session_labels_in_progress_and_an_answer_comments_once(self):
+        record = self.build(bugs=[_bug("B1", verify={"verdict": "decide", "date": "x", "question": "q?"})])
+        self.mirror(record)
+        record["bugs"][0].update(owner_decision="open", owner_answer="guard it at the caller, cc @someone",
+                                 fix_session="2026-10-06T01:00:00Z")
+        self.mirror(record)
+        self.mirror(record)
+        self.assertEqual(sorted(self.github.issues[1]["labels"]), ["decide", "in-progress", "judge-bug"])
+        self.assertEqual(self.github.issues[1]["comments"], ["Your answer: guard it at the caller, cc `@someone`\n"])
+
+    def test_an_answer_that_leaks_is_not_quoted(self):
+        record = self.build(bugs=[_bug("B1", verify={"verdict": "decide", "date": "x"})])
+        self.mirror(record)
+        record["bugs"][0].update(owner_decision="open", owner_answer="it's in jFWePN")
+        self.mirror(record, uids=())
+        self.i.defuse = lambda text, uids=(): text   # a defuse that missed one: the backstop still holds
+        record["bugs"][0]["issue"].pop("answered")
+        self.mirror(record, uids={"jFWePN"})
+        self.assertEqual(self.github.issues[1]["comments"][1],
+                         "Answered in `pixi run judge-review` (the answer isn't shown here).\n")
+
     def test_an_issue_not_in_the_list_is_missing_and_left_alone(self):
         record = self.build(bugs=[_fix("B1", issue={"number": 9, "state": "open"})])
         report = self.mirror(record)
