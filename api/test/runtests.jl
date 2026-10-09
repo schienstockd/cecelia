@@ -268,11 +268,10 @@ include(joinpath(@__DIR__, "suite", "movie_rail_translators.jl"))
 # (VIEWER_PARITY 1+2). Path expression uses API_TEST_DIR.
 include(joinpath(@__DIR__, "suite", "overlay_3d_and_rail_3d.jl"))
 
-# ── /api/tasks/validate + /api/correction-plan + /api/cell_cards + _require_ids testsets ─
-# Four testsets: /api/tasks/validate wiring (form-time advisory), /api/correction-plan wiring
-# (CORRECTION_QC_PLAN slice 3a), /api/cell_cards metadata + sidecar cache (synthetic fixture),
-# _require_ids returns 400 on missing/empty ids (guard helper).
-include(joinpath(@__DIR__, "suite", "validate_correction_cards.jl"))
+# ── /api/tasks/validate + /api/cell_cards + _require_ids testsets ─
+# Three testsets: /api/tasks/validate wiring (form-time advisory), /api/cell_cards metadata + sidecar
+# cache (synthetic fixture), _require_ids returns 400 on missing/empty ids (guard helper).
+include(joinpath(@__DIR__, "suite", "validate_and_cards.jl"))
 # ── BIDIR Part 5 push writer + Kiwi target endpoints testsets ─
 # Six testsets: format_capture_message (locked-format one-liner), push_capture_notification
 # (:not_paired silent, Unix socket round-trip, stale-target fallback), POST /api/push/target/clear

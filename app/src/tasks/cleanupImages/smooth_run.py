@@ -21,7 +21,7 @@ has to not break them):
     `b_t^p / sum_i b_i^p`), so a per-channel transform corrupts it. That extends to the dynamic-range
     gain below: ONE gain for all smoothed channels, never per-channel. For `stat="gated"`, whose
     kernel is ADAPTIVE, "shared" has to mean shared WEIGHTS: the match and the gate are derived once
-    from the summed channels of the window and applied to each — see the gated branch below.
+    from the summed channels of the window and applied to each — see `smooth_utils.smooth_timepoint`.
 
 Parameter contract (JSON written by Julia):
   imPath           - absolute path to input .ome.zarr
@@ -60,66 +60,10 @@ from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
 
-# coastal owns the smoothing engine (array-only, imports nothing from cecelia). Declared as a git
-# dep in pixi.toml — see the note there for why it is no longer an editable sibling path.
-from coastal.smooth import (
-    spatial_smooth, temporal_smooth, gated_frames, noise_sigma, flow_warped_frames,
-)
-
-
-def _anscombe(x):
-    """Poisson variance-stabilising transform: `y = 2 sqrt(x + 3/8)` (Anscombe 1948)."""
-    return 2.0 * np.sqrt(np.clip(x, 0.0, None) + 3.0 / 8.0)
-
-
-def _inv_anscombe(s):
-    """Unbiased closed-form inverse of `_anscombe`. Mäkitalo & Foi, IEEE T-IP 2011."""
-    s = np.clip(s, 1e-6, None)
-    inv = ((s / 2.0) ** 2 - 1.0 / 8.0
-           + (np.sqrt(3.0 / 2.0) / 4.0) / s
-           - (11.0 / 8.0) / (s ** 2)
-           + (5.0 * np.sqrt(3.0 / 2.0) / 8.0) / (s ** 3))
-    return np.clip(inv, 0.0, None).astype(np.float32)
-
-
-def _bilateral_vst(frame, sigma_color, sigma_spatial, polish_sigma=0.0):
-    """Anscombe VST → cv2 bilateral → unbiased inverse [→ gentle Gaussian polish]. All the "one shared
-    kernel per channel" invariant needs is one filter with fixed params applied identically — that
-    holds here, and the polish (a fixed-sigma Gaussian) preserves it.
-
-    `polish_sigma` breaks bilateral's bimodal weight distribution near transitions: after
-    variance-stabilised bilateral, single-pixel jitter shows up because the color-weight is ~1 on the
-    same-brightness side of an edge and ~0 across it, so quantising back to the integer store leaves
-    isolated pixels sticking out. A sub-pixel Gaussian on top of the inverse averages that jitter into
-    the neighbours the bilateral already agreed with, without pulling in the cross-edge neighbours it
-    excluded. Measured on `zolIMa/fXgbTl` — see docs/todo/SMOOTHING_PLAN.md.
-    """
-    a = _anscombe(frame)
-    b = cv2.bilateralFilter(a.astype(np.float32), d=-1,
-                            sigmaColor=float(sigma_color),
-                            sigmaSpace=float(sigma_spatial))
-    out = _inv_anscombe(b)
-    if polish_sigma > 0:
-        # ksize=0 lets cv2 derive an odd kernel width from sigma. Sub-pixel sigmas need at least 3.
-        out = cv2.GaussianBlur(out, ksize=(0, 0), sigmaX=float(polish_sigma),
-                               sigmaY=float(polish_sigma))
-    return out
-
-
-def _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach, bilateral_polish):
-    """Return the per-frame spatial callable used by the streaming loop AND the gain estimator.
-
-    One callable so both paths run identical arithmetic — the gain the estimator picks is the gain
-    the streaming loop needs. `gaussian` routes to coastal.smooth's `spatial_smooth` unchanged.
-    """
-    if method == "bilateral_vst":
-        return lambda frame: _bilateral_vst(frame, bilateral_color, bilateral_reach,
-                                            bilateral_polish)
-    return lambda frame: spatial_smooth(frame, sigma)
-
-#: How many (t, z) planes to sample when estimating the dynamic-range gain. The gain only needs the
-#: right order of magnitude, and a sample keeps this from being a second full pass over the store.
-GAIN_SAMPLE_PLANES = 24
+# The per-frame compute (spatial engines, gain, gate scale, the temporal statistic) lives in
+# `smooth_utils`, shared with the preview worker so a preview runs this file's arithmetic. coastal owns
+# the engine underneath it (array-only, a git dep in pixi.toml).
+import cecelia.utils.smooth_utils as smooth_utils
 
 
 def _axis_len(dim_utils, letter, shape):
@@ -159,8 +103,8 @@ def run(params):
 
     # ONE spatial function for the estimators AND the streaming loop — see `_build_spatial_fn`.
     # A separate closure per path would let the gain estimate drift from the loop that uses it.
-    spatial_fn = _build_spatial_fn(method, sigma, bilateral_color, bilateral_reach,
-                                   bilateral_polish)
+    spatial_fn = smooth_utils.build_spatial_fn(method, sigma, bilateral_color, bilateral_reach,
+                                               bilateral_polish)
 
     log.log(f'>> open image: {im_path}')
     # Plain zarr, not dask: every read is one chunk-aligned plane, so a dask graph only adds
@@ -220,45 +164,19 @@ def run(params):
         return np.asarray(level_in[_plane_slice(len(shape), t_idx, t, c_idx, c, z_idx, z)],
                           dtype=np.float32)
 
-    # ── the gain ───────────────────────────────────────────────────────────────────────────────
-    # Averaging lowers the maximum, so writing the result back at the input dtype throws away the
-    # precision the AF background estimate needs: measured on fXgbTl, smoothed nuc-GFP has p99=15
-    # and max 59, i.e. ~59 integer levels for the whole channel, and the background sits at 2.6 —
-    # one integer step is 38% of it. ONE gain across all smoothed channels restores the range
-    # without touching cross-channel ratios.
+    # ── the gain ── ONE across all smoothed channels (`smooth_utils.estimate_gain` says why)
     gain = 1.0
     dtype_max = np.iinfo(zarr_utils.native_dtype(level_in.dtype)).max \
         if np.issubdtype(level_in.dtype, np.integer) else None
     if restore_gain and dtype_max is not None:
         log.log('>> estimate dynamic-range gain')
-        rng = np.random.default_rng(0)
-        picks = [(int(rng.integers(0, nt)), int(rng.integers(0, nz)))
-                 for _ in range(min(GAIN_SAMPLE_PLANES, nt * nz))]
-        hi_in, hi_sm = [], []
-        for t, z in picks:
-            for c in sel:
-                raw = read_plane(t, c, z)
-                sm = spatial_fn(raw)
-                hi_in.append(np.percentile(raw, 99.99))
-                hi_sm.append(np.percentile(sm, 99.99))
-        hi_in, hi_sm = float(np.mean(hi_in)), float(np.mean(hi_sm))
-        if hi_sm > 0:
-            gain = max(1.0, hi_in / hi_sm)
+        gain, hi_in, hi_sm = smooth_utils.estimate_gain(read_plane, spatial_fn, sel, nt, nz)
         log.log(f'   input p99.99 {hi_in:.1f}, smoothed {hi_sm:.1f} -> gain {gain:.2f}')
 
     if gated:
         log.log('>> estimate the gate noise scale')
-        rng = np.random.default_rng(1)
-        zs = sorted({int(rng.integers(0, nz)) for _ in range(min(3, nz))})
-        span = min(nt, 8)
-        samples = []
-        for z in zs:
-            # the guide is the SUM over smoothed channels, so estimate on that same quantity
-            slab = np.stack([sum(spatial_fn(read_plane(t, c, z)) for c in sel)
-                             for t in range(span)])
-            samples.append(noise_sigma(slab))
-        gate_sigma = float(np.median(samples))
-        log.log(f'   gate sigma {gate_sigma:.2f} (median of {len(samples)} z-planes)')
+        gate_sigma, n_samples = smooth_utils.estimate_gate_sigma(read_plane, spatial_fn, sel, nt, nz)
+        log.log(f'   gate sigma {gate_sigma:.2f} (median of {n_samples} z-planes)')
 
         # A gate with no noise scale is not a weak gate, it is NO gate: `_scale_from` clamps to 1e-12,
         # so every weight becomes exp(-d/1e-12) = 0 for any mismatch at all and the output is the
@@ -325,63 +243,13 @@ def run(params):
             local_clipped = 0
 
             for t in range(nt):
-                # `gated` needs every selected channel's window at once: the match and the weight come
-                # from their SUM, so that one gate can be applied to all of them (the AF-ratio
-                # invariant, for an adaptive kernel). Built per timepoint from the same cache the
-                # other stats use, so memory is still bounded by the window.
-                gate_out = {}
-                fw_out = {}
-                if gated:
-                    wins = {c: np.stack([spatial_at(tt, c)
-                                         for tt in range(t - half, t + half + 1)]) for c in sel}
-                    guide = None
-                    for w in wins.values():
-                        guide = w.copy() if guide is None else guide + w
-                    # ONE call for every channel: the match depends only on the guide, so gating each
-                    # channel separately recomputes the identical block match C times — and the match
-                    # (a filter per candidate offset) is the expensive half, while applying a known one
-                    # is a gather. Measured on a real 4-channel plane: 588 ms -> 155 ms, i.e. 33.5 min
-                    # -> 8.9 min over a 180t x 19z movie.
-                    order = list(sel)
-                    for c, frame in zip(order, gated_frames([wins[c] for c in order], guide=guide,
-                                                            sigma=gate_sigma)):
-                        gate_out[c] = frame
-                elif farneback:
-                    # Same shared-kernel shape as gated, for the same reason: Farneback is the
-                    # expensive half here (one dense flow field per neighbour), so a per-channel loop
-                    # would recompute the identical field C times. `flow_warped_frames` computes the
-                    # flow ONCE from the summed guide, then applies the same warp to each channel —
-                    # a dim channel inherits the warp found in the bright signal, matching the AF
-                    # ratio invariant the gated path also enforces.
-                    wins = {c: np.stack([spatial_at(tt, c)
-                                         for tt in range(t - half, t + half + 1)]) for c in sel}
-                    guide = None
-                    for w in wins.values():
-                        guide = w.copy() if guide is None else guide + w
-                    order = list(sel)
-                    for c, frame in zip(order, flow_warped_frames(
-                            [wins[c] for c in order], guide=guide,
-                            max_shift_px=farneback_clamp)):
-                        fw_out[c] = frame
-
+                outs = smooth_utils.smooth_timepoint(spatial_at, sel, t, half, frames, stat,
+                                                     gate_sigma, farneback_clamp)
                 for c in sel:
-                    if gated:
-                        out = gate_out[c]
-                    elif farneback:
-                        out = fw_out[c]
-                    elif half == 0:
-                        out = spatial_at(t, c)
-                    else:
-                        # spatial FIRST (cached), then the temporal statistic across the window
-                        win = np.stack([spatial_at(tt, c) for tt in range(t - half, t + half + 1)])
-                        out = temporal_smooth(win, frames, stat, time_axis=0)[half]
                     raw = read_plane(t, c, z)
                     local_zin[c].append(float((raw == 0).mean()))
-
-                    out = out * gain
-                    if dtype_max is not None:
-                        local_clipped += int((out > dtype_max).sum())
-                        out = np.clip(np.rint(out), 0, dtype_max)
+                    out, n_clip = smooth_utils.apply_gain(outs[c], gain, dtype_max)
+                    local_clipped += n_clip
                     local_zout[c].append(float((out == 0).mean()))
                     # Zarr writes to non-overlapping chunks are safe from concurrent threads (each
                     # z is its own chunk row in the default layout). Verified by convention: coastal

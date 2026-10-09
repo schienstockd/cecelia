@@ -60,6 +60,14 @@ export interface CciaImage {
   starred?: boolean
   qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
   runLog?: import('../utils/runLog').RunLogEntry[]  // automatic per-image run history (provenance)
+  // What was measured that bears on Cleanup, no verdict (docs/todo/CLEANUP_FACTS_PLAN.md D1).
+  cleanupFacts?: CleanupFacts
+}
+
+/** `img_cleanup_facts` (app/src/qc.jl). A `null` value was not measured (imported before the field). */
+export interface CleanupFacts {
+  channels: { index: number; name: string; zeroPct: number | null; clippedPct: number | null }[]
+  drift: { valueName: string; maxDriftPx: number; maxDriftUm: number | null }[]
 }
 
 export interface CciaSet {

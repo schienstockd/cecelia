@@ -190,15 +190,16 @@ class SmoothRunnerTest(unittest.TestCase):
     @unittest.skipUnless(HAVE_GATED, 'installed coastal predates gated_frames')
     def test_gated_estimates_the_noise_scale_once(self):
         """Not per window: the gate's strictness is a property of the acquisition. Pinned by watching
-        how often the runner asks coastal for an estimate."""
+        how often coastal is asked for an estimate (by the runner's `smooth_utils.estimate_gate_sigma`,
+        which imports it lazily, or by `gated_frames` itself were it handed no sigma)."""
         import coastal.smooth as cs
         calls = []
         real = cs.noise_sigma
-        self.runner.noise_sigma = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+        cs.noise_sigma = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
         try:
             self._run(temporalStat='gated')
         finally:
-            self.runner.noise_sigma = real
+            cs.noise_sigma = real
         nz, nt = self.SHAPE['size_z'], self.SHAPE['size_t']
         self.assertLessEqual(len(calls), 3, 'the noise scale is being re-estimated per window')
         self.assertGreaterEqual(len(calls), 1)

@@ -24,7 +24,6 @@ include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
 include("task_validate_api.jl")     # POST /api/tasks/validate — uses _gating_image (gating_api.jl)
-include("correction_plan_api.jl")   # /api/correction-plan/* — uses _gating_image (gating_api.jl)
 include("update_api.jl")
 include("system_api.jl")    # /api/system/envs — opt-in pixi env probe + install job (cellpose-v3 on Mac)
 include("plugins_api.jl")   # plugin install/remove; uses update_api.jl's Downloads + routes.jl's payload
@@ -338,8 +337,6 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/storage/summary" => (req, body_bytes) -> (api_storage_summary(req)),
     "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),
-    "/api/correction-plan/presets" => (req, body_bytes) -> (api_correction_plan_presets(req)),
-    "/api/correction-plan/get" => (req, body_bytes) -> (api_correction_plan_get(req)),
     # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
     "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
     "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
@@ -361,9 +358,6 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/config/threads/set" => (req, body_bytes) -> (api_threads_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
-    "/api/correction-plan/recommend" => (req, body_bytes) -> (api_correction_plan_recommend(req, body_bytes)),
-    "/api/correction-plan/save" => (req, body_bytes) -> (api_correction_plan_save(req, body_bytes)),
-    "/api/correction-plan/mount" => (req, body_bytes) -> (api_correction_plan_mount(req, body_bytes)),
     "/api/plugins/install" => (req, body_bytes) -> (api_plugins_install(body_bytes)),
     "/api/plugins/install-local" => (req, body_bytes) -> (api_plugins_install_local(body_bytes)),
     "/api/plugins/remove"  => (req, body_bytes) -> (api_plugins_remove(body_bytes)),

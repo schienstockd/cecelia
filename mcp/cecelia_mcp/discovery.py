@@ -5,7 +5,7 @@ Two things live here, both shared by every MCP server in this package:
 - `discovery_enabled()` — THE reader of `CECELIA_MCP_DISCOVERY` (`on`, the default, or `off`). The
   guide-run harness sets it to `off` for the arm that runs without the discovery information
   (`guide-run --discovery off`, plan Decision 9). Every surface the toggle governs asks this one
-  function — the spec fields and `get_task_catalogue` here, the recommender's `evidence=metadata`
+  function — the spec fields and `get_task_catalogue` here, an image's `cleanupFacts` (CLEANUP_FACTS_PLAN D7)
   and the `seg.*` findings elsewhere — so the arms can never disagree about which one they are in.
 - `task_catalogue()` — every visible task's `purpose` / `useWhen` / `notWhen`, grouped by pipeline
   stage, built from the task definitions route (the task JSON is the one source, Decision 1).

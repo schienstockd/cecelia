@@ -86,10 +86,14 @@ def _strip_discovery_qc(qc):
 
 
 def _strip_discovery_image(img):
-    """An image payload with its `qc` passed through `_strip_discovery_qc`."""
-    if _discovery_on() or not isinstance(img, dict) or "qc" not in img:
+    """An image payload with its `qc` passed through `_strip_discovery_qc` and its `cleanupFacts`
+    (per-channel zero / clipped %, per-run drift — CLEANUP_FACTS_PLAN D7) dropped."""
+    if _discovery_on() or not isinstance(img, dict):
         return img
-    return {**img, "qc": _strip_discovery_qc(img["qc"])}
+    out = {k: v for k, v in img.items() if k != "cleanupFacts"}
+    if "qc" in out:
+        out["qc"] = _strip_discovery_qc(out["qc"])
+    return out
 
 
 def _strip_discovery_log(text: str) -> str:

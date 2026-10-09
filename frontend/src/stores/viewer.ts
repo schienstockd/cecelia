@@ -117,6 +117,8 @@ export interface LiveLabels {
  *  run (not per channel), even though the swap runs across every entry. */
 export interface PreviewImage {
   sourceChannel: number
+  /** The per-channel compare badge the viewer shows ("AF", "Smooth") — which preview this channel reads. */
+  badge?: string
   valueName: string
   imageUid: string
   projectUid: string

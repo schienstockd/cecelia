@@ -1,7 +1,8 @@
 # Task preview — one mechanism for judging long-running tasks before you commit
 
 **Status: BUILT** — shipped in #437 (2026-08-01) with two consumers, `segment.cellpose` and
-`cleanupImages.afCorrect`. Denoise is deliberately not a consumer; see *Denoise waits for coastal*.
+`cleanupImages.afCorrect`; `cleanupImages.smooth` joined 2026-10-09 (CLEANUP_FACTS_PLAN P2, compute
+extracted to `python/cecelia/utils/smooth_utils.py`). Denoise is deliberately not a consumer; see *Denoise waits for coastal*.
 The originating `docs/TODO.md` item is retired accordingly, and the durable half is promoted into
 `docs/SEGMENTATION.md` → *Previewing params BEFORE a run (the task preview)*.
 
@@ -32,6 +33,7 @@ Previewability is a property of a task's *compute*, not of a category:
 | `segment.cellpose` | labels | Yes — modulo tile seams and whole-image normalisation |
 | `cleanupImages.afCorrect` | image | Yes — per-pixel channel competition. Preserves the input shape, but needs **whole-image globals** (`af_weight_stats`: one background level per participating channel), so the preview derives them once over the whole image and caches them, exactly as cellpose caches `norm_params` |
 | ~~`cleanupImages.cellposeCorrect`~~ (denoise) | image | Task REMOVED in the cellpose 4 migration — see *Denoise waits for coastal* |
+| `cleanupImages.smooth` | image | Yes — per-plane spatial + a temporal window of the same tile. Needs the **whole-image gain** (and, for `gated`, the noise scale), derived once from the run's seeded sample and cached (`PreviewState.smooth_globals`) |
 | `cleanupImages.driftCorrect` | — | **No.** `drift_correction_shifts` derives shifts from the whole timecourse; a crop cannot produce the real shifts, and the shifts are the thing you would want to judge. Declares nothing. |
 
 `driftCorrect` is why this is opt-in per task rather than automatic for a category.
@@ -216,8 +218,9 @@ out, and the preview would then be re-pointed at the replacement anyway.
 
 **Settled, 2026-08-21:** the task is gone (cellpose 4 migration — `CELLPOSE_V4_PLAN.md`), so there is
 nothing here to preview. `cleanupImages.smooth` is the cleanup task now, and it is an image-output
-preview candidate on exactly the terms this section describes — its compute lives in
-`smooth_run.py`, not in a reusable helper, so the same extraction question applies to it.
+preview candidate on exactly the terms this section describes — its compute lived in
+`smooth_run.py`, not in a reusable helper, so the same extraction question applied to it. **Done
+2026-10-09:** extracted to `smooth_utils` and previewed by `_preview_smooth` (CLEANUP_FACTS_PLAN P2).
 
 What to do instead: **define the denoise seam, not the extraction.** Segmentation already has one —
 `SegmentationUtils` owns the loop and a backend implements `predict_slice`, so coastal adds a backend with a

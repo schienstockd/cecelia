@@ -37,6 +37,29 @@ function parse_smooth_params(d::AbstractDict)::SmoothParams
         version = parse_version_pin(d))
 end
 
+# The compute half of the Python contract — what `smooth_utils` needs — shared by the run and the
+# preview so the two cannot drift: the run adds only its paths. `restoreDynamicRange` is the spec's
+# name for what the runner calls `restoreGain`.
+_smooth_compute_params(p::SmoothParams, channel_idx::Vector{Int}) =
+    (; channels = channel_idx, spatialMethod = p.spatialMethod, spatialSigma = p.spatialSigma,
+       bilateralColor = p.bilateralColor, bilateralReach = p.bilateralReach,
+       bilateralPolish = p.bilateralPolish, temporalFrames = p.temporalFrames,
+       temporalStat = p.temporalStat, farnebackMaxShiftPx = p.farnebackMaxShiftPx,
+       restoreGain = p.restoreDynamicRange)
+
+# Smoothing is previewable (CLEANUP_FACTS_PLAN D2): the worker's `_preview_smooth` runs the run's
+# `smooth_utils` compute over the visible tile at the current timepoint. The preview sends the
+# FRONTEND's params — channel NAMES, the spec's param names — so this is the same translation the run
+# does, through the same helper.
+task_previewable(::Smooth) = true
+
+function preview_params(::Smooth, params::AbstractDict, img::CciaImage)::Dict{String,Any}
+    p = parse_smooth_params(params)
+    idx = channel_indices(p.channels, ccid_channel_names(read_ccid_raw(state_file(img)));
+                          what = "channels")
+    Dict{String,Any}(String(k) => v for (k, v) in pairs(_smooth_compute_params(p, idx)))
+end
+
 # QC from the persisted smoothing stats. The failure modes here are quiet ones — the task always
 # "succeeds", it just may not have helped:
 #  • not run on aligned data — the temporal statistic compares the same pixel across frames, so on an
@@ -166,19 +189,8 @@ function _run_task(task::Smooth, img::CciaImage, params::Dict{String,Any};
     qc_out_path = joinpath(task_run_dir(img._dir), "smooth_stats.json")
 
     ok = run_py("tasks/cleanupImages/smooth_run.py",
-        (; imPath          = im_path,
-           imOutputPath    = im_output_path,
-           channels        = channel_idx,
-           spatialMethod   = p.spatialMethod,
-           spatialSigma    = p.spatialSigma,
-           bilateralColor  = p.bilateralColor,
-           bilateralReach  = p.bilateralReach,
-           bilateralPolish = p.bilateralPolish,
-           temporalFrames  = p.temporalFrames,
-           temporalStat    = p.temporalStat,
-           farnebackMaxShiftPx = p.farnebackMaxShiftPx,
-           restoreGain     = p.restoreDynamicRange,
-           qcOutPath       = qc_out_path),
+        (; imPath = im_path, imOutputPath = im_output_path, qcOutPath = qc_out_path,
+           _smooth_compute_params(p, channel_idx)...),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing

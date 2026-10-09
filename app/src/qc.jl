@@ -210,7 +210,7 @@ const _SATURATION_WARN_SIGNAL_FRAC = 1e-2
 
 # Level at which a channel is called PHOTON-LIMITED, expressed as the exact-zero fraction of its
 # voxels. Structural (needs no metadata), computed at import from the same histogram pass as
-# `saturation_stats`. Feeds the correction-plan photon-limited card (CORRECTION_QC_PLAN.md Q-M4).
+# `saturation_stats`. Raises `import.photon_limited`; the per-channel numbers are `img_cleanup_facts`.
 #
 # **Unvalidated placeholder — calibrated on the dev movies, not on a ground-truth cohort.** SMOOTHING_
 # PLAN.md measured `zeroFracIn` on `zolIMa/Dml3RG` — a resonance-scanner acquisition that needed
@@ -357,7 +357,8 @@ _PHOTON_LIMITED_ZERO_FRAC` per the same `meta["saturation"]["channels"]` block t
 finding reads. Photon-limitation is a **scanning-mode property** (laser power / PMT gain / dwell
 time are set once for the acquisition), so a per-channel finding would be N copies of the same
 observation — one combined finding matches the mental model and cuts the QC noise. Detail carries
-the per-channel breakdown so the plan engine has the raw scores.
+the per-channel breakdown. The text states the measurement, not a method (CLEANUP_FACTS_PLAN D6);
+the per-channel numbers for every channel, under the cutoff too, are `img_cleanup_facts`.
 
 PURE → unit-tested. Empty when the check didn't run (an image imported before the sparsity fields
 existed, or a non-integer store where `saturation_stats` was never computed) OR when no channel is
@@ -533,7 +534,7 @@ function saturation_metrics(meta::AbstractDict)
     chans = _saturation_channels(meta)
     isempty(chans) && return nothing
     n = 0; worst = 0.0; worst_sig = 0.0
-    # Sparsity across channels — for the correction-plan photon-limited card (Q-M4). `maxZeroFrac`
+    # Sparsity across channels (CORRECTION_QC_PLAN Q-M4). `maxZeroFrac`
     # surfaces the sparsest channel in the image (a cohort outlier is a channel that is much sparser
     # than its peers — e.g. one acquired on the resonance scanner while the rest were galvo).
     # `minSignalFrac` is the complement view — the channel with the least above-background
@@ -563,6 +564,55 @@ function saturation_metrics(meta::AbstractDict)
         out["minSignalFrac"] = isfinite(min_sig) ? min_sig : 0.0
     end
     out
+end
+
+"""
+    img_cleanup_facts(img) -> Dict
+
+What was measured about an image that bears on Cleanup, with no verdict attached
+(docs/todo/CLEANUP_FACTS_PLAN.md Decision 1). Two lists:
+
+- `channels`: one entry per channel in `meta["saturation"]` — `index`, `name`, `zeroPct` (voxels
+  that are exactly 0, % of all voxels) and `clippedPct` (voxels piled up at the top value, % of
+  SIGNAL voxels; 0 when the structural detector found no pile-up). Either is `nothing` when the
+  image was imported before that field existed.
+- `drift`: one entry per drift-correction output — `valueName`, `maxDriftPx` (the XY excursion the
+  run measured) and `maxDriftUm` (`nothing` when the image has no physical pixel size).
+
+No cutoff and no "do this": the task text (`useWhen` / `notWhen`) says what each method needs, the
+reader matches the two. The GUI's Cleanup page and the MCP's `get_image_info` both read this, from
+the image payload — there is no separate agent tool (Decision 5). Cheap enough for a payload: the
+meta is in memory and the drift numbers are one small sidecar read per drift run.
+"""
+function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
+    names = something(channel_names(img), String[])
+    channels = Dict{String,Any}[]
+    for ch in _saturation_channels(img.meta)
+        i  = _cal_int(get(ch, "index", nothing), length(channels))
+        zf = _cal_num(get(ch, "zeroFrac", nothing))
+        cf = _cal_num(get(ch, "clippedSignalFrac", nothing))
+        clipped = get(ch, "saturated", false) === true ? cf : (isnothing(cf) ? nothing : 0.0)
+        push!(channels, Dict{String,Any}(
+            "index"      => i,
+            "name"       => i + 1 <= length(names) ? names[i + 1] : "Channel $(i + 1)",
+            "zeroPct"    => isnothing(zf) ? nothing : round(zf * 100, digits = 1),
+            "clippedPct" => isnothing(clipped) ? nothing : round(clipped * 100, digits = 3)))
+    end
+    um_per_px = img_is_calibrated(img) ? img_physical_sizes(img)[1][3] : nothing
+    drift = Dict{String,Any}[]
+    dir = qc_fun_dir(img, "cleanupImages.driftCorrect")      # only this task's sidecars, not all QC
+    for f in (isdir(dir) ? sort(readdir(dir)) : String[])
+        endswith(f, ".json") || continue
+        doc = _read_qc_file(joinpath(dir, f))
+        m  = get(doc, :metrics, nothing)
+        px = m isa AbstractDict ? _cal_num(get(m, :maxDriftPx, nothing)) : nothing
+        isnothing(px) && continue
+        push!(drift, Dict{String,Any}(
+            "valueName"  => String(get(doc, :valueName, f[1:end-5])),
+            "maxDriftPx" => px,
+            "maxDriftUm" => isnothing(um_per_px) ? nothing : round(px * um_per_px, digits = 1)))
+    end
+    Dict{String,Any}("channels" => channels, "drift" => drift)
 end
 
 # Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale

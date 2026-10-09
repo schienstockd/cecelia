@@ -57,12 +57,15 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Channel {channel} clipped at the detector",
         long  = "Lower the gain or exposure when acquiring — clipped values cannot be recovered."),
 
-    # photon-limited channels (import.photon_limited) — ONE finding per image, not per channel:
-    # photon-limitation is a scanning-mode property (laser/PMT settings shared across channels), so
-    # a per-channel finding would be N copies of the same acquisition observation.
+    # mostly-zero channels (import.photon_limited) — ONE finding per image, not per channel: sparsity
+    # is a scanning-mode property (laser/PMT settings shared across channels), so a per-channel
+    # finding would be N copies of the same acquisition observation. States the measurement, not a
+    # method: the cutoff behind it is a placeholder, and which cleanup fits is the reader's call
+    # against each task's "Use when" (CLEANUP_FACTS_PLAN D6). The key keeps its old name so banked
+    # sidecars re-render with this text.
     "import.photon_limited" => (
-        short = "{n} photon-limited channel{s} (up to {pct}% zero voxels)",
-        long  = "Run Cleanup → Denoise before segmentation. Channels: {channels}."),
+        short = "{n} mostly-zero channel{s} (up to {pct}% zero voxels)",
+        long  = "Compare the Cleanup page's per-channel facts with each task's \"Use when\" before you denoise or smooth. Channels: {channels}."),
 
 
     # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)

@@ -775,7 +775,7 @@ const currentKey = computed(() => isLabelMode.value ? labelKey.value : trackKey.
 </template>
 
 <style scoped>
-/* fp-body carries no padding by convention (LabLogPanel, ViewerPanel, CorrectionPlanPanel all pad
+/* fp-body carries no padding by convention (LabLogPanel and ViewerPanel pad
    their own root). Same here. */
 .cockpit { display: flex; flex-direction: column; height: 100%; padding: 8px 10px; gap: 8px;
            min-height: 0; }

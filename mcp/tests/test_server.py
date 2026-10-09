@@ -965,6 +965,23 @@ class DiscoveryToggleQcTest(unittest.TestCase):
         # the source payload is not mutated (the client may cache it)
         self.assertEqual(len(self.QC["segment.cellpose/seg"]["findings"]), 2)
 
+    def test_off_drops_cleanup_facts(self):
+        """CLEANUP_FACTS_PLAN D7: the off arm does not see the per-channel / drift facts; on does."""
+        facts = {"channels": [{"index": 0, "name": "GFP", "zeroPct": 0.0, "clippedPct": 0.0}], "drift": []}
+        meta = {"image": {"uid": "i1", "qc": self.QC, "cleanupFacts": facts}}
+        def call(env, fn, *args):
+            with unittest.mock.patch.dict("os.environ", env, clear=False), \
+                 unittest.mock.patch.object(server._client, "get_image_meta", lambda *a: meta), \
+                 unittest.mock.patch.object(server._client, "list_images",
+                                            lambda *a: {"images": [meta["image"]]}):
+                return fn(*args)
+        off = {"CECELIA_MCP_DISCOVERY": "off"}
+        self.assertNotIn("cleanupFacts", call(off, server.get_image_info, "p", "i1"))
+        self.assertNotIn("cleanupFacts", call(off, server.list_images, "p")[0])
+        self.assertIn("cleanupFacts", meta["image"])                      # source not mutated
+        on = {"CECELIA_MCP_DISCOVERY": "on"}
+        self.assertEqual(call(on, server.get_image_info, "p", "i1")["cleanupFacts"], facts)
+
     def test_default_and_on_keep_them(self):
         import os
         for env in ({}, {"CECELIA_MCP_DISCOVERY": "on"}):

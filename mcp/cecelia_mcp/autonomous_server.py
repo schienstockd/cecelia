@@ -87,15 +87,6 @@ def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict
 
 
 @_tool
-def recommend_correction_plan(project_uid: str, image_uid: str) -> dict:
-    """The Cleanup module's correction-plan recommendation for this image, as a user sees it:
-    `included` steps derived from the image's metadata (e.g. a T axis → driftCorrect) and the
-    import's photon-limited measure (denoise / smooth), `excluded` ones with the reason. Nothing is
-    computed from the pixels at call time."""
-    return _client.recommend_correction_plan(project_uid, image_uid)
-
-
-@_tool
 def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y: str = "",
                    transform: dict | None = None, pop: str = "root", bins: int = 30) -> dict:
     """The distribution to choose a gate from: per axis, quantiles + an even-width count table of

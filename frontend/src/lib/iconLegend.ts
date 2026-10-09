@@ -142,7 +142,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-sliders-h', lucide: 'sliders-horizontal', means: 'Viewer controls, or how a canvas is laid out' },
       { icon: 'pi-thumbtack', lucide: 'pin', means: 'Keep these controls visible' },
       { icon: 'pi-bookmark', lucide: 'bookmark', means: 'Saved for later — a folder, or the viewer look' },
-      { icon: 'pi-clipboard', lucide: 'clipboard-list', means: 'A written plan — the correction plan' },
+      { icon: 'pi-clipboard', lucide: 'clipboard-list', means: 'Shared — the plot is on the clipboard' },
       { icon: 'pi-search-plus', lucide: 'zoom-in', means: 'Zoom' },
       { icon: 'pi-tag', lucide: 'tag', means: 'Labels — channel names, or labels drawn on a plot' },
       { icon: 'pi-palette', lucide: 'palette', means: 'Colour — palettes, colour-by options, cluster hues' },

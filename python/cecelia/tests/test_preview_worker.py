@@ -120,6 +120,7 @@ class PreviewWorkerAfTest(unittest.TestCase):
             self.assertIn(m['sourceChannel'], (1, 2))
             self.assertEqual(m['valueName'], 'afCorrected')
             self.assertIn('AF', m['name'])                         # names the source channel it corrects
+            self.assertEqual(m['badge'], 'AF')                     # the viewer's compare badge
             self.assertEqual(m['shape'],
                              [self.SHAPE['size_t'], self.SHAPE['size_z'],
                               self.SHAPE['size_y'], self.SHAPE['size_x']])
@@ -280,6 +281,70 @@ class PreviewWorkerAfTest(unittest.TestCase):
         self.assertEqual(reply['protocol'], self.worker.PROTOCOL)
         self.assertIn('cleanupImages.afCorrect', reply['backends'])
 
+
+
+@unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
+class PreviewWorkerSmoothTest(unittest.TestCase):
+    """The smoothing preview (CLEANUP_FACTS_PLAN D2) runs the RUN's compute — `smooth_utils` — over the
+    tile, with the run's whole-image gain. Pinned by recomputing the run's arithmetic on the full plane
+    and comparing away from the tile edge (the edge is the seam caveat every tiled preview carries)."""
+    SHAPE = PreviewWorkerAfTest.SHAPE
+
+    @classmethod
+    def setUpClass(cls):
+        cls.worker = _load_worker()
+
+    def setUp(self):
+        PreviewWorkerAfTest.setUp(self)          # same synthetic 4-channel uint16 store
+
+    def _request(self, params, t=1):
+        return self.worker.execute_command({
+            'type': 'preview', 'imPath': self.im_path, 'taskDir': self.dir,
+            'funName': 'cleanupImages.smooth', 'outputValueName': 'smoothed',
+            'params': params,
+            'region': {'xy': {'X': [2, 18], 'Y': [2, 20]}, 'z': 0, 't': t, 'ndisplay': 2},
+        })
+
+    def test_the_preview_is_the_runs_arithmetic_on_the_tile(self):
+        import cecelia.utils.smooth_utils as smooth_utils
+        params = {'channels': [1, 3], 'spatialMethod': 'gaussian', 'spatialSigma': 1.0,
+                  'temporalFrames': 3, 'temporalStat': 'median', 'restoreGain': True}
+        out = self._request(params)
+        self.assertNotEqual(out.get('type'), 'error', out.get('msg'))
+        self.assertEqual(sorted(m['sourceChannel'] for m in out['previewImages']), [1, 3])  # only the selected
+
+        level = zarr_utils.open_as_zarr(self.im_path, as_dask=False)[0][0]
+        du = self.du
+        idx = {ax: du.dim_idx(ax) for ax in 'TCZ'}
+
+        def read_plane(t, c, z):
+            sl = [slice(None)] * level.ndim
+            sl[idx['T']], sl[idx['C']], sl[idx['Z']] = t, c, z
+            return np.asarray(level[tuple(sl)], dtype=np.float32)
+
+        spatial_fn = smooth_utils.build_spatial_fn('gaussian', 1.0, 10.0, 3.0, 0.6)
+        gain = smooth_utils.estimate_gain(read_plane, spatial_fn, [1, 3],
+                                          self.SHAPE['size_t'], self.SHAPE['size_z'])[0]
+        self.assertAlmostEqual(out['derived']['gain'], round(gain, 3))
+        n_t = self.SHAPE['size_t']
+
+        def spatial_at(t, c):
+            return spatial_fn(read_plane(min(max(t, 0), n_t - 1), c, 0))
+
+        full = smooth_utils.smooth_timepoint(spatial_at, [1, 3], 1, 1, 3, 'median')
+        for m in out['previewImages']:
+            c = m['sourceChannel']
+            want, _ = smooth_utils.apply_gain(full[c], gain, np.iinfo(np.uint16).max)
+            got = np.asarray(zarr_utils.open_as_zarr(m['path'], as_dask=False)[0][0])
+            got = got[1, 0]                                       # T=1, Z=0 → [Y, X]
+            # interior of the tile Y[2,20) X[2,18), 4 px in from the crop edge
+            np.testing.assert_array_equal(got[6:16, 6:14], want[6:16, 6:14].astype(np.uint16))
+            self.assertIn('smoothed', m['name'])
+            self.assertEqual(m['badge'], 'Smooth')
+
+    def test_smooth_is_a_declared_backend(self):
+        reply = self.worker.execute_command({'type': 'ping'})
+        self.assertIn('cleanupImages.smooth', reply['backends'])
 
 
 @unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')

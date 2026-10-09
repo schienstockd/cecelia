@@ -75,7 +75,7 @@ export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_
 export state_file, obj_meta_dir, STATE_FILENAME
 export TRACK_PROPS_SUFFIX, BRANCH_PROPS_SUFFIX, is_reserved_value_name
 export migrate_qc_findings
-export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
+export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
@@ -280,8 +280,6 @@ include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
 include("qc.jl")
-include("correction_presets.jl") # AcquisitionPreset registry consumed by correction_plan.jl
-include("correction_plan.jl")   # after qc.jl — reuses `_saturation_channels` / `_cal_num` / `_cal_int`
 include("run_log.jl")
 include("label_props.jl")
 include("gating/transforms.jl")
@@ -382,7 +380,6 @@ include("view_profiles.jl")
 include("tasks/scheduler.jl")
 include("tasks/task_outcomes.jl")
 include("tasks/chain.jl")
-include("correction_plan_chain.jl")   # plan → ChainTemplate; loads after chain.jl
 # Sink-agnostic task execution — the body `handle_task_run` used to inline, so the API server and the
 # detached runner drive the SAME execution. See docs/todo/TASK_RUNNER_PLAN.md.
 include("runner/execute.jl")

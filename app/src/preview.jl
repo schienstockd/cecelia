@@ -88,7 +88,8 @@ const PREVIEW_PORT   = 7656
 # 16 adds the `render` command (stills on the shared shader, `api/src/movie_render.jl`). The backend
 # falls back to a one-off renderer when the worker can't answer, which would hide a stale worker
 # forever — the bump is what replaces it.
-const PREVIEW_PROTOCOL = 16
+# 17 adds `cleanupImages.smooth` to the previewable set — the same "dead button" case as 15.
+const PREVIEW_PROTOCOL = 17
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
