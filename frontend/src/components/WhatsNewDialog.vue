@@ -13,6 +13,7 @@ import WhatNewCard from './WhatNewCard.vue'
 import { useAppControlStore } from '../stores/appControl'
 import { useUpdateCard, openWithTip, viewedTipIndex, type WhatNewCard as WhatNewCardT } from '../lib/whatsNew'
 import { CECELIA_RELEASES_URL } from '../lib/links'
+import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import { TIPS, todayTipIndex } from '../lib/tips'
 
 const props = withDefaults(defineProps<{
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{
 defineEmits<{ (e: 'close'): void }>()
 
 const app = useAppControlStore()
+const restartUpd = useRestartToUpdate()
 const updateCard = useUpdateCard()
 
 // Today's tip goes to the top when the launch trigger opened the dialog (openWhatsNew({withTip:true})).
@@ -87,12 +89,18 @@ const canInstall = computed(() =>
         All releases <i class="pi pi-external-link" />
       </a>
       <span v-if="app.updateMsg" class="wn-foot-msg cc-muted cc-fs-xs">{{ app.updateMsg }}</span>
-      <button v-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
+      <button v-if="restartUpd.show.value" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
+              :disabled="restartUpd.blocked.value" v-tooltip.top="restartUpd.tip.value"
+              @click="restartUpd.restart">
+        <i :class="['pi', app.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
+        {{ app.busy ? 'Updating…' : 'Restart now' }}
+      </button>
+      <button v-else-if="canInstall" class="cc-btn cc-btn-primary cc-btn-dense wn-install-btn"
               :disabled="app.updateBusy || !app.updateLatest" @click="app.applyUpdate">
         <i :class="['pi', app.updateBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
         {{ app.updateBusy ? 'Installing…' : `Install ${app.updateLatest ?? '(no version)'}` }}
       </button>
-      <button class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'wn-close-btn': !canInstall }" @click="$emit('close')">Close</button>
+      <button class="cc-btn cc-btn-ghost cc-btn-dense" :class="{ 'wn-close-btn': !canInstall && !restartUpd.show.value }" @click="$emit('close')">Close</button>
     </template>
   </BaseModal>
 </template>

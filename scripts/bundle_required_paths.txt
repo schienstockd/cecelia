@@ -31,6 +31,12 @@ pluto/launch.jl
 # Registered as `python -m cecelia_mcp.server` with PYTHONPATH=<install>/mcp (observer_mcp_spec).
 mcp/cecelia_mcp/server.py
 
+# ── the uninstallers ────────────────────────────────────────────────────────────────────────────
+# Not loaded by the app, but docs/INSTALL.md → Uninstall tells users to run the copy inside their
+# install, so a bundle without them leaves that instruction dead.
+uninstall.sh
+uninstall.ps1
+
 # ── the app itself ───────────────────────────────────────────────────────────────────────────────
 app.py
 api/src/server.jl

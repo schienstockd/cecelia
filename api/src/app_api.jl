@@ -121,14 +121,20 @@ end
 const RESTART_EXIT_CODE = 42
 _can_restart()::Bool = haskey(ENV, "CECELIA_SUPERVISED")
 
-# POST /api/app/restart  → { ok } | 409  — restart the backend itself.
+# POST /api/app/restart [{ stopRunner: true }] → { ok } | 409  — restart the backend itself.
 # Stop children, then exit with the sentinel; the supervisor relaunches in place (same terminal / app
-# window) — no detaching, no pixi-on-PATH dependency.
+# window) — no detaching, no pixi-on-PATH dependency. `stopRunner` is the "restart to finish an
+# update" route: the launcher swaps the files in between, and a runner left alive would keep running
+# tasks on the OLD code. The UI only sends it with no task in flight. A staged update forces it too —
+# the launcher applies one on ANY restart, whichever button asked.
 function api_app_restart(body_bytes::Vector{UInt8})
     _can_restart() || return 409, JSON3.write((;
         error = "Restart unavailable — the server isn't running under a supervisor."))
-    @info "Restart requested via /api/app/restart"
-    _stop_children_for_exit(; stop_runner = false)   # a restart must NOT cost a running task
+    body = _parse_body(body_bytes; allow_empty = true)
+    body isa Tuple && return body
+    stop_runner = _wbool(body, :stopRunner) || _pending_restart()
+    @info "Restart requested via /api/app/restart" stop_runner
+    _stop_children_for_exit(; stop_runner)   # a plain restart must NOT cost a running task
     @async begin
         sleep(0.4)      # flush the HTTP response first, then exit with the restart sentinel
         _exit_now(RESTART_EXIT_CODE)

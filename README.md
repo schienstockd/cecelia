@@ -69,7 +69,24 @@ where to store your projects — accept the default or pick a folder. The choice
 `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.toml` on Windows); to move the folder later,
 edit that file or delete it and relaunch.
 
-**Advanced setup** — shared/lab machines (system-wide install), custom install location,
+**Shared lab machine** — one install for every account, each with their own settings and projects:
+
+```sh
+# Linux / macOS — run as your admin account, WITHOUT sudo (it asks for your password when needed)
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_INSTALL_SCOPE=system sh
+```
+
+```powershell
+# Windows — in PowerShell opened with "Run as administrator"
+$env:CECELIA_INSTALL_SCOPE='system'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
+```
+
+It installs to `/opt/cecelia`, `/Applications/cecelia` or `C:\Program Files\cecelia`, and adds a
+**Cecelia** entry to every account's menu. Other accounts can run it but can't change it. On
+Linux/macOS the install belongs to the admin account that ran the installer. On Windows it belongs to
+the administrators.
+
+**Advanced setup** — custom install location,
 remote-server access — is in [`docs/INSTALL.md`](docs/INSTALL.md). To use your own
 `bioformats2raw` instead of the bundled one, add `bioformats2raw = "/path/to/bioformats2raw"` under
 `[dirs]` in `~/.cecelia/custom.toml`; every setting is listed in the bundled `app/config.toml`.
@@ -79,7 +96,33 @@ remote-server access — is in [`docs/INSTALL.md`](docs/INSTALL.md). To use your
 ## Updating
 
 Re-run the install command, run `pixi run update` from the install directory, or use the in-app
-**Update** button. System-wide installs update by re-running the installer as an administrator.
+**Update** button. A shared install is updated by re-running its install command. On Linux/macOS that
+means the admin account that installed it, and on Windows an administrator.
+
+---
+
+## Uninstalling
+
+Run the uninstaller that sits in the install folder. It removes the app, its environment and the
+menu entry. **Your settings and projects are kept** unless you say otherwise — it asks.
+
+```sh
+# Linux / macOS
+sh ~/.local/share/cecelia/uninstall.sh          # shared install: sh /opt/cecelia/uninstall.sh
+                                                # (macOS: sh /Applications/cecelia/uninstall.sh)
+```
+
+```powershell
+# Windows (PowerShell; "Run as administrator" for a shared install)
+powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\cecelia\uninstall.ps1"
+# shared install: powershell -ExecutionPolicy Bypass -File "$env:ProgramFiles\cecelia\uninstall.ps1"
+```
+
+To delete everything without being asked, add `--wipe-settings --wipe-projects --yes`
+(`-WipeSettings -WipeProjects -Yes` on Windows). Projects are deleted one by one, so anything else
+in your projects folder stays. Pixi, Julia and their caches stay installed, because other software
+may use them. The uninstaller lists them so you can remove them yourself. Details:
+[`docs/INSTALL.md`](docs/INSTALL.md) → *Uninstall*.
 
 ---
 

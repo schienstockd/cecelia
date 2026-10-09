@@ -2,9 +2,9 @@
 Flip task.
 
 Reads an OME-ZARR image, reverses order along one axis (X, Y or Z) and writes the result as a NEW
-OME-ZARR multiscale store, streaming one timepoint at a time. Dims are preserved (only element
-order changes), so existing per-image downstream artifacts still line up on the flipped version —
-the Julia handler registers it as a NEW VERSION on the same image, not a new image.
+OME-ZARR multiscale store, streaming one timepoint at a time. Dims are preserved but content is
+mirrored, so existing labels (which this does not touch) do NOT line up on the flipped version —
+segment after flipping. The Julia handler registers it as a NEW VERSION on the same image.
 
 Parameter contract (JSON written by Julia):
   imPath   - absolute path to the source .ome.zarr
