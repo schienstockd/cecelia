@@ -30,7 +30,7 @@
 - **storage_api.jl**: `/api/storage/summary` (walked disk/reclaimable scan) + `/api/storage/reclaim` — thin adapters over `storage.jl`.
 - **repl_api.jl / update_api.jl / setup_api.jl**: diagnostics + gated REPL; self-update; first-launch wizard.
 - **observer_api.jl**: `/api/observer/status` (assistant CLI present + the generated MCP config path) and `/api/observer/register` (one-click register of the observer MCP in the user's Claude config — the only route that touches it).
-- **system_api.jl**: `/api/system/envs` (+ `/install`, streamed over WS) — probe/install the opt-in pixi envs in `_OPT_IN_ENVS` (today `cellpose-v3`). Client: `utils/systemEnvs.ts`.
+- **system_api.jl**: `/api/system/envs` (+ `/install`, streamed over WS) — probe/install the opt-in pixi envs in `_OPT_IN_ENVS` (today `cellpose-v3`). Client: `utils/systemEnvs.ts`. Also the **model-weights job** (`model-weights:<model>`): `start_weights_fetch!` (start or join), `missing_weights_job(params)` (the preview gate → coded `weights-downloading`), `fetch_missing_weights_at_boot!`, `/api/system/weights` (+ `/fetch`). Python side: `cecelia.utils.model_weights`.
 - **pixi_bin.jl**: `_find_pixi(root)` — THE pixi lookup (`PIXI_EXE` from `pixi run`, PATH, `<root>/pixi/bin`, `$PIXI_HOME/bin`, `~/.pixi/bin`); used by system_api.jl + update_api.jl. The shipped macOS `.app` has no pixi on PATH. Launcher twin: `app.py:_find_pixi`, same order.
 - **plugins_api.jl**: `/api/plugins/install|install-local|remove` — pinned tarball fetch (never git), unpack via `Cecelia.plugin_unpack!`; the listing rides `/api/tasks/custom-modules`.
 - **maintenance_api.jl**: `GET /api/maintenance/patches` — lists `maintenance_patches()`; running one is the WS `maintenance:run` action.

@@ -215,9 +215,10 @@ checkpoint, and v4 refuses to load one. The Julia resolver `cellpose_model_path(
 still mirrors bioformats2raw's bundled/override pattern —
 `<install>/models/cellposeModels/` first, `<config_dir>/models/cellposeModels/` as a user override
 slot — and `pixi run models-fetch` (`scripts/models_fetch.py`, `--ref` to pin) still works for
-whenever there is a v4 set to fetch. What DOES download at first use is cellpose's own `cpsam_v2`
+whenever there is a v4 set to fetch. What the installer DOES fetch is cellpose's own `cpsam_v2`
 (~1.2 GB, HuggingFace → `~/.cellpose/models`, relocatable via `CELLPOSE_LOCAL_MODELS_PATH`) —
-bigger than everything else here combined, and not something the installer controls.
+bigger than everything else here combined; the app re-fetches it at start if missing. See
+`docs/SEGMENTATION.md` → *Model weights*.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
 `releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a
@@ -644,7 +645,7 @@ the updated `pixi.toml` + `pixi.lock`.
 
 | Package | Pin | Reason |
 |---------|-----|--------|
-| `cellpose>=4.2` | lower bound | v4 (Cellpose-SAM). v4 dropped `DenoiseModel`, the cyto*/nuclei zoo and v3-checkpoint loading — `cleanupImages.cellposeCorrect` was retired for it and `cleanupImages.smooth` covers the cleanup case. `cpsam_v2` weights (1.2 GB) download from HuggingFace on first use; `CELLPOSE_LOCAL_MODELS_PATH` can pre-seed them. See docs/todo/CELLPOSE_V4_PLAN.md. |
+| `cellpose>=4.2` | lower bound | v4 (Cellpose-SAM). v4 dropped `DenoiseModel`, the cyto*/nuclei zoo and v3-checkpoint loading — `cleanupImages.cellposeCorrect` was retired for it and `cleanupImages.smooth` covers the cleanup case. `cpsam_v2` weights (1.2 GB) are fetched by the installer (else at app start) from HuggingFace; `CELLPOSE_LOCAL_MODELS_PATH` can pre-seed them. See docs/todo/CELLPOSE_V4_PLAN.md. |
 | `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
 
 ### GPU detection (cellpose tasks)

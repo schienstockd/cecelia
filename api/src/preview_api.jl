@@ -323,6 +323,16 @@ function api_preview_run(body_bytes::Vector{UInt8})
     end
     chan_names = something(channel_names(img_for_params; value_name = in_value_name), String[])
 
+    # Missing built-in weights are never downloaded inside this request: loading `cpsam_v2` cold pulls
+    # ~1.2 GB and outlasts the browser's timeout. Start (or join) the visible weights job and say so;
+    # the frontend re-requests when that job finishes (system_api.jl → *Model weights*).
+    dl = missing_weights_job(params)
+    dl === nothing || return 409, JSON3.write((;
+        error = "Downloading $(dl.label) (~$(round(dl.approx_size_mb / 1000; digits = 1)) GB) — " *
+                "the preview runs when it finishes.",
+        code  = "weights-downloading",
+        jobId = dl.job_id))
+
     reply = try
         _with_preview() do
             w = _preview()
