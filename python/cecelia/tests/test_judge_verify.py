@@ -86,6 +86,15 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual((summary["groups"], summary["verified"], summary["usd"]), (1, 2, 1.0))
         self.assertEqual(summary["precision"], {"plausible": {"fix": 0, "decide": 1, "guard": 0, "dismiss": 1}})
 
+    def test_guard_parks_a_bug_with_its_trigger(self):
+        def guard(prompt):
+            return {"items": [{"key": "a", "verdict": "guard", "evidence": "a.py:1", "effect": "no caller passes None",
+                               "trigger": "a caller passing None"}]}, 1.0
+        out, _ = self.v.verify([_bug("a")], date="2026-10-03", sha="s" * 40, agent=guard)
+        self.assertEqual((out[0]["status"], out[0]["why"]),
+                         ("parked", "verified guard (2026-10-03): can't happen yet; live once a caller passing None"))
+        self.assertEqual(self.v.eligible(out), [])
+
     def test_the_cap_holds_even_if_every_agent_spends_its_budget(self):
         bugs = [_bug(k, file=f"{k}.py", branch=k) for k in "abc"]
         out, summary = self.v.verify(bugs, date="d", sha="s", agent=self.agent(cost=0.2),

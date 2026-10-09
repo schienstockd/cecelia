@@ -185,15 +185,19 @@ def _pr_body(record: dict) -> str:
                 f"`{record['run']['error']}`.\n\nRecord: `{rel}`. The previous run's PR stays open."
                 f"\n\n{_PR_FOOTER}\n")
     bugs = record["bugs"]
-    n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "unjudged")}
+    n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "parked")}
     new = sum(_record.newly_open(b, date) for b in bugs)
     verified = sum(b["status"] == "open" and bool(b.get("verify")) for b in bugs)
     decide = len(record["queue"])
     landed, confirmed = _record.landed_counts(bugs)
+    # fixed: what the judge called gone, and a landed fix verify dismissed (`landed_counts` confirms both)
+    fixed = n["gone"] + sum(b["status"] == "dismissed" and bool(b.get("fix_landed")) for b in bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
-             f"**Bugs: {n['open']} open** ({verified} verified, {new} new), {n['gone']} fixed since the last pass"
+             f"**Bugs: {n['open']} open** ({verified} verified, {new} new)"
+             + (f", {n['parked']} parked (can't happen yet)" if n["parked"] else "")
+             + f", {fixed} fixed since the last pass"
              + (f", {landed - confirmed} more with a fix landed, awaiting re-check" if landed > confirmed else "")
-             + (f", {n['unjudged']} waiting for the judge" if n["unjudged"] else "")
+             + f", {_record.backlog_line(record)}"
              + (f", {decide} for you to decide (`pixi run judge-review`)" if decide else "") + "."]
     failed = record["run"].get("failed") or {}
     if failed.get("sweep"):
@@ -309,6 +313,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
                            agent_causes=_run_reviews.agent_causes(reviewed))
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
+                         backlog_last=_record.backlog(previous["bugs"]) if previous else None,
                          **({"failed": failed} if failed else {}))
     return record
 

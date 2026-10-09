@@ -7,7 +7,10 @@ A fanout finding nobody fixed is a possible bug in shipped code: `**confirmed**`
 verdict: the judge sees it and its reason next to the code. Each pass collects those logged since the previous record, plus the previous
 record's open bugs, and asks one tool-less judge call whether each is still live at the pinned
 SHA. Python inlines the code around each `file:line` at that SHA, so the judge reads data, not
-the repo.
+the repo. The judge takes `BATCH_ITEMS` per call and is called again until nothing is left or the
+next call could take the sweep past `SWEEP_USD`: a bug with a landed fix first, then carried `open`
+ones, then the rest oldest first. What the budget didn't reach is `unjudged`, the backlog: the record
+and PR say how it moved, and the recital console warns when it grew two passes in a row.
 
 The record's `bugs` list is the work list: a session pointed at the record fixes the `open` ones
 on a normal branch, and the next pass re-checks them and marks the fixed ones `gone`. A finding
@@ -18,9 +21,15 @@ Before the judge, free checks: findings on frozen paths (an earlier run record) 
 dropped; the judge sees the whole function a finding sits in, found at the finding's own commit
 (`enclosing.py`), so a moved line still shows the right code; a function that no longer exists is
 `gone` without a call; findings on one file + function are one bug listing every source; findings
-over the per-pass cap, or with no verdict, are `unjudged` (carried, never on the owner queue). And
+over the sweep budget, or with no verdict, are `unjudged` (carried, never on the owner queue). And
 one check no finding raises: commits pushed to a PR's branch after it merged, which the merge
 never took (`stranded`).
+
+A bug verify called `guard` (the flaw is there, nothing reachable triggers it) is `parked`: carried,
+off the work list, and not judged again. Each pass checks for free whether a commit names its key
+(`fix_landed`) or one since its verify SHA touched its file (an agent-run error with no file: whether
+a run hit it again); if so, it goes back to `open` with its verdict cleared, so verify looks at it
+again.
 
 A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
 gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
@@ -45,6 +54,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import importlib.util as _importlib_util
+import itertools
 import json
 import pathlib
 import re
@@ -87,7 +97,7 @@ MAX_FUNCTION_LINES = 200
 #: Findings here describe a frozen snapshot (an earlier run record), never live code.
 FROZEN_PATHS = ("docs/ai-assist/judge-runs/", "docs/archive/")
 #: Statuses the next pass carries; the rest are reported once.
-CARRY = ("open", "unjudged", "unmerged")
+CARRY = ("open", "unjudged", "unmerged", "parked")
 #: An agent-run error the owner closed is carried too, unchanged: the next run that hits it would
 #: otherwise raise it as new. Not `gone` / `dismissed`: verify dismisses a fixed bug too, so one that
 #: comes back is a regression and is raised again.
@@ -97,13 +107,18 @@ MUTED = ("wont_fix",)
 #: this many times the count it was dismissed at — growth that matters, at most log2(runs) re-opens.
 REOPEN_GROWTH = 2
 #: Carried statuses whose landed fixes are looked for (`fix_landed`).
-LANDED_FROM = ("open", "unjudged")
+LANDED_FROM = ("open", "unjudged", "parked")
 _PR_IN_SUBJECT = re.compile(r"\(#(\d+)\)\s*$")
 _MERGE_PR = re.compile(r"^Merge pull request #(\d+)\b")
-#: Most findings judged per pass; the rest wait for the next one (oldest first).
-MAX_ITEMS = 40
+#: Findings per judge call: bounds the prompt, not the spend.
+BATCH_ITEMS = 40
 WINDOW_DAYS = 7
+#: Budget per judge call (`--max-budget-usd`). A 40-item call measured $0.78.
 CALL_USD = 1.50
+#: Budget per sweep. A call starts only while what's spent plus a whole CALL_USD fits, so the cap
+#: holds even if that call spends its budget: $4 is four calls, 160 findings, against a measured
+#: inflow of about 100 a week.
+SWEEP_USD = 4.0
 
 JUDGE_SCHEMA = {
     "type": "object",
@@ -373,6 +388,47 @@ def _opened(b: dict, date: str) -> str:
     return (b.get("opened") or b.get("first_seen") or date) if b.get("was") == "open" else date
 
 
+def _parked(b: dict) -> bool:
+    """A carried bug verify called `guard`: `parked`, or `open` in a record from before parking."""
+    return b.get("was") == "parked" or b.get("was") == "open" and (b.get("verify") or {}).get("verdict") == "guard"
+
+
+def _touched(b: dict, sha: str, repo: pathlib.Path) -> str | None:
+    """Why a parked bug goes back to verify, or None while it stays parked: a commit names its key
+    (the guard may have gone in elsewhere, so its file needn't change), or one since its verify SHA
+    touched its file. An agent-run error with no file has nothing else to watch but its own runs: it
+    goes back once a run hits it again after it was verified."""
+    v = b.get("verify") or {}
+    if b.get("fix_landed"):
+        return f"a commit naming its key landed ({b['fix_landed'][-1]['commit'][:8]})"
+    if not b.get("file"):
+        seen, at = (b.get("last_seen") or "")[:10], v.get("date") or ""
+        return f"an agent run hit it again on {seen}, after it was parked" if seen > at else None
+    if not v.get("sha"):
+        return "parked with no verify SHA to compare against"
+    commits = (git_output("log", "--format=%h", f"{v['sha']}..{sha}", "--", b["file"], cwd=str(repo)) or "").split()
+    return (f"`{b['file']}` changed since it was verified ({len(commits)} commit(s), latest {commits[0]})"
+            if commits else None)
+
+
+def _prompt(batch: _t.Sequence[dict]) -> str:
+    return _BRIEF + "\n\n".join(
+        f"FINDING {b['key']} ({b['marker']}, {b['file']}:{b['line']}, branch {b.get('branch') or '?'}):\n"
+        f"{b['desc']}\n"
+        + (f"(tagged {b['outcome']}" + (f": {b['reason']}" if b.get("reason") else "") + ")\n"
+           if b.get("outcome") else "")
+        + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
+        + _record.landed_hint(b)
+        + f"CODE:\n{b['code']}" for b in batch)
+
+
+def _queue_order(group: list[dict]) -> tuple:
+    """Who the judge sees first: a bug with a landed fix (the re-check it waits on), then a carried
+    `open` one (on the work list already), then the oldest."""
+    return (not any(b.get("fix_landed") for b in group), not any(b.get("was") == "open" for b in group),
+            min(b.get("first_seen") or b.get("logged") or "" for b in group))
+
+
 def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | None,
           judge: _t.Callable[[str], tuple[dict, float]] | None = None, no_judge: bool = False,
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
@@ -386,8 +442,10 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     without the judge: there is no code to excerpt. `gone` is listed for a
     carried bug (its fix, reported once) and for a function that no longer exists; a new finding
     the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
-    answer for (failed, or over the cap) waits `unjudged`, except a carried `open` one, which stays
-    open. A failed judge call is said in `failures["sweep"]`; a `judge.RateLimited` propagates.
+    answer for (failed, or over the budget) waits `unjudged`, except a carried `open` one, which stays
+    open. A carried `parked` bug skips the judge: it stays parked unless its file changed since it
+    was verified. A failed judge call is said in `failures["sweep"]` and ends the sweep; a
+    `judge.RateLimited` propagates.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
@@ -429,6 +487,16 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                          "why": f"dismissed at {closed} run(s), hit in {runs} now"
                                 + (f" (dismissed as: {was})" if was else "")})
             continue
+        if _parked(b):
+            back = _touched(b, sha, repo)
+            if back:   # verified afresh: `eligible` takes an open bug with no verdict
+                was = b.get("verify") or {}
+                b = {k: v for k, v in b.items() if k != "verify"}
+                bugs.append({**_strip(b), "status": "open", "opened": date,
+                             "why": f"parked {was.get('date') or '?'} as guard; {back}, so verify checks it again"})
+            else:
+                bugs.append({**_strip(b), "status": "parked", "why": _record.parked_why(b.get("verify") or {})})
+            continue
         if b.get("kind") == "agent_run" and not b.get("file"):
             why = (f"agents hit this 4xx in {b.get('runs')} separate runs: is the platform failing to guide "
                    "them? Verify traces the tool's guidance" if b.get("repeat") else
@@ -451,32 +519,31 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         groups.setdefault(g, []).append({**b, "code": where["code"]})
     bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
              for g in waits.values()]
-    # a bug a fix landed for is judged first, so the cap never holds back the re-check it waits on
-    ask = [_merge(g) for g in sorted(groups.values(), key=lambda g: not any(b.get("fix_landed") for b in g))]
-    ask, waiting = ask[:MAX_ITEMS], ask[MAX_ITEMS:]
-    bugs += [_not_judged(b, date, "waiting for the judge (over the per-pass cap)") for b in waiting]
-    cost, answer = 0.0, {}
+    ask = [_merge(g) for g in sorted(groups.values(), key=_queue_order)]
+    cost, verdicts, asked, broke = 0.0, {}, set(), False
     if ask and not no_judge:
-        prompt = _BRIEF + "\n\n".join(
-            f"FINDING {b['key']} ({b['marker']}, {b['file']}:{b['line']}, branch {b.get('branch') or '?'}):\n"
-            f"{b['desc']}\n"
-            + (f"(tagged {b['outcome']}" + (f": {b['reason']}" if b.get("reason") else "") + ")\n"
-               if b.get("outcome") else "")
-            + "".join(f"(also raised: {a['desc']})\n" for a in b.get("also", []))
-            + _record.landed_hint(b)
-            + f"CODE:\n{b['code']}" for b in ask)
-        try:
-            answer, cost, used = _judge.unpack((judge or default_judge)(prompt))
+        for batch in itertools.batched(ask, BATCH_ITEMS):
+            if cost + CALL_USD > SWEEP_USD:
+                break
+            try:
+                answer, spent, used = _judge.unpack((judge or default_judge)(_prompt(batch)))
+            except _judge.JudgeError as e:   # the pass still records; the rest wait for the next one
+                print(f"bug sweep: judge failed ({e})", file=sys.stderr)
+                if failures is not None:
+                    failures["sweep"] = str(e)
+                broke = True
+                break
             _judge.add_tokens(meter, used)
-        except _judge.JudgeError as e:   # the pass still records; these wait for the next one
-            print(f"bug sweep: judge failed ({e})", file=sys.stderr)
-            if failures is not None:
-                failures["sweep"] = str(e)
-    verdicts = {a["key"]: a for a in answer.get("items", [])}
+            cost += spent
+            asked |= {b["key"] for b in batch}
+            verdicts |= {a["key"]: a for a in answer.get("items", []) if a.get("key") in asked}
     for b in ask:
         v = verdicts.get(b["key"])
-        if v is None:   # skipped, failed or --no-judge: carried as unjudged, not put to the owner
-            why = "not judged (--no-judge)" if no_judge else "not judged (the judge returned no verdict)"
+        if v is None:   # skipped, failed, over budget or --no-judge: carried as unjudged, not put to the owner
+            why = ("not judged (--no-judge)" if no_judge else
+                   "not judged (the judge returned no verdict)" if b["key"] in asked else
+                   "not judged (the judge failed)" if broke else
+                   f"waiting for the judge (over the ${SWEEP_USD:g} sweep budget)")
             bugs.append(_not_judged(b, date, why))
         elif v["verdict"] != "gone" or b.get("carried"):   # fixed before it was ever listed: nothing to say
             status = _VERDICT_STATUS[v["verdict"]]
@@ -524,8 +591,8 @@ def main(argv: list[str] | None = None) -> int:
     except _judge.RateLimited as e:
         return _judge.limit_exit("judge-bugs", e)
     print(json.dumps(bugs, indent=2, ensure_ascii=False))
-    n = {s: sum(b["status"] == s for b in bugs) for s in ("open", "unjudged")}
-    print(f"{n['open']} open, {n['unjudged']} unjudged bug(s); judge ${cost:.2f}", file=sys.stderr)
+    n = {s: sum(b["status"] == s for b in bugs) for s in ("open", "parked", "unjudged")}
+    print(f"{n['open']} open, {n['parked']} parked, {n['unjudged']} unjudged bug(s); judge ${cost:.2f}", file=sys.stderr)
     return 0
 
 

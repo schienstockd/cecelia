@@ -218,34 +218,123 @@ class SweepTest(_Repo):
         self.assertEqual(after[0]["opened"], "2026-10-12")
         self.assertFalse(record.newly_open(after[0], "2026-10-19"))
 
-    def test_over_the_cap_is_unjudged_not_open(self):
-        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
-        bugs, _ = self.sweep(events, judge=self.judge("not_a_bug"))
-        self.assertEqual(sum(b["status"] == "dismissed" for b in bugs), self.b.MAX_ITEMS)
-        self.assertEqual(sum(b["status"] == "unjudged" for b in bugs), 2)
-        self.assertEqual(sum(b["status"] == "open" for b in bugs), 0)
+    def _many(self, n):
+        return [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(n)]
 
-    def test_a_carried_open_bug_over_the_cap_stays_open(self):
-        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
-        bugs, _ = self.sweep(events)
+    def test_the_sweep_batches_until_the_queue_is_empty(self):
+        bugs, cost = self.sweep(self._many(2 * self.b.BATCH_ITEMS + 2), judge=self.judge("not_a_bug"))
+        self.assertEqual([len(re.findall(r"^FINDING ", p, re.M)) for p in self.prompts],
+                         [self.b.BATCH_ITEMS, self.b.BATCH_ITEMS, 2])
+        self.assertEqual({b["status"] for b in bugs}, {"dismissed"})
+        self.assertAlmostEqual(cost, 0.3)
+
+    def test_a_call_starts_only_while_its_whole_budget_fits(self):
+        def dear(prompt):   # every call spends $1: $4 with $1.50 a call stops after the third
+            self.prompts.append(prompt)
+            return {"items": []}, 1.0
+        _, cost = self.sweep(self._many(5 * self.b.BATCH_ITEMS), judge=dear)
+        self.assertEqual((len(self.prompts), cost), (3, 3.0))
+
+    def test_over_the_budget_is_unjudged_not_open(self):
+        with mock.patch.object(self.b, "SWEEP_USD", self.b.CALL_USD):   # one call
+            bugs, _ = self.sweep(self._many(self.b.BATCH_ITEMS + 2), judge=self.judge("not_a_bug"))
+        self.assertEqual(sum(b["status"] == "dismissed" for b in bugs), self.b.BATCH_ITEMS)
+        waiting = [b for b in bugs if b["status"] == "unjudged"]
+        self.assertEqual(len(waiting), 2)
+        self.assertEqual(waiting[0]["why"], "waiting for the judge (over the $1.5 sweep budget)")
+
+    def test_a_failed_call_ends_the_sweep_and_keeps_what_was_judged(self):
+        calls = []
+
+        def second_fails(prompt):
+            calls.append(prompt)
+            if len(calls) == 2:
+                raise self.b._judge.JudgeError("judge failed (exit 1): overloaded")
+            return self.judge("not_a_bug")(prompt)
+        failures: dict = {}
+        bugs, _ = self.sweep(self._many(3 * self.b.BATCH_ITEMS), judge=second_fails, failures=failures)
+        self.assertEqual(len(calls), 2)
+        whys = {b["why"] for b in bugs if b["status"] == "unjudged"}
+        self.assertEqual((sum(b["status"] == "dismissed" for b in bugs), whys),
+                         (self.b.BATCH_ITEMS, {"not judged (the judge failed)"}))
+        self.assertEqual(failures, {"sweep": "judge failed (exit 1): overloaded"})
+
+    def test_a_carried_open_bug_over_the_budget_stays_open(self):
+        bugs, _ = self.sweep(self._many(self.b.BATCH_ITEMS + 2))
         for b in bugs:   # all on the work list, as if an earlier pass had judged the overflow too
             b.update(status="open", opened="2026-10-05")
-        later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
-                             judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
+        with mock.patch.object(self.b, "SWEEP_USD", self.b.CALL_USD):
+            later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
+                                 judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
         self.assertEqual({b["status"] for b in later}, {"open"})
         self.assertEqual(sum(b["why"].startswith("still open; waiting for the judge") for b in later), 2)
 
-    def test_a_bug_with_a_landed_fix_is_judged_before_the_cap(self):
-        events = [_finding(f"fanout-{i:08x}", line=i + 1) for i in range(self.b.MAX_ITEMS + 2)]
-        bugs, _ = self.sweep(events)
+    def test_landed_fixes_then_carried_open_bugs_are_judged_first(self):
+        events = self._many(self.b.BATCH_ITEMS + 4)
+        bugs, _ = self.sweep(events, no_judge=True)
+        landed = {f"fanout-{i:08x}" for i in (self.b.BATCH_ITEMS + 2, self.b.BATCH_ITEMS + 3)}   # the newest
+        carried_open = {f"fanout-{i:08x}" for i in (self.b.BATCH_ITEMS, self.b.BATCH_ITEMS + 1)}
         for b in bugs:
-            b.update(status="open", opened="2026-10-05")
-        last = {f"fanout-{i:08x}" for i in (self.b.MAX_ITEMS, self.b.MAX_ITEMS + 1)}   # what the cap held back
+            if b["key"] in carried_open:
+                b.update(status="open", opened="2026-10-05")
         fix = [{"commit": "abcdef0123", "subject": "fix", "pr": 1}]
-        with mock.patch.object(self.b, "landed_fixes", return_value={k: fix for k in last}):
+        with mock.patch.object(self.b, "landed_fixes", return_value={k: fix for k in landed}), \
+                mock.patch.object(self.b, "SWEEP_USD", self.b.CALL_USD):
             later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous={"run": {}, "bugs": bugs},
                                  judge=self.judge("gone"), merged_prs=lambda since: [], repo=self.repo)[0]
-        self.assertEqual({b["key"]: b["status"] for b in later if b["key"] in last}, dict.fromkeys(last, "gone"))
+        status = {b["key"]: b["status"] for b in later}
+        self.assertEqual({k: status[k] for k in landed | carried_open}, dict.fromkeys(landed | carried_open, "gone"))
+        self.assertEqual(sum(s == "unjudged" for s in status.values()), 4)   # the oldest fresh ones wait
+
+    def _guarded(self, status="parked"):
+        """One bug verify called `guard` at this repo's SHA, as the next pass gets it."""
+        bugs, _ = self.sweep([_finding("fanout-00000001")])
+        bugs[0].update(status=status, verify={"verdict": "guard", "date": "2026-10-05", "sha": self.sha,
+                                              "effect": "no caller passes None", "trigger": "a caller passing None"})
+        return {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+
+    def test_a_parked_bug_stays_parked_unjudged_until_its_file_changes(self):
+        previous = self._guarded()
+        self.prompts.clear()
+        later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([(b["status"], b["why"]) for b in later],
+                         [("parked", "verified guard (2026-10-05): can't happen yet; live once a caller passing None")])
+        self.assertEqual(self.prompts, [])   # no judge call for it
+
+    def test_a_guard_bug_from_before_parking_is_parked(self):
+        later = self.b.sweep([], date="2026-10-12", sha=self.sha, previous=self._guarded(status="open"),
+                             judge=self.judge(), merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([b["status"] for b in later], ["parked"])
+
+    def test_a_parked_bug_whose_file_changed_goes_back_to_verify(self):
+        previous = self._guarded()
+        self.commit("b.py", "x = 1\n")   # another file: still parked
+        sha = self.commit("a.py", "".join(f"line {i}\n" for i in range(1, 62)), msg="touch a")
+        later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([(b["status"], b["opened"], "verify" in b) for b in later], [("open", "2026-10-12", False)])
+        self.assertIn("`a.py` changed since it was verified (1 commit(s)", later[0]["why"])
+
+    def test_a_parked_bug_whose_key_a_commit_names_goes_back_to_verify(self):
+        previous = self._guarded()
+        sha = self.commit("b.py", "guard = True\n", msg="fix: guard the caller (fanout-00000001)")
+        later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual([(b["status"], "verify" in b) for b in later], [("open", False)])
+        self.assertIn("a commit naming its key landed", later[0]["why"])
+        self.assertEqual(later[0]["fix_landed"][0]["commit"], sha)
+
+    def test_a_parked_run_error_goes_back_when_a_run_hits_it_again(self):
+        bugs, _ = self.sweep([_run_error("run-00000001", ts="2026-10-04T00:30:00Z")])
+        bugs[0].update(status="parked", verify={"verdict": "guard", "date": "2026-10-05", "sha": self.sha})
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+        quiet = self.b.sweep([], date="2026-10-12", sha=self.sha, previous=previous, judge=self.judge(),
+                             merged_prs=lambda since: [], repo=self.repo)[0]
+        again = self.b.sweep([_run_error("run-00000001", ts="2026-10-08T00:30:00Z")], date="2026-10-12",
+                             sha=self.sha, previous=previous, judge=self.judge(), merged_prs=lambda since: [],
+                             repo=self.repo)[0]
+        self.assertEqual(([b["status"] for b in quiet], [b["status"] for b in again]), (["parked"], ["open"]))
 
     def test_no_judge_makes_no_call(self):
         bugs, cost = self.sweep([_finding("fanout-00000001")], no_judge=True)
