@@ -10,9 +10,9 @@ Two entry points, one file
   install-git-hooks` (`core.hooksPath=.githooks`, shared by every worktree; each worktree runs
   its own checkout's copy).
 - **Claude Code PreToolUse guard** (`.claude/settings.json`, no args, tool-call JSON on stdin) —
-  only makes sure the git hook can't be skipped: blocks a `git commit` Bash command when
-  `core.hooksPath` isn't set, or when it passes `--no-verify` / `-n` / a `core.hooksPath`
-  override.
+  only makes sure the git hook can't be skipped: blocks a `git commit` Bash command into a
+  cecelia checkout when `core.hooksPath` isn't set, or when it passes `--no-verify` / `-n` / a
+  `core.hooksPath` override. Commits into other repos pass (`guard`).
 
 Why the checks moved (2026-09-30): the PreToolUse version matched the Bash COMMAND TEXT. It fired
 on test heredocs that merely contained `git commit` + a slug pair (writing fake resolution rows),
@@ -72,6 +72,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import sys
 
 #: The hook lives at `.claude/hooks/check_commit_recital.py`; the effectiveness log module
@@ -455,27 +456,105 @@ def commit_msg_main(message_path: str) -> int:
 #: Ways a `git commit` command skips or redirects the commit-msg hook.
 _SKIPS_HOOKS = re.compile(r"(?:^|\s)(?:--no-verify|-n)(?=\s|$)|core\.hooksPath")
 
+#: What makes a toplevel "a cecelia checkout": the file `.githooks/commit-msg` execs (this one).
+#: Present in the primary and every worktree, absent from any other repo — a bare `.githooks/`
+#: dir is a common convention elsewhere, so it alone would mis-claim foreign repos. A cecelia
+#: branch from before this hook existed has no git hook to dodge, so allowing it is right too.
+_CECELIA_MARKER = pathlib.Path(".claude") / "hooks" / "check_commit_recital.py"
+
+#: A `cd` / `cd <dir>` step — its argument runs to the next separator.
+_CD_STEP = re.compile(r"(?:^|[;&|(\n])\s*cd(?:[ \t]+([^;&|)\n]*))?(?=[;&|)\n]|$)")
+
+
+def _static_path(arg: str, base: str) -> str | None:
+    """`arg` (one shell word, still quoted) resolved against `base`, or None when it isn't a
+    literal path — an unexpanded variable, a command substitution, `cd -`, several words."""
+    try:
+        words = [w for w in shlex.split(arg) if w not in ("-P", "-L", "--")]
+    except ValueError:
+        return None
+    if not words:
+        return os.path.expanduser("~")
+    if len(words) > 1 or words[0] == "-":
+        return None
+    path = os.path.expandvars(os.path.expanduser(words[0]))
+    if "$" in path or "`" in path:
+        return None
+    return os.path.normpath(os.path.join(base, _native_path(path)))
+
+
+def _native_path(path: str, windows: bool = os.name == "nt") -> str:
+    """Git Bash (Claude Code's shell on Windows) spells `C:\\x` as `/c/x`; Python would read that
+    as `\\c\\x` on the current drive. Map the drive prefix back; elsewhere `/c/x` is a real path."""
+    m = re.match(r"/([A-Za-z])(?=/|$)", path)
+    return f"{m.group(1).upper()}:/{path[3:]}" if windows and m else path
+
+
+def _commit_target(command: str, start: int, segment: str, cwd: str | None) -> str | None:
+    """The directory the `git commit` `segment` (at offset `start` in `command`) runs in, or None
+    when the command text doesn't pin it down.
+
+    Session cwd, then every `cd` before the segment in order, then the segment's own `-C` dirs
+    (git composes repeated `-C`). `--git-dir` / `--work-tree` / `GIT_DIR=` / `GIT_WORK_TREE=`
+    point git away from its cwd, so they leave it unresolved. A `cd` inside an earlier `( … )`
+    subshell is still applied — modelling shell grouping from text is not worth its edge cases.
+    """
+    if re.search(r"--git-dir|--work-tree|\bGIT_(?:DIR|WORK_TREE)=", command):
+        return None
+    where = cwd or os.getcwd()
+    for m in _CD_STEP.finditer(command[:start]):
+        where = _static_path(m.group(1) or "", where)
+        if where is None:
+            return None
+    sub = re.search(r"\scommit(?=\s|$)", segment)  # the subcommand, not `-c commit.gpgsign=…`
+    try:
+        words = shlex.split(segment[: sub.start()] if sub else segment)
+    except ValueError:
+        return None
+    for i, word in enumerate(words):
+        if word == "-C":
+            if i + 1 >= len(words):
+                return None
+            where = _static_path(shlex.quote(words[i + 1]), where)
+            if where is None:
+                return None
+    return where
+
+
+def _is_cecelia_checkout(target: str) -> bool:
+    """True if `target` sits inside a cecelia clone or worktree (see `_CECELIA_MARKER`)."""
+    top = _git("rev-parse", "--show-toplevel", cwd=target)
+    return top is not None and (pathlib.Path(top) / _CECELIA_MARKER).is_file()
+
 
 def guard(command: str, cwd: str | None) -> str | None:
     """PreToolUse guard: None to allow, else why this `git commit` would dodge the git hook.
+
+    Only commits into a cecelia checkout are checked: the guard sees every Bash call of a session
+    started here, including commits in unrelated repos, where `.githooks` can never be set. Each
+    commit's directory comes from `_commit_target`; when the text doesn't pin it down, the
+    session cwd is checked as if it were cecelia (fail closed).
 
     Text-matching is fine here because a false positive only BLOCKS (the agent rewrites the
     command); it never writes to the log, which is what the old in-command checks got wrong.
     """
     # `git [-c k=v …] commit …` segments; only their own flags count (`&& head -n 5` doesn't).
-    segments = _GIT_COMMIT_SEGMENT.findall(command)
-    if not segments:
-        return None
-    if any(_SKIPS_HOOKS.search(seg) for seg in segments):
-        return ("this `git commit` skips the recital git hook (`--no-verify` / `-n` / a "
-                "`core.hooksPath` override). Commit normally; for a real emergency use "
-                "`CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
-    hooks_path = _git("config", "--get", "core.hooksPath", cwd=cwd)
-    in_repo = _git("rev-parse", "--git-dir", cwd=cwd) is not None
-    if in_repo and hooks_path != _HOOKS_PATH:
-        return (f"the recital git hook isn't active in this clone (`core.hooksPath` is "
-                f"{hooks_path or 'unset'}, needs `{_HOOKS_PATH}`). Run `pixi run "
-                "install-git-hooks` once, then retry.")
+    for m in _GIT_COMMIT_SEGMENT.finditer(command):
+        seg = m.group(0)
+        target = _commit_target(command, m.start(), seg, cwd)
+        if target is not None and not _is_cecelia_checkout(target):
+            continue
+        where = cwd if target is None else target
+        if _SKIPS_HOOKS.search(seg):
+            return ("this `git commit` skips the recital git hook (`--no-verify` / `-n` / a "
+                    "`core.hooksPath` override). Commit normally; for a real emergency use "
+                    "`CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+        hooks_path = _git("config", "--get", "core.hooksPath", cwd=where)
+        in_repo = _git("rev-parse", "--git-dir", cwd=where) is not None
+        if in_repo and hooks_path != _HOOKS_PATH:
+            return (f"the recital git hook isn't active in this clone (`core.hooksPath` is "
+                    f"{hooks_path or 'unset'}, needs `{_HOOKS_PATH}`). Run `pixi run "
+                    "install-git-hooks` once, then retry.")
     return None
 
 
