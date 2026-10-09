@@ -580,6 +580,8 @@ class GuardTest(unittest.TestCase):
         def fake_git(*args, cwd=None):
             if args[:2] == ("config", "--get"):
                 return hooks_path
+            if args == ("rev-parse", "--show-toplevel"):  # this checkout: carries the marker
+                return str(self.hook._REPO_ROOT) if in_repo else None
             if args[:1] == ("rev-parse",):
                 return ".git" if in_repo else None
             return None
@@ -614,6 +616,81 @@ class GuardTest(unittest.TestCase):
     def test_dash_n_outside_the_commit_segment_is_fine(self):
         self.assertIsNone(self._guard("git commit -m x && git log -n 1"))
         self.assertIsNone(self._guard("git commit -m x | head -n 5"))
+
+
+class GuardScopeTest(unittest.TestCase):
+    """The guard only applies to commits into a cecelia checkout. A session started here also
+    commits in unrelated repos (a bug-report repo with no `.githooks`), where it could never pass.
+    Real throwaway repos, both with `core.hooksPath` unset; only `cecelia` carries the marker."""
+
+    def setUp(self):
+        self.hook = _load_hook()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = pathlib.Path(self._tmp.name)
+        # Keep the user's global/system git config (it may set core.hooksPath) out of the repos.
+        env = mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"})
+        env.start()
+        self.addCleanup(env.stop)
+        for name in ("cecelia", "other"):
+            (self.root / name).mkdir()
+            self.assertIsNotNone(self.hook._git("init", "-q", cwd=str(self.root / name)))
+        marker = self.root / "cecelia" / self.hook._CECELIA_MARKER
+        marker.parent.mkdir(parents=True)
+        marker.write_text("", encoding="utf-8")
+        (self.root / "cecelia" / "sub").mkdir()
+        self.cecelia, self.other = str(self.root / "cecelia"), str(self.root / "other")
+
+    def test_other_repo_commit_allowed(self):
+        self.assertIsNone(self.hook.guard("git add x && git commit -m x && git push", cwd=self.other))
+        self.assertIsNone(self.hook.guard("git commit --no-verify -m x", cwd=self.other))
+
+    def test_cecelia_commit_blocks_when_hooks_path_unset(self):
+        self.assertIn("install-git-hooks", self.hook.guard("git commit -m x", cwd=self.cecelia))
+        # A subdirectory resolves to the same toplevel.
+        self.assertIsNotNone(self.hook.guard("git commit -m x", cwd=f"{self.cecelia}/sub"))
+
+    def test_cecelia_commit_passes_once_hooks_installed(self):
+        self.hook._git("config", "core.hooksPath", ".githooks", cwd=self.cecelia)
+        self.assertIsNone(self.hook.guard("git commit -m x", cwd=self.cecelia))
+        self.assertIsNotNone(self.hook.guard("git commit -n -m x", cwd=self.cecelia))
+
+    def test_cd_into_other_repo_is_allowed(self):
+        # The reported case: session cwd is a cecelia checkout, the commit isn't.
+        self.assertIsNone(self.hook.guard(f"cd {self.other} && git commit -m x", cwd=self.cecelia))
+        self.assertIsNone(self.hook.guard("cd ../other && git commit -m x", cwd=self.cecelia))
+
+    def test_cd_into_cecelia_blocks(self):
+        self.assertIsNotNone(self.hook.guard(f"cd '{self.cecelia}' && git commit -m x", cwd=self.other))
+        self.assertIsNotNone(self.hook.guard("cd ../cecelia; cd sub && git commit -m x", cwd=self.other))
+
+    def test_git_dash_c(self):
+        self.assertIsNone(self.hook.guard(f"git -C {self.other} commit -m x", cwd=self.cecelia))
+        self.assertIsNotNone(self.hook.guard(f"git -C {self.cecelia} commit -m x", cwd=self.other))
+        # Relative `-C` composes on top of a preceding `cd`.
+        self.assertIsNotNone(self.hook.guard(f"cd {self.root} && git -C cecelia commit -m x",
+                                             cwd=self.other))
+
+    def test_global_c_option_naming_commit_is_not_the_subcommand(self):
+        self.assertIsNone(self.hook.guard(
+            f"git -c commit.gpgsign=false -C {self.other} commit -m x", cwd=self.cecelia))
+
+    def test_each_commit_in_a_chain_is_judged_on_its_own_dir(self):
+        cmd = f"git -C {self.other} commit -m x && git -C {self.cecelia} commit -m y"
+        self.assertIsNotNone(self.hook.guard(cmd, cwd=self.other))
+
+    def test_unresolvable_dir_falls_back_to_session_cwd(self):
+        # Fail closed: when the text doesn't pin the dir, the session cwd is checked as if it
+        # were cecelia — the pre-scoping behaviour, marker not consulted.
+        for cmd in ('cd "$WT" && git commit -m x', "cd $(mktemp -d) && git commit -m x",
+                    "cd - && git commit -m x", f"git --git-dir={self.other}/.git commit -m x",
+                    f"GIT_DIR={self.other}/.git git commit -m x"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(self.hook.guard(cmd, cwd=self.cecelia))
+
+    def test_unresolvable_dir_from_a_non_repo_cwd_allows(self):
+        # Unchanged from before: the fallback only blocks when the session cwd is a repo.
+        self.assertIsNone(self.hook.guard('cd "$WT" && git commit -m x', cwd=str(self.root)))
 
 
 class CommitMsgHookTest(unittest.TestCase):
