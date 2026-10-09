@@ -1,13 +1,31 @@
 # Guide runs — an agent follows one in-app guide, you review what it hands back
 
-**Status:** in progress (2026-10-06) — P1 built (`cause` on a run record's `bad` section verdict: API, GUI, MCP);
+**Status:** **parked** (2026-10-09) — P1 built (`cause` on a run record's `bad` section verdict: API, GUI, MCP);
 P2 built (run reviews to the weekly judge; `agent` causes listed, not matched); P3 `pixi run guide-run`
-built. Checkpoints open: P1's marks, P2 in `judge-review`, one reviewed intravital run.
+built and run (intravital, discovery on/off, 2026-10-09). No timer is scheduled. See [Parked](#parked-2026-10-09).
 Reframes the app-tier runs of
 [`AGENT_OVERNIGHT_PLAN.md`](AGENT_OVERNIGHT_PLAN.md) P4b. Builds on the run record and section
 verdicts of [`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md) (P1, P1b, P2, P4), whose P3 score
 this replaces. The brief that asked the question:
 [`docs/archive/agent-runs-scope-prompt.md`](../archive/agent-runs-scope-prompt.md).
+
+## Parked (2026-10-09)
+
+**What the runs showed.** The 2026-10-05/06 runs each surfaced platform bugs (about ten fixed). The
+2026-10-09 discovery on/off pair (one run per arm, ~$4 each without the why turn) surfaced none; only
+agent behaviour differed:
+- **on** acted on "not photon-limited": no denoising, cellpose per cell type, gates on marker intensity.
+- **off** smoothed inside cellpose, merged all types into one label set, gated on shape only.
+- neither went back to Cleanup after segmenting — which supports
+  [`CLEANUP_FACTS_PLAN.md`](CLEANUP_FACTS_PLAN.md).
+
+**Why parked.** The yield per run has dropped to behaviour differences that n=1 can't separate from
+noise (~3 runs per arm, ~$24, plus review time). The remaining limits — segmentation (~9 cells per
+frame) and speeds (21–27 µm/min vs 8–21 reference) — are platform and algorithm work, not something a
+run measures.
+
+**Restart when** Cleanup facts P1–P3 ship, or segmentation changes: one on/off pair
+(`pixi run guide-run intravital-timelapse --discovery on`, then `off`) checks the change reaches the agent.
 
 ## Goal
 
