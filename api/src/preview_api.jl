@@ -180,17 +180,35 @@ function api_preview_start(body_bytes::Vector{UInt8})
     200, JSON3.write((; alive = ready, starting = _preview_starting[], port = PREVIEW_PORT))
 end
 
+# `task_dir` normalised, when it is an image's meta dir — `{projects_dir}/{projectUid}/1/{imageUid}` with
+# a `ccid.json` — else `nothing`. The cleanup path's only input is this client string, and the worker
+# deletes preview stores under it, so it must name a place a preview could have been written.
+function _preview_task_dir(task_dir::AbstractString)::Union{Nothing,String}
+    isempty(task_dir) && return nothing
+    root  = normpath(abspath(projects_dir()))
+    td    = normpath(abspath(task_dir))
+    parts = try splitpath(relpath(td, root)) catch; return nothing end   # e.g. another drive
+    (length(parts) == 3 && !any(==(".."), parts)) || return nothing
+    proj_dir = joinpath(root, parts[1])
+    meta = obj_meta_dir(proj_dir, parts[3])
+    (meta == joinpath(root, parts...) && isfile(state_file(proj_dir, parts[3]))) ? meta : nothing
+end
+
 # ── POST /api/preview/stop ────────────────────────────────────────────────────
 # Toggle-off: sweep the preview labels store on disk, then stop the worker. Stopping is the ONLY
 # thing that releases the VRAM a warm cellpose model holds, which is why this is a real user action
 # and not just cleanup.
 function api_preview_stop(body_bytes::Vector{UInt8})
     data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch; Dict{String,Any}(); end
-    task_dir = _wstr(data, "taskDir")
+    # The worker deletes every `*__preview*` store under `{taskDir}/labels/` and `{taskDir}/`, so the
+    # client's path is only honoured when it IS an image meta dir in the projects dir. Anything else
+    # skips the sweep (a later run wipes its own store on entry) — the worker is still stopped,
+    # because that is what frees the VRAM.
+    task_dir = _preview_task_dir(_wstr(data, "taskDir"))
 
     # sweep first — if stopping the worker throws, the browser is not left with a preview slab route
     # pointing at debris
-    if !isempty(task_dir)
+    if task_dir !== nothing
         try
             _with_preview() do
                 w = _preview()
@@ -223,6 +241,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
     project_uid = _wstr(data, "projectUid")
     image_uid   = _wstr(data, "imageUid")
     value_name  = _wstr(data, "valueName", VERSIONED_DEFAULT_VAL)
+    # the worker removes and rewrites `{taskDir}/labels/{vn}__preview.ome.zarr` — one path component
+    (bad = _value_name_400(value_name)) === nothing || return bad
     params      = get(data, "params", nothing)
     region      = get(data, "region", nothing)
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
@@ -255,6 +275,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
     isnothing(filename) &&
         return 404, JSON3.write((; error = "No filepath registered (valueName=$in_value_name). Run a conversion task first."))
     wanted = joinpath(proj_dir, "0", image_uid, string(filename))
+    # Where the worker writes the scratch store: the image's meta dir, DERIVED here rather than taken
+    # from the body's `taskDir` (which only says a viewer is open). It is the same dir the viewer meta
+    # route reported as `taskDir` and the one the `preview=1` slab routes read back from.
+    task_dir = obj_meta_dir(proj_dir, image_uid)
     _same_store(wanted, open_zarr_path) ||
         # The message is the frontend's TOOLTIP DETAIL — the short amber label comes from `code`
         # (frontend `ERROR_SHORT`), so this carries the two concrete names instead of restating the
@@ -303,7 +327,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
         _with_preview() do
             w = _preview()
             w === nothing && error("preview worker is not running")
-            send(w, preview_request(open_zarr_path, open_task_dir, params, region;
+            send(w, preview_request(open_zarr_path, task_dir, params, region;
                                     value_name = value_name,
                                     fun_name = _wstr(data, "funName"),
                                     channel_names = chan_names))
