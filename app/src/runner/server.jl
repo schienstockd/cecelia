@@ -20,7 +20,13 @@
 # What does NOT live here: chains (Phase 2 — the executor moves with them), background jobs (D8 — they
 # stay in the app), and the task preview (D7 — it must never queue behind a full run).
 
-const RUNNER_PORT = 7657
+# Which Cecelia a runner belongs to. Several users can run Cecelia on one machine (app/src/ports.jl),
+# and a runner executes whatever is submitted with ITS user's file access — so the client sends its
+# config dir on every control POST and a runner refuses one that is not its own. Reported on /ping too,
+# so `runner_launch!` can say plainly that it found someone else's runner.
+const RUNNER_OWNER_HEADER = "X-Cecelia-Config-Dir"
+_runner_foreign_caller(req::HTTP.Request)::Bool =
+    (d = HTTP.header(req, RUNNER_OWNER_HEADER, ""); !isempty(d) && d != config_dir())
 
 # Bumped whenever an ADOPTED older runner would answer differently — a changed reply shape, a changed
 # route set, OR a bug fixed inside the runner. Same behavioural rule as `PREVIEW_PROTOCOL`, and for the
@@ -190,7 +196,7 @@ const _RUNNER_COMMIT     = Ref("")
 # The port ACTUALLY bound, not the constant. `api/runner.jl` honours CECELIA_RUNNER_PORT, so reporting
 # `RUNNER_PORT` was a lie whenever it was overridden — /ping answered on 7697 and said 7657, which is
 # precisely the field a client would use to find it.
-const _RUNNER_BOUND_PORT = Ref(RUNNER_PORT)
+const _RUNNER_BOUND_PORT = Ref(0)
 
 # Through `git_probe`, not a hand-rolled shell-out: a `git` call gets ONE spelling here, with the
 # stderr redirect in it by construction. The four inline copies this replaces were what printed
@@ -208,7 +214,8 @@ runner_identity()::Dict{String,Any} = Dict{String,Any}(
     "uptimeSeconds" => round(Int, time() - _RUNNER_STARTED_AT[]),
     "threads"       => Threads.nthreads(),
     "chainRuns"     => runner_chain_claims(),
-    "projectsDir"   => projects_dir())
+    "projectsDir"   => projects_dir(),
+    "configDir"     => config_dir())
 
 # ── Life span: the runner must not outlive its REASON ─────────────────────────
 #
@@ -388,6 +395,9 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
                                      seq    = log_ring_seq(_runner_log_ring),
                                      ringId = log_ring_id(_runner_log_ring)))
         elseif req.method == "POST"
+            # `ok = false` is the existing "a live runner said no" answer: the caller runs it in-process.
+            _runner_foreign_caller(req) &&
+                return _json(200, (; ok = false, error = "this task runner belongs to another Cecelia user"))
             route == "/submit"       && return _runner_submit(body_bytes)
             route == "/cancel"       && return _runner_cancel(body_bytes)
             route == "/submit-chain" && return _runner_submit_chain(body_bytes)
@@ -428,7 +438,7 @@ function _runner_stream(stream::HTTP.Stream)
 end
 
 """
-    runner_serve(; port = RUNNER_PORT, host = "127.0.0.1")
+    runner_serve(; port = service_port(:runner), host = "127.0.0.1")
 
 Bind and serve until killed. **Blocks** — this is the runner process's whole job.
 
@@ -437,7 +447,7 @@ surface runs arbitrary registered tasks with the user's project data. `host` is 
 than a constant so a remote target has somewhere to land (Phase 4) — but a non-loopback bind must not
 ship without authentication. See docs/todo/TASK_RUNNER_PLAN.md → *HPC*, constraint 2.
 """
-function runner_serve(; port::Int = RUNNER_PORT, host::AbstractString = "127.0.0.1")
+function runner_serve(; port::Int = service_port(:runner), host::AbstractString = "127.0.0.1")
     _RUNNER_STARTED_AT[]  = time()
     _RUNNER_COMMIT[]      = _runner_git_short()
     _RUNNER_BOUND_PORT[]  = port

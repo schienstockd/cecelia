@@ -31,12 +31,12 @@ export const SERVER_LOG_SOURCES = ['backend', 'preview', 'runner', 'notebooks'] 
  */
 export const LOG_GROUPS: { value: LogGroup; label: string; tip: string; quiet?: boolean }[] = [
   { value: 'app',       label: 'App',       tip: 'This browser UI — actions, fetch failures, render errors' },
-  { value: 'backend',   label: 'Backend',   tip: 'The Julia server (:8080)' },
+  { value: 'backend',   label: 'Backend',   tip: 'The Julia server' },
   { value: 'tasks',     label: 'Tasks',     tip: 'Task and chain runs' },
   { value: 'viewer',    label: 'Viewer',    tip: 'Opening images — GPU, geometry, load failures' },
-  { value: 'preview',   label: 'Preview',   tip: 'Task-preview worker (:7656) — errors always show',  quiet: true },
-  { value: 'runner',    label: 'Runner',    tip: 'Detached task runner (:7657) — errors always show', quiet: true },
-  { value: 'notebooks', label: 'Notebooks', tip: 'Pluto server (:7660) — errors always show',         quiet: true },
+  { value: 'preview',   label: 'Preview',   tip: 'Task-preview worker — errors always show', quiet: true },
+  { value: 'runner',    label: 'Runner',    tip: 'Detached task runner — errors always show', quiet: true },
+  { value: 'notebooks', label: 'Notebooks', tip: 'Pluto server — errors always show', quiet: true },
 ]
 
 /** The groups shown until the user says otherwise. */

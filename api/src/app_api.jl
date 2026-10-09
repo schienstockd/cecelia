@@ -55,8 +55,8 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
     # belt-and-suspenders: also free the child ports by force, covering a child we only ADOPTED or
     # that outlived a crash (no process handle to close!) — so shutdown/restart never leaves a zombie
     # on :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
-    try; Cecelia._kill_listeners_on_port(Cecelia.PREVIEW_PORT); catch; end
-    try; Cecelia._kill_listeners_on_port(NOTEBOOKS_PORT);       catch; end
+    try; Cecelia._kill_listeners_on_port(service_port(:preview));   catch; end
+    try; Cecelia._kill_listeners_on_port(service_port(:notebooks)); catch; end
     # …and the task runner, but ONLY on the routes that mean "stop everything". A restart leaving it
     # alive is not an oversight to be tidied up later — it is the feature.
     stop_runner && try; Cecelia.runner_stop!(_RUNNER); catch; end

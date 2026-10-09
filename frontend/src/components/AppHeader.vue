@@ -41,7 +41,7 @@ const statusLabel: Record<string, string> = {
 }
 const statusTip: Record<string, string> = {
   connected:    'Julia backend is running and reachable.',
-  connecting:   'Attempting to connect to Julia backend on port 8080.',
+  connecting:   'Attempting to connect to the Julia backend.',
   disconnected: 'Not connected. Check that the Julia server is running (pixi run dev).',
   error:        'WebSocket error. See the console below for details.',
 }
