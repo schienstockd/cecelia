@@ -1287,10 +1287,12 @@ function onChainsUpdated(data: Record<string, unknown>) {
 onMounted(() => ws.on('chains_updated', onChainsUpdated))
 onUnmounted(() => ws.off('chains_updated', onChainsUpdated))
 
-// onActivated fires when KeepAlive restores the component. Retry loading defs
-// if the first mount failed (server wasn't ready yet).
+// onActivated fires when KeepAlive restores the component. Re-read the defs every time, not only
+// when the first mount failed: their model pickers are resolved server-side from the vault
+// (`optionsFrom`), so a model trained or renamed since the page first mounted was missing from a
+// node's select until a reload. Same fix as `useTaskDefs`; the route costs ~5 ms.
 onActivated(async () => {
-  if (!allTaskDefs.value.length) await loadAllTaskDefs()
+  await loadAllTaskDefs()
   // Same retry for pools — without it a fetch that failed once (backend still starting) left the
   // Resource pool picker with only its inherit option, i.e. apparently frozen, until a page reload.
   if (!pools.value.length) await loadPools()

@@ -335,6 +335,9 @@ describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 
   // reads this and wants to reset the budget lower, either the schema shrinks (shorter
   // pop paths / names) or the density cap for the augmented layer moves down from 32.
   //
+  // 2026-10-07: tile pops gained `layer` (every segmentation's pops are counted) → ~680 KB. Spelling
+  // the segmentation + pop type out on every tile pop instead measured ~800 KB.
+  //
   // Ratchet at 700 KB — comfortably above the measured 640 KB, room for one small future
   // field (~50 KB) before it fires. Not the plan's original 500 KB soft budget — that
   // needs revisiting alongside this test if it's the number to hold to.
@@ -360,16 +363,16 @@ describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 
       },
       segCount: 42,
       pops: [
-        { path: '/live/tnaive',    name: 'T naive',   count: 5 },
-        { path: '/live/tmem',      name: 'T mem',     count: 3 },
-        { path: '/live/treg',      name: 'T reg',     count: 2 },
-        { path: '/live/dendritic', name: 'Dendritic', count: 4 },
+        { path: '/live/tnaive',    name: 'T naive',   count: 5, layer: 0 },
+        { path: '/live/tmem',      name: 'T mem',     count: 3, layer: 0 },
+        { path: '/live/treg',      name: 'T reg',     count: 2, layer: 0 },
+        { path: '/live/dendritic', name: 'Dendritic', count: 4, layer: 0 },
       ],
       tracks: { count: 7, meanDuration: 42.5, meanSpeed: 1.234 },
     }))
     const sourceRun = {
       segCount: { valueName: 'default', labelsVersion: 'v2' },
-      pops:     { valueName: 'default', popType: 'flow', gatingMtime: '1698765432.123' },
+      pops:     [{ valueName: 'default', popType: 'flow', gatingMtime: '1698765432.123' }],
       tracks:   { valueName: 'default', labelsVersion: 'v2' },
       channels: { valueName: 'default', imageVersion: 'v1', level: 0 },
     }

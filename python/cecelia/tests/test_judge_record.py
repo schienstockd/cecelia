@@ -119,6 +119,26 @@ class RenderTest(_Fixture):
         self.assertIn("$2.90 · bug sweep $0.40 · verify $2.00 · rules $0.50", md)
         self.assertIn("needs 3 different sessions", md)
 
+    def test_parked_bugs_render_apart_and_the_backlog_shows_its_trend(self):
+        guard = {"verdict": "guard", "date": "2026-10-05", "effect": "no caller passes None",
+                 "trigger": "a caller passing None"}
+        record = self.build(bugs=[_bug("B1"), _bug("B2", status="parked", verify=guard),
+                                  _bug("B3", status="unjudged")])
+        record["run"]["backlog_last"] = 64
+        md = self.rec.render_markdown(record)
+        self.assertIn("1 open · 1 unjudged · 1 parked", md)
+        self.assertNotIn("### B2", md)
+        self.assertIn("### Parked", md)
+        self.assertIn("- B2 · `a.py:3` · `fanout-b2` — no caller passes None Live once: a caller passing None", md)
+        self.assertIn("| Backlog | 1 waiting for the judge (last pass 64) |", md)
+        self.assertEqual(self.rec.validate(record), [])
+
+    def test_a_landed_fix_verify_dismissed_counts_as_confirmed(self):
+        fix = [{"commit": "abcdef0123", "subject": "fix"}]
+        bugs = [_bug("B1", status="dismissed", fix_landed=fix), _bug("B2", status="gone", fix_landed=fix),
+                _bug("B3", fix_landed=fix)]
+        self.assertEqual(self.rec.landed_counts(bugs), (3, 2))
+
     def test_a_record_without_tokens_says_so(self):
         self.assertIn("| Tokens | not recorded |", self.rec.render_markdown(self.build()))
 

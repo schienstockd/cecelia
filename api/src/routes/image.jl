@@ -551,6 +551,8 @@ function api_qc_cohort(req::HTTP.Request)
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
     _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = get(q, "valueName", "")
+    # joined onto each image's qc/ dir to read — keep it one path component
+    isempty(vn_param) || (bad = _value_name_400(vn_param)) === nothing || return bad
     run_param = get(q, "run", "")   # clustering: restrict to one run's value_names (see cohort_runs)
     thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
     set = _cohort_set(project_uid, set_uid)
@@ -750,6 +752,9 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
     _has_cohort_answer(fun_name) || return _no_cohort_metrics(fun_name)
     vn_param = _wstr(body, :valueName)
+    # joined onto the set's cohort/ dir AND each image's qc/ dir, then written (`cohort_qc!`) — a vn
+    # with a separator would put the sidecar anywhere on disk
+    isempty(vn_param) || (bad = _value_name_400(vn_param)) === nothing || return bad
     run_param = _wstr(body, :run)   # clustering: check only this run's value_names (see cohort_runs)
     tv  = get(body, :threshold, nothing)
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD

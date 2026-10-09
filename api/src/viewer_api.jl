@@ -372,6 +372,9 @@ function api_viewer_meta(req::HTTP.Request)
                             # Per-store fingerprints (`store_rev`) — the viewer reloads on a task
                             # done only when the store it shows changed, not on every task.
                             storeRevs  = (; image = store_rev(zp), labels = label_revs),
+                            # the segmentations with a CELL TABLE — what populations, tracks and track
+                            # clusters draw from, mask or not (`_overlay_segmentations`, the movie's list)
+                            cellTableNames = try _overlay_segmentations(init_object(pu, iu)) catch; String[] end,
                             valueNames = value_names,
                             valueName = vnn === nothing ? active_vn : vn,
                             # The ACTIVE one regardless of what was asked for, so a picker can say
@@ -420,6 +423,17 @@ end
 # compression measured 195-208 ms per timepoint against a 330 ms read: a third of the server's time
 # spent shrinking bytes that a loopback socket moves for free. It is the remote-VM case that wants it,
 # and only the client knows which case it is in.
+# A slab refusal as a JSON `{error}` with a status, written before any body bytes (see the read-failure
+# note in `try_serve_slab`). Returns `true` — the request was handled.
+function _slab_json_error(stream::HTTP.Stream, status::Integer, msg)::Bool
+    HTTP.setstatus(stream, status)
+    HTTP.setheader(stream, "Content-Type" => "application/json")
+    HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
+    HTTP.startwrite(stream)
+    write(stream, JSON3.write((; error = msg)))
+    true
+end
+
 function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     q  = HTTP.queryparams(HTTP.URI(target))
     vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
@@ -439,11 +453,24 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # source image. `sourceChannel` is the source-image channel index the corrected store REPLACES —
     # the FE swaps channel-by-channel URLs based on which channels were corrected. `valueName` here
     # is the AF task's `outputValueName` (the write side's target version), NOT `c`.
+    #
+    # `live=1` retargets a labels request to the STAGING store a running segmentation is filling
+    # (`{vn}.zarr.partial` — see `segment_live_outputs`), for the viewer panel's "preview this run while
+    # it writes" row. A missing store is a 409, not a 404: the run promoting its store onto the final
+    # path between the panel's last task snapshot and this fetch is the ordinary end of a live preview,
+    # and 409 is what the viewer already reads as "no mask to draw" rather than as an error.
     preview_labels = get(q, "preview", "") == "1"
+    live_labels    = get(q, "live", "") == "1"
     preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
-        if preview_labels
+        if live_labels
+            zpl, lerr = live_labels_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+            if lerr !== nothing
+                return _slab_json_error(stream, 409, lerr)
+            end
+            zp = zpl
+        elseif preview_labels
             zpp, perr = preview_labels_store_path(
                 get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
             perr === nothing || return false
@@ -472,7 +499,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
             src_ch = tryparse(Int, get(q, "sourceChannel", ""))
             src_ch === nothing && return false
             af_vn = get(q, "previewValueName", "")
-            isempty(af_vn) && return false
+            Cecelia.value_name_problem(af_vn) === nothing || return false   # joined onto meta_dir
             zp = joinpath(meta_dir, "$(af_vn)__preview_af_ch$(src_ch).ome.zarr")
             # A stale AF store from a prior preview is swept on cleanup; a missing store here is a
             # normal race (the FE fetched before the worker's promote landed) and 404s so the
@@ -520,12 +547,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         label_level(zp, lvl_req)
     end
     if lvl_err !== nothing
-        HTTP.setstatus(stream, 409)
-        HTTP.setheader(stream, "Content-Type" => "application/json")
-        HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
-        HTTP.startwrite(stream)
-        write(stream, JSON3.write((; error = lvl_err)))
-        return true
+        return _slab_json_error(stream, 409, lvl_err)
     end
     enc = get(q, "enc", "identity")
 
@@ -550,12 +572,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     catch e
         msg = e isa BoundsError ? "t/c out of range for this image version" : sprint(showerror, e)
         @error "Slab read failed" zarr = zp t c exception = (e, catch_backtrace())
-        HTTP.setstatus(stream, e isa BoundsError ? 400 : 500)
-        HTTP.setheader(stream, "Content-Type" => "application/json")
-        HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
-        HTTP.startwrite(stream)
-        write(stream, JSON3.write((; error = msg)))
-        return true
+        return _slab_json_error(stream, e isa BoundsError ? 400 : 500, msg)
     end
 
     HTTP.setheader(stream, "Content-Type"   => "application/octet-stream")
@@ -643,8 +660,33 @@ function preview_labels_store_path(project_uid::AbstractString, image_uid::Abstr
     err === nothing || return (nothing, "image not found")
     vn = isempty(value_name) ? "" : String(value_name)
     isempty(vn) && return (nothing, "value_name required")
+    # joined onto the labels dir, so it must stay one path component
+    Cecelia.value_name_problem(vn) === nothing || return (nothing, "invalid value_name")
     zp = joinpath(img_labels_dir(img), "$(vn)__preview.ome.zarr")
     isdir(zp) || return (nothing, "preview labels store not on disk: $(basename(zp))")
+    (zp, nothing)
+end
+
+"""
+    live_labels_store_path(project_uid, image_uid, value_name) -> (path, err)
+
+The staging store a RUNNING segmentation is writing for `value_name` — the base type's store from
+`segment_label_files` plus the staging suffix, which is what `segment_live_outputs` declares. Built from
+the vn rather than taken from the client, so the query cannot name an arbitrary path; a vn carrying a
+path separator is refused for the same reason. Mid-run only level 0 exists (the pyramid is built at
+the end), which `store_pyramid_levels` already reports, so a zoomed-out view gets the usual 409.
+"""
+function live_labels_store_path(project_uid::AbstractString, image_uid::AbstractString,
+                                value_name::AbstractString)
+    vn = String(value_name)
+    # joined onto the labels dir, so it must stay one path component
+    Cecelia.value_name_problem(vn) === nothing || return (nothing, "invalid value_name")
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return (nothing, "image not found")
+    # the base type's store — `segment_label_files` is the one derivation of label filenames
+    base = first(Cecelia.segment_label_files(vn, nothing))
+    zp = Cecelia.staging_store_path(joinpath(img_labels_dir(img), base))
+    isdir(zp) || return (nothing, "no run is writing '$vn'")
     (zp, nothing)
 end
 
@@ -727,14 +769,7 @@ function api_viewer_overlays(req::HTTP.Request)
         # cells than the table holds is the kind of thing that reads as a segmentation problem.
         fin(v) = !ismissing(v) && isfinite(Float64(v))
         need = vcat(String["centroid_$a" for a in axes], has("centroid_t") ? ["centroid_t"] : String[])
-        keep = trues(n)
-        for c in need
-            v = df[!, c]
-            for i in 1:n
-                keep[i] = keep[i] && fin(v[i])
-            end
-        end
-        idx = findall(keep)
+        idx = findall(_finite_rows(df, need))
         col(name) = has(name) ? Float64[Float64(df[i, name]) for i in idx] : Float64[]
         # "" rather than null for "no track source": one sentinel the client tests, and it stays a
         # String[] so JSON3 serialises it without missings. Both "no track_id column" AND "column
@@ -794,15 +829,13 @@ function api_viewer_overlays(req::HTTP.Request)
         # stored as 0/1). Re-deriving that in TypeScript would be a second answer that disagrees with
         # the plots about the same column, which is the class of bug this codebase keeps paying for.
         # Reaching for the underscore name is deliberate: same rule, one owner.
-        kind = used === nothing ? nothing :
-               (Cecelia._is_categorical_col(df[!, used], used) ? "categorical" : "numeric")
         # The levels (categorical) or the range (numeric) the client maps onto — computed here for the
-        # same reason, so the legend agrees with what a plot of this column would show.
-        levels = kind == "categorical" ?
-                 sort(unique(Any[v for v in vals if v !== nothing]); by = string) : nothing
-        finite = kind == "numeric" ? Float64[Float64(v) for v in vals if v isa Real] : Float64[]
-        range_ = (kind == "numeric" && !isempty(finite)) ?
-                 [minimum(finite), maximum(finite)] : nothing
+        # same reason, so the legend agrees with what a plot of this column would show. The movie
+        # reads a column's scale through the same `_cb_scale_of`.
+        scale = used === nothing ? nothing : _cb_scale_of([vals], used; kind_col = df[!, used])
+        kind = scale === nothing ? nothing : (scale.continuous ? "numeric" : "categorical")
+        levels = kind == "categorical" ? scale.levels : nothing
+        range_ = (kind == "numeric" && scale.range !== nothing) ? collect(scale.range) : nothing
         200, JSON3.write((; nCells = length(idx), nDropped = n - length(idx),
                             axes, hasT = has("centroid_t"), cells, pops,
                             colourColumns = obs, colourBy = used, valueKind = kind,
@@ -1167,7 +1200,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
-    elseif isempty(ov_vn) && !(plan.trackclust || any(x -> !isempty(first(x)), plan.segs))
+    elseif isempty(ov_vn) && !(plan.trackclust || plan.pop_all_segs || any(x -> !isempty(first(x)), plan.segs))
         ov_diag["reason"] = "no valueName resolved"
     elseif !_has_label_props(img)
         ov_diag["reason"] = "image has no labelProps"
@@ -1235,9 +1268,9 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 all_cells_col = String(_ov(ov_raw, :allCellsColour, OVERLAY_GREY))
                 mask_contour_px = Int(_ov(ov_raw, :maskContourPx, mask_contour_px))
                 # colourBy / colourOverrides ride on `ov_raw` (from `_overlays_raw_from_config`) —
-                # nothing to do here beyond forwarding; the author does the actual recolour. Empty
-                # / missing → pop-derived colours (pre-P5.5 behaviour).
-                cb_raw_v = _ov(ov_raw, :colourBy, nothing)
+                # the mask takes them only when asked (`maskColourBy`: the batch's `colourLabels`);
+                # else the per-id palette, as the viewer's mask. Absent (a prebuilt dict) = asked.
+                cb_raw_v = Bool(_ov(ov_raw, :maskColourBy, true)) ? _ov(ov_raw, :colourBy, nothing) : nothing
                 mask_cb = (cb_raw_v isa AbstractString && !isempty(String(cb_raw_v))) ?
                             String(cb_raw_v) : nothing
                 co_raw_v = _ov(ov_raw, :colourOverrides, nothing)

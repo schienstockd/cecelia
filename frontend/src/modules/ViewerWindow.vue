@@ -83,12 +83,13 @@ import { screenToImagePx } from '../utils/viewerPick'
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
-  overlaysUrl, buildPointBuffer, timepointRange, overlaySummary,
+  overlaysUrl, buildPointBufferLayers, pooledColourScale, timepointRange, overlayLayersSummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
-  type OverlayPayload, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
+import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
 import {
@@ -708,19 +709,44 @@ const heldAfterCrash = ref(false)
 const heldProbe = ref('')
 
 /**
- * The h5ad-derived overlays (P3): population points now, tracks next.
+ * The population layers: one h5ad-derived overlays payload per (segmentation × cell pop type that is
+ * on). Only the MASK is one segmentation at a time; populations are not a property of the shown
+ * segmentation, so every segmentation's flow / clust / region pops draw together
+ * (docs/todo/VIEWER_OVERLAY_PARITY_PLAN.md).
  *
- * ONE fetch for the whole movie, because it is small — measured at 2.0 MB for the largest cell table in
- * the dev projects and 0.13 MB for the typical one, against 8.8 MB for a single 2D slab. So there is no
- * request path here that a scrub can spam, and nothing to keep coherent with the timepoint cache.
+ * Fetched whole, not per timepoint, because each is small — measured at 2.0 MB for the largest cell
+ * table in the dev projects and 0.13 MB for the typical one, against 8.8 MB for a single 2D slab. So
+ * there is no request path here that a scrub can spam, and nothing to keep coherent with the
+ * timepoint cache.
  */
-const overlays = ref<OverlayPayload | null>(null)
+interface PopLayer { vn: string; popType: string; payload: OverlayPayload }
+const popLayers = ref<PopLayer[]>([])
+/** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
+const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
+/** Whether a layer's pop is DRAWN — its eye (`hiddenPops`) is the only authority; the manager's
+ *  `show` only seeds it on fetch. The points, the capture snapshot and the landscape counts all ask
+ *  here, so they agree on what is on screen. */
+const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.vn, l.popType, path))
+/** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
+ *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a shown track-drawable
+ *  pop (`isTrack` OR `hasTracks` — MULTI_POP_TRACKING_PLAN.md Decision 2), its ribbon eye on. The
+ *  ribbons and the capture snapshot both ask here. */
+function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
+  const su = setUid.value
+  if (!su || !settings.getShowGatedTracks(su)) return false
+  if (settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(l.vn)) return false
+  return p.show && !!p.labels?.length && (p.isTrack || !!p.hasTracks) && !trackPopHidden(l.vn, p.path)
+}
+/** The Tracks-legend key of a pop's cell-track ribbon — `vn::path` for gating pops (the key the
+ *  colour overrides were always stored under), `vn::popType::path` for the other cell pop types; the
+ *  trackclust form is `vn::trackclust::path`. The movie builds the same keys (`viewer_overlay_closure`). */
+const trackPopSourceKey = (vn: string, popType: string, path: string) =>
+  popType === 'flow' ? `${vn}::${path}` : `${vn}::${popType}::${path}`
 const overlaysErr = ref('')
 /**
  * Track ribbons are drawn from PER-SEGMENTATION payloads, one per vn the panel's track eye has
- * ticked — so a user can see coastalFg's tracks AND coastalSm15's tracks at the same time, even
- * while the pop manager (which drives the main `overlays` fetch) is on a third, un-tracked vn like
- * `default`. Cached across renders so a repeat toggle is instant; refreshed when trackVisibility
+ * ticked — so a user can see coastalFg's tracks AND coastalSm15's tracks at the same time, whatever
+ * segmentation the pop manager is on. Cached across renders so a repeat toggle is instant; refreshed when trackVisibility
  * changes or the viewer is pinged for an overlay update. Viewer draws one Tracks layer per vn;
  * this is the WebGPU analogue.
  */
@@ -738,14 +764,11 @@ const trackSources = ref<MultiTrackResult['sources']>([])
 /** Speed range in µm per hop (Δt = 1 frame), or null when the mode isn't speed. Feeds the ramp
  *  legend under the Tracks control block, same shape as the point colour-by numeric scale. */
 const trackSpeedRange = ref<[number, number] | null>(null)
-/** Whether the panel has this vn's popType turned on. Mirrors the same read `loadOverlays` uses
- *  when it decides whether to clear the payload's pops, so the summary line and the pop list agree.
- *  Reactive: `gatingCurrent` changes when the pop manager switches popType, `_setPrefs` updates via
- *  the storage bridge whenever the panel toggles the icon. */
-const popsPanelOn = computed(() => {
-  const pt = gatingCurrent.value.popType || 'flow'
-  return setUid.value ? settings.getPopVisible(setUid.value, pt) : false
-})
+/** The cell pop types the panel has on — the ones `loadOverlays` fetches, for every segmentation.
+ *  Reactive through `_setPrefs`, which the storage bridge updates whenever the panel toggles an icon. */
+const shownPopTypes = computed(() =>
+  setUid.value ? CELL_POP_TYPES.filter(pt => settings.getPopVisible(setUid.value!, pt)) : [])
+const popsPanelOn = computed(() => shownPopTypes.value.length > 0)
 /** Track colour mode — persisted per set. Empty setUid = a viewer opened without a set context
  *  (rare); falls back to the default 'track'. */
 const trackColorMode = computed<'track' | 'speed' | 'solid' | 'pop'>({
@@ -770,6 +793,8 @@ function setTrackSourceColour(vn: string, hex: string) {
  * switch depending on the pop manager not depending on the segmentation being shown on the image".
  */
 const readGatingCurrent = () => readGatingCurrentFor(imageUid ?? '')
+/** The segmentations overlays draw from — every one with a cell table, mask or not. */
+const cellTableNames = () => meta.value?.cellTableNames ?? meta.value?.labelNames ?? []
 const gatingCurrent = ref(readGatingCurrent())
 
 /**
@@ -795,21 +820,22 @@ function toggleSelectMode() {
   selectModeActive.value = next
   try { localStorage.setItem('cc.viewerSelectMode', next ? 'select' : 'off') } catch { /* noop */ }
 }
-/** Populations the USER has hidden, by path. The server's own `show` flag is honoured separately, so a
- *  pop hidden in the population manager stays hidden here without a second source of truth. */
+/** Populations the USER has hidden, by `popKey`. Seeded from the server's `show` flag on every fetch, so
+ *  a pop hidden in the population manager stays hidden here without a second source of truth. */
 const hiddenPops = ref<Set<string>>(new Set())
 /**
  * Track-layer visibility hides a pop's RIBBONS separately from its POINTS. A user showing points for
  * `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing this into `hiddenPops` would
  * silently link the two, which the plan (MULTI_POP_TRACKING_PLAN.md Decision 5) rejects.
  *
- * PERSISTED per (imageUid × vn) via `settings.getTrackPopHidden` — the pop-manager ping fires
+ * Keyed by segmentation, then path. PERSISTED per (imageUid × vn) via `settings.getTrackPopHidden` — the pop-manager ping fires
  * `loadOverlays` on every gate write, so a transient-per-fetch set clobbered the hide within a second.
  * On refetch we RECONCILE (keep hides for pops still in the payload, drop stale), not reset. Unlike
  * `hiddenPops` (points) this set has NO server-side counterpart — `hasTracks` is data-eligibility, not
  * user intent — so a persisted user-intent overlay is safe from server clobbering.
  */
-const hiddenTrackPops = ref<Set<string>>(new Set())
+const hiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
+const trackPopHidden = (vn: string, path: string) => !!hiddenTrackPops.value.get(vn)?.has(path)
 /**
  * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
  * and write goes to the one store the panel already uses — the same image cannot then look different
@@ -846,7 +872,7 @@ watch(colourBy, () => { void loadOverlays() })
  * panel has more than one ticked, the first one wins deterministically. This is the visible
  * limitation the row hint below spells out.
  */
-/** The `labelName` the latest `reallocate()` started with — see the `labelName` watcher. */
+/** The `maskName` the latest `reallocate()` started with — see the `labelName` watcher. */
 let allocatedLabel: string | null = null
 /** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
 let allocatedBricks: boolean | null = null
@@ -856,6 +882,23 @@ function pickLabelName(names: string[]): string {
   return names.find(n => vis[n]) ?? ''
 }
 const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
+// The task preview's mask for THIS image, '' when none. It wins over the ticked mask while it exists:
+// a preview is "show me what these params do, here", and losing it under a ticked segmentation made it
+// look like it never ran. Clearing the preview falls back to the ticked one (`previewLabelsKey`).
+const previewVn = computed(() => {
+  const p = viewerStore.previewLabels
+  return p && p.imageUid === imageUid ? p.valueName : ''
+})
+// A running segmentation's store the user asked to watch from the viewer panel ("preview this run
+// while it writes") — read from the run's staging store, refetched on each re-stamp (`liveLabelsKey`).
+const liveVn = computed(() => {
+  const l = viewerStore.liveLabels
+  return l && l.imageUid === imageUid ? l.valueName : ''
+})
+const maskName = computed(() => previewVn.value || liveVn.value || labelName.value)
+// Session-only on/off for the mask on screen, so it can be compared against the signal it was drawn
+// from. Display state only — the mask stays loaded, so flipping it is a redraw, not a refetch.
+const maskHidden = ref(false)
 // A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
 // — so a change here has to `reallocate()` for the same reason a `<select>` did.
 //
@@ -867,7 +910,9 @@ const labelName = computed(() => pickLabelName(meta.value?.labelNames ?? []))
 // `allocatedLabel` guard: a meta refresh that flips `labelName` (a new segmentation becoming
 // known) already calls `reallocate()` itself, which reads the new name — the watcher's own
 // reallocate would be a second full reload of the same frame.
-watch(labelName, n => { if (starting.value || n === allocatedLabel) return; reallocate() })
+// Keyed on the DRAWN mask: ticking another segmentation while a preview/live mask wins changes nothing
+// on screen, so it must not reload the frame.
+watch(labelName, () => { if (starting.value || maskName.value === allocatedLabel) return; reallocate() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -926,7 +971,14 @@ const previewLabelsKey = computed(() => {
   const p = viewerStore.previewLabels
   return p && p.imageUid === imageUid ? p.updateId : 0
 })
-watch(previewLabelsKey, () => reallocate())
+// A fresh preview result is shown even if the last one was hidden — that is what was asked for.
+watch(previewLabelsKey, () => { maskHidden.value = false; reallocate() })
+// Same for the live store: every re-stamp means more frames are written, so reload the frame on screen.
+const liveLabelsKey = computed(() => {
+  const l = viewerStore.liveLabels
+  return l && l.imageUid === imageUid ? l.updateId : 0
+})
+watch(liveLabelsKey, () => reallocate())
 
 // P7.1: refetch whenever the AF preview for THIS image changes — a new AF run, a parameter edit or
 // a toggle-off. Every entry in the array shares one `updateId` (the store stamps them together), so
@@ -991,7 +1043,7 @@ const EMPTY_SEGMENTS: SegmentBuffer = {
 let segments: SegmentBuffer = EMPTY_SEGMENTS
 const pointCount = ref(0)
 const segCount = ref(0)
-const summary = computed(() => overlaySummary(overlays.value))
+const summary = computed(() => overlayLayersSummary(popLayers.value))
 /**
  * Ribbon-drawable pops from the current overlays payload — pops the Tracks section enumerates as
  * per-pop layer rows (swatch/name/count/eye), mirroring the Populations section. A pop qualifies
@@ -1000,12 +1052,20 @@ const summary = computed(() => overlaySummary(overlays.value))
  * across refetches. `count` is the pop's label count from the payload — a cell-level number that
  * matches what the Populations section shows for the same pop, so the two sections read the same.
  */
-const trackDrawablePops = computed(() => {
-  const pops = overlays.value?.pops ?? []
-  return pops.filter(p => p.show && p.labels?.length && (p.isTrack || p.hasTracks))
-             .map(p => ({ path: p.path, name: p.name, colour: p.colour, count: p.labels.length }))
-             .sort((a, b) => a.path.localeCompare(b.path))
-})
+const trackDrawablePops = computed(() =>
+  popLayers.value.flatMap(l => l.payload.pops
+    .filter(p => p.show && p.labels?.length && (p.isTrack || p.hasTracks))
+    .map(p => ({ vn: l.vn, path: p.path, key: popKey(l.vn, l.popType, p.path), name: p.name,
+                 colour: p.colour, count: p.labels.length })))
+    .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
+/** The population layers with something to list, for the Populations section — a segmentation
+ *  header above each group when more than one segmentation draws. */
+const listedPopLayers = computed(() => popLayers.value.filter(l => l.payload.pops.length > 0))
+const popLayerSegs = computed(() => new Set(listedPopLayers.value.map(l => l.vn)).size)
+const popLayerTypes = computed(() => new Set(listedPopLayers.value.map(l => l.popType)).size)
+/** The colour-by legend: the one scale every layer's points are shaded with (`pooledColourScale`,
+ *  as `buildPointBufferLayers`) — levels and range over every segmentation drawn. */
+const colourLegend = computed(() => pooledColourScale(popLayers.value.map(l => l.payload)))
 /** The ramp as a CSS gradient, from the same 256-entry lookup the points are shaded with — a legend
  *  built from a different set of stops would be a second answer about the same scale. */
 const rampStyle = computed(() => {
@@ -1487,8 +1547,7 @@ const frame = usePlotResize(canvas, () => {
   // has to be complete.
   // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
-  const showLabels = !!labelName.value || (!!viewerStore.previewLabels &&
-    viewerStore.previewLabels?.imageUid === imageUid)
+  const showLabels = !!maskName.value && !maskHidden.value
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
   // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
@@ -1586,28 +1645,27 @@ const frame = usePlotResize(canvas, () => {
  */
 function rebuildOverlays() {
   const r = renderer.value
-  points = buildPointBuffer(overlays.value, meta.value, hiddenPops.value, PALETTES.cecelia)
+  points = buildPointBufferLayers(popLayers.value.map(l => ({
+    payload: l.payload,
+    hidden: new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path)),
+  })), meta.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
-  // main `overlays` fetch. That way a user with the pop manager on a non-tracked vn (e.g. `default`)
-  // still sees ribbons for whichever tracked vns they have the "directions" eye on, and can show
-  // several vns at once — one Tracks layer per segmentation. P7 of
+  // population layers — one Tracks layer per segmentation, several at once. P7 of
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
   // Source list mixes THREE track kinds, in this order:
   //   1. Per-vn base tracks — from `trackPayloads`, the panel's "directions" eye per segmentation.
   //      Colour-cycled by track id (or per-source solid, or heat by speed — the mode picker).
-  //   2. Cell-track ribbons — one filtered payload per pop.show flow pop with
-  //      `isTrack || hasTracks`, from the POP MANAGER's active payload (`overlays.value`), not
-  //      the per-vn track eye. That is the authoring surface for populations, so a viewer with
-  //      the pop manager on vn A and no per-vn eye ticked still shows A's cell tracks. Gated by
+  //   2. Cell-track ribbons — one filtered payload per shown pop with `isTrack || hasTracks`, from
+  //      every population layer (`popLayers` — each segmentation × visible pop type), not the
+  //      per-vn track eye, so a segmentation with no eye ticked still shows its cells' tracks. Gated by
   //      `settings.getShowGatedTracks(setUid)` (setting key kept for continuity; the toggle
   //      label is "Show cell-track ribbons"). Distinct from "gated tracks" — a future
   //      track-poptype pop gated on TRACK measures; see docs/TRACKING.md → deferred 3d/3e.
-  //   3. Trackclust ribbons — from `trackclustPayloads[popManagerVn]`, gated by
+  //   3. Trackclust ribbons — from `trackclustPayloads` (every segmentation's), gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
-  const gatedOn = setUid.value ? settings.getShowGatedTracks(setUid.value) : false
   const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
@@ -1623,8 +1681,8 @@ function rebuildOverlays() {
   const hlVn = hlActive ? hl!.valueName : null
   // Track ids are per-vn — the same integer means different tracks in different segmentations —
   // so we ONLY narrow sources whose vn matches `hlVn`. For the per-vn base tracks that is the
-  // trackPayloads key; for cell-track and trackclust ribbons that is `popMgrVn`, since those
-  // come from the pop-manager payload for popMgrVn.
+  // trackPayloads key; for cell-track and trackclust ribbons it is the segmentation of the layer
+  // they come from.
   //
   // Was: only the per-vn base tracks source was narrowed. When the user also had the "Show
   // cell-track ribbons" (or the trackclust) toggle on, those additional ribbons kept rendering
@@ -1663,35 +1721,27 @@ function rebuildOverlays() {
     const p = narrowByHighlight(vn, payload, { allowFallback: true })
     if (p) sources.push({ vn, payload: p, colour: overrides[vn] })
   }
-  const popMgrPayload = overlays.value
-  const popMgrVn = gatingCurrent.value.valueName || popMgrPayload?.valueName || ''
-  // Same suppression rule as the per-vn plain ribbons above: when trackclust is drawing on
-  // popMgrVn, the flow-pop cell-track ribbons draw the SAME tracks over the top in a lump
-  // colour. Trackclust wins on specificity — it colours by cluster membership rather than by
-  // authoring gate — so the cell-track ribbons stand down. Trackclust off, or trackclust on
-  // but no pops for popMgrVn (empty payload → not cached) → cell-track ribbons render as before.
-  const suppressGatedForTrackclust = trackclustOn && popMgrVn && trackclustPayloads.value.has(popMgrVn)
-  if (gatedOn && popMgrPayload && popMgrVn && !suppressGatedForTrackclust) {
-    for (const pop of popMgrPayload.pops ?? []) {
-      // A pop is ribbon-drawable when it was TYPED as a track pop (`isTrack`) OR when its cells
-      // actually hold `track_id > 0` (`hasTracks`) — data OR type, either qualifies. Legacy servers
-      // omit `hasTracks`; the guard falls back to today's `isTrack`-only behaviour.
-      // See docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2.
-      if (!pop.show || !pop.labels?.length) continue
-      if (!(pop.isTrack || pop.hasTracks)) continue
-      if (hiddenTrackPops.value.has(pop.path)) continue
+  // Cell-track ribbons: every population layer's track-drawable pops — every segmentation, every pop
+  // type that is on, not just the pop manager's. Same suppression rule as the per-vn plain ribbons
+  // above: where trackclust is drawing on a segmentation, its cell-track ribbons draw the SAME tracks
+  // in a lump colour, so they stand down. Trackclust off, or no trackclust pops on that segmentation
+  // (empty payload → not cached) → the cell-track ribbons draw.
+  for (const layer of popLayers.value) {
+    const lvn = layer.vn
+    for (const pop of layer.payload.pops ?? []) {
+      if (!popRibbonDrawn(layer, pop)) continue
       // Compose label + track_source filters: keep cells in this pop's gate AND authored by
       // (or unattributed under) this pop. Without the second filter, a cell that's in /qc/test's
       // gate but whose track_id came from an earlier /qc/CD169- run drew the CD169- ribbon under
       // /qc/test's colour — the "tracks don't match the pop" bug. See
       // docs/todo/MULTI_POP_TRACKING_ORPHANS_PLAN.md + `filterPayloadByTrackSource`. Legacy
       // servers (no pop.uid or no cells.trackSource) fall back to labels-only.
-      const byLabels = filterPayloadByLabels(popMgrPayload, new Set(pop.labels))
+      const byLabels = filterPayloadByLabels(layer.payload, new Set(pop.labels))
       const filtered = pop.uid ? filterPayloadByTrackSource(byLabels, pop.uid) : byLabels
       if (!filtered.nCells) continue
-      const p = narrowByHighlight(popMgrVn, filtered, { allowFallback: false })
+      const p = narrowByHighlight(lvn, filtered, { allowFallback: false })
       if (!p) continue
-      const key = `${popMgrVn}::${pop.path}`
+      const key = trackPopSourceKey(lvn, layer.popType, pop.path)
       sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
                      popColour: pop.colour })
     }
@@ -1750,80 +1800,71 @@ function rebuildOverlays() {
 async function loadOverlays() {
   if (!projectUid || !imageUid) return
   overlaysErr.value = ''
-  try {
-    // NO `valueName` — deliberately. The window's `valueName` is an IMAGE VERSION (the zarr the pixels
-    // come from, e.g. "smoothed"); this route wants a labelProps key (a SEGMENTATION, e.g. "memTom").
-    // They are different namespaces that happen to share a parameter name, and sending one for the
-    // other resolves to the active segmentation by luck rather than by intent. The server picks the
-    // active one and says which in `valueName`, so the panel can report it. A segmentation PICKER is
-    // the next step — see the plan.
-    // Follow the pop manager's selection when it has published one. Empty strings fall back to the
-    // server defaults (`_resolve_vn` + popType=flow) — matches the pre-P5 behaviour for a viewer
-    // opened before the pop manager writes anything.
-    const gc = gatingCurrent.value
-    const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
-                                          valueName: gc.valueName, popType: gc.popType }),
-                            { cache: 'no-store' })
-    const p = await readJson<OverlayPayload>(res, 'Overlays')
-    // Two layers of ground truth act on the pops in the payload:
-    //   1. The panel's per-pop-TYPE gate ("Populations & tracks" icon row). If the popType the pop
-    //      manager is currently on (flow / clust / …) is toggled off in the panel, the whole family
-    //      is DROPPED from the overlays payload — not just hidden. The overlays panel then reads as
-    //      "no populations gated".
-    //      That is what the panel toggle promises: no pops at all, not "pops listed but invisible".
-    //   2. Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON.
-    //      The viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs.
-    //      Trying to preserve local eye state across refetches was worse: PopManager pings this window
-    //      on every write, so the override would be clobbered within a second anyway
-    //      ("the toggles for pops and tracks dont do anything").
-    // Empty `setUid` = a viewer opened without a set context (rare — export path). Default HIDDEN
-    // to match `settings.getPopVisible` (line 429) and the panel's own `popVisible` fallback (both
-    // false). Before this line defaulted to shown, which contradicted the panel — a viewer whose
-    // meta.setUid came back empty showed pop dots while every icon in the panel read as off
-    // Empty gating popType = the pop manager hasn't published yet; fall back to the server default
-    // (`flow`) — matches the pre-P5 assumption so the pop-family gate stays meaningful.
-    const currentPopType = gatingCurrent.value.popType || 'flow'
-    const popTypeOn = setUid.value ? settings.getPopVisible(setUid.value, currentPopType) : false
-    if (!popTypeOn) p.pops = []
-    hiddenPops.value = new Set((p.pops ?? []).filter(x => !x.show).map(x => x.path))
-    // Track-layer hides are user intent, not server state — reconcile against the fresh payload
-    // instead of resetting. Uid-aware remap (docs/todo/POP_SYNC_PLAN.md): a RENAME carries the hide
-    // to the pop's new path (its uid is preserved by `rename_pop!`), a DELETE drops it, first fetch
-    // falls back to path-presence for legacy payloads with no uid. See `hiddenTrackPops` docstring
-    // for why persistence is the right shape here.
-    const gcVn = gatingCurrent.value.valueName || ''
-    const persisted = imageUid ? settings.getTrackPopHidden(imageUid, gcVn) : new Set<string>()
-    const prevPopIdents: PopIdent[] = (overlays.value?.pops ?? []).map(x => ({ key: x.path, uid: x.uid ?? '' }))
-    const nextPopIdents: PopIdent[] = (p.pops ?? []).map(x => ({ key: x.path, uid: x.uid ?? '' }))
-    const remap = makePopPathRemap(prevPopIdents, nextPopIdents)
-    const nextHidden = new Set(remapPopKeys([...persisted], remap))
-    hiddenTrackPops.value = nextHidden
-    const same = persisted.size === nextHidden.size &&
-                 [...persisted].every(k => nextHidden.has(k))
-    if (imageUid && !same) {
-      settings.setTrackPopHidden(imageUid, gcVn, nextHidden)
+  // Every segmentation × every cell pop type the panel has on. The pop manager's selection is what it
+  // EDITS, not what the viewer draws — populations are not a property of the shown segmentation.
+  // With no segmentation list yet (meta not loaded), the pop manager's is the one we know of.
+  // A pop type the panel has off is not fetched at all: that is what the toggle promises — no pops of
+  // that type, not "pops listed but invisible". Empty `setUid` (a viewer opened without a set
+  // context — rare, export path) = every type off, matching `settings.getPopVisible`'s default.
+  const vns = cellTableNames().length ? cellTableNames()
+    : (gatingCurrent.value.valueName ? [gatingCurrent.value.valueName] : [])
+  const wanted = vns.flatMap(vn => shownPopTypes.value.map(popType => ({ vn, popType })))
+  const errors: string[] = []
+  const fetched = await Promise.all(wanted.map(async ({ vn, popType }): Promise<PopLayer | null> => {
+    try {
+      const res = await fetch(overlaysUrl({ projectUid, imageUid, colourBy: colourBy.value,
+                                            valueName: vn, popType }), { cache: 'no-store' })
+      return { vn, popType, payload: await readJson<OverlayPayload>(res, 'Overlays') }
+    } catch (e) {
+      // One segmentation without a cell table must not take the others down.
+      errors.push(`${vn}: ${e instanceof Error ? e.message : String(e)}`)
+      return null
     }
-    overlays.value = p
-    rebuildOverlays()
-  } catch (e) {
-    // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
-    // cell table is a normal state for an unsegmented image.
-    overlaysErr.value = e instanceof Error ? e.message : String(e)
+  }))
+  const next = fetched.filter((l): l is PopLayer => l !== null)
+  // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
+  // cell table is a normal state for an unsegmented image. Said only when nothing came back.
+  if (!next.length && errors.length) overlaysErr.value = errors[0]
+  // Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON. The
+  // viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs. Trying to
+  // preserve local eye state across refetches was worse: PopManager pings this window on every
+  // write, so the override would be clobbered within a second anyway ("the toggles for pops and
+  // tracks dont do anything").
+  hiddenPops.value = new Set(next.flatMap(l => l.payload.pops.filter(x => !x.show)
+                                                       .map(x => popKey(l.vn, l.popType, x.path))))
+  // Track-layer hides are user intent, not server state — reconcile against the fresh payloads
+  // instead of resetting, per segmentation. Uid-aware remap (docs/todo/POP_SYNC_PLAN.md): a RENAME
+  // carries the hide to the pop's new path (its uid is preserved by `rename_pop!`), a DELETE drops it,
+  // first fetch falls back to path-presence for legacy payloads with no uid. See `hiddenTrackPops`
+  // docstring for why persistence is the right shape here.
+  const idents = (layers: PopLayer[], vn: string): PopIdent[] => layers.filter(l => l.vn === vn)
+    .flatMap(l => l.payload.pops.map(x => ({ key: x.path, uid: x.uid ?? '' })))
+  const hiddenNext = new Map<string, Set<string>>()
+  for (const vn of new Set(next.map(l => l.vn))) {
+    const persisted = settings.getTrackPopHidden(imageUid, vn)
+    const remap = makePopPathRemap(idents(popLayers.value, vn), idents(next, vn))
+    const kept = new Set(remapPopKeys([...persisted], remap))
+    hiddenNext.set(vn, kept)
+    const same = persisted.size === kept.size && [...persisted].every(k => kept.has(k))
+    if (!same) settings.setTrackPopHidden(imageUid, vn, kept)
   }
+  hiddenTrackPops.value = hiddenNext
+  popLayers.value = next
+  rebuildOverlays()
 }
 
-function togglePop(path: string) {
+function togglePop(key: string) {
   const next = new Set(hiddenPops.value)
-  next.has(path) ? next.delete(path) : next.add(path)
+  next.has(key) ? next.delete(key) : next.add(key)
   hiddenPops.value = next
   rebuildOverlays()
 }
 // Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
-function toggleTrackPop(path: string) {
-  const next = new Set(hiddenTrackPops.value)
-  next.has(path) ? next.delete(path) : next.add(path)
-  hiddenTrackPops.value = next
-  if (imageUid) settings.setTrackPopHidden(imageUid, gatingCurrent.value.valueName || '', next)
+function toggleTrackPop(vn: string, path: string) {
+  const mine = new Set(hiddenTrackPops.value.get(vn) ?? [])
+  mine.has(path) ? mine.delete(path) : mine.add(path)
+  hiddenTrackPops.value = new Map(hiddenTrackPops.value).set(vn, mine)
+  if (imageUid) settings.setTrackPopHidden(imageUid, vn, mine)
   rebuildOverlays()
 }
 
@@ -1840,7 +1881,7 @@ function toggleTrackPop(path: string) {
  */
 async function loadTracks() {
   if (!projectUid || !imageUid) return
-  const names = meta.value?.labelNames ?? []
+  const names = cellTableNames()
   const vis = settings.getTrackVisibility(imageUid, names)
   const wantVns = names.filter(vn => vis[vn])
   // Drop cached vns no longer ticked
@@ -2025,11 +2066,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
     // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
     // cannot label this response with a different segmentation's name.
-    // P7: prefer the preview's vn when a task-preview is showing labels for THIS image and the user
-    // has not picked one — a first-time segmentation preview must render even without a picker entry.
-    const previewMatches = !!viewerStore.previewLabels &&
-      viewerStore.previewLabels?.imageUid === imageUid
-    const vn = labelName.value || (previewMatches ? viewerStore.previewLabels!.valueName : '')
+    // P7: the preview's vn when a task-preview is showing labels for THIS image (see `maskName`) — a
+    // first-time segmentation preview must render even without a picker entry.
+    const vn = maskName.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         // P7.1: when an AF preview run has this channel in its corrected set, retarget its slab onto
@@ -2072,9 +2111,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
         // current image dims by construction (the worker uses the open image), so bypass this
         // check for previews.
-        if (!(!!viewerStore.previewLabels &&
-              viewerStore.previewLabels?.valueName === vn &&
-              viewerStore.previewLabels?.imageUid === imageUid)
+        if (vn !== previewVn.value && vn !== liveVn.value
             && m.labelDims && labelDimsMismatch(m, vn)) {
           return null
         }
@@ -2085,15 +2122,16 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
-        const usePreview = !!viewerStore.previewLabels &&
-          viewerStore.previewLabels?.valueName === vn &&
-          viewerStore.previewLabels?.imageUid === imageUid
+        const usePreview = vn === previewVn.value
+        const useLive = !usePreview && vn === liveVn.value
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
           preview: usePreview,
           // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
           // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
           previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
+          live: useLive,
+          liveId: useLive ? viewerStore.liveLabels?.updateId : undefined,
           // Same cache-buster for the durable labels store's own rewrites.
           rev: cacheClearRev.value || undefined,
         })
@@ -2901,6 +2939,9 @@ const MASK_ZOOM_IN = 'This mask has no level at this zoom — zoom in to pick ce
 async function pickCellAt(e: PointerEvent, pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
+  // A preview or live mask on screen has no cell table to pick from, and picking under the ticked
+  // store would outline whichever preview cell happens to share the id. Nothing to pick until it's gone.
+  if (previewVn.value || liveVn.value) return
   const rect = c.getBoundingClientRect()
   const cx = e.clientX - rect.left
   const cy = e.clientY - rect.top
@@ -2957,6 +2998,7 @@ async function pickRectAt(rect: { x: number; y: number; w: number; h: number },
                           pickMode: 'replace' | 'add' | 'toggle' = 'replace') {
   const c = canvas.value, m = meta.value
   if (!c || !m) return
+  if (previewVn.value || liveVn.value) return   // same as `pickCellAt`
   const lvl = slabLevel.value
   const nx = renderNX.value, ny = renderNY.value
   const p1 = screenToImagePx(rect.x,          rect.y,          c.clientWidth, c.clientHeight, cam.value, m, nx, ny)
@@ -3731,7 +3773,7 @@ async function ensureRenderer() {
 async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
-  allocatedLabel = labelName.value
+  allocatedLabel = maskName.value
   allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
@@ -3782,8 +3824,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     if (!r) return
     // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
     // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
-    const wantLabels = !!labelName.value || (!!viewerStore.previewLabels &&
-      viewerStore.previewLabels?.imageUid === imageUid)
+    const wantLabels = !!maskName.value
     // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
@@ -3803,11 +3844,17 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     r.setBrickSource?.({
       projectUid, imageUid,
       valueName: valueName.value || undefined,
-      // Fire label brick fetches when the picker or the preview marks THIS image as showing
-      // labels — same predicate `wantLabels` above uses to decide whether the texture is
-      // allocated. `undefined` when no mask is picked, which lets the brick loader skip label
+      // Fire label brick fetches for the mask on screen (`maskName`: preview, live store or the
+      // ticked one) — same predicate `wantLabels` above uses to decide whether the texture is
+      // allocated. `undefined` when no mask is shown, which lets the brick loader skip label
       // requests entirely on projects with no segmentation.
-      labelName: wantLabels ? (labelName.value || undefined) : undefined,
+      labelName: wantLabels ? maskName.value : undefined,
+      labelStore: !wantLabels ? undefined
+        : maskName.value === previewVn.value ? 'preview'
+        : maskName.value === liveVn.value ? 'live' : undefined,
+      labelStoreId: !wantLabels ? undefined
+        : maskName.value === previewVn.value ? viewerStore.previewLabels?.updateId
+        : maskName.value === liveVn.value ? viewerStore.liveLabels?.updateId : undefined,
       // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
       // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
       // `setBrickSource`'s compare treats a rev change as a full source switch and drops the
@@ -4634,24 +4681,13 @@ interface ViewerCapture {
   const layers: Record<string, { visible: true; colour?: string | null }> = {}
   // Track sources → the colour their tails are drawn in (null = by track / speed, no one swatch).
   const drawn = new Map(trackSources.value.map(s => [s.vn, s.drawn]))
-  // Point pops for the active gating pop_type (matches viewer's own gate on `getPopVisible`). The
-  // vn comes from the OVERLAY payload's own `valueName` (the vn its pops were authored on) — not
-  // from `valueName.value` (the image RENDER version), which is unrelated: a viewer can render
-  // `default` while the pop manager is authored on `flowTom`, and using the render vn would key the
-  // layer names to a segmentation with no pops → server resolves nothing → empty Populations row
-  // in the strip legend.
-  const popType = overlays.value?.popType || gatingCurrent.value.popType || 'flow'
-  const popsShown = setUid.value ? settings.getPopVisible(setUid.value, popType) : false
-  if (popsShown) {
-    const popVn = overlays.value?.valueName || gatingCurrent.value.valueName || valueName.value || ''
-    for (const p of (overlays.value?.pops ?? [])) {
-      if (!p.show || hiddenPops.value.has(p.path)) continue
-      layers[`(${popType}) (${popVn}) ${p.path}`] = { visible: true }
-      if ((p.isTrack || p.hasTracks) && setUid.value
-          && settings.getShowGatedTracks(setUid.value)
-          && !hiddenTrackPops.value.has(p.path)) {
-        layers[`(track) (${popVn}) Tracks ${p.path}`] = { visible: true }
-      }
+  // Point pops: every population layer the viewer draws — each (segmentation, pop type) — keyed to
+  // the segmentation its pops were authored on, which is what the server resolves the layer names
+  // against. A cell-track ribbon layer alongside when the ribbon drew (gated chip, its eye on).
+  for (const l of popLayers.value) {
+    for (const p of l.payload.pops) {
+      if (popDrawn(l, p.path)) layers[`(${l.popType}) (${l.vn}) ${p.path}`] = { visible: true }
+      if (popRibbonDrawn(l, p)) layers[`(track) (${l.vn}) Tracks ${p.path}`] = { visible: true }
     }
   }
   // Whole-segmentation tracks: one per vn that DREW (its "directions" eye on, not stood down for
@@ -4886,17 +4922,17 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
         .filter(ch => ch.visible)
         .map(({ index, name }) => ({ index, name }))
       const labelsVn = labelName.value    // '' when the labels layer is off — backend skips segCount
-      // Pops snapshot: the pop manager's currently-authored (vn, popType), gated by whether
-      // the panel has that popType toggled visible. `resolve_pops` on the backend applies
-      // per-pop `.show` — we only pass "is the layer on"; the individual-pop filter lives
-      // there. Empty popVn/popType ⇒ backend skips pops entirely.
-      const popVn = popsPanelOn.value ? (gatingCurrent.value.valueName || '') : ''
-      const popType = popsPanelOn.value ? (gatingCurrent.value.popType || '') : ''
+      // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
+      // and the pops in it whose eye is on — so the tile counts are the dots on screen.
+      const popLayersSnap = popLayers.value.map(l => ({
+        valueName: l.vn, popType: l.popType,
+        paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
+      })).filter(l => l.paths.length > 0)
       // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
       // "one at a time" discipline `labelName` uses for the labels layer — the backend
       // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
       const trackVn = (() => {
-        const names = meta.value?.labelNames ?? []
+        const names = cellTableNames()
         if (!imageUid || !names.length) return ''
         const vis = settings.getTrackVisibility(imageUid, names)
         return names.find(n => vis[n]) ?? ''
@@ -4904,7 +4940,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       // At least one augmentable dimension has to be on before we ask; if the frontend has
       // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
       const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
-                         (!!popVn && !!popType) || !!trackVn
+                         popLayersSnap.length > 0 || !!trackVn
       if (anyAugment && projectUid) {
         // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
         // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
@@ -4933,14 +4969,14 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
               cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
               channels: visibleChannels,
               ...(labelsVn ? { labelsValueName: labelsVn } : {}),
-              ...(popVn && popType ? { popValueName: popVn, popType } : {}),
+              ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
               ...(trackVn ? { tracksValueName: trackVn } : {}),
             }),
           })
           if (cRes.ok) {
             const cJson = await cRes.json() as {
               tiles?: AugmentTile[],
-              sourceRun?: Record<string, Record<string, string | number>>,
+              sourceRun?: LandscapeResult['sourceRun'],
               viewport?: { renderMode: string; zLo?: number; zHi?: number },
             }
             if (Array.isArray(cJson.tiles)) {
@@ -5855,15 +5891,23 @@ onUnmounted(() => {
                Empty state: same shape as Populations and Tracks — one-liner "No X shown — action in
                the viewer panel" using .cc-empty-inline, so the three sections read coherently
 . -->
-          <template v-if="labelName">
+          <template v-if="maskName">
+            <!-- The task preview's mask counts as shown too: it gets the same opacity + outline, and
+                 the toggle flips whichever mask is on screen so it can be checked against the signal. -->
             <div class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Mask</span>
-              <span class="cc-fs-2xs vw-grow" :title="labelName">{{ labelName }}</span>
+              <span class="cc-fs-2xs vw-grow" :title="maskName">
+                {{ maskName }}<span v-if="previewVn || liveVn" class="cc-muted">
+                  · {{ previewVn ? 'preview' : 'live' }}</span>
+              </span>
+              <CcToggle :model-value="!maskHidden" @update:model-value="v => { maskHidden = !v; frame.redraw() }"
+                        aria-label="Show mask"
+                        v-tooltip.bottom="maskHidden ? 'Show the mask' : 'Hide the mask'" />
             </div>
             <!-- More than one ticked: only the first renders because the compositor's bind group has
                  one label slot. Multi-mask rendering is a later phase; naming the limit here is the
                  alternative to silently dropping the others. -->
-            <div v-if="shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
+            <div v-if="!previewVn && !liveVn && shownLabelCount > 1" class="cc-muted-warn cc-fs-3xs">
               {{ shownLabelCount }} segmentations ticked — showing {{ labelName }} only
             </div>
             <div class="cc-row cc-row-tight">
@@ -5916,16 +5960,22 @@ onUnmounted(() => {
               {{ summary.cells }} cells, no populations gated
             </div>
             <template v-else>
-              <div v-for="pop in overlays!.pops" :key="pop.path" class="cc-row cc-row-tight">
-                <span class="vw-swatch" :style="{ background: pop.colour }" />
-                <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
-                <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
-                <CcToggle
-                  :model-value="!hiddenPops.has(pop.path)"
-                  v-tooltip.bottom="'Draw this population over the image'"
-                  :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(pop.path)"
-                />
-              </div>
+              <template v-for="l in listedPopLayers" :key="l.vn + '::' + l.popType">
+                <!-- one group per (segmentation, pop type); named only when there is more than one -->
+                <div v-if="popLayerSegs > 1 || popLayerTypes > 1" class="cc-muted cc-fs-3xs">
+                  {{ popLayerSegs > 1 ? l.vn : '' }}{{ popLayerSegs > 1 && popLayerTypes > 1 ? ' · ' : '' }}{{ popLayerTypes > 1 ? l.popType : '' }}
+                </div>
+                <div v-for="pop in l.payload.pops" :key="pop.path" class="cc-row cc-row-tight">
+                  <span class="vw-swatch" :style="{ background: pop.colour }" />
+                  <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+                  <span class="cc-readout cc-fs-3xs">{{ pop.labels.length }}</span>
+                  <CcToggle
+                    :model-value="!hiddenPops.has(popKey(l.vn, l.popType, pop.path))"
+                    v-tooltip.bottom="'Draw this population over the image'"
+                    :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(popKey(l.vn, l.popType, pop.path))"
+                  />
+                </div>
+              </template>
               <!-- No colour-by picker: locked decision 3. The CHOICE lives in ViewerPanel's Colour by
                    section, keyed per set. This row shows what it resolved to; the legend below shows
                    its scale. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P4. -->
@@ -5937,15 +5987,15 @@ onUnmounted(() => {
               </div>
               <!-- The legend says which SCALE is in use, because that is the server's decision (the same
                    rule the plots use) and the two kinds look nothing alike. -->
-              <div v-if="overlays!.colourBy && overlays!.valueKind === 'numeric'"
+              <div v-if="colourLegend?.kind === 'numeric'"
                    class="cc-row cc-row-tight cc-fs-3xs">
-                <span class="cc-muted">{{ (overlays!.valueRange?.[0] ?? 0).toPrecision(3) }}</span>
+                <span class="cc-muted">{{ (colourLegend.range?.[0] ?? 0).toPrecision(3) }}</span>
                 <span class="vw-ramp" :style="rampStyle" />
-                <span class="cc-muted">{{ (overlays!.valueRange?.[1] ?? 1).toPrecision(3) }}</span>
+                <span class="cc-muted">{{ (colourLegend.range?.[1] ?? 1).toPrecision(3) }}</span>
               </div>
-              <div v-else-if="overlays!.colourBy && overlays!.valueKind === 'categorical'"
+              <div v-else-if="colourLegend?.kind === 'categorical'"
                    class="cc-muted cc-fs-3xs">
-                {{ overlays!.valueLevels?.length ?? 0 }} levels
+                {{ colourLegend.levels.length }} levels
               </div>
 
               <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
@@ -5976,7 +6026,7 @@ onUnmounted(() => {
                 <span class="cc-readout cc-fs-2xs vw-num">{{ pointBorder }}</span>
               </div>
               <div class="cc-muted cc-fs-3xs">
-                <template v-if="overlays!.valueName">{{ overlays!.valueName }} · </template>
+                <template v-if="popLayerSegs === 1">{{ listedPopLayers[0]?.vn }} · </template>
                 {{ pointCount }} drawn · {{ summary.cells }} cells
                 <template v-if="summary.dropped">· {{ summary.dropped }} without a centroid</template>
                 <template v-if="singlePlane">· this plane only</template>
@@ -5997,14 +6047,14 @@ onUnmounted(() => {
                  mirroring the Populations section above (swatch/name/count/toggle). The eye hides
                  the ribbon layer WITHOUT touching the point layer's eye — `hiddenTrackPops` is a
                  separate set from `hiddenPops` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
-            <div v-for="pop in trackDrawablePops" :key="pop.path" class="cc-row cc-row-tight">
+            <div v-for="pop in trackDrawablePops" :key="pop.key" class="cc-row cc-row-tight">
               <span class="vw-swatch" :style="{ background: pop.colour }" />
-              <span class="cc-fs-2xs vw-pop-name" :title="pop.path">{{ pop.name }}</span>
+              <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
               <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
               <CcToggle
-                :model-value="!hiddenTrackPops.has(pop.path)"
+                :model-value="!trackPopHidden(pop.vn, pop.path)"
                 v-tooltip.bottom="'Draw this population as a track ribbon layer'"
-                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop.path)"
+                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop.vn, pop.path)"
               />
             </div>
             <div class="cc-row cc-row-tight">

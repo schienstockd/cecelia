@@ -67,6 +67,11 @@ export interface BrickSource {
    *  same slot. Undefined = no labels shown; the placeholder texture stays bound and the
    *  shader's label path is skipped via `p.lab.x == 0`. */
   labelName?: string
+  /** Read the mask from the task preview's scratch store or a running task's staging store instead of
+   *  the registered one, with that store's stamp as the cache-buster. Part of the source identity: a
+   *  new stamp means new bytes under the same URL shape, so the atlas is dropped. */
+  labelStore?: 'preview' | 'live'
+  labelStoreId?: number
   /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
    *  overwriting `ccidSmoothed.ome.zarr`). Handled the same way as a projectUid/imageUid/valueName
    *  change: any diff drops the atlas. Undefined defaults to no rev, so callers that don't opt in
@@ -1895,6 +1900,8 @@ export async function createBrickVolumeRenderer(
         && source.imageUid === next.imageUid
         && source.valueName === next.valueName
         && source.labelName === next.labelName
+        && source.labelStore === next.labelStore
+        && source.labelStoreId === next.labelStoreId
         && (source.rev ?? '') === (next.rev ?? '')
       if (same) { source = next; return }
       source = next

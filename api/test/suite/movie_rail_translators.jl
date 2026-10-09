@@ -129,12 +129,25 @@
             "flowTom" => Dict{String,Any}("visible" => true,  "colour" => "#AA1F5E"),
             "cpSAM"   => Dict{String,Any}("visible" => false, "colour" => "#ff6b6b"))), false)
     @test ov_map["trackSegs"] == [Dict{String,Any}("valueName" => "flowTom", "colour" => "#AA1F5E")]
-    # An entry with no colour falls back to the neutral grey, so a caller can send half-filled
-    # entries without breaking the multi-source path.
+    # An entry with no colour keeps none — the viewer's default for that source (the palette by its
+    # position, `_colour_hops`), not a grey the viewer never draws.
     ov_ts_default = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
         "trackSources" => [Dict("valueName" => "cpSAM")]), false)
-    @test ov_ts_default["trackSegs"][1]["colour"] == "#9ca3af"
+    @test ov_ts_default["trackSegs"][1]["colour"] == ""
+    # the viewer look's pop layers, ribbon hides per segmentation and Tracks-legend colours pass through
+    ov_look = _overlays_raw_from_config(Dict{String,Any}(
+        "showPopulations" => true, "popTypes" => ["flow", "clust"], "popAllSegmentations" => true,
+        "hiddenTrackPops" => Dict("OTI" => ["/a"]), "trackSourceColours" => Dict("OTI::/a" => "#123456")), false)
+    @test ov_look["popTypes"] == ["flow", "clust"] && ov_look["popAllSegmentations"] === true
+    @test ov_look["hiddenTrackPops"] == Dict{String,Any}("OTI" => ["/a"])
+    @test ov_look["trackSourceColours"] == Dict("OTI::/a" => "#123456")
+    plan = overlay_track_plan(ov_look)
+    @test plan.pop_all_segs && plan.pop_types == ["flow", "clust"]
+    @test plan.hidden_track_pops == Dict("OTI" => ["/a"]) && plan.track_colours["OTI::/a"] == "#123456"
+    # the mask takes colour-by only under `colourLabels` (the viewer's mask is the per-id palette)
+    @test _overlays_raw_from_config(Dict{String,Any}("colourBy" => "c"), true)["maskColourBy"] === false
+    @test _overlays_raw_from_config(Dict{String,Any}("colourBy" => "c", "colourLabels" => true), true)["maskColourBy"] === true
     # A blank valueName is dropped (can't render tracks against no seg) — never sent to the author.
     ov_ts_blank = _overlays_raw_from_config(Dict{String,Any}(
         "showTracks" => true,
@@ -429,9 +442,15 @@ end
     @test [r["label"] for r in _track_source_items(look)] == ["flowTom tracks"]
     # every source hidden: none drawn, none listed
     @test isempty(_track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackSources => Any[])))
-    # "pop" paints a source in its colour too
+    # "pop" paints a segmentation's tracks in the palette's colour for its position, as the viewer
+    # (its Tracks-legend colour is the "solid" one)
     @test _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "pop",
-                                               :trackSources => srcs))[2]["colour"] == "#00ccff"
+                                               :trackSources => srcs))[2]["colour"] == rgb_to_hex(CECELIA_TRACK_PALETTE[2])
+    # "solid" with no colour picked: the palette by position, else the Tracks-legend colour
+    nocol = [Dict("valueName" => "flowTom"), Dict("valueName" => "cpSAM")]
+    @test [r["colour"] for r in _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "solid",
+              :trackSources => nocol, :trackSourceColours => Dict("cpSAM" => "#abcdef")))] ==
+          [rgb_to_hex(CECELIA_TRACK_PALETTE[1]), "#abcdef"]
     # no sources: the one segmentation's tracks — "solid" is the palette's first colour, "pop" the grey
     @test _track_source_items(Dict{Symbol,Any}(:showTracks => true, :trackColourMode => "solid")) ==
           [Dict{String,Any}("label" => "tracks", "colour" => rgb_to_hex(CECELIA_TRACK_PALETTE[1]))]

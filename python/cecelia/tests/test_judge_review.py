@@ -144,10 +144,11 @@ class WorkTest(_ReviewFixture):
         fix = {"verdict": "fix", "date": "2026-10-05", "effect": "drops the tail", "evidence": "b.py:9"}
         self.record = self.build(bugs=[_bug("B1", verify=fix), _bug("B2"), _bug("B3", status="gone")])
 
-    def test_live_bugs_lead_the_work_list_and_closed_ones_are_not_on_it(self):
+    def test_live_bugs_lead_the_work_list_and_closed_or_guard_ones_are_not_on_it(self):
+        # an open guard bug: a record from before parking
         self.record["bugs"].append(_bug("B4", verify={"verdict": "guard", "trigger": "a map-shaped input"}))
         self.assertEqual([(i["kind"], i["ref"]) for i in self.rv.pending(self.record, [])],
-                         [("work", "B1"), ("work", "B4"), ("work", "B2")])
+                         [("work", "B1"), ("work", "B2")])
 
     def test_fix_now_briefs_a_session_and_is_not_offered_again(self):
         n, out = self.queue("f")

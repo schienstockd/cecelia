@@ -399,3 +399,60 @@ end
         @test n(paired) == 2 * n(alone)
     end
 end
+
+@testset "API: ribbon colours — one rule with the viewer (`_colour_hops` ≡ buildMultiTrackBuffer)" begin
+    pal = CECELIA_TRACK_PALETTE; n = length(pal)
+    c = RGB{N0f8}(0, 0, 0)
+    # a tracker gap is not drawn across, as in the viewer
+    hist = Dict((7, c, "") => [(0, 0.0, 0.0, 0.0), (1, 1.0, 0.0, 0.0), (3, 2.0, 0.0, 0.0), (4, 4.0, 0.0, 0.0)])
+    hops = _hops_of(hist)
+    @test sort([h[1] for h in hops]) == [1, 4]
+    @test isempty(_hops_of(hist; group = "/other"))
+    # by track: the track's own id, whatever source it is in
+    one = (; hops, solid = nothing, pop = nothing)
+    empty = (; hops = _Hop[], solid = nothing, pop = nothing)
+    col(segs) = unique(c for b in values(segs) for c in b.colour)
+    @test col(_colour_hops([one], "track")) == [pal[7 % n + 1]]
+    @test col(_colour_hops([empty, one], "track")) == [pal[7 % n + 1]]
+    # solid / pop: the source's own colour, else the palette's by position
+    @test col(_colour_hops([empty, one], "solid")) == [pal[2]]
+    @test col(_colour_hops([(; hops, solid = RGB{N0f8}(1, 0, 0), pop = nothing)], "solid")) == [RGB{N0f8}(1, 0, 0)]
+    @test col(_colour_hops([(; hops, solid = RGB{N0f8}(1, 0, 0), pop = RGB{N0f8}(0, 1, 0))], "pop")) == [RGB{N0f8}(0, 1, 0)]
+    # speed: µm hop length, over EVERY source's range — the slow source's hop is the ramp's low end
+    slow = (; hops = [(1, 1, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, c)], solid = nothing, pop = nothing)
+    fast = (; hops = [(1, 2, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, c)], solid = nothing, pop = nothing)
+    segs = _colour_hops([slow, fast], "speed")
+    @test Set(segs[1].colour) == Set([_heat_ramp(0.0), _heat_ramp(1.0)])
+    # ... and z counts, in µm (`um` = µm per voxel, x y z)
+    upz = (; hops = [(1, 3, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, c)], solid = nothing, pop = nothing)
+    @test _colour_hops([slow, upz], "speed"; um = (1.0, 1.0, 3.0))[1].colour[2] == _heat_ramp(1.0)
+end
+
+@testset "API: colour-by — one scale over every segmentation (`_cb_scale_of` ≡ pooledColourScale)" begin
+    DataFrame = Cecelia.DataFrames.DataFrame   # the api project does not depend on DataFrames itself
+    df(v) = DataFrame(var"live.cell.speed" = v)
+    a = df([0.5, 5.5]); b = df([5.5, 20.5])   # fractional: a quantity (`_is_categorical_col`)
+    s = _cb_scale_of([a[!, 1], b[!, 1]], "live.cell.speed")
+    @test s.continuous && s.range == (0.5, 20.5)
+    # the same value is one colour on both segmentations — per table, A's 5 would be the ramp's top
+    ra = _cb_prepare(a, "live.cell.speed", nothing, nothing; scale = s)
+    rb = _cb_prepare(b, "live.cell.speed", nothing, nothing; scale = s)
+    d = RGB{N0f8}(0, 0, 0)
+    @test ra(d, 2) == rb(d, 1) == _heat_ramp(0.25)
+    @test _cb_prepare(a, "live.cell.speed", nothing, nothing)(d, 2) == _heat_ramp(1.0)
+    # a zero-width range shades at the middle, as the viewer's `colourByValue`
+    @test _cb_prepare(df([4.25, 4.25]), "live.cell.speed", nothing, nothing)(d, 1) == _heat_ramp(0.5)
+    # categorical: the levels' union, so a level keeps its palette slot across tables
+    ca = DataFrame(var"clusters.leiden" = ["2", "3"]); cb = DataFrame(var"clusters.leiden" = ["1", "2"])
+    sc = _cb_scale_of([ca[!, 1], cb[!, 1]], "clusters.leiden")
+    @test !sc.continuous && Set(sc.levels) == Set(["1", "2", "3"])
+    @test _cb_prepare(ca, "clusters.leiden", nothing, nothing; scale = sc)(d, 1) ==
+          _cb_prepare(cb, "clusters.leiden", nothing, nothing; scale = sc)(d, 2)
+    @test sc.levels == ["1", "2", "3"]   # sorted by `string`, as the viewer payload's
+    # a table storing the codes as numbers does not pool with text ones (no sort across types)
+    mixed = _cb_scale_of(Any[["2", "3"], [1, 2]], "clusters.leiden")
+    @test mixed.levels == ["2", "3"]
+    # "no value" entries (the payload's `nothing`) are not levels, and no finite value = no range
+    @test _cb_scale_of(Any[Any["a", nothing]], "x").levels == ["a"]
+    @test _cb_scale_of(Any[Any[nothing, 0.5]], "x"; kind_col = [0.5, 1.5]).range == (0.5, 0.5)
+end

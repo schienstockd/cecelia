@@ -2020,10 +2020,12 @@ def get_capture(project_uid: str, capture_id: str) -> list:
             "high mean on Tcells, low mean on SHG" even when its category is `bright-textured`.
           • `tiles[i].segCount` — how many segmented objects have a centroid inside this tile
             at the shown t. The "5 vs 12 cells" answer a downsampled composite can't give.
-          • `tiles[i].pops = [{path, name, count}]` — which populations occupy this tile at
-            the shown t, one entry per pop with count > 0. `path` is the pop manager's
-            canonical id ("/live/tnaive"); use it when calling `mark_cells` back on member
-            cells. Populations with 0 count in a tile are ABSENT — infer nothing from a
+          • `tiles[i].pops = [{path, name, count, layer}]` — which populations occupy this tile at
+            the shown t, one entry per pop with count > 0, from every segmentation and pop type the
+            viewer draws. `layer` indexes `sourceRun.pops` — that entry's `valueName` is the
+            segmentation (older captures have no `layer` and count only the pop manager's one set).
+            To mark member cells, call `mark_cells` with that `valueName` as `value_name`; `path`
+            names the pop within it. Populations with 0 count in a tile are ABSENT — infer nothing from a
             missing entry beyond "not visible here or not toggled on".
           • `tiles[i].tracks = {count, meanDuration?, meanSpeed?}` — per-tile tracks summary.
             `count` = distinct tracks with a cell in this tile at t; `meanDuration` = mean
@@ -2040,7 +2042,8 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     A v2 landscape may also carry `sourceRun` at the landscape (not tile) level — a per-field
     bag naming the run/vn/version that produced each augmented field:
       • `sourceRun.segCount = {valueName, labelsVersion}` — the label_props vn + resolved vN
-      • `sourceRun.pops     = {valueName, popType, gatingMtime}` — gating file's on-disk mtime
+      • `sourceRun.pops     = [{valueName, popType, gatingMtime}]` — one per pop layer counted, with
+        its gating file's on-disk mtime (older captures: a single object)
       • `sourceRun.tracks   = {valueName, labelsVersion}`
       • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
     Use these to answer "which run produced this number", or to compare two capture envelopes
@@ -2079,7 +2082,8 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     leaves this tool, so the whole envelope fits under Claude Code's tool-result token cap. The
     stored envelope on disk keeps the fat form (Kiwi + frontend read that); the shape you see:
       • `landscape.channelNames: [str, …]` — union of channel names across tiles, first-seen order.
-      • `landscape.popMap: {"<key>": {path, name}}` — union of visible-pop (path, name) tuples.
+      • `landscape.popMap: {"<key>": {path, name, valueName?, popType?}}` — union of the visible pops, each
+        resolved to its segmentation + pop type (a tile pop's `layer`).
       • Per-tile `channels: [mean, snr, mean, snr, …]` positional to `channelNames`
         (channel `i`'s stats live at indices `2i, 2i+1`).
       • Per-tile `pops: [[popKey, count], …]` — `popKey` is the string index into `popMap`.

@@ -113,9 +113,9 @@ export interface ObserverTerminal {
 
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
 export const observerApi = {
-  /** Availability (drives the disabled-with-why UI), the model allow-list, and whether the user's own
+  /** Availability (drives the disabled-with-why UI) + where the CLI was found, the model allow-list, and whether the user's own
    *  terminal is set up. Never throws → unavailable on error. */
-  status: async (): Promise<{ available: boolean; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal }> => {
+  status: async (): Promise<{ available: boolean; cliPath?: string; models?: string[]; defaultModel?: string; mcpConfigPath?: string; terminal?: ObserverTerminal }> => {
     try {
       const res = await fetch('/api/observer/status')
       return res.ok ? await res.json() : { available: false }

@@ -163,6 +163,67 @@ end
     @test Cecelia.agent_bin_path("") === nothing
     @test Cecelia.agent_bin_path("cecelia-definitely-no-such-binary-42") === nothing
 
+    # ── Off-PATH install dirs ────────────────────────────────────────────────────────────
+    # A fresh Ubuntu box: the native installer creates ~/.local/bin AFTER login, and ~/.profile only
+    # adds it to PATH if it existed at login — so the desktop session (and the app it launches, and
+    # every backend restart) never sees `claude`. Settings said "not detected" with it installed.
+    mktempdir() do home
+        fake_env = Dict{String,String}()
+        dirs = Cecelia._agent_bin_fallback_dirs(home; iswin = false, isapple = false, env = fake_env)
+        @test dirs[1] == joinpath(home, ".local", "bin")                   # native installer first
+        @test dirs[2] == joinpath(home, ".claude", "local")
+        @test joinpath(home, ".npm-global", "bin") in dirs
+        @test dirs[end] == "/usr/local/bin"
+        @test !("/opt/homebrew/bin" in dirs)
+        @test "/opt/homebrew/bin" in Cecelia._agent_bin_fallback_dirs(home; iswin = false, isapple = true,
+                                                                       env = fake_env)
+        # npm prefix from ~/.npmrc (`npm config set prefix`), and nvm versions newest-first
+        write(joinpath(home, ".npmrc"), "fund=false\nprefix = \"/opt/npm-pfx\"\n")
+        for v in ("v18.2.0", "v22.11.0", "v9.0.0", "not-a-version")
+            mkpath(joinpath(home, ".nvm", "versions", "node", v, "bin"))
+        end
+        dirs = Cecelia._agent_bin_fallback_dirs(home; iswin = false, isapple = false, env = fake_env)
+        @test joinpath("/opt/npm-pfx", "bin") in dirs                     # host separator
+        nvm = filter(d -> occursin(".nvm", d), dirs)
+        @test nvm == [joinpath(home, ".nvm", "versions", "node", v, "bin")
+                      for v in ("v22.11.0", "v18.2.0", "v9.0.0")]
+        # Windows: npm's prefix IS the bin dir; %APPDATA%\npm is where `npm i -g` lands
+        wdirs = Cecelia._agent_bin_fallback_dirs(home; iswin = true, isapple = false,
+                                                 env = Dict("APPDATA" => "C:/Users/x/AppData/Roaming"))
+        @test wdirs[1] == joinpath(home, ".local", "bin")
+        @test joinpath("C:/Users/x/AppData/Roaming", "npm") in wdirs
+        @test "/opt/npm-pfx" in wdirs && !("/usr/local/bin" in wdirs)
+    end
+
+    # The live resolver end to end: a fake `claude` in a temp HOME's ~/.local/bin, PATH stripped of
+    # it — found anyway, as the symlink-preserving path (the native installer's ~/.local/bin/claude is a
+    # symlink into a versioned dir that changes on every update).
+    if !Sys.iswindows()
+        mktempdir() do home
+            bin = mkpath(joinpath(home, ".local", "bin"))
+            fake = joinpath(bin, "cecelia-fake-claude")
+            write(fake, "#!/bin/sh\necho fake\n"); chmod(fake, 0o755)
+            withenv("HOME" => home, "PATH" => "/usr/bin:/bin", "NVM_BIN" => nothing,
+                    "NVM_DIR" => nothing, "NPM_CONFIG_PREFIX" => nothing, "npm_config_prefix" => nothing) do
+                @test Sys.which("cecelia-fake-claude") === nothing           # the bug: not on PATH
+                @test Cecelia.agent_bin_path("cecelia-fake-claude") == fake  # …but found
+                # spawned with its own dir first on PATH (nvm's `node` lives beside an npm `claude`)
+                c = Cecelia._agent_spawn_cmd(`cecelia-fake-claude --version`)
+                @test c.exec[1] == fake
+                @test any(==("PATH=$(bin):/usr/bin:/bin"), c.env)
+                @test readchomp(c) == "fake"
+                # an explicit path is never substituted, even when the name exists in a fallback dir
+                @test Cecelia.agent_bin_path(joinpath(home, "elsewhere", "cecelia-fake-claude")) === nothing
+                @test Cecelia.agent_bin_path("~/.local/bin/cecelia-fake-claude") == fake
+            end
+        end
+    end
+    # a CLI already on PATH spawns with PATH untouched
+    @test Cecelia._agent_spawn_path("/usr/bin/claude", "/usr/local/bin:/usr/bin/", false) === nothing
+    @test Cecelia._agent_spawn_path("/h/.local/bin/claude", "/usr/bin", false) == "/h/.local/bin:/usr/bin"
+    @test Cecelia._agent_spawn_path("C:\\U\\.local\\bin\\claude.exe", "C:\\u\\.LOCAL\\bin\\;C:\\W", true) === nothing
+    @test Cecelia._agent_spawn_path(nothing, "/usr/bin", false) === nothing
+
     # Is the user's own terminal set up? Drives which button Kiwi's Terminal row shows, so the
     # three states must be exact. A stale entry (another checkout's python, or no/!matching
     # CECELIA_API_URL) is NOT "set up" — it fails silently in the user's session.

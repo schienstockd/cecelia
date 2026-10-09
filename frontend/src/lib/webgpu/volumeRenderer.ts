@@ -214,6 +214,9 @@ export interface VolumeRenderer {
      *  the label atlas at the same slot. Undefined = no label fetches; the placeholder texture
      *  stays bound and the shader skips the label path via `p.lab.x == 0`. */
     labelName?: string
+    /** Preview / live store for the mask — see `BrickSource.labelStore`. */
+    labelStore?: 'preview' | 'live'
+    labelStoreId?: number
     /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
      *  overwriting `ccidSmoothed.ome.zarr`). Treated as an identity component: any diff drops the
      *  atlas the same way a valueName change does. See `viewerCacheClearChannel.ts`. */

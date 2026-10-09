@@ -9,6 +9,8 @@ import { observerApi } from '../utils/serviceApi'
 // (capture_context! digests + QC). A store so the state survives the v-if'd panels closing.
 export const useObserverStore = defineStore('observer', () => {
   const available = ref(false)
+  // Where the backend found the CLI ('' = not found) — PATH or an installer's own dir (agent_bin_path).
+  const cliPath = ref('')
   const models = ref<string[]>(['haiku', 'sonnet', 'opus'])
   // Path of the MCP config Cecelia generates for the spawned agent — reused verbatim as the
   // `claude --mcp-config <path>` line the info panel offers if one-click setup fails.
@@ -21,6 +23,7 @@ export const useObserverStore = defineStore('observer', () => {
   async function refresh() {
     const s = await observerApi.status()
     available.value = s.available
+    cliPath.value = s.cliPath ?? ''
     if (s.models?.length) models.value = s.models
     if (s.mcpConfigPath) mcpConfigPath.value = s.mcpConfigPath
     terminalState.value = s.terminal?.state ?? ''
@@ -51,7 +54,7 @@ export const useObserverStore = defineStore('observer', () => {
     } finally { registering.value = false }
   }
 
-  return { available, models, mcpConfigPath, terminalState, registering, registerError,
+  return { available, cliPath, models, mcpConfigPath, terminalState, registering, registerError,
            refresh, registerMcp }
 })
 

@@ -612,7 +612,7 @@ const observerAuthFailed = computed(() => {
 })
 const mcpConnectionRows = computed(() =>
   mcpRows(mcpRaw.value, observer.terminalState, settings.hiddenMcpAccounts,
-          { available: observer.available, authFailed: observerAuthFailed.value }))
+          { available: observer.available, authFailed: observerAuthFailed.value, path: observer.cliPath }))
 // The observer is Cecelia's own row and belongs with the other backend components in "System" — it
 // used to render in "MCP connections" alongside third-party servers, and readers hunting for
 // Cecelia's lifecycle didn't find it. Now: shown ONCE, next to Application/Notebooks/etc.
@@ -638,6 +638,14 @@ async function loadMcpConnections() {
   catch { mcpRaw.value = [] }
 }
 onMounted(() => { loadMcpConnections(); observer.refresh() })
+// "I just installed it": re-probe the backend (it searches PATH + the installers' dirs every call, so
+// no restart is needed) and re-read the config the install may have created.
+const cliRechecking = ref(false)
+async function recheckCli() {
+  cliRechecking.value = true
+  try { await Promise.all([observer.refresh(), loadMcpConnections()]) }
+  finally { cliRechecking.value = false }
+}
 // re-read once a setup attempt settles, so the dot reflects the config rather than the click
 watch(() => observer.registering, busy => { if (!busy) loadMcpConnections() })
 
@@ -1488,6 +1496,10 @@ async function switchWt(path: string) {
         <button v-if="r.dismissable" class="cc-btn cc-btn-bare cc-btn-icon"
                 @click="hideAccountConnector(r.name)" v-tooltip.left="'Hide — not used here'">
           <i class="pi pi-times" />
+        </button>
+        <button v-else-if="r.recheck" class="cc-btn cc-btn-bare cc-btn-icon" :disabled="cliRechecking"
+                @click="recheckCli" v-tooltip.left="'Re-check'">
+          <i :class="['pi', cliRechecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
         </button>
         <span v-else />
       </div>

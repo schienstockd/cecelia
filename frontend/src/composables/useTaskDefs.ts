@@ -1,5 +1,6 @@
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import type { TaskDef } from '../tasks/types'
+import { useWsStore } from '../stores/ws'
 
 // Fetches task definitions from the package-owned JSON specs via the API.
 // Retries automatically (up to MAX_RETRIES times, RETRY_DELAY ms apart) so that
@@ -73,7 +74,34 @@ export function useTaskDefs(category: string | string[]) {
     await load(0)
   }
 
-  onMounted(() => load(0))
+  // Runtime option sources (`optionsFrom`: the flow-model vault, cellpose checkpoints, …) are resolved
+  // by the server INTO these defs, so the defs go stale whenever a model is trained, renamed or deleted.
+  // The module pages live under <KeepAlive> and mount once per project, so a fetch-on-mount alone
+  // showed a model trained on Model Training as "None" on Segment until the page was reloaded.
+  // Refetch quietly (no blanking — `load`, not `reload()`, keeps the form and the last form state) on
+  // every return to the page, and on a finished task while the page is visible (a run that ends while
+  // it is hidden is picked up by the activation refetch). The route costs ~5 ms. Not `useWhenVisible`:
+  // the activation refetch already covers a hidden-time finish, and it must run regardless (a vault
+  // rename or delete is not a task), so a deferred call on top of it would fetch twice.
+  const ws = useWsStore()
+  let visible = true
+  let mounted = false
+  const onTaskDone = (data: Record<string, unknown>) => {
+    if (visible && String(data.status ?? '') === 'done') void load(0)
+  }
+  const onNodeDone = () => { if (visible) void load(0) }
+  onMounted(() => {
+    void load(0)
+    ws.on('task:status', onTaskDone)
+    ws.on('chain:node:done', onNodeDone)
+  })
+  // onActivated also fires right after the first mount — skip that one, onMounted already fetched
+  onActivated(() => { visible = true; if (mounted) void load(0); mounted = true })
+  onDeactivated(() => { visible = false })
+  onUnmounted(() => {
+    ws.off('task:status', onTaskDone)
+    ws.off('chain:node:done', onNodeDone)
+  })
 
   return { defs, loading, reload }
 }

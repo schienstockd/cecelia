@@ -34,13 +34,19 @@ test whether an agent can actually use the framework.
    notes describe the same gap is the owner's read: no judge step compares notes.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, every
-   `plausible`), plus the last record's `open` / `unjudged` / `unmerged` bugs. Free checks come first:
+   `plausible`), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
+   come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
    - a finding whose branch hasn't reached the SHA is `unmerged` and waits;
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
      own commit, so a moved line still shows the right code;
    - a function that no longer exists is `gone`;
-   - findings on one file + function are merged into one bug.
+   - findings on one file + function are merged into one bug;
+   - a `parked` bug (verify said `guard`, step 4) skips the judge and stays parked, unless a commit
+     names its key (*Landed fixes* below: the guard may have gone in elsewhere) or one since its
+     verify SHA touched its file (an agent-run error with no file: unless a run hit it again after it
+     was verified). Then it goes back to `open` with its verdict cleared, and verify looks at
+     it again. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
    Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
@@ -81,28 +87,38 @@ test whether an agent can actually use the framework.
    ([`../todo/AGENT_RUN_REVIEW_PLAN.md`](../todo/AGENT_RUN_REVIEW_PLAN.md) Decision 1). The one
    single-run 4xx (an unknown plot name) stayed out.
 
-   **Landed fixes** (no Claude call). For each carried `open` / `unjudged` bug, git looks for commits
+   **Landed fixes** (no Claude call). For each carried `open` / `unjudged` / `parked` bug, git looks for commits
    since the last pass (`previous run.sha..sha`) whose message names one of its keys (`fanout-…`,
    `rep-…`, `run-…`, `stranded-pr…`). They go on the bug as `fix_landed`, with the PR from `(#N)` in
    the subject or the `Merge pull request #N` that brought them in. That is evidence, not a verdict:
    the judge and verify prompts get it as a hint, and the judge still decides `gone`. The record says
-   *Fix landed: … — awaiting re-check* until it does. So a fix you landed with `pixi run
+   *Fix landed: … — awaiting re-check* until it does, or verify dismisses it. So a fix you landed with `pixi run
    judge-review` shows up even on a pass whose judge failed. On 2026-10-05, 6 of the 7 carried open
    bugs had a fix commit naming their key on main; the judge never ran, so the record said "0 fixed".
 
-   Then one tool-less judge call reads the excerpts as data and marks each bug `live_bug` / `gone` /
-   `not_a_bug`. Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the
-   judge gives no verdict for (the call failed, or the bug is over the 40-per-pass cap; bugs with a
-   landed fix go first, so the cap never holds back their re-check) waits as
-   `unjudged`, except one the last record had `open`: it stays `open`, with its verdict, because a
-   missing check is no evidence it was fixed.
+   Then tool-less judge calls read the excerpts as data and mark each bug `live_bug` / `gone` /
+   `not_a_bug`, 40 per call (`BATCH_ITEMS`: it bounds the prompt, not the spend). Calls continue until
+   nothing is left or the next one could take the sweep past **$4** (`SWEEP_USD`): a call starts only
+   while what's spent plus its whole $1.50 budget fits, so $4 is four calls, 160 bugs, against a
+   measured inflow of about 100 a week. Bugs with a landed fix go first, then carried `open` ones,
+   then the rest oldest first. A failed call ends the sweep; what earlier calls judged stands.
+   Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the judge gives
+   no verdict for (a call failed, or the budget ran out before it) waits as `unjudged`, except one the
+   last record had `open`: it stays `open`, with its verdict, because a missing check is no evidence
+   it was fixed.
+
+   The `unjudged` count is the **backlog**. The record's *Backlog* row and the PR say it against the
+   last pass (`N waiting for the judge (last pass M)`), and the recital console warns when it grew
+   two passes in a row: the budget no longer covers the inflow, and you decide whether to raise
+   `SWEEP_USD`. Nothing ages out.
 4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
    `claude -p` agent in a sandboxed checkout at the SHA (`agent_sandbox.py`: no network, `~` is
    write-denied, no MCP). Bugs that share a branch or a file go to the same agent, and so do one
    run's errors. The verdict is
    one of:
    - `fix`: the bug is live;
-   - `guard`: it can't happen today, and the agent names what would make it live;
+   - `guard`: it can't happen today, and the agent names what would make it live. The bug becomes
+     `parked`: off the work list, listed under *Parked*, and back to verify when its file changes;
    - `decide`: only you can answer it, so it goes on the owner queue;
    - `dismiss`: the bug becomes `dismissed`.
 5. **Rules** (`rules.py`). Every fanout + convention finding from the last 30 days is mapped to the
@@ -120,7 +136,8 @@ test whether an agent can actually use the framework.
    pass's record is still the work list.
 
 The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
-a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug.
+a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
+parked count, what was fixed since the last pass, and the backlog against the last pass.
 
 A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,
 `RateLimited`, from the sweep, verify or rules — read by `claude_cli.rate_limit`, the one reader the
@@ -141,12 +158,12 @@ wrapper **keeps the cron lock through the wait**, so the nightly agent run is sk
 the same limit. The unit's `TimeoutStartSec=12h` covers one wait. Any other failed judge call
 doesn't stop the pass; the record's `run.failed` names the step, and the record and PR say that
 step didn't run instead of reporting a quiet week. The recital console warns when the newest record
-is more than 9 days old or failed (`judge_staleness.py`).
+is more than 9 days old or failed, and when the backlog grew two passes in a row (`judge_staleness.py`).
 
 **Spend.** The record's *Tokens* row has what each step used: output, uncached input, and cache read
 and write, taken from each call's `usage`. Its *Spend* row is the CLI's dollar figure, which is list
 price, not what a seat is charged. The caps are in dollars, because `--max-budget-usd` is the
-CLI's only limit: bug sweep $1.50, verify $10 ($2 per group), rule mapping $2. Verify's cap counts
+CLI's only limit: bug sweep $4 ($1.50 per call), verify $10 ($2 per group), rule mapping $2. Verify's cap counts
 a failed agent that never said its cost at its whole budget (`reserved_usd`); its spend (`usd`) is
 only what the agents reported.
 
@@ -160,7 +177,7 @@ than the screen, and a resize repaints it at once:
    recommendation), `[a] answer` (in your own words; a session follows yours instead), or
    `[w] won't fix` (dropped, never carried again).
 2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you kept open or answered,
-   then `guard`, then the rest. `[f] fix now` starts an interactive Claude Code session where you
+   then the rest. A `guard` bug is parked, so it isn't offered. `[f] fix now` starts an interactive Claude Code session where you
    start sessions (the folder holding the main checkout and its worktrees, `~/cc-workspace/cecelia`),
    briefed on that bug: where it is, what verify found, your answer or the recommendation, and how to
    work it (confirm on `origin/main`, its own worktree from `pixi run bootstrap-worktree fix-<key>`,

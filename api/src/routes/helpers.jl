@@ -57,6 +57,22 @@ _wvec_str(data, key::Symbol)::Vector{String} =
 _wvec_str(data, key::AbstractString)::Vector{String} =
     (v = get(data, key, nothing); v === nothing ? String[] : String[string(x) for x in v])
 
+# Why a request's value name can't be joined onto a directory, or `nothing` if it can: it must be one
+# non-empty path component (no `/` or `\`, not `.`/`..`). Routes that WRITE or DELETE at a path built
+# from a client vn (cohort check sidecar, preview scratch store) refuse with a 400 instead. Same rule as
+# `Cecelia.value_name_problem` (#1510) — switch to it once that lands.
+function _value_name_problem(v::AbstractString)::Union{Nothing,String}
+    isempty(v) && return "cannot be empty"
+    (occursin('/', v) || occursin('\\', v)) && return "cannot contain a path separator"
+    (v == "." || v == "..") && return "is not a usable name"
+    nothing
+end
+
+# The 400 for a value name that fails `_value_name_problem`, or `nothing` when it is usable.
+_value_name_400(v::AbstractString) =
+    (p = _value_name_problem(v); p === nothing ? nothing :
+        (400, JSON3.write((; error = "valueName $p", code = "invalid-value-name"))))
+
 function _scan_projects_raw()::Vector{Dict{String,Any}}
     isdir(projects_dir()) || return Dict{String,Any}[]
     projects = Dict{String,Any}[]

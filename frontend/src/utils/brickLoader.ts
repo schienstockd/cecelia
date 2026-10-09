@@ -124,7 +124,8 @@ export function brickSlabUrl(
  * header parse — without it, every label brick silently drops on the shape guard.
  */
 export function brickLabelSlabUrl(
-  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string },
+  base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string
+          labelStore?: 'preview' | 'live'; labelStoreId?: number },
   labelName: string,
   brick: VirtualBrick,
   brickSizeVox: readonly [number, number, number],
@@ -147,6 +148,10 @@ export function brickLabelSlabUrl(
     zTo: b.zHi + zOffset,
     level: brick.level,
     rev: base.rev,
+    preview: base.labelStore === 'preview',
+    previewId: base.labelStore === 'preview' ? base.labelStoreId : undefined,
+    live: base.labelStore === 'live',
+    liveId: base.labelStore === 'live' ? base.labelStoreId : undefined,
   })
 }
 

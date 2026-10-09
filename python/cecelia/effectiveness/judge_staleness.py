@@ -2,7 +2,8 @@
 
 The weekly pass writes one run record per pass to `judge-runs/` beside the effectiveness log
 (`scripts/judge/record.py`). A stopped timer or a pass that keeps failing is otherwise silent, so
-the console says so. It warns, never blocks. Design: docs/ai-assist/WEEKLY_JUDGE.md.
+the console says so. So is a backlog the sweep budget no longer covers: candidates waiting for the
+judge that grew two passes in a row. It warns, never blocks. Design: docs/ai-assist/WEEKLY_JUDGE.md.
 """
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ from .log import default_log_path
 #: The pass runs weekly; two days' slack covers a late timer or a rerun the next morning.
 CADENCE_DAYS = 7
 SLACK_DAYS = 2
+#: Passes in a row the backlog must grow before the console says so: one can be a busy week.
+BACKLOG_GROWTH_PASSES = 2
 
 
 def judge_store(log_path: pathlib.Path | None = None) -> pathlib.Path:
@@ -52,4 +55,33 @@ def judge_record_warning(store: pathlib.Path | None = None, *, today: _dt.date |
     steps = sorted((record.get("run") or {}).get("failed") or {})
     if steps:
         return f"Weekly judge: the {newest} pass ran, but its {' and '.join(steps)} judge failed; see {path}"
-    return None
+    return backlog_warning([p for _, p in sorted(dated)])
+
+
+def backlog(bugs: list[dict]) -> int:
+    """A pass's backlog: candidates waiting for the judge (`unjudged`), what the sweep budget didn't
+    reach. The one definition; `scripts/judge/record.py` reports it."""
+    return sum(b.get("status") == "unjudged" for b in bugs)
+
+
+def _backlog(path: pathlib.Path) -> int | None:
+    """A pass record's backlog; None for a failure record or an unreadable file."""
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if record.get("kind") != "pass":
+        return None
+    return backlog(record.get("bugs") or [])
+
+
+def backlog_warning(paths: list[pathlib.Path], *, passes: int = BACKLOG_GROWTH_PASSES) -> str | None:
+    """One line when the backlog grew in each of the last `passes` pass records (oldest first), else
+    None: the sweep budget (`scripts/judge/bugs.py` `SWEEP_USD`) no longer covers the inflow, and
+    a person should decide whether to raise it."""
+    recent = paths[-4 * (passes + 1):]   # a failure record in between is skipped, not a reset
+    counts = [n for n in map(_backlog, recent) if n is not None][-(passes + 1):]
+    if len(counts) <= passes or any(b <= a for a, b in zip(counts, counts[1:])):
+        return None
+    return (f"Weekly judge: the backlog grew {passes} passes in a row ({' → '.join(map(str, counts))} waiting "
+            "for the judge); the sweep budget no longer covers the inflow: raise SWEEP_USD in scripts/judge/bugs.py")

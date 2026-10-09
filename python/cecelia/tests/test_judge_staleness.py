@@ -41,6 +41,25 @@ class JudgeStalenessTest(unittest.TestCase):
         msg = judge_record_warning(self.store, today=dt.date(2026, 9, 9))
         self.assertIn("its rules and sweep judge failed", msg)
 
+    def _pass(self, date, waiting):
+        (self.store / f"{date}.json").write_text(json.dumps(
+            {"kind": "pass", "bugs": [{"status": "unjudged"}] * waiting + [{"status": "open"}]}), encoding="utf-8")
+
+    def test_a_backlog_that_grew_two_passes_in_a_row_says_so(self):
+        for date, n in (("2026-09-01", 5), ("2026-09-08", 3), ("2026-09-15", 4)):
+            self._pass(date, n)
+        self.assertIsNone(judge_record_warning(self.store, today=dt.date(2026, 9, 16)))   # grew once
+        self._record("2026-09-19", kind="failure")
+        self._pass("2026-09-22", 9)
+        msg = judge_record_warning(self.store, today=dt.date(2026, 9, 23))
+        self.assertIn("backlog grew 2 passes in a row (3 → 4 → 9 waiting for the judge)", msg)
+        self.assertIn("raise SWEEP_USD", msg)
+
+    def test_a_backlog_that_held_steady_is_silent(self):
+        for date, n in (("2026-09-01", 0), ("2026-09-08", 0), ("2026-09-15", 0)):
+            self._pass(date, n)
+        self.assertIsNone(judge_record_warning(self.store, today=dt.date(2026, 9, 16)))
+
     def test_no_store_is_silent(self):
         self.assertIsNone(judge_record_warning(self.store.parent / "missing"))
 

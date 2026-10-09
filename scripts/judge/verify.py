@@ -9,7 +9,8 @@ pattern). Each comes back as:
 
 - `fix`: live; a session or the fix stage should fix it.
 - `decide`: a question only the owner can answer. Only these go on the owner queue.
-- `guard`: can't happen today; `trigger` names what would make it live.
+- `guard`: can't happen today; `trigger` names what would make it live. The bug becomes `parked`:
+  off the work list until a commit touches its file (`bugs.py` checks each pass).
 - `dismiss`: already fixed, or not a bug. The bug becomes `dismissed`.
 
 Containment: read-only tools, a detached worktree at the pinned SHA under
@@ -204,7 +205,7 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
 
     A group starts only while `reserved + group_usd <= cap_usd`, so the cap holds even if every
     agent spends its whole budget. A group that fails or isn't reached stays unverified and waits
-    for the next pass. `dismiss` sets the bug's status to `dismissed`.
+    for the next pass. `dismiss` sets the bug's status to `dismissed`, `guard` to `parked`.
 
     The summary's `usd` is what the agents reported spending; `reserved_usd` is what the cap
     counted, which charges a failed agent that never said its cost its whole budget. A
@@ -243,6 +244,8 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
             out.append(b)
         elif v["verdict"] == "dismiss":
             out.append({**b, "verify": v, "status": "dismissed", "why": f"verified: {v['effect']}"})
+        elif v["verdict"] == "guard":
+            out.append({**b, "verify": v, "status": "parked", "why": _record.parked_why(v)})
         else:
             out.append({**b, "verify": v})
     summary = {"groups": ran, "verified": len(verdicts), "failed": failed, "waiting": waiting,

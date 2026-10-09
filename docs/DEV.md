@@ -605,7 +605,12 @@ use the named helper, don't re-derive the platform branch inline:
 - **Finding/spawning a CLI on PATH** — use `agent_bin_path()` + `_agent_spawn_cmd()` in
   `ai/agent_runner.jl`. `Sys.which` only tries the bare name plus `.exe`/`.com` on Windows, so it
   never finds an npm-installed `claude.cmd`; and a `.cmd`/`.bat` can't be spawned directly at all —
-  `CreateProcess` refuses batch files, they need `cmd /c`.
+  `CreateProcess` refuses batch files, they need `cmd /c`. And PATH alone is not enough on any OS:
+  a GUI-launched app inherits the desktop session's PATH, which misses a CLI installed after login
+  (Ubuntu's `~/.profile` adds `~/.local/bin` only if it existed at login; nvm edits only `~/.bashrc`).
+  `agent_bin_path` therefore also searches the installers' own dirs (`_agent_bin_fallback_dirs`), and
+  `_agent_spawn_cmd` puts a CLI found there first on the child's PATH (an npm `claude` needs the
+  `node` beside it).
 - **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl` (`grace_sec = n` to SIGTERM first and
   force-kill after `n` s), or `_kill_proc_tree(proc)` when you
   hold a `Base.Process`; never write `kill`/`pgrep`/`taskkill` inline. `Base.Process` has no `.pid`

@@ -11,7 +11,7 @@
 # Every backend implements these four; everything else in this file is Claude-specific plumbing.
 #
 #   agent_available(a)     → Bool       is the engine usable here (drives the UI gate). The default
-#                                       below assumes a CLI on PATH; a non-CLI engine overrides it
+#                                       below finds a CLI (`agent_bin_path`); a non-CLI engine overrides it
 #   agent_label(a)         → String     display name for the UI, so components never hard-code one
 #   agent_capabilities(a)  → NamedTuple (; native_schema, native_mcp, resumable)
 #   _run_agent_once(a, prompt, mcp_config_path; opts...) → AgentResult   one spawn, no retries
@@ -120,19 +120,104 @@ function _agent_spawn_argv(argv::Vector{String}, resolved::Union{String,Nothing}
     _needs_cmd_shell(out[1], iswin) ? vcat(String["cmd", "/c"], out) : out
 end
 
+# ── Finding the CLI off PATH (fresh installs, GUI launches) ────────────────────────────────────────
+#
+# The app's PATH is the desktop session's, not a login shell's. The native installer puts `claude` in
+# `~/.local/bin`, and Ubuntu's stock `~/.profile` adds that dir to PATH only
+# `if [ -d "$HOME/.local/bin" ]` — evaluated ONCE, at desktop login. On a fresh box the dir
+# does not exist until the installer creates it, so the desktop session (and every app launched from
+# it, our .desktop entry included, and every restart of the backend, which inherits the supervisor's
+# env) has a PATH without it until the user logs out and back in. npm-under-nvm installs are worse:
+# nvm only ever edits `~/.bashrc`, which a GUI launch never sources.
+#
+# So after PATH, look where the installers actually put it. A configured path is never second-guessed
+# (`agent_bin_path` only falls back for a bare name). The dirs, in order:
+#   native installer      ~/.local/bin                  (all platforms — `claude.exe` on Windows)
+#   old local installer   ~/.claude/local
+#   npm global prefix     $NPM_CONFIG_PREFIX, or `prefix=` in ~/.npmrc, then the common ~/.npm-global
+#   nvm / volta           $NVM_BIN, ~/.nvm/versions/node/*/bin (newest first), ~/.volta/bin
+#   system                /usr/local/bin (+ /opt/homebrew/bin on macOS); %APPDATA%\npm on Windows
+#
+# Reads the home dir (nvm versions, ~/.npmrc) but nothing else, so a test can point `home` + `env` at
+# a temp dir and assert the whole order.
+function _agent_bin_fallback_dirs(home::AbstractString; iswin::Bool = Sys.iswindows(),
+                                  isapple::Bool = Sys.isapple(),
+                                  env::AbstractDict = ENV)::Vector{String}
+    h    = String(home)
+    dirs = String[joinpath(h, ".local", "bin"), joinpath(h, ".claude", "local")]
+    # npm puts global bins in <prefix>/bin on Unix, <prefix> itself on Windows
+    npm_bin(p) = iswin ? p : joinpath(p, "bin")
+    for p in (get(env, "NPM_CONFIG_PREFIX", ""), get(env, "npm_config_prefix", ""), _npmrc_prefix(h))
+        isempty(p) || push!(dirs, npm_bin(expand_user(String(p))))
+    end
+    push!(dirs, npm_bin(joinpath(h, ".npm-global")))
+    nvm_bin = String(get(env, "NVM_BIN", ""))
+    isempty(nvm_bin) || push!(dirs, nvm_bin)
+    nvm_dir  = String(get(env, "NVM_DIR", ""))
+    nvm_root = joinpath(isempty(nvm_dir) ? joinpath(h, ".nvm") : nvm_dir, "versions", "node")
+    if isdir(nvm_root)
+        vs = filter(v -> !isnothing(tryparse(VersionNumber, v)), readdir(nvm_root))
+        append!(dirs, joinpath(nvm_root, v, "bin") for v in sort(vs; by = v -> VersionNumber(v), rev = true))
+    end
+    push!(dirs, joinpath(h, ".volta", "bin"))
+    if iswin
+        appdata = String(get(env, "APPDATA", joinpath(h, "AppData", "Roaming")))
+        push!(dirs, joinpath(appdata, "npm"))
+    else
+        isapple && push!(dirs, "/opt/homebrew/bin")
+        push!(dirs, "/usr/local/bin")
+    end
+    unique(dirs)
+end
+
+# `prefix=` from the user's ~/.npmrc (how `npm config set prefix ~/.npm-global` records it), or "".
+function _npmrc_prefix(home::AbstractString)::String
+    rc = joinpath(String(home), ".npmrc")
+    isfile(rc) || return ""
+    for line in eachline(rc)
+        m = match(r"^\s*prefix\s*=\s*(.+?)\s*$", line)
+        isnothing(m) || return String(strip(m.captures[1], ['"', '\'']))
+    end
+    ""
+end
+
 """
     agent_bin_path(bin) -> String | Nothing
 
-Absolute path to the agent CLI, or `nothing` if it isn't on `PATH`. Extension-aware on Windows (see
-the comment above): falls back to `<bin>.cmd` / `<bin>.bat` when the bare name isn't found.
+Absolute path to the agent CLI, or `nothing` if it can't be found. A path (anything with a directory
+component, `~` allowed) is checked as given. A bare name is looked up on `PATH`, then in the
+installers' own locations (`_agent_bin_fallback_dirs`) — the app's PATH is the desktop session's,
+which misses a CLI installed after login. Extension-aware on Windows (see the comment above): falls
+back to `<bin>.cmd` / `<bin>.bat` when the bare name isn't found. Not cached: the Settings page
+re-probes, so a CLI installed while the app runs is found without a restart.
 """
 function agent_bin_path(bin::AbstractString)::Union{String,Nothing}
     isempty(String(bin)) && return nothing
-    for cand in _agent_bin_candidates(bin, Sys.iswindows())
+    name  = expand_user(String(bin))
+    cands = _agent_bin_candidates(name, Sys.iswindows())
+    for cand in cands
         p = Sys.which(cand)
         isnothing(p) || return String(p)
     end
+    isempty(dirname(name)) || return nothing          # an explicit path: never substitute another
+    for d in _agent_bin_fallback_dirs(homedir()), cand in cands
+        p = Sys.which(joinpath(d, cand))
+        isnothing(p) || return String(p)
+    end
     nothing
+end
+
+# PATH for the spawned CLI when it was found OFF the app's PATH: its own dir goes first. An npm
+# install's `claude` is a `#!/usr/bin/env node` script and nvm's `node` sits beside it — without this
+# the CLI is found and then dies with "env: node: not found". `nothing` = leave PATH alone. PURE.
+function _agent_spawn_path(resolved::Union{AbstractString,Nothing}, path_env::AbstractString,
+                           iswin::Bool)::Union{String,Nothing}
+    (isnothing(resolved) || isempty(dirname(String(resolved)))) && return nothing
+    d   = dirname(String(resolved))
+    sep = iswin ? ';' : ':'
+    norm(p) = iswin ? lowercase(rstrip(p, ['\\', '/'])) : rstrip(p, '/')
+    any(p -> norm(p) == norm(d), split(String(path_env), sep; keepempty = false)) && return nothing
+    isempty(path_env) ? d : string(d, sep, path_env)
 end
 
 # Turn a logical argv (as the pure builders below produce it) into something the OS will actually
@@ -147,12 +232,19 @@ end
 # `dir` is carried over deliberately: rebuilding the argv into a fresh `Cmd` would drop it, and the
 # local-scope cleanup below is the one caller that MUST run in a specific directory (`claude mcp
 # remove -s local` acts on its own cwd). Losing it there would silently edit the wrong scope.
-_agent_spawn_cmd(cmd::Cmd)::Cmd =
-    (argv = collect(String, cmd.exec);
-     isempty(argv) ? cmd :
-     Cmd(Cmd(_agent_spawn_argv(argv, agent_bin_path(argv[1]), Sys.iswindows())); dir = cmd.dir))
+#
+# A CLI found off PATH (`_agent_bin_fallback_dirs`) also gets its own dir prepended to the child's
+# PATH — see `_agent_spawn_path`.
+function _agent_spawn_cmd(cmd::Cmd)::Cmd
+    argv = collect(String, cmd.exec)
+    isempty(argv) && return cmd
+    resolved = agent_bin_path(argv[1])
+    out  = Cmd(Cmd(_agent_spawn_argv(argv, resolved, Sys.iswindows())); dir = cmd.dir)
+    path = _agent_spawn_path(resolved, get(ENV, "PATH", ""), Sys.iswindows())
+    isnothing(path) ? out : addenv(out, "PATH" => path)
+end
 
-# Is the agent CLI available on PATH? Drives the UI availability gate (feature hidden if absent).
+# Is the agent CLI installed (PATH or a known install dir)? Drives the UI availability gate.
 agent_available(a::AgentBackend)::Bool = !isnothing(agent_bin_path(_agent_bin(a)))
 _agent_bin(::AgentBackend)::String = ""         # non-CLI engines: no binary to find
 _agent_bin(a::ClaudeAgent)::String = a.bin
@@ -356,7 +448,7 @@ _apply_claude_env(cmd::Cmd, profile_dir::AbstractString)::Cmd =
 _apply_claude_env(cmd::Cmd)::Cmd = _apply_claude_env(cmd, _active_claude_profile_dir!())
 
 """
-    kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path("claude")) -> String
+    kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path(observer_agent_bin())) -> String
 
 The one-liner a user pastes to launch `claude` under the active Kiwi profile
 (LOGIN_CREDENTIAL_ISOLATION_PLAN D9). Ambient credential env vars are scrubbed in the same call
@@ -378,7 +470,7 @@ name — surfacing the missing-CLI error to the user rather than silently omitti
 PURE → tested without spawning. Platform-switched on `Sys.iswindows()`.
 """
 function kiwi_terminal_command(profile_dir::AbstractString;
-                               claude_bin::Union{AbstractString,Nothing} = agent_bin_path("claude"),
+                               claude_bin::Union{AbstractString,Nothing} = agent_bin_path(observer_agent_bin()),
                                is_windows::Bool = Sys.iswindows())::String
     bin = isnothing(claude_bin) || isempty(String(claude_bin)) ? "claude" : String(claude_bin)
     if is_windows
