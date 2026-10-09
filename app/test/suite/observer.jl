@@ -183,7 +183,7 @@ end
             mkpath(joinpath(home, ".nvm", "versions", "node", v, "bin"))
         end
         dirs = Cecelia._agent_bin_fallback_dirs(home; iswin = false, isapple = false, env = fake_env)
-        @test "/opt/npm-pfx/bin" in dirs
+        @test joinpath("/opt/npm-pfx", "bin") in dirs                     # host separator
         nvm = filter(d -> occursin(".nvm", d), dirs)
         @test nvm == [joinpath(home, ".nvm", "versions", "node", v, "bin")
                       for v in ("v22.11.0", "v18.2.0", "v9.0.0")]
