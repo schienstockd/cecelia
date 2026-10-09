@@ -2,6 +2,9 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 import { fetchProfiles, profileDisplayName } from '../utils/profileApi'
 
+/** A PR merged on the dev branch since the installed build (`/api/update/check?channel=dev`). */
+export interface MergedPr { number: number; title: string }
+
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
 // re-implementation). Per-service (viewer/notebooks) controls stay local to the Settings panel.
@@ -142,6 +145,10 @@ export const useAppControlStore = defineStore('appControl', () => {
   const updateUrl       = ref('')
   const updateNotes     = ref('')                                  // GitHub release `body` (markdown)
   const updatePublished = ref('')                                  // ISO timestamp; empty if unknown
+  // Dev channel only: how far the installed build trails the branch tip, and the PRs merged since.
+  // null/[] when unknown (stable channel, stable install asking for dev, or the compare call failed).
+  const updateBehindBy  = ref<number | null>(null)
+  const updateMergedPrs = ref<MergedPr[]>([])
   // in-app apply is only offered for a per-user install (not a shared system install or dev checkout)
   const canApplyUpdate  = computed(() => updateScope.value === 'user')
 
@@ -164,6 +171,9 @@ export const useAppControlStore = defineStore('appControl', () => {
       updateUrl.value         = d.url ?? ''
       updateNotes.value       = d.releaseNotes ?? ''
       updatePublished.value   = d.publishedAt ?? ''
+      updateBehindBy.value    = typeof d.behindBy === 'number' ? d.behindBy : null
+      updateMergedPrs.value   = Array.isArray(d.mergedPrs) ? d.mergedPrs : []
+      if (d.compareUrl) updateUrl.value = d.compareUrl   // dev: "View on GitHub" opens the full diff
       updateHasPrevious.value = !!d.hasPrevious
       updatePending.value     = !!d.pendingRestart
       if (d.error) updateMsg.value = d.error
@@ -287,7 +297,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, activeProfileDisplayName, profileCount, worktrees, canSwitch,
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
-           updateUrl, updateNotes, updatePublished, canApplyUpdate,
+           updateUrl, updateNotes, updatePublished, updateBehindBy, updateMergedPrs, canApplyUpdate,
            updateHasPrevious, updateRevertBusy, updatePending,
            checkUpdate, applyUpdate, revertUpdate, dismissUpdate, restartToUpdate,
            refreshDev, refreshStartup, completeSetup, completeProfilePick, markProfileJustPicked,
