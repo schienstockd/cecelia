@@ -132,11 +132,24 @@ test whether an agent can actually use the framework.
 
    The count is sessions, not findings: one session's fanout can raise ten findings about a single
    pattern.
-6. **Record + PR.** Write `~/.cecelia-effectiveness/judge-runs/<date>.json`, mirror it with its
-   rendered markdown to `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital,
-   and open the PR. Each new PR closes the previous one. A failure's PR closes none: the last
-   pass's record is still the work list.
-7. **Issues** (`issues.py`, only with `--issues`; the timer doesn't pass it yet). Each open bug
+6. **Record.** Write `~/.cecelia-effectiveness/judge-runs/<date>.json` and, beside it, its rendered
+   `<date>.md`. The JSON is the only source; every reader (`judge-review`, fix sessions, the next
+   pass) reads it.
+7. **Publish**, one of two layouts:
+   - **Issues** (`--issues`, or `JUDGE_ISSUES=1` in the timer's unit: *Turning on issues* in
+     [`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md)). The bugs go to
+     GitHub issues (step 8). The pinned **Judge status** issue (label `judge-status`, filed, locked
+     and pinned by the first pass) gets one comment: the bugs filed, closed, reopened and held,
+     the backlog and its warning, any step whose judge failed, the rules PR, and spend. A PR is
+     opened only when there are rule proposals: it carries `EFFECTIVENESS.md` (`pixi run
+     audit-rollup`) to main and lists the proposals. A pass without proposals closes any record PR
+     left from before the switch. A failed pass comments on the status issue instead of opening
+     a PR.
+   - **Record PR** (the default until issues are turned on). Mirror the record with its markdown to
+     `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital, and open the PR.
+     Each new PR closes the previous one. A failure's PR closes none: the last pass's record is
+     still the work list.
+8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
    - closed as completed when the judge confirms it `gone`;
@@ -154,7 +167,7 @@ test whether an agent can actually use the framework.
    second; the rest wait. A mirror that fails says so on `run.issues` and leaves the pass standing.
    Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
 
-The PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
+The record PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
 parked count (and how many of them are due a re-check), what was fixed since the last pass, and the backlog against the last pass.
 
@@ -203,7 +216,7 @@ than the screen, and a resize repaints it at once:
    sibling call sites, a failing test, recital, the bug key in the commit). You're in that session as usual; the queue comes back when
    you exit it. `[w] won't fix` closes a bug you don't want.
 
-**Issues.** Once the mirror runs (step 7), each card names the bug's issue under its title: the link,
+**Issues.** Once the mirror runs (step 8), each card names the bug's issue under its title: the link,
 *issue pending* (a pass stopped while filing it; the next adopts or files it), or *issue missing*
 (the record maps it to a number that isn't a judge issue you opened). All of it comes from the
 record; `judge-review` never calls GitHub. The fix brief names the issue, says not to read it, and
@@ -213,7 +226,7 @@ add one comment (your words, defused like a body), and `[f]` labels it `in-progr
 
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
-`docs/ai-assist/judge-runs/<date>.md` for any session pointed at the record.
+`~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.
 
 **Rules.** Take a `tighten` or `ratchet` proposal like any other change. Every finding it cites is
 listed under *Sources*.
@@ -225,7 +238,7 @@ No fix runs unattended: an unattended fix agent is deferred, see
 
 | | |
 |---|---|
-| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it, `-- --issues` also mirrors to issues |
+| `pixi run judge-weekly` | The pass. `-- --no-pr` writes the record only, `-- --dry-run` prints it, `-- --issues` publishes the issue layout |
 | `pixi run judge-bugs` | The sweep, printed (`--no-judge` is free) |
 | `pixi run judge-verify --date D` | Verify a record's bugs; prints, never writes |
 | `pixi run judge-rules` | The rule table + proposals, printed |

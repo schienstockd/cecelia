@@ -2,7 +2,9 @@
 
 **Status:** decisions locked (2026-10-07, Dominik); a concerns review folded in (2026-10-09: D14, D15
 and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2 built, off until
-Dominik reads its dry run (`pixi run judge-issues`) and the timer gets `--issues`. P3 built. Next: P4.
+Dominik reads its dry run (`pixi run judge-issues`) and turns it on (`JUDGE_ISSUES=1`, see
+`scripts/judge/systemd/README.md`). P3 and P4 built behind the same switch. Next: P5, after a pass
+in the issue layout.
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan

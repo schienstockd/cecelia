@@ -22,7 +22,14 @@ Usage:
     pixi run judge-weekly                  # pin origin/main, sweep, verify, record, open the PR
     pixi run judge-weekly -- --no-pr       # write the record only
     pixi run judge-weekly -- --dry-run     # print the record; write nothing
-    pixi run judge-weekly -- --issues      # also mirror the open bugs to GitHub issues (`issues.py`)
+    pixi run judge-weekly -- --issues      # bugs as GitHub issues, a status comment, a PR only for rules
+
+`--issues` (or `JUDGE_ISSUES=1`, which is how the timer gets it) switches the pass to the issue
+layout (docs/todo/JUDGE_WORKFLOW_PLAN.md D7–D12): the open bugs are mirrored to issues
+(`issues.py`), the pinned *Judge status* issue gets one comment, and a PR is opened only when there
+are rule proposals, holding `EFFECTIVENESS.md`. The record isn't committed; its rendered markdown
+sits beside the JSON in the store. A failed pass comments on the status issue instead of opening a
+FAILED PR. Without it, the pass opens the record PR as before.
 """
 from __future__ import annotations
 
@@ -42,6 +49,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
+from cecelia.effectiveness.judge_staleness import backlog_warning  # noqa: E402
 from cecelia.effectiveness.state import state_dir, try_lock  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
@@ -220,33 +228,66 @@ def _pr_body(record: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subprocess.CompletedProcess] = None) -> str:
+def _rules_title(record: dict) -> str:
+    n = len(record["proposals"])
+    return f"judge: rule proposals {record['date']} ({n})"
+
+
+def _rules_body(record: dict) -> str:
+    """The rules-only PR (issue layout): the proposals, and the rollup this PR carries to main."""
+    lines = [f"Weekly judge, {record['date']}: **{len(record['proposals'])} rule proposal(s)**, from findings "
+             "broken in enough different sessions. The bugs are issues (label `judge-bug`); the pinned "
+             "*Judge status* issue has this pass's summary.", ""]
+    lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in record["proposals"]]
+    lines += ["", "This PR carries `docs/ai-assist/EFFECTIVENESS.md` (`pixi run audit-rollup`), so the rollup "
+              "reaches main when it merges. The full record, with each proposal's sources, is "
+              f"`~/.cecelia-effectiveness/judge-runs/{record['date']}.md`.", "", _PR_FOOTER]
+    return "\n".join(lines) + "\n"
+
+
+def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subprocess.CompletedProcess] = None,
+            rules_only: bool = False) -> str:
     """Commit the record on `judge-run/<date>`, open its PR, close older ones (a failure closes none).
 
     Runs in the persistent worktree, which sits at the pinned SHA. One open PR at a time: the record
     is already in the local store, so closing an unmerged one loses nothing. Returns the PR's URL.
+    `rules_only` (the issue layout): the PR holds the rollup, not the record, and says the proposals.
     """
     run = run or (lambda cmd, **kw: _run(cmd, cwd=worktree, stage="publish", **kw))
     pixi, gh = shutil.which("pixi") or "pixi", shutil.which("gh") or "gh"
     branch = f"judge-run/{record['date']}"
+    title, body = (_rules_title(record), _rules_body(record)) if rules_only else (_title(record), _pr_body(record))
     run(["git", "checkout", "--quiet", "-B", branch])
-    _record.write(record, mirror=True, force=True, mirror_dir=worktree / _record.MIRROR_REL)
+    if not rules_only:
+        _record.write(record, mirror=True, force=True, mirror_dir=worktree / _record.MIRROR_REL)
     if record.get("kind") != "failure":
         run([pixi, "run", "audit-rollup"])
     run(["git", "add", "docs/ai-assist"])
     recital = run([pixi, "run", "recital"]).stdout   # docs-only: no reviewer spawns, but the tails
-    run(["git", "commit", "--quiet", "-F", "-"], input=f"{_title(record)}\n\n{recital.strip()}\n\n{_ATTRIBUTION}\n")
+    run(["git", "commit", "--quiet", *(["--allow-empty"] if rules_only else []), "-F", "-"],
+        input=f"{title}\n\n{recital.strip()}\n\n{_ATTRIBUTION}\n")
     run(["git", "push", "--quiet", "--force", "-u", "origin", branch])
     existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,url"]).stdout)
     mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)
     url = mine or run([gh, "pr", "create", "--base", "main", "--head", branch,
-                       "--title", _title(record), "--body-file", "-"], input=_pr_body(record)).stdout.strip()
+                       "--title", title, "--body-file", "-"], input=body).stdout.strip()
     if record.get("kind") == "failure":   # it supersedes nothing: the last pass's bugs are still the work list
         return url
-    for p in existing:
-        if p["headRefName"].startswith("judge-run/") and p["headRefName"] != branch:
-            run([gh, "pr", "close", str(p["number"]), "--comment", f"Superseded by {url}."])
+    close_run_prs(f"Superseded by {url}.", keep=branch, run=run, existing=existing)
     return url
+
+
+def close_run_prs(comment: str, *, keep: str | None = None, run: _t.Callable[..., subprocess.CompletedProcess] = None,
+                  existing: list[dict] | None = None) -> list[int]:
+    """Close every open `judge-run/*` PR but `keep`'s, with `comment`; their numbers."""
+    run = run or (lambda cmd, **kw: _run(cmd, cwd=_REPO, stage="publish", **kw))
+    gh = shutil.which("gh") or "gh"
+    if existing is None:
+        existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,url"]).stdout)
+    closed = [p["number"] for p in existing if p["headRefName"].startswith("judge-run/") and p["headRefName"] != keep]
+    for n in closed:
+        run([gh, "pr", "close", str(n), "--comment", comment])
+    return closed
 
 
 # ── the pass ───────────────────────────────────────────────────────────────────────────────────
@@ -337,6 +378,24 @@ def mirror_issues(record: dict, gh: "_issues.Gh | None" = None) -> dict:
     return report
 
 
+def issues_on(args: argparse.Namespace) -> bool:
+    """The issue layout: `--issues`, or `JUDGE_ISSUES=1` (how the timer's unit turns it on)."""
+    return bool(args.issues) or os.environ.get("JUDGE_ISSUES") == "1"
+
+
+def post_status(record: dict, report: dict | None, *, pr: str | None = None,
+                gh: "_issues.Gh | None" = None) -> str:
+    """The pass's comment on the pinned Judge status issue; one line saying what happened."""
+    try:
+        gh = gh or _issues.Gh(_issues.repo_slug())
+        paths = sorted(_record.store_root().glob("*.json"))
+        warning = backlog_warning(paths) if record.get("kind") != "failure" else None
+        n = _issues.post_status(gh, _issues.status_text(record, report, repo=gh.repo, pr=pr, warning=warning))
+        return f"status comment on {_issues.issue_url(gh.repo, n)}" if n else "status comment (dry run)"
+    except Exception as e:  # noqa: BLE001 — the record stands; the cron log has why
+        return f"status comment failed: {type(e).__name__}: {e}"
+
+
 def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> dict | None:
     """Write the failure record, unless that date already has a pass record: never replace data."""
     date = date or _now()[:10]
@@ -382,12 +441,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{record['date']}: {n} open bug(s), {len(record['proposals'])} rule proposal(s)\n"
               f"  tokens: {_record.tokens_line(record['run']['spend'])}\n"
               f"  spend (list price): {_record.spend_line(record['run']['spend'])}\n  wrote {path}")
-        if args.issues:
+        if issues_on(args):
             state["stage"] = "issues"
             report = mirror_issues(record)
             print("  issues: " + ("failed: " + report["error"] if "error" in report else
                                   "; ".join(_issues.report_lines(report))), file=sys.stderr)
-        if not args.no_pr:
+            pr = None
+            if not args.no_pr:
+                state["stage"] = "publish"
+                if record["proposals"]:
+                    pr = publish(record, worktree=args.worktree or default_worktree(), rules_only=True)
+                    print(f"  PR {pr}")
+                else:   # the record PRs from before the switch: the status issue replaces them
+                    close_run_prs("Superseded by the pinned Judge status issue (label `judge-status`).")
+            print(f"  {post_status(record, report, pr=pr)}", file=sys.stderr)
+        elif not args.no_pr:
             state["stage"] = "publish"
             print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")
         return 0
@@ -401,7 +469,9 @@ def main(argv: list[str] | None = None) -> int:
             failed = _write_failure(args.date, where, e, state["sha"])
             # a failure gets its PR too, once there is a worktree at the pinned SHA to commit from;
             # not while a retry follows, which would open its own
-            if failed and not args.no_pr and not retrying and where not in ("start", "pin", "worktree", "publish"):
+            if failed and issues_on(args) and not retrying:
+                print(f"  {post_status(failed, None)}", file=sys.stderr)
+            elif failed and not args.no_pr and not retrying and where not in ("start", "pin", "worktree", "publish"):
                 try:
                     print(f"  PR {publish(failed, worktree=args.worktree or default_worktree())}", file=sys.stderr)
                 except Exception as p:  # noqa: BLE001

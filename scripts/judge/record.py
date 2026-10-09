@@ -401,6 +401,8 @@ def write(record: dict, *, mirror: bool = False, force: bool = False,
         raise RecordError(f"{dest} exists; pass --force to replace it")
     dest.parent.mkdir(parents=True, exist_ok=True)
     write_json_atomic(dest, record, indent=2, ensure_ascii=False)
+    with write_atomic(dest.with_suffix(".md"), encoding="utf-8") as fh:   # the record to read; the JSON is the source
+        fh.write(render_markdown(record))
     written = [dest]
     if mirror:
         mirror_dir = mirror_dir or _MIRROR_DIR
