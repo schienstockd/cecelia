@@ -93,6 +93,31 @@ def split_z_gaps(masks):
     return masks
 
 
+def _refuse_unknown_v4_model(model_type):
+    """Raise unless cellpose 4 can load `model_type` AS ITSELF — a v4 built-in or a checkpoint file.
+
+    Cellpose 4 answers any other name with a log warning and `cpsam_v2`, so without this a cellpose 3
+    model reaching the default env (a preview worker started there, #1555) segments with SAM under the
+    cyto3 label. Julia routes v3 names to the `cellpose-v3` env; this is the backstop for anything that
+    gets here anyway — run or preview.
+    """
+    import os
+    if model_type in _CELLPOSE_V4_BUILTINS or os.path.isfile(str(model_type)):
+        return
+    if model_type in _CELLPOSE_V3_BUILTINS:
+        raise ValueError(
+            f'{model_type!r} is a cellpose 3 model and this process runs cellpose 4 (the default env). '
+            "It runs in the 'cellpose-v3' env — install it from Settings → System.")
+    raise ValueError(
+        f'Cellpose model {model_type!r} is neither a cellpose 4 built-in '
+        f'({", ".join(_CELLPOSE_V4_BUILTINS)}) nor a checkpoint file; cellpose 4 would silently '
+        'load cpsam_v2 in its place.')
+
+
+#: Cellpose 4 built-in names — `BUILTIN_CELLPOSE_MODELS` with backend `:v4` (app/src/config/models.jl).
+_CELLPOSE_V4_BUILTINS = ('cpsam_v2', 'cpsam')
+
+
 class CellposeUtils(SegmentationUtils):
 
     def __init__(self, params, dim_utils):
@@ -130,6 +155,7 @@ class CellposeUtils(SegmentationUtils):
                 model_type=model_type,
             )
         else:
+            _refuse_unknown_v4_model(model_type)
             try:
                 model = models.CellposeModel(
                     gpu=self.use_gpu, device=self.gpu_device,

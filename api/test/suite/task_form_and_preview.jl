@@ -212,6 +212,56 @@ end
     @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
 end
 
+@testset "API: the preview worker runs in the env its model needs (#1555)" begin
+    # THE REPORTED BUG: one worker, always in the default env, so a `cyto3` preview ran cellpose 4,
+    # which loaded `cpsam_v2` in its place. The routing decision is pure so every case is pinned here
+    # without a process (a live worker would need the Mac-only cellpose-v3 env).
+    act(have, want; alive = true, starting = false) =
+        _preview_env_action(have, want; alive = alive, starting = starting)
+    @test act(missing, :cellpose_v3) === :launch
+    @test act(missing, :any) === :launch
+    @test act(nothing, nothing) === :ready
+    @test act(:cellpose_v3, :cellpose_v3) === :ready
+    @test act(nothing, :cellpose_v3) === :switch                          # the bug: never reuse it
+    @test act(:cellpose_v3, nothing) === :switch                          # …and back for SAM
+    @test act(nothing, :cellpose_v3; alive = false, starting = true) === :switch
+    @test act(:cellpose_v3, :cellpose_v3; alive = false, starting = true) === :wait
+    @test act(nothing, nothing; alive = false) === :launch                # died: relaunch
+    # rendering / flow / AF run in either env: keep what is up rather than pay a warm-up
+    @test act(:cellpose_v3, :any) === :ready
+    @test act(nothing, :any; alive = false, starting = true) === :wait
+    @test _preview_env_symbol("default") === nothing
+    @test _preview_env_symbol(Cecelia.pixi_env_name(:cellpose_v3)) === :cellpose_v3
+
+    # the env comes from the task's own params, through the run's preparation
+    seg = "segment.cellposeMeasure"
+    mdl(m...) = Dict("models" => Dict(string(i) => Dict("model" => x, "cellChannels" => ["CH1"])
+                                      for (i, x) in enumerate(m)))
+    @test _preview_env_for(seg, mdl("cyto3")) == (:cellpose_v3, nothing)
+    @test _preview_env_for(seg, mdl("cpsam_v2")) == (nothing, nothing)
+    @test _preview_env_for("", nothing) == (:any, nothing)
+    env, bad = _preview_env_for(seg, mdl("cyto3", "cpsam_v2"))
+    @test bad[1] == 400 && JSON3.read(bad[2]).code == "params-not-previewable"
+
+    # a missing cellpose-v3 env is refused up front, naming the install — never the default env.
+    # Raised before anything probes :7656, so this cannot touch a developer's running worker.
+    if isempty(Cecelia._python_bin_for_env(:cellpose_v3))
+        st, body = _post(api_preview_start, Dict("funName" => seg, "params" => mdl("cyto3")))
+        @test st == 409
+        d = JSON3.read(body)
+        @test d.code == "env-missing" && occursin("cellpose-v3", d.error)
+        @test _preview() === nothing                                     # nothing launched
+    end
+    st, body = _post(api_preview_start, Dict("funName" => seg, "params" => mdl("cyto3", "cpsam_v2")))
+    @test st == 400
+
+    # callers with no model (stills, flow) keep whatever worker is up
+    for f in ("movie_render.jl", "optical_flow_api.jl")
+        src = read(joinpath(API_TEST_DIR, "..", "src", f), String)
+        @test occursin("_ensure_preview!()", src)
+    end
+end
+
 @testset "API: preview-labels slab resolves an UNREGISTERED vn" begin
     # A first-time segmentation preview writes `<img_labels_dir>/<vn>__preview.ome.zarr` BEFORE any
     # ccid.json entry exists — registration only happens on a successful RUN. The `preview=1` slab

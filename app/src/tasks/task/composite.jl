@@ -118,6 +118,13 @@ function preview_params(task::CompositeTask, params::AbstractDict, img::CciaImag
     params
 end
 
+# Composite: the env of the step `preview_params` hands the params to.
+function preview_py_env(task::CompositeTask, params::AbstractDict)::Union{Symbol,Nothing}
+    for sub in _composite_steps(task)
+        task_previewable(sub) && return preview_py_env(sub, params)
+    end
+    :any
+end
 
 # Composite: the FIRST step that names an output. A composite carries no params of its own — the form
 # is the union of its steps' (see `api_task_definitions`) — so the name the user typed belongs to a

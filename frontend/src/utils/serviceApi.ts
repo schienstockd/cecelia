@@ -72,7 +72,11 @@ export const previewApi = {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
   },
-  start: () => svcPost('/api/preview/start'),
+  /** Warm the worker. `funName`/`params` name the task about to be previewed, so the worker starts in
+   *  the env its model needs (cellpose 3 models run in `cellpose-v3`) rather than paying a second
+   *  warm-up switching over on the first request. */
+  start: (ctx?: { funName?: string; params?: Record<string, unknown> | null }) =>
+    svcPost('/api/preview/start', { funName: ctx?.funName, params: ctx?.params ?? undefined }),
   /** Stop the worker AND sweep the preview labels store under `taskDir`. `taskDir` is optional for
    *  callers that don't know the open image (Settings module), but a normal toggle-off from a viewer
    *  window MUST pass it so the scratch bytes don't outlive the toggle. */

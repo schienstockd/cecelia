@@ -274,9 +274,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     try {
       // warm first: pays the worker's imports (and, on the first run, the normalisation statistic) at
       // toggle-on rather than making the user's first parameter change look like a 10 s hang
-      await previewApi.start()
+      await previewApi.start(context.value ?? undefined)
     } catch (e) {
-      fail(e instanceof Error ? e.message : String(e))
+      fail(e instanceof Error ? e.message : String(e), (e as SvcError)?.code ?? '')
     }
     await refreshStatus()
     request()

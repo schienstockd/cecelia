@@ -117,5 +117,52 @@ class TestCellposeV4CallPath(unittest.TestCase):
         self.assertEqual(len(self.model.calls), 1)
 
 
+class TestNoSilentModelFallback(unittest.TestCase):
+    """Cellpose 4 loads `cpsam_v2` for any name it does not know, with only a log line. So a cellpose 3
+    model that reaches the default env — the preview worker always started there before #1555 — would
+    segment with SAM under the cyto3 label. `_get_model` refuses before cellpose sees the name."""
+
+    def setUp(self):
+        import cecelia.utils.cellpose_utils as cpu
+        from cellpose import models
+        self.cpu, self.models = cpu, models
+        self._major, self._ctor = cpu._CELLPOSE_MAJOR, models.CellposeModel
+        cpu._CELLPOSE_MAJOR = 4                                  # the default env
+        self.loaded = []
+        models.CellposeModel = lambda **kw: self.loaded.append(kw['pretrained_model']) or object()
+        self.seg = CellposeUtils({'taskDir': '/tmp'}, None)
+
+    def tearDown(self):
+        self.cpu._CELLPOSE_MAJOR = self._major
+        self.models.CellposeModel = self._ctor
+
+    def test_cellpose3_model_is_refused_naming_the_env(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.seg._get_model('cyto3')
+        self.assertIn('cellpose-v3', str(ctx.exception))
+        self.assertEqual(self.loaded, [])                        # cellpose never saw the name
+
+    def test_unknown_name_is_refused(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.seg._get_model('not-a-model')
+        self.assertIn('cpsam_v2', str(ctx.exception))
+        self.assertEqual(self.loaded, [])
+
+    def test_builtins_and_checkpoint_files_load(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.pt') as f:
+            for name in ('cpsam_v2', 'cpsam', f.name):
+                self.seg._get_model(name)
+            self.assertEqual(self.loaded, ['cpsam_v2', 'cpsam', f.name])
+
+    def test_v4_builtins_match_the_julia_catalogue(self):
+        """`BUILTIN_CELLPOSE_MODELS` (app/src/config/models.jl) is the one list; the guard mirrors it."""
+        import re
+        from pathlib import Path
+        src = (Path(__file__).resolve().parents[3] / 'app' / 'src' / 'config' / 'models.jl').read_text(encoding='utf-8')
+        v4 = set(re.findall(r'\("(\w+)",\s*"[^"]*",\s*:v4\)', src))
+        self.assertEqual(v4, set(self.cpu._CELLPOSE_V4_BUILTINS))
+
+
 if __name__ == '__main__':
     unittest.main()

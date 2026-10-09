@@ -89,15 +89,24 @@ const PREVIEW_PORT   = 7656
 # falls back to a one-off renderer when the worker can't answer, which would hide a stale worker
 # forever — the bump is what replaces it.
 # 17 adds `cleanupImages.smooth` to the previewable set — the same "dead button" case as 15.
-const PREVIEW_PROTOCOL = 17
+# 18: the ping names the worker's pixi env (`env`), because a worker now runs in the env its model needs
+# (cellpose 3 models in `cellpose-v3`, #1555) and adoption has to know which one it is adopting; and
+# cellpose 4 refuses a model name it does not know instead of silently loading `cpsam_v2`. A protocol-17
+# worker can say neither.
+const PREVIEW_PROTOCOL = 18
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
+# `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for
+# the opt-in sidecar — same meaning as `run_py`'s `env`. One worker at a time: a preview that needs the
+# other env replaces it (`_ensure_preview!`), because the two cannot share a process.
 mutable struct PreviewWorker
     port::Int
     proc::Union{Base.Process, Nothing}
+    env::Union{Symbol, Nothing}
 end
 
-PreviewWorker(; port::Int=PREVIEW_PORT) = PreviewWorker(port, nothing)
+PreviewWorker(; port::Int=PREVIEW_PORT, env::Union{Symbol,Nothing}=nothing) =
+    PreviewWorker(port, nothing, env)
 
 """
     send(w::PreviewWorker, msg) -> Dict
@@ -147,9 +156,12 @@ function launch!(w::PreviewWorker)::PreviewWorker
     # the worker's `traceback.print_exc()` was discarded and the only thing Julia ever saw of a failure
     # was the `{"type":"error","msg":"TypeName: message"}` reply — the exception type and message with
     # no stack. The traceback now reaches the console under `source = "preview"`.
+    # The env comes from the model (`PreviewWorker.env`); the worker echoes `CECELIA_PY_ENV` in its
+    # ping so a worker adopted after a backend restart can be matched against what a preview needs.
     w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
-                          addenv(`$(python_bin_path()) $PREVIEW_WORKER`,
+                          addenv(`$(python_bin_for(w.env)) $PREVIEW_WORKER`,
                                  "PYTHONPATH" => _python_dir(),
+                                 "CECELIA_PY_ENV" => pixi_env_name(w.env),
                                  "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
                                  # Same reason as the BLAS budget, for the OTHER parallelism this
                                  # compute uses: coastal's flow stage is `Parallel(n_jobs=-1)`, so
@@ -163,14 +175,19 @@ function launch!(w::PreviewWorker)::PreviewWorker
         try
             reply = send(w, Dict("type" => "ping"))
             protocol = Int(get(reply, "protocol", 1))
-            if protocol == PREVIEW_PROTOCOL
-                @info "Preview worker connected" port=w.port
+            # The ENV too, not only the protocol: on a switch the old worker (same protocol, other env)
+            # may still be answering when this loop starts, and accepting it would serve a cellpose 3
+            # preview from cellpose 4 — the bug the switch exists to fix (#1555).
+            env_ok = String(get(reply, "env", "")) == pixi_env_name(w.env)
+            if protocol == PREVIEW_PROTOCOL && env_ok
+                @info "Preview worker connected" port=w.port env=pixi_env_name(w.env)
                 return w
             end
             # Someone else holds the port. Keep waiting — it may be on its way out (a kill is async, and
             # the process we just spawned cannot bind until it goes) — but remember what answered so the
             # timeout can name the cause instead of blaming the launch.
-            squatter = protocol
+            squatter = env_ok ? "protocol $protocol" :
+                       "protocol $protocol in the '$(get(reply, "env", "?"))' env"
         catch e
             # Anything not a code-bug shape is treated as "still not up" — the child pays 17.7 s
             # of Python imports before it can bind, so a stream of connect-refused / read-timeout /
@@ -183,14 +200,15 @@ function launch!(w::PreviewWorker)::PreviewWorker
         if !process_running(w.proc)
             error("Preview worker exited immediately" *
                   (squatter === nothing ? "" :
-                   " — port $(w.port) is held by a worker speaking protocol $squatter, which is why it " *
+                   " — port $(w.port) is held by a worker speaking $squatter, which is why it " *
                    "could not bind. Stop that process (Settings → Restart stops it with the backend)."))
         end
         sleep(0.5)
     end
     error("Preview worker did not start within 90 seconds" *
           (squatter === nothing ? "" :
-           " — port $(w.port) is answering with protocol $squatter, not $PREVIEW_PROTOCOL"))
+           " — port $(w.port) is answering with $squatter, not protocol $PREVIEW_PROTOCOL in " *
+           "the '$(pixi_env_name(w.env))' env"))
 end
 
 """

@@ -576,6 +576,54 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
     end
 
+    @testset "a cellpose 3 model is previewed in the cellpose-v3 env (#1555)" begin
+        # THE REPORTED BUG. The worker always started in the default env, so `cyto3` reached
+        # cellpose 4 — which loads `cpsam_v2` for a name it does not know, with only a log line. The
+        # preview showed SAM output labelled cyto3. The env is now the task's to name, and the run and
+        # the preview name it through the same `cellpose_py_env`.
+        bag(models...) = Dict{String,Any}(string(i - 1) => Dict{String,Any}("model" => m)
+                                          for (i, m) in enumerate(models))
+        @test Cecelia.cellpose_py_env(bag("cyto3")) === :cellpose_v3
+        @test Cecelia.cellpose_py_env(bag("cyto2", "cyto3")) === :cellpose_v3
+        @test Cecelia.cellpose_py_env(bag("cpsam_v2")) === nothing
+        @test Cecelia.cellpose_py_env(bag("/models/custom.pt")) === nothing   # custom → v4
+        @test Cecelia.cellpose_py_env(nothing) === nothing
+        err = try Cecelia.cellpose_py_env(bag("cyto3", "cpsam_v2")); nothing catch e; e end
+        @test err isa ErrorException && occursin("Cannot mix", err.msg)
+
+        # what the Segment page runs: a composite, whose cellpose step owns the env
+        cpm = Cecelia._task_from_fun_name("segment.cellposeMeasure")
+        params = Dict{String,Any}("models" => Dict("0" => Dict{String,Any}(
+            "model" => "cyto3", "matchAs" => "base", "cellChannels" => ["CH1"])))
+        @test Cecelia.preview_env(cpm, params) === :cellpose_v3
+        params["models"]["0"]["model"] = "cpsam_v2"
+        @test Cecelia.preview_env(cpm, params) === nothing
+        # a task whose compute runs in either env keeps whatever worker is up
+        @test Cecelia.preview_env(Cecelia._task_from_fun_name("segment.ridges"), Dict{String,Any}()) === :any
+
+        # the run picks its env through the same helper — one decision, not two copies of it
+        src = read(joinpath(_SUITE_APP_SRC, "tasks", "segment", "cellpose.jl"), String)
+        run_body = src[findfirst("function _run_task(task::CellposeSegment", src)[1]:end]
+        @test occursin("cellpose_py_env(models_converted)", run_body)
+
+        # the worker is launched in the env it was asked for, and says which in its ping
+        @test Cecelia.pixi_env_name(nothing) == "default"
+        @test Cecelia.pixi_env_name(:cellpose_v3) == "cellpose-v3"
+        @test Cecelia.PreviewWorker(; env = :cellpose_v3).env === :cellpose_v3
+        # a missing opt-in env refuses, naming the install action — never the default env's python
+        if isempty(Cecelia._python_bin_for_env(:cellpose_v3))
+            err = try Cecelia.python_bin_for(:cellpose_v3); nothing catch e; e end
+            @test err isa ErrorException && occursin("pixi install -e cellpose-v3", err.msg)
+        end
+        @test Cecelia.python_bin_for(nothing) == Cecelia.python_bin_path()
+        preview_src = read(joinpath(dirname(pathof(Cecelia)), "preview.jl"), String)
+        launch_body = preview_src[findfirst("function launch!(", preview_src)[1]:end]
+        @test occursin("python_bin_for(w.env)", launch_body)
+        @test occursin("\"CECELIA_PY_ENV\" => pixi_env_name(w.env)", launch_body)
+        # …and readiness requires that env back: on a switch the old worker may still be answering
+        @test occursin("protocol == PREVIEW_PROTOCOL && env_ok", launch_body)
+    end
+
     @testset "a stale preview worker is stopped by port, not by handle" begin
         # THE BUG THIS PINS. On a protocol mismatch the backend must remove the worker holding :7656.
         # It only ever PINGED that process, so the handle it has is a bare `PreviewWorker()` with no
