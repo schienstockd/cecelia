@@ -62,6 +62,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/INSTALL.md`](docs/INSTALL.md) | Installation, Unix + Windows — the *how*. Needs review before production deployment |
 | [`docs/SHIPPING.md`](docs/SHIPPING.md) | Distribution architecture — the *why*: Pixi/constructor + browser stack, update model, Python env + version pins. **40 KB — slice it** |
 | [`docs/RELEASING.md`](docs/RELEASING.md) | Release *policy*: when to tag, rc-vs-release-vs-milestone, pre-1.0 versioning, cutting checklist |
+| [`docs/USER_REPORTS.md`](docs/USER_REPORTS.md) | **A user sent a bug report** — private intake repo, triage against `main`, public issues, reply. Follow it for any report |
 | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) | How this software was built and how we know it works — field context, per-subsystem validation record, attribution + publication position. Longer version of the README's *How this software was built* section |
 | [`docs/FUTURE.md`](docs/FUTURE.md) | **Deliberately deferred**: known-better alternatives, non-goals, work gated on a trigger that may never fire |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Temporary forward goals: phases + post-v1 backlog. Consult before starting a new phase |
