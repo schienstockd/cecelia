@@ -19,7 +19,7 @@ board plots for it, added to the copy and rendered headless by the app's own fro
                                                      [--no-stage-boards]
 
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. `--ask-why` resumes the
-finished session once for the why (costs an agent turn; off for a back-fill).
+finished session once for the why (~$6 a run: the first turn re-reads the session; off for a back-fill).
 
 A run the account's usage limit stopped (the trace's `result` event is a 429 / limit refusal) is said
 in the title, at the top of the entry and in the `agentRun` marker (`rateLimited`): its decisions are
@@ -439,7 +439,9 @@ def ask_why(root: pathlib.Path, session_id: str, dec: dict, claude: str = "claud
     """Resume the finished session once (no tools) and ask why for every decision. Raises
     `claude_cli.RateLimited` on the usage limit and `WhyFailed` on any other CLI failure — never an
     empty answer that reads as "the agent had nothing to say". Its cost goes to `why.json` (`{costUsd}`)
-    beside the trace, failed or not: the trace's cost is the run's alone, and `guide_run.py` logs both."""
+    beside the trace, failed or not: the trace's cost is the run's alone, and `guide_run.py` logs both.
+    `budget_usd` does not bound it: the first turn re-reads the whole session (~$6 for a 90-turn run)
+    before the cap is checked."""
     prompt = WHY_PROMPT + "\n".join(heading(s).removeprefix("### ") for s in dec["sections"])
     cmd = [claude, "-p", "--resume", session_id, "--tools", "", "--strict-mcp-config",
            "--mcp-config", json.dumps({"mcpServers": {}}), "--max-budget-usd", str(budget_usd),

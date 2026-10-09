@@ -279,8 +279,9 @@ def main(argv=None) -> int:
     ap.add_argument("--source-project", required=True)
     ap.add_argument("--image", required=True, action="append", help="repeat for each run image")
     ap.add_argument("--source-set", default="", help="the source set, for its cohort QC")
-    ap.add_argument("--no-ask-why", dest="ask_why", action="store_false",
-                    help="skip the post-run why turn (it resumes the session once)")
+    ap.add_argument("--ask-why", action="store_true",
+                    help="after the run, resume the whole session to ask why: ~$6 a run, since its first turn "
+                         "re-reads the session and the budget cap only applies after it")
     ap.add_argument("--knowledge", action="store_true",
                     help="carry the source project's lab-knowledge entries into the copy (P4)")
     ap.add_argument("--discovery", choices=("on", "off"), default="on",

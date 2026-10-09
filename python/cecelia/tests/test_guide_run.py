@@ -40,7 +40,7 @@ INTRAVITAL = {"sourceProject": "tSJpBI", "sourceSet": "k58SK7", "images": ["jV6p
 
 
 def _args(**kw):
-    base = dict(runs=1, budget_usd=5.0, knowledge=False, at=None, ask_why=True, projects_dir=None,
+    base = dict(runs=1, budget_usd=5.0, knowledge=False, at=None, ask_why=False, projects_dir=None,
                 timeout_s=600, api_url="http://127.0.0.1:1", discovery="on")
     return types.SimpleNamespace(**{**base, **kw})
 
@@ -108,7 +108,7 @@ class TestBrief(unittest.TestCase):
 class TestRunAppArgs(unittest.TestCase):
     def argv(self, **kw):
         base = dict(root=pathlib.Path("R"), projects_dir="P", api_url="http://a", budget_usd=5.0,
-                    knowledge=False, timeout_s=600, ask_why=True)
+                    knowledge=False, timeout_s=600, ask_why=False)
         return guide_run.run_app_argv("intravital-timelapse", {**INTRAVITAL, "checklist": ["look at the gate"]},
                                       **{**base, **kw})
 
@@ -134,12 +134,18 @@ class TestRunAppArgs(unittest.TestCase):
         self.assertEqual(a.brief, "Use the intravital timelapse guide to process the images in this project.")
         self.assertEqual(a.check, ["look at the gate"])
         self.assertEqual((a.guide, a.budget_usd, a.knowledge, a.ask_why, a.root, a.projects_dir),
-                         ("intravital-timelapse", 5.0, False, True, "R", "P"))
+                         ("intravital-timelapse", 5.0, False, False, "R", "P"))
 
-    def test_knowledge_and_no_why_pass_through(self):
-        a = self.parsed(self.argv(knowledge=True, ask_why=False))
+    def test_knowledge_and_why_pass_through(self):
+        a = self.parsed(self.argv(knowledge=True, ask_why=True))
         self.assertTrue(a.knowledge)
-        self.assertFalse(a.ask_why)
+        self.assertTrue(a.ask_why)
+
+    def test_why_turn_is_opt_in(self):
+        """~$6 a run (it resumes the whole session): never on unless asked, here or forwarded to the timer."""
+        self.assertNotIn("--ask-why", self.argv())
+        self.assertNotIn("--ask-why", guide_run.forward_args("intravital-timelapse", _args()))
+        self.assertIn("--ask-why", guide_run.forward_args("intravital-timelapse", _args(ask_why=True)))
 
     def test_discovery_passes_through_to_both_mcp_servers(self):
         self.assertEqual(self.parsed(self.argv()).discovery, "on")
