@@ -218,6 +218,10 @@ def _agent_error(b: dict) -> str:
             + (f", in {b['runs']} separate runs" if (b.get("runs") or 0) > 1 else ""))
 
 
+#: The last line of every issue the judge files, like the 🤖 line on Claude Code PRs.
+FOOTER = "⚖️ Filed by the weekly judge from its local record."
+
+
 def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
     v = b.get("verify") or {}
     d = lambda s: defuse(s, uids)   # noqa: E731
@@ -239,9 +243,7 @@ def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
     if b.get("fix_landed"):
         lines += ["**Fix landed:** " + ", ".join(f"`{c['commit'][:8]}`" for c in b["fix_landed"])
                   + ", awaiting the judge's re-check.", ""]
-    lines += ["---", "Filed by the weekly judge from its local record. This issue is a mirror: its text, "
-              "comments and labels are never read back, and the next change to the bug rewrites it. "
-              "Answer it in `pixi run judge-review`; fix briefs say `Refs` and never close it."]
+    lines += ["---", FOOTER]
     return "\n".join(lines) + "\n"
 
 
@@ -434,8 +436,7 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
 # ── the status issue (D12) ─────────────────────────────────────────────────────────────────────
 
 _STATUS_BODY = ("The weekly judge comments here once a pass: the bugs it filed, closed and reopened as "
-                "issues (label `judge-bug`), the backlog, spend, and a failed pass. Written by the judge, "
-                "never read back.\n")
+                "issues (label `judge-bug`), the backlog, spend, and a failed pass.\n\n---\n" + FOOTER + "\n")
 
 
 def status_issue(gh: Gh, owner: str) -> int | None:
