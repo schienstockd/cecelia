@@ -176,13 +176,27 @@ class WeeklyTest(_WeeklyFixture):
         # B1 is open but no agent checked it: "verified" counts only B2
         # the confirmed one is among the fixed; the other two are still waiting on the judge
         self.assertIn("**Bugs: 2 open** (1 verified, 1 new), 1 fixed since the last pass, "
-                      "2 more with a fix landed, awaiting re-check", body)
+                      "2 more with a fix landed, awaiting re-check, 1 waiting for the judge.", body)
         md = self.rec.render_markdown(record)
         self.assertIn("**Fix landed:** `abcdef01` #1430 — awaiting re-check", md)
-        self.assertIn("**Fix landed:** `abcdef01` — confirmed gone", md)
+        self.assertIn("**Fix landed:** `abcdef01` — confirmed fixed", md)
         self.assertIn("A fix landed for 3 bug(s) since the last pass (a commit names the bug's key): "
-                      "1 confirmed gone by the judge, 2 awaiting re-check.", md)
+                      "1 confirmed fixed, 2 awaiting re-check.", md)
         self.assertIn("· `fanout-b4` — still there · fix landed `abcdef01` #1430", md)
+
+    def test_a_landed_fix_verify_dismissed_counts_as_fixed_in_the_headline(self):
+        fix = [{"commit": "abcdef0123", "subject": "fix"}]
+        record = self.build("2026-10-05", bugs=[_bug("B1", status="dismissed", fix_landed=fix),
+                                                _bug("B2", status="gone"), _bug("B3", status="dismissed")])
+        self.assertIn("2 fixed since the last pass, 0 waiting", self.w._pr_body(record))
+
+    def test_the_headline_says_parked_bugs_and_the_backlog_against_the_last_pass(self):
+        self.rec.write(self.build("2026-09-28", bugs=[_bug(f"B{i}", status="unjudged") for i in range(1, 4)]))
+        record = self.run_pass()
+        self.assertEqual(record["run"]["backlog_last"], 3)
+        record["bugs"].append(_bug("B9", status="parked", verify={"verdict": "guard", "date": "2026-10-05"}))
+        self.assertIn("**Bugs: 2 open** (1 verified, 2 new), 1 parked (can't happen yet), 0 fixed since the last pass, "
+                      "0 waiting for the judge (last pass 3)", self.w._pr_body(record))
 
     def test_a_failure_never_replaces_a_pass_record(self):
         self.rec.write(self.build("2026-10-05"))

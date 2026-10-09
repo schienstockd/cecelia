@@ -23,12 +23,12 @@ MIRROR_REL = pathlib.PurePosixPath("docs/ai-assist/judge-runs")   # in any check
 _MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.judge_staleness import judge_store  # noqa: E402
+from cecelia.effectiveness.judge_staleness import backlog, judge_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
 SCHEMA_VERSION = 1
 PROPOSAL_KINDS = ("tighten", "ratchet")
-BUG_STATUSES = ("open", "unjudged", "unmerged", "gone", "dismissed", "wont_fix")
+BUG_STATUSES = ("open", "unjudged", "unmerged", "parked", "gone", "dismissed", "wont_fix")
 
 _HOW_TO_USE = (
     "Point a session at this file. To fix bugs, work the `open` ones under *Bugs*. To tighten a "
@@ -37,9 +37,10 @@ _BUGS_HOW_TO = (
     "Possible bugs in shipped code, from fanout findings nobody fixed, checked against the pinned SHA. "
     "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
     "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
-    "A bug an agent verified says how: `fix` is live, `guard` can't happen yet (add the guard or test "
-    "its *Live once* names), `decide` waits for the owner's answer; an *Owner's answer* overrides the "
-    "agent's recommendation. "
+    "A bug an agent verified says how: `fix` is live, `decide` waits for the owner's answer; an *Owner's "
+    "answer* overrides the agent's recommendation. A `guard` bug can't happen yet: it is `parked`, off the "
+    "work list, and goes back to verify when a commit touches its file (add the guard or test its *Live once* "
+    "names to close it sooner). "
     "The next pass checks each one again and marks the fixed ones `gone`. "
     "`pixi run judge-review` walks these one at a time and can open a briefed fix session for each, "
     "or answer `wont_fix` for a bug that isn't worth fixing. "
@@ -50,6 +51,18 @@ _BUGS_HOW_TO = (
     "A *run review* is a section of an agent run's record a person marked bad with cause `guide` (the guide didn't "
     "say it) or `platform` (the agent couldn't see it): fix the guide or the surface the note names. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
+
+
+def parked_why(v: dict) -> str:
+    """A parked bug's `why`, from its `guard` verdict."""
+    return (f"verified guard ({v.get('date') or '?'}): can't happen yet"
+            + (f"; live once {v['trigger']}" if v.get("trigger") else ""))
+
+
+def backlog_line(record: dict) -> str:
+    """`N waiting for the judge (last pass M)`; the trend is the point, so it's said even at 0."""
+    last = record["run"].get("backlog_last")
+    return f"{backlog(record['bugs'])} waiting for the judge" + (f" (last pass {last})" if last is not None else "")
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
     "*Agent's code* is a mistake in the reviewed diff; *older code* was there before it. A proposal "
@@ -211,10 +224,15 @@ def _landed(b: dict) -> str:
     return ", ".join(f"`{c['commit'][:8]}`" + (f" #{c['pr']}" if c.get("pr") else "") for c in b.get("fix_landed", []))
 
 
+#: A landed fix is confirmed once the bug is one of these.
+_CONFIRMED = ("gone", "dismissed")
+
+
 def landed_counts(bugs: _t.Sequence[dict]) -> tuple[int, int]:
-    """(bugs a fix landed for since the last pass, of those the ones the judge confirmed gone)."""
+    """(bugs a fix landed for since the last pass, of those confirmed fixed: the judge said `gone` or
+    verify dismissed it)."""
     landed = [b for b in bugs if b.get("fix_landed")]
-    return len(landed), sum(b["status"] == "gone" for b in landed)
+    return len(landed), sum(b["status"] in _CONFIRMED for b in landed)
 
 
 def bug_location(b: dict) -> str:
@@ -244,14 +262,14 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
     landed, confirmed = landed_counts(bugs)
     if landed:
         out += [f"A fix landed for {landed} bug(s) since the last pass (a commit names the bug's key): "
-                f"{confirmed} confirmed gone by the judge, {landed - confirmed} awaiting re-check.", ""]
-    for b in (b for b in bugs if b["status"] != "unjudged" and not b.get("muted")):
+                f"{confirmed} confirmed fixed, {landed - confirmed} awaiting re-check.", ""]
+    for b in (b for b in bugs if b["status"] not in ("unjudged", "parked") and not b.get("muted")):
         v = b.get("verify") or {}
         out += [f"### {b['id']} · {b['status']}{' · ' + v['verdict'] if v else ''} · {_bug_where(b)} · `{b['key']}`", "",
                 f"**Check:** {b['why']}", ""]
         if b.get("fix_landed"):
             out += [f"**Fix landed:** {_landed(b)} — "
-                    + ("confirmed gone" if b["status"] == "gone" else "awaiting re-check"), ""]
+                    + ("confirmed fixed" if b["status"] in _CONFIRMED else "awaiting re-check"), ""]
         if b.get("owner_answer"):
             out += [f"**Owner's answer** (follow this, not the recommendation): {b['owner_answer']}", ""]
         if v:
@@ -282,6 +300,14 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
                 "a dismissed repeated error re-opens once its run count doubles.", ""]
         out += [f"- {b['id']} · {b['status'].replace('_', ' ')} · {_bug_where(b)} · `{b['key']}` — "
                 f"hit in {b.get('runs') or 1} run(s), last {(b.get('last_seen') or '?')[:10]}" for b in muted]
+        out.append("")
+    parked = [b for b in bugs if b["status"] == "parked"]
+    if parked:
+        out += ["### Parked", "", "Verified `guard`: the flaw is there, but nothing reachable triggers it. "
+                "Each goes back to verify when a commit touches its file.", ""]
+        out += [f"- {b['id']} · {_bug_where(b)} · `{b['key']}` — {(b.get('verify') or {}).get('effect') or b['desc']}"
+                + (f" Live once: {b['verify']['trigger']}" if (b.get("verify") or {}).get("trigger") else "")
+                for b in parked]
         out.append("")
     waiting = [b for b in bugs if b["status"] == "unjudged"]
     if waiting:
@@ -348,6 +374,7 @@ def render_markdown(record: dict) -> str:
            f"| Tokens | {tokens_line(run['spend'])} |",
            f"| Spend (list price) | {spend_line(run['spend'])} |",
            f"| Owner queue | {len(record['queue'])} (`pixi run judge-review`) |",
+           f"| Backlog | {backlog_line(record)} |",
            *(f"| Failed | {step}: `{_cell(one_line(why))}` |" for step, why in (run.get("failed") or {}).items()),
            "",
            "## Bugs", "",

@@ -125,13 +125,15 @@ def apply_reviews(record: dict, reviews: _t.Iterable[dict]) -> dict:
 
 
 #: Work-list order: what is known live first, then what the owner already decided, then the rest.
-_WORK_ORDER = {"fix": 0, "decide": 1, "guard": 2}
+_WORK_ORDER = {"fix": 0, "decide": 1}
 
 
 def work_items(record: dict) -> list[dict]:
-    """Every open bug, live ones first, except a decide item the owner hasn't answered yet."""
+    """Every open bug, live ones first, except a decide item the owner hasn't answered yet and a
+    `guard` one: parked (`bugs.py`), though a record from before parking still has it `open`."""
     queued = {item["ref"] for item in record.get("queue", [])}
     bugs = [b for b in record.get("bugs", []) if b["status"] == "open"
+            and (b.get("verify") or {}).get("verdict") != "guard"
             and (b["id"] not in queued or b.get("owner_decision") == "open")]
     bugs.sort(key=lambda b: _WORK_ORDER.get((b.get("verify") or {}).get("verdict"), 3))
     return [{"kind": "work", "ref": b["id"]} for b in bugs]
