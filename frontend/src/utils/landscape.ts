@@ -47,6 +47,10 @@ export const LANDSCAPE_SWATCHES: Record<LandscapeCategory, string> = {
 /** One tile's raw statistics, before clustering. Kept small on purpose — every extra dimension a
  *  future author bolts on makes the k-means slower to converge and the "why this cluster" harder
  *  to reason about. Add one and drop one before you add a second. */
+/** One population's members in a tile. `layer` indexes `sourceRun.pops` — the (segmentation, pop
+ *  type) it belongs to; absent on older captures (one layer, `sourceRun.pops` an object). */
+export interface LandscapePop { path: string; name: string; count: number; layer?: number }
+
 export interface TileStats {
   /** Mean per-pixel luminance in the tile, 0..1. */
   intensity: number
@@ -81,8 +85,9 @@ export interface LandscapeTile {
   // Phase 2b: which populations occupy this tile at the shown t, one entry per pop with
   // count > 0 in THIS tile. `path` is the pop manager's canonical id (e.g. `/live/tnaive`);
   // `name` is the display name. Populations with zero members in this tile are absent, and
-  // a tile with no member pops has no `pops` key at all (sparse per Decision 3).
-  pops?: Array<{ path: string; name: string; count: number }>
+  // a tile with no member pops has no `pops` key at all (sparse per Decision 3). `layer` names the
+  // (segmentation, pop type) — every one drawn is counted, and `/qc` on two is two pops.
+  pops?: LandscapePop[]
   // Phase 3: per-tile tracks summary. `count` = distinct tracks with a cell in this tile
   // at t; `meanDuration` = mean of per-track full-lifetime frame counts across those tracks;
   // `meanSpeed` = mean instantaneous per-cell speed in this tile at t. Both mean fields are
@@ -122,7 +127,8 @@ export interface LandscapeResult {
   // (`channels` / `segCount` / `pops` / `tracks`); each value names the run/vn/version the
   // field came from. Absent when a v1 landscape reader encounters this; sparse per-field
   // when v2 (only fields that were actually computed have a `sourceRun` entry).
-  sourceRun?: Record<string, Record<string, string | number>>
+  // `pops` is a list — one per population layer counted (older captures: one object).
+  sourceRun?: Record<string, Record<string, string | number> | Record<string, string | number>[]>
   // Phase 6: how the compute reduced Z — see `LandscapeViewport`. Absent on v1 and on v2
   // envelopes from a compute that computed nothing.
   viewport?: LandscapeViewport
@@ -136,7 +142,7 @@ export interface AugmentTile {
   tileId: string
   channels?: Record<string, { mean: number; snr: number }>
   segCount?: number
-  pops?: Array<{ path: string; name: string; count: number }>
+  pops?: LandscapePop[]
   tracks?: { count: number; meanDuration?: number; meanSpeed?: number }
 }
 
@@ -147,7 +153,7 @@ export interface AugmentTile {
  *  time isn't in the augmentation, therefore not on the tile). */
 export function augmentLandscape(
   base: LandscapeResult, augment: AugmentTile[],
-  sourceRun?: Record<string, Record<string, string | number>>,
+  sourceRun?: LandscapeResult['sourceRun'],
   viewport?: { renderMode?: string; zLo?: number; zHi?: number },
 ): LandscapeResult {
   const byId = new Map<string, AugmentTile>()

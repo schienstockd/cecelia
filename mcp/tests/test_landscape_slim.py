@@ -111,6 +111,24 @@ class SlimTileShapeTest(unittest.TestCase):
         self.assertEqual([["0", 3], ["1", 1]], out["tiles"][0]["pops"])
         self.assertEqual([["0", 5]], out["tiles"][1]["pops"])
 
+    def test_pops_of_two_segmentations_stay_apart(self):
+        # Every segmentation's pops are counted, and their paths collide — `/qc` on OTI and on
+        # P14 are two populations, so the layer is part of the popMap key.
+        env = {"landscape": {
+            "grid": {"cols": 1, "rows": 1}, "schemaVersion": 2, "legend": [],
+            "sourceRun": {"pops": [{"valueName": "OTI", "popType": "flow", "gatingMtime": "1"},
+                                   {"valueName": "P14", "popType": "flow", "gatingMtime": "2"}]},
+            "tiles": [
+                _fat_tile(0, 0, pops=[
+                    {"path": "/qc", "name": "qc", "count": 3, "layer": 0},
+                    {"path": "/qc", "name": "qc", "count": 2, "layer": 1}]),
+            ]}}
+        out = slim_landscape_for_mcp(env)["landscape"]
+        self.assertEqual(2, len(out["popMap"]))
+        self.assertEqual({"path": "/qc", "name": "qc", "valueName": "P14", "popType": "flow"},
+                         out["popMap"]["1"])
+        self.assertEqual([["0", 3], ["1", 2]], out["tiles"][0]["pops"])
+
     def test_prelude_fields_preserved_verbatim(self):
         env = {"landscape": {
             "grid": {"cols": 1, "rows": 1}, "schemaVersion": 2, "legend": [{"category": "dark"}],

@@ -1,6 +1,6 @@
 # Viewer overlay parity — populations from every segmentation, movies that match
 
-Status: P1–P5 BUILT 2026-10-07 in `viewer-pops-all-segs`, remaining: a visual pass in the viewer. Follows #1477 (movies draw the
+Status: P1–P6 BUILT 2026-10-07 in `viewer-pops-all-segs`, remaining: a visual pass in the viewer. Follows #1477 (movies draw the
 viewer's tracks, not one segmentation's).
 
 ## Problem
@@ -71,11 +71,15 @@ reading for this plan):
   and `_cb_scale` (movie). The movie's ramp-or-palette call moves from the column's dtype to
   `_is_categorical_col` (the viewer's `valueKind`), and a zero-width range shades mid-ramp as the viewer.
   The viewer's overlays route reads its levels / range through the same `_cb_scale_of`.
+- **P6 landscape.** The Share-time tile summary counted the pop manager's one pop layer. It now
+  counts every layer the viewer draws, each filtered to the pops whose eye is on
+  (`popLayers: [{valueName, popType, paths}]`). `sourceRun.pops` is one entry per layer, and a tile
+  pop's `layer` indexes it (`/qc` on two segmentations is two pops); the MCP `popMap` resolves it to
+  the segmentation + pop type. An index, not the names spelled out per tile pop: those took the
+  32×32 envelope ratchet from ~640 KB to ~800 KB, the index to ~680 KB (budget 700).
 
 ## Not in scope
 
-- The landscape tile summary still takes ONE pop layer (the pop manager's, when its type is on) —
-  its backend computes one pops summary per tile.
 - `hiddenTrackPops` keys by path within a segmentation, so the same path under two pop types of one
   segmentation shares a ribbon eye.
 
@@ -85,6 +89,9 @@ reading for this plan):
   its own segmentation only. Which rule is canonical is a call to make, not a bug fix.
 - A mask recoloured by colour-by (`colourLabels`) uses its own table's scale, not a pooled one. Not
   reachable today: only a batch sets `colourLabels`, and a batch draws one segmentation's pops.
+- The viewer's per-pop point eyes (`hiddenPops`) are window-local and transient, so a movie recorded
+  from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
+  `trackPopHidden`).
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.

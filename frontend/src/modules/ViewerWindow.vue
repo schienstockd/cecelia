@@ -86,7 +86,7 @@ import {
   overlaysUrl, buildPointBufferLayers, pooledColourScale, timepointRange, overlayLayersSummary,
   buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
-  type OverlayPayload, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
+  type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
@@ -723,6 +723,20 @@ interface PopLayer { vn: string; popType: string; payload: OverlayPayload }
 const popLayers = ref<PopLayer[]>([])
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
 const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
+/** Whether a layer's pop is DRAWN — its eye (`hiddenPops`) is the only authority; the manager's
+ *  `show` only seeds it on fetch. The points, the capture snapshot and the landscape counts all ask
+ *  here, so they agree on what is on screen. */
+const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.vn, l.popType, path))
+/** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
+ *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a shown track-drawable
+ *  pop (`isTrack` OR `hasTracks` — MULTI_POP_TRACKING_PLAN.md Decision 2), its ribbon eye on. The
+ *  ribbons and the capture snapshot both ask here. */
+function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
+  const su = setUid.value
+  if (!su || !settings.getShowGatedTracks(su)) return false
+  if (settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(l.vn)) return false
+  return p.show && !!p.labels?.length && (p.isTrack || !!p.hasTracks) && !trackPopHidden(l.vn, p.path)
+}
 /** The Tracks-legend key of a pop's cell-track ribbon — `vn::path` for gating pops (the key the
  *  colour overrides were always stored under), `vn::popType::path` for the other cell pop types; the
  *  trackclust form is `vn::trackclust::path`. The movie builds the same keys (`viewer_overlay_closure`). */
@@ -1608,8 +1622,7 @@ function rebuildOverlays() {
   const r = renderer.value
   points = buildPointBufferLayers(popLayers.value.map(l => ({
     payload: l.payload,
-    hidden: new Set(l.payload.pops.filter(p => hiddenPops.value.has(popKey(l.vn, l.popType, p.path)))
-                                  .map(p => p.path)),
+    hidden: new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path)),
   })), meta.value, PALETTES.cecelia)
   pointCount.value = points.count
   r?.setOverlayPoints(points.data)
@@ -1628,7 +1641,6 @@ function rebuildOverlays() {
   //   3. Trackclust ribbons — from `trackclustPayloads` (every segmentation's), gated by
   //      `settings.getPopVisible(setUid, 'trackclust')`. Fetched with `popType=trackclust` in
   //      `loadTracks`; same filter-by-pop-labels treatment. See VIEWER_CONTROLS_SPLIT_PLAN.md → P7.
-  const gatedOn = setUid.value ? settings.getShowGatedTracks(setUid.value) : false
   const trackclustOn = setUid.value ? settings.getPopVisible(setUid.value, 'trackclust') : false
   const overrides = setUid.value ? settings.getTrackSourceColours(setUid.value) : {}
   const sources: { vn: string; payload: OverlayPayload; colour?: string; popColour?: string }[] = []
@@ -1689,17 +1701,10 @@ function rebuildOverlays() {
   // above: where trackclust is drawing on a segmentation, its cell-track ribbons draw the SAME tracks
   // in a lump colour, so they stand down. Trackclust off, or no trackclust pops on that segmentation
   // (empty payload → not cached) → the cell-track ribbons draw.
-  for (const layer of gatedOn ? popLayers.value : []) {
+  for (const layer of popLayers.value) {
     const lvn = layer.vn
-    if (trackclustOn && trackclustPayloads.value.has(lvn)) continue
     for (const pop of layer.payload.pops ?? []) {
-      // A pop is ribbon-drawable when it was TYPED as a track pop (`isTrack`) OR when its cells
-      // actually hold `track_id > 0` (`hasTracks`) — data OR type, either qualifies. Legacy servers
-      // omit `hasTracks`; the guard falls back to today's `isTrack`-only behaviour.
-      // See docs/todo/MULTI_POP_TRACKING_PLAN.md Decision 2.
-      if (!pop.show || !pop.labels?.length) continue
-      if (!(pop.isTrack || pop.hasTracks)) continue
-      if (trackPopHidden(lvn, pop.path)) continue
+      if (!popRibbonDrawn(layer, pop)) continue
       // Compose label + track_source filters: keep cells in this pop's gate AND authored by
       // (or unattributed under) this pop. Without the second filter, a cell that's in /qc/test's
       // gate but whose track_id came from an earlier /qc/CD169- run drew the CD169- ribbon under
@@ -4648,14 +4653,10 @@ interface ViewerCapture {
   // Point pops: every population layer the viewer draws — each (segmentation, pop type) — keyed to
   // the segmentation its pops were authored on, which is what the server resolves the layer names
   // against. A cell-track ribbon layer alongside when the ribbon drew (gated chip, its eye on).
-  const gatedOn = !!setUid.value && settings.getShowGatedTracks(setUid.value)
   for (const l of popLayers.value) {
     for (const p of l.payload.pops) {
-      if (!p.show || hiddenPops.value.has(popKey(l.vn, l.popType, p.path))) continue
-      layers[`(${l.popType}) (${l.vn}) ${p.path}`] = { visible: true }
-      if ((p.isTrack || p.hasTracks) && gatedOn && !trackPopHidden(l.vn, p.path)) {
-        layers[`(track) (${l.vn}) Tracks ${p.path}`] = { visible: true }
-      }
+      if (popDrawn(l, p.path)) layers[`(${l.popType}) (${l.vn}) ${p.path}`] = { visible: true }
+      if (popRibbonDrawn(l, p)) layers[`(track) (${l.vn}) Tracks ${p.path}`] = { visible: true }
     }
   }
   // Whole-segmentation tracks: one per vn that DREW (its "directions" eye on, not stood down for
@@ -4890,14 +4891,12 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
         .filter(ch => ch.visible)
         .map(({ index, name }) => ({ index, name }))
       const labelsVn = labelName.value    // '' when the labels layer is off — backend skips segCount
-      // Pops snapshot: the pop manager's currently-authored (vn, popType), gated by whether
-      // the panel has that popType toggled visible. `resolve_pops` on the backend applies
-      // per-pop `.show` — we only pass "is the layer on"; the individual-pop filter lives
-      // there. Empty popVn/popType ⇒ backend skips pops entirely.
-      const gcType = gatingCurrent.value.popType || 'flow'
-      const gcOn = shownPopTypes.value.includes(gcType as typeof CELL_POP_TYPES[number])
-      const popVn = gcOn ? (gatingCurrent.value.valueName || '') : ''
-      const popType = gcOn ? gcType : ''
+      // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
+      // and the pops in it whose eye is on — so the tile counts are the dots on screen.
+      const popLayersSnap = popLayers.value.map(l => ({
+        valueName: l.vn, popType: l.popType,
+        paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
+      })).filter(l => l.paths.length > 0)
       // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
       // "one at a time" discipline `labelName` uses for the labels layer — the backend
       // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
@@ -4910,7 +4909,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       // At least one augmentable dimension has to be on before we ask; if the frontend has
       // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
       const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
-                         (!!popVn && !!popType) || !!trackVn
+                         popLayersSnap.length > 0 || !!trackVn
       if (anyAugment && projectUid) {
         // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
         // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
@@ -4939,14 +4938,14 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
               cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
               channels: visibleChannels,
               ...(labelsVn ? { labelsValueName: labelsVn } : {}),
-              ...(popVn && popType ? { popValueName: popVn, popType } : {}),
+              ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
               ...(trackVn ? { tracksValueName: trackVn } : {}),
             }),
           })
           if (cRes.ok) {
             const cJson = await cRes.json() as {
               tiles?: AugmentTile[],
-              sourceRun?: Record<string, Record<string, string | number>>,
+              sourceRun?: LandscapeResult['sourceRun'],
               viewport?: { renderMode: string; zLo?: number; zHi?: number },
             }
             if (Array.isArray(cJson.tiles)) {

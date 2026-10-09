@@ -252,10 +252,14 @@ end
 #
 # `nothing` return means "can't compute pops for this (image, vn, popType)" — either the
 # resolver failed or centroids are missing. Frontend degrades: no `pops` key on any tile.
+#
+# `paths`: the pops the viewer is drawing (its point eyes), which win over the manager's `.show` —
+# `nothing` = `.show` (an older caller with no per-pop snapshot).
 function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::AbstractString,
                           t::Int, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
                           z_lo::Union{Int,Nothing} = nothing,
-                          z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Vector{NamedTuple}},Nothing}
+                          z_hi::Union{Int,Nothing} = nothing,
+                          paths::Union{Nothing,AbstractVector} = nothing)::Union{Vector{Vector{NamedTuple}},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     # Centroids: one label_props read, keyed by :label so we can bin per label id.
     df = try
@@ -298,6 +302,10 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
         resolve_pops(img, pop_type; value_name = pop_vn)
     catch
         return nothing
+    end
+    if paths !== nothing
+        want = Set(String.(paths))
+        pops = [merge(p, (; show = true)) for p in pops if String(p.path) in want]
     end
     _pop_counts_from_label_map(pops, label_to_tile, ncols * nrows)
 end
@@ -505,7 +513,7 @@ end
 
 Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
          channels: [{index, name}], labelsValueName?,
-         popValueName?, popType?, tracksValueName? }`
+         popLayers?: [{valueName, popType, paths?}], popValueName?, popType?, tracksValueName? }`
 Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?, tracks?}, ...],
            sourceRun?: {segCount?, pops?, tracks?, channels?} }`
 
@@ -525,11 +533,12 @@ that tile at the shown t. Empty / omitted ⇒ tiles have no `segCount` key (spar
 by visibility per Decision 3). A vn that has no `label_props` on disk is treated
 as absent (a fresh unmeasured image doesn't 500 the whole compute).
 
-`popValueName` + `popType` are the (Phase 2b) visibility snapshot for the population
-overlay: the pop manager's currently-active (vn, popType) — matches what
-`overlay_author` reads via `resolve_pops`. Both non-empty ⇒ each tile with any
-visible-pop members gets `pops: [{path, name, count}]` for pops with count > 0
-in THAT tile (sparse per Decision 3 — zero-count pops are simply absent, and a
+`popLayers` is the (Phase 2b) visibility snapshot for the population overlay: every
+(segmentation, pop type) the viewer draws, `paths` the pops in it whose eye is on (absent
+⇒ the pop manager's `.show`). The older `popValueName` + `popType` pair (the pop manager's
+one set) is read when `popLayers` is absent. Each tile with any visible-pop members gets
+`pops: [{path, name, count, layer}]` for pops with count > 0 in THAT tile — `layer` indexes
+`sourceRun.pops` (its `valueName` / `popType`), since paths collide across segmentations (sparse per Decision 3 — zero-count pops are simply absent, and a
 tile with no member pops has no `pops` key at all). Same coordinate frame as
 segCount: level-0 pixel bins.
 
@@ -547,7 +556,7 @@ An untracked vn (no `track_id` obs) drops the pass; no `tracks` key on any tile.
 (Decision 4 — not sprinkled into each tile). One key per field that was actually
 computed; the value names what the field came from:
   `segCount = {valueName, labelsVersion}`
-  `pops     = {valueName, popType, gatingMtime}`   (gating file mtime, cache-key parity)
+  `pops     = [{valueName, popType, gatingMtime}]` one per pop layer (gating file mtime)
   `tracks   = {valueName, labelsVersion}`
   `channels = {valueName, imageVersion, level}`    (pyramid level actually read)
 Sparse — a field absent from the response has no `sourceRun` key. Enables
@@ -597,9 +606,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     channels_raw = get(body, :channels, nothing)
     channels_raw isa AbstractVector || return 400, JSON3.write((; error = "channels required (list)"))
     labels_vn = _wstr(body, :labelsValueName)   # empty ⇒ segCount off (Decision 3 sparsity)
-    pop_vn    = _wstr(body, :popValueName)      # both required for pops — the pop manager's
-    pop_type  = _wstr(body, :popType)           # (vn, popType), from `cc.gatingCurrent`
-    pops_on   = !isempty(pop_vn) && !isempty(pop_type)
+    pop_layers = _landscape_pop_layers(body)
+    pops_on   = !isempty(pop_layers)
     tracks_vn = _wstr(body, :tracksValueName)   # empty ⇒ tracks off
     # Early-out: nothing to compute (no channels AND no labels/pops/tracks layer visible).
     # Return an empty tiles list rather than 400 — the frontend calls this optimistically at
@@ -725,29 +733,37 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         end
     end
 
-    # ── Per-tile pops (Phase 2b) — only when the pop manager's (vn, popType) is set AND
-    # the layer is on. `resolve_pops` filters by `.show`, so we get exactly what the viewer
+    # ── Per-tile pops (Phase 2b) — every pop layer the viewer draws, each filtered to the pops
+    # whose eye is on (`paths`; else `resolve_pops`' `.show`), so we get exactly what the viewer
     # is currently painting. Empty tile ⇒ no `pops` key (Decision 3 sparsity carries all
     # the way down: an off pop is absent, a zero-count tile is absent, no false zeros).
     if pops_on && img_obj !== nothing
-        pop_tiles = try
-            _tile_pop_counts(img_obj, pop_vn, pop_type, t, ncols, nrows, sizeX, sizeY;
-                             z_lo = z_lo, z_hi = z_hi)
-        catch
-            nothing
-        end
-        if pop_tiles !== nothing
-            for i in eachindex(tiles)
-                bag = pop_tiles[i]
-                isempty(bag) && continue
-                tiles[i]["pops"] = [Dict("path" => p.path, "name" => p.name, "count" => p.count)
-                                    for p in bag]
+        runs = Dict{String,Any}[]
+        for L in pop_layers
+            pop_tiles = try
+                _tile_pop_counts(img_obj, L.valueName, L.popType, t, ncols, nrows, sizeX, sizeY;
+                                 z_lo = z_lo, z_hi = z_hi, paths = L.paths)
+            catch
+                nothing
             end
+            pop_tiles === nothing && continue
+            # A tile pop names its layer by index into `sourceRun.pops` (`layer`, 0-based): `/qc` on
+            # two segmentations is two pops (VIEWER_OVERLAY_PARITY_PLAN.md P6).
             # Record provenance even if all tiles were empty — the compute ran, and a reader
             # seeing "pops in sourceRun but no `pops` on any tile" learns that the visible-pops
             # snapshot HAD nothing landing on-screen, not that pops weren't asked for.
-            source_run["pops"] = _source_run_for_pops(img_obj, pop_vn, pop_type)
+            li = length(runs)
+            push!(runs, _source_run_for_pops(img_obj, L.valueName, L.popType))
+            for i in eachindex(tiles)
+                bag = pop_tiles[i]
+                isempty(bag) && continue
+                append!(get!(tiles[i], "pops", Dict{String,Any}[]),
+                        [Dict{String,Any}("path" => p.path, "name" => p.name, "count" => p.count,
+                                          "layer" => li)
+                         for p in bag])
+            end
         end
+        isempty(runs) || (source_run["pops"] = runs)
     end
 
     # ── Per-tile tracks summary (Phase 3) — only when the frontend has a tracks layer on
@@ -847,6 +863,28 @@ function _source_run_for_labels(img::CciaImage, vn::AbstractString)::Dict{String
         LATEST_DEFAULT_VAL
     end
     Dict("valueName" => String(vn), "labelsVersion" => lv)
+end
+
+# The population layers to count: `popLayers = [{valueName, popType, paths?}]` — every
+# (segmentation, pop type) the viewer draws, `paths` its shown pops — else the older single
+# `popValueName` + `popType` (the pop manager's). Layers missing either name are dropped.
+function _landscape_pop_layers(body)
+    raw = get(body, :popLayers, nothing)
+    out = NamedTuple{(:valueName, :popType, :paths),Tuple{String,String,Union{Nothing,Vector{String}}}}[]
+    if raw isa AbstractVector
+        for L in raw
+            L isa AbstractDict || continue
+            vn = _wstr(L, :valueName); pt = _wstr(L, :popType)
+            (isempty(vn) || isempty(pt)) && continue
+            ps = get(L, :paths, nothing)
+            push!(out, (; valueName = vn, popType = pt,
+                          paths = ps isa AbstractVector ? String[string(p) for p in ps] : nothing))
+        end
+        return out
+    end
+    vn = _wstr(body, :popValueName); pt = _wstr(body, :popType)
+    (isempty(vn) || isempty(pt)) || push!(out, (; valueName = vn, popType = pt, paths = nothing))
+    out
 end
 
 function _source_run_for_pops(img::CciaImage, vn::AbstractString,
