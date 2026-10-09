@@ -203,6 +203,14 @@ than the screen, and a resize repaints it at once:
    sibling call sites, a failing test, recital, the bug key in the commit). You're in that session as usual; the queue comes back when
    you exit it. `[w] won't fix` closes a bug you don't want.
 
+**Issues.** Once the mirror runs (step 7), each card names the bug's issue under its title: the link,
+*issue pending* (a pass stopped while filing it; the next adopts or files it), or *issue missing*
+(the record maps it to a number that isn't a judge issue you opened). All of it comes from the
+record; `judge-review` never calls GitHub. The fix brief names the issue, says not to read it, and
+asks for `Refs #N` in the commit, never `fixes` / `closes`: the judge closes it when it confirms the
+fix. Your answers reach the issue at the next pass: `[w]` closes it as not planned, `[o]` / `[a]`
+add one comment (your words, defused like a body), and `[f]` labels it `in-progress`.
+
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `docs/ai-assist/judge-runs/<date>.md` for any session pointed at the record.
