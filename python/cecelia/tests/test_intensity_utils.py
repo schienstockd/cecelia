@@ -183,7 +183,7 @@ class TestIntensityUtils(unittest.TestCase):
             self.assertEqual(s['signalFrac'], 0.0)
 
     def test_saturation_stats_reports_sparsity_fields(self):
-        """The plan-time signal for the correction-plan photon-limited card (Q-M4). Two derived
+        """The sparsity signal shown in the Cleanup facts (Q-M4). Two derived
         fields on the same histogram pass: `zeroFrac` (exact-zero fraction, what SMOOTHING_PLAN
         measured — 91-96% on the resonance-scanner channels that needed denoise) and `signalFrac`
         (the complement of the derived-background fraction). Directionally: a mostly-zero channel

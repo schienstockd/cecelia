@@ -36,7 +36,6 @@
 - **tls.jl**: `tls_paths`/`ensure_dev_cert` — self-signed cert under `<config_dir>/tls/` via system `openssl`; `nothing` ⇒ the server falls back to HTTP/1.1. The preference: `app/src/config/tls.jl`.
 - **preview_api.jl**: `/api/preview/status|start|stop|run` over the resident `preview/preview_worker.py` (:7656); a run whose viewer store ≠ the task's store is a 409, never a silent switch.
 - **task_validate_api.jl**: `POST /api/tasks/validate` — form-time param advisory for `backendAdvisor` (`tasks/paramAdvisors.ts`), answered by the Julia validators in `app/src/tasks/param_validators.jl`.
-- **correction_plan_api.jl**: `/api/correction-plan/presets|recommend|get|save|mount` over `correction_plan.jl` (`mount` → `plan_to_chain_template`, gated by `overwrite`).
 - **labels_api.jl**: `GET /api/labels/ids` — real cell label / track ids for a segmentation (`kind=cells|tracks`), capped at `limit` with `total`/`truncated`, `sample=true` for a stride sample.
 - **landscape_api.jl**: `/api/viewer/landscape` (browser publishes, MCP `get_landscape` reads; in-memory, 1 h TTL) + `/api/viewer/landscape/compute` (server-side per-tile channel/seg/pop/track summary with `sourceRun` provenance).
 - **vault_api.jl**: the model-vault primitives shared by `denoise_api.jl` + `optical_flow_api.jl` — `safe_vault_model_name`, `vault_model_row`/`vault_model_bytes`/`vault_model_mtime`, `vault_rename`/`vault_delete` (pooled `.pt` and per-channel bundles). `vault_model_stem` stays in `config.jl`.

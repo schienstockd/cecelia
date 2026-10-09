@@ -107,7 +107,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # real gain/expression difference. See qc.jl saturation_metrics.
     "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsSaturated",
                                          "maxClippedSignalFrac", "maxClippedFrac",
-                                         # Sparsity for the correction-plan photon-limited card
+                                         # Sparsity per acquisition
                                          # (CORRECTION_QC_PLAN.md Q-M4). `maxZeroFrac` surfaces an
                                          # image whose sparsest channel is far sparser than its
                                          # peers — the cohort question the raw threshold cannot

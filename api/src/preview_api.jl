@@ -383,6 +383,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
         [Dict{String,Any}(
             "sourceChannel" => Int(m["sourceChannel"]),
             "name"          => String(get(m, "name", "")),
+            # the viewer's per-channel compare badge ("AF", "Smooth") — which preview this channel reads
+            "badge"         => String(get(m, "badge", "AF")),
             "valueName"     => String(get(m, "valueName", value_name)),
             "imageUid"      => image_uid,
             "projectUid"    => project_uid,

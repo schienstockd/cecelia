@@ -1,7 +1,8 @@
 # Cleanup facts — show what was measured, drop the plan recommender
 
-**Status:** parked (2026-10-07), nothing built. **Gated on the 2026-10-07 night run** (intravital
-guide run, `--discovery on` vs `off`). Replaces the recommending half of
+**Status:** built (2026-10-09) — P0 answered, P1–P3 built; open checkpoint: P2's look at one
+photon-limited and one bright movie. Was gated on the night guide run (intravital, `--discovery on`
+vs `off`), which ran 2026-10-09. Replaces the recommending half of
 [`CORRECTION_QC_PLAN.md`](CORRECTION_QC_PLAN.md) (cards, wizard, plan.json, mount, order buckets). Its
 measuring half (Q-M4 sparsity probes, `meta.saturation`) stays. Related:
 [`TASK_DISCOVERY_PLAN.md`](TASK_DISCOVERY_PLAN.md) (task text, `--discovery` arm),
@@ -64,16 +65,29 @@ measuring half (Q-M4 sparsity probes, `meta.saturation`) stays. Related:
   shown: if the agent used it, the per-channel line is the replacement; if it did not, P1 is still
   for people and the agent check waits for a later pair.
 
-### P1 — per-channel facts
-- The image accessor, a row on the Cleanup page for the selected image, and `get_image_info` carrying
+**Answered (2026-10-09, one run per arm).** `on` acted on "not photon-limited": no denoising, cellpose
+per cell type, gates on marker intensity. `off` smoothed inside cellpose and merged the cell types.
+Neither went back to Cleanup after segmenting. So the per-channel line is the replacement.
+
+### P1 — per-channel facts — **built**
+- `img_cleanup_facts` (`app/src/qc.jl`) on the image payload as `cleanupFacts`; `CleanupFacts.vue` at
+  the top of the Cleanup page's task column; `get_image_info` carries it, `--discovery off` drops it.
+  Clipped % is of SIGNAL voxels and 0 unless the structural detector saw a pile-up. An image imported
+  before the sparsity fields shows no channel line until a denoise run backfills it.
+- Was: the image accessor, a row on the Cleanup page for the selected image, and `get_image_info` carrying
   it. Copy per `docs/ui/COPY.md`.
 
-### P2 — smoothing preview
-- Extract the smooth compute and declare the preview trait. Checkpoint: Dominik looks at one
+### P2 — smoothing preview — **built, checkpoint open**
+- `python/cecelia/utils/smooth_utils.py` (shared by `smooth_run.py` and the worker's `_preview_smooth`);
+  `task_previewable(::Smooth)`; protocol 17. The viewer's compare badge reads "Smooth".
+- Was: extract the smooth compute and declare the preview trait. Checkpoint: Dominik looks at one
   photon-limited and one bright movie in the preview.
 
-### P3 — removal
-- The files and routes in Decision 3, the MCP tool and its guidance line, and the
+### P3 — removal — **built**
+- Removed as listed, plus the §2.1 score layer (`QCResult` and friends — nothing else read it) and the
+  autonomous MCP's `recommend_correction_plan`. `import.photon_limited` now reads "N mostly-zero
+  channels" and points at the facts; the key is unchanged so banked findings re-render.
+- Was: the files and routes in Decision 3, the MCP tool and its guidance line, and the
   `import.photon_limited` copy (Decision 6). Update `docs/inventory/*`, `docs/API.md`,
   `docs/inventory/MCP.md`, and mark CORRECTION_QC_PLAN's recommender sections superseded.
 

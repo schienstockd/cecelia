@@ -60,8 +60,10 @@ class InstalledCoastalContractTest(unittest.TestCase):
         self.assertEqual(missing, [], f'LearnedAffinityInference lacks {missing}')
 
     def test_the_smoothing_engine_is_there(self):
-        """`smooth_run.py` imports these at MODULE scope, so a rollback errors on load."""
-        from coastal.smooth import gated_frames, noise_sigma      # noqa: F401
+        """`smooth_utils` (the smoothing run AND its preview) imports these LAZILY, inside the call that
+        needs each one — so a rollback no longer errors on load, it errors mid-run. This test is the
+        early guard: every name `smooth_utils` imports from `coastal.smooth` is listed here."""
+        from coastal.smooth import gated_frames, noise_sigma, flow_warped_frames  # noqa: F401
         from coastal.smooth import spatial_smooth, temporal_smooth  # noqa: F401
 
     def test_training_takes_what_opticalFlow_train_passes(self):

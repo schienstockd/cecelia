@@ -267,8 +267,6 @@ end
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
         "/api/chains/run", "/api/chains/runs",
-        "/api/correction-plan/get",
-        "/api/correction-plan/presets",
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
@@ -338,9 +336,6 @@ end
         "/api/hmm_state_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 3 — HMM-state snapshot cards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
-        "/api/correction-plan/mount",
-        "/api/correction-plan/recommend",
-        "/api/correction-plan/save",
         "/api/gating/copy", "/api/gating/pop/add",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
@@ -479,7 +474,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 110 && length(POST_ROUTES) == 164
+    @test length(GET_ROUTES) == 108 && length(POST_ROUTES) == 161
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

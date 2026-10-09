@@ -168,9 +168,8 @@ def saturation_stats(hist, background_method='triangle'):
         'topFrac': (n_top / total) if total else 0.0,
         'signalVoxels': signal,
         'clippedSignalFrac': (n_top / signal) if signal else 0.0,
-        # Sparsity fields for the correction-plan photon-limited card (CORRECTION_QC_PLAN.md Q-M4).
-        # Free — same histogram pass, one extra sum. The plan engine reads these directly rather
-        # than a hardcoded verdict, so the threshold stays tunable there.
+        # Sparsity fields (CORRECTION_QC_PLAN.md Q-M4). Free — same histogram pass, one extra sum.
+        # Shown as-is on the Cleanup page (`img_cleanup_facts`, CLEANUP_FACTS_PLAN D1), no verdict.
         'zeroFrac': (n_zero / total) if total else 0.0,
         'signalFrac': (signal / total) if total else 0.0,
     }

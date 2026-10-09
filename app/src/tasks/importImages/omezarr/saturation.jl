@@ -35,9 +35,9 @@ end
 """
     ensure_saturation_meta!(img) -> Bool
 
-Backfill `meta["saturation"]` for an image imported before the probe existed, so the correction
-plan's photon-limited and saturation rules, denoise's saturation gate and the import QC dot have
-their signal. Called by `recommend_plan(img)` and the denoise task. A no-op when
+Backfill `meta["saturation"]` for an image imported before the probe existed, so denoise's
+saturation gate, the import QC dot and the Cleanup facts (`img_cleanup_facts`) have their signal.
+Called by the denoise task. A no-op when
 the field is already there. Probes the `default` store — clipping and photon counts are
 ACQUISITION properties; a derived store (drift padding, AF output) would skew `zeroFrac` — through
 `_probe_saturation`, then persists through the import's own fill-only meta write and refreshes the

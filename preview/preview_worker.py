@@ -79,6 +79,7 @@ import numpy as np
 import zarr
 
 import cecelia.utils.correction_utils as correction_utils
+import cecelia.utils.smooth_utils as smooth_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
@@ -249,7 +250,9 @@ def _cellpose_imports():
 #: 16: a `render` command — stills on the shared shader. A protocol-15 worker answers "unknown
 #:     command: 'render'", which reads as a card that never renders; the backend's fallback (the
 #:     one-off renderer) would hide that, so the bump is what replaces the stale worker.
-PROTOCOL = 16
+#: 17: `cleanupImages.smooth` enters the previewable set (`_preview_smooth`, the run's compute via
+#:     `smooth_utils`). A protocol-16 worker answers "no preview backend", i.e. a dead button.
+PROTOCOL = 17
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -279,6 +282,7 @@ class PreviewState:
         self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
         self._af = {}            # (im_path, channel, method) → per-channel AF stats
         self._af_alpha = {}      # (im_path, src, dst, method) → bleedthrough coefficient (0.0 = none)
+        self._smooth = {}        # (im_path, channels, spatial params, stat, frames) → (gain, gate sigma)
 
     def image(self, im_path):
         """The image as DASK levels. Kept lazy because cellpose's whole-image normalisation
@@ -422,6 +426,38 @@ class PreviewState:
                     if self._af_alpha.get((im_path, p[0], p[1], method, _mode(p[1])), 0.0) > 0.0},
             saturated={ch: entries[i][1] for i, ch in enumerate(channels)},
             nbins=entries[0][2], exponent=entries[0][3])
+
+    def smooth_globals(self, im_path, sel, spatial_key, spatial_fn, stat, half, restore_gain):
+        """`(gain, gate_sigma)` for a smoothing preview — the run's whole-image values, cached.
+
+        Both come from a seeded sample of FULL planes across the movie, exactly as `smooth_run.py`
+        derives them (`smooth_utils.estimate_gain` / `estimate_gate_sigma`), so the preview of a tile
+        is scaled and gated the way the run will scale and gate it. Deriving them over the visible
+        tile instead would make a dim tile look brighter than the run writes it. The first preview of
+        an image pays the sample (tens of planes); later ones, at the same settings, cost nothing.
+        """
+        key = (im_path, tuple(sel), spatial_key, stat, half, bool(restore_gain))
+        if key not in self._smooth:
+            level = self.image_zarr(im_path)[0]
+            _, dim_utils = self.image(im_path)
+            idx = {ax: dim_utils.dim_idx(ax) for ax in ('T', 'C', 'Z')}
+            nt = level.shape[idx['T']] if idx['T'] is not None else 1
+            nz = level.shape[idx['Z']] if idx['Z'] is not None else 1
+
+            def read_plane(t, c, z):
+                sl = [slice(None)] * level.ndim
+                for ax, v in (('T', t), ('C', c), ('Z', z)):
+                    if idx[ax] is not None:
+                        sl[idx[ax]] = v
+                return np.asarray(level[tuple(sl)], dtype=np.float32)
+
+            gain = 1.0
+            if restore_gain and np.issubdtype(level.dtype, np.integer):
+                gain = smooth_utils.estimate_gain(read_plane, spatial_fn, sel, nt, nz)[0]
+            gate_sigma = (smooth_utils.estimate_gate_sigma(read_plane, spatial_fn, sel, nt, nz)[0]
+                          if stat == 'gated' and half > 0 else None)
+            self._smooth[key] = (gain, gate_sigma)
+        return self._smooth[key]
 
 
 STATE = PreviewState()
@@ -1168,6 +1204,7 @@ def _preview_af(ctx):
         preview_images.append({
             'sourceChannel': int(ch),
             'name': f'{label} AF',
+            'badge': 'AF',
             'valueName': str(ctx.value_name),
             'path': str(preview_path),
             'shape': [int(x) for x in full_shape],
@@ -1185,6 +1222,78 @@ def _preview_af(ctx):
         'hasSignal': has_signal,
         'noSignalWhy': why,
         'derived': stats_out,
+        'previewImages': preview_images,
+    }
+
+
+def _preview_smooth(ctx):
+    """Smooth the visible region at the current timepoint with the run's own compute.
+
+    `smooth_utils.smooth_timepoint` over the tile, across the temporal window the run would use
+    (clamped at the ends of the movie, as the run clamps), then the run's whole-image gain
+    (`PreviewState.smooth_globals`). The one difference from a run is the tile edge: a Gaussian or
+    bilateral near the crop border sees fewer neighbours than it would in the full plane, the same
+    seam caveat every tiled preview carries.
+
+    Delivered like AF's preview: one scratch image store per smoothed channel at
+    `{task_dir}/{value_name}__preview_af_ch{N}.ome.zarr` — the per-channel image-preview store, named
+    for its first user — so the browser swaps that channel's slab onto it and A/B is the preview
+    toggle. Unselected channels are untouched, as in the run.
+    """
+    p = ctx.params
+    sel = [int(c) for c in (p.get('channels') or [])] or list(range(int(ctx.axis_len.get('C', 1))))
+    method = str(p.get('spatialMethod', 'gaussian'))
+    spatial_key = (method, float(p.get('spatialSigma', 1.0)), float(p.get('bilateralColor', 10.0)),
+                   float(p.get('bilateralReach', 3.0)), float(p.get('bilateralPolish', 0.6)))
+    spatial_fn = smooth_utils.build_spatial_fn(*spatial_key)
+    frames = int(p.get('temporalFrames', 3))
+    stat = str(p.get('temporalStat', 'median'))
+    half = max(0, (frames - 1) // 2) if frames > 1 else 0
+    gain, gate_sigma = STATE.smooth_globals(ctx.im_path, sel, spatial_key, spatial_fn, stat, half,
+                                            bool(p.get('restoreGain', True)))
+
+    t_now = int(ctx.bounds.get('T', (0, 1))[0])
+    n_t = int(ctx.axis_len.get('T', 1))
+    tiles, spatial = {}, {}
+
+    def spatial_at(t, c):
+        t = min(max(t, 0), n_t - 1)              # clamp, as the run does
+        if t not in tiles:
+            tiles[t] = ctx.crop_at_t(t) if 'T' in ctx.axis_len else ctx.crop()
+        if (t, c) not in spatial:
+            spatial[(t, c)] = spatial_fn(np.asarray(tiles[t][c], dtype=np.float32))
+        return spatial[(t, c)]
+
+    outs = smooth_utils.smooth_timepoint(spatial_at, sel, t_now, half, frames, stat, gate_sigma,
+                                         float(p.get('farnebackMaxShiftPx', 8.0)))
+    axes, full_shape, block_shape = ctx.block_geometry()
+    names = ctx.channel_names()
+    level_dtype = ctx.levels[0].dtype
+    dtype_max = (np.iinfo(zarr_utils.native_dtype(level_dtype)).max
+                 if np.issubdtype(level_dtype, np.integer) else None)
+
+    preview_images = []
+    for c in sel:
+        out, _ = smooth_utils.apply_gain(outs[c], gain, dtype_max)
+        block = np.reshape(out.astype(level_dtype), block_shape)
+        path = _stage_af_image_store(block, axes, full_shape, ctx.bounds, ctx.task_dir,
+                                     ctx.value_name, channel_index=c, im_path=ctx.im_path)
+        label = names[c] if c < len(names) else f'ch{c}'
+        preview_images.append({
+            'sourceChannel': int(c),
+            'name': f'{label} smoothed',
+            'badge': 'Smooth',
+            'valueName': str(ctx.value_name),
+            'path': str(path),
+            'shape': [int(x) for x in full_shape],
+            'axes': list(axes),
+        })
+
+    has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tiles[min(max(t_now, 0), n_t - 1)])
+    return {
+        'hasSignal': has_signal,
+        'noSignalWhy': why,
+        'derived': {'gain': round(float(gain), 3)},
         'previewImages': preview_images,
     }
 
@@ -1294,6 +1403,7 @@ _BACKENDS = {
     'opticalFlow.inspect': _preview_flow_inspect,
     'opticalFlow.probability': _preview_flow_probability,
     'cleanupImages.afCorrect': _preview_af,
+    'cleanupImages.smooth': _preview_smooth,
 }
 
 

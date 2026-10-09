@@ -276,6 +276,10 @@ function _image_payload(img::CciaImage)
         # flags the GUI renders as a badge + tooltip. Includes the live calibration fallback so
         # pre-migration images still surface metadata warnings (see _image_qc_payload).
         qc              = _image_qc_payload(img),
+        # What was measured that bears on Cleanup — per channel zero / clipped %, per drift run the
+        # excursion — with no verdict (CLEANUP_FACTS_PLAN D1). The Cleanup page and the MCP's
+        # get_image_info both read it from here (D5).
+        cleanupFacts    = Cecelia.img_cleanup_facts(img),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
         runLog          = _enriched_run_log(img),

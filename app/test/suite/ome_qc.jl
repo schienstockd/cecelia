@@ -476,7 +476,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         rm(proj.root; recursive = true)
     end
 
-    # ── ensure_saturation_meta!: an image imported before the probe gets it on first recommend ──
+    # ── ensure_saturation_meta!: an image imported before the probe gets it on first call ──
     # Real integer store (ZARRFMT/ZV2img), copied into a throwaway project — runs the import's own
     # `saturation_run.py`, persists through the fill-only meta write, and does it only once.
     @testset "ensure_saturation_meta! backfills via the import probe" begin
@@ -494,22 +494,65 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
 
             r0 = init_object(proj.uid, img.uid)
             @test !haskey(r0.meta, "saturation")
-            # :metadata never probes
-            Cecelia.recommend_plan(r0; evidence = :metadata)
-            @test !haskey(init_object(proj.uid, img.uid).meta, "saturation")
-            # :all probes once and persists; the score is no longer absent
-            plan = Cecelia.recommend_plan(r0)
+            @test isempty(Cecelia.img_cleanup_facts(r0)["channels"])   # nothing measured yet
+            # probes once and persists
+            @test Cecelia.ensure_saturation_meta!(r0)
             r1 = init_object(proj.uid, img.uid)
             @test haskey(r1.meta, "saturation")
             chans = r1.meta["saturation"]["channels"]
             @test !isempty(chans) && all(ch -> haskey(ch, "zeroFrac"), chans)
-            pl = only([q for q in plan.qc_scores if q.metric == "smooth.photon_limited_frac"])
-            @test !Cecelia.qc_score_absent(pl)
+            # the facts line reads it straight back — one entry per probed channel, a number each
+            facts = Cecelia.img_cleanup_facts(r1)
+            @test length(facts["channels"]) == length(chans)
+            @test all(c -> c["zeroPct"] isa Real && c["clippedPct"] isa Real, facts["channels"])
+            @test isempty(facts["drift"])                        # drift correction never ran
             @test r1.meta["SizeT"] == 1                          # fill-only: other meta untouched
             # already present → no second probe
             @test !Cecelia.ensure_saturation_meta!(r1)
             rm(proj.root; recursive = true)
         end
+    end
+
+    # ── img_cleanup_facts: what Cleanup shows, no verdict (CLEANUP_FACTS_PLAN D1) ──────────────────
+    @testset "img_cleanup_facts — per channel zero/clipped, per drift run the excursion" begin
+        proj = create_project!(name = "cleanup-facts-$(rand(1000:9999))")
+        s    = add_set!(proj; name = "set")
+        sat  = Dict{String,Any}("channels" => [
+            # clipped: the detector saw a pile-up → clipped % of SIGNAL voxels
+            Dict{String,Any}("index" => 0, "zeroFrac" => 0.93, "saturated" => true, "clippedSignalFrac" => 0.0123),
+            # clean: a one-voxel "pile-up" the detector rejected reads 0, not the noise fraction
+            Dict{String,Any}("index" => 1, "zeroFrac" => 0.0, "saturated" => false, "clippedSignalFrac" => 3e-6),
+            # imported before the sparsity fields: not measured, not 0
+            Dict{String,Any}("index" => 2, "saturated" => false)])
+        img = add_image!(s; name = "img", meta = Dict{String,Any}("saturation" => sat,
+                         "PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5))
+        set_channel_names!(img, ["GFP", "CFP"]; check_length = false)
+        save!(img)
+
+        f = Cecelia.img_cleanup_facts(img)
+        c = f["channels"]
+        @test [x["name"] for x in c] == ["GFP", "CFP", "Channel 3"]   # unnamed channel falls back
+        @test c[1]["zeroPct"] == 93.0 && c[1]["clippedPct"] == 1.23
+        @test c[2]["zeroPct"] == 0.0  && c[2]["clippedPct"] == 0.0
+        @test c[3]["zeroPct"] === nothing && c[3]["clippedPct"] === nothing
+        @test isempty(f["drift"])
+
+        # one entry per drift output, from its QC sidecar; µm from the pixel size
+        write_qc(img, "cleanupImages.driftCorrect", "driftCorrected", Dict{String,Any}[];
+                 metrics = Dict{String,Any}("maxDriftPx" => 35.6))
+        write_qc(img, "cleanupImages.afCorrect", "afCorrected", Dict{String,Any}[];
+                 metrics = Dict{String,Any}("maxDriftPx" => 99.0))      # not a drift run → ignored
+        d = only(Cecelia.img_cleanup_facts(img)["drift"])
+        @test d["valueName"] == "driftCorrected" && d["maxDriftPx"] == 35.6 && d["maxDriftUm"] == 17.8
+
+        # uncalibrated image: px only, never px relabelled as µm
+        img2 = add_image!(s; name = "img2", meta = Dict{String,Any}())
+        write_qc(img2, "cleanupImages.driftCorrect", "driftCorrected", Dict{String,Any}[];
+                 metrics = Dict{String,Any}("maxDriftPx" => 4.0))
+        f2 = Cecelia.img_cleanup_facts(img2)
+        @test isempty(f2["channels"])
+        @test only(f2["drift"])["maxDriftUm"] === nothing
+        rm(proj.root; recursive = true)
     end
 end
 
@@ -894,8 +937,8 @@ end
     end
 
     @testset "photon-limited findings + sparsity metrics" begin
-        # The correction-plan photon-limited card's QC signal (CORRECTION_QC_PLAN.md Q-M4). Feeds off
-        # the same meta.saturation.channels dict the clipping finding reads — extended in this change
+        # The mostly-zero channel signal (CORRECTION_QC_PLAN.md Q-M4; per channel: img_cleanup_facts).
+        # Feeds off the same meta.saturation.channels dict the clipping finding reads — extended in this change
         # with `zeroFrac` / `signalFrac`. Threshold is a smoke alarm, unvalidated: `zeroFrac >= 0.90`
         # per `_PHOTON_LIMITED_ZERO_FRAC`; below it, silent. Photon-limitation is a scanning-mode
         # property (shared laser/PMT settings), so all sparse channels roll up into ONE finding.
@@ -924,9 +967,10 @@ end
         @test length(fs[1]["detail"]["perChannel"]) == 2
         @test fs[1]["detail"]["perChannel"][2]["channel"] == 3
         # the finding renders — `{n}`/`{s}`/`{pct}`/`{channels}` placeholders substituted
-        @test occursin("2 photon-limited channels", fs[1]["short"])
+        @test occursin("2 mostly-zero channels", fs[1]["short"])
         @test occursin("95", fs[1]["short"])
         @test occursin("1, 3", fs[1]["long"])
+        @test !occursin("Run Cleanup", fs[1]["long"])      # states the measurement, names no method (D6)
 
         m = Cecelia.saturation_metrics(meta)
         @test m["maxZeroFrac"] == 0.95                          # the sparsest channel
@@ -938,7 +982,7 @@ end
         ]))
         sfs = Cecelia.photon_limited_qc_findings(singular)
         @test length(sfs) == 1
-        @test occursin("1 photon-limited channel ", sfs[1]["short"])
+        @test occursin("1 mostly-zero channel ", sfs[1]["short"])
         @test !occursin("channels", sfs[1]["short"])
 
         # zero photon-limited channels → no finding at all (not an empty one)
@@ -983,489 +1027,6 @@ end
         @test "maxZeroFrac"   in keys_declared
         @test "minSignalFrac" in keys_declared
     end
-
-    # CORRECTION_QC_PLAN.md §2.1 — metadata-derived scores. The score-band layer that turns the
-    # import probes (Q-M4 shipped in #811) into 0-1 signals the rule engine will trigger on. Pure
-    # over meta; no engine yet.
-    @testset "correction_plan §2.1 scores" begin
-        # QCResult validates and carries the score sentinel `NaN` for "check didn't run"
-        r = Cecelia.QCResult("x", 0.5)
-        @test r.score == 0.5 && r.level == "info" && r.scope == :image
-        @test !Cecelia.qc_score_absent(r)
-        absent = Cecelia.QCResult("y", Cecelia.QC_SCORE_ABSENT)
-        @test Cecelia.qc_score_absent(absent)
-        @test_throws ErrorException Cecelia.QCResult("z", 1.5)   # out-of-range refused
-
-        # ── axis presence: structural, trivial, no cohort story ─────────────────────────────────
-        @test Cecelia.qc_axis_t_present(Dict{String,Any}("SizeT" => 100)).score == 1.0
-        @test Cecelia.qc_axis_t_present(Dict{String,Any}("SizeT" => 1)).score   == 0.0
-        @test Cecelia.qc_axis_t_present(Dict{String,Any}()).score               == 0.0    # missing = 1
-        @test Cecelia.qc_axis_z_present(Dict{String,Any}("SizeZ" => 40)).score  == 1.0
-        @test Cecelia.qc_axis_z_present(Dict{String,Any}("SizeZ" => 1)).score   == 0.0
-
-        # ── denoise gate: 1.0 = every channel saturated (no clean channel to learn from) ────────
-        # `NaN` when the check never ran — a caller must distinguish absent from "measured zero".
-        # This is the whole point of `QC_SCORE_ABSENT`: an engine treating absent as 0.0 would
-        # silently let denoise run on an image whose saturation state is unknown.
-        mk_sat(i, sat) = Dict{String,Any}("index" => i, "saturated" => sat, "topValue" => 1000,
-                                          "topCount" => 0, "topFrac" => 0.0,
-                                          "clippedSignalFrac" => 0.0)
-        all_sat = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                    [mk_sat(0, true), mk_sat(1, true)]))
-        s = Cecelia.qc_all_channels_saturated(all_sat)
-        @test s.score == 1.0 && s.level == "warn"                # gate signal — worth surfacing
-        @test s.subs[:nSaturated] == 2 && s.subs[:nChannels] == 2
-
-        mixed = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                  [mk_sat(0, true), mk_sat(1, false)]))
-        @test Cecelia.qc_all_channels_saturated(mixed).score == 0.5
-
-        clean = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                  [mk_sat(0, false), mk_sat(1, false)]))
-        cs = Cecelia.qc_all_channels_saturated(clean)
-        @test cs.score == 0.0 && cs.level == "info"              # measured zero, not absent
-
-        absent_sat = Cecelia.qc_all_channels_saturated(Dict{String,Any}())
-        @test Cecelia.qc_score_absent(absent_sat)                # NaN, not 0.0
-
-        # ── photon-limited: the worst channel's zeroFrac ────────────────────────────────────────
-        mk_zf(i, zf) = merge(mk_sat(i, false), Dict{String,Any}("zeroFrac" => zf,
-                                                                "signalFrac" => 1.0 - zf))
-        with_zf = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                    [mk_zf(0, 0.50), mk_zf(1, 0.94), mk_zf(2, 0.87)]))
-        pl = Cecelia.qc_photon_limited_frac(with_zf)
-        @test pl.score == 0.94                                   # the sparsest
-        @test pl.subs[:channel] == 1                             # ...its index
-
-        # a channel without zeroFrac is skipped (pre-#811 field-absent), not treated as 0
-        mixed_zf = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                     [mk_zf(0, 0.55), mk_sat(1, false), mk_zf(2, 0.93)]))
-        @test Cecelia.qc_photon_limited_frac(mixed_zf).score == 0.93
-
-        # no channel carries the field → absent (not zero)
-        old_meta = Dict{String,Any}("saturation" => Dict{String,Any}("channels" =>
-                                     [mk_sat(0, false), mk_sat(1, false)]))
-        @test Cecelia.qc_score_absent(Cecelia.qc_photon_limited_frac(old_meta))
-
-        # ── the roll-up returns all four in stable order for downstream diff ────────────────────
-        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30,
-                                "saturation" => Dict{String,Any}("channels" =>
-                                                                  [mk_zf(0, 0.95)]))
-        rs = Cecelia.compute_qc_scores(meta)
-        @test length(rs) == 4
-        @test [r.metric for r in rs] == ["axis.T_present", "axis.Z_present",
-                                         "denoise.channel_saturated_frac",
-                                         "smooth.photon_limited_frac"]
-        @test rs[1].score == 1.0
-        @test rs[2].score == 1.0
-        @test rs[3].score == 0.0                                 # channel present, not saturated
-        @test rs[4].score == 0.95
-
-        # JSON3 round-trip on the meta — the real read path (persisted ccid comes back Symbol-keyed)
-        rt   = JSON3.read(JSON3.write(meta))
-        rtm  = Dict{String,Any}(String(k) => v for (k, v) in rt)
-        @test Cecelia.qc_photon_limited_frac(rtm).score == 0.95
-
-        # ── vault presence: system-level, appended only when the caller supplies the list ──────
-        v_empty = Cecelia.qc_denoise_vault_model_present(String[])
-        @test v_empty.score == 0.0 && v_empty.subs[:nModels] == 0
-        v_some  = Cecelia.qc_denoise_vault_model_present(["m1", "m2"])
-        @test v_some.score == 1.0 && v_some.subs[:nModels] == 2
-        # compute_qc_scores appends only when vault_models !== nothing — pure meta path unchanged
-        @test length(Cecelia.compute_qc_scores(meta)) == 4
-        @test length(Cecelia.compute_qc_scores(meta; vault_models = String[])) == 5
-        rs_v = Cecelia.compute_qc_scores(meta; vault_models = ["some-model"])
-        @test rs_v[end].metric == "denoise.vault_model_present"
-        @test rs_v[end].score  == 1.0
-    end
-
-    # CORRECTION_QC_PLAN.md §1 (rule table) + §3 (tie-break) + §5 (preset cards). Phase C of the
-    # plan: pure meta → CorrectionPlan. No chain wiring, no plan.json write — the engine is a set
-    # of pure functions that a Phase D consumer will mount on a `ChainTemplate`.
-    @testset "correction_plan engine (§1 + §3 + §5)" begin
-        # ── §5 presets: shape + registry ────────────────────────────────────────────────────────
-        @test Set(Cecelia.preset_ids()) == Set([:resonance, :galvo, :spinning_disk, :deep_3d, :custom])
-        res = Cecelia.preset_by_id(:resonance)
-        @test res isa Cecelia.AcquisitionPreset
-        @test res.validation_status == :unvalidated          # honest until a fixture exists
-        @test ("cleanupImages.smooth", "spatialMethod") in res.hard_commitments
-        @test res.params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
-        # C-Deep3D hard commitments (PR #818 compose): stackAlign + driftCorrect(driftPerPlane)
-        d3 = Cecelia.preset_by_id(:deep_3d)
-        @test ("cleanupImages.stackAlign",   "referenceMode") in d3.hard_commitments
-        @test ("cleanupImages.driftCorrect", "driftPerPlane") in d3.hard_commitments
-        @test d3.params_by_task["cleanupImages.driftCorrect"]["driftPerPlane"] === true
-        # unknown card id → custom, keeps the engine total for stale plan.json refs
-        @test Cecelia.preset_by_id(:not_a_card).id == :custom
-
-        mk_scores(size_t, size_z; sat_frac = Cecelia.QC_SCORE_ABSENT,
-                  photon_frac = Cecelia.QC_SCORE_ABSENT,
-                  vault_present = 1.0) = Cecelia.QCResult[
-            Cecelia.QCResult("axis.T_present", size_t > 1 ? 1.0 : 0.0),
-            Cecelia.QCResult("axis.Z_present", size_z > 1 ? 1.0 : 0.0),
-            Cecelia.QCResult("denoise.channel_saturated_frac", sat_frac),
-            Cecelia.QCResult("smooth.photon_limited_frac",     photon_frac),
-            Cecelia.QCResult("denoise.vault_model_present",    vault_present),
-        ]
-
-        # ── §1 rule 1: T-axis absent → driftCorrect + flowRegister excluded, even if the card
-        #    seeded them. The exclusion row keeps the reason for the audit trail.
-        r = Cecelia.apply_rules(mk_scores(1, 1), Cecelia.preset_by_id(:galvo))
-        drift_excl = only([s for s in r.excluded if s.fun_name == "cleanupImages.driftCorrect"])
-        @test drift_excl.exclusion_reason == "No T axis — drift correction not applicable"
-        @test !any(s -> s.fun_name == "cleanupImages.driftCorrect", r.included)
-
-        # ── §1 rule 2: T-axis present but card omits driftCorrect → auto-include (custom card).
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom))
-        drift = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
-        @test drift.source == :computed_qc
-
-        # ── §1 rule 3: all channels saturated → denoise excluded, PR #796 refusal. Galvo does not
-        #    seed denoise, so the exclusion is a pure engine emission with no card→excluded
-        #    transition; a Resonance-card variant of this test is below.
-        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 1.0), Cecelia.preset_by_id(:galvo))
-        den = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
-        @test occursin("saturated", den.exclusion_reason)
-
-        # partial saturation (< 1.0) does NOT exclude denoise — the gate is all-or-nothing
-        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 0.5), Cecelia.preset_by_id(:galvo))
-        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
-
-        # sat NaN (probe never ran) → no exclusion (a signal-absent metric is NOT "0.0")
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo))
-        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
-
-        # ── denoise vault gate — Resonance seeds denoise; the vault + saturation scores decide
-        #    whether the seed survives. Chained so exactly one exclusion row is emitted.
-        # vault present + not saturated → seeded from the card, no exclusion
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:resonance))
-        den = only([s for s in r.included if s.fun_name == "cleanupImages.denoise"])
-        @test den.source == :card
-        @test isempty(den.params)                       # SUPPORT model picked at the task widget
-        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.excluded)
-
-        # vault empty → excluded with the vault reason, seed dropped from `included`
-        r = Cecelia.apply_rules(mk_scores(100, 1; vault_present = 0.0), Cecelia.preset_by_id(:resonance))
-        vault_ex = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
-        @test vault_ex.exclusion_reason == "No trained denoise model in vault"
-        @test !any(s -> s.fun_name == "cleanupImages.denoise", r.included)
-
-        # vault empty + saturated → vault wins (single row, vault reason) — see the chained gate
-        r = Cecelia.apply_rules(mk_scores(100, 1; vault_present = 0.0, sat_frac = 1.0),
-                                Cecelia.preset_by_id(:resonance))
-        rows = [s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]
-        @test length(rows) == 1
-        @test rows[1].exclusion_reason == "No trained denoise model in vault"
-
-        # vault present + saturated → falls through to the saturation reason
-        r = Cecelia.apply_rules(mk_scores(100, 1; sat_frac = 1.0), Cecelia.preset_by_id(:resonance))
-        sat_ex = only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"])
-        @test occursin("saturated", sat_ex.exclusion_reason)
-
-        # afCorrect is never auto-included: which channels share autofluorescence is a judgement
-        # (usually no channel is dedicated to it), not something a channel name can answer
-        r = Cecelia.apply_rules(mk_scores(100, 8), Cecelia.preset_by_id(:custom))
-        @test !any(s -> s.fun_name == "cleanupImages.afCorrect", r.included)
-
-        # ── photon-limited score → denoise + smooth, both ways (TASK_DISCOVERY_PLAN Decision 4)
-        _fns(steps) = [s.fun_name for s in steps]
-        not_limited = "Not photon-limited — denoising would remove signal"
-        # photon-limited, no-preset card → smooth (resonance card's params) + denoise included
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:custom))
-        sm = only([s for s in r.included if s.fun_name == "cleanupImages.smooth"])
-        @test sm.source == :computed_qc
-        @test sm.params["spatialMethod"] == "bilateral_vst"
-        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :computed_qc
-        @test !("cleanupImages.denoise" in _fns(r.excluded))
-        # ...the smooth seed is a copy — the registered card is not mutated
-        sm.params["spatialMethod"] = "x"
-        @test Cecelia.preset_by_id(:resonance).params_by_task["cleanupImages.smooth"]["spatialMethod"] == "bilateral_vst"
-        # ...a refusal gate still wins: empty vault → denoise excluded with the vault reason, smooth stays
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, vault_present = 0.0),
-                                Cecelia.preset_by_id(:custom))
-        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
-              "No trained denoise model in vault"
-        @test "cleanupImages.smooth" in _fns(r.included)
-        # ...all saturated → saturation reason, single row
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95, sat_frac = 1.0),
-                                Cecelia.preset_by_id(:custom))
-        @test occursin("saturated", only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason)
-        # ...a named card outranks the score (§3): galvo's omission of smooth/denoise stands
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.95), Cecelia.preset_by_id(:galvo))
-        @test !("cleanupImages.smooth" in _fns(r.included))
-        @test !("cleanupImages.denoise" in _fns(r.included))
-
-        # not photon-limited → denoise excluded with the reason; smooth untouched (no row either way)
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:custom))
-        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason == not_limited
-        @test !("cleanupImages.denoise" in _fns(r.included))
-        @test !("cleanupImages.smooth" in _fns(r.included)) && !("cleanupImages.smooth" in _fns(r.excluded))
-        # ...the vault reason outranks it (one row per fun)
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0, vault_present = 0.0),
-                                Cecelia.preset_by_id(:custom))
-        @test only([s for s in r.excluded if s.fun_name == "cleanupImages.denoise"]).exclusion_reason ==
-              "No trained denoise model in vault"
-        # ...a card-seeded denoise is not removed by the score (§3: card > computed QC)
-        r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = 0.0), Cecelia.preset_by_id(:resonance))
-        @test only([s for s in r.included if s.fun_name == "cleanupImages.denoise"]).source == :card
-        @test !("cleanupImages.denoise" in _fns(r.excluded))
-
-        # between the bands, and absent (NaN) → identical to the metadata-only answer
-        base = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom))
-        for pf in (0.7, Cecelia.QC_SCORE_ABSENT)
-            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom))
-            @test _fns(r.included) == _fns(base.included)
-            @test _fns(r.excluded) == _fns(base.excluded)
-        end
-
-        # evidence = :metadata skips the photon rules entirely — both directions
-        for pf in (0.95, 0.0)
-            r = Cecelia.apply_rules(mk_scores(100, 1; photon_frac = pf), Cecelia.preset_by_id(:custom);
-                                    evidence = :metadata)
-            @test _fns(r.included) == _fns(base.included)
-            @test _fns(r.excluded) == _fns(base.excluded)
-        end
-        @test_throws ArgumentError Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:custom);
-                                                        evidence = :pixels)
-        # ...and recommend_plan threads it through from meta
-        pl_meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 1,
-            "saturation" => Dict{String,Any}("channels" => [
-                Dict{String,Any}("index" => 0, "saturated" => false, "zeroFrac" => 0.97)]))
-        @test "cleanupImages.denoise" in _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"]).included)
-        @test !("cleanupImages.denoise" in
-                _fns(Cecelia.recommend_plan(pl_meta; vault_models = ["m"], evidence = :metadata).included))
-
-        # ── §5 C-Deep3D: stackAlign shipped on the card, referenceMode = middle.
-        r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:deep_3d))
-        sa = only([s for s in r.included if s.fun_name == "cleanupImages.stackAlign"])
-        @test sa.params["referenceMode"] == "middle"
-        @test sa.source == :card
-        # driftCorrect also carries the card's per-plane opinion — PR #818 shipped `driftPerPlane` /
-        # `driftZSmoothness`, and the two compose with stackAlign per the peer session's finding
-        # (stackAlign = intra-stack per-frame anchor; driftPerPlane = inter-frame per-Z-plane rigid).
-        dc = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
-        @test dc.params["driftEstimator"]   == "multiLag"
-        @test dc.params["driftPerPlane"]    === true
-        @test dc.params["driftZSmoothness"] == 0.0
-        @test dc.source == :card
-        # ...and Z-axis absent excludes it regardless
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:deep_3d))
-        @test any(s -> s.fun_name == "cleanupImages.stackAlign" &&
-                       s.exclusion_reason == "No Z axis", r.excluded)
-
-        # ── §1 order weights: drift (200) before smooth (300) before af (400)
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:resonance))
-        order = [s.fun_name for s in r.included]
-        drift_i  = findfirst(==("cleanupImages.driftCorrect"), order)
-        smooth_i = findfirst(==("cleanupImages.smooth"), order)
-        @test drift_i !== nothing && smooth_i !== nothing
-        @test drift_i < smooth_i             # 200 < 300
-
-        # ── §3 wizard tier > card tier ──────────────────────────────────────────────────────────
-        # W2 = yes → driftEstimator switches from card's `multiLag` to `sitkRigid`
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo),
-                                Dict{Symbol,Any}(:W2 => :yes))
-        drift = only([s for s in r.included if s.fun_name == "cleanupImages.driftCorrect"])
-        @test drift.params["driftEstimator"] == "sitkRigid"
-        @test drift.source == :wizard        # provenance stamps the wizard, not the card
-
-        # W2 without T-axis → no autocreate (no driftCorrect step)
-        r = Cecelia.apply_rules(mk_scores(1, 1), Cecelia.preset_by_id(:custom),
-                                Dict{Symbol,Any}(:W2 => :yes))
-        @test !any(s -> s.fun_name == "cleanupImages.driftCorrect", r.included)
-
-        # W3 = yes → include flowRegister (card didn't ship it)
-        r = Cecelia.apply_rules(mk_scores(100, 1), Cecelia.preset_by_id(:galvo),
-                                Dict{Symbol,Any}(:W3 => :yes))
-        fr = only([s for s in r.included if s.fun_name == "cleanupImages.flowRegister"])
-        @test fr.source == :wizard
-
-        # W5 = yes on a Z-present image → include stackAlign (custom card has no seed)
-        r = Cecelia.apply_rules(mk_scores(100, 30), Cecelia.preset_by_id(:custom),
-                                Dict{Symbol,Any}(:W5 => :yes))
-        @test any(s -> s.fun_name == "cleanupImages.stackAlign" && s.source == :wizard, r.included)
-
-        # ── recommend_plan(meta) — the persist-facing entrypoint ───────────────────────────────
-        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30)
-        plan = Cecelia.recommend_plan(meta; image_uid = "img-abc", card_id = :deep_3d)
-        @test plan isa Cecelia.CorrectionPlan
-        @test plan.image_uid == "img-abc"
-        @test plan.preset_id == :deep_3d
-        @test length(plan.qc_scores) == 4                    # score snapshot preserved
-        # Deep3D includes both stackAlign (card) and driftCorrect (card + T-axis satisfies)
-        fns = [s.fun_name for s in plan.included]
-        @test "cleanupImages.stackAlign" in fns
-        @test "cleanupImages.driftCorrect" in fns
-    end
-
-    # Phase D of docs/todo/CORRECTION_QC_PLAN.md — plan.json sidecar. Provenance is deliberate:
-    # `ceceliaVersion` invalidates every plan when the code that would run it changes; the
-    # `saturationFingerprint` catches a re-import that shifted per-channel saturation numbers
-    # (which a version stamp cannot). No per-step writer versions — cecelia ships as one package.
-    @testset "correction_plan persistence (§8 sidecar + provenance)" begin
-        # ── saturation_fingerprint: stable across a JSON3 round-trip, changes with content ───────
-        sat_chan(zf) = Dict{String,Any}("index" => 0, "saturated" => false, "topValue" => 500,
-                                        "topCount" => 0, "topFrac" => 0.0,
-                                        "clippedSignalFrac" => 0.0,
-                                        "zeroFrac" => zf, "signalFrac" => 1.0 - zf)
-        meta_a = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30,
-                                   "saturation" => Dict{String,Any}("channels" => [sat_chan(0.85)]))
-        fp_a   = Cecelia.saturation_fingerprint(meta_a)
-        @test !isempty(fp_a) && length(fp_a) == 64          # hex sha256
-
-        # round-trip through JSON3 — Int/Float coercion and Symbol-vs-String keys must not shift it
-        raw = JSON3.read(JSON3.write(meta_a))
-        rt  = Dict{String,Any}(String(k) => v for (k, v) in raw)
-        @test Cecelia.saturation_fingerprint(rt) == fp_a    # THE invariant this exists to enforce
-
-        # different content → different fingerprint
-        meta_b = Dict{String,Any}("saturation" => Dict{String,Any}("channels" => [sat_chan(0.50)]))
-        @test Cecelia.saturation_fingerprint(meta_b) != fp_a
-        # missing saturation → empty string sentinel (caller distinguishes "both unknown")
-        @test Cecelia.saturation_fingerprint(Dict{String,Any}()) == ""
-
-        # ── plan.json roundtrip on a real CciaImage ───────────────────────────────────────────
-        proj = create_project!(name = "plan-$(rand(1000:9999))")
-        s    = add_set!(proj; name = "set")
-        img  = add_image!(s; name = "im")
-        img.meta = meta_a
-        save!(img)                                          # writes ccid.json with meta
-
-        plan = Cecelia.recommend_plan(img; card_id = :resonance,
-                                            wizard = Dict{Symbol,Any}(:W2 => :yes))
-        @test plan.image_uid == img.uid
-        @test plan.preset_id == :resonance
-        @test plan.cecelia_version == cecelia_version()
-        @test plan.saturation_fingerprint == fp_a
-
-        path = Cecelia.save_plan(img, plan)
-        @test isfile(path)
-        @test basename(path) == "plan.json"
-
-        loaded = Cecelia.load_plan(img)
-        @test loaded !== nothing
-        @test loaded.image_uid == plan.image_uid
-        @test loaded.preset_id == plan.preset_id
-        @test loaded.wizard_answers == plan.wizard_answers    # Symbol values round-trip via _wizard_v_from_json
-        @test loaded.cecelia_version == plan.cecelia_version
-        @test loaded.saturation_fingerprint == plan.saturation_fingerprint
-        @test [s.fun_name for s in loaded.included] == [s.fun_name for s in plan.included]
-        @test [s.source   for s in loaded.included] == [s.source   for s in plan.included]
-        @test length(loaded.qc_scores) == length(plan.qc_scores)
-
-        # NaN score (QC_SCORE_ABSENT) survives the JSON null bridge — the case that isn't hit by
-        # `meta_a` (which has a saturation dict, so no absent scores) needs its own image:
-        img2 = add_image!(s; name = "im-no-sat")
-        img2.meta = Dict{String,Any}("SizeT" => 1, "SizeZ" => 1)
-        save!(img2)
-        p2 = Cecelia.recommend_plan(img2)
-        r  = only([x for x in p2.qc_scores if x.metric == "denoise.channel_saturated_frac"])
-        @test Cecelia.qc_score_absent(r)                      # no saturation field → absent
-        Cecelia.save_plan(img2, p2)
-        p2back = Cecelia.load_plan(img2)
-        r2 = only([x for x in p2back.qc_scores if x.metric == "denoise.channel_saturated_frac"])
-        @test Cecelia.qc_score_absent(r2)                     # absent survives roundtrip
-
-        # ── missing file → nothing ────────────────────────────────────────────────────────────
-        img3 = add_image!(s; name = "im-no-plan")
-        @test Cecelia.load_plan(img3) === nothing
-
-        # ── unknown planVersion → nothing (caller re-plans, never trusts a schema drift) ──────
-        path3 = joinpath(img3._dir, "plan.json")
-        open(path3, "w") do io
-            JSON3.pretty(io, Dict{String,Any}("planVersion" => 999,
-                                              "ceceliaVersion" => "9.9.9",
-                                              "imageUid" => img3.uid,
-                                              "presetId" => "custom",
-                                              "wizardAnswers" => Dict{String,Any}(),
-                                              "saturationFingerprint" => "",
-                                              "included" => [], "excluded" => [], "qcScores" => []))
-        end
-        @test Cecelia.load_plan(img3) === nothing
-
-        # ── malformed JSON → nothing (never throws to the caller) ──────────────────────────────
-        open(path3, "w") do io; write(io, "{not json"); end
-        @test Cecelia.load_plan(img3) === nothing
-
-        rm(proj.root; recursive = true)
-    end
-
-    # Phase E of docs/todo/CORRECTION_QC_PLAN.md — chain mount + card recommender. The plan is now
-    # an execution surface: `plan_to_chain_template` yields a `ChainTemplate` the executor accepts
-    # (validate_chain_template passes). `recommend_card` picks a card from wizard+scores so callers
-    # of recommend_plan can leave `card_id` implicit.
-    @testset "correction_plan chain mount + recommender (§E)" begin
-        # ── recommend_card: wizard > everything, then W1 → card, else :custom ────────────────
-        empty_scores = Cecelia.QCResult[]
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}()) == :custom
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :resonance)) == :resonance
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :galvo))     == :galvo
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :spinning_disk)) == :spinning_disk
-        # W5 wins over W1 — an intra-stack shear is what defines Deep-3D
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :galvo, :W5 => :yes)) == :deep_3d
-        # unknown W1 or missing → fallback custom
-        @test Cecelia.recommend_card(empty_scores, Dict{Symbol,Any}(:W1 => :other)) == :custom
-
-        # ── recommend_plan with no card_id auto-picks via recommend_card ─────────────────────
-        meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 1)
-        p_auto = Cecelia.recommend_plan(meta; wizard = Dict{Symbol,Any}(:W1 => :resonance))
-        @test p_auto.preset_id == :resonance
-        p_custom = Cecelia.recommend_plan(meta)   # no card, no wizard → :custom
-        @test p_custom.preset_id == :custom
-
-        # ── plan_to_chain_template: shape + linear edges ─────────────────────────────────────
-        p = Cecelia.recommend_plan(meta; card_id = :resonance)
-        tmpl = Cecelia.plan_to_chain_template(p; name = "test-mount")
-        @test tmpl.name == "test-mount"
-        @test length(tmpl.nodes) == length(p.included)
-        @test [n.fn for n in tmpl.nodes] == [s.fun_name for s in p.included]
-        # Node ids are short-form fun_names — stable across re-plans. Resonance seeds
-        # drift (200) + smooth (300) + denoise (400). Denoise's vault gate defaults `1.0` for a
-        # pure-meta plan (no vault_models argument), so the seed survives without exclusion —
-        # the img-variant of recommend_plan is where a real vault enumeration decides.
-        @test [n.id for n in tmpl.nodes] == ["driftCorrect", "smooth", "denoise"]
-        @test [(e.from, e.to) for e in tmpl.edges] ==
-              [("driftCorrect", "smooth"), ("smooth", "denoise")]
-        # each node after the first reads the previous one's output — not the raw `default`
-        @test !haskey(tmpl.nodes[1].params, "valueName")
-        @test tmpl.nodes[2].params["valueName"] == "driftCorrected"
-        @test tmpl.nodes[3].params["valueName"] == "smoothed"
-        # Excluded steps are NOT in the template — the audit trail is a plan concept, not chain
-        @test !any(n -> n.fn == "cleanupImages.stackAlign", tmpl.nodes)   # Z-absent → excluded
-
-        # ── default name derives from image_uid; re-mount replaces canonically ───────────────
-        p2 = Cecelia.recommend_plan(meta; image_uid = "img-42", card_id = :resonance)
-        tmpl2 = Cecelia.plan_to_chain_template(p2)
-        @test tmpl2.name == "correction-plan-img-42"
-
-        # ── validate_chain_template accepts the mount (the executor would run it) ────────────
-        proj = create_project!(name = "mount-$(rand(1000:9999))")
-        s    = add_set!(proj; name = "set")
-        img  = add_image!(s; name = "im"); img.meta = meta; save!(img)
-        p_real = Cecelia.recommend_plan(img; card_id = :resonance)
-        tmpl_real = Cecelia.plan_to_chain_template(p_real)
-        Cecelia.validate_chain_template(tmpl_real)   # throws on failure — no @test needed
-        # Deep3D on a Z+T image — stackAlign shipped as card + card ships it before drift
-        img.meta = Dict{String,Any}("SizeT" => 100, "SizeZ" => 30); save!(img)
-        p_d3 = Cecelia.recommend_plan(img; card_id = :deep_3d)
-        t_d3 = Cecelia.plan_to_chain_template(p_d3)
-        @test "cleanupImages.stackAlign" in [n.fn for n in t_d3.nodes]
-        @test "cleanupImages.driftCorrect" in [n.fn for n in t_d3.nodes]
-        # bucket order: stackAlign (100) before driftCorrect (200)
-        sa_i = findfirst(n -> n.fn == "cleanupImages.stackAlign", t_d3.nodes)
-        dr_i = findfirst(n -> n.fn == "cleanupImages.driftCorrect", t_d3.nodes)
-        @test sa_i < dr_i
-        Cecelia.validate_chain_template(t_d3)
-
-        # ── empty plan (nothing to run) → empty template, no edges ───────────────────────────
-        p_empty = Cecelia.recommend_plan(Dict{String,Any}(); card_id = :custom)
-        t_empty = Cecelia.plan_to_chain_template(p_empty)
-        @test isempty(t_empty.nodes) && isempty(t_empty.edges)
-
-        rm(proj.root; recursive = true)
-    end
-
-    # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
 
     # Pyramid depth QC — synthesised on disk (JSON-only, no pixels) because the function reads the
     # multiscales metadata and the L0 `.zarray`, not the array itself. A flat store here rather than

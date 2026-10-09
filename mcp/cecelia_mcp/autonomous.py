@@ -26,7 +26,6 @@ import time
 
 from cecelia_mcp import gating_views as gv
 from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
-from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.wsclient import api_url_to_ws
 
 PROJECT_ENV = "CECELIA_MCP_PROJECT"
@@ -48,7 +47,6 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/gating/stats"),       # count / % of parent for one population
     ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
     ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
-    ("POST", "/api/correction-plan/recommend"),  # no plan write (may backfill meta.saturation once)
     ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
     ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
@@ -311,17 +309,6 @@ class AutonomousClient:
                 st.update({"finished": not st["active"], "waitedS": round(time.time() - t0)})
                 return st
             time.sleep(poll_s)
-
-    def recommend_correction_plan(self, project_uid: str, image_uid: str) -> dict:
-        check_project(project_uid)
-        # discovery off → the metadata-only answer, without the photon-limited rules
-        plan = self._request("POST", "/api/correction-plan/recommend",
-                             body={"projectUid": project_uid, "imageUid": image_uid,
-                                   "evidence": "all" if discovery_enabled() else "metadata"})
-        keep = ("funName", "params", "source", "exclusionReason")
-        return {"included": [{k: s.get(k) for k in keep} for s in plan.get("included") or []],
-                "excluded": [{k: s.get(k) for k in keep} for s in plan.get("excluded") or []],
-                "card": plan.get("presetId")}
 
     # ── gating ──
     def _require_measured(self, project_uid: str, image_uid: str, value_name: str) -> None:

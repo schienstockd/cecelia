@@ -1028,6 +1028,10 @@ function hasAfPreview(c: number) {
   const arr = viewerStore.previewImages
   return !!arr?.some(m => m.imageUid === imageUid && m.sourceChannel === c)
 }
+/** The badge text for this channel's preview — which task it previews (AF correction, smoothing). */
+function previewBadge(c: number): string {
+  return viewerStore.previewImages?.find(m => m.imageUid === imageUid && m.sourceChannel === c)?.badge ?? 'AF'
+}
 /** How many segmentations the panel has ticked on. Drives the "N ticked, showing one" hint below —
  *  when it's above 1, the visible limitation gets named rather than the extras silently dropping. */
 const shownLabelCount = computed(() => {
@@ -5843,8 +5847,8 @@ onUnmounted(() => {
                       :class="['vw-ch-af-badge cc-fs-3xs', { 'vw-ch-af-badge-off': afSuspended.has(c) }]"
                       @click="toggleAfSuspended(c)"
                       v-tooltip.top="afSuspended.has(c)
-                        ? 'Reading SOURCE pixels — click to switch back to the AF correction'
-                        : 'Reading corrected pixels — click to compare against the source'">AF</button>
+                        ? 'Reading SOURCE pixels — click to switch back to the preview'
+                        : 'Reading previewed pixels — click to compare against the source'">{{ previewBadge(c) }}</button>
               <ColourPicker
                 :model-value="channelHex(ch)" :palette="CHANNEL_PALETTE" :tip="'Colour for ' + ch.name"
                 @update:model-value="v => setChannelColour(c, v)"

@@ -80,7 +80,7 @@ Cecelia today: focus card is text only (`Label 12 @ frame 3 / Centroid (…)`).
 **Port seed:** new `frontend/src/components/correction/ReviewMontage.vue` — for the focused label,
 fetch a bounding-box tile at ±k t (live imaging) or ±k z (3D) via the existing tile route
 (`api/src/frame_overlays.jl` — check for a `/api/labels/bbox` or extend if needed), render as a
-small grid using the primitives the CorrectionPlan cards already use.
+small grid using the primitives the (since removed) CorrectionPlan cards used.
 
 **This is not new scope** — Phase 3 in `CORRECTION_PLAN.md` explicitly promises "per-object Details
 montage". Owed functionality.
