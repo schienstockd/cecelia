@@ -229,6 +229,22 @@ export function levelMeta(meta: ViewerMeta, level: number | undefined): ViewerLe
   return meta.levels?.find(v => v.level === L) ?? null
 }
 
+/** Slot shape for the tile atlas: the LARGEST chunk over every pyramid level (and the level being
+ *  set, for a meta without a pyramid). A pyramid's coarsest levels are smaller than one chunk — so
+ * *  their chunk is clipped (e.g. 1024² down to L4, 635×528 at L5) — and sizing the atlas to the
+ *  current level's chunk reallocated it on every zoom across that threshold: every resident tile
+ *  dropped (black flash), and old + new atlas briefly resident together. A smaller tile in a bigger
+ *  slot is the edge-tile case the shader already handles (`sampledPx`). */
+export function tileSlotShape(meta: ViewerMeta, chunkX: number, chunkY: number): [number, number] {
+  let x = chunkX
+  let y = chunkY
+  for (const l of meta.levels ?? []) {
+    if (l.chunkX > x) x = l.chunkX
+    if (l.chunkY > y) y = l.chunkY
+  }
+  return [x, y]
+}
+
 /** How many tiles a level's plane splits into. Same math the pump uses to bound the halo; extracted so
  *  the mini tile-map widget agrees with the pump's grid. */
 export function tileGridDims(lvl: ViewerLevel): { nTx: number; nTy: number } {
