@@ -212,6 +212,56 @@ end
     @test !_same_store("/a/b/X.ome.zarr", "/a/b/Y.ome.zarr")
 end
 
+@testset "API: the preview worker runs in the env its model needs (#1555)" begin
+    # THE REPORTED BUG: one worker, always in the default env, so a `cyto3` preview ran cellpose 4,
+    # which loaded `cpsam_v2` in its place. The routing decision is pure so every case is pinned here
+    # without a process (a live worker would need the Mac-only cellpose-v3 env).
+    act(have, want; alive = true, starting = false) =
+        _preview_env_action(have, want; alive = alive, starting = starting)
+    @test act(missing, :cellpose_v3) === :launch
+    @test act(missing, :any) === :launch
+    @test act(nothing, nothing) === :ready
+    @test act(:cellpose_v3, :cellpose_v3) === :ready
+    @test act(nothing, :cellpose_v3) === :switch                          # the bug: never reuse it
+    @test act(:cellpose_v3, nothing) === :switch                          # …and back for SAM
+    @test act(nothing, :cellpose_v3; alive = false, starting = true) === :switch
+    @test act(:cellpose_v3, :cellpose_v3; alive = false, starting = true) === :wait
+    @test act(nothing, nothing; alive = false) === :launch                # died: relaunch
+    # rendering / flow / AF run in either env: keep what is up rather than pay a warm-up
+    @test act(:cellpose_v3, :any) === :ready
+    @test act(nothing, :any; alive = false, starting = true) === :wait
+    @test _preview_env_symbol("default") === nothing
+    @test _preview_env_symbol(Cecelia.pixi_env_name(:cellpose_v3)) === :cellpose_v3
+
+    # the env comes from the task's own params, through the run's preparation
+    seg = "segment.cellposeMeasure"
+    mdl(m...) = Dict("models" => Dict(string(i) => Dict("model" => x, "cellChannels" => ["CH1"])
+                                      for (i, x) in enumerate(m)))
+    @test _preview_env_for(seg, mdl("cyto3")) == (:cellpose_v3, nothing)
+    @test _preview_env_for(seg, mdl("cpsam_v2")) == (nothing, nothing)
+    @test _preview_env_for("", nothing) == (:any, nothing)
+    env, bad = _preview_env_for(seg, mdl("cyto3", "cpsam_v2"))
+    @test bad[1] == 400 && JSON3.read(bad[2]).code == "params-not-previewable"
+
+    # a missing cellpose-v3 env is refused up front, naming the install — never the default env.
+    # Raised before anything probes :7656, so this cannot touch a developer's running worker.
+    if isempty(Cecelia._python_bin_for_env(:cellpose_v3))
+        st, body = _post(api_preview_start, Dict("funName" => seg, "params" => mdl("cyto3")))
+        @test st == 409
+        d = JSON3.read(body)
+        @test d.code == "env-missing" && occursin("cellpose-v3", d.error)
+        @test _preview() === nothing                                     # nothing launched
+    end
+    st, body = _post(api_preview_start, Dict("funName" => seg, "params" => mdl("cyto3", "cpsam_v2")))
+    @test st == 400
+
+    # callers with no model (stills, flow) keep whatever worker is up
+    for f in ("movie_render.jl", "optical_flow_api.jl")
+        src = read(joinpath(API_TEST_DIR, "..", "src", f), String)
+        @test occursin("_ensure_preview!()", src)
+    end
+end
+
 @testset "API: preview-labels slab resolves an UNREGISTERED vn" begin
     # A first-time segmentation preview writes `<img_labels_dir>/<vn>__preview.ome.zarr` BEFORE any
     # ccid.json entry exists — registration only happens on a successful RUN. The `preview=1` slab
@@ -315,6 +365,46 @@ end
         # runs when the worker is up (it owns the file handles that might still be holding it
         # open on Windows). Left as debris here; a later run wipes it on entry via `_stage_labels_store`.
     end
+end
+
+@testset "API: a stop during the warm-up is a cancel, not an error (#1559)" begin
+    # THE REPORTED SEQUENCE: second click during the ~18 s warm-up → stop → a cleanup send to the worker
+    # that had not bound yet ("scratch sweep failed … refused") → `close!` under the launch's poll →
+    # MethodError logged as "worker failed to start". The process half is pinned in the app suite
+    # ("stopping a worker mid-launch…"); this is the route half, on a worker that is only `:starting`
+    # (no process, an unused port — never :7656).
+    mktempdir() do proj_root
+        conf  = cecelia_conf()
+        pdirs = get!(conf, "dirs", Dict{String,Any}())
+        had   = haskey(pdirs, "projects"); prev = get(pdirs, "projects", nothing)
+        pdirs["projects"] = proj_root
+        try
+            meta = joinpath(proj_root, "p", "1", "img1"); mkpath(meta)
+            write(joinpath(meta, "ccid.json"), JSON3.write(Dict("uid" => "img1")))
+            w = PreviewWorker(; port = 17656 + rand(0:999))
+            w.state = Cecelia.PREVIEW_STARTING
+            _preview_ref[] = w
+            st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
+            d = JSON3.read(body)
+            @test d.starting == true && d.alive == false     # starting is not alive: nothing is bound
+            @test _ensure_preview!() == false                # …so a request waits instead of sending
+
+            # no cleanup send to an unbound worker, so no warning; the worker ends `:stopped`
+            st, body = @test_logs min_level = Base.CoreLogging.Warn _post(api_preview_stop,
+                                                                          Dict("taskDir" => meta))
+            @test st == 200 && JSON3.read(body).stopped == true
+            @test w.state === Cecelia.PREVIEW_STOPPED
+            @test _preview() === nothing
+            @test JSON3.read(api_preview_status(HTTP.Request("GET", "/api/preview/status"))[2]).starting == false
+        finally
+            _preview_ref[] = nothing
+            had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
+        end
+    end
+    # Pluto's launch watcher had the same shape: a shutdown during startup read as "exited during
+    # startup". Source-level — a live Pluto boot is minutes cold.
+    nb = read(joinpath(API_TEST_DIR, "..", "src", "notebooks_api.jl"), String)
+    @test occursin("_pluto_state.proc === proc || break", nb)
 end
 
 @testset "API: preview refuses a client path it would write or delete under" begin

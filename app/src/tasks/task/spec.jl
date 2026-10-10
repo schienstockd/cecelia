@@ -403,6 +403,30 @@ function preview_params_for_run(task::CciaTask, params::AbstractDict,
 end
 
 
+"""
+    preview_py_env(task, params) -> Union{Symbol,Nothing}
+
+The pixi env the preview worker has to be running in to preview `task` with these params — `nothing`
+for the default env, `:any` (the base method) when the task's compute runs in either. Same meaning as
+`run_py`'s `env`, and an overload must agree with what the task's `_run_task` passes there: the preview's whole claim is that it runs the run's compute, and a model
+running under the wrong env is a different compute (cellpose 4 silently loads `cpsam_v2` for a v3
+name). Call [`preview_env`](@ref), which prepares the params first.
+"""
+preview_py_env(::CciaTask, ::AbstractDict)::Union{Symbol,Nothing} = :any
+
+"""
+    preview_env(task, params) -> Union{Symbol,Nothing}
+
+[`preview_py_env`](@ref) on params lifted the way a run lifts them (`_flatten_sections`,
+`_apply_group_order`), so a nested `models` group or an unticked v3 entry is read the way the run would
+read it. Needs no image, so `/api/preview/start` can warm the RIGHT env before the first request.
+"""
+function preview_env(task::CciaTask, params::AbstractDict)::Union{Symbol,Nothing}
+    flat = _flatten_sections(task, Dict{String,Any}(String(k) => v for (k, v) in params))
+    preview_py_env(task, _apply_group_order(task, flat))
+end
+
+
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
 # This makes the output handle a single, introspectable source of truth (the JSON) rather than a
 # constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream

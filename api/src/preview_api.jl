@@ -19,7 +19,6 @@
 import Cecelia: send
 
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
-const _preview_starting = Ref(false)
 const _preview_lock     = ReentrantLock()
 
 # Serialise all interaction with the single worker, for the same reason as `_with_viewer`: under
@@ -28,6 +27,10 @@ const _preview_lock     = ReentrantLock()
 _with_preview(f) = lock(f, _preview_lock)
 
 _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
+
+# A launch is in flight — read off the worker's own lifecycle (`PreviewWorker.state`), not a flag kept
+# beside it that every path had to remember to reset.
+_preview_starting()::Bool = (w = _preview_ref[]; w !== nothing && w.state === Cecelia.PREVIEW_STARTING)
 
 """
     _stop_preview_worker!()
@@ -46,8 +49,7 @@ function _stop_preview_worker!()
         w === nothing || try; close!(w); catch e
             @warn "Could not stop preview worker" exception = e
         end
-        _preview_ref[]      = nothing
-        _preview_starting[] = false
+        _preview_ref[] = nothing
     end
 end
 
@@ -59,13 +61,44 @@ worker built before the handshake existed does.
 docstring for why blacklist over whitelist); everything else is treated as "not reachable".
 """
 function _preview_ping(w::PreviewWorker)
+    ok, protocol, _ = _preview_ping_env(w)
+    (ok, protocol)
+end
+
+# `_preview_ping` plus the env the worker says it runs in (`""` when it names none — protocol < 18).
+function _preview_ping_env(w::PreviewWorker)
     try
         reply = send(w, Dict("type" => "ping"))
-        (true, Int(get(reply, "protocol", 1)))
+        (true, Int(get(reply, "protocol", 1)), String(get(reply, "env", "")))
     catch e
         Cecelia._is_probe_code_bug(e) && rethrow()
-        (false, 0)
+        (false, 0, "")
     end
+end
+
+"""
+    _preview_env_action(have, want; alive, starting) -> Symbol
+
+What `_ensure_preview!` does about the worker's env — pure, so the routing is testable without a
+process. `have` is the env of the worker we hold (`missing` when there is none); `want` is `:any` for
+a compute that runs in either env (rendering, flow, AF — everything but cellpose), which keeps whatever
+is up rather than paying a warm-up to switch:
+
+- `:ready`  — alive and in the wanted env
+- `:wait`   — a launch into the wanted env is already in flight
+- `:switch` — the worker (alive or starting) is in the OTHER env: stop it, launch the wanted one
+- `:launch` — nothing held
+
+A model is never run in the env that happens to be up (#1555): cellpose 4 handed a cellpose 3 name
+loads `cpsam_v2` and says so only in a log line.
+"""
+function _preview_env_action(have, want::Union{Symbol,Nothing}; alive::Bool, starting::Bool)::Symbol
+    have === missing && return :launch
+    want === :any && (want = have)
+    have !== want && return :switch
+    alive && return :ready
+    starting && return :wait
+    :launch
 end
 
 # ── The hot-path alive check ─────────────────────────────────────────────────
@@ -91,6 +124,7 @@ end
 function _preview_worker_alive()::Bool
     w = _preview_ref[]
     w === nothing && return false
+    w.state === Cecelia.PREVIEW_READY || return false   # starting, or stopped under us
     w.proc !== nothing && return preview_alive(w)   # hot path — no I/O
     # Adopted (no proc handle) — the ping is the only signal we have.
     ok, protocol = _preview_ping(w)
@@ -98,59 +132,91 @@ function _preview_worker_alive()::Bool
 end
 
 """
-Launch the worker if it isn't up. Returns true when it is ready NOW, false when a launch is in
-flight — the caller reports `starting` rather than blocking, because the worker pays 17.7 s of torch
-and cellpose imports before it can answer (that cost is the whole reason it is resident).
+Launch the worker if it isn't up — in `env`, the pixi env the preview's model needs (`preview_env`).
+Returns true when it is ready NOW, false when a launch is in flight — the caller reports `starting`
+rather than blocking, because the worker pays 17.7 s of torch and cellpose imports before it can
+answer (that cost is the whole reason it is resident).
+
+A worker in the OTHER env is stopped and replaced (`_preview_env_action`): one worker at a time, and
+switching model family costs one warm-up. A missing opt-in env raises before anything is stopped, with
+the install action in the message — never a fallback to the default env (#1555).
 
 Adopts a worker already listening on the port — one that survived a backend restart is still
 perfectly good, and a second process on the port would just fail to bind. It is adopted only when
-its `PREVIEW_PROTOCOL` matches: a worker running older code pings fine and then fails the real
-request, so a mismatch is STOPPED and replaced rather than trusted.
+its `PREVIEW_PROTOCOL` matches and it names the wanted env: a worker running older code pings fine and
+then fails the real request, so a mismatch is STOPPED and replaced rather than trusted.
 """
-function _ensure_preview!()::Bool
+function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
     lock(_preview_lock) do
-        _preview_worker_alive() && return true
-        _preview_starting[] && return false
-        if _preview_ref[] === nothing
+        env in (nothing, :any) || Cecelia.python_bin_for(env)   # raises when the env isn't installed
+        w = _preview_ref[]
+        action = _preview_env_action(w === nothing ? missing : w.env, env;
+                                     alive = _preview_worker_alive(), starting = _preview_starting())
+        action === :ready && return true
+        action === :wait  && return false
+        if action === :switch
+            @info "Switching preview worker to the $(Cecelia.pixi_env_name(env)) env"
+            _stop_preview_worker!()
+            _free_preview_port!()
+        elseif _preview_ref[] === nothing
             probe = PreviewWorker()
-            ok, protocol = _preview_ping(probe)
-            if ok && protocol == PREVIEW_PROTOCOL
+            ok, protocol, probe_env = _preview_ping_env(probe)
+            if ok && protocol == PREVIEW_PROTOCOL &&
+               (env === :any || probe_env == Cecelia.pixi_env_name(env))
+                probe.env = _preview_env_symbol(probe_env)
+                probe.state = Cecelia.PREVIEW_READY
                 _preview_ref[] = probe
                 @info "Adopted existing preview worker on port $(probe.port)"
                 return true
             elseif ok
-                @warn "Replacing preview worker: it speaks protocol $protocol, this backend needs " *
-                      "$PREVIEW_PROTOCOL (its code predates a change to what a preview answers — " *
-                      "the reply shape, the previewable tasks, or a bug fixed since)"
-                # Kill by PORT, not `close!(probe)` — the probe was only ever pinged, so its `proc` is
-                # nothing and `close!` is a silent no-op. The stale worker then keeps the port, the
-                # replacement cannot bind, and its readiness ping is answered by the very process we
-                # meant to remove: a relaunch loop that serves the old code.
-                Cecelia._kill_listeners_on_port(service_port(:preview))
-                # …and WAIT for it to let go. The kill is asynchronous, so launching straight away races
-                # the old process's exit: the replacement loses the bind and dies, which `launch!` reports
-                # as an error the user sees once before the next attempt succeeds. Cheap to just wait.
-                for _ in 1:20
-                    first(_preview_ping(probe)) || break
-                    sleep(0.25)
-                end
+                protocol == PREVIEW_PROTOCOL ?
+                    @info("Replacing preview worker: it runs in the '$probe_env' env, this preview " *
+                          "needs '$(Cecelia.pixi_env_name(env))'") :
+                    @warn("Replacing preview worker: it speaks protocol $protocol, this backend needs " *
+                          "$PREVIEW_PROTOCOL (its code predates a change to what a preview answers — " *
+                          "the reply shape, the previewable tasks, or a bug fixed since)")
+                _free_preview_port!()
             end
         end
-        @info "Launching preview worker..."
-        w = PreviewWorker()
+        env === :any && (env = nothing)   # nothing up and no preference: the default env
+        @info "Launching preview worker..." env = Cecelia.pixi_env_name(env)
+        w = PreviewWorker(; env = env)
         _preview_ref[] = w
-        _preview_starting[] = true
+        w.state = Cecelia.PREVIEW_STARTING   # now, not when the task runs: a status poll must already say so
         @async begin
             try
                 launch!(w)
+                preview_stopping(w) && @info "Preview worker start cancelled"
             catch e
-                @error "Preview worker failed to start" exception = e
-                lock(_preview_lock) do; _preview_ref[] = nothing; end
-            finally
-                lock(_preview_lock) do; _preview_starting[] = false; end
+                # a stop that lands mid-launch can still surface as a dead child — it is the cancel,
+                # not a failure, so it does not log as one (#1559)
+                preview_stopping(w) ? @info("Preview worker start cancelled") :
+                                      @error("Preview worker failed to start", exception = e)
+                close!(w)
+                lock(_preview_lock) do; _preview_ref[] === w && (_preview_ref[] = nothing); end
             end
         end
         false
+    end
+end
+
+# The ping's env name back to `PreviewWorker.env` — the inverse of `Cecelia.pixi_env_name`.
+_preview_env_symbol(name::AbstractString) =
+    name == "default" ? nothing : Symbol(replace(String(name), "-" => "_"))
+
+# Kill whatever holds the preview port and wait for it to let go.
+# Kill by PORT, not `close!(probe)` — an adopted or probed worker has no `proc`, so `close!` is a silent
+# no-op. The stale worker then keeps the port, the replacement cannot bind, and its readiness ping is
+# answered by the very process we meant to remove: a relaunch loop that serves the old code.
+# …and WAIT, because the kill is asynchronous: launching straight away races the old process's exit, the
+# replacement loses the bind and dies, which `launch!` reports as an error the user sees once before
+# the next attempt succeeds. Cheap to just wait.
+function _free_preview_port!()
+    probe = PreviewWorker()
+    Cecelia._kill_listeners_on_port(service_port(:preview))
+    for _ in 1:20
+        first(_preview_ping(probe)) || break
+        sleep(0.25)
     end
 end
 
@@ -162,10 +228,14 @@ function api_preview_status(req::HTTP.Request)
     # viewer is authoritative for what's on screen now (client posts `zarrPath`/`taskDir`/
     # `imageUid` on `/api/preview/run`), so this route reports the worker's state only. Kept as
     # null fields so any client relying on the shape still parses.
+    w = _preview()
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
-        starting = _preview_starting[],
+        starting = _preview_starting(),
         port     = service_port(:preview),
+        # the pixi env of the worker held (running or starting), so the toggle can say a warm-up is
+        # cellpose 3's; `nothing` when none is held
+        env      = w === nothing ? nothing : Cecelia.pixi_env_name(w.env),
         imageUid = nothing,
         zarrPath = nothing,
         taskDir  = nothing,
@@ -175,10 +245,39 @@ end
 # ── POST /api/preview/start ───────────────────────────────────────────────────
 # Warm the worker without previewing anything, so the import cost is paid at toggle-on rather than on
 # the user's first parameter change.
+# Body (optional): `{ funName, params }` — the task about to be previewed, so the worker is warmed in
+# the env its model needs. Without it the default env is warmed and the first cellpose 3 preview would
+# pay a second warm-up switching over.
 function api_preview_start(body_bytes::Vector{UInt8})
-    ready = _ensure_preview!()
-    200, JSON3.write((; alive = ready, starting = _preview_starting[], port = service_port(:preview)))
+    data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch; Dict{String,Any}(); end
+    env, bad = _preview_env_for(_wstr(data, "funName"), get(data, "params", nothing))
+    bad === nothing || return bad
+    ready = try
+        _ensure_preview!(env)
+    catch e
+        return _preview_env_error(e)
+    end
+    w = _preview()
+    200, JSON3.write((; alive = ready, starting = _preview_starting(), port = service_port(:preview),
+                        env = w === nothing ? nothing : Cecelia.pixi_env_name(w.env)))
 end
+
+# `(env, nothing)` for a task's params, or `(nothing, 400-response)` when they cannot be previewed in
+# any one env (cellpose 3 and 4 models mixed). An unknown task or no params → `:any`.
+function _preview_env_for(fun_name::AbstractString, params)
+    task = try Cecelia._task_from_fun_name(fun_name) catch; nothing end
+    (task === nothing || !(params isa AbstractDict)) && return (:any, nothing)
+    try
+        (Cecelia.preview_env(task, params), nothing)
+    catch e
+        (nothing, (400, JSON3.write((; error = e isa ErrorException ? e.msg : sprint(showerror, e),
+                                       code = "params-not-previewable"))))
+    end
+end
+
+# The opt-in env isn't installed: a refusal with the install action, coded so the UI can say it short.
+_preview_env_error(e) = (409, JSON3.write((;
+    error = e isa ErrorException ? e.msg : sprint(showerror, e), code = "env-missing")))
 
 # `task_dir` normalised, when it is an image's meta dir — `{projects_dir}/{projectUid}/1/{imageUid}` with
 # a `ccid.json` — else `nothing`. The cleanup path's only input is this client string, and the worker
@@ -212,7 +311,10 @@ function api_preview_stop(body_bytes::Vector{UInt8})
         try
             _with_preview() do
                 w = _preview()
-                w === nothing || send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
+                # Only a READY worker is bound to answer. One still starting has written nothing to
+                # sweep, and the send would only fail against an unbound port.
+                (w === nothing || w.state !== Cecelia.PREVIEW_READY) ||
+                    send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
             end
         catch e
             @warn "Preview scratch sweep failed" exception = e
@@ -290,8 +392,18 @@ function api_preview_run(body_bytes::Vector{UInt8})
             wantedValueName = in_value_name,
             openZarr = basename(open_zarr_path)))
 
-    ready = _ensure_preview!()
+    # The env the model needs (#1555): a cellpose 3 model is previewed in the cellpose-v3 env or not at
+    # all — cellpose 4 would silently segment it with `cpsam_v2`.
+    env, bad = _preview_env_for(_wstr(data, "funName"), params)
+    bad === nothing || return bad
+    ready = try
+        _ensure_preview!(env)
+    catch e
+        return _preview_env_error(e)
+    end
     ready || return 202, JSON3.write((; starting = true, alive = false,
+                                        env = (w = _preview(); w === nothing ? nothing :
+                                               Cecelia.pixi_env_name(w.env)),
                                         message = "Preview worker is starting."))
 
     # Params as a real RUN would prepare them: section sub-params lifted to the top level, then the

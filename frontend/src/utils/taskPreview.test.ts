@@ -3,7 +3,7 @@ import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary, passBreakdown,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination, previewValueName,
-  warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
+  warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS, startingLabel, previewToggleFace,
   type PreviewContext, type PreviewStatus, previewFailureLog, isWeightsJob } from './taskPreview'
 import type { TaskDef, ParamDef } from '../tasks/types'
 
@@ -630,6 +630,28 @@ describe('previewNotice — raw exceptions are not copy', () => {
                                     code: 'no-preview-backend' })
     expect(n.short).toBe('Not previewable')
     expect(n.detail).toBe('This task has no preview — run it to see the result')
+  })
+})
+
+describe('startingLabel — a cellpose 3 warm-up says so (#1555)', () => {
+  it('names cellpose 3 when the worker starting is in its env', () => {
+    expect(startingLabel({ env: 'cellpose-v3' })).toBe('Starting cellpose 3…')
+  })
+  it('stays generic otherwise', () => {
+    expect(startingLabel({ env: 'default' })).toBe('Starting preview…')
+    expect(startingLabel(null)).toBe('Starting preview…')
+  })
+})
+
+describe('previewToggleFace — the bolt is Cancel during the warm-up (#1559)', () => {
+  it('offers cancel while the worker starts', () => {
+    expect(previewToggleFace({ enabled: true, starting: true, busy: true }))
+      .toEqual({ icon: 'pi-times', tip: 'Cancel starting the preview' })
+  })
+  it('is the bolt otherwise, spinning while a preview runs', () => {
+    expect(previewToggleFace({ enabled: false, starting: false, busy: false }).icon).toBe('pi-bolt')
+    expect(previewToggleFace({ enabled: true, starting: false, busy: true }).icon).toBe('pi-spinner pi-spin')
+    expect(previewToggleFace({ enabled: true, starting: false, busy: false }).tip).toMatch(/^Stop previewing/)
   })
 })
 

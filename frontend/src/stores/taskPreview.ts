@@ -74,6 +74,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // import this store, so they don't fight this write; the main window is the sole author.
   viewerStore.setPreviewLabels(null)
   viewerStore.setPreviewImages(null)
+  viewerStore.setPreviewBox(null)   // and the box those results were in
 
   /**
    * Record a failure: the readout AND the error console.
@@ -277,9 +278,9 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     try {
       // warm first: pays the worker's imports (and, on the first run, the normalisation statistic) at
       // toggle-on rather than making the user's first parameter change look like a 10 s hang
-      await previewApi.start()
+      await previewApi.start(context.value ?? undefined)
     } catch (e) {
-      fail(e instanceof Error ? e.message : String(e))
+      fail(e instanceof Error ? e.message : String(e), (e as SvcError)?.code ?? '')
     }
     await refreshStatus()
     request()
@@ -290,6 +291,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     scheduler.cancel()               // drop pending + supersede in flight, so no late mask lands
     cancelWarmPoll()                 // …and stop waiting on a worker we are about to shut down
     clearResult()
+    viewerStore.setPreviewBox(null)  // the next preview starts from the view again
     error.value = ''
     errorCode.value = ''
     starting.value = false
@@ -328,6 +330,7 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // preview labels store belongs to the previous vn/uid pair.
     scheduler.cancel()
     clearResult()
+    viewerStore.setPreviewBox(null)
     void refreshStatus().then(request)
   })
 

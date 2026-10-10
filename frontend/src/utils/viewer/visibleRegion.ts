@@ -7,8 +7,8 @@
 // derivation the tile fetcher and the minimap use too), not a camera.
 //
 // The region is CAPPED at `maxSide` L0 pixels per axis, centred on the view: a zoomed-out whole-slide
-// view would otherwise send the whole slide to the model inside a browser request. The caller draws
-// the box on the viewer when `capped` is set, so the user sees what was segmented.
+// view would otherwise send the whole slide to the model inside a browser request. Once a preview has
+// run, the user's box (`previewBox.ts`, seeded from that first region) replaces the view as the input.
 //
 // Under `ndisplay: 3` (3D volume) there is no single "visible plane": the worker previews the plane at
 // `z` over the image's XY — capped the same way, centred on the image.
@@ -31,6 +31,9 @@ export interface VisibleRegionInput {
   currentT: number
   /** 2 = plane, 3 = volume. Determines whether the view or the image centre anchors the region. */
   ndisplay: number
+  /** the user's preview box (`previewBox.ts`), L0 px — when set, the 2D region is the box, not the
+   *  view. Ignored when `ndisplay` is 3. */
+  box?: L0Rect | null
   /** cap per axis, L0 px; defaults to `PREVIEW_REGION_MAX_SIDE` */
   maxSide?: number
 }
@@ -40,7 +43,7 @@ export interface VisibleRegion {
   z: number
   t: number
   ndisplay: number
-  /** true when the cap cut the region down from what is on screen — the viewer draws the box */
+  /** true when the cap cut the region down from the view (or the box) */
   capped?: boolean
 }
 
@@ -65,8 +68,9 @@ function capSpan([lo, hi]: [number, number], max: number): [number, number] {
 export function visibleRegion(input: VisibleRegionInput): VisibleRegion {
   const { imageW, imageH, currentZ, currentT, ndisplay } = input
   const max = Math.max(1, Math.floor(input.maxSide ?? PREVIEW_REGION_MAX_SIDE))
-  // 3D: no XY window is "what you see" through a volume, so the whole plane; 2D: the visible part.
-  const v = ndisplay === 3 ? { x0: 0, y0: 0, x1: imageW, y1: imageH } : input.view
+  // 3D: no XY window is "what you see" through a volume, so the whole plane; 2D: the user's box if
+  // there is one, else the visible part.
+  const v = ndisplay === 3 ? { x0: 0, y0: 0, x1: imageW, y1: imageH } : (input.box ?? input.view)
   const X = clampSpan(v.x0, v.x1, imageW)
   const Y = clampSpan(v.y0, v.y1, imageH)
   const cX = capSpan(X, max)

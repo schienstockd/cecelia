@@ -281,6 +281,19 @@ class PreviewWorkerAfTest(unittest.TestCase):
         self.assertEqual(reply['protocol'], self.worker.PROTOCOL)
         self.assertIn('cleanupImages.afCorrect', reply['backends'])
 
+    def test_ping_names_the_env_it_was_launched_in(self):
+        """Adoption matches the worker's env to the model (#1555): the backend sets `CECELIA_PY_ENV` at
+        launch and needs it back, or a worker in the default env is adopted for a cellpose 3 preview."""
+        old = os.environ.get('CECELIA_PY_ENV')
+        os.environ['CECELIA_PY_ENV'] = 'cellpose-v3'
+        try:
+            reply = _load_worker().execute_command({'type': 'ping'})
+        finally:
+            os.environ.pop('CECELIA_PY_ENV') if old is None else os.environ.__setitem__('CECELIA_PY_ENV', old)
+        self.assertEqual(reply['env'], 'cellpose-v3')
+        self.assertEqual(self.worker.execute_command({'type': 'ping'})['env'],
+                         old if old is not None else 'default')
+
 
 
 @unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')

@@ -125,6 +125,28 @@ function cellpose_models_for_python(params::AbstractDict, raw::AbstractDict;
     out
 end
 
+"""
+    cellpose_py_env(models) -> Union{Symbol,Nothing}
+
+The pixi env a `models` bag has to run in: `:cellpose_v3` when its models are cellpose 3 built-ins,
+`nothing` (the default env, cellpose 4) otherwise. Raises when the bag mixes the two — one Python
+process imports one cellpose, so there is no env that could run both.
+
+**Shared by the run and the preview, and it has to be:** a v3 name must never reach cellpose 4, which
+answers an unknown name with a log line and `cpsam_v2`. Works on the frontend's bag or the translated
+one — a custom name resolved to a path is v4 either way.
+"""
+function cellpose_py_env(models)::Union{Symbol,Nothing}
+    models isa AbstractDict || return nothing
+    backends = unique(cellpose_model_backend(String(get(m, "model", ""))) for (_, m) in models)
+    length(backends) > 1 &&
+        error("Cannot mix cellpose v3 and v4 models in one segmentation: $(join(backends, ", ")).")
+    (!isempty(backends) && first(backends) === :v3) ? :cellpose_v3 : nothing
+end
+
+# Which env the preview worker must run in for this task's params — see `preview_py_env` (spec.jl).
+preview_py_env(::CellposeSegment, params::AbstractDict) = cellpose_py_env(get(params, "models", nothing))
+
 # The preview sends the FRONTEND's params, so they need the same preparation the run does before
 # Python sees them (see `cellpose_models_for_python`). Without this the worker gets channel names where
 # it expects indices.
@@ -171,12 +193,12 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     # — one task = one env — because there is no sensible "compose two cellpose versions" story.
     # The v3 env is opt-in and Mac-only; on any other platform a v3 pick fails via run_py's env
     # guard with a message pointing at the install action. See docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
-    backends = unique(cellpose_model_backend(get(m, "model", "")) for (_, m) in models_converted)
-    if length(backends) > 1
-        on_log("[ERROR] Cannot mix cellpose v3 and v4 models in one segmentation task: $(join(backends, ", ")).")
+    py_env = try
+        cellpose_py_env(models_converted)
+    catch e
+        on_log("[ERROR] $(e isa ErrorException ? e.msg : sprint(showerror, e))")
         return nothing
     end
-    py_env = (first(backends) === :v3) ? :cellpose_v3 : nothing
 
     on_log("[INFO] Input:  $im_path")
     on_log("[INFO] Output: $(joinpath(task_dir, "labels", p.outputValueName)).zarr")

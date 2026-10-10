@@ -40,7 +40,7 @@ What it does NOT do:
   viewer-agnostic — because they are canvas plots, not layers.
 
 Protocol: one JSON message per connection, same shape as the napari bridge.
-    {"type": "ping"}     -> {"type": "ok", "protocol": PROTOCOL}
+    {"type": "ping"}     -> {"type": "ok", "protocol": PROTOCOL, "env": ENV_NAME}
     {"type": "preview", ...} -> {"type": "ok",
                                  "layers"       : [{kind, name, valueName, path, shape, axes}, …]?,
                                  "previewImages": [{sourceChannel, name, valueName, path,
@@ -252,9 +252,13 @@ def _cellpose_imports():
 #:     one-off renderer) would hide that, so the bump is what replaces the stale worker.
 #: 17: `cleanupImages.smooth` enters the previewable set (`_preview_smooth`, the run's compute via
 #:     `smooth_utils`). A protocol-16 worker answers "no preview backend", i.e. a dead button.
-#: 18: the socket needs the API token (`_authorized`). A protocol-17 worker answers any account on
+#: 18: the ping names the pixi env this worker runs in (`env`, from `CECELIA_PY_ENV`), because a
+#:     cellpose 3 model is now previewed in the `cellpose-v3` env and adoption has to match the env to
+#:     the model (#1555). Also a fix inside the worker: cellpose 4 refuses a model name it does not know
+#:     instead of loading `cpsam_v2` under it.
+#: 19: the socket needs the API token (`_authorized`). A protocol-18 worker answers any account on
 #:     the machine — run compute over your files and hand back the result — so it must be replaced.
-PROTOCOL = 18
+PROTOCOL = 19
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -263,6 +267,8 @@ _CELLPOSE_TRANSLATOR = 'cellpose_models_for_python (cellpose.jl)'
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
+#: The pixi env this worker was launched in (`preview_env_name`, app/src/preview.jl), echoed in the ping.
+ENV_NAME = os.environ.get("CECELIA_PY_ENV", "default")
 
 # Frame cap, set explicitly on both resident-Python legs rather than left implicit — same number and
 # same reason as `WS_MAX_SIZE` in napari_bridge.py and `WS_MAX_FRAME_SIZE` in app/src/utils.jl, which
@@ -1481,7 +1487,7 @@ def _command_lock(kind):
 def execute_command(msg):
     kind = msg.get("type", "")
     if kind == "ping":
-        return {"type": "ok", "protocol": PROTOCOL, "backends": sorted(_BACKENDS)}
+        return {"type": "ok", "protocol": PROTOCOL, "env": ENV_NAME, "backends": sorted(_BACKENDS)}
     if kind == "render":
         return {"type": "ok", "paths": render(msg)}
     if kind == "preview":
