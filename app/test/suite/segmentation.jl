@@ -570,8 +570,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
 
     @testset "the preview worker gets its own port" begin
         # must not collide with Pluto (7660), the historic napari bridge port (7655), the API
-        # server (8080) or the frontend dev server (5173).
-        @test Cecelia.PREVIEW_PORT ∉ (7655, 7660, 8080, 5173)
+        # server (8080) or the frontend dev server (5173). Per-slot distinctness: suite/ports.jl.
+        @test Cecelia.service_port(:preview; slot = 0) ∉ (7655, 7660, 8080, 5173)
         # not alive until launched — `preview_alive` must never report true for a null process
         @test !Cecelia.preview_alive(Cecelia.PreviewWorker())
     end
@@ -593,7 +593,7 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # live stale worker to exercise.
         api_src = read(joinpath(dirname(dirname(pathof(Cecelia))), "..", "api", "src",
                                 "preview_api.jl"), String)
-        @test occursin("_kill_listeners_on_port(PREVIEW_PORT)", api_src)
+        @test occursin("_kill_listeners_on_port(service_port(:preview))", api_src)
         # CODE only — the comment above that call names `close!(probe)` to say why it is wrong, and a
         # naive text search cannot tell an explanation from the thing it warns about.
         api_code = filter(l -> !startswith(strip(l), "#"), split(api_src, '\n'))

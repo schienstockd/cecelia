@@ -2,7 +2,7 @@
 Cellpose segmentation subclass.
 
 Implements predict_slice() for BOTH cellpose 4 (Cellpose-SAM) and cellpose 3 (cyto2/cyto3). The
-version is detected once at import via `cellpose.__version__`; the runner runs under exactly one
+version is detected once at import from the package metadata; the runner runs under exactly one
 env at a time (default = v4, opt-in `cellpose-v3` on Mac = v3), so the branching is inside the
 `predict_slice` method rather than two files.
 
@@ -43,6 +43,8 @@ transformer):
 See docs/todo/CELLPOSE_V4_PLAN.md and docs/todo/CELLPOSE_V3_OPTIN_PLAN.md.
 """
 
+import importlib.metadata
+
 import numpy as np
 from scipy import ndimage
 from skimage import filters
@@ -53,12 +55,11 @@ import cecelia.utils.script_utils as script_utils
 
 
 def _cellpose_major_version() -> int:
-    """`3` under the `cellpose-v3` opt-in env, `4` under the default env. Any parse failure falls
-    back to 4 — the runner is spawned into a specific env, so the wrong branch would fail loud on
-    the first eval() call rather than silently produce wrong labels."""
+    """`3` under the `cellpose-v3` opt-in env, `4` under the default env. Read from the installed
+    distribution's metadata: neither cellpose 3 nor 4 defines `cellpose.__version__`, and reading
+    that sent every v3 run down the v4 path (#1552). Any failure falls back to 4."""
     try:
-        import cellpose
-        return int(str(getattr(cellpose, '__version__', '4')).split('.')[0])
+        return int(importlib.metadata.version('cellpose').split('.')[0])
     except Exception:
         return 4
 

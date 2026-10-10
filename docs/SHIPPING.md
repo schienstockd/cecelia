@@ -215,9 +215,10 @@ checkpoint, and v4 refuses to load one. The Julia resolver `cellpose_model_path(
 still mirrors bioformats2raw's bundled/override pattern —
 `<install>/models/cellposeModels/` first, `<config_dir>/models/cellposeModels/` as a user override
 slot — and `pixi run models-fetch` (`scripts/models_fetch.py`, `--ref` to pin) still works for
-whenever there is a v4 set to fetch. What DOES download at first use is cellpose's own `cpsam_v2`
+whenever there is a v4 set to fetch. What the installer DOES fetch is cellpose's own `cpsam_v2`
 (~1.2 GB, HuggingFace → `~/.cellpose/models`, relocatable via `CELLPOSE_LOCAL_MODELS_PATH`) —
-bigger than everything else here combined, and not something the installer controls.
+bigger than everything else here combined; the app re-fetches it at start if missing. See
+`docs/SEGMENTATION.md` → *Model weights*.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
 `releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a
@@ -291,7 +292,7 @@ root). This is the only structural difference between the two paths.
 |---|---|
 | Console | `pixi run update` → `pixi update` (refreshes deps within `pixi.toml` constraints, rewrites `pixi.lock`) |
 | In-app — stable | Settings → Software → *Update to vX.Y.Z*. `/api/update/check` picks the newest GitHub release; `/api/update/apply` downloads `cecelia.tar.gz`, verifies it against the published `.sha256`, and stages it. Launcher applies the staged bundle on the next restart. |
-| In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API; apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `pixi exec --spec nodejs -- npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Node/npm come from an ephemeral pixi env, no host Node required. |
+| In-app — dev channel | Settings → Software → *Track main (dev builds)* toggle. `/api/update/check?channel=dev` compares the installed sha (from `.cecelia-version`) with the tip of `main` via the commits API. When behind, one compare call adds `behindBy` and `mergedPrs` (PR number + title from merge/squash commits), which What's New shows as "N commits behind, M PRs merged" plus a capped one-line-per-PR list in place of release notes; *View on GitHub* opens the compare page. Apply downloads `archive/<sha>.tar.gz`, unpacks it with `--strip-components=1`, and runs `pixi exec --spec nodejs -- npm install && npm run build` inside the payload — same shape as `install.sh`'s dev channel. Node/npm come from an ephemeral pixi env, no host Node required. |
 | In-app — finishing | A staged apply/revert sets `pendingRestart` on `/api/update/check`, which suppresses `updateAvailable` (the files on disk are still the old build) and swaps the header badge for *Restart to update*. That button (also in What's New + Settings) calls `/api/app/restart` with `stopRunner: true` so the task runner comes back on the new code; it is disabled while a task runs. The dev-channel "at tip" test is a ≥7-char prefix match: in-app apply writes a short sha, `install.sh` a full one. |
 | In-app — revert | Settings → Software → *Revert to previous version*. Each apply snapshots the files it's about to overwrite into `.previous-release/payload/`; revert stages a `.pending-revert` marker and the launcher moves them back on the next restart. Only ONE step of history is kept — a second apply discards the earlier snapshot. |
 
@@ -644,7 +645,7 @@ the updated `pixi.toml` + `pixi.lock`.
 
 | Package | Pin | Reason |
 |---------|-----|--------|
-| `cellpose>=4.2` | lower bound | v4 (Cellpose-SAM). v4 dropped `DenoiseModel`, the cyto*/nuclei zoo and v3-checkpoint loading — `cleanupImages.cellposeCorrect` was retired for it and `cleanupImages.smooth` covers the cleanup case. `cpsam_v2` weights (1.2 GB) download from HuggingFace on first use; `CELLPOSE_LOCAL_MODELS_PATH` can pre-seed them. See docs/todo/CELLPOSE_V4_PLAN.md. |
+| `cellpose>=4.2` | lower bound | v4 (Cellpose-SAM). v4 dropped `DenoiseModel`, the cyto*/nuclei zoo and v3-checkpoint loading — `cleanupImages.cellposeCorrect` was retired for it and `cleanupImages.smooth` covers the cleanup case. `cpsam_v2` weights (1.2 GB) are fetched by the installer (else at app start) from HuggingFace; `CELLPOSE_LOCAL_MODELS_PATH` can pre-seed them. See docs/todo/CELLPOSE_V4_PLAN.md. |
 | `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
 
 ### GPU detection (cellpose tasks)

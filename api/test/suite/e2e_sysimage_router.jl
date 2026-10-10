@@ -318,6 +318,7 @@ end
         "/api/tracking/motion-dims", "/api/tracking/issues", "/api/tracking/paths",
         "/api/tracking/diagnostics", "/api/tracking/selection", "/api/tracking/detections",
         "/api/system/envs",
+        "/api/system/weights",
         "/api/update/check",
         "/api/version",
         "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
@@ -419,6 +420,7 @@ end
         "/api/tasks/custom-modules/reload", "/api/tasks/validate",
         "/api/plugins/install", "/api/plugins/install-local", "/api/plugins/remove",
         "/api/system/envs/install",
+        "/api/system/weights/fetch",
         "/api/update/apply",
         "/api/update/revert",
         "/api/viewer/props",   # POST; the GET at the same path is the load, listed above
@@ -474,7 +476,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 108 && length(POST_ROUTES) == 161
+    @test length(GET_ROUTES) == 109 && length(POST_ROUTES) == 162
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

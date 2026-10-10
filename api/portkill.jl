@@ -132,18 +132,33 @@ end # module
 
 using .PortKill: free_port, listener_pids
 
-# ── Script entry point: `julia portkill.jl <label> <port> [<label> <port> …]` ────────────────────
-# Used by the `pixi run stop*` tasks. Prints one line per component and reports what actually
-# happened — a port that could not be freed says so instead of being echoed over as "stopped".
+# ── Script entry point ────────────────────────────────────────────────────────────────────────────
+#   julia portkill.jl <service> [<service> …]         — backend/frontend/preview/runner/notebooks
+#   julia portkill.jl <label> <port> [<label> <port> …]
+# The `pixi run stop*` tasks use the first form: a service resolves to THIS user's port slot
+# (`CECELIA_PORT_SLOT`, else the sticky slot the last launch saved — app/src/ports.jl), so a stop never
+# aims at another user's Cecelia on the same machine. Prints one line per component and reports what
+# actually happened — a port that could not be freed says so instead of being echoed over as "stopped".
 if abspath(PROGRAM_FILE) == @__FILE__
+    include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
+    include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
     args = ARGS
-    isodd(length(args)) && (println(stderr, "usage: julia portkill.jl <label> <port> [...]"); exit(2))
+    targets = Pair{String,Int}[]
+    if !isempty(args) && all(a -> Symbol(a) in keys(SERVICE_PORT_BASE), args)
+        slot = current_port_slot()
+        append!(targets, [a => service_port(Symbol(a); slot) for a in args])
+    else
+        (isempty(args) || isodd(length(args))) &&
+            (println(stderr, "usage: julia portkill.jl <service> [...] | <label> <port> [...]"); exit(2))
+        for i in 1:2:length(args)
+            port = something(tryparse(Int, args[i + 1]), 0)
+            port == 0 && (println(stderr, "portkill: not a port: $(args[i + 1])"); exit(2))
+            push!(targets, args[i] => port)
+        end
+    end
     stuck = String[]
     done  = String[]
-    for i in 1:2:length(args)
-        label = args[i]
-        port  = something(tryparse(Int, args[i + 1]), 0)
-        port == 0 && (println(stderr, "portkill: not a port: $(args[i + 1])"); exit(2))
+    for (label, port) in targets
         (free_port(port) ? done : stuck) |> v -> push!(v, "$label($port)")
     end
     isempty(done)  || println("stopped ", join(done, "/"))

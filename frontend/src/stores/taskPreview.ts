@@ -20,9 +20,10 @@ import {
   compositeWarning, warmPollAction,
   PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker, type PreviewPass,
-  previewFailureLog } from '../utils/taskPreview'
+  previewFailureLog, isWeightsJob } from '../utils/taskPreview'
 import { useLogStore } from './log'
 import { useViewerStore, type PreviewImage } from './viewer'
+import { useTaskCompletionWatch } from '../composables/useTaskCompletionWatch'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
@@ -313,6 +314,15 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // done at the viewer store's sink, and this saves a round trip through the backend just to reach a
   // peer store.
   watch(() => viewerStore.visibleRegion, () => { request() })
+  // A preview refused with `weights-downloading` waits on the `model-weights:` job; when that job
+  // ends, ask again — a `done` previews, a `failed` comes back as the same refusal with a fresh job.
+  useTaskCompletionWatch({
+    enabled: () => errorCode.value === 'weights-downloading',
+    frameTypes: ['task:status'],
+    isTrigger: f => isWeightsJob(String(f.taskId ?? '')) && ['done', 'failed'].includes(String(f.status ?? '')),
+    debounceMs: 0,
+    onComplete: () => { error.value = ''; errorCode.value = ''; request() },
+  }).install()
   watch(() => viewerStore.openImage, () => {
     // Opening a different image (route load, valueName picker) invalidates the mask on screen — the
     // preview labels store belongs to the previous vn/uid pair.

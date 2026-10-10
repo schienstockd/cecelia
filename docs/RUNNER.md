@@ -22,7 +22,7 @@ apply is worse than no control.
 
 | | |
 |---|---|
-| Port | **7657** (7655 napari · 7656 preview · 7660 notebooks) |
+| Port | **7657** in port slot 0, `service_port(:runner)` in general — `docs/ARCHITECTURE.md` → *Ports* |
 | Start | with the backend, or `pixi run runner` standalone |
 | Stop | `pixi run stop-runner`, `pixi run stop`, Quit, or Ctrl-C on the supervisor |
 | Survives | **Settings → Restart** and the worktree switch |
@@ -216,7 +216,7 @@ terminal — two different pids in one log, which sent the reader hunting for a 
 do not**, and that is the entire feature. Every other resident child is stopped by both. `api/test`
 asserts all three directions, including that Quit does *not* opt out — the copy-paste this guards.
 
-`dev.jl`'s `CHILD_PORTS` includes 7657, so Ctrl-C takes it: once the supervisor is gone nothing can
+`dev.jl`'s `CHILD_SERVICES` includes the runner, so Ctrl-C takes it: once the supervisor is gone nothing can
 reach it again.
 
 **A crash is the third case, and it relaunches.** The supervisors (`api/dev.jl`, prod's `app.py`) used

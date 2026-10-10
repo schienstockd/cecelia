@@ -1,14 +1,15 @@
 # ── Single-instance lock (LOGIN_CREDENTIAL_ISOLATION_PLAN D7 / phase P5) ─────────────
 #
-# Cecelia binds several fixed ports (:8080 API, :5173 frontend, :7656 preview, :7657 runner, :7660
-# notebooks). Without an instance check, launching Cecelia a second time on the same box — locally
-# OR over SSH/VNC — crashes on whichever port binds first, with whatever error that component
-# happens to throw. Fine on a local screen (glance and infer); useless over remote access, which
+# Cecelia binds several ports (:8080 API, :5173 frontend, :7656 preview, :7657 runner, :7660
+# notebooks in port slot 0). Without an instance check, launching Cecelia a second time for the same
+# config dir — locally OR over SSH/VNC — would take a second port slot and run two backends over one
+# config and one projects dir. The lock is per CONFIG DIR, i.e. per user: a different OS user has their
+# own lock and gets the next port slot (`ports.jl`), which is the supported way to share a machine. Fine on a local screen (glance and infer); useless over remote access, which
 # is the exact case D7 exists for.
 #
 # This is the ONE authoritative "is another Cecelia already running here?" check. Called at the
 # top of the API server's `start()`, BEFORE any HTTP/WS component tries to bind — so a remote
-# user sees `Cecelia is already running on this machine (PID N since T on port P)` instead of a
+# user sees `Cecelia is already running for this user (PID N since T on port P)` instead of a
 # bind traceback. Stale locks self-heal: a lock whose PID is no longer alive is silently reclaimed.
 #
 # Deliberately simple:
@@ -95,7 +96,7 @@ function _already_running_message(data::AbstractDict)::String
     isempty(string(at))   || push!(detail, "since $(at)")
     isempty(string(port)) || push!(detail, "on port $(port)")
     tail = isempty(detail) ? "" : string(" ", join(detail, " "))
-    string("Cecelia is already running on this machine (PID $(pid)$(tail)). ",
+    string("Cecelia is already running for this user (PID $(pid)$(tail)). ",
            "Use `pixi run stop` to release it if you are certain nothing is using it.")
 end
 

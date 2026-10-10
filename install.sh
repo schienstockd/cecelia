@@ -301,14 +301,22 @@ fi
 # cellpose 4 cannot load them — it raises "This model does not appear to be a CP4 model". The
 # drop-in slot itself is unchanged and takes a v4 checkpoint: <install>/models/cellposeModels/ or
 # <config_dir>/models/cellposeModels/ (cellpose_model_path() in config.jl), and `pixi run
-# models-fetch` still exists for whenever there is a v4 set to fetch. Cellpose's own weights
-# (`cpsam_v2`, ~1.2 GB) are downloaded by cellpose on first use, not here.
+# models-fetch` still exists for whenever there is a v4 set to fetch. Cellpose's own default
+# weights (`cpsam_v2`, ~1.2 GB) ARE fetched, after the Python env below.
 # See docs/SEGMENTATION.md → Custom cellpose checkpoints and docs/todo/CELLPOSE_V4_PLAN.md.
 
 # ── Provision ────────────────────────────────────────────────────────────────
 cd "$INSTALL_DIR"
 say "Installing the Python environment (downloads a few GB on first run)…"
 as_owner "$PIXI" install
+# The default segmentation model's weights, so the first preview doesn't download 1.2 GB inside a
+# request. Not fatal: the app fetches missing weights at start as a visible job
+# (api/src/system_api.jl → Model weights). CECELIA_SKIP_MODEL_WEIGHTS=1 skips it (an offline install).
+if [ "${CECELIA_SKIP_MODEL_WEIGHTS:-}" != "1" ]; then
+  say "Downloading the Cellpose-SAM model weights (~1.2 GB)…"
+  as_owner "$PIXI" run python -m cecelia.utils.model_weights cpsam_v2 \
+    || say "Model weights download failed — Cecelia will retry when it starts."
+fi
 say "Precompiling Julia (a few minutes on first run)…"
 as_owner "$JULIA" --project=api -e 'using Pkg; Pkg.instantiate()'
 

@@ -84,6 +84,10 @@ export function profileDisplayName(p: Pick<Profile, 'name' | 'isDefault'>): stri
   return p.isDefault ? DEFAULT_PROFILE_DISPLAY_NAME : p.name
 }
 
+/** `profileDisplayName` for a bare profile name off the wire (project owners, `createdBy`, …). */
+export const profileNameLabel = (name: string): string =>
+  profileDisplayName({ name, isDefault: name === 'default' })
+
 const _JSON = { 'Content-Type': 'application/json' }
 
 async function _json(res: Response): Promise<any> {
