@@ -169,6 +169,50 @@ export async function setStoreLayout(name: string): Promise<string> {
 }
 
 /**
+ * The server's decoded-chunk cache (`api/src/chunk_cache.jl`): RAM it may use to keep decoded zarr
+ * chunks, so the viewer's other bricks of a timepoint are a copy rather than a decode. Persisted as
+ * `[viewer].chunkCache`; a change applies to the running server at once.
+ */
+export interface ChunkCacheStats {
+  budgetBytes: number; bytes: number; chunks: number
+  hits: number; misses: number; waits: number; evictions: number
+}
+export interface ChunkCacheSettings {
+  current: string            // 'auto' | 'off' | MB as a string
+  choices: string[]
+  autoBytes: number          // what 'auto' resolves to on this machine
+  stats: ChunkCacheStats
+}
+
+/** Chip labels for the budget choices — `auto` carries the size it picked on this machine. */
+export function chunkCacheOptions(choices: string[], autoBytes: number): { value: string; label: string }[] {
+  return choices.map(c => ({
+    value: c,
+    label: c === 'auto' ? `Auto (${formatBytes(autoBytes)})`
+         : c === 'off'  ? 'Off'
+         : formatBytes(Number(c) * 1024 ** 2),
+  }))
+}
+
+export async function fetchChunkCache(): Promise<ChunkCacheSettings> {
+  const res = await fetch('/api/viewer/chunk-cache')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as ChunkCacheSettings
+}
+
+export async function setChunkCache(value: string): Promise<{ current: string; stats: ChunkCacheStats }> {
+  const res = await fetch('/api/viewer/chunk-cache/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as any)?.error ?? `HTTP ${res.status}`)
+  return data as { current: string; stats: ChunkCacheStats }
+}
+
+/**
  * VN versioning: when true, a re-run of a producing task mints the next `vN` alongside the current
  * version instead of overwriting. Backend routes through `version_write!` (the P2 guarded writer).
  *

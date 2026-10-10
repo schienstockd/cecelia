@@ -333,6 +333,7 @@ include(joinpath(@__DIR__, "suite", "tracking_hmm.jl"))
 include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 
 include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
+include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))
 
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
 #

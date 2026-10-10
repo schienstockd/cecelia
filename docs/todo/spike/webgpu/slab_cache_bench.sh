@@ -13,7 +13,7 @@
 # Wall minus server_read is the pipe: TLS, HTTP/2 framing, socket, curl.
 #
 # Env: CECELIA_URL, PROJ, IMG, VN (valueName; empty = the image's default store), MODE=flat (whole (t, c)
-# volumes for 8 timepoints instead of bricks).
+# volumes for 8 timepoints instead of bricks) or MODE=scrub (all 64 bricks of 4 timepoints).
 #
 # Cold run: drop the page cache FIRST (needs sudo, so it is not done here):
 #   sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
@@ -31,7 +31,15 @@ NT=181; NZ=31; NC=4; NXB=8; NYB=8; B=128   # 8eapy6: (t,c,z,y,x) = (181,4,31,102
 vq=${VN:+&valueName=$VN}
 
 cfg=$(mktemp); trap 'rm -f "$cfg"' EXIT
-if [ "$MODE" = flat ]; then
+if [ "$MODE" = scrub ]; then
+  # What a viewer scrub actually asks for: EVERY brick of a timepoint (8x8 at level 0), for 4
+  # timepoints — the 64 bricks of one t share the same chunks, which is what a chunk cache exploits.
+  for t in 10 60 110 160; do for by in $(seq 0 $((NYB - 1))); do for bx in $(seq 0 $((NXB - 1))); do
+    x0=$((bx * B)); y0=$((by * B))
+    printf 'url = "%s/api/viewer/slab?projectUid=%s&imageUid=%s&t=%d&c=0&cTo=%d&z=0&zTo=%d&x=%d&xTo=%d&y=%d&yTo=%d&level=0%s"\noutput = "/dev/null"\n' \
+      "$BASE" "$PROJ" "$IMG" "$t" $((NC - 1)) $((NZ - 1)) "$x0" $((x0 + B - 1)) "$y0" $((y0 + B - 1)) "$vq" >> "$cfg"
+  done; done; done
+elif [ "$MODE" = flat ]; then
   for t in 5 25 45 65 85 105 125 145; do for c in $(seq 0 $((NC - 1))); do
     printf 'url = "%s/api/viewer/slab?projectUid=%s&imageUid=%s&t=%d&c=%d%s"\noutput = "/dev/null"\n' \
       "$BASE" "$PROJ" "$IMG" "$t" "$c" "$vq" >> "$cfg"

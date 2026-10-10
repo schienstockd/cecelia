@@ -77,7 +77,7 @@ The other half of this trap: the writers force native order via `zarr_utils.nati
 corrected/cropped versions are little-endian.
 """
 function read_native(arr, idx...)
-    blk = arr[idx...]
+    blk = cached_read(arr, idx...)    # = arr[idx...], from decoded chunks when the cache is on (chunk_cache.jl)
     order = _zarr_byte_order(arr)
     order == '>' &&  HOST_IS_LITTLE_ENDIAN && return ntoh.(blk)   # big store, little host
     order == '<' && !HOST_IS_LITTLE_ENDIAN && return ltoh.(blk)   # little store, big host

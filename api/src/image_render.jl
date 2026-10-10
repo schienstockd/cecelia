@@ -342,3 +342,7 @@ function cached_render!(key::String, produce)
     v
 end
 
+# The decoded-chunk cache `read_native` reads through. Here, with `using Zarr`, because it is the other
+# half of this file's carve-out (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 11) — and so every script
+# that loads the renderer gets the same reader the server uses.
+include(joinpath(@__DIR__, "chunk_cache.jl"))

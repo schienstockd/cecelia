@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes, debrisLine } from './storage'
+import { formatBytes, debrisLine, chunkCacheOptions } from './storage'
 
 describe('formatBytes', () => {
   it('handles zero / non-finite', () => {
@@ -41,5 +41,13 @@ describe('debrisLine', () => {
   it('reports a count even when the bytes are zero', () => {
     // an empty staging dir is still debris worth removing; hiding it would leave it forever
     expect(debrisLine({ count: 2, bytes: 0, activeSkipped: 0, byWhy: {} })).toBe('2 leftover items · 0 B')
+  })
+})
+
+describe('chunkCacheOptions', () => {
+  it('auto carries the size it picked; MB choices render as sizes', () => {
+    const opts = chunkCacheOptions(['auto', 'off', '512', '4096'], 1024 ** 3)
+    expect(opts.map(o => o.value)).toEqual(['auto', 'off', '512', '4096'])
+    expect(opts.map(o => o.label)).toEqual(['Auto (1 GB)', 'Off', '512 MB', '4 GB'])
   })
 })

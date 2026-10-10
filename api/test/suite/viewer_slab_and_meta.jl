@@ -8,6 +8,7 @@
 #  - `API: viewer meta — per-level shapes (spatial audit LOD)`.
 #  - `API: viewer meta — labelDims lets the picker flag masks that dont fit`.
 #  - `API: c-blosc runs without its global lock, and parallel reads match serial`.
+#  - `API: decoded-chunk cache — …` (equality, eviction, invalidation, bypass, single-flight).
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -509,5 +510,78 @@ end
         proj = dirname(Base.active_project())
         out = read(`$(Base.julia_cmd()) -t 4 --project=$proj $child $render $(joinpath(d, "s.zarr"))`, String)
         @test out == "nolock=true mismatches=0"
+    end
+end
+
+import Random
+
+@testset "API: decoded-chunk cache — same bytes as an uncached read, bounded, invalidated by a rewrite" begin
+    # `read_native` reads through `cached_read` (chunk_cache.jl). Every assertion compares against
+    # Zarr.jl's own `arr[idx...]`: a cache that returned a different shape, a transposed block or a
+    # stale chunk would still render a plausible image of the wrong thing.
+    mk(p, seed) = begin
+        a = zcreate(UInt16, zgroup(Zarr.DirectoryStore(p)), "0", 70, 50, 3, 2, 2; chunks = (32, 32, 1, 1, 1))
+        a[:, :, :, :, :] = rand(Random.MersenneTwister(seed), UInt16, 70, 50, 3, 2, 2)
+        a
+    end
+    cases = [(1:70, 1:50, 1:3, 1:2, 1), (20:45, 30:50, 2:3, 2, 2), (:, :, 2, 1, 1),
+             (69:70, 49:50, 3, 1:2, 2), (5, 7, :, :, 1), (33:33, 1:50, 1, 1, 2)]
+    try
+        mktempdir() do d
+            a = mk(joinpath(d, "s.ome.zarr"), 1)
+            chunk_cache_budget!(0)
+            ref = [a[c...] for c in cases]
+            @test [cached_read(a, c...) for c in cases] == ref        # off: a passthrough
+            @test chunk_cache_stats().misses == 0
+
+            chunk_cache_budget!(64 * 2^20)
+            m0 = chunk_cache_stats().misses
+            cold = [cached_read(a, c...) for c in cases]
+            @test cold == ref && typeof.(cold) == typeof.(ref) && size.(cold) == size.(ref)
+            m1 = chunk_cache_stats().misses
+            @test m1 > m0
+            @test [cached_read(a, c...) for c in cases] == ref        # warm: all hits, no new decodes
+            @test chunk_cache_stats().misses == m1
+            @test read_native(a, 20:45, 30:50, 2:3, 2, 2) == ref[2]  # the real entry point
+            @test_throws BoundsError cached_read(a, 1:10, 1:10, 1, 1, 3)
+
+            # bounded: a budget of ~3 chunks holds at most that, and still answers correctly
+            chunk_cache_budget!(3 * 32 * 32 * 2)
+            @test [cached_read(a, c...) for c in cases] == ref
+            st = chunk_cache_stats()
+            @test st.bytes <= st.budgetBytes && st.evictions > 0
+
+            # a rewritten store — staged elsewhere and promoted, as every writer does — is never
+            # served from the old store's chunks
+            chunk_cache_budget!(64 * 2^20)
+            @test cached_read(a, :, :, 2, 1, 1) == ref[3]
+            sleep(0.01)
+            b = mk(joinpath(d, "new.ome.zarr"), 2)
+            rm(joinpath(d, "s.ome.zarr"); recursive = true); mv(joinpath(d, "new.ome.zarr"), joinpath(d, "s.ome.zarr"))
+            a2 = zopen(joinpath(d, "s.ome.zarr"))["0"]
+            @test cached_read(a2, :, :, 2, 1, 1) == a2[:, :, 2, 1, 1] != ref[3]
+
+            # a read that covers whole chunks (a full plane here) goes straight to Zarr.jl: nothing to save
+            mf = chunk_cache_stats().misses
+            @test cached_read(a2, :, :, 3, 2, 2) == a2[:, :, 3, 2, 2]
+            @test chunk_cache_stats().misses == mf
+
+            # a `.partial` store is being filled right now (live=1) — never cached
+            p = mk(joinpath(d, "live.zarr.partial"), 3)
+            mp = chunk_cache_stats().misses
+            @test cached_read(p, :, :, 1, 1, 1) == p[:, :, 1, 1, 1]
+            @test chunk_cache_stats().misses == mp
+        end
+    finally
+        chunk_cache_budget!(0)          # global state — leave it off for every other testset
+    end
+
+    # Single-flight needs real concurrency, which this single-threaded suite does not have.
+    mktempdir() do d
+        child = joinpath(@__DIR__, "..", "chunk_cache_child.jl")
+        render = joinpath(@__DIR__, "..", "..", "src", "image_render.jl")
+        proj = dirname(Base.active_project())
+        out = read(`$(Base.julia_cmd()) -t 4 --project=$proj $child $render $(joinpath(d, "s.zarr"))`, String)
+        @test out == "misses=48 chunks=48 mismatches=0"
     end
 end

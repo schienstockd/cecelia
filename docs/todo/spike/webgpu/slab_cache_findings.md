@@ -348,6 +348,38 @@ Same machine, store and bench as *Phase 0 baseline*, through a dev server runnin
   for whoever looks at the flat pipe next.
 - Raw: `slab_cache_results/p1_*.tsv`.
 
+## Phase 2 — decoded-chunk cache (2026-10-10)
+
+`api/src/chunk_cache.jl`, under `read_native`. Same machine (32 threads), Dml3RG raw import and its
+512²-chunked derived store, warm page cache, budget 2 GB unless stated.
+
+**Through the server, before** (Phase 1 code, `MODE=scrub`: every brick of 4 timepoints, 256 requests,
+16 in flight, HTTP/1.1): raw 4.86–6.27 s run wall, derived 1.72 s. Raw: `p2_before_*_scrub*.tsv`.
+
+**The cache alone, without HTTP** (`slab_cache_scrub.jl`, same 256 bricks, 16 in flight, through
+`read_native`; cache path compiled before timing). Raw: `scrub_Dml3RG_*.json`.
+
+| Store | Cache off | Cache on, first visit | Cache on, revisit |
+|---|---|---|---|
+| raw (1024², 64x) | 4.78 s (median brick 295 ms) | **0.62 s** (21 ms) | **0.34 s** (17 ms) |
+| derived (512², 16x) | 1.10 s (67 ms) | **0.51 s** (16 ms) | **0.25 s** (12 ms) |
+
+- **Single-flight is exact**: 124 decodes per raw timepoint (= 4 c x 31 z), 560 per derived
+  timepoint's 1024² brick area; each chunk once.
+- **Claim-first matters.** The first version walked every brick's chunks in the same order: the first
+  brick decoded them while the other 15 waited, and a cold derived scrub came out SLOWER than no cache
+  (1.23 vs 1.10 s). Decoding unclaimed chunks first, from a random start, fixed it (waits 3098 → ~800).
+- **A ~1 s p95 in the first cold runs was JIT**, not GC (GC was lower with the cache than without).
+  The scrub script now compiles the cached path first; a real server pays it once, on the first slab.
+- **Whole-movie sweep, 1 GB budget** (181 timepoints x 64 bricks, 47 GB of data): 26.5 s; cache peaked at
+  exactly the budget (1,074 MB) with 21,942 evictions; 22,444 decodes = 181 x 124, each chunk once;
+  process max RSS 3.4 GB (transient decode garbage on top of the bounded cache).
+- **Flat volumes bypass the cache.** Through it, 32 whole (t, c) volumes at 4 in flight were 1.4–2.7x
+  slower cold and no faster on a revisit — they use every chunk in full, so there is no amplification to
+  save. A read covering every chunk it touches in full now goes straight to Zarr.jl; measured after:
+  raw 1.61/1.53 s vs 1.38–1.70 s off, derived 1.10/0.96 s vs 0.88–0.96 s off (noise).
+- Counters in the JSONs are cumulative and include the warm-up (one timepoint's decodes).
+
 ## Method deviations
 
 - **Cache drop:** `sudo` could not authenticate from the agent session, so instead of
@@ -384,6 +416,7 @@ bench's hardcoded geometry fits it too (`PROJ=zolIMa IMG=Dml3RG`).
 | `slab_cache_summary.py` | median / p95 / MB/s per run |
 | `page_cache_evict.py` | no-sudo page-cache eviction for one directory, verified with `mincore` |
 | `slab_parallel_bench.jl` | brick reads from N threads without HTTP; run as-is and with `BLOSC_NOLOCK=1`, store path as the argument (commands in its header) |
+| `slab_cache_scrub.jl` | viewer scrub (every brick of 4 timepoints, 16 in flight) through `read_native`, cache off / cold / revisit |
 | `slab_amplification.jl` | whole chunk vs 128² sub-read vs full brick, per level; store path as the argument |
 | `slab_nolock_check.jl` | SHA-256 of 16-way parallel vs serial brick reads, 5 rounds; store path as the argument |
 | `slab_cache_results/parallel_{default,nolock}_<image>.json` | `slab_parallel_bench.jl` results |

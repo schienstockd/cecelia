@@ -16,6 +16,7 @@ import ViewProfileEditor from '../components/ViewProfileEditor.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchCompressor, setCompressor,
          fetchStoreLayout, setStoreLayout, fetchKeepPrevVersion, setKeepPrevVersion,
+         fetchChunkCache, setChunkCache, chunkCacheOptions, type ChunkCacheSettings,
          fetchVersionsInventory, pruneVersions, inventoryHasPrunable,
          type StorageSummary, type CompressorSettings, type StoreLayoutSettings,
          type KeepPrevVersionSettings, type VersionsInventory,
@@ -432,6 +433,25 @@ onMounted(loadDiag)
 onMounted(loadCompressor)
 onMounted(loadLayout)
 onMounted(loadKeepPrev)
+
+// Decoded-chunk cache budget — applies to the running server at once (no restart).
+const chunkCache      = ref<ChunkCacheSettings | null>(null)
+const chunkCacheBusy  = ref(false)
+const chunkCacheError = ref('')
+const chunkCacheChips = computed(() =>
+  chunkCache.value ? chunkCacheOptions(chunkCache.value.choices, chunkCache.value.autoBytes) : [])
+async function loadChunkCache() {
+  try { chunkCache.value = await fetchChunkCache() }
+  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not read the viewer cache' }
+}
+async function changeChunkCache(value: string) {
+  if (!chunkCache.value || value === chunkCache.value.current) return
+  chunkCacheBusy.value = true; chunkCacheError.value = ''
+  try { Object.assign(chunkCache.value, await setChunkCache(value)) }
+  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not change the viewer cache' }
+  finally { chunkCacheBusy.value = false }
+}
+onMounted(loadChunkCache)
 onMounted(loadTls)
 onMounted(loadThreads)
 
@@ -963,6 +983,18 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">Off by default; the current output is overwritten on re-run</span>
       </div>
       <span v-if="keepPrevError" class="field-hint cc-muted-error cc-fs-xs">{{ keepPrevError }}</span>
+
+      <!-- Viewer chunk cache: RAM the server keeps decoded image chunks in (api/src/chunk_cache.jl).
+           `auto` is sized from this machine's RAM and says what it picked. -->
+      <div v-if="chunkCache" class="field">
+        <span class="svc-name">Viewer cache</span>
+        <ChipSelect :options="chunkCacheChips" :model-value="chunkCache.current"
+                    :disabled="chunkCacheBusy" aria-label="Viewer chunk cache size"
+                    v-tooltip.bottom="'RAM for decoded image chunks; faster scrubbing'"
+                    @update:model-value="changeChunkCache($event as string)" />
+        <span class="field-hint cc-muted cc-fs-xs">In use: {{ formatBytes(chunkCache.stats.bytes) }}</span>
+      </div>
+      <span v-if="chunkCacheError" class="field-hint cc-muted-error cc-fs-xs">{{ chunkCacheError }}</span>
 
       <div class="field">
         <div class="field-row">
