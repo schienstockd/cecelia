@@ -100,8 +100,13 @@ burst; a 128² sub-read costs as much as the whole chunk; amplification = chunk 
 
 - Decisions 5–8. Brick reads assemble from cached chunks. Flat path uses it only if measured to help.
 - Risk to resolve first: Zarr.jl decodes chunks inside `read_native`'s call; the cache needs a
-  chunk-level read path under our control, not a Zarr.jl fork. It lives in `api/src/image_render.jl`
-  next to `open_level` / `read_native` — the only file the `zarr-access ratchet` lets `using Zarr`.
+  chunk-level read path under our control, not a Zarr.jl fork. It **extends `read_native`** in
+  `api/src/image_geometry.jl` (with `open_level`): `read_native` assembles the block from cached
+  decoded chunks, then applies the stored byte order exactly as today — a decoder that skipped that
+  step would serve raw bioformats2raw (`>u2`) stores byte-swapped. `image_geometry.jl` already reads
+  Zarr under `image_render.jl`'s narrow carve-out (the `zarr-access ratchet` exempts only
+  `image_render.jl` from the `using Zarr` ban, and both headers say not to grow a general reader), so a
+  chunk cache widens that carve-out: record it as a numbered decision when Phase 2 lands.
 - Optional: on a brick miss for timepoint t, prefetch t's remaining chunks in the background —
   bounded, cancellable, never ahead of interactive requests.
 - Tests: 124-decode single-flight test; rewrite-invalidates test.
