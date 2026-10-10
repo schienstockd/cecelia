@@ -425,6 +425,27 @@ end
 # and only the client knows which case it is in.
 # A slab refusal as a JSON `{error}` with a status, written before any body bytes (see the read-failure
 # note in `try_serve_slab`). Returns `true` — the request was handled.
+# ── Decoded-chunk cache budget (Settings) ────────────────────────────────────────
+# GET → the choice, the choices, what `auto` resolves to on this machine, and the live counters; POST
+# sets it and resizes the running cache at once (no restart). See chunk_cache.jl / viewer_cache.jl.
+function api_viewer_chunk_cache_get(_req)
+    200, JSON3.write((; current = Cecelia.viewer_chunk_cache_setting(),
+                        choices = Cecelia.VIEWER_CACHE_CHOICES,
+                        autoBytes = Cecelia.viewer_chunk_cache_auto_bytes(),
+                        stats = chunk_cache_stats()))
+end
+
+function api_viewer_chunk_cache_set(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
+    v = string(get(data, :value, ""))
+    v in Cecelia.VIEWER_CACHE_CHOICES ||
+        return 400, JSON3.write((; error = "value must be one of $(Cecelia.VIEWER_CACHE_CHOICES)"))
+    cur = Cecelia.set_viewer_chunk_cache!(v)
+    chunk_cache_budget!(Cecelia.viewer_chunk_cache_bytes(cur))
+    200, JSON3.write((; current = cur, stats = chunk_cache_stats()))
+end
+
 function _slab_json_error(stream::HTTP.Stream, status::Integer, msg)::Bool
     HTTP.setstatus(stream, status)
     HTTP.setheader(stream, "Content-Type" => "application/json")

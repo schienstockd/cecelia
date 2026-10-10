@@ -1,7 +1,8 @@
 # Slab read performance plan
 
-Status: **in progress** (2026-10-10). Phase 0 done; Phase 1 built on `perf/slab-nolock` (results in
-`spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*); Phase 2 next.
+Status: **in progress** (2026-10-10). Phases 0–1 shipped (#1572, #1575); Phase 2 built on
+`perf/slab-chunk-cache`; Phase 3 decided for new images (#1576). Results in
+`spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*, *Phase 2*.
 
 ## Goal
 
@@ -51,22 +52,37 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
 4. **Race-freedom is argued from source, plus a permanent regression test.** `blosc_decompress_ctx`
    builds a local context per call (no shared state). The SHA-256 serial-vs-parallel test (5 rounds x
    16 bricks) becomes a permanent test. Docs and PR text claim no more than that.
-5. **Cache decoded *chunks*, not planes.** Same idea as the brief's plane cache, keyed at the zarr
-   chunk so it also covers 512² tiled stores and any later chunk shape. One cache, process-wide.
-6. **Cache key = (store path, level, chunk index, chunk file mtime + size).** A stat per chunk is
-   cheap next to a 2 MB decode, and catches an upstream task rewriting the store in place. A stale
-   decoded chunk is a correctness bug.
-7. **Single-flight per key.** The 64 bricks of one timepoint share the same 124 chunks; concurrent
-   misses on one key wait on one decode. Test: 64 concurrent bricks of one timepoint → exactly 124
-   decodes.
-8. **Byte budget, LRU, observable.** Explicit budget with a setting; default sized from physical
-   RAM, not from this workstation (proposal in Phase 2, justified by the laptop case). Hits, misses,
-   bytes, evictions, single-flight waits exposed through a debug endpoint or log line.
+5. **Cache decoded *chunks*, not planes — and only for reads that use part of a chunk.** Keyed at the
+   zarr chunk so it covers 512² tiled stores and any later chunk shape. One cache, process-wide. A
+   read that covers every chunk it touches in full (a whole volume, a 2D plane, a chunk-aligned tile)
+   bypasses it: measured 1.4–2.7x slower cold and no faster on a revisit through the cache, since
+   there is no amplification to save. So the flat path is left alone by construction.
+6. **Cache key = (level array directory, its inode + mtime, chunk index).** A stale decoded chunk is
+   a correctness bug. Every writer stages and promotes (`test_store_staging_convention`), so a rewrite
+   arrives as a new directory; a chunk file added in place would bump the directory's mtime too. One
+   `stat` per read, not per chunk. The one store read while being written — a running segmentation's
+   `.partial` staging store — is never cached. (Planned as a per-chunk-file stat; the directory key
+   needs no knowledge of chunk key encoding and no metadata filename — the zarr-access ratchet bans
+   those literals outside the import reader.)
+7. **Single-flight per key, claim-first.** The 64 bricks of one timepoint share the same 124 chunks;
+   concurrent misses on one key wait on one decode (measured: exactly 124 decodes). A read decodes the
+   chunks nobody else holds first, from a random start, and only then waits — walking chunks in one
+   shared order left every brick but one waiting and made a cold scrub slower than no cache.
+8. **Byte budget, LRU, observable.** Settings → Storage → *Server read cache* (`[viewer].chunkCache`:
+   `auto` / `off` / 512 MB–32 GB), applied to the running server without a restart. `auto` = 1/16 of
+   physical RAM clamped to 256 MiB–4 GiB: 1 GiB on a 16 GB laptop (four 248 MB raw timepoints), and a
+   workstation raises it by hand. Counters in `/api/diagnostics` → `chunkCache`. Named *server read
+   cache* because the viewer already has a *viewer cache* — the browser's VRAM budget (`viewerCacheMB`).
 9. **Scope.** `api/src/`, launch config, tests, docs. No renderer WGSL, atlas eviction, upload path
    (`writeBrick`, payload ring), or HTTP/2 changes. No rechunker without sign-off (Phase 3).
 10. **Measure before and after every phase, same bench.** A result that contradicts the plan stops
     the phase. Projections are labelled as projections. Through-server numbers need a server running
     the branch — Dominik starts it; agents do not start or kill servers.
+11. **The cache widens `image_render.jl`'s Zarr carve-out, deliberately and narrowly.** It lives in
+    `api/src/chunk_cache.jl`, included by `image_render.jl` (still the only file with `using Zarr`),
+    and `read_native` (`image_geometry.jl`) reads through it — so the byte-order swap still applies
+    after assembly. It reads chunks; it does not open stores or parse metadata, and it adds no reader
+    a caller could use instead of `read_native`.
 
 ## Phases
 
@@ -106,7 +122,14 @@ responses are then transfer-bound in HTTP.jl's buffered body path — outside th
   (projection up to ~3–4x); `/api/version` during C back near idle; 0 mismatches, 0 errors. Far off
   → stop and investigate before Phase 2.
 
-### Phase 2 — decoded chunk cache with single-flight
+### Phase 2 — decoded chunk cache with single-flight — BUILT 2026-10-10
+
+Viewer scrub without HTTP (every brick of 4 timepoints, 16 in flight; `slab_cache_scrub.jl`): raw
+4.78 → 0.62 s cold, 0.34 s revisit; derived 1.10 → 0.51 s cold, 0.25 s revisit. A whole-movie sweep
+(181 timepoints) stays at the 1 GB budget and decodes each chunk once. Flat volumes unchanged (bypass,
+Decision 5). Prefetch not built: the claim-first cold pass already lands near the revisit. Through
+the server: raw scrub 4.9–6.3 → 2.3 s, server-read per brick ~300 → 21 ms — the run wall is now set by
+HTTP.jl's buffered response path, not the read (outside this plan). Details: findings → *Phase 2*.
 
 - Decisions 5–8. Brick reads assemble from cached chunks. Flat path uses it only if measured to help.
 - Risk to resolve first: Zarr.jl decodes chunks inside `read_native`'s call; the cache needs a

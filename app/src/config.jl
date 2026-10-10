@@ -130,6 +130,7 @@ include("config/throttle.jl")
 include("config/image_format.jl")
 include("config/tls.jl")
 include("config/server_threads.jl")
+include("config/viewer_cache.jl")
 # ── Per-profile settings — after agent_runner.jl so `active_profile_name()` is available ──
 # `agent_runner.jl` is loaded from Cecelia.jl AFTER config.jl, so profile_settings.jl can
 # only be included from there. That include statement lives near the AI block, not here.

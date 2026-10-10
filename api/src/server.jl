@@ -285,6 +285,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/storage/compressor" => (req, body_bytes) -> (api_compressor_get(req)),
     "/api/storage/layout" => (req, body_bytes) -> (api_store_layout_get(req)),
     "/api/storage/keep-previous-version" => (req, body_bytes) -> (api_keep_previous_version_get(req)),
+    "/api/viewer/chunk-cache" => (req, body_bytes) -> (api_viewer_chunk_cache_get(req)),
     "/api/versions" => (req, body_bytes) -> (api_versions_list(req)),
     "/api/versions/inventory" => (req, body_bytes) -> (api_versions_inventory(req)),
     "/api/config/tls" => (req, body_bytes) -> (api_tls_get(req)),
@@ -363,6 +364,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/storage/compressor/set" => (req, body_bytes) -> (api_compressor_set(body_bytes)),
     "/api/storage/layout/set" => (req, body_bytes) -> (api_store_layout_set(body_bytes)),
     "/api/storage/keep-previous-version/set" => (req, body_bytes) -> (api_keep_previous_version_set(body_bytes)),
+    "/api/viewer/chunk-cache/set" => (req, body_bytes) -> (api_viewer_chunk_cache_set(body_bytes)),
     "/api/config/tls/set" => (req, body_bytes) -> (api_tls_set(body_bytes)),
     "/api/config/threads/set" => (req, body_bytes) -> (api_threads_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
@@ -999,6 +1001,8 @@ function start(; host=HOST, port=PORT)
         msg = "BLOSC_NOLOCK is not visible to c-blosc — zarr decodes will serialise on its global lock"
         _is_dev() ? error(msg) : @warn msg
     end
+    # The decoded-chunk cache is off until given a budget (chunk_cache.jl) — serving is when it is wanted.
+    chunk_cache_budget!(Cecelia.viewer_chunk_cache_bytes())
     want_tls = Cecelia.tls_desired(is_dev = _is_dev())
     tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing
