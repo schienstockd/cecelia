@@ -396,7 +396,7 @@ export function imageVersionAdvisory(
 // `app/src/config.jl`). Add a v3 model → update all three.
 
 const CELLPOSE_V3_MODELS: ReadonlySet<string> = new Set(['cyto2', 'cyto3'])
-const CELLPOSE_V3_ENV_NAME = 'cellpose-v3'
+export const CELLPOSE_V3_ENV_NAME = 'cellpose-v3'
 
 /** Platforms where the advisor is allowed to fire. Mac only — v4 is fast on CUDA and the v3 env
  *  isn't shipped for Linux/Windows (`[feature.cellpose-v3]` in `pixi.toml`). */

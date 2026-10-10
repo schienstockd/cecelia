@@ -3,7 +3,7 @@ import {
   previewBlocker, hasPreviewableModel, blockerMessage, previewNotice, previewSummary, passBreakdown,
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination, previewValueName,
-  warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS,
+  warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS, startingLabel,
   type PreviewContext, type PreviewStatus, previewFailureLog, isWeightsJob } from './taskPreview'
 import type { TaskDef, ParamDef } from '../tasks/types'
 
@@ -630,6 +630,16 @@ describe('previewNotice — raw exceptions are not copy', () => {
                                     code: 'no-preview-backend' })
     expect(n.short).toBe('Not previewable')
     expect(n.detail).toBe('This task has no preview — run it to see the result')
+  })
+})
+
+describe('startingLabel — a cellpose 3 warm-up says so (#1555)', () => {
+  it('names cellpose 3 when the worker starting is in its env', () => {
+    expect(startingLabel({ env: 'cellpose-v3' })).toBe('Starting cellpose 3…')
+  })
+  it('stays generic otherwise', () => {
+    expect(startingLabel({ env: 'default' })).toBe('Starting…')
+    expect(startingLabel(null)).toBe('Starting…')
   })
 })
 

@@ -151,11 +151,37 @@ _py_task_env(pythonpath::AbstractString) = [
 # underscores (Julia convention) and are translated to pixi's dashed form. Off-default entry point;
 # `python_bin_path()` remains the answer for the default env — see `config.jl`.
 function _python_bin_for_env(env_name::Symbol)::String
-    dashed = replace(String(env_name), "_" => "-")
+    dashed = pixi_env_name(env_name)
     root   = abspath(joinpath(_app_dir(), ".."))   # app/ → repo root
     bin    = joinpath(root, ".pixi", "envs", dashed,
                       Sys.iswindows() ? "python.exe" : joinpath("bin", "python"))
     isfile(bin) ? bin : ""
+end
+
+"""
+    pixi_env_name(env) -> String
+
+`run_py`'s `env` as pixi spells it — `:cellpose_v3` → `"cellpose-v3"`, `nothing` → `"default"`. The one
+spelling; the preview worker's ping reports it too.
+"""
+pixi_env_name(env::Union{Symbol,Nothing})::String =
+    env === nothing ? "default" : replace(String(env), "_" => "-")
+
+"""
+    python_bin_for(env) -> String
+
+The interpreter for `env` (`nothing` = the activated default env). A missing opt-in env RAISES, naming
+the in-app install action — never a fallback to `default`, which would run a cellpose 3 model under
+cellpose 4 and return a different segmentation. Shared by `run_py` and the preview worker's `launch!`,
+so a run and a preview refuse with the same words.
+"""
+function python_bin_for(env::Union{Symbol,Nothing})::String
+    env === nothing && return python_bin_path()
+    bin = _python_bin_for_env(env)
+    isempty(bin) && error("The '$(pixi_env_name(env))' pixi environment is not installed. In " *
+                          "Settings → System, click 'Install' next to that env, or run " *
+                          "`pixi install -e $(pixi_env_name(env))` from the repo root.")
+    bin
 end
 
 """
@@ -222,17 +248,11 @@ function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
     # An ENV VAR rather than a params field, on purpose: the params payload stays exactly the shape each
     # runner documents, and a developer replaying a saved params file by hand simply has no variable set,
     # which `script_utils` treats as "skip the check" rather than as a failure.
-    py_bin = if isnothing(env)
-        python_bin_path()
-    else
-        bin = _python_bin_for_env(env)
-        if isempty(bin)
-            on_log("[ERROR] The '$(replace(String(env), "_" => "-"))' pixi environment is not " *
-                   "installed. In Settings → System, click 'Install' next to that env, or run " *
-                   "`pixi install -e $(replace(String(env), "_" => "-"))` from the repo root.")
-            return false
-        end
-        bin
+    py_bin = try
+        python_bin_for(env)
+    catch e
+        on_log("[ERROR] $(e isa ErrorException ? e.msg : sprint(showerror, e))")
+        return false
     end
     cmd  = addenv(`$py_bin $py_script --params $params_file`, _py_task_env(pythonpath)...)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)

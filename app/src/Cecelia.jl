@@ -262,7 +262,7 @@ export launch!, close!, send
 export PreviewWorker, PREVIEW_PROTOCOL, preview_alive, preview_request
 export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
-       preview_steps_not_previewed
+       preview_steps_not_previewed, preview_py_env, preview_env
 export task_output_effect
 
 # ── Includes ──────────────────────────────────────────────────────────────────

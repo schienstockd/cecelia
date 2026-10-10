@@ -11,7 +11,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useTaskPreviewStore } from '../stores/taskPreview'
 import InlineNote from './InlineNote.vue'
-import type { PreviewContext } from '../utils/taskPreview'
+import { startingLabel, type PreviewContext } from '../utils/taskPreview'
 
 const props = defineProps<{
   projectUid: string
@@ -34,7 +34,7 @@ watch(ctx, c => preview.setContext(c), { deep: true, immediate: true })
 onMounted(() => { void preview.refreshStatus() })
 
 const label = computed(() => {
-  if (preview.starting) return 'Starting…'
+  if (preview.starting) return startingLabel(preview.status)
   if (preview.runState !== 'idle') return 'Previewing…'
   return preview.summary.text
 })

@@ -6,11 +6,14 @@
 // the user is told when we don't.
 import { taskOutput } from './taskOutput'
 import type { TaskDef } from '../tasks/types'
+import { CELLPOSE_V3_ENV_NAME } from '../tasks/paramAdvisors'
 
 /** What the backend reports about the viewer + worker (`GET /api/preview/status`). */
 export interface PreviewStatus {
   alive: boolean
   starting: boolean
+  /** pixi env of the worker held (running or starting): 'default' | 'cellpose-v3'; null when none */
+  env?: string | null
   imageUid: string | null
   zarrPath: string | null
   taskDir: string | null
@@ -188,7 +191,16 @@ const ERROR_SHORT: Record<string, string> = {
   'params-not-previewable': 'Params not usable',
   'timeout':                'Preview timed out',
   'no-preview-backend':     'Not previewable',
+  'env-missing':            'Cellpose 3 not installed',
   'weights-downloading':    'Downloading model',
+}
+
+/**
+ * The readout while the worker warms. A cellpose 3 model runs in its own env, so picking one after a
+ * cellpose 4 preview restarts the worker — said, so the second warm-up does not read as a hang.
+ */
+export function startingLabel(status: Pick<PreviewStatus, 'env'> | null): string {
+  return status?.env === CELLPOSE_V3_ENV_NAME ? 'Starting cellpose 3…' : 'Starting…'
 }
 
 /**
