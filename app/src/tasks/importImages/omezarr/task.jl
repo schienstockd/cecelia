@@ -112,11 +112,10 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     compression = bf2raw_compression_flags()
     on_log("[INFO] Compression: $(image_compressor())")
 
-    # Chunk (bioformats2raw calls it the TILE) size. This param existed in the JSON for a long time as
-    # `chunkSizeX`/`chunkSizeY` and was read by NOTHING — no tile flag ever reached the CLI, so a user
-    # who set 512 still got bioformats2raw's 1024. One control now, and it is actually passed.
+    # Chunk (bioformats2raw calls it the TILE) size — the one place it is chosen; every derived store
+    # inherits it (`bf2raw_chunk_flags`). Always passed, auto included.
     chunk_flags = bf2raw_chunk_flags(p.chunkSize)
-    on_log("[INFO] Chunk size: $(isempty(chunk_flags) ? "auto (1024, capped to the frame)" : chunk_flags[2])")
+    on_log("[INFO] Chunk size: $(chunk_flags[2]) (capped to the frame)")
 
     # Store FORMAT — chosen here and only here; every derived store inherits it (ZARR_V3_PLAN D9).
     # `z_planes` lets "all z" resolve to a real depth; the source is not converted yet, so it comes from

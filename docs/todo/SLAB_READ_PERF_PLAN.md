@@ -125,6 +125,12 @@ responses are then transfer-bound in HTTP.jl's buffered body path — outside th
 
 ### Phase 3 — chunk-shape decision (write-up, not necessarily code)
 
+**Decided 2026-10-10 for new images:** import auto = 512 (`bf2raw_chunk_flags`, measured in the
+findings → *Chunk size*: brick 136 → 33 ms, +7% disk), and every derived store inherits its source's
+XY chunk (`zarr_utils.store_xy_tile`; `ZARR_V3_PLAN.md` D9 now implemented for chunks, not only
+format). Existing 1024 imports keep 1024 and so do their new derived stores — Phase 2's cache, or a
+rechunk, is what helps them. Still open: whether to offer a rechunk for existing stores.
+
 Phase 0 answered the premise: it is the norm — bioformats2raw `1,1,1,≤1024,≤1024` and our writer's
 `zarr_utils.plane_chunks` `1,1,1,≤512,≤512`, the latter justified by napari's per-plane slicing,
 which is being retired. So write up the options: brick-aligned chunks for new writes (`plane_chunks`),

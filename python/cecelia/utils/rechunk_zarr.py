@@ -15,7 +15,7 @@ smaller than `blosc/lz4-5` on 16-bit acquisition data. **Pixel data is unchanged
 the layout and the encoding differ.
 
 Usage (run in the analysis env, e.g. ``pixi run python``):
-    python python/cecelia/utils/rechunk_zarr.py PATH [--replace] [--force] [--xy-tile 512]
+    python python/cecelia/utils/rechunk_zarr.py PATH [--replace] [--force] [--xy-tile N]
 
     PATH       a single ``*.ome.zarr`` store, or a directory scanned recursively for corrected stores.
     --replace  swap the rechunked copy in place; the original is backed up to ``<name>.bak.ome.zarr``.
@@ -45,7 +45,7 @@ import dask.array as da
 import zarr
 
 # `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
-from cecelia.utils.zarr_utils import (plane_chunks, store_compressor, _codec_kwargs,
+from cecelia.utils.zarr_utils import (plane_chunks, store_compressor, _codec_kwargs, DEFAULT_XY_TILE,
                                       _group_format, _group_separator)
 
 
@@ -54,7 +54,7 @@ def _levels(group):
     return sorted((k for k in group.array_keys() if str(k).isdigit()), key=int)
 
 
-def needs_rechunk(arr, xy_tile=512):
+def needs_rechunk(arr, xy_tile=DEFAULT_XY_TILE):
     """True if any non-spatial (all but the last two) axis has a chunk > 1 — i.e. the chunk spans
     time/channel/z, the pattern that makes napari plane access read far more than one plane."""
     n = len(arr.shape)
@@ -85,7 +85,7 @@ def needs_recompress(arr, kind='image'):
     return want not in have
 
 
-def rechunk_store(path, xy_tile=512, replace=False, force=False, kind='image'):
+def rechunk_store(path, xy_tile=DEFAULT_XY_TILE, replace=False, force=False, kind='image'):
     """Rechunk one ``*.ome.zarr``. Returns (status, detail).
 
     Also re-lands the store on the canonical compressor (`zarr_utils.store_compressor`), because it
@@ -174,7 +174,8 @@ def main(argv=None):
     ap.add_argument("path", help="a .ome.zarr store or a directory to scan")
     ap.add_argument("--replace", action="store_true", help="swap in place (backs up to *.bak.ome.zarr)")
     ap.add_argument("--force", action="store_true", help="rechunk even if already per-plane")
-    ap.add_argument("--xy-tile", type=int, default=512, help="max chunk size along Y/X (default 512)")
+    ap.add_argument("--xy-tile", type=int, default=DEFAULT_XY_TILE,
+                    help=f"max chunk size along Y/X (default {DEFAULT_XY_TILE})")
     a = ap.parse_args(argv)
 
     stores = list(_find_stores(os.path.abspath(a.path)))

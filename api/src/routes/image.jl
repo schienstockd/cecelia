@@ -133,6 +133,10 @@ function api_import_peek_pyramid(body_bytes::Vector{UInt8})
     isempty(paths) && return 400, JSON3.write((; error="no usable paths in request"))
     params = Dict{String,Any}("paths" => paths, "resultPath" => "")
     haskey(body, :chunk) && (params["chunk"] = Int(body.chunk))
+    # A still's pyramid should end at one chunk — the IMPORT's chunk, so the advice matches what
+    # `qc.jl::pyramid_layout` will measure on the store. Passed, not held in Python, so
+    # `BF2RAW_AUTO_TILE` stays the one number that sets it.
+    params["stillTarget"] = Cecelia.BF2RAW_AUTO_TILE
     # Opt the JVM (`showinf`) fallback in whenever bftools is present, so a wizard peek on a
     # .czi/.nd2/.oir/... resolves to real dims instead of `unsupported`. Empty ⇒ Python skips it.
     let sh = Cecelia.showinf_bin(); isempty(sh) || (params["showinfBin"] = sh) end

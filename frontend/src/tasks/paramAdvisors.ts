@@ -684,8 +684,8 @@ export const popsCompatAdvisor: ParamAdvisor = {
 //
 // Peeks the source file's XY through `/api/import/peek-pyramid` (metadata only, no pixels) and
 // says which level count fits the tiering rule (peek_pyramid_run.py::target_for_shape). Two-tier:
-// 256 for a timelapse (each frame is a fetch, deeper = smoother playback), 1024 for a still
-// (matches `qc.jl::pyramid_layout` so pre-import advice and post-import QC agree).
+// 256 for a timelapse (each frame is a fetch, deeper = smoother playback), the import's chunk for a
+// still (matches `qc.jl::pyramid_layout` so pre-import advice and post-import QC agree).
 //
 // The cache lives in `pyramidPeek.ts` — shared with `TaskRunner`, which reads it synchronously
 // to pre-fill the field on form load. `ManageImagesModule.submitRegister` primes it eagerly on
@@ -744,7 +744,7 @@ export function pyramidLevelsAdvisory(
   return {
     severity: behind ? 'warn' : 'ok',
     message: parts.join('\n'),
-    tip: `Deepest level shrinks by 2× per level. Suggested N picks the smallest that fits ${peek.targetChunk ?? 1024} px on the long XY side — 256 for a timelapse (each frame is a fetch, smaller is smoother), 1024 for a still (matches the post-import QC finding qc.jl::pyramid_layout).`,
+    tip: `Deepest level shrinks by 2× per level. Suggested N picks the smallest that fits ${peek.targetChunk ?? '—'} px on the long XY side — 256 for a timelapse (each frame is a fetch, smaller is smoother), the import chunk for a still (matches the post-import QC finding qc.jl::pyramid_layout).`,
   }
 }
 

@@ -17,11 +17,13 @@ whether the image is a timelapse:
     frame in a playback tick. Measured against VJy1Nx (1057×1111×31×181): 3 levels leave the
     deepest at 278×265×31 (73 MB/frame at 4×u8 — too much), 4 levels give ~139×132×31 (~18 MB)
     which plays cleanly; 5 was over-eager.
-  * **Static** (T=1): TARGET=1024 — matches bioformats2raw's XY chunk. The deepest level fits
-    one chunk; further downsampling costs storage without changing anyone's zoom-out speed.
+  * **Static** (T=1): TARGET = the import's XY chunk (`stillTarget`, which Julia passes as
+    `BF2RAW_AUTO_TILE`). The deepest level fits one chunk; further downsampling costs storage
+    without changing anyone's zoom-out speed. Taken from Julia rather than held here, so the
+    import's chunk size stays the one number to change.
 
-The rule agrees with ``qc.jl::pyramid_layout`` at TARGET=1024 (its "one chunk on the long side"
-rule); the playback tier is pre-import knowledge that QC can't have (QC looks at the store, which
+The rule agrees with ``qc.jl::pyramid_layout`` at TARGET = the store's chunk (its "one chunk on the
+long side" rule); the playback tier is pre-import knowledge that QC can't have (QC looks at the store, which
 by then is already whatever it is). Static 3D (Z>1, T=1) intentionally shares the static-2D
 target — a Z-stack browser fetches on user gesture, not per frame — and can be tuned separately
 if a report shows navigation is sluggish. The `chunk` override in the params contract still
@@ -31,6 +33,7 @@ Parameter contract (JSON written by Julia):
   paths      - list of absolute source file paths
   resultPath - where to write the result JSON
   chunk      - optional; when absent, the shape-based TARGET above is used. Force with an int.
+  stillTarget - the static-image TARGET: the import's XY chunk (`BF2RAW_AUTO_TILE`).
   showinfBin - optional; absolute path to `showinf` (Bio-Formats CLI). When present, JVM-eligible
                formats (see JVM_EXTS below) route through it; when absent or empty, they come
                back as `reader: "unsupported"`.
@@ -49,21 +52,24 @@ import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
 
 
-DEFAULT_CHUNK = 1024
 PLAYBACK_TARGET = 256
 
 
-def target_for_shape(nz, nt):
+def target_for_shape(nz, nt, still_target):
     """Per-shape XY target for the deepest level (see module docstring for the tiering rule).
     Two tiers: playback (T>1) uses a smaller target so each frame is cheap to fetch;
-    everything else uses bf2raw's XY chunk."""
-    return PLAYBACK_TARGET if int(nt or 1) > 1 else DEFAULT_CHUNK
+    everything else uses the import's XY chunk (`still_target`)."""
+    if int(nt or 1) > 1:
+        return PLAYBACK_TARGET
+    if still_target is None:
+        raise ValueError('stillTarget (the import chunk size) is required for a static image')
+    return int(still_target)
 
 
-def recommend_levels(nx, ny, chunk=DEFAULT_CHUNK):
+def recommend_levels(nx, ny, chunk):
     """The smallest N such that the deepest level fits in `chunk` px on the long side.
-    Mirrors ``qc.jl::pyramid_layout`` at chunk=1024; smaller targets are the pre-import extra
-    depth for 3D/movie playback that a post-import QC can't decide."""
+    Mirrors ``qc.jl::pyramid_layout`` at chunk = the store's chunk; smaller targets are the
+    pre-import extra depth for 3D/movie playback that a post-import QC can't decide."""
     long_side = max(int(nx or 0), int(ny or 0))
     chunk = max(1, int(chunk))
     if long_side <= chunk:
@@ -183,9 +189,9 @@ def _peek_showinf(path, showinf_bin):
             int(dims.get('T', 1)), int(dims.get('C', 1)))
 
 
-def peek_one(path, chunk=None, showinf_bin=None):
-    """`chunk` = None ⇒ derive the target from the shape (see `target_for_shape`); an int
-    forces that target regardless of shape (the caller's override). `showinf_bin` = an absolute
+def peek_one(path, chunk=None, showinf_bin=None, still_target=None):
+    """`chunk` = None ⇒ derive the target from the shape (see `target_for_shape`, which takes
+    `still_target` for a static image); an int forces that target regardless of shape. `showinf_bin` = an absolute
     path opts the JVM fallback in for JVM-eligible extensions; None/empty leaves them
     `unsupported`."""
     name, fn = _pick_reader(path)
@@ -199,7 +205,7 @@ def peek_one(path, chunk=None, showinf_bin=None):
             return {'path': path, 'reader': 'unsupported'}
     except Exception as e:
         return {'path': path, 'reader': 'error', 'error': f'{type(e).__name__}: {e}'}
-    effective_chunk = int(chunk) if chunk is not None else target_for_shape(nz, nt)
+    effective_chunk = int(chunk) if chunk is not None else target_for_shape(nz, nt, still_target)
     return {
         'path': path, 'reader': reader,
         'nX': int(nx), 'nY': int(ny), 'nZ': int(nz), 'nT': int(nt), 'nC': int(nc),
@@ -217,6 +223,7 @@ def run(params):
         try: chunk = int(chunk)
         except (ValueError, TypeError): chunk = None
     showinf_bin = params.get('showinfBin') or None
+    still_target = params['stillTarget']
     result_path = params['resultPath']
 
     results = []
@@ -226,7 +233,7 @@ def run(params):
                             'error': 'file not found'})
             log.log(f'[{i+1}/{len(paths)}] not a file: {p}')
             continue
-        r = peek_one(p, chunk, showinf_bin)
+        r = peek_one(p, chunk, showinf_bin, still_target)
         results.append(r)
         summary = f"{r['reader']}"
         if 'recommendedPyramidLevels' in r:

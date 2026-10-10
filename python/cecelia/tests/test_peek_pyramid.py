@@ -28,21 +28,27 @@ class RecommendationRuleTest(unittest.TestCase):
     def test_still_image_lands_at_one_chunk_on_the_long_side(self):
         # A still whose long side already fits the chunk needs just N=1 (level 0 is the full-res).
         self.assertEqual(peek.recommend_levels(800, 600, chunk=1024), 1)
-        # A still overshoots by ~9% ⇒ N=2 (one downsample fits it). This is what a stills-only
-        # user gets for a 1057×1111 still — matches qc.jl::pyramid_layout.
+        # A still overshoots by ~9% ⇒ N=2 (one downsample fits it) — matches qc.jl::pyramid_layout.
         self.assertEqual(peek.recommend_levels(1057, 1111, chunk=1024), 2)
+
+    def test_a_still_targets_the_import_chunk_it_is_given(self):
+        # The still target is the import's chunk, passed in (`stillTarget`) — not a number held here.
+        # At the 512 import default a 1057×1111 still needs 3 levels to end at one chunk.
+        self.assertEqual(peek.target_for_shape(nz=1, nt=1, still_target=512), 512)
+        self.assertEqual(peek.recommend_levels(1057, 1111, chunk=512), 3)
+        with self.assertRaises(ValueError):
+            peek.target_for_shape(nz=1, nt=1, still_target=None)
 
     def test_timelapse_picks_the_playback_target_not_the_still_target(self):
         # T>1 ⇒ TARGET=256. 1111 / 256 = 4.34 → ceil(log2)=3, +1 for level 0 → 4 levels.
         # The measured-good answer for VJy1Nx; N=5 was over-eager (~69×66×31 per frame).
-        chunk = peek.target_for_shape(nz=31, nt=181)
+        chunk = peek.target_for_shape(nz=31, nt=181, still_target=512)
         self.assertEqual(chunk, peek.PLAYBACK_TARGET)
         self.assertEqual(peek.recommend_levels(1057, 1111, chunk=chunk), 4)
 
     def test_a_target_change_is_a_deliberate_call_not_a_silent_one(self):
         # Guardrail: if the tiering constants get retuned, this fails loudly rather than the
         # recommendation drifting for every user under a refactor.
-        self.assertEqual(peek.DEFAULT_CHUNK, 1024)
         self.assertEqual(peek.PLAYBACK_TARGET, 256)
 
 

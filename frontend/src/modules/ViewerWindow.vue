@@ -3874,7 +3874,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
   allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
-  // (chunks stay 1024² at every level), keeps in-flight fetches (many will still be wanted at the
+  // (chunks are the same size at every level), keeps in-flight fetches (many will still be wanted at the
   // new viewport — `scheduleTilePump` selectively aborts what the new viewport does NOT want), and
   // keeps `shownT` so the overlay does not flash "Loading timepoint 0…" on every wheel notch. Without
   // this split, a burst of level swaps aborted every fetch mid-air and the pump got stuck retrying

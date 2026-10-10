@@ -218,7 +218,7 @@ export async function createTileRenderer(
   const u = new Float32Array(TILE_UNIFORM_BYTES / 4)
 
   /** Atlas state. The atlas is a 3D texture whose ONE dimension that ever changes is `capacity * nC`
-   *  along z — chunks are always the same 1024² per level (server convention), so a `setImage` for a
+   *  along z — chunks are the same size at every level (the store's import chunk), so a `setImage` for a
    *  new level does NOT need to reallocate the atlas. That is the whole shape of progressive
    *  refinement: the old level's tiles stay resident under the new level's, the eviction ranker
    *  drops coarse tiles when zoomed in, and the frame is never blank across a zoom threshold. */
@@ -313,7 +313,7 @@ export async function createTileRenderer(
       metaRef = m
       const nch = Math.min(nC, MAX_CHANNELS)
       // Progressive refinement: an atlas allocated for the CURRENT (chunkX, chunkY, nC) shape is a
-      // valid atlas for ANY level — chunks are 1024² at every level (server convention) — so a level
+      // valid atlas for ANY level — chunks are the same size at every level (the store's import chunk) — so a level
       // swap should reuse it. Old-level tiles stay resident, get drawn UNDER the new-level ones as
       // they stream in (drawTiles sorts coarsest-first), and the eviction ranker drops the coarse
       // tiles under memory pressure. Reallocating on every level swap is what caused the "black
