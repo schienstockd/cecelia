@@ -839,6 +839,10 @@ def _preview_cellpose(ctx):
     seg = STATE.segmenter(
         {**ctx.params, 'taskDir': ctx.task_dir, 'outputValueName': ctx.value_name}, ctx.dim_utils)
     tile = ctx.crop()
+    # One plane by construction, so `[C,Y,X]` — the same contract the run's tile reader keeps for a
+    # single-plane image (`predict_from_zarr` → `drop_z`). Checked, not assumed: a `[C,1,Y,X]` here
+    # sends every engine down its 3D branch.
+    seg.check_rank(tile, 3, False, 'preview tile')
     axes, full_shape, block_shape = ctx.block_geometry()
 
     _, count_labels = _cellpose_imports()
@@ -850,6 +854,7 @@ def _preview_cellpose(ctx):
         # result the run cannot reproduce. Cached across previews — see `PreviewState.norm_params`.
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params)
+        seg.check_rank(masks, 2, False, 'preview masks')
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
     if merged is None:
@@ -1012,6 +1017,7 @@ def _preview_coastal(ctx):
     axes, full_shape, block_shape = ctx.block_geometry()
     context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
     tile = context[centre]
+    seg.check_rank(tile, 3, False, 'preview tile')        # see `_preview_cellpose`
 
     # `predict_slice` takes ONE `TemporalWindow` (segmentation_utils) — it used to take `context=` and
     # `context_index=`, and it grew to six such kwargs before they were collected into the object. This
@@ -1040,6 +1046,7 @@ def _preview_coastal(ctx):
         model_params = models[key]
         norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
         masks = seg.predict_slice(tile, model_params, norm_params, window)
+        seg.check_rank(masks, 2, False, 'preview masks')
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
 
     if merged is None:

@@ -209,18 +209,27 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 ### `predict_slice` signature (current implementation)
 ```python
 def predict_slice(self, tile: np.ndarray, model_params: dict, norm_params: dict | None,
-                  context: np.ndarray | None = None, context_index: int | None = None) -> np.ndarray:
+                  window: TemporalWindow | None = None) -> np.ndarray:
     """
     tile: [C, Z, Y, X] for 3D images, [C, Y, X] for 2D
     model_params: one entry from the 'models' JSON dict (with 0-based channel indices)
     norm_params: per-channel (norm_min, norm_max) from normaliseToWhole, or None
-    context: [W, ...tile axes] — the same tile through time; ONLY when TEMPORAL_RADIUS > 0
-    context_index: index of this timepoint within `context` (not always the middle)
+    window: the same tile through time (`window.frames` = [W, ...tile axes]); ONLY when
+            TEMPORAL_RADIUS > 0
     Returns: uint32 label array [Z, Y, X] or [Y, X]
     """
 ```
 
 Called once per model per tile in the outer loop. The outer loop in `segmentation_utils.py` handles multi-model iteration and accumulates results by `matchAs`.
+
+**2D vs 3D is decided once, by the base, from `is_3D()`** — never by an engine from `tile.ndim`. A
+single-plane image keeps a length-1 Z axis in its store whenever the source had one, so the base drops
+that singleton Z at read time (`drop_z` in `predict_from_zarr`): the tile, the temporal window and the
+frame buffer are all 2D, and only the store write puts the axis back. An engine may then branch on
+`tile.ndim` safely. `check_rank` raises at the source if a tile or a returned mask has the wrong rank.
+Handing an engine `[C, 1, Y, X]` used to send it down its 3D branch while the base cropped as 2D — a
+crash on every single-plane image bigger than one tile (#1551). The task preview keeps the same
+contract (`[C, Y, X]`, checked) at its two `predict_slice` call sites.
 
 ---
 
