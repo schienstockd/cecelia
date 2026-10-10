@@ -25,7 +25,7 @@ import string
 import time
 
 from cecelia_mcp import gating_views as gv
-from cecelia_mcp import loopback
+from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
@@ -185,7 +185,7 @@ class AutonomousClient:
         from websockets.sync.client import connect
         seen: list[dict] = []
         try:
-            # the scheme http_json found working (TLS may have been toggled since setup — loopback.py)
+            # the scheme http_json found working (TLS may have been toggled since setup — cecelia/utils/loopback.py)
             ws_url = api_url_to_ws(loopback.resolve(self.base_url))
             with connect(ws_url, open_timeout=5, additional_headers=auth_headers(),
                          **ssl_kwargs(ws_url)) as ws:

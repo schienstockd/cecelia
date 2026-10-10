@@ -35,7 +35,7 @@ from websockets.sync.client import connect
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "mcp"))
 from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
-from cecelia_mcp.loopback import open_url, resolve  # noqa: E402 — http or https, whichever the app serves
+from cecelia.utils.loopback import open_url, resolve  # noqa: E402 — http or https, whichever the app serves
 DIST = REPO / "frontend" / "dist"
 # POSTs a board's plots make that read (or only fill the copy's own card cache)
 READ_POSTS = ("/api/plot_data", "/api/labels/by_category", "/api/cell_cards", "/api/motif_cards",

@@ -32,7 +32,7 @@ const HOST      = get(ENV, "CECELIA_HOST", "127.0.0.1")
 const PORT      = string(service_port(:backend; slot = current_port_slot()))
 # HTTP or HTTPS is the server's call (`tls_desired`, app/src/config/tls.jl) and can change across a
 # restart, so the scheme is not fixed here: a connect that fails swaps it, as the MCP client does
-# (mcp/cecelia_mcp/loopback.py). Loopback + self-signed cert, so requests skip verification.
+# (python/cecelia/utils/loopback.py). Loopback + self-signed cert, so requests skip verification.
 const HTTP_BASE = Ref("http://$HOST:$PORT")
 _ws_url() = replace(HTTP_BASE[], r"^http" => "ws") * "/ws"
 _swap_scheme!() = (HTTP_BASE[] = startswith(HTTP_BASE[], "https:") ? "http://$HOST:$PORT" : "https://$HOST:$PORT")

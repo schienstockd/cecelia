@@ -261,17 +261,25 @@ observer_api_url(protocol::AbstractString, port::Integer)::String =
     string(startswith(protocol, "HTTPS") ? "https" : "http", "://127.0.0.1:", port)
 
 # The server SPEC (one entry) — points at the SAME `cecelia_mcp.server`, talking back to this API.
-# `mcp_dir` is repo-root/mcp (on PYTHONPATH); `api_url` is this server. Reuses mcp/ unchanged. Split
-# out from the wrapper below because `claude mcp add-json <name> <json>` takes exactly this object.
+# `mcp_dir` is repo-root/mcp; `api_url` is this server. Reuses mcp/ unchanged. Split out from the
+# wrapper below because `claude mcp add-json <name> <json>` takes exactly this object.
+#
+# PYTHONPATH = mcp/ then its sibling python/: the MCP imports `cecelia.utils.loopback` (the one
+# http-or-https rule). The env's editable `cecelia` install can resolve to ANOTHER worktree's python/
+# when nothing pins it (pixi.toml [activation.env]), and this process is not started by `pixi run` —
+# so it is pinned here, to the same checkout as the MCP. `_install_path` reads the first entry.
 #
 # The API token travels as a FILE PATH (`CECELIA_API_TOKEN_FILE`, read by mcp/cecelia_mcp/auth.py),
 # never as the secret: this spec is written into Claude's own config, which is not owner-only.
+_observer_pythonpath(mcp_dir::AbstractString)::String =
+    join([String(mcp_dir), joinpath(dirname(rstrip(mcp_dir, ['/', '\\'])), "python")], Sys.iswindows() ? ";" : ":")
+
 function observer_mcp_spec(mcp_dir::AbstractString, python_bin::AbstractString,
                            api_url::AbstractString;
                            token_file::AbstractString = api_token_path())::Dict{String,Any}
     Dict{String,Any}("command" => String(python_bin),
                      "args"    => ["-m", "cecelia_mcp.server"],
-                     "env"     => Dict{String,Any}("PYTHONPATH" => String(mcp_dir),
+                     "env"     => Dict{String,Any}("PYTHONPATH" => _observer_pythonpath(mcp_dir),
                                                    "CECELIA_API_URL" => String(api_url),
                                                    "CECELIA_API_TOKEN_FILE" => String(token_file)))
 end
@@ -624,7 +632,8 @@ function mcp_connections(path::AbstractString = claude_config_path())::Vector{Di
     # one, and another tool's file must never error a route.
     _install_path(spec) = spec isa AbstractDict ? begin
         env = get(spec, :env, nothing)
-        env isa AbstractDict ? String(something(get(env, :PYTHONPATH, nothing), "")) : ""
+        pp = env isa AbstractDict ? String(something(get(env, :PYTHONPATH, nothing), "")) : ""
+        String(first(split(pp, Sys.iswindows() ? ';' : ':')))   # mcp/ — python/ follows it
     end : ""
     _row(name, scope, dir, spec) = Dict{String,Any}(
         "name" => String(name), "scope" => scope, "dir" => dir,

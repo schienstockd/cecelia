@@ -12,27 +12,22 @@ Uses only the stdlib (`urllib`) so it adds no dependency to the napari venv.
 """
 import json
 import os
-import ssl
-import urllib.error
 import urllib.parse
-import urllib.request
 
 import numpy as np
+
+from cecelia.utils import loopback
 
 
 def default_base_url() -> str:
     """This user's backend: `CECELIA_API_URL` if given, else 127.0.0.1 on this user's port
     (`CECELIA_PORT`, or 8080 + 10 × `CECELIA_PORT_SLOT` — app/src/ports.jl; a task inherits both).
-    The scheme here is only a first guess; `_open` finds the one the server actually speaks."""
+    The scheme here is only a first guess; `loopback.open_url` finds the one the server speaks."""
     url = os.environ.get("CECELIA_API_URL", "").strip()
     if url:
         return url
     port = os.environ.get("CECELIA_PORT", "").strip() or str(8080 + 10 * int(os.environ.get("CECELIA_PORT_SLOT", "0") or 0))
     return f"http://127.0.0.1:{port}"
-
-
-_LOOPBACK = ("127.0.0.1", "localhost", "::1")
-_SWAP = {"http": "https", "https": "http"}
 
 
 class CeceliaClient:
@@ -49,34 +44,16 @@ class CeceliaClient:
 
     # ── internal ──────────────────────────────────────────────────────────────────
     @staticmethod
-    def _url(base: str, path: str, params: dict) -> str:
+    def _path(path: str, params: dict) -> str:
         q = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
-        return f"{base}{path}?{q}"
+        return f"{path}?{q}"
 
     def _open(self, path: str, params: dict):
-        """GET `path` on the backend. The server picks HTTP or HTTPS (installed apps: HTTPS, self-signed)
-        and can switch across a restart, so on loopback a connection-level failure retries on the other
-        scheme and keeps the one that answered — the stdlib twin of mcp/cecelia_mcp/loopback.py, which
-        this napari-venv module cannot import. An HTTP error status is an answer: raised as-is."""
+        """GET `path` on the backend, on whichever scheme it serves (`loopback.open_url`). An HTTP
+        error status is raised as-is; nothing reachable is a `ConnectionError`."""
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
-        scheme, rest = self.base_url.split("://", 1)
-        loopback = (urllib.parse.urlsplit(self.base_url).hostname or "") in _LOOPBACK
-        bases = [self.base_url] + ([f"{_SWAP.get(scheme, scheme)}://{rest}"] if loopback else [])
-        err = None
-        for base in bases:
-            ctx = ssl._create_unverified_context() if base.startswith("https:") and loopback else None
-            req = urllib.request.Request(self._url(base, path, params), headers=headers)
-            try:
-                resp = urllib.request.urlopen(req, timeout=self.timeout, context=ctx)
-            except urllib.error.HTTPError:
-                self.base_url = base   # it answered: this IS the scheme, whatever the status
-                raise
-            except (urllib.error.URLError, OSError) as e:   # refused / reset / TLS mismatch
-                err = e
-                continue
-            self.base_url = base
-            return resp
-        raise err
+        return loopback.open_url(self.base_url, self._path(path, params), headers=headers,
+                                 timeout=self.timeout)
 
     def _common(self, value_name, pop_type):
         return {"projectUid": self.project_uid, "imageUid": self.image_uid,

@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 from cecelia.cecelia_client import CeceliaClient, default_base_url
+from cecelia.utils import loopback
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -51,6 +52,7 @@ class SchemeAndTokenTest(unittest.TestCase):
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.port = self.srv.server_address[1]
         _Handler.seen_auth = []
+        loopback.forget()
 
     def tearDown(self):
         self.srv.shutdown()
@@ -59,20 +61,20 @@ class SchemeAndTokenTest(unittest.TestCase):
     def test_https_guess_reaches_http_server_and_sticks(self):
         cc = CeceliaClient(f"https://127.0.0.1:{self.port}", "p", "i", timeout=5, token="tok")
         self.assertEqual(cc.cells_in_pops("flow", "/a"), {"/a": [1, 2]})
-        self.assertEqual(cc.base_url, f"http://127.0.0.1:{self.port}")
+        self.assertEqual(loopback.resolve(cc.base_url), f"http://127.0.0.1:{self.port}")
         self.assertEqual(_Handler.seen_auth, ["Bearer tok"])
 
     def test_http_errors_are_not_retried(self):
         cc = CeceliaClient(f"http://127.0.0.1:{self.port}", "p", "i", timeout=5, token="tok")
         with self.assertRaises(urllib.error.HTTPError):
             cc._open("/missing", {})
-        self.assertEqual(cc.base_url, f"http://127.0.0.1:{self.port}")
+        self.assertEqual(loopback.resolve(cc.base_url), f"http://127.0.0.1:{self.port}")
 
     def test_an_error_status_still_settles_the_scheme(self):
         cc = CeceliaClient(f"https://127.0.0.1:{self.port}", "p", "i", timeout=5)
         with self.assertRaises(urllib.error.HTTPError):
             cc._open("/missing", {})
-        self.assertEqual(cc.base_url, f"http://127.0.0.1:{self.port}")
+        self.assertEqual(loopback.resolve(cc.base_url), f"http://127.0.0.1:{self.port}")
 
     def test_nothing_listening_raises(self):
         dead = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)   # bound, then closed: nothing listens

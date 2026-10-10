@@ -37,7 +37,7 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
-from cecelia_mcp import loopback
+from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 
@@ -213,7 +213,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
     raw bytes) out, the API's `{error: …}` surfaced as `ApiError`. The caller owns its allow-list.
 
     On loopback the registered scheme may be stale (TLS toggled since setup): a connection-level
-    failure retries once with the other scheme and remembers the one that answered — see loopback.py.
+    failure retries once with the other scheme and remembers the one that answered — see cecelia/utils/loopback.py.
     An HTTP error status is an answer, not a scheme problem, so it never retries."""
     query = ""
     if params:

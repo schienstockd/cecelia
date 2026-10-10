@@ -19,7 +19,7 @@ import urllib.parse
 
 import app_project
 import board_render
-from board_render import auth_headers, open_url   # the token + http-or-https (cecelia_mcp.auth / .loopback)
+from board_render import auth_headers, open_url   # the token + http-or-https (cecelia_mcp.auth / cecelia.utils.loopback)
 
 # which stage a decision's function belongs to (None = no board)
 _STAGE = {"segment": "segment", "tracking": "track", "behaviour.hmm": "hmm",

@@ -15,7 +15,7 @@ first) and ``BRIEFING_GUIDANCE`` rides back with ``get_session_briefing``. That 
 my current project in cecelia" a sufficient prompt; **a tool added here must be named there**, or the
 assistant never offers it (``mcp/tests/test_server.py`` fails if it isn't).
 
-Run:   pixi run mcp          (or:  PYTHONPATH=mcp python -m cecelia_mcp.server)
+Run:   pixi run mcp          (or:  PYTHONPATH=mcp:python python -m cecelia_mcp.server)
 Talks to the Julia API at $CECELIA_API_URL (default http://127.0.0.1:8080), so `pixi run dev` must
 be running. See mcp/README.md for wiring this into Claude Code.
 

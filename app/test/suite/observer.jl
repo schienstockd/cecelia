@@ -93,7 +93,8 @@ end
     srv = cfg["mcpServers"]["cecelia-observer"]
     @test srv["command"] == "/env/python"
     @test srv["args"] == ["-m", "cecelia_mcp.server"]
-    @test srv["env"]["PYTHONPATH"] == "/repo/mcp"
+    # mcp/ then its sibling python/ (for `cecelia.utils.loopback`), pinned to the same checkout
+    @test srv["env"]["PYTHONPATH"] == join(["/repo/mcp", joinpath("/repo", "python")], Sys.iswindows() ? ";" : ":")
     @test srv["env"]["CECELIA_API_URL"] == "http://127.0.0.1:8080"
     # the API token goes in as a PATH — the secret itself must never land in Claude's config
     @test srv["env"]["CECELIA_API_TOKEN_FILE"] == Cecelia.api_token_path()
@@ -522,6 +523,10 @@ end
     # Tolerant: a spec with no env yields "", never errors.
     @test first(r["installPath"] for r in rows if r["scope"] == "user" && r["name"] == "cecelia-observer") == "/opt/here/mcp"
     @test first(r["installPath"] for r in rows if r["scope"] == "local") == ""
+    # today's spec carries mcp/ AND python/ (`_observer_pythonpath`): the row still names mcp/
+    write(cfg, JSON3.write(Dict("mcpServers" => Dict("cecelia-observer" =>
+        Cecelia.observer_mcp_spec("/opt/here/mcp", "py", "http://127.0.0.1:8080")))))
+    @test only(mcp_connections(cfg))["installPath"] == "/opt/here/mcp"
 end
 
 @testset "LabArchives context sidecar (round-trip, gaps, briefing)" begin

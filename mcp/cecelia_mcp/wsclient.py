@@ -17,7 +17,7 @@ import threading
 
 import websockets
 
-from cecelia_mcp import loopback
+from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.monitor import SessionMonitor, normalize_frame
 
@@ -58,7 +58,7 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
     """Connect and stream frames into the monitor forever, reconnecting on drop. Best-effort.
 
     A connect that fails switches to the other scheme (ws ↔ wss) on loopback, so a registration made
-    before TLS was toggled still hears the app — see loopback.py. A drop after connecting reconnects on
+    before TLS was toggled still hears the app — see cecelia/utils/loopback.py. A drop after connecting reconnects on
     the same scheme."""
     urls = loopback.candidates(ws_url)
     i, delay = 0, 0.0

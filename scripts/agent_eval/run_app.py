@@ -64,7 +64,9 @@ DISCOVERY_ENV = "CECELIA_MCP_DISCOVERY"
 
 def mcp_config(api_url: str, project_uid: str, prefix: str, discovery: str = "on") -> dict:
     py = str(REPO / ".pixi" / "envs" / "default" / "bin" / "python3")
-    env = {"PYTHONPATH": str(REPO / "mcp"), "CECELIA_API_URL": api_url, DISCOVERY_ENV: discovery}
+    # mcp/ + python/ (`cecelia.utils.loopback`), pinned to this checkout like `observer_mcp_spec` does
+    env = {"PYTHONPATH": os.pathsep.join([str(REPO / "mcp"), str(REPO / "python")]),
+           "CECELIA_API_URL": api_url, DISCOVERY_ENV: discovery}
     return {"mcpServers": {
         "cecelia-observer": {"command": py, "args": ["-m", "cecelia_mcp.server"],
                              # headless: never re-pair the user's open project

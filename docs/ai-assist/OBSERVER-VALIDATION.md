@@ -32,11 +32,11 @@ main env's Python; a worktree has no `.pixi`):
 
 ```
 claude mcp add cecelia-observer \
-  --env PYTHONPATH=<abs-path-to>/mcp \
+  --env PYTHONPATH=<abs-path-to>/mcp:<abs-path-to>/python \
   -- <abs-path-to>/.pixi/envs/default/bin/python -m cecelia_mcp.server
 ```
 
-e.g. `PYTHONPATH=/home/dominik/cc-workspace/cecelia/mcp-observer-slice-c/mcp` and the pixi Python at
+e.g. `PYTHONPATH=/home/dominik/cc-workspace/cecelia/mcp-observer-slice-c/mcp:/home/dominik/cc-workspace/cecelia/mcp-observer-slice-c/python` and the pixi Python at
 `/home/dominik/cc-workspace/cecelia/cecelia-feijoa/.pixi/envs/default/bin/python`. Override the API
 with `CECELIA_API_URL` if not `http://127.0.0.1:8080`.
 

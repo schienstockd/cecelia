@@ -19,7 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from cecelia_mcp import client, loopback, wsclient
+from cecelia.utils import loopback
+from cecelia_mcp import client, wsclient
 from cecelia_mcp.monitor import SessionMonitor
 
 

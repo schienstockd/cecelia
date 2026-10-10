@@ -1,12 +1,13 @@
-"""Reaching the app on loopback whichever scheme it serves.
+"""Reaching the app on loopback whichever scheme it serves — the ONE copy of this rule, for every
+Python client of the API: the launcher (`app.py`), the MCP (`cecelia_mcp`), `CeceliaClient` and the
+agent_eval scripts. Julia clients have their own (`api/task_console.jl`, `api/dev.jl`).
 
-The registered `CECELIA_API_URL` can name the wrong scheme: installed apps serve HTTPS with a
-self-signed cert, dev serves HTTP, and TLS can be toggled in Settings after the MCP was set up. So for
-a LOOPBACK base URL only (127.0.0.1 / localhost / ::1):
+The server picks HTTP or HTTPS itself (`tls_desired`: installed apps serve HTTPS with a self-signed
+cert, dev serves HTTP, and TLS can be toggled in Settings), so a URL a client was given can name the
+wrong scheme. For a LOOPBACK base URL only (127.0.0.1 / localhost / ::1):
 
 - HTTPS skips certificate verification. The cert is self-signed by design, so verification would
-  always fail; the launcher does the same (`app.py` → `_NOVERIFY`). Loopback traffic never leaves the
-  machine.
+  always fail. Loopback traffic never leaves the machine.
 - On a connection-level failure the caller retries once with the other scheme and `remember`s the one
   that worked, so later calls go straight there.
 

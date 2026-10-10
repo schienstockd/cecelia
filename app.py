@@ -15,12 +15,13 @@ import hashlib
 import json
 import os
 import shutil
-import ssl
 import sys
 import time
 import subprocess
-import urllib.request
+import urllib.error
 import webbrowser
+
+from cecelia.utils import loopback   # `pixi run app` puts python/ on PYTHONPATH (pixi.toml [activation.env])
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -155,23 +156,11 @@ def _reexec_if_launcher_changed(before: bytes, browser_opened: bool) -> None:
 PORT = os.environ.get("CECELIA_PORT", "8080")
 # The server decides HTTP vs HTTPS from `[tls].enabled` / `CECELIA_TLS` (see app/src/config/tls.jl);
 # prod defaults to HTTPS + HTTP/2, dev to HTTP/1.1, and a missing openssl silently falls back to HTTP.
-# The launcher can't reproduce that resolution without shelling into Julia, so it probes both on the
-# same port and remembers whichever answered. `URL` is set by `_server_ready`; the browser open and
-# the shutdown POST both read it back so they use the same scheme the health check succeeded on.
-URL = f"http://localhost:{PORT}"
-# Self-signed loopback cert — verification would always fail. urllib's default HTTPSHandler enforces
-# it, so we pass an unverified context explicitly for the probe.
-_NOVERIFY = ssl._create_unverified_context()
-
-
-def _probe(url: str) -> bool:
-    try:
-        opener = (urllib.request.build_opener(urllib.request.HTTPSHandler(context=_NOVERIFY))
-                  if url.startswith("https:") else urllib.request.build_opener())
-        with opener.open(url + "/api/health", timeout=2) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+# The launcher can't reproduce that resolution without shelling into Julia, so it asks /api/health on
+# both schemes (`cecelia.utils.loopback` — the one copy of that rule, self-signed cert accepted). `URL`
+# is set by `_server_ready`; the browser open and the shutdown POST both read it back so they use the
+# same scheme the health check succeeded on.
+URL = f"https://localhost:{PORT}"
 
 
 def _launched_port(proc, launched_at: float, timeout: float = 180.0) -> str | None:
@@ -211,17 +200,20 @@ def _api_token() -> str:
 
 
 def _server_ready(timeout: float = 180.0) -> bool:
-    """Probe HTTPS first, then HTTP, on the same port. Sets the module-level `URL` to whichever
-    answered so downstream (browser open, shutdown POST) speaks the same scheme as the server."""
+    """Wait for /api/health on either scheme (HTTPS tried first — the installed default). Sets the
+    module-level `URL` to whichever answered so downstream (browser open, shutdown POST) speaks the
+    same scheme as the server."""
     global URL
-    https_url = f"https://localhost:{PORT}"
-    http_url  = f"http://localhost:{PORT}"
+    base = f"https://localhost:{PORT}"
     deadline = time.time() + timeout
     while time.time() < deadline:
-        for candidate in (https_url, http_url):
-            if _probe(candidate):
-                URL = candidate
-                return True
+        try:
+            with loopback.open_url(base, "/api/health", timeout=2) as resp:
+                if resp.status == 200:
+                    URL = loopback.resolve(base)
+                    return True
+        except (urllib.error.URLError, OSError):   # not up yet (refused on both, or still starting)
+            pass
         time.sleep(0.5)
     return False
 
@@ -242,12 +234,9 @@ def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
     Failure just falls through to terminate/kill, which is where this always ended up.
     """
     try:
-        req = urllib.request.Request(
-            f"{URL}/api/app/shutdown", data=b"{}",
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {_api_token()}"}, method="POST")
-        ctx = _NOVERIFY if URL.startswith("https:") else None
-        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
+        with loopback.open_url(URL, "/api/app/shutdown", data=b"{}", method="POST", timeout=5,
+                               headers={"Content-Type": "application/json",
+                                        "Authorization": f"Bearer {_api_token()}"}) as resp:
             if resp.status != 200:
                 return False
     except Exception:

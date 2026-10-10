@@ -43,7 +43,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[1] / "mcp"))
 from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
-from cecelia_mcp.loopback import open_url  # noqa: E402 — http or https, whichever the app serves
+from cecelia.utils.loopback import open_url  # noqa: E402 — http or https, whichever the app serves
 
 import app_project  # noqa: E402
 import stage_boards  # noqa: E402
