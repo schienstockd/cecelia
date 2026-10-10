@@ -1327,8 +1327,14 @@ full run and looking at the result. Full design + every measured number:
 **The region budget.** The region is what is on screen, capped at `PREVIEW_REGION_MAX_SIDE` (1024) L0
 pixels per axis and centred on the view (`frontend/src/utils/viewer/visibleRegion.ts`). 1024² is four
 512² model tiles — ~17 s on Apple MPS with Cellpose-SAM, inside the browser's 90 s request timeout;
-2048² (~70 s) is not. When the cap applies, the viewer outlines the previewed box so a mask that covers
-part of the screen reads as a box, not as "no cells there".
+2048² (~70 s) is not.
+
+**The preview box.** The first preview's region becomes a box on the image (dashed outline) that the
+user owns: panning leaves it where it is, and a parameter change re-runs the same box, so settings are
+compared on the same cells. Edges and corners resize it (clamped at the budget), the grip moves it, the
+pencil draws a new one, and the refresh button drops it onto the current view. Switching the preview
+off or opening another image discards it. Geometry: `frontend/src/utils/viewer/previewBox.ts`; bridged
+across windows as `viewerStore.previewBox`. 3D views ignore it.
 
 **Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
 legacy bridge and Pluto, on the un-pooled `jobs.jl` rail — a preview that queued behind a full
