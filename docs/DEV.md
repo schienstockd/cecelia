@@ -419,6 +419,22 @@ Bundling into one task is deliberate — three separate memory bullets ("copy .e
 "pixi install per worktree") produced the split-attention pattern where at least one was omitted
 every time.
 
+## Removing worktrees
+
+```bash
+pixi run prune-worktrees            # report: every worktree in one bucket, with the reason
+pixi run prune-worktrees --remove   # remove the SAFE ones, prune dead entries
+```
+
+Only **SAFE** worktrees are removed: merged (in `origin/main`, or a merged PR at the same head — so
+squash merges count and commits pushed after the merge don't), clean, nothing running from them
+(`/proc`, Linux only), no stash, and created more than 24 h ago. **Dead** entries (folder already
+gone) are pruned. Everything else is listed for a person to decide — the tool never uses `--force`,
+`git branch -D` or `kill`, and prints the command where one would be needed. Each SAFE worktree is
+re-checked just before it is removed. Design: `docs/todo/WORKTREE_CLEANUP_PLAN.md`.
+
+`bootstrap-worktree` prints a one-line nudge when the worktree list has grown; agents relay it.
+
 ## Dev worktree switch (Settings → System)
 
 When several git worktrees exist (the branch-preview workflow), **Settings → System → Worktree** lists
