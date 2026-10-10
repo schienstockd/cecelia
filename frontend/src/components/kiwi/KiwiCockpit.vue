@@ -346,14 +346,14 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
                     :short="shareNote.short" :detail="shareNote.detail" />
 
         <CollapsibleSection label="Ask" max-height="none"
-                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('ask') }]"
+                            fill
                             :open="sectionOpen('ask')" @update:open="() => toggleSection('ask')"
                             tip="Ask a structured question — every claim in the reply carries a pointer you can click.">
           <KiwiAsk />
         </CollapsibleSection>
 
         <CollapsibleSection label="Recent captures" max-height="none"
-                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('captures') }]"
+                            fill
                             :open="sectionOpen('captures')" @update:open="() => toggleSection('captures')"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">
           <div v-if="capturesLoading" class="kiwi-empty cc-muted cc-fs-xs">Loading…</div>
@@ -425,7 +425,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         </CollapsibleSection>
 
         <CollapsibleSection label="Session identity" max-height="none"
-                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('session') }]"
+                            fill
                             :open="sectionOpen('session')" @update:open="() => toggleSection('session')"
                             tip="Which assistant session is paired here — and a button to unpair.">
           <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
@@ -470,7 +470,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         </CollapsibleSection>
 
         <CollapsibleSection label="Assistant" max-height="none"
-                            :class="['kiwi-acc', { 'kiwi-acc-open': sectionOpen('assistant') }]"
+                            fill
                             :open="sectionOpen('assistant')" @update:open="() => toggleSection('assistant')"
                             tip="Is the assistant CLI installed, and is its MCP entry registered in your terminal?">
           <div class="kiwi-obs-row">
@@ -510,15 +510,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 <style scoped>
 .kiwi-body { padding: 0.6rem; display: flex; flex-direction: column; gap: 0.55rem;
              height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
-/* Accordion: the OPEN section fills the remaining panel height (min-height:0 lets the child
-   scroll instead of pushing kiwi-body — and therefore the FloatingPanel — taller). Closed
-   items keep their natural (header-only) height. `!important` overrides the child's own scoped
-   `.collapsible-section { flex-shrink: 0 }`, which otherwise wins the cascade tie against
-   :deep() and leaves the section at its natural height. The body's own max-height is `none`
-   (passed as a prop) so the flex:1 + overflow-y:auto here own the scroll surface. */
-:deep(.kiwi-acc-open) { flex: 1 1 0 !important; min-height: 0; overflow: hidden; }
-:deep(.kiwi-acc-open .cs-body) { flex: 1 1 0 !important; min-height: 0;
-                                 overflow-y: auto !important; }
+/* Accordion fill (the open section takes the remaining height) is CollapsibleSection's `fill`. */
 .kiwi-empty { text-align: center; padding: 1rem 0.5rem; }
 .kiwi-row { display: flex; align-items: center; gap: 0.5rem; }
 .kiwi-lbl { min-width: 4rem; }

@@ -272,8 +272,10 @@ class OverlayRenderTest(unittest.TestCase):
         from cecelia.utils import wgpu_host
         n = self.N
         self.host.set_volume(vol)
-        lut = np.zeros((32, 64, 4), np.uint8)
-        lut[0, :, 0] = np.round(255 * np.arange(64) / 63)
+        consts = wgsl_utils.shader_constants()
+        stops = int(consts["LUT_STOPS"])
+        lut = np.zeros((int(consts["MAX_CHANNELS"]), stops, 4), np.uint8)
+        lut[0, :, 0] = np.round(255 * np.arange(stops) / (stops - 1))
         lut[:, :, 3] = 255
         self.host.set_lut(lut)
         self.host.set_palette(wgpu_host.label_palette())
