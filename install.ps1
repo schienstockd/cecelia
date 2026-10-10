@@ -250,13 +250,21 @@ if (Get-Command showinf -ErrorAction SilentlyContinue) {
 
 # ── Custom cellpose models (segmentation) ───────────────────────────────────────
 # NOT fetched — `schienstockd/ceceliaModels` holds cellpose 3 checkpoints and cellpose 4 cannot
-# load them. The drop-in slot is unchanged and takes a v4 checkpoint; cellpose downloads its own
-# `cpsam_v2` weights on first use. See docs/todo/CELLPOSE_V4_PLAN.md.
+# load them. The drop-in slot is unchanged and takes a v4 checkpoint. Cellpose's own default
+# weights (`cpsam_v2`, ~1.2 GB) ARE fetched, after the Python env below. See docs/todo/CELLPOSE_V4_PLAN.md.
 
 # ── Provision ───────────────────────────────────────────────────────────────────
 Push-Location $InstallDir
 Say 'Installing the Python environment (downloads a few GB on first run)...'
 & $Pixi install
+# The default segmentation model's weights, so the first preview doesn't download 1.2 GB inside a
+# request. Not fatal: the app fetches missing weights at start as a visible job
+# (api/src/system_api.jl -> Model weights). CECELIA_SKIP_MODEL_WEIGHTS=1 skips it (an offline install).
+if ($env:CECELIA_SKIP_MODEL_WEIGHTS -ne '1') {
+  Say 'Downloading the Cellpose-SAM model weights (~1.2 GB)...'
+  & $Pixi run python -m cecelia.utils.model_weights cpsam_v2
+  if ($LASTEXITCODE) { Say 'Model weights download failed - Cecelia will retry when it starts.' }
+}
 Say 'Precompiling Julia (a few minutes on first run)...'
 & $Julia --project=api -e 'using Pkg; Pkg.instantiate()'
 # The dev channel ships source only — build the frontend the server serves (stable already has it).

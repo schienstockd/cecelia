@@ -16,7 +16,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
 import { runningTaskCount } from '../utils/runningTasks'
-import { fetchProfiles } from '../utils/profileApi'
+import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -122,13 +122,13 @@ const projectRows = computed(() => projectMeta.recent
     _owners: [...(p.owners ?? [])].sort((a, b) => {
       if (a === activeProfile.value) return -1
       if (b === activeProfile.value) return 1
-      return a.localeCompare(b)
+      return profileNameLabel(a).localeCompare(profileNameLabel(b))
     }),
     // Sort key for the Owners column — alphabetically-first owner name (ignoring the you-first
     // display order), so column-sort behaviour is stable across profiles. Un-owned rows use a
     // high-Unicode sentinel so they cluster at the bottom.
     _ownersSort: (p.owners && p.owners.length > 0)
-      ? [...p.owners].sort()[0].toLowerCase()
+      ? p.owners.map(o => profileNameLabel(o).toLowerCase()).sort()[0]
       : '￿',
   })))
 
@@ -375,8 +375,8 @@ function formatDate(iso: string | null): string {
               <span class="owner-chip" :class="{ me: p._owners[0] === activeProfile }"
                     v-tooltip.bottom="p._owners[0] === activeProfile
                       ? 'You are an owner of this project'
-                      : `Profile ${p._owners[0]} owns this project`">
-                <i class="pi pi-user" />{{ p._owners[0] }}
+                      : `Profile ${profileNameLabel(p._owners[0])} owns this project`">
+                <i class="pi pi-user" />{{ profileNameLabel(p._owners[0]) }}
               </span>
               <button v-if="p._owners.length > 1" type="button" class="owner-chip owner-more"
                       v-tooltip.bottom="`${p._owners.length - 1} more owner${p._owners.length - 1 === 1 ? '' : 's'} — click to see all`"
@@ -556,7 +556,7 @@ function formatDate(iso: string | null): string {
       <div class="owner-chips owners-pop-list">
         <span v-for="name in openOwnersRow?._owners ?? []" :key="name"
               class="owner-chip" :class="{ me: name === activeProfile }">
-          <i class="pi pi-user" />{{ name }}
+          <i class="pi pi-user" />{{ profileNameLabel(name) }}
         </span>
       </div>
     </div>

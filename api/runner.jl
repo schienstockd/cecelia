@@ -14,5 +14,6 @@ init_cecelia!()
 Cecelia.load_custom_modules!()   # a drop-in task must be runnable here too, or it runs nowhere
 
 Cecelia.runner_serve(;
-    port = parse(Int, get(ENV, "CECELIA_RUNNER_PORT", string(Cecelia.RUNNER_PORT))),
+    # the backend passes its slot in the env; a standalone `pixi run runner` follows the saved one
+    port = Cecelia.service_port(:runner; slot = Cecelia.current_port_slot()),
     host = get(ENV, "CECELIA_RUNNER_HOST", "127.0.0.1"))

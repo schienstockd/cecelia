@@ -217,7 +217,7 @@ Settings → Debug console UI shows a note to this effect.
 | GET | `/api/setup/validate?path=` | `{ok, message, willCreate}` — live projects-dir feedback (pure check, no side effects). |
 | POST | `/api/setup/init` | `{projectsDir}` → `{ok, projectsDir, restartRequired}` \| `400`. Validate → `mkpath` → write `custom.toml` (`Cecelia.set_projects_dir!`) → hot-reload config. `restartRequired` is `false` on the normal path (config reloads in place). Drives the `/setup` wizard; `/api/diagnostics` exposes `setupRequired` to trigger it. See `docs/todo/ONBOARDING_PLAN.md`. |
 | GET | `/api/version` | `{version, installed}` — running version + whether this is an installed bundle (vs dev checkout). (`api/src/update_api.jl`) |
-| GET | `/api/update/check` | `{current, latest, updateAvailable, url, scope}` vs the newest GitHub release. `scope` ∈ `user`\|`system`\|`dev` gates the UI: `user` self-updates, `system` shows an admin note, `dev` hides it. |
+| GET | `/api/update/check` | `{current, latest, updateAvailable, url, scope}` vs the newest GitHub release. `scope` ∈ `user`\|`system`\|`dev` gates the UI: `user` self-updates, `system` shows an admin note, `dev` hides it. `?channel=dev` compares to the branch tip instead and, when behind, adds `behindBy`, `mergedPrs` [{number, title}] and `compareUrl`. |
 | POST | `/api/update/apply` | `{version}` → downloads + **stages** the release bundle (`app.py` applies it on next restart). `403` on a `system` install (admin-only), `400` on a dev checkout. |
 | POST | `/api/update/revert` | stage a revert to the previous installed release via a `.pending-revert` marker, applied on next boot — `{staged, message}` (`api_update_revert`, `api/src/update_api.jl`) |
 | — | **Gating** (below) | population manager + gating |
@@ -266,6 +266,8 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/blackboard/delete` | `{projectUid, entryId}` → removes the entry dir and registry key; `{ok, deleted}` (`api_blackboard_delete`, `api/src/blackboard_api.jl`) |
 | GET | `/api/system/envs` | opt-in pixi envs with install/platform support status — `{platform, envs: {<name>: {installed, supported, approxSizeMb, description}}}` (`api_system_envs`, `api/src/system_api.jl`) |
 | POST | `/api/system/envs/install` | `{env}` start a background `pixi install -e <env>` streamed on the task rail — 202 `{started, jobId, env}` or `{installed, alreadyPresent}` (`api_system_envs_install`, `api/src/system_api.jl`) |
+| GET | `/api/system/weights` | built-in cellpose weights the app fetches — `{models: {<name>: {present, fetching, label, approxSizeMb}}}` (`api_system_weights`, `api/src/system_api.jl`) |
+| POST | `/api/system/weights/fetch` | `{model}` start (or join) the `model-weights:<model>` background job — 202 `{started, jobId}` or 200 `{present}` (`api_system_weights_fetch`, `api/src/system_api.jl`) |
 | GET | `/api/maintenance/patches` | data-patch catalogue for Settings (listing only; running is the `maintenance:run` WS action) — `{patches: [{id, title, description}]}` (`api_maintenance_patches`, `api/src/maintenance_api.jl`) |
 | GET | `/api/runner/status` | task-runner state for Settings → System — `{enabled, settable, running, port, pid?, adopted?, commit?, stale?, protocolMismatch?, uptimeSeconds?, busy?}` (`api_runner_status`, `api/src/runner_api.jl`) |
 | POST | `/api/runner/restart` | `{force?}` stop and relaunch the task runner; 409 while tasks are in flight unless `force` — `{ok, message}` (`api_runner_restart`, `api/src/runner_api.jl`) |

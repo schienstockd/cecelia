@@ -226,8 +226,7 @@ the process for cancellation, and checks `exitcode` **and** `termsignal`. Signat
 anti-patterns it exists to delete: [`app/CLAUDE.md`](app/CLAUDE.md) → *Spawning Python*.
 
 Enforced by the `python spawn ratchet` testset in `app/test/suite/ratchets.jl` (only
-`app/src/py_runner.jl` — and the boot-time cellpose model warm in `api/src/system_api.jl` — may
-spawn `python` by hand).
+`app/src/py_runner.jl` may spawn `python` by hand).
 
 ---
 

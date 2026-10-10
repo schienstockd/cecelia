@@ -253,6 +253,13 @@ _agent_bin(a::ClaudeAgent)::String = a.bin
 # register/remove commands. Renaming it in one place must rename it everywhere.
 const OBSERVER_MCP_NAME = "cecelia-observer"
 
+# The URL the observer MCP calls back on: loopback, on the scheme the server ACTUALLY started with
+# (`protocol` = `_PROTOCOL[]` in api/src/server.jl). Installed apps serve HTTPS, dev serves HTTP, and a
+# missing openssl falls back to HTTP — a hard-coded `http://` failed every MCP call on installed apps.
+# A registration made before a TLS toggle then reads as stale (`observer_registration_state`).
+observer_api_url(protocol::AbstractString, port::Integer)::String =
+    string(startswith(protocol, "HTTPS") ? "https" : "http", "://127.0.0.1:", port)
+
 # The server SPEC (one entry) — points at the SAME `cecelia_mcp.server`, talking back to this API.
 # `mcp_dir` is repo-root/mcp (on PYTHONPATH); `api_url` is this server. Reuses mcp/ unchanged. Split
 # out from the wrapper below because `claude mcp add-json <name> <json>` takes exactly this object.

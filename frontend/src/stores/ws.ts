@@ -131,7 +131,7 @@ export const useWsStore = defineStore('ws', () => {
 
     socket.onerror = () => {
       status.value = 'error'
-      useLogStore().error('WebSocket error — check that Julia server is running on port 8080', { source: 'ws' })
+      useLogStore().error('WebSocket error — check that the Julia server is running', { source: 'ws' })
     }
   }
 

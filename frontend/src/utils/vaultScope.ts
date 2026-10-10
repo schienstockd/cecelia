@@ -13,7 +13,7 @@
  * The server resolves the origin onto the row (`vault_model_origin`, api/src/vault_api.jl), including
  * the project of a pre-stamp model, recovered from its source image uids.
  */
-import { profileDisplayName } from './profileApi'
+import { profileNameLabel } from './profileApi'
 import type { DetailGroup } from './flowManifest'
 
 /** The origin fields of a vault row. Structural, so `ModelVault`'s row type satisfies it. */
@@ -41,7 +41,7 @@ export function vaultInScope(m: VaultOrigin, s: VaultScope): boolean {
 /** Who trained it, as the list shows it — '' when not recorded. The default profile goes by its
  *  display name rather than blank: in a list that mixes users, blank would read as "unknown". */
 export const vaultUserLabel = (m: VaultOrigin): string => m.createdBy
-  ? profileDisplayName({ name: m.createdBy, isDefault: m.createdBy === 'default' }) : ''
+  ? profileNameLabel(m.createdBy) : ''
 
 /** The project as the list shows it: its name, else its uid (it may have been deleted), else ''. */
 export const vaultProjectLabel = (m: VaultOrigin): string => m.projectName || m.projectUid || ''

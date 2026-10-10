@@ -126,7 +126,7 @@ function _ensure_preview!()::Bool
                 # nothing and `close!` is a silent no-op. The stale worker then keeps the port, the
                 # replacement cannot bind, and its readiness ping is answered by the very process we
                 # meant to remove: a relaunch loop that serves the old code.
-                Cecelia._kill_listeners_on_port(PREVIEW_PORT)
+                Cecelia._kill_listeners_on_port(service_port(:preview))
                 # …and WAIT for it to let go. The kill is asynchronous, so launching straight away races
                 # the old process's exit: the replacement loses the bind and dies, which `launch!` reports
                 # as an error the user sees once before the next attempt succeeds. Cheap to just wait.
@@ -165,7 +165,7 @@ function api_preview_status(req::HTTP.Request)
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
         starting = _preview_starting[],
-        port     = PREVIEW_PORT,
+        port     = service_port(:preview),
         imageUid = nothing,
         zarrPath = nothing,
         taskDir  = nothing,
@@ -177,7 +177,7 @@ end
 # the user's first parameter change.
 function api_preview_start(body_bytes::Vector{UInt8})
     ready = _ensure_preview!()
-    200, JSON3.write((; alive = ready, starting = _preview_starting[], port = PREVIEW_PORT))
+    200, JSON3.write((; alive = ready, starting = _preview_starting[], port = service_port(:preview)))
 end
 
 # `task_dir` normalised, when it is an image's meta dir — `{projects_dir}/{projectUid}/1/{imageUid}` with
@@ -322,6 +322,16 @@ function api_preview_run(body_bytes::Vector{UInt8})
         end
     end
     chan_names = something(channel_names(img_for_params; value_name = in_value_name), String[])
+
+    # Missing built-in weights are never downloaded inside this request: loading `cpsam_v2` cold pulls
+    # ~1.2 GB and outlasts the browser's timeout. Start (or join) the visible weights job and say so;
+    # the frontend re-requests when that job finishes (system_api.jl → *Model weights*).
+    dl = missing_weights_job(params)
+    dl === nothing || return 409, JSON3.write((;
+        error = "Downloading $(dl.label) (~$(round(dl.approx_size_mb / 1000; digits = 1)) GB) — " *
+                "the preview runs when it finishes.",
+        code  = "weights-downloading",
+        jobId = dl.job_id))
 
     reply = try
         _with_preview() do
