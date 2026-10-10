@@ -5711,7 +5711,7 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- View toggles as ONE icon row (pressed = `.cc-btn-on`), Reset view at its end; the residency
+        <!-- View toggles as ONE icon row (pressed = `.cc-btn-on-glyph`), Reset view at its end; the residency
              maps hang below the row when their toggle is on. Fps keeps its own row — it is a slider. -->
         <div v-if="nT > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -5732,28 +5732,28 @@ onUnmounted(() => {
                   : 'Requested playback rate'">{{ settings.viewerFps }}</span>
         </div>
         <div class="cc-row cc-row-tight">
-          <button v-if="nT > 1" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': settings.viewerLoop }]"
+          <button v-if="nT > 1" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': settings.viewerLoop }]"
                   @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
                   v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
             <i class="pi pi-repeat" />
           </button>
           <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
-          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': overviewShown }]"
+          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': overviewShown }]"
                   @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
                   v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
             <i class="pi pi-overview" />
           </button>
-          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': gizmoShown }]"
+          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': gizmoShown }]"
                   @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
                   v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
             <i class="pi pi-axes" />
           </button>
-          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': tilesMapShown }]"
+          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': tilesMapShown }]"
                   @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
                   v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
             <i class="pi pi-tiles" />
           </button>
-          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': bricksMapShown }]"
+          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': bricksMapShown }]"
                   @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
                   v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
             <i class="pi pi-bricks" />
@@ -5879,22 +5879,22 @@ onUnmounted(() => {
                             @update:open="v => setSection('channels', v)" fill>
           <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
                colours, one at a time + its stepper), contrast and card layout on the right. Pressed
-               state is `.cc-btn-on` (PRIMITIVES → *Engaged / pressed toggle button*) — icons rather than
+               state is `.cc-btn-on .cc-btn-on-glyph` (PRIMITIVES → *Engaged / pressed toggle button*) — icons rather than
                labelled `CcToggle` rows, so the section header is one line. -->
           <div class="cc-row cc-row-tight vw-ch-master">
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': allChannelsVisible }]"
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': allChannelsVisible }]"
                     @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
                     v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
                     aria-label="Toggle every channel">
               <i :class="['pi', allChannelsVisible ? 'pi-eye' : 'pi-eye-slash']" />
             </button>
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': distinctChannelColours }]"
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': distinctChannelColours }]"
                     @click="distinctChannelColours = !distinctChannelColours" :aria-pressed="distinctChannelColours"
                     v-tooltip.right="'Distinct colours — a separate hue per channel'"
                     aria-label="Assign a distinct colour to each channel">
               <i class="pi pi-palette" />
             </button>
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': soloChannel }]"
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': soloChannel }]"
                     @click="soloChannel = !soloChannel" :aria-pressed="soloChannel"
                     v-tooltip.right="'One at a time — showing a channel hides the others'"
                     aria-label="Show one channel at a time">

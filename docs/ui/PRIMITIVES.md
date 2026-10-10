@@ -15,7 +15,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
-| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) — also an on/off option in an **icon row** (with `aria-pressed` + `aria-label`), where a labelled `CcToggle` row per option would stack (viewer Channels / view controls) | a scoped `.on`/`.active` colour rule |
+| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled, `-on-glyph` white icon, no border) — also an on/off option in an **icon row** (`-on-glyph`, with `aria-pressed` + `aria-label`), where a labelled `CcToggle` row per option would stack (viewer Channels / view controls) | a scoped `.on`/`.active` colour rule |
 | Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
 | On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
