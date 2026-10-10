@@ -1,7 +1,8 @@
 """Tests for `scripts/judge/weekly.py` — the weekly judge pass.
 
-Design: docs/ai-assist/WEEKLY_JUDGE.md. No test spawns `claude`, `gh` or `pixi`: the sweep, verify
-and rule steps are patched or injected, and publish gets a fake runner. The store is a temp dir.
+Design: docs/ai-assist/WEEKLY_JUDGE.md. No test spawns `claude`, `gh` or `pixi`, or touches the real
+repo's git: the sweep, verify and rule steps, `pin` and `prepare_worktree` are patched or injected, and
+publish gets a fake runner. The store is a temp dir.
 
 Run with `pixi run test-py`.
 """
@@ -29,6 +30,14 @@ def _load_weekly():
     return mod
 
 
+def _worktrees_under(repo: pathlib.Path, root: pathlib.Path) -> list[str]:
+    """The worktrees `repo` has registered under `root`, stale (`prunable`) ones included."""
+    out = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=str(repo), capture_output=True,
+                         text=True, encoding="utf-8", check=False).stdout
+    paths = (line[len("worktree "):] for line in out.splitlines() if line.startswith("worktree "))
+    return [p for p in paths if pathlib.Path(p).resolve().is_relative_to(root.resolve())]
+
+
 class _WeeklyFixture(_Fixture):
     def setUp(self):
         super().setUp()
@@ -45,6 +54,20 @@ class _WeeklyFixture(_Fixture):
         guard = mock.patch.object(self.w._issues, "_default_run", no_gh)
         guard.start()
         self.addCleanup(guard.stop)
+        # never the real repo's git: `main()` runs a live pass, whose `pin` fetches and whose
+        # `prepare_worktree` adds `<state_dir>/judge-worktree` to the repo the tests run in. The state
+        # dir is a temp dir, so each run left a `prunable` worktree in the real repo. The fakes record
+        # instead; `WorktreeTest` runs `real_prepare_worktree` on a repo of its own
+        self.pinned, self.prepared = [], []
+        self.real_prepare_worktree = self.w.prepare_worktree
+        for name, fake in (("pin", lambda ref, repo=None: self.pinned.append(ref) or "0" * 40),
+                           ("prepare_worktree", lambda path, sha, repo=None: self.prepared.append(path))):
+            p = mock.patch.object(self.w, name, fake)
+            p.start()
+            self.addCleanup(p.stop)
+        # the guard: no worktree of the real repo under this test's temp dir (other sessions add
+        # and remove worktrees of the same repo meanwhile, so a before/after diff would be flaky)
+        self.addCleanup(lambda: self.assertEqual(_worktrees_under(self.w._REPO, self.tmp), []))
         self.swept = {}
 
         self.fail_steps: dict = {}   # step → error its judge "failed" with
@@ -143,6 +166,7 @@ class WeeklyTest(_WeeklyFixture):
         with mock.patch.dict(os.environ, {"JUDGE_RETRY_LEFT": str(retry_left)}), \
                 mock.patch.object(self.w, "publish", return_value="url") as publish:
             code = self.w.main(["--no-issues", "--date", "2026-10-05"])
+        self.assertEqual(self.prepared, [self.tmp / "judge-worktree"])   # the live pass, against the fake
         return code, publish, json.loads(self.w.ratelimit_path().read_text(encoding="utf-8"))
 
     def test_a_usage_limit_fails_the_pass_instead_of_recording_nothing_judged(self):
@@ -445,11 +469,11 @@ class WorktreeTest(_WeeklyFixture):
         true = which("true")   # /bin/true on Linux, /usr/bin/true on macOS
         pixi_is_true = lambda name: true if name == "pixi" else which(name)   # noqa: E731
         with mock.patch.object(self.w.shutil, "which", pixi_is_true):
-            self.w.prepare_worktree(wt, sha, repo)
+            self.real_prepare_worktree(wt, sha, repo)
             (wt / "f.txt").write_text("dirty\n", encoding="utf-8")
             (wt / ".pixi").mkdir()
             (wt / "stray.txt").write_text("x", encoding="utf-8")
-            self.w.prepare_worktree(wt, sha, repo)
+            self.real_prepare_worktree(wt, sha, repo)
         self.assertEqual((wt / "f.txt").read_text(encoding="utf-8"), "one\n")
         # last run's `judge-run/*` branch must not move when the worktree resets to a newer SHA
         self._git("checkout", "-q", "-B", "judge-run/old", cwd=wt)
@@ -457,7 +481,7 @@ class WorktreeTest(_WeeklyFixture):
         self._git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "two", cwd=repo)
         new = self.w.git_output("rev-parse", "HEAD", cwd=str(repo))
         with mock.patch.object(self.w.shutil, "which", pixi_is_true):
-            self.w.prepare_worktree(wt, new, repo)
+            self.real_prepare_worktree(wt, new, repo)
         self.assertEqual(self.w.git_output("rev-parse", "judge-run/old", cwd=str(repo)), sha)
         self.assertTrue((wt / ".pixi").is_dir())
         self.assertFalse((wt / "stray.txt").exists())
