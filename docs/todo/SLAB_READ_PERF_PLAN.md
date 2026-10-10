@@ -1,7 +1,11 @@
 # Slab read performance plan
 
-Status: **in progress** (2026-10-10). Phases 0–1 shipped (#1572, #1575); Phase 2 built on
-`perf/slab-chunk-cache`; Phase 3 decided for new images (#1576). Results in
+Status: **built** (2026-10-10). Phases 0–1 shipped (#1572, #1575); Phase 2 #1581; Phase 3 decided for
+new images (#1576); Phase 4 docs done. Rechunking EXISTING 1024 stores is not recommended: with the
+cache, a raw 1024-chunked scrub runs 0.62 s cold / 0.34 s revisit against 0.51 / 0.25 s for a
+512-chunked store (findings → *Phase 2*; different stores, so a rough bound) — little left to win for a
+rewrite of every old import. Next limit: the response path (HTTP.jl buffers `Content-Length` bodies),
+outside this plan. Results in
 `spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*, *Phase 2*.
 
 ## Goal
@@ -160,7 +164,12 @@ which is being retired. So write up the options: brick-aligned chunks for new wr
 rechunk on import, a rechunk task for existing stores, or the cache as the whole fix — with measured read
 costs (including the movie and 2D-plane readers, which prefer plane chunks). Needs sign-off.
 
-### Phase 4 — docs
+### Phase 4 — docs — DONE 2026-10-10
+
+`ARCHITECTURE.md` → *Slab reads — server side*; `WEB_VIEWER_PLAN.md` rejection revisited; outcome note
+under the archived brief. The `ViewerWindow.vue` "server's thread pool" comments became true with Phase 1
+and were left as they are.
+
 
 - `slab_cache_findings.md` post-fix numbers; `WEB_VIEWER_PLAN.md` → *Rejected:
   `Blosc.set_num_threads(n > 1)`* revisited with this evidence (blosc internal threads > 1 under

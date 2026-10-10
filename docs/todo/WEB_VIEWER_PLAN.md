@@ -607,6 +607,16 @@ the mechanism is present. And the safe form is a **regression**: a lock around r
 pay off by overlapping across reads. The one legitimate route is `blosc_decompress_ctx`, which Blosc.jl
 does not expose — upstream work, not ours. Numbers: `spike/webgpu/p2_blosc_threads.json`.
 
+*Revisited 2026-10-10 (`SLAB_READ_PERF_PLAN.md`).* Two premises above did not hold. c-blosc 1.21.6's
+`blosc_decompress` **does** take a global mutex (read in `blosc/blosc.c`; measured: 16 threads reading
+bricks ran at 0.34x of serial on one machine, 0.95x on another) — so calls were serialised, not racing;
+the 0.86x-at-`blosc=8` reading above is unexplained and was not re-measured. And the safe route is not
+upstream work: with `BLOSC_NOLOCK` set, the same `blosc_decompress` call goes through
+`blosc_decompress_ctx` (7–8.7x at 16 threads, byte-identical), which the server now sets at load. This
+rejection of blosc's *internal* threads still stands as shipped — the parallelism now comes from
+concurrent reads, one context each. Whether internal threads > 1 help on top under NOLOCK is unmeasured
+(each `_ctx` call would start its own threads); an optional follow-up, not a known win.
+
 **A range slider committed on `@change` drifts, and neither existing detector saw it.** The
 continuous-controls rule only inspects `@input` handlers, so a slider that commits on release was
 invisible to it, and `driftingTextFields` excluded the type on the grounds that ranges were the other
