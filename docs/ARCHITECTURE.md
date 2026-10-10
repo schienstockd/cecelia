@@ -353,9 +353,13 @@ Three rules keep it parallel and correct (`docs/todo/SLAB_READ_PERF_PLAN.md`):
   reads it back the same way; a dev server refuses to start without it, and `/api/diagnostics` reports
   `bloscNolock`. Every launcher loads that file, so no launcher sets it separately.
 - **A route dispatched before `handle_stream`'s pool hop must hop itself if it does blocking work.**
-  `try_serve_slab` runs on HTTP.jl's single interactive thread; its read + encode go to the default
-  pool (`Threads.@spawn`), and the response is still written on the connection's task. Without the
-  hop, one decode stalled every other request (`/api/version` 0.7 → 60 ms during a brick burst).
+  `try_serve_slab` runs on HTTP.jl's single interactive thread; its read, encode AND response write go
+  to the default pool (`Threads.@spawn`). Without the hop, one decode stalled every other request
+  (`/api/version` 0.7 → 60 ms during a brick burst); with the write left behind, concurrent responses
+  queued on that thread (a 16-in-flight scrub took twice as long).
+- **A large response body goes to HTTP.jl as a `Vector{UInt8}`, never a `reinterpret` view** — HTTP.jl
+  copies any non-`Vector` body into a fresh `Vector` first, and from a `ReinterpretArray` that copy is
+  element by element. `with_slab_bytes` wraps the volume's memory without a copy.
 - **Reads go through `read_native`, which reads through the decoded-chunk cache** (`chunk_cache.jl`).
   Only reads that use part of a chunk are cached; the key is the level directory's (path, inode,
   mtime), which is only sound because every writer stages and promotes — a writer that rewrote chunks

@@ -359,9 +359,8 @@ Same machine, store and bench as *Phase 0 baseline*, through a dev server runnin
 - **Flat gains less than projected (1.28x, not 3–4x), and the read is no longer why.** Server-read per
   request halves (409 → 199 ms at c4: four channels now decode at once), but each 65 MB response then
   spends ~300 ms in transfer (wall − server-read: ~100 ms at c1, ~300 ms at c4), ~0.9 GB/s aggregate.
-  That is the HTTP.jl body path — a `Content-Length` response is buffered whole before it is written
-  (see `_stream_file!` in `server.jl`) — not decode. Out of this plan's scope (Decision 9); recorded
-  for whoever looks at the flat pipe next.
+  Not decode. First blamed on HTTP.jl buffering `Content-Length` bodies; Phase 5 measured that wrong —
+  see *Phase 5* for the real cause.
 - Raw: `slab_cache_results/p1_*.tsv`.
 
 ## Phase 2 — decoded-chunk cache (2026-10-10)
@@ -409,10 +408,53 @@ Same machine, store and bench as *Phase 0 baseline*, through a dev server runnin
 
 - **The read is no longer the cost; the response is.** Server-read per brick fell ~15x, the run wall
   ~2.5x: at 16 in flight each 4 MB brick now spends ~110 ms between "read done" and "received", against
-  ~20 ms reading. Same signature as flat in Phase 1 — HTTP.jl buffers a `Content-Length` body whole
-  before writing it (`_stream_file!` in `server.jl`). That response path is the next bottleneck for
-  bricks and flat alike, and is outside this plan (Decision 9).
+  ~20 ms reading. Same signature as flat in Phase 1: the response path is the next bottleneck for
+  bricks and flat alike. (The buffering diagnosis written here first was wrong — *Phase 5*.)
 - Raw: `p2_after_*.tsv`.
+
+## Phase 5 — the response path (2026-10-10)
+
+The dev server ran plain HTTP/1.1 (no cert), so these are the HTTP/1.1 write path. Standalone
+repro, `slab_response_bench.jl`: the route's read (`read_native` through the chunk cache, 2 GB) on a
+pool thread, then the response, in its own process on an ephemeral port — the app server untouched.
+Dml3RG raw, warm cache, `MODE=scrub` list (256 bricks of 4.06 MB), curl `-Z`, HTTP/1.1, 32 threads.
+Each variant changes one thing, runs interleaved, 3 rounds.
+
+**Buffering is not it.** HTTP.jl does buffer a `Content-Length` body over HTTP/1.1 (the memory cost
+`_movie_plan` avoids), but it costs no time. A fixed 4 MB body with no read: `Content-Length` 0.42–0.45 s, chunked
+0.46–0.53 s, chunked in 64 KB writes 0.47–0.50 s for 256 requests at 16 in flight (~2.3 GB/s). Two
+curl clients at once got the same aggregate, so curl is not the cap.
+
+**Concurrency sweep through the real server** (warm revisit; run wall): c1 2.79 s, c2 1.76, c4 1.29,
+c8 1.08, c16 1.07, c32 1.06 s; read median 6.1 ms at c1 and 12.6 ms at c16. A plateau from c8 while the
+reads still run in parallel: one serial stage of ~4 ms per brick.
+
+| Variant (repro, warm scrub, 16 in flight) | Run wall |
+|---|---|
+| as shipped: `reinterpret` body, written on the connection task | 1.06–1.38 s |
+| chunked framing instead | 1.17–1.41 s |
+| `Vector` body, connection task | 0.74–1.14 s (median 0.82) |
+| `Vector` body, `-t 32,4` (four interactive threads) | 0.63–0.67 s |
+| as shipped, `-t 32,4` | 0.74–0.80 s |
+| **`Vector` body, written from the pool task** | **0.64–0.88 s (median 0.67)** |
+
+- At 6 in flight (Chrome's HTTP/1.1 limit per origin): 1.30–1.45 s as shipped → 0.94–1.02 `Vector`
+  → 0.81 s pool.
+- Flat, 32 whole (t, c) volumes of 65 MB at 4 in flight: 3.75–3.93 s → 1.98–2.06 s.
+- `Vector{UInt8}(::ReinterpretArray)` is 0.73 ms against 0.25 ms for a memcpy on one idle thread —
+  small alone, but on the one thread every response shares, and it allocates.
+- GC is ~25% of the repro's wall (~200–250 ms per scrub, ~5 full sweeps); the `Vector` variants
+  allocate less. Not pursued further.
+- Not measured: HTTP/2 over TLS, which HTTP.jl writes by a different path.
+
+Reproduce (from the repo root; any store, any free port — it prints its own):
+
+```bash
+julia --project=api -t auto docs/todo/spike/webgpu/slab_response_bench.jl <store.ome.zarr> &
+B=docs/todo/spike/webgpu/slab_response_bench.sh   # <port> <mode> <conc>
+for m in view vec pool; do $B $PORT $m 16; done    # warm-up pass first, then interleave
+for m in flatview flatpool; do $B $PORT $m 4; done
+```
 
 ## Method deviations
 

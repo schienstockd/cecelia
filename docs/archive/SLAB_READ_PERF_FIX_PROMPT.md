@@ -14,8 +14,9 @@
 > - **Concerns 6–7** — the cache is keyed on the level directory (inode + mtime), not per-chunk files;
 >   it caches only partial-chunk reads (whole-volume reads were slower through it); and plain
 >   single-flight made cold scrubs slower until reads claimed unclaimed chunks first.
-> - **Phase 1 accept for flat (3–4x)** was not met (1.28x): the read halved, then HTTP.jl's buffered
->   response path became the limit — now the limit for bricks too, outside this plan.
+> - **Phase 1 accept for flat (3–4x)** was not met (1.28x): the read halved, then the
+>   response write became the limit, for bricks too. Not buffering, as first guessed: the write ran on
+>   HTTP.jl's interactive thread and converted a `reinterpret` body byte by byte. Plan Phase 5 fixed both.
 
 # Prompt: fix `/api/viewer/slab` read performance
 
