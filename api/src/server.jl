@@ -920,6 +920,13 @@ function start(; host=HOST, port=PORT)
     # custom.toml (Settings toggle) → default (`!_is_dev`). The effective protocol is
     # published to `/api/diagnostics` via `_PROTOCOL[]` — separate from `tls_desired`
     # because openssl-missing falls back to HTTP/1.1 with a warning.
+    # `enable_blosc_nolock!` ran at load (image_render.jl). If it did not reach the C runtime blosc
+    # reads, every zarr decode in this process queues on blosc's global lock and the viewer's
+    # concurrent slab reads run one at a time — loud in dev, a warning in an installed app.
+    if !blosc_nolock()
+        msg = "BLOSC_NOLOCK is not visible to c-blosc — zarr decodes will serialise on its global lock"
+        _is_dev() ? error(msg) : @warn msg
+    end
     want_tls = Cecelia.tls_desired(is_dev = _is_dev())
     tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing

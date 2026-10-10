@@ -1,12 +1,13 @@
 # Viewer slab + viewer meta (spatial audit LOD + labelDims) testsets — extracted from
 # api/test/runtests.jl.
 #
-# Four testsets covering the WebGPU-facing viewer endpoints:
+# Testsets covering the WebGPU-facing viewer endpoints:
 #  - `API: viewer slab (voxels the GPU can upload without a transform)` — read_slab feeds
 #    a WebGPU 3D texture directly; response body is copied to VRAM with no reshape.
 #  - `API: viewer slab — XY tile + pyramid level (spatial audit Phase 2)`.
 #  - `API: viewer meta — per-level shapes (spatial audit LOD)`.
 #  - `API: viewer meta — labelDims lets the picker flag masks that dont fit`.
+#  - `API: c-blosc runs without its global lock, and parallel reads match serial`.
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -489,5 +490,24 @@ end
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
+    end
+end
+
+@testset "API: c-blosc runs without its global lock, and parallel reads match serial" begin
+    # Concurrent slab reads only scale if c-blosc skips its process-wide mutex — `enable_blosc_nolock!`
+    # sets BLOSC_NOLOCK at load (image_render.jl). `blosc_nolock` reads it back through the C runtime
+    # blosc itself uses; on Windows that is msvcrt, which a plain `ENV` write does not reach, so this is
+    # the check that the setter landed where blosc looks (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 3).
+    @test blosc_nolock()
+
+    # Under NOLOCK every decode goes through `blosc_decompress_ctx`, a context per call. A clean run
+    # cannot prove the absence of a race — it catches a change that makes one likely (Decision 4).
+    # Runs in a child with real threads: this suite runs on one, where `@spawn` is only cooperative.
+    mktempdir() do d
+        child = joinpath(@__DIR__, "..", "blosc_parallel_child.jl")
+        render = joinpath(@__DIR__, "..", "..", "src", "image_render.jl")
+        proj = dirname(Base.active_project())
+        out = read(`$(Base.julia_cmd()) -t 4 --project=$proj $child $render $(joinpath(d, "s.zarr"))`, String)
+        @test out == "nolock=true mismatches=0"
     end
 end
