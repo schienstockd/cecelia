@@ -442,13 +442,13 @@ const chunkCacheChips = computed(() =>
   chunkCache.value ? chunkCacheOptions(chunkCache.value.choices, chunkCache.value.autoBytes) : [])
 async function loadChunkCache() {
   try { chunkCache.value = await fetchChunkCache() }
-  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not read the viewer cache' }
+  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not read the server read cache' }
 }
 async function changeChunkCache(value: string) {
   if (!chunkCache.value || value === chunkCache.value.current) return
   chunkCacheBusy.value = true; chunkCacheError.value = ''
   try { Object.assign(chunkCache.value, await setChunkCache(value)) }
-  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not change the viewer cache' }
+  catch (e: any) { chunkCacheError.value = e?.message ?? 'Could not change the server read cache' }
   finally { chunkCacheBusy.value = false }
 }
 onMounted(loadChunkCache)
@@ -987,9 +987,9 @@ async function switchWt(path: string) {
       <!-- Viewer chunk cache: RAM the server keeps decoded image chunks in (api/src/chunk_cache.jl).
            `auto` is sized from this machine's RAM and says what it picked. -->
       <div v-if="chunkCache" class="field">
-        <span class="svc-name">Viewer cache</span>
+        <span class="svc-name">Server read cache</span>
         <ChipSelect :options="chunkCacheChips" :model-value="chunkCache.current"
-                    :disabled="chunkCacheBusy" aria-label="Viewer chunk cache size"
+                    :disabled="chunkCacheBusy" aria-label="Server read cache size"
                     v-tooltip.bottom="'RAM for decoded image chunks; faster scrubbing'"
                     @update:model-value="changeChunkCache($event as string)" />
         <span class="field-hint cc-muted cc-fs-xs">In use: {{ formatBytes(chunkCache.stats.bytes) }}</span>

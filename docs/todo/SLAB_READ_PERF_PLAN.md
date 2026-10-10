@@ -68,10 +68,11 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
    concurrent misses on one key wait on one decode (measured: exactly 124 decodes). A read decodes the
    chunks nobody else holds first, from a random start, and only then waits — walking chunks in one
    shared order left every brick but one waiting and made a cold scrub slower than no cache.
-8. **Byte budget, LRU, observable.** Settings → Storage → *Viewer cache* (`[viewer].chunkCache`:
+8. **Byte budget, LRU, observable.** Settings → Storage → *Server read cache* (`[viewer].chunkCache`:
    `auto` / `off` / 512 MB–32 GB), applied to the running server without a restart. `auto` = 1/16 of
    physical RAM clamped to 256 MiB–4 GiB: 1 GiB on a 16 GB laptop (four 248 MB raw timepoints), and a
-   workstation raises it by hand. Counters in `/api/diagnostics` → `chunkCache`.
+   workstation raises it by hand. Counters in `/api/diagnostics` → `chunkCache`. Named *server read
+   cache* because the viewer already has a *viewer cache* — the browser's VRAM budget (`viewerCacheMB`).
 9. **Scope.** `api/src/`, launch config, tests, docs. No renderer WGSL, atlas eviction, upload path
    (`writeBrick`, payload ring), or HTTP/2 changes. No rechunker without sign-off (Phase 3).
 10. **Measure before and after every phase, same bench.** A result that contradicts the plan stops
