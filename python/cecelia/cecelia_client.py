@@ -11,6 +11,7 @@ API server is running in both (it is what launches production tasks).
 Uses only the stdlib (`urllib`) so it adds no dependency to the napari venv.
 """
 import json
+import os
 import urllib.parse
 import urllib.request
 
@@ -19,8 +20,12 @@ import numpy as np
 
 class CeceliaClient:
     def __init__(self, base_url: str = "http://localhost:8080",
-                 project_uid: str = None, image_uid: str = None, timeout: float = 30.0):
+                 project_uid: str = None, image_uid: str = None, timeout: float = 30.0,
+                 token: str | None = None):
         self.base_url = base_url.rstrip("/")
+        # The API only answers its own user (app/src/api_token.jl). A task the backend spawned has the
+        # token in its env; anywhere else, pass it (`<config_dir>/api-token`).
+        self.token = token if token is not None else os.environ.get("CECELIA_API_TOKEN", "")
         self.project_uid = project_uid
         self.image_uid = image_uid
         self.timeout = timeout
@@ -29,6 +34,10 @@ class CeceliaClient:
     def _url(self, path: str, params: dict) -> str:
         q = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
         return f"{self.base_url}{path}?{q}"
+
+    def _request(self, url: str) -> urllib.request.Request:
+        headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
+        return urllib.request.Request(url, headers=headers)
 
     def _common(self, value_name, pop_type):
         return {"projectUid": self.project_uid, "imageUid": self.image_uid,
@@ -42,7 +51,7 @@ class CeceliaClient:
         params = self._common(value_name, pop_type)
         params["pops"] = ",".join(pops)
         url = self._url("/api/gating/membership", params)
-        with urllib.request.urlopen(url, timeout=self.timeout) as r:
+        with urllib.request.urlopen(self._request(url), timeout=self.timeout) as r:
             return json.loads(r.read().decode())["membership"]
 
     def cells_in_pop(self, pop_type, pop, value_name: str = "default") -> np.ndarray:
@@ -52,5 +61,5 @@ class CeceliaClient:
         params["pops"] = pop
         params["binary"] = "1"
         url = self._url("/api/gating/membership", params)
-        with urllib.request.urlopen(url, timeout=self.timeout) as r:
+        with urllib.request.urlopen(self._request(url), timeout=self.timeout) as r:
             return np.frombuffer(r.read(), dtype="<i4")

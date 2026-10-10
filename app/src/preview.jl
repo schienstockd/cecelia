@@ -87,7 +87,8 @@ _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 # falls back to a one-off renderer when the worker can't answer, which would hide a stale worker
 # forever — the bump is what replaces it.
 # 17 adds `cleanupImages.smooth` to the previewable set — the same "dead button" case as 15.
-const PREVIEW_PROTOCOL = 17
+# 18 the socket needs the API token. A protocol-17 worker answers any account on the machine.
+const PREVIEW_PROTOCOL = 18
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 mutable struct PreviewWorker
@@ -107,7 +108,9 @@ function send(w::PreviewWorker, msg::Dict)::Dict{String,Any}
     result = Dict{String,Any}()
     # Same cap as the napari leg — a preview reply carries whole label blocks, corrected channels and
     # PNG contact sheets in one frame. See `WS_MAX_FRAME_SIZE` (utils.jl).
-    HTTP.WebSockets.open("ws://localhost:$(w.port)"; maxframesize = WS_MAX_FRAME_SIZE) do ws
+    # The worker refuses a handshake without the API token (preview_worker.py `_check_token`).
+    HTTP.WebSockets.open("ws://localhost:$(w.port)"; maxframesize = WS_MAX_FRAME_SIZE,
+                         headers = [api_auth_header(something(read_api_token(), ""))]) do ws
         HTTP.WebSockets.send(ws, JSON3.write(msg))
         result = JSON3.read(HTTP.WebSockets.receive(ws), Dict{String,Any})
     end

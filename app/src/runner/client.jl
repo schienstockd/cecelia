@@ -28,23 +28,28 @@ runner_port_default()::Int = service_port(:runner)
 RunnerHandle(; port::Int = runner_port_default()) = RunnerHandle(port, nothing, false)
 
 _runner_url(h::RunnerHandle, path::AbstractString) = "http://127.0.0.1:$(h.port)$path"
+# Every call but `/ping` needs the API token (the runner's gate, server.jl). Read per call: cheap, and a
+# token rotated while the backend runs is picked up rather than locking it out.
+_runner_auth() = [api_auth_header(something(read_api_token(), ""))]
 
 # Short timeouts throughout: every call here is control traffic against a loopback process, so a slow
 # reply means "not there" rather than "be patient". Execution is announced on the event stream, never
 # awaited on a request.
 function _runner_get(h::RunnerHandle, path::AbstractString; timeout::Real = 5)::Dict{String,Any}
-    r = HTTP.get(_runner_url(h, path); request_timeout = timeout, retry = false, status_exception = true)
+    r = HTTP.get(_runner_url(h, path), _runner_auth(); request_timeout = timeout, retry = false,
+                 status_exception = true)
     JSON3.read(String(r.body), Dict{String,Any})
 end
 
 function _runner_get_array(h::RunnerHandle, path::AbstractString; timeout::Real = 5)::Vector{Any}
-    r = HTTP.get(_runner_url(h, path); request_timeout = timeout, retry = false, status_exception = true)
+    r = HTTP.get(_runner_url(h, path), _runner_auth(); request_timeout = timeout, retry = false,
+                 status_exception = true)
     JSON3.read(String(r.body), Vector{Any})
 end
 
 function _runner_post(h::RunnerHandle, path::AbstractString, body::Dict; timeout::Real = 10)::Dict{String,Any}
     r = HTTP.post(_runner_url(h, path),
-                  ["Content-Type" => "application/json", RUNNER_OWNER_HEADER => config_dir()],
+                  ["Content-Type" => "application/json", _runner_auth()...],
                   JSON3.write(body);
                   request_timeout = timeout, retry = false, status_exception = true)
     JSON3.read(String(r.body), Dict{String,Any})
@@ -77,8 +82,8 @@ runner_alive(h::RunnerHandle)::Bool = runner_ping(h) !== nothing
 
 # A runner answering on our port that belongs to another user's Cecelia (a slot collision — see
 # app/src/ports.jl). `runner_launch!` refuses to adopt it: subscribing would count as its audience and
-# keep it from idling out. It also refuses our submits (`_runner_foreign_caller`), so a submit that
-# reaches it anyway runs in-process instead.
+# keep it from idling out. It also refuses our submits — its token is not ours (`_runner_authorized`) —
+# so a submit that reaches it anyway runs in-process instead.
 runner_is_foreign(reply::AbstractDict)::Bool =
     (d = get(reply, "configDir", nothing); d !== nothing && d != config_dir())
 
@@ -275,7 +280,7 @@ function runner_subscribe!(h::RunnerHandle, on_frame::Function; on_reconnect::Fu
         while true
             try
                 HTTP.WebSockets.open("ws://127.0.0.1:$(h.port)/events";
-                                     maxframesize = WS_MAX_FRAME_SIZE) do ws
+                                     headers = _runner_auth(), maxframesize = WS_MAX_FRAME_SIZE) do ws
                     backoff = 1.0
                     connected && @info "Task runner reconnected"
                     connected = true

@@ -349,8 +349,8 @@ headless VM; you'll open the browser on the laptop side.
 **Tunnel from the laptop:**
 ```bash
 ssh -L 8080:localhost:8080 <vm>
-# then, in a laptop browser:
-open http://localhost:8080
+# then, in a laptop browser — the sign-in link, once per browser (Cecelia only answers its own user):
+open "http://localhost:8080/api/auth?token=$(ssh <vm> cat .cecelia/api-token)"
 ```
 
 **Viewer.** The WebGPU browser viewer runs over the same tunnel — the headless VM does no rendering

@@ -180,6 +180,21 @@ def _launched_port(proc, launched_at: float, timeout: float = 180.0) -> str | No
     return None
 
 
+def _api_token() -> str:
+    """The server's API token (app/src/api_token.jl): every request but /api/health must carry it,
+    so only this account can drive Cecelia. The server creates `<config_dir>/api-token` before it
+    takes the lock, so it exists once `_launched_port` has returned. Empty when unreadable — the
+    request then fails with a 401, which says why."""
+    tok = os.environ.get("CECELIA_API_TOKEN", "").strip()
+    if tok:
+        return tok
+    try:
+        with open(os.path.join(_config_dir(), "api-token"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def _server_ready(timeout: float = 180.0) -> bool:
     """Probe HTTPS first, then HTTP, on the same port. Sets the module-level `URL` to whichever
     answered so downstream (browser open, shutdown POST) speaks the same scheme as the server."""
@@ -214,7 +229,8 @@ def _stop_gracefully(proc, timeout: float = 20.0) -> bool:
     try:
         req = urllib.request.Request(
             f"{URL}/api/app/shutdown", data=b"{}",
-            headers={"Content-Type": "application/json"}, method="POST")
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {_api_token()}"}, method="POST")
         ctx = _NOVERIFY if URL.startswith("https:") else None
         with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
             if resp.status != 200:
@@ -402,7 +418,9 @@ def main() -> int:
             print(f"Waiting for /api/health on port {PORT}")
             if _server_ready():
                 if first:
-                    webbrowser.open(URL)   # only pop a browser on the initial launch, not each restart
+                    # only pop a browser on the initial launch, not each restart. Via the sign-in
+                    # link, which sets the cookie the browser needs from then on.
+                    webbrowser.open(f"{URL}/api/auth?token={_api_token()}")
                     first = False
                 print(f"Cecelia is running at {URL} — close this window to stop.")
             else:

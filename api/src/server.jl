@@ -744,10 +744,78 @@ function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
     true
 end
 
+# ── The API token gate (app/src/api_token.jl) ─────────────────────────────────
+#
+# Every request but the health probe and the sign-in link must carry the token — as a Bearer header
+# (programmatic clients) or as this backend's cookie (the browser). Checked HERE, in the stream
+# handler, so it covers the router, the static frontend, the binary routes and the WebSocket upgrade
+# alike. Set in `start()`: an empty token means nothing is being served (tests, REPL `include`).
+
+const _API_TOKEN = Ref("")
+
+_auth_exempt(method::AbstractString, path::AbstractString)::Bool =
+    method == "OPTIONS" || path in ("/api/health", "/api/auth")
+
+_request_authorized(req::HTTP.Request)::Bool =
+    isempty(_API_TOKEN[]) ||
+    Cecelia.token_authorized(_API_TOKEN[], HTTP.header(req, "Authorization", ""),
+                             HTTP.header(req, "Cookie", ""), PORT)
+
+# Where `/api/auth` may redirect: a path on this server, never `//elsewhere` or a full URL.
+_safe_next(next::AbstractString)::String =
+    (startswith(next, "/") && !startswith(next, "//") && !occursin('\\', next)) ? String(next) : "/"
+
+const _SIGN_IN_HTML = """<!doctype html><meta charset="utf-8"><title>Cecelia</title>
+<body style="font-family:sans-serif;max-width:32em;margin:4em auto;color:#333">
+<h3>Open Cecelia from its launcher</h3>
+<p>This Cecelia only answers the account that started it. Use the launcher (it opens the right
+link), or the link printed in the terminal that started Cecelia.</p></body>"""
+
+function _write_response!(stream::HTTP.Stream, status::Integer, body, headers::Pair...)
+    HTTP.setstatus(stream, status)
+    for h in headers
+        HTTP.setheader(stream, h)
+    end
+    HTTP.startwrite(stream)
+    write_http_body!(stream, body)
+    nothing
+end
+
+# 401 — JSON for the API and the socket, the sign-in page for anything a browser navigates to.
+function _write_unauthorized!(stream::HTTP.Stream, path::AbstractString)
+    api = startswith(path, "/api/") || path == "/ws"
+    _write_response!(stream, 401,
+                     api ? JSON3.write((; error = "Not signed in to this Cecelia — open it from its launcher")) :
+                           _SIGN_IN_HTML,
+                     "Content-Type" => (api ? "application/json" : "text/html; charset=utf-8"))
+end
+
+# `/api/auth?token=…&next=…` — the launch link. A right token sets the cookie and redirects.
+function _handle_auth!(stream::HTTP.Stream, req::HTTP.Request)
+    q   = HTTP.queryparams(HTTP.URI(req.target))
+    tok = get(q, "token", "")
+    if isempty(_API_TOKEN[]) || !Cecelia._token_eq(tok, _API_TOKEN[])
+        return _write_unauthorized!(stream, "/")
+    end
+    secure = startswith(_PROTOCOL[], "HTTPS") ? "; Secure" : ""
+    _write_response!(stream, 302, "",
+                     "Location"   => _safe_next(get(q, "next", "/")),
+                     "Set-Cookie" => "$(Cecelia.api_cookie_name(PORT))=$(tok); Path=/; HttpOnly; " *
+                                     "SameSite=Lax; Max-Age=31536000$(secure)",
+                     "Cache-Control" => "no-store")
+end
+
 # ── Mixed HTTP + WebSocket stream handler ─────────────────────────────────────
 
 function handle_stream(stream::HTTP.Stream)
     req = stream.message
+    path = HTTP.URI(req.target).path
+
+    path == "/api/auth" && return _handle_auth!(stream, req)
+    if !_auth_exempt(req.method, path) && !_request_authorized(req)
+        read(stream)
+        return _write_unauthorized!(stream, path)
+    end
 
     if HTTP.WebSockets.isupgrade(req)
         HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin) -> true)
@@ -884,6 +952,10 @@ function start(; host=HOST, port=PORT)
     # threw — fine on a local screen, unreadable over SSH/VNC. Catch the typed exception here so
     # the remote user sees the one-liner not a Julia traceback, and exit cleanly (dev.jl treats
     # any non-42 exit as "stop"; nothing to restart). Registers atexit-release itself.
+    # The API token, before the lock: a launcher waits for the lock and then reads the token, so it
+    # must already exist by then. Gate on from the first request (app/src/api_token.jl).
+    _API_TOKEN[] = Cecelia.ensure_api_token!()
+    ENV[Cecelia.API_TOKEN_ENV] = _API_TOKEN[]   # every child we spawn (runner, preview worker) inherits it
     try
         Cecelia.acquire_single_instance!(host, port)
     catch e

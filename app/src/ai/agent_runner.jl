@@ -256,12 +256,17 @@ const OBSERVER_MCP_NAME = "cecelia-observer"
 # The server SPEC (one entry) — points at the SAME `cecelia_mcp.server`, talking back to this API.
 # `mcp_dir` is repo-root/mcp (on PYTHONPATH); `api_url` is this server. Reuses mcp/ unchanged. Split
 # out from the wrapper below because `claude mcp add-json <name> <json>` takes exactly this object.
+#
+# The API token travels as a FILE PATH (`CECELIA_API_TOKEN_FILE`, read by mcp/cecelia_mcp/auth.py),
+# never as the secret: this spec is written into Claude's own config, which is not owner-only.
 function observer_mcp_spec(mcp_dir::AbstractString, python_bin::AbstractString,
-                           api_url::AbstractString)::Dict{String,Any}
+                           api_url::AbstractString;
+                           token_file::AbstractString = api_token_path())::Dict{String,Any}
     Dict{String,Any}("command" => String(python_bin),
                      "args"    => ["-m", "cecelia_mcp.server"],
                      "env"     => Dict{String,Any}("PYTHONPATH" => String(mcp_dir),
-                                                   "CECELIA_API_URL" => String(api_url)))
+                                                   "CECELIA_API_URL" => String(api_url),
+                                                   "CECELIA_API_TOKEN_FILE" => String(token_file)))
 end
 
 # The `--mcp-config` file shape (`{mcpServers: {<name>: <spec>}}`) — what the spawned agent loads.

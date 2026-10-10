@@ -37,6 +37,7 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
+from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
@@ -216,7 +217,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
             url += "?" + urllib.parse.urlencode(q)
     data = None
     # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude"}
+    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **auth_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"

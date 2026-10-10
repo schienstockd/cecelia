@@ -448,7 +448,7 @@ end
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
-    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab"]
+    STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab", "/api/auth"]
 
     # Would genuinely restart/shut down/spawn a worker if called with an empty body. Their PRESENCE is
     # still pinned by the inventory half; only the live call is skipped.

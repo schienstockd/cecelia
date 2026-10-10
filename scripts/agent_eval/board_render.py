@@ -32,6 +32,8 @@ import urllib.parse
 from websockets.sync.client import connect
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "mcp"))
+from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
 DIST = REPO / "frontend" / "dist"
 # POSTs a board's plots make that read (or only fill the copy's own card cache)
 READ_POSTS = ("/api/plot_data", "/api/labels/by_category", "/api/cell_cards", "/api/motif_cards",
@@ -164,6 +166,11 @@ def _session(cdp: _Cdp, api: str, project_uid: str, boards: list[str], image_uid
     cdp.call("Network.enable")
     cdp.call("Network.setBlockedURLs", {"urls": ["ws://*", "wss://*"]})   # no live session: no pairing, no pushes
     cdp.call("Fetch.enable", {"patterns": [{"urlPattern": f"{api.rstrip('/')}/*"}]})
+    # The API only answers its own user (app/src/api_token.jl): give this browser the sign-in cookie a
+    # launch link would have set, so the page's own /api fetches pass the gate.
+    token = auth_headers().get("Authorization", "").removeprefix("Bearer ")
+    cdp.call("Network.setCookie", {"name": f"cecelia_auth_{urllib.parse.urlsplit(api).port or 80}",
+                                   "value": token, "url": api.rstrip("/") + "/", "httpOnly": True})
     cdp.call("Emulation.setDeviceMetricsOverride", VIEWPORT)
     q = urllib.parse.urlencode({"project": project_uid, "images": ",".join(image_uids)})
     cdp.call("Page.enable")

@@ -25,6 +25,7 @@ import string
 import time
 
 from cecelia_mcp import gating_views as gv
+from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
 from cecelia_mcp.wsclient import api_url_to_ws
 
@@ -183,7 +184,8 @@ class AutonomousClient:
         from websockets.sync.client import connect
         seen: list[dict] = []
         try:
-            with connect(api_url_to_ws(self.base_url), open_timeout=5) as ws:
+            with connect(api_url_to_ws(self.base_url), open_timeout=5,
+                         additional_headers=auth_headers()) as ws:
                 ws.send(json.dumps(message))
                 deadline = time.time() + wait_s
                 while time.time() < deadline:

@@ -22,6 +22,7 @@ const RESTART_EXIT_CODE = 42
 # script runs without Cecelia loaded.
 include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
 include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
+include(joinpath(@__DIR__, "..", "app", "src", "api_token.jl"))   # the backend only answers its token
 
 # The backend's OWN children — napari, the preview worker, Pluto. Killing the backend does not take them
 # with it (they are grandchildren, in their own process groups), and only the in-app Quit/Restart runs
@@ -157,6 +158,7 @@ function _ask_backend_to_quit(port::Integer; secs::Real = 2)::Bool
     try
         s = Sockets.connect(Sockets.localhost, port)
         write(s, "POST /api/app/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\n" *
+                 "Authorization: Bearer $(something(read_api_token(), ""))\r\n" *
                  "Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
         ok = Ref(false)
         t = Timer(_ -> (try; close(s); catch; end), secs)
@@ -221,6 +223,10 @@ function supervise()
     # Before either child starts: both inherit the slot through the env this sets.
     slot = resolve_port_slot!()
     slot == 0 || @info "[dev] using port slot $slot" backend = service_port(:backend) frontend = service_port(:frontend)
+    # Created here rather than waiting for the backend, so the sign-in link can be printed up front.
+    # One visit sets a cookie that lasts a year; after that plain http://localhost:<port> works.
+    tok = ensure_api_token!()
+    @info "[dev] sign in once → $(api_launch_url("http://localhost:$(service_port(:frontend))", tok))"
 
     julia = Base.julia_cmd().exec[1]   # this julia's executable; child gets its own flags (-t auto, Revise)
     workdir = @__DIR__                 # api/ of the worktree the server currently runs from

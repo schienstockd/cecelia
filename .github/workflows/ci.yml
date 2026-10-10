@@ -255,7 +255,16 @@ jobs:
             || { echo "server never became healthy"; cat server.log; exit 1; }
           echo
           echo "== / (server-served frontend) =="
-          curl -kfsS -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost:8080/
+          # The API token gate (app/src/api_token.jl): without the sign-in cookie the page and the API
+          # answer 401; the launch link sets the cookie and then both serve. No .env on CI → ~/.cecelia.
+          code=$(curl -ks -o /dev/null -w "%{http_code}" https://localhost:8080/api/diagnostics)
+          [ "$code" = 401 ] || { echo "API answered $code without the token — gate is open"; exit 1; }
+          tok=$(cat ~/.cecelia/api-token)
+          curl -ksS -c jar -o /dev/null "https://localhost:8080/api/auth?token=$tok"
+          curl -kfsS -b jar -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost:8080/ \
+            || { echo "frontend not served after sign-in"; exit 1; }
+          curl -kfsS -H "Authorization: Bearer $tok" -o /dev/null https://localhost:8080/api/diagnostics \
+            || { echo "API refused the Bearer token"; exit 1; }
           pixi run stop || true
 
   # ── Python + MCP ──────────────────────────────────────────────────────────────────────────────

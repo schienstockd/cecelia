@@ -95,6 +95,9 @@ end
     @test srv["args"] == ["-m", "cecelia_mcp.server"]
     @test srv["env"]["PYTHONPATH"] == "/repo/mcp"
     @test srv["env"]["CECELIA_API_URL"] == "http://127.0.0.1:8080"
+    # the API token goes in as a PATH — the secret itself must never land in Claude's config
+    @test srv["env"]["CECELIA_API_TOKEN_FILE"] == Cecelia.api_token_path()
+    @test !haskey(srv["env"], Cecelia.API_TOKEN_ENV)
     # the wrapper is built FROM the spec — one source of truth for both the --mcp-config file and
     # `claude mcp add-json` (which takes the bare spec)
     @test srv == Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")

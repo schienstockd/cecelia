@@ -20,13 +20,17 @@
 # What does NOT live here: chains (Phase 2 — the executor moves with them), background jobs (D8 — they
 # stay in the app), and the task preview (D7 — it must never queue behind a full run).
 
-# Which Cecelia a runner belongs to. Several users can run Cecelia on one machine (app/src/ports.jl),
-# and a runner executes whatever is submitted with ITS user's file access — so the client sends its
-# config dir on every control POST and a runner refuses one that is not its own. Reported on /ping too,
-# so `runner_launch!` can say plainly that it found someone else's runner.
-const RUNNER_OWNER_HEADER = "X-Cecelia-Config-Dir"
-_runner_foreign_caller(req::HTTP.Request)::Bool =
-    (d = HTTP.header(req, RUNNER_OWNER_HEADER, ""); !isempty(d) && d != config_dir())
+# Who may drive a runner. It executes whatever is submitted with ITS user's file access, and loopback
+# is shared by every account on the machine — so every route but `/ping` needs the API token
+# (app/src/api_token.jl), the same one the backend checks. The backend hands it over in the env; a
+# standalone runner reads (or creates) the file. `/ping` stays open because it is how a client tells
+# "nothing there" from "someone else's runner" — it reports `configDir` for exactly that.
+# Empty = not serving (tests call the handler directly).
+const _RUNNER_TOKEN = Ref("")
+_runner_open_route(path::AbstractString)::Bool = path == "/ping"
+_runner_authorized(req::HTTP.Request)::Bool =
+    isempty(_RUNNER_TOKEN[]) ||
+    token_authorized(_RUNNER_TOKEN[], HTTP.header(req, "Authorization", ""), "", 0)
 
 # Bumped whenever an ADOPTED older runner would answer differently — a changed reply shape, a changed
 # route set, OR a bug fixed inside the runner. Same behavioural rule as `PREVIEW_PROTOCOL`, and for the
@@ -34,7 +38,8 @@ _runner_foreign_caller(req::HTTP.Request)::Bool =
 # would not want served from old code has to move it.
 #
 # 1: initial — tasks only, no chains, no on-disk spool.
-const RUNNER_PROTOCOL = 1
+# 2: every route but /ping needs the API token. An adopted protocol-1 runner answers anyone.
+const RUNNER_PROTOCOL = 2
 
 # ── Subscriber fan-out ────────────────────────────────────────────────────────
 # Per-subscriber bounded queue drained by its own task, exactly as `api/src/server.jl` does. A task
@@ -395,9 +400,6 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
                                      seq    = log_ring_seq(_runner_log_ring),
                                      ringId = log_ring_id(_runner_log_ring)))
         elseif req.method == "POST"
-            # `ok = false` is the existing "a live runner said no" answer: the caller runs it in-process.
-            _runner_foreign_caller(req) &&
-                return _json(200, (; ok = false, error = "this task runner belongs to another Cecelia user"))
             route == "/submit"       && return _runner_submit(body_bytes)
             route == "/cancel"       && return _runner_cancel(body_bytes)
             route == "/submit-chain" && return _runner_submit_chain(body_bytes)
@@ -418,6 +420,18 @@ end
 # concern here and not a copied precaution.
 function _runner_stream(stream::HTTP.Stream)
     req = stream.message
+    if !_runner_open_route(HTTP.URI(req.target).path) && !_runner_authorized(req)
+        read(stream)
+        # A refused POST answers `ok = false` — the existing "a live runner said no", on which the
+        # caller runs the task in-process — rather than an error that reads as "runner gone".
+        status, body = req.method == "POST" ?
+            _json(200, (; ok = false, error = "not authorized for this task runner")) :
+            _json(401, (; error = "not authorized for this task runner"))
+        HTTP.setstatus(stream, status)
+        HTTP.setheader(stream, "Content-Type" => "application/json")
+        HTTP.startwrite(stream)
+        return write_http_body!(stream, body)
+    end
     if HTTP.WebSockets.isupgrade(req)
         HTTP.WebSockets.upgrade(_runner_events, stream; check_origin = (_, _) -> true)
         return
@@ -451,6 +465,8 @@ function runner_serve(; port::Int = service_port(:runner), host::AbstractString 
     _RUNNER_STARTED_AT[]  = time()
     _RUNNER_COMMIT[]      = _runner_git_short()
     _RUNNER_BOUND_PORT[]  = port
+    _RUNNER_TOKEN[]       = ensure_api_token!()
+    ENV[API_TOKEN_ENV]    = _RUNNER_TOKEN[]   # a task's own client (cecelia_client.py) inherits it
     # The chain event bus is in-process, so a chain executing here fires its events here. Same builder
     # the API server uses, so the frames are byte-identical and it can relay them untranslated.
     subscribe_chain_frames!(runner_emit)

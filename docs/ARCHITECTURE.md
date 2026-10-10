@@ -727,15 +727,37 @@ computed — never hardcode a number.
   aims at another user's Cecelia.
 - **Per-service overrides still win:** `CECELIA_PORT`, `CECELIA_FRONTEND_PORT`,
   `CECELIA_PREVIEW_PORT`, `CECELIA_RUNNER_PORT`, `CECELIA_PLUTO_PORT`.
-- **Ownership:** the runner reports its config dir on `/ping` and refuses control POSTs from another
-  config dir (`X-Cecelia-Config-Dir`), and `runner_launch!` will not adopt a foreign runner. The other
-  children are started by their own backend and reached only on its slot.
-- **Not isolation.** The ports are unauthenticated loopback. Another account on the same machine can
-  still reach your backend if it knows the port. Slots stop the *collisions*, not access.
+- **Ownership:** the runner reports its config dir on `/ping`, and `runner_launch!` will not adopt or
+  stop a foreign runner. *Access* is the API token's job (next section): slots stop collisions, the
+  token stops another account from using your ports.
 
 The runner's port **deliberately outlives the API server**, so two checkouts that share a
 `CECELIA_DEV_DIR` (a worktree with a copied `.env`) share it too and cannot both run `pixi run dev`.
 They also share the single-instance lock and the sticky slot. The second one's runner stands down with
 a one-line message rather than a stack trace; override with `CECELIA_RUNNER_PORT` if you genuinely need
 two.
+
+### API token — only the launching user gets in
+Loopback is shared by every account on the machine, and the backend answers
+`Access-Control-Allow-Origin: *`. Without a gate, another user on a shared workstation, or any web page
+open in your browser, could drive Cecelia as you: read and write projects, run tasks, use the debug
+REPL. So every port answers only requests carrying the **API token** (`app/src/api_token.jl`):
+
+- **The secret:** `<config_dir>/api-token`, 32 random bytes, mode 0600 (on Windows the per-user profile
+  ACL). It is created by the first backend (or `pixi run dev`) and kept across restarts. Delete it to
+  rotate; every browser then signs in again.
+- **Programmatic clients** send `Authorization: Bearer <token>`. They all run as you and read the file,
+  or get it from the env. The backend exports `CECELIA_API_TOKEN` to everything it spawns (runner,
+  preview worker, task subprocesses). The observer MCP registration passes the file *path*
+  (`CECELIA_API_TOKEN_FILE`), never the secret, because Claude's config is not owner-only.
+- **The browser** signs in once through the launch link `/api/auth?token=…`, which `app.py` opens and
+  `pixi run dev` prints. It sets an HttpOnly, `SameSite=Lax` cookie named per backend port
+  (`cecelia_auth_<port>`), valid for a year. Lax: a cross-site page's fetch or WebSocket never carries
+  it. The link lives under `/api/` so Vite's dev proxy forwards it.
+- **Gated everywhere:** the backend checks in `handle_stream` (router, static frontend, binary routes and
+  WS upgrade alike). Only `/api/health` (launcher polling) and `/api/auth` are open. The runner gates
+  every route but `/ping`, and refuses a POST with `ok = false`, so the task runs in-process. The
+  preview worker refuses the WS handshake and fails closed with no token. Pluto keeps its own secret.
+- **Refused:** a browser navigation gets a short "open Cecelia from its launcher" page. API calls get
+  401 JSON. In dev, where Vite serves the page without the gate, the header chip reads *Not signed in*.
 

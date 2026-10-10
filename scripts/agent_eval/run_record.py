@@ -42,6 +42,8 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parents[1] / "mcp"))
+from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
 
 import app_project  # noqa: E402
 import stage_boards  # noqa: E402
@@ -344,14 +346,15 @@ def render(run: dict, rec: dict, dec: dict, why: dict | None, caps: dict, notes:
 
 def _get(api: str, path: str, params: dict, timeout: int = 120):
     """A JSON GET on the app's API (no client header: the harness, not Claude, is the caller)."""
-    with urllib.request.urlopen(f"{api.rstrip('/')}{path}?{urllib.parse.urlencode(params)}",
-                                timeout=timeout) as r:
+    req = urllib.request.Request(f"{api.rstrip('/')}{path}?{urllib.parse.urlencode(params)}",
+                                 headers=auth_headers())
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _post(api: str, path: str, body: dict):
     req = urllib.request.Request(api.rstrip("/") + path, data=json.dumps(body).encode("utf-8"),
-                                 headers={"Content-Type": "application/json"}, method="POST")
+                                 headers={"Content-Type": "application/json", **auth_headers()}, method="POST")
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode("utf-8"))
 

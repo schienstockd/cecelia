@@ -26,11 +26,13 @@
 using HTTP, JSON3, Dates, Printf
 include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))   # Base-only, for the port slot
 include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
+include(joinpath(@__DIR__, "..", "app", "src", "api_token.jl"))   # the server only answers its token
 
 const HOST      = get(ENV, "CECELIA_HOST", "127.0.0.1")
 const PORT      = string(service_port(:backend; slot = current_port_slot()))
 const HTTP_BASE = "http://$HOST:$PORT"
 const WS_URL    = "ws://$HOST:$PORT/ws"
+const AUTH      = [api_auth_header(something(read_api_token(), ""))]
 
 # Append-only mode when asked, or automatically when stdout isn't a terminal
 # (so `pixi run console | tee run.log` produces a clean, un-escaped log).
@@ -474,7 +476,7 @@ end
 
 function refresh_snapshot!()
     try
-        r = HTTP.get("$HTTP_BASE/api/tasks"; connect_timeout=2, readtimeout=3, retry=false)
+        r = HTTP.get("$HTTP_BASE/api/tasks", AUTH; connect_timeout=2, readtimeout=3, retry=false)
         _reconcile_snapshot!(JSON3.read(String(r.body)))
         return true
     catch
@@ -527,7 +529,7 @@ end
 function refresh_recent!(; prime::Bool = false)
     try
         since = HTTP.escapeuri(RECENT_SINCE[])
-        r = HTTP.get("$HTTP_BASE/api/tasks/recent?since=$since";
+        r = HTTP.get("$HTTP_BASE/api/tasks/recent?since=$since", AUTH;
                      connect_timeout=2, readtimeout=3, retry=false, status_exception=false)
         # An older server has no such route — degrade to WS-only counting rather than erroring.
         r.status == 200 || return false
@@ -541,7 +543,7 @@ end
 # ── Pool occupancy snapshot (GET /api/pools → limit + running + queued per pool) ──
 function refresh_pools!()
     try
-        r = HTTP.get("$HTTP_BASE/api/pools"; connect_timeout=2, readtimeout=3, retry=false)
+        r = HTTP.get("$HTTP_BASE/api/pools", AUTH; connect_timeout=2, readtimeout=3, retry=false)
         rows = JSON3.read(String(r.body))
         lock(LOCK) do
             empty!(POOLS)
@@ -813,7 +815,7 @@ function run_console()
     while true
         connected = Ref(true)
         try
-            HTTP.WebSockets.open(WS_URL; connect_timeout=3) do ws
+            HTTP.WebSockets.open(WS_URL; headers=AUTH, connect_timeout=3) do ws
                 # A (re)connect on localhost means the server (re)started — its task ids and in-flight
                 # set are gone, so drop our stale view and re-seed from the fresh snapshot. Otherwise
                 # tasks from the previous server session would linger forever (we only ever add rows).

@@ -17,6 +17,7 @@ import threading
 
 import websockets
 
+from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.monitor import SessionMonitor, normalize_frame
 
 
@@ -47,7 +48,8 @@ def api_url_to_ws(api_url: str) -> str:
 
 async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event | None = None) -> None:
     """Connect and stream frames into the monitor forever, reconnecting on drop. Best-effort."""
-    async for ws in websockets.connect(ws_url, ping_interval=20, open_timeout=5):
+    async for ws in websockets.connect(ws_url, ping_interval=20, open_timeout=5,
+                                       additional_headers=auth_headers()):
         try:
             async for raw in ws:
                 feed_raw(monitor, raw)

@@ -697,6 +697,11 @@ Revise reloads function bodies on save. Struct/macro changes still need a restar
 URL. The slot is sticky per config dir, so `pixi run stop` and `pixi run console` find it. Details:
 `docs/ARCHITECTURE.md` → *Ports*.
 
+**"Not signed in" in the header?** Every Cecelia port only answers the user who launched it (the API
+token). `pixi run dev` prints `[dev] sign in once → http://localhost:…/api/auth?token=…`. Open it once
+per browser; the cookie lasts a year. Scripts and tools send `Authorization: Bearer $(cat
+<config_dir>/api-token)`. Details: `docs/ARCHITECTURE.md` → *API token*.
+
 **Testing HTTP/2 locally** — installed apps default to HTTPS + HTTP/2; a dev checkout defaults
 to plain HTTP/1.1 (Vite's proxy is HTTP/1.1-only both ways, so ALPN downgrades under
 `pixi run dev` and TLS earns nothing). Set `CECELIA_TLS=1` against `pixi run prod` from a dev
