@@ -256,7 +256,9 @@ def _cellpose_imports():
 #:     cellpose 3 model is now previewed in the `cellpose-v3` env and adoption has to match the env to
 #:     the model (#1555). Also a fix inside the worker: cellpose 4 refuses a model name it does not know
 #:     instead of loading `cpsam_v2` under it.
-PROTOCOL = 18
+#: 19: the socket needs the API token (`_authorized`). A protocol-18 worker answers any account on
+#:     the machine — run compute over your files and hand back the result — so it must be replaced.
+PROTOCOL = 19
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -1521,9 +1523,32 @@ async def handle(ws):
         await ws.send(json.dumps(reply))
 
 
+#: The API token (app/src/api_token.jl), handed over by the backend in the env. Loopback is shared by
+#: every account on the machine, and this worker runs compute over whatever paths it is sent, with
+#: YOUR file access — so the handshake must carry `Authorization: Bearer <token>`. No token → every
+#: connection is refused: fail closed rather than serve anyone.
+_TOKEN = os.environ.get("CECELIA_API_TOKEN", "").strip()
+
+
+def _authorized(authorization: str | None, token: str = _TOKEN) -> bool:
+    import hmac
+    return bool(token) and hmac.compare_digest((authorization or "").encode("utf-8"),
+                                               f"Bearer {token}".encode("utf-8"))
+
+
+def _check_token(connection, request):
+    from http import HTTPStatus
+    if not _authorized(request.headers.get("Authorization")):
+        return connection.respond(HTTPStatus.UNAUTHORIZED, "not authorized for this preview worker\n")
+    return None
+
+
 async def main():
     import websockets
-    async with websockets.serve(handle, HOST, PORT, max_size=WS_MAX_SIZE):
+    if not _TOKEN:
+        print("preview worker: no CECELIA_API_TOKEN — refusing every connection", flush=True)
+    async with websockets.serve(handle, HOST, PORT, max_size=WS_MAX_SIZE,
+                                process_request=_check_token):
         print(f"preview worker ready on ws://{HOST}:{PORT}", flush=True)
         await asyncio.Future()
 

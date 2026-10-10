@@ -30,11 +30,13 @@ import subprocess
 import sys
 import time
 import urllib.error
-import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO / "mcp"))
+from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
+from cecelia.utils.loopback import open_url  # noqa: E402 — http or https, whichever the app serves
 
 import trace_view  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
@@ -114,9 +116,9 @@ def run_app_argv(guide: str, entry: dict, *, root: pathlib.Path, projects_dir: s
 def app_status(api_url: str, timeout: float = 5) -> dict | None:
     """The running app's `/api/diagnostics` (its projects dir, its commit), or None when it is down."""
     try:
-        with urllib.request.urlopen(f"{api_url.rstrip('/')}/api/diagnostics", timeout=timeout) as r:
+        with open_url(api_url.rstrip("/"), "/api/diagnostics", headers=auth_headers(), timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, OSError, ValueError):   # ConnectionError (nothing answers) is an OSError
         return None
 
 

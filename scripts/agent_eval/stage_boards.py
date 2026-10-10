@@ -16,10 +16,10 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.parse
-import urllib.request
 
 import app_project
 import board_render
+from board_render import auth_headers, open_url   # the token + http-or-https (cecelia_mcp.auth / cecelia.utils.loopback)
 
 # which stage a decision's function belongs to (None = no board)
 _STAGE = {"segment": "segment", "tracking": "track", "behaviour.hmm": "hmm",
@@ -118,7 +118,7 @@ def _cluster_pops(api: str, project_uid: str, image_uid: str, value_name: str, p
     q = urllib.parse.urlencode({"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
                                 "popType": pop_type})
     try:
-        with urllib.request.urlopen(f"{api.rstrip('/')}/api/gating/popmap?{q}", timeout=60) as r:
+        with open_url(api.rstrip("/"), f"/api/gating/popmap?{q}", headers=auth_headers(), timeout=60) as r:
             return len(((json.loads(r.read().decode("utf-8")) or {}).get("tree") or {}).get("populations") or [])
     except (urllib.error.URLError, OSError, ValueError):
         return -1                      # unknown: keep the views, the render will say what it shows
@@ -149,10 +149,10 @@ def _add_board(api: str, project_uid: str, spec: dict) -> str | None:
     for plots in spec["candidates"]:
         body = {"projectUid": project_uid, "name": spec["name"], "plots": plots,
                 "compareBy": spec.get("compareBy", "")}
-        req = urllib.request.Request(api.rstrip("/") + "/api/boards/add", data=json.dumps(body).encode("utf-8"),
-                                     headers={"Content-Type": "application/json"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=120):
+            with open_url(api.rstrip("/"), "/api/boards/add", data=json.dumps(body).encode("utf-8"),
+                          headers={"Content-Type": "application/json", **auth_headers()}, method="POST",
+                          timeout=120):
                 return None
         except urllib.error.HTTPError as e:
             msg = (json.loads(e.read().decode("utf-8") or "{}") or {}).get("error", f"HTTP {e.code}")

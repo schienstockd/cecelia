@@ -3,7 +3,7 @@ work, wait for it, draw gates. Never wired into a user's interactive session; th
 (`scripts/agent_eval/run_app.py`) starts it with ``CECELIA_MCP_PROJECT`` set to a disposable project.
 The guard and its allow-list live in ``cecelia_mcp.autonomous``.
 
-Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp python -m cecelia_mcp.autonomous_server
+Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp:python python -m cecelia_mcp.autonomous_server
 """
 from __future__ import annotations
 

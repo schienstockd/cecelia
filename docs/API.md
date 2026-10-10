@@ -77,7 +77,8 @@ Settings → Debug console UI shows a note to this effect.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | liveness |
+| GET | `/api/health` | liveness — open, no API token needed |
+| GET | `/api/auth` | sign-in link: `?token=…[&next=/path]` sets the browser's API-token cookie, 302 to `next`. Open. See `docs/ARCHITECTURE.md` → *API token* |
 | GET/POST | `/api/push/target?projectUid` | **push pairing** (BIDIR Part 5, `docs/todo/BIDIR_PUSH_PLAN.md` PR #1). **GET** → `{paired: bool, socketPath?, sessionLabel?, pairedAt?, pairedFromPid?}` — the "am I paired?" chip. The **token is never returned** (delivery credential; lives only in `<proj>/settings/push_target.json` on disk). **POST** `{projectUid, socketPath, token, sessionLabel?, pairedFromPid?}` writes/overwrites the record. Called by the MCP client's auto-pair middleware on any tool with a `project_uid` — so a fresh Claude Code session pairs on its first call, no user ceremony — and by the explicit `register_push_target` MCP tool for manual re-pair. Consumed by `push_writer.jl` (PR #2) — the writer reads the record and pushes a plain-text capture notification directly to the paired Claude session's inbox socket. |
 | POST | `/api/push/target/clear` | `{projectUid}` → deletes the push-pairing record and broadcasts `push_target:changed`; `{ok, cleared}` (`api_push_target_clear`, `api/src/push_api.jl`) |
 | POST | `/api/push/target/probe` | `{projectUid}` → test-connects the paired socket, deleting the record if dead; `{ok, paired, alive, reason?}` (`api_push_target_probe`, `api/src/push_api.jl`) |
@@ -291,7 +292,7 @@ scheduler: **`movie:batch`** `{taskId,projectUid,imageUids,config,fileAttrs,fps[
 same `task:progress/log/status/result` (keyed by the client's `taskId`), so it shows in the task list with
 a progress bar + Cancel. `task:cancel` also flags it (stops after the current image) — the movie
 recorder is serialised in `api/`, not a pooled scheduler task. See `docs/todo/ANIMATION_PLAN.md` → F1.3.
-**`movie:record`** `{taskId,projectUid,imageUid[,keyframes,fps,sizeX,sizeY,suffix,titleCard,apiUrl]}`
+**`movie:record`** `{taskId,projectUid,imageUid[,keyframes,fps,sizeX,sizeY,suffix,titleCard]}`
 (`handle_movie_record` → `run_single_movie`) records ONE movie on the same rail: `keyframes` present ⇒
 the interpolated animation, absent ⇒ the open image's T-sweep. Per-frame `task:progress` arrives from the
 renderer; `task:cancel` stops it **mid-render**. `suffix` is a filename addition so two movies of one

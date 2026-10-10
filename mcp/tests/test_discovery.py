@@ -128,7 +128,9 @@ class ServerToggleTest(unittest.TestCase):
                 "'params_doc': server.get_module_params.__doc__}))")
         out = subprocess.run([sys.executable, "-c", code], cwd=MCP_DIR, capture_output=True, text=True,
                              encoding="utf-8", check=True,
-                             env={**os.environ, "PYTHONPATH": str(MCP_DIR), discovery.DISCOVERY_ENV: env})
+                             env={**os.environ, discovery.DISCOVERY_ENV: env,
+                                  # mcp/ + python/ (`cecelia.utils.loopback`), as the app registers it
+                                  "PYTHONPATH": os.pathsep.join([str(MCP_DIR), str(MCP_DIR.parent / "python")])})
         return json.loads(out.stdout)
 
     def test_on_registers_the_catalogue_and_says_when_to_read_it(self):

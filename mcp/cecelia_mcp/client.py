@@ -37,7 +37,8 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
-from cecelia_mcp import loopback
+from cecelia.utils import loopback
+from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
@@ -212,7 +213,7 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
     raw bytes) out, the API's `{error: …}` surfaced as `ApiError`. The caller owns its allow-list.
 
     On loopback the registered scheme may be stale (TLS toggled since setup): a connection-level
-    failure retries once with the other scheme and remembers the one that answered — see loopback.py.
+    failure retries once with the other scheme and remembers the one that answered — see cecelia/utils/loopback.py.
     An HTTP error status is an answer, not a scheme problem, so it never retries."""
     query = ""
     if params:
@@ -221,34 +222,26 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
             query = "?" + urllib.parse.urlencode(q)
     data = None
     # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude"}
+    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **auth_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
-    errors = []
-    for base in loopback.candidates(loopback.resolve(base_url)):
-        req = urllib.request.Request(base + path + query, data=data, method=method, headers=headers)
-        ctx = loopback.ssl_context(base)
+    try:
+        with loopback.open_url(base_url, path + query, data=data, method=method, headers=headers,
+                               timeout=timeout) as resp:
+            payload = resp.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
         try:
-            with (urllib.request.urlopen(req, timeout=timeout, context=ctx) if ctx is not None
-                  else urllib.request.urlopen(req, timeout=timeout)) as resp:
-                payload = resp.read()
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")
-            try:
-                detail = json.loads(detail).get("error", detail)  # surface the API's {error: …}
-            except Exception:
-                pass
-            raise ApiError(e.code, detail) from e
-        except TimeoutError as e:  # the server took the connection: a slow answer, not a wrong scheme
-            raise ApiError(0, f"Cecelia API at {base} timed out after {timeout:g}s") from e
-        except (urllib.error.URLError, OSError) as e:  # refused / reset / TLS mismatch
-            errors.append(f"{base}: {getattr(e, 'reason', e)}")
-            continue
-        loopback.remember(base_url, base)
-        return payload if raw else json.loads(payload.decode("utf-8"))
-    raise ApiError(
-        0, f"cannot reach Cecelia API ({'; '.join(errors)}). Is Cecelia running?")
+            detail = json.loads(detail).get("error", detail)  # surface the API's {error: …}
+        except Exception:
+            pass
+        raise ApiError(e.code, detail) from e
+    except TimeoutError as e:  # the server took the connection: a slow answer, not a wrong scheme
+        raise ApiError(0, f"Cecelia API at {loopback.resolve(base_url)} timed out after {timeout:g}s") from e
+    except ConnectionError as e:
+        raise ApiError(0, f"cannot reach Cecelia API ({e}). Is Cecelia running?") from e
+    return payload if raw else json.loads(payload.decode("utf-8"))
 
 
 class DisallowedRoute(RuntimeError):

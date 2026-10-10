@@ -17,7 +17,8 @@ import threading
 
 import websockets
 
-from cecelia_mcp import loopback
+from cecelia.utils import loopback
+from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.monitor import SessionMonitor, normalize_frame
 
 
@@ -57,14 +58,15 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
     """Connect and stream frames into the monitor forever, reconnecting on drop. Best-effort.
 
     A connect that fails switches to the other scheme (ws ↔ wss) on loopback, so a registration made
-    before TLS was toggled still hears the app — see loopback.py. A drop after connecting reconnects on
+    before TLS was toggled still hears the app — see cecelia/utils/loopback.py. A drop after connecting reconnects on
     the same scheme."""
     urls = loopback.candidates(ws_url)
     i, delay = 0, 0.0
     while not (stop is not None and stop.is_set()):
         url = urls[i]
         try:
-            async with websockets.connect(url, ping_interval=20, open_timeout=5, **ssl_kwargs(url)) as ws:
+            async with websockets.connect(url, ping_interval=20, open_timeout=5,
+                                          additional_headers=auth_headers(), **ssl_kwargs(url)) as ws:
                 delay = 0.0
                 async for raw in ws:
                     feed_raw(monitor, raw)
@@ -72,6 +74,8 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
                         return
         except websockets.ConnectionClosed:
             pass
+        except websockets.InvalidStatus:   # refused (e.g. 401): it answered, so the scheme stays
+            delay = min(max(2 * delay, 0.5), 10.0)
         except (OSError, EOFError, asyncio.TimeoutError, websockets.InvalidHandshake):
             i = (i + 1) % len(urls)
             delay = min(max(2 * delay, 0.5), 10.0)

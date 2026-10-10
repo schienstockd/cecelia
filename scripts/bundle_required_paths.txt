@@ -28,7 +28,8 @@ pluto/Project.toml
 pluto/launch.jl
 
 # ── the observer MCP server ──────────────────────────────────────────────────────────────────────
-# Registered as `python -m cecelia_mcp.server` with PYTHONPATH=<install>/mcp (observer_mcp_spec).
+# Registered as `python -m cecelia_mcp.server` with PYTHONPATH=<install>/mcp + <install>/python
+# (observer_mcp_spec) — it imports cecelia.utils.loopback, listed with the app below.
 mcp/cecelia_mcp/server.py
 
 # ── the uninstallers ────────────────────────────────────────────────────────────────────────────
@@ -39,6 +40,8 @@ uninstall.ps1
 
 # ── the app itself ───────────────────────────────────────────────────────────────────────────────
 app.py
+# app.py (and the MCP) import it at launch: reaching the server on http or https.
+python/cecelia/utils/loopback.py
 api/src/server.jl
 app/src/Cecelia.jl
 python/cecelia/utils/zarr_utils.py

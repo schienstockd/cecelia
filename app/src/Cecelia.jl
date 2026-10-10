@@ -3,6 +3,7 @@ module Cecelia
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user
 export service_port, port_slot
+export read_api_token, ensure_api_token!, api_auth_header, api_launch_url
 export acquire_single_instance!, release_single_instance!, single_instance_lock_path, AlreadyRunningError
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models, cellpose_model_backend
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
@@ -268,6 +269,7 @@ export task_output_effect
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config_dir.jl")     # Base-only: also included standalone by api/dev.jl + api/portkill.jl
 include("ports.jl")          # Base-only port-slot resolver — same standalone loaders
+include("api_token.jl")      # Base-only API token (the loopback gate) — same standalone loaders
 include("config.jl")
 include("utils.jl")
 include("single_instance.jl")  # at-most-one Cecelia per host — before any HTTP/WS bind. D7 / P5.

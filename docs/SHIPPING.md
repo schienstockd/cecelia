@@ -177,7 +177,7 @@ OS-independent:
    | `python/` | `run_py` resolves helper modules under `python/cecelia/`, and the editable `cecelia` dep points there — without it every Python task fails |
    | `pluto/` | `api/src/notebooks_api.jl` includes `pluto/sysimage_stamp.jl` **at server load** — without it the API does not start at all |
    | `preview/` | the resident task-preview worker the backend spawns (`PREVIEW_WORKER`, :7656) |
-   | `mcp/` | the observer MCP server, registered as `python -m cecelia_mcp.server` with `PYTHONPATH=<install>/mcp` |
+   | `mcp/` | the observer MCP server, registered as `python -m cecelia_mcp.server` with `PYTHONPATH=<install>/mcp` plus `<install>/python` (for `cecelia.utils.loopback`) |
    | `scripts/` | the `pixi run models-fetch` / `ui-copy` tasks shipped in `pixi.toml` |
    | `LICENSE`, `THIRD_PARTY.md` | GPL-3 conveys with its license text and attributions |
 

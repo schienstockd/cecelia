@@ -448,3 +448,22 @@ class PreviewStoreLevelsTest(unittest.TestCase):
             s = 2 ** lv
             np.testing.assert_array_equal(np.asarray(levels[lv][:]), full[:, ::s, ::s],
                                           err_msg=f'level {lv}')
+
+
+class PreviewWorkerTokenTest(unittest.TestCase):
+    """The handshake needs the API token: the worker runs compute over the paths it is sent, with the
+    launching user's file access, and loopback is shared by every account on the machine."""
+
+    def setUp(self):
+        self.worker = _load_worker()
+
+    def test_only_the_bearer_token_passes(self):
+        ok = self.worker._authorized
+        self.assertTrue(ok('Bearer s3cret', token='s3cret'))
+        self.assertFalse(ok('Bearer wrong', token='s3cret'))
+        self.assertFalse(ok('s3cret', token='s3cret'))
+        self.assertFalse(ok(None, token='s3cret'))
+
+    def test_no_token_fails_closed(self):
+        self.assertFalse(self.worker._authorized('Bearer ', token=''))
+        self.assertFalse(self.worker._authorized(None, token=''))

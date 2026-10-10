@@ -554,17 +554,25 @@ end
 end
 
 # A runner reached through a slot collision may belong to another user: it reports its config dir,
-# and the client refuses to adopt it (`runner_launch!`) — the runner refuses its submits too.
+# and the client refuses to adopt it (`runner_launch!`) — and without our token it refuses our calls.
 @testset "Runner ownership" begin
     @test !Cecelia.runner_is_foreign(Dict{String,Any}())                               # pre-slot runner
     @test !Cecelia.runner_is_foreign(Dict{String,Any}("configDir" => config_dir()))
     @test Cecelia.runner_is_foreign(Dict{String,Any}("configDir" => "/home/someone-else/.cecelia"))
     @test Cecelia.runner_identity()["configDir"] == config_dir()
-    req(dir) = (r = Cecelia.HTTP.Request("POST", "/submit");
-                isnothing(dir) || Cecelia.HTTP.setheader(r, Cecelia.RUNNER_OWNER_HEADER => dir); r)
-    @test !Cecelia._runner_foreign_caller(req(nothing))
-    @test !Cecelia._runner_foreign_caller(req(config_dir()))
-    @test Cecelia._runner_foreign_caller(req("/home/someone-else/.cecelia"))
+    # The runner's gate: every route but /ping needs the API token as a Bearer header.
+    req(auth) = (r = Cecelia.HTTP.Request("POST", "/submit");
+                 isnothing(auth) || Cecelia.HTTP.setheader(r, "Authorization" => auth); r)
+    @test Cecelia._runner_authorized(req(nothing))            # not serving (token unset) → open
+    Cecelia._RUNNER_TOKEN[] = "s3cret"
+    try
+        @test !Cecelia._runner_authorized(req(nothing))
+        @test !Cecelia._runner_authorized(req("Bearer wrong!"))
+        @test Cecelia._runner_authorized(req("Bearer s3cret"))
+        @test Cecelia._runner_open_route("/ping") && !Cecelia._runner_open_route("/submit")
+    finally
+        Cecelia._RUNNER_TOKEN[] = ""
+    end
 
     # `runner_stop!` kills by port, so it must ask first: a runner answering with another config dir
     # is left alone. Stand-in runner = an HTTP server in THIS process — if the guard ever regresses,
@@ -586,4 +594,34 @@ end
     finally
         close(srv)
     end
+end
+
+# ── API token (app/src/api_token.jl) ──────────────────────────────────────
+# The loopback gate: only the account holding `<config_dir>/api-token` can drive Cecelia.
+@testset "API token" begin
+    withenv(Cecelia.API_TOKEN_ENV => nothing) do
+        mktempdir() do cfg
+            @test Cecelia.read_api_token(cfg) === nothing
+            tok = Cecelia.ensure_api_token!(cfg)
+            @test length(tok) == 64 && all(c -> c in "0123456789abcdef", tok)
+            @test Cecelia.ensure_api_token!(cfg) == tok              # kept across launches
+            @test Cecelia.read_api_token(cfg) == tok
+            # Owner-only. (Windows has no POSIX mode bits; the per-user profile ACL does that job.)
+            Sys.iswindows() || @test filemode(Cecelia.api_token_path(cfg)) & 0o077 == 0
+            @test !isfile(Cecelia.api_token_path(cfg) * ".tmp")
+            # A spawned child gets it in the env, which wins.
+            withenv(Cecelia.API_TOKEN_ENV => "fromenv") do
+                @test Cecelia.read_api_token(cfg) == "fromenv"
+            end
+        end
+    end
+    ok(auth, cookie; port = 8090) = Cecelia.token_authorized("abc123", auth, cookie, port)
+    @test ok("Bearer abc123", "")
+    @test !ok("Bearer abc12", "") && !ok("Bearer abc1234", "") && !ok("abc123", "")
+    @test ok("", "theme=dark; cecelia_auth_8090=abc123")
+    @test !ok("", "cecelia_auth_8080=abc123")                 # another instance's cookie
+    @test !ok("", "cecelia_auth_8090=nope") && !ok("", "")
+    @test !Cecelia.token_authorized("", "Bearer ", "", 8090)    # no token → nothing passes
+    @test Cecelia.api_launch_url("http://localhost:5183/", "t") == "http://localhost:5183/api/auth?token=t"
+    @test Cecelia.api_auth_header("t") == ("Authorization" => "Bearer t")
 end

@@ -313,3 +313,4 @@ include(joinpath(@__DIR__, "suite", "project_ownership.jl"))
 # ── Authorship stamps (persistence audit gap C) ───────────────────
 # Blackboard / notebooks / chains record {profile, via}; task + chain requests carry the asker.
 include(joinpath(@__DIR__, "suite", "authorship.jl"))
+include(joinpath(@__DIR__, "suite", "api_token_gate.jl"))   # the loopback gate: only the launching user gets in

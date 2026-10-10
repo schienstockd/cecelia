@@ -38,12 +38,14 @@ const statusLabel: Record<string, string> = {
   connecting:   'Connecting…',
   disconnected: 'Disconnected',
   error:        'Connection error',
+  signedOut:    'Not signed in',
 }
 const statusTip: Record<string, string> = {
   connected:    'Julia backend is running and reachable.',
   connecting:   'Attempting to connect to the Julia backend.',
   disconnected: 'Not connected. Check that the Julia server is running (pixi run dev).',
   error:        'WebSocket error. See the console below for details.',
+  signedOut:    'Open the sign-in link printed in the terminal that started Cecelia.',
 }
 </script>
 
@@ -283,8 +285,10 @@ const statusTip: Record<string, string> = {
 .ws-badge.connecting .dot { background: #fbbf24; }
 .ws-badge.disconnected { background: #27272a55; color: #71717a; }
 .ws-badge.disconnected .dot { background: #52525b; }
-.ws-badge.error        { background: #7f1d1d33; color: #fca5a5; }
-.ws-badge.error .dot   { background: var(--cc-sev-fail); box-shadow: 0 0 5px var(--cc-sev-fail); }
+.ws-badge.error,
+.ws-badge.signedOut    { background: #7f1d1d33; color: #fca5a5; }
+.ws-badge.error .dot,
+.ws-badge.signedOut .dot { background: var(--cc-sev-fail); box-shadow: 0 0 5px var(--cc-sev-fail); }
 
 .update-badge {
   display: flex;

@@ -13,7 +13,9 @@ chain run. That is the arc in [`docs/ai-assist/OBSERVER.md`](../docs/ai-assist/O
 
 It's a **standalone stdio process** (Python + the [MCP SDK](https://github.com/modelcontextprotocol/python-sdk)'s `MCPServer`)
 that talks to the Julia API over HTTP. It is separate infra, not part of the `cecelia` Python package
-(one language per top-level dir).
+(one language per top-level dir) — but it imports one stdlib helper from it,
+`cecelia.utils.loopback` (reach the app on whichever scheme it serves), so `python/` is on its
+`PYTHONPATH` next to `mcp/`.
 
 ## Layout
 
@@ -24,7 +26,6 @@ mcp/
     guidance.py  # what the server TELLS a session about its own toolset (see below)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
-    loopback.py  # http↔https on loopback: self-signed cert accepted, stale scheme retried
     server.py    # MCPServer — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked

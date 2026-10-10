@@ -19,7 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from cecelia_mcp import client, loopback, wsclient
+from cecelia.utils import loopback
+from cecelia_mcp import client, wsclient
 from cecelia_mcp.monitor import SessionMonitor
 
 
@@ -120,6 +121,16 @@ class LoopbackSchemeTest(unittest.TestCase):
             client.http_json(f"http://127.0.0.1:{port}", "GET", "/api/x")
         self.assertEqual(cm.exception.status, 0)
         self.assertIn("https://", cm.exception.message)
+
+    def test_open_url_names_every_url_tried(self):
+        # the transport the agent_eval scripts share with http_json: nothing listening → ConnectionError
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        port = srv.server_address[1]
+        srv.server_close()
+        with self.assertRaises(ConnectionError) as cm:
+            loopback.open_url(f"http://127.0.0.1:{port}", "/api/x", timeout=5)
+        self.assertIn(f"http://127.0.0.1:{port}", str(cm.exception))
+        self.assertIn(f"https://127.0.0.1:{port}", str(cm.exception))
 
     def test_http_errors_are_not_retried(self):
         # an API answer (404 here) is not a scheme problem

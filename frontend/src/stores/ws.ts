@@ -19,7 +19,9 @@ import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
 import { writtenImageVersion } from '../utils/taskResultVersion'
 
-export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
+// `signedOut`: the backend is up but refuses this browser — it has no sign-in cookie (the API token,
+// app/src/api_token.jl). Only reachable in dev, where Vite serves the page without the backend's gate.
+export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error' | 'signedOut'
 
 type MessageHandler = (data: Record<string, unknown>) => void
 const handlers = new Map<string, MessageHandler[]>()
@@ -57,6 +59,15 @@ export const useWsStore = defineStore('ws', () => {
   // Same idea as the console's SEEN_TERM. Cleared per id, so `task:restart` on that id works normally.
   const recovered = new Set<string>()
   const OUTCOME_POLL_MS = 3000
+
+  // A refused upgrade looks like any failed socket, so ask a plain route: 401 means the backend is up
+  // and this browser is not signed in. Keeps reconnecting — signing in from another tab then just works.
+  async function detectSignedOut() {
+    try {
+      const r = await fetch('/api/diagnostics')
+      if (r.status === 401 && status.value !== 'connected') status.value = 'signedOut'
+    } catch { /* backend down — 'disconnected' already says so */ }
+  }
 
   function connect() {
     // Only skip if already OPEN; do not skip if stuck in CONNECTING — the
@@ -126,6 +137,7 @@ export const useWsStore = defineStore('ws', () => {
       if (wasConnected) {
         useLogStore().warn('Connection to Julia backend lost — retrying in 3 s', { source: 'ws' })
       }
+      void detectSignedOut()
       scheduleReconnect()
     }
 
