@@ -31,6 +31,13 @@ logger.error = (msg, opts) => {
   logger.info(quiet, { timestamp: true })
 }
 
+// Ports come from the dev supervisor (`api/dev.jl`), which resolves this user's port slot and passes
+// both explicitly — several users can each run Cecelia on one machine (app/src/ports.jl). Standalone
+// `pixi run frontend` gets the slot-0 defaults. `strictPort`: on a taken port Vite would otherwise
+// quietly move to the next one, which may be another user's slot.
+const backendPort = process.env.CECELIA_PORT ?? '8080'
+const frontendPort = Number(process.env.CECELIA_FRONTEND_PORT ?? 5173)
+
 export default defineConfig({
   customLogger: logger,
   plugins: [vue()],
@@ -44,9 +51,12 @@ export default defineConfig({
   // so processing CSS costs nothing else.
   test: { css: true },
   server: {
+    host: '127.0.0.1',
+    port: frontendPort,
+    strictPort: true,
     proxy: {
-      '/ws': { target: 'ws://localhost:8080', ws: true, changeOrigin: false },
-      '/api': { target: 'http://localhost:8080', changeOrigin: false },
+      '/ws': { target: `ws://127.0.0.1:${backendPort}`, ws: true, changeOrigin: false },
+      '/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: false },
     },
   },
 })

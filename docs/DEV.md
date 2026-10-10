@@ -692,6 +692,11 @@ switch), so do NOT run `pixi run frontend` alongside `dev`. The standalone `pixi
 backend. `pixi run prod` runs the server without Revise (production). `pixi run stop` stops all by port.
 Revise reloads function bodies on save. Struct/macro changes still need a restart.
 
+**Another user already running Cecelia on this machine?** Nothing to do. `pixi run dev` takes the next
+**port slot** (8090/5183/…, then 8100/5193/…), logs `[dev] using port slot N`, and prints the frontend
+URL. The slot is sticky per config dir, so `pixi run stop` and `pixi run console` find it. Details:
+`docs/ARCHITECTURE.md` → *Ports*.
+
 **Testing HTTP/2 locally** — installed apps default to HTTPS + HTTP/2; a dev checkout defaults
 to plain HTTP/1.1 (Vite's proxy is HTTP/1.1-only both ways, so ALPN downgrades under
 `pixi run dev` and TLS earns nothing). Set `CECELIA_TLS=1` against `pixi run prod` from a dev

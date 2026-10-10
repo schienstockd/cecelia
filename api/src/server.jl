@@ -5,6 +5,13 @@ using Reseau: TLS
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
+# This user's port slot (app/src/ports.jl): inherited from the launcher when it resolved one, else
+# resolved here. FIRST, before any include — several files build port-holding handles at include time
+# (`_RUNNER` in runner_api.jl), and one built before this line points at slot 0, i.e. possibly at
+# another session's runner, which Quit then stops. Children read the slot from the env this sets.
+# Skipped under CECELIA_NO_SERVE (tests, REPL): nothing binds, so the slot-0 numbers are only labels.
+get(ENV, "CECELIA_NO_SERVE", "") == "1" || Cecelia.resolve_port_slot!()
+
 init_cecelia!()
 
 # Load user drop-in task modules from <config_dir>/modules (no rebuild needed). Safe/never-throws;
@@ -807,7 +814,7 @@ end
 # the safer default and what lets the debug console run (its hard gate is a loopback bind). Set
 # CECELIA_HOST=0.0.0.0 to deliberately expose it (the console then refuses to run).
 const HOST = get(ENV, "CECELIA_HOST", "127.0.0.1")
-const PORT = parse(Int, get(ENV, "CECELIA_PORT", "8080"))
+const PORT = Cecelia.service_port(:backend)   # this user's slot — resolved at the top of this file
 # The address the server is ACTUALLY bound to (set in `start`). The debug REPL keys off this: it only
 # runs when the bind is loopback, so a loopback bind — not a spoofable header — is the network control.
 const _BOUND_HOST = Ref{String}("")
@@ -885,6 +892,7 @@ function start(; host=HOST, port=PORT)
         exit(1)
     end
     _BOUND_HOST[] = string(host)
+    Cecelia.persist_port_slot!(Cecelia.port_slot())   # ours now (we hold the lock) — reuse it next launch
     _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
     _start_runner!()      # launch or ADOPT the detached task runner (no-op unless CECELIA_RUNNER=1)
     # Guarded for the same reason as `_watch_supervisor!`: on a Ctrl-C or a closed window our streams

@@ -2,6 +2,7 @@ module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user
+export service_port, port_slot
 export acquire_single_instance!, release_single_instance!, single_instance_lock_path, AlreadyRunningError
 export cellpose_models_dir, cellpose_model_path, list_cellpose_models, cellpose_model_backend
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
@@ -232,7 +233,7 @@ export TaskRequest, execute_task, task_request, task_request_dict
 export ChainRequest, execute_chain, chain_request, chain_request_dict
 export subscribe_chain_frames!, chain_event_task_id
 # The detached task runner (runner/server.jl + runner/client.jl)
-export RUNNER_PORT, RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
+export RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
 export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_logs, runner_pools, runner_set_pool_limit
 export runner_set_task_workers
@@ -258,13 +259,15 @@ export chain_node, make_chain
 # `launch!`/`close!`/`send` are the resident-child generics defined in preview.jl. Viewer used to
 # define them too — retired in P9.
 export launch!, close!, send
-export PreviewWorker, PREVIEW_PORT, PREVIEW_PROTOCOL, preview_alive, preview_request
+export PreviewWorker, PREVIEW_PROTOCOL, preview_alive, preview_request
 export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed
 export task_output_effect
 
 # ── Includes ──────────────────────────────────────────────────────────────────
+include("config_dir.jl")     # Base-only: also included standalone by api/dev.jl + api/portkill.jl
+include("ports.jl")          # Base-only port-slot resolver — same standalone loaders
 include("config.jl")
 include("utils.jl")
 include("single_instance.jl")  # at-most-one Cecelia per host — before any HTTP/WS bind. D7 / P5.
