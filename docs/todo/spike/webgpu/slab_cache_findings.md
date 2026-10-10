@@ -380,6 +380,24 @@ Same machine, store and bench as *Phase 0 baseline*, through a dev server runnin
   raw 1.61/1.53 s vs 1.38–1.70 s off, derived 1.10/0.96 s vs 0.88–0.96 s off (noise).
 - Counters in the JSONs are cumulative and include the warm-up (one timepoint's decodes).
 
+**Through the server, after** (dev server on `perf/slab-chunk-cache`, `auto` budget = 1.9 GB on this
+31 GB box, one warm-up slab first; same `MODE=scrub` bench, HTTP/1.1):
+
+| Run | Run wall | Server-read median | Wall median |
+|---|---|---|---|
+| raw scrub, first visit | **2.34 s** (was 4.86–6.27) | 20.7 ms (was 286–347) | 130 ms |
+| raw scrub, revisit | 1.89 s | 16.7 ms | 116 ms |
+| derived scrub, first visit | 1.57 s (was 1.72) | 15.5 ms | 82 ms |
+| derived scrub, revisit | 1.02 s | 9.4 ms | 64 ms |
+| raw `flat_c4` | 3.16 s (Phase 1: 4.05) | 195 ms | 367 ms |
+
+- **The read is no longer the cost; the response is.** Server-read per brick fell ~15x, the run wall
+  ~2.5x: at 16 in flight each 4 MB brick now spends ~110 ms between "read done" and "received", against
+  ~20 ms reading. Same signature as flat in Phase 1 — HTTP.jl buffers a `Content-Length` body whole
+  before writing it (`_stream_file!` in `server.jl`). That response path is the next bottleneck for
+  bricks and flat alike, and is outside this plan (Decision 9).
+- Raw: `p2_after_*.tsv`.
+
 ## Method deviations
 
 - **Cache drop:** `sudo` could not authenticate from the agent session, so instead of

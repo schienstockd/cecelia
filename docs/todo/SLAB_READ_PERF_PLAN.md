@@ -127,8 +127,9 @@ responses are then transfer-bound in HTTP.jl's buffered body path — outside th
 Viewer scrub without HTTP (every brick of 4 timepoints, 16 in flight; `slab_cache_scrub.jl`): raw
 4.78 → 0.62 s cold, 0.34 s revisit; derived 1.10 → 0.51 s cold, 0.25 s revisit. A whole-movie sweep
 (181 timepoints) stays at the 1 GB budget and decodes each chunk once. Flat volumes unchanged (bypass,
-Decision 5). Prefetch not built: the claim-first cold pass already lands near the revisit. Details:
-findings → *Phase 2*.
+Decision 5). Prefetch not built: the claim-first cold pass already lands near the revisit. Through
+the server: raw scrub 4.9–6.3 → 2.3 s, server-read per brick ~300 → 21 ms — the run wall is now set by
+HTTP.jl's buffered response path, not the read (outside this plan). Details: findings → *Phase 2*.
 
 - Decisions 5–8. Brick reads assemble from cached chunks. Flat path uses it only if measured to help.
 - Risk to resolve first: Zarr.jl decodes chunks inside `read_native`'s call; the cache needs a
