@@ -41,7 +41,7 @@ def run(params):
     log.progress(0, 2)
     try:
         dim_utils = DimUtils(ome_xml_utils.load_ome_xml(im_path))
-        levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+        levels, _ = zarr_utils.open_as_zarr(im_path)
         level0 = levels[0]
         dim_utils.calc_image_dimensions(level0.shape)
         c_idx = dim_utils.dim_idx('C') if 'C' in dim_utils.im_dim_order else None

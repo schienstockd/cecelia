@@ -13,7 +13,6 @@ import os
 import typing
 
 import numpy as np
-import dask.array as da
 
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils
@@ -749,19 +748,17 @@ class SegmentationUtils:
 
     # ── Normalisation ─────────────────────────────────────────────────────────
 
-    def _subsample_time(self, darr, max_frames):
-        """Evenly stride the time axis down to at most `max_frames` frames; identity when that isn't
-        needed or possible. A no-op for a single-timepoint image (a large tiled mosaic), which is why
-        subsampling can't hurt the case that most depends on a global window."""
+    def _time_steps(self, shape, max_frames):
+        """`{t_idx: stride}` that evenly strides the time axis down to at most `max_frames` frames, for
+        `intensity_utils.channel_histograms(steps=...)`; `{}` when that isn't needed or possible. A
+        no-op for a single-timepoint image (a large tiled mosaic), which is why subsampling can't hurt
+        the case that most depends on a global window."""
         if not max_frames or max_frames < 1:
-            return darr
+            return {}
         t_idx = self.dim_utils.dim_idx('T')
-        if t_idx is None or darr.shape[t_idx] <= max_frames:
-            return darr
-        stride = -(-darr.shape[t_idx] // max_frames)      # ceil → at most max_frames frames
-        sl = [slice(None)] * darr.ndim
-        sl[t_idx] = slice(0, None, stride)
-        return darr[tuple(sl)]
+        if t_idx is None or shape[t_idx] <= max_frames:
+            return {}
+        return {t_idx: -(-shape[t_idx] // max_frames)}      # ceil → at most max_frames frames
 
     def _compute_norm_params(self, im_dat, model_params, max_frames=None):
         """Per-channel percentile clipping range for scale-to-whole normalisation.
@@ -826,9 +823,8 @@ class SegmentationUtils:
         if streaming:
             # bounded streaming histogram over the (single, full-res) level
             level = im_dat[0]
-            darr = level if isinstance(level, da.Array) else da.from_array(level)
-            darr = self._subsample_time(darr, max_frames)
-            hists = intensity_utils.channel_histograms(darr, c_idx, channels=todo)
+            hists = intensity_utils.channel_histograms(
+                level, c_idx, channels=todo, steps=self._time_steps(level.shape, max_frames))
             for ch, hist in zip(todo, hists):
                 hist = hist.copy()
                 hist[0] = 0                       # drop background zeros

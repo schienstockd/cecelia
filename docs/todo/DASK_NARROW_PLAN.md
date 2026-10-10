@@ -1,7 +1,7 @@
 # Narrow dask to where it earns its keep
 
-**Status:** parked (2026-10-10) on `docs/dask-narrow-plan`. Nothing built. The `zarr_utils.py`
-overlap with chunk-inherit has cleared: that work merged as #1576, and this branch is rebased on it.
+**Status:** P0–P3 built (2026-10-10) on `docs/dask-narrow-plan`, PR #1584. Line numbers below are from
+the inventory taken before the build.
 
 ## Goal
 
@@ -52,7 +52,7 @@ size in from Julia instead.
 
 **Dask branches nothing in the app reaches** (no producer of a dask array was found)
 - In `zarr_utils`: `open_zarr(as_dask=True)` and `zarr_data_to_dask`, plus the dask branches of
-  `fortify`, `chunks`, `create_multiscales` (1305–1321) and `write_multiscale_pyramid` (1378).
+  `fortify`, `chunks`, `create_multiscales` (1340–1356) and `write_multiscale_pyramid` (1413).
 - `block_transfer.place_block_lazy`: no callers. It was built for the napari bridge, which has been
   retired.
 - `correction_utils.py:16`: the import is unused, and the module docstring ("returned as a dask
@@ -69,8 +69,8 @@ size in from Julia instead.
    from `pyproject.toml` would buy nothing.
 2. **No module-level `import dask` anywhere under `python/cecelia/utils/`.** A function that needs
    dask imports it locally. A function that only has to *recognise* a dask array must not import
-   dask to do it. The check already exists as `intensity_utils._is_dask`. Move it to `zarr_utils` as
-   the one helper, have `intensity_utils` import it, and make the body
+   dask to do it. The check already existed as `intensity_utils._is_dask`. It is now
+   `zarr_utils.is_dask`, the one helper, with the body
    `'dask.array' in sys.modules and isinstance(a, sys.modules['dask.array'].Array)`. If dask was
    never imported, the input cannot be a dask array.
 3. **The guard is an import-isolation test, not a grep.** In a subprocess: import each
@@ -90,6 +90,10 @@ size in from Julia instead.
    (`af_weight_stats`). That is single-threaded where `da.bincount` is threaded. Time both on a large
    single-level movie before switching. `ZARR_STREAMING_PLAN.md` Decision 3 (no Python-side pool)
    favours the loop, unless it is materially slower.
+   **Measured (2026-10-10)** on `zolIMa/VJy1Nx` `ccidDriftCorrected` level 0, 181x4x37x1041x1099
+   uint16 with (1,1,1,512,512) chunks, two channels: the per-plane loop took 94 s at 175 MB peak RSS,
+   and `da.bincount(da.from_array(level))` took 280 s at 3.6 GB. The histograms were identical. The
+   loop replaced the dask branch outright.
 
 ## Phases (each can ship on its own)
 
@@ -98,10 +102,10 @@ The import-isolation test from Decision 3. Its first run lists every module that
 dask.
 
 ### P1: lazy imports (the latency win; behaviour unchanged)
-- `zarr_utils`: delete lines 20–21. Add the `_is_dask` helper (Decision 2). Move the import into
+- `zarr_utils`: delete lines 20–21. Add the `is_dask` helper (Decision 2). Move the import into
   `zarr_data_to_dask` and the dask branch of `create_multiscales`.
 - `segmentation_utils`, `rechunk_zarr`, `intensity_utils`: move the import into the function that
-  uses it. `intensity_utils._is_dask` moves to `zarr_utils` (Decision 2).
+  uses it. `intensity_utils._is_dask` becomes `zarr_utils.is_dask` (Decision 2).
 - `correction_utils`: delete the import and fix the docstring.
 - Check: P0 turns green. Re-measure `import cecelia.utils.zarr_utils` with a target of about 0.25 s
   warm, the cost of `zarr` alone. The full suite passes, including `test_zarr_store`.
@@ -113,6 +117,10 @@ dask.
 - `segmentation_utils._compute_norm_params`: pass the zarr level through and drop `da.from_array`.
   `_subsample_time` is plain slicing, so it carries over.
 - `saturation_run`, `register_run`: `as_dask=False`.
+- `preview/preview_worker.py`: `PreviewState.image` opened dask levels only because the old
+  `channel_histograms` needed them lazy, and `image_zarr` was a second, plain handle for every other
+  reader. The worker now has one plain-zarr handle. The inventory above missed this: it was found by
+  the commit's fanout audit.
 - Measure: the `channel_histograms` wall-clock and peak RSS, old against new, on one big single-level
   store (a drift-corrected movie). The norm-params values must not change, since a histogram is exact.
 

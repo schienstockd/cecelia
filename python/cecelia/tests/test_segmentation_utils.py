@@ -5,63 +5,67 @@ IDs (background 0 ignored, repeats collapsed, non-contiguous IDs handled), which
 sidecar banks for segmentation."""
 import unittest
 
-import dask.array as da
 import numpy as np
 
 
-class SubsampleTimeTest(unittest.TestCase):
-    """`_subsample_time` — the preview's frame budget for the whole-image normalisation statistic.
+class TimeStepsTest(unittest.TestCase):
+    """`_time_steps` — the preview's frame budget for the whole-image normalisation statistic.
 
     The statistic costs ~30 s on a single-level timelapse, which is the entire latency of a preview
     whose inference is 0.35 s. Striding time is safe in a specific way worth pinning: it trades only
     TEMPORAL coverage, so it is an **identity** on a single-timepoint image — a large tiled mosaic,
     which is exactly the case that most needs a global window (per-tile normalisation there makes the
     segmentation visibly patchy).
+
+    It returns `steps` for `intensity_utils.channel_histograms`, so a frame is counted when its index
+    is in `range(0, n_t, stride)`.
     """
 
     class _Seg:
         def __init__(self, t_idx):
             self.dim_utils = type("D", (), {"dim_idx": lambda _s, ax: t_idx if ax == "T" else None})()
-        _subsample_time = None      # bound below
+        _time_steps = None      # bound below
 
     def _seg(self, t_idx):
         from cecelia.utils.segmentation_utils import SegmentationUtils
         s = self._Seg(t_idx)
-        s._subsample_time = SegmentationUtils._subsample_time.__get__(s)
+        s._time_steps = SegmentationUtils._time_steps.__get__(s)
         return s
 
+    @staticmethod
+    def _kept(n_t, steps, t_idx=0):
+        return len(range(0, n_t, steps.get(t_idx, 1)))
+
     def test_no_budget_is_exact(self):
-        arr = da.zeros((201, 2, 8, 8), chunks=(1, 1, 8, 8))
         for budget in (None, 0):
-            self.assertEqual(self._seg(0)._subsample_time(arr, budget).shape[0], 201)
+            self.assertEqual(self._seg(0)._time_steps((201, 2, 8, 8), budget), {})
 
     def test_strides_down_to_at_most_the_budget(self):
-        arr = da.zeros((201, 2, 8, 8), chunks=(1, 1, 8, 8))
         for budget in (50, 20, 10, 5, 2):
-            got = self._seg(0)._subsample_time(arr, budget).shape[0]
+            got = self._kept(201, self._seg(0)._time_steps((201, 2, 8, 8), budget))
             self.assertLessEqual(got, budget, f"budget {budget} exceeded ({got} frames)")
             self.assertGreater(got, 0)
 
     def test_identity_when_there_are_fewer_frames_than_the_budget(self):
-        arr = da.zeros((5, 2, 8, 8), chunks=(1, 1, 8, 8))
-        self.assertEqual(self._seg(0)._subsample_time(arr, 20).shape[0], 5)
+        self.assertEqual(self._seg(0)._time_steps((5, 2, 8, 8), 20), {})
 
     def test_identity_for_a_single_timepoint_mosaic(self):
         # the large-tiled-image case: nothing is given up, so a global window stays global
-        arr = da.zeros((1, 2, 4096, 4096), chunks=(1, 1, 512, 512))
-        out = self._seg(0)._subsample_time(arr, 20)
-        self.assertEqual(out.shape, arr.shape)
+        self.assertEqual(self._seg(0)._time_steps((1, 2, 4096, 4096), 20), {})
 
     def test_identity_when_the_image_has_no_time_axis(self):
-        arr = da.zeros((2, 64, 64), chunks=(1, 64, 64))
-        self.assertEqual(self._seg(None)._subsample_time(arr, 20).shape, arr.shape)
+        self.assertEqual(self._seg(None)._time_steps((2, 64, 64), 20), {})
 
     def test_spatial_coverage_is_never_reduced(self):
-        # every frame it keeps is kept WHOLE — that is what makes this safe for tiled images
-        arr = da.from_array(np.arange(201 * 4 * 6, dtype=np.uint16).reshape(201, 1, 4, 6))
-        out = self._seg(0)._subsample_time(arr, 10)
-        self.assertEqual(out.shape[1:], arr.shape[1:])
-        self.assertTrue(np.array_equal(np.asarray(out[0]), np.asarray(arr[0])))
+        # only the time axis is strided, and every frame it keeps is counted WHOLE — that is what
+        # makes this safe for tiled images
+        from cecelia.utils import intensity_utils
+        arr = np.arange(201 * 4 * 6, dtype=np.uint16).reshape(201, 1, 4, 6)
+        steps = self._seg(0)._time_steps(arr.shape, 10)
+        self.assertEqual(set(steps), {0})
+        hist = intensity_utils.channel_histograms(arr, 1, steps=steps)[0]
+        np.testing.assert_array_equal(
+            hist, np.bincount(arr[::steps[0]].ravel(), minlength=2 ** 16))
 
 import numpy as np
 
