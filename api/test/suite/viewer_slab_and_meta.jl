@@ -55,7 +55,7 @@
         @test vec(vol)[nx * ny + 1] == val(1, 1, 2, 2, 1)         # then z
 
         # …and the wire bytes are little-endian pairs of exactly that, nothing padded or reordered.
-        bytes = slab_bytes(vol)
+        bytes = with_slab_bytes(copy, vol)
         @test length(bytes) == nx * ny * nz * 2
         @test bytes[1] == UInt8(val(1, 1, 1, 2, 1) % 256)
         @test bytes[2] == UInt8(val(1, 1, 1, 2, 1) ÷ 256)
@@ -235,6 +235,36 @@
         # sampling instead of indexing off the end or shifting every channel's colour by one.
         @test resolved_display_specs(pj, 3) === nothing
         @test resolved_display_specs(joinpath(d, "absent.json"), 1) === nothing
+    end
+end
+
+@testset "API: viewer slab — the response is written from the pool, byte-exact under concurrency" begin
+    # `try_serve_slab` writes the body from the pool task that read it, as a `Vector` wrapped over the
+    # volume's memory (`with_slab_bytes`). Both are about speed (SLAB_READ_PERF_PLAN.md, Phase 5); what
+    # can go wrong is silent — a wrapped vector outliving its volume, or two responses interleaving —
+    # so this sends real slabs through a real HTTP.jl listener, 16 at a time, and compares every byte.
+    vol = reshape(UInt16.(1:(7 * 5 * 3 * 2)), 7, 5, 3, 2)
+    meta = (; nx = 7, ny = 5, nz = 3, nc = 2, bpv = 2, read_ms = 0.0, comp_ms = 0.0)
+    want = with_slab_bytes(copy, vol)
+    @test want == collect(reinterpret(UInt8, vec(vol)))
+    @test length(want) == sizeof(vol)
+    handler(stream) = fetch(Threads.@spawn begin
+        v = copy(vol) .+ UInt16(parse(Int, split(stream.message.target, "=")[2]))
+        with_slab_bytes(b -> _write_slab!(stream, b, meta, 0:1, 0, "identity"), v)
+        GC.gc(false)                   # a freed volume would show up as wrong bytes, not as an error
+    end)
+    srv = HTTP.listen!(handler, "127.0.0.1", 0)
+    try
+        port = HTTP.port(srv)
+        rs = fetch.([Threads.@spawn HTTP.get("http://127.0.0.1:$port/s?k=$k") for k in 1:16])
+        for (k, r) in enumerate(rs)
+            @test r.status == 200
+            @test HTTP.header(r, "X-Slab-Shape") == "2,3,5,7"
+            @test HTTP.header(r, "Content-Length") == string(sizeof(vol))
+            @test r.body == with_slab_bytes(copy, vol .+ UInt16(k))
+        end
+    finally
+        close(srv)
     end
 end
 

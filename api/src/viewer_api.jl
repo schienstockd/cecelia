@@ -151,15 +151,22 @@ function read_slab(arr, caxes, t::Int, c::Union{Int,AbstractUnitRange{Int}};
 end
 
 """
-    slab_bytes(vol) -> Vector{UInt8}
+    with_slab_bytes(f, vol)
 
-`vol`'s voxels as little-endian bytes. `read_native` has already put them in HOST order; this pins the
-wire format to little-endian so the client never has to ask. A no-op copy on x86/ARM.
+Call `f` with `vol`'s voxels as little-endian bytes — a `Vector{UInt8}` over `vol`'s own memory, valid
+only inside `f`. `read_native` has already put them in HOST order; this pins the wire format to
+little-endian so the client never has to ask. No copy on x86/ARM.
+
+A real `Vector`, not a `reinterpret` view, because HTTP.jl converts any other byte vector to a
+`Vector` element by element before writing it — measured, that conversion alone cost a 16-in-flight
+brick scrub 30% (docs/todo/SLAB_READ_PERF_PLAN.md, Phase 5). Hence the callback: the wrapped vector
+does not keep `vol` alive, so it must not escape.
 """
-function slab_bytes(vol)
+function with_slab_bytes(f, vol)
     v = vec(vol)
     HOST_IS_LITTLE_ENDIAN || (v = htol.(v))  # a copy, so it is behind the branch, not unconditional
-    reinterpret(UInt8, v)
+    v isa Array || (v = collect(v))
+    GC.@preserve v f(unsafe_wrap(Array, Ptr{UInt8}(pointer(v)), sizeof(v)))
 end
 
 # ── Contrast when the viewer has never seen the image ───────────────────────────────
@@ -577,38 +584,56 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # connection, which the client cannot tell from a network blip. An out-of-range `t` or `c` is the
     # ordinary case (a hand-edited URL, a stale slider bound) and answers 400 with the actual bound.
     #
-    # The read + encode runs on the default thread POOL, not on this connection's task. HTTP.jl runs
-    # every handler on its single `:interactive` thread, and `try_serve_slab` is dispatched before
-    # `handle_stream`'s own hop — so a blosc decode, a C call that never yields, held that one thread:
-    # concurrent brick requests decoded one after another, and every other API call waited behind them.
-    # The hop only pays together with BLOSC_NOLOCK (image_render.jl) — under blosc's global lock the
-    # pool threads just queue on the mutex (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 1). As in
-    # `handle_stream`, errors are caught INSIDE the task, so `fetch` never rethrows; the response is
-    # written back here, on the connection's task.
+    # The read, the encode AND the response write run on the default thread POOL, not on this
+    # connection's task. HTTP.jl runs every handler on its single `:interactive` thread, and
+    # `try_serve_slab` is dispatched before `handle_stream`'s own hop — so a blosc decode, a C call that
+    # never yields, held that one thread: concurrent brick requests decoded one after another, and every
+    # other API call waited behind them. The hop only pays together with BLOSC_NOLOCK (image_render.jl)
+    # — under blosc's global lock the pool threads just queue on the mutex
+    # (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 1).
+    #
+    # The WRITE hops too: once reads are cheap (the chunk cache) the response becomes the serial part —
+    # HTTP.jl copies the body into its buffer and onto the socket on whichever thread writes, and on the
+    # interactive thread every concurrent response took its turn. Writing from the pool thread halved a
+    # 16-in-flight brick scrub (Phase 5). Only one task ever touches the stream at a time: this one,
+    # while the connection's task waits in `fetch`.
+    #
+    # Read errors are caught INSIDE the task, before anything is written, so they come back as a
+    # status; a failed WRITE (the client went away) propagates like any other handler error — there is
+    # no response left to shape.
     r = fetch(Threads.@spawn begin
-        try
+        got = try
             t0 = time()
             vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
-            body = slab_bytes(vol)
-            bpv  = sizeof(eltype(vol))
             read_ms = round(1000 * (time() - t0); digits = 1)
-
             comp_ms = 0.0
+            zbody = nothing
             if enc == "zstd"
                 t1 = time()
-                body = encode(ZstdEncodeOptions(; compression_level = 1), body)
+                zbody = with_slab_bytes(b -> encode(ZstdEncodeOptions(; compression_level = 1), b), vol)
                 comp_ms = round(1000 * (time() - t1); digits = 1)
             end
-            (; body, nx, ny, nz, nc, bpv, read_ms, comp_ms)
+            (; vol, zbody, nx, ny, nz, nc, bpv = sizeof(eltype(vol)), read_ms, comp_ms)
         catch e
             @error "Slab read failed" zarr = zp t c exception = (e, catch_backtrace())
             e isa BoundsError ? (400, "t/c out of range for this image version") :
                                 (500, sprint(showerror, e))
         end
+        got isa Tuple && return got
+        if got.zbody === nothing
+            with_slab_bytes(body -> _write_slab!(stream, body, got, c, level, enc), got.vol)
+        else
+            _write_slab!(stream, got.zbody, got, c, level, enc)
+        end
+        nothing
     end)
     r isa Tuple && return _slab_json_error(stream, r...)
-    (; body, nx, ny, nz, nc, bpv, read_ms, comp_ms) = r
+    true
+end
 
+# The slab's headers and body. `meta` carries the shape and the timings from the read.
+function _write_slab!(stream::HTTP.Stream, body::Vector{UInt8}, meta, c, level, enc)
+    (; nx, ny, nz, nc, bpv, read_ms, comp_ms) = meta
     HTTP.setheader(stream, "Content-Type"   => "application/octet-stream")
     # X-Slab-Shape: nc,nz,ny,nx when the request has a `cTo` (channels axis is kept), otherwise
     # nz,ny,nx (the legacy scalar-c shape, unchanged for the flat atlas). The client asserts this
@@ -637,7 +662,7 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     HTTP.setstatus(stream, 200)
     HTTP.startwrite(stream)
     write(stream, body)
-    true
+    nothing
 end
 
 # ── Label (segmentation mask) stores ──────────────────────────────────────────────

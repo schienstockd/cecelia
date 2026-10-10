@@ -4,9 +4,9 @@ Status: **built** (2026-10-10). Phases 0–1 shipped (#1572, #1575); Phase 2 #15
 new images (#1576); Phase 4 docs done. Rechunking EXISTING 1024 stores is not recommended: with the
 cache, a raw 1024-chunked scrub runs 0.62 s cold / 0.34 s revisit against 0.51 / 0.25 s for a
 512-chunked store (findings → *Phase 2*; different stores, so a rough bound) — little left to win for a
-rewrite of every old import. Next limit: the response path (HTTP.jl buffers `Content-Length` bodies),
-outside this plan. Results in
-`spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*, *Phase 2*.
+rewrite of every old import. Phase 5 (response written from the pool, as a plain `Vector`) built
+2026-10-10. Results in `spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*,
+*Phase 2*, *Phase 5*.
 
 ## Goal
 
@@ -78,7 +78,8 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
    workstation raises it by hand. Counters in `/api/diagnostics` → `chunkCache`. Named *server read
    cache* because the viewer already has a *viewer cache* — the browser's VRAM budget (`viewerCacheMB`).
 9. **Scope.** `api/src/`, launch config, tests, docs. No renderer WGSL, atlas eviction, upload path
-   (`writeBrick`, payload ring), or HTTP/2 changes. No rechunker without sign-off (Phase 3).
+   (`writeBrick`, payload ring), or HTTP/2 changes. Phase 5 widened it to the slab route's response
+   write — still `api/src/`, still no HTTP/2 change. No rechunker without sign-off (Phase 3).
 10. **Measure before and after every phase, same bench.** A result that contradicts the plan stops
     the phase. Projections are labelled as projections. Through-server numbers need a server running
     the branch — Dominik starts it; agents do not start or kill servers.
@@ -112,7 +113,8 @@ burst; a 128² sub-read costs as much as the whole chunk; amplification = chunk 
 
 Built 2026-10-10. Raw bricks at 16 in flight 9.98 → 1.37 s, derived 1.63 → 0.53 s, `/api/version`
 during a burst 60 → 11 ms mean; serial unchanged. Flat c4 only 1.28x: its read halves, but the 65 MB
-responses are then transfer-bound in HTTP.jl's buffered body path — outside this plan (Decision 9).
+responses were then bound by the response write on the interactive thread (Phase 5 found the real
+cause; the "buffered body" guess was wrong).
 
 - Read/encode of `try_serve_slab` inside `Threads.@spawn` on the default pool, mirroring
   `handle_stream`; the stream write stays on the connection task. `try_serve_movie` and
@@ -133,7 +135,7 @@ Viewer scrub without HTTP (every brick of 4 timepoints, 16 in flight; `slab_cach
 (181 timepoints) stays at the 1 GB budget and decodes each chunk once. Flat volumes unchanged (bypass,
 Decision 5). Prefetch not built: the claim-first cold pass already lands near the revisit. Through
 the server: raw scrub 4.9–6.3 → 2.3 s, server-read per brick ~300 → 21 ms — the run wall is now set by
-HTTP.jl's buffered response path, not the read (outside this plan). Details: findings → *Phase 2*.
+the response write, not the read — Phase 5. Details: findings → *Phase 2*.
 
 - Decisions 5–8. Brick reads assemble from cached chunks. Flat path uses it only if measured to help.
 - Risk to resolve first: Zarr.jl decodes chunks inside `read_native`'s call; the cache needs a
@@ -163,6 +165,32 @@ Phase 0 answered the premise: it is the norm — bioformats2raw `1,1,1,≤1024,�
 which is being retired. So write up the options: brick-aligned chunks for new writes (`plane_chunks`),
 rechunk on import, a rechunk task for existing stores, or the cache as the whole fix — with measured read
 costs (including the movie and 2D-plane readers, which prefer plane chunks). Needs sign-off.
+
+### Phase 5 — the response path — BUILT 2026-10-10
+
+Phase 2 left bricks spending ~5x longer between "read done" and "received" than reading. The plan
+blamed HTTP.jl buffering `Content-Length` bodies. It does buffer them over HTTP/1.1 — a memory cost,
+which is why the movie route streams chunked (`_movie_plan`) — but not a time cost: framing makes no
+difference to speed (fixed vs chunked within noise, plain HTTP.jl moves 256 x 4 MB at 16 in flight in 0.45 s).
+Two real causes, both on HTTP.jl's single interactive thread, where every response is written:
+
+- **The body was a `reinterpret` view.** `slab_bytes` returned a `ReinterpretArray`, which HTTP.jl
+  converts to a `Vector{UInt8}` element by element before writing. `with_slab_bytes` hands it a
+  `Vector` wrapped over the volume's memory instead (no copy; valid only inside the callback).
+- **The write ran on the interactive thread**, so 16 concurrent responses copied into HTTP.jl's buffer
+  and onto the socket one after another. `try_serve_slab` now writes from the pool task that read the
+  slab. Same effect as raising the interactive thread count (`-t auto,4`, measured equal) without
+  touching every launcher.
+
+Measured in a standalone repro (the route's read + send, own process, Dml3RG raw, warm cache):
+warm scrub at 16 in flight 1.12–1.28 s → 0.64–0.67 s; at 6 in flight (Chrome's HTTP/1.1 per-origin
+limit) ~1.38 → 0.81 s; flat, 32 whole volumes at 4 in flight, 3.8 → 2.0 s. Through-server numbers
+need a server on the branch.
+
+- **Accept:** byte-exact responses under concurrency (test: 16 in flight through a real listener);
+  scrub and flat both faster through the server; no regression for other routes (untouched).
+- **Not done:** HTTP/2 (TLS) takes a different write path in HTTP.jl (`_write_data_frames_h2_server!`,
+  per-connection write lock); not measured here because the dev server currently runs without a cert.
 
 ### Phase 4 — docs — DONE 2026-10-10
 
