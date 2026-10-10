@@ -6,7 +6,15 @@ import {
   createProfile,
   retireProfile,
   fetchTerminalCommand,
+  profileNameLabel,
 } from './profileApi'
+
+describe('profileNameLabel', () => {
+  it('shows the default profile by its display alias, others as-is', () => {
+    expect(profileNameLabel('default')).toBe('peanut')
+    expect(profileNameLabel('alice')).toBe('alice')
+  })
+})
 
 // The validator mirror-tests. Same cases the backend suite pins in `api/test/suite/kiwi_profile.jl` —
 // keep both green together so the dialog can't accept a name the round-trip will reject.

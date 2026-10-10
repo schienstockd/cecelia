@@ -20,7 +20,7 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
-         fetchTerminalCommand, isValidProfileName, profileDisplayName,
+         fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
          type ProfileRoster } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -304,8 +304,8 @@ async function copyTerminalCommand(profile?: string) {
                     :disabled="!!termFetching"
                     @click="copyTerminalCommand()"
                     v-tooltip.top="termCopied()
-                      ? `Copied — paste in a terminal to log ${roster.active} in`
-                      : `Copy a login one-liner for ${roster.active} — the active profile`">
+                      ? `Copied — paste in a terminal to log ${profileNameLabel(roster.active)} in`
+                      : `Copy a login one-liner for ${profileNameLabel(roster.active)} — the active profile`">
               <i :class="['pi', termFetching === '__active__' ? 'pi-spin pi-spinner'
                                 : termCopied() ? 'pi-check' : 'pi-sign-in']" />
               {{ termCopied() ? 'Copied' : 'Copy login command' }}
