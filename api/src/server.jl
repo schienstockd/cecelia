@@ -240,6 +240,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/version" => (req, body_bytes) -> (api_version(req)),
     "/api/update/check" => (req, body_bytes) -> (api_update_check(req)),
     "/api/system/envs" => (req, body_bytes) -> (api_system_envs(req)),
+    "/api/system/weights" => (req, body_bytes) -> (api_system_weights(req)),
     "/api/setup/defaults" => (req, body_bytes) -> (api_setup_defaults(req)),
     "/api/setup/validate" => (req, body_bytes) -> (api_setup_validate(req)),
     "/api/projects" => (req, body_bytes) -> (api_projects_list(req)),
@@ -530,6 +531,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
     "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
     "/api/system/envs/install" => (req, body_bytes) -> (api_system_envs_install(body_bytes)),
+    "/api/system/weights/fetch" => (req, body_bytes) -> (api_system_weights_fetch(body_bytes)),
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
     "/api/versions/prune" => (req, body_bytes) -> (api_versions_prune(body_bytes)),
 )
@@ -903,6 +905,7 @@ function start(; host=HOST, port=PORT)
         try; _stop_children_for_exit(); catch; end
     end
     _watch_supervisor!()
+    fetch_missing_weights_at_boot!()   # a visible background job; never blocks the boot
     # HTTP/2 requires TLS (browsers refuse cleartext h2). Bootstrap a self-signed dev cert
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available.

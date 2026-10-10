@@ -218,6 +218,50 @@ end
     @test !isdefined(@__MODULE__, :_pixi_bin_path)
 end
 
+@testset "API: model weights — never fetched inside a request" begin
+    # Every case below either finds the weights on disk or JOINS a job id claimed here first, so no
+    # test spawns the real ~1.2 GB download.
+    mktempdir() do dir
+        withenv("CELLPOSE_LOCAL_MODELS_PATH" => dir) do
+            params(model) = Dict("models" => Dict("base" => Dict("model" => model, "cellChannels" => [0])))
+            job = _weights_job_id("cpsam_v2")
+
+            # missing → the preview gets the job to wait on, and the job is the one already running
+            @test claim_job!(job)
+            try
+                @test !claim_job!(job)                       # a second starter joins instead
+                dl = missing_weights_job(params("cpsam_v2"))
+                @test dl !== nothing && dl.job_id == job && dl.approx_size_mb > 0
+                st, body = api_system_weights(nothing)
+                m = JSON3.read(body)["models"]["cpsam_v2"]
+                @test st == 200 && m["present"] == false && m["fetching"] == true
+                st, body = api_system_weights_fetch(Vector{UInt8}(JSON3.write(Dict("model" => "cpsam_v2"))))
+                @test st == 202 && JSON3.read(body)["jobId"] == job
+            finally
+                finish_job!(job)
+            end
+            @test !job_active(job)
+
+            # present → nothing to wait for
+            write(joinpath(dir, "cpsam_v2"), "weights")
+            @test missing_weights_job(params("cpsam_v2")) === nothing
+            st, body = api_system_weights_fetch(Vector{UInt8}(JSON3.write(Dict("model" => "cpsam_v2"))))
+            @test st == 200 && JSON3.read(body)["present"] == true
+
+            # not a listed built-in (a custom checkpoint path, a v3 model) → not this job's business
+            @test missing_weights_job(params("/models/my_ckpt")) === nothing
+            @test missing_weights_job(params("cyto3")) === nothing
+            @test missing_weights_job(Dict("other" => 1)) === nothing
+            @test first(api_system_weights_fetch(Vector{UInt8}(JSON3.write(Dict("model" => "cyto3"))))) == 400
+        end
+    end
+    # boot: a dev checkout (this test run) never starts a download, nor does the opt-out
+    @test fetch_missing_weights_at_boot!() === nothing
+    withenv("CECELIA_SKIP_MODEL_WEIGHTS" => "1") do
+        @test fetch_missing_weights_at_boot!() === nothing
+    end
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.

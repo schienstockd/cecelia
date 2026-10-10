@@ -382,8 +382,9 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 `4.2.1.1` (see `docs/todo/CELLPOSE_V4_PLAN.md` for the migration record):
 
 1. **One model.** `cpsam_v2` (and `cpsam`, the v1 release, kept so an older run still resolves). The
-   v3 zoo — `cyto3` / `cyto2` / `cyto` / `nuclei` — is gone. Weights (~1.2 GB) download from
-   HuggingFace into `~/.cellpose/models` on first use; `CELLPOSE_LOCAL_MODELS_PATH` relocates that.
+   v3 zoo — `cyto3` / `cyto2` / `cyto` / `nuclei` — is gone. Weights (~1.2 GB) come from
+   HuggingFace into `~/.cellpose/models` (`CELLPOSE_LOCAL_MODELS_PATH` relocates that), fetched by
+   one visible job, never inside a request — see *Model weights* below.
 2. **A v3 model name is rejected, not translated.** v4 answers an unknown `pretrained_model` with a
    log warning and loads `cpsam_v2` anyway, so a saved `cyto3` run would silently come back as a
    different segmentation. `cellpose_models_for_python` raises instead (`RETIRED_CELLPOSE_MODELS`).
@@ -427,10 +428,22 @@ v3 env, so `.github/workflows/verify-cellpose-v3.yml` runs real cyto3 through `p
 on a macOS arm64 runner (CPU) whenever the cellpose code or the pixi env changes.
 
 **Shipped v3 models.** Only `cyto2` and `cyto3`, the two built-ins. Both auto-download from
-cellpose's own server on first use (~25 MB each) into `~/.cellpose/models/`; the install job
-pre-warms both so the download happens once, up front. `nuclei` and the tissue-specifics are
+cellpose's own server (~25 MB each) into `~/.cellpose/models/`; the install job fetches both
+(`cecelia.utils.model_weights`) right after the env, so the download happens once, up front. `nuclei` and the tissue-specifics are
 deferred until someone asks. Custom v3 checkpoints are not on the drop path today — the
 `<config_dir>/models/cellposeModels/` slot is for v4 files, per the resolver above.
+
+**Model weights.** Cellpose loads a built-in model's weights on first use, and for `cpsam_v2`
+that is ~1.2 GB — inside a preview request it outlasts the browser's timeout. So weights are
+fetched by one background job, `model-weights:<model>` (`api/src/system_api.jl`, through `run_py`
+→ `python/cecelia/utils/model_weights.py`), from three places: the installers (`install.sh` /
+`install.ps1`, non-fatal); app start when missing (installed apps only, so a dev checkout or CI boot
+never starts one); and a preview that needs them, which gets a coded `weights-downloading` reply
+("Downloading model") and re-runs when the job ends. The job shows in the Task Manager and is
+retried by previewing again. `CECELIA_SKIP_MODEL_WEIGHTS=1` turns off the installer and app-start
+fetches. A system-scope install fetches into the installing account's home; other accounts get
+theirs at app start. A segmentation *task* with no weights still downloads inside its own run —
+that is a visible, cancellable task already.
 
 **When v3 is NOT the answer.**
 - On Linux / Windows with a CUDA GPU: v4 is already fast — the advisor does not fire and the v3
