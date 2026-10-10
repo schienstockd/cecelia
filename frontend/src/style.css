@@ -306,8 +306,6 @@ body {
      .cc-btn-on + .cc-btn-on-tint  tinted  — + an accent-washed surface. An enabled *option* that
                                              should read as on at a glance (viewer toggles).
      .cc-btn-on + .cc-btn-on-solid solid   — accent fill, white text. Prominent/segmented toggles.
-     .cc-btn-on + .cc-btn-on-glyph glyph   — white icon (off = the bare tone's dim), no border or fill. A ROW of icon
-                                             toggles, where an outline per engaged option boxes the row.
 
    Always composed onto a tone: `class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-on"`.
 
@@ -336,15 +334,6 @@ body {
   background: var(--cc-accent-tint-2);
   border-color: var(--cc-accent-strong);
   color: var(--cc-accent-soft);
-}
-
-.cc-btn-on.cc-btn-on-glyph {
-  border-color: transparent;
-  color: #fff;
-}
-.cc-btn.cc-btn-on.cc-btn-on-glyph:hover:not(:disabled) {
-  border-color: transparent;
-  color: #fff;
 }
 
 .cc-btn-on.cc-btn-on-solid {

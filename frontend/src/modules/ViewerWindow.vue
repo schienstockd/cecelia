@@ -5711,7 +5711,7 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- View toggles as ONE icon row (pressed = `.cc-btn-on-glyph`), Reset view at its end; the residency
+        <!-- View toggles as ONE icon row, same buttons as the View row at the top (ghost icon, `-on-tint` engaged), Reset view at its end; the residency
              maps hang below the row when their toggle is on. Fps keeps its own row — it is a slider. -->
         <div v-if="nT > 1" class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col"
@@ -5732,34 +5732,34 @@ onUnmounted(() => {
                   : 'Requested playback rate'">{{ settings.viewerFps }}</span>
         </div>
         <div class="cc-row cc-row-tight">
-          <button v-if="nT > 1" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': settings.viewerLoop }]"
+          <button v-if="nT > 1" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
                   @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
                   v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
             <i class="pi pi-repeat" />
           </button>
           <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
-          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': overviewShown }]"
+          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
                   @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
                   v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
             <i class="pi pi-overview" />
           </button>
-          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': gizmoShown }]"
+          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
                   @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
                   v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
             <i class="pi pi-axes" />
           </button>
-          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': tilesMapShown }]"
+          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': tilesMapShown }]"
                   @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
                   v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
             <i class="pi pi-tiles" />
           </button>
-          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': bricksMapShown }]"
+          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': bricksMapShown }]"
                   @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
                   v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
             <i class="pi pi-bricks" />
           </button>
           <span class="vw-grow" aria-hidden="true" />
-          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetView"
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
                   v-tooltip.left="'Reset view — fit the image and face it square'" aria-label="Reset view">
             <i class="pi pi-reset-view" />
           </button>
@@ -5879,50 +5879,50 @@ onUnmounted(() => {
                             @update:open="v => setSection('channels', v)" fill>
           <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
                colours, one at a time + its stepper), contrast and card layout on the right. Pressed
-               state is `.cc-btn-on .cc-btn-on-glyph` (PRIMITIVES → *Engaged / pressed toggle button*) — icons rather than
+               state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
                labelled `CcToggle` rows, so the section header is one line. -->
           <div class="cc-row cc-row-tight vw-ch-master">
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': allChannelsVisible }]"
+            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allChannelsVisible }]"
                     @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
                     v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
                     aria-label="Toggle every channel">
               <i :class="['pi', allChannelsVisible ? 'pi-eye' : 'pi-eye-slash']" />
             </button>
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': distinctChannelColours }]"
+            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': distinctChannelColours }]"
                     @click="distinctChannelColours = !distinctChannelColours" :aria-pressed="distinctChannelColours"
                     v-tooltip.right="'Distinct colours — a separate hue per channel'"
                     aria-label="Assign a distinct colour to each channel">
               <i class="pi pi-palette" />
             </button>
-            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on cc-btn-on-glyph': soloChannel }]"
+            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloChannel }]"
                     @click="soloChannel = !soloChannel" :aria-pressed="soloChannel"
                     v-tooltip.right="'One at a time — showing a channel hides the others'"
                     aria-label="Show one channel at a time">
               <i class="pi pi-dot-circle" />
             </button>
             <template v-if="soloChannel">
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              <button class="cc-btn cc-btn-ghost cc-btn-icon"
                       @click="stepSolo(-1)" v-tooltip.top="'Previous channel'" aria-label="Show previous channel">
                 <i class="pi pi-chevron-up" />
               </button>
-              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+              <button class="cc-btn cc-btn-ghost cc-btn-icon"
                       @click="stepSolo(1)" v-tooltip.top="'Next channel'" aria-label="Show next channel">
                 <i class="pi pi-chevron-down" />
               </button>
             </template>
             <span class="vw-grow" aria-hidden="true" />
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoAllContrast"
+            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="autoAllContrast"
                     v-tooltip.left="'Auto contrast on every channel'"
                     aria-label="Auto contrast every channel">
               <i class="pi pi-bolt" />
             </button>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetAllContrast"
+            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetAllContrast"
                     v-tooltip.left="'Reset every channel to the full bit range'"
                     aria-label="Reset every channel contrast">
               <i class="pi pi-arrow-right-arrow-left" />
             </button>
             <!-- Auto-contrast tuning popover, anchored beside the Auto button so the two read together. -->
-            <button ref="autoTuneTrigger" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+            <button ref="autoTuneTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
                     @click="autoTuneOpen = !autoTuneOpen"
                     v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
               <i class="pi pi-sliders-h" />
@@ -5941,7 +5941,7 @@ onUnmounted(() => {
                 How far Auto pushes the top of the window.
               </div>
             </TeleportPopover>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="toggleAllCards"
+            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="toggleAllCards"
                     v-tooltip.left="allCardsCompact ? 'Expand every channel' : 'Compact every channel'"
                     :aria-label="allCardsCompact ? 'Expand every channel' : 'Compact every channel'">
               <i :class="['pi', allCardsCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
