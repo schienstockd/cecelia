@@ -20,6 +20,41 @@
 
 using Zarr, JSON3, PNGFiles, ColorTypes, FixedPointNumbers
 
+# ── c-blosc's global lock ─────────────────────────────────────────────────────────
+# Zarr.jl decodes through c-blosc 1.x's `blosc_decompress`, which takes ONE process-wide mutex around
+# every call unless `BLOSC_NOLOCK` is set; with it set, each call goes through `blosc_decompress_ctx`,
+# the form c-blosc documents for multithreaded callers (a context per call, no shared state). With the
+# lock, concurrent slab reads run one at a time or worse — measured 0.34–0.95x of serial at 16 threads,
+# against 7–8.7x with NOLOCK, byte-identical (docs/todo/SLAB_READ_PERF_PLAN.md, Decisions 1 + 4).
+#
+# c-blosc calls `getenv("BLOSC_NOLOCK")` on EVERY call, so setting it here at load works — but it has
+# to land in the C runtime blosc reads. On Linux/macOS that is libc's environment, which `ENV` writes.
+# On Windows `libblosc.dll` imports `getenv` from msvcrt, whose copy of the environment a Win32
+# `SetEnvironmentVariableW` (what `ENV` calls) does not update — so `_putenv` it there too.
+# `blosc_nolock()` reads it back through that same `getenv`: the check is what blosc itself will see.
+function _blosc_getenv(name::AbstractString)
+    p = @static if Sys.iswindows()
+        ccall((:getenv, "msvcrt"), Cstring, (Cstring,), name)
+    else
+        ccall(:getenv, Cstring, (Cstring,), name)
+    end
+    p == C_NULL ? nothing : unsafe_string(p)
+end
+
+"""Whether c-blosc will skip its global lock — read through the C runtime blosc itself uses."""
+blosc_nolock() = _blosc_getenv("BLOSC_NOLOCK") !== nothing
+
+"""Set `BLOSC_NOLOCK` where c-blosc will read it. Runs at load, before the server takes requests —
+`setenv` racing a `getenv` on another thread is not safe, so never call it from a handler."""
+function enable_blosc_nolock!()
+    ENV["BLOSC_NOLOCK"] = "1"
+    @static if Sys.iswindows()
+        ccall((:_putenv, "msvcrt"), Cint, (Cstring,), "BLOSC_NOLOCK=1")
+    end
+    blosc_nolock()
+end
+enable_blosc_nolock!()
+
 # ── Channel colour ────────────────────────────────────────────────────────────────
 # A channel's colour comes from napari, as a LUT (`colormap_lut` in the props JSON: black→colour stops
 # that this renderer interpolates). napari is the authority on its own palette, so we do not re-derive

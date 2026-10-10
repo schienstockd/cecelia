@@ -321,6 +321,33 @@ with msvcrt's `_putenv` (which updates both), or inherited from the parent; and 
 should read it back through msvcrt's `getenv` — exactly what blosc sees. (The msvcrt-vs-Win32 split is
 documented CRT behaviour; not yet exercised on a Windows box.)
 
+## Phase 1 — `BLOSC_NOLOCK` + slab read on the default pool (2026-10-10)
+
+Same machine, store and bench as *Phase 0 baseline*, through a dev server running `perf/slab-nolock`
+(`/api/diagnostics` → `bloscNolock: true`, 32 threads), HTTP/1.1, warm.
+
+| Run | Conc | Run wall before → after | Server-read median before → after |
+|---|---|---|---|
+| raw B | 1 | 9.89 → 10.34 s | 148.6 → 151.3 ms |
+| **raw C** | 16 | **9.98 → 1.37 s (7.3x)** | 2430 → 296 ms |
+| raw `flat_c1` | 1 | 6.10 → 6.06–6.32 s (3 re-runs; one outlier at 7.38) | 103.6 → 113.7 ms |
+| raw `flat_c4` | 4 | 5.20 → 4.05 s (1.28x) | 409.2 → 198.6 ms |
+| derived B | 1 | 1.52 → 1.71 s | 19.1 → 20.7 ms |
+| **derived C** | 16 | **1.63 → 0.53 s (3.1x)** | 359.5 → 45.5 ms |
+
+- **Bricks scale.** Raw C lands under the ~2 s projection. Serial runs are unchanged within noise —
+  the hop costs nothing measurable.
+- **`GET /api/version` during sustained 16-way raw bursts:** 59.5 ms mean / 101 ms max →
+  **11.1 ms mean, 5.2 ms median, 63 ms max** (n=30; idle 0.8 ms). Not back to idle — the connection
+  task still parses and writes on the interactive thread — but the 10x stall is gone.
+- **Flat gains less than projected (1.28x, not 3–4x), and the read is no longer why.** Server-read per
+  request halves (409 → 199 ms at c4: four channels now decode at once), but each 65 MB response then
+  spends ~300 ms in transfer (wall − server-read: ~100 ms at c1, ~300 ms at c4), ~0.9 GB/s aggregate.
+  That is the HTTP.jl body path — a `Content-Length` response is buffered whole before it is written
+  (see `_stream_file!` in `server.jl`) — not decode. Out of this plan's scope (Decision 9); recorded
+  for whoever looks at the flat pipe next.
+- Raw: `slab_cache_results/p1_*.tsv`.
+
 ## Method deviations
 
 - **Cache drop:** `sudo` could not authenticate from the agent session, so instead of

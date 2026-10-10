@@ -555,25 +555,38 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # there is still a response to shape — once bytes are on the wire the only thing left is a broken
     # connection, which the client cannot tell from a network blip. An out-of-range `t` or `c` is the
     # ordinary case (a hand-edited URL, a stale slider bound) and answers 400 with the actual bound.
-    local body, nx, ny, nz, nc, bpv, read_ms, comp_ms
-    try
-        t0 = time()
-        vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
-        body = slab_bytes(vol)
-        bpv  = sizeof(eltype(vol))
-        read_ms = round(1000 * (time() - t0); digits = 1)
+    #
+    # The read + encode runs on the default thread POOL, not on this connection's task. HTTP.jl runs
+    # every handler on its single `:interactive` thread, and `try_serve_slab` is dispatched before
+    # `handle_stream`'s own hop — so a blosc decode, a C call that never yields, held that one thread:
+    # concurrent brick requests decoded one after another, and every other API call waited behind them.
+    # The hop only pays together with BLOSC_NOLOCK (image_render.jl) — under blosc's global lock the
+    # pool threads just queue on the mutex (docs/todo/SLAB_READ_PERF_PLAN.md, Decision 1). As in
+    # `handle_stream`, errors are caught INSIDE the task, so `fetch` never rethrows; the response is
+    # written back here, on the connection's task.
+    r = fetch(Threads.@spawn begin
+        try
+            t0 = time()
+            vol, nx, ny, nz, nc = read_slab(zp, t, c; z = z, x = xr, y = yr, level = level)
+            body = slab_bytes(vol)
+            bpv  = sizeof(eltype(vol))
+            read_ms = round(1000 * (time() - t0); digits = 1)
 
-        comp_ms = 0.0
-        if enc == "zstd"
-            t1 = time()
-            body = encode(ZstdEncodeOptions(; compression_level = 1), body)
-            comp_ms = round(1000 * (time() - t1); digits = 1)
+            comp_ms = 0.0
+            if enc == "zstd"
+                t1 = time()
+                body = encode(ZstdEncodeOptions(; compression_level = 1), body)
+                comp_ms = round(1000 * (time() - t1); digits = 1)
+            end
+            (; body, nx, ny, nz, nc, bpv, read_ms, comp_ms)
+        catch e
+            @error "Slab read failed" zarr = zp t c exception = (e, catch_backtrace())
+            e isa BoundsError ? (400, "t/c out of range for this image version") :
+                                (500, sprint(showerror, e))
         end
-    catch e
-        msg = e isa BoundsError ? "t/c out of range for this image version" : sprint(showerror, e)
-        @error "Slab read failed" zarr = zp t c exception = (e, catch_backtrace())
-        return _slab_json_error(stream, e isa BoundsError ? 400 : 500, msg)
-    end
+    end)
+    r isa Tuple && return _slab_json_error(stream, r...)
+    (; body, nx, ny, nz, nc, bpv, read_ms, comp_ms) = r
 
     HTTP.setheader(stream, "Content-Type"   => "application/octet-stream")
     # X-Slab-Shape: nc,nz,ny,nx when the request has a `cTo` (channels axis is kept), otherwise

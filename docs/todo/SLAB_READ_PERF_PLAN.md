@@ -1,7 +1,7 @@
 # Slab read performance plan
 
-Status: **in progress** (2026-10-10). Phase 0 done (results in `spike/webgpu/slab_cache_findings.md` →
-*Phase 0 baseline*); Phase 1 next.
+Status: **in progress** (2026-10-10). Phase 0 done; Phase 1 built on `perf/slab-nolock` (results in
+`spike/webgpu/slab_cache_findings.md` → *Phase 0 baseline*, *Phase 1*); Phase 2 next.
 
 ## Goal
 
@@ -39,8 +39,12 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
    - Windows: `libblosc.dll` imports `getenv` from **msvcrt.dll** (Phase 0, `objdump`). Julia's `ENV`
      writes the Win32 block, which msvcrt's copy does not see. In-process, set it with
      `ccall((:_putenv, "msvcrt"), …)`; the startup check reads it back with msvcrt's `getenv` — what
-     blosc reads. Also pass it in the child environment at spawn (`dev.jl`, `app.py`, `pixi.toml`
-     tasks) so an inherited value covers it either way. Verified on CI `windows-latest`, not argued.
+     blosc reads. Verified on CI `windows-latest` by the testset that asserts `blosc_nolock()`.
+   - **One setter, in-process, at load** (`enable_blosc_nolock!` in `image_render.jl`, the file that
+     owns `using Zarr`). Only the API server process decodes zarr in Julia — the runner and `app/` do
+     not — and every launcher (`dev.jl`, `prod`, `app.py`, `bundle_check.sh`) loads that file, so it
+     covers them all by construction. Copies at each spawn site were rejected: four places to drift,
+     none needed.
    - The startup check logs the effective mode; in dev (`CECELIA_DEV`) a missing NOLOCK is an error.
    - It is process-wide: Julia-side zarr writes take the `_ctx` path too. That is the documented
      multithreaded form, not a new risk, but it is a behaviour change to name in the PR.
@@ -86,12 +90,18 @@ burst; a 128² sub-read costs as much as the whole chunk; amplification = chunk 
 
 ### Phase 1 — `BLOSC_NOLOCK` + hop off the interactive thread (one PR)
 
-- Read/encode of `try_serve_slab`, `try_serve_movie`, `try_serve_board_asset` inside
-  `Threads.@spawn` on the default pool, mirroring `handle_stream`; the stream write stays on the
-  connection task.
-- NOLOCK per Decision 3 on every launch path: `pixi run dev` (`dev.jl` backend spawn), `prod`,
-  `runner`/`dev-runner`, `app.py` (installed app, all three OSes), `scripts/bundle_check.sh`.
-- Startup check + permanent SHA test.
+Built 2026-10-10. Raw bricks at 16 in flight 9.98 → 1.37 s, derived 1.63 → 0.53 s, `/api/version`
+during a burst 60 → 11 ms mean; serial unchanged. Flat c4 only 1.28x: its read halves, but the 65 MB
+responses are then transfer-bound in HTTP.jl's buffered body path — outside this plan (Decision 9).
+
+- Read/encode of `try_serve_slab` inside `Threads.@spawn` on the default pool, mirroring
+  `handle_stream`; the stream write stays on the connection task. `try_serve_movie` and
+  `try_serve_board_asset` are NOT hopped: they read files (64 KB slices, small PNGs) and make no
+  long C call, so they only ever waited behind slab decodes — which this hop removes.
+- NOLOCK per Decision 3: one in-process setter at load; `blosc_nolock()` in `/api/diagnostics`
+  (`bloscNolock`); startup error in dev / warning in prod if it did not land.
+- Permanent tests: `blosc_nolock()` in-process, and a 5 x 16 serial-vs-parallel SHA-256 check in a
+  child with `-t 4` (the API suite runs single-threaded, where a race check cannot bite).
 - **Accept:** C 16 run wall well down from ~13.5 s (projection ~2 s); `flat_c4` real parallel gain
   (projection up to ~3–4x); `/api/version` during C back near idle; 0 mismatches, 0 errors. Far off
   → stop and investigate before Phase 2.

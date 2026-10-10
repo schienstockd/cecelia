@@ -126,6 +126,7 @@ function api_diagnostics(::HTTP.Request)
         dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
         protocol    = _PROTOCOL[],          # what the server ACTUALLY started with — HTTPS/HTTP2 or HTTP/1.1
         tlsDesired  = Cecelia.tls_desired(is_dev = _is_dev()),   # what the resolver wants (may differ from protocol on cert failure)
+        bloscNolock = blosc_nolock(),       # c-blosc skips its global lock (image_render.jl) — false = every zarr decode serialises
         previewPort   = service_port(:preview),   # child-service ports Cecelia occupies (backend `port`
         notebooksPort = service_port(:notebooks), # is above), surfaced so the panel shows the "don't
         runnerPort    = service_port(:runner),    # bind here" list; runner = the detached task runner
