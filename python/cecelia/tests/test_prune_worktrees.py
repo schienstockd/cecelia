@@ -100,7 +100,9 @@ class HelpersTest(unittest.TestCase):
                 "worktree /tmp/t/judge\nHEAD bbb\ndetached\nprunable gitdir file points to non-existent location\n\n"
                 "worktree /ws/cecelia-l\nHEAD ccc\nbranch refs/heads/l\nlocked\n")
         rows = P.parse_worktree_list(text)
-        self.assertEqual([r["worktree"] for r in rows], ["/ws/main", "/tmp/t/judge", "/ws/cecelia-l"])
+        # OS-native separators: git prints `D:/a/x` on Windows
+        self.assertEqual([r["worktree"] for r in rows],
+                         [os.path.normpath(p) for p in ("/ws/main", "/tmp/t/judge", "/ws/cecelia-l")])
         self.assertIn("prunable", rows[1])
         self.assertIn("locked", rows[2])
 
