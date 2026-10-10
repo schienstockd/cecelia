@@ -342,6 +342,27 @@ The browser viewer (`frontend/src/lib/webgpu`) drives image display, overlays an
   pay a renderer's start-up (`docs/todo/STILLS_WORKER_PLAN.md`). Julia's CPU compositor
   (`image_render.jl`) is left for the crop panel's preview. See `docs/todo/SHARED_RENDERER_PLAN.md`.
 
+### Slab reads — server side
+
+`/api/viewer/slab` serves every voxel the viewer draws: bricks, flat volumes, planes, tiles, masks.
+Three rules keep it parallel and correct (`docs/todo/SLAB_READ_PERF_PLAN.md`):
+
+- **`BLOSC_NOLOCK` is set at load, in-process.** c-blosc 1.x serialises every decompress on one global
+  mutex otherwise — concurrent reads ran at 0.34–0.95x of serial. `enable_blosc_nolock!`
+  (`image_render.jl`) sets it where blosc reads it (msvcrt's `_putenv` on Windows) and `blosc_nolock()`
+  reads it back the same way; a dev server refuses to start without it, and `/api/diagnostics` reports
+  `bloscNolock`. Every launcher loads that file, so no launcher sets it separately.
+- **A route dispatched before `handle_stream`'s pool hop must hop itself if it does blocking work.**
+  `try_serve_slab` runs on HTTP.jl's single interactive thread; its read + encode go to the default
+  pool (`Threads.@spawn`), and the response is still written on the connection's task. Without the
+  hop, one decode stalled every other request (`/api/version` 0.7 → 60 ms during a brick burst).
+- **Reads go through `read_native`, which reads through the decoded-chunk cache** (`chunk_cache.jl`).
+  Only reads that use part of a chunk are cached; the key is the level directory's (path, inode,
+  mtime), which is only sound because every writer stages and promotes — a writer that rewrote chunks
+  in place would be served stale. `.partial` stores are never cached. The budget is a Settings choice
+  (*Server read cache*, `auto` = RAM/16, 256 MiB–4 GiB), not to be confused with the browser's VRAM
+  `viewerCacheMB`.
+
 ### Multi-atlas contract (WebGPU brick renderer)
 
 The brick renderer allocates N ∈ 1..`MAX_ATLASES` (=4) atlas textures per image — where N is what

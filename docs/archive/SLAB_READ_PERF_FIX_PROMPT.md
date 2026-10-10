@@ -1,6 +1,21 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run. The measured
 > findings it was built on live in `docs/todo/spike/webgpu/slab_cache_findings.md`.
+>
+> **Outcome (2026-10-10).** Built as `docs/todo/SLAB_READ_PERF_PLAN.md`: Phase 1 (NOLOCK + pool hop,
+> #1575 via #1572), Phase 2 (decoded-chunk cache, #1581), Phase 3 decided for new images (import chunk
+> 512, derived stores inherit, #1576). Durable rules: `docs/ARCHITECTURE.md` → *Slab reads — server
+> side*. Premises that turned out wrong:
+> - **Concern 2** — `BLOSC_NOLOCK` is read on *every* `blosc_decompress`, so setting it late does take
+>   effect. The real trap was Windows: `libblosc.dll` reads msvcrt's environment, which a Julia `ENV`
+>   write does not update (fixed with `_putenv`, verified on CI).
+> - **Concern 1's "3x slower"** — the 0.34x was one machine; another measured 0.95x. "No gain from the
+>   hop alone" held on both.
+> - **Concerns 6–7** — the cache is keyed on the level directory (inode + mtime), not per-chunk files;
+>   it caches only partial-chunk reads (whole-volume reads were slower through it); and plain
+>   single-flight made cold scrubs slower until reads claimed unclaimed chunks first.
+> - **Phase 1 accept for flat (3–4x)** was not met (1.28x): the read halved, then HTTP.jl's buffered
+>   response path became the limit — now the limit for bricks too, outside this plan.
 
 # Prompt: fix `/api/viewer/slab` read performance
 
