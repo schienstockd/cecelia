@@ -98,7 +98,7 @@ def run(params):
     input_arrays = []
     dim_utils_list = []
     for p in im_paths:
-        arr, _ = zarr_utils.open_as_zarr(p, as_dask=True)
+        arr, _ = zarr_utils.open_as_zarr(p)
         input_arrays.append(arr)
         omexml = ome_xml_utils.parse_meta(p)
         du = DimUtils(omexml, use_channel_axis=True)

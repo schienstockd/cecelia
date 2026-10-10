@@ -412,8 +412,9 @@ reads by name.
 Two OME-ZARR layouts coexist — always detect rather than assume:
 
 ```python
-im_dat, zarr_group_info = zarr_utils.open_as_zarr(params['imPath'], as_dask=True)
-# im_dat[0] is the full-res array; im_dat[1], im_dat[2], ... are downsampled
+im_dat, zarr_group_info = zarr_utils.open_as_zarr(params['imPath'])
+# im_dat[0] is the full-res array; im_dat[1], im_dat[2], ... are downsampled. Plain zarr: read a
+# frame at a time with zarr_utils.read_timepoint (CLAUDE.md → Image / OME-ZARR access)
 ```
 
 Write output with:

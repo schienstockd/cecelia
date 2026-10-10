@@ -181,10 +181,12 @@ had `.h5ad` accesses fragmenting into a private napari reader stack before the l
 consolidated them. Full rule and the sanctioned entry points: root [`CLAUDE.md`](../CLAUDE.md) →
 *Image / OME-ZARR access*.
 
-`dask.array` inside a task runner (`app/src/tasks/**/*.py`) is opt-in — the sanctioned entry is
-`zarr_utils.open_as_zarr(as_dask=True)`, and per-frame reads go through `zarr_utils.read_timepoint`.
-A runner that pulls `import dask.array` directly needs `# DASK-OK: <reason>` on that import line;
-library utils under `python/cecelia/**` are unrestricted. This exists because the streaming ratchet
+`dask.array` is opt-in. Reads are plain zarr: per frame through `zarr_utils.read_timepoint`,
+whole-stack statistics through `intensity_utils.channel_histograms`. A task runner
+(`app/src/tasks/**/*.py`) that pulls `import dask.array` directly needs `# DASK-OK: <reason>` on that
+import line, and no module under `python/cecelia/utils/` may import dask at load time
+(`test_dask_import_isolation.py`; [`docs/todo/DASK_NARROW_PLAN.md`](todo/DASK_NARROW_PLAN.md)). The
+runner rule exists because the streaming ratchet
 (`test_streaming_convention.py`) landed after `segment.ridges` shipped a per-timepoint hand-rolled
 zarr read *and* accumulate-then-write; the shape of that failure was "dask looked like an equal
 option to numpy" and this makes the answer visible.

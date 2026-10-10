@@ -13,9 +13,6 @@ import numpy as np
 
 from cecelia.utils import block_transfer as bt
 
-AXES = ('T', 'Z', 'Y', 'X')
-FULL = (201, 21, 544, 548)
-
 
 def _mask(h=40, w=50, cells=7, dtype=np.uint32):
     """A block shaped like a real preview result: a length-1 T and Z, background plus a few labels."""
@@ -69,60 +66,6 @@ class CodecTest(unittest.TestCase):
         p['shape'] = [10 ** 6, 10 ** 6]
         with self.assertRaises(ValueError):
             bt.decode_block(p)
-
-
-class PlaceBlockTest(unittest.TestCase):
-    def _region(self, t=44, z=9, y=100, x=50, h=40, w=50):
-        return {'T': [t, t + 1], 'Z': [z, z + 1], 'Y': [y, y + h], 'X': [x, x + w]}
-
-    def test_block_lands_at_the_region_and_nowhere_else(self):
-        m = _mask()
-        out = bt.place_block_lazy(m, FULL, AXES, self._region())
-        self.assertEqual(tuple(out.shape), FULL)
-        self.assertEqual(out.dtype, m.dtype)
-        placed = out[44, 9, 100:140, 50:100].compute()
-        self.assertTrue(np.array_equal(placed, m[0, 0]))
-        self.assertEqual(out[44, 9, :, :].compute().sum(), m.sum())   # nothing outside the block
-        self.assertEqual(out[43, 9, :, :].compute().sum(), 0)         # neighbouring plane empty
-        self.assertEqual(out[44, 8, :, :].compute().sum(), 0)
-
-    def test_t_and_z_are_chunked_to_single_planes(self):
-        """The property that keeps a preview cheap. A chunk is the atomic unit of computation, so a
-        chunk spanning T/Z would materialise the whole volume to draw one plane — 4.8 GB here."""
-        out = bt.place_block_lazy(_mask(), FULL, AXES, self._region())
-        self.assertEqual(out.chunks[0], (1,) * FULL[0])
-        self.assertEqual(out.chunks[1], (1,) * FULL[1])
-        largest = int(np.prod([max(cs) for cs in out.chunks]))    # biggest single chunk, in elements
-        self.assertLess(largest * out.dtype.itemsize, 8 * 1024 * 1024)
-
-    def test_the_full_extent_is_never_materialised(self):
-        """A 4.8 GB nominal array must cost the block's bytes, not the extent's."""
-        out = bt.place_block_lazy(_mask(), FULL, AXES, self._region())
-        nominal = np.prod(FULL) * 4
-        self.assertGreater(nominal, 4e9)                       # the shape really is that big
-        self.assertLess(len(out.dask), 50_000)                 # graph stays small (measured ~8.4k)
-
-    def test_an_axis_outside_the_region_must_be_covered_in_full(self):
-        """Guards the silent-misplacement case: a block that doesn't span an unspecified axis would
-        otherwise be pinned at 0 along it and look like a correct result on the wrong plane."""
-        region = self._region()
-        del region['Z']
-        with self.assertRaises(ValueError):
-            bt.place_block_lazy(_mask(), FULL, AXES, region)
-
-    def test_a_block_running_past_the_extent_raises(self):
-        region = self._region(x=530)                    # 530 + 50 > 548
-        with self.assertRaises(ValueError):
-            bt.place_block_lazy(_mask(), FULL, AXES, region)
-
-    def test_works_without_a_z_axis(self):
-        """A 2D timelapse's label extent has no Z at all."""
-        axes, full = ('T', 'Y', 'X'), (10, 544, 548)
-        m = _mask()[:, 0]                               # (1, 40, 50)
-        out = bt.place_block_lazy(m, full, axes, {'T': [3, 4], 'Y': [0, 40], 'X': [0, 50]})
-        self.assertEqual(tuple(out.shape), full)
-        self.assertTrue(np.array_equal(out[3, 0:40, 0:50].compute(), m[0]))
-        self.assertEqual(out[4].compute().sum(), 0)
 
 
 if __name__ == '__main__':

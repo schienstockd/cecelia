@@ -44,6 +44,32 @@ class TestIntensityUtils(unittest.TestCase):
         self.assertEqual(len(hists), 1)
         self.assertEqual(hists[0][50], 1)
 
+    def test_a_stack_is_summed_plane_by_plane(self):
+        # (T, C, Z, Y, X): the leading axes are walked one plane at a time; the result must equal a
+        # histogram of the whole channel at once
+        rng = np.random.default_rng(0)
+        stack = rng.integers(0, 300, size=(3, 2, 4, 5, 6), dtype=np.uint16)
+        hists = iu.channel_histograms(stack, 1)
+        for c in range(2):
+            np.testing.assert_array_equal(
+                hists[c], np.bincount(stack[:, c].ravel(), minlength=2 ** 16))
+
+    def test_a_zarr_level_matches_numpy(self):
+        import zarr
+        rng = np.random.default_rng(1)
+        stack = rng.integers(0, 300, size=(3, 2, 4, 5, 6), dtype=np.uint16)
+        z = zarr.create_array(store={}, shape=stack.shape, chunks=(1, 1, 1, 5, 6), dtype=stack.dtype)
+        z[:] = stack
+        for got, want in zip(iu.channel_histograms(z, 1), iu.channel_histograms(stack, 1)):
+            np.testing.assert_array_equal(got, want)
+
+    def test_steps_stride_a_leading_axis(self):
+        rng = np.random.default_rng(2)
+        stack = rng.integers(0, 300, size=(5, 2, 3, 4, 4), dtype=np.uint16)
+        hists = iu.channel_histograms(stack, 1, channels=[0], steps={0: 2})
+        np.testing.assert_array_equal(
+            hists[0], np.bincount(stack[::2, 0].ravel(), minlength=2 ** 16))
+
     def test_hist_percentile(self):
         hists = iu.channel_histograms(self.arr, self.caxis)
         self.assertEqual(iu.hist_percentile(hists[0], 100), 50)

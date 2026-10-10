@@ -17,10 +17,9 @@ ends in `.partial` while it is being written.
 """
 
 import zarr
-import dask.array as da
-import dask
 import contextlib
 import os
+import sys
 import shutil
 import time
 import bisect
@@ -345,10 +344,19 @@ def open_zarr(zarr_path, mode='r', multiscales=None, as_dask=False):
     return zarr_data, zarr_group_info
 
 
+def is_dask(a):
+    """Whether ``a`` is a dask array, WITHOUT importing dask. Importing `dask.array` costs ~0.5 s
+    (it drags in xarray/pandas/scipy), and if nothing has imported it yet, ``a`` cannot be one.
+    No module under `cecelia.utils` may import dask at load time — docs/todo/DASK_NARROW_PLAN.md
+    Decision 2, guarded by test_dask_import_isolation."""
+    da = sys.modules.get('dask.array')
+    return da is not None and isinstance(a, da.Array)
+
+
 def fortify(im_array):
     if isinstance(im_array, zarr.Array):
         return im_array[:]
-    elif isinstance(im_array, dask.array.core.Array):
+    elif is_dask(im_array):
         return im_array.compute()
     return im_array
 
@@ -367,7 +375,7 @@ def chunks(im_array):
     im_chunks = None
     if isinstance(im_array, zarr.Array):
         im_chunks = im_array.chunks
-    elif isinstance(im_array, dask.array.core.Array):
+    elif is_dask(im_array):
         im_chunks = im_array.chunksize
     return [x if isinstance(x, int) else x[0] for x in im_chunks]
 
@@ -429,6 +437,7 @@ def plane_chunks(shape, dim_utils=None, xy_tile=None):
 
 
 def zarr_data_to_dask(zarr_data):
+    import dask.array as da
     return [da.from_zarr(arr) for arr in zarr_data]
 
 
@@ -1337,7 +1346,8 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     # the read-side counterpart; one place per direction.
     write_multiscales_attrs(multiscales_zarr, ms_meta, zarr_format)
 
-    if isinstance(im_array, dask.array.core.Array):
+    if is_dask(im_array):
+        import dask.array as da
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
         # dask array's own chunksize, which for a correction built via `chunks='auto'` spans the whole
         # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read.
@@ -1410,7 +1420,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
 
     def _read(src_slice):
         return fortify(level_source[src_slice]) \
-            if isinstance(level_source, dask.array.core.Array) else level_source[src_slice]
+            if is_dask(level_source) else level_source[src_slice]
 
     for i, x in enumerate(slices):
         # destination shape = length of each (strided) source slice

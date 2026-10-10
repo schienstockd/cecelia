@@ -125,9 +125,9 @@ AF_PREVIEW_STRIDE = (2, 4)
 def _preview_timepoints(dim_utils, max_frames=NORM_FRAMES):
     """At most `max_frames` timepoints, evenly strided — or None for "read them all".
 
-    The AF analogue of `SegmentationUtils._subsample_time`: same ceil-stride policy and the same
-    `NORM_FRAMES` budget, expressed as the index list `af_weight_stats` takes rather than a sliced
-    array. Two spellings because the two APIs differ, one policy.
+    The AF analogue of `SegmentationUtils._time_steps`: same ceil-stride policy and the same
+    `NORM_FRAMES` budget, expressed as the index list `af_weight_stats` takes rather than the `steps`
+    dict `channel_histograms` takes. Two spellings because the two APIs differ, one policy.
 
     The AF path had NO time budget while the cellpose path had had one all along, which is most of why
     a first AF preview felt broken and a first cellpose preview did not. Measured on
@@ -284,8 +284,7 @@ class PreviewState:
     other per-invocation cost a resident process removes."""
 
     def __init__(self):
-        self._images = {}        # im_path → (dask levels, dim_utils)
-        self._images_zarr = {}   # im_path → plain zarr levels (see image_zarr)
+        self._images = {}        # im_path → (zarr levels, dim_utils)
         self._model_cache = {}   # shared with each CellposeUtils instance (see `segmenter`)
         self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
         self._af = {}            # (im_path, channel, method) → per-channel AF stats
@@ -293,29 +292,19 @@ class PreviewState:
         self._smooth = {}        # (im_path, channels, spatial params, stat, frames) → (gain, gate sigma)
 
     def image(self, im_path):
-        """The image as DASK levels. Kept lazy because cellpose's whole-image normalisation
-        (`_compute_norm_params` → `channel_histograms`) streams an entire channel: with a plain zarr
-        handle that materialises the channel in RAM, which is the OOM the streaming rework removed."""
+        """The image as plain ZARR levels, plus its `DimUtils`.
+
+        Not dask: every reader here works a frame or a plane at a time, and a dask slice rebuilds and
+        executes a graph per read — measured at **9.3x** on AF's per-frame derivation
+        (`af_correct_image` 278.7 s → 30.1 s) and **12x** on a 17-frame temporal window (1.276 s →
+        0.106 s on `zolIMa/VJy1Nx`, 512 px crop). Cellpose's whole-image normalisation streams too:
+        `channel_histograms` reads one plane at a time (docs/todo/DASK_NARROW_PLAN.md Decision 7)."""
         if im_path not in self._images:
-            levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=True)
+            levels, _ = zarr_utils.open_as_zarr(im_path)
             dim_utils = DimUtils(ome_xml_utils.parse_meta(im_path), use_channel_axis=True)
             dim_utils.calc_image_dimensions(levels[0].shape)
             self._images[im_path] = (levels, dim_utils)
         return self._images[im_path]
-
-    def image_zarr(self, im_path):
-        """The same image as plain ZARR levels, for a reader that works one frame at a time.
-
-        Not the same handle as `image` on purpose, and not a blanket flip of it. AF's derivation reads
-        `fortify(arr[slice])` per frame — bounded either way — and measured on a real store the dask
-        handle costs **9.3×** on exactly that access pattern (`af_correct_image` 278.7 s → 30.1 s),
-        because each slice rebuilds and executes a graph. Cellpose's normalisation needs the opposite
-        (see `image`), so both handles exist. Opening a second one is metadata-only.
-        """
-        if im_path not in self._images_zarr:
-            levels, _ = zarr_utils.open_as_zarr(im_path, as_dask=False)
-            self._images_zarr[im_path] = levels
-        return self._images_zarr[im_path]
 
     def segmenter(self, params, dim_utils):
         """A fresh `CellposeUtils` per preview — params change every time, and that is the point —
@@ -399,7 +388,7 @@ class PreviewState:
         if needed:
             # one pass over the union of what is not yet known, never per combination
             derived = correction_utils.af_weight_stats(
-                self.image_zarr(im_path)[0], dim_utils, needed,
+                self.image(im_path)[0][0], dim_utils, needed,
                 background_method=method, spatial_stride=AF_PREVIEW_STRIDE,
                 timepoints=_preview_timepoints(dim_utils),
                 exclusive={int(channel_idx): bool(exclusive)})
@@ -446,8 +435,8 @@ class PreviewState:
         """
         key = (im_path, tuple(sel), spatial_key, stat, half, bool(restore_gain))
         if key not in self._smooth:
-            level = self.image_zarr(im_path)[0]
-            _, dim_utils = self.image(im_path)
+            levels, dim_utils = self.image(im_path)
+            level = levels[0]
             idx = {ax: dim_utils.dim_idx(ax) for ax in ('T', 'C', 'Z')}
             nt = level.shape[idx['T']] if idx['T'] is not None else 1
             nz = level.shape[idx['Z']] if idx['Z'] is not None else 1
@@ -603,28 +592,12 @@ class PreviewContext:
         return _as_cyx(zarr_utils.fortify(self.levels[0][sl]), self.dim_utils)
 
     def crop_at_t(self, t):
-        """The same region at timepoint `t`, as `[C, Y, X]` — read one frame at a time.
-
-        Reads through the PLAIN ZARR handle, not `self.levels`. This is the access pattern
-        `PreviewState.image_zarr` exists for and its docstring already measures on the AF path: a
-        dask slice rebuilds and executes a graph, so paying that per frame across a temporal window
-        is the whole cost. Measured on `zolIMa/VJy1Nx` driftCorrected, the 17-frame window a
-        `temporalScales` of 8 needs, 512 px crop:
-
-            17 dask slices     1.276 s
-            17 zarr slices     0.106 s      (12x)
-
-        That was 41% of the 3.1 s a flow panel took to answer a nudge of the t slider. `self.levels`
-        stays dask because `norm_params` needs it lazy — a whole-channel histogram through a plain
-        handle is the OOM that put it there — so this is a second handle, not a flip of the first,
-        exactly as `af_stats` uses one.
-
-        `crop()` is deliberately left alone: it is ONE slice, so it pays the graph once.
+        """The same region at timepoint `t`, as `[C, Y, X]` — read one frame at a time. `self.levels`
+        is plain zarr (see `PreviewState.image`), so a temporal window costs one chunk read per frame.
         """
-        levels = STATE.image_zarr(self.im_path)
         sl = slice_utils.crop_slice_tuple(
-            levels[0].ndim, _axis_indices(self.dim_utils), {**self.bounds, 'T': (t, t + 1)})
-        return _as_cyx(zarr_utils.fortify(levels[0][sl]), self.dim_utils)
+            self.levels[0].ndim, _axis_indices(self.dim_utils), {**self.bounds, 'T': (t, t + 1)})
+        return _as_cyx(zarr_utils.fortify(self.levels[0][sl]), self.dim_utils)
 
     def block_geometry(self):
         """`(axes, full_shape, block_shape)` for a channel-less block covering this region — what the

@@ -41,7 +41,6 @@ import os
 import shutil
 import sys
 
-import dask.array as da
 import zarr
 
 # `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
@@ -116,6 +115,7 @@ def rechunk_store(path, xy_tile=DEFAULT_XY_TILE, replace=False, force=False, kin
     src_sep = _group_separator(src)      # preserve the layout too, not just the format
     dst = zarr.open_group(tmp, mode="w", zarr_format=src_fmt)
     dst.attrs.update(dict(src.attrs))                         # multiscales metadata, verbatim
+    import dask.array as da
     for k in levels:
         s = src[k]
         ch = plane_chunks(s.shape, xy_tile=xy_tile)
