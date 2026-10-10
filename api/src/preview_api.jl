@@ -19,7 +19,6 @@
 import Cecelia: send
 
 const _preview_ref      = Ref{Union{PreviewWorker,Nothing}}(nothing)
-const _preview_starting = Ref(false)
 const _preview_lock     = ReentrantLock()
 
 # Serialise all interaction with the single worker, for the same reason as `_with_viewer`: under
@@ -28,6 +27,10 @@ const _preview_lock     = ReentrantLock()
 _with_preview(f) = lock(f, _preview_lock)
 
 _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
+
+# A launch is in flight — read off the worker's own lifecycle (`PreviewWorker.state`), not a flag kept
+# beside it that every path had to remember to reset.
+_preview_starting()::Bool = (w = _preview_ref[]; w !== nothing && w.state === Cecelia.PREVIEW_STARTING)
 
 """
     _stop_preview_worker!()
@@ -46,8 +49,7 @@ function _stop_preview_worker!()
         w === nothing || try; close!(w); catch e
             @warn "Could not stop preview worker" exception = e
         end
-        _preview_ref[]      = nothing
-        _preview_starting[] = false
+        _preview_ref[] = nothing
     end
 end
 
@@ -122,6 +124,7 @@ end
 function _preview_worker_alive()::Bool
     w = _preview_ref[]
     w === nothing && return false
+    w.state === Cecelia.PREVIEW_READY || return false   # starting, or stopped under us
     w.proc !== nothing && return preview_alive(w)   # hot path — no I/O
     # Adopted (no proc handle) — the ping is the only signal we have.
     ok, protocol = _preview_ping(w)
@@ -148,7 +151,7 @@ function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
         env in (nothing, :any) || Cecelia.python_bin_for(env)   # raises when the env isn't installed
         w = _preview_ref[]
         action = _preview_env_action(w === nothing ? missing : w.env, env;
-                                     alive = _preview_worker_alive(), starting = _preview_starting[])
+                                     alive = _preview_worker_alive(), starting = _preview_starting())
         action === :ready && return true
         action === :wait  && return false
         if action === :switch
@@ -161,6 +164,7 @@ function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
             if ok && protocol == PREVIEW_PROTOCOL &&
                (env === :any || probe_env == Cecelia.pixi_env_name(env))
                 probe.env = _preview_env_symbol(probe_env)
+                probe.state = Cecelia.PREVIEW_READY
                 _preview_ref[] = probe
                 @info "Adopted existing preview worker on port $(probe.port)"
                 return true
@@ -178,19 +182,18 @@ function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
         @info "Launching preview worker..." env = Cecelia.pixi_env_name(env)
         w = PreviewWorker(; env = env)
         _preview_ref[] = w
-        _preview_starting[] = true
+        w.state = Cecelia.PREVIEW_STARTING   # now, not when the task runs: a status poll must already say so
         @async begin
             try
                 launch!(w)
+                preview_stopping(w) && @info "Preview worker start cancelled"
             catch e
-                @error "Preview worker failed to start" exception = e
+                # a stop that lands mid-launch can still surface as a dead child — it is the cancel,
+                # not a failure, so it does not log as one (#1559)
+                preview_stopping(w) ? @info("Preview worker start cancelled") :
+                                      @error("Preview worker failed to start", exception = e)
+                close!(w)
                 lock(_preview_lock) do; _preview_ref[] === w && (_preview_ref[] = nothing); end
-            finally
-                # A switch may already have replaced `w` with a worker that is starting in its own
-                # right; its flag is not this launch's to clear.
-                lock(_preview_lock) do
-                    (_preview_ref[] === w || _preview_ref[] === nothing) && (_preview_starting[] = false)
-                end
             end
         end
         false
@@ -228,7 +231,7 @@ function api_preview_status(req::HTTP.Request)
     w = _preview()
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
-        starting = _preview_starting[],
+        starting = _preview_starting(),
         port     = service_port(:preview),
         # the pixi env of the worker held (running or starting), so the toggle can say a warm-up is
         # cellpose 3's; `nothing` when none is held
@@ -255,7 +258,7 @@ function api_preview_start(body_bytes::Vector{UInt8})
         return _preview_env_error(e)
     end
     w = _preview()
-    200, JSON3.write((; alive = ready, starting = _preview_starting[], port = service_port(:preview),
+    200, JSON3.write((; alive = ready, starting = _preview_starting(), port = service_port(:preview),
                         env = w === nothing ? nothing : Cecelia.pixi_env_name(w.env)))
 end
 
@@ -308,7 +311,10 @@ function api_preview_stop(body_bytes::Vector{UInt8})
         try
             _with_preview() do
                 w = _preview()
-                w === nothing || send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
+                # Only a READY worker is bound to answer. One still starting has written nothing to
+                # sweep, and the send would only fail against an unbound port.
+                (w === nothing || w.state !== Cecelia.PREVIEW_READY) ||
+                    send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
             end
         catch e
             @warn "Preview scratch sweep failed" exception = e

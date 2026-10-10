@@ -97,14 +97,26 @@ const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker
 # `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for
 # the opt-in sidecar — same meaning as `run_py`'s `env`. One worker at a time: a preview that needs the
 # other env replaces it (`_ensure_preview!`), because the two cannot share a process.
+#
+# `state` is the worker's lifecycle, set explicitly rather than inferred from whether `proc` happens to
+# be set: `PREVIEW_IDLE` → `PREVIEW_STARTING` (spawned, importing) → `PREVIEW_READY` (answered with our
+# protocol and env), and `PREVIEW_STOPPING` → `PREVIEW_STOPPED` from any of them. A stop during the
+# warm-up is therefore a cancel `launch!` can see, not a `proc` cleared under its poll. An adopted
+# worker is `PREVIEW_READY` from the start.
+@enum PreviewState PREVIEW_IDLE PREVIEW_STARTING PREVIEW_READY PREVIEW_STOPPING PREVIEW_STOPPED
+
 mutable struct PreviewWorker
     port::Int
     proc::Union{Base.Process, Nothing}
     env::Union{Symbol, Nothing}
+    state::PreviewState
 end
 
 PreviewWorker(; port::Int=service_port(:preview), env::Union{Symbol,Nothing}=nothing) =
-    PreviewWorker(port, nothing, env)
+    PreviewWorker(port, nothing, env, PREVIEW_IDLE)
+
+# Stopped, or on its way: a launch in flight gives up quietly, and nothing is sent to it.
+preview_stopping(w::PreviewWorker)::Bool = w.state in (PREVIEW_STOPPING, PREVIEW_STOPPED)
 
 """
     send(w::PreviewWorker, msg) -> Dict
@@ -140,6 +152,8 @@ mismatch it was meant to repair. A dead child is also detected directly, so a bi
 second rather than after the full 90.
 """
 function launch!(w::PreviewWorker)::PreviewWorker
+    preview_stopping(w) && return w
+    w.state = PREVIEW_STARTING
     # PYTHONPATH pins `import cecelia.*` to THIS checkout's `python/`, exactly as `run_py` does for
     # task runners. Without it the worker runs this worktree's `preview_worker.py` while importing
     # whatever `cecelia` pip has installed — in dev an editable install pointing at the MAIN checkout.
@@ -156,7 +170,7 @@ function launch!(w::PreviewWorker)::PreviewWorker
     # no stack. The traceback now reaches the console under `source = "preview"`.
     # The env comes from the model (`PreviewWorker.env`); the worker echoes `CECELIA_PY_ENV` in its
     # ping so a worker adopted after a backend restart can be matched against what a preview needs.
-    w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
+    proc = w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
                           addenv(`$(python_bin_for(w.env)) $PREVIEW_WORKER`,
                                  "PYTHONPATH" => _python_dir(),
                                  "CECELIA_PY_ENV" => pixi_env_name(w.env),
@@ -172,6 +186,9 @@ function launch!(w::PreviewWorker)::PreviewWorker
     deadline = time() + 90
     squatter = nothing
     while time() < deadline
+        # A stop during the warm-up is a CANCEL (the user's second click on the bolt), not a failure:
+        # return without raising, so nothing logs an error for what the user asked for.
+        preview_stopping(w) && return w
         try
             reply = send(w, Dict("type" => "ping"))
             protocol = Int(get(reply, "protocol", 1))
@@ -180,6 +197,8 @@ function launch!(w::PreviewWorker)::PreviewWorker
             # preview from cellpose 4 — the bug the switch exists to fix (#1555).
             env_ok = String(get(reply, "env", "")) == pixi_env_name(w.env)
             if protocol == PREVIEW_PROTOCOL && env_ok
+                preview_stopping(w) && return w
+                w.state = PREVIEW_READY
                 @info "Preview worker connected" port=w.port env=pixi_env_name(w.env)
                 return w
             end
@@ -197,7 +216,9 @@ function launch!(w::PreviewWorker)::PreviewWorker
             # that never even tried to bind). See its docstring for why blacklist over whitelist.
             _is_probe_code_bug(e) && rethrow()
         end
-        if !process_running(w.proc)
+        # the handle this launch spawned, not `w.proc` — `close!` clears that from another task
+        preview_stopping(w) && return w
+        if !process_running(proc)
             error("Preview worker exited immediately" *
                   (squatter === nothing ? "" :
                    " — port $(w.port) is held by a worker speaking $squatter, which is why it " *
@@ -219,12 +240,16 @@ memory a warm cellpose model holds, which is why this is a real user-facing acti
 cleanup. Kills the tree — torch spawns children a bare `kill` would orphan.
 """
 function close!(w::PreviewWorker)
+    w.state = PREVIEW_STOPPING   # first, so a launch in flight sees a cancel, not a dead child
     w.proc !== nothing && try; _kill_proc_tree(w.proc); catch; end
     w.proc = nothing
+    w.state = PREVIEW_STOPPED
 end
 
+# Ready AND its process still running. `PREVIEW_READY` is part of it: a worker still importing has a live
+# process but nothing bound, and treating that as alive sent the first preview to a refused port.
 preview_alive(w::PreviewWorker)::Bool =
-    w.proc !== nothing && process_running(w.proc)
+    w.state === PREVIEW_READY && w.proc !== nothing && process_running(w.proc)
 
 """
     preview_request(img, params, region; value_name) -> Dict

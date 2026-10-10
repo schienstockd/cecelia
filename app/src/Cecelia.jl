@@ -259,7 +259,7 @@ export chain_node, make_chain
 # `launch!`/`close!`/`send` are the resident-child generics defined in preview.jl. Viewer used to
 # define them too — retired in P9.
 export launch!, close!, send
-export PreviewWorker, PREVIEW_PROTOCOL, preview_alive, preview_request
+export PreviewWorker, PREVIEW_PROTOCOL, preview_alive, preview_stopping, preview_request
 export preview_reply_payload
 export task_previewable, preview_params, preview_params_for_run,
        preview_steps_not_previewed, preview_py_env, preview_env

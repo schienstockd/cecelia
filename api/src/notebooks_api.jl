@@ -103,16 +103,23 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
             try
                 for _ in 1:120   # up to ~120 s cold start (first Pluto boot precompiles)
                     _notebook_server_alive() && break
+                    # A shutdown during startup moves `_pluto_state.proc` off this launch — that exit
+                    # is the user's stop, not a failure, so it records no error.
+                    _pluto_state.proc === proc || break
                     if process_exited(proc) && !_notebook_server_alive()
                         _with_pluto_state_lock() do
-                            _pluto_state.error = "The notebook server exited during startup. $_SETUP_HINT"
+                            _pluto_state.proc === proc &&
+                                (_pluto_state.error = "The notebook server exited during startup. $_SETUP_HINT")
                         end
                         break
                     end
                     sleep(1)
                 end
             finally
-                _with_pluto_state_lock() do; _pluto_state.starting = false; end
+                # …and a launch that has been replaced does not clear its successor's flag
+                _with_pluto_state_lock() do
+                    _pluto_state.proc === proc && (_pluto_state.starting = false)
+                end
             end
         end
         false

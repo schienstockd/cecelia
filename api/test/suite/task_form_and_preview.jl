@@ -367,6 +367,46 @@ end
     end
 end
 
+@testset "API: a stop during the warm-up is a cancel, not an error (#1559)" begin
+    # THE REPORTED SEQUENCE: second click during the ~18 s warm-up → stop → a cleanup send to the worker
+    # that had not bound yet ("scratch sweep failed … refused") → `close!` under the launch's poll →
+    # MethodError logged as "worker failed to start". The process half is pinned in the app suite
+    # ("stopping a worker mid-launch…"); this is the route half, on a worker that is only `:starting`
+    # (no process, an unused port — never :7656).
+    mktempdir() do proj_root
+        conf  = cecelia_conf()
+        pdirs = get!(conf, "dirs", Dict{String,Any}())
+        had   = haskey(pdirs, "projects"); prev = get(pdirs, "projects", nothing)
+        pdirs["projects"] = proj_root
+        try
+            meta = joinpath(proj_root, "p", "1", "img1"); mkpath(meta)
+            write(joinpath(meta, "ccid.json"), JSON3.write(Dict("uid" => "img1")))
+            w = PreviewWorker(; port = 17656 + rand(0:999))
+            w.state = Cecelia.PREVIEW_STARTING
+            _preview_ref[] = w
+            st, body = api_preview_status(HTTP.Request("GET", "/api/preview/status"))
+            d = JSON3.read(body)
+            @test d.starting == true && d.alive == false     # starting is not alive: nothing is bound
+            @test _ensure_preview!() == false                # …so a request waits instead of sending
+
+            # no cleanup send to an unbound worker, so no warning; the worker ends `:stopped`
+            st, body = @test_logs min_level = Base.CoreLogging.Warn _post(api_preview_stop,
+                                                                          Dict("taskDir" => meta))
+            @test st == 200 && JSON3.read(body).stopped == true
+            @test w.state === Cecelia.PREVIEW_STOPPED
+            @test _preview() === nothing
+            @test JSON3.read(api_preview_status(HTTP.Request("GET", "/api/preview/status"))[2]).starting == false
+        finally
+            _preview_ref[] = nothing
+            had ? (pdirs["projects"] = prev) : delete!(pdirs, "projects")
+        end
+    end
+    # Pluto's launch watcher had the same shape: a shutdown during startup read as "exited during
+    # startup". Source-level — a live Pluto boot is minutes cold.
+    nb = read(joinpath(API_TEST_DIR, "..", "src", "notebooks_api.jl"), String)
+    @test occursin("_pluto_state.proc === proc || break", nb)
+end
+
 @testset "API: preview refuses a client path it would write or delete under" begin
     # The worker removes and rewrites `{taskDir}/labels/{vn}__preview.ome.zarr`, and on stop deletes
     # every preview store under `{taskDir}`. So the vn must be one path component (400 before anything

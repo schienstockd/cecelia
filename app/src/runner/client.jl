@@ -146,7 +146,10 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
     #                        possible destination for the one output you most need.
     #   `@info/@warn/@error` → `runner:log` on its event stream → the app console, with source/detail/
     #                        seq, gap-filled from the runner's own ring after a reconnect.
-    h.proc = run(pipeline(Cmd(addenv(`$julia --project -t auto runner.jl`,
+    # `proc` is THIS launch's handle, and the poll below uses it rather than `h.proc`: `runner_stop!`
+    # (Quit, or a second restart) clears `h.proc` from another task while this waits, and polling the
+    # field then raised `process_running(::Nothing)` — the same race as the preview worker's `launch!`.
+    proc = h.proc = run(pipeline(Cmd(addenv(`$julia --project -t auto runner.jl`,
                                      "CECELIA_RUNNER_PORT" => string(h.port));
                               dir = dirname(script), detach = true);
                           stdout = stdout, stderr = stderr); wait = false)
@@ -154,6 +157,7 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
 
     deadline = time() + wait_seconds
     while time() < deadline
+        h.proc === proc || return h      # stopped (or relaunched) under us — not this launch's to report
         reply = runner_ping(h)
         if reply !== nothing && Int(get(reply, "protocol", 0)) == RUNNER_PROTOCOL
             # WHOSE runner answered? Not necessarily ours. A runner that was already starting up when
@@ -163,7 +167,7 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
             # the reader hunting for a bug in the pid that died, which is what happened in practice.
             # The pid on the wire is the truth; compare it and say which of the two this was.
             their_pid = get(reply, "pid", nothing)
-            ours      = try; Libc.getpid(h.proc); catch; nothing; end
+            ours      = try; Libc.getpid(proc); catch; nothing; end
             mine      = their_pid !== nothing && ours !== nothing && Int(their_pid) == Int(ours)
             h.adopted = !mine
             mine ?
@@ -176,7 +180,7 @@ function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
         # `!process_running` no longer implies the port was taken: a runner that finds an incumbent now
         # exits cleanly and deliberately (see `runner_serve`). Loop once more so an incumbent that is
         # up gets adopted on the next pass rather than reported as a failure.
-        if !process_running(h.proc)
+        if !process_running(proc)
             reply = runner_ping(h)
             if reply !== nothing
                 h.adopted = true
