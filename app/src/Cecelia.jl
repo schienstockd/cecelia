@@ -225,7 +225,7 @@ export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_p
        recent_tasks, record_task_outcome!, pool_status
 export note_task_started!, task_started_at, forget_task_start!, iso_utc, parse_iso_utc, TASK_TS_FORMAT
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
-export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
+export start_job!, claim_job!, job_active, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
 export resize_pool!, set_pool_limit!
 # Sink-agnostic execution (runner/execute.jl) — one implementation, driven by the API server today and
@@ -435,6 +435,7 @@ export profile_settings_path, read_profile_settings, write_profile_settings!, pa
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export REQUEST_VIA, author_stamp
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
+       observer_api_url,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,

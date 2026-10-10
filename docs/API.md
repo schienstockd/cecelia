@@ -267,6 +267,8 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/blackboard/delete` | `{projectUid, entryId}` → removes the entry dir and registry key; `{ok, deleted}` (`api_blackboard_delete`, `api/src/blackboard_api.jl`) |
 | GET | `/api/system/envs` | opt-in pixi envs with install/platform support status — `{platform, envs: {<name>: {installed, supported, approxSizeMb, description}}}` (`api_system_envs`, `api/src/system_api.jl`) |
 | POST | `/api/system/envs/install` | `{env}` start a background `pixi install -e <env>` streamed on the task rail — 202 `{started, jobId, env}` or `{installed, alreadyPresent}` (`api_system_envs_install`, `api/src/system_api.jl`) |
+| GET | `/api/system/weights` | built-in cellpose weights the app fetches — `{models: {<name>: {present, fetching, label, approxSizeMb}}}` (`api_system_weights`, `api/src/system_api.jl`) |
+| POST | `/api/system/weights/fetch` | `{model}` start (or join) the `model-weights:<model>` background job — 202 `{started, jobId}` or 200 `{present}` (`api_system_weights_fetch`, `api/src/system_api.jl`) |
 | GET | `/api/maintenance/patches` | data-patch catalogue for Settings (listing only; running is the `maintenance:run` WS action) — `{patches: [{id, title, description}]}` (`api_maintenance_patches`, `api/src/maintenance_api.jl`) |
 | GET | `/api/runner/status` | task-runner state for Settings → System — `{enabled, settable, running, port, pid?, adopted?, commit?, stale?, protocolMismatch?, uptimeSeconds?, busy?}` (`api_runner_status`, `api/src/runner_api.jl`) |
 | POST | `/api/runner/restart` | `{force?}` stop and relaunch the task runner; 409 while tasks are in flight unless `force` — `{ok, message}` (`api_runner_restart`, `api/src/runner_api.jl`) |

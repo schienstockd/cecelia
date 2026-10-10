@@ -6,8 +6,8 @@ Deliberately thin: all it does is connect to ``ws://…/ws``, JSON-decode each f
 
 The MCP server (stdio) runs the MCP SDK's own loop; this runs on a background daemon thread with its own
 asyncio loop (see ``start_listener``). ``websockets`` is already a repo dependency (the napari bridge),
-so no new dep. If the backend is down or drops, ``websockets.connect``'s async-iterator form
-reconnects automatically — the observer is best-effort and never blocks the read tools.
+so no new dep. If the backend is down or drops, ``observe`` reconnects with a capped backoff — the
+observer is best-effort and never blocks the read tools.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import threading
 
 import websockets
 
+from cecelia_mcp import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.monitor import SessionMonitor, normalize_frame
 
@@ -46,19 +47,37 @@ def api_url_to_ws(api_url: str) -> str:
     return base + "/ws"
 
 
+def ssl_kwargs(ws_url: str) -> dict:
+    """`connect(..., **ssl_kwargs(url))`: the unverified context for wss:// on loopback (the app's cert
+    is self-signed), nothing otherwise — websockets rejects an `ssl` argument for a ws:// URL."""
+    ctx = loopback.ssl_context(ws_url)
+    return {"ssl": ctx} if ctx is not None else {}
+
+
 async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event | None = None) -> None:
-    """Connect and stream frames into the monitor forever, reconnecting on drop. Best-effort."""
-    async for ws in websockets.connect(ws_url, ping_interval=20, open_timeout=5,
-                                       additional_headers=auth_headers()):
+    """Connect and stream frames into the monitor forever, reconnecting on drop. Best-effort.
+
+    A connect that fails switches to the other scheme (ws ↔ wss) on loopback, so a registration made
+    before TLS was toggled still hears the app — see loopback.py. A drop after connecting reconnects on
+    the same scheme."""
+    urls = loopback.candidates(ws_url)
+    i, delay = 0, 0.0
+    while not (stop is not None and stop.is_set()):
+        url = urls[i]
         try:
-            async for raw in ws:
-                feed_raw(monitor, raw)
-                if stop is not None and stop.is_set():
-                    return
+            async with websockets.connect(url, ping_interval=20, open_timeout=5,
+                                          additional_headers=auth_headers(), **ssl_kwargs(url)) as ws:
+                delay = 0.0
+                async for raw in ws:
+                    feed_raw(monitor, raw)
+                    if stop is not None and stop.is_set():
+                        return
         except websockets.ConnectionClosed:
-            continue  # reconnect
-        if stop is not None and stop.is_set():
-            return
+            pass
+        except (OSError, EOFError, asyncio.TimeoutError, websockets.InvalidHandshake):
+            i = (i + 1) % len(urls)
+            delay = min(max(2 * delay, 0.5), 10.0)
+        await asyncio.sleep(max(delay, 0.5))
 
 
 def start_listener(monitor: SessionMonitor, ws_url: str) -> threading.Thread:

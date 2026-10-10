@@ -20,9 +20,10 @@ import {
   compositeWarning, warmPollAction,
   PREVIEW_DEBOUNCE_MS, WORKER_WARM_POLL_MS,
   type PreviewContext, type PreviewStatus, type PreviewBlocker, type PreviewPass,
-  previewFailureLog } from '../utils/taskPreview'
+  previewFailureLog, isWeightsJob } from '../utils/taskPreview'
 import { useLogStore } from './log'
-import { useViewerStore } from './viewer'
+import { useViewerStore, type PreviewImage } from './viewer'
+import { useTaskCompletionWatch } from '../composables/useTaskCompletionWatch'
 
 export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // SESSION-ONLY, and a deliberate exception to "persist every user-settable option"
@@ -180,13 +181,15 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
     // Goes on the VIEWER STORE (bridged across windows), because the run completes in the module
     // page's Pinia and the render happens in the popup viewer's Pinia — a plain ref here would never
     // reach it.
+    // The region rides along so the viewer can outline what was previewed when the cap cut it down.
     viewerStore.setPreviewLabels(
-      res?.previewLabels && typeof res.previewLabels === 'object' ? res.previewLabels : null)
+      res?.previewLabels && typeof res.previewLabels === 'object' ? { ...res.previewLabels, region } : null)
     // P7.1: an AF-shaped reply carries `previewImages: [{sourceChannel, valueName, ...}, …]`; when
     // set, ViewerWindow swaps each corrected channel's slab onto the scratch AF store. Same
     // cross-window story as previewLabels.
     viewerStore.setPreviewImages(
-      Array.isArray(res?.previewImages) ? res.previewImages : null)
+      Array.isArray(res?.previewImages)
+        ? res.previewImages.map((p: Omit<PreviewImage, 'updateId'>) => ({ ...p, region })) : null)
     error.value = ''
     errorCode.value = ''
   }, {
@@ -311,6 +314,15 @@ export const useTaskPreviewStore = defineStore('taskPreview', () => {
   // done at the viewer store's sink, and this saves a round trip through the backend just to reach a
   // peer store.
   watch(() => viewerStore.visibleRegion, () => { request() })
+  // A preview refused with `weights-downloading` waits on the `model-weights:` job; when that job
+  // ends, ask again — a `done` previews, a `failed` comes back as the same refusal with a fresh job.
+  useTaskCompletionWatch({
+    enabled: () => errorCode.value === 'weights-downloading',
+    frameTypes: ['task:status'],
+    isTrigger: f => isWeightsJob(String(f.taskId ?? '')) && ['done', 'failed'].includes(String(f.status ?? '')),
+    debounceMs: 0,
+    onComplete: () => { error.value = ''; errorCode.value = ''; request() },
+  }).install()
   watch(() => viewerStore.openImage, () => {
     // Opening a different image (route load, valueName picker) invalidates the mask on screen — the
     // preview labels store belongs to the previous vn/uid pair.

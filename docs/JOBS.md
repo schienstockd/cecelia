@@ -60,6 +60,8 @@ parallel export).
 | Function | Purpose |
 |---|---|
 | `start_job!(task_id)` | register the job (idempotent), so `job_cancelled` is meaningful before any subprocess spawns |
+| `claim_job!(task_id)` | register only if not running — `false` = join the one in flight (one download, however many callers) |
+| `job_active(task_id)` | `Bool` — is the job registered (running)? |
 | `track_job!(task_id, proc)` | register a live subprocess (wire into `run_py`'s `on_process`, or call around a `run(...)`); kills it immediately if the job was already cancelled (race guard) |
 | `job_cancelled(task_id)` | `Bool` — checked *in-loop* by a parallel packer to stop between units |
 | `cancel_job!(task_id)` | set the flag **and** kill every tracked subprocess |

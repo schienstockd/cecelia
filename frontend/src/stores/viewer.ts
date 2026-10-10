@@ -59,6 +59,8 @@ export interface PreviewLabels {
   imageUid: string
   projectUid: string
   updateId: number
+  /** the region this run previewed — the viewer outlines it when it is smaller than the view */
+  region?: VisibleRegion
 }
 
 /** ONE cross-window handoff for "jump the browser viewer somewhere and, optionally, show these
@@ -123,6 +125,8 @@ export interface PreviewImage {
   imageUid: string
   projectUid: string
   updateId: number
+  /** the region this run previewed (see `PreviewLabels.region`) */
+  region?: VisibleRegion
 }
 
 /**

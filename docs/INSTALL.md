@@ -124,9 +124,10 @@ pixi run python -c "import torch, cellpose; print('cuda', torch.cuda.is_availabl
 > floor, the `coastal` commit-pinned tarball dependency, GPU/RAPIDS being parked, the run-via-`pixi run`
 > model — lives in `docs/SHIPPING.md`, not here.
 
-> **First cellpose run downloads weights.** Cellpose 4 fetches `cpsam_v2` (~1.2 GB) from
-> HuggingFace into `~/.cellpose/models` on first use. Set `CELLPOSE_LOCAL_MODELS_PATH` to point
-> elsewhere, or to a pre-seeded directory on a machine with no internet access.
+> **The installer downloads the segmentation weights.** Cellpose-SAM's `cpsam_v2` (~1.2 GB) comes
+> from HuggingFace into `~/.cellpose/models`. If that fails (or `CECELIA_SKIP_MODEL_WEIGHTS=1` is
+> set), the app fetches it at start as a visible background job. Set `CELLPOSE_LOCAL_MODELS_PATH` to
+> point elsewhere, or to a pre-seeded directory on a machine with no internet access.
 
 ### Don't move or rename the checkout after installing
 
