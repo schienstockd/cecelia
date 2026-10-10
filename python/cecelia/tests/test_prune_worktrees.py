@@ -77,7 +77,7 @@ class ClassifyTest(unittest.TestCase):
                                      tracked_ts={"frontend/src/u.ts"}), P.JUNK)
 
     def test_junk_mixed_with_real_work_is_dirty(self):
-        self.assertEqual(self.bucket(status=["?? frontend/src/A.vue.js", "?? docs/todo/X_PLAN.md"]), P.DIRTY)
+        self.assertEqual(self.bucket(status=["?? frontend/src/A.vue.js", "?? notes/draft.md"]), P.DIRTY)
 
     def test_primary_dead_locked_and_outside_are_never_safe(self):
         self.assertEqual(self.bucket(primary=True), P.PRIMARY)

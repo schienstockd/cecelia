@@ -17,11 +17,11 @@ include(joinpath(@__DIR__, "bootstrap_worktree.jl"))  # PROGRAM_FILE guard skips
     # The failing case — the exact shape `normpath(joinpath(@__DIR__, ".."))` produces on
     # Unix. Trailing slash MUST NOT keep the result nested inside the source.
     @test sibling_dst("/home/u/ws/cecelia/cecelia-source/", "target") ==
-        "/home/u/ws/cecelia/cecelia-target"
+        normpath("/home/u/ws/cecelia/cecelia-target")   # `\` separators on Windows
 
     # No trailing slash — the same answer.
     @test sibling_dst("/home/u/ws/cecelia/cecelia-source", "target") ==
-        "/home/u/ws/cecelia/cecelia-target"
+        normpath("/home/u/ws/cecelia/cecelia-target")   # `\` separators on Windows
 
     # A relative repo root also lands relative-to-parent, not nested inside itself.
     @test sibling_dst("cecelia-source", "target") == "cecelia-target"
