@@ -109,7 +109,10 @@ def classify(f: Facts) -> tuple[str, str]:
 # ── fact gathering ──────────────────────────────────────────────────────────────────────────
 
 def parse_worktree_list(text: str) -> list[dict]:
-    """`git worktree list --porcelain` → one dict per entry (`worktree`, `HEAD`, `branch`, flags)."""
+    """`git worktree list --porcelain` → one dict per entry (`worktree`, `HEAD`, `branch`, flags).
+
+    `worktree` is normalised to OS-native separators: git prints `D:/a/x` on Windows, which would
+    otherwise never compare equal to a `pathlib` path."""
     out = []
     for block in text.split("\n\n"):
         entry: dict = {}
@@ -117,6 +120,7 @@ def parse_worktree_list(text: str) -> list[dict]:
             key, _, val = line.partition(" ")
             entry[key] = val
         if "worktree" in entry:
+            entry["worktree"] = os.path.normpath(entry["worktree"])
             out.append(entry)
     return out
 
@@ -148,7 +152,8 @@ def scan_processes(own_pid: int | None = None) -> list[tuple[int, str, list[str]
 
 
 def _under(path: str, root: str) -> bool:
-    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+    path, root = os.path.normcase(path), os.path.normcase(root).rstrip(os.sep)
+    return path == root or path.startswith(root + os.sep)
 
 
 def pids_under(root: str, procs: list[tuple[int, str, list[str]]] | None) -> list[tuple[int, str]] | None:
@@ -173,7 +178,7 @@ def stash_counts(primary: str) -> dict[str, int]:
 def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float) -> Facts:
     path = entry["worktree"]
     branch = entry.get("branch", "").removeprefix("refs/heads/") or None
-    f = Facts(path=path, branch=branch, head=entry.get("HEAD"), primary=path == primary,
+    f = Facts(path=path, branch=branch, head=entry.get("HEAD"), primary=os.path.normcase(path) == os.path.normcase(primary),
               locked="locked" in entry, exists=pathlib.Path(path).is_dir(),
               managed=_under(path, str(pathlib.Path(primary).parent)))
     if f.primary or not f.exists or f.locked or not f.managed:
