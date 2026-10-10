@@ -1,6 +1,7 @@
 # Slab read performance plan
 
-Status: **parked → in progress** (2026-10-10). Plan only so far; Phase 0 next.
+Status: **in progress** (2026-10-10). Phase 0 done (results in `spike/webgpu/slab_cache_findings.md` →
+*Phase 0 baseline*); Phase 1 next.
 
 ## Goal
 
@@ -35,10 +36,11 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
    tag v1.21.6) — the brief's "must be set before blosc's first call" is wrong. Consequences:
    - Linux/macOS: `ENV["BLOSC_NOLOCK"] = "1"` at the top of the server (and runner) entry point works.
      Set it before the thread pool is busy — `setenv` racing `getenv` in other threads is unsafe.
-   - Windows: Julia's `ENV` writes the Win32 environment; the C runtime blosc links against keeps its
-     own copy, which may not see it. The child must get the variable from its parent's environment at
-     spawn (`dev.jl`, `app.py`, `pixi.toml` tasks), and the startup check must read it through the
-     same CRT blosc uses.
+   - Windows: `libblosc.dll` imports `getenv` from **msvcrt.dll** (Phase 0, `objdump`). Julia's `ENV`
+     writes the Win32 block, which msvcrt's copy does not see. In-process, set it with
+     `ccall((:_putenv, "msvcrt"), …)`; the startup check reads it back with msvcrt's `getenv` — what
+     blosc reads. Also pass it in the child environment at spawn (`dev.jl`, `app.py`, `pixi.toml`
+     tasks) so an inherited value covers it either way. Verified on CI `windows-latest`, not argued.
    - The startup check logs the effective mode; in dev (`CECELIA_DEV`) a missing NOLOCK is an error.
    - It is process-wide: Julia-side zarr writes take the `_ctx` path too. That is the documented
      multithreaded form, not a new risk, but it is a behaviour change to name in the PR.
@@ -64,7 +66,13 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
 
 ## Phases
 
-### Phase 0 — baseline + confirmations (no behaviour change)
+### Phase 0 — baseline + confirmations (no behaviour change) — DONE 2026-10-10
+
+Results: serialisation reproduces on raw and derived stores; `/api/version` 0.7 → 60 ms during a
+burst; a 128² sub-read costs as much as the whole chunk; amplification = chunk XY / brick XY per level
+(64x raw, 16x our writer); every store is one z-plane per chunk; Windows blosc reads msvcrt's
+`getenv`. Done:
+
 
 - Through the current server, on Dml3RG (same geometry as 8eapy6): runs B (warm, conc 1), C (warm,
   conc 16), `flat_c1`, `flat_c4`, plus `/api/version` latency during C. Save as
@@ -102,8 +110,10 @@ The GPU upload path is not the bottleneck (`WEBGPU_UPLOAD_PATH_PLAN.md`).
 
 ### Phase 3 — chunk-shape decision (write-up, not necessarily code)
 
-From Phase 0: if plane chunking is the norm for imports and our writer, write up brick-aligned
-rechunk on import vs a rechunk task for existing stores vs the cache as the fix, with measured read
+Phase 0 answered the premise: it is the norm — bioformats2raw `1,1,1,≤1024,≤1024` and our writer's
+`zarr_utils.plane_chunks` `1,1,1,≤512,≤512`, the latter justified by napari's per-plane slicing,
+which is being retired. So write up the options: brick-aligned chunks for new writes (`plane_chunks`),
+rechunk on import, a rechunk task for existing stores, or the cache as the whole fix — with measured read
 costs (including the movie and 2D-plane readers, which prefer plane chunks). Needs sign-off.
 
 ### Phase 4 — docs

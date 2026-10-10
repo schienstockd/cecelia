@@ -258,6 +258,69 @@ Standalone Julia, **no HTTP** (so layer 1 is out of the picture), `-t 16`, blosc
 4. **How common is plane chunking?** Is `1,1,1,Y,X` the default for every bioformats2raw import / our
    own writer, i.e. is this every store or just this one?
 
+## Phase 0 baseline (2026-10-10, `SLAB_READ_PERF_PLAN.md`)
+
+Second machine (32 logical cores), through the running dev server (`cecelia-feijoa` @ `650bfe7f` —
+behind `main` in `try_serve_slab`'s routing, not its read path), plain HTTP/1.1 (no cert on this box).
+Store `zolIMa`/`Dml3RG`: raw import `valueName=default` (same geometry and chunking as 8eapy6) and the
+image's default store, a derived one at `1,1,1,512,512` (35 z). Page cache warm.
+
+| Run | Store | Conc | Run wall | Server-read median | Server-read p95 |
+|---|---|---|---|---|---|
+| `p0_baseline_raw_B` | raw | 1 | 9.89 s | 148.6 ms | 182.5 ms |
+| `p0_baseline_raw_C` | raw | 16 | 9.98 s | 2430 ms | 2511 ms |
+| `p0_baseline_raw_flat_c1` | raw | 1 | 6.10 s | 103.6 ms | 164.5 ms |
+| `p0_baseline_raw_flat_c4` | raw | 4 | 5.20 s | 409.2 ms | 587.1 ms |
+| `p0_baseline_derived_B` | derived | 1 | 1.52 s | 19.1 ms | 28.5 ms |
+| `p0_baseline_derived_C` | derived | 16 | 1.63 s | 359.5 ms | 401.8 ms |
+
+- **Serialisation reproduces on both stores**: 16 in flight take as long as 16 in turn (raw 9.98 vs
+  9.89 s; derived 1.63 vs 1.52 s). Flat c4 gains 1.17x.
+- **`GET /api/version`**: idle 0.7 ms mean (n=10) → **59.5 ms mean, 101 ms max** during raw C (n=30).
+- **The store a user actually views is often the derived one**, and it is ~8x cheaper per brick
+  (19 vs 149 ms): 16x amplification instead of 64x, and its chunks decode faster.
+
+### Amplification, measured directly — `slab_amplification.jl`
+
+Whole chunk vs a 128² sub-read of the same chunk (middle z, one channel), then a full brick;
+single thread, warm. Raw: `slab_cache_results/amplification_*.json`.
+
+| Store | Level | Chunk (x,y) | Chunk | 128² sub-read | Brick | Decoded per brick | Amplification |
+|---|---|---|---|---|---|---|---|
+| Dml3RG raw | L0 | 1024² | 1.50 ms | 0.94 ms (0.62x) | 200 ms | 260 MB | 64x |
+| Dml3RG derived | L0 | 512² | 0.12 ms | 0.13 ms (1.07x) | 26 ms | 73 MB | 16x |
+| 4rNbMp/FtGoJO raw | L0 | 1024² | 3.57 ms | 3.32 ms (0.93x) | 574 ms | 327 MB | 64x |
+| | L1 | 1012² | 3.44 ms | 3.40 ms (0.99x) | 564 ms | 320 MB | 62.5x |
+| | L2 | 506² | 0.83 ms | 0.80 ms (0.96x) | 141 ms | 80 MB | 15.6x |
+| | L3 | 253² | 0.21 ms | 0.21 ms (1.03x) | 34 ms | 20 MB | 3.9x |
+
+- **Confirmed**: a 128² sub-read costs 0.6–1.1x of the whole chunk — the decode is the cost.
+- **Amplification = chunk XY area / brick XY area**, per level. It does not shrink with level until the
+  level's plane drops under the chunk cap: bioformats2raw caps chunks at 1024², so a 2024² image's L1
+  (1012²) is still one chunk per plane, 62.5x. Dml3RG's stores have no pyramid (L0 only).
+- The Dml3RG raw brick measured 149 ms in one run and 200 ms in the next on the same machine — read
+  single-run brick times as ±30%.
+
+### Chunk shapes — every store is one z-plane per chunk
+
+- **bioformats2raw imports**: `1,1,1,min(Y,1024),min(X,1024)` — whole planes up to 1024², tiled
+  1024² above (4rNbMp slides: 3271x6488 at `1,1,1,1024,1024`).
+- **Our writer** (`zarr_utils.plane_chunks`): `1,1,1,min(Y,512),min(X,512)`, every level. Its
+  docstring gives the reason: napari slices per (t, c, z). napari is being retired; the browser brick
+  renderer reads all z at once, which is the opposite access pattern.
+- No brick-shaped store exists in the projects dir sampled (`~/cecelia-feijoa/projects`, 10 projects).
+
+### Windows: `libblosc.dll` reads `getenv` from msvcrt
+
+`Blosc_jll` 1.21.7 (the manifest's) is a Yggdrasil rebuild of c-blosc **1.21.6** (commit
+`616f4b73`), so the per-call `getenv("BLOSC_NOLOCK")` read in `blosc/blosc.c` v1.21.6 applies.
+`objdump -p` on its x86_64-w64-mingw32 `libblosc.dll`: imports `getenv` from **`msvcrt.dll`**. Julia's
+`ENV[...] =` on Windows calls `SetEnvironmentVariableW`, which updates the Win32 environment block but
+not msvcrt's own copy (built at process start). So on Windows, in-process, the variable must be set
+with msvcrt's `_putenv` (which updates both), or inherited from the parent; and the startup check
+should read it back through msvcrt's `getenv` — exactly what blosc sees. (The msvcrt-vs-Win32 split is
+documented CRT behaviour; not yet exercised on a Windows box.)
+
 ## Method deviations
 
 - **Cache drop:** `sudo` could not authenticate from the agent session, so instead of
@@ -281,7 +344,7 @@ iostat -x -m 1 nvme0n1 > $R/A_iostat.txt & vmstat 1 > $R/A_vmstat.txt &
 python3 -I slab_cache_summary.py $R A B C
 ```
 
-`slab_cache_bench.sh` takes `CECELIA_URL`, `PROJ`, `IMG` env overrides; the store geometry
+`slab_cache_bench.sh` takes `CECELIA_URL`, `PROJ`, `IMG`, `VN` (valueName) and `MODE=flat` (8 t x NC whole volumes) env overrides; the store geometry
 (`NT/NZ/NC`, 8x8 bricks) is hardcoded for `8eapy6` at the top of the script.
 The two `.jl` scripts take the store path as their argument and read the geometry from it. Another
 store with the same layout, for a run on a different machine: `zolIMa`/`Dml3RG`'s raw import
@@ -294,6 +357,7 @@ bench's hardcoded geometry fits it too (`PROJ=zolIMa IMG=Dml3RG`).
 | `slab_cache_summary.py` | median / p95 / MB/s per run |
 | `page_cache_evict.py` | no-sudo page-cache eviction for one directory, verified with `mincore` |
 | `slab_parallel_bench.jl` | brick reads from N threads without HTTP; run as-is and with `BLOSC_NOLOCK=1`, store path as the argument (commands in its header) |
+| `slab_amplification.jl` | whole chunk vs 128² sub-read vs full brick, per level; store path as the argument |
 | `slab_nolock_check.jl` | SHA-256 of 16-way parallel vs serial brick reads, 5 rounds; store path as the argument |
 | `slab_cache_results/parallel_{default,nolock}_<image>.json` | `slab_parallel_bench.jl` results |
 | `slab_cache_results/flat_c{1,4}.tsv` | flat-path whole-volume slabs, concurrency 1 vs 4 (same columns as the brick TSVs) |
