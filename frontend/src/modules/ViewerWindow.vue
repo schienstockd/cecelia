@@ -62,7 +62,7 @@ import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
 import { adapterNameText, classifiedByText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
-import { MAX_ATLASES } from '../utils/brickAtlas'
+import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
   metaUrl, slabUrl, slabShapeError, extentUm, fitCamera, carryCamera, orbitDrag, panDrag, orbitZoom, contrastFromSlab,
@@ -74,6 +74,7 @@ import {
 import {
   prefetchWindow, prefetchDepth, walkPrefetch, stripCells, playbackAdvance, playbackIntervalMs,
 } from '../utils/volumeCache'
+import type { PlaybackHint } from '../utils/pageTable'
 import {
   playHealthSummary, trimSamples, type PlayHealthSample,
 } from '../utils/playHealth'
@@ -1397,15 +1398,14 @@ const cacheHardCapMB = computed(() => {
   const a = stableAdapterReport.value
   return a ? perAtlasMB.value * MAX_ATLASES : Infinity
 })
-/** How many atlases the picker will allocate for this budget on this hardware. Mirrors the picker:
- *  floor(budget / one atlas), capped at MAX_ATLASES — the picker never allocates a partial atlas,
- *  so a ceil here labelled 12 GB "4×" when the picker builds 3. The real picker in
+/** How many atlases the picker will allocate for this budget on this hardware — the picker's own
+ *  `atlasCountForBudget`, capped at MAX_ATLASES. The real picker in
  *  `frontend/src/utils/brickAtlas.ts` can return fewer if a single brick already exceeds the
  *  per-atlas budget (pathological cases only) — for the chip strip this budget-only estimate
  *  is close enough, and doesn't depend on which image is loaded. */
 function estimateAtlasesForBudget(budgetMB: number): number {
   if (perAtlasMB.value <= 0 || budgetMB <= 0) return 1
-  return Math.max(1, Math.min(MAX_ATLASES, Math.floor(budgetMB / perAtlasMB.value)))
+  return Math.min(MAX_ATLASES, atlasCountForBudget(budgetMB, perAtlasMB.value))
 }
 const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
   const overCap = o.mb > 0 && o.mb > cacheHardCapMB.value
@@ -2260,7 +2260,7 @@ const depth = () => {
 const pump = debouncedLatest<number>(async (tp, isCurrent) => {
   const r = renderer.value, m = meta.value
   if (!r || !m) return
-  const dir = Math.sign(tp - lastT) || 1
+  const dir = travelDir(tp)
   lastT = tp
 
   // The walk itself is `walkPrefetch` — see there for the stale-walk race that left the first frame
@@ -2304,10 +2304,22 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
 function schedulePump(tp: number) {
   const m = meta.value
   if (m) {
-    const keep = new Set(prefetchWindow(tp, Math.sign(tp - lastT) || 1, m.nT, depth()))
+    const keep = new Set(prefetchWindow(tp, travelDir(tp), m.nT, depth()))
     for (const [k, ac] of [...aborts]) if (!keep.has(k)) ac.abort()
   }
   pump.schedule(tp)
+}
+
+/** Direction of travel towards `tp`, for the prefetch window. Playback only runs forward — going
+ *  by `tp - lastT` read the loop wrap (last → 0) as reverse and fetched behind the playhead. */
+function travelDir(tp: number): number {
+  return playing.value ? 1 : Math.sign(tp - lastT) || 1
+}
+
+/** While playing, tells the brick atlas to evict by next use rather than LRU — so a loop that
+ *  overflows the cache refetches only the overflow, not every frame. `null` when not playing. */
+function playbackHint(nT: number): PlaybackHint | null {
+  return playing.value ? { dir: 1, nT, loop: settings.viewerLoop } : null
 }
 
 /** Paint immediately, fetch on the scheduler — the documented split: a paint is coalesced per frame,
@@ -2333,14 +2345,14 @@ function gotoT(tp: number) {
   // renderer streams per-viewport per-t, so the hint lives here rather than inside the pump.
   const r = renderer.value; const m = meta.value
   if (r?.setPrefetchTimepoints && m) {
-    const dir = Math.sign(tp - lastT) || 1
+    const dir = travelDir(tp)
     // Cap requested: 4 during playback (~½ s buffer at 8 fps), 1 otherwise. The renderer clamps
     // to whatever fits alongside boundT in the atlas — a small cache or a big-L0 image (Dml3RG
     // shape) rounds this down so prefetch bricks can't LRU-evict boundT bricks. Regression guard
     // for the rectangular-black-holes symptom observed 2026-09-02.
     const requested = playing.value ? 4 : 1
     const cap = r.maxSafePrefetchDepth?.(requested) ?? requested
-    r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap))
+    r.setPrefetchTimepoints(prefetchWindow(tp, dir, m.nT, cap), playbackHint(m.nT))
   }
 }
 
@@ -2843,12 +2855,12 @@ function tick() {
       // this t matters). Under playback cap=4 so the window covers the direction of travel.
       const m = meta.value
       if (r?.setPrefetchTimepoints && m) {
-        const dir = Math.sign(step.next - t.value) || 1
+        const dir = 1   // playback runs forward; `step.next - t` is negative at the loop wrap
         // Same atlas-size clamp as gotoT — a stalled playback step MUST NOT ask for more
         // prefetch than the atlas can hold, or the prefetch bricks LRU-evict the boundT bricks
         // the shader is trying to draw. Regression guard, .
         const cap = r.maxSafePrefetchDepth?.(4) ?? 4
-        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap))
+        r.setPrefetchTimepoints(prefetchWindow(step.next, dir, m.nT, cap), playbackHint(m.nT))
       }
       frame.redraw()
     } else {

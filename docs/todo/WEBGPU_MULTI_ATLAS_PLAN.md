@@ -84,10 +84,16 @@ one-div slot decode (Decision 2). No user-visible win — the caller wants "more
 
 ### Decision 4 — Sizing: pack until budget or axis limit, then start a new atlas.
 
-`pickAtlasLayout(bytes, ..., budget, limits)` sizes ONE atlas at `min(budget, maxBufferSize)`
-with the existing algorithm, then divides the caller's remaining budget by that atlas' byte
-size to get N. Capped at `MAX_ATLASES`. Uneven remainders round down — a `perAtlas × N` that
-doesn't quite fill the budget is the design (Decision 3 forbids ragged sizes).
+`pickAtlasLayout(bytes, ..., budget, limits)` sizes ONE atlas at
+`budget / ceil(budget / maxBufferSize)` with the existing algorithm, then divides the caller's
+budget by that atlas' byte size to get N. Capped at `MAX_ATLASES`. Atlases stay homogeneous
+(Decision 3) — the budget is split EVENLY rather than leaving a ragged remainder.
+
+Revised 2026-10-10: the original rule sized each atlas at `min(budget, maxBufferSize)` and
+rounded N down, so with a ~4 GiB cap a 12 GB budget got 2 × 4 GiB and anything under 8 GiB got
+a single 4 GiB atlas — the extra cache the user set bought nothing. A budget within 1 % over a
+multiple of `maxBufferSize` (Chromium reports 2³² − 4 for a "4 GB" pick) doesn't spawn an
+extra atlas.
 
 Reason: this reuses today's sizer for the per-atlas layout — no separate multi-atlas
 tie-break, no risk of a different tie-breaker choosing a worse-square layout.

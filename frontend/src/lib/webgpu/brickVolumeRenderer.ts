@@ -31,8 +31,8 @@ import { createBrickAtlasTextures, brickPayloadBytes, type BrickAtlasTexture } f
 import { createBrickPayloadRing, type BrickPayloadRing } from '../../utils/brickPayloadRing'
 import {
   PageTable, brickKey, parseBrickKey, shouldAdmitKick,
-  maxSafePrefetchDepth as computeMaxSafePrefetchDepth,
-  type VirtualBrick,
+  maxSafePrefetchDepth as computeMaxSafePrefetchDepth, nextUseDistance, viewportPosKey,
+  type VirtualBrick, type PageTableEntry, type PlaybackHint,
 } from '../../utils/pageTable'
 import {
   scheduleBricks, brickWorldFromMeta, brickViewportFromCamera,
@@ -513,6 +513,12 @@ export async function createBrickVolumeRenderer(
    *  `show(t)` bumps `boundT` to one of them — LRU keeps them warm in the atlas until then, so
    *  playback advances without cold-fetching each new t. Empty = current-t only. */
   let prefetchTs: number[] = []
+  /** Set while playing (`setPrefetchTimepoints`' second argument): eviction then ranks by next
+   *  use instead of LRU — see `playbackVictimRank`. */
+  let playback: PlaybackHint | null = null
+  /** Grid positions (`viewportPosKey`) the current view intersects at the current level, as of
+   *  the last `tickScheduler`. A resident brick elsewhere is off screen at every t. */
+  let viewportPositions = new Set<string>()
   /** User-chosen level FLOOR — coarsest LOD the SSE picker is allowed to pick. Undefined = no
    *  floor (SSE freely picks any). Threaded through by ViewerWindow from its `slabLevel`
    *  computed, which itself calls `pickVolumeLevel` (default = coarsest). Replaces the 8b780fd
@@ -565,19 +571,27 @@ export async function createBrickVolumeRenderer(
   const camState: OrbitCamera = { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 }
   const channels: ViewerChannel[] = []
 
-  const dropAtlas = () => {
-    if (atlas === null) return
+  /** Bumped by every `setImage`; an async atlas allocation that wakes to a newer generation
+   *  (another `setImage`, or `destroy`) throws its work away instead of installing it. */
+  let allocGen = 0
+
+  const destroyAtlasState = (a: AtlasState) => {
     // Multi-atlas P2: destroy every allocated atlas texture (in P1 there's always exactly one).
-    for (const t of atlas.textures) t.destroy()
-    atlas.pageTableBuffer.destroy()
-    atlas.prevPageTableBuffer.destroy()
+    for (const t of a.textures) t.destroy()
+    a.pageTableBuffer.destroy()
+    a.prevPageTableBuffer.destroy()
     // Reject any pending payload-ring leases — an inflight fetchBrick that was waiting for a
     // slot will resolve to `null` and the caller drops it, matching the same-atlas-changed
     // behaviour of the abort path a few lines up.
-    atlas.payloadRing.destroy()
+    a.payloadRing.destroy()
     // Only destroy the real per-image label textures — the shared placeholder is
     // renderer-lived. S2: N textures instead of one; destroy all when labels are enabled.
-    if (atlas.labelsEnabled) for (const t of atlas.labelTextures) t.destroy()
+    if (a.labelsEnabled) for (const t of a.labelTextures) t.destroy()
+  }
+
+  const dropAtlas = () => {
+    if (atlas === null) return
+    destroyAtlasState(atlas)
     atlas = null
     // displayT tracks pageTableCpu residency at the current atlas — a fresh atlas has neither,
     // so reset here or the next show(t) would think it's still holding the previous image.
@@ -607,9 +621,11 @@ export async function createBrickVolumeRenderer(
     const [ex, ey, ez] = extentUm(meta, zd)
     uniform.ext = [ex, ey, ez]
 
+    const hadAtlas = atlas !== null
     dropAtlas()
     inflight.forEach(ac => ac.abort())
     inflight.clear()
+    const gen = ++allocGen
     const bpv = meta.bytesPerVoxel
     // Thin-Z stores collapse brickZ to nZ (Decision 2). Vibratome stacks keep the full 128.
     // Also clamped by `meta.nZ` so a caller passing `zd > nZ` (e.g. a restored `zRange` that
@@ -644,121 +660,163 @@ export async function createBrickVolumeRenderer(
       onError?.(`Brick atlas: no layout fits budget ${budget} bytes on this device`)
       return
     }
-    const layout = layouts[0]
-    const textures = createBrickAtlasTextures(device, layouts, limits, onError)
-    if (textures === null) return
-    const texture = textures[0]
+    // Build every GPU object for an `n`-atlas residency. Runs inside `allocateAtlas`'s awaited
+    // 'out-of-memory' scope, so an OOM anywhere in here (intensity atlases, label atlases,
+    // staging buffers) is seen by that one pop. Returns the state WITHOUT installing it.
+    const buildAtlas = (n: number): AtlasState | null => {
+      const layout = layouts[0]
+      const textures = createBrickAtlasTextures(device, layouts.slice(0, n), limits, onError)
+      if (textures === null) return null
+      const texture = textures[0]
 
-    // Global slot ID (Decision 2). PageTable's capacity spans all N atlases; the shader's
-    // slot decode still uses layout[0]'s atlasSlotCounts because all layouts are homogeneous.
-    const perAtlasCapacity = atlasSlotCapacity(layout)
-    const capacity = perAtlasCapacity * textures.length
-    const pageTable = new PageTable(capacity)
+      // Global slot ID (Decision 2). PageTable's capacity spans all N atlases; the shader's
+      // slot decode still uses layout[0]'s atlasSlotCounts because all layouts are homogeneous.
+      const perAtlasCapacity = atlasSlotCapacity(layout)
+      const capacity = perAtlasCapacity * textures.length
+      const pageTable = new PageTable(capacity)
 
-    // L0 grid is the largest we ever address — allocate the page-table CPU + GPU buffer for it, so a
-    // level switch never has to reallocate. Coarser levels index a smaller subrange of the same
-    // storage.
-    const gridNxL0 = Math.max(1, Math.ceil(meta.nX / brickSize[0]))
-    const gridNyL0 = Math.max(1, Math.ceil(meta.nY / brickSize[1]))
-    const gridNzL0 = Math.max(1, Math.ceil(zd / brickSize[2]))
+      // L0 grid is the largest we ever address — allocate the page-table CPU + GPU buffer for it, so a
+      // level switch never has to reallocate. Coarser levels index a smaller subrange of the same
+      // storage.
+      const gridNxL0 = Math.max(1, Math.ceil(meta.nX / brickSize[0]))
+      const gridNyL0 = Math.max(1, Math.ceil(meta.nY / brickSize[1]))
+      const gridNzL0 = Math.max(1, Math.ceil(zd / brickSize[2]))
 
-    const pageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
-    const pageTableBuffer = device.createBuffer({
-      size: Math.max(16, pageTableCpu.byteLength),   // WebGPU rejects 0-size buffers
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
-    // Prev-level fallback buffer: same size + shape as pageTableBuffer, empty until the first
-    // level switch copies the current CPU buffer here. Must be bound even when unused — WebGPU
-    // won't let a bind-group slot go absent, and `prevValid=0` in the uniform keeps the shader
-    // from reading it.
-    const prevPageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
-    const prevPageTableBuffer = device.createBuffer({
-      size: Math.max(16, prevPageTableCpu.byteLength),
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    })
-
-    // Label atlas: r32uint, same slot layout as the image atlas (same slotsX/Y/Z, same brickXY)
-    // but Z is `slotsZ * brickZ` — labels have no channel stacking. Only allocated when the
-    // caller flags `withLabels`; otherwise the shared placeholder rides in this slot. The atlas
-    // ALLOCATION is decoupled from whether label bytes are actually fetched — the caller has to
-    // pre-declare labels here for the same reason the flat renderer does (a texture allocation is
-    // expensive; toggling between real and placeholder without warning would drop every landed
-    // brick on the floor). Fetches then gate on `source.labelName` separately.
-    // Per-N variant (S1). `variantN = textures.length` — the layout picker's N drives which
-    // shader we bind against. Every atlas texture goes in at its per-variant `atlas[i]` slot;
-    // downstream bindings shift by the label-atlas addition (S2) — see `brickShader.ts` for
-    // the shift rule.
-    const variantN = textures.length
-    const variant = pickVariant(variantN)
-    const vb = variant.bindings
-
-    // Label atlases (S2): one per intensity atlas, each sized to that atlas's slot grid. When
-    // labels are off we bind the shared placeholder N times over — WebGPU allows the same
-    // texture view at multiple binding slots, and the shader skips the label path anyway
-    // (p.lab.x == 0). Same allocation discipline as pre-S2: the atlas ALLOCATION is decoupled
-    // from whether label bytes are actually fetched, because toggling between real and
-    // placeholder would drop every landed brick.
-    const labelsEnabled = !!withLabels
-    let labelTextures: GPUTexture[]
-    if (labelsEnabled) {
-      const [bx, by, bz] = layout.brickSizeVox
-      // Homogeneous layouts (parent plan Decision 3) — every entry in `layouts` has the same
-      // per-atlas slot grid. Size a label texture per intensity atlas so `writeTexture` can
-      // route to the right (atlas, slot) pair below (kickLabelFetch).
-      labelTextures = layouts.map(l => {
-        const [sx, sy, sz] = l.atlasSlotCounts
-        return device.createTexture({
-          size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-        })
+      const pageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
+      const pageTableBuffer = device.createBuffer({
+        size: Math.max(16, pageTableCpu.byteLength),   // WebGPU rejects 0-size buffers
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       })
-    } else {
-      labelTextures = Array.from({ length: variantN }, () => noLabelAtlas)
+      // Prev-level fallback buffer: same size + shape as pageTableBuffer, empty until the first
+      // level switch copies the current CPU buffer here. Must be bound even when unused — WebGPU
+      // won't let a bind-group slot go absent, and `prevValid=0` in the uniform keeps the shader
+      // from reading it.
+      const prevPageTableCpu = new Uint32Array(gridNxL0 * gridNyL0 * gridNzL0).fill(EMPTY_SLOT)
+      const prevPageTableBuffer = device.createBuffer({
+        size: Math.max(16, prevPageTableCpu.byteLength),
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      })
+
+      // Label atlas: r32uint, same slot layout as the image atlas (same slotsX/Y/Z, same brickXY)
+      // but Z is `slotsZ * brickZ` — labels have no channel stacking. Only allocated when the
+      // caller flags `withLabels`; otherwise the shared placeholder rides in this slot. The atlas
+      // ALLOCATION is decoupled from whether label bytes are actually fetched — the caller has to
+      // pre-declare labels here for the same reason the flat renderer does (a texture allocation is
+      // expensive; toggling between real and placeholder without warning would drop every landed
+      // brick on the floor). Fetches then gate on `source.labelName` separately.
+      // Per-N variant (S1). `variantN = textures.length` — the layout picker's N drives which
+      // shader we bind against. Every atlas texture goes in at its per-variant `atlas[i]` slot;
+      // downstream bindings shift by the label-atlas addition (S2) — see `brickShader.ts` for
+      // the shift rule.
+      const variantN = textures.length
+      const variant = pickVariant(variantN)
+      const vb = variant.bindings
+
+      // Label atlases (S2): one per intensity atlas, each sized to that atlas's slot grid. When
+      // labels are off we bind the shared placeholder N times over — WebGPU allows the same
+      // texture view at multiple binding slots, and the shader skips the label path anyway
+      // (p.lab.x == 0). Same allocation discipline as pre-S2: the atlas ALLOCATION is decoupled
+      // from whether label bytes are actually fetched, because toggling between real and
+      // placeholder would drop every landed brick.
+      const labelsEnabled = !!withLabels
+      let labelTextures: GPUTexture[]
+      if (labelsEnabled) {
+        const [bx, by, bz] = layout.brickSizeVox
+        // Homogeneous layouts (parent plan Decision 3) — every entry in `layouts` has the same
+        // per-atlas slot grid. Size a label texture per intensity atlas so `writeTexture` can
+        // route to the right (atlas, slot) pair below (kickLabelFetch).
+        labelTextures = layouts.slice(0, n).map(l => {
+          const [sx, sy, sz] = l.atlasSlotCounts
+          return device.createTexture({
+            size: [bx * sx, by * sy, bz * sz], dimension: '3d', format: 'r32uint',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          })
+        })
+      } else {
+        labelTextures = Array.from({ length: variantN }, () => noLabelAtlas)
+      }
+
+      const atlasEntries = textures.map((tex, i) => ({
+        binding: vb.atlas[i]!, resource: tex.texture.createView(),
+      }))
+      const labAtlasEntries = labelTextures.map((tex, i) => ({
+        binding: vb.labAtlas[i]!, resource: tex.createView(),
+      }))
+      const bindGroup = device.createBindGroup({
+        layout: variant.bindGroupLayout,
+        entries: [
+          { binding: vb.uniform, resource: { buffer: uniformBuf } },
+          { binding: vb.pt, resource: { buffer: pageTableBuffer } },
+          ...atlasEntries,
+          { binding: vb.prevPt, resource: { buffer: prevPageTableBuffer } },
+          { binding: vb.lut, resource: lutTex.createView() },
+          ...labAtlasEntries,
+          { binding: vb.pal, resource: palTex.createView() },
+          { binding: vb.pick, resource: { buffer: pickBuffer } },
+        ],
+      })
+
+      // U3 payload ring — one ArrayBuffer per inflight slot, sized to the full-brick payload
+      // (edge bricks fill less; the buffer is oversized rather than shrinking per-fetch). Owned
+      // per-atlas so a layout change (level swap, new image) rebuilds it with the new shape;
+      // capacity equals `MAX_INFLIGHT` because that's the caller's admission cap.
+      const payloadRing = createBrickPayloadRing({
+        capacity: MAX_INFLIGHT,
+        payloadBytes: brickPayloadBytes(layout),
+      })
+
+      return {
+        layout, layouts: layouts.slice(0, n), texture, textures, perAtlasCapacity, payloadRing, pageTable,
+        gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
+        gridNxL0, gridNyL0, gridNzL0,
+        pageTableBuffer, pageTableCpu, pageTableDirty: true,
+        prevPageTableBuffer, prevPageTableCpu, prevPageTableDirty: true,   // upload the empty state
+        prevGridNx: 0, prevGridNy: 0, prevGridNz: 0,
+        prevLevel: undefined,
+        bindGroup,
+        currentLevel: undefined,
+        labelTextures, labelsEnabled,
+        variantN,
+      }
     }
 
-    const atlasEntries = textures.map((tex, i) => ({
-      binding: vb.atlas[i]!, resource: tex.texture.createView(),
-    }))
-    const labAtlasEntries = labelTextures.map((tex, i) => ({
-      binding: vb.labAtlas[i]!, resource: tex.createView(),
-    }))
-    const bindGroup = device.createBindGroup({
-      layout: variant.bindGroupLayout,
-      entries: [
-        { binding: vb.uniform, resource: { buffer: uniformBuf } },
-        { binding: vb.pt, resource: { buffer: pageTableBuffer } },
-        ...atlasEntries,
-        { binding: vb.prevPt, resource: { buffer: prevPageTableBuffer } },
-        { binding: vb.lut, resource: lutTex.createView() },
-        ...labAtlasEntries,
-        { binding: vb.pal, resource: palTex.createView() },
-        { binding: vb.pick, resource: { buffer: pickBuffer } },
-      ],
-    })
-
-    // U3 payload ring — one ArrayBuffer per inflight slot, sized to the full-brick payload
-    // (edge bricks fill less; the buffer is oversized rather than shrinking per-fetch). Owned
-    // per-atlas so a layout change (level swap, new image) rebuilds it with the new shape;
-    // capacity equals `MAX_INFLIGHT` because that's the caller's admission cap.
-    const payloadRing = createBrickPayloadRing({
-      capacity: MAX_INFLIGHT,
-      payloadBytes: brickPayloadBytes(layout),
-    })
-
-    atlas = {
-      layout, layouts, texture, textures, perAtlasCapacity, payloadRing, pageTable,
-      gridNx: gridNxL0, gridNy: gridNyL0, gridNz: gridNzL0,     // start at L0
-      gridNxL0, gridNyL0, gridNzL0,
-      pageTableBuffer, pageTableCpu, pageTableDirty: true,
-      prevPageTableBuffer, prevPageTableCpu, prevPageTableDirty: true,   // upload the empty state
-      prevGridNx: 0, prevGridNy: 0, prevGridNz: 0,
-      prevLevel: undefined,
-      bindGroup,
-      currentLevel: undefined,
-      labelTextures, labelsEnabled,
-      variantN,
+    // Allocate, then install. Two things make the obvious synchronous `createTexture` OOM on a
+    // card with room to spare:
+    //  - Dawn frees a destroyed texture's VkDeviceMemory only once the GPU has retired the work
+    //    that used it. Re-creating straight after `dropAtlas()` (every 2D↔3D toggle: the brick
+    //    shape changes) needs old + new resident at once — 24 GB for a 12 GB cache. So when
+    //    an atlas was just dropped, wait for the queue to drain first.
+    //  - Other tenants (the desktop, another tab, a CUDA job) own VRAM WebGPU can't see. So an
+    //    OOM steps down one atlas and retries, rather than failing the brick renderer outright;
+    //    only a single atlas failing reaches `onError` (→ the flat fallback in ViewerWindow).
+    const allocateAtlas = async (): Promise<void> => {
+      if (hadAtlas) await device.queue.onSubmittedWorkDone()
+      let lastErr = ''
+      for (let n = layouts.length; n >= 1; n--) {
+        if (gen !== allocGen || destroyed) return
+        device.pushErrorScope('out-of-memory')
+        const next = buildAtlas(n)
+        const oom = await device.popErrorScope()
+        if (gen !== allocGen || destroyed || next === null) {
+          if (next !== null) destroyAtlasState(next)
+          return
+        }
+        if (oom === null) {
+          if (n < layouts.length) {
+            console.warn(`Brick atlas: ${layouts.length} atlases did not fit in VRAM; using ${n}`)
+          }
+          atlas = next
+          uniform.nch = nC
+          needsRedraw?.()
+          return
+        }
+        lastErr = oom.message
+        destroyAtlasState(next)
+        await device.queue.onSubmittedWorkDone()   // let the failed attempt's memory go too
+      }
+      onError?.(`Brick atlas: ${lastErr}`)
     }
-    uniform.nch = nC
+    void allocateAtlas()
   }
 
   const writePageTable = () => {
@@ -776,6 +834,21 @@ export async function createBrickVolumeRenderer(
   /** Flat grid index at the CURRENT level. Matches the shader's `(bz * nBy + by) * nBx + bx`. */
   const gridIndex = (a: AtlasState, bx: number, by: number, bz: number): number =>
     (bz * a.gridNy + by) * a.gridNx + bx
+
+  /** Eviction rank while playing — higher goes first; `undefined` (not playing) = plain LRU.
+   *  Order: off-screen or other-level bricks, then by frames until next drawn
+   *  (`nextUseDistance`), and never the timepoints the shader draws or hole-fills from. */
+  const playbackVictimRank = (): ((e: PageTableEntry) => number) | undefined => {
+    if (playback === null || atlas === null) return undefined
+    const hint = playback
+    const level = atlas.currentLevel
+    return e => {
+      const b = e.brick
+      if (b.t === boundT || b.t === displayT || b.t === prevDisplayT) return -Infinity
+      if (b.level !== level || !viewportPositions.has(viewportPosKey(b))) return Infinity
+      return nextUseDistance(b.t, boundT, hint)
+    }
+  }
 
   /** Kick a fetch for one scheduled brick unless one is already in flight for that key. On arrival
    *  the bytes are checked against the CURRENT scheduler state: if the level changed or the brick
@@ -818,7 +891,7 @@ export async function createBrickVolumeRenderer(
         // arrival before the next tick — without this, a freshly-arrived boundT brick has
         // `lastUsed = frameNow` and can be evicted by the next arrival within the same frame.
         const arrivalStamp = brick.t === boundT ? frameNow + BOUND_T_TOUCH_BIAS : frameNow
-        const result = atlas.pageTable.insertOrEvictLru(brick, arrivalStamp)
+        const result = atlas.pageTable.insertOrEvictLru(brick, arrivalStamp, playbackVictimRank())
         const evictedIdx = result.evictedKey === null ? -1 :
           gridIndexOfKey(atlas, result.evictedKey)
         // Edge bricks: server clamps xTo/yTo/zTo to store bounds; pad the response back up to the
@@ -1251,6 +1324,7 @@ export async function createBrickVolumeRenderer(
     // observed 2026-09-02. Prefetch churn under overload continues (expected — want > atlas);
     // this fix only stops that churn from bleeding into the visible frame.
     const scheduled = bricksIntersectingViewport(view, world, atlas.currentLevel ?? 0)
+    viewportPositions = new Set(scheduled.map(s => viewportPosKey(s.brick)))
     const ts = [boundT]
     for (const pt of prefetchTs) if (pt !== boundT) ts.push(pt)
     for (const pt of ts) {
@@ -1763,12 +1837,14 @@ export async function createBrickVolumeRenderer(
     setOnBrickWritten(cb) { onBrickWritten = cb },
     setOnFrameTimings(cb) { onFrameTimings = cb },
     maxSafePrefetchDepth(requestedCap) {
-      if (atlas === null) return Math.max(0, requestedCap)
-      const capacity = atlasSlotCapacity(atlas.layout)
+      // Atlas still allocating: current t only — an unclamped window set now would stay in
+      // force after the atlas lands, until the next `gotoT`.
+      if (atlas === null) return Math.max(0, Math.min(1, requestedCap))
+      const capacity = atlas.perAtlasCapacity * atlas.textures.length
       const coreBricks = atlas.gridNx * atlas.gridNy * atlas.gridNz
       return computeMaxSafePrefetchDepth(capacity, coreBricks, requestedCap)
     },
-    setPrefetchTimepoints(list) { prefetchTs = list.slice() },
+    setPrefetchTimepoints(list, hint) { prefetchTs = list.slice(); playback = hint ?? null },
     setLevelFloor(level) {
       // Coarsest LOD the SSE picker is allowed to pick. Matches the user's `viewerVolumeLevel`
       // dropdown: Auto = n-1 (coarsest possible, no restriction), an explicit pick = that level.
@@ -1789,10 +1865,13 @@ export async function createBrickVolumeRenderer(
       // × nch), so we can keep the texture and just invalidate every brick's contents:
       // atlas.pageTable.clear() rewinds the free-slot stack so incoming fetches reuse the
       // same slots. Same discipline as level swap, but without the level/grid churn.
-      if (atlas === null || currentMeta === null) return
+      if (currentMeta === null) return
       const newZLo = Math.max(0, Math.floor(zLo))
       if (newZLo === currentZLo) return
       currentZLo = newZLo
+      // Atlas still allocating (`setImage` is async): nothing resident to invalidate, and its
+      // first fetches will read the new `currentZLo`.
+      if (atlas === null) return
       // Abort every request on the wire — they carry the OLD zLo in their URL and would
       // land as stale bytes.
       inflight.forEach(ac => ac.abort())

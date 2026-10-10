@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   PageTable, brickKey, slotToAtlasOrigin, slotCount, maxSafePrefetchDepth, shouldAdmitKick,
+  nextUseDistance, type PageTableEntry, type PlaybackHint,
 } from './pageTable'
 
 describe('brickKey', () => {
@@ -160,6 +161,70 @@ describe('PageTable — LRU eviction', () => {
     expect(() => t.evict('T0/L0/B99,0,0')).not.toThrow()
     // The freed slot 0 is reused by the next inserter.
     expect(t.insertOrEvictLru(brick(1), 2).entry.slot).toBe(0)
+  })
+})
+
+describe('nextUseDistance — frames until a timepoint is drawn again', () => {
+  const fwdLoop: PlaybackHint = { dir: 1, nT: 10, loop: true }
+  it('counts ahead in the play direction', () => {
+    expect(nextUseDistance(5, 5, fwdLoop)).toBe(0)
+    expect(nextUseDistance(7, 5, fwdLoop)).toBe(2)
+  })
+  it('wraps a looping play: the frame just played is the farthest', () => {
+    expect(nextUseDistance(4, 5, fwdLoop)).toBe(9)
+    expect(nextUseDistance(0, 9, fwdLoop)).toBe(1)
+  })
+  it('a non-looping play never returns behind the playhead', () => {
+    expect(nextUseDistance(4, 5, { ...fwdLoop, loop: false })).toBe(Infinity)
+  })
+  it('reverse play counts downward', () => {
+    expect(nextUseDistance(3, 5, { ...fwdLoop, dir: -1 })).toBe(2)
+    expect(nextUseDistance(6, 5, { ...fwdLoop, dir: -1 })).toBe(9)
+  })
+})
+
+describe('PageTable — playback eviction (evictHighestRank)', () => {
+  it('evicts the highest rank, ties by LRU', () => {
+    const pt = new PageTable(3)
+    pt.insert({ t: 0, level: 0, bx: 0, by: 0, bz: 0 }, 1)
+    pt.insert({ t: 1, level: 0, bx: 0, by: 0, bz: 0 }, 2)
+    pt.insert({ t: 2, level: 0, bx: 0, by: 0, bz: 0 }, 3)
+    const rank = (e: PageTableEntry) => (e.brick.t === 0 ? 0 : 5)
+    expect(pt.evictHighestRank(rank)).toBe('T1/L0/B0,0,0')   // t1 and t2 tie at 5; t1 is older
+  })
+
+  // A looping play whose working set (N timepoints) overflows the cache (K): count refetches per
+  // loop through the real PageTable, with the same prefetch-ahead pattern the renderer uses.
+  const simulate = (rankFor: ((now: number) => ((e: PageTableEntry) => number) | undefined)) => {
+    const N = 181, K = 156, P = 3
+    const pt = new PageTable(K)
+    let clock = 0
+    const perLoop: number[] = []
+    for (let loop = 0; loop < 3; loop++) {
+      let fetches = 0
+      for (let t = 0; t < N; t++) {
+        for (let k = 0; k <= P; k++) {
+          const u = (t + k) % N
+          const b = { t: u, level: 0, bx: 0, by: 0, bz: 0 }
+          clock++
+          if (pt.has(brickKey(b))) { if (k === 0) pt.touch(brickKey(b), clock); continue }
+          fetches++
+          pt.insertOrEvictLru(b, clock, rankFor(t))
+        }
+      }
+      perLoop.push(fetches)
+    }
+    return perLoop
+  }
+
+  it('plain LRU refetches every frame of every loop (the flicker)', () => {
+    expect(simulate(() => undefined).slice(1)).toEqual([181, 181])
+  })
+
+  it('farthest-next-use refetches only the overflow, N − K per loop', () => {
+    const hint: PlaybackHint = { dir: 1, nT: 181, loop: true }
+    const perLoop = simulate(t => e => (e.brick.t === t ? -Infinity : nextUseDistance(e.brick.t, t, hint)))
+    expect(perLoop.slice(1)).toEqual([181 - 156, 181 - 156])
   })
 })
 
