@@ -35,6 +35,7 @@ import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
+import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
 import { usePlotResize } from '../composables/usePlotResize'
@@ -1976,6 +1977,21 @@ function setAllChannels(visible: boolean) {
  *  markers is one click each instead of on-this-then-off-that. Turning the mode on keeps the first
  *  visible channel (or the first channel, if none is) and hides the rest. */
 const soloChannel = ref(false)
+/** Compact channel cards (name, colour, toggle — no histogram), so a 38-channel panel fits on screen.
+ *  The section-wide mode starts from the channel count (`defaultCompact`); once the user picks one with
+ *  the compact-all button it persists for THIS image. One-card flips are session-local. */
+const chCompactKey = `cc.vw.chCompact.${imageUid}`
+const storedCompact = profileStorage.getItem(chCompactKey)
+const channelsCompactPick = ref<boolean | null>(storedCompact === null ? null : storedCompact === 'true')
+const channelsCompact = computed(() => channelsCompactPick.value ?? defaultCompact(nChannels.value))
+const channelFlips = ref<Set<number>>(new Set())
+const allCardsCompact = computed(() => !nextAllCompact(channelsCompact.value, channelFlips.value, nChannels.value))
+function toggleAllCards() {
+  const next = nextAllCompact(channelsCompact.value, channelFlips.value, nChannels.value)
+  channelsCompactPick.value = next
+  profileStorage.setItem(chCompactKey, String(next))
+  channelFlips.value = new Set()
+}
 function setChannelVisible(c: number, visible: boolean) {
   const m = meta.value
   if (!m) return
@@ -5695,100 +5711,85 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- Compact controls block: toggles column on the left, Reset view button on the right with
-             the tile/brick residency map slotted directly under it. Reset used to sit BETWEEN Loop
-             and Overview, and the residency maps landed at the bottom after every other section,
-             so the reset action was in the middle of a row of switches and the map wasn't visibly
-             tied to Reset's siblings. Left column carries a compact `Fps`
-             control too — no need to spend a full sidebar row on a 1–30 slider. -->
-        <div class="vw-compact">
-          <div class="vw-compact-left">
-            <div v-if="nT > 1" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
-              <input
-                type="range" class="vw-grow" :min="1" :max="30" :step="1"
-                v-model.number="settings.viewerFps"
-                v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
-                aria-label="Playback rate (fps)"
-              >
-              <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
-                   slider have the plain description so a hover on either still explains the
-                   control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
-              <span class="cc-readout cc-fs-2xs vw-fps-val"
-                    :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
-                    v-tooltip.left="playing && waitingFor >= 0
-                      ? 'Playback throttled — fetches are behind the requested Fps'
-                      : 'Requested playback rate'">{{ settings.viewerFps }}</span>
+        <!-- View toggles as ONE icon row (pressed = `.cc-btn-on`), Reset view at its end; the residency
+             maps hang below the row when their toggle is on. Fps keeps its own row — it is a slider. -->
+        <div v-if="nT > 1" class="cc-row cc-row-tight">
+          <span class="cc-muted cc-fs-2xs cc-lbl-col"
+                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
+          <input
+            type="range" class="vw-grow" :min="1" :max="30" :step="1"
+            v-model.number="settings.viewerFps"
+            v-tooltip.bottom="'Playback rate — waits rather than skip an uncached frame'"
+            aria-label="Playback rate (fps)"
+          >
+          <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
+               slider have the plain description so a hover on either still explains the
+               control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
+          <span class="cc-readout cc-fs-2xs vw-fps-val"
+                :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
+                v-tooltip.left="playing && waitingFor >= 0
+                  ? 'Playback throttled — fetches are behind the requested Fps'
+                  : 'Requested playback rate'">{{ settings.viewerFps }}</span>
+        </div>
+        <div class="cc-row cc-row-tight">
+          <button v-if="nT > 1" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': settings.viewerLoop }]"
+                  @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
+                  v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
+            <i class="pi pi-repeat" />
+          </button>
+          <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
+          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': overviewShown }]"
+                  @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
+                  v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
+            <i class="pi pi-overview" />
+          </button>
+          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': gizmoShown }]"
+                  @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
+                  v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
+            <i class="pi pi-axes" />
+          </button>
+          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': tilesMapShown }]"
+                  @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
+                  v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
+            <i class="pi pi-tiles" />
+          </button>
+          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': bricksMapShown }]"
+                  @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
+                  v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
+            <i class="pi pi-bricks" />
+          </button>
+          <span class="vw-grow" aria-hidden="true" />
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetView"
+                  v-tooltip.left="'Reset view — fit the image and face it square'" aria-label="Reset view">
+            <i class="pi pi-reset-view" />
+          </button>
+        </div>
+        <!-- Residency maps: one cell per tile (2D) / brick (3D, one grid per Z slice). -->
+        <div v-if="tileMapGrid && tilesMapShown" class="vw-tilemap vw-nested-map"
+             :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
+                       gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
+                       aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}`,
+                       width: `${3 * Math.min(1, tileMapGrid.nTx / tileMapGrid.nTy)}rem` }">
+          <span v-for="c in tileMapCellsView" :key="c.key"
+                class="vw-tilemap-cell" :class="'is-' + c.state" />
+        </div>
+        <div v-if="brickMapGrid && bricksMapShown" class="vw-brickmapgrid vw-nested-map"
+             :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)`,
+                       width: `${3 * Math.min(1, brickMapSlices.gridCols * brickMapSlices.displayNBx
+                         / (Math.ceil(brickMapSlices.slices.length / brickMapSlices.gridCols) * brickMapSlices.displayNBy))}rem` }">
+          <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
+            <div class="vw-tilemap vw-brickmap-slice"
+                 :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                           gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                           aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
+              <span v-for="c in s.cells" :key="c.key"
+                    class="vw-tilemap-cell" :class="'is-' + c.state" />
             </div>
-            <div v-if="nT > 1" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    v-tooltip.right="'Restart from the first timepoint at the end'">Loop</span>
-              <CcToggle v-model="settings.viewerLoop" aria-label="Loop playback" />
-            </div>
-            <!-- Overview minimap, offered for any 2D plane view — small images benefit too once
-                 you zoom in. Volume mode has its own corner overlay (Axes) instead: a rotated MIP
-                 has no useful "where AM I" answer, but "which way am I looking" is a real
-                 question the moment the view rotates away from face-on. -->
-            <div v-if="mode === 'plane'" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    v-tooltip.right="'Show a small overview in the corner — click to jump'">Overview</span>
-              <CcToggle v-model="overviewShown" aria-label="Show the overview minimap" />
-            </div>
-            <div v-if="mode === 'volume'" class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                    v-tooltip.right="'Show a small XYZ triad in the corner'">Axes</span>
-              <CcToggle v-model="gizmoShown" aria-label="Show the orientation gizmo" />
-            </div>
-            <!-- Tile residency: toggle row + the map, packed together as one block so the map
-                 sits directly under the switch that controls it. One cell
-                 per tile at the current level; blue = in the atlas, amber = fetching. -->
-            <div v-if="tileMapGrid" class="vw-mapblock">
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                      v-tooltip.right="'Tile cache — blue is loaded, amber is fetching'">Tiles</span>
-                <CcToggle v-model="tilesMapShown" aria-label="Show the tile cache map" />
-              </div>
-              <div v-if="tilesMapShown" class="vw-tilemap vw-nested-map"
-                   :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
-                             gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
-                             aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}` }">
-                <span v-for="c in tileMapCellsView" :key="c.key"
-                      class="vw-tilemap-cell" :class="'is-' + c.state" />
-              </div>
-            </div>
-            <!-- Brick residency: same packed layout. Multiple Z slices wrap into a square-ish
-                 grid via `brickMapSlices.gridCols` so nBz > 2 (SRPabw, nBz=2 already; a real
-                 vibratome stack goes higher) doesn't stretch across the sidebar. -->
-            <div v-if="brickMapGrid" class="vw-mapblock">
-              <div class="cc-row cc-row-tight">
-                <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                      v-tooltip.right="'Brick cache — blue is loaded, amber is fetching'">Bricks</span>
-                <CcToggle v-model="bricksMapShown" aria-label="Show the brick cache map" />
-              </div>
-              <div v-if="bricksMapShown" class="vw-brickmapgrid vw-nested-map"
-                   :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)` }">
-                <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
-                  <div class="vw-tilemap vw-brickmap-slice"
-                       :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
-                                 gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
-                                 aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
-                    <span v-for="c in s.cells" :key="c.key"
-                          class="vw-tilemap-cell" :class="'is-' + c.state" />
-                  </div>
-                  <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
-                       plane mode `nBz === 1` so a single "z0" label just added a row of vertical
-                       space under the grid with nothing to compare it against. -->
-                  <span v-if="brickMapSlices.slices.length > 1"
-                        class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="vw-compact-right">
-            <button class="cc-btn cc-btn-ghost vw-reset"
-                    @click="resetView"
-                    v-tooltip.top="'Face the volume square to the screen again'">Reset view</button>
+            <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
+                 plane mode `nBz === 1` so a single "z0" label just added a row of vertical
+                 space under the grid with nothing to compare it against. -->
+            <span v-if="brickMapSlices.slices.length > 1"
+                  class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
           </div>
         </div>
 
@@ -5799,7 +5800,7 @@ onUnmounted(() => {
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
         <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
                             :open="openSection === 'ann'"
-                            @update:open="v => setSection('ann', v)" max-height="none">
+                            @update:open="v => setSection('ann', v)" fill>
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
                in front of you, and a separate row for each would double the group's height. -->
           <div class="cc-row cc-row-tight">
@@ -5875,15 +5876,41 @@ onUnmounted(() => {
              marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
                             :open="openSection === 'channels'"
-                            @update:open="v => setSection('channels', v)">
-          <!-- One canonical toggle (docs/ui/PRIMITIVES.md → CcToggle), same idiom as every other
-               on/off in the app — a pair of buttons was a second variant of a decision that already
-               has one right way to render it. A little breathing room below so the master row does
-               not run into the first channel card. -->
+                            @update:open="v => setSection('channels', v)" fill>
+          <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
+               colours, one at a time + its stepper), contrast and card layout on the right. Pressed
+               state is `.cc-btn-on` (PRIMITIVES → *Engaged / pressed toggle button*) — icons rather than
+               labelled `CcToggle` rows, so the section header is one line. -->
           <div class="cc-row cc-row-tight vw-ch-master">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col">All channels</span>
-            <CcToggle :model-value="allChannelsVisible" @update:model-value="setAllChannels"
-                      aria-label="Toggle every channel" />
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': allChannelsVisible }]"
+                    @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
+                    v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
+                    aria-label="Toggle every channel">
+              <i :class="['pi', allChannelsVisible ? 'pi-eye' : 'pi-eye-slash']" />
+            </button>
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': distinctChannelColours }]"
+                    @click="distinctChannelColours = !distinctChannelColours" :aria-pressed="distinctChannelColours"
+                    v-tooltip.right="'Distinct colours — a separate hue per channel'"
+                    aria-label="Assign a distinct colour to each channel">
+              <i class="pi pi-palette" />
+            </button>
+            <button :class="['cc-btn cc-btn-bare cc-btn-icon cc-btn-micro', { 'cc-btn-on': soloChannel }]"
+                    @click="soloChannel = !soloChannel" :aria-pressed="soloChannel"
+                    v-tooltip.right="'One at a time — showing a channel hides the others'"
+                    aria-label="Show one channel at a time">
+              <i class="pi pi-dot-circle" />
+            </button>
+            <template v-if="soloChannel">
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                      @click="stepSolo(-1)" v-tooltip.top="'Previous channel'" aria-label="Show previous channel">
+                <i class="pi pi-chevron-up" />
+              </button>
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                      @click="stepSolo(1)" v-tooltip.top="'Next channel'" aria-label="Show next channel">
+                <i class="pi pi-chevron-down" />
+              </button>
+            </template>
+            <span class="vw-grow" aria-hidden="true" />
             <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="autoAllContrast"
                     v-tooltip.left="'Auto contrast on every channel'"
                     aria-label="Auto contrast every channel">
@@ -5894,10 +5921,7 @@ onUnmounted(() => {
                     aria-label="Reset every channel contrast">
               <i class="pi pi-arrow-right-arrow-left" />
             </button>
-            <!-- Auto-contrast tuning popover. Anchored to a cog next to the Auto button — the eye
-                 lands on the two together, and the popover keeps the sidebar row height stable
-                 (: an inline chip strip was noise, especially since Reset was
-                 removed for being visually redundant with Auto on his data). -->
+            <!-- Auto-contrast tuning popover, anchored beside the Auto button so the two read together. -->
             <button ref="autoTuneTrigger" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                     @click="autoTuneOpen = !autoTuneOpen"
                     v-tooltip.left="'Auto tuning'" aria-label="Auto-contrast tuning">
@@ -5917,35 +5941,21 @@ onUnmounted(() => {
                 How far Auto pushes the top of the window.
               </div>
             </TeleportPopover>
-          </div>
-          <div class="cc-row cc-row-tight vw-ch-master">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Golden-angle hue rotation — quick visual separation of every marker'">
-              Distinct
-            </span>
-            <CcToggle v-model="distinctChannelColours"
-                      aria-label="Assign a distinct colour to each channel" />
-            <!-- Spacer that occupies the same slot as the reset button in the row above, so the two
-                 toggles line up in the same column. Non-interactive, hidden from a11y. -->
-            <span class="vw-ch-master-slot" aria-hidden="true" />
-          </div>
-          <div class="cc-row cc-row-tight vw-ch-master">
-            <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Showing a channel hides the others'">
-              One at a time
-            </span>
-            <CcToggle v-model="soloChannel" aria-label="Show one channel at a time" />
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!soloChannel"
-                    @click="stepSolo(-1)" v-tooltip.left="'Previous channel'" aria-label="Show previous channel">
-              <i class="pi pi-chevron-up" />
-            </button>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :disabled="!soloChannel"
-                    @click="stepSolo(1)" v-tooltip.left="'Next channel'" aria-label="Show next channel">
-              <i class="pi pi-chevron-down" />
+            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="toggleAllCards"
+                    v-tooltip.left="allCardsCompact ? 'Expand every channel' : 'Compact every channel'"
+                    :aria-label="allCardsCompact ? 'Expand every channel' : 'Compact every channel'">
+              <i :class="['pi', allCardsCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
             </button>
           </div>
-          <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c" class="vw-ch cc-card cc-card-2">
+          <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c"
+               :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(channelsCompact, channelFlips, c) }]">
             <div class="cc-row cc-row-tight">
+              <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-ch-fold"
+                      @click="channelFlips = toggleFlip(channelFlips, c)"
+                      v-tooltip.right="isCompact(channelsCompact, channelFlips, c) ? 'Show contrast' : 'Hide contrast'"
+                      :aria-label="(isCompact(channelsCompact, channelFlips, c) ? 'Expand ' : 'Compact ') + ch.name">
+                <i :class="['pi', isCompact(channelsCompact, channelFlips, c) ? 'pi-chevron-right' : 'pi-chevron-down']" />
+              </button>
               <span class="vw-ch-name cc-fs-xs"
                     v-tooltip.right="'Show this channel in the composite'">{{ ch.name }}</span>
               <!-- P7.1: says which channels are reading from the AF preview scratch store rather than
@@ -5978,7 +5988,7 @@ onUnmounted(() => {
             <!-- RangeSlider is a flex-ROW item by construction (`flex: 1`, i.e. `flex-basis: 0`), so in a
                  column it collapses to no height and its absolutely-positioned thumbs escape the card.
                  Every other consumer wraps it in a row with a readout beside it; so does this one. -->
-            <div class="cc-row cc-row-tight">
+            <div v-if="!isCompact(channelsCompact, channelFlips, c)" class="cc-row cc-row-tight">
               <RangeSlider
                 v-tooltip.top="'Contrast window — values outside it clip'"
                 :lo="ch.lo" :hi="ch.hi" :min="0" :max="Math.max(chMax[c] ?? 1, hiCeiling[c] ?? 0, 1)" :step="1"
@@ -5996,7 +6006,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
                             :open="openSection === 'seg'"
-                            @update:open="v => setSection('seg', v)" max-height="none">
+                            @update:open="v => setSection('seg', v)" fill>
           <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
                is decided in the ViewerPanel per image and reaches this window via the P2
                storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
@@ -6054,7 +6064,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
                             :open="openSection === 'pops'"
-                            @update:open="v => setSection('pops', v)" max-height="none">
+                            @update:open="v => setSection('pops', v)" fill>
           <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
                and no populations, and an empty group would read as a broken feature rather than as an
                image that has not been through segmentation yet.
@@ -6153,7 +6163,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
                             :open="openSection === 'tracks'"
-                            @update:open="v => setSection('tracks', v)" max-height="none">
+                            @update:open="v => setSection('tracks', v)" fill>
           <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
                section colours + shapes the ribbons. Empty state names both the "nothing ticked" case
                and the "ticked but no tracked cells" case rather than showing an empty block. -->
@@ -6243,7 +6253,7 @@ onUnmounted(() => {
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
                             :open="openSection === 'debug'"
-                            @update:open="v => setSection('debug', v)" max-height="none">
+                            @update:open="v => setSection('debug', v)" fill>
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
                measure. Steps + Keep for volume mode, then three toggles. Eyebrow matches the
                readouts below so the whole panel reads as one column of labelled sub-blocks. -->
@@ -6602,6 +6612,10 @@ onUnmounted(() => {
    didn't actually take. */
 .vw-side > * { flex-shrink: 0; flex-grow: 0; }
 .vw-side > .vw-grow, .vw-side > .rs { flex-grow: 0; }
+/* Accordion fill (`CollapsibleSection fill`, the Kiwi cockpit's rule): the open section takes the
+   height the others leave and scrolls inside. `.vw-side` scrolls itself, so on a short panel the open
+   section keeps a usable floor instead of shrinking to its header. */
+.vw-side > .collapsible-section.cs-fill { min-height: 12rem; }
 .vw-title-row { align-items: flex-start; }
 .vw-title { font-weight: 600; word-break: break-word; flex: 1; min-width: 0; }
 .vw-ch { padding: 0.35rem 0.4rem; display: flex; flex-direction: column; gap: 0.2rem;
@@ -6610,6 +6624,9 @@ onUnmounted(() => {
 . */
   min-width: 0; overflow: clip; }
 .vw-ch :deep(.rs) { min-width: 0; }
+.vw-ch-compact { padding-top: 0.15rem; padding-bottom: 0.15rem; }
+/* The fold chevron sits in the card's left padding so names line up compact or not. */
+.vw-ch-fold { margin-left: -0.45rem; }
 .vw-ch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vw-ch-af-badge { flex: none; padding: 0 0.35rem; border-radius: var(--cc-radius-pill);
   border: 1px solid var(--cc-accent); background: transparent; color: var(--cc-accent);
@@ -6621,19 +6638,6 @@ onUnmounted(() => {
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
-/* Force EXACT label width in the master rows, so a longer word ("Distinct colours") does not push
-   its toggle further right than the row above ("All channels"). Base `.cc-lbl-col` is a min-width
-   that lets the label grow; the whole point of these master rows is that the toggles stack. */
-.vw-ch-master > .cc-lbl-col {
-  width: var(--cc-lbl-col); min-width: var(--cc-lbl-col);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-/* Same footprint as `cc-btn-micro` icon (`i.pi` inside a bare button, ~1.1rem square). Reserves the
-   trailing slot in a row that has no icon, so the toggle in that row lines up with the toggle in the
-   row that DOES carry an icon. */
-/* TWO icon slots (auto + reset) worth of space, plus the gap between them. Keeps the toggle in the
-   Distinct row lined up with the toggle in the All-channels row where two buttons follow it. */
-.vw-ch-master-slot { flex: none; width: calc(2 * 1.1rem + 0.35rem); height: 1.1rem; }
 /* min-width sized for the widest reading ("0–65535") — without it the readout column shrinks as
    `hi` drops, the flex-1 slider gains width, and the histogram silhouette appears to breathe with
    every drag. Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
@@ -6665,7 +6669,7 @@ onUnmounted(() => {
 .vw-tilemaprow { display: flex; align-items: flex-start; gap: 0.3rem; }
 .vw-tilemap {
   display: grid; gap: 1px; flex: 1; min-width: 0;
-  max-height: 6rem; background: var(--cc-surface-2);
+  background: var(--cc-surface-2);
   padding: 1px; border-radius: var(--cc-radius-xs);
 }
 .vw-tilemap-cell { background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
@@ -6683,20 +6687,10 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { min-width: 0; width: 100%; }
 .vw-brickmap-zlabel { line-height: 1; }
-/* Toggle-row + nested residency map, packed together as one block so the map hangs directly
-   under the switch that turns it on ("have these back underneath the bricks
-   toggle"). One .vw-mapblock per toggle; the map itself uses `.vw-nested-map` to cap width so a
-   single-tile map doesn't stretch across the whole sidebar. */
-.vw-mapblock { display: flex; flex-direction: column; gap: 0.25rem; }
-.vw-nested-map { width: 100%; max-width: 6rem; }
-/* Compact controls block — toggles (Fps, Loop, Overview, Tiles, Bricks) stacked on the left,
-   Reset view on the right. Residency maps live under their own toggles in the left column.
-   Right column takes its own width from the button so the left column can grow to fill the rest
-   of the sidebar. */
-.vw-compact { display: flex; gap: 0.5rem; align-items: flex-start; }
-.vw-compact-left { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; min-width: 0; }
-.vw-compact-right { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; flex: 0 0 auto; min-width: 0; }
-.vw-reset { white-space: nowrap; }
+/* Residency maps under the view icon row: the whole map fits a 3rem box. The tile map's width is set
+   inline from its aspect (`3rem × min(1, nTx/nTy)`; the brick grid's from all its slices) so a tall map shrinks in width rather than
+   stretching its cells; `align-self` stops the column's stretch from overriding it. */
+.vw-nested-map { max-width: 3rem; align-self: flex-start; }
 /* Compact Fps readout — same size language as `.cc-readout` but with a fixed slot so the digits
    don't jitter the slider on every playback tick. */
 .vw-fps-val { min-width: 1.4rem; text-align: right; flex: none; }

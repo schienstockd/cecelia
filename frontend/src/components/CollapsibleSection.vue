@@ -12,6 +12,10 @@
                          itself, exactly as before. This is what an ACCORDION needs: "only one open at a
                          time" is a fact about a GROUP of sections, and no section can know it alone.
                          `null` rather than `undefined` is load-bearing — see the note by the computed.
+    fill        bool     ACCORDION FILL: while open, the section takes the remaining height of its flex-column
+                         parent and its body scrolls inside it (closed, it is header-only). The parent must be
+                         a height-bounded flex column. Overrides `maxHeight`. Kiwi's cockpit and the viewer
+                         side panel use it — one open section, using all the room the others are not.
 -->
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
@@ -27,6 +31,7 @@ const props = withDefaults(defineProps<{
   maxHeight?:   string
   storageKey?:  string
   open?:        boolean | null
+  fill?:        boolean
 }>(), {
   defaultOpen: true,
   maxHeight:   '320px',
@@ -59,7 +64,7 @@ const open = computed({
 </script>
 
 <template>
-  <div class="collapsible-section">
+  <div :class="['collapsible-section', { 'cs-fill': fill && open }]">
     <button class="cs-toggle cc-section-toggle" @click="open = !open"
       v-tooltip.right="tip || (open ? `Collapse ${label}` : `Expand ${label}`)">
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
@@ -69,7 +74,8 @@ const open = computed({
          container (overflow-y:auto would still make it the sticky scrollport, so a `position:sticky`
          descendant — e.g. the board's pop-manager rail — sticks to a box that never scrolls and never
          activates). Let the outer page scroll handle it. -->
-    <div v-show="open" class="cs-body" :style="{ maxHeight, overflowY: maxHeight === 'none' ? 'visible' : 'auto' }">
+    <div v-show="open" class="cs-body"
+         :style="fill ? undefined : { maxHeight, overflowY: maxHeight === 'none' ? 'visible' : 'auto' }">
       <slot />
     </div>
   </div>
@@ -95,6 +101,12 @@ const open = computed({
 /* the heading IS the eyebrow scenario — colour/weight/tracking/case/size all come from .cc-eyebrow,
    which this component previously hand-rolled (and at a size the scale had no step for) */
 .cs-label { color: inherit; }
+
+/* Two classes so it outranks a parent's scoped `> * { flex-grow: 0 }` reset without `!important`.
+   `min-height: 0` lets the body scroll instead of pushing the parent taller; a parent that itself
+   scrolls can raise it so a short panel does not squeeze the open section down to its header. */
+.collapsible-section.cs-fill { flex: 1 1 0; min-height: 0; overflow: hidden; }
+.collapsible-section.cs-fill > .cs-body { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 
 .cs-body {
   overflow-y: auto;

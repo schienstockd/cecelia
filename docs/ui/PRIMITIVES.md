@@ -15,7 +15,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 |------|-----|-------|
 | Button | `.cc-btn` + `-primary`/`-ghost`/`-bare`/`-danger`/`-danger-ghost` (`style.css`) | scoped `.btn-sm`/`.btn-primary` in a component |
 | Icon-only button | `.cc-btn` + `-bare`\|`-ghost` + `-icon` (+ `-micro`/`-dense`/`-lg`) | a per-file `.icon-btn`/`.opt-btn`/`.gear` class |
-| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) | a scoped `.on`/`.active` colour rule |
+| Engaged / pressed toggle button | `.cc-btn-on` (+ `-on-tint` washed, `-on-solid` filled) — also an on/off option in an **icon row** (with `aria-pressed` + `aria-label`), where a labelled `CcToggle` row per option would stack (viewer Channels / view controls) | a scoped `.on`/`.active` colour rule |
 | Joined strip of related buttons | `.cc-btn-group` wrapping ordinary `.cc-btn`s | a hand-rolled `.seg { } .seg button { }` block |
 | On/off option (applies on flip) | `components/CcToggle.vue` | a native checkbox styled as a switch |
 | Select from a list (multi/single) | native `<input type="checkbox">`, or `ChipSelect` for chips | a column of toggle switches |
@@ -38,7 +38,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
 | Standalone module page (not the image-table layout) | `components/ModulePage.vue` — a `#controls` slot + content, `layout="flow\|scroll\|fill"` | a per-page `.x-page`/`.x-head` wrapper, a page `<h1>`, or a descriptive subtitle paragraph |
 | Pipeline / writing-surface module page (toolbar + list-and-viewer split) | Match `modules/ChainModule.vue`'s shape — full-height flex column, toolbar on top, two-pane split below via `SelectionTable` + `usePanelResize({edge:'right'})`. Family: `ChainModule`, `TasksModule`, `BlackboardModule`. See *A pipeline / writing-surface module page* below | a per-page `.x-page`/`.x-head`/`.x-split` scaffold, or bordered `surface-1` boxes around the halves |
-| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome | a per-file chevron toggle |
+| Collapsible section (chevron + heading) | `components/CollapsibleSection.vue`, or `.cc-section-toggle` for the bare row without the panel-bar chrome. **Accordion in a side panel**: controlled `open` + `fill`, so the open section takes the height the closed ones leave and scrolls inside (Kiwi cockpit, viewer panel) | a per-file chevron toggle; `:deep(.cs-body)` flex overrides to make a section fill |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
 | Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
 | ↳ | `v-model:lo` / `v-model:hi` fire per pointer move; **`@change` fires once on release** — use it when the effect is expensive (the volume viewer's z range refetches every cached timepoint) | committing an expensive effect from `update:*` |

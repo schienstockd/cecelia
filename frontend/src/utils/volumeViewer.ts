@@ -114,11 +114,12 @@ export interface ViewerMeta {
 }
 
 /** Channels the shader can composite in one pass. Beyond this the viewer shows the first MAX_CHANNELS
- *  and says so — a silent truncation would read as "that channel is empty". Sized for 25-ch CODEX-style
- *  stacks and multi-marker IF; the cost is one row in the LUT texture and one vec4 in the uniform block
- *  per slot. In 3D mode this also multiplies the vol texture's z-layer count (nZ * nT * MAX_CHANNELS),
- *  which can bump into `maxTextureDimension3D` (2048 on integrated) for deep z-stacks — but 2D and
- *  moderate 3D fit fine. */
+ *  and says so — a silent truncation would read as "that channel is empty". Sized for cyclic IF panels
+ *  (38-ch stacks exist); the fixed cost is one row in the LUT texture and one vec4 in the uniform block
+ *  per slot. Everything else scales with the image's OWN channel count, not this cap: the textures
+ *  allocate `min(nC, MAX_CHANNELS)` channels and the shaders loop to it. In 3D the vol texture's z-layer
+ *  count is nZ * nT * nC, which can bump into `maxTextureDimension3D` (2048 on integrated) for deep
+ *  many-channel stacks. */
 export const MAX_CHANNELS = SHADER_CONSTANTS.MAX_CHANNELS
 /** Stops per channel in the LUT texture. Matches the bridge's `_LUT_MAX_STOPS`, which is what caps the
  *  stops the props file can carry in the first place. */
