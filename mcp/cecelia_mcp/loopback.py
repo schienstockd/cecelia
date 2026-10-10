@@ -15,7 +15,9 @@ Any other host is untouched: verified with the default context, never swapped. S
 from __future__ import annotations
 
 import ssl
+import urllib.error
 import urllib.parse
+import urllib.request
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _SWAP = {"http": "https", "https": "http", "ws": "wss", "wss": "ws"}
@@ -56,3 +58,26 @@ def remember(base_url: str, working: str) -> None:
 
 def forget() -> None:
     _WORKING.clear()
+
+
+def open_url(base_url: str, path: str, *, data: bytes | None = None, headers: dict | None = None,
+             method: str | None = None, timeout: float = 60.0):
+    """`urllib.request.urlopen` on `base_url + path`, the stale-scheme retry included: the remembered
+    working scheme first, then (loopback only) the other one on a connection-level failure, remembering
+    whichever answered. An HTTP error status or a timeout is an answer, not a scheme problem — raised
+    as-is. Nothing reachable → `ConnectionError` naming every URL tried. Returns the open response."""
+    errors = []
+    for base in candidates(resolve(base_url)):
+        req = urllib.request.Request(base + path, data=data, method=method, headers=headers or {})
+        ctx = ssl_context(base)
+        try:
+            resp = (urllib.request.urlopen(req, timeout=timeout, context=ctx) if ctx is not None
+                    else urllib.request.urlopen(req, timeout=timeout))
+        except (urllib.error.HTTPError, TimeoutError):
+            raise
+        except (urllib.error.URLError, OSError) as e:  # refused / reset / TLS mismatch
+            errors.append(f"{base}: {getattr(e, 'reason', e)}")
+            continue
+        remember(base_url, base)
+        return resp
+    raise ConnectionError("; ".join(errors))

@@ -252,7 +252,7 @@ async function render() {
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid: projectUid.value, imageUid: uid,
       keyframes, keyframeMeta, fps: anim.fps, suffix: anim.suffix, titleCard,
-      apiUrl: window.location.origin, look: lookForRender(look),
+      look: lookForRender(look),
       ...movieSizeParams(anim.sizeX, anim.sizeY),
     })
   } catch (e) {

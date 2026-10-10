@@ -27,6 +27,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 
 from websockets.sync.client import connect
@@ -34,6 +35,7 @@ from websockets.sync.client import connect
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "mcp"))
 from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
+from cecelia_mcp.loopback import open_url, resolve  # noqa: E402 — http or https, whichever the app serves
 DIST = REPO / "frontend" / "dist"
 # POSTs a board's plots make that read (or only fill the copy's own card cache)
 READ_POSTS = ("/api/plot_data", "/api/labels/by_category", "/api/cell_cards", "/api/motif_cards",
@@ -140,6 +142,7 @@ def _launch(profile: str):
     proc = subprocess.Popen([chromium_bin(), "--headless=new", "--remote-debugging-port=0",
                              f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                              "--disable-extensions", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                             "--ignore-certificate-errors",   # loopback only; installed apps self-sign
                              "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
                             encoding="utf-8", errors="replace")
     found: list[str] = []
@@ -209,6 +212,12 @@ def render_boards(api: str, project_uid: str, boards: list[str], image_uids: lis
     """{"boards": {name: {"ok", "error"?, "slots": [{index, name, title?, png (base64)}]}}, "blocked": [...]}.
     Raises RenderError when nothing could be rendered at all (no browser, no build, app down)."""
     dist = ensure_dist(dist or DIST)
+    try:   # the page loads from the scheme the app actually serves (installed apps: HTTPS, self-signed)
+        with open_url(api.rstrip("/"), "/api/health", timeout=10):
+            pass
+    except (urllib.error.URLError, OSError) as e:
+        raise RenderError(f"the app at {api} did not answer ({e})") from e
+    api = resolve(api.rstrip("/"))
     profile = tempfile.mkdtemp(prefix="cc-board-render-")
     proc, ws_url = _launch(profile)
     try:

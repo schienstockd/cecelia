@@ -471,7 +471,7 @@ async function recordTimelapse() {
       })
       ws.send({
         type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-        suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin, source: 'viewer',
+        suffix: movieSuffix.value, titleCard, source: 'viewer',
         valueNames: versions, look: lookForRender(look), renderQuality: renderQuality.value,
         showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
         keyframes: timelapseKeyframes(hexViewState(vs3), movieTStart.value, Math.min(movieTEnd.value ?? lastT, lastT)),
@@ -491,7 +491,7 @@ async function recordTimelapse() {
     })
     ws.send({
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-      suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin,
+      suffix: movieSuffix.value, titleCard,
       // More than one cell = a comparison; one is the plain record the backend already did.
       // `labelValueNames` is OMITTED when there is nothing to say — absent means "leave the masks
       // alone", which is what the plain record has always done.
@@ -555,7 +555,7 @@ async function recordViewerMatch(uid: string, projectUid: string) {
     })
     const common = {
       type: 'movie:record', taskId: t.id, projectUid, imageUid: uid, fps: movieFps.value,
-      suffix: movieSuffix.value, titleCard, apiUrl: window.location.origin, matchViewer: true,
+      suffix: movieSuffix.value, titleCard, matchViewer: true,
       valueNames: look.valueNames ?? [], look: lookForRender(look),
       showTimestamp: movieTimestamp.value, showScaleBar: movieScaleBar.value,
     }

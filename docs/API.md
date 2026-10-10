@@ -292,7 +292,7 @@ scheduler: **`movie:batch`** `{taskId,projectUid,imageUids,config,fileAttrs,fps[
 same `task:progress/log/status/result` (keyed by the client's `taskId`), so it shows in the task list with
 a progress bar + Cancel. `task:cancel` also flags it (stops after the current image) — the movie
 recorder is serialised in `api/`, not a pooled scheduler task. See `docs/todo/ANIMATION_PLAN.md` → F1.3.
-**`movie:record`** `{taskId,projectUid,imageUid[,keyframes,fps,sizeX,sizeY,suffix,titleCard,apiUrl]}`
+**`movie:record`** `{taskId,projectUid,imageUid[,keyframes,fps,sizeX,sizeY,suffix,titleCard]}`
 (`handle_movie_record` → `run_single_movie`) records ONE movie on the same rail: `keyframes` present ⇒
 the interpolated animation, absent ⇒ the open image's T-sweep. Per-frame `task:progress` arrives from the
 renderer; `task:cancel` stops it **mid-render**. `suffix` is a filename addition so two movies of one

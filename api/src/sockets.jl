@@ -348,7 +348,6 @@ function handle_movie_record(ws, data)
     fps         = Int(get(data, :fps, 15))
     size_x, size_y = _movie_size_params(data)   # blank = the viewer's canvas size
     suffix      = _wstr(data, :suffix)
-    api_url     = _wstr(data, :apiUrl, "http://localhost:8080")
     kf_raw      = get(data, :keyframes, nothing)
     keyframes   = (kf_raw === nothing || length(kf_raw) == 0) ? nothing : kf_raw
     fun         = keyframes === nothing ? "movie:record" : "movie:animation"
