@@ -18,12 +18,12 @@ mutable struct RunnerHandle
     adopted::Bool
 end
 
-# Both halves read the SAME override, or they disagree about where the runner is: `api/runner.jl`
-# binds `CECELIA_RUNNER_PORT`, so a client defaulting to the constant would ping a port nothing is on
-# and silently fall back to in-process forever. It also makes a second, isolated backend+runner pair
-# possible alongside a real one — which is how the restart-mid-run path gets exercised without
+# Both halves read the SAME port — `service_port(:runner)`, which honours `CECELIA_RUNNER_PORT` and the
+# port slot — or they disagree about where the runner is, and a client pinging a port nothing is on
+# silently falls back to in-process forever. The override also makes a second, isolated backend+runner
+# pair possible alongside a real one — which is how the restart-mid-run path gets exercised without
 # stopping somebody's actual session.
-runner_port_default()::Int = parse(Int, get(ENV, "CECELIA_RUNNER_PORT", string(RUNNER_PORT)))
+runner_port_default()::Int = service_port(:runner)
 
 RunnerHandle(; port::Int = runner_port_default()) = RunnerHandle(port, nothing, false)
 
@@ -43,7 +43,9 @@ function _runner_get_array(h::RunnerHandle, path::AbstractString; timeout::Real 
 end
 
 function _runner_post(h::RunnerHandle, path::AbstractString, body::Dict; timeout::Real = 10)::Dict{String,Any}
-    r = HTTP.post(_runner_url(h, path), ["Content-Type" => "application/json"], JSON3.write(body);
+    r = HTTP.post(_runner_url(h, path),
+                  ["Content-Type" => "application/json", RUNNER_OWNER_HEADER => config_dir()],
+                  JSON3.write(body);
                   request_timeout = timeout, retry = false, status_exception = true)
     JSON3.read(String(r.body), Dict{String,Any})
 end
@@ -73,6 +75,13 @@ end
 
 runner_alive(h::RunnerHandle)::Bool = runner_ping(h) !== nothing
 
+# A runner answering on our port that belongs to another user's Cecelia (a slot collision — see
+# app/src/ports.jl). `runner_launch!` refuses to adopt it: subscribing would count as its audience and
+# keep it from idling out. It also refuses our submits (`_runner_foreign_caller`), so a submit that
+# reaches it anyway runs in-process instead.
+runner_is_foreign(reply::AbstractDict)::Bool =
+    (d = get(reply, "configDir", nothing); d !== nothing && d != config_dir())
+
 """
     runner_launch!(h; wait_seconds = 120) -> RunnerHandle
 
@@ -93,6 +102,9 @@ than lazily on the first task.
 function runner_launch!(h::RunnerHandle; wait_seconds::Real = 120)::RunnerHandle
     existing = runner_ping(h)
     if existing !== nothing
+        runner_is_foreign(existing) &&
+            error("The task runner on port $(h.port) belongs to another Cecelia user " *
+                  "($(existing["configDir"])) — not adopting it; it exits on its own once idle.")
         h.proc, h.adopted = nothing, true
         proto = Int(get(existing, "protocol", 0))
         proto == RUNNER_PROTOCOL ?
@@ -193,6 +205,14 @@ Kills by port rather than by handle because the common case is a runner we ADOPT
 for; `_kill_listeners_on_port` kills the tree, so a task's Python subprocess goes with it.
 """
 function runner_stop!(h::RunnerHandle)
+    # Never another user's (or another config dir's) runner: kill-by-port trusts the port, and a slot
+    # mix-up would otherwise take down someone else's running work. A runner too old to report its
+    # config dir reads as ours, which is what it was before slots existed.
+    reply = runner_ping(h)
+    if reply !== nothing && runner_is_foreign(reply)
+        @warn "Not stopping the task runner on this port — it belongs to another Cecelia" port = h.port its_config_dir = reply["configDir"]
+        return nothing
+    end
     try; _kill_listeners_on_port(h.port); catch e; @warn "Stopping the task runner failed" exception = e; end
     h.proc, h.adopted = nothing, false
     nothing

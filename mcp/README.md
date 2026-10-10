@@ -24,6 +24,7 @@ mcp/
     guidance.py  # what the server TELLS a session about its own toolset (see below)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
+    loopback.py  # http↔https on loopback: self-signed cert accepted, stale scheme retried
     server.py    # MCPServer — wires the client into the read tools + poll_observations + the additive writes
   tests/
     test_client.py    # stdlib unittest, HTTP mocked

@@ -1,13 +1,13 @@
 # ── Notebook Playground (API layer) ─────────────────────────────────────────────
-# Launch / probe the Pluto notebook server (port 7660) and list a project's notebooks. The Pluto
+# Launch / probe the Pluto notebook server (`service_port(:notebooks)`, 7660 in slot 0) and list a project's notebooks. The Pluto
 # server runs as its OWN Julia process (the pluto/ env, which path-sources Cecelia) — NOT this API
 # server. Lifecycle mirrors the napari bridge: lazy-launch on first request, adopt an already-running
 # server (e.g. one from `pixi run notebooks` or a survivor of a server restart) instead of spawning a
 # duplicate. Secret auth stays ON (see launch.jl); launch.jl publishes the session secret to
 # pluto/.plutosecret and the frontend appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 
-const NOTEBOOKS_PORT = 7660
-const NOTEBOOKS_URL  = "http://localhost:$(NOTEBOOKS_PORT)/"
+# Functions, not constants: the port follows this user's port slot (app/src/ports.jl).
+_notebooks_url() = "http://localhost:$(service_port(:notebooks))/"
 
 # api/src → repo root → pluto/ (engine env + launch.jl) and notebooks/ (shipped examples).
 _pluto_root()          = abspath(joinpath(@__DIR__, "..", "..", "pluto"))
@@ -59,7 +59,7 @@ _pluto_env_ready() = isfile(joinpath(_pluto_root(), "Manifest.toml"))
 # case, so the per-call ping cost is not the hot-path concern it is there.
 function _notebook_server_alive()::Bool
     try
-        HTTP.get(NOTEBOOKS_URL; retry = false, redirect = false,
+        HTTP.get(_notebooks_url(); retry = false, redirect = false,
                  connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
         true
     catch e
@@ -85,9 +85,10 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
         cmd = Cmd(`$julia_exe --project=$pluto_root $launch_script`)
         cmd = addenv(cmd,
             "CECELIA_NOTEBOOKS_DIR" => abspath(notebooks_dir),
+            "CECELIA_PLUTO_PORT"    => string(service_port(:notebooks)),   # launch.jl binds this
             "CECELIA_PLUTO_BROWSER" => "false")
 
-        @info "Launching Pluto notebook server..." notebooks_dir port = NOTEBOOKS_PORT
+        @info "Launching Pluto notebook server..." notebooks_dir port = service_port(:notebooks)
         # Onto the log rail with the other children (`spawn_logged`, app/src/log_stream.jl). Pluto was
         # already wired to the parent's streams, so this loses nothing from the terminal — it ADDS the
         # console, which is where a "not instantiated" precompile failure is actually read from.
@@ -142,7 +143,7 @@ function api_notebooks_launch(body_bytes::Vector{UInt8})
         return 500, JSON3.write((; error = "Could not launch notebook server: $(sprint(showerror, e))"))
     end
     # 202 while starting (mirrors the legacy viewer's starting response), 200 once serving.
-    (ready ? 200 : 202), JSON3.write((; url = NOTEBOOKS_URL, secret = _notebook_secret(), starting = !ready))
+    (ready ? 200 : 202), JSON3.write((; url = _notebooks_url(), secret = _notebook_secret(), starting = !ready))
 end
 
 # GET /api/notebooks/status  → { running, starting, url, secret, sysimage, error }
@@ -153,7 +154,7 @@ function api_notebooks_status(req::HTTP.Request)
     starting, err = _with_pluto_state_lock() do
         (_pluto_state.starting, _pluto_state.error)
     end
-    200, JSON3.write((; running = running, starting = starting, url = NOTEBOOKS_URL,
+    200, JSON3.write((; running = running, starting = starting, url = _notebooks_url(),
                         secret = _notebook_secret(), sysimage = _sysimage_status(),
                         error = running ? nothing : err))
 end

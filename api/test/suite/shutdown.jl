@@ -37,7 +37,7 @@
     # true. So the count covers the other two and the runner is asserted on its own below.
     @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child) - 1
 
-    for c in ("PREVIEW_PORT", "NOTEBOOKS_PORT")
+    for c in ("service_port(:preview)", "service_port(:notebooks)")
         @test occursin(c, body)
     end
 
@@ -82,14 +82,14 @@
     @test isdefined(Main, :_stop_preview_worker!)
 
     # The dev supervisor frees the same children on Ctrl-C / crash, where nothing runs the route above.
-    # It cannot load Cecelia (standalone script), so it repeats the port numbers as literals — assert the
-    # copies agree, because a renumbered port that only ONE of them knows about is a silent zombie.
+    # It names them as services (mapped through the same `service_port` the package uses) — assert the
+    # list covers every child, because a child only ONE side knows about is a silent zombie.
     dev = read(joinpath(API_TEST_DIR, "..", "dev.jl"), String)
-    m   = match(r"const CHILD_PORTS = \(([^)]*)\)", dev)
+    m   = match(r"const CHILD_SERVICES = \(([^)]*)\)", dev)
     @test m !== nothing
-    dev_ports = sort(parse.(Int, strip.(split(m.captures[1], ","))))
-    @test dev_ports == sort([Cecelia.PREVIEW_PORT, Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
-    @test occursin("for p in CHILD_PORTS", dev)          # …and they are actually freed, not just listed
+    @test sort(Symbol.(lstrip.(strip.(split(m.captures[1], ",")), ':'))) ==
+          sort(filter(s -> s ∉ (:backend, :frontend), collect(keys(Cecelia.SERVICE_PORT_BASE))))
+    @test occursin("for svc in CHILD_SERVICES", dev)     # …and they are actually freed, not just listed
     # Both LONG-LIVED children this supervisor spawns must wire their streams EXPLICITLY. A
     # non-blocking `run` defaults to devnull, NOT to inheritance, and the Vite launch got that wrong for
     # as long as it existed — under a comment claiming the opposite, so its missing output was read as
@@ -283,13 +283,20 @@ end
         @test string.(Cecelia._listener_pids_from_ss(raw)) == DevSupervisor.PortKill.pids_from_ss(raw)
         @test isempty(DevSupervisor.PortKill.pids_from_ss(""))
     end
-    # Every port a `stop*` task names must be one the app actually uses — a typo'd port silently
-    # stops nothing, and the task prints "stopped" either way.
+    # The port slot is resolved before ANY include: `_RUNNER` (runner_api.jl) captures its port at
+    # include time, and one captured before the slot is known points at slot 0 — so a slot-1 instance's
+    # Quit killed the slot-0 session's runner. Measured, not hypothetical.
+    let src = read(joinpath(API_TEST_DIR, "..", "src", "server.jl"), String)
+        @test findfirst("Cecelia.resolve_port_slot!()", src)[1] < findfirst("\ninclude(", src)[1]
+    end
+    # `stop` names every service, by name — portkill.jl maps them to this user's port slot. A literal
+    # port here would aim at slot 0, i.e. possibly another user's Cecelia.
     let pixi = read(joinpath(API_TEST_DIR, "..", "..", "pixi.toml"), String)
         stop_line = only(filter(l -> startswith(l, "stop  "), split(pixi, '\n')))
-        ports = sort(parse.(Int, [m.captures[1] for m in eachmatch(r"\b(\d{4})\b", stop_line)]))
-        @test ports == sort([8080, 5173, Cecelia.PREVIEW_PORT,
-                             Cecelia.RUNNER_PORT, NOTEBOOKS_PORT])
+        m = match(r"portkill\.jl ([a-z ]+)\"", stop_line)
+        @test m !== nothing
+        @test sort(Symbol.(split(m.captures[1]))) == sort(collect(keys(Cecelia.SERVICE_PORT_BASE)))
+        @test !occursin(r"\b\d{4}\b", stop_line)
         @test occursin("portkill.jl", stop_line)
         # Base-only, deliberately: `stop` has to work when a manifest is broken, which is when you
         # reach for it. `--project` here would make the emergency stop depend on the thing that broke.

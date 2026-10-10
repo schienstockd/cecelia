@@ -1,0 +1,50 @@
+name: Verify cellpose-v3
+
+# Runs real cellpose 3 (cyto3) through the segmentation path in the opt-in `cellpose-v3` env, which
+# only installs on osx-arm64 — so nobody without a Mac can run it locally. Fails if the version
+# detection or a v3 `eval()` call regresses. CPU only: the runner's MPS isn't usable, so it checks the call path, not speed.
+#
+# Path-filtered like verify-macos.yml. Only the Python env is installed (no Julia, no frontend).
+
+on:
+  pull_request:
+    paths:
+      - python/cecelia/utils/cellpose_utils.py
+      - python/cecelia/utils/segmentation_utils.py
+      - python/cecelia/tests/test_cellpose_smoke.py
+      - python/cecelia/tests/test_cellpose_v3_callpath.py
+      - pixi.toml
+      - pixi.lock
+      - .github/workflows/verify-cellpose-v3.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: macOS arm64 — cyto3 smoke test
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Pixi + cellpose-v3 env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          environments: cellpose-v3
+          cache: true
+
+      # cellpose 3 downloads cyto3 into ~/.cellpose/models on first use; cache it across runs.
+      - name: Cache cellpose models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cellpose/models
+          key: cellpose-v3-models-cyto3
+
+      - name: Detection + v3 call path (stubbed model)
+        run: pixi run -e cellpose-v3 python -m unittest -v cecelia.tests.test_cellpose_v3_callpath
+
+      - name: Real cyto3 through predict_from_zarr
+        env:
+          CECELIA_CELLPOSE_SMOKE: '1'
+          CECELIA_EXPECT_CELLPOSE_MAJOR: '3'
+        run: pixi run -e cellpose-v3 python -m unittest -v cecelia.tests.test_cellpose_smoke

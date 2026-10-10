@@ -96,6 +96,7 @@ class LaunchCommandTest(unittest.TestCase):
         proc.poll.return_value = 0
         with mock.patch.dict(os.environ, {_DEV_DIR_VAR: self.cfg, **extra}, clear=True), \
              mock.patch.object(self.app, "_find_julia", return_value="julia"), \
+             mock.patch.object(self.app, "_launched_port", return_value="8080"), \
              mock.patch.object(self.app, "_server_ready", return_value=True), \
              mock.patch.object(self.app.webbrowser, "open"), \
              mock.patch.object(self.app.subprocess, "Popen", return_value=proc) as popen:

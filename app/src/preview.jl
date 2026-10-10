@@ -47,8 +47,6 @@ Called by:
 """
 _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 
-const PREVIEW_PORT   = 7656
-
 # Reply-shape + backend-set version the backend expects, mirroring `preview_worker.PROTOCOL`. A worker
 # already listening on the port is ADOPTED rather than relaunched, which saves its 17.7 s of imports —
 # but that means stale worker code can outlive a backend it was not started by.
@@ -114,7 +112,7 @@ mutable struct PreviewWorker
     state::PreviewState
 end
 
-PreviewWorker(; port::Int=PREVIEW_PORT, env::Union{Symbol,Nothing}=nothing) =
+PreviewWorker(; port::Int=service_port(:preview), env::Union{Symbol,Nothing}=nothing) =
     PreviewWorker(port, nothing, env, PREVIEW_IDLE)
 
 # Stopped, or on its way: a launch in flight gives up quietly, and nothing is sent to it.
@@ -176,7 +174,7 @@ function launch!(w::PreviewWorker)::PreviewWorker
                           addenv(`$(python_bin_for(w.env)) $PREVIEW_WORKER`,
                                  "PYTHONPATH" => _python_dir(),
                                  "CECELIA_PY_ENV" => pixi_env_name(w.env),
-                                 # the worker binds what we will ping (a test launches off :7656)
+                                 # the worker binds this (preview_worker.py); slot-shifted, ports.jl
                                  "CECELIA_PREVIEW_PORT" => string(w.port),
                                  "OPENBLAS_NUM_THREADS" => string(BLAS_THREADS_PER_TASK),
                                  # Same reason as the BLAS budget, for the OTHER parallelism this

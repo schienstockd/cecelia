@@ -5,6 +5,13 @@ using Reseau: TLS
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
+# This user's port slot (app/src/ports.jl): inherited from the launcher when it resolved one, else
+# resolved here. FIRST, before any include — several files build port-holding handles at include time
+# (`_RUNNER` in runner_api.jl), and one built before this line points at slot 0, i.e. possibly at
+# another session's runner, which Quit then stops. Children read the slot from the env this sets.
+# Skipped under CECELIA_NO_SERVE (tests, REPL): nothing binds, so the slot-0 numbers are only labels.
+get(ENV, "CECELIA_NO_SERVE", "") == "1" || Cecelia.resolve_port_slot!()
+
 init_cecelia!()
 
 # Load user drop-in task modules from <config_dir>/modules (no rebuild needed). Safe/never-throws;
@@ -24,6 +31,7 @@ include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
 include("task_validate_api.jl")     # POST /api/tasks/validate — uses _gating_image (gating_api.jl)
+include("pixi_bin.jl")       # _find_pixi — the one pixi lookup (update_api.jl + system_api.jl)
 include("update_api.jl")
 include("system_api.jl")    # /api/system/envs — opt-in pixi env probe + install job (cellpose-v3 on Mac)
 include("plugins_api.jl")   # plugin install/remove; uses update_api.jl's Downloads + routes.jl's payload
@@ -232,6 +240,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/version" => (req, body_bytes) -> (api_version(req)),
     "/api/update/check" => (req, body_bytes) -> (api_update_check(req)),
     "/api/system/envs" => (req, body_bytes) -> (api_system_envs(req)),
+    "/api/system/weights" => (req, body_bytes) -> (api_system_weights(req)),
     "/api/setup/defaults" => (req, body_bytes) -> (api_setup_defaults(req)),
     "/api/setup/validate" => (req, body_bytes) -> (api_setup_validate(req)),
     "/api/projects" => (req, body_bytes) -> (api_projects_list(req)),
@@ -522,6 +531,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/update/apply" => (req, body_bytes) -> (api_update_apply(body_bytes)),
     "/api/update/revert" => (req, body_bytes) -> (api_update_revert(body_bytes)),
     "/api/system/envs/install" => (req, body_bytes) -> (api_system_envs_install(body_bytes)),
+    "/api/system/weights/fetch" => (req, body_bytes) -> (api_system_weights_fetch(body_bytes)),
     "/api/storage/reclaim" => (req, body_bytes) -> (api_storage_reclaim(body_bytes)),
     "/api/versions/prune" => (req, body_bytes) -> (api_versions_prune(body_bytes)),
 )
@@ -807,7 +817,7 @@ end
 # the safer default and what lets the debug console run (its hard gate is a loopback bind). Set
 # CECELIA_HOST=0.0.0.0 to deliberately expose it (the console then refuses to run).
 const HOST = get(ENV, "CECELIA_HOST", "127.0.0.1")
-const PORT = parse(Int, get(ENV, "CECELIA_PORT", "8080"))
+const PORT = Cecelia.service_port(:backend)   # this user's slot — resolved at the top of this file
 # The address the server is ACTUALLY bound to (set in `start`). The debug REPL keys off this: it only
 # runs when the bind is loopback, so a loopback bind — not a spoofable header — is the network control.
 const _BOUND_HOST = Ref{String}("")
@@ -885,6 +895,7 @@ function start(; host=HOST, port=PORT)
         exit(1)
     end
     _BOUND_HOST[] = string(host)
+    Cecelia.persist_port_slot!(Cecelia.port_slot())   # ours now (we hold the lock) — reuse it next launch
     _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
     _start_runner!()      # launch or ADOPT the detached task runner (no-op unless CECELIA_RUNNER=1)
     # Guarded for the same reason as `_watch_supervisor!`: on a Ctrl-C or a closed window our streams
@@ -894,6 +905,7 @@ function start(; host=HOST, port=PORT)
         try; _stop_children_for_exit(); catch; end
     end
     _watch_supervisor!()
+    fetch_missing_weights_at_boot!()   # a visible background job; never blocks the boot
     # HTTP/2 requires TLS (browsers refuse cleartext h2). Bootstrap a self-signed dev cert
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available.

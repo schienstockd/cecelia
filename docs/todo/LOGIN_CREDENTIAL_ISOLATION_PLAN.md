@@ -102,6 +102,11 @@ CLI: `claude 2.1.280 (Claude Code)`, binary at `/home/dominik/.local/bin/claude`
    two at once, that is a future problem for the one person, not everyone's design tax. This also
    collapses the picker's shared-state race: one process ⇒ one active identity ⇒ no cross-tab
    contention to design around.
+   **Amended 2026-10-09 (user):** the "nobody runs it" premise expired — several OS users now run
+   Cecelia on one machine. Each already had their own config dir, lock, projects dir and observer MCP
+   registration; only the ports collided. **Port slots** fix that (base + 10 × slot,
+   `app/src/ports.jl`, `docs/ARCHITECTURE.md` → *Ports*). Single-instance **per config dir** still
+   holds — this decision's one-process ⇒ one-identity guarantee is unchanged.
 8. **Attribution logging: yes, but only the write side, and it piggybacks on Kiwi turn logs**
    (user, 2026-09-24). Every Kiwi turn log entry gains `{profile, tokens_in, tokens_out,
    tool_calls, turn_id}`; no new store, no new file, no new schema surface — one field extension

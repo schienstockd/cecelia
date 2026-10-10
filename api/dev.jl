@@ -15,8 +15,13 @@
 import Sockets     # stdlib; `_ask_backend_to_quit` speaks HTTP by hand (no packages in this file)
 
 const RESTART_EXIT_CODE = 42
-const FRONTEND_PORT = 5173
-const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom port, this is the backstop
+
+# Ports come from this user's port slot (app/src/ports.jl), resolved once in `supervise()` and
+# inherited by the backend via `CECELIA_PORT_SLOT` — so the supervisor, Vite and the backend agree, and
+# a second user on this machine gets the next slot instead of a bind error. Base-only includes: this
+# script runs without Cecelia loaded.
+include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
+include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
 
 # The backend's OWN children — napari, the preview worker, Pluto. Killing the backend does not take them
 # with it (they are grandchildren, in their own process groups), and only the in-app Quit/Restart runs
@@ -24,9 +29,8 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # cellpose model's VRAM with no backend able to reach it, and zombie napari bridges are the reason this
 # start/stop machinery exists at all.
 #
-# Duplicated as literals because dev.jl is a standalone supervisor with no Cecelia loaded (same reason
-# `_free_port` is inlined below). `api/test/runtests.jl` asserts these agree with the package constants,
-# so the copies cannot drift apart silently.
+# Named as services, not ports: `service_port` (ports.jl) maps them to this slot's numbers, the same
+# function the package uses — `api/test/suite/shutdown.jl` asserts the list covers every child.
 # The task runner (7657) is here too, and its presence is a judgement call worth stating: it is
 # DESIGNED to outlive the backend, so an in-app Restart deliberately leaves it running. But this
 # `finally` runs when the SUPERVISOR itself goes away — Ctrl-C, Quit, or a crash it has given up on —
@@ -36,7 +40,7 @@ const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom p
 # A single crash no longer reaches here at all: it relaunches the backend instead (`_crash_death`), so
 # the runner keeps working and the fresh server adopts it — a segfault in the backend's own shutdown
 # path must NOT reap the running segmentation the runner exists to protect.
-const CHILD_PORTS = (7656, 7657, 7660)   # preview worker, task runner, notebooks
+const CHILD_SERVICES = (:preview, :runner, :notebooks)
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
 # with the restart sentinel; we relaunch the backend FROM THAT DIR (and the frontend from the sibling
@@ -70,6 +74,9 @@ function _start_frontend(root::AbstractString)
     fe = joinpath(root, "frontend")
     isdir(joinpath(fe, "node_modules")) || @warn "[dev] $fe/node_modules missing — run `npm install` there"
     cmd = Sys.iswindows() ? `cmd /c npm run dev` : `npm run dev`
+    # vite.config.ts reads both: its own port, and the backend port its /api + /ws proxy targets.
+    cmd = addenv(cmd, "CECELIA_PORT" => string(service_port(:backend)),
+                      "CECELIA_FRONTEND_PORT" => string(service_port(:frontend)))
     try
         # stdio wired EXPLICITLY to this supervisor's streams. The comment here used to read "inherits
         # stdio → Vite logs into this terminal" over a bare `run(cmd; wait = false)` — which does the
@@ -81,7 +88,7 @@ function _start_frontend(root::AbstractString)
         # Julia-flushed confirmation that the frontend was launched, and where. Still worth having now
         # that Vite's own banner can actually arrive: it is block-buffered when its stdout is a pipe
         # rather than a TTY, so it can appear late — this line does not.
-        @info "[dev] frontend (Vite) starting → http://localhost:$FRONTEND_PORT" dir = fe
+        @info "[dev] frontend (Vite) starting → http://localhost:$(service_port(:frontend))" dir = fe
         return p
     catch e
         @warn "[dev] frontend (Vite) failed to start" exception = e
@@ -91,7 +98,7 @@ end
 
 function _stop_frontend(vite)
     vite === nothing || (try; kill(vite); catch; end)
-    _free_port(FRONTEND_PORT)     # ensure the port is actually free before a relaunch binds it
+    _free_port(service_port(:frontend))     # ensure the port is actually free before a relaunch binds it
 end
 
 # ── Crash relaunch ─────────────────────────────────────────────────────────────
@@ -181,7 +188,7 @@ end
 #
 # The old code sent one SIGTERM by handle and moved on, leaving the backend alive on :8080 with a wall
 # of backtrace still scrolling past the shell prompt that had already come back.
-function _stop_backend!(p::Union{Base.Process,Nothing}; port::Integer = BACKEND_PORT,
+function _stop_backend!(p::Union{Base.Process,Nothing}; port::Integer = service_port(:backend),
                         quit_grace::Real = 8.0, term_grace::Real = 3.0)
     p === nothing && return
     _await(secs) = (t = time() + secs; while time() < t; process_running(p) || return true; sleep(0.1); end; !process_running(p))
@@ -210,6 +217,10 @@ function supervise()
     # and left its child orphaned; with this one line it printed both and killed the child.
     # That is the bug behind "Ctrl-C leaves everything running".
     Base.exit_on_sigint(false)
+
+    # Before either child starts: both inherit the slot through the env this sets.
+    slot = resolve_port_slot!()
+    slot == 0 || @info "[dev] using port slot $slot" backend = service_port(:backend) frontend = service_port(:frontend)
 
     julia = Base.julia_cmd().exec[1]   # this julia's executable; child gets its own flags (-t auto, Revise)
     workdir = @__DIR__                 # api/ of the worktree the server currently runs from
@@ -290,14 +301,14 @@ function supervise()
             # is really gone — freeing :8080 afterwards is only a backstop, and a backstop that keys
             # off the listening socket cannot see a backend that has closed it and then wedged.
             _stop_backend!(backend[])
-            _free_port(BACKEND_PORT)
+            _free_port(service_port(:backend))
             _stop_frontend(vite)
             # …and the backend's own children, which it only stops itself on an in-app Quit/Restart or
             # a Ctrl-C it caught. If it was killed outright nothing else will, so this is the one place
             # that catches them. Ordered after the backend is dead, so a supervisor still running
             # cannot relaunch one mid-teardown.
-            for p in CHILD_PORTS
-                _free_port(p)
+            for svc in CHILD_SERVICES
+                _free_port(service_port(svc))
             end
         end
     end
@@ -305,6 +316,6 @@ end
 
 # Run only when this file IS the script (`julia --project dev.jl`, the `pixi run dev` command). Guarded
 # so the API suite can `include` it and unit-test the crash classifier for real — the alternative was
-# asserting on the file's SOURCE TEXT, which is what the CHILD_PORTS check has to do and which cannot
+# asserting on the file's SOURCE TEXT, which is what the CHILD_SERVICES check has to do and which cannot
 # tell whether `_crash_death` actually treats SIGTERM as a request rather than a fault.
 abspath(PROGRAM_FILE) == (@__FILE__) && supervise()   # parens: a bare `@__FILE__ && x` eats the `&&`

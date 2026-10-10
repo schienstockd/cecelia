@@ -31,6 +31,8 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ### Fixed
 
+- **Project manager shows the default profile as `peanut`.** The Owners column still said `default`;
+  it now uses the same name as the header and profile picker.
 - **Other accounts can start a shared install.** Julia used to fail for any account except the one
   that installed it, while trying to write into the shared, read-only package folder. Each account
   now gets its own small writable Julia folder. On Windows, other accounts also couldn't run the

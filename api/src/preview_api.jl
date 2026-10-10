@@ -213,7 +213,7 @@ _preview_env_symbol(name::AbstractString) =
 # the next attempt succeeds. Cheap to just wait.
 function _free_preview_port!()
     probe = PreviewWorker()
-    Cecelia._kill_listeners_on_port(PREVIEW_PORT)
+    Cecelia._kill_listeners_on_port(service_port(:preview))
     for _ in 1:20
         first(_preview_ping(probe)) || break
         sleep(0.25)
@@ -232,7 +232,7 @@ function api_preview_status(req::HTTP.Request)
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
         starting = _preview_starting(),
-        port     = PREVIEW_PORT,
+        port     = service_port(:preview),
         # the pixi env of the worker held (running or starting), so the toggle can say a warm-up is
         # cellpose 3's; `nothing` when none is held
         env      = w === nothing ? nothing : Cecelia.pixi_env_name(w.env),
@@ -258,7 +258,7 @@ function api_preview_start(body_bytes::Vector{UInt8})
         return _preview_env_error(e)
     end
     w = _preview()
-    200, JSON3.write((; alive = ready, starting = _preview_starting(), port = PREVIEW_PORT,
+    200, JSON3.write((; alive = ready, starting = _preview_starting(), port = service_port(:preview),
                         env = w === nothing ? nothing : Cecelia.pixi_env_name(w.env)))
 end
 
@@ -434,6 +434,16 @@ function api_preview_run(body_bytes::Vector{UInt8})
         end
     end
     chan_names = something(channel_names(img_for_params; value_name = in_value_name), String[])
+
+    # Missing built-in weights are never downloaded inside this request: loading `cpsam_v2` cold pulls
+    # ~1.2 GB and outlasts the browser's timeout. Start (or join) the visible weights job and say so;
+    # the frontend re-requests when that job finishes (system_api.jl → *Model weights*).
+    dl = missing_weights_job(params)
+    dl === nothing || return 409, JSON3.write((;
+        error = "Downloading $(dl.label) (~$(round(dl.approx_size_mb / 1000; digits = 1)) GB) — " *
+                "the preview runs when it finishes.",
+        code  = "weights-downloading",
+        jobId = dl.job_id))
 
     reply = try
         _with_preview() do

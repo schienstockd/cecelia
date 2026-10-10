@@ -82,3 +82,48 @@ export function screenToImagePx(
   const inside = x >= 0 && y >= 0 && x < nX && y < nY
   return { x, y, in: inside }
 }
+
+/** An axis-aligned rectangle in LEVEL-0 image pixels, `[x0, x1) × [y0, y1)`. Floats — callers round. */
+export interface L0Rect { x0: number; y0: number; x1: number; y1: number }
+
+/**
+ * The rectangle of the image the 2D plane view shows, in L0 pixels — the forward half of
+ * `screenToImagePx`, for the whole canvas at once. Not clamped to the image: a zoomed-out view
+ * reports bounds past the edges and the caller clamps for its own purpose.
+ *
+ * The one derivation for "what is on screen": the tile fetcher's viewport, the overview minimap and
+ * the task-preview region all read it.
+ */
+export function cameraViewL0(
+  cam: OrbitCamera, meta: ViewerMeta, canvasW: number, canvasH: number,
+): L0Rect {
+  const vx = meta.voxelUm[0] || 1
+  const vy = meta.voxelUm[1] || 1
+  const halfH = cam.dist * VIEW_HALF_ANGLE
+  const halfW = halfH * (Math.max(canvasW, 1) / Math.max(canvasH, 1))
+  // Same shader convention as `screenToImagePx`: screen centre sits at image µm (panX + extX/2,
+  // -panY + extY/2).
+  const cx = cam.panX + (meta.nX * vx) / 2
+  const cy = -cam.panY + (meta.nY * vy) / 2
+  return { x0: (cx - halfW) / vx, y0: (cy - halfH) / vy, x1: (cx + halfW) / vx, y1: (cy + halfH) / vy }
+}
+
+/** An L0 rectangle → canvas CSS pixels (`{x, y, w, h}` from the canvas top-left) — the inverse of
+ *  `cameraViewL0`, for drawing an image-anchored box over the canvas. */
+export function l0RectToScreen(
+  r: L0Rect, cam: OrbitCamera, meta: ViewerMeta, canvasW: number, canvasH: number,
+): { x: number; y: number; w: number; h: number } {
+  const v = cameraViewL0(cam, meta, canvasW, canvasH)
+  const sx = canvasW / Math.max(v.x1 - v.x0, 1e-9)
+  const sy = canvasH / Math.max(v.y1 - v.y0, 1e-9)
+  return { x: (r.x0 - v.x0) * sx, y: (r.y0 - v.y0) * sy, w: (r.x1 - r.x0) * sx, h: (r.y1 - r.y0) * sy }
+}
+
+/** Canvas CSS pixels → L0 pixels (floats, unclamped). The inverse of `l0RectToScreen` for one point. */
+export function screenToL0(
+  px: number, py: number, cam: OrbitCamera, meta: ViewerMeta, canvasW: number, canvasH: number,
+): [number, number] {
+  const v = cameraViewL0(cam, meta, canvasW, canvasH)
+  return [v.x0 + (px / Math.max(canvasW, 1)) * (v.x1 - v.x0),
+          v.y0 + (py / Math.max(canvasH, 1)) * (v.y1 - v.y0)]
+}

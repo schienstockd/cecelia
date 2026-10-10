@@ -184,6 +184,21 @@ start_job!(task_id::AbstractString) =
     (lock(_JOBS_LOCK) do; get!(_JOBS, String(task_id), _Job(false, Base.Process[])); end; nothing)
 
 """
+    claim_job!(task_id) -> Bool
+
+Register job `task_id` only if it is not already running: `true` = the caller starts it, `false` = one
+is in flight, join it (watch its id) instead. One locked check-and-register, so two callers racing to
+start the same download cannot both win. Pair with `finish_job!` like `start_job!`."""
+claim_job!(task_id::AbstractString)::Bool = lock(_JOBS_LOCK) do
+    haskey(_JOBS, String(task_id)) && return false
+    _JOBS[String(task_id)] = _Job(false, Base.Process[])
+    true
+end
+
+"""    job_active(task_id) -> Bool — is job `task_id` registered (running, not yet finished)?"""
+job_active(task_id::AbstractString)::Bool = lock(() -> haskey(_JOBS, String(task_id)), _JOBS_LOCK)
+
+"""
     track_job!(task_id, proc) -> proc
 
 Register `proc` as one of job `task_id`'s live subprocesses, so `cancel_job!` kills it. Wire into
