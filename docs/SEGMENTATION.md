@@ -420,6 +420,12 @@ v3+v4 in one task is refused up front — one task = one env. Missing v3 env fai
 message pointing at the Install button (never a silent fallback to v4 that would return different
 labels).
 
+**Which call path runs inside the env.** `cellpose_utils.py` reads the installed cellpose's major
+version from the package metadata (`importlib.metadata.version`; cellpose defines no
+`__version__`) and branches `_get_model`/`predict_slice` on it. Nobody without a Mac can run the
+v3 env, so `.github/workflows/verify-cellpose-v3.yml` runs real cyto3 through `predict_from_zarr`
+on a macOS arm64 runner (CPU) whenever the cellpose code or the pixi env changes.
+
 **Shipped v3 models.** Only `cyto2` and `cyto3`, the two built-ins. Both auto-download from
 cellpose's own server on first use (~25 MB each) into `~/.cellpose/models/`; the install job
 pre-warms both so the download happens once, up front. `nuclei` and the tissue-specifics are
