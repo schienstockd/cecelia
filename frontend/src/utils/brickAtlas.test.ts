@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   atlasTextureSize, atlasVramBytes, atlasSlotCapacity,
-  validateAtlasLayout, pickAtlasLayout, canReuseAtlas, canReuseAtlases,
+  validateAtlasLayout, pickAtlasLayout, canReuseAtlas, canReuseAtlases, atlasCountForBudget,
   type AtlasLayout, type DeviceLimits,
 } from './brickAtlas'
 
@@ -167,6 +167,32 @@ describe('pickAtlasLayout — real-world sizing', () => {
       expect(capped!).toHaveLength(cap)
       expect(capped![0].atlasSlotCounts).toEqual(uncapped![0].atlasSlotCounts)
     }
+  })
+
+  it('spends a budget between maxBufferSize multiples instead of rounding the atlas count down', () => {
+    // Dml3RG 2D ±3 planes: brick [128,128,7], bpv=2, 4 ch. Each atlas sized at the 4 GiB cap
+    // used to leave a 6 GB budget at ONE atlas and 12 GB at two (8.6 GB) — the extra cache the
+    // user set bought nothing.
+    const GiB = 1024 * 1024 * 1024
+    const lim: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * GiB }
+    for (const budgetGiB of [6, 12]) {
+      const l = pickAtlasLayout([128, 128, 7], 2, 4, budgetGiB * GiB, lim)
+      expect(l).not.toBeNull()
+      const total = l!.length * atlasVramBytes(l![0])
+      expect(total).toBeLessThanOrEqual(budgetGiB * GiB)
+      expect(total).toBeGreaterThan(0.95 * budgetGiB * GiB)
+      for (const layout of l!) expect(validateAtlasLayout(layout, lim)).toBeNull()
+    }
+  })
+
+  it('a "4 GB" pick against Chromium\'s 2³² − 4 maxBufferSize stays one atlas', () => {
+    const GiB = 1024 * 1024 * 1024
+    expect(atlasCountForBudget(4 * GiB, 4 * GiB - 4)).toBe(1)
+    expect(atlasCountForBudget(6 * GiB, 4 * GiB - 4)).toBe(2)
+    expect(atlasCountForBudget(12 * GiB, 4 * GiB - 4)).toBe(3)
+    const l = pickAtlasLayout([128, 128, 7], 2, 4, 4 * GiB,
+                              { maxTextureDimension3D: 2048, maxBufferSize: 4 * GiB - 4 })
+    expect(l).toHaveLength(1)
   })
 
   it('stays at N=1 when budget only fits one atlas', () => {

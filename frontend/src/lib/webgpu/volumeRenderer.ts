@@ -266,8 +266,9 @@ export interface VolumeRenderer {
    * scheduled brick × each prefetch `t`; arrived bricks sit LRU-warmed in the atlas until
    * `show(t)` swaps them onto the page table. Empty = current-t only. Absent on the flat
    * renderer — its own timepoint cache uses `uploadFrame` + `setCapacity`.
+   * `hint` (while playing) switches atlas eviction from LRU to farthest-next-use.
    */
-  setPrefetchTimepoints?(list: number[]): void
+  setPrefetchTimepoints?(list: number[], hint?: import('../../utils/pageTable').PlaybackHint | null): void
   /**
    * Brick renderer only: safest prefetch depth given atlas capacity and the current per-t core
    * brick count. Callers pass their preferred cap (e.g. `4` during playback); the renderer clamps

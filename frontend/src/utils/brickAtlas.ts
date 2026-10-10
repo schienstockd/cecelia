@@ -142,13 +142,22 @@ export function canReuseAtlases(current: readonly AtlasLayout[], next: readonly 
   return true
 }
 
+/** How many atlases a budget splits into: `ceil(budget / maxBufferSize)`, except that a budget
+ *  within 1 % over a multiple stays at that multiple — Chromium reports `maxBufferSize` as
+ *  2³² − 4, and a "4 GB" pick must not become two 2 GB atlases. Shared with the cache chips'
+ *  atlas-count label so the two can't disagree. */
+export function atlasCountForBudget(budget: number, maxBufferSize: number): number {
+  if (budget <= 0 || maxBufferSize <= 0) return 1
+  return Math.max(1, Math.ceil(budget / maxBufferSize - 0.01))
+}
+
 /**
  * Pick an array of atlas layouts for a given store, targeting a total VRAM budget. See
  * `docs/todo/WEBGPU_MULTI_ATLAS_PLAN.md` → Decisions 3 (homogeneous atlases) + 4 (sizer per
  * atlas, then divide).
  *
- * Multi-atlas: sizes ONE atlas at `min(vramBudgetBytes, maxBufferSize)` with the existing
- * per-atlas sizer, then divides the total budget by that atlas's byte size to compute N.
+ * Multi-atlas: sizes ONE atlas at `vramBudgetBytes / ceil(vramBudgetBytes / maxBufferSize)` with
+ * the existing per-atlas sizer, then divides the total budget by that atlas's byte size to compute N.
  * Capped at `min(maxAtlases, MAX_ATLASES)`. Homogeneous by construction — every returned layout
  * is the same per-atlas layout, so a single `perAtlasCapacity` fully describes the array
  * (Decision 3).
@@ -173,8 +182,11 @@ export function pickAtlasLayout(
   if (oneBrickBytes > vramBudgetBytes) return null
 
   // One atlas is capped at maxBufferSize — Chromium/Dawn caps every texture's storage regardless
-  // of card VRAM. Anything past that ceiling is what multi-atlas is FOR.
-  const perAtlasBudget = Math.min(vramBudgetBytes, limits.maxBufferSize)
+  // of card VRAM. Anything past that ceiling is what multi-atlas is FOR: the budget is split
+  // evenly over as many atlases as it takes (WEBGPU_MULTI_ATLAS_PLAN.md → Decision 4).
+  const nCap = Math.max(1, Math.min(MAX_ATLASES, Math.floor(maxAtlases)))
+  const nWanted = Math.min(nCap, atlasCountForBudget(vramBudgetBytes, limits.maxBufferSize))
+  const perAtlasBudget = Math.min(limits.maxBufferSize, Math.floor(vramBudgetBytes / nWanted))
   const budgetSlots = Math.floor(perAtlasBudget / oneBrickBytes)
   if (budgetSlots < 1) return null
 
@@ -231,7 +243,6 @@ export function pickAtlasLayout(
   // unused remainder is by design). When a caller asks for less than one atlas' worth of
   // budget past the first (`nAtlases = 1`), N=1 → behaviour identical to Phase 1.
   const perAtlasBytes = atlasVramBytes(layout)
-  const nCap = Math.max(1, Math.min(MAX_ATLASES, Math.floor(maxAtlases)))
   const nAtlases = Math.max(1, Math.min(nCap, Math.floor(vramBudgetBytes / perAtlasBytes)))
   const layouts: AtlasLayout[] = []
   for (let i = 0; i < nAtlases; i++) layouts.push(layout)

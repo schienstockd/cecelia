@@ -115,6 +115,34 @@ export function slotCount(atlasSlotCounts: readonly [number, number, number]): n
   return atlasSlotCounts[0] * atlasSlotCounts[1] * atlasSlotCounts[2]
 }
 
+/** A brick's grid position without its timepoint — the same screen footprint at every t. */
+export function viewportPosKey(v: VirtualBrick): string {
+  return `${v.level}/${v.bx}/${v.by}/${v.bz}`
+}
+
+/** Where playback is heading — lets eviction rank a brick by when it will next be drawn. */
+export interface PlaybackHint {
+  dir: 1 | -1
+  nT: number
+  loop: boolean
+}
+
+/**
+ * Frames until timepoint `t` is drawn again, playing from `fromT` in `hint.dir`. `Infinity` for a
+ * timepoint behind the playhead that a non-looping play never returns to.
+ *
+ * This is what makes a looping play settle: plain LRU on a cyclic sweep longer than the cache
+ * evicts exactly the frame needed next (the one played longest ago), so every loop refetches
+ * everything. Evicting the farthest next use instead (Belady's MIN — Belady 1966,
+ * doi:10.1147/sj.52.0078) keeps all but the overflow resident: at a cache holding K of N
+ * timepoints, N−K refetch per loop instead of N.
+ */
+export function nextUseDistance(t: number, fromT: number, hint: PlaybackHint): number {
+  const d = hint.dir >= 0 ? t - fromT : fromT - t
+  if (d >= 0) return d
+  return hint.loop ? d + hint.nT : Infinity
+}
+
 /** Result of a page-table lookup / mutation. `slot === -1` means "not resident and no free slot"
  *  — the eviction policy on top of this table has to make room first. */
 export interface PageTableEntry {
@@ -173,16 +201,18 @@ export class PageTable {
     return entry
   }
 
-  /** Insert; if the table is full, evict the least-recently-used entry FIRST. Returns the entry
+  /** Insert; if the table is full, evict the least-recently-used entry FIRST — or, given `rank`,
+   *  the highest-ranked one (`evictHighestRank`). Returns the entry
    *  for the inserted brick, plus the key that was evicted (if any) so the caller can release the
    *  matching GPU slot state. */
   insertOrEvictLru(
     brick: VirtualBrick,
     now: number,
+    rank?: (e: PageTableEntry) => number,
   ): { entry: PageTableEntry; evictedKey: string | null } {
     let evictedKey: string | null = null
     if (!this.byKey.has(brickKey(brick)) && this.freeSlots.length === 0) {
-      evictedKey = this.evictLru()
+      evictedKey = rank === undefined ? this.evictLru() : this.evictHighestRank(rank)
     }
     const entry = this.insert(brick, now)!
     return { entry, evictedKey }
@@ -196,6 +226,24 @@ export class PageTable {
       if (e.lastUsed < victimTime) {
         victimTime = e.lastUsed
         victimKey = k
+      }
+    }
+    if (victimKey === null) return null
+    this.evict(victimKey)
+    return victimKey
+  }
+
+  /** Drop the entry `rank` scores highest (ties → least recently used), returning its key. */
+  evictHighestRank(rank: (e: PageTableEntry) => number): string | null {
+    let victimKey: string | null = null
+    let victimRank = -Infinity
+    let victimTime = Infinity
+    for (const [k, e] of this.byKey) {
+      const r = rank(e)
+      if (victimKey === null || r > victimRank || (r === victimRank && e.lastUsed < victimTime)) {
+        victimKey = k
+        victimRank = r
+        victimTime = e.lastUsed
       }
     }
     if (victimKey === null) return null

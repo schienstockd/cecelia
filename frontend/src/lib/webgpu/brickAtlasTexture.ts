@@ -73,6 +73,7 @@ export function createBrickAtlasTexture(
   layout: AtlasLayout,
   limits: DeviceLimits,
   onError?: (msg: string) => void,
+  opts: { callerScope?: boolean } = {},
 ): BrickAtlasTexture | null {
   const err = validateAtlasLayout(layout, limits)
   if (err !== null) {
@@ -84,7 +85,11 @@ export function createBrickAtlasTexture(
 
   // Same OOM discipline as `volumeRenderer.ts` — a big atlas can legitimately fail to allocate,
   // and the caller then holds the handle at `null` rather than crashing the browser.
-  device.pushErrorScope('out-of-memory')
+  // `callerScope`: the caller has pushed its own 'out-of-memory' scope and AWAITS it (the brick
+  // renderer does, so it can retry with fewer atlases). A scope of ours nested inside would
+  // swallow the OOM before the caller's pop could see it.
+  const ownScope = !opts.callerScope
+  if (ownScope) device.pushErrorScope('out-of-memory')
   const texture = device.createTexture({
     size: [dx, dy, dz],
     dimension: '3d',
@@ -94,7 +99,7 @@ export function createBrickAtlasTexture(
   // Fire the pop but don't await — a failed alloc will surface via `onuncapturederror`; the
   // returned handle is either valid or already unusable, and `destroy()` on the next layout
   // change will drop it.
-  void device.popErrorScope().then(popErr => {
+  if (ownScope) void device.popErrorScope().then(popErr => {
     if (popErr) onError?.(`Brick atlas: ${popErr.message}`)
   })
 
@@ -119,12 +124,12 @@ export function createBrickAtlasTexture(
     // `writeTexture`'s 7.1 ms on a 4 MB r16uint brick (WEBGPU_UPLOAD_PATH_PLAN.md §C,
     // 2026-09-15 on RTX 2000 Ada) — the 4 ms/brick delta is the driver's own staging copy
     // that `writeTexture` re-runs each call.
-    device.pushErrorScope('out-of-memory')
+    if (ownScope) device.pushErrorScope('out-of-memory')
     stagingBuf = device.createBuffer({
       size: brickPayloadBytes(layout),
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     })
-    void device.popErrorScope().then(popErr => {
+    if (ownScope) void device.popErrorScope().then(popErr => {
       if (popErr) onError?.(`Brick atlas staging buffer: ${popErr.message}`)
     })
   }
@@ -194,10 +199,10 @@ export function createBrickAtlasTexture(
 }
 
 /**
- * Create N atlas textures from an array of layouts. `WEBGPU_MULTI_ATLAS_PLAN.md` Phase 1
- * refactor — always length 1 during Phase 1, N up to `MAX_ATLASES` in Phase 2. Returns
- * `null` if any single atlas fails to allocate, cleaning up any already-created textures
- * so the caller doesn't leak GPU memory on a partial success.
+ * Create N atlas textures from an array of layouts, inside the CALLER's 'out-of-memory' error
+ * scope (`callerScope` above) — the caller awaits that scope and decides what an OOM means (the
+ * brick renderer retries with fewer atlases). Returns `null` on a layout error, destroying any
+ * already-created textures so a partial success doesn't leak GPU memory.
  *
  * Homogeneity (Decision 3) is a caller contract, not enforced here — `pickAtlasLayout` is
  * the single producer and never returns heterogeneous arrays.
@@ -211,10 +216,8 @@ export function createBrickAtlasTextures(
   if (layouts.length === 0) return null
   const created: BrickAtlasTexture[] = []
   for (const layout of layouts) {
-    const tex = createBrickAtlasTexture(device, layout, limits, onError)
+    const tex = createBrickAtlasTexture(device, layout, limits, onError, { callerScope: true })
     if (tex === null) {
-      // Partial success: destroy the atlases we did allocate so the GPU-side memory doesn't
-      // outlive the caller's null-check.
       for (const t of created) t.destroy()
       return null
     }
@@ -222,4 +225,3 @@ export function createBrickAtlasTextures(
   }
   return created
 }
-
