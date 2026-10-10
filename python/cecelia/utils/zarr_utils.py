@@ -372,13 +372,48 @@ def chunks(im_array):
     return [x if isinstance(x, int) else x[0] for x in im_chunks]
 
 
-def plane_chunks(shape, dim_utils=None, xy_tile=512):
-    """Per-plane chunking for an OME-ZARR consumed by napari: 1 along the non-spatial axes
-    (T/C/Z) and `xy_tile`-capped along the two spatial axes (Y/X). napari slices per (t,c,z),
-    so a chunk must NOT span the time/channel axes — `dask`'s `chunks='auto'` packs the whole
-    time series into one ~128 MB chunk, which makes a single plane cost a full-timecourse read
-    (slow first open, fast once OS-cached). Spatial axes come from `dim_utils` when available,
-    else assumed to be the last two (bioformats2raw TCZYX order)."""
+# Chunk XY for a write that has NO source store to inherit from. Every derived store inherits its
+# source's XY chunk instead (`store_xy_tile`, ZARR_V3_PLAN D9), so the import is where the size is
+# really chosen; this only covers a store built from nothing. Pinned equal to the import's auto
+# (`BF2RAW_AUTO_TILE` in app/src/config/image_format.jl) by test_zarr_utils.
+DEFAULT_XY_TILE = 512
+
+
+def store_xy_tile(reference):
+    """The XY chunk size of an existing store, for a derived store to inherit — or None.
+
+    The chunk-shape half of `store_encoding_of`'s D9 rule (`docs/todo/ZARR_V3_PLAN.md`): derived stores
+    take their format AND chunk from the source, so the import's chunk choice is the only one. A writer
+    must not pick its own size.
+
+    Accepts a path or an already-open zarr/dask array, like `store_encoding_of`. Returns the larger of
+    the level-0 array's last two chunk dims (Y, X in every store we read): bioformats2raw caps a tile
+    to the frame per axis, so the larger one is the size that was asked for. None when there is no
+    reference or it cannot be read — the writer then falls back to `DEFAULT_XY_TILE` rather than
+    failing a derived write over a source's metadata."""
+    try:
+        if reference is None or reference == '':
+            return None
+        if isinstance(reference, (str, bytes, os.PathLike)):
+            levels, _ = open_zarr(os.fspath(reference))
+            reference = levels[0]
+        ch = chunks(reference)
+        return int(max(ch[-2], ch[-1])) if len(ch) >= 2 else None
+    except Exception:
+        return None
+
+
+def plane_chunks(shape, dim_utils=None, xy_tile=None):
+    """Per-plane chunking: 1 along the non-spatial axes (T/C/Z) and `xy_tile`-capped along the two
+    spatial axes (Y/X). A chunk must NOT span the time/channel axes — `dask`'s `chunks='auto'` packs
+    the whole time series into one ~128 MB chunk, which makes a single plane cost a full-timecourse
+    read (slow first open, fast once OS-cached). Spatial axes come from `dim_utils` when available,
+    else assumed to be the last two (bioformats2raw TCZYX order).
+
+    ``xy_tile``: writers pass `store_xy_tile(source)` so a derived store keeps its source's chunk size;
+    None (no source) takes `DEFAULT_XY_TILE`."""
+    if xy_tile is None:
+        xy_tile = DEFAULT_XY_TILE
     n = len(shape)
     spatial = set()
     order = getattr(dim_utils, "im_dim_order", None) if dim_utils is not None else None
@@ -1306,7 +1341,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
         # dask array's own chunksize, which for a correction built via `chunks='auto'` spans the whole
         # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read.
-        pchunks = plane_chunks(im_array.shape, dim_utils)
+        pchunks = plane_chunks(im_array.shape, dim_utils, xy_tile=store_xy_tile(reference_zarr))
         dest = multiscales_zarr.create_array(
             "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype),
             **_codec_kwargs(kind, zarr_format, shards=shards, separator=separator)
@@ -1598,7 +1633,7 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     # Same stamp as `create_multiscales`, because the two must produce the same layout (see docstring).
     write_multiscales_attrs(multiscales_zarr, ms_meta, zarr_format)
 
-    pchunks = plane_chunks(tuple(shape), dim_utils)
+    pchunks = plane_chunks(tuple(shape), dim_utils, xy_tile=store_xy_tile(reference_zarr))
     level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,
                                            dtype=native_dtype(dtype),
                                            **_codec_kwargs(kind, zarr_format, shards=shards,

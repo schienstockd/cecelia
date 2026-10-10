@@ -212,6 +212,69 @@ class InheritFormatTest(unittest.TestCase):
             self.assertEqual(fmt, zarr_utils.store_format(out), f'crop of a v{fmt} source')
 
 
+class InheritChunkTest(unittest.TestCase):
+    """D9's other half: a derived store takes its XY CHUNK from its source too, so the import is the
+    only place a chunk size is chosen."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.dark, self.arr, self.du = _fixture(shape=(1, 1, 2, 64, 64))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _source(self, xy):
+        # a store chunked at `xy` — through the canonical rechunk tool, not a hand-built array
+        from cecelia.utils.rechunk_zarr import rechunk_store
+        p = os.path.join(self.tmp, f'src{xy}.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, p, dim_utils=self.du, nscales=1)
+        status, detail = rechunk_store(p, xy_tile=xy, replace=True, force=True)
+        self.assertEqual('rechunked', status, detail)
+        return p
+
+    def test_the_resolver_reads_the_sources_xy_chunk(self):
+        src = self._source(16)
+        self.assertEqual(16, zarr_utils.store_xy_tile(src))                              # a path
+        self.assertEqual(16, zarr_utils.store_xy_tile(zarr_utils.open_as_zarr(src)[0][0]))  # open array
+        # nothing to inherit → None, and the writer falls back; never raises over a bad reference
+        for ref in (None, '', os.path.join(self.tmp, 'nope')):
+            self.assertIsNone(zarr_utils.store_xy_tile(ref))
+
+    def test_the_streaming_writer_inherits_the_chunk(self):
+        # open_multiscales_for_writing is what every correction / edit / label task writes through
+        for xy in (16, 32):
+            out = os.path.join(self.tmp, f'streamed{xy}.ome.zarr')
+            _, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+                out, self.arr.shape, self.arr.dtype, self.du, nscales=1, reference_zarr=self._source(xy))
+            self.assertEqual((1, 1, 1, xy, xy), tuple(level0.chunks), f'from a {xy}-chunked source')
+            self.assertEqual((1, 1, 1, xy, xy), tuple(pchunks))
+
+    def test_the_dask_writer_inherits_the_chunk(self):
+        out = os.path.join(self.tmp, 'dask16.ome.zarr')
+        zarr_utils.create_multiscales(self.dark, out, dim_utils=self.du, nscales=1,
+                                      reference_zarr=self._source(16))
+        self.assertEqual((1, 1, 1, 16, 16), tuple(zarr_utils.open_as_zarr(out)[0][0].chunks))
+        np.testing.assert_array_equal(self.arr, np.asarray(zarr_utils.open_as_zarr(out)[0][0][:]))
+
+    def test_no_source_falls_back_to_the_default_capped_to_the_frame(self):
+        out = os.path.join(self.tmp, 'nosrc.ome.zarr')
+        _, level0, _ = zarr_utils.open_multiscales_for_writing(
+            out, self.arr.shape, self.arr.dtype, self.du, nscales=1)
+        cap = min(zarr_utils.DEFAULT_XY_TILE, 64)
+        self.assertEqual((1, 1, 1, cap, cap), tuple(level0.chunks))
+
+    def test_the_fallback_matches_the_imports_auto(self):
+        # The import (bioformats2raw "auto") is where the size is chosen; a store with no source must
+        # land on the same number, or two defaults drift apart. One number per language, pinned here.
+        import re
+        jl = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'app', 'src', 'config',
+                          'image_format.jl')
+        with open(jl, encoding='utf-8') as fh:
+            m = re.search(r'^const BF2RAW_AUTO_TILE = (\d+)$', fh.read(), re.M)
+        self.assertIsNotNone(m, 'BF2RAW_AUTO_TILE not found in image_format.jl')
+        self.assertEqual(int(m.group(1)), zarr_utils.DEFAULT_XY_TILE)
+
+
 class CalibrationRestampTest(unittest.TestCase):
     """A calibration RE-stamp must land where the store actually keeps its NGFF attributes.
 

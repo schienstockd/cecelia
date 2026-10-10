@@ -750,12 +750,14 @@ def _write_region_levels(staging, block, axes, full_shape, bounds, im_path, kind
     exactly as it reads the real store. Only the chunks the region overlaps are written; the rest
     read back as the fill value 0.
 
-    Zarr format + separator are inherited from the source image; the codec follows ``kind``
+    Zarr format, separator and XY chunk are inherited from the source image (`store_xy_tile`, so the
+    preview reads like the store it stands in for); the codec follows ``kind``
     (`'labels'` / `'image'`) — the same rule `_open_label_store` in segmentation_utils follows."""
     enc = zarr_utils.store_encoding_of(im_path) if im_path else {'zarr_format': 2, 'separator': None}
     fmt = enc.get('zarr_format', 2)
     separator = enc.get('separator')
     nscales = len(zarr_utils.open_as_zarr(im_path, as_dask=False)[0]) if im_path else 1
+    xy = zarr_utils.store_xy_tile(im_path) or zarr_utils.DEFAULT_XY_TILE
     full = tuple(int(x) for x in full_shape)
     axes_up = [str(a).upper() for a in axes]
 
@@ -764,7 +766,7 @@ def _write_region_levels(staging, block, axes, full_shape, bounds, im_path, kind
     for lv in range(nscales):
         shape, region, sub = _level_region(axes_up, full, bounds, 2 ** lv)
         # Per-plane on Y/X so writing the region touches only the chunks that overlap it.
-        chunks = tuple(min(shape[i], 512) if ax in ('Y', 'X') else 1 for i, ax in enumerate(axes_up))
+        chunks = tuple(min(shape[i], xy) if ax in ('Y', 'X') else 1 for i, ax in enumerate(axes_up))
         arr = g.create_array(
             str(lv), shape=shape, chunks=chunks, dtype=block.dtype, fill_value=0,
             **zarr_utils._codec_kwargs(kind, fmt, separator=separator))

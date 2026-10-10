@@ -46,7 +46,7 @@
           "options": [
             {
               "value": "auto",
-              "label": "Auto (recommended)"
+              "label": "Auto (512 px)"
             },
             {
               "value": "512",
@@ -61,7 +61,7 @@
               "label": "2048 px"
             }
           ],
-          "tip": "Zarr chunk shape in XY (--tile-width/height); auto = 1024, capped to the frame"
+          "tip": "Zarr chunk XY (--tile-width/height); derived images inherit it"
         },
         {
           "key": "ngffVersion",

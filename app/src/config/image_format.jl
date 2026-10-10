@@ -228,32 +228,34 @@ _bf2raw_lib_dir(bin::AbstractString = bioformats2raw_bin()) = joinpath(dirname(d
 """
     bf2raw_chunk_flags(value) -> Vector{String}
 
-bioformats2raw `--tile-width`/`--tile-height` flags for the configured chunk size, or **empty for
-`"auto"`**.
+bioformats2raw `--tile-width`/`--tile-height` flags for the configured chunk size. `"auto"` means
+`BF2RAW_AUTO_TILE` (512).
 
-Auto deliberately passes NOTHING and lets bioformats2raw apply its own default of 1024 — because that
-default is already *capped to the frame*: a 512×512 acquisition gets 512×512 chunks, a 1024×1024 one
-gets 1024×1024. That is exactly the rule we want (one chunk per plane, up to 1024) and it needs no
-knowledge of the source dimensions, which we do not have at this point anyway — the image has not been
-converted yet, so there is no store to measure.
+**This is the one place a chunk size is chosen.** Every derived store — corrections, crops, label sets
+— inherits its source's XY chunk (`zarr_utils.store_xy_tile`, `docs/todo/ZARR_V3_PLAN.md` D9), so the
+import decides it for the image and everything made from it. To change the default for new images,
+change `BF2RAW_AUTO_TILE`; nothing downstream holds its own number (`zarr_utils.DEFAULT_XY_TILE`, the
+fallback for a store with no source, is pinned to it by a Python test).
 
-Why one chunk per plane is the target rather than something smaller: napari slices per (t,c,z) and
-draws whole planes, so a plane that is one chunk is one read. The same reasoning is written down in
-`zarr_utils.plane_chunks`, which chunks our OWN writes that way. Smaller chunks only pay off for
-routine sub-region reads, which nothing in the app does — segmentation reads tiles that are at least
-its own block size.
+Why 512 and not bioformats2raw's own 1024: the browser viewer reads 128x128 bricks through ALL z, so
+every brick decodes each chunk it touches in full. Measured on one 1024² acquisition re-chunked three
+ways (`docs/todo/spike/webgpu/slab_cache_findings.md` → *Chunk size*): a brick costs 136 ms at 1024²,
+33 ms at 512², 9 ms at 256²; compressed size is identical and on-disk size +7% at 512 (block rounding
+over 4x the files), +32% at 256. Whole-plane reads barely move (0.50 → 0.74 ms). 256 is not the default: 16x the
+files hurts most on Windows and network shares.
 
-A 1024×1024 `uint16` chunk is 2 MB. 2048 is 8 MB, which is a lot to fetch for a viewport showing far
-less; it is offered for the rare very large frame, not as an upgrade.
+bioformats2raw caps it to the frame per axis (verified: 300x700 → 300x512 chunks), so a frame under
+512 px still gets one chunk per plane.
 
 Anything unparseable falls back to auto rather than raising — the same call as
 `bf2raw_compression_flags`: a typo must not fail an hour-long import.
 """
+const BF2RAW_AUTO_TILE = 512
+
 function bf2raw_chunk_flags(value)::Vector{String}
     s = lowercase(strip(string(value)))
-    (isempty(s) || s == "auto") && return String[]
-    n = tryparse(Int, s)
-    (isnothing(n) || n < 32) && return String[]
+    n = (isempty(s) || s == "auto") ? BF2RAW_AUTO_TILE : tryparse(Int, s)
+    (isnothing(n) || n < 32) && (n = BF2RAW_AUTO_TILE)
     ["--tile-width", string(n), "--tile-height", string(n)]
 end
 

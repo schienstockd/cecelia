@@ -170,6 +170,13 @@ So there is ONE resolver — read the source store's encoding and write to match
 `importImages.omezarr` exposes the choice. This is also what keeps the param surface answerable: the
 user picks once, on the image, not again on every downstream task.
 
+**Chunk XY is inherited too (2026-10-10).** Until then only the format was: the plane writers
+(`open_multiscales_for_writing`, `create_multiscales`' dask branch) hardcoded 512, so a 1024-chunked
+import produced 512-chunked corrections. They now take `zarr_utils.store_xy_tile(reference_zarr)`, and
+the size is chosen once, at import (`bf2raw_chunk_flags`, auto = `BF2RAW_AUTO_TILE`). A write with no
+source falls back to `zarr_utils.DEFAULT_XY_TILE`, pinned equal to the import's auto by a test. Why
+512: `docs/todo/SLAB_READ_PERF_PLAN.md` Phase 3.
+
 Consequence for labels: a label set derived from a v3 image is written v3 too, and the LABEL compressor
 stays its own decision (`LABEL_COMPRESSOR`) — format is inherited, codec is not. The two are separate
 axes and conflating them would undo the measured label-codec choice.

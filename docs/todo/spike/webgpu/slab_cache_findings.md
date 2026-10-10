@@ -310,6 +310,22 @@ single thread, warm. Raw: `slab_cache_results/amplification_*.json`.
   renderer reads all z at once, which is the opposite access pattern.
 - No brick-shaped store exists in the projects dir sampled (`~/cecelia-feijoa/projects`, 10 projects).
 
+### Chunk size, on the same data — `slab_chunk_size.jl`
+
+The first 10 timepoints of Dml3RG's raw import copied three ways, same codec (blosc/zstd 3, shuffle),
+single thread, warm. Raw: `slab_cache_results/chunk_size_Dml3RG.json`.
+
+| Chunk XY | Files | Apparent | On disk | Brick (128² x 31z x 4c) | Whole plane |
+|---|---|---|---|---|---|
+| 1024² (bioformats2raw default) | 1,244 | 134.0 MB | 136.6 MB | 135.8 ms | 0.50 ms |
+| **512²** | 4,964 | 133.9 MB | 145.7 MB (+7%) | **32.9 ms (4.1x)** | 0.74 ms |
+| 256² | 19,844 | 134.3 MB | 179.9 MB (+32%) | 9.3 ms | 0.70 ms |
+
+- Compressed size does not depend on chunk size; the on-disk cost is file-system block rounding.
+- Decided: import auto = 512 (`bf2raw_chunk_flags`), and derived stores inherit their source's XY chunk
+  (`zarr_utils.store_xy_tile`, ZARR_V3_PLAN D9). 256 rejected: 16x the files, worst on Windows and
+  network shares.
+
 ### Windows: `libblosc.dll` reads `getenv` from msvcrt
 
 `Blosc_jll` 1.21.7 (the manifest's) is a Yggdrasil rebuild of c-blosc **1.21.6** (commit

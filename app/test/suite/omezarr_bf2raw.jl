@@ -202,19 +202,21 @@ end
     @test Cecelia.bf2raw_chunk_flags("512") == ["--tile-width", "512", "--tile-height", "512"]
     @test Cecelia.bf2raw_chunk_flags(1024)  == ["--tile-width", "1024", "--tile-height", "1024"]
 
-    # "auto" passes NOTHING on purpose: bioformats2raw's own default is 1024 ALREADY CAPPED to the
-    # frame, which is exactly the rule we want (one chunk per plane, up to 1024) and needs no source
-    # dimensions — which we do not have, since the image is not converted yet.
-    @test isempty(Cecelia.bf2raw_chunk_flags("auto"))
-    @test isempty(Cecelia.bf2raw_chunk_flags("AUTO"))
-    @test isempty(Cecelia.bf2raw_chunk_flags(""))
+    # "auto" is an explicit BF2RAW_AUTO_TILE, NOT bioformats2raw's own 1024 default: the import is
+    # the one place the chunk size is chosen (derived stores inherit it), and 512 is what the
+    # browser viewer's brick reads want — see `bf2raw_chunk_flags`.
+    auto = ["--tile-width", string(Cecelia.BF2RAW_AUTO_TILE), "--tile-height", string(Cecelia.BF2RAW_AUTO_TILE)]
+    @test Cecelia.BF2RAW_AUTO_TILE == 512
+    @test Cecelia.bf2raw_chunk_flags("auto") == auto
+    @test Cecelia.bf2raw_chunk_flags("AUTO") == auto
+    @test Cecelia.bf2raw_chunk_flags("")     == auto
 
     # unparseable / absurd falls back to auto rather than raising — same call as the compression
     # flags: a bad value must not fail an hour-long import
-    @test isempty(Cecelia.bf2raw_chunk_flags("banana"))
-    @test isempty(Cecelia.bf2raw_chunk_flags(0))
-    @test isempty(Cecelia.bf2raw_chunk_flags(-8))
-    @test isempty(Cecelia.bf2raw_chunk_flags(16))       # below 32: not a sane chunk
+    @test Cecelia.bf2raw_chunk_flags("banana") == auto
+    @test Cecelia.bf2raw_chunk_flags(0)        == auto
+    @test Cecelia.bf2raw_chunk_flags(-8)       == auto
+    @test Cecelia.bf2raw_chunk_flags(16)       == auto     # below 32: not a sane chunk
 
     # every option the task spec offers must actually resolve (a spec/handler drift here is silent —
     # the import would just ignore the choice, which is the bug this whole testset exists for)
@@ -225,7 +227,7 @@ end
     @test "auto" in vals
     @test string(cs.default) in vals
     for v in vals
-        @test v == "auto" ? isempty(Cecelia.bf2raw_chunk_flags(v)) :
+        @test v == "auto" ? Cecelia.bf2raw_chunk_flags(v) == auto :
                             Cecelia.bf2raw_chunk_flags(v) == ["--tile-width", v, "--tile-height", v]
     end
 
