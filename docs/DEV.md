@@ -704,7 +704,10 @@ per browser; the cookie lasts a year. Scripts and tools send `Authorization: Bea
 
 **Testing HTTP/2 locally** — installed apps default to HTTPS + HTTP/2; a dev checkout defaults
 to plain HTTP/1.1 (Vite's proxy is HTTP/1.1-only both ways, so ALPN downgrades under
-`pixi run dev` and TLS earns nothing). Set `CECELIA_TLS=1` against `pixi run prod` from a dev
+`pixi run dev` and TLS earns nothing). Under `pixi run dev` the supervisor decides the scheme once
+(`CECELIA_TLS`, default off) and the backend, Vite's proxy and its Quit all follow it, so the Settings
+TLS toggle can't leave Vite proxying HTTP to an HTTPS backend; `CECELIA_TLS=1 pixi run dev` runs the
+dev stack over TLS. Set `CECELIA_TLS=1` against `pixi run prod` from a dev
 tree to exercise the installed-app codepath — that generates a self-signed cert at
 `$CECELIA_DEV_DIR/tls/{cert,key}.pem` via the system `openssl` (rotate by deleting both files).
 Verify h2 is actually on the wire:

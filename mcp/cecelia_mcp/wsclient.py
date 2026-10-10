@@ -74,6 +74,8 @@ async def observe(monitor: SessionMonitor, ws_url: str, *, stop: asyncio.Event |
                         return
         except websockets.ConnectionClosed:
             pass
+        except websockets.InvalidStatus:   # refused (e.g. 401): it answered, so the scheme stays
+            delay = min(max(2 * delay, 0.5), 10.0)
         except (OSError, EOFError, asyncio.TimeoutError, websockets.InvalidHandshake):
             i = (i + 1) % len(urls)
             delay = min(max(2 * delay, 0.5), 10.0)

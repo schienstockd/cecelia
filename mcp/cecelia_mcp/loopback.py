@@ -73,7 +73,10 @@ def open_url(base_url: str, path: str, *, data: bytes | None = None, headers: di
         try:
             resp = (urllib.request.urlopen(req, timeout=timeout, context=ctx) if ctx is not None
                     else urllib.request.urlopen(req, timeout=timeout))
-        except (urllib.error.HTTPError, TimeoutError):
+        except urllib.error.HTTPError:
+            remember(base_url, base)   # it answered: this IS the scheme, whatever the status
+            raise
+        except TimeoutError:
             raise
         except (urllib.error.URLError, OSError) as e:  # refused / reset / TLS mismatch
             errors.append(f"{base}: {getattr(e, 'reason', e)}")

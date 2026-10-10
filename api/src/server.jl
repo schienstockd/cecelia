@@ -579,7 +579,7 @@ end
 
 # ── Static frontend serving ───────────────────────────────────────────────────
 # In production the Julia server serves the built Vue app (frontend/dist) at the same origin, so
-# the whole app is reachable at http://localhost:8080 — no CORS, no dev proxy. In dev you still use
+# the whole app is reachable at one origin (https://localhost:8080 when TLS is on) — no CORS, no dev proxy. In dev you still use
 # the Vite server (:5173), which proxies /api + /ws here. If dist/ is absent (dev), these no-op and
 # requests fall through to the API router. See docs/SHIPPING.md.
 
@@ -982,11 +982,11 @@ function start(; host=HOST, port=PORT)
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available.
     #
-    # Default: TLS ON in prod (installed app), OFF in dev + CI. Two reasons dev stays off:
-    # (1) Vite's dev proxy is HTTP/1.1-only both ways under `pixi run dev`, so ALPN downgrades
-    # and TLS earns nothing; (2) the CI smoke workflow curls plain http://localhost:8080/
-    # against `pixi run prod` and would break. Prod flip landed after U4 shipped opt-in and
-    # nobody flipped `CECELIA_TLS=1` — a feature nobody sees is a zombie feature.
+    # Default: TLS ON in prod (installed app), OFF in dev: Vite's dev proxy is HTTP/1.1-only both
+    # ways under `pixi run dev`, so ALPN downgrades and TLS earns nothing (`api/dev.jl` pins
+    # `CECELIA_TLS` so Vite's proxy and this server always agree). Prod flip landed after U4 shipped
+    # opt-in and nobody flipped `CECELIA_TLS=1` — a feature nobody sees is a zombie feature.
+    # Every client finds the scheme rather than assuming it — the launchers and the MCP probe both.
     #
     # `Cecelia.tls_desired` resolves order: `CECELIA_TLS` env → `[tls].enabled` in
     # custom.toml (Settings toggle) → default (`!_is_dev`). The effective protocol is

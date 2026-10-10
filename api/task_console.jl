@@ -30,8 +30,12 @@ include(joinpath(@__DIR__, "..", "app", "src", "api_token.jl"))   # the server o
 
 const HOST      = get(ENV, "CECELIA_HOST", "127.0.0.1")
 const PORT      = string(service_port(:backend; slot = current_port_slot()))
-const HTTP_BASE = "http://$HOST:$PORT"
-const WS_URL    = "ws://$HOST:$PORT/ws"
+# HTTP or HTTPS is the server's call (`tls_desired`, app/src/config/tls.jl) and can change across a
+# restart, so the scheme is not fixed here: a connect that fails swaps it, as the MCP client does
+# (mcp/cecelia_mcp/loopback.py). Loopback + self-signed cert, so requests skip verification.
+const HTTP_BASE = Ref("http://$HOST:$PORT")
+_ws_url() = replace(HTTP_BASE[], r"^http" => "ws") * "/ws"
+_swap_scheme!() = (HTTP_BASE[] = startswith(HTTP_BASE[], "https:") ? "http://$HOST:$PORT" : "https://$HOST:$PORT")
 const AUTH      = [api_auth_header(something(read_api_token(), ""))]
 
 # Append-only mode when asked, or automatically when stdout isn't a terminal
@@ -476,7 +480,7 @@ end
 
 function refresh_snapshot!()
     try
-        r = HTTP.get("$HTTP_BASE/api/tasks", AUTH; connect_timeout=2, readtimeout=3, retry=false)
+        r = HTTP.get("$(HTTP_BASE[])/api/tasks", AUTH; require_ssl_verification=false, connect_timeout=2, readtimeout=3, retry=false)
         _reconcile_snapshot!(JSON3.read(String(r.body)))
         return true
     catch
@@ -529,7 +533,7 @@ end
 function refresh_recent!(; prime::Bool = false)
     try
         since = HTTP.escapeuri(RECENT_SINCE[])
-        r = HTTP.get("$HTTP_BASE/api/tasks/recent?since=$since", AUTH;
+        r = HTTP.get("$(HTTP_BASE[])/api/tasks/recent?since=$since", AUTH; require_ssl_verification=false,
                      connect_timeout=2, readtimeout=3, retry=false, status_exception=false)
         # An older server has no such route — degrade to WS-only counting rather than erroring.
         r.status == 200 || return false
@@ -543,7 +547,7 @@ end
 # ── Pool occupancy snapshot (GET /api/pools → limit + running + queued per pool) ──
 function refresh_pools!()
     try
-        r = HTTP.get("$HTTP_BASE/api/pools", AUTH; connect_timeout=2, readtimeout=3, retry=false)
+        r = HTTP.get("$(HTTP_BASE[])/api/pools", AUTH; require_ssl_verification=false, connect_timeout=2, readtimeout=3, retry=false)
         rows = JSON3.read(String(r.body))
         lock(LOCK) do
             empty!(POOLS)
@@ -711,7 +715,7 @@ function render()
 
     # header — live counts + cumulative finished tallies (so you see "how many done" without 50 rows)
     print(io, "\e[H\e[2J")
-    print(io, col(BOLD, "Cecelia task console"), col(DIM, "  $HTTP_BASE"),
+    print(io, col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"),
           "   ", col(GREY, Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")), "\n")
     print(io, col(CYAN, "$n_run running"), col(DIM, " · "), col(YELLOW, "$n_q queued"),
           col(DIM, " · "), col(GREEN, "$(TALLY["done"]) done"),
@@ -801,7 +805,7 @@ function show_waiting(reason::AbstractString)
         push_event!("console", col(YELLOW, reason))
     else
         print("\e[H\e[2J")
-        println(col(BOLD, "Cecelia task console"), col(DIM, "  $HTTP_BASE"))
+        println(col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"))
         println()
         println(col(YELLOW, reason))
         flush(stdout)
@@ -810,12 +814,14 @@ end
 
 # ── Main loop (connect, stream, reconnect) ───────────────────────────────────────
 function run_console()
-    STREAM_MODE ? push_event!("console", "connecting to $WS_URL") :
-                  show_waiting("Connecting to $WS_URL …")
+    STREAM_MODE ? push_event!("console", "connecting to $(_ws_url())") :
+                  show_waiting("Connecting to $(_ws_url()) …")
     while true
         connected = Ref(true)
+        opened = false
         try
-            HTTP.WebSockets.open(WS_URL; headers=AUTH, connect_timeout=3) do ws
+            HTTP.WebSockets.open(_ws_url(); headers=AUTH, connect_timeout=3, require_ssl_verification=false) do ws
+                opened = true
                 # A (re)connect on localhost means the server (re)started — its task ids and in-flight
                 # set are gone, so drop our stale view and re-seed from the fresh snapshot. Otherwise
                 # tasks from the previous server session would linger forever (we only ever add rows).
@@ -853,10 +859,13 @@ function run_console()
             end
         catch e
             e isa InterruptException && rethrow()
+            # never reached it → try the other scheme next. A drop, or a refused upgrade (a 401 is a
+            # `WebSocketError`), was an answer on this scheme, so it stays.
+            opened || e isa HTTP.WebSockets.WebSocketError || _swap_scheme!()
         finally
             connected[] = false
         end
-        show_waiting("Disconnected from $WS_URL — is the server running? Retrying in 2s …")
+        show_waiting("Disconnected from $(_ws_url()) — is the server running? Retrying in 2s …")
         sleep(2)
     end
 end

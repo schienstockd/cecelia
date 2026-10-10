@@ -12,7 +12,7 @@
 # child. `pixi run dev` now starts the frontend too — do NOT also run `pixi run frontend` alongside it
 # (two Vites would fight over the port). `pixi run frontend` stays for running the frontend standalone.
 
-import Sockets     # stdlib; `_ask_backend_to_quit` speaks HTTP by hand (no packages in this file)
+import Downloads   # stdlib; `_ask_backend_to_quit` (no packages in this file)
 
 const RESTART_EXIT_CODE = 42
 
@@ -51,6 +51,15 @@ const CHILD_SERVICES = (:preview, :runner, :notebooks)
 const SWITCH_FILE = abspath(joinpath(@__DIR__, ".switch-worktree"))
 ENV["CECELIA_SWITCH_FILE"] = SWITCH_FILE
 isfile(SWITCH_FILE) && rm(SWITCH_FILE; force = true)     # clear a stale request left by a crash
+
+# HTTP or HTTPS is decided HERE, once, and every party follows it: the backend reads `CECELIA_TLS`
+# before the Settings toggle (`tls_desired`, app/src/config/tls.jl), Vite's proxy reads it for its
+# target scheme, and `_ask_backend_to_quit` below. Left to the backend alone, flipping the toggle in a
+# dev session served HTTPS on the next restart while Vite still proxied plain HTTP — an app that never
+# came up. Default HTTP (the toggle reports the effective value, so it shows the truth);
+# `CECELIA_TLS=1 pixi run dev` runs the whole dev stack over TLS.
+const DEV_TLS = lowercase(strip(get(ENV, "CECELIA_TLS", ""))) in ("1", "true", "yes", "on")
+ENV["CECELIA_TLS"] = DEV_TLS ? "1" : "0"
 
 # Freeing a port by killing its LISTENER lives in `portkill.jl` — one implementation, shared with the
 # `pixi run stop*` tasks (it is Base-only for exactly that reason). It escalates SIGTERM → SIGKILL,
@@ -151,20 +160,20 @@ function _note_crash!(times::Vector{Float64})::Bool
 end
 
 # Ask the backend to quit, over its own HTTP API — the SAME route the in-app Quit button uses, so
-# there is one orderly-shutdown path and not a second one. Raw sockets rather than HTTP.jl: this file
-# is a standalone Base-only supervisor. Best-effort; `false` just means "escalate".
+# there is one orderly-shutdown path and not a second one. The `Downloads` stdlib rather than HTTP.jl:
+# this file is a standalone supervisor with no packages — and unlike a raw socket it speaks TLS, on the
+# scheme `DEV_TLS` pinned. Best-effort; `false` just means "escalate".
 # (prod's `app.py::_stop_gracefully` does exactly this, for exactly this reason.)
 function _ask_backend_to_quit(port::Integer; secs::Real = 2)::Bool
+    url = "$(DEV_TLS ? "https" : "http")://127.0.0.1:$port/api/app/shutdown"
     try
-        s = Sockets.connect(Sockets.localhost, port)
-        write(s, "POST /api/app/shutdown HTTP/1.1\r\nHost: 127.0.0.1\r\n" *
-                 "Authorization: Bearer $(something(read_api_token(), ""))\r\n" *
-                 "Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-        ok = Ref(false)
-        t = Timer(_ -> (try; close(s); catch; end), secs)
-        try; ok[] = occursin("200", readuntil(s, "\r\n")); catch; end
-        close(t); try; close(s); catch; end
-        return ok[]
+        # the dev cert is self-signed (api/src/tls.jl): skip verification for loopback only
+        resp = withenv("JULIA_SSL_NO_VERIFY_HOSTS" => "127.0.0.1") do
+            Downloads.request(url; method = "POST", input = IOBuffer("{}"), timeout = secs, throw = false,
+                              headers = ["Content-Type" => "application/json",
+                                         "Authorization" => "Bearer $(something(read_api_token(), ""))"])
+        end
+        return resp isa Downloads.Response && resp.status == 200
     catch
         return false
     end

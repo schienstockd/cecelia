@@ -37,6 +37,10 @@ logger.error = (msg, opts) => {
 // quietly move to the next one, which may be another user's slot.
 const backendPort = process.env.CECELIA_PORT ?? '8080'
 const frontendPort = Number(process.env.CECELIA_FRONTEND_PORT ?? 5173)
+// …and the scheme: `api/dev.jl` pins `CECELIA_TLS` for the backend and for us, so the proxy speaks
+// whatever the backend serves. `secure: false` — the dev cert is self-signed (api/src/tls.jl).
+const backendTls = ['1', 'true', 'yes', 'on'].includes((process.env.CECELIA_TLS ?? '').trim().toLowerCase())
+const [httpScheme, wsScheme] = backendTls ? ['https', 'wss'] : ['http', 'ws']
 
 export default defineConfig({
   customLogger: logger,
@@ -55,8 +59,8 @@ export default defineConfig({
     port: frontendPort,
     strictPort: true,
     proxy: {
-      '/ws': { target: `ws://127.0.0.1:${backendPort}`, ws: true, changeOrigin: false },
-      '/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: false },
+      '/ws': { target: `${wsScheme}://127.0.0.1:${backendPort}`, ws: true, changeOrigin: false, secure: false },
+      '/api': { target: `${httpScheme}://127.0.0.1:${backendPort}`, changeOrigin: false, secure: false },
     },
   },
 })

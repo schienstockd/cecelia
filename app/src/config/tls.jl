@@ -5,7 +5,7 @@
 # default. The default flip vs. the initial ship (2026-09-16 → 2026-09-16-later): opt-in
 # by default reached zero users, so `tls_desired` now returns `true` in prod (installed app,
 # no `CECELIA_DEV`) and `false` in dev (Vite proxy is HTTP/1.1-only both ways, TLS earns
-# nothing under `pixi run dev`; CI smoke curls plain http against `pixi run prod`).
+# nothing under `pixi run dev`; `api/dev.jl` pins `CECELIA_TLS` so the toggle can't split them).
 #
 # The actual protocol the server starts with may differ (openssl missing → fallback to
 # HTTP/1.1 with a warning); `api_diagnostics` reports the effective protocol separately.
