@@ -4,7 +4,7 @@ import {
   FALLBACK_2D_WARN, baseOnlyWarning, tilingWarning, compositeWarning,
   paramsBlocker, hasAfCombination, previewValueName,
   warmPollAction, WORKER_WARM_POLL_MS, WORKER_WARM_TIMEOUT_MS, startingLabel,
-  type PreviewContext, type PreviewStatus, previewFailureLog } from './taskPreview'
+  type PreviewContext, type PreviewStatus, previewFailureLog, isWeightsJob } from './taskPreview'
 import type { TaskDef, ParamDef } from '../tasks/types'
 
 const ctx = (over: Partial<PreviewContext> = {}): PreviewContext => ({
@@ -640,5 +640,23 @@ describe('startingLabel — a cellpose 3 warm-up says so (#1555)', () => {
   it('stays generic otherwise', () => {
     expect(startingLabel({ env: 'default' })).toBe('Starting…')
     expect(startingLabel(null)).toBe('Starting…')
+  })
+})
+
+describe('weights-downloading — a wait, not a failure', () => {
+  const dl = { message: 'Downloading Cellpose-SAM weights (~1.2 GB) — the preview runs when it finishes.',
+               code: 'weights-downloading' }
+
+  it('says what is happening, muted, with the size on hover', () => {
+    expect(previewNotice(null, dl)).toEqual({ short: 'Downloading model', detail: dl.message, warn: false })
+  })
+
+  it('is not logged — the download has its own Task Manager row', () => {
+    expect(previewFailureLog(dl)).toBeNull()
+  })
+
+  it('names the job the store waits on', () => {
+    expect(isWeightsJob('model-weights:cpsam_v2')).toBe(true)
+    expect(isWeightsJob('system-env-install:cellpose-v3')).toBe(false)
   })
 })

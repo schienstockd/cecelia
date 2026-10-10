@@ -702,14 +702,40 @@ Miss one and it precompiles fine everywhere else but dies in that one env — wh
 ```
 
 ### Ports
+Slot-0 numbers — the ones a single-user machine always sees:
 - `8080` — Julia WS/HTTP server
-- `5173` — Vite dev (proxies `/ws` → `8080`)
+- `5173` — Vite dev (proxies `/ws` → the backend port)
 - `7656` — Task-preview worker WS (`preview/preview_worker.py`)
 - `7657` — Detached task runner (`api/runner.jl`, dev only — see `docs/RUNNER.md`)
 - `7660` — Pluto notebooks server
 
-The runner's port is **fixed and deliberately outlives the API server**, so two checkouts that share a
+**Port slots — several users, one machine.** Each OS user runs their own Cecelia (own home → own
+config dir → own single-instance lock), so the ports move as a set: port = base + 10 × slot
+(`app/src/ports.jl`). Slot 1 is 8090/5183/7666/7667/7670, and so on up to slot 9. The stride is 10
+because the child ports are adjacent; a stride of 1 would put slot 1's preview worker on slot 0's runner.
+`service_port(:backend | :frontend | :preview | :runner | :notebooks)` is the one place a port is
+computed — never hardcode a number.
+
+- **Which slot:** `CECELIA_PORT_SLOT` when the launcher set it (`api/dev.jl` resolves it before starting
+  Vite + the backend; children inherit it), else the user's **sticky** slot (`<config_dir>/port-slot`)
+  while its backend + frontend ports are bindable, else the lowest slot whose five ports are all
+  bindable. Sticky skips the runner port on purpose: our own runner outliving the backend is normal.
+- **Persisted once the backend holds the lock** (`start()` in `api/src/server.jl`), so a refused second
+  launch never moves it. Stable ports keep the URL and the observer MCP registration valid.
+- **Who reads it back:** `app.py` reads the server-chosen port from `cecelia.lock`; `pixi run stop*`
+  pass service names to `api/portkill.jl`, which maps them through the sticky slot, so a stop never
+  aims at another user's Cecelia.
+- **Per-service overrides still win:** `CECELIA_PORT`, `CECELIA_FRONTEND_PORT`,
+  `CECELIA_PREVIEW_PORT`, `CECELIA_RUNNER_PORT`, `CECELIA_PLUTO_PORT`.
+- **Ownership:** the runner reports its config dir on `/ping` and refuses control POSTs from another
+  config dir (`X-Cecelia-Config-Dir`), and `runner_launch!` will not adopt a foreign runner. The other
+  children are started by their own backend and reached only on its slot.
+- **Not isolation.** The ports are unauthenticated loopback. Another account on the same machine can
+  still reach your backend if it knows the port. Slots stop the *collisions*, not access.
+
+The runner's port **deliberately outlives the API server**, so two checkouts that share a
 `CECELIA_DEV_DIR` (a worktree with a copied `.env`) share it too and cannot both run `pixi run dev`.
-The second one's runner stands down with a one-line message rather than a stack trace; override with
-`CECELIA_RUNNER_PORT` if you genuinely need two.
+They also share the single-instance lock and the sticky slot. The second one's runner stands down with
+a one-line message rather than a stack trace; override with `CECELIA_RUNNER_PORT` if you genuinely need
+two.
 

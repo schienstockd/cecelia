@@ -21,7 +21,7 @@
 
 _observer_repo_root() = dirname(dirname(@__DIR__))              # api/src → api → repo root
 _observer_mcp_dir()   = joinpath(_observer_repo_root(), "mcp")
-_observer_api_url()   = "http://127.0.0.1:$(PORT)"
+_observer_api_url()   = observer_api_url(_PROTOCOL[], PORT)   # the scheme the server started with
 
 # (Re)write an MCP config — cheap, keeps the resolved paths current. Two files, two jobs:
 #   observer-mcp.json          the user's OWN terminal (`claude --mcp-config <path>`, shown by status):

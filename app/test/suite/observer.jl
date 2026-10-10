@@ -243,6 +243,14 @@ end
     @test Cecelia.observer_registration_state(no_url, want) === :stale
     @test Cecelia.observer_registration_state(Dict{String,Any}("command" => "/env/python"), want) === :stale
 
+    # the scheme follows what the server actually started with (`_PROTOCOL[]`): installed apps serve
+    # HTTPS, and a hard-coded http:// failed every MCP call there
+    @test Cecelia.observer_api_url("HTTPS/HTTP2", 8080) == "https://127.0.0.1:8080"
+    @test Cecelia.observer_api_url("HTTP/1.1", 8080) == "http://127.0.0.1:8080"
+    # …so a registration made before TLS was switched on reads as stale → the one-click re-sync
+    want_tls = Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", Cecelia.observer_api_url("HTTPS/HTTP2", 8080))
+    @test Cecelia.observer_registration_state(registered, want_tls) === :stale
+
     # config path is driven by the ACTIVE PROFILE, not the ambient `CLAUDE_CONFIG_DIR` — deliberate.
     # Deferring to the ambient env would defeat the isolation guarantee (LOGIN_CREDENTIAL_ISOLATION_PLAN
     # D6): a stray shell export would silently redirect the "is the terminal set up?" check to a

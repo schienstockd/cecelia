@@ -430,11 +430,13 @@ install-git-hooks = "git config core.hooksPath .githooks"
 # It restricts to LISTENING sockets throughout: a browser tab and its Vite HMR socket are CONNECTED to
 # :5173, and killing those reaps Firefox/Chrome. Base-only Julia (no `--project`), so it still works
 # when the env or a manifest is half-installed — which is exactly when you reach for `stop`.
-stop           = { cmd = "julia --startup-file=no portkill.jl backend 8080 frontend 5173 preview 7656 runner 7657 notebooks 7660", cwd = "api" }
-stop-backend   = { cmd = "julia --startup-file=no portkill.jl backend 8080",       cwd = "api" }
-stop-preview   = { cmd = "julia --startup-file=no portkill.jl preview 7656",       cwd = "api" }
-stop-runner    = { cmd = "julia --startup-file=no portkill.jl runner 7657",        cwd = "api" }
-stop-notebooks = { cmd = "julia --startup-file=no portkill.jl notebooks 7660",     cwd = "api" }
+# Services, not port numbers: portkill.jl maps each to THIS user's port slot (app/src/ports.jl), so a
+# stop never aims at another user's Cecelia on the same machine.
+stop           = { cmd = "julia --startup-file=no portkill.jl backend frontend preview runner notebooks", cwd = "api" }
+stop-backend   = { cmd = "julia --startup-file=no portkill.jl backend",       cwd = "api" }
+stop-preview   = { cmd = "julia --startup-file=no portkill.jl preview",       cwd = "api" }
+stop-runner    = { cmd = "julia --startup-file=no portkill.jl runner",        cwd = "api" }
+stop-notebooks = { cmd = "julia --startup-file=no portkill.jl notebooks",     cwd = "api" }
 
 # --- GPU acceleration (PARKED) ----------------------------------------------------------------
 # RAPIDS-based GPU clustering is CUDA-only (Linux/Windows + NVIDIA). When un-parked, add it as a

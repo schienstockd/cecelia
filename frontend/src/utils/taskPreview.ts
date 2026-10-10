@@ -192,6 +192,7 @@ const ERROR_SHORT: Record<string, string> = {
   'timeout':                'Preview timed out',
   'no-preview-backend':     'Not previewable',
   'env-missing':            'Cellpose 3 not installed',
+  'weights-downloading':    'Downloading model',
 }
 
 /**
@@ -201,6 +202,16 @@ const ERROR_SHORT: Record<string, string> = {
 export function startingLabel(status: Pick<PreviewStatus, 'env'> | null): string {
   return status?.env === CELLPOSE_V3_ENV_NAME ? 'Starting cellpose 3…' : 'Starting…'
 }
+
+/**
+ * Coded replies that are a WAIT, not a failure: the preview runs by itself once the thing finishes
+ * (`weights-downloading` — the store re-requests when the `model-weights:` job ends). Said in muted
+ * text, never logged: the download has its own row in the Task Manager.
+ */
+const WAIT_CODES = new Set(['weights-downloading'])
+
+/** The `model-weights:<model>` background job (api/src/system_api.jl) a `weights-downloading` waits on. */
+export const isWeightsJob = (taskId: string): boolean => taskId.startsWith('model-weights:')
 
 /**
  * What the control says about why there is no fresh preview — and at what volume.
@@ -255,6 +266,7 @@ export function previewFailureLog(
   const message = error?.message?.trim()
   if (!error || !message) return null
   const code = error.code ?? ''
+  if (WAIT_CODES.has(code)) return null
   return {
     level: code === 'timeout' ? 'warn' : 'error',
     // the headline matches what the control says, so the console and the button agree
@@ -283,7 +295,7 @@ export function previewNotice(
     return {
       short: known ? ERROR_SHORT[code]! : 'Preview failed',
       detail: known ? error.message : 'Unexpected error — see the log',
-      warn: true,
+      warn: !WAIT_CODES.has(code),
     }
   }
   // The frontend catches this one before spending a request; same class as the backend's

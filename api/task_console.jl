@@ -20,12 +20,15 @@
 #
 # Or directly:  julia --project=api api/task_console.jl [--stream]
 #
-# Honours CECELIA_HOST / CECELIA_PORT (same defaults as the server: 127.0.0.1:8080).
+# Honours CECELIA_HOST / CECELIA_PORT (same defaults as the server: 127.0.0.1, and 8080 — or this
+# user's port slot when several users share the machine, app/src/ports.jl).
 
 using HTTP, JSON3, Dates, Printf
+include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))   # Base-only, for the port slot
+include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
 
 const HOST      = get(ENV, "CECELIA_HOST", "127.0.0.1")
-const PORT      = get(ENV, "CECELIA_PORT", "8080")
+const PORT      = string(service_port(:backend; slot = current_port_slot()))
 const HTTP_BASE = "http://$HOST:$PORT"
 const WS_URL    = "ws://$HOST:$PORT/ws"
 

@@ -209,18 +209,27 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 ### `predict_slice` signature (current implementation)
 ```python
 def predict_slice(self, tile: np.ndarray, model_params: dict, norm_params: dict | None,
-                  context: np.ndarray | None = None, context_index: int | None = None) -> np.ndarray:
+                  window: TemporalWindow | None = None) -> np.ndarray:
     """
     tile: [C, Z, Y, X] for 3D images, [C, Y, X] for 2D
     model_params: one entry from the 'models' JSON dict (with 0-based channel indices)
     norm_params: per-channel (norm_min, norm_max) from normaliseToWhole, or None
-    context: [W, ...tile axes] — the same tile through time; ONLY when TEMPORAL_RADIUS > 0
-    context_index: index of this timepoint within `context` (not always the middle)
+    window: the same tile through time (`window.frames` = [W, ...tile axes]); ONLY when
+            TEMPORAL_RADIUS > 0
     Returns: uint32 label array [Z, Y, X] or [Y, X]
     """
 ```
 
 Called once per model per tile in the outer loop. The outer loop in `segmentation_utils.py` handles multi-model iteration and accumulates results by `matchAs`.
+
+**2D vs 3D is decided once, by the base, from `is_3D()`** — never by an engine from `tile.ndim`. A
+single-plane image keeps a length-1 Z axis in its store whenever the source had one, so the base drops
+that singleton Z at read time (`drop_z` in `predict_from_zarr`): the tile, the temporal window and the
+frame buffer are all 2D, and only the store write puts the axis back. An engine may then branch on
+`tile.ndim` safely. `check_rank` raises at the source if a tile or a returned mask has the wrong rank.
+Handing an engine `[C, 1, Y, X]` used to send it down its 3D branch while the base cropped as 2D — a
+crash on every single-plane image bigger than one tile (#1551). The task preview keeps the same
+contract (`[C, Y, X]`, checked) at its two `predict_slice` call sites.
 
 ---
 
@@ -373,8 +382,9 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 `4.2.1.1` (see `docs/todo/CELLPOSE_V4_PLAN.md` for the migration record):
 
 1. **One model.** `cpsam_v2` (and `cpsam`, the v1 release, kept so an older run still resolves). The
-   v3 zoo — `cyto3` / `cyto2` / `cyto` / `nuclei` — is gone. Weights (~1.2 GB) download from
-   HuggingFace into `~/.cellpose/models` on first use; `CELLPOSE_LOCAL_MODELS_PATH` relocates that.
+   v3 zoo — `cyto3` / `cyto2` / `cyto` / `nuclei` — is gone. Weights (~1.2 GB) come from
+   HuggingFace into `~/.cellpose/models` (`CELLPOSE_LOCAL_MODELS_PATH` relocates that), fetched by
+   one visible job, never inside a request — see *Model weights* below.
 2. **A v3 model name is rejected, not translated.** v4 answers an unknown `pretrained_model` with a
    log warning and loads `cpsam_v2` anyway, so a saved `cyto3` run would silently come back as a
    different segmentation. `cellpose_models_for_python` raises instead (`RETIRED_CELLPOSE_MODELS`).
@@ -411,11 +421,29 @@ v3+v4 in one task is refused up front — one task = one env. Missing v3 env fai
 message pointing at the Install button (never a silent fallback to v4 that would return different
 labels).
 
+**Which call path runs inside the env.** `cellpose_utils.py` reads the installed cellpose's major
+version from the package metadata (`importlib.metadata.version`; cellpose defines no
+`__version__`) and branches `_get_model`/`predict_slice` on it. Nobody without a Mac can run the
+v3 env, so `.github/workflows/verify-cellpose-v3.yml` runs real cyto3 through `predict_from_zarr`
+on a macOS arm64 runner (CPU) whenever the cellpose code or the pixi env changes.
+
 **Shipped v3 models.** Only `cyto2` and `cyto3`, the two built-ins. Both auto-download from
-cellpose's own server on first use (~25 MB each) into `~/.cellpose/models/`; the install job
-pre-warms both so the download happens once, up front. `nuclei` and the tissue-specifics are
+cellpose's own server (~25 MB each) into `~/.cellpose/models/`; the install job fetches both
+(`cecelia.utils.model_weights`) right after the env, so the download happens once, up front. `nuclei` and the tissue-specifics are
 deferred until someone asks. Custom v3 checkpoints are not on the drop path today — the
 `<config_dir>/models/cellposeModels/` slot is for v4 files, per the resolver above.
+
+**Model weights.** Cellpose loads a built-in model's weights on first use, and for `cpsam_v2`
+that is ~1.2 GB — inside a preview request it outlasts the browser's timeout. So weights are
+fetched by one background job, `model-weights:<model>` (`api/src/system_api.jl`, through `run_py`
+→ `python/cecelia/utils/model_weights.py`), from three places: the installers (`install.sh` /
+`install.ps1`, non-fatal); app start when missing (installed apps only, so a dev checkout or CI boot
+never starts one); and a preview that needs them, which gets a coded `weights-downloading` reply
+("Downloading model") and re-runs when the job ends. The job shows in the Task Manager and is
+retried by previewing again. `CECELIA_SKIP_MODEL_WEIGHTS=1` turns off the installer and app-start
+fetches. A system-scope install fetches into the installing account's home; other accounts get
+theirs at app start. A segmentation *task* with no weights still downloads inside its own run —
+that is a visible, cancellable task already.
 
 **When v3 is NOT the answer.**
 - On Linux / Windows with a CUDA GPU: v4 is already fast — the advisor does not fire and the v3

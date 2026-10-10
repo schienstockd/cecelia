@@ -2,7 +2,7 @@
 """Cecelia launcher.
 
 Starts the Julia API server, waits until it answers `/api/health`, then opens the user's default
-browser at http://localhost:8080. The Julia server serves the built Vue frontend at that same
+browser at http://localhost:8080 (or the next free port slot — see app/src/ports.jl). The Julia server serves the built Vue frontend at that same
 origin, so the whole app is one URL — no separate frontend process in production.
 
 This is the entrypoint behind both `pixi run app` and the desktop shortcut created by the
@@ -12,6 +12,7 @@ analysis stack the server spawns all resolve to that env. See docs/SHIPPING.md.
 Close this window (or Ctrl-C) to stop the server.
 """
 import hashlib
+import json
 import os
 import shutil
 import ssl
@@ -62,8 +63,23 @@ def _find_julia() -> str:
 
 
 def _find_pixi() -> str:
-    """Resolve the Pixi binary: PATH first, else Pixi's default per-user install location."""
-    return shutil.which("pixi") or os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+    """Resolve the Pixi binary — same order as `_find_pixi` in api/src/pixi_bin.jl: `PIXI_EXE`
+    (exported by `pixi run`), PATH, then install.sh's locations (system scope `<root>/pixi/bin`,
+    `$PIXI_HOME/bin`, `~/.pixi/bin`). Nothing found → the `~/.pixi` path, so the caller's error names it."""
+    from_run = os.environ.get("PIXI_EXE", "").strip()
+    if from_run and os.path.isfile(from_run):
+        return from_run
+    found = shutil.which("pixi")
+    if found:
+        return found
+    pixi_home = os.environ.get("PIXI_HOME", "")
+    user = os.path.join(os.path.expanduser("~"), ".pixi", "bin", _exe("pixi"))
+    for cand in (os.path.join(ROOT, "pixi", "bin", _exe("pixi")),
+                 os.path.join(pixi_home, "bin", _exe("pixi")) if pixi_home else "",
+                 user):
+        if cand and os.path.isfile(cand):
+            return cand
+    return user
 
 
 def _config_dir() -> str:
@@ -133,6 +149,9 @@ def _reexec_if_launcher_changed(before: bytes, browser_opened: bool) -> None:
     os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), *sys.argv[1:]])
 
 
+# The port the server took. Normally 8080, but the SERVER picks it: several users can each run Cecelia
+# on one machine, and a later one gets the next port slot (app/src/ports.jl). `_launched_port` reads
+# the choice back each launch; this initial value only covers the time before that.
 PORT = os.environ.get("CECELIA_PORT", "8080")
 # The server decides HTTP vs HTTPS from `[tls].enabled` / `CECELIA_TLS` (see app/src/config/tls.jl);
 # prod defaults to HTTPS + HTTP/2, dev to HTTP/1.1, and a missing openssl silently falls back to HTTP.
@@ -153,6 +172,27 @@ def _probe(url: str) -> bool:
             return resp.status == 200
     except Exception:
         return False
+
+
+def _launched_port(proc, launched_at: float, timeout: float = 180.0) -> str | None:
+    """The API port the server we just started took, read from the single-instance lock it writes
+    (`acquire_single_instance!`, app/src/single_instance.jl) before it binds. Only a lock written
+    since this launch counts — a stale one from a crashed run names a port nobody is on. Not keyed on
+    the PID: on Windows `julia` is the juliaup launcher, whose PID is not the server's. `None` when
+    the server exits first (e.g. it refused because Cecelia is already running for this user)."""
+    path = os.path.join(_config_dir(), "cecelia.lock")
+    deadline = time.time() + timeout
+    while time.time() < deadline and proc.poll() is None:
+        try:
+            if os.path.getmtime(path) >= launched_at - 1:
+                with open(path, encoding="utf-8") as f:
+                    port = json.load(f).get("api_port")
+                if port:
+                    return str(port)
+        except (OSError, ValueError):
+            pass                       # not written yet, or caught mid-write — look again
+        time.sleep(0.5)
+    return None
 
 
 def _server_ready(timeout: float = 180.0) -> bool:
@@ -335,6 +375,7 @@ def _crashed(rc: int) -> bool:
 
 
 def main() -> int:
+    global PORT
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
     # server's Python subprocesses use the same env. CECELIA_SUPERVISED tells the server that
     # backend restart is available (we relaunch it on RESTART_EXIT_CODE). Resolve Julia first: it can
@@ -355,13 +396,25 @@ def main() -> int:
         # Read per iteration, so Settings → "Use all CPU cores" lands on the in-app Restart.
         targs, applied = _thread_args()
         env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied}
+        launched_at = time.time()
         proc = subprocess.Popen(
             [julia, "--project", *targs, "src/server.jl"],
             cwd=os.path.join(ROOT, "api"),
             env=env,
         )
         try:
-            print(f"Starting Cecelia… (waiting for /api/health on port {PORT})")
+            print("Starting Cecelia…")
+            port = _launched_port(proc, launched_at)
+            if port is None:
+                # Exited first (its own message says why, e.g. already running for this user) or
+                # never got as far as the lock. Never fall back to probing 8080: that may be
+                # ANOTHER user's Cecelia, and we would open the browser on it.
+                print("Cecelia server did not start.", file=sys.stderr)
+                if proc.poll() is None:
+                    proc.terminate()
+                return 1
+            PORT = port
+            print(f"Waiting for /api/health on port {PORT}")
             if _server_ready():
                 if first:
                     webbrowser.open(URL)   # only pop a browser on the initial launch, not each restart

@@ -11,7 +11,8 @@ import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext,
          type AdvisorParam } from './paramAdvisors'
 import { debouncedLatest } from '../utils/debouncedLatest'
-import { requestEnvInstall } from '../utils/systemEnvs'
+import { requestEnvInstall, onSystemEnvsChanged } from '../utils/systemEnvs'
+import { useLogStore } from '../stores/log'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
 import { selectedOptionHelp } from '../utils/optionHelp'
@@ -498,23 +499,28 @@ watch(() => [props.param.key, val.value, advisor.value?.reloadOn?.(advisoryCtx.v
 onUnmounted(() => advisoryRun.cancel())
 
 // Advisory trailing action — today the one kind is `install-env`, which shells `pixi install -e
-// <env>` in a jobs.jl-tracked background job. The completion frame (ws.ts) invalidates the
-// systemEnvs cache and the advisor re-fires on the next value change or panel remount. Not a
-// permanent busy flag: cleared on completion OR on unmount so a re-entry to the page never sees a
-// stale spinner.
+// <env>` in a jobs.jl-tracked background job. When the env state changes — the job ends (ws.ts), or
+// the env was there already — `onSystemEnvsChanged` frees the button and re-runs the advisor, so the
+// note updates in place. A refused request shows its error under the button and in the log.
 const advisoryActionBusy = ref(false)
+const advisoryActionError = ref('')
+const offEnvsChanged = onSystemEnvsChanged(() => {
+  advisoryActionBusy.value = false
+  loadAdvisory()
+})
+onUnmounted(offEnvsChanged)
 async function onAdvisoryAction() {
   const a = advisory.value?.action
   if (!a || advisoryActionBusy.value) return
   if (a.kind === 'install-env') {
     advisoryActionBusy.value = true
-    try {
-      const r = await requestEnvInstall(a.env)
-      if (!r.started) advisoryActionBusy.value = false   // failed to enqueue → free the button
-      // A successful enqueue leaves the button in "Installing…" until the ws completion frame lands
-      // and the advisor re-runs; the new advisory (no `action`) replaces this one, so nothing else
-      // to clear here.
-    } catch { advisoryActionBusy.value = false }
+    advisoryActionError.value = ''
+    const r = await requestEnvInstall(a.env)
+    if (r.status === 'error') {
+      advisoryActionBusy.value = false
+      advisoryActionError.value = r.error
+      useLogStore().error(`Couldn't install ${a.env}`, { source: 'system', detail: r.error })
+    }
   }
 }
 
@@ -966,6 +972,8 @@ const pct = computed(() => {
           {{ advisoryActionBusy ? 'Installing…' : advisory.action.label }}
         </button>
       </div>
+      <InlineNote v-if="advisoryActionError" class="param-advisory" severity="fail"
+                  short="Install failed" :detail="advisoryActionError" />
     </template>
     <!-- Per-OPTION guidance for a select: what this choice means and when to pick it. Deliberately NOT
          an advisory — nothing about the user's data was consulted, and borrowing `severity: ok` would

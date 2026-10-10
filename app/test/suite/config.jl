@@ -487,3 +487,103 @@ end
 end
 
 # ── Custom cellpose model resolver ───────────────────────────────────────────
+
+# ── Port slots (app/src/ports.jl) ─────────────────────────────────────────
+# Several users on one machine each run their own Cecelia; a slot shifts all five ports together.
+@testset "Port slots" begin
+    withenv((v => nothing for v in values(Cecelia.SERVICE_PORT_ENV))...,
+            Cecelia.PORT_SLOT_ENV => nothing) do
+        # Slot 0 is the historic port set — a one-user machine sees no change.
+        @test Cecelia.port_slot() == 0
+        @test [Cecelia.service_port(s) for s in keys(Cecelia.SERVICE_PORT_BASE)] == [8080, 5173, 7656, 7657, 7660]
+        @test Cecelia.service_port(:backend; slot = 2) == 8100
+        # No port is shared between any two (service, slot) pairs — the reason the stride is 10, not 1
+        # (7656 + 1 would be slot 0's runner).
+        all_ports = [Cecelia.service_port(s; slot) for s in keys(Cecelia.SERVICE_PORT_BASE)
+                     for slot in 0:Cecelia.PORT_SLOT_COUNT-1]
+        @test allunique(all_ports)
+        # A per-service env var still pins that one port, whatever the slot.
+        withenv("CECELIA_PORT" => "18080") do
+            @test Cecelia.service_port(:backend; slot = 3) == 18080
+            @test Cecelia.service_port(:runner;  slot = 3) == 7687
+        end
+
+        # The choice, with a fake `bindable` (no sockets).
+        taken(ports...) = p -> p ∉ ports
+        @test Cecelia._choose_port_slot(nothing, taken()) == 0
+        @test Cecelia._choose_port_slot(nothing, taken(8080)) == 1          # another user on slot 0
+        @test Cecelia._choose_port_slot(nothing, taken(7657)) == 1          # even a lone child port
+        @test Cecelia._choose_port_slot(2, taken()) == 2                    # sticky wins while free…
+        # …and our own runner outliving the backend on the sticky slot is not a collision.
+        @test Cecelia._choose_port_slot(2, taken(7677)) == 2
+        @test Cecelia._choose_port_slot(2, taken(8100)) == 0                # sticky taken → lowest free
+        @test Cecelia._choose_port_slot(42, taken()) == 0                   # out of range → ignored
+        @test Cecelia._choose_port_slot(nothing, p -> false) === nothing    # machine full
+
+        mktempdir() do cfg
+            # Nothing persisted → lowest free, exported to the env for the children.
+            @test Cecelia.resolve_port_slot!(cfg; bindable = taken(8080)) == 1
+            @test ENV[Cecelia.PORT_SLOT_ENV] == "1"
+            # A slot already in the env wins untouched (the launcher resolved it).
+            @test Cecelia.resolve_port_slot!(cfg; bindable = p -> false) == 1
+            delete!(ENV, Cecelia.PORT_SLOT_ENV)
+            # Persisted → sticky on the next launch, even with slot 0 free again.
+            Cecelia.persist_port_slot!(1, cfg)
+            @test Cecelia._read_port_slot(cfg) == 1
+            @test Cecelia.resolve_port_slot!(cfg; bindable = taken()) == 1
+            delete!(ENV, Cecelia.PORT_SLOT_ENV)
+            # A tool that talks to the running Cecelia (stop, console) follows the sticky slot.
+            @test Cecelia.current_port_slot(cfg) == 1
+            withenv(Cecelia.PORT_SLOT_ENV => "4") do
+                @test Cecelia.current_port_slot(cfg) == 4
+            end
+            # Garbage in the file reads as "no sticky slot".
+            write(Cecelia.port_slot_path(cfg), "nonsense")
+            @test Cecelia._read_port_slot(cfg) === nothing
+            @test Cecelia.current_port_slot(cfg) == 0
+        end
+        @test !haskey(ENV, Cecelia.PORT_SLOT_ENV)
+    end
+    # The real probe: a port we are listening on is not bindable.
+    let srv = Cecelia.Sockets.listen(Cecelia.Sockets.IPv4("127.0.0.1"), 0)
+        port = Int(Cecelia.Sockets.getsockname(srv)[2])
+        @test !Cecelia.port_bindable(port)
+        close(srv)
+        @test Cecelia.port_bindable(port)
+    end
+end
+
+# A runner reached through a slot collision may belong to another user: it reports its config dir,
+# and the client refuses to adopt it (`runner_launch!`) — the runner refuses its submits too.
+@testset "Runner ownership" begin
+    @test !Cecelia.runner_is_foreign(Dict{String,Any}())                               # pre-slot runner
+    @test !Cecelia.runner_is_foreign(Dict{String,Any}("configDir" => config_dir()))
+    @test Cecelia.runner_is_foreign(Dict{String,Any}("configDir" => "/home/someone-else/.cecelia"))
+    @test Cecelia.runner_identity()["configDir"] == config_dir()
+    req(dir) = (r = Cecelia.HTTP.Request("POST", "/submit");
+                isnothing(dir) || Cecelia.HTTP.setheader(r, Cecelia.RUNNER_OWNER_HEADER => dir); r)
+    @test !Cecelia._runner_foreign_caller(req(nothing))
+    @test !Cecelia._runner_foreign_caller(req(config_dir()))
+    @test Cecelia._runner_foreign_caller(req("/home/someone-else/.cecelia"))
+
+    # `runner_stop!` kills by port, so it must ask first: a runner answering with another config dir
+    # is left alone. Stand-in runner = an HTTP server in THIS process — if the guard ever regresses,
+    # the kill takes the test process down, which fails the run loudly.
+    srv = Cecelia.HTTP.listen!("127.0.0.1", 0) do stream
+        read(stream)
+        Cecelia.HTTP.setstatus(stream, 200)
+        Cecelia.HTTP.setheader(stream, "Content-Type" => "application/json")
+        Cecelia.HTTP.startwrite(stream)
+        Cecelia.write_http_body!(stream, JSON3.write(Dict("protocol" => Cecelia.RUNNER_PROTOCOL,
+                                                          "pid" => 1, "configDir" => "/elsewhere")))
+    end
+    try
+        port = Int(Cecelia.HTTP.port(srv))
+        h = Cecelia.RunnerHandle(port, nothing, false)
+        @test Cecelia.runner_is_foreign(Cecelia.runner_ping(h))
+        @test_logs (:warn, r"belongs to another Cecelia") Cecelia.runner_stop!(h)
+        @test Cecelia.runner_alive(h)
+    finally
+        close(srv)
+    end
+end

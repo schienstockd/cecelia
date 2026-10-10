@@ -555,10 +555,8 @@ end
 # for every Python subprocess. Hand-rolling `\`... python ...\`` / `Cmd(["python", ...])` /
 # `pipeline(\`python ...\`)` in a task means losing the PYTHONPATH the runner sets, the
 # `[PROGRESS]` streaming, the cancellation registration, and the `exitcode`+`termsignal` check —
-# every one of which was a distinct bug at some point. Sanctioned owners:
-#   • `app/src/py_runner.jl`   — where `run_py` lives.
-#   • `api/src/system_api.jl`  — a one-off boot-time cellpose model warm at admin request, not a
-#     task runner and not on any user path; documented alternate use.
+# every one of which was a distinct bug at some point. Sanctioned owner: `app/src/py_runner.jl`, where
+# `run_py` lives (the model-weights job in `api/src/system_api.jl` goes through it too).
 @testset "python spawn ratchet — spawn only via `run_py`" begin
     # Matches a backtick command that spawns `python` by bare name, or an interpolated
     # `\`$python ...\`` form, or a Cmd([...]) literal.
@@ -568,7 +566,6 @@ end
               r"Cmd\(\s*\[\s*\"python\"")
     exempt = Set([
         joinpath("app", "src", "py_runner.jl"),
-        joinpath("api", "src", "system_api.jl"),
     ])
 
     roots = [_app_src, _api_src]
