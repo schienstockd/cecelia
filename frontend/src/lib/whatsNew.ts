@@ -13,7 +13,7 @@
 // a placeholder until STATS_ANNOTATIONS_PLAN.md lands content.
 import { computed, ref, type ComputedRef } from 'vue'
 import { marked } from 'marked'
-import { useAppControlStore } from '../stores/appControl'
+import { useAppControlStore, type MergedPr } from '../stores/appControl'
 
 export type WhatNewKind = 'update' | 'tip' | 'fix' | 'about'
 
@@ -91,22 +91,43 @@ export function useUpdateCard(): ComputedRef<WhatNewCard | null> {
   const app = useAppControlStore()
   return computed(() => {
     if (!app.updateLatest) return null
+    const behind = app.updateAvailable ? behindPhrase(app.updateBehindBy, app.updateMergedPrs.length) : ''
     const description = app.updatePending
       ? 'Downloaded — restart Cecelia to finish installing.'
       : app.updateAvailable
-      ? (app.updateCurrent ? `You're running ${app.updateCurrent}.` : undefined)
+      ? (app.updateCurrent ? `You're running ${app.updateCurrent}${behind ? ` — ${behind}` : ''}.` : undefined)
       : (app.updateCurrent ? `You're up to date (${app.updateCurrent}).` : undefined)
+    const mergedMd = app.updateAvailable && !app.updatePending ? mergedPrsMd(app.updateMergedPrs) : ''
     return {
       id: `update-${app.updateLatest}`,
       kind: 'update',
       title: `Cecelia ${app.updateLatest}`,
       description,
-      bodyMd: app.updateNotes || undefined,
+      bodyMd: app.updateNotes || mergedMd || undefined,
       releaseVersion: app.updateLatest,
       releaseUrl: app.updateUrl || undefined,
       publishedAt: app.updatePublished || undefined,
     }
   })
+}
+
+/** "101 commits behind, 39 PRs merged" — the dev-channel gap in one clause. Empty when the count is
+ *  unknown (stable channel, or the compare call failed), so the description falls back to plain. */
+export function behindPhrase(behindBy: number | null, prCount: number): string {
+  if (behindBy == null || behindBy <= 0) return ''
+  const commits = `${behindBy} commit${behindBy === 1 ? '' : 's'} behind`
+  return prCount ? `${commits}, ${prCount} PR${prCount === 1 ? '' : 's'} merged` : commits
+}
+
+/** Dev builds have no release notes, so the card body lists the merged PRs instead — one line each,
+ *  newest first, no changelog prose. Capped; the "View on GitHub" link opens the full compare. */
+export const MERGED_PRS_SHOWN = 25
+export function mergedPrsMd(prs: MergedPr[], cap = MERGED_PRS_SHOWN): string {
+  if (!prs.length) return ''
+  // Titles are plain text from commit messages; keep `<` from reading as HTML in the v-html body.
+  const lines = prs.slice(0, cap).map(p => `- #${p.number} ${p.title.replace(/</g, '&lt;')}`)
+  if (prs.length > cap) lines.push(`- …and ${prs.length - cap} more`)
+  return lines.join('\n')
 }
 
 /** Format an ISO timestamp as "5 Aug 2026" for compact card display. Empty string on invalid input. */

@@ -1,11 +1,11 @@
 # Admin + install/update + app-lifecycle API testsets — extracted from api/test/runtests.jl.
 #
-# 14 testsets covering the server-admin / install / update / lifecycle surface: diagnostics,
+# 15 testsets covering the server-admin / install / update / lifecycle surface: diagnostics,
 # the API thread-pool preference,
 # pool-limit set guards, task thread budget (reports where the number came from), maintenance
 # patches, system envs (probe + install guards), running-version (prefers dev marker over
 # stale VERSION), _find_pixi (falls back past PATH), update scope, update version ordering
-# (rcN sorts numerically), update apply guard rails, setup wizard, app lifecycle, and the
+# (rcN sorts numerically), update apply guard rails, dev-channel merged-PR list, setup wizard, app lifecycle, and the
 # incremental console log ring. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl. The extracted file loads at
 # the top level of runtests.jl, so helpers defined earlier (_post) are still in scope
@@ -308,6 +308,25 @@ end
         write(joinpath(root, ".pending-revert"), "")
         @test _pending_restart(root)
     end
+end
+
+@testset "API: dev-channel merged-PR list from compare commits" begin
+    # Oldest first, as GitHub's compare API returns them; the list comes back newest first.
+    msgs = [
+        "Merge pull request #10 from me/a\n\nFirst feature",
+        "wip on b",                                            # the PR's own commit — skipped
+        "Merge origin/main into b\n\nconflicts",              # branch sync — skipped
+        "Second feature (#11)",                                # squash merge
+        "Merge pull request #12 from me/c",                    # no body → subject stands in
+        "Merge pull request #10 from me/a\n\nFirst feature",  # repeated number counted once
+    ]
+    prs = _merged_prs(msgs)
+    @test [p.number for p in prs] == [10, 12, 11]
+    @test prs[1].title == "First feature"
+    @test prs[2].title == "Merge pull request #12 from me/c"
+    @test prs[3].title == "Second feature"
+    @test isempty(_merged_prs(String[]))
+    @test _dev_behind("", "0"^40) == (nothing, NamedTuple[], "")   # stable install: nothing to compare
 end
 
 @testset "API: setup wizard" begin
