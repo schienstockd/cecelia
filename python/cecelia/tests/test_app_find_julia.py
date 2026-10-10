@@ -71,6 +71,43 @@ class FindJuliaTest(unittest.TestCase):
             self.assertEqual(os.environ["PATH"], "/usr/local/bin:/usr/bin")
 
 
+class FindPixiTest(unittest.TestCase):
+    """Same order as `_find_pixi` in api/src/pixi_bin.jl. The macOS `.app` starts the launcher with
+    launchd's minimal PATH; `pixi run app` exports PIXI_EXE, which must win."""
+
+    def setUp(self):
+        self.app = _load_app()
+        self.root = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        self.app.ROOT = self.root
+
+    def _touch(self, *parts):
+        path = os.path.join(*parts)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w", encoding="utf-8").close()
+        return path
+
+    def _env(self, **extra):
+        env = {"PATH": "", "HOME": self.home, "USERPROFILE": self.home, **extra}
+        return (mock.patch.dict(os.environ, env, clear=True),
+                mock.patch("shutil.which", return_value=None))
+
+    def test_pixi_exe_wins(self):
+        launcher = self._touch(self.home, "launcher", "pixi")
+        self._touch(self.root, "pixi", "bin", self.app._exe("pixi"))
+        a, b = self._env(PIXI_EXE=launcher)
+        with a, b:
+            self.assertEqual(self.app._find_pixi(), launcher)
+
+    def test_system_scope_then_user_scope(self):
+        a, b = self._env(PIXI_EXE=os.path.join(self.home, "gone"))
+        with a, b:
+            user = self._touch(self.home, ".pixi", "bin", self.app._exe("pixi"))
+            self.assertEqual(self.app._find_pixi(), user)
+            system = self._touch(self.root, "pixi", "bin", self.app._exe("pixi"))
+            self.assertEqual(self.app._find_pixi(), system)
+
+
 class FindBinaryWindowsTest(unittest.TestCase):
     """On Windows the hand-built fallback paths must carry `.exe`: install.ps1 puts
     `~\\.juliaup\\bin\\julia.exe`, and a GUI launch whose PATH lacks juliaup reaches these fallbacks.

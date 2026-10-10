@@ -41,28 +41,6 @@ function _running_version(root::AbstractString = _APP_ROOT)::String
     "dev"
 end
 
-# Locate the `pixi` binary. The dev-channel apply invokes `pixi exec --spec nodejs -- npm …` to
-# fetch Node.js on demand (see `api_update_apply`), and `Sys.which("pixi")` alone is not enough: the
-# desktop shortcut on Linux + macOS goes through a `cecelia-launch.sh` wrapper that exports the
-# shared runtime's PATH, but a user launching from a `.desktop` file with a minimal inherited env, or
-# running `pixi run app` from a shell where pixi is not on PATH, arrives here with a stripped PATH.
-# Fallback chain mirrors install.sh's install locations (system-scope inside `<root>/pixi/bin`,
-# user-scope in `~/.pixi/bin`) and app.py's `_reprovision_env`. Returns "" when nothing is found.
-# Windows: `pixi.exe`.
-function _find_pixi(root::AbstractString = _APP_ROOT)::String
-    exe = Sys.iswindows() ? "pixi.exe" : "pixi"
-    on_path = Sys.which("pixi")
-    on_path === nothing || return String(on_path)
-    for cand in (
-        joinpath(root, "pixi", "bin", exe),           # system-scope install (install.sh line 67)
-        get(ENV, "PIXI_HOME", "") |> h -> isempty(h) ? "" : joinpath(h, "bin", exe),
-        joinpath(expand_user("~/.pixi"), "bin", exe), # user-scope default
-    )
-        !isempty(cand) && isfile(cand) && return cand
-    end
-    ""
-end
-
 # Installed bundle (safe to self-update) vs dev checkout (must not be clobbered). `root` param is for
 # tests; production always uses the real install root. `VERSION` is written by release.yml into the
 # release bundle (stable installs), `.cecelia-version` is written by install.sh regardless of channel
@@ -380,7 +358,7 @@ function api_update_apply(body_bytes::Vector{UInt8})
         # shortcut goes through a wrapper (`cecelia-launch.sh` / `.bat`) that exports the shared
         # runtime env, but a user who runs `pixi run app` directly from a shell where they don't have
         # pixi on PATH, or launches on Linux via a `.desktop` file that inherits a minimal env, ends
-        # up here with a stripped PATH. `_find_pixi` mirrors install.sh's + app.py's fallback chain.
+        # up here with a stripped PATH. `_find_pixi` (pixi_bin.jl) covers it.
         pixi_bin = _find_pixi()
         isempty(pixi_bin) && return 500, JSON3.write((;
             error = "`pixi` was not found — the Cecelia install looks broken (dev-channel updates " *

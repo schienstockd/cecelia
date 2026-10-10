@@ -1,6 +1,7 @@
 import { ref, onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
 import type { TaskDef } from '../tasks/types'
 import { useWsStore } from '../stores/ws'
+import { onSystemEnvsChanged } from '../utils/systemEnvs'
 
 // Fetches task definitions from the package-owned JSON specs via the API.
 // Retries automatically (up to MAX_RETRIES times, RETRY_DELAY ms apart) so that
@@ -90,7 +91,11 @@ export function useTaskDefs(category: string | string[]) {
     if (visible && String(data.status ?? '') === 'done') void load(0)
   }
   const onNodeDone = () => { if (visible) void load(0) }
+  // An opt-in env appearing changes the cellpose model list (`list_cellpose_models` hides the v3
+  // models until the env exists). A failed install or one that was already there sends no `done`.
+  let offEnvsChanged: (() => void) | null = null
   onMounted(() => {
+    offEnvsChanged = onSystemEnvsChanged(() => { if (visible) void load(0) })
     void load(0)
     ws.on('task:status', onTaskDone)
     ws.on('chain:node:done', onNodeDone)
@@ -99,6 +104,7 @@ export function useTaskDefs(category: string | string[]) {
   onActivated(() => { visible = true; if (mounted) void load(0); mounted = true })
   onDeactivated(() => { visible = false })
   onUnmounted(() => {
+    offEnvsChanged?.()
     ws.off('task:status', onTaskDone)
     ws.off('chain:node:done', onNodeDone)
   })

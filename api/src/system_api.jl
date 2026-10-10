@@ -10,9 +10,7 @@
 #   POST /api/system/envs/install {env}     → 202 { started, jobId, env } — streams progress over WS
 #                                              (`system:env-install-log`, `system:env-install-complete`)
 #
-# Refused in a git checkout only when the caller asks; the install itself is fine in dev
-# (pixi lives on PATH via `pixi run dev`), but shipped-app resolvability of `pixi` is the real gate.
-# See docs/SHIPPING.md → bundled `pixi` lookup once that's decided.
+# pixi is resolved by `_find_pixi` (pixi_bin.jl) — the shipped app has no pixi on PATH.
 
 using JSON3
 
@@ -49,14 +47,6 @@ _pixi_env_dir(name::AbstractString)::String = joinpath(_SYSTEM_APP_ROOT, ".pixi"
 _env_installed(name::AbstractString)::Bool =
     isfile(joinpath(_pixi_env_dir(name), Sys.iswindows() ? "python.exe" : joinpath("bin", "python")))
 
-# Locate the pixi binary. `PIXI` env var wins (bundle-time override), else PATH, else "".
-function _pixi_bin_path()::String
-    p = strip(get(ENV, "PIXI", ""))
-    !isempty(p) && isfile(p) && return p
-    found = Sys.which("pixi")
-    isnothing(found) ? "" : String(found)
-end
-
 function api_system_envs(req)
     plat = _current_pixi_platform()
     envs = Dict{String,Any}()
@@ -91,9 +81,9 @@ function api_system_envs_install(body_bytes)
     _dir_writable(_SYSTEM_APP_ROOT) || return 403, JSON3.write((;
         error = "Shared installation — only the account that installed Cecelia can add $name."))
 
-    pixi = _pixi_bin_path()
+    pixi = _find_pixi()
     isempty(pixi) && return 500, JSON3.write((;
-        error = "pixi executable not found on PATH — cannot install env from within the app"))
+        error = "pixi not found — cannot install $name from within the app"))
 
     job_id = _env_install_job_id(name)
     start_job!(job_id)

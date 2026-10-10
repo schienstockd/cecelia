@@ -190,6 +190,34 @@ end
     end
 end
 
+@testset "API: _find_pixi — PIXI_EXE first, then the install locations" begin
+    # The user-scope macOS `.app` runs under launchd's minimal PATH: pixi is not on it, but the
+    # launcher's `pixi run app` exports PIXI_EXE.
+    exe = Sys.iswindows() ? "pixi.exe" : "pixi"
+    touch_exe(dir) = (mkpath(dir); f = joinpath(dir, exe); write(f, ""); f)
+    mktempdir() do tmp
+        home = joinpath(tmp, "home"); root = joinpath(tmp, "root")
+        mkpath(home); mkpath(root)
+        stripped = ("PATH" => "", "HOME" => home, "USERPROFILE" => home, "PIXI_HOME" => nothing)
+        withenv(stripped..., "PIXI_EXE" => nothing) do
+            @test _find_pixi(root) == ""
+            user = touch_exe(joinpath(home, ".pixi", "bin"))
+            @test _find_pixi(root) == user
+            sys = touch_exe(joinpath(root, "pixi", "bin"))
+            @test _find_pixi(root) == sys                      # system scope beats ~/.pixi
+        end
+        launcher = touch_exe(joinpath(tmp, "launcher-pixi"))
+        withenv(stripped..., "PIXI_EXE" => launcher) do
+            @test _find_pixi(root) == launcher                 # what `pixi run` exported wins
+        end
+        withenv(stripped..., "PIXI_EXE" => joinpath(tmp, "gone", exe)) do
+            @test _find_pixi(root) == joinpath(root, "pixi", "bin", exe)   # stale PIXI_EXE ignored
+        end
+    end
+    # One lookup: the system-env install route uses the same helper, not a private copy.
+    @test !isdefined(@__MODULE__, :_pixi_bin_path)
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.
