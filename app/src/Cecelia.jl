@@ -433,6 +433,7 @@ export profile_settings_path, read_profile_settings, write_profile_settings!, pa
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export REQUEST_VIA, author_stamp
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
+       observer_api_url,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
