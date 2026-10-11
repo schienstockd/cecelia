@@ -1,5 +1,6 @@
 // A label's colour and whether it is drawn, shared VERBATIM by every raycast that composites labels
-// (mip.wgsl, brick.wgsl, brick_multi.wgsl). The includer supplies `p.lab` and the `pal` texture.
+// (mip.wgsl, brick.wgsl, brick_multi.wgsl) and the 2D tile pass (tile.wgsl). The includer supplies
+// `p.lab` and the `pal` texture.
 //
 // 'id % rows' on the one-row palette. Id 0 never reaches here, so every row is available to real cells.
 // A NEGATIVE row count switches to a colour TABLE: `pal` is W = -rows texels wide and as many rows

@@ -64,6 +64,27 @@ export function labelPaletteBytes(n = LABEL_PALETTE_N): Uint8Array {
   return out
 }
 
+/** Which store a shown mask is read from: a task preview's scratch store, a running segmentation's
+ *  staging store, or (`undefined`) the durable labels store. The ONE pick — the flat, brick and tile
+ *  paths all fetch through it, so they cannot disagree about which bytes a mask is. A preview wins
+ *  over a live store of the same name, as it wins the mask slot (`maskName`). */
+export type MaskStore = 'preview' | 'live'
+export function maskStoreFor(vn: string, previewVn: string, liveVn: string): MaskStore | undefined {
+  if (!vn) return undefined
+  return vn === previewVn ? 'preview' : vn === liveVn ? 'live' : undefined
+}
+
+/** The slab-query fields that point a labels read at `store`, `storeId` riding as the cache-buster
+ *  (identical URLs across two preview runs would otherwise return the first run's bytes). */
+export function maskStoreQuery(store: MaskStore | undefined, storeId: number | undefined): {
+  preview: boolean; previewId?: number; live: boolean; liveId?: number
+} {
+  return {
+    preview: store === 'preview', previewId: store === 'preview' ? storeId : undefined,
+    live: store === 'live', liveId: store === 'live' ? storeId : undefined,
+  }
+}
+
 /**
  * A label slab as the `r32uint` texture wants it, whatever width the store used.
  *

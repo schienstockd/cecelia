@@ -11,6 +11,7 @@ import { slabUrl, type ViewerMeta, type SlabQuery } from './volumeViewer'
 import type { VirtualBrick } from './pageTable'
 import type { BrickPayloadRing, BrickPayloadLease } from './brickPayloadRing'
 import { drainResponseIntoBuffer } from './brickPayloadRing'
+import { maskStoreQuery, type MaskStore } from './viewerLabels'
 
 /** Shape of a `cTo`-carrying slab response, parsed from `X-Slab-Shape: nc,nz,ny,nx`. */
 export interface BrickSlabShape {
@@ -125,7 +126,7 @@ export function brickSlabUrl(
  */
 export function brickLabelSlabUrl(
   base: { projectUid: string; imageUid: string; enc?: 'identity' | 'zstd'; rev?: string
-          labelStore?: 'preview' | 'live'; labelStoreId?: number },
+          labelStore?: MaskStore; labelStoreId?: number },
   labelName: string,
   brick: VirtualBrick,
   brickSizeVox: readonly [number, number, number],
@@ -148,10 +149,7 @@ export function brickLabelSlabUrl(
     zTo: b.zHi + zOffset,
     level: brick.level,
     rev: base.rev,
-    preview: base.labelStore === 'preview',
-    previewId: base.labelStore === 'preview' ? base.labelStoreId : undefined,
-    live: base.labelStore === 'live',
-    liveId: base.labelStore === 'live' ? base.labelStoreId : undefined,
+    ...maskStoreQuery(base.labelStore, base.labelStoreId),
   })
 }
 
