@@ -21,26 +21,9 @@
 // with the same expressions the MIP shader inverts for its overlay `project()` — the two views cannot
 // drift apart as long as both use `VIEW_HALF_ANGLE` and the same pan convention.
 //
-// The per-frame uniform block (`uniforms.json` → "tile"). Small — everything a tile draw needs about
-// camera and channels — and sized so a `minBindingSize` check catches a layout drift without a probe
-// frame.
-//
-// `cam`   x = camera pan X (µm, screen right), y = camera pan Y (µm, screen up),
-//         z = camera dist (µm; half-height at unit-µm-per-µm ortho = `dist * VIEW_HALF_ANGLE`),
-//         w = aspect (canvas w / h).
-// `vp`    x = channel count, y = canvas W (px), z = canvas H (px), w = unused.
-// `ext`   x = image extent X µm, y = image extent Y µm, z/w = unused.
-// `slot`  x = channels per slot (nC — how far to step in z per channel), y/z/w = unused.
-// `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = unused.
+// The uniform block and the projection live in `tile_common.wgsl`, shared with the overlay passes.
 
-struct P {
-  cam:  vec4<f32>,
-  vp:   vec4<f32>,
-  ext:  vec4<f32>,
-  slot: vec4<f32>,
-  ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
-};
-@group(0) @binding(0) var<uniform> p: P;
+#include "tile_common.wgsl"
 @group(0) @binding(1) var atlas: texture_3d<u32>;
 @group(0) @binding(2) var lut: texture_2d<f32>;
 
@@ -77,19 +60,8 @@ struct VOut {
   let wx = inst.worldXY.x + corner.x * inst.worldWH.x;
   let wy = inst.worldXY.y + corner.y * inst.worldWH.y;
 
-  // Orthographic project — same convention as the MIP shader's overlay project().
-  //   ro.xy = (panX, -panY)          (screen up = -y world)
-  //   halfH = dist * VIEW_HALF_ANGLE
-  //   halfW = halfH * aspect
-  //   ndc.x = (wx - panX) / halfW
-  //   ndc.y = -(wy + panY) / halfH
-  let halfH = p.cam.z * ${VIEW_HALF_ANGLE};
-  let halfW = halfH * max(p.cam.w, 1e-6);
-  let ndcX = (wx - p.cam.x) / max(halfW, 1e-6);
-  let ndcY = -(wy + p.cam.y) / max(halfH, 1e-6);
-
   var o: VOut;
-  o.pos = vec4(ndcX, ndcY, 0.0, 1.0);
+  o.pos = vec4(tileNdc(vec2(wx, wy)), 0.0, 1.0);
   o.uv = corner;
   o.slot = i32(inst.slotIdx);
   o.sampledPx = inst.sampledPx;

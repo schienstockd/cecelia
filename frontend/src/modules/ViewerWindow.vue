@@ -87,12 +87,12 @@ import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/draw
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
-  overlaysUrl, buildPointBufferLayers, pooledColourScale, timepointRange, overlayLayersSummary,
-  buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
+  overlaysUrl, buildPointBufferLayers, pooledColourScale, overlayLayersSummary,
+  buildMultiTrackBuffer, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
-import { heatUnit, seedRendererOverlays } from '../utils/viewerOverlays'
+import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
@@ -1056,6 +1056,13 @@ const EMPTY_SEGMENTS: SegmentBuffer = {
 let segments: SegmentBuffer = EMPTY_SEGMENTS
 const pointCount = ref(0)
 const segCount = ref(0)
+/** The point + track settings every renderer's overlay draw reads (`setOverlayWindow`). The z
+ *  tolerance exists because a cell spans several planes: a marker only on its CENTROID's plane shows a
+ *  handful of points against a mask full of cells, which reads as random rather than as a strict slice. */
+const overlayStyle = computed<OverlayStyle>(() => ({
+  pointPx: pointSize.value, borderPx: pointBorder.value, pointZTol: settings.viewerPointZTol,
+  tailFrames: settings.viewerTailLength, tailPx: settings.viewerTailWidth, trackZTol: settings.viewerTrackZTol,
+}))
 const summary = computed(() => overlayLayersSummary(popLayers.value))
 /**
  * Ribbon-drawable pops from the current overlays payload — pops the Tracks section enumerates as
@@ -1531,28 +1538,10 @@ const frame = usePlotResize(canvas, () => {
   r.setCamera(cam.value)
   r.setSteps(singlePlane.value ? 1 : settings.viewerSteps)
   // The overlay slice for the frame ACTUALLY on screen, not the one asked for — same rule as the
-  // timestamp. A range of `null` means nothing is drawn at this timepoint, which is not an error.
-  const range = shownT.value >= 0 ? timepointRange(points, shownT.value) : null
-  // The planes actually LOADED: one in the 2D view, the crop range or ±n window otherwise. Not "-1
-  // for 3D" — a view cropped to eight planes would then draw the whole stack's cells against a box
-  // holding eight.
-  const [pLo, pHi] = zLoaded.value
-  // Widened by the z tolerance: a cell spans several planes, so drawing a marker only on the plane its
-  // CENTROID falls on shows a handful of points against a mask layer full of cells — which reads as the
-  // points being random rather than as a strict slice. 0 is the strict reading and
-  // is still available.
-  const tol = Math.max(0, settings.viewerPointZTol)
-  r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0,
-                   pointSize.value, pLo - tol, pHi + tol, pointBorder.value)
-  // A tail of N frames ENDING at the frame on screen. Contiguous in the segment buffer by construction,
-  // so this is two array reads rather than a per-frame filter.
-  const tail = shownT.value >= 0 && settings.viewerTailLength > 0
-    ? tailRange(segments, shownT.value, settings.viewerTailLength) : null
-  // Track ribbons carry their OWN Z reach — usually wider than the points' (a track spans several
-  // planes and reads best with slack). Same "negative lo = no filter" convention as the points.
-  const trackTol = Math.max(0, settings.viewerTrackZTol)
-  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth,
-                          pLo - trackTol, pHi + trackTol)
+  // timestamp. The planes are the ones actually LOADED: one in the 2D view, the crop range or ±n window
+  // otherwise. Not "-1 for 3D" — a view cropped to eight planes would then draw the whole stack's cells
+  // against a box holding eight.
+  setOverlayWindow(r, points, segments, shownT.value, zLoaded.value, overlayStyle.value)
   // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
@@ -1656,13 +1645,11 @@ const frame = usePlotResize(canvas, () => {
  * inside it (see `buildPointBuffer`).
  */
 function rebuildOverlays() {
-  const r = renderer.value
   points = buildPointBufferLayers(popLayers.value.map(l => ({
     payload: l.payload,
     hidden: new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path)),
   })), meta.value, PALETTES.cecelia)
   pointCount.value = points.count
-  r?.setOverlayPoints(points.data)
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
   // population layers — one Tracks layer per segmentation, several at once. P7 of
   // docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md.
@@ -1805,7 +1792,9 @@ function rebuildOverlays() {
     trackSpeedRange.value = null
   }
   segCount.value = segments.count
-  r?.setOverlaySegments(segments.data)
+  // Whichever renderer owns the canvas draws them — the volume ones or the 2D tile one.
+  if (renderer.value) seedRendererOverlays(renderer.value, points, segments)
+  if (tileRenderer.value) seedRendererOverlays(tileRenderer.value, points, segments)
   frame.redraw()
 }
 
@@ -2749,6 +2738,8 @@ function drawTiles() {
   // instanced draw order was undefined between them.
   const tp = t.value
   const zp = zPlane.value
+  // Overlays for the (t, z) on screen — the one plane the tile view shows.
+  setOverlayWindow(tr, points, segments, tp, [zp, zp], overlayStyle.value)
   const entries = tr.residentTiles().filter(e => e.t === tp && e.z === zp).slice()
     .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
@@ -3779,6 +3770,8 @@ async function ensureRenderer() {
       })
       tileRenderer.value = tr
       currentRendererKind.value = 'tile'
+      // Same as the volume branch below: a new renderer's overlay buffers start empty.
+      seedRendererOverlays(tr, points, segments)
       // Pin the adapter report so `bricksEnabled`'s budget gate doesn't lose it on a future
       // destroy — see `stableAdapterReport`'s docstring for the oscillator this prevents.
       if (stableAdapterReport.value === null) stableAdapterReport.value = tr.adapter

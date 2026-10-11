@@ -36,7 +36,8 @@ import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../u
 import { pickSrgbCanvasFormats } from './canvasFormat'
 export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
-import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
+import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
+import { compileShader } from './compileShader'
 import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
@@ -441,13 +442,7 @@ export async function createVolumeRenderer(
   })
   configureCtx()
 
-  const module = device.createShaderModule({ code: MIP_WGSL })
-  // Compile errors are reported, not thrown, so an unchecked module fails later as a blank canvas —
-  // indistinguishable from "the data is empty". Surface it here instead.
-  const errs = (await module.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (errs.length) {
-    throw new Error('Shader: ' + errs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
+  const module = await compileShader(device, MIP_WGSL, 'Shader')
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
@@ -491,72 +486,15 @@ export async function createVolumeRenderer(
   // therefore the camera. `project()` in the shader is the exact inverse of the ray construction; a
   // second camera would put a marker next to its cell rather than on it, and would still look
   // plausible. Alpha-blended over the finished MIP in the same pass — no second attachment, no clear.
-  const pointsModule = device.createShaderModule({ code: POINTS_WGSL })
-  const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (pointsErrs.length) {
-    throw new Error('Points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
-  const pointsPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-    vertex: {
-      module: pointsModule, entryPoint: 'vs',
-      buffers: [{
-        arrayStride: POINT_STRIDE * 4,
-        stepMode: 'instance',
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre, absolute image µm
-          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
-          { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
-        ],
-      }],
-    },
-    fragment: {
-      module: pointsModule, entryPoint: 'fs',
-      targets: [{
-        format,
-        blend: {
-          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        },
-      }],
-    },
-    primitive: { topology: 'triangle-list' },
-  })
+  const pointsModule = await compileShader(device, POINTS_WGSL, 'Points shader')
+  const pointsPipeline = device.createRenderPipeline(overlayPipelineDescriptor(
+    pointsModule, device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }), format, POINT_VERTEX_LAYOUT))
 
   // Track tails. A third pipeline rather than a second topology: WebGPU draws 1px lines only, and a
   // 1px tail over a noisy MIP is close to invisible (the viewer's tail_width defaults to 4).
-  const segModule = device.createShaderModule({ code: SEGMENTS_WGSL })
-  const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (segErrs.length) {
-    throw new Error('Segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
-  const segPipeline = device.createRenderPipeline({
-    layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-    vertex: {
-      module: segModule, entryPoint: 'vs',
-      buffers: [{
-        arrayStride: SEG_STRIDE * 4,
-        stepMode: 'instance',
-        attributes: [
-          { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from, absolute image µm
-          { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
-          { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
-          { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane of the segment's END
-        ],
-      }],
-    },
-    fragment: {
-      module: segModule, entryPoint: 'fs',
-      targets: [{
-        format,
-        blend: {
-          color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-        },
-      }],
-    },
-    primitive: { topology: 'triangle-list' },
-  })
+  const segModule = await compileShader(device, SEGMENTS_WGSL, 'Segments shader')
+  const segPipeline = device.createRenderPipeline(overlayPipelineDescriptor(
+    segModule, device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }), format, SEG_VERTEX_LAYOUT))
 
   const uniforms = device.createBuffer({
     size: UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -960,16 +898,7 @@ export async function createVolumeRenderer(
     setOverlayPoints(data: Float32Array) {
       if (!usable()) return
       if (data.length === 0) { pointCount = 0; return }
-      // Grown, never shrunk: a buffer is destroyed and reallocated only when it is too small, so
-      // toggling a population off and on again does not churn VRAM.
-      if (!pointBuf || data.length > pointCap) {
-        pointBuf?.destroy()
-        pointCap = data.length
-        pointBuf = device.createBuffer({
-          size: pointCap * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        })
-      }
-      device.queue.writeBuffer(pointBuf, 0, data)
+      ;({ buf: pointBuf, cap: pointCap } = writeInstances(device, pointBuf, pointCap, data))
     },
 
     setOverlayDraw(first: number, count: number, sizePx: number,
@@ -987,14 +916,7 @@ export async function createVolumeRenderer(
     setOverlaySegments(data: Float32Array) {
       if (!usable()) return
       if (data.length === 0) { segCount = 0; return }
-      if (!segBuf || data.length > segCap) {
-        segBuf?.destroy()
-        segCap = data.length
-        segBuf = device.createBuffer({
-          size: segCap * 4, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        })
-      }
-      device.queue.writeBuffer(segBuf, 0, data)
+      ;({ buf: segBuf, cap: segCap } = writeInstances(device, segBuf, segCap, data))
     },
 
     setOverlaySegmentDraw(first: number, count: number, widthPx: number,

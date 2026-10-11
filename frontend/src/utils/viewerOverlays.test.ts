@@ -3,7 +3,7 @@ import {
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
-  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays,
+  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -548,7 +548,8 @@ describe('buildMultiTrackBuffer — a track keeps its colour whatever its source
 })
 
 // A renderer swapped in by a 2D↔3D, flat↔brick or ±planes switch starts with empty overlay buffers;
-// without a re-seed the population dots vanished until a population toggle forced a rebuild.
+// without a re-seed the population dots and track tails vanished until a population toggle forced a
+// rebuild.
 describe('seedRendererOverlays', () => {
   it('uploads both the point and the segment buffers', () => {
     const got: string[] = []
@@ -560,12 +561,56 @@ describe('seedRendererOverlays', () => {
     expect(got).toEqual([`p${POINT_STRIDE}`, `s${SEG_STRIDE}`])
   })
 
-  it('ViewerWindow seeds every freshly constructed volume renderer', () => {
-    const src = (import.meta.glob('/src/modules/ViewerWindow.vue', { query: '?raw', import: 'default', eager: true }) as
-      Record<string, string>)['/src/modules/ViewerWindow.vue']
-    const body = src.slice(src.indexOf('async function ensureRenderer()'), src.indexOf('async function reallocate('))
-    const assigned = body.indexOf('renderer.value = r\n')
-    expect(assigned).toBeGreaterThan(0)
-    expect(body.indexOf('seedRendererOverlays(r, points, segments)', assigned)).toBeGreaterThan(assigned)
+  const viewerSrc = (import.meta.glob('/src/modules/ViewerWindow.vue', { query: '?raw', import: 'default', eager: true }) as
+    Record<string, string>)['/src/modules/ViewerWindow.vue']
+  const fnBody = (start: string, end: string) => viewerSrc.slice(viewerSrc.indexOf(start), viewerSrc.indexOf(end))
+
+  it('ViewerWindow seeds every freshly constructed renderer — volume and tile', () => {
+    const body = fnBody('async function ensureRenderer()', 'async function reallocate(')
+    for (const [assign, seed] of [['tileRenderer.value = tr\n', 'seedRendererOverlays(tr, points, segments)'],
+                                  ['renderer.value = r\n', 'seedRendererOverlays(r, points, segments)']]) {
+      const at = body.indexOf(assign)
+      expect(at).toBeGreaterThan(0)
+      expect(body.indexOf(seed, at)).toBeGreaterThan(at)
+    }
+  })
+
+  it('a rebuild reaches the tile renderer too', () => {
+    const body = fnBody('function rebuildOverlays()', 'async function loadOverlays(')
+    expect(body).toContain('seedRendererOverlays(renderer.value, points, segments)')
+    expect(body).toContain('seedRendererOverlays(tileRenderer.value, points, segments)')
+  })
+})
+
+describe('setOverlayWindow', () => {
+  // payload(): track 1 runs t0 → t1, so a tail at t = 1 holds its one segment.
+  const style = { pointPx: 5, borderPx: 1, pointZTol: 1, tailFrames: 2, tailPx: 3, trackZTol: 2 }
+  const rec = () => {
+    const calls: { pts?: number[]; segs?: number[] } = {}
+    return {
+      calls,
+      setOverlayDraw: (...a: number[]) => { calls.pts = a },
+      setOverlaySegmentDraw: (...a: number[]) => { calls.segs = a },
+    }
+  }
+
+  it("draws timepoint t's points and a tail ending at t, each with its own plane window", () => {
+    const pts = buildPointBuffer(payload(), meta())
+    const segs = buildTrackBuffer(payload(), meta(), ['#ff0000'])
+    const r = rec()
+    setOverlayWindow(r, pts, segs, 1, [2, 2], style)
+    const [first, count] = timepointRange(pts, 1)!
+    expect(r.calls.pts).toEqual([first, count, 5, 1, 3, 1])
+    const tail = tailRange(segs, 1, 2)
+    expect(tail).not.toBeNull()
+    expect(r.calls.segs).toEqual([tail![0], tail![1], 3, 0, 4])
+  })
+
+  it('nothing on screen yet (t < 0) draws nothing', () => {
+    const pts = buildPointBuffer(payload(), meta())
+    const r = rec()
+    setOverlayWindow(r, pts, buildTrackBuffer(payload(), meta(), ['#ff0000']), -1, [0, 3], style)
+    expect(r.calls.pts?.slice(0, 2)).toEqual([0, 0])
+    expect(r.calls.segs?.slice(0, 2)).toEqual([0, 0])
   })
 })

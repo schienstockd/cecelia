@@ -15,12 +15,14 @@
   },
   "tile": {
     "struct": "P",
-    "file": "tile.wgsl",
+    "file": "tile_common.wgsl",
     "fields": [
       { "name": "cam",  "lanes": ["panX", "panY", "dist", "aspect"] },
       { "name": "vp",   "lanes": ["nch", "canvasW", "canvasH", "unused"] },
       { "name": "ext",  "lanes": ["x", "y", "unused0", "unused1"] },
       { "name": "slot", "lanes": ["channelsPerSlot", "unused0", "unused1", "unused2"] },
+      { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
+      { "name": "ovx",  "lanes": ["pointBorderPx", "ribbonLo", "ribbonHi", "unused"] },
       { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   },

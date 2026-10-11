@@ -90,13 +90,15 @@
       }
     },
     "tile": {
-      "floats": 272,
+      "floats": 280,
       "slots": {
         "cam.aspect": 3,
         "vp.canvasH": 6,
         "slot.channelsPerSlot": 12,
-        "ch[1].lo": 20,
-        "ch[63].hi": 269
+        "ov.pointPx": 16,
+        "ovx.ribbonHi": 22,
+        "ch[1].lo": 28,
+        "ch[63].hi": 277
       }
     },
     "brick": {
