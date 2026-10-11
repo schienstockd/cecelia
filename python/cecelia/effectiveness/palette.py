@@ -54,8 +54,9 @@ def _hex_to_ansi(hex_str: str) -> str:
     return f"\033[38;2;{r};{g};{b}m"
 
 
-def load_palette(path: pathlib.Path | None = None) -> dict[str, str]:
-    """Return `{swatch_name: ansi_escape}` from `share/console_palette.json`.
+def load_hex(path: pathlib.Path | None = None) -> dict[str, str]:
+    """Return `{swatch_name: "#RRGGBB"}` from `share/console_palette.json` — for output that takes
+    the hex itself (the effectiveness chart's SVG) rather than a terminal escape.
 
     `path` overrides the default location — used by tests to point at a fixture.
     """
@@ -76,7 +77,15 @@ def load_palette(path: pathlib.Path | None = None) -> dict[str, str]:
             f"palette {p} missing required swatch(es): {missing}. "
             f"Both consoles depend on the full set; add or restore rather than deleting."
         )
-    return {name: _hex_to_ansi(hex_str) for name, hex_str in swatches.items()}
+    return dict(swatches)
+
+
+def load_palette(path: pathlib.Path | None = None) -> dict[str, str]:
+    """Return `{swatch_name: ansi_escape}` from `share/console_palette.json`.
+
+    `path` overrides the default location — used by tests to point at a fixture.
+    """
+    return {name: _hex_to_ansi(hex_str) for name, hex_str in load_hex(path).items()}
 
 
 #: Loaded once at import — a palette load failure is a hard startup error, not a first-

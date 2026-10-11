@@ -68,6 +68,7 @@ _rules = _load_sibling("rules")
 _judge = _load_sibling("judge")
 _run_reviews = _load_sibling("run_reviews")
 _issues = _load_sibling("issues")
+_chart = _load_sibling("chart")
 
 
 #: Exit code of a pass stopped by the usage limit (sysexits `EX_TEMPFAIL`): `cron_pass.sh` retries it.
@@ -417,6 +418,22 @@ def post_status(record: dict, report: dict | None, *, pr: str | None = None,
         return f"status comment failed: {type(e).__name__}: {e}"
 
 
+def chart_step(record: dict, *, push: bool, repo: pathlib.Path) -> str:
+    """The README chart (`chart.py`), best-effort: rendered from the store and, unless `--no-pr`,
+    pushed to the `judge-assets` branch. What happened is kept on `run.chart`; nothing here fails the
+    pass."""
+    result = _chart.update(push=push, repo=repo)
+    record["run"]["chart"] = result
+    try:
+        _record.write(record, force=True)
+    except (OSError, ValueError) as w:
+        print(f"  chart result not recorded: {w}", file=sys.stderr)
+    if "error" in result:
+        return f"chart failed: {result['error']}"
+    return "chart " + (f"pushed {result['pushed'][:8]}" if "pushed" in result else
+                       f"unchanged, not pushed" if result.get("skipped") else f"rendered to {result['path']}")
+
+
 def _write_failure(date: str | None, stage: str, error: Exception, sha: str | None) -> dict | None:
     """Write the failure record, unless that date already has a pass record: never replace data."""
     date = date or _now()[:10]
@@ -481,6 +498,8 @@ def main(argv: list[str] | None = None) -> int:
         elif not args.no_pr:
             state["stage"] = "publish"
             print(f"  PR {publish(record, worktree=args.worktree or default_worktree())}")
+        print(f"  {chart_step(record, push=not args.no_pr, repo=args.worktree or default_worktree())}",
+              file=sys.stderr)
         return 0
     except Exception as e:  # noqa: BLE001 — any crash still leaves a record
         where = e.stage if isinstance(e, JudgeRunError) else state["stage"]
