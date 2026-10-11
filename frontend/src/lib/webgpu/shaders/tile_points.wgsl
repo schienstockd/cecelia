@@ -27,12 +27,12 @@ struct POut {
     return o;
   }
   let ndc = overlayNdc(centre);
-  o.pos = markerPos(ndc, corner, p.ov.x, p.ovx.x, p.vp.yz);
+  o.pos = markerPos(ndc, corner, p.ov.x, p.lab.w, p.vp.yz);
   return o;
 }
 
 @fragment fn fs(in: POut) -> @location(0) vec4<f32> {
-  let c = markerColour(in.local, in.rgb, p.ov.x, p.ovx.x);
+  let c = markerColour(in.local, in.rgb, p.ov.x, p.lab.w);
   if (c.a <= 0.001) { discard; }
   return c;
 }

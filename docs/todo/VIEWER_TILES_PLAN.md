@@ -204,6 +204,22 @@ reserved in the plan) buys headroom. Do not preemptively expand.
 - A wire-up smoke test would want a mountable `ViewerWindow` — that's the extract-for-tests
   follow-up already flagged. Not gated on this phase.
 
+## Masks on tiles — SHIPPED
+
+The tile view draws the segmentation mask (durable, live or task-preview) the volume path draws.
+Before this, a whole-slide plane showed NO mask at all, so a cellpose preview on one looked like it
+found nothing while reporting hundreds of cells.
+
+- **A parallel `r32uint` atlas, layer = slot** (`tileRenderer.ts`), allocated on the first mask upload.
+  Not more image layers: ids are u32 and the image is u8/u16.
+- **Residency per slot against a mask source id** (`tileMaskSourceId`: value name + store + rewrite
+  stamp). A preview re-run is a new source — the pump refetches only the mask bytes of resident tiles,
+  never the image channels. A slot re-let to another tile clears its mask tag, so a tile is never drawn
+  with another tile's mask.
+- **Contour reads off-tile neighbours as the same id**, or every cell would be outlined along every
+  tile seam. Composited with the shared `label_colour.wgsl`, same opacity/contour settings.
+- Not ported: the correction cockpit's pick highlight, points and track tails.
+
 ## Server surface — already shipped in #659
 
 - `/api/viewer/slab?level=&x=&xTo=&y=&yTo=` returns an XY rect at a chosen level.

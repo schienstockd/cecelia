@@ -17,7 +17,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
   o.rgb = rgb;
   // Ribbons carry their OWN plane bounds, so a viewer can widen the tail's z-reach independently of
   // the points' — a track's plane is where it ends, but the tail is a continuous path.
-  if (offPlanes(plane, p.ovx.y, p.ovx.z)) {
+  if (offPlanes(plane, p.ovx.x, p.ovx.y)) {
     o.pos = clippedPos();
     return o;
   }

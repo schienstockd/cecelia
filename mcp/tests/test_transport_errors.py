@@ -23,9 +23,36 @@ class _Canned(socketserver.BaseRequestHandler):
     reply = b""
 
     def handle(self):
-        self.request.recv(65536)  # the request; its content doesn't matter
-        self.request.sendall(self.server.reply)
-        self.request.shutdown(socket.SHUT_WR)
+        # Read the WHOLE request (headers + Content-Length body) before replying, then half-close and
+        # wait for the client to hang up. Closing with unread request bytes in the receive buffer
+        # makes the kernel send RST, and on macOS the RST discards the reply the client hasn't read
+        # yet — it then sees ECONNRESET instead of the broken reply under test.
+        sock = self.request
+        sock.settimeout(5)
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        length = 0
+        for line in head.split(b"\r\n")[1:]:
+            name, _, value = line.partition(b":")
+            if name.strip().lower() == b"content-length":
+                length = int(value.strip())
+        while len(body) < length:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            body += chunk
+        sock.sendall(self.server.reply)
+        sock.shutdown(socket.SHUT_WR)
+        try:  # drain until the client closes, so our close never finds unread bytes
+            while sock.recv(65536):
+                pass
+        except OSError:
+            pass
 
 
 def _serve(reply: bytes) -> socketserver.ThreadingTCPServer:

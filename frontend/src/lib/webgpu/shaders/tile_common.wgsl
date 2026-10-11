@@ -12,9 +12,12 @@
 // `vp`    x = channel count, y = canvas W (px), z = canvas H (px), w = unused.
 // `ext`   x = image extent X µm, y = image extent Y µm, z/w = unused.
 // `slot`  x = channels per slot (nC — how far to step in z per channel), y/z/w = unused.
+// `lab`   x = mask opacity (0 = off), y = contour width (px, 0 = filled), z = palette rows,
+//         w = POINT border width (px, 0 = no outline). Same lanes as the MIP shader's `lab`, which is
+//         what lets `label_colour.wgsl` read it.
 // `ov`    points: x = size (px), y = first plane shown, z = tail width (px), w = last plane shown.
 //         Negative y = no plane filter. Same lanes as the MIP block's `ov`.
-// `ovx`   x = point border (px, 0 = no outline), y/z = track ribbon first/last plane, w = unused.
+// `ovx`   x/y = track ribbon first/last plane (negative x = no filter), z/w = unused.
 // `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = unused.
 
 struct P {
@@ -22,6 +25,7 @@ struct P {
   vp:   vec4<f32>,
   ext:  vec4<f32>,
   slot: vec4<f32>,
+  lab:  vec4<f32>,
   ov:   vec4<f32>,
   ovx:  vec4<f32>,
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>,

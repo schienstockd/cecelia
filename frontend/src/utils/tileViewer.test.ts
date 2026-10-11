@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
-  tileSlotShape,
+  tileSlotShape, tileMaskSourceId,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -296,5 +296,24 @@ describe('levelMeta', () => {
   })
   it('coerces an undefined level to 0 — the caller can be in first-mount', () => {
     expect(levelMeta(META, undefined)).toBe(L0)
+  })
+})
+
+describe('tileMaskSourceId', () => {
+  const base = { vn: 'cells', hidden: false }
+  it('no mask, or a hidden one, is no source', () => {
+    expect(tileMaskSourceId({ ...base, vn: '' })).toBe('')
+    expect(tileMaskSourceId({ ...base, hidden: true })).toBe('')
+  })
+  it('a preview re-run is a new source under the same value name', () => {
+    const a = tileMaskSourceId({ ...base, store: 'preview', storeId: 1 })
+    const b = tileMaskSourceId({ ...base, store: 'preview', storeId: 2 })
+    expect(a).not.toBe(b)
+    expect(a).not.toBe(tileMaskSourceId(base))
+  })
+  it('the durable store differs from its preview and from its own rewrite', () => {
+    expect(tileMaskSourceId(base)).toBe('cells|labels|0')
+    expect(tileMaskSourceId({ ...base, rev: '3' })).toBe('cells|labels|3')
+    expect(tileMaskSourceId({ ...base, store: 'live', storeId: 4 })).toBe('cells|live:4|0')
   })
 })

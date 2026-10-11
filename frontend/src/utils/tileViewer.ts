@@ -18,6 +18,7 @@
 // so a small pan is instant. Same load discipline — visible first, then the halo, one request at a time
 // through a `debouncedLatest` pump.
 
+import type { MaskStore } from './viewerLabels'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
 /** A tile at timepoint `t`, plane `z`, level `level`, tile-grid coordinates `(tx, ty)`. Channels are
@@ -39,6 +40,23 @@ export interface TileKey {
  *  unambiguous letter so a grep never conflates the store's `t` axis with the tile's `tx`. */
 export function tileKeyStr(k: TileKey): string {
   return `T${k.t}/Z${k.z}/L${k.level}/x${k.tx}/y${k.ty}`
+}
+
+/**
+ * The id the tile renderer tags each slot's MASK layer with (`setLabelSource`) — `''` when no mask is
+ * shown. It names the store and its rewrite stamp, not just the value name: a task-preview re-run, a
+ * live store re-stamp or a durable-store rewrite (`rev`) must read as a new source, or the renderer
+ * would keep drawing the previous bytes under an unchanged name. A hidden mask is no source at all,
+ * so nothing is fetched while it is off.
+ */
+export function tileMaskSourceId(o: {
+  vn: string; hidden: boolean
+  store?: MaskStore; storeId?: number
+  rev?: string | number
+}): string {
+  if (!o.vn || o.hidden) return ''
+  const store = o.store ? `${o.store}:${o.storeId ?? 0}` : 'labels'
+  return `${o.vn}|${store}|${o.rev || 0}`
 }
 
 /** Viewport in level-0 (native) pixel coordinates — the client thinks in L0, the slab route thinks in

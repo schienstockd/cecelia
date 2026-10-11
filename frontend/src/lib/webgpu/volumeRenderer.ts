@@ -38,7 +38,7 @@ export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
-import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
+import { LABEL_PALETTE_N, labelPaletteBytes, type MaskStore } from '../../utils/viewerLabels'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = MIP_LAYOUT.bytes
@@ -216,7 +216,7 @@ export interface VolumeRenderer {
      *  stays bound and the shader skips the label path via `p.lab.x == 0`. */
     labelName?: string
     /** Preview / live store for the mask — see `BrickSource.labelStore`. */
-    labelStore?: 'preview' | 'live'
+    labelStore?: MaskStore
     labelStoreId?: number
     /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
      *  overwriting `ccidSmoothed.ome.zarr`). Treated as an identity component: any diff drops the
