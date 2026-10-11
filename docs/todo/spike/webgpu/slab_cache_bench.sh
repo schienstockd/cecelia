@@ -10,10 +10,10 @@
 #
 # Writes <out-dir>/<label>.tsv: label, conc, t, http_code, wall_ms, bytes, server_read_ms (the
 # route's own X-Server-Read-Ms — zarr chunk read + blosc/zstd decode + slice, measured inside Julia).
-# Wall minus server_read is the pipe: TLS, HTTP/2 framing, socket, curl.
+# Wall minus server_read is the pipe: framing (plus TLS when on), socket, curl.
 #
 # Env: CECELIA_URL, CECELIA_API_TOKEN or CECELIA_API_TOKEN_FILE (the server's API token, sent as a
-# Bearer header — every route but /api/health needs it; same names as mcp/cecelia_mcp/auth.py), HTTP=2 (default) or 1.1, PROJ, IMG, VN (valueName; empty = the image's default store), MODE=flat (whole (t, c)
+# Bearer header — every route but /api/health needs it; same names as mcp/cecelia_mcp/auth.py), HTTP=1.1 (default) or 2, PROJ, IMG, VN (valueName; empty = the image's default store), MODE=flat (whole (t, c)
 # volumes for 8 timepoints instead of bricks) or MODE=scrub (all 64 bricks of 4 timepoints).
 #
 # Cold run: drop the page cache FIRST (needs sudo, so it is not done here):
