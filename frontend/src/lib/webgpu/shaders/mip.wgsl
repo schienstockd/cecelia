@@ -88,18 +88,7 @@ fn labAt(vi: vec3<i32>) -> u32 {
   return textureLoad(lab, vi, 0).r;
 }
 
-// the viewer's 'contour': the label's OUTLINE, w voxels thick, instead of a filled region — which is what
-// lets the channel signal under the mask stay readable while the boundary stays exact. Filled at w = 0,
-// which is the viewer's default and this one. In-plane only (x/y): the outline of a 3D object through its
-// z neighbours is a surface, not a contour, and would fill the region back in.
-fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
-  if (w <= 0) { return true; }
-  for (var k = 1; k <= w; k = k + 1) {
-    if (labAt(vi + vec3<i32>(k, 0, 0)) != id || labAt(vi - vec3<i32>(k, 0, 0)) != id ||
-        labAt(vi + vec3<i32>(0, k, 0)) != id || labAt(vi - vec3<i32>(0, k, 0)) != id) { return true; }
-  }
-  return false;
-}
+#include "label_edge.wgsl" LAB_AT=labAt
 
 #include "label_colour.wgsl"
 

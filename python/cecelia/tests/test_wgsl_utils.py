@@ -57,7 +57,9 @@ class RealShadersTest(unittest.TestCase):
                            PT_BINDING=1, PREV_PT_BINDING=4, LUT_BINDING=5, PAL_BINDING=8, PICK_BINDING=9)
         cases = {"mip.wgsl": {}, "mip_points.wgsl": {}, "mip_segments.wgsl": {}, "tile.wgsl": {},
                  "brick.wgsl": {}, "brick_points.wgsl": {}, "brick_segments.wgsl": {},
-                 "brick_multi.wgsl": brick_multi}
+                 "brick_multi.wgsl": brick_multi,
+                 # an include, not an entry: its includer names the fetch it calls
+                 "label_edge.wgsl": {"LAB_AT": "labAt"}}
         for name, extra in cases.items():
             with self.subTest(name):
                 code = wgsl_utils.expand_wgsl(name, **extra)

@@ -104,6 +104,19 @@ describe('the shaders the renderers compile', () => {
     expect(TILE_WGSL).toMatch(/id != 0u && labShown\(id\)/)
   })
 
+  // The contour loop once lived in all four label passes, each its own copy; one shared body means a
+  // change to the outline rule reaches the 2D tile view and the 3D views together.
+  const edged = { MIP_WGSL: [MIP_WGSL, 'labAt'], TILE_WGSL: [TILE_WGSL, 'labAt'],
+                  BRICK_WGSL: [BRICK_WGSL, 'labAtlasSample'], BRICK_N2: [brick[1], 'labAtlasSample'],
+                  BRICK_N3: [brick[2], 'labAtlasSample'], BRICK_N4: [brick[3], 'labAtlasSample'] }
+  for (const [k, [code, fetch]] of Object.entries(edged)) {
+    it(`${k} draws contours with the one shared labEdge`, () => {
+      expect(code).toContain(expandWgsl('label_edge.wgsl', { LAB_AT: fetch }))
+      expect(code.match(/fn labEdge\(/g)).toHaveLength(1)
+      expect(code.match(/for \(var k = 1; k <= w;/g)).toHaveLength(1)
+    })
+  }
+
   it('the TS constants are the shader constants', () => {
     expect([MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, PICK_BITSET_CAPACITY, PICK_BITSET_WORDS]).toEqual([
       SHADER_CONSTANTS.MAX_CHANNELS, SHADER_CONSTANTS.LUT_STOPS, SHADER_CONSTANTS.VIEW_HALF_ANGLE,
