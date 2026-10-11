@@ -92,23 +92,21 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   return mix(a, b, f);
 }
 
-// The mask id at a pixel of this tile. Outside the tile reads as the SAME id: the neighbour lives in
-// another slot, and reading it as background would outline every cell along every tile seam.
-fn labAt(slot: i32, x: i32, y: i32, sampled: vec2<f32>, id: u32) -> u32 {
-  if (x < 0 || y < 0 || x >= i32(sampled.x) || y >= i32(sampled.y)) { return id; }
-  return textureLoad(labAtlas, vec3<i32>(x, y, slot), 0).r;
+// The tile `labAt` reads from, set by `fs` before it calls `labEdge`: the shared contour loop hands its
+// fetch a voxel only, and the tile's extent and the id under test are per-tile, not per-voxel.
+var<private> labTileSampled: vec2<f32>;
+var<private> labTileId: u32;
+
+// The mask id at (x, y) in layer `vi.z` — the tile's slot. Outside the tile reads as the id under test:
+// the neighbour lives in another slot, and reading it as background would outline every cell along
+// every tile seam.
+fn labAt(vi: vec3<i32>) -> u32 {
+  if (vi.x < 0 || vi.y < 0 || vi.x >= i32(labTileSampled.x) || vi.y >= i32(labTileSampled.y)) { return labTileId; }
+  return textureLoad(labAtlas, vi, 0).r;
 }
 
-// The viewer's 'contour': the label's outline, w px thick (in this level's pixels), filled at w = 0.
-// Same rule as the MIP shader's `labEdge`, in-plane only.
-fn labEdge(slot: i32, x: i32, y: i32, sampled: vec2<f32>, id: u32, w: i32) -> bool {
-  if (w <= 0) { return true; }
-  for (var k = 1; k <= w; k = k + 1) {
-    if (labAt(slot, x + k, y, sampled, id) != id || labAt(slot, x - k, y, sampled, id) != id ||
-        labAt(slot, x, y + k, sampled, id) != id || labAt(slot, x, y - k, sampled, id) != id) { return true; }
-  }
-  return false;
-}
+// The contour width is in this level's pixels.
+#include "label_edge.wgsl" LAB_AT=labAt
 
 #include "label_colour.wgsl"
 
@@ -136,7 +134,9 @@ fn labEdge(slot: i32, x: i32, y: i32, sampled: vec2<f32>, id: u32, w: i32) -> bo
   // The mask goes OVER the composite at its opacity — same compositing as the MIP shader.
   if (p.lab.x > 0.0 && in.labOn > 0.5) {
     let id = textureLoad(labAtlas, vec3<i32>(sx, sy, in.slot), 0).r;
-    if (id != 0u && labShown(id) && labEdge(in.slot, sx, sy, in.sampledPx, id, i32(p.lab.y))) {
+    labTileSampled = in.sampledPx;
+    labTileId = id;
+    if (id != 0u && labShown(id) && labEdge(vec3<i32>(sx, sy, in.slot), id, i32(p.lab.y))) {
       acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x);
     }
   }

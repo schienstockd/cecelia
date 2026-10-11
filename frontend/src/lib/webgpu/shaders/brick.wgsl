@@ -152,19 +152,7 @@ fn labAtlasSample(vi: vec3<i32>) -> u32 {
     vec3<i32>(sx * bxSize + lx, sy * bySize + ly, sz * bzSize + lz), 0).r;
 }
 
-// the viewer's contour: the label's OUTLINE, w voxels thick, in-plane only (x/y). Mirrors
-// mip.wgsl's labEdge — filled at w = 0 (the viewer's default), which draws the region rather
-// than the boundary.
-fn labEdge(vi: vec3<i32>, id: u32, w: i32) -> bool {
-  if (w <= 0) { return true; }
-  for (var k = 1; k <= w; k = k + 1) {
-    if (labAtlasSample(vi + vec3<i32>(k, 0, 0)) != id ||
-        labAtlasSample(vi - vec3<i32>(k, 0, 0)) != id ||
-        labAtlasSample(vi + vec3<i32>(0, k, 0)) != id ||
-        labAtlasSample(vi - vec3<i32>(0, k, 0)) != id) { return true; }
-  }
-  return false;
-}
+#include "label_edge.wgsl" LAB_AT=labAtlasSample
 
 #include "label_colour.wgsl"
 
