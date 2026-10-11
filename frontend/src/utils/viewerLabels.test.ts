@@ -153,5 +153,9 @@ describe('maskStoreQuery', () => {
     expect(maskStoreQuery('preview', 3)).toEqual({ preview: true, previewId: 3, live: false, liveId: undefined })
     expect(maskStoreQuery('live', 4)).toEqual({ preview: false, previewId: undefined, live: true, liveId: 4 })
     expect(maskStoreQuery(undefined, 5)).toEqual({ preview: false, previewId: undefined, live: false, liveId: undefined })
+    // the run's start rides only on a live read — a durable or preview store has no run to date
+    expect(maskStoreQuery('live', 4, '2026-10-11T03:10:43Z').liveSince).toBe('2026-10-11T03:10:43Z')
+    expect(maskStoreQuery('preview', 3, '2026-10-11T03:10:43Z')).not.toHaveProperty('liveSince')
+    expect(maskStoreQuery(undefined, 5, '2026-10-11T03:10:43Z')).not.toHaveProperty('liveSince')
   })
 })

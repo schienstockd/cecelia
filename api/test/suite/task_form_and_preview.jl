@@ -335,6 +335,30 @@ end
         @test err === nothing
         @test zp == staging
 
+        # The run promoted its store but is still going (a composite's later step). The final store
+        # was written by THIS run iff it is no older than the task's `started_at` (`liveSince`).
+        final = joinpath(labels_dir, "flowKat.zarr")
+        mv(staging, final)
+        write(joinpath(final, ".zattrs"), "{}")
+        written = Cecelia.store_written_at(final)
+        @test written > 0
+        iso(t) = Cecelia.iso_utc(Dates.unix2datetime(t))
+        zp, err = live_labels_store_path(proj.uid, img.uid, "flowKat"; live_since = iso(written - 60))
+        @test err === nothing
+        @test zp == final
+        # older than the run → the PREVIOUS segmentation a re-run's final path still holds: not live
+        _, err = live_labels_store_path(proj.uid, img.uid, "flowKat"; live_since = iso(written + 60))
+        @test err !== nothing && occursin("no run is writing", err)
+        # no (or an unparseable) start time → today's behaviour
+        for since in ("", "not-a-time")
+            _, err = live_labels_store_path(proj.uid, img.uid, "flowKat"; live_since = since)
+            @test err !== nothing && occursin("no run is writing", err)
+        end
+        # a staging store present again (a re-run's write) wins over the final one
+        mkpath(staging)
+        zp, err = live_labels_store_path(proj.uid, img.uid, "flowKat"; live_since = iso(written - 60))
+        @test zp == staging
+
         # the path is derived from the vn, so a vn that walks out of the labels dir is refused
         for bad in ("../x", "a/b", "..", "")
             _, berr = live_labels_store_path(proj.uid, img.uid, bad)

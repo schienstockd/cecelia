@@ -10,6 +10,8 @@
 // at app level; the decisions live here, pure and unit-tested, so they can't drift from the panel's
 // own per-toggle requests.
 
+import type { InFlightTaskRow } from './runningTasks'
+
 // The CELL-grained population types that render as centroid POINT overlays, in display order. Only
 // these belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
 // (membership is track_ids) and render as ribbons via show-tracks. ONE list — the ViewerPanel toggle
@@ -95,13 +97,9 @@ export function buildAutoShowPlan(input: AutoShowInput): AutoShowPlan {
 // segmentation's label store before it finishes, because `ccid.json` — the source for every labels
 // picker — is only written on success.
 
-// One in-flight task's declaration, as GET /api/tasks returns it (snake_case, matching the rest
-// of that route's payload — it predates this and the observer reads it too).
-export interface TaskListEntry {
-  id: string
-  fun_name?: string
-  image_uid?: string
-  status?: string
+// One in-flight task's declaration, as GET /api/tasks returns it — the canonical row
+// (`InFlightTaskRow`) plus the stores it is streaming into.
+export interface TaskListEntry extends InFlightTaskRow {
   live_outputs?: { kind?: string; value_name?: string; files?: string[] }[]
 }
 
@@ -110,6 +108,10 @@ export interface LivePreview {
   taskId: string
   valueName: string
   files: string[]
+  // The task's `started_at` — sent as the slab route's `liveSince`, so a task still running after its
+  // segmentation promoted the store (a composite's later step) keeps showing it, while a re-run's
+  // final path holding the PREVIOUS segmentation does not.
+  startedAt: string
 }
 
 // The cell-label stores currently being written for one image: `{valueName → files}` plus the task
@@ -134,7 +136,7 @@ export function liveLabelPreviews(
       // first declaration wins rather than producing two rows for one store.
       if (o?.kind !== 'labels' || !valueName || !files.length || seen.has(valueName)) continue
       seen.add(valueName)
-      out.push({ taskId: t.id, valueName, files })
+      out.push({ taskId: t.id, valueName, files, startedAt: t.started_at ?? '' })
     }
   }
   return out.sort((a, b) => a.valueName.localeCompare(b.valueName))

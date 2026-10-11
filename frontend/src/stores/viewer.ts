@@ -116,6 +116,8 @@ export interface PendingViewState {
 export interface LiveLabels {
   imageUid: string
   valueName: string
+  /** The run's `started_at` — the slab route's `liveSince` (see `SlabQuery.liveSince`). */
+  startedAt?: string
   updateId: number
 }
 

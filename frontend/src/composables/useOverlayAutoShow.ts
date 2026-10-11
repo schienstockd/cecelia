@@ -84,8 +84,9 @@ function _syncLiveLabels(restamp = false): void {
   const shown = uid ? livePreviews.value.find(p => previewShown.value[p.valueName]) : undefined
   const cur = viewer.liveLabels
   if (!uid || !shown) { viewer.setLiveLabels(null); return }
-  if (!restamp && cur && cur.imageUid === uid && cur.valueName === shown.valueName) return
-  viewer.setLiveLabels({ imageUid: uid, valueName: shown.valueName })
+  if (!restamp && cur && cur.imageUid === uid && cur.valueName === shown.valueName
+      && cur.startedAt === shown.startedAt) return
+  viewer.setLiveLabels({ imageUid: uid, valueName: shown.valueName, startedAt: shown.startedAt })
 }
 
 // Show/hide one live preview. Returns the new state so the caller can reflect the choice.

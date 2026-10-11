@@ -1304,6 +1304,12 @@ show/hide controls. A few things differ from a normal mask:
 - **A refresh may find the store gone.** The finishing run renames the staging store onto the final
   path, so a fetch can lose the race. The route answers 409 ("nothing to draw"), not an error. The
   task-finished snapshot then drops the row, and the viewer falls back to the ticked segmentation.
+- **A task can outlive its store's promotion.** A composite (`segment.coastalMeasure`: segment, then
+  measure) keeps running — and keeps declaring the store — for minutes after the segment step
+  promoted it. The viewer sends the task's `started_at` as `liveSince`; with the staging store gone,
+  the route serves the FINAL store if it was written at or after that (`store_written_at` — the newest
+  mtime among the store's root metadata files, which the run wrote). An older final store is the
+  previous segmentation a re-run has not replaced yet, so it stays a 409.
 
 The toggle is deliberately **not** persisted: it describes a store that exists only while one task
 runs, so restoring it later would produce a dead toggle.

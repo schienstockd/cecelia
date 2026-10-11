@@ -158,7 +158,13 @@ describe('liveLabelPreviews', () => {
 
   it('offers a running task\'s label store for the open image', () => {
     expect(liveLabelPreviews([run()], 'imgA'))
-      .toEqual([{ taskId: 't1', valueName: 'X', files: ['X.zarr'] }])
+      .toEqual([{ taskId: 't1', valueName: 'X', files: ['X.zarr'], startedAt: '' }])
+  })
+
+  // the viewer sends it as `liveSince`: a promoted store still shows while the task runs on
+  it('carries the task\'s started_at', () => {
+    const [p] = liveLabelPreviews([run({ started_at: '2026-10-11T04:56:00.000Z' })], 'imgA')
+    expect(p.startedAt).toBe('2026-10-11T04:56:00.000Z')
   })
 
   it('ignores tasks on other images', () => {

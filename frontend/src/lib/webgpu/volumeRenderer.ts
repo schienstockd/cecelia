@@ -218,6 +218,7 @@ export interface VolumeRenderer {
     /** Preview / live store for the mask — see `BrickSource.labelStore`. */
     labelStore?: MaskStore
     labelStoreId?: number
+    liveSince?: string
     /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
      *  overwriting `ccidSmoothed.ome.zarr`). Treated as an identity component: any diff drops the
      *  atlas the same way a valueName change does. See `viewerCacheClearChannel.ts`. */

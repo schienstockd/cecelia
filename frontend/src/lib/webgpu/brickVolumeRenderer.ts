@@ -75,6 +75,8 @@ export interface BrickSource {
    *  new stamp means new bytes under the same URL shape, so the atlas is dropped. */
   labelStore?: MaskStore
   labelStoreId?: number
+  /** The live run's `started_at` — `SlabQuery.liveSince`. */
+  liveSince?: string
   /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
    *  overwriting `ccidSmoothed.ome.zarr`). Handled the same way as a projectUid/imageUid/valueName
    *  change: any diff drops the atlas. Undefined defaults to no rev, so callers that don't opt in
@@ -1904,6 +1906,7 @@ export async function createBrickVolumeRenderer(
         && source.labelName === next.labelName
         && source.labelStore === next.labelStore
         && source.labelStoreId === next.labelStoreId
+        && source.liveSince === next.liveSince
         && (source.rev ?? '') === (next.rev ?? '')
       if (same) { source = next; return }
       source = next

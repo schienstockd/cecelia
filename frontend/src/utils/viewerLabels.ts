@@ -76,12 +76,15 @@ export function maskStoreFor(vn: string, previewVn: string, liveVn: string): Mas
 
 /** The slab-query fields that point a labels read at `store`, `storeId` riding as the cache-buster
  *  (identical URLs across two preview runs would otherwise return the first run's bytes). */
-export function maskStoreQuery(store: MaskStore | undefined, storeId: number | undefined): {
-  preview: boolean; previewId?: number; live: boolean; liveId?: number
+export function maskStoreQuery(store: MaskStore | undefined, storeId: number | undefined,
+                               liveSince?: string): {
+  preview: boolean; previewId?: number; live: boolean; liveId?: number; liveSince?: string
 } {
   return {
     preview: store === 'preview', previewId: store === 'preview' ? storeId : undefined,
     live: store === 'live', liveId: store === 'live' ? storeId : undefined,
+    // the live run's start, so a store its composite already promoted still reads (`live` only)
+    ...(store === 'live' && liveSince ? { liveSince } : {}),
   }
 }
 
