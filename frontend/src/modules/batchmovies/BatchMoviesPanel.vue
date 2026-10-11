@@ -33,7 +33,7 @@ import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.v
 import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import SceneAid from '../../components/SceneAid.vue'
-import { buildOverlayScene, renderOverlayPreview } from './overlayPreview'
+import { buildOverlayScene, drawsTails, renderOverlayPreview } from './overlayPreview'
 import CcToggle from '../../components/CcToggle.vue'
 import ColourPicker from '../../components/ColourPicker.vue'
 import MovieCompareControls from '../../components/MovieCompareControls.vue'
@@ -170,6 +170,8 @@ const popValueName = computed<string>({
   set: v => patch({ popValueName: v }),
 })
 const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,         set: v => patch({ tailWidth: v }) })
+// every track kind (plain, cell-track, trackclust) draws its ribbons at `tailWidth`
+const showTail     = computed<boolean>(() => drawsTails(cfg.value))
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
 
 // Title card — merge-patch so each control keeps the others' values.
@@ -603,8 +605,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
             <option v-for="s in segNames" :key="s" :value="s">{{ s }}</option>
           </select>
         </div>
-        <div v-if="showTracks || showPops" class="bm-inset">
-          <template v-if="showTracks">
+        <div v-if="showTail || showPops" class="bm-inset">
+          <template v-if="showTail">
             <span class="bm-lbl cc-muted">tail</span>
             <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
                    class="bm-range" v-tooltip.bottom="'Thickness of the track tail'" />
