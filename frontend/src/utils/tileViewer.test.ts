@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   tileKeyStr, tileL0Span, tileFetchRect, viewportTiles, visibleTileCoords, tilesInHalo,
   tileCacheCapacity, tileEvictions, viewportCentreTile, levelMeta, tileGridDims, tileMapCells,
+  tileSlotShape,
 } from './tileViewer'
 import type { ViewerLevel, ViewerMeta } from './volumeViewer'
 
@@ -262,6 +263,24 @@ describe('tileMapCells', () => {
     const k = tileKeyStr({ t: 0, z: 0, level: 4, tx: 1, ty: 1 })
     const cells = tileMapCells(L4, 0, 0, 4, new Set([k]), new Set([k]))
     expect(cells.find(c => c.tx === 1 && c.ty === 1)!.state).toBe('loading')
+  })
+})
+
+describe('tileSlotShape', () => {
+  // f8gzA2's pyramid: 1024² chunks down to L4, the coarsest level clipped to its own extent.
+  const f8 = {
+    levels: [
+      { level: 0, nX: 20329, nY: 16898, chunkX: 1024, chunkY: 1024 },
+      { level: 4, nX: 1270, nY: 1056, chunkX: 1024, chunkY: 1024 },
+      { level: 5, nX: 635, nY: 528, chunkX: 635, chunkY: 528 },
+    ],
+  } as unknown as ViewerMeta
+  it('is the same at every level — a zoom across the clipped coarse level keeps the atlas', () => {
+    expect(tileSlotShape(f8, 635, 528)).toEqual([1024, 1024])
+    expect(tileSlotShape(f8, 1024, 1024)).toEqual([1024, 1024])
+  })
+  it('falls back to the given chunk when the meta has no pyramid', () => {
+    expect(tileSlotShape({} as ViewerMeta, 300, 200)).toEqual([300, 200])
   })
 })
 

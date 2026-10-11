@@ -34,7 +34,7 @@ import {
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
 export { WebGpuUnavailable, type AdapterReport }
-import { tileKeyStr, tileFetchRect, type TileKey } from '../../utils/tileViewer'
+import { tileKeyStr, tileFetchRect, tileSlotShape, type TileKey } from '../../utils/tileViewer'
 
 /** Bytes per voxel the atlas is currently allocated for. Set on `setImage` from the store's dtype
  *  (`meta.bytesPerVoxel`): 1 for `|u1` sources (Manual IBEX .ims), 2 for `|u2` sources. Feeds both
@@ -85,8 +85,9 @@ export interface TileRenderer {
   /**
    * Allocate the atlas for one image at one pyramid level. `budgetBytes` bounds the slot count
    * together with the adapter's `maxTextureDimension3D`; `chunkX`/`chunkY` are the level's own chunk
-   * shape, `nC` its channel count. Called on setImage AND on every level swap — the atlas dims are a
-   * function of the level (finer levels have finer chunks in µm terms but the same pixel dims).
+   * shape, `nC` its channel count. Called on setImage AND on every level swap; the atlas is only
+   * reallocated when the slot shape (largest chunk over all levels — `tileSlotShape`), channel
+   * count or dtype changes. The texture is allocated asynchronously; `uploadTile` waits for it.
    *
    * `sourceId` names the STORE the tiles will come from — `<imageUid>/<valueName>` is the current
    * convention. Two stores of identical shape (a drift-corrected version and its smoothed sibling
@@ -232,6 +233,11 @@ export async function createTileRenderer(
   let capacity = 0
   let currentLevel = -1
   let metaRef: ViewerMeta | null = null
+  /** In-flight `allocateAtlas` (setImage is sync, the allocation is not). `uploadTile` awaits it,
+   *  so a tile fetched during the allocation still lands. `allocGen` lets a newer `setImage`
+   *  discard an older allocation instead of installing it. */
+  let pendingAlloc: Promise<void> | null = null
+  let allocGen = 0
 
   /** keyStr → { entry (slot, lru...) }. Ordering is on `lastUsed` so `residentTiles()` can hand a
    *  ranker-ready list. */
@@ -275,6 +281,7 @@ export async function createTileRenderer(
   }
 
   function dropAtlas() {
+    allocGen++                    // a pending allocation is for the geometry being dropped
     if (!dead) atlas?.destroy()
     atlas = null
     bindGroup = null
@@ -287,6 +294,45 @@ export async function createTileRenderer(
     atlasSourceId = ''
     capacity = 0
     currentLevel = -1
+  }
+
+  /**
+   * Allocate and install the atlas for the geometry `setImage` just recorded. Same discipline as
+   * the brick atlas (`brickVolumeRenderer.ts` → `allocateAtlas`):
+   *  - Dawn frees a destroyed texture's memory only once the queue has retired the work that used
+   *    it, so after a drop, wait for the queue before allocating — otherwise old + new (up to
+   *    `maxBufferSize` each) must fit at once.
+   *  - The OOM scope is AWAITED and the texture installed only if it allocated; an OOM halves the
+   *    slot count and retries (VRAM other tenants hold is invisible to WebGPU). Only a 1-slot
+   *    failure reaches `onError`.
+   */
+  async function allocateAtlas(gen: number, waitForFree: boolean, fmt: GPUTextureFormat, cap: number) {
+    if (waitForFree) await device.queue.onSubmittedWorkDone()
+    let lastErr = ''
+    for (let c = cap; c >= 1; c = Math.floor(c / 2)) {
+      if (gen !== allocGen || !usable()) return
+      device.pushErrorScope('out-of-memory')
+      const tex = device.createTexture({
+        size: [atlasChunkX, atlasChunkY, c * atlasNC], dimension: '3d', format: fmt,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+      const err = await device.popErrorScope()
+      if (gen !== allocGen || !usable()) { if (!dead) tex.destroy(); return }
+      if (err === null) {
+        if (c < cap) console.warn(`Tile atlas: ${cap} slots did not fit in VRAM; using ${c}`)
+        atlas = tex
+        capacity = c
+        // Fill the free list top-down so the first tiles land at slot 0 — makes a debug read of the
+        // atlas start with the visible viewport rather than with holes.
+        for (let sl = c - 1; sl >= 0; sl--) freeSlots.push(sl)
+        rebuildBindGroup()
+        return
+      }
+      lastErr = err.message
+      tex.destroy()
+      await device.queue.onSubmittedWorkDone()   // let the failed attempt's memory go too
+    }
+    onError?.('Tile atlas: ' + lastErr)
   }
 
   function computeCapacity(budgetBytes: number, chunkX: number, chunkY: number, nC: number, bpv: number): number {
@@ -312,15 +358,17 @@ export async function createTileRenderer(
     setImage(m, level, budgetBytes, chunkX, chunkY, nC, sourceId) {
       metaRef = m
       const nch = Math.min(nC, MAX_CHANNELS)
-      // Progressive refinement: an atlas allocated for the CURRENT (chunkX, chunkY, nC) shape is a
-      // valid atlas for ANY level — chunks are the same size at every level (the store's import chunk) — so a level
-      // swap should reuse it. Old-level tiles stay resident, get drawn UNDER the new-level ones as
+      // Progressive refinement: the atlas is valid for ANY level — slots are sized for the largest
+      // chunk at any level (`tileSlotShape`), so a pyramid's clipped coarse levels fit too — and a
+      // level swap reuses it. Old-level tiles stay resident, get drawn UNDER the new-level ones as
       // they stream in (drawTiles sorts coarsest-first), and the eviction ranker drops the coarse
-      // tiles under memory pressure. Reallocating on every level swap is what caused the "black
-      // tiles between levels" that reported (2026-08-26).
-      const reuse = atlas
-        && atlasChunkX === chunkX
-        && atlasChunkY === chunkY
+      // tiles under memory pressure. Reallocating on a level swap is what caused the "black tiles
+      // between levels" (2026-08-26). A pending allocation of the same shape counts as reusable —
+      // a wheel burst must not restart it every notch.
+      const [slotX, slotY] = tileSlotShape(m, chunkX, chunkY)
+      const reuse = (atlas !== null || pendingAlloc !== null)
+        && atlasChunkX === slotX
+        && atlasChunkY === slotY
         && atlasNC === nch
       // Store identity change (a version swap on the same image, most often): the atlas geometry
       // still fits, but every resident tile decoded from the OLD store and its `(t, z, level, tx, ty)`
@@ -342,43 +390,34 @@ export async function createTileRenderer(
       const bpv = m.bytesPerVoxel === 1 ? 1 : 2
       if (reuse && atlasBPV === bpv) return
       // Different shape or dtype → fresh atlas.
+      const hadAtlas = atlas !== null
       dropAtlas()
       atlasBPV = bpv
-      const cap = computeCapacity(budgetBytes, chunkX, chunkY, nch, bpv)
+      const cap = computeCapacity(budgetBytes, slotX, slotY, nch, bpv)
       if (cap <= 0) return
-      // Same OOM discipline as the volume renderer — a big atlas can legitimately fail to allocate,
-      // and the caller then holds at capacity 0 rather than crashing the browser.
       if (!usable()) return
-      device.pushErrorScope('out-of-memory')
+      // The geometry is decided now (the reuse check above reads it); the texture lands async.
+      atlasChunkX = slotX
+      atlasChunkY = slotY
+      atlasNC = nch
+      // `dropAtlas` cleared it — without this the NEXT level swap read as a store change and wiped
+      // every tile.
+      atlasSourceId = sourceId
+      currentLevel = level
+      setChannelsImpl(m.channels)
       // Texture format keys on the store's dtype: 8-bit Imaris exports (Manual IBEX) come out `|u1`
       // in zarr, 16-bit `|u2`. The shader binds `texture_3d<u32>` either way and reads `.r` as a
       // u32, so no shader change — only the storage width differs. Contrast/LUT already keys the
       // dtype-max on `bytesPerVoxel` (`contrastCeiling` in `utils/volumeViewer.ts`).
       const fmt: GPUTextureFormat = m.bytesPerVoxel === 1 ? 'r8uint' : 'r16uint'
-      const tex = device.createTexture({
-        size: [chunkX, chunkY, cap * nch], dimension: '3d', format: fmt,
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      })
-      // Fire the pop but don't await — a failed alloc will surface via onuncapturederror; the atlas
-      // is set unconditionally here because the returned texture is either valid or already unusable
-      // and dropAtlas() will destroy it on the next setImage.
-      void device.popErrorScope().then(err => {
-        if (err) onError?.('Tile atlas: ' + err.message)
-      })
-      atlas = tex
-      atlasChunkX = chunkX
-      atlasChunkY = chunkY
-      atlasNC = nch
-      capacity = cap
-      currentLevel = level
-      // Fill the free list top-down so the first tiles land at slot 0 — makes a debug read of the
-      // atlas start with the visible viewport rather than with holes.
-      for (let s = cap - 1; s >= 0; s--) freeSlots.push(s)
-      setChannelsImpl(m.channels)
-      rebuildBindGroup()
+      const gen = ++allocGen
+      const p = allocateAtlas(gen, hadAtlas, fmt, cap)
+      pendingAlloc = p
+      void p.finally(() => { if (pendingAlloc === p) pendingAlloc = null })
     },
 
     async uploadTile(key, channelBytes, keep, evict) {
+      if (pendingAlloc) await pendingAlloc
       if (!usable() || !atlas) return -1
       const kStr = tileKeyStr(key)
       // Re-upload just refreshes the LRU position; the slot stays. A tile the pump re-fetched (level
@@ -416,10 +455,10 @@ export async function createTileRenderer(
       const w = rect.xTo - rect.x + 1
       const h = rect.yTo - rect.y + 1
       if (w <= 0 || h <= 0) return -1
-      // The atlas is sized for its OWN level's chunks. A tile in flight from before a zoom-out —
-      // when the atlas gets reallocated to a coarser level with smaller chunks — can arrive with
-      // dims LARGER than the atlas can hold, and `writeTexture` then throws "Texture copy range
-      // touches outside …". Reject cleanly; the tile pump will re-request at the current level
+      // Slots cover every level's chunk, but a tile in flight from before an IMAGE switch (to one
+      // with a smaller slot shape) can arrive with dims LARGER than the atlas can hold, and
+      // `writeTexture` then throws "Texture copy range touches outside …". Reject cleanly; the
+      // tile pump will re-request at the current level
       if (w > atlasChunkX || h > atlasChunkY) return -1
       // Each channel goes to `slot * nC + c` in the atlas. `writeTexture` returns once the bytes are
       // STAGED — the caller can then read `hasTile` synchronously.
