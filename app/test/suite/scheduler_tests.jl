@@ -624,38 +624,35 @@ end
     end
 end
 
-@testset "TLS desired: env overrides toml overrides default (prod on / dev off)" begin
-    # Parallel to the runner testset above — same resolution shape. The default IS the
-    # feature that changed (opt-in → prod-on), so it is the one pinned by every branch here.
+@testset "TLS desired: env overrides toml overrides default (off everywhere)" begin
+    # Parallel to the runner testset above — same resolution shape. The default is pinned because it
+    # is a measured decision: HTTP/2 loads bricks slower than plain HTTP/1.1 (WEBGPU_UPLOAD_PATH_PLAN U4).
     cfg = mktempdir()
     try
-        # PROD default (no dev, no env, no toml key): TLS on. The whole point of the flip.
+        # Default (no env, no toml key): off — installed app and dev alike.
+        for dev in (nothing, "1")
+            withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => dev, "CECELIA_TLS" => nothing) do
+                init_cecelia!()
+                @test tls_desired() == false
+            end
+        end
+        # Settings toggle persists and takes precedence over the default.
         withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => nothing) do
             init_cecelia!()
-            @test tls_desired(is_dev = false) == true
-        end
-        # DEV default: TLS off. Vite proxy is HTTP/1.1-only, TLS earns nothing.
-        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => "1", "CECELIA_TLS" => nothing) do
-            init_cecelia!()
-            @test tls_desired(is_dev = true) == false
-        end
-        # Settings toggle persists in both modes and takes precedence over the default.
-        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => nothing) do
-            init_cecelia!()
-            @test set_tls_desired!(false; is_dev = false) == false
+            @test set_tls_desired!(true) == true
             @test occursin("[tls]", read(custom_toml_path(), String))
             init_cecelia!()
-            @test tls_desired(is_dev = false) == false     # …survives a reload
+            @test tls_desired() == true      # …survives a reload
         end
         # …and env still wins over the file, in both directions.
-        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => "1") do
-            init_cecelia!()
-            @test tls_desired(is_dev = false) == true       # env-on beats toml-off
-        end
         withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => "0") do
             init_cecelia!()
-            @test set_tls_desired!(true; is_dev = false) == false   # written but env forces off
-            @test tls_desired(is_dev = false) == false
+            @test tls_desired() == false     # env-off beats toml-on
+        end
+        withenv("CECELIA_DEV_DIR" => cfg, "CECELIA_DEV" => nothing, "CECELIA_TLS" => "1") do
+            init_cecelia!()
+            @test set_tls_desired!(false) == true   # written but env forces on
+            @test tls_desired() == true
         end
     finally
         init_cecelia!()

@@ -2,8 +2,8 @@
 Python client of the API: the launcher (`app.py`), the MCP (`cecelia_mcp`), `CeceliaClient` and the
 agent_eval scripts. Julia clients have their own (`api/task_console.jl`, `api/dev.jl`).
 
-The server picks HTTP or HTTPS itself (`tls_desired`: installed apps serve HTTPS with a self-signed
-cert, dev serves HTTP, and TLS can be toggled in Settings), so a URL a client was given can name the
+The server picks HTTP or HTTPS itself (`tls_desired`: plain HTTP by default, HTTPS with a self-signed
+cert when toggled on in Settings or by `CECELIA_TLS=1`), so a URL a client was given can name the
 wrong scheme. For a LOOPBACK base URL only (127.0.0.1 / localhost / ::1):
 
 - HTTPS skips certificate verification. The cert is self-signed by design, so verification would

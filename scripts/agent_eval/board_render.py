@@ -142,7 +142,7 @@ def _launch(profile: str):
     proc = subprocess.Popen([chromium_bin(), "--headless=new", "--remote-debugging-port=0",
                              f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                              "--disable-extensions", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
-                             "--ignore-certificate-errors",   # loopback only; installed apps self-sign
+                             "--ignore-certificate-errors",   # loopback only; HTTPS (opt-in) is self-signed
                              "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
                             encoding="utf-8", errors="replace")
     found: list[str] = []
@@ -212,7 +212,7 @@ def render_boards(api: str, project_uid: str, boards: list[str], image_uids: lis
     """{"boards": {name: {"ok", "error"?, "slots": [{index, name, title?, png (base64)}]}}, "blocked": [...]}.
     Raises RenderError when nothing could be rendered at all (no browser, no build, app down)."""
     dist = ensure_dist(dist or DIST)
-    try:   # the page loads from the scheme the app actually serves (installed apps: HTTPS, self-signed)
+    try:   # the page loads from the scheme the app actually serves (HTTP by default, HTTPS when opted in)
         with open_url(api.rstrip("/"), "/api/health", timeout=10):
             pass
     except (urllib.error.URLError, OSError) as e:

@@ -254,8 +254,8 @@ _agent_bin(a::ClaudeAgent)::String = a.bin
 const OBSERVER_MCP_NAME = "cecelia-observer"
 
 # The URL the observer MCP calls back on: loopback, on the scheme the server ACTUALLY started with
-# (`protocol` = `_PROTOCOL[]` in api/src/server.jl). Installed apps serve HTTPS, dev serves HTTP, and a
-# missing openssl falls back to HTTP — a hard-coded `http://` failed every MCP call on installed apps.
+# (`protocol` = `_PROTOCOL[]` in api/src/server.jl). HTTP by default, HTTPS when opted in, and a missing
+# openssl falls back to HTTP — a hard-coded `http://` failed every MCP call on an HTTPS server.
 # A registration made before a TLS toggle then reads as stale (`observer_registration_state`).
 observer_api_url(protocol::AbstractString, port::Integer)::String =
     string(startswith(protocol, "HTTPS") ? "https" : "http", "://127.0.0.1:", port)

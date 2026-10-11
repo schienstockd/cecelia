@@ -1345,15 +1345,17 @@ async function switchWt(path: string) {
         </select>
       </div>
 
-      <!-- HTTPS + HTTP/2 preference. Default: on in prod, off in dev (Vite is HTTP/1.1-only).
+      <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
+           Greyed out while off — it can only be switched OFF here (CECELIA_TLS=1 / [tls].enabled still
+           turn it on), so an install that opted in can opt out without a slower option on offer.
            Requires a restart to switch protocol on the wire (server binds the socket once at
            startup). CECELIA_TLS env, when set, overrides the toggle for the session. -->
       <div v-if="tls" class="field" style="margin: 0.2rem 0 0.6rem;">
         <CcToggle class="toggle-row"
-               :disabled="tlsBusy || tls.envOverride"
+               :disabled="tlsBusy || tls.envOverride || !tls.desired"
                :model-value="tls.desired"
                @update:model-value="tlsToggle($event)"
-               v-tooltip.bottom="'HTTPS + HTTP/2 — restart required to switch protocol'">
+               v-tooltip.bottom="'Slower image loading — restart to apply'">
           Serve over HTTPS + HTTP/2
         </CcToggle>
         <span v-if="tls.envOverride" class="field-hint cc-muted cc-fs-xs">
@@ -1563,7 +1565,7 @@ async function switchWt(path: string) {
         <span>Host</span><span class="mono">{{ diag.host }}:{{ diag.port }}</span>
         <span v-if="diag.protocol">Protocol</span>
         <span v-if="diag.protocol" class="mono"
-              v-tooltip.top="diag.protocol === 'HTTPS/HTTP2' ? 'HTTPS + HTTP/2 — brick fetches multiplex on one socket' : 'Cleartext HTTP/1.1 — Chromium caps at 6 fetches per origin'">
+              v-tooltip.top="diag.protocol === 'HTTPS/HTTP2' ? 'HTTPS + HTTP/2 (opt-in)' : 'Plain HTTP/1.1 (default)'">
           {{ diag.protocol === 'HTTPS/HTTP2' ? 'h2' : 'h1.1' }}
         </span>
         <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>

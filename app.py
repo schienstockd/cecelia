@@ -175,12 +175,12 @@ def _reexec_if_launcher_changed(before: bytes, browser_opened: bool) -> None:
 # the choice back each launch; this initial value only covers the time before that.
 PORT = os.environ.get("CECELIA_PORT", "8080")
 # The server decides HTTP vs HTTPS from `[tls].enabled` / `CECELIA_TLS` (see app/src/config/tls.jl);
-# prod defaults to HTTPS + HTTP/2, dev to HTTP/1.1, and a missing openssl silently falls back to HTTP.
+# both default to plain HTTP/1.1 (HTTPS + HTTP/2 is an opt-in), and a missing openssl falls back to HTTP.
 # The launcher can't reproduce that resolution without shelling into Julia, so it asks /api/health on
 # both schemes (`cecelia.utils.loopback` — the one copy of that rule, self-signed cert accepted). `URL`
 # is set by `_server_ready`; the browser open and the shutdown POST both read it back so they use the
 # same scheme the health check succeeded on.
-URL = f"https://localhost:{PORT}"
+URL = f"http://localhost:{PORT}"
 
 
 def _launched_port(proc, launched_at: float, timeout: float = 180.0) -> str | None:
@@ -220,11 +220,11 @@ def _api_token() -> str:
 
 
 def _server_ready(timeout: float = 180.0) -> bool:
-    """Wait for /api/health on either scheme (HTTPS tried first — the installed default). Sets the
+    """Wait for /api/health on either scheme (HTTP tried first — the default). Sets the
     module-level `URL` to whichever answered so downstream (browser open, shutdown POST) speaks the
     same scheme as the server."""
     global URL
-    base = f"https://localhost:{PORT}"
+    base = f"http://localhost:{PORT}"
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:

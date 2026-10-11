@@ -984,14 +984,13 @@ function start(; host=HOST, port=PORT)
     # on first launch; on failure fall back to HTTP/1.1 so the server never fails to start
     # just because openssl isn't available.
     #
-    # Default: TLS ON in prod (installed app), OFF in dev: Vite's dev proxy is HTTP/1.1-only both
-    # ways under `pixi run dev`, so ALPN downgrades and TLS earns nothing (`api/dev.jl` pins
-    # `CECELIA_TLS` so Vite's proxy and this server always agree). Prod flip landed after U4 shipped
-    # opt-in and nobody flipped `CECELIA_TLS=1` — a feature nobody sees is a zombie feature.
-    # Every client finds the scheme rather than assuming it — the launchers and the MCP probe both.
+    # Default: TLS OFF, dev and installed app alike — in Chromium, HTTP/2 loads bricks slower than
+    # plain HTTP/1.1 (`docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4, outcome). `api/dev.jl` pins
+    # `CECELIA_TLS` so Vite's proxy and this server always agree. Every client finds the scheme
+    # rather than assuming it — the launchers and the MCP probe both.
     #
     # `Cecelia.tls_desired` resolves order: `CECELIA_TLS` env → `[tls].enabled` in
-    # custom.toml (Settings toggle) → default (`!_is_dev`). The effective protocol is
+    # custom.toml (Settings toggle) → default (off). The effective protocol is
     # published to `/api/diagnostics` via `_PROTOCOL[]` — separate from `tls_desired`
     # because openssl-missing falls back to HTTP/1.1 with a warning.
     # `enable_blosc_nolock!` ran at load (image_render.jl). If it did not reach the C runtime blosc
@@ -1003,7 +1002,7 @@ function start(; host=HOST, port=PORT)
     end
     # The decoded-chunk cache is off until given a budget (chunk_cache.jl) — serving is when it is wanted.
     chunk_cache_budget!(Cecelia.viewer_chunk_cache_bytes())
-    want_tls = Cecelia.tls_desired(is_dev = _is_dev())
+    want_tls = Cecelia.tls_desired()
     tls = want_tls ? ensure_dev_cert() : nothing
     if tls === nothing
         _PROTOCOL[] = "HTTP/1.1"

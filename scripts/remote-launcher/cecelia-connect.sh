@@ -126,13 +126,15 @@ if [ "$TUNNEL_UP" = "0" ]; then
 fi
 
 ACTIVE_PORT="${REUSED_PORT:-$LOCAL_PORT}"
-# The remote server picks HTTP or HTTPS itself (installed apps serve HTTPS with a self-signed cert), so
+# The remote server picks HTTP or HTTPS itself (HTTP by default; HTTPS is an opt-in, self-signed), so
 # ask /api/health on each — the tunnel carries either — and open whichever answered.
 URL="http://localhost:$ACTIVE_PORT"
 if command -v curl >/dev/null 2>&1; then
-  if curl -ksf -m 5 -o /dev/null "https://localhost:$ACTIVE_PORT/api/health"; then
+  if curl -sf -m 5 -o /dev/null "http://localhost:$ACTIVE_PORT/api/health"; then
+    URL="http://localhost:$ACTIVE_PORT"
+  elif curl -ksf -m 5 -o /dev/null "https://localhost:$ACTIVE_PORT/api/health"; then
     URL="https://localhost:$ACTIVE_PORT"
-  elif ! curl -sf -m 5 -o /dev/null "http://localhost:$ACTIVE_PORT/api/health"; then
+  else
     printf '[cecelia] the tunnel is up but Cecelia is not answering on the VM yet — opening anyway\n' >&2
   fi
 fi

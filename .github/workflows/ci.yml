@@ -237,11 +237,10 @@ jobs:
             done ) > server.log &
           # Wait up to ~5 min for the API (first request JIT-compiles the handler; slower on
           # Windows/macOS runners than the warm Linux one).
-          # `pixi run prod` defaults to HTTPS + HTTP/2 (tls_desired defaults `true` outside dev,
-          # so `!_is_dev` is true on CI). Smoke against the shipped path — `-k` to accept the
-          # self-signed dev cert bootstrapped on first launch.
+          # `pixi run prod` serves plain HTTP/1.1 — the shipped default (`tls_desired`, off unless
+          # opted in). Smoke against that path.
           for i in $(seq 1 300); do
-            curl -kfsS https://localhost:8080/api/health >/dev/null 2>&1 && break
+            curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
             sleep 1
           done
           # ATTRIBUTION, not decoration. This poll loop is the single slowest step in the job, and it
@@ -254,19 +253,19 @@ jobs:
           echo "wall to first healthy response: $(( $(date +%s) - t0 ))s"
           cat server.log
           echo "== /api/health =="
-          curl -kfsS https://localhost:8080/api/health \
+          curl -fsS http://localhost:8080/api/health \
             || { echo "server never became healthy"; cat server.log; exit 1; }
           echo
           echo "== / (server-served frontend) =="
           # The API token gate (app/src/api_token.jl): without the sign-in cookie the page and the API
           # answer 401; the launch link sets the cookie and then both serve. No .env on CI → ~/.cecelia.
-          code=$(curl -ks -o /dev/null -w "%{http_code}" https://localhost:8080/api/diagnostics)
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/diagnostics)
           [ "$code" = 401 ] || { echo "API answered $code without the token — gate is open"; exit 1; }
           tok=$(cat ~/.cecelia/api-token)
-          curl -ksS -c jar -o /dev/null "https://localhost:8080/api/auth?token=$tok"
-          curl -kfsS -b jar -o /dev/null -w "%{http_code} %{content_type}\n" https://localhost:8080/ \
+          curl -sS -c jar -o /dev/null "http://localhost:8080/api/auth?token=$tok"
+          curl -fsS -b jar -o /dev/null -w "%{http_code} %{content_type}\n" http://localhost:8080/ \
             || { echo "frontend not served after sign-in"; exit 1; }
-          curl -kfsS -H "Authorization: Bearer $tok" -o /dev/null https://localhost:8080/api/diagnostics \
+          curl -fsS -H "Authorization: Bearer $tok" -o /dev/null http://localhost:8080/api/diagnostics \
             || { echo "API refused the Bearer token"; exit 1; }
           pixi run stop || true
 

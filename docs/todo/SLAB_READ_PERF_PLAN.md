@@ -190,8 +190,9 @@ Phase 2): scrub at 16 in flight 1.07 → 0.76–0.80 s, at 6 in flight 0.91–0.
 
 - **Accept:** byte-exact responses under concurrency (test: 16 in flight through a real listener);
   scrub and flat both faster through the server; no regression for other routes (untouched).
-- **Not done:** HTTP/2 (TLS) takes a different write path in HTTP.jl (`_write_data_frames_h2_server!`,
-  per-connection write lock); not measured here because the dev server currently runs without a cert.
+- **HTTP/2 (TLS)**, measured afterwards in Chromium: slower than plain HTTP/1.1 for bricks (2.5 vs
+  1.6 s at 16 in flight), partly an HTTP.jl 64 KB-per-send cap. TLS now defaults off —
+  `WEBGPU_UPLOAD_PATH_PLAN.md` → *U4 outcome*.
 
 ### Phase 4 — docs — DONE 2026-10-10
 

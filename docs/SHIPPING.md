@@ -94,19 +94,22 @@ calls `/api/...` and `ws://<host>/ws` relatively, so it works identically whethe
 dev (:5173, proxying to :8080) or by the Julia server in production (:8080). No CORS, no API-base
 configuration, no second process for the user.
 
-**HTTPS + HTTP/2 defaults on in prod, off in dev/CI.** Resolution order (`Cecelia.tls_desired`
+**Plain HTTP/1.1 by default; HTTPS + HTTP/2 is an opt-in.** Resolution order (`Cecelia.tls_desired`
 in `app/src/config/tls.jl`): `CECELIA_TLS` env → `[tls].enabled` in `custom.toml` (the
-Settings toggle) → `!_is_dev()`. Two reasons dev + CI stay off: (1) Vite's dev proxy is
-HTTP/1.1-only both ways, so ALPN downgrades under `pixi run dev` and TLS earns nothing; (2)
-the smoke-test workflow curls plain `http://localhost:8080/` against `pixi run prod`, and
-switching to HTTPS in that path would break every install. The default flip landed after
-opt-in shipped and nobody flipped `CECELIA_TLS=1` — a feature nobody sees is a zombie feature.
+Settings toggle) → off. HTTP/2 was the default in installed apps to escape Chromium's
+6-connections-per-origin queue on HTTP/1.1, back when a brick took 200–300 ms to read. With reads at
+10–15 ms the queue no longer limits loading, and measured in Chromium HTTP/2 is the slowest option:
+a 256-brick scrub at 16 in flight takes 2.5 s over HTTP/2 against 1.6 s over plain HTTP/1.1, and
+small API calls during the scrub wait ~40 ms vs ~70 ms — not a difference anyone sees. Part of the
+gap is an HTTP.jl 2.8.0 limit (each HTTP/2 send is capped at one 64 KB frame); even patched, HTTP/2
+stays behind. Numbers: `docs/todo/WEBGPU_UPLOAD_PATH_PLAN.md` → U4 outcome. Nothing else needs TLS
+on loopback: `localhost` is a secure context for WebGPU, and the API-token cookie adds `Secure`
+only over HTTPS.
 
 `api/src/tls.jl:ensure_dev_cert` generates a 365-day self-signed cert at
 `<config_dir>/tls/{cert,key}.pem` via the system `openssl` binary (idempotent: existing files
-are reused; delete both to rotate). ALPN advertises `h2` then `http/1.1`; Chromium picks h2
-and real multiplexing kicks in — the fix the WebGPU viewer's brick loader needed once it hit
-Chromium's 6-per-origin queue on HTTP/1.1 (`WEBGPU_UPLOAD_PATH_PLAN.md` U4). If `openssl` is
+are reused; delete both to rotate) when TLS is on. ALPN advertises `h2` then `http/1.1`; Chromium
+picks h2. If `openssl` is
 missing on `PATH`, the server logs `HTTP/1.1 — TLS wanted but cert unavailable` and starts
 cleanly on plain HTTP — the default never blocks launch. `api_diagnostics` reports the
 actual protocol as `protocol` (either `HTTPS/HTTP2` or `HTTP/1.1`) separately from

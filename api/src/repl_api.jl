@@ -125,7 +125,7 @@ function api_diagnostics(::HTTP.Request)
         replAvailable = _repl_available(),  # toggle on AND loopback-bound → console usable
         dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
         protocol    = _PROTOCOL[],          # what the server ACTUALLY started with — HTTPS/HTTP2 or HTTP/1.1
-        tlsDesired  = Cecelia.tls_desired(is_dev = _is_dev()),   # what the resolver wants (may differ from protocol on cert failure)
+        tlsDesired  = Cecelia.tls_desired(),   # what the resolver wants (may differ from protocol on cert failure)
         bloscNolock = blosc_nolock(),       # c-blosc skips its global lock (image_render.jl) — false = every zarr decode serialises
         chunkCache  = chunk_cache_stats(),  # decoded-chunk cache: budget, bytes, hits/misses/waits (chunk_cache.jl)
         previewPort   = service_port(:preview),   # child-service ports Cecelia occupies (backend `port`
