@@ -68,13 +68,6 @@
           "tip": "3D shape descriptors (surface area, sphericity, …); slow"
         }
       ]
-    },
-    {
-      "key": "imageTiling",
-      "label": "Image tiling",
-      "type": "section",
-      "collapsed": true,
-      "params": [{"$include": "imageTiling"}]
     }
   ]
 }

@@ -59,23 +59,26 @@ end
 # measureOptions => {extendedMeasures: true}), but tasks read them flat. run_task must lift them.
 @testset "Section params flatten (chain nesting)" begin
     ml = _task_from_fun_name("segment.measureLabels")
-    # measureLabels declares `measureOptions` + `imageTiling` sections
+    # measureLabels declares a `measureOptions` section, and no `imageTiling`: its block size is
+    # fixed (docs/todo/MEASURE_TILING_PLAN.md, Decision 8)
     @test "measureOptions" in Cecelia._section_keys(ml)
-    @test "imageTiling"    in Cecelia._section_keys(ml)
+    @test !("imageTiling" in Cecelia._section_keys(ml))
     nested = Dict{String,Any}(
         "outputValueName" => "T",
-        "measureOptions"  => Dict{String,Any}("extendedMeasures" => true),
-        "imageTiling"     => Dict{String,Any}("blockSize" => 4096, "overlap" => 0))
+        "measureOptions"  => Dict{String,Any}("extendedMeasures" => true))
     flat = Cecelia._flatten_sections(ml, nested)
     @test flat["extendedMeasures"] == true          # was buried under measureOptions
-    @test flat["blockSize"] == 4096                  # was buried under imageTiling
     @test !haskey(flat, "measureOptions")            # section container dropped
     @test flat["outputValueName"] == "T"             # top-level survives
     # composite pulls section keys from its sub-tasks (cellpose + measureLabels)
     comp = _task_from_fun_name("segment.cellposeMeasure")
     @test "measureOptions" in Cecelia._section_keys(comp)
-    @test Cecelia._flatten_sections(comp,
-        Dict{String,Any}("measureOptions" => Dict{String,Any}("extendedMeasures" => true)))["extendedMeasures"] == true
+    @test "imageTiling"    in Cecelia._section_keys(comp)   # cellpose's
+    cflat = Cecelia._flatten_sections(comp, Dict{String,Any}(
+        "measureOptions" => Dict{String,Any}("extendedMeasures" => true),
+        "imageTiling"    => Dict{String,Any}("blockSize" => 4096, "overlap" => 0)))
+    @test cflat["extendedMeasures"] == true
+    @test cflat["blockSize"] == 4096                 # was buried under imageTiling
     # already-flat params are unchanged (idempotent)
     @test Cecelia._flatten_sections(ml, Dict{String,Any}("extendedMeasures" => true))["extendedMeasures"] == true
 end

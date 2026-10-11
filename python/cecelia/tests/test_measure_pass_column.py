@@ -184,10 +184,10 @@ class MeasureFromZarrStampsThePassTest(unittest.TestCase):
 
 
 class ThreadedMeasureMatchesSerialTest(unittest.TestCase):
-    """`measure_from_zarr(n_threads>1)` runs each timepoint on a worker; the concat then reorders by
-    submission index, and every per-timepoint helper mutates only its own local df. If any of that
-    drifts, the threaded output stops matching the serial one. The whole thing has to be reproducible
-    against the fixture, cell-for-cell — a threaded run is not "usually" the same as a serial one."""
+    """`measure_from_zarr(n_workers>1)` measures each block in a worker process; blocks finish in
+    any order and the concat re-sorts by (t, label). If any of that drifts, the parallel output stops
+    matching the serial one. The whole thing has to be reproducible against the fixture,
+    cell-for-cell — a parallel run is not "usually" the same as a serial one."""
 
     def test_threaded_output_equals_serial_output(self):
         import anndata as ad
@@ -206,17 +206,17 @@ class ThreadedMeasureMatchesSerialTest(unittest.TestCase):
 
         du = MeasureFromZarrStampsThePassTest._dim_utils((3, 1, 2, 10, 8))
 
-        def _run(n_threads):
+        def _run(n_workers):
             with tempfile.TemporaryDirectory() as tmp:
                 mu = MeasureUtils({'taskDir': tmp, 'outputValueName': 'thr'}, du)
                 out = mu.measure_from_zarr({'base': [labels]}, [image], _Log(),
-                                           n_threads=n_threads)
+                                           n_workers=n_workers)
                 return ad.read_h5ad(out)
 
         serial = _run(1)
         threaded = _run(4)
 
-        # Same rows, same order (concat is by submission t-index, not completion order).
+        # Same rows, same order (re-sorted by (t, label), not completion order).
         self.assertEqual(list(serial.obs.index), list(threaded.obs.index))
         self.assertTrue(np.allclose(serial.X, threaded.X, equal_nan=True))
         self.assertTrue(np.allclose(serial.obsm['spatial'], threaded.obsm['spatial']))

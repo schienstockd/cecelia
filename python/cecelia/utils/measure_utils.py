@@ -10,13 +10,17 @@ is True, a trimesh mesh is built per cell via marching cubes, giving accurate
 surface area, volume, convex hull metrics, and ellipsoid axes.  Meshes are
 transient (never written to disk) — spatial contact analysis regenerates them
 on the fly from label masks (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11).
+
+Memory is bounded by a block, not a frame: every object is measured exactly once, from a crop of the
+block that OWNS it (the block holding its bounding-box start), so a tile scan with tens of channels
+and millions of cells never has a whole timepoint in RAM. See docs/todo/MEASURE_TILING_PLAN.md.
 """
 
 from __future__ import annotations
 
 import concurrent.futures as cf
+import multiprocessing as mp
 import os
-import threading
 import warnings
 from pathlib import Path
 
@@ -24,6 +28,7 @@ import numpy as np
 import pandas as pd
 import skimage.measure as skmeas
 import skimage.filters as skfilt
+from scipy import ndimage as ndi
 from cecelia.utils.atomic_io import write_h5ad_atomic
 import cecelia.utils.zarr_utils as zarr_utils
 import anndata as ad
@@ -59,6 +64,129 @@ _PROPS_3D_BASE = [
 ]
 
 
+# Smallest XY block edge when the task doesn't send one. Rounded UP to a whole number of the label
+# store's chunks (`block_size_for`), so a block read never over-fetches (MEASURE_TILING_PLAN, D8).
+DEFAULT_BLOCK_SIZE = 1024
+
+# How far an object may reach past its owning block's end before it is measured from its own crop
+# instead of widening the block's read (Decision 2). Bounds a block read at (block + cap)².
+MARGIN_CAP = 512
+
+# scipy/skimage `gaussian` kernel radius for a given sigma at the default `truncate=4.0` — a block
+# read with this halo smooths to the same values as the whole plane (Decision 5).
+_GAUSS_TRUNCATE = 4.0
+
+
+def block_size_for(label_arr, target: int = DEFAULT_BLOCK_SIZE) -> int:
+    """`target` rounded up to a whole number of `label_arr`'s XY chunks (the store's own tile)."""
+    tile = zarr_utils.store_xy_tile(label_arr) or zarr_utils.DEFAULT_XY_TILE
+    return tile * max(1, -(-target // tile))
+
+
+def scan_label_bboxes(arr, la_t, t_idx: int, spatial_axes: list, block: int,
+                      pool=None) -> pd.DataFrame | None:
+    """Bounding box of every label in one timepoint of a label store, read block by block.
+
+    Returns a DataFrame indexed by label id with `lo_<ax>` / `hi_<ax>` (half-open) per spatial axis,
+    or None when the timepoint has no labels. Only one XY block (full Z) is ever resident.
+
+    Each block is relabelled densely before `find_objects`, which is O(max label id) per call —
+    with millions of ids that per-block cost, not the pixels, would dominate the scan.
+    """
+    shape = [arr.shape[i] for i in range(arr.ndim) if i != la_t]
+    iy, ix = spatial_axes.index('Y'), spatial_axes.index('X')
+    starts = [(y, x) for y in range(0, shape[iy], block) for x in range(0, shape[ix], block)]
+
+    def _one(yx):
+        y0, x0 = yx
+        sl = [slice(None)] * len(spatial_axes)
+        sl[iy] = slice(y0, min(y0 + block, shape[iy]))
+        sl[ix] = slice(x0, min(x0 + block, shape[ix]))
+        crop = _read_label_region(arr, la_t, t_idx, sl)
+        ids = np.unique(crop)
+        ids = ids[ids != 0]
+        if ids.size == 0:
+            return None
+        dense = _dense_labels(crop, ids)
+        objs = ndi.find_objects(dense)
+        origin = [s.start or 0 for s in sl]
+        lo = np.array([[o[k].start + origin[k] for k in range(len(o))] for o in objs])
+        hi = np.array([[o[k].stop + origin[k] for k in range(len(o))] for o in objs])
+        return ids, lo, hi
+
+    parts = list(pool.map(_one, starts)) if pool is not None else [_one(s) for s in starts]
+    parts = [p for p in parts if p is not None]
+    if not parts:
+        return None
+    ids = np.concatenate([p[0] for p in parts])
+    cols = {}
+    for k, ax in enumerate(spatial_axes):
+        cols[f'lo_{ax}'] = np.concatenate([p[1][:, k] for p in parts])
+        cols[f'hi_{ax}'] = np.concatenate([p[2][:, k] for p in parts])
+    df = pd.DataFrame(cols, index=pd.Index(ids, name='label'))
+    agg = {c: ('min' if c.startswith('lo_') else 'max') for c in df.columns}
+    return df.groupby(level=0).agg(agg)
+
+
+def plan_regions(bbox: pd.DataFrame, block: int, cap: int = MARGIN_CAP):
+    """Assign each object to the block holding its bbox start and return the crops to measure.
+
+    A region is `(lo, hi, ids)`: the union of the bboxes of the objects one block owns, so every
+    owned object lies entirely inside it and is measured exactly once (Decision 1). An object
+    reaching more than `cap` past its block's end gets a region of its own (Decision 2) — measured,
+    never dropped. Returns `(regions, n_outliers)`.
+    """
+    axes = [c[3:] for c in bbox.columns if c.startswith('lo_')]
+    lo_y, lo_x = bbox['lo_Y'].to_numpy(), bbox['lo_X'].to_numpy()
+    by, bx = lo_y // block, lo_x // block
+    reach = np.maximum(bbox['hi_Y'].to_numpy() - (by + 1) * block,
+                       bbox['hi_X'].to_numpy() - (bx + 1) * block)
+    outlier = reach > cap
+
+    regions = []
+    lo_cols = [f'lo_{a}' for a in axes]
+    hi_cols = [f'hi_{a}' for a in axes]
+    owned = bbox.loc[~outlier].assign(_by=by[~outlier], _bx=bx[~outlier])
+    for _, g in owned.groupby(['_by', '_bx'], sort=True):
+        regions.append((g[lo_cols].min().to_numpy(), g[hi_cols].max().to_numpy(),
+                        np.sort(g.index.to_numpy())))
+    for lbl, row in bbox.loc[outlier].iterrows():
+        regions.append((row[lo_cols].to_numpy(), row[hi_cols].to_numpy(), np.array([lbl])))
+    return regions, int(outlier.sum())
+
+
+def _read_label_region(arr, la_t, t_idx: int, spatial_sl: list) -> np.ndarray:
+    """One timepoint of a label store, cropped to `spatial_sl` (one slice per non-T axis)."""
+    it = iter(spatial_sl)
+    sl = tuple(t_idx if i == la_t else next(it) for i in range(arr.ndim))
+    return np.asarray(arr[sl])
+
+
+def _dense_labels(crop: np.ndarray, ids: np.ndarray) -> np.ndarray:
+    """Relabel `crop` so `ids[k]` becomes k+1 and every other value 0. `ids` sorted, non-empty."""
+    idx = np.searchsorted(ids, crop)
+    np.minimum(idx, len(ids) - 1, out=idx)
+    return np.where(ids[idx] == crop, idx + 1, 0).astype(np.int32)
+
+
+class _NullLog:
+    def log(self, msg):
+        pass
+
+
+_WORKER: dict = {}
+
+
+def _worker_init(mu, ctx):
+    """Process-pool initializer: the measurer and its open stores, once per worker."""
+    _WORKER['mu'] = mu
+    _WORKER['ctx'] = {**ctx, 'log': _NullLog()}
+
+
+def _worker_measure(region):
+    return _WORKER['mu']._measure_region(*region, _WORKER['ctx'])
+
+
 class MeasureUtils:
     def __init__(self, params: dict, dim_utils):
         self.params             = params
@@ -75,7 +203,7 @@ class MeasureUtils:
     # ── public entry point ────────────────────────────────────────────────────
 
     def measure_from_zarr(self, label_zarrs: dict, im_dat, log, label_passes=None,
-                          n_threads: int = 1):
+                          n_workers: int = 1):
         """
         label_zarrs : {'base': [level0, level1, …], 'nuc': […], …}  – multiscale level lists
                       (as returned by zarr_utils.open_as_zarr; level 0 is full-res)
@@ -86,6 +214,7 @@ class MeasureUtils:
                       object — which is what makes a multi-pass run usable downstream. Named
                       one-based, as the form and the preview number the same passes; see
                       `zarr_utils.pass_display_name`.
+        n_workers   : worker processes for the measurement (threads for the cheap bbox scan).
 
         All label types are measured together and written to a single .h5ad file.
         Non-base types (nuc, cyto, halo) contribute extra intensity columns to the
@@ -138,62 +267,82 @@ class MeasureUtils:
             log.log(f'>> label passes: {len(label_passes)} ranges over '
                     f'{len(names)} passes ({", ".join(names)})')
 
-        # Per-timepoint measurement. Reads (zarr), skimage regionprops and numpy aggregations all
-        # release the GIL, so a ThreadPoolExecutor gives real speedup here — near-linear up to disk
-        # bandwidth (~4-8 workers on the typical zarr).
-        def _measure_one(t_idx: int):
-            base_vol = self._extract_t(base_arr, l_la_t, t_idx)
-            if base_vol.max() == 0:
-                return None, 'no labels'
-            im_vol = self._extract_t(im_arr, la_t, t_idx).astype(np.float32)
-            if self.gaussian_filter > 0.0:
-                im_vol = self._gaussian_smooth(im_vol, la_c, la_t, n_c)
-            morph_df = self._measure_morphology(base_vol, is_3d, log)
-            if morph_df is None or len(morph_df) == 0:
-                return None, 'no morphology'
-            morph_df = self._measure_intensities(
-                morph_df, base_vol, im_vol, la_c, la_t, n_c)
-            for ltype, lzarr in label_zarrs.items():
-                if ltype == 'base':
-                    continue
-                sec_vol = self._extract_t(lzarr[0], l_la_t, t_idx)
-                morph_df = self._measure_secondary_intensities(
-                    morph_df, sec_vol, im_vol, la_c, la_t, n_c, ltype)
-            if pass_of is not None:
-                # HERE, not after the concat: `pd.concat(..., ignore_index=True)` below discards the
-                # index, and the index is the label id. Stamped as a column it survives.
-                morph_df['pass'] = [pass_of(lbl) for lbl in morph_df.index]
-            morph_df['t'] = t_idx
-            return morph_df, None
+        spatial = [ax for ax in label_dim_order if ax != 'T']
+        block = max(64, int(self.params.get('blockSize') or block_size_for(base_arr)))
+        n_workers = max(1, int(n_workers))
+        pool = cf.ThreadPoolExecutor(max_workers=n_workers) if n_workers > 1 else None
+        ctx = dict(label_zarrs=label_zarrs, im_arr=im_arr, l_la_t=l_la_t, la_t=la_t, la_c=la_c,
+                   n_c=n_c, is_3d=is_3d, spatial=spatial, log=log)
 
-        results: list = [None] * n_t
-        n_threads = max(1, int(n_threads))
-        prog_lock = threading.Lock()
-        done = 0
-
-        def _finish(t_idx: int, df, skipped: str | None):
-            nonlocal done
-            with prog_lock:
-                done += 1
-                results[t_idx] = df
-                tag = f' ({skipped})' if skipped else ''
-                log.log(f'>> t {t_idx + 1}/{n_t} done{tag}')
-                log.progress(done, n_t)
-
-        if n_threads == 1:
+        try:
+            # Pass 1 — labels only: where is every object? Secondary stores (nuc/cyto/halo) widen
+            # an object's box, since a halo reaches past its cell and must fit in the same crop.
+            regions: list = []
+            n_outliers = n_objects = 0
             for t_idx in range(n_t):
-                df, skipped = _measure_one(t_idx)
-                _finish(t_idx, df, skipped)
-        else:
-            log.log(f'>> measuring {n_t} timepoints across {n_threads} threads')
-            with cf.ThreadPoolExecutor(max_workers=n_threads) as ex:
-                futs = {ex.submit(_measure_one, t): t for t in range(n_t)}
-                for fut in cf.as_completed(futs):
-                    t_idx = futs[fut]
-                    df, skipped = fut.result()
-                    _finish(t_idx, df, skipped)
+                bbox = scan_label_bboxes(base_arr, l_la_t, t_idx, spatial, block, pool)
+                if bbox is None:
+                    log.log(f'>> t {t_idx + 1}/{n_t}: no labels')
+                    continue
+                for ltype, lzarr in label_zarrs.items():
+                    if ltype == 'base':
+                        continue
+                    sec = scan_label_bboxes(lzarr[0], l_la_t, t_idx, spatial, block, pool)
+                    if sec is not None:
+                        sec = sec.reindex(bbox.index)
+                        for c in bbox.columns:
+                            op = np.fmin if c.startswith('lo_') else np.fmax
+                            bbox[c] = op(bbox[c], sec[c]).astype(bbox[c].dtype)
+                regs, n_out = plan_regions(bbox, block, MARGIN_CAP)
+                regions += [(t_idx, lo, hi, ids) for lo, hi, ids in regs]
+                n_outliers += n_out
+                n_objects += len(bbox)
 
-        all_dfs: list[pd.DataFrame] = [df for df in results if df is not None]
+            if not regions:
+                log.log('[WARN] No cells found — no output written')
+                return None
+            log.log(f'>> measuring {n_objects} objects in {len(regions)} blocks of {block} px '
+                    f'across {n_workers} worker(s)')
+            if n_outliers:
+                log.log(f'>> {n_outliers} object(s) reach more than {MARGIN_CAP} px past their '
+                        f'block; measured from their own crop')
+
+            # Pass 2 — each owned object from its block's crop. PROCESSES, not threads: skimage's
+            # per-object props hold the GIL, so threads stall at ~2 workers and get slower past 4,
+            # while processes scale ~5x at 8 (measured, docs/todo/MEASURE_TILING_PLAN.md → P2).
+            results: list = []
+            step = max(1, len(regions) // 100)
+
+            def _done(i, df):
+                if df is not None:
+                    if pass_of is not None:
+                        # HERE, not after the concat: `pd.concat(..., ignore_index=True)` discards
+                        # the index, and the index is the label id. Stamped as a column it survives.
+                        df['pass'] = [pass_of(lbl) for lbl in df.index]
+                    results.append(df)
+                if (i + 1) % step == 0 or i + 1 == len(regions):
+                    log.progress(i + 1, len(regions))
+
+            if n_workers == 1 or len(regions) == 1:
+                for i, r in enumerate(regions):
+                    _done(i, self._measure_region(*r, ctx))
+            else:
+                # spawn on every OS: Windows has nothing else, it is macOS's default, and forking a
+                # process that has run blosc/thread pools can deadlock on Linux. One behaviour on all
+                # three, at the cost of each worker importing this module (~1-2 s, in parallel).
+                wctx = {k: v for k, v in ctx.items() if k != 'log'}
+                with cf.ProcessPoolExecutor(
+                        max_workers=min(n_workers, len(regions)),
+                        mp_context=mp.get_context('spawn'),
+                        initializer=_worker_init, initargs=(self, wctx)) as ex:
+                    futs = [ex.submit(_worker_measure, r) for r in regions]
+                    for i, fut in enumerate(cf.as_completed(futs)):
+                        _done(i, fut.result())
+        finally:
+            if pool is not None:
+                pool.shutdown()
+
+        all_dfs: list[pd.DataFrame] = results
 
         if not all_dfs:
             log.log('[WARN] No cells found — no output written')
@@ -203,14 +352,92 @@ class MeasureUtils:
         # index which `label_props.jl` then reads AS the label id, silently shifting every row.
         for d in all_dfs:
             d['label'] = d.index
-        full_df = pd.concat(all_dfs, ignore_index=True).set_index('label')
+        # Blocks finish in any order; restore the (t, label) order a single whole-plane pass gives.
+        full_df = (pd.concat(all_dfs, ignore_index=True)
+                     .sort_values(['t', 'label'], kind='stable').set_index('label'))
         out_path = self._to_anndata(full_df, is_3d, n_t)
         log.log(f'>> wrote {out_path}')
         return out_path
 
+    # ── one block ─────────────────────────────────────────────────────────────
+
+    def _measure_region(self, t_idx: int, lo, hi, ids: np.ndarray, ctx: dict) -> pd.DataFrame | None:
+        """Measure the objects `ids` (sorted) from the crop `lo:hi` of timepoint `t_idx`.
+
+        Every object in `ids` lies entirely inside the crop (`plan_regions`). Everything else in it
+        is zeroed, and the owned ids are relabelled 1..k: skimage's per-call cost is O(max label id),
+        and each object's values depend only on its own pixels, so this is the whole-plane result.
+        """
+        spatial = ctx['spatial']
+        sl = [slice(int(a), int(b)) for a, b in zip(lo, hi)]
+        dense = _dense_labels(
+            _read_label_region(ctx['label_zarrs']['base'][0], ctx['l_la_t'], t_idx, sl), ids)
+
+        df = self._measure_morphology(dense, ctx['is_3d'], ctx['log'],
+                                      origin=[s.start for s in sl])
+        if df is None or len(df) == 0:
+            return None
+        # Coordinates come out crop-local; move them into the image frame.
+        for k, s in enumerate(sl):
+            col = f'centroid-{k}'
+            if col in df:
+                df[col] = df[col] + s.start
+
+        crops = {'base': dense}
+        for ltype, lzarr in ctx['label_zarrs'].items():
+            if ltype != 'base':
+                crops[ltype] = _dense_labels(
+                    _read_label_region(lzarr[0], ctx['l_la_t'], t_idx, sl), ids)
+        # The label→pixel grouping is the same for every channel, so build it once per label type.
+        groups = {lt: np.unique(c.ravel(), return_inverse=True) for lt, c in crops.items()} \
+            if self.intensity_measure == 'mean' else None
+
+        for c in range(ctx['n_c']):
+            chan = self._read_channel(ctx['im_arr'], ctx['la_t'], ctx['la_c'], t_idx, c, sl, spatial)
+            for ltype, crop in crops.items():
+                prefix = '' if ltype == 'base' else f'{ltype}_'
+                col = f'{prefix}{self.intensity_measure}_intensity_{c}'
+                if groups is not None:
+                    s = _mean_by_label(*groups[ltype], chan)
+                else:
+                    s = self._median_intensity(crop, chan, df.index, col)
+                df[col] = df.index.map(s)
+
+        df.index = ids[df.index.to_numpy() - 1]
+        df.index.name = 'label'
+        df['t'] = t_idx
+        return df
+
+    def _read_channel(self, im_arr, la_t, la_c, t_idx: int, c: int, sl: list,
+                      spatial: list) -> np.ndarray:
+        """Channel `c` of timepoint `t_idx` over the crop `sl`, as float32, smoothed if asked.
+
+        With a Gaussian, the read carries a halo of the kernel radius on Y and X and is trimmed
+        after — the same values as smoothing the whole plane (Z is always read whole)."""
+        halo = int(_GAUSS_TRUNCATE * self.gaussian_filter + 0.5) if self.gaussian_filter > 0 else 0
+        read_sl, trim = [], []
+        for ax, s in zip(spatial, sl):
+            if halo and ax in ('Y', 'X'):
+                n = im_arr.shape[self.dim_utils.im_dim_order.index(ax)]
+                a, b = max(0, s.start - halo), min(n, s.stop + halo)
+                read_sl.append(slice(a, b))
+                trim.append(slice(s.start - a, s.start - a + (s.stop - s.start)))
+            else:
+                read_sl.append(s)
+                trim.append(slice(None))
+        it = iter(read_sl)
+        full = tuple(t_idx if i == la_t else c if i == la_c else next(it)
+                     for i in range(im_arr.ndim))
+        chan = np.asarray(im_arr[full]).astype(np.float32)
+        if halo:
+            chan = skfilt.gaussian(chan, sigma=self.gaussian_filter,
+                                   preserve_range=True).astype(np.float32)[tuple(trim)]
+        return chan
+
     # ── morphology ────────────────────────────────────────────────────────────
 
-    def _measure_morphology(self, vol: np.ndarray, is_3d: bool, log) -> pd.DataFrame | None:
+    def _measure_morphology(self, vol: np.ndarray, is_3d: bool, log,
+                            origin=None) -> pd.DataFrame | None:
         use_trimesh = is_3d and self.extended_measures and _HAS_TRIMESH
         if is_3d:
             props_list = _PROPS_3D_BASE if use_trimesh else _PROPS_3D
@@ -229,7 +456,7 @@ class MeasureUtils:
             if not use_trimesh:
                 df = self._add_3d_derived(df)
             if self.extended_measures:
-                df = self._extended_3d_measures(vol, df, log)
+                df = self._extended_3d_measures(vol, df, log, origin=origin)
         else:
             df = self._add_2d_derived(df)
 
@@ -293,7 +520,8 @@ class MeasureUtils:
 
     # ── extended 3D via trimesh ───────────────────────────────────────────────
 
-    def _extended_3d_measures(self, vol: np.ndarray, df: pd.DataFrame, log) -> pd.DataFrame:
+    def _extended_3d_measures(self, vol: np.ndarray, df: pd.DataFrame, log,
+                              origin=None) -> pd.DataFrame:
         # Meshes come from the SHARED builder (mesh_utils.build_label_meshes), which marches cubes on
         # each label's BOUNDING BOX and offsets the vertices back into the full-volume frame. This
         # used to march cubes over `vol == lb` — the WHOLE volume — once per cell, which is
@@ -313,7 +541,8 @@ class MeasureUtils:
 
         rows: dict[int, dict] = {}
         labels = df.index.tolist()
-        meshes = build_label_meshes(vol, labels, phys=(1.0, 1.0, 1.0), min_voxels=4)
+        # `origin` puts a block crop's vertices back in the image frame, for the same qhull reason.
+        meshes = build_label_meshes(vol, labels, phys=(1.0, 1.0, 1.0), min_voxels=4, origin=origin)
 
         for lb, mesh in meshes.items():
             ch = mesh.convex_hull
@@ -382,38 +611,6 @@ class MeasureUtils:
 
     # ── intensity measurement ─────────────────────────────────────────────────
 
-    def _measure_intensities(self, df: pd.DataFrame, label_vol: np.ndarray,
-                             im_vol: np.ndarray, la_c, la_t, n_c: int) -> pd.DataFrame:
-        """Add per-channel intensity columns to df (in-place, returns df)."""
-        for c in range(n_c):
-            chan = self._extract_channel(im_vol, la_c, la_t, c)
-            col  = f'{self.intensity_measure}_intensity_{c}'
-            if self.intensity_measure == 'mean':
-                tbl = skmeas.regionprops_table(
-                    label_vol, intensity_image=chan, properties=['label', 'mean_intensity'])
-                s = pd.Series(tbl['mean_intensity'], index=tbl['label'], name=col)
-            else:
-                s = self._median_intensity(label_vol, chan, df.index, col)
-            df[col] = df.index.map(s)
-        return df
-
-    def _measure_secondary_intensities(self, df: pd.DataFrame,
-                                       sec_vol: np.ndarray, im_vol: np.ndarray,
-                                       la_c, la_t, n_c: int,
-                                       ltype: str) -> pd.DataFrame:
-        """Add {ltype}_{measure}_intensity_{c} columns to df using the secondary label mask."""
-        for c in range(n_c):
-            chan = self._extract_channel(im_vol, la_c, la_t, c)
-            col  = f'{ltype}_{self.intensity_measure}_intensity_{c}'
-            if self.intensity_measure == 'mean':
-                tbl = skmeas.regionprops_table(
-                    sec_vol, intensity_image=chan, properties=['label', 'mean_intensity'])
-                s = pd.Series(tbl['mean_intensity'], index=tbl['label'], name=col)
-            else:
-                s = self._median_intensity(sec_vol, chan, df.index, col)
-            df[col] = df.index.map(s)
-        return df
-
     def _median_intensity(self, label_vol: np.ndarray, chan: np.ndarray,
                           label_ids, col_name: str) -> pd.Series:
         vals = {}
@@ -474,33 +671,13 @@ class MeasureUtils:
         write_h5ad_atomic(adata, out_path)
         return out_path
 
-    # ── helpers ───────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _extract_t(arr, la_t, t_idx: int) -> np.ndarray:
-        if la_t is None:
-            return np.asarray(arr[:])
-        sl = tuple(t_idx if i == la_t else slice(None) for i in range(arr.ndim))
-        return np.asarray(arr[sl])
+def _mean_by_label(uniq: np.ndarray, inv: np.ndarray, chan: np.ndarray) -> pd.Series:
+    """Per-label mean of `chan` from a precomputed `np.unique(labels, return_inverse=True)`.
 
-    @staticmethod
-    def _extract_channel(im_vol: np.ndarray, la_c, la_t, c: int) -> np.ndarray:
-        if la_c is None:
-            return im_vol
-        # la_c is the axis in the full (T,Z,Y,X,C) array; after removing T
-        # (already done in _extract_t), adjust the axis index accordingly.
-        ax = la_c - (1 if la_t is not None else 0)
-        sl = tuple(c if i == ax else slice(None) for i in range(im_vol.ndim))
-        return im_vol[sl]
-
-    def _gaussian_smooth(self, im_vol: np.ndarray, la_c, la_t, n_c: int) -> np.ndarray:
-        if la_c is None:
-            return skfilt.gaussian(im_vol, sigma=self.gaussian_filter,
-                                   preserve_range=True).astype(np.float32)
-        ax = la_c - (1 if la_t is not None else 0)
-        out = im_vol.copy()
-        for c in range(n_c):
-            sl = tuple(c if i == ax else slice(None) for i in range(im_vol.ndim))
-            out[sl] = skfilt.gaussian(im_vol[sl], sigma=self.gaussian_filter,
-                                      preserve_range=True)
-        return out
+    A sum and a count per label: ~5× faster than `regionprops` `mean_intensity` per channel."""
+    inv = inv.ravel()
+    sums = np.bincount(inv, weights=chan.ravel(), minlength=uniq.size)
+    cnts = np.bincount(inv, minlength=uniq.size)
+    keep = uniq != 0
+    return pd.Series(sums[keep] / cnts[keep], index=uniq[keep])
