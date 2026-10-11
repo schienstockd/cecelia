@@ -177,6 +177,32 @@ def merged_prs_since(since: str, cwd: str | None = None) -> list[dict] | None:
         return None
 
 
+def merged_pr_heads(branch: str, cwd: str | None = None) -> list[dict] | None:
+    """Merged PRs opened from `branch`, each with `number` and `headRefOid` (the head it merged at).
+
+    A squash merge leaves no ancestry link to main, so "is this branch's work merged?" is answered
+    by comparing a local HEAD against these heads. None on any failure, so a caller can tell "no
+    merged PR" (`[]`) from "couldn't ask". Same ladder as `pr_for_branch`.
+    """
+    gh = shutil.which("gh")
+    if gh is None:
+        return None
+    try:
+        result = subprocess.run(
+            [gh, "pr", "list", "--head", branch, "--state", "merged",
+             "--json", "number,headRefOid"],
+            capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8", cwd=cwd,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        return json.loads(result.stdout or "[]")
+    except ValueError:
+        return None
+
+
 def git_output(*args: str, cwd: str | None = None) -> str | None:
     """`git <args>` stdout (stripped), or None on any failure — not a repo, `git` missing, non-zero
     exit, timeout. For one-off git-state questions (the commit hook's `core.hooksPath` /

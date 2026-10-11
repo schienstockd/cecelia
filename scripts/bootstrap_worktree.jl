@@ -34,6 +34,27 @@ Pure — no side effects, no `git` calls — so the test suite drives it with sy
 sibling_dst(repo_root::AbstractString, name::AbstractString) =
     normpath(joinpath(repo_root, "..", "cecelia-$name"))
 
+# Above this many worktrees (the main checkout included) the nudge fires: a dozen is the usual
+# working set of parallel sessions, so more than that is mostly merged work left standing.
+const NUDGE_AT = 15
+
+"""
+    cleanup_nudge(porcelain::AbstractString) -> Union{String,Nothing}
+
+One line suggesting `pixi run prune-worktrees` when `git worktree list --porcelain` shows more than
+`NUDGE_AT` worktrees or any dead entry (`prunable`); `nothing` otherwise. Counting only — the
+merged/clean/in-use judgement is the prune tool's, so this stays instant. Agents relay the line
+(root CLAUDE.md → *remind Dominik about worktree cleanup*).
+"""
+function cleanup_nudge(porcelain::AbstractString)
+    blocks = filter(b -> startswith(b, "worktree "), split(strip(porcelain), r"\n\n+"))
+    dead = count(b -> occursin(r"^prunable"m, b), blocks)
+    n = length(blocks)
+    (n <= NUDGE_AT && dead == 0) && return nothing
+    "$n worktrees" * (dead > 0 ? " ($dead dead)" : "") *
+        " — run `pixi run prune-worktrees` to see which can go"
+end
+
 function usage()
     println(stderr, "usage: pixi run bootstrap-worktree <name> [<branch>] [<ref>]")
     println(stderr, "  name    — path suffix; the worktree lives at ../cecelia-<name>")
@@ -85,6 +106,9 @@ function main()
     println("  branch: $branch (tracking $ref)")
     println()
     println("next: cd $dst && pixi run dev")
+
+    nudge = cleanup_nudge(read(Cmd(`git -C $REPO_ROOT worktree list --porcelain`), String))
+    nudge === nothing || (println(); println("tidy: ", nudge))
 end
 
 # Only fire `main()` when the script is the process entrypoint. `include`-ing it from a

@@ -143,6 +143,9 @@ jobs:
       - name: Package tests
         run: pixi run test-pkg
 
+      - name: Dev-script tests
+        run: pixi run test-scripts
+
   # ── API tests + frontend + the server actually booting ────────────────────────────────────────
   # Everything that needs the *server* env (api/, which path-sources Cecelia from app/) or a built
   # frontend. Grouped because they share that instantiate and the Node install.
