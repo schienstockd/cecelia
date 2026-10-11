@@ -1346,11 +1346,13 @@ async function switchWt(path: string) {
       </div>
 
       <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
+           Greyed out while off — it can only be switched OFF here (CECELIA_TLS=1 / [tls].enabled still
+           turn it on), so an install that opted in can opt out without a slower option on offer.
            Requires a restart to switch protocol on the wire (server binds the socket once at
            startup). CECELIA_TLS env, when set, overrides the toggle for the session. -->
       <div v-if="tls" class="field" style="margin: 0.2rem 0 0.6rem;">
         <CcToggle class="toggle-row"
-               :disabled="tlsBusy || tls.envOverride"
+               :disabled="tlsBusy || tls.envOverride || !tls.desired"
                :model-value="tls.desired"
                @update:model-value="tlsToggle($event)"
                v-tooltip.bottom="'Slower image loading — restart to apply'">

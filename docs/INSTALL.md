@@ -195,9 +195,10 @@ Cecelia shells out to the system `openssl` binary on first launch to generate a 
 `~/.cecelia/tls/{cert,key}.pem`, and the browser shows a "Not secure" warning once; click through
 and the exception is remembered per browser. Regenerate by deleting both files.
 
-**Toggle** — Settings → System has a *Serve over HTTPS + HTTP/2* switch that flips the
-preference; the current wire protocol shows as `h2` or `h1.1` next to the app port. Toggling
-requires a server restart to switch protocols.
+**Toggle** — Settings → System shows a *Serve over HTTPS + HTTP/2* switch. It is greyed out while
+off and can only switch HTTPS off (turn it on with `CECELIA_TLS=1` or `[tls] enabled = true` in
+`custom.toml`); the current wire protocol shows as `h2` or `h1.1` next to the app port. Switching
+requires a server restart.
 
 **Overrides.** `CECELIA_TLS=1` or `=0` in the environment overrides both the toggle and the
 default for the session. If `openssl` is not on `PATH` (default on Linux + macOS; via
