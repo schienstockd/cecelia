@@ -221,6 +221,15 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+
+def full_sha(sha: str | None, cwd: str | None = None) -> str | None:
+    """`sha` (short, full, or any ref) as the full 40-hex commit SHA; unchanged when git cannot
+    resolve it in `cwd`. Every `commit` the effectiveness log carries is full: the commit hook's
+    `_same_change` and the judge's dedup compare it by string."""
+    if not sha:
+        return sha
+    return git_output("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", cwd=cwd) or sha
+
 #: `@@ -a,b +c,d @@` — only the new-side start matters; `,d` is absent for one-line hunks.
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 _FILE_HEADER = re.compile(r"^diff --git a/(\S+) b/(\S+)$")

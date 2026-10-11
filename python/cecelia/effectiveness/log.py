@@ -9,7 +9,7 @@ The row shape (schema_version 1):
       "session": "<claude-code-session-id>",
       "source": "live" | "retrospective_<tag>",
       "pr": "#1240" | null,
-      "commit": "2d13dc21" | null,
+      "commit": "<full 40-hex SHA>" | null,
       "branch": "feat/foo" | null,   # captured so the rollup can resolve `pr` later
       "payload": { ... }             # event-specific
     }

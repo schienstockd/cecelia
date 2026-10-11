@@ -38,6 +38,7 @@ import typing as _t
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
+from cecelia.effectiveness.git_context import full_sha  # noqa: E402
 from cecelia.effectiveness.log import append_event  # noqa: E402
 
 EVENT = "agent_run_finding"
@@ -128,11 +129,12 @@ def log_new(verdicts: _t.Iterable[dict], events: _t.Iterable[dict], *, pass_ts: 
             continue
         seen.add(v["key"])
         payload = finding(v)
+        commit = full_sha(v["commit"], cwd=str(_REPO))
         if write:
-            rows.append(append_event(EVENT, payload, session="weekly-judge", commit=v["commit"], branch=None,
+            rows.append(append_event(EVENT, payload, session="weekly-judge", commit=commit, branch=None,
                                      ts=ts, log_path=log_path))
         else:
-            rows.append({"event": EVENT, "ts": ts, "session": "weekly-judge", "commit": v["commit"],
+            rows.append({"event": EVENT, "ts": ts, "session": "weekly-judge", "commit": commit,
                          "branch": None, "payload": payload})
     return rows
 

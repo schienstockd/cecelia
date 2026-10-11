@@ -41,7 +41,7 @@ sys.path.insert(0, str(REPO / "python"))
 
 import app_project  # noqa: E402
 import run_record  # noqa: E402
-from cecelia.effectiveness.git_context import git_output  # noqa: E402
+from cecelia.effectiveness.git_context import full_sha as _full_sha  # noqa: E402
 from cecelia.effectiveness.log import append_event, read_events  # noqa: E402
 
 EVENT = "agent_run_finding"
@@ -170,11 +170,8 @@ def backend_findings(api: str, start: _dt.datetime, end: _dt.datetime, run: str)
 
 
 def full_sha(sha: str | None) -> str | None:
-    """`sha` as the full 40-hex SHA (the rest of the effectiveness log carries full ones); unchanged
-    when git cannot resolve it here."""
-    if not sha:
-        return sha
-    return git_output("rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}", cwd=str(REPO)) or sha
+    """`git_context.full_sha`, resolved in this repo."""
+    return _full_sha(sha, cwd=str(REPO))
 
 
 def run_commit(root: pathlib.Path, rec: dict) -> str | None:
