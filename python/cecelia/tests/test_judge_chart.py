@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -160,12 +161,13 @@ class AggregateTest(_Fixture):
     def test_a_low_session_or_partial_week_is_drawn_hollow_and_dashed(self):
         rows = _week(day="2026-09-28", sessions=3) + _week(day="2026-10-06")
         svg = self.c.render_svg(self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20)))
-        self.assertEqual(svg.count('fill="none"'), 6)  # the low week's point on each of the six lines
-        self.assertIn("stroke-dasharray=\"4 4\"", svg)
+        hollow = re.compile(r'<circle[^>]*fill="none"')
+        self.assertEqual(len(hollow.findall(svg)), 6)  # the low week's point on each of the six lines
+        self.assertIn('stroke-dasharray="4 3"', svg)
         whole = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06"), [],
                                                    as_of=dt.date(2026, 10, 20)))
-        self.assertNotIn('fill="none"', whole)
-        self.assertNotIn("4 4", whole)
+        self.assertFalse(hollow.findall(whole))
+        self.assertNotIn("dasharray", whole)
 
     def test_judge_summary_is_the_newest_pass_counts_only(self):
         old = {"kind": "pass", "date": "2026-10-02", "bugs": [{"status": "open", "desc": "secret text"}]}
@@ -218,6 +220,14 @@ class RenderTest(_Fixture):
     def test_same_numbers_same_bytes(self):
         data = self.c.aggregate(_week(), [])
         self.assertEqual(self.c.render_svg(data), self.c.render_svg(json.loads(json.dumps(data))))
+
+    def test_axis_ticks_are_round_and_cover_the_data(self):
+        self.assertEqual(self.c._ticks(234), [0, 100, 200, 300])
+        self.assertEqual(self.c._ticks(89), [0, 25, 50, 75, 100])
+        self.assertEqual(self.c._ticks(33), [0, 10, 20, 30, 40])
+        self.assertEqual(self.c._ticks(0), [0, 1])
+        self.assertEqual(self.c._ticks(3), [0, 1, 2, 3])
+        self.assertEqual(self.c._ticks(3, percent=True), [0, 25, 50, 75, 100])
 
     def test_text_is_escaped_for_xml(self):
         self.assertEqual(self.c.esc('a<b & "c"\x07'), "a&lt;b &amp; &quot;c&quot;")

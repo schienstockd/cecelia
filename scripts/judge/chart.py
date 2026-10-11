@@ -32,6 +32,7 @@ import hashlib
 import html
 import importlib.util as _importlib_util
 import json
+import math
 import pathlib
 import re
 import shutil
@@ -309,91 +310,92 @@ def _ends(w: dict) -> str:
     return (_dt.date.fromisoformat(w["week"]) + _dt.timedelta(days=6)).isoformat()
 
 
-def _panel(add, *, x: float, y: float, w: float, title: str, weeks: list[dict],
-           series: list[tuple[str | None, str, list, list]], fmt: str = "{:.0f}", percent: bool = False) -> None:
-    """One line panel at (x, y): `series` is (legend name or None, colour, value per week (None = no
-    point), hollow per week)."""
-    top, bot = y + (40 if any(s[0] for s in series) else 22), y + 150
-    add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="13" font-weight="700">{esc(title)}</text>')
-    lx = x
-    for name, colour, _, _ in series:
-        if name:
-            add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 15:.1f}" y2="{y + 15:.1f}" stroke="{colour}" '
-                f'stroke-width="2.5" stroke-linecap="round"/>')
-            add(f'<text x="{lx + 21:.1f}" y="{y + 19:.1f}" font-size="11">{esc(name)}</text>')
-            lx += 21 + 6.2 * len(name) + 18
-    x0, x1 = x + 36, x + w - (16 if len(series) == 1 else 40)
-    add(f'<line x1="{x:.1f}" x2="{x + w:.1f}" y1="{bot:.1f}" y2="{bot:.1f}" stroke="{INK}" stroke-opacity="0.4"/>')
+def _ticks(peak: float, *, percent: bool = False) -> list[float]:
+    """Round axis ticks from 0 to at least `peak`: steps of 1, 2, 2.5 or 5 × 10ⁿ, four or so."""
     if percent:
-        peak = 100.0
-        add(f'<line x1="{x0 - 8:.1f}" x2="{x + w:.1f}" y1="{top:.1f}" y2="{top:.1f}" stroke="{INK}" '
-            f'stroke-opacity="0.25" stroke-dasharray="2 3"/>')
-        add(f'<text x="{x:.1f}" y="{top + 4:.1f}" font-size="10">100%</text>')
-    else:
-        peak = max([v for _, _, vals, _ in series for v in vals if v is not None] or [1]) * 1.1 or 1
+        return [0, 25, 50, 75, 100]
+    peak = max(peak, 1)
+    raw = max(peak / 4, 1)  # counts: no fractional steps
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    return [k * step for k in range(math.ceil(peak / step - 1e-9) + 1)]
+
+
+def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel: str, weeks: list[dict],
+           series: list[tuple[str, str, list, list]], percent: bool = False, xlabel: bool = False) -> None:
+    """One panel at (x, y), drawn like a paper figure: a letter, a title, a legend, a y axis with
+    round ticks and its label, x ticks per week. `series` is (legend name, colour, value per week
+    (None = no point), hollow per week)."""
+    top, bot = y + 40, y + 170
+    ax, x1 = x + 58, x + w - 10
+    add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
+    add(f'<text x="{x + 18:.1f}" y="{y:.1f}" font-size="13" font-weight="700">{esc(title)}</text>')
+    lx = ax
+    for name, colour, _, _ in series:
+        add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
+            f'stroke-width="2"/>')
+        add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
+        add(f'<text x="{lx + 21:.1f}" y="{y + 23:.1f}" font-size="11">{esc(name)}</text>')
+        lx += 21 + 6.2 * len(name) + 18
+    ticks = _ticks(max([v for _, _, vals, _ in series for v in vals if v is not None] or [1]), percent=percent)
+    peak = ticks[-1]
+    # axes: left and bottom spines, ticks outward
+    add(f'<path d="M{ax:.1f},{top:.1f} V{bot:.1f} H{x1:.1f}" fill="none" stroke="{INK}" stroke-width="1"/>')
+    for t in ticks:
+        ty = bot - (bot - top) * t / peak
+        add(f'<line x1="{ax - 4:.1f}" x2="{ax:.1f}" y1="{ty:.1f}" y2="{ty:.1f}" stroke="{INK}"/>')
+        add(f'<text x="{ax - 7:.1f}" y="{ty + 4:.1f}" font-size="11" text-anchor="end">{t:g}</text>')
+    cy = (top + bot) / 2
+    add(f'<text x="{x + 12:.1f}" y="{cy:.1f}" font-size="11" text-anchor="middle" '
+        f'transform="rotate(-90 {x + 12:.1f} {cy:.1f})">{esc(ylabel)}</text>')
     n = len(weeks)
-    every = n <= 6  # label every point while they fit; past that, only the newest
+    every = n <= 6  # a date under every tick while they fit; past that, the first and the last
 
     def at(i: int, v: float) -> tuple[float, float]:
-        px = (x0 + x1) / 2 if n == 1 else x0 + (x1 - x0) * i / (n - 1)
+        px = (ax + 20 + x1) / 2 if n == 1 else ax + 20 + (x1 - ax - 30) * i / (n - 1)
         return px, bot - (bot - top) * v / peak
 
     for i, wk in enumerate(weeks):
+        px = at(i, 0)[0]
+        add(f'<line x1="{px:.1f}" x2="{px:.1f}" y1="{bot:.1f}" y2="{bot + 4:.1f}" stroke="{INK}"/>')
         if every or i in (0, n - 1):
-            add(f'<text x="{at(i, 0)[0]:.1f}" y="{bot + 16:.1f}" font-size="11" text-anchor="middle">'
+            add(f'<text x="{px:.1f}" y="{bot + 17:.1f}" font-size="11" text-anchor="middle">'
                 f'{esc(_fmt_day(wk["week"]))}</text>')
-    labels: dict[int, list[tuple[float, str]]] = collections.defaultdict(list)
+    if xlabel:
+        add(f'<text x="{(ax + x1) / 2:.1f}" y="{bot + 35:.1f}" font-size="11" text-anchor="middle">Week starting</text>')
     for _, colour, vals, hollow in series:
         for i in range(n - 1):
             if vals[i] is None or vals[i + 1] is None:
                 continue
             (xa, ya), (xb, yb) = at(i, vals[i]), at(i + 1, vals[i + 1])
-            dash = ' stroke-dasharray="4 4"' if hollow[i] or hollow[i + 1] else ""
+            dash = ' stroke-dasharray="4 3"' if hollow[i] or hollow[i + 1] else ""
             add(f'<line x1="{xa:.1f}" y1="{ya:.1f}" x2="{xb:.1f}" y2="{yb:.1f}" stroke="{colour}" '
-                f'stroke-width="2" stroke-linecap="round"{dash}/>')
+                f'stroke-width="1.75"{dash}/>')
         for i, v in enumerate(vals):
             if v is None:
                 continue
             px, py = at(i, v)
-            fill = 'fill="none" stroke-width="2"' if hollow[i] else f'fill="{colour}" stroke-width="0"'
-            add(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4.5" stroke="{colour}" {fill}/>')
-            if (every and len(series) == 1) or i == n - 1:
-                labels[i].append((py, fmt.format(v)))
-    # one line: every value above its point. Several: only the newest, right of the line, spaced apart
-    for i, items in sorted(labels.items()):
-        px = at(i, 0)[0]
-        if len(series) == 1:
-            for py, text in items:
-                add(f'<text x="{px:.1f}" y="{py - 9:.1f}" font-size="11" text-anchor="middle">{esc(text)}</text>')
-            continue
-        if i != n - 1:
-            continue
-        items.sort()
-        ys = [py + 4 for py, _ in items]
-        for k in range(1, len(ys)):
-            ys[k] = max(ys[k], ys[k - 1] + 13)
-        for (_, text), ly in zip(items, ys):
-            add(f'<text x="{px + 9:.1f}" y="{ly:.1f}" font-size="11">{esc(text)}</text>')
+            fill = 'fill="none" stroke-width="1.5"' if hollow[i] else f'fill="{colour}" stroke-width="0"'
+            add(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.5" stroke="{colour}" {fill}/>')
 
 
 def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     """The chart. Same `data`, same bytes: no clock, no random ids, fixed number formatting."""
     pal = palette or load_hex()
-    W, H = 960, 520
+    W, H = 960, 560
     left = 20
     weeks = data["weeks"][-MAX_WEEKS:]
     out: list[str] = []
     add = out.append
     title = "Agent pre-commit reviews, per week"
     add(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" role="img" '
-        f'aria-labelledby="t d" font-family="-apple-system, \'Segoe UI\', Helvetica, Arial, sans-serif" '
-        f'fill="{INK}">')
+        f'aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" fill="{INK}">')
     add(f'<title id="t">{esc(title)}</title>')
     add(f'<desc id="d">{esc(describe(data))}</desc>')
-    add(f'<text x="{left}" y="30" font-size="18" font-weight="700">{esc(title)}</text>')
+    add(f'<text x="{left}" y="30" font-size="17" font-weight="700">{esc(title)}</text>')
     since = (f"Since {_fmt_day(data['first_day'])}, {data['first_day'][:4]} · the reviewer prompts still change most weeks"
              if data["first_day"] else "Nothing logged yet")
-    add(f'<text x="{left}" y="52" font-size="13">{esc(since)}</text>')
+    add(f'<text x="{left}" y="50" font-size="12">{esc(since)}</text>')
 
     if not weeks:
         add(f'<text x="{W // 2}" y="{H // 2}" font-size="15" text-anchor="middle">No reviews logged yet.</text>')
@@ -401,28 +403,31 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
         add("</svg>")
         return "\n".join(out) + "\n"
 
-    gap = 60
+    gap = 50
     pw = (W - 2 * left - gap) / 2
     col = (left, left + pw + gap)
-    row = (95, 305)
+    row = (88, 318)
     hollow = [thin(w) for w in weeks]
 
     def by_reviewer(value) -> list:
         return [(name, pal[swatch], [value(w, r) for w in weeks], hollow) for r, name, swatch in REVIEWERS]
 
-    _panel(add, x=col[0], y=row[0], w=pw, title="Changes reviewed and PRs merged", weeks=weeks,
+    _panel(add, x=col[0], y=row[0], w=pw, letter="a", title="Changes reviewed and PRs merged",
+           ylabel="Count per week", weeks=weeks,
            series=[("changes reviewed", INK, [w["changes"] for w in weeks], hollow),
                    ("PRs merged", pal[PR_SWATCH], [w["prs"] for w in weeks], hollow)])
-    _panel(add, x=col[1], y=row[0], w=pw, title="Findings per 100 changes", weeks=weeks, series=by_reviewer(_per_100))
-    _panel(add, x=col[0], y=row[1], w=pw, title="Findings fixed before commit", weeks=weeks,
-           series=by_reviewer(_fixed), fmt="{:.0f}%", percent=True)
+    _panel(add, x=col[1], y=row[0], w=pw, letter="b", title="Finding rate", ylabel="Findings per 100 changes",
+           weeks=weeks, series=by_reviewer(_per_100))
+    _panel(add, x=col[0], y=row[1], w=pw, letter="c", title="Findings fixed before commit",
+           ylabel="Fixed before commit (%)", weeks=weeks, series=by_reviewer(_fixed), percent=True, xlabel=True)
     j = data.get("judge")
     if j:
         judged = j.get("by_week", {})
         # a week the judge's pass fell inside is only partly judged
         late = [h or _ends(w) >= j["date"] for h, w in zip(hollow, weeks)]
-        _panel(add, x=col[1], y=row[1], w=pw, weeks=weeks,
+        _panel(add, x=col[1], y=row[1], w=pw, letter="d",
                title=f"Judge's verdict on fan-out notes nobody fixed ({_fmt_day(j['date'])})",
+               ylabel="Notes (n)", weeks=weeks, xlabel=True,
                series=[(name, pal[swatch],
                         # no point for a week the judge has nothing from: not swept, or not yet
                         [sum(judged[w["week"]][s] for s in group) if w["week"] in judged else None
@@ -438,7 +443,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
 def _footer(data: dict, x: int, H: int) -> str:
     through = (f"Data through {_fmt_day(data['last_day'])} · {data['sessions']} sessions"
                if data["last_day"] else "No data yet")
-    return (f'<text x="{x}" y="{H - 14}" font-size="11">{esc(through)} · hollow = partial week or under '
+    return (f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week or under '
             f'{LOW_SESSIONS} sessions · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
 
 
