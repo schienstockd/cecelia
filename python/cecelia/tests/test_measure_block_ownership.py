@@ -42,6 +42,10 @@ class _Dims:
         self.im_dim_order = order
         self.im_dim = list(shape)
 
+    def is_3D(self):
+        # mirrors `DimUtils.is_3D()`: a Z axis of length 1 is a single plane
+        return 'Z' in self.im_dim_order and self.im_dim[self.im_dim_order.index('Z')] > 1
+
 
 def _labels_2d(seed=0, shape=(96, 112)):
     rng = np.random.default_rng(seed)
@@ -176,6 +180,40 @@ class BlockOwnership2DTest(unittest.TestCase):
         np.testing.assert_allclose(got.obsm['spatial'][:, 1], ref['centroid-1'], rtol=1e-6)
 
 
+class SingletonZTest(unittest.TestCase):
+    """A single plane stored with a length-1 Z (`T,C,Z,Y,X`, Z = 1 — how a 2D tile scan arrives) is
+    measured as 2D: the 2D prop set and two centroid columns, exactly as if the Z axis were absent.
+    Segmentation drops the same singleton Z (docs/SEGMENTATION.md → `drop_z`)."""
+
+    @classmethod
+    def setUpClass(cls):
+        lab = _labels_2d()
+        cls.lab_yx = np.stack([lab, np.roll(lab, 7, axis=1)])               # T, Y, X
+        rng = np.random.default_rng(3)
+        cls.im_yx = rng.integers(0, 4000, size=(2, 3) + lab.shape).astype(np.uint16)
+        cls.lab_z = cls.lab_yx[:, None]                                     # T, Z=1, Y, X
+        cls.im_z = cls.im_yx[:, :, None]                                    # T, C, Z=1, Y, X
+
+    def _z(self, **kw):
+        return _run(self.lab_z, self.im_z, ['T', 'C', 'Z', 'Y', 'X'], **kw)
+
+    def test_gets_the_2d_prop_set_and_two_spatial_columns(self):
+        a = self._z(block=16)
+        for prop in ('perimeter', 'solidity', 'eccentricity', 'feret_diameter_max'):
+            self.assertIn(prop, list(a.var_names))
+        self.assertNotIn('euler_number', list(a.var_names))
+        self.assertEqual(a.obsm['spatial'].shape[1], 2)
+        self.assertEqual(list(a.uns['spatial_cols']), ['centroid_y', 'centroid_x'])
+
+    def test_equals_the_same_image_without_a_z_axis(self):
+        kw = dict(block=16, sigma=1.0, secondary=True)
+        _assert_same(self, self._z(**kw),
+                     _run(self.lab_yx, self.im_yx, ['T', 'C', 'Y', 'X'], **kw))
+
+    def test_worker_processes_match_serial(self):
+        _assert_same(self, self._z(block=16, workers=3), self._z(block=16))
+
+
 class BlockOwnership3DTest(unittest.TestCase):
     order = ['C', 'Z', 'Y', 'X']
 
@@ -198,6 +236,10 @@ class BlockOwnership3DTest(unittest.TestCase):
         whole = _run(self.lab, self.im, self.order, block=10_000)
         self.assertEqual(blk.n_obs, len(np.unique(self.lab)) - 1)
         _assert_same(self, blk, whole)
+        # a real volume (Z > 1) keeps the 3D set and its z centroid
+        self.assertEqual(list(blk.uns['spatial_cols']), ['centroid_z', 'centroid_y', 'centroid_x'])
+        self.assertIn('euler_number', list(blk.var_names))
+        self.assertNotIn('perimeter', list(blk.var_names))
 
     @unittest.skipUnless(measure_utils._HAS_TRIMESH, 'trimesh not installed')
     def test_extended_mesh_measures_equal_whole_volume(self):
