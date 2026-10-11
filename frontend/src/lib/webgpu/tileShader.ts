@@ -1,5 +1,5 @@
-// The tile pass: one instanced quad per resident tile, sampled from a shared 3D atlas texture. Same
-// LUT/contrast machinery as the MIP shader, different geometry.
+// The tile pass (one instanced quad per resident tile, sampled from a shared 3D atlas texture) and its
+// two overlay passes. Same LUT/contrast machinery as the MIP shader, different geometry.
 //
 // The WGSL and the reasoning behind it (why a 3D atlas, why `textureLoad`, the coordinate model)
 // live in `shaders/tile.wgsl`; this module only expands it.
@@ -14,3 +14,9 @@ export const TILE_LAYOUT = uniformLayout('tile')
 export const TILE_UNIFORM_BYTES = TILE_LAYOUT.bytes
 
 export const TILE_WGSL = expandWgsl('tile.wgsl')
+
+/** Population points over the tiles (`shaders/tile_points.wgsl`). */
+export const TILE_POINTS_WGSL = expandWgsl('tile_points.wgsl')
+
+/** Track tails over the tiles (`shaders/tile_segments.wgsl`). */
+export const TILE_SEGMENTS_WGSL = expandWgsl('tile_segments.wgsl')

@@ -55,7 +55,7 @@ class RealShadersTest(unittest.TestCase):
     def test_entry_shaders_expand_fully(self):
         brick_multi = dict(ATLAS_DECLS="", ATLAS_SWITCH="", LAB_ATLAS_DECLS="", LAB_ATLAS_SWITCH="",
                            PT_BINDING=1, PREV_PT_BINDING=4, LUT_BINDING=5, PAL_BINDING=8, PICK_BINDING=9)
-        cases = {"mip.wgsl": {}, "mip_points.wgsl": {}, "mip_segments.wgsl": {}, "tile.wgsl": {},
+        cases = {"mip.wgsl": {}, "mip_points.wgsl": {}, "mip_segments.wgsl": {}, "tile.wgsl": {}, "tile_points.wgsl": {}, "tile_segments.wgsl": {},
                  "brick.wgsl": {}, "brick_points.wgsl": {}, "brick_segments.wgsl": {},
                  "brick_multi.wgsl": brick_multi}
         for name, extra in cases.items():

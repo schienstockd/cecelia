@@ -48,6 +48,8 @@ import {
   type MaskStore,
 } from '../../utils/viewerLabels'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
+import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
+import { compileShader } from './compileShader'
 import {
   BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
   BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
@@ -259,18 +261,8 @@ export async function createBrickVolumeRenderer(
   //
   // Compile cost: measured in ms on Dawn for one shader; 4× at construction is invisible per
   // the plan. If a future measurement shows otherwise, drop to lazy compile-on-first-N-atlas.
-  const pointsModule = device.createShaderModule({ code: BRICK_POINTS_WGSL })
-  const pointsErrs = (await pointsModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (pointsErrs.length) {
-    throw new WebGpuUnavailable(
-      'Brick points shader: ' + pointsErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
-  const segModule = device.createShaderModule({ code: BRICK_SEGMENTS_WGSL })
-  const segErrs = (await segModule.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (segErrs.length) {
-    throw new WebGpuUnavailable(
-      'Brick segments shader: ' + segErrs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
+  const pointsModule = await compileShader(device, BRICK_POINTS_WGSL, 'Brick points shader', WebGpuUnavailable)
+  const segModule = await compileShader(device, BRICK_SEGMENTS_WGSL, 'Brick segments shader', WebGpuUnavailable)
 
   const buildVariant = async (nAtlases: number): Promise<BrickPipelineVariant> => {
     const shader = makeBrickShader({ nAtlases })
@@ -313,71 +305,17 @@ export async function createBrickVolumeRenderer(
     })
     const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] })
 
-    const module = device.createShaderModule({ code: shader.code })
-    const errs = (await module.getCompilationInfo()).messages.filter(m => m.type === 'error')
-    if (errs.length) {
-      throw new WebGpuUnavailable(
-        `Brick shader (N=${nAtlases}): ` + errs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-    }
+    const module = await compileShader(device, shader.code, `Brick shader (N=${nAtlases})`, WebGpuUnavailable)
     const pipeline = device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module, entryPoint: 'vs' },
       fragment: { module, entryPoint: 'fs', targets: [{ format }] },
       primitive: { topology: 'triangle-list' },
     })
-    const pointsPipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: {
-        module: pointsModule, entryPoint: 'vs',
-        buffers: [{
-          arrayStride: POINT_STRIDE * 4,
-          stepMode: 'instance',
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },   // centre µm
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },  // rgb
-            { shaderLocation: 2, offset: 24, format: 'float32' },    // z plane
-          ],
-        }],
-      },
-      fragment: {
-        module: pointsModule, entryPoint: 'fs',
-        targets: [{
-          format,
-          blend: {
-            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          },
-        }],
-      },
-      primitive: { topology: 'triangle-list' },
-    })
-    const segPipeline = device.createRenderPipeline({
-      layout: pipelineLayout,
-      vertex: {
-        module: segModule, entryPoint: 'vs',
-        buffers: [{
-          arrayStride: SEG_STRIDE * 4,
-          stepMode: 'instance',
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' },   // from µm
-            { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
-            { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
-            { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
-          ],
-        }],
-      },
-      fragment: {
-        module: segModule, entryPoint: 'fs',
-        targets: [{
-          format,
-          blend: {
-            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
-          },
-        }],
-      },
-      primitive: { topology: 'triangle-list' },
-    })
+    const pointsPipeline = device.createRenderPipeline(
+      overlayPipelineDescriptor(pointsModule, pipelineLayout, format, POINT_VERTEX_LAYOUT))
+    const segPipeline = device.createRenderPipeline(
+      overlayPipelineDescriptor(segModule, pipelineLayout, format, SEG_VERTEX_LAYOUT))
     return { nAtlases, bindings: b, bindGroupLayout, pipelineLayout, pipeline, pointsPipeline, segPipeline }
   }
 
@@ -1699,15 +1637,7 @@ export async function createBrickVolumeRenderer(
       // happen on a population that shrank, which is not something the frame pump ever needs to
       // do — the caller passes the whole ordered array when populations change.
       if (destroyed) return
-      const needed = Math.max(data.byteLength, POINT_STRIDE * 4)
-      if (pointBuf === null || pointCap < needed) {
-        pointBuf?.destroy()
-        pointBuf = device.createBuffer({
-          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        })
-        pointCap = needed
-      }
-      if (data.byteLength > 0) device.queue.writeBuffer(pointBuf, 0, data)
+      ;({ buf: pointBuf, cap: pointCap } = writeInstances(device, pointBuf, pointCap, data, POINT_STRIDE * 4))
     },
     setOverlayDraw(first, count, sizePx, planeLo, planeHi, borderPx) {
       pointFirst = first
@@ -1721,15 +1651,7 @@ export async function createBrickVolumeRenderer(
     },
     setOverlaySegments(data) {
       if (destroyed) return
-      const needed = Math.max(data.byteLength, SEG_STRIDE * 4)
-      if (segBuf === null || segCap < needed) {
-        segBuf?.destroy()
-        segBuf = device.createBuffer({
-          size: needed, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-        })
-        segCap = needed
-      }
-      if (data.byteLength > 0) device.queue.writeBuffer(segBuf, 0, data)
+      ;({ buf: segBuf, cap: segCap } = writeInstances(device, segBuf, segCap, data, SEG_STRIDE * 4))
     },
     setOverlaySegmentDraw(first, count, widthPx, planeLo, planeHi) {
       segFirst = first
