@@ -319,7 +319,7 @@ class FullscreenTest(_ReviewFixture):
         _, text = self.queue("o", "q", fullscreen=True)
         self.assertTrue(text.startswith(self.rv._ENTER))
         self.assertEqual(text.count(self.rv._CLEAR), 2)              # B1, then B2 with B1's answer on top
-        self.assertIn("✓ B1 → keep open", text.split(self.rv._CLEAR)[2])
+        self.assertIn("✓ B1 → follow recommendation", text.split(self.rv._CLEAR)[2])
         after = text.split(self.rv._LEAVE)[1]                        # back on the normal screen
         self.assertIn("1 answered this session · 3 left", after)   # B2, and B1 + B3 to work
 

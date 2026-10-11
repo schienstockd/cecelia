@@ -218,10 +218,10 @@ only what the agents reported.
 a key answers as soon as it is pressed, no Enter (`[z]` undoes a slip). PgUp/PgDn or the mouse wheel scroll a bug taller
 than the screen, and a resize repaints it at once:
 
-1. **Decide.** The bugs a verify agent sent to you. `[o] keep open` (a session follows the agent's
-   recommendation), `[a] answer` (in your own words; a session follows yours instead), or
+1. **Decide.** The bugs a verify agent sent to you. `[o] follow recommendation` (stays open; a
+   session follows the agent's recommendation), `[a] answer` (in your own words; a session follows yours instead), or
    `[w] won't fix` (dropped, never carried again).
-2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you kept open or answered,
+2. **Work.** Every other open bug: `fix` first, then the `decide` bugs you followed or answered,
    then the rest. A `guard` bug is parked, so it isn't offered. `[f] fix now` starts an interactive Claude Code session where you
    start sessions (the folder holding the main checkout and its worktrees, `~/cc-workspace/cecelia`),
    briefed on that bug: where it is, what verify found, your answer or the recommendation, and how to
