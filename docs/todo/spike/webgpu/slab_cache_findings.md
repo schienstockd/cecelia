@@ -445,7 +445,8 @@ reads still run in parallel: one serial stage of ~4 ms per brick.
   small alone, but on the one thread every response shares, and it allocates.
 - GC is ~25% of the repro's wall (~200–250 ms per scrub, ~5 full sweeps); the `Vector` variants
   allocate less. Not pursued further.
-- Not measured: HTTP/2 over TLS, which HTTP.jl writes by a different path.
+- HTTP/2 over TLS, measured later in Chromium: slower than plain HTTP/1.1 —
+  `WEBGPU_UPLOAD_PATH_PLAN.md` → *U4 outcome*.
 
 **Through the server, after** (dev server on `perf/slab-response-pool`, plain HTTP/1.1, `-t auto`,
 same `MODE=scrub` / `MODE=flat` bench as Phase 2 with `HTTP=1.1`, warm cache, 3 rounds, 0 errors):
@@ -493,7 +494,7 @@ iostat -x -m 1 nvme0n1 > $R/A_iostat.txt & vmstat 1 > $R/A_vmstat.txt &
 python3 -I slab_cache_summary.py $R A B C
 ```
 
-`slab_cache_bench.sh` takes `CECELIA_URL`, `CECELIA_API_TOKEN` or `CECELIA_API_TOKEN_FILE` (the API token — every route but `/api/health` needs it), `HTTP=1.1` (default 2), `PROJ`, `IMG`, `VN` (valueName) and `MODE=flat` (8 t x NC whole volumes) env overrides; the store geometry
+`slab_cache_bench.sh` takes `CECELIA_URL`, `CECELIA_API_TOKEN` or `CECELIA_API_TOKEN_FILE` (the API token — every route but `/api/health` needs it), `HTTP=2` (default 1.1), `PROJ`, `IMG`, `VN` (valueName) and `MODE=flat` (8 t x NC whole volumes) env overrides; the store geometry
 (`NT/NZ/NC`, 8x8 bricks) is hardcoded for `8eapy6` at the top of the script.
 The two `.jl` scripts take the store path as their argument and read the geometry from it. Another
 store with the same layout, for a run on a different machine: `zolIMa`/`Dml3RG`'s raw import
@@ -502,7 +503,8 @@ bench's hardcoded geometry fits it too (`PROJ=zolIMa IMG=Dml3RG`).
 
 | File | What |
 |---|---|
-| `slab_cache_bench.sh` | the bench: 64-brick list, curl HTTP/2, per-request TSV |
+| `slab_cache_bench.sh` | the bench: 64-brick list, curl (HTTP/1.1 default, `HTTP=2`), per-request TSV |
+| `slab_browser_bench.mjs` | the same lists fetched by headless Chromium over CDP; optional small-request latency probe |
 | `slab_cache_summary.py` | median / p95 / MB/s per run |
 | `page_cache_evict.py` | no-sudo page-cache eviction for one directory, verified with `mincore` |
 | `slab_parallel_bench.jl` | brick reads from N threads without HTTP; run as-is and with `BLOSC_NOLOCK=1`, store path as the argument (commands in its header) |

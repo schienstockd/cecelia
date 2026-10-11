@@ -5,8 +5,8 @@
 #
 # Requests a FIXED list of 64 viewer-shaped bricks (128x128 x all z x all channels, level 0 — the shape
 # `brickVolumeRenderer.ts` asks for on a thin-Z store: BRICK_XY=128, brickZ=min(128, nZ), cTo=nC-1),
-# one per timepoint so every request touches chunks no other request in the list touches. Talks HTTP/2
-# over TLS like the browser does (the server is TLS-only when a cert exists; plain http gets a reset).
+# one per timepoint so every request touches chunks no other request in the list touches. Plain
+# HTTP/1.1 by default, like the server; HTTP=2 with an https:// CECELIA_URL for a TLS server.
 #
 # Writes <out-dir>/<label>.tsv: label, conc, t, http_code, wall_ms, bytes, server_read_ms (the
 # route's own X-Server-Read-Ms — zarr chunk read + blosc/zstd decode + slice, measured inside Julia).
@@ -24,10 +24,10 @@ label=${1:?run label}; conc=${2:?concurrency}
 out=${3:-$(dirname "$0")/slab_cache_results}
 mkdir -p "$out"
 
-BASE=${CECELIA_URL:-https://127.0.0.1:8080}
+BASE=${CECELIA_URL:-http://127.0.0.1:8080}
 PROJ=${PROJ:-e1Mn6X}; IMG=${IMG:-8eapy6}
 VN=${VN:-}                                 # valueName (empty = the image's default store)
-HTTP=${HTTP:-2}                            # 2 over TLS like the browser; 1.1 for a server without a cert
+HTTP=${HTTP:-1.1}                          # 1.1 (the server's default); 2 needs TLS
 MODE=${MODE:-brick}                        # brick | flat (whole (t, c) volumes, 8 t x NC)
 NT=181; NZ=31; NC=4; NXB=8; NYB=8; B=128   # 8eapy6: (t,c,z,y,x) = (181,4,31,1024,1024) u16
 vq=${VN:+&valueName=$VN}
