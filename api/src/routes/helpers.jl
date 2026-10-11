@@ -277,8 +277,8 @@ function _image_payload(img::CciaImage)
         # pre-migration images still surface metadata warnings (see _image_qc_payload).
         qc              = _image_qc_payload(img),
         # What was measured that bears on Cleanup — per channel zero / clipped %, per drift run the
-        # excursion — with no verdict (CLEANUP_FACTS_PLAN D1). The Cleanup page and the MCP's
-        # get_image_info both read it from here (D5).
+        # excursion — with no verdict (CLEANUP_FACTS_PLAN D1). The MCP's get_image_info reads it from
+        # here (D5); the GUI does not show it.
         cleanupFacts    = Cecelia.img_cleanup_facts(img),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.

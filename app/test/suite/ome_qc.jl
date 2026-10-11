@@ -513,7 +513,7 @@ zu.write_calibration(sys.argv[1], du)     # the PYTHON stamp, on the first store
         end
     end
 
-    # ── img_cleanup_facts: what Cleanup shows, no verdict (CLEANUP_FACTS_PLAN D1) ──────────────────
+    # ── img_cleanup_facts: what get_image_info shows, no verdict (CLEANUP_FACTS_PLAN D1) ────────────
     @testset "img_cleanup_facts — per channel zero/clipped, per drift run the excursion" begin
         proj = create_project!(name = "cleanup-facts-$(rand(1000:9999))")
         s    = add_set!(proj; name = "set")

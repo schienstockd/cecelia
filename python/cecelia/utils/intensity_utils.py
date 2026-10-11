@@ -164,7 +164,7 @@ def saturation_stats(hist, background_method='triangle'):
         'signalVoxels': signal,
         'clippedSignalFrac': (n_top / signal) if signal else 0.0,
         # Sparsity fields (CORRECTION_QC_PLAN.md Q-M4). Free — same histogram pass, one extra sum.
-        # Shown as-is on the Cleanup page (`img_cleanup_facts`, CLEANUP_FACTS_PLAN D1), no verdict.
+        # Shown as-is in `get_image_info` (`img_cleanup_facts`, CLEANUP_FACTS_PLAN D1), no verdict.
         'zeroFrac': (n_zero / total) if total else 0.0,
         'signalFrac': (signal / total) if total else 0.0,
     }

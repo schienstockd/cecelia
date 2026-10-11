@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
-import CleanupFacts from '../components/CleanupFacts.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: cleanupDefs, reload: reloadDefs } = useTaskDefs('cleanupImages')
@@ -11,7 +10,6 @@ const { defs: cleanupDefs, reload: reloadDefs } = useTaskDefs('cleanupImages')
   <ModuleLayout module="cleanup" :show-attrs="true" :show-filter="true">
     <template #right="{ selectedUids, selectedNames }">
       <div class="cleanup-right">
-        <CleanupFacts :selected-uids="selectedUids" />
         <TaskRunner
           :defs="cleanupDefs"
           :on-reload-defs="reloadDefs"
