@@ -12,7 +12,8 @@
 # route's own X-Server-Read-Ms — zarr chunk read + blosc/zstd decode + slice, measured inside Julia).
 # Wall minus server_read is the pipe: TLS, HTTP/2 framing, socket, curl.
 #
-# Env: CECELIA_URL, PROJ, IMG, VN (valueName; empty = the image's default store), MODE=flat (whole (t, c)
+# Env: CECELIA_URL, CECELIA_API_TOKEN or CECELIA_API_TOKEN_FILE (the server's API token, sent as a
+# Bearer header — every route but /api/health needs it; same names as mcp/cecelia_mcp/auth.py), HTTP=2 (default) or 1.1, PROJ, IMG, VN (valueName; empty = the image's default store), MODE=flat (whole (t, c)
 # volumes for 8 timepoints instead of bricks) or MODE=scrub (all 64 bricks of 4 timepoints).
 #
 # Cold run: drop the page cache FIRST (needs sudo, so it is not done here):
@@ -26,6 +27,7 @@ mkdir -p "$out"
 BASE=${CECELIA_URL:-https://127.0.0.1:8080}
 PROJ=${PROJ:-e1Mn6X}; IMG=${IMG:-8eapy6}
 VN=${VN:-}                                 # valueName (empty = the image's default store)
+HTTP=${HTTP:-2}                            # 2 over TLS like the browser; 1.1 for a server without a cert
 MODE=${MODE:-brick}                        # brick | flat (whole (t, c) volumes, 8 t x NC)
 NT=181; NZ=31; NC=4; NXB=8; NYB=8; B=128   # 8eapy6: (t,c,z,y,x) = (181,4,31,1024,1024) u16
 vq=${VN:+&valueName=$VN}
@@ -56,7 +58,9 @@ fi
 
 fmt="${label}\t${conc}\t%{url}\t%{http_code}\t%{time_total}\t%{size_download}\t%header{x-server-read-ms}\n"
 start=$(date +%s.%N)
-curl -sk --http2 -Z --parallel-max "$conc" --parallel-immediate -K "$cfg" -w "$fmt" \
+tok=${CECELIA_API_TOKEN:-}; [ -z "$tok" ] && [ -n "${CECELIA_API_TOKEN_FILE:-}" ] && tok=$(<"$CECELIA_API_TOKEN_FILE")
+auth=(); [ -n "$tok" ] && auth=(-H "Authorization: Bearer $tok")
+curl -sk "--http$HTTP" "${auth[@]}" -Z --parallel-max "$conc" --parallel-immediate -K "$cfg" -w "$fmt" \
   | awk -F'\t' -v OFS='\t' '{ match($3, /[?&]t=[0-9]+/); t = substr($3, RSTART + 3, RLENGTH - 3);
                               print $1, $2, t, $4, $5 * 1000, $6, $7 }' > "$out/$label.tsv"
 end=$(date +%s.%N)
