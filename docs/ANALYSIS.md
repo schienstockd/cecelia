@@ -399,6 +399,9 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   frameless. The summary charts' HTML legend + title overlays are drawn INTO the export from their on-screen
   layout (`PlotChart.toImageURL` → `plots/export.ts` `svgWithOverlays`; `docs/PLOTS.md` → *Legend &
   sizing*) — they used to be dropped, so a board PDF lost every series legend and heatmap colour bar.
+  A view whose key is its own HTML beside the plot host (the training-curve Detail captions) wraps key +
+  host in one figure element and exports THAT (`figureToSvg(fig, ink, bg, chart)` / `elementToImageURL`);
+  a swatch there is an `<svg>`, since the snapshot keeps text and `<svg>`, not CSS backgrounds.
 - **Hi-res raster**: WebGL scatters (UMAP, gating cell) would export soft at screen backing size. The
   **shared** helpers `rasterExportScale` + `rasterPlotToImageURL` (`plots/export.ts`) target a fixed
   ~2200px long side (scale 4–14×) and re-render the point cloud at that scale via each view's `hiRes`
