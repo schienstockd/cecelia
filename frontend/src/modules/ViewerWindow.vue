@@ -92,7 +92,7 @@ import {
   filterPayloadByTrackSource,
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
-import { heatUnit } from '../utils/viewerOverlays'
+import { heatUnit, seedRendererOverlays } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
@@ -3808,6 +3808,9 @@ async function ensureRenderer() {
       })
       renderer.value = r
       currentRendererKind.value = desiredKind
+      // The new renderer's overlay buffers are empty; `rebuildOverlays` only runs on a data or
+      // visibility change, so re-upload what is already built or the dots vanish on a mode swap.
+      seedRendererOverlays(r, points, segments)
       // Pin the adapter report so `bricksEnabled`'s budget gate doesn't lose it on a future
       // destroy — see `stableAdapterReport`'s docstring for the oscillator this prevents.
       if (stableAdapterReport.value === null) stableAdapterReport.value = r.adapter

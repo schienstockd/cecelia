@@ -3,7 +3,7 @@ import {
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
-  WHOLE_SEG_TRACK_SOURCE,
+  WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -544,5 +544,28 @@ describe('buildMultiTrackBuffer — a track keeps its colour whatever its source
                           { vn: 'b', payload: p }])
     expect(alone).toEqual(hexToUnit(PAL[4 % 3]))
     expect(second).toEqual(alone)
+  })
+})
+
+// A renderer swapped in by a 2D↔3D, flat↔brick or ±planes switch starts with empty overlay buffers;
+// without a re-seed the population dots vanished until a population toggle forced a rebuild.
+describe('seedRendererOverlays', () => {
+  it('uploads both the point and the segment buffers', () => {
+    const got: string[] = []
+    const r = {
+      setOverlayPoints: (d: Float32Array) => { got.push(`p${d.length}`) },
+      setOverlaySegments: (d: Float32Array) => { got.push(`s${d.length}`) },
+    }
+    seedRendererOverlays(r, { data: new Float32Array(POINT_STRIDE) }, { data: new Float32Array(SEG_STRIDE) })
+    expect(got).toEqual([`p${POINT_STRIDE}`, `s${SEG_STRIDE}`])
+  })
+
+  it('ViewerWindow seeds every freshly constructed volume renderer', () => {
+    const src = (import.meta.glob('/src/modules/ViewerWindow.vue', { query: '?raw', import: 'default', eager: true }) as
+      Record<string, string>)['/src/modules/ViewerWindow.vue']
+    const body = src.slice(src.indexOf('async function ensureRenderer()'), src.indexOf('async function reallocate('))
+    const assigned = body.indexOf('renderer.value = r\n')
+    expect(assigned).toBeGreaterThan(0)
+    expect(body.indexOf('seedRendererOverlays(r, points, segments)', assigned)).toBeGreaterThan(assigned)
   })
 })

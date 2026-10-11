@@ -733,6 +733,20 @@ export function tailRange(
   return end > first ? [first, end - first] : null
 }
 
+/**
+ * Hand the built point + segment buffers to a renderer. Every freshly CONSTRUCTED renderer needs this:
+ * its GPU buffers start empty, and the viewer only rebuilds the buffers when the population data or
+ * visibility changes — so a renderer swapped in by a 2D↔3D, flat↔brick or ±planes switch (each can
+ * change the renderer kind) drew no points until a population toggle forced a rebuild.
+ */
+export function seedRendererOverlays(
+  r: { setOverlayPoints(data: Float32Array): void; setOverlaySegments(data: Float32Array): void },
+  points: Pick<PointBuffer, 'data'>, segments: Pick<SegmentBuffer, 'data'>,
+): void {
+  r.setOverlayPoints(points.data)
+  r.setOverlaySegments(segments.data)
+}
+
 // ── Colour-by ────────────────────────────────────────────────────────────────────
 
 /** Grey for a cell the column has no value for. Deliberately not invisible and not the ramp's low end:
