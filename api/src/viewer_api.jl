@@ -487,13 +487,16 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
     # it writes" row. A missing store is a 409, not a 404: the run promoting its store onto the final
     # path between the panel's last task snapshot and this fetch is the ordinary end of a live preview,
     # and 409 is what the viewer already reads as "no mask to draw" rather than as an error.
+    # `liveSince` (the task's `started_at`) lets a run that promoted its store but is still going keep
+    # showing it — see `live_labels_store_path`.
     preview_labels = get(q, "preview", "") == "1"
     live_labels    = get(q, "live", "") == "1"
     preview_af     = get(q, "preview_af", "") == "1"
     lbl = get(q, "labels", "")
     if !isempty(lbl)
         if live_labels
-            zpl, lerr = live_labels_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
+            zpl, lerr = live_labels_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl;
+                                               live_since = get(q, "liveSince", ""))
             if lerr !== nothing
                 return _slab_json_error(stream, 409, lerr)
             end
@@ -727,16 +730,23 @@ function preview_labels_store_path(project_uid::AbstractString, image_uid::Abstr
 end
 
 """
-    live_labels_store_path(project_uid, image_uid, value_name) -> (path, err)
+    live_labels_store_path(project_uid, image_uid, value_name; live_since = "") -> (path, err)
 
 The staging store a RUNNING segmentation is writing for `value_name` — the base type's store from
 `segment_label_files` plus the staging suffix, which is what `segment_live_outputs` declares. Built from
 the vn rather than taken from the client, so the query cannot name an arbitrary path; a vn carrying a
 path separator is refused for the same reason. Mid-run only level 0 exists (the pyramid is built at
 the end), which `store_pyramid_levels` already reports, so a zoomed-out view gets the usual 409.
+
+`live_since` (the task's `started_at`, ISO-8601 UTC) covers a task that keeps running after its
+segmentation promoted the store — a composite like `segment.coastalMeasure` measuring for minutes
+after its segment step. With the staging store gone, the FINAL store is served if it was written at
+or after `live_since` (`store_written_at`): that is this run's output. One written earlier is the
+PREVIOUS segmentation — what a re-run's final path holds until it promotes — and stays a 409, as does
+any request without `live_since`.
 """
 function live_labels_store_path(project_uid::AbstractString, image_uid::AbstractString,
-                                value_name::AbstractString)
+                                value_name::AbstractString; live_since::AbstractString = "")
     vn = String(value_name)
     # joined onto the labels dir, so it must stay one path component
     Cecelia.value_name_problem(vn) === nothing || return (nothing, "invalid value_name")
@@ -744,9 +754,15 @@ function live_labels_store_path(project_uid::AbstractString, image_uid::Abstract
     err === nothing || return (nothing, "image not found")
     # the base type's store — `segment_label_files` is the one derivation of label filenames
     base = first(Cecelia.segment_label_files(vn, nothing))
-    zp = Cecelia.staging_store_path(joinpath(img_labels_dir(img), base))
-    isdir(zp) || return (nothing, "no run is writing '$vn'")
-    (zp, nothing)
+    final = joinpath(img_labels_dir(img), base)
+    zp = Cecelia.staging_store_path(final)
+    isdir(zp) && return (zp, nothing)
+    since = Cecelia.parse_iso_utc(live_since)
+    if since !== nothing && isdir(final) &&
+       Cecelia.store_written_at(final) >= Dates.datetime2unix(since)
+        return (final, nothing)
+    end
+    (nothing, "no run is writing '$vn'")
 end
 
 # ── GET /api/viewer/overlays ──────────────────────────────────────────────────────

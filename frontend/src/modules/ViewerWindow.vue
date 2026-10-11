@@ -898,10 +898,15 @@ const liveVn = computed(() => {
 const maskName = computed(() => previewVn.value || liveVn.value || labelName.value)
 /** Which store a mask's bytes come from (`maskStoreFor`) plus that store's rewrite stamp — the
  *  cache-buster every mask fetch path sends. */
-function maskStoreOf(vn: string): { store: MaskStore | undefined; storeId: number | undefined } {
+function maskStoreOf(vn: string): {
+  store: MaskStore | undefined; storeId: number | undefined; liveSince: string | undefined
+} {
   const store = maskStoreFor(vn, previewVn.value, liveVn.value)
   return { store, storeId: store === 'preview' ? viewerStore.previewLabels?.updateId
-    : store === 'live' ? viewerStore.liveLabels?.updateId : undefined }
+    : store === 'live' ? viewerStore.liveLabels?.updateId : undefined,
+    // when the run started — lets the server serve the store a composite's segment step already
+    // promoted (see `live_labels_store_path`)
+    liveSince: store === 'live' ? viewerStore.liveLabels?.startedAt : undefined }
 }
 // The region the task preview last segmented, for THIS image, in the plane view — what seeds the
 // user's preview box (`previewBox`) the first time a preview lands.
@@ -2147,7 +2152,7 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
-          ...maskStoreQuery(ms.store, ms.storeId),
+          ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
           // Same cache-buster for the durable labels store's own rewrites.
           rev: cacheClearRev.value || undefined,
         })
@@ -2554,7 +2559,7 @@ async function fetchTileLabel(key: TileKey): Promise<boolean> {
       projectUid, imageUid, valueName: valueName.value, t: key.t, c: 0, z: key.z, level: key.level,
       enc: settings.viewerCompress ? 'zstd' : 'identity', labels: vn,
       x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
-      ...maskStoreQuery(ms.store, ms.storeId),
+      ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
       rev: cacheClearRev.value || undefined,
     })
     const res = await fetch(url, { cache: 'default', signal: ac.signal })
@@ -4059,6 +4064,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
       labelName: wantLabels ? maskName.value : undefined,
       labelStore: wantLabels ? maskStoreOf(maskName.value).store : undefined,
       labelStoreId: wantLabels ? maskStoreOf(maskName.value).storeId : undefined,
+      liveSince: wantLabels ? maskStoreOf(maskName.value).liveSince : undefined,
       // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
       // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
       // `setBrickSource`'s compare treats a rev change as a full source switch and drops the

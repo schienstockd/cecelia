@@ -100,13 +100,18 @@ describe('brickLabelSlabUrl', () => {
 
   it('reads a preview or live mask from its own store, busted by the store stamp', () => {
     const brick = { t: 0, level: 0, bx: 0, by: 0, bz: 0 }
-    const live = brickLabelSlabUrl({ ...base, labelStore: 'live', labelStoreId: 4 }, 'flowTom', brick, brickSize)
+    const since = '2026-10-11T04:56:00.000Z'
+    const live = brickLabelSlabUrl({ ...base, labelStore: 'live', labelStoreId: 4, liveSince: since },
+                                   'flowTom', brick, brickSize)
     expect(live).toContain('live=1')
     expect(live).toContain('_lv=4')
+    expect(new URL(live, 'http://x').searchParams.get('liveSince')).toBe(since)
     const prev = brickLabelSlabUrl({ ...base, labelStore: 'preview', labelStoreId: 9 }, 'flowTom', brick, brickSize)
     expect(prev).toContain('preview=1')
     expect(prev).toContain('_pv=9')
     expect(prev).not.toContain('live=')
+    expect(brickLabelSlabUrl({ ...base, labelStore: 'preview', liveSince: since }, 'flowTom', brick, brickSize))
+      .not.toContain('liveSince')
     // the registered store's URL is unchanged
     expect(brickLabelSlabUrl(base, 'flowTom', brick, brickSize)).not.toMatch(/preview=|live=/)
   })

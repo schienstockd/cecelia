@@ -13,14 +13,33 @@ canonical resolver, so both layouts fingerprint their real metadata — a calibr
 """
 function store_rev(path::AbstractString)
     isdir(path) || return ""
-    base = try series_base(path) catch; String(path) end
-    paths = unique([path; [joinpath(b, rel) for b in unique([String(path), base])
-                           for rel in (".zattrs", ".zgroup", "zarr.json",
-                                       joinpath("0", ".zarray"), joinpath("0", "zarr.json"))]])
     parts = String[]
-    for p in paths
+    for p in _store_meta_paths(path)
         st = stat(p)
         ispath(st) && push!(parts, "$(st.inode):$(st.mtime):$(st.ctime)")
     end
     join(parts, "|")
+end
+
+# The store root plus its root/level-0 metadata files, in both layouts — what `store_rev` and
+# `store_written_at` stat.
+function _store_meta_paths(path::AbstractString)
+    base = try series_base(path) catch; String(path) end
+    unique([String(path); [joinpath(b, rel) for b in unique([String(path), base])
+                           for rel in (".zattrs", ".zgroup", "zarr.json",
+                                       joinpath("0", ".zarray"), joinpath("0", "zarr.json"))]])
+end
+
+"""
+    store_written_at(path) -> Float64
+
+The latest mtime (unix seconds) among the same stat-only set `store_rev` fingerprints — a lower bound
+on when the store's current contents were written, and `0.0` when the store is absent. Every writer
+fills a fresh staging dir and renames it into place, so these files are written by the run that
+produced the store; the rename itself is not relied on, since a directory rename does not move the
+directory's own mtime on every filesystem. Answers "is this store newer than that run's start?".
+"""
+function store_written_at(path::AbstractString)::Float64
+    isdir(path) || return 0.0
+    maximum(p -> (st = stat(p); ispath(st) ? Float64(st.mtime) : 0.0), _store_meta_paths(path))
 end

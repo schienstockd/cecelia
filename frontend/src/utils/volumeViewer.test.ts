@@ -25,9 +25,14 @@ describe('slab + meta urls', () => {
                                 live: true, liveId: 7 }), 'http://x')
     expect(u.searchParams.get('live')).toBe('1')
     expect(u.searchParams.get('_lv')).toBe('7')
+    expect(u.searchParams.get('liveSince')).toBeNull()
+    const since = new URL(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, labels: 'flowKat',
+                                    live: true, liveSince: '2026-10-11T04:56:00.000Z' }), 'http://x')
+    expect(since.searchParams.get('liveSince')).toBe('2026-10-11T04:56:00.000Z')
     const both = new URL(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, labels: 'flowKat',
-                                   preview: true, live: true }), 'http://x')
+                                   preview: true, live: true, liveSince: 'x' }), 'http://x')
     expect(both.searchParams.get('live')).toBeNull()
+    expect(both.searchParams.get('liveSince')).toBeNull()
     // no labels → no live flag (it is a mask-only mode)
     expect(slabUrl({ projectUid: 'P', imageUid: 'I', t: 0, c: 0, live: true })).not.toContain('live=')
   })

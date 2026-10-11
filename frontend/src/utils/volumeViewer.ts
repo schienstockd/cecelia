@@ -182,6 +182,9 @@ export interface SlabQuery {
    */
   live?: boolean
   liveId?: number
+  /** The running task's `started_at`. Once the staging store is promoted (the task still running —
+   *  a composite's later step), the server serves the final store only if it was written since. */
+  liveSince?: string
   /**
    * Swap this channel's image slab onto the AF preview scratch store (P7.1). The worker writes one
    * store per corrected channel at
@@ -235,6 +238,7 @@ export function slabUrl(q: SlabQuery): string {
   if (q.labels && q.live && !q.preview) {
     p.set('live', '1')
     if (q.liveId !== undefined) p.set('_lv', String(q.liveId))
+    if (q.liveSince) p.set('liveSince', q.liveSince)
   }
   // AF preview (P7.1): only meaningful WITHOUT `labels` (this is an image swap, not a mask swap).
   if (!q.labels && q.preview_af && q.sourceChannel !== undefined && q.previewValueName) {
