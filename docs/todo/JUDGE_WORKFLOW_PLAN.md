@@ -6,6 +6,7 @@ and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2–
 for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5). Rule proposals are answered
 in `judge-review` after the bugs (Dominik, 2026-10-09: "I will probably forget otherwise"); the
 rules-only PR only carries `EFFECTIVENESS.md`.
+**Part 4 (pooling by root cause, D16–D18, P6) proposed 2026-10-11, not built.**
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan
@@ -264,6 +265,54 @@ Revisit if the store is ever lost for real.
   key in the commit, because landed-fix detection relies on it.
 - **Rule proposals:** stay PRs, kept out of the bug queue, as now.
 
+## Part 4 — pooling by root cause (proposed 2026-10-11)
+
+**What the 2026-10-09 record shows.** 24 open rows hold about 17 bugs: B16/B19, B29/B31, B33/B58,
+B56/B66 and B49/B51/B64/B67 each describe one defect. Each row gets its own issue (D7) and its own
+`fix now` session. The sweep pools by `(file, enclosing function)`, else `(file, "line N")`, and
+misses all of these for three reasons:
+- **No name for the function.** `enclosing.py` doesn't recognise a property-assignment arrow
+  (`;(window as …).__cceceliaViewerCapture = () => {`) or a callback (`onMounted(() => {`,
+  `computed(() => {`). The key falls back to the exact line, so B16 (line 4562) and B19 (line
+  4561), raised at the same commit, are two bugs.
+- **No function at all.** B29/B31 are template lines 604/605 of `BatchMoviesPanel.vue`.
+- **One cause, two sites.** A caller and its callee (B33/B58), the capture path and the landscape
+  snapshot (the `labelName`→`maskName` four), the same default in two tasks (B56/B66). No positional
+  key can join these.
+
+Every pair shares a branch or a file, so `verify.groups` already gave each pair to one agent, with the
+code. That agent is the cheapest place to decide that two rows are one bug.
+
+### D16. Verify names duplicates
+
+Verify's schema gains an optional `same_as: <key>`: this bug is the same as another BUG in the
+prompt, so **one fix, or one answer, settles both**. A shared pattern that still needs a separate edit
+at each site is not `same_as`. The pass merges each duplicate into its lead with the sweep's `_merge`
+(`sources` + `also`). The duplicate's descriptions then travel in the fix brief and the issue body, and
+its issue closes through the mirror's existing merged-row close (`issues.py`, "Merged into the
+judge's bug"). The lead is the oldest row. A `same_as` that names a key
+outside the group, names itself or forms a cycle is ignored. A merged bug stays open until verify
+finds every pooled finding fixed: their descriptions are in its prompt already (`also raised:`).
+
+**Cost:** no extra agent. Each prompt grows by one sentence of brief.
+
+### D17. Carried open bugs join as context
+
+A new finding often duplicates a bug that's already open: the fanout runs again on the next commit.
+Each verify group also lists up to `CONTEXT_MAX` (8) carried `open` bugs that share its branch or
+file. They're marked as already verified and are only targets for `same_as`. Verify gives them no
+new verdict.
+
+**Backfill:** once, `pixi run judge-verify --pool-open` sends today's open list through verify's
+grouping, asking only for `same_as`. On the 2026-10-09 list that's about 8 groups, ~$2.5.
+
+### D18. Name property-assignment arrows
+
+`_BRACE` in `enclosing.py` learns `obj.prop = (…) =>` and `obj.prop = function`, and uses the last
+property name as the symbol. Callbacks stay unnamed: there's no name to find at the next SHA. This is
+for the excerpt, not the pooling (D16 covers that). With no symbol, the excerpt is a window around
+the line instead of the whole function, and a moved line isn't followed.
+
 ## Phases
 
 Each phase ships alone, P1 first, because it's the problem that bites now. Every phase also checks
@@ -331,6 +380,19 @@ Left alone: `fix-landed` coming off a week later is intended (a re-verified open
 didn't fix it); a key the sweep judge never answers stays `unjudged` with no repeat yet, revisited if
 the same key goes unanswered twice.
 
+### P6 — pooling by root cause (Part 4)
+
+D16–D18. **Tests:**
+- a `same_as` merges into the lead with `sources` + `also`, and the duplicate's issue closes
+  through the existing merged-row close;
+- a `same_as` outside the group, onto itself, or in a cycle is ignored;
+- a context bug (D17) keeps its verdict, and its key gets no new verdict;
+- `enclosing` names `;(window as X).foo = () => {` as `foo`.
+
+**Checkpoint:** the backfill on the 2026-10-09 open list pools the five sets above and leaves B47 and
+B50 on their own (24 rows → about 17). Dominik reads the merges before the first pass that closes
+issues.
+
 ## Rejected
 
 - **A generated index instead of issues.** It would have to be committed to be seen, which needs
@@ -346,6 +408,12 @@ the same key goes unanswered twice.
 - **Watching the bug's function instead of its file:** no trigger names the bug's own function, and
   it would miss callers in the same file.
 - **A backup of the store** (concern 4): see D15.
+- **Pooling by `(file, branch, commit)`** (2026-10-11): that groups by the fanout pass that raised
+  the findings, not by bug. One diff on one big file raises distinct bugs (B47 and the
+  `labelName` four are both in `ViewerWindow.vue`), and an over-merge hides one from the owner.
+- **A separate clustering call over the whole open list:** it would judge from descriptions without
+  the code, and it costs a call. Verify's groups already put each observed pair in front of one agent
+  with the code. Revisit if duplicates turn up that share neither branch nor file.
 
 ## Answered (Dominik, 2026-10-07)
 
@@ -357,6 +425,8 @@ the same key goes unanswered twice.
 
 ## What would change this plan
 
+- **An over-merge in `judge-review`** (a pooled row that one fix didn't settle): add a `split`
+  answer that un-merges the row and pins the pair apart.
 - **D2's warning fires two weeks running:** inflow outgrew the budget. Raise `SWEEP_USD` or cut
   inflow (D6).
 - **Outsiders start filing look-alike issues:** a GitHub App identity becomes worth its credential.
