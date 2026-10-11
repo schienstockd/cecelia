@@ -19,9 +19,10 @@ import { computed, onScopeDispose, ref, watchEffect, type Ref } from 'vue'
 import { endpointsFor, type VaultKind } from '../utils/modelVaultKinds'
 import type { FlowManifest } from '../utils/flowManifest'
 import type { DenoiseManifest } from '../utils/denoiseManifest'
+import type { VaultOrigin } from '../utils/vaultScope'
 
 // Row shape as returned by both vault endpoints (a superset — kind decides which manifest applies).
-interface VaultRow {
+interface VaultRow extends VaultOrigin {
   name: string
   stem: string
   hasManifest: boolean
@@ -148,6 +149,35 @@ export function useVaultModel(nameRef: Ref<string> | (() => string)): UseVaultMo
   onScopeDispose(() => { /* no-op */ })
 
   return { kind, manifest, loading, error, refresh }
+}
+
+/**
+ * One vault's rows, looked up by picker value (`name` or `stem` — coastal pickers carry the filename,
+ * denoise the stem). Shares the module cache, so every picker on a page costs one fetch per kind.
+ * `ensure(values)` re-fetches once when the picker offers a value the cache has not seen — a model
+ * trained since the last fetch — and not again for the same set, so a value no vault holds (a model
+ * this chain will train) does not refetch on every render.
+ */
+export function useVaultRows(kind: Ref<VaultKind | undefined> | (() => VaultKind | undefined)) {
+  const k = computed(() => typeof kind === 'function' ? kind() : kind.value)
+  watchEffect(() => { if (k.value) _fetchKind(k.value) })
+  const index = computed(() => {
+    void cacheEpoch.value
+    const m = new Map<string, VaultRow>()
+    for (const r of (k.value && cache[k.value].rows) || []) { m.set(r.name, r); m.set(r.stem, r) }
+    return m
+  })
+  let asked = ''
+  function ensure(values: string[]) {
+    const kind = k.value
+    if (!kind || cache[kind].rows === null) return
+    const missing = values.filter(v => v && !index.value.has(v)).sort().join('\n')
+    if (!missing || missing === asked) return
+    asked = missing
+    cache[kind] = { rows: null, err: '' }
+    _fetchKind(kind)
+  }
+  return { rowFor: (v: string): VaultOrigin | undefined => index.value.get(v), ensure }
 }
 
 /** Clear the module cache — for tests. Production callers should use `refresh()`. */

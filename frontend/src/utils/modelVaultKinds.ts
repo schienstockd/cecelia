@@ -1,7 +1,7 @@
 // One kind selector, one endpoint map. `ModelVault.vue` dispatches list / rename / delete against
 // this table so a new vault (custom cellpose training, next) is one entry and no branching in the
-// component. `optionsFrom` in a task spec uses the same string — that keeps the vault picker and
-// the vault manager pointed at the same server route.
+// component. A task spec's `optionsFrom` names the same vaults — mapped by `vaultKindForSource`
+// below, so the vault picker and the vault manager read the same server route.
 
 import type { ChipOption } from '../components/ChipSelect.vue'
 
@@ -29,6 +29,17 @@ const ENDPOINTS: Record<VaultKind, VaultEndpoints> = {
 export function endpointsFor(kind: VaultKind): VaultEndpoints {
   return ENDPOINTS[kind]
 }
+
+// The vault behind a task picker's `optionsFrom`. `coastalModels` is the flow vault under its
+// segmentation name; `cellposeModels` has no vault listing (built-ins + dropped-in files), so no entry.
+// Not `RESOLVERS` (utils/vaultManifest.ts): that maps a source to a manifest→form mapper and is keyed by
+// `flowModels`, the train task's name suggestions; this maps a PICKER's source to the listing it reads.
+const SOURCE_KIND: Record<string, VaultKind> = {
+  coastalModels: 'flowModels',
+  denoiseModels: 'denoiseModels',
+}
+export const vaultKindForSource = (src: string | undefined): VaultKind | undefined =>
+  src ? SOURCE_KIND[src] : undefined
 
 // The chip row users see. Order matches "what came first": optical-flow shipped in v0, denoise in
 // Phase A/B of DENOISE_INTEGRATION_PLAN.

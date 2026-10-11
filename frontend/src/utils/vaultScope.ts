@@ -15,6 +15,7 @@
  */
 import { profileNameLabel } from './profileApi'
 import type { DetailGroup } from './flowManifest'
+import type { ParamDef } from '../tasks/types'
 
 /** The origin fields of a vault row. Structural, so `ModelVault`'s row type satisfies it. */
 export interface VaultOrigin {
@@ -66,4 +67,57 @@ export function vaultOriginGroup(m: VaultOrigin): DetailGroup {
     ? (m.projectInferred ? `${proj} (from its source images)` : proj)
     : 'not recorded' })
   return { label: 'Origin', fields }
+}
+
+// ── The task form's model picker ─────────────────────────────────────────────
+// The picker's options come from the server (`optionsFrom`, label + value only); the origin of each
+// comes from the vault listing — joined here so a `select` reads like the manager: same scope, same
+// toggles (`settings.vaultOther*` are shared, not a second preference), and headed by WHERE each
+// model was trained, the way the function picker is headed by group.
+
+/** One task-spec select option — the type `ParamDef.options` already declares. */
+export type PickerOption = NonNullable<ParamDef['options']>[number]
+export interface PickerGroup { title: string; options: PickerOption[] }
+export interface PickerLayout {
+  /** Options with no vault row — the spec's `None`, a model this chain will train — listed first. */
+  loose: PickerOption[]
+  groups: PickerGroup[]
+  hidden: number
+}
+
+/** Heading for vault models whose project was never recorded (trained before the stamp). */
+export const ORIGIN_UNKNOWN = 'Origin not recorded'
+export const THIS_PROJECT = 'This project'
+
+/**
+ * Lay a vault picker's options out by project: this project first, then other projects by name,
+ * unrecorded last. Out-of-scope models are dropped and counted, EXCEPT the selected one — a select
+ * whose value is not among its options shows blank, which reads as "nothing picked". Another user's
+ * model says whose it is in its label: once Other users is on, the same name can come from two people.
+ */
+export function vaultPickerLayout(
+  options: PickerOption[],
+  rowFor: (value: string) => VaultOrigin | undefined,
+  scope: VaultScope,
+  selected: string,
+): PickerLayout {
+  const loose: PickerOption[] = []
+  const byTitle = new Map<string, PickerOption[]>()
+  let hidden = 0
+  for (const o of options) {
+    const row = rowFor(o.value)
+    if (!row) { loose.push(o); continue }
+    if (!vaultInScope(row, scope) && o.value !== selected) { hidden++; continue }
+    const title = !row.projectUid ? ORIGIN_UNKNOWN
+      : row.projectUid === scope.projectUid ? THIS_PROJECT
+      : vaultProjectLabel(row)
+    const user = row.createdBy && row.createdBy !== scope.profile ? vaultUserLabel(row) : ''
+    if (!byTitle.has(title)) byTitle.set(title, [])
+    byTitle.get(title)!.push(user ? { ...o, label: `${o.label} — ${user}` } : o)
+  }
+  const rank = (t: string) => t === THIS_PROJECT ? 0 : t === ORIGIN_UNKNOWN ? 2 : 1
+  const groups = [...byTitle.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([title, opts]) => ({ title, options: opts }))
+  return { loose, groups, hidden }
 }

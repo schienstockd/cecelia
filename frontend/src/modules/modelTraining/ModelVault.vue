@@ -37,8 +37,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import CanvasSidePanel from '../../components/canvas/CanvasSidePanel.vue'
 import ChipSelect from '../../components/ChipSelect.vue'
-import CcToggle from '../../components/CcToggle.vue'
-import TeleportPopover from '../../components/TeleportPopover.vue'
+import VaultViewButton from '../../components/VaultViewButton.vue'
 import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from '../../components/SelectionTable.vue'
 import FlowModelDetails from './FlowModelDetails.vue'
@@ -48,7 +47,7 @@ import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
-import { useSettingsStore, VAULT_VIEW_DEFAULTS } from '../../stores/settings'
+import { useSettingsStore } from '../../stores/settings'
 import {
   vaultInScope, vaultMatchesQuery, vaultUserLabel, vaultProjectLabel, vaultOriginGroup,
   type VaultOrigin,
@@ -145,11 +144,6 @@ const settings    = useSettingsStore()
 const projectMeta = useProjectMetaStore()
 const appControl  = useAppControlStore()
 const query       = ref('')   // transient, like the Task Manager's
-const viewOpen    = ref(false)
-const viewBtn     = ref<HTMLElement | null>(null)
-const viewChanged = computed(() =>
-  (Object.keys(VAULT_VIEW_DEFAULTS) as (keyof typeof VAULT_VIEW_DEFAULTS)[])
-    .some(k => settings[k] !== VAULT_VIEW_DEFAULTS[k]))
 
 const shown = computed(() => {
   const scope = {
@@ -161,12 +155,14 @@ const shown = computed(() => {
 const hiddenCount = computed(() => models.value.length - shown.value.length)
 
 const COLUMNS = computed<SelectionColumn[]>(() => [
-  { key: 'stem',     label: 'Model', sortable: true },
-  ...(settings.vaultOtherUsers ? [{ key: 'user', label: 'User', sortable: true, ellipsis: true }] : []),
+  { key: 'stem',     label: 'Model', sortable: true, ellipsis: true, width: 130 },
+  ...(settings.vaultOtherUsers
+    ? [{ key: 'user', label: 'User', sortable: true, ellipsis: true, width: 80 }] : []),
   ...(settings.vaultOtherProjects
-    ? [{ key: 'project', label: 'Project', sortable: true, ellipsis: true }] : []),
-  { key: 'modified', label: 'Date', sortable: true },
-  { key: 'size',     label: 'Size', sortable: true, sortKey: 'bytes' },
+    ? [{ key: 'project', label: 'Project', sortable: true, ellipsis: true, width: 100 }] : []),
+  // a date and a size never need more room than this, so they stay put while the names are dragged
+  { key: 'modified', label: 'Date', sortable: true, width: 84, fixed: true },
+  { key: 'size',     label: 'Size', sortable: true, sortKey: 'bytes', width: 64, fixed: true },
 ])
 const tableRows = computed(() => shown.value.map(m => ({
   name: m.name, stem: m.stem, modified: m.modified, size: mb(m.bytes), bytes: m.bytes,
@@ -238,19 +234,7 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
         <input v-model="query" class="vault-search cc-input-xs" type="search" placeholder="Search"
                aria-label="Search models"
                v-tooltip.bottom="'Filter by name, channel, user or project'" />
-        <button ref="viewBtn" class="cc-btn cc-btn-bare cc-btn-icon"
-                :class="{ 'cc-btn-on cc-btn-on-solid': viewOpen, 'vault-view-set': viewChanged }"
-                @click="viewOpen = !viewOpen" v-tooltip.left="'View: other users, other projects'">
-          <i class="pi pi-eye" />
-        </button>
-        <TeleportPopover v-model="viewOpen" :anchor="viewBtn" placement="bottom-end">
-          <div class="vault-view">
-            <CcToggle v-model="settings.vaultOtherUsers" label="Other users"
-                      v-tooltip.bottom="'Include models other users trained'" />
-            <CcToggle v-model="settings.vaultOtherProjects" label="Other projects"
-                      v-tooltip.bottom="'Include models trained in other projects'" />
-          </div>
-        </TeleportPopover>
+        <VaultViewButton :hidden="hiddenCount" />
         <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Refresh'"
                 :disabled="loading" @click="load">
           <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
@@ -264,7 +248,11 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
         No models match — {{ hiddenCount }} hidden by search or view.
       </p>
 
-      <SelectionTable v-else :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label=""
+      <!-- Drag-resizable (column-width-key). `fit="content"` + the scroll wrapper because the User /
+           Project toggles can add more columns than the panel is wide. -->
+      <div v-else class="vault-table-scroll">
+      <SelectionTable :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label=""
+                      column-width-key="cc.vault.colw" fit="content" actions-width="6.5rem"
                       :row-tooltip="rowTip">
         <template #actions="{ row }">
           <input v-if="isEditing(row.name)" v-model="draft" class="vault-rename" :ref="focusInput"
@@ -292,6 +280,7 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
           </template>
         </template>
       </SelectionTable>
+      </div>
     </div>
   </CanvasSidePanel>
 
@@ -307,7 +296,6 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
 .vault-kinds { display: flex; justify-content: center; }
 .vault-bar { display: flex; align-items: center; gap: 0.3rem; }
 .vault-search { flex: 1; min-width: 6rem; }
-.vault-view { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.5rem 0.65rem; }
-.vault-view-set { color: var(--cc-accent); }   /* a view preference is off its default */
 .vault-rename { width: 20ch; }
+.vault-table-scroll { min-width: 0; overflow-x: auto; }
 </style>
