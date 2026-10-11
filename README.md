@@ -216,14 +216,23 @@ The final choice was made on the images, not on the number. Per-subsystem valida
 
 **Claude checks its own drift.** Dominik can't review every change, so the setup tries to let
 Claude catch its own mistakes. Before each commit, `pixi run recital` has two fresh reviewer agents
-read the diff: one looks for a fix that missed its sibling call sites, the other for new code that
-duplicates an existing helper. A mechanical check also flags new files or routes the docs don't
-list. Each finding must be resolved in the commit message (fixed, shipped anyway, or false
-positive), and a git hook blocks the commit otherwise. Outcomes are logged
-(`pixi run recital-console`). Once a week, a judge re-checks the findings nobody fixed against
-`main`, files the ones that are still bugs as issues, and counts which `CLAUDE.md` rules keep
-breaking across sessions. This is recent and still being measured:
-[`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+read the diff: the *fan-out audit* looks for a fix that missed its sibling call sites, the
+*convention check* for new code that duplicates an existing helper or breaks a convention.
+Mechanical checks also flag new files or routes the docs don't list, and code that breaks the
+structural rules in [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md). Each finding must be
+resolved in the commit message (fixed, shipped anyway, false positive, or dropped), and a git hook
+blocks the commit otherwise. Outcomes are logged (`pixi run recital-console`). Once a week, a judge
+re-checks the fan-out notes nobody fixed against `main`, files the ones that are still bugs as
+issues, and counts which `CLAUDE.md` rules keep breaking across sessions. This is recent and still
+being measured: [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+
+**What didn't work.** The first attempt was an eval: canned single-shot tasks replayed against
+`CLAUDE.md`. After three passes every prompt passed 3/3 while real sessions kept breaking the same
+rules — in one week the discovery step was broken 27 times across 9 sessions, and its prompt was
+green. It was retired on 2026-10-04 in favour of the log above
+([`docs/archive/CLAUDE_MD_EVAL_PLAN.md`](docs/archive/CLAUDE_MD_EVAL_PLAN.md)). Unattended runs, in
+which a headless agent gets a real analysis and works through it alone, were tried and are parked
+([`docs/todo/AGENT_OVERNIGHT_PLAN.md`](docs/todo/AGENT_OVERNIGHT_PLAN.md)).
 
 <p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Weekly chart of the agents' pre-commit reviews since logging began on 27 September 2026: four line panels: changes reviewed per week; findings per 100 changes and the share fixed before commit, for each of the two reviewers (fan-out audit and convention check); and the weekly judge's verdict on the fan-out notes nobody fixed (real bug, gone, dismissed). Early data, no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
 
