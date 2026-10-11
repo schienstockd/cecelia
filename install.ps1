@@ -24,7 +24,8 @@
 #
 # Env overrides:  $env:CECELIA_CHANNEL = 'stable'|'dev' ;  $env:CECELIA_VERSION = 'v0.1.0' ;
 #                 $env:CECELIA_BRANCH = 'main' ;  $env:CECELIA_INSTALL_SCOPE = 'user'|'system' ;
-#                 $env:CECELIA_HOME = 'C:\path'
+#                 $env:CECELIA_HOME = 'C:\path' ;
+#                 $env:GITHUB_TOKEN / $env:GH_TOKEN — optional; authenticates the GitHub API lookups (CI only)
 $ErrorActionPreference = 'Stop'
 
 $Repo    = 'schienstockd/cecelia'
@@ -33,6 +34,18 @@ $Version = if ($env:CECELIA_VERSION) { $env:CECELIA_VERSION } else { 'latest' }
 $Scope   = if ($env:CECELIA_INSTALL_SCOPE) { $env:CECELIA_INSTALL_SCOPE } else { 'user' }
 
 function Say($m) { Write-Host "[cecelia] $m" -ForegroundColor Cyan }
+
+# GET a GitHub API URL. Anonymous calls share a 60/h limit per IP, which a shared CI runner IP
+# exhausts — so a GITHUB_TOKEN/GH_TOKEN in the env is sent as auth (CI sets it; end users don't need
+# one). A rejected token falls back to the anonymous call rather than failing the install.
+function Invoke-GitHubApi($Uri) {
+  $headers = @{ 'User-Agent' = 'cecelia-installer' }
+  $token = if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { $env:GH_TOKEN }
+  if ($token) {
+    try { return Invoke-RestMethod -Uri $Uri -Headers ($headers + @{ Authorization = "Bearer $token" }) } catch { }
+  }
+  Invoke-RestMethod -Uri $Uri -Headers $headers
+}
 
 # ── Install location + scope ────────────────────────────────────────────────────
 # CECELIA_HOME overrides either default. Expand a leading ~ / ~\ / ~/ ourselves — PowerShell doesn't
@@ -77,7 +90,7 @@ if ($Channel -eq 'dev') {
   $Branch = if ($env:CECELIA_BRANCH) { $env:CECELIA_BRANCH } else { 'main' }
   $Url = "https://github.com/$Repo/archive/refs/heads/$Branch.tar.gz"
   Say "Resolving current $Branch commit..."
-  $commit = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/commits/$Branch" -Headers @{ 'User-Agent' = 'cecelia-installer' }
+  $commit = Invoke-GitHubApi "https://api.github.com/repos/$Repo/commits/$Branch"
   $Sha = $commit.sha
   $Provenance = "dev @ $Branch $Sha"
 } else {
@@ -86,7 +99,7 @@ if ($Channel -eq 'dev') {
   # published release ourselves via the API — it lists prereleases too, newest first.
   if ($Version -eq 'latest') {
     Say 'Resolving the latest release...'
-    $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases" -Headers @{ 'User-Agent' = 'cecelia-installer' }
+    $rel = Invoke-GitHubApi "https://api.github.com/repos/$Repo/releases"
     $Version = $rel[0].tag_name
     if (-not $Version) { throw 'Could not resolve the latest release from the GitHub API.' }
     Say "Latest release is $Version"

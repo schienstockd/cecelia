@@ -263,6 +263,12 @@ GitHub
 serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —
 so the dev path just points the *same* installer at that URL. `CECELIA_BRANCH` overrides the branch.
 
+**GitHub API auth (`GITHUB_TOKEN` / `GH_TOKEN`).** Both installers resolve the dev commit / latest
+release via `api.github.com` — anonymous, 60 calls/h per IP. If either variable is set it is sent as a
+Bearer token (one helper per script: `gh_api` / `Invoke-GitHubApi`; a rejected token falls back to
+anonymous). End users never need one; CI sets `GITHUB_TOKEN: ${{ github.token }}` on the install steps
+of `verify-system-install.yml`, because shared runner IPs exhaust the anonymous limit.
+
 **Node comes via `pixi exec`.** A release bundle ships a prebuilt `frontend/dist`; a branch archive
 is source only, so the dev channel builds the frontend on the machine. Both the initial
 `install.sh --channel dev` and the in-app dev-channel apply path invoke `pixi exec --spec nodejs --

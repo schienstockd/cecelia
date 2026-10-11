@@ -47,6 +47,11 @@ jobs:
           node-version: 24
 
       - name: Install (system scope, as ${{ matrix.how }})
+        # Authenticates the installer's GitHub API lookups — anonymous ones share a 60/h limit per
+        # runner IP. Step-scoped, not job-scoped: no later step (alice's server) needs it. `sudo -E`
+        # below carries it into the sudo variant.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           # Snapshot root's home: the runner image already has caches there, so compare, don't assume.
           ROOTHOME=$( [ "$RUNNER_OS" = Linux ] && echo /root || echo /var/root )
@@ -171,6 +176,10 @@ jobs:
           node-version: 24
 
       - name: Install (system scope, elevated)
+        # Authenticates the installer's GitHub API lookups — anonymous ones share a 60/h limit per
+        # runner IP. The child powershell inherits the step env.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           powershell -ExecutionPolicy Bypass -File .\install.ps1
           if ($LASTEXITCODE) { throw "install.ps1 exited $LASTEXITCODE" }

@@ -30,6 +30,7 @@
 #
 # Env overrides:  CECELIA_CHANNEL=stable|dev  CECELIA_VERSION=v0.1.0  CECELIA_BRANCH=main
 #                 CECELIA_INSTALL_SCOPE=user|system  CECELIA_HOME=<dir>
+#                 GITHUB_TOKEN / GH_TOKEN — optional; authenticates the GitHub API lookups (CI only)
 set -eu
 
 REPO="schienstockd/cecelia"
@@ -41,6 +42,17 @@ OS="$(uname -s)"
 say() { printf '\033[1;36m[cecelia]\033[0m %s\n' "$1"; }
 err() { printf '\033[1;31m[cecelia] error:\033[0m %s\n' "$1" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# GET a GitHub API URL. Anonymous calls share a 60/h limit per IP, which a shared CI runner IP
+# exhausts — so a GITHUB_TOKEN/GH_TOKEN in the env is sent as auth (CI sets it; end users don't need
+# one). A rejected token falls back to the anonymous call rather than failing the install. The authed
+# body is buffered so a reader closing the pipe early (`grep -m1`) isn't mistaken for a rejection.
+gh_api() {
+  _tok="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [ -n "$_tok" ] && _body="$(curl -fsSL -H "Authorization: Bearer $_tok" "$1" 2>/dev/null)"; then
+    printf '%s\n' "$_body"; return 0
+  fi
+  curl -fsSL "$1"
+}
 
 have curl || err "curl is required."
 have tar  || err "tar is required."
@@ -111,7 +123,7 @@ if [ "$CHANNEL" = "dev" ]; then
   BRANCH="${CECELIA_BRANCH:-main}"
   URL="https://github.com/$REPO/archive/refs/heads/$BRANCH.tar.gz"
   say "Resolving current $BRANCH commit…"
-  SHA="$(curl -fsSL "https://api.github.com/repos/$REPO/commits/$BRANCH" \
+  SHA="$(gh_api "https://api.github.com/repos/$REPO/commits/$BRANCH" \
          | grep -m1 '"sha":' | sed -E 's/.*"sha": *"([^"]+)".*/\1/')"
   PROVENANCE="dev @ $BRANCH ${SHA:-unknown}"
 else
@@ -120,7 +132,7 @@ else
   # published release ourselves via the API — it lists prereleases too, newest first.
   if [ "$VERSION" = "latest" ]; then
     say "Resolving the latest release…"
-    VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" \
+    VERSION="$(gh_api "https://api.github.com/repos/$REPO/releases" \
                | grep -m1 '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
     [ -n "$VERSION" ] || err "Could not resolve the latest release from the GitHub API."
     say "Latest release is $VERSION"
