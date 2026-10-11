@@ -1,11 +1,12 @@
 """The INSTALLED coastal must accept the calls cecelia makes.
 
 `pixi.toml` pins coastal to one commit and calls that commit a HARD FLOOR — cecelia passes arguments that do
-not exist before it. Its own comment names the hole this closes: *"Nothing catches a rollback past
-the `segment.coastal` / `opticalFlow.train` calls above."* Nothing did, and it bit — a rev bump was
-left out of the PR that started passing `flow_cache=`, so `main` had cecelia calling a coastal that
-raises `TypeError: flow_metrics_for_frame() got an unexpected keyword argument 'flow_cache'` on the
-first tile of every optical-flow run. Nothing failed until someone segmented an image.
+not exist before it. Its comment used to admit that nothing caught a rollback past those calls; this
+test is now what it names: "`test_coastal_contract` checks the kwargs above by signature". Nothing had
+caught one, and it bit — a rev bump was left out of the PR that started passing `flow_cache=`, so
+`main` had cecelia calling a coastal that raises
+`TypeError: flow_metrics_for_frame() got an unexpected keyword argument 'flow_cache'` on the first
+tile of every optical-flow run. Nothing failed until someone segmented an image.
 
 Signature-only, deliberately: a call test would need a trained checkpoint and a GPU, which is why
 the rest of the coastal-side tests stub coastal out. What breaks a floor is an argument that is not
