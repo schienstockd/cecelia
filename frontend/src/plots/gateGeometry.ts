@@ -53,3 +53,22 @@ export function convertGateKind(gate: GateSpec, to: GateSpec['kind'] = otherGate
 // place. Re-exported here so GateOverlay's imports (`from '../../plots/gateGeometry'`) keep working
 // unchanged; the annotation callers import from `utils/drawGeometry` directly.
 export { MIN_DRAG_PX, isClickNotDrag, polygonAreaPx, isDegeneratePolygon } from '../utils/drawGeometry'
+
+// ── Drawing past the plot border ───────────────────────────────────────────────
+// A cloud piled against an axis (every cell at 0) has its edge cells ON the border, and a gate around
+// them has to start or end just outside the plot. The overlay therefore keeps drawing while the cursor
+// is up to `EDGE_REACH_PX` beyond the plot area, and pins every such point to the border: the axes are
+// padded past the data (`_display_extent` in api/src/gating_api.jl), so the border already encloses
+// the edge cells, and a gate ON the border does not regrow the axes — no rescale under the gate just
+// drawn. An edit drag is different on purpose: it extrapolates, and the server regrows the axes to fit.
+export const EDGE_REACH_PX = 24
+
+/** A plot-area pixel pinned inside the `w`×`h` box. */
+export function clampToBox(p: [number, number], w: number, h: number): [number, number] {
+  return [Math.min(w, Math.max(0, p[0])), Math.min(h, Math.max(0, p[1]))]
+}
+
+/** Is the pixel within `reach` of the `w`×`h` box (inside it counts)? */
+export function withinReach(p: [number, number], w: number, h: number, reach = EDGE_REACH_PX): boolean {
+  return p[0] >= -reach && p[0] <= w + reach && p[1] >= -reach && p[1] <= h + reach
+}

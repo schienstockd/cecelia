@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { orientGate, convertGateKind, otherGateKind } from './gateGeometry'
+import { orientGate, convertGateKind, otherGateKind, clampToBox, withinReach, EDGE_REACH_PX } from './gateGeometry'
+import { pxToData } from './axisMap'
 import type { GateSpec } from '../stores/gating'
 // Click-vs-drag / polygon-degeneracy primitives moved to `utils/drawGeometry.ts` — tests too.
 
@@ -64,3 +65,31 @@ describe('convertGateKind', () => {
   })
 })
 
+
+describe('drawing past the plot border', () => {
+  it('pins a point outside the box to the border, leaves one inside alone', () => {
+    expect(clampToBox([-15, 50], 200, 100)).toEqual([0, 50])
+    expect(clampToBox([230, 130], 200, 100)).toEqual([200, 100])
+    expect(clampToBox([40, -3], 200, 100)).toEqual([40, 0])
+    expect(clampToBox([40, 60], 200, 100)).toEqual([40, 60])
+  })
+  it('reaches EDGE_REACH_PX beyond each side, no farther', () => {
+    const r = EDGE_REACH_PX
+    expect(withinReach([50, 50], 200, 100)).toBe(true)
+    expect(withinReach([-r, 50], 200, 100)).toBe(true)
+    expect(withinReach([200 + r, 100 + r], 200, 100)).toBe(true)
+    expect(withinReach([-r - 1, 50], 200, 100)).toBe(false)
+    expect(withinReach([50, 100 + r + 1], 200, 100)).toBe(false)
+  })
+  it('a pinned point maps EXACTLY onto the extent edge — so the server does not regrow the axes', () => {
+    // `_include_edges` only grows for an edge strictly outside the extent; the border must not be one
+    const e = { xMin: -2.9, xMax: 99.6, yMin: -1.8, yMax: 63 }
+    for (const flipY of [false, true]) {
+      const b = { w: 300, h: 280, flipY }
+      const [x0, y0] = pxToData(e, b, ...clampToBox([-20, 400], b.w, b.h))
+      const [x1, y1] = pxToData(e, b, ...clampToBox([999, -50], b.w, b.h))
+      expect([x0, x1].sort((a, c) => a - c)).toEqual([e.xMin, e.xMax])
+      expect([y0, y1].sort((a, c) => a - c)).toEqual([e.yMin, e.yMax])
+    }
+  })
+})
