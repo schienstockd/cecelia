@@ -208,6 +208,22 @@ class Render2DRunTest(unittest.TestCase):
         self.assertGreater(on[30:34, 30:34, 1].mean(), 150)
         self.assertLess(off[30:34, 30:34, 1].mean(), 40)
 
+    def test_an_older_hop_draws_fainter(self):
+        # The viewer's tail fade (`tailAlpha` in shaders/overlay_quads.wgsl): the hop arriving at `head` solid, one
+        # four frames older of a five-frame tail at 0.2 + 0.8 * (1/5). Plane 10 is dark, so the
+        # green is the ribbon alone. Without `t1` (a card's trace) both draw at the peak.
+        segs = {"x0": [4.0, 4.0], "y0": [8.0, 24.0], "z0": [10.0, 10.0],
+                "x1": [28.0, 28.0], "y1": [8.0, 24.0], "z1": [10.0, 10.0],
+                "colour": [[0.0, 1.0, 0.0], [0.0, 1.0, 0.0]]}
+        faded = self._frame([10, 10], overlays={"segments": dict(segs, t1=[6.0, 2.0], head=6, length=5)},
+                            segmentWidthPx=4)[..., 1]
+        new, old = faded[14:18, 16:48].mean(), faded[46:50, 16:48].mean()
+        self.assertGreater(new, 200)
+        self.assertLess(old, new * 0.7)
+        self.assertGreater(old, 40)                      # the floor keeps it visible
+        flat = self._frame([10, 10], overlays={"segments": segs}, segmentWidthPx=4)[..., 1]
+        self.assertAlmostEqual(flat[46:50, 16:48].mean(), flat[14:18, 16:48].mean(), delta=15)
+
 
 if __name__ == "__main__":
     unittest.main()

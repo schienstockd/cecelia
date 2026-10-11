@@ -144,6 +144,9 @@ export interface VolumeRenderer {
    *  window. Negative `planeLo` disables the filter (3D volume view, no z-slicing). */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number,
                         planeLo: number, planeHi?: number): void
+  /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
+   *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
+  setTailFade(head: number, length: number): void
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
    * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
@@ -929,6 +932,11 @@ export async function createVolumeRenderer(
       // don't belong on.
       u[U.pan.ribbonLo] = planeLo
       u[U.pan.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+
+    setTailFade(head: number, length: number) {
+      u[U.trail.head] = head
+      u[U.trail.length] = Math.max(0, length)
     },
 
     setLabelStyle(opacity: number, contourPx: number) {

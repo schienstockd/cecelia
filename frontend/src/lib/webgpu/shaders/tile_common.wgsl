@@ -17,7 +17,8 @@
 //         what lets `label_colour.wgsl` read it.
 // `ov`    points: x = size (px), y = first plane shown, z = tail width (px), w = last plane shown.
 //         Negative y = no plane filter. Same lanes as the MIP block's `ov`.
-// `ovx`   x/y = track ribbon first/last plane (negative x = no filter), z/w = unused.
+// `ovx`   x/y = track ribbon first/last plane (negative x = no filter), z/w = tail fade head /
+//         length (`tailAlpha`, overlay_quads.wgsl) — the MIP and brick blocks' `trail`.
 // `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = unused.
 
 struct P {

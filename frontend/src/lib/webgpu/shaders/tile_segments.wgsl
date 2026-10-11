@@ -4,7 +4,7 @@
 #include "tile_common.wgsl"
 #include "overlay_quads.wgsl"
 
-struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
+struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @location(1) alpha: f32 };
 
 @vertex fn vs(
   @builtin(vertex_index) vi: u32,
@@ -12,9 +12,11 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
   @location(1) b: vec3<f32>,
   @location(2) rgb: vec3<f32>,
   @location(3) plane: f32,
+  @location(4) tEnd: f32,
 ) -> SOut {
   var o: SOut;
   o.rgb = rgb;
+  o.alpha = tailAlpha(tEnd, p.ovx.z, p.ovx.w);
   // Ribbons carry their OWN plane bounds, so a viewer can widen the tail's z-reach independently of
   // the points' — a track's plane is where it ends, but the tail is a continuous path.
   if (offPlanes(plane, p.ovx.x, p.ovx.y)) {
@@ -28,5 +30,5 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
 }
 
 @fragment fn fs(in: SOut) -> @location(0) vec4<f32> {
-  return vec4(in.rgb, 0.85);
+  return vec4(in.rgb, in.alpha);
 }

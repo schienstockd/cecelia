@@ -143,7 +143,16 @@ end
     @test dct["points"]["z"] == [3.0, 4.5]
     @test dct["points"]["colour"][1] == Float64[1.0, 0.0, 0.0]
     @test dct["segments"]["z1"] == [4.5]
-    @test !haskey(dct["segments"], "alpha")      # the viewer draws tails at one alpha; so does the movie
+    @test !haskey(dct["segments"], "alpha")      # the shader fades, from t1 + head + length
+    @test !haskey(dct["segments"], "t1")         # no `tail` column (a card's trace) → unfaded
+    # The overlay author's segments carry `tail`: the fade's inputs, head = t + 1 as `_state_at`
+    # windows it — what `setTailFade` writes in the viewer.
+    fsegs = merge(segs, (; t1 = [6], tail = [30]))
+    fd = _overlays3d_state(t -> (nothing, fsegs), 5)["segments"]
+    @test fd["t1"] == [6.0] && fd["head"] == 6 && fd["length"] == 30
+    # Merged sources concatenate `tail` like every other column, so the frame still has one length.
+    merged = merge_overlay_closures([t -> (nothing, fsegs), t -> (nothing, fsegs)])
+    @test _overlays3d_state(merged, 5)["segments"]["t1"] == [6.0, 6.0]
     # Round-trips through JSON3 — the actual over-the-wire test.
     j = JSON3.read(JSON3.write(dct))
     @test collect(j.points.x) == [50.5, 60.0]

@@ -121,6 +121,21 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
+  // One fade for the viewer's three renderers AND the movie host (which runs mip_segments.wgsl), so a
+  // tail in a recorded movie fades exactly as it does on screen.
+  const fades = { SEGMENTS_WGSL: 'p.trail.x, p.trail.y', BRICK_SEGMENTS_WGSL: 'p.trail.x, p.trail.y',
+                  TILE_SEGMENTS_WGSL: 'p.ovx.z, p.ovx.w' }
+  const segCode: Record<string, string> = { SEGMENTS_WGSL, BRICK_SEGMENTS_WGSL, TILE_SEGMENTS_WGSL }
+  for (const [k, lanes] of Object.entries(fades)) {
+    it(`${k} fades tails by age with the one shared tailAlpha`, () => {
+      const code = segCode[k]
+      expect(code.match(/fn tailAlpha\(/g)).toHaveLength(1)
+      expect(code).toMatch(/@location\(4\) tEnd: f32/)
+      expect(code).toContain(`o.alpha = tailAlpha(tEnd, ${lanes});`)
+      expect(code).toMatch(/return vec4\(in\.rgb, in\.alpha\);/)
+    })
+  }
+
   it('TILE_WGSL colours its mask with the one shared labColour / labShown', () => {
     expect(TILE_WGSL).toContain(expandWgsl('label_colour.wgsl'))
     expect(TILE_WGSL.match(/fn labColour\(/g)).toHaveLength(1)

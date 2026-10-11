@@ -232,6 +232,8 @@ the uniforms, the LUT and the palette, and `render_frame.py` uploads them to wgp
   cannot drift from the volume. That pulls Phase 4 forward for 3D, which was forced by the pitch
   finding: keeping Julia's projection would have needed a third copy of the camera.
   - The 3D tail fade is gone. The viewer draws tails at one alpha (0.85), and now so does the movie.
+    *Later:* the fade came back in the shared shader (`tailAlpha` in `shaders/overlay_quads.wgsl`), so the viewer and
+    every movie fade tails alike — `docs/TRACKING.md` → *Tail fade*.
 - **Masks in 3D.** A 3D movie now draws the viewer's 3D mask: every label, nearest along the ray,
   `shaders/label_palette.json` colours, `LABEL_OPACITY`, and the request's `labelContour`.
   - It is not pop-filtered, because the viewer's 3D view isn't either.

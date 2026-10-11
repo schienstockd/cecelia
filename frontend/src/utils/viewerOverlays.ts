@@ -424,8 +424,9 @@ export function filterPayloadByTrackSource(payload: OverlayPayload, popUid: stri
 
 // ── Track tails ──────────────────────────────────────────────────────────────────
 
-/** Floats per segment instance: ax, ay, az, bx, by, bz, r, g, b, plane. */
-export const SEG_STRIDE = 10
+/** Floats per segment instance: ax, ay, az, bx, by, bz, r, g, b, plane, end timepoint. The end
+ *  timepoint is what the shader fades a tail by (`tailAlpha` in `shaders/overlay_quads.wgsl`). */
+export const SEG_STRIDE = 11
 
 export interface SegmentBuffer {
   /** Segment instances, `SEG_STRIDE` floats each, ordered by the segment's END timepoint. */
@@ -503,6 +504,7 @@ export function buildTrackBuffer(
     // The plane of the segment's END, so the 2D view keeps a tail that arrives on the plane you are
     // looking at. Judging by the start instead would drop the segment that brought the cell here.
     data[o + 9] = z && z.length ? Math.floor(z[b] / vz) : 0
+    data[o + 10] = segs[n].end
   }
 
   // Prefix indexes over timepoints. Built once; two reads per frame afterwards.
@@ -668,6 +670,7 @@ export function buildMultiTrackBuffer(
     data[o + 3] = b.x; data[o + 4] = b.y; data[o + 5] = b.z
     data[o + 6] = rgb[0]; data[o + 7] = rgb[1]; data[o + 8] = rgb[2]
     data[o + 9] = Math.floor(b.z / vz)   // plane of segment END — the tail arrives on the plane you see
+    data[o + 10] = s.end                 // end timepoint, for the tail fade
     sourceCounts[s.source]++
     perSource[s.source]++
   }
@@ -706,6 +709,15 @@ export function buildMultiTrackBuffer(
 }
 
 /**
+ * The newest END timepoint a tail at frame `t` shows — `t + 1`, see `tailRange`. Also the fade's
+ * age-0 point (`trail.head`, `tailAlpha` in `shaders/overlay_quads.wgsl`), so the hop drawn solid is the hop the
+ * window ends on.
+ */
+export function tailHead(t: number): number {
+  return Math.max(0, Math.round(t)) + 1
+}
+
+/**
  * `[first, count]` for a tail of `tailFrames` ending at `t`, or `null` when it is empty.
  *
  * `tailFrames` is a count of FRAMES, as the viewer's `tail_length` is, so L gives L segments per track —
@@ -723,7 +735,7 @@ export function tailRange(
   // model does the same on scrub; the old `hi = t` read as broken at t = 0 (window collapsed to
   // [0, 0] and every segment ends at t ≥ 1 → nothing to draw, even though tracks were built).
   // "still no ribbons ... there are tracks in 'default' segmentation".
-  const hi = Math.max(0, Math.round(t)) + 1
+  const hi = tailHead(t)
   // L frames means L hops visible. `hi - L + 1` keeps the tail's LENGTH at L when hi is shifted:
   // L=1 → [t+1, t+1] = the current hop only; L=2 → [t, t+1] = current + one back.
   const lo = Math.max(0, hi - L + 1)
@@ -772,6 +784,7 @@ export function setOverlayWindow(
                    borderPx?: number): void
     setOverlaySegmentDraw(first: number, count: number, widthPx: number, planeLo: number,
                           planeHi?: number): void
+    setTailFade(head: number, length: number): void
   },
   points: PointBuffer, segments: SegmentBuffer, t: number, planes: readonly [number, number],
   style: OverlayStyle,
@@ -783,6 +796,8 @@ export function setOverlayWindow(
   const tail = t >= 0 && style.tailFrames > 0 ? tailRange(segments, t, style.tailFrames) : null
   const trackTol = Math.max(0, style.trackZTol)
   r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, lo - trackTol, hi + trackTol)
+  // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.
+  r.setTailFade(tailHead(Math.max(0, t)), style.tailFrames)
 }
 
 // ── Colour-by ────────────────────────────────────────────────────────────────────

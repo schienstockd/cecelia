@@ -16,6 +16,7 @@ struct BU {
   lab:      vec4<f32>,  // opacity (0 = off), contour px (0 = filled), palette rows, POINT border px (0 = no outline)
   prevGrid: vec4<f32>,  // prevNBx, prevNBy, prevNBz, prevValid (0.0 = no fallback)
   prevDims: vec4<f32>,  // prevNX, prevNY, prevNZ (previous level), _
+  trail:    vec4<f32>,  // track tail fade: newest end timepoint shown, tail length (frames), _, _
   ch:       array<vec4<f32>, ${MAX_CHANNELS}>,  // per-channel (lo, hi, visible, unused)
 };
 @group(0) @binding(0) var<uniform> p: BU;

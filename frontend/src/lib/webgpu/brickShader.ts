@@ -44,7 +44,7 @@ export const EMPTY_SLOT = 0xFFFFFFFF
 /** The brick uniform block (`shaders/uniforms.json` → "brick", struct `BU` in `brick_common.wgsl`). */
 const BRICK_LAYOUT = uniformLayout('brick')
 
-/** Uniform buffer size in bytes: twelve leading vec4s + one vec4 per channel slot. */
+/** Uniform buffer size in bytes: thirteen leading vec4s + one vec4 per channel slot. */
 export const BRICK_UNIFORM_BYTES = BRICK_LAYOUT.bytes
 
 /**
@@ -64,6 +64,8 @@ export const BU = {
   LAB: BRICK_LAYOUT.base.lab,
   PREV_GRID: BRICK_LAYOUT.base.prevGrid,
   PREV_DIMS: BRICK_LAYOUT.base.prevDims,
+  /** Track tail fade `(head, length, _, _)` — `tailAlpha` in `shaders/overlay_quads.wgsl`. */
+  TRAIL: BRICK_LAYOUT.base.trail,
   /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
   CH0: BRICK_LAYOUT.base.ch,
 }

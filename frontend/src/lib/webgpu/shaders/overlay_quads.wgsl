@@ -48,6 +48,18 @@ fn markerColour(local: vec2<f32>, rgb: vec3<f32>, sizePx: f32, borderPx: f32) ->
   return vec4(rgb, a);
 }
 
+// A track-tail segment's opacity from its age, so a tail reads as a trail in time — the newest hop
+// solid, older hops fading out, as napari and Imaris draw them. Without it every hop has one weight
+// and a path has no direction. `head` = the newest END timepoint the tail shows (`tailHead` in
+// `utils/viewerOverlays.ts`), `length` = the tail in frames: the hop ending at `head` is age 0 and
+// draws at the peak, the oldest shown (age length - 1) 1/length of the way up from the floor, which
+// keeps the far end of a long tail visible. `length <= 0` = no fade.
+fn tailAlpha(tEnd: f32, head: f32, length: f32) -> f32 {
+  if (length <= 0.0) { return f32(${TAIL_ALPHA_PEAK}); }
+  let f = clamp(1.0 - (head - tEnd) / length, 0.0, 1.0);
+  return mix(f32(${TAIL_ALPHA_FLOOR}), f32(${TAIL_ALPHA_PEAK}), f);
+}
+
 // Corner `vi` of a tail quad from NDC `pa` to `pb`, `widthPx` wide. Widened perpendicular to the
 // SCREEN-space direction, in pixels, so the width stays constant under perspective.
 fn ribbonPos(pa: vec2<f32>, pb: vec2<f32>, vi: u32, widthPx: f32, canvas: vec2<f32>) -> vec4<f32> {

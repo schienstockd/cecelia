@@ -167,6 +167,9 @@ export interface TileRenderer {
   /** Which slice of the segment buffer to draw, its width in px, and its own plane window. */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number,
                         planeLo: number, planeHi?: number): void
+  /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
+   *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
+  setTailFade(head: number, length: number): void
   /** Draw the given tiles as one instanced call over the finished atlas, then the overlays. Tiles
    *  that name a slot the atlas does not currently hold are silently skipped. */
   draw(tiles: TileDraw[]): void
@@ -674,6 +677,10 @@ export async function createTileRenderer(
       u[U.ov.tailPx] = Math.max(1, widthPx)
       u[U.ovx.ribbonLo] = planeLo
       u[U.ovx.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+    setTailFade(head, length) {
+      u[U.ovx.trailHead] = head
+      u[U.ovx.trailLength] = Math.max(0, length)
     },
 
     resize(): boolean {

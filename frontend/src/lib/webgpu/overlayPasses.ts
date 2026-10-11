@@ -17,7 +17,8 @@ export const POINT_VERTEX_LAYOUT: GPUVertexBufferLayout = {
   ],
 }
 
-/** One track-tail segment: from, to (absolute image µm), rgb, z plane of the segment's END. */
+/** One track-tail segment: from, to (absolute image µm), rgb, z plane of the segment's END, and its
+ *  end timepoint (the tail fade, `tailAlpha` in `shaders/overlay_quads.wgsl`). */
 export const SEG_VERTEX_LAYOUT: GPUVertexBufferLayout = {
   arrayStride: SEG_STRIDE * 4,
   stepMode: 'instance',
@@ -26,6 +27,7 @@ export const SEG_VERTEX_LAYOUT: GPUVertexBufferLayout = {
     { shaderLocation: 1, offset: 12, format: 'float32x3' },   // to
     { shaderLocation: 2, offset: 24, format: 'float32x3' },   // rgb
     { shaderLocation: 3, offset: 36, format: 'float32' },     // z plane of the segment's END
+    { shaderLocation: 4, offset: 40, format: 'float32' },     // end timepoint, for the fade
   ],
 }
 
