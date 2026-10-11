@@ -181,12 +181,10 @@ down to the edited objects. Build it with that item, not separately.
 
 ## Found while building (not fixed here)
 
-- **A 2D image stored with a singleton Z is measured as 3D.** `measure_from_zarr` sets
-  `is_3d = 'Z' in dim_order`, and `f8gzA2` reports dims `T,C,Z,Y,X` with Z = 1. So the 2D slide got
-  the 3D prop set (no perimeter, solidity or Feret) plus a `centroid_z` column of zeros.
-  `DimUtils.is_3D()` (Z > 1) exists. Changing it changes the output columns of every such image, and
-  the downstream readers of `spatial_cols`, so it needs its own change and tests. Tracked in
-  `docs/TODO.md` → *Singleton-Z images measured as 3D*.
+- **A 2D image stored with a singleton Z was measured as 3D** (`is_3d = 'Z' in dim_order`): the 3D
+  prop set plus an all-zero `centroid_z`. Fixed in its own change: `measure_from_zarr` now uses
+  `DimUtils.is_3D()` and drops the singleton Z at read time, like segmentation's `drop_z`. Existing
+  h5ad files keep the 3D shape until the image is re-measured.
 
 ## Risks / open questions
 

@@ -187,6 +187,12 @@ describe('filterPayloadByLabels', () => {
     const p = filterPayloadByLabels(payload({ values: ['a', 'b', 'c', 'd'] }), new Set([10, 12]))
     expect(p.values).toEqual(['a', 'c'])
   })
+  it('an absent axis (`z: []` on a 2D segmentation) stays empty, never a column of undefineds', () => {
+    // every reader tests `z.length ? z[r] : 0`, so picked undefineds would draw as NaN
+    const p = filterPayloadByLabels(payload({ cells: { ...payload().cells, z: [] } }), new Set([11, 13]))
+    expect(p.cells.z).toEqual([])
+    expect(p.cells.x).toEqual([2, 4])
+  })
   it('a payload with no label column cannot be filtered → empty answer', () => {
     const p = filterPayloadByLabels(payload({ cells: {} }), new Set([1, 2, 3]))
     expect(p.nCells).toBe(0)

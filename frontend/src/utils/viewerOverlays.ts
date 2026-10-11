@@ -300,6 +300,14 @@ export function overlayLayersSummary(layers: readonly { vn: string; payload: Ove
 }
 
 // ── Filtering ────────────────────────────────────────────────────────────────────
+// Narrow one `cells.*` column to the `keep` rows. An EMPTY column is an axis the table does not have —
+// `cells.z` on a 2D segmentation is `[]` — and stays empty: mapping it would give `keep.length`
+// undefineds, which every reader's `z.length ? z[r] : 0` takes as present and writes as NaN.
+function pickRows<T>(arr: T[] | undefined, keep: number[]): T[] | undefined {
+  if (!arr) return undefined
+  return arr.length ? keep.map(i => arr[i]) : arr
+}
+
 // Given a payload and a population's cell labels, return a NEW payload whose `cells.*` arrays only
 // carry rows whose `label` is in the set. The pops list, colour-by columns and the flags are
 // carried across unchanged — this only narrows the row axis. Used for gated-track-pop ribbons and
@@ -328,8 +336,7 @@ export function filterPayloadByTracks(payload: OverlayPayload, trackIds: Readonl
   }
   const keep: number[] = []
   for (let i = 0; i < tracks.length; i++) if (trackIds.has(tracks[i])) keep.push(i)
-  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
-    arr ? keep.map(i => arr[i]) : undefined
+  const pick = <T>(arr: T[] | undefined): T[] | undefined => pickRows(arr, keep)
   return {
     ...payload,
     nCells: keep.length,
@@ -353,8 +360,7 @@ export function filterPayloadByLabels(payload: OverlayPayload, labels: ReadonlyS
   }
   const keep: number[] = []
   for (let i = 0; i < labs.length; i++) if (labels.has(labs[i])) keep.push(i)
-  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
-    arr ? keep.map(i => arr[i]) : undefined
+  const pick = <T>(arr: T[] | undefined): T[] | undefined => pickRows(arr, keep)
   return {
     ...payload,
     nCells: keep.length,
@@ -404,8 +410,7 @@ export function filterPayloadByTrackSource(payload: OverlayPayload, popUid: stri
     const s = sources[i]
     if (s === '' || s === WHOLE_SEG_TRACK_SOURCE || s === popUid) keep.push(i)
   }
-  const pick = <T>(arr: T[] | undefined): T[] | undefined =>
-    arr ? keep.map(i => arr[i]) : undefined
+  const pick = <T>(arr: T[] | undefined): T[] | undefined => pickRows(arr, keep)
   return {
     ...payload,
     nCells: keep.length,

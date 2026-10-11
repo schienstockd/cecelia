@@ -21,7 +21,7 @@ Each measured label set produces one AnnData file:
 | `X` | Float32 feature matrix (cells × features). Contains all morphology and intensity columns. |
 | `obsm["spatial"]` | Float32 `(n_cells, n_spatial_dims)` — centroid coordinates in array order (Z, Y, X for 3D; Y, X for 2D). |
 | `obsm["temporal"]` | Float32 `(n_cells, 1)` — timepoint index (0-based). Present only for timecourse images. |
-| `uns["spatial_cols"]` | Explicit axis names for `obsm["spatial"]` columns — `["centroid_z","centroid_y","centroid_x"]` (3D) or `["centroid_y","centroid_x"]` (2D). NOT skimage's positional `centroid-N` (see below). |
+| `uns["spatial_cols"]` | Explicit axis names for `obsm["spatial"]` columns — `["centroid_z","centroid_y","centroid_x"]` (3D) or `["centroid_y","centroid_x"]` (2D — including a single plane stored with a length-1 Z, which is measured as 2D, the same `is_3D()` rule segmentation uses). NOT skimage's positional `centroid-N` (see below). |
 | `uns["temporal_cols"]` | Name for `obsm["temporal"]` (always `["centroid_t"]`). |
 
 > **Centroid axis names are explicit and read by name, never by position.** Columns are

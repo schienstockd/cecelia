@@ -84,16 +84,21 @@ def block_size_for(label_arr, target: int = DEFAULT_BLOCK_SIZE) -> int:
 
 
 def scan_label_bboxes(arr, la_t, t_idx: int, spatial_axes: list, block: int,
-                      pool=None) -> pd.DataFrame | None:
+                      pool=None, store_axes: list | None = None) -> pd.DataFrame | None:
     """Bounding box of every label in one timepoint of a label store, read block by block.
 
     Returns a DataFrame indexed by label id with `lo_<ax>` / `hi_<ax>` (half-open) per spatial axis,
     or None when the timepoint has no labels. Only one XY block (full Z) is ever resident.
 
+    `store_axes` is the store's non-T axis order when it differs from `spatial_axes` — i.e. when a
+    singleton Z is dropped (`_store_index`); default: the same.
+
     Each block is relabelled densely before `find_objects`, which is O(max label id) per call —
     with millions of ids that per-block cost, not the pixels, would dominate the scan.
     """
-    shape = [arr.shape[i] for i in range(arr.ndim) if i != la_t]
+    store_axes = store_axes or spatial_axes
+    store_shape = dict(zip(store_axes, (arr.shape[i] for i in range(arr.ndim) if i != la_t)))
+    shape = [store_shape[ax] for ax in spatial_axes]
     iy, ix = spatial_axes.index('Y'), spatial_axes.index('X')
     starts = [(y, x) for y in range(0, shape[iy], block) for x in range(0, shape[ix], block)]
 
@@ -102,7 +107,7 @@ def scan_label_bboxes(arr, la_t, t_idx: int, spatial_axes: list, block: int,
         sl = [slice(None)] * len(spatial_axes)
         sl[iy] = slice(y0, min(y0 + block, shape[iy]))
         sl[ix] = slice(x0, min(x0 + block, shape[ix]))
-        crop = _read_label_region(arr, la_t, t_idx, sl)
+        crop = _read_label_region(arr, la_t, t_idx, _store_index(store_axes, spatial_axes, sl))
         ids = np.unique(crop)
         ids = ids[ids != 0]
         if ids.size == 0:
@@ -155,8 +160,15 @@ def plan_regions(bbox: pd.DataFrame, block: int, cap: int = MARGIN_CAP):
     return regions, int(outlier.sum())
 
 
+def _store_index(store_axes: list, spatial: list, sl: list) -> list:
+    """Per-axis slices over the MEASURED axes → one index per store axis. A store axis that is not
+    measured (a singleton Z, dropped) is read at 0, which squeezes it out of the crop."""
+    by_ax = dict(zip(spatial, sl))
+    return [by_ax.get(ax, 0) for ax in store_axes]
+
+
 def _read_label_region(arr, la_t, t_idx: int, spatial_sl: list) -> np.ndarray:
-    """One timepoint of a label store, cropped to `spatial_sl` (one slice per non-T axis)."""
+    """One timepoint of a label store, cropped to `spatial_sl` (one index per non-T axis)."""
     it = iter(spatial_sl)
     sl = tuple(t_idx if i == la_t else next(it) for i in range(arr.ndim))
     return np.asarray(arr[sl])
@@ -233,7 +245,13 @@ class MeasureUtils:
         dim_order = self.dim_utils.im_dim_order
         dim_sizes = dict(zip(dim_order, self.dim_utils.im_dim))
 
-        is_3d  = 'Z' in dim_order
+        # Dimensionality is the image's REAL Z extent, not whether its axes name a Z: a single-plane
+        # image keeps a length-1 Z whenever its source had one, and measuring that as 3D gave it the 3D
+        # prop set (no perimeter, solidity, Feret, eccentricity) and an all-zero `centroid_z`. The
+        # singleton Z is dropped at read time — the same rule segmentation applies (`drop_z` in
+        # `predict_from_zarr`, docs/SEGMENTATION.md), so crops, centroids and blocks are all Y,X.
+        is_3d  = self.dim_utils.is_3D()
+        drop_z = 'Z' in dim_order and not is_3d
         n_t    = int(dim_sizes.get('T', 1))
         n_c    = int(dim_sizes.get('C', 1))
         la_t   = dim_order.index('T') if 'T'  in dim_order else None
@@ -267,12 +285,13 @@ class MeasureUtils:
             log.log(f'>> label passes: {len(label_passes)} ranges over '
                     f'{len(names)} passes ({", ".join(names)})')
 
-        spatial = [ax for ax in label_dim_order if ax != 'T']
+        store_axes = [ax for ax in label_dim_order if ax != 'T']        # the label store's own axes
+        spatial = [ax for ax in store_axes if not (drop_z and ax == 'Z')]   # the axes measured
         block = max(64, int(self.params.get('blockSize') or block_size_for(base_arr)))
         n_workers = max(1, int(n_workers))
         pool = cf.ThreadPoolExecutor(max_workers=n_workers) if n_workers > 1 else None
         ctx = dict(label_zarrs=label_zarrs, im_arr=im_arr, l_la_t=l_la_t, la_t=la_t, la_c=la_c,
-                   n_c=n_c, is_3d=is_3d, spatial=spatial, log=log)
+                   n_c=n_c, is_3d=is_3d, spatial=spatial, store_axes=store_axes, log=log)
 
         try:
             # Pass 1 — labels only: where is every object? Secondary stores (nuc/cyto/halo) widen
@@ -280,14 +299,15 @@ class MeasureUtils:
             regions: list = []
             n_outliers = n_objects = 0
             for t_idx in range(n_t):
-                bbox = scan_label_bboxes(base_arr, l_la_t, t_idx, spatial, block, pool)
+                bbox = scan_label_bboxes(base_arr, l_la_t, t_idx, spatial, block, pool, store_axes)
                 if bbox is None:
                     log.log(f'>> t {t_idx + 1}/{n_t}: no labels')
                     continue
                 for ltype, lzarr in label_zarrs.items():
                     if ltype == 'base':
                         continue
-                    sec = scan_label_bboxes(lzarr[0], l_la_t, t_idx, spatial, block, pool)
+                    sec = scan_label_bboxes(lzarr[0], l_la_t, t_idx, spatial, block, pool,
+                                            store_axes)
                     if sec is not None:
                         sec = sec.reindex(bbox.index)
                         for c in bbox.columns:
@@ -370,8 +390,9 @@ class MeasureUtils:
         """
         spatial = ctx['spatial']
         sl = [slice(int(a), int(b)) for a, b in zip(lo, hi)]
+        store_sl = _store_index(ctx['store_axes'], spatial, sl)
         dense = _dense_labels(
-            _read_label_region(ctx['label_zarrs']['base'][0], ctx['l_la_t'], t_idx, sl), ids)
+            _read_label_region(ctx['label_zarrs']['base'][0], ctx['l_la_t'], t_idx, store_sl), ids)
 
         df = self._measure_morphology(dense, ctx['is_3d'], ctx['log'],
                                       origin=[s.start for s in sl])
@@ -387,7 +408,7 @@ class MeasureUtils:
         for ltype, lzarr in ctx['label_zarrs'].items():
             if ltype != 'base':
                 crops[ltype] = _dense_labels(
-                    _read_label_region(lzarr[0], ctx['l_la_t'], t_idx, sl), ids)
+                    _read_label_region(lzarr[0], ctx['l_la_t'], t_idx, store_sl), ids)
         # The label→pixel grouping is the same for every channel, so build it once per label type.
         groups = {lt: np.unique(c.ravel(), return_inverse=True) for lt, c in crops.items()} \
             if self.intensity_measure == 'mean' else None
@@ -413,7 +434,8 @@ class MeasureUtils:
         """Channel `c` of timepoint `t_idx` over the crop `sl`, as float32, smoothed if asked.
 
         With a Gaussian, the read carries a halo of the kernel radius on Y and X and is trimmed
-        after — the same values as smoothing the whole plane (Z is always read whole)."""
+        after — the same values as smoothing the whole plane (Z is always read whole). An image axis
+        not in `spatial` (a dropped singleton Z) is read at 0, so the plane comes back Y,X."""
         halo = int(_GAUSS_TRUNCATE * self.gaussian_filter + 0.5) if self.gaussian_filter > 0 else 0
         read_sl, trim = [], []
         for ax, s in zip(spatial, sl):
@@ -425,9 +447,9 @@ class MeasureUtils:
             else:
                 read_sl.append(s)
                 trim.append(slice(None))
-        it = iter(read_sl)
-        full = tuple(t_idx if i == la_t else c if i == la_c else next(it)
-                     for i in range(im_arr.ndim))
+        by_ax = dict(zip(spatial, read_sl))
+        full = tuple(t_idx if i == la_t else c if i == la_c else by_ax.get(ax, 0)
+                     for i, ax in enumerate(self.dim_utils.im_dim_order))
         chan = np.asarray(im_arr[full]).astype(np.float32)
         if halo:
             chan = skfilt.gaussian(chan, sigma=self.gaussian_filter,

@@ -107,18 +107,6 @@ Blocks nothing today (the no-op skip covers the case that hit), but the first re
 a large image will feel it.
 
 
-### Singleton-Z images measured as 3D
-
-`MeasureUtils.measure_from_zarr` decides 2D vs 3D with `is_3d = 'Z' in dim_order`. A 2D tile scan
-stored as `T,C,Z,Y,X` with Z = 1 (seen on `4rNbMp/f8gzA2`, 2026-10-11) is therefore measured with
-the 3D prop set: no `perimeter`, `solidity`, `feret_diameter_max` or `eccentricity`, plus a
-`centroid_z` column of zeros in `obsm['spatial']`. `DimUtils.is_3D()` (Z > 1) already exists.
-
-Switching to it changes the output columns and `spatial_cols` for every such image, so check the
-readers of `spatial_cols` / `centroid_z` (tracking, spatial, `label_props.jl`, the viewer's centroid
-mapping) before flipping, and decide what an existing h5ad with the 3D set should do (re-measure, or
-leave it). Found while building `docs/todo/MEASURE_TILING_PLAN.md`.
-
 ### WebGPU per-image layer props — animation snapshot source (P9 blocker)
 
 **Blocks** [`docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md`](todo/VIEWER_CONTROLS_SPLIT_PLAN.md) → P9
