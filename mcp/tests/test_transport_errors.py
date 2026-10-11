@@ -26,6 +26,15 @@ class _Canned(socketserver.BaseRequestHandler):
         self.request.recv(65536)  # the request; its content doesn't matter
         self.request.sendall(self.server.reply)
         self.request.shutdown(socket.SHUT_WR)
+        # Drain until the client hangs up. Closing with request bytes still unread (a body that came
+        # in a second segment) makes the kernel send RST, and macOS then hands the client
+        # "Connection reset" in place of the canned reply.
+        self.request.settimeout(5)
+        try:
+            while self.request.recv(65536):
+                pass
+        except OSError:
+            pass
 
 
 def _serve(reply: bytes) -> socketserver.ThreadingTCPServer:
