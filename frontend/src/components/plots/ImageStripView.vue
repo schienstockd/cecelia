@@ -24,7 +24,7 @@ import { openViewerWindow } from '../../utils/viewerWindow'
 import { channelLegend, type LegendSection } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { captureViewLegend, type CapturedViewLegend } from '../../utils/viewerOverlays'
-import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
+import { parseOverlays, overlayPushConfig, type CapturedLayer } from '../../utils/overlayLayers'
 import { getOpenPopoutWindow } from '../../lib/popout'
 import StripCell from './StripCell.vue'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -144,7 +144,7 @@ async function capture(i: number) {
     }
     const vw = getOpenPopoutWindow('/viewer-window')
     const cap = (vw as unknown as { __cceceliaViewerCapture?: () =>
-      { png: string; extentUm: { x: number; y: number; unit?: string | null } | null; imageUid: string; overlayLayers?: Record<string, { visible: true }> } })?.__cceceliaViewerCapture
+      { png: string; extentUm: { x: number; y: number; unit?: string | null } | null; imageUid: string; overlayLayers?: Record<string, CapturedLayer> } })?.__cceceliaViewerCapture
     if (!cap) {
       err.value = 'Open the viewer window on this image and try again.'
       return

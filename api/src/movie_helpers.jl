@@ -373,11 +373,15 @@ function overlay_legend_content(img, column::AbstractString, overlay_pops, user_
                 push!(pops, Dict{String,Any}("name" => name, "colour" => drawn === missing ? nothing : drawn))
                 continue
             end
+            # A cell-track ribbon (`track` layer over a flow / clust / region pop) is its own row, in
+            # the tails' colour: the pop's points may be drawn alongside in the pop's colour.
+            ribbon = pt == "track"
             try
-                p = pop_at(_live_map(img, vn, pt), path)
-                p.name in seen && continue
-                push!(seen, p.name)
-                push!(pops, Dict{String,Any}("name" => p.name, "colour" => drawn === missing ? p.colour : drawn))
+                p = pop_at(_live_map(img, vn, ribbon ? read_pop_type(img, vn, path) : pt), path)
+                name = ribbon ? "$(p.name) tracks" : p.name
+                name in seen && continue
+                push!(seen, name)
+                push!(pops, Dict{String,Any}("name" => name, "colour" => drawn === missing ? p.colour : drawn))
             catch
                 # pop map / path unavailable → skip
             end
