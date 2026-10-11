@@ -17,6 +17,7 @@ import sys
 import unittest
 from unittest import mock
 
+from cecelia.tests.test_judge_chart import FakeRemote
 from cecelia.tests.test_judge_record import _bug, _Fixture
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
@@ -54,6 +55,13 @@ class _WeeklyFixture(_Fixture):
         guard = mock.patch.object(self.w._issues, "_default_run", no_gh)
         guard.start()
         self.addCleanup(guard.stop)
+        # never the real `git push` either: the chart step pushes to `judge-assets` unless `--no-pr`.
+        # Every `chart.Git` talks to an in-memory remote instead
+        self.chart_remote = FakeRemote()
+        chart_guard = mock.patch.object(self.w._chart.Git, "_default_run",
+                                        lambda _self, args, input: self.chart_remote(args, input))
+        chart_guard.start()
+        self.addCleanup(chart_guard.stop)
         # never the real repo's git: `main()` runs a live pass, whose `pin` fetches and whose
         # `prepare_worktree` adds `<state_dir>/judge-worktree` to the repo the tests run in. The state
         # dir is a temp dir, so each run left a `prunable` worktree in the real repo. The fakes record
@@ -275,6 +283,27 @@ class WeeklyTest(_WeeklyFixture):
                 mock.patch.object(self.w, "publish", return_value="url"):
             self.assertEqual(self.w.main(["--no-issues"]), 0)
             self.assertEqual(self.w.main(["--no-issues", "--no-pr"]), 0)
+
+
+    def test_the_chart_is_pushed_after_the_pass_and_not_with_no_pr(self):
+        record = self.run_pass()
+        with mock.patch.object(self.w, "weekly", return_value=record), \
+                mock.patch.object(self.w, "publish", return_value="url"):
+            self.assertEqual(self.w.main(["--no-issues", "--no-pr"]), 0)
+            self.assertEqual(self.chart_remote.pushes(), [])
+            self.assertEqual(self.w.main(["--no-issues"]), 0)
+        [push] = self.chart_remote.pushes()
+        self.assertTrue(push[3].endswith(":refs/heads/judge-assets"))
+        self.assertIn("pushed", self.rec.load(self.tmp / "judge-runs" / f"{record['date']}.json")["run"]["chart"])
+
+    def test_a_chart_crash_never_fails_the_pass(self):
+        record = self.run_pass()
+        with mock.patch.object(self.w, "weekly", return_value=record), \
+                mock.patch.object(self.w, "publish", return_value="url"), \
+                mock.patch.object(self.w._chart, "render_svg", side_effect=ValueError("bad data")):
+            self.assertEqual(self.w.main(["--no-issues"]), 0)
+        chart = self.rec.load(self.tmp / "judge-runs" / f"{record['date']}.json")["run"]["chart"]
+        self.assertEqual(chart, {"error": "ValueError: bad data"})
 
 
 class IssueLayoutTest(_WeeklyFixture):

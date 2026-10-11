@@ -179,6 +179,10 @@ test whether an agent can actually use the framework.
    `gh` is allowlisted to the issue subcommands this needs. At most 20 creates a pass, one a
    second; the rest wait. A mirror that fails says so on `run.issues` and leaves the pass standing.
    Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
+9. **Chart** (`chart.py`, best-effort, last). The README's chart is rendered from the log and the
+   store and pushed to the `judge-assets` branch; *The chart* below. With `--no-pr` it is rendered
+   but not pushed. Whatever happens is kept on `run.chart` (`pushed`, `skipped`, or `error`) and
+   printed; a chart failure never fails the pass.
 
 The record PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
 a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
@@ -261,6 +265,31 @@ proposals in `judge-review`.
 No fix runs unattended: an unattended fix agent is deferred, see
 [`../FUTURE.md`](../FUTURE.md) → *Unattended fix agent for the weekly judge*.
 
+## The chart
+
+The README embeds `effectiveness.svg` from the orphan `judge-assets` branch: what it shows and what
+it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in three steps:
+
+- **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), findings by
+  their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
+  does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
+  `CLAUDE.md`. Plus the newest pass record's bug counts by status. Numbers only.
+- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Okabe-Ito swatches from
+  `share/console_palette.json`, mid-grey ink on a transparent background so one file reads on
+  GitHub's light and dark themes; the numbers are in its `<desc>` too. Every label is fixed text or a
+  number, XML-escaped anyway; an outcome the code doesn't know is drawn as *no outcome logged*.
+- **Publish.** A blob per file, a tree and a commit with no parent (`git hash-object` / `mktree` /
+  `commit-tree`: no checkout is touched), force-pushed to `refs/heads/judge-assets`, so the branch
+  is always one commit. The `git` runner (`chart.Git`) allows only those calls, `ls-remote` of that
+  ref, and a push of a bare SHA to it: nothing else runs on the owner's credentials. The push is
+  skipped when the SVG is byte-identical to the last one pushed and the branch still holds that
+  commit (`~/.cecelia-effectiveness/chart/pushed.json`); a deleted branch is pushed again. A failed
+  push writes nothing, so the next pass tries again.
+
+`raw.githubusercontent.com` serves the SVG as `image/svg+xml` with a 5-minute cache, so a push
+shows in the README within minutes. If the branch is deleted, the README image breaks until the
+next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
+
 ## Commands
 
 | | |
@@ -272,6 +301,7 @@ No fix runs unattended: an unattended fix agent is deferred, see
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
+| `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |
 | `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
 
 On the usage limit, `judge-bugs` / `judge-verify` / `judge-rules` print one line with when it lifts
