@@ -447,6 +447,20 @@ reads still run in parallel: one serial stage of ~4 ms per brick.
   allocate less. Not pursued further.
 - Not measured: HTTP/2 over TLS, which HTTP.jl writes by a different path.
 
+**Through the server, after** (dev server on `perf/slab-response-pool`, plain HTTP/1.1, `-t auto`,
+same `MODE=scrub` / `MODE=flat` bench as Phase 2 with `HTTP=1.1`, warm cache, 3 rounds, 0 errors):
+
+| Run | Before (Phase 2 server) | After | Server-read median | Wall median |
+|---|---|---|---|---|
+| raw scrub, 1 in flight | 2.79 s | 2.58–2.70 s | 6.7 ms | 9 ms |
+| raw scrub, 6 in flight | between c4 1.29 and c8 1.08 s | 0.91–0.97 s | 10.4 ms | 16 ms |
+| raw scrub, 16 in flight | 1.07 s | **0.76–0.80 s** | 15.9 ms | 35 ms |
+| raw `flat_c4` | 3.16 s | **1.81–1.87 s** | 143 ms | 220 ms |
+
+- At 16 in flight a brick now spends ~19 ms between "read done" and "received" (was ~110 ms).
+- 1 in flight is unchanged, as expected: nothing ran concurrently to serialise.
+- Raw: `p5_after_*.tsv`.
+
 Reproduce (from the repo root; any store, any free port — it prints its own):
 
 ```bash
@@ -479,7 +493,7 @@ iostat -x -m 1 nvme0n1 > $R/A_iostat.txt & vmstat 1 > $R/A_vmstat.txt &
 python3 -I slab_cache_summary.py $R A B C
 ```
 
-`slab_cache_bench.sh` takes `CECELIA_URL`, `PROJ`, `IMG`, `VN` (valueName) and `MODE=flat` (8 t x NC whole volumes) env overrides; the store geometry
+`slab_cache_bench.sh` takes `CECELIA_URL`, `CECELIA_API_TOKEN` or `CECELIA_API_TOKEN_FILE` (the API token — every route but `/api/health` needs it), `HTTP=1.1` (default 2), `PROJ`, `IMG`, `VN` (valueName) and `MODE=flat` (8 t x NC whole volumes) env overrides; the store geometry
 (`NT/NZ/NC`, 8x8 bricks) is hardcoded for `8eapy6` at the top of the script.
 The two `.jl` scripts take the store path as their argument and read the geometry from it. Another
 store with the same layout, for a run on a different machine: `zolIMa`/`Dml3RG`'s raw import

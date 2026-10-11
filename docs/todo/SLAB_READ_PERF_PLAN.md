@@ -184,8 +184,9 @@ Two real causes, both on HTTP.jl's single interactive thread, where every respon
 
 Measured in a standalone repro (the route's read + send, own process, Dml3RG raw, warm cache):
 warm scrub at 16 in flight 1.12–1.28 s → 0.64–0.67 s; at 6 in flight (Chrome's HTTP/1.1 per-origin
-limit) ~1.38 → 0.81 s; flat, 32 whole volumes at 4 in flight, 3.8 → 2.0 s. Through-server numbers
-need a server on the branch.
+limit) ~1.38 → 0.81 s; flat, 32 whole volumes at 4 in flight, 3.8 → 2.0 s. Through the dev server (HTTP/1.1, same bench as
+Phase 2): scrub at 16 in flight 1.07 → 0.76–0.80 s, at 6 in flight 0.91–0.97 s, `flat_c4`
+3.16 → 1.81–1.87 s; 1 in flight unchanged (2.58–2.70 s). Accept met.
 
 - **Accept:** byte-exact responses under concurrency (test: 16 in flight through a real listener);
   scrub and flat both faster through the server; no regression for other routes (untouched).
