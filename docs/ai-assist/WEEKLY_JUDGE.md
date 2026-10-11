@@ -270,13 +270,14 @@ No fix runs unattended: an unattended fix agent is deferred, see
 The README embeds `effectiveness.svg` from the orphan `judge-assets` branch: what it shows and what
 it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in three steps:
 
-- **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), findings by
+- **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), PRs merged
+  (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
   their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
   does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
   `CLAUDE.md`. Plus the newest pass record's bug counts by status, and the fan-out ones by week
   raised. Numbers only.
 - **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Four small line panels:
-  changes reviewed; findings per 100 changes and share fixed before commit, one line per reviewer;
+  changes reviewed and PRs merged; findings per 100 changes and share fixed before commit, one line per reviewer;
   and the newest pass's verdicts on fan-out findings and advisories, by the week raised (the
   judge's own `bugs._key` joins a record's bug to its log row). Partial and low-session weeks are
   hollow points on dashed segments. A week is partial until the run's date is past its

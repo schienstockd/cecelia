@@ -92,6 +92,8 @@ _OUTCOME_KEYS = set(_OUTCOME_LOOK)
 INK = "#7F7F7F"
 #: The two reviewers: key, legend name, swatch.
 REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"))
+#: Merged PRs, beside the changes reviewed: how many checks went into each PR.
+PR_SWATCH = "sky_blue"
 _REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention"}
 
 
@@ -116,9 +118,25 @@ def doc_edits(paths: _t.Sequence[str], *, repo: pathlib.Path = _REPO, ref: str =
     return sorted(d for d in (_day(line) for line in (out or "").splitlines()) if d)
 
 
+def pr_dates(log: str) -> list[_dt.date]:
+    """The days PRs merged, from `git log --first-parent --format='%cs %s'` output."""
+    out = []
+    for line in log.splitlines():
+        day, _, subject = line.partition(" ")
+        # a merge commit, or a squash merge's `(#123)` subject: the judge's own two patterns
+        if (_bugs._MERGE_PR.match(subject) or _bugs._PR_IN_SUBJECT.search(subject)) and _day(day):
+            out.append(_day(day))
+    return sorted(out)
+
+
+def pr_merges(*, repo: pathlib.Path = _REPO, ref: str = "HEAD") -> list[_dt.date]:
+    """The days PRs merged into `ref`. An empty list when git can't answer."""
+    return pr_dates(git_output("log", "--first-parent", "--format=%cs %s", ref, cwd=str(repo)) or "")
+
+
 def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
               prompt_edits: _t.Sequence[_dt.date] = (), rule_edits: _t.Sequence[_dt.date] = (),
-              as_of: _dt.date | None = None) -> dict:
+              prs: _t.Sequence[_dt.date] = (), as_of: _dt.date | None = None) -> dict:
     """Per-week numbers for the chart; JSON-ready and free of any text from the log.
 
     A *change reviewed* is one branch + parent commit a recital reviewed (reruns on the same change
@@ -172,6 +190,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
             "week": monday.isoformat(),
             "partial": monday < first_day or sunday >= as_of,
             "changes": len(changes[monday]),
+            "prs": sum(max(monday, first_day) <= d <= sunday for d in prs),
             "sessions": len(sessions[monday] - {None}),
             "findings": {k: sum(c[k] for c in by_reviewer.values()) for k, _, _ in OUTCOMES},
             "by_reviewer": by_reviewer,
@@ -254,7 +273,8 @@ def describe(data: dict) -> str:
                           f"{w['by_reviewer'][r]['fixed_pre_commit']} fixed before commit"
                           for r, name, _ in REVIEWERS)
         parts.append(f"Week of {_week_label(w['week'])}{' (partial)' if w['partial'] else ''}: "
-                     f"{w['changes']} changes reviewed across {w['sessions']} sessions; {total} findings, "
+                     f"{w['changes']} changes reviewed across {w['sessions']} sessions, {w['prs']} PRs merged; "
+                     f"{total} findings, "
                      + ", ".join(f"{f[k]} {label}" for k, label, _ in OUTCOMES) + f" ({split}).")
     j = data.get("judge")
     if j:
@@ -390,8 +410,9 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     def by_reviewer(value) -> list:
         return [(name, pal[swatch], [value(w, r) for w in weeks], hollow) for r, name, swatch in REVIEWERS]
 
-    _panel(add, x=col[0], y=row[0], w=pw, title="Changes reviewed", weeks=weeks,
-           series=[(None, INK, [w["changes"] for w in weeks], hollow)])
+    _panel(add, x=col[0], y=row[0], w=pw, title="Changes reviewed and PRs merged", weeks=weeks,
+           series=[("changes reviewed", INK, [w["changes"] for w in weeks], hollow),
+                   ("PRs merged", pal[PR_SWATCH], [w["prs"] for w in weeks], hollow)])
     _panel(add, x=col[1], y=row[0], w=pw, title="Findings per 100 changes", weeks=weeks, series=by_reviewer(_per_100))
     _panel(add, x=col[0], y=row[1], w=pw, title="Findings fixed before commit", weeks=weeks,
            series=by_reviewer(_fixed), fmt="{:.0f}%", percent=True)
@@ -533,7 +554,7 @@ def update(*, push: bool, repo: pathlib.Path = _REPO, git: Git | None = None, dr
     try:
         data = aggregate(read_events(), _record.pass_records(),
                          prompt_edits=doc_edits(PROMPT_DOCS, repo=repo), rule_edits=doc_edits(RULE_DOCS, repo=repo),
-                         as_of=_dt.date.today())
+                         prs=pr_merges(repo=repo), as_of=_dt.date.today())
         svg = render_svg(data)
         out_dir = out_dir or chart_dir()
         out_dir.mkdir(parents=True, exist_ok=True)

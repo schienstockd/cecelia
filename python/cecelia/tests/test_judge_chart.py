@@ -160,7 +160,7 @@ class AggregateTest(_Fixture):
     def test_a_low_session_or_partial_week_is_drawn_hollow_and_dashed(self):
         rows = _week(day="2026-09-28", sessions=3) + _week(day="2026-10-06")
         svg = self.c.render_svg(self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20)))
-        self.assertEqual(svg.count('fill="none"'), 5)  # the low week's point on each of the five lines
+        self.assertEqual(svg.count('fill="none"'), 6)  # the low week's point on each of the six lines
         self.assertIn("stroke-dasharray=\"4 4\"", svg)
         whole = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06"), [],
                                                    as_of=dt.date(2026, 10, 20)))
@@ -177,6 +177,17 @@ class AggregateTest(_Fixture):
                                          "dismissed": 1, "by_week": {}})
         svg = self.c.render_svg(data) + json.dumps(data)
         self.assertNotIn("secret", svg)
+
+    def test_merged_prs_are_merge_commits_and_squash_subjects(self):
+        log = ("2026-10-07 Merge pull request #12 from x/y\n"
+               "2026-10-07 fix(thing): a squash merge (#13)\n"
+               "2026-10-06 a direct commit\n"
+               "2026-10-06 mentions (#14) mid-subject\n"
+               "2026-09-01 Merge pull request #1 from old/branch\n")
+        prs = self.c.pr_dates(log)
+        self.assertEqual(prs, [dt.date(2026, 9, 1), dt.date(2026, 10, 7), dt.date(2026, 10, 7)])
+        weeks = self.c.aggregate(_week(), [], prs=prs)["weeks"]
+        self.assertEqual([w["prs"] for w in weeks], [2])  # the September one predates logging
 
     def test_findings_are_split_by_reviewer(self):
         w = self.c.aggregate(_week(), [])["weeks"][0]
@@ -214,7 +225,7 @@ class RenderTest(_Fixture):
     def test_the_numbers_are_in_the_description(self):
         svg = self.c.render_svg(self.c.aggregate(_week(), []))
         self.assertIn('role="img"', svg)
-        self.assertIn("12 changes reviewed across 12 sessions; 3 findings, 1 fixed before commit", svg)
+        self.assertIn("12 changes reviewed across 12 sessions, 0 PRs merged; 3 findings, 1 fixed before commit", svg)
 
     def test_the_svg_parses(self):
         import xml.etree.ElementTree as ET

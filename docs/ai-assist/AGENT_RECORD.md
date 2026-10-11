@@ -15,8 +15,10 @@ effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md
 
 Four line panels, one point per ISO week (Monday–Sunday, UTC):
 
-- **Changes reviewed.** One branch + parent commit a recital reviewed. Running recital again on the
-  same change counts once; a reviewer that errored counts none.
+- **Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
+  reviewed. Running recital again on the same change counts once; a reviewer that errored counts
+  none. PRs merged counts merge and squash commits on `main` (`git log --first-parent`) beside it:
+  a PR usually carries more than one reviewed change.
 - **Findings per 100 changes**, one line per reviewer (fan-out audit, convention check): the week's
   findings ÷ its changes reviewed. Each finding counts once, in the week it was first raised.
 - **Findings fixed before commit**, one line per reviewer: the share of the week's findings whose
