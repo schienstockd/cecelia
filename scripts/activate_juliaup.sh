@@ -24,4 +24,12 @@ fi
 if [ -d "$_cecelia_juliaup/depot" ]; then
   export JULIA_DEPOT_PATH="$HOME/.cecelia/julia-depot:$_cecelia_juliaup/depot:"
 fi
+# No `julia` on PATH (a desktop launch's minimal PATH): fall back to the Julia the installer recorded,
+# as `_recorded_julia` in app.py does. Appended, not prepended: its dir can be /opt/homebrew/bin,
+# whose python would otherwise shadow the pixi env's.
+if ! command -v julia >/dev/null 2>&1 && [ -f "$PIXI_PROJECT_ROOT/.cecelia-julia" ]; then
+  _cecelia_julia="$(head -n 1 "$PIXI_PROJECT_ROOT/.cecelia-julia")"
+  [ -x "$_cecelia_julia" ] && export PATH="$PATH:${_cecelia_julia%/*}"
+  unset _cecelia_julia
+fi
 unset _cecelia_juliaup

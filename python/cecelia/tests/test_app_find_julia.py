@@ -7,6 +7,8 @@ pointed at its own state, or the server comes up under Rosetta again.
 import importlib.util
 import os
 import pathlib
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -62,6 +64,31 @@ class FindJuliaTest(unittest.TestCase):
             self.app._find_julia()
             self.assertNotIn("JULIA_DEPOT_PATH", os.environ)
 
+    def test_installer_recorded_julia_is_found_off_path(self):
+        # A Homebrew juliaup's `julia` sits in /opt/homebrew/bin, which launchd's PATH leaves out.
+        julia = os.path.join(tempfile.mkdtemp(), "bin", self.app._exe("julia"))
+        os.makedirs(os.path.dirname(julia))
+        open(julia, "w", encoding="utf-8").close()
+        with open(os.path.join(self.root, ".cecelia-julia"), "w", encoding="utf-8") as f:
+            f.write(julia + "\n")
+        home = tempfile.mkdtemp()
+        with mock.patch.dict(os.environ, {"PATH": "/usr/bin:/bin", "HOME": home, "USERPROFILE": home}, clear=True), \
+             mock.patch("shutil.which", return_value=None):
+            self.assertEqual(self.app._find_julia(), julia)
+
+    def test_recorded_julia_that_is_gone_falls_through_to_path(self):
+        with open(os.path.join(self.root, ".cecelia-julia"), "w", encoding="utf-8") as f:
+            f.write(os.path.join(self.root, "removed", "julia") + "\n")
+        with mock.patch.dict(os.environ, {"PATH": "/usr/local/bin:/usr/bin"}, clear=True), \
+             mock.patch("shutil.which", return_value="/usr/local/bin/julia"):
+            self.assertEqual(self.app._find_julia(), "/usr/local/bin/julia")
+
+    def test_both_installers_record_the_julia(self):
+        # The file `_recorded_julia` reads only exists if the installers write it.
+        repo = APP_PY.parent
+        self.assertIn('"$INSTALL_DIR/.cecelia-julia"', (repo / "install.sh").read_text(encoding="utf-8"))
+        self.assertIn("'.cecelia-julia')   -Value $Julia", (repo / "install.ps1").read_text(encoding="utf-8"))
+
     def test_without_it_path_julia_is_used_and_env_untouched(self):
         env = {"PATH": "/usr/local/bin:/usr/bin"}
         with mock.patch.dict(os.environ, env, clear=True), \
@@ -69,6 +96,36 @@ class FindJuliaTest(unittest.TestCase):
             self.assertEqual(self.app._find_julia(), "/usr/local/bin/julia")
             self.assertNotIn("JULIAUP_DEPOT_PATH", os.environ)
             self.assertEqual(os.environ["PATH"], "/usr/local/bin:/usr/bin")
+
+
+@unittest.skipIf(os.name == "nt", "pixi sources activate_juliaup.sh on unix only")
+class ActivateRecordedJuliaTest(unittest.TestCase):
+    """``scripts/activate_juliaup.sh`` falls back to the recorded Julia like ``_recorded_julia``,
+    appending its dir so it never shadows the pixi env's own binaries."""
+
+    def _activate(self, root):
+        script = APP_PY.parent / "scripts" / "activate_juliaup.sh"
+        out = subprocess.run(["/bin/sh", "-c", '. "$1"; echo "$PATH"', "sh", str(script)],
+                             env={"PATH": "/usr/bin:/bin", "PIXI_PROJECT_ROOT": root},
+                             capture_output=True, text=True, encoding="utf-8", check=True)
+        return out.stdout.strip()
+
+    def test_recorded_julia_dir_is_appended_when_no_julia_on_path(self):
+        root = tempfile.mkdtemp()
+        bin_dir = os.path.join(root, "hb")
+        os.makedirs(bin_dir)
+        julia = os.path.join(bin_dir, "julia")
+        with open(julia, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(julia, 0o755)
+        with open(os.path.join(root, ".cecelia-julia"), "w", encoding="utf-8") as f:
+            f.write(julia + "\n")
+        if shutil.which("julia", path="/usr/bin:/bin"):
+            self.skipTest("a julia in /usr/bin or /bin already satisfies PATH")
+        self.assertEqual(self._activate(root), "/usr/bin:/bin:" + bin_dir)
+
+    def test_no_record_leaves_path_alone(self):
+        self.assertEqual(self._activate(tempfile.mkdtemp()), "/usr/bin:/bin")
 
 
 class FindPixiTest(unittest.TestCase):
