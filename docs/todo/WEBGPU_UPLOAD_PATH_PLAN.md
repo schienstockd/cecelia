@@ -234,6 +234,39 @@ same problem (fewer round trips) from different angles and don't conflict.
 re-running `curl -sI --http2 https://…/api/version → protocol=2`), `?cert=…` config
 docs.
 
+#### U4 outcome (2026-10-11) — HTTP/2 reverted to opt-in; plain HTTP/1.1 is the default
+
+The premise held only while reads were slow. After `SLAB_READ_PERF_PLAN.md` (reads ~200–300 ms →
+10–15 ms per brick), Chromium's 6-connection queue no longer limits loading, and HTTP/2 measured as
+the slowest protocol. Headless Chromium 155 over CDP, `fetch()` from a page on the server origin
+(`spike/webgpu/slab_browser_bench.mjs`), warm raw scrub of 256 × 4 MB bricks, isolated server, all 200:
+
+| Run wall | 4 in flight | 6 | 16 |
+|---|---|---|---|
+| plain HTTP/1.1 | 1.85–1.97 s | 1.67–1.83 s | **1.57–1.68 s** |
+| HTTP/1.1 over TLS | 1.95–2.07 s | 1.80–1.83 s | 1.60–1.68 s |
+| HTTP/2 over TLS | 2.31–2.46 s | 2.31–2.44 s | 2.54–2.59 s |
+| HTTP/2, HTTP.jl patched (below) | | 1.80–1.90 s | 2.19–2.23 s |
+
+Flat volumes (32 × 65 MB, 4 in flight): plain 2.84–3.27 s, HTTP/2 3.2–3.45 s.
+
+Small API calls (`/api/version`, `/api/projects`, every 25 ms) during the scrub — the case HTTP/2
+was meant to protect: at 16 in flight p50 ~70 ms / p95 ~100–117 ms on plain HTTP/1.1 vs p50 33–41 ms /
+p95 64–96 ms on HTTP/2; at 4 in flight p50 3–7 ms / p95 ~30 ms vs 14–16 / 26–30 ms. Both far under the
+~200 ms that would matter. (Each protocol had one cold first `/api/projects` at 0.8–1.0 s.)
+
+Root cause of most of the HTTP/2 gap: HTTP.jl 2.8.0 `_reserve_h2_send_window!` (`http2_server.jl`)
+caps every flow-control reservation at one 64 KB frame (`_H2_SERVER_MAX_DATA_FRAME_SIZE`), which
+defeats the batching in `_write_data_frames_h2_server!`: a 4 MB brick becomes 64 lock acquisitions +
+TLS writes on the connection's one write lock (one server thread at 100% during a run). A local
+override reserving up to the window removed the hot thread (patched row above) but HTTP/2 still
+trails at 16 in flight. Not fixed here — upstream.
+
+Nothing else needs TLS on loopback: `localhost` is a secure context (WebGPU works over plain HTTP),
+the server binds 127.0.0.1, and the API-token cookie adds `Secure` only over HTTPS. Decision:
+`tls_desired` defaults off everywhere; the Settings toggle and `CECELIA_TLS=1` remain, so HTTP/2 can
+come back if HTTP.jl's path gets faster — re-run `slab_browser_bench.mjs` before flipping it.
+
 ### U5 — Multi-atlas support. **SHIPPED 2026-09-17.**
 
 **Trigger fired 2026-09-16** — §B (laptop) showed 8 GB / 32 GB budgets rejected by

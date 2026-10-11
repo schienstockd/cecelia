@@ -718,13 +718,13 @@ token). `pixi run dev` prints `[dev] sign in once → http://localhost:…/api/a
 per browser; the cookie lasts a year. Scripts and tools send `Authorization: Bearer $(cat
 <config_dir>/api-token)`. Details: `docs/ARCHITECTURE.md` → *API token*.
 
-**Testing HTTP/2 locally** — installed apps default to HTTPS + HTTP/2; a dev checkout defaults
-to plain HTTP/1.1 (Vite's proxy is HTTP/1.1-only both ways, so ALPN downgrades under
-`pixi run dev` and TLS earns nothing). Under `pixi run dev` the supervisor decides the scheme once
+**Testing HTTP/2 locally** — dev and installed apps both default to plain HTTP/1.1; HTTPS + HTTP/2
+is an opt-in (slower for bricks, `docs/SHIPPING.md`). Vite's proxy is HTTP/1.1-only both ways, so
+ALPN downgrades under `pixi run dev` and TLS earns nothing there. Under `pixi run dev` the supervisor decides the scheme once
 (`CECELIA_TLS`, default off) and the backend, Vite's proxy and its Quit all follow it, so the Settings
 TLS toggle can't leave Vite proxying HTTP to an HTTPS backend; `CECELIA_TLS=1 pixi run dev` runs the
 dev stack over TLS. Set `CECELIA_TLS=1` against `pixi run prod` from a dev
-tree to exercise the installed-app codepath — that generates a self-signed cert at
+tree to exercise the HTTPS codepath — that generates a self-signed cert at
 `$CECELIA_DEV_DIR/tls/{cert,key}.pem` via the system `openssl` (rotate by deleting both files).
 Verify h2 is actually on the wire:
 
@@ -737,7 +737,7 @@ curl -sI -k --http2 https://127.0.0.1:8080/api/version -o /dev/null -w 'proto=%{
 
 The `-k` skips validation of the self-signed cert (same click-through the browser does).
 Settings → System also shows the effective protocol as `h2` or `h1.1` next to the port. Full
-resolution order (env → `[tls].enabled` in `custom.toml` → `!is_dev`) and the fallback logic —
+resolution order (env → `[tls].enabled` in `custom.toml` → off) and the fallback logic —
 openssl missing on PATH falls back to HTTP/1.1 with a warning rather than refusing to start —
 live in `docs/SHIPPING.md` → *Runtime flow* and `app/src/config/tls.jl`.
 

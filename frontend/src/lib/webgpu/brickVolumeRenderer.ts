@@ -88,9 +88,9 @@ const BRICK_Z_MAX = 128
  *  magnitude as the flat renderer's typical timepoint budget on the RTX 2000 Ada. */
 const DEFAULT_ATLAS_BUDGET = 512 * 1024 * 1024
 
-/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host
- *  and HTTP/2 multiplexes freely; 16 gives room for both while leaving slack for prefetch t's
- *  behind boundT's bricks. 8 (the initial pick) was too tight — the scheduler kicks the current
+/** Concurrent brick fetches in flight at any moment. HTTP/1.1 caps browser-side at 6 per host,
+ *  so the rest queue in Chromium; 16 still measured fastest (1.6 s vs 1.9 s at 4 for a 256-brick
+ *  scrub, WEBGPU_UPLOAD_PATH_PLAN U4) and leaves slack for prefetch t's behind boundT's bricks. 8 (the initial pick) was too tight — the scheduler kicks the current
  *  t's bricks first, and at 16 bricks per timepoint (fXgbTl at brickSize [128,128,32]) that
  *  used every slot, so prefetch never ran. Measured 2026-08-29: "doesn't prefetch or
  *  buffer anything" under playback. Missed bricks still come back on the next scheduler tick. */

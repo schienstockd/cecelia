@@ -115,12 +115,12 @@ jobs:
           echo "ALICE_LOG=$RUNNER_TEMP/alice.log" >> "$GITHUB_ENV"
           t0=$(date +%s)
           for _ in $(seq 1 180); do
-            curl -m 10 -kfsS https://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
             curl -m 10 -fsS http://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
+            curl -m 10 -kfsS https://127.0.0.1:18080/api/health >/dev/null 2>&1 && break
             sleep 5
           done
           echo "alice's server: $(( $(date +%s) - t0 ))s to first healthy response"
-          curl -m 10 -kfsS https://127.0.0.1:18080/api/health || curl -m 10 -fsS http://127.0.0.1:18080/api/health \
+          curl -m 10 -fsS http://127.0.0.1:18080/api/health || curl -m 10 -kfsS https://127.0.0.1:18080/api/health \
             || { echo "::error::alice's server never became healthy"; tail -80 "$RUNNER_TEMP/alice.log"; exit 1; }
           echo; echo "alice's per-user depot:"; sudo ls -A "$ALICE_HOME/.cecelia" || true
 
@@ -228,8 +228,8 @@ jobs:
             Start-Sleep 5
             # the launcher died (e.g. "Access is denied") — stop waiting, show why
             if ($i -gt 2 -and (Get-ScheduledTask -TaskName cecelia-alice).State -ne 'Running') { break }
-            curl.exe -m 10 -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
             curl.exe -m 10 -fsS http://127.0.0.1:18080/api/health 2>$null;  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            curl.exe -m 10 -kfsS https://127.0.0.1:18080/api/health 2>$null; if ($LASTEXITCODE -eq 0) { $ok = $true; break }
           }
           "alice's server: $([int]((Get-Date) - $t0).TotalSeconds)s"
           if (Select-String -Path C:\ci\alice.log -Pattern 'ALICE-CAN-WRITE-INSTALL' -Quiet) { throw 'alice can write the install' }

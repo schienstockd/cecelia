@@ -1,6 +1,6 @@
 """The MCP reaches the app whichever scheme it was registered with (#1558).
 
-Installed apps serve HTTPS with a self-signed cert, dev serves HTTP, and TLS can be toggled in
+The app serves plain HTTP by default and HTTPS with a self-signed cert when TLS is toggled on in
 Settings — so the registered `CECELIA_API_URL` can name the wrong scheme. On loopback the client skips
 verification (the cert is self-signed by design) and, on a connection-level failure, retries once with
 the other scheme and remembers the one that worked. Off loopback nothing changes: certificates are

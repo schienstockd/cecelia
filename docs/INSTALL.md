@@ -189,11 +189,11 @@ and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOAR
 
 ## HTTPS + HTTP/2
 
-An installed app defaults to HTTPS + HTTP/2 — Chromium refuses cleartext h2, and h2 is what
-multiplexes the brick fetches the viewer needs during a scrub. On first launch Cecelia shells
-out to the system `openssl` binary to generate a self-signed cert at `~/.cecelia/tls/{cert,key}.pem`,
-and the browser shows a "Not secure" warning once; click through and the exception is
-remembered per browser. Regenerate by deleting both files.
+Cecelia serves plain HTTP/1.1 on loopback by default. HTTPS + HTTP/2 is an opt-in: measured in
+Chromium it loads the viewer's bricks slower, not faster (`docs/SHIPPING.md`). When it is on,
+Cecelia shells out to the system `openssl` binary on first launch to generate a self-signed cert at
+`~/.cecelia/tls/{cert,key}.pem`, and the browser shows a "Not secure" warning once; click through
+and the exception is remembered per browser. Regenerate by deleting both files.
 
 **Toggle** — Settings → System has a *Serve over HTTPS + HTTP/2* switch that flips the
 preference; the current wire protocol shows as `h2` or `h1.1` next to the app port. Toggling
@@ -204,9 +204,8 @@ default for the session. If `openssl` is not on `PATH` (default on Linux + macOS
 git-for-windows on Windows) the server logs `HTTP/1.1, no TLS` and starts cleanly on plain
 HTTP — the click-through never blocks launch.
 
-Dev checkouts (`pixi run dev`) default to plain HTTP/1.1 because Vite's proxy is HTTP/1.1-only
-both ways — ALPN downgrades under dev and TLS earns nothing there. Set `CECELIA_TLS=1` against
-`pixi run prod` if you're testing an installed-app codepath from a dev tree.
+Under `pixi run dev`, Vite's proxy is HTTP/1.1-only both ways, so TLS earns nothing there even when
+on. Set `CECELIA_TLS=1` against `pixi run prod` to exercise the HTTPS codepath from a dev tree.
 
 ## Shared / lab machines (system-wide install)
 

@@ -763,9 +763,8 @@ end
 # server restart to take effect on the wire — the UI shows a "restart required" hint when
 # `desired != current-on-wire`.
 function api_tls_get(_req)
-    is_dev = _is_dev()
     200, JSON3.write((;
-        desired = Cecelia.tls_desired(is_dev = is_dev),
+        desired = Cecelia.tls_desired(),
         protocol = _PROTOCOL[],
         envOverride = haskey(ENV, "CECELIA_TLS"),   # settings toggle is a no-op while env forces it
     ))
@@ -776,8 +775,7 @@ function api_tls_set(body_bytes)
     data isa Tuple && return data
     on = get(data, :on, nothing)
     (on === true || on === false) || return 400, JSON3.write((; error = "on (bool) required"))
-    is_dev = _is_dev()
-    effective = Cecelia.set_tls_desired!(on; is_dev = is_dev)
+    effective = Cecelia.set_tls_desired!(on)
     200, JSON3.write((;
         desired = effective,
         protocol = _PROTOCOL[],

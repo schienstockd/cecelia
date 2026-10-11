@@ -170,14 +170,14 @@ kill_server() {
 trap 'kill_server; cleanup' EXIT
 
 note "waiting for /api/health on :$PORT (up to 300s — first launch precompiles Cecelia)"
-# The server is HTTPS-by-default since v0.2.5 (a self-signed loopback cert lands automatically),
-# but `CECELIA_TLS=0` still switches it off. Probe HTTPS first (`-k` accepts the self-signed cert)
-# then fall back to HTTP, matching `app.py::_server_ready` and `.github/workflows/ci.yml`.
+# The server serves plain HTTP by default; HTTPS (self-signed) is an opt-in (`CECELIA_TLS=1` or the
+# Settings toggle). Probe HTTP first, then HTTPS (`-k` accepts the self-signed cert), matching
+# `app.py::_server_ready`.
 health=""
 scheme=""
 for _ in $(seq 1 300); do
   if ! kill -0 "$SERVER_PID" 2>/dev/null; then break; fi          # server died — stop waiting
-  for s in https http; do
+  for s in http https; do
     health="$(curl -kfsS "$s://127.0.0.1:$PORT/api/health" 2>/dev/null || true)"
     [ -n "$health" ] && { scheme="$s"; break; }
   done
