@@ -180,7 +180,9 @@ class WorkTest(_ReviewFixture):
     def setUp(self):
         super().setUp()
         fix = {"verdict": "fix", "date": "2026-10-05", "effect": "drops the tail", "evidence": "b.py:9"}
-        self.record = self.build(bugs=[_bug("B1", verify=fix), _bug("B2"), _bug("B3", status="gone")])
+        # B2 shares neither file nor branch with B1, so each is its own card (BundleTest bundles)
+        self.record = self.build(bugs=[_bug("B1", verify=fix), _bug("B2", file="b.py", branch="feat/y"),
+                                       _bug("B3", status="gone")])
 
     def test_live_bugs_lead_the_work_list_and_closed_or_guard_ones_are_not_on_it(self):
         # an open guard bug: a record from before parking
@@ -307,11 +309,74 @@ class WorkspaceTest(unittest.TestCase):
 class DecideThenWorkTest(_ReviewFixture):
     def test_a_decide_bug_kept_open_joins_the_work_list_in_the_same_session(self):
         _, out = self.queue("a", "Document it in SHIPPING.md.", "n", "f")
-        self.assertIn("── B1 · work", out)
+        self.assertIn("── B1 + B3 · bundle", out)   # B1 joins B3 on its file and branch
         self.assertIn("  Your answer\n    Document it in SHIPPING.md.", out)
         self.assertIn("My answer, which decides the fix over the agent's recommendation: Document it in SHIPPING.md.",
                       self.launched[0])
         self.assertNotIn("Recommendation: guard it", self.launched[0])
+
+
+class BundleTest(_ReviewFixture):
+    """Work bugs on one branch or file come as one card and one fix session (`bundles`)."""
+
+    def setUp(self):
+        super().setUp()
+        fix = {"verdict": "fix", "date": "2026-10-05", "effect": "drops the tail", "evidence": "b.py:9"}
+        self.record = self.build(bugs=[
+            _bug("B1", verify=fix), _bug("B2", file="b.py", issue={"number": 7}),   # B2: same branch as B1
+            _bug("B3", file="c.py", branch="feat/y", verify=fix), _bug("B4", file="d.py", branch="feat/z")])
+
+    def items(self, apart=()):
+        return [(i["kind"], i["ref"], i.get("refs")) for i in
+                self.rv.bundles(self.record, self.rv.pending(self.record, []), apart)]
+
+    def test_a_shared_branch_or_file_bundles_and_the_rest_stay_single(self):
+        self.assertEqual(self.items(), [("bundle", "B1", ["B1", "B2"]), ("work", "B3", None), ("work", "B4", None)])
+        self.record["bugs"][3]["file"] = "c.py"   # B4 now shares B3's file
+        self.assertEqual(self.items()[1:], [("bundle", "B3", ["B3", "B4"])])
+
+    def test_a_split_bundle_comes_back_one_by_one(self):
+        self.assertTrue(all(kind == "work" for kind, _, _ in self.items(apart={"B1", "B2"})))
+        _, out = self.queue("s", "f")
+        self.assertIn("B1 + B2 → one by one", out)
+        self.assertIn("── B1 · work", out)
+        self.assertEqual([r["ref"] for r in self.rv.read_reviews(self.log)], ["B1"])
+
+    def test_no_bundle_is_bigger_than_a_verify_group(self):
+        self.record = self.build(bugs=[_bug(f"B{i}") for i in range(self.rv._verify.GROUP_MAX + 2)])
+        self.assertEqual([len(i["refs"]) for i in self.rv.bundles(self.record, self.rv.pending(self.record, []))],
+                         [self.rv._verify.GROUP_MAX, 2])
+
+    def test_fix_now_briefs_one_session_on_every_bug_and_records_each(self):
+        n, out = self.queue("f", "q")
+        self.assertIn("── B1 + B2 · bundle · 3 left", out)
+        self.assertIn("2 bugs on one branch or file", out)
+        self.assertIn("  Bug\n    desc B2", out)
+        self.assertNotIn("Evidence", out.split("── B1 + B2")[1].split("── B3")[0])   # the brief carries it
+        self.assertIn("4 to work in 3 session(s)", out)
+        self.assertEqual(n, 2)
+        self.assertEqual(len(self.launched), 1)
+        brief = self.launched[0]
+        self.assertIn("Work these 2 bugs", brief)
+        self.assertIn("## B1 (`fanout-b1`)", brief)
+        self.assertIn("## B2 (`fanout-b2`)", brief)
+        self.assertIn("Evidence: b.py:9", brief)
+        self.assertIn("pixi run bootstrap-worktree fix-bundle-fanout-b1", brief)
+        self.assertIn("name each fixed bug's key (`fanout-b1`, `fanout-b2`) in the commit that fixes it", brief)
+        self.assertIn("Say `Refs #N` for each one you fix, never `fixes` or `closes`", brief)
+        self.assertIn("The issues (#7)", brief)
+        self.assertEqual([(r["ref"], r["value"]) for r in self.rv.read_reviews(self.log)],
+                         [("B1", "fix_session"), ("B2", "fix_session")])
+
+    def test_one_undo_takes_the_whole_bundle_back(self):
+        self.queue("f", "z", "q")
+        rows = self.rv.read_reviews(self.log)
+        self.assertEqual([(r["ref"], r["value"]) for r in rows][2:], [("B1", None), ("B2", None)])
+        self.assertEqual(self.items()[0], ("bundle", "B1", ["B1", "B2"]))
+
+    def test_skipping_a_bundle_skips_its_bugs(self):
+        _, out = self.queue("n", "q")
+        self.assertIn("── B3 · work · 2 left", out)
 
 
 class FullscreenTest(_ReviewFixture):

@@ -5,7 +5,9 @@ First the bugs a verify agent sent to the owner (`decide`): follow the agent's r
 stays open), answer it in your own words (a session follows yours instead), or
 `wont_fix` to stop carrying it. Then the rest of the open work list: `fix now` starts an
 interactive Claude Code session where the owner starts sessions (the folder holding the checkouts),
-briefed on that bug and told to make its own worktree; the queue resumes when it exits. Every answer is an append-only event in `~/.cecelia-effectiveness/review.jsonl`; an undo is a
+briefed on that bug and told to make its own worktree; the queue resumes when it exits. Work bugs that
+share a reviewed branch or a file come as one bundle (verify's grouping): `fix now` briefs one session
+on all of them, `one by one` splits it back into single cards. Every answer is an append-only event in `~/.cecelia-effectiveness/review.jsonl`; an undo is a
 correcting event, never an edit. The weekly pass applies the events at the start of the next pass.
 
 Last, the record's rule proposals: `edit the rule` starts a session briefed on the CLAUDE.md section
@@ -53,14 +55,17 @@ def _load_sibling(name: str):
 _record = _load_sibling("record")
 _issues = _load_sibling("issues")
 _rules = _load_sibling("rules")
+_verify = _load_sibling("verify")
 
 REVIEW_SCHEMA_VERSION = 1
 
 #: queue item kind → {key the owner presses: (event, value)}. `decide` items are the record's queue;
-#: `work` items are the rest of its open bugs.
-ANSWERS: dict[str, dict[str, tuple[str, str]]] = {
+#: `work` items are the rest of its open bugs; a `bundle` is work items one session takes together.
+#: `s` (one by one) records nothing: it splits the bundle for this session.
+ANSWERS: dict[str, dict[str, tuple[str, str] | None]] = {
     "decide": {"w": ("bug_status", "wont_fix"), "o": ("bug_status", "open"), "a": ("bug_status", "open")},
     "work": {"f": ("bug_work", "fix_session"), "w": ("bug_status", "wont_fix")},
+    "bundle": {"f": ("bug_work", "fix_session"), "s": None},
     "rule": {"e": ("rule_status", "accepted"), "r": ("rule_status", "rejected")},
 }
 REVIEW_EVENTS = ("bug_status", "bug_work", "rule_status")
@@ -225,6 +230,27 @@ def pending(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] =
     return [item for item in items_of(record) if not answered(item)]
 
 
+def bundles(record: dict, items: _t.Sequence[dict], apart: _t.Collection[str] = ()) -> list[dict]:
+    """`items` with work items joined into one `bundle` per fix session: bugs that share a reviewed
+    branch or a file (`verify.groups`, at most its GROUP_MAX), whose fixes likely touch the same code.
+    A bundle sits where its first bug was and keeps the work list's order inside; `apart` (bug ids the
+    owner split) stay single."""
+    by_id = {b["id"]: b for b in record.get("bugs", [])}
+    order = [it["ref"] for it in items if it["kind"] == "work" and it["ref"] not in apart]
+    group_of = {b["id"]: n for n, g in enumerate(_verify.groups([by_id[r] for r in order])) for b in g}
+    members: dict[int, list[str]] = {}
+    for r in order:
+        members.setdefault(group_of[r], []).append(r)
+    out: list[dict] = []
+    for it in items:
+        grouped = it["kind"] == "work" and it["ref"] in group_of
+        refs = members.pop(group_of[it["ref"]], None) if grouped else [it["ref"]]
+        if refs is None:
+            continue   # in a bundle already placed
+        out.append({"kind": "bundle", "ref": refs[0], "refs": refs} if len(refs) > 1 else it)
+    return out
+
+
 def _origin(bug: dict) -> str:
     """Where a bug came from: the reviewed branch, or the agent runs that hit it."""
     if bug.get("review"):
@@ -235,13 +261,10 @@ def _origin(bug: dict) -> str:
     return f"raised on branch `{bug.get('branch') or '?'}`"
 
 
-def fix_brief(record: dict, bug: dict) -> str:
-    """The opening prompt of a fix session: the bug, what verify found, and how to work it."""
+def _bug_lines(bug: dict) -> list[str]:
+    """What a fix brief says about one bug: where, the finding, what verify found, the answer to follow."""
     v = bug.get("verify") or {}
-    main = main_checkout()
-    lines = [f"Work bug {bug['id']} (`{bug['key']}`) from the weekly judge record of {record['date']} "
-             f"(`{_record.store_root() / (record['date'] + '.json')}`).", "",
-             f"Where: {_record._bug_where(bug)}, {_origin(bug)}.", f"Finding: {bug['desc']}"]
+    lines = [f"Where: {_record._bug_where(bug)}, {_origin(bug)}.", f"Finding: {bug['desc']}"]
     lines += [f"Also raised: {a['desc']}" for a in bug.get("also", [])]
     if v:
         lines.append(f"Verified ({v.get('verdict')}): {v.get('effect', '')}")
@@ -253,20 +276,61 @@ def fix_brief(record: dict, bug: dict) -> str:
         lines.append(f"Live once: {v['trigger']}")
     if v.get("evidence"):
         lines.append(f"Evidence: {v['evidence']}")
-    issue = (bug.get("issue") or {}).get("number")
+    if bug.get("kind") == "stranded":
+        lines += ["", "These commits were pushed to the PR's branch after it merged: "
+                  + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
+    return lines
+
+
+def _issue_of(bug: dict) -> int | None:
+    return (bug.get("issue") or {}).get("number")
+
+
+def _record_line(record: dict) -> str:
+    return f"the weekly judge record of {record['date']} (`{_record.store_root() / (record['date'] + '.json')}`)"
+
+
+def _worktree_line(name: str) -> str:
+    main = main_checkout()
+    return (f"work in your own worktree: from `{main}`, run `pixi run bootstrap-worktree {name}` and work in "
+            f"the worktree it creates, never in `{main}` itself.")
+
+
+def fix_brief(record: dict, bug: dict) -> str:
+    """The opening prompt of a fix session: the bug, what verify found, and how to work it."""
+    lines = [f"Work bug {bug['id']} (`{bug['key']}`) from {_record_line(record)}.", "", *_bug_lines(bug)]
+    issue = _issue_of(bug)
     if issue:
         lines.append(f"Tracked as issue #{issue}. Don't read it: this brief is the whole task, and the issue "
                      f"is a mirror of the record. Say `Refs #{issue}` in the commit message, never `fixes` or "
                      "`closes`: the judge closes it once it confirms the fix.")
-    if bug.get("kind") == "stranded":
-        lines += ["", "These commits were pushed to the PR's branch after it merged: "
-                  + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
     lines += ["", "Confirm it on origin/main first. If it isn't real, say so and stop; I'll answer it won't-fix. "
-              f"Otherwise work in your own worktree: from `{main}`, run "
-              f"`pixi run bootstrap-worktree fix-{bug['key']}` and work in the worktree it creates, never in "
-              f"`{main}` itself. Fix it there, including every sibling call site with the same shape, add a test "
-              "that fails without the fix, run the matching tests and recital, and name "
-              f"`{bug['key']}` in the commit message. Ask before committing, as usual."]
+              f"Otherwise {_worktree_line('fix-' + bug['key'])} Fix it there, including every sibling call site "
+              "with the same shape, add a test that fails without the fix, run the matching tests and recital, "
+              f"and name `{bug['key']}` in the commit message. Ask before committing, as usual."]
+    return "\n".join(lines)
+
+
+def bundle_brief(record: dict, bugs: _t.Sequence[dict]) -> str:
+    """The opening prompt of one fix session for a bundle: every bug's brief, then how to work them
+    together. Each key still goes in the commit that fixes it: landed-fix detection is per bug."""
+    lines = [f"Work these {len(bugs)} bugs from {_record_line(record)} in one session. They share a reviewed "
+             "branch or a file, so their fixes likely touch the same code."]
+    for b in bugs:
+        lines += ["", f"## {b['id']} (`{b['key']}`)", *_bug_lines(b)]
+        if _issue_of(b):
+            lines.append(f"Tracked as issue #{_issue_of(b)}.")
+    issues = [f"#{_issue_of(b)}" for b in bugs if _issue_of(b)]
+    keys = ", ".join(f"`{b['key']}`" for b in bugs)
+    lines += ["", "Confirm each on origin/main first. One that isn't real: say so and leave it; I'll answer it "
+              f"won't-fix. Then {_worktree_line('fix-bundle-' + bugs[0]['key'])} Fix the real ones there, "
+              "including every sibling call site with the same shape, add a test per fix that fails without it, "
+              f"run the matching tests and recital, and name each fixed bug's key ({keys}) in the commit that "
+              "fixes it."
+              + (f" The issues ({', '.join(issues)}) mirror the record: don't read them. Say `Refs #N` for each "
+                 "one you fix, never `fixes` or `closes`: the judge closes it once it confirms the fix."
+                 if issues else "")
+              + " End by listing which keys you fixed and which you left, and why. Ask before committing, as usual."]
     return "\n".join(lines)
 
 
@@ -302,7 +366,7 @@ def source_findings(slugs: _t.Iterable[str], events: _t.Iterable[dict] | None = 
 
 def rule_brief(record: dict, p: dict, findings: _t.Sequence[dict]) -> str:
     """The opening prompt of a rule session: the section, why the judge proposes it, and its sources."""
-    main = main_checkout()
+    worktree = f"rule-{p['id'].lower()}-{record['date']}"
     file, _, heading = p["rule"].partition(" → ")
     lines = [f"Work rule proposal {p['id']} from the weekly judge record of {record['date']} "
              f"(`{_record.store_root() / (record['date'] + '.md')}`, section *Rules*).", "",
@@ -313,9 +377,7 @@ def rule_brief(record: dict, p: dict, findings: _t.Sequence[dict]) -> str:
               if s not in {f.get("slug") for f in findings}]
     lines += ["", "Read the section and the findings, then say in two or three sentences what the findings have "
               "in common and why the rule didn't stop them. If they don't share a cause the rule can fix, say so "
-              "and stop. Otherwise work in your own worktree: from "
-              f"`{main}`, run `pixi run bootstrap-worktree rule-{p['id'].lower()}-{record['date']}` and work in "
-              f"the worktree it creates, never in `{main}` itself. Keep the rule as short as it is now or shorter; "
+              f"and stop. Otherwise {_worktree_line(worktree)} Keep the rule as short as it is now or shorter; "
               "a mechanical check beats more words. Run recital and ask before committing, as usual."]
     return "\n".join(lines)
 
@@ -347,7 +409,8 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 
 #: How each answer reads on the prompt and after it, and its colour.
 _LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
-           "f": ("fix now", BLUE), "e": ("edit the rule", BLUE), "r": ("reject", VERMILLION)}
+           "f": ("fix now", BLUE), "s": ("one by one", GREY), "e": ("edit the rule", BLUE),
+           "r": ("reject", VERMILLION)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
 _SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Your answer", REDDISH_PURPLE),
@@ -417,10 +480,19 @@ def describe_rule(record: dict, p: dict, findings: _t.Sequence[dict], *, width: 
     return out
 
 
-def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: bool = True) -> list[str]:
+def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: bool = True,
+             evidence: bool = True) -> list[str]:
     """The card for one bug: where it is, then the agent's question (a decide item) or the bug and what
     verify found (a work item), the answer or recommendation, and the evidence. A rule item's card is
-    `describe_rule`'s."""
+    `describe_rule`'s; a bundle's is every bug's card without its evidence (the session gets it)."""
+    if item["kind"] == "bundle":
+        out = ["  " + _col(_BOLD, f"{len(item['refs'])} bugs on one branch or file", use_colour=use_colour)
+               + _col(_DIM, ": one session fixes them together; the brief carries each one's evidence",
+                      use_colour=use_colour)]
+        for ref in item["refs"]:
+            out += ["", *describe(record, {"kind": "work", "ref": ref}, width=width, use_colour=use_colour,
+                                  evidence=False)]
+        return out
     if item["kind"] == "rule":
         p = next(p for p in record.get("proposals", []) if p["id"] == item["ref"])
         key = tuple(p["sources"])
@@ -444,7 +516,7 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
              "Bug": None if decide else b["desc"], "Verified": None if decide else v.get("effect"),
              "Your answer": b.get("owner_answer"),
              "Recommendation": None if b.get("owner_answer") else v.get("recommendation"),
-             "Live once": v.get("trigger"), "Evidence": v.get("evidence")}
+             "Live once": v.get("trigger"), "Evidence": v.get("evidence") if evidence else None}
     for label, colour in _SECTIONS:
         if not texts[label]:
             continue
@@ -506,7 +578,9 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     """Walk the queue; returns how many answers were recorded this session (net of undos). `older`:
     the records before this one, whose late answers count as answers here (`apply_reviews`).
 
-    The queue is re-read after every answer, so a decide bug kept open joins the work list at once.
+    The queue is re-read after every answer, so a decide bug kept open joins the work list at once,
+    and a bundle (`bundles`) once its file or branch has another open bug. A bundle's `fix now` records
+    a fix session on each of its bugs, and one undo takes them all back.
     `fullscreen` (a terminal) repaints one card per screen, like `pixi run recital-console`; off, the
     cards scroll, which is what a pipe or a test reads. `launch` starts a fix session (`default_launch`)
     in `cwd`, by default the `workspace()` the owner starts sessions in. `press` reads the answer key
@@ -525,19 +599,22 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
     def state() -> tuple[dict, list[dict], int]:
         rec = apply_reviews(base, read_reviews(path), older)
         left = [it for it in pending(rec, read_reviews(path), older) if (it["kind"], it["ref"]) not in skipped]
-        return rec, left, len(items_of(rec))
+        return rec, bundles(rec, left, apart), len(items_of(rec))
 
     skipped: set[tuple[str, str]] = set()
+    apart: set[str] = set()   # bundled bugs the owner asked to see one by one
     rec, items, total = state()
     counts = {k: sum(it["kind"] == k for it in items) for k in ANSWERS}
+    work = counts["work"] + sum(len(it["refs"]) for it in items if it["kind"] == "bundle")
+    sessions = f" in {counts['work'] + counts['bundle']} session(s)" if counts["bundle"] else ""
     title = (_col(_BOLD, "Weekly judge review", use_colour=use_colour) + "  "
-             + _col(_DIM, f"{record['date']} · {counts['decide']} to decide · {counts['work']} to work"
+             + _col(_DIM, f"{record['date']} · {counts['decide']} to decide · {work} to work{sessions}"
                     + (f" · {counts['rule']} rule proposal(s)" if counts["rule"] else ""), use_colour=use_colour))
     if not items:
         print(title, file=out)
         print(_col(BLUISH_GREEN, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)
         return 0
-    done: list[tuple[dict, str]] = []   # (event row, key) answered this session, for undo
+    done: list[tuple[list[dict], str, str]] = []   # (event rows, key, card ref) per answer this session, for undo
     status = ""   # the last answer, shown under the title of the next card
     if fullscreen:
         out.write(_ENTER)
@@ -563,8 +640,11 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
             keys = ANSWERS[item["kind"]]
             kind = item["kind"]
 
+            refs = item.get("refs") or [item["ref"]]
+            label_ref = " + ".join(refs)
+
             def card(w: int) -> list[str]:
-                return [_hr(f"{item['ref']} · {kind} · {len(items)} left", w, use_colour=use_colour),
+                return [_hr(f"{label_ref} · {kind} · {len(items)} left", w, use_colour=use_colour),
                         *describe(rec, item, width=w, use_colour=use_colour)]
             offset = 0
             while True:   # scroll and resize repaint this card; any other key answers it
@@ -582,15 +662,19 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
             if key == "q":
                 break
             if key == "n":
-                skipped.add((item["kind"], item["ref"]))
+                skipped.update(("work" if kind == "bundle" else kind, r) for r in refs)
             elif key == "z":
                 if not done:
                     status = _col(YELLOW, "  nothing to undo in this session", use_colour=use_colour)
                 else:
-                    prev, prev_key = done.pop()
-                    append_review(prev["event"], prev["record"], prev["ref"], None, corrects=prev["id"], path=path)
-                    status = _col(REDDISH_PURPLE, f"  ↺ undid {prev['ref']} = {_LABELS[prev_key][0]}",
+                    rows, prev_key, prev_ref = done.pop()
+                    for prev in rows:
+                        append_review(prev["event"], prev["record"], prev["ref"], None, corrects=prev["id"], path=path)
+                    status = _col(REDDISH_PURPLE, f"  ↺ undid {prev_ref} = {_LABELS[prev_key][0]}",
                                   use_colour=use_colour)
+            elif key == "s" and kind == "bundle":
+                apart.update(refs)
+                status = _col(GREY, f"  {label_ref} → one by one", use_colour=use_colour)
             elif key not in keys:
                 status = _col(YELLOW, f"  press one of: {', '.join([*keys, *_CONTROL])}", use_colour=use_colour)
             else:
@@ -605,7 +689,8 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                     status = _col(YELLOW, "  empty answer: nothing recorded", use_colour=use_colour)
                 elif key in ("f", "e"):
                     if key == "f":
-                        brief = fix_brief(rec, next(b for b in rec["bugs"] if b["id"] == item["ref"]))
+                        bugs = [next(b for b in rec["bugs"] if b["id"] == r) for r in refs]
+                        brief = bundle_brief(rec, bugs) if kind == "bundle" else fix_brief(rec, bugs[0])
                     else:
                         p = next(p for p in rec["proposals"] if p["id"] == item["ref"])
                         brief = rule_brief(rec, p, source_findings(p["sources"]))
@@ -618,11 +703,13 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                     if failed:
                         status = _col(YELLOW, f"  {failed}", use_colour=use_colour)
                     else:
-                        done.append((append_review(event, record["date"], item["ref"], value, path=path), key))
-                        status = _col(BLUE, f"  ✓ {item['ref']} → {'fix' if key == 'f' else 'rule'} session ended",
+                        done.append(([append_review(event, record["date"], r, value, path=path) for r in refs],
+                                     key, label_ref))
+                        status = _col(BLUE, f"  ✓ {label_ref} → {'fix' if key == 'f' else 'rule'} session ended",
                                       use_colour=use_colour)
                 else:
-                    done.append((append_review(event, record["date"], item["ref"], value, note=note, path=path), key))
+                    done.append(([append_review(event, record["date"], item["ref"], value, note=note, path=path)],
+                                 key, item["ref"]))
                     label, colour = _LABELS[key]
                     status = _col(colour, f"  ✓ {item['ref']} → {label}", use_colour=use_colour)
             rec, items, total = state()
@@ -631,14 +718,15 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
             out.write(_LEAVE)
             out.flush()
     left_n = len(pending(apply_reviews(base, read_reviews(path), older), read_reviews(path), older))
+    answered = sum(len(rows) for rows, _, _ in done)   # per bug: a bundle's fix now answers each of its bugs
     if fullscreen:   # the alternate screen is gone; leave the outcome in the shell
         print(title, file=out)
     elif status:
         print(status, file=out)
-    print(_hr(f"{len(done)} answered this session · " + (f"{left_n} left" if left_n else "nothing left"), size()[0],
+    print(_hr(f"{answered} answered this session · " + (f"{left_n} left" if left_n else "nothing left"), size()[0],
               use_colour=use_colour), file=out)
     print(_col(_DIM, "  the next weekly pass applies these", use_colour=use_colour), file=out)
-    return len(done)
+    return answered
 
 
 def main(argv: list[str] | None = None) -> int:
