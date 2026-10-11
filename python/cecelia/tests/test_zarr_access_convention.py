@@ -14,10 +14,11 @@ Three assertions:
   `from lxml*`, and `dask.array.from_zarr(...)` are only allowed in the sanctioned readers
   themselves or in a listed baseline file. A new file that pulls one in fails.
 - **No new dask in a task runner.** `import dask*` (or `from dask*`) inside `app/src/tasks/**/*.py`
-  is banned without a `# DASK-OK: <reason>` marker. The sanctioned entry is
-  `zarr_utils.open_as_zarr(..., as_dask=True)`, which returns dask-backed levels without pulling
-  `dask.array` into the runner. Reach for `dask.array` directly only for a whole-level analytical
-  pass; the streaming primitive `zarr_utils.read_timepoint` covers the per-frame case.
+  is banned without a `# DASK-OK: <reason>` marker. Reads are plain zarr: `zarr_utils.read_timepoint`
+  per frame, `intensity_utils.channel_histograms` for whole-stack statistics. Only a whole-level pass
+  that genuinely needs a lazy graph opts in, via `zarr_utils.open_as_zarr(..., as_dask=True)` or a
+  marked import. (The `cecelia.utils` side — no dask at import time — is
+  `test_dask_import_isolation.py`.)
 - **Scan coverage floor.** Guard against a wrong scan root by pinning a known-good file count.
 
 Exemption discipline mirrors the H5AD/zarr readers (CLAUDE.md → deviations need an inline comment
@@ -199,10 +200,9 @@ class DaskInRunnersConventionTest(unittest.TestCase):
                 offenders.append(f'{rel}:{lineno}: `import {dotted}`')
         self.assertEqual(
             offenders, [],
-            'these task runners import `dask.array` directly. The sanctioned entry is '
-            '`zarr_utils.open_as_zarr(..., as_dask=True)`, which returns dask-backed levels without '
-            'pulling `dask.array` into the runner. Per-frame reads go through '
-            '`zarr_utils.read_timepoint` — see CLAUDE.md → *Image / OME-ZARR access*. For a '
+            'these task runners import `dask.array` directly. Read with plain zarr: per frame '
+            'through `zarr_utils.read_timepoint`, whole-stack statistics through '
+            '`intensity_utils.channel_histograms` — see CLAUDE.md → *Image / OME-ZARR access*. For a '
             'legitimate whole-level analytical pass that genuinely needs dask, add '
             '`# DASK-OK: <reason>` on the import line:\n  '
             + '\n  '.join(offenders))

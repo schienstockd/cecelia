@@ -63,7 +63,7 @@ def main(argv=None) -> int:
     if axes != ["t", "c", "z", "y", "x"]:
         raise SystemExit(f"expected a t,c,z,y,x store, got {axes}")
     scale = dict(zip(axes, zarr_utils.read_scale(store)))
-    levels, _ = zarr_utils.open_as_zarr(store, as_dask=True)
+    levels, _ = zarr_utils.open_as_zarr(store)
     level0 = levels[0]
 
     ref_fn = vn_versioning.versioned_get_field_at(ccid, "label_props", a.reference_vn)
@@ -75,7 +75,7 @@ def main(argv=None) -> int:
     ref = ref[ref["track_id"].notna()]
     t0, z0, y0, x0 = best_window(ref, level0.shape[2:], a.size, a.z, a.frames)
     win = level0[t0:t0 + a.frames, :, z0:z0 + a.z, y0:y0 + a.size, x0:x0 + a.size]
-    image = np.asarray(win.compute() if hasattr(win, "compute") else win)
+    image = np.asarray(win)
 
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

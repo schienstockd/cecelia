@@ -203,14 +203,15 @@ bridge, and external consumers (coastal).
   truncated store, and on a single-level store the missing frames read as **zeros with no error**.
   Enforced by `test_store_staging_convention.py`.
 - **One sanctioned exception — file *creation*,** via `zarr_utils.create_multiscales`.
-- **`dask.array` is opt-in inside a task runner.** The sanctioned entry is
-  `zarr_utils.open_as_zarr(..., as_dask=True)`, which returns dask-backed levels without pulling
-  `dask.array` into the runner. Per-frame reads go through `zarr_utils.read_timepoint`. Reach for
-  `import dask.array` in a runner only for a whole-level analytical pass that genuinely needs lazy
-  chunked evaluation — and mark the import with `# DASK-OK: <reason>` so the discipline is visible.
-  Library utils under `python/cecelia/**` are unrestricted (they compose whole-level pipelines).
+- **`dask.array` is opt-in, and never at import time.** Reads are plain zarr: per-frame through
+  `zarr_utils.read_timepoint`, whole-stack statistics through `intensity_utils.channel_histograms`
+  (one plane at a time — faster and ~20× less RAM than the dask graph it replaced). No module under
+  `python/cecelia/utils/` may import dask at load time (~0.5 s): a function that needs it imports it
+  locally, and `zarr_utils.is_dask(a)` recognises a dask array without importing it. A task runner that
+  reaches for `import dask.array` marks the line `# DASK-OK: <reason>`. Rationale + measurements:
+  [`docs/todo/DASK_NARROW_PLAN.md`](docs/todo/DASK_NARROW_PLAN.md).
 
-Enforced by `test_zarr_access_convention.py` + the `zarr-access ratchet` testset in `app/test/suite.jl`
+Enforced by `test_zarr_access_convention.py` + `test_dask_import_isolation.py` + the `zarr-access ratchet` testset in `app/test/suite.jl`
 (Julia side: only `api/src/image_render.jl` may `using Zarr`). Full rationale + drifted-reader case +
 compressor numbers: [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) → *Image / OME-ZARR access*.
 

@@ -3,8 +3,8 @@ Image correction utilities: autofluorescence and drift correction.
 
 Ported from the original R/Python cecelia package. Uses scipy and skimage
 instead of dask-image and pyclesperanto (neither of which is in the venv).
-All channel-level operations materialise to numpy internally; output is
-returned as a dask array so create_multiscales can use it directly.
+All channel-level operations materialise to numpy internally; the writers stream
+one timepoint at a time into the ``out`` store from ``open_multiscales_for_writing``.
 """
 
 import collections
@@ -13,7 +13,6 @@ import os
 import numpy as np
 import shutil
 
-import dask.array as da
 import scipy.fft
 import scipy.ndimage
 import skimage.restoration

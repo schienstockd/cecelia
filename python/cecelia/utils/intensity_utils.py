@@ -10,55 +10,50 @@ cannot materialise a channel to sort it. A single streamed `bincount` per channe
 ≈ 256 KB) is exact for integer data and gives min/max, any percentile, a threshold and the clip stats
 — all from one pass over the stack.
 """
+import itertools
+
 import numpy as np
-
-try:
-    import dask.array as da
-    _HAS_DASK = True
-except ImportError:  # dask is an IO-tier dep; guard so pure-numpy callers still work
-    _HAS_DASK = False
-
-
-def _is_dask(a):
-    return _HAS_DASK and isinstance(a, da.Array)
-
-
-def _take_channel(arr, channel_axis, c):
-    """One channel as an array of the same kind (numpy→numpy, dask→dask)."""
-    if channel_axis is None:
-        return arr
-    idx = [slice(None)] * arr.ndim
-    idx[channel_axis] = c
-    return arr[tuple(idx)]
 
 
 def _n_channels(arr, channel_axis):
     return 1 if channel_axis is None else int(arr.shape[channel_axis])
 
 
-def channel_histograms(arr, channel_axis, channels=None):
+def channel_histograms(arr, channel_axis, channels=None, steps=None):
     """
     One integer histogram per channel over the whole stack (all axes except `channel_axis`).
 
     Integer dtype only — the histogram is indexed by pixel value in [0, iinfo(dtype).max]. Returns a
-    list of 1-D numpy arrays (length = max value + 1). Streams over dask chunks (bounded memory).
+    list of 1-D numpy arrays (length = max value + 1).
+
+    `arr` is a zarr level or a numpy array, with Y/X as its last two axes. It is read ONE PLANE AT A
+    TIME and the planes' `np.bincount`s are summed, so memory stays at one plane plus the histogram.
+    Not dask: see docs/todo/DASK_NARROW_PLAN.md Decision 7 for the measurement.
 
     `channels`: optional list of channel indices to histogram (default: all). The returned list is
     aligned with `channels` when given — so callers that only need a subset (e.g. segmentation
     normalising just its cell/nuc channels) don't pay to scan every channel.
+
+    `steps`: optional `{axis: stride}` over the leading (non-Y/X) axes — e.g. `{t_idx: 4}` reads every
+    fourth timepoint. Striding here, rather than slicing `arr` first, keeps a zarr level unread.
     """
     if not np.issubdtype(arr.dtype, np.integer):
         raise ValueError(f"channel_histograms requires an integer dtype, got {arr.dtype}")
     nbins = int(np.iinfo(arr.dtype).max) + 1
     chans = range(_n_channels(arr, channel_axis)) if channels is None else channels
+    steps = steps or {}
+    lead = [i for i in range(arr.ndim - 2) if i != channel_axis]
     hists = []
     for c in chans:
-        flat = _take_channel(arr, channel_axis, c).ravel()
-        if _is_dask(flat):
-            hist = da.bincount(flat, minlength=nbins).compute()
-        else:
-            hist = np.bincount(np.asarray(flat), minlength=nbins)
-        hists.append(np.asarray(hist))
+        hist = np.zeros(nbins, np.int64)
+        for ix in itertools.product(*(range(0, arr.shape[i], steps.get(i, 1)) for i in lead)):
+            sl = [slice(None)] * arr.ndim
+            if channel_axis is not None:
+                sl[channel_axis] = c
+            for i, v in zip(lead, ix):
+                sl[i] = v
+            hist += np.bincount(np.asarray(arr[tuple(sl)]).ravel(), minlength=nbins)[:nbins]
+        hists.append(hist)
     return hists
 
 

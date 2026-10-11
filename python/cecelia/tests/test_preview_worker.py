@@ -219,7 +219,7 @@ class PreviewWorkerAfTest(unittest.TestCase):
         warm = self.worker.STATE.af_stats(
             self.im_path, None, self.du, 1, [2, 3], 'triangle')
         direct = self.worker.correction_utils.af_weight_stats(
-            self.worker.STATE.image_zarr(self.im_path)[0], self.du, [1, 2, 3],
+            self.worker.STATE.image(self.im_path)[0][0], self.du, [1, 2, 3],
             background_method='triangle',
             spatial_stride=self.worker.AF_PREVIEW_STRIDE,
             timepoints=self.worker._preview_timepoints(self.du))
