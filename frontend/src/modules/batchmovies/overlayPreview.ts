@@ -140,6 +140,9 @@ export function previewHasMask(cfg: OverlayPreviewConfig): boolean {
   return (cfg.labelValueNames?.length ?? 0) > 0
 }
 
+/** The chips that decide which track kinds draw — all a `BatchMovieCfg` needs to answer that. */
+type OverlayChips = Pick<OverlayPreviewConfig, 'showTracks' | 'showGatedTracks' | 'showPopulations' | 'showTrackclust'>
+
 /** The track kinds the movie draws — locked so the preview and `_overlays_raw_from_config` /
  *  `viewer_overlay_closure` cannot disagree. As in the viewer, only the pops are tied to one
  *  segmentation; the track kinds stand on their own:
@@ -148,13 +151,20 @@ export function previewHasMask(cfg: OverlayPreviewConfig): boolean {
  *  - `trackclust = showTrackclust` — track-cluster ribbons, alone or with anything else; where they
  *    draw, the plain and cell-track ribbons of that segmentation stand down.
  *  See the API testset "movie rail — offline overlay-config translator". */
-export function derivedOverlayFlags(cfg: OverlayPreviewConfig):
+export function derivedOverlayFlags(cfg: OverlayChips):
   { segTracks: boolean; gatedRibbons: boolean; trackclust: boolean } {
   return {
     segTracks: !!cfg.showTracks,
     gatedRibbons: !!cfg.showGatedTracks && !!cfg.showPopulations,
     trackclust: !!cfg.showTrackclust,
   }
+}
+
+/** Whether any track kind draws — every ribbon family takes its width from `tailWidth`
+ *  (`segmentWidthPx`), so this is what gates the tail-width control, not `showTracks` alone. */
+export function drawsTails(cfg: OverlayChips): boolean {
+  const { segTracks, gatedRibbons, trackclust } = derivedOverlayFlags(cfg)
+  return segTracks || gatedRibbons || trackclust
 }
 
 /** Hash a pop path to a stable scene-pop index. Same path always maps to the same fake pop, so

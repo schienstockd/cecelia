@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildOverlayScene, derivedOverlayFlags, popsForConfig, renderOverlayPreview,
+  buildOverlayScene, derivedOverlayFlags, drawsTails, popsForConfig, renderOverlayPreview,
   ALL_TRACKS_GREY, PREVIEW_PALETTE,
 } from './overlayPreview'
 
@@ -25,6 +25,36 @@ describe('derivedOverlayFlags — the viewer\'s track kinds', () => {
   it('track clusters draw alone, not only with the pops', () => {
     expect(derivedOverlayFlags({ showTrackclust: true }).trackclust).toBe(true)
     expect(derivedOverlayFlags({ showTrackclust: true, showTracks: true }).trackclust).toBe(true)
+  })
+})
+
+// Every ribbon kind draws at `tailWidth` (`segmentWidthPx`), so the panel's tail slider shows
+// whenever ANY ribbon draws — cell-track ribbons and track clusters need no tracks chip.
+describe('drawsTails — gates the tail-width control', () => {
+  const scene = buildOverlayScene()
+  const KEYS = ['showTracks', 'showGatedTracks', 'showPopulations', 'showTrackclust'] as const
+
+  it('is true exactly when the preview draws ribbons, over every chip combination', () => {
+    for (let m = 0; m < 1 << KEYS.length; m++) {
+      const cfg = Object.fromEntries(KEYS.map((k, i) => [k, !!(m & (1 << i))]))
+      expect(drawsTails(cfg), JSON.stringify(cfg))
+        .toBe(renderOverlayPreview(cfg, scene).ribbons.length > 0)
+    }
+  })
+
+  it('covers the ribbon kinds that need no tracks chip', () => {
+    expect(drawsTails({ showTrackclust: true })).toBe(true)
+    expect(drawsTails({ showGatedTracks: true, showPopulations: true })).toBe(true)
+    expect(drawsTails({ showPopulations: true })).toBe(false)
+  })
+
+  it('the batch panel gates its tail slider on it', () => {
+    const src = Object.values(import.meta.glob('./BatchMoviesPanel.vue',
+                                                { query: '?raw', import: 'default', eager: true }))[0] as string
+    const slider = src.indexOf('v-model.number="tailWidth"')
+    const gate = src.lastIndexOf('<template v-if="', slider)
+    expect(src.slice(gate, src.indexOf('>', gate))).toBe('<template v-if="showTail"')
+    expect(src).toMatch(/const showTail\s*=\s*computed<boolean>\(\(\) => drawsTails\(cfg\.value\)\)/)
   })
 })
 
