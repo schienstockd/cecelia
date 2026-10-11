@@ -88,7 +88,7 @@ import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
 import {
   overlaysUrl, buildPointBufferLayers, pooledColourScale, timepointRange, overlayLayersSummary,
-  buildMultiTrackBuffer, tailRange, filterPayloadByLabels, filterPayloadByTracks,
+  buildMultiTrackBuffer, tailRange, tailHead, filterPayloadByLabels, filterPayloadByTracks,
   filterPayloadByTrackSource,
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
@@ -1553,6 +1553,8 @@ const frame = usePlotResize(canvas, () => {
   const trackTol = Math.max(0, settings.viewerTrackZTol)
   r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, settings.viewerTailWidth,
                           pLo - trackTol, pHi + trackTol)
+  // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.
+  r.setTailFade(tailHead(Math.max(0, shownT.value)), settings.viewerTailLength)
   // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group

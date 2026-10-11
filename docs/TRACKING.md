@@ -758,3 +758,8 @@ Phase 3 shipped 2026-08-20.
   the browser viewer, kept in sync with the gating selection. The source plan's "napari Tracks
   layer" bullet is defunct — napari is being dropped in favour of the browser viewer + the offline
   renderer.
+- **Tail fade.** A ribbon fades by age, as napari and Imaris draw tracks: the hop arriving at the
+  frame on screen is solid, older hops fade to a floor (`TAIL_ALPHA_FLOOR`) over the tail length,
+  so a tail shows which way the cell went. One rule for the viewer and every movie:
+  `shaders/tail_fade.wgsl`, fed by each segment's end timepoint (`SEG_STRIDE` lane 10) and the
+  `trail` uniform (`setTailFade` in the viewer, `trail_lanes` in `render_animation_run.py`).

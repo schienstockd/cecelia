@@ -24,7 +24,9 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          or absent
         ``specs``      : per channel ``{lo, hi, lut: [[r, g, b], …], visible}`` (``_as_lut`` stops)
         ``overlays3d`` : optional ``{points: {x, y, z, colour}, segments: {x0, y0, z0, x1, y1, z1,
-                         colour}}`` in native voxel coordinates, colours as ``[r, g, b]`` in 0..1
+                         colour, t1?, head?, length?}}`` in native voxel coordinates, colours as
+                         ``[r, g, b]`` in 0..1; ``t1`` (per segment) + ``head`` + ``length`` drive
+                         the viewer's tail fade
         ``ndisplay``   : 2 or 3 (default 3)
         ``zRange``     : the level-0 planes ``[lo, hi]`` shown (default: all) — a 2D frame's slab, or
                          a 3D view cropped to part of the stack (the viewer's ±n window / Depth)
@@ -187,7 +189,8 @@ def _point_instances(pts, voxel_um, origin_yx=(0.0, 0.0)):
 
 
 def _segment_instances(segs, voxel_um, origin_yx=(0.0, 0.0)):
-    """Julia's per-frame tail segments → ``SEG_STRIDE`` rows: from, to (image µm), rgb, end plane."""
+    """Julia's per-frame tail segments → ``SEG_STRIDE`` rows: from, to (image µm), rgb, end plane,
+    end timepoint (0 when Julia sent none — the fade is then off, see ``trail_lanes``)."""
     if not segs or not segs.get('x0'):
         return None
     vx, vy, vz = voxel_um
@@ -198,7 +201,17 @@ def _segment_instances(segs, voxel_um, origin_yx=(0.0, 0.0)):
         out[:, k] = (np.asarray(segs[a]) - shift.get(a, 0.0)) * s
     out[:, 6:9] = np.asarray(segs['colour'], np.float64).reshape(-1, 3)
     out[:, 9] = np.floor(np.asarray(segs['z1'], np.float64))
+    out[:, 10] = np.asarray(segs['t1'], np.float64) if segs.get('t1') else 0.0
     return out
+
+
+def trail_lanes(segs):
+    """The tail fade's lanes (``shaders/tail_fade.wgsl``) from Julia's per-frame segments — what
+    ``setTailFade`` writes in the viewer. A frame without ``t1`` (a card's trace) gets length 0:
+    every hop at the peak, as the shader reads it."""
+    if not segs or not segs.get('t1'):
+        return {'trail.head': 0, 'trail.length': 0}
+    return {'trail.head': float(segs['head']), 'trail.length': max(0.0, float(segs['length']))}
 
 
 def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_style, overlay_style,
@@ -232,7 +245,8 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
          'pan.x': cam['panX'], 'pan.y': cam['panY'],
          'ov.planeLo': p_lo, 'ov.planeHi': p_hi, 'pan.ribbonLo': r_lo, 'pan.ribbonHi': r_hi,
          'ov.pointPx': max(1, overlay_style['pointPx']), 'ov.tailPx': max(1, overlay_style['tailPx']),
-         'lab.pointBorderPx': max(0, overlay_style['borderPx'])}
+         'lab.pointBorderPx': max(0, overlay_style['borderPx']),
+         **trail_lanes((state.get('overlays3d') or {}).get('segments'))}
     if label_style is not None:
         u['lab.opacity'] = label_style['opacity']
         u['lab.contourPx'] = label_style['contourPx']

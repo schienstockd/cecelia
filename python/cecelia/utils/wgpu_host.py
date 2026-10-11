@@ -26,7 +26,7 @@ from cecelia.utils import wgsl_utils
 
 TARGET_FORMAT = "rgba8unorm-srgb"
 #: floats per overlay instance — ``POINT_STRIDE`` / ``SEG_STRIDE`` in ``utils/viewerOverlays.ts``.
-POINT_STRIDE, SEG_STRIDE = 7, 10
+POINT_STRIDE, SEG_STRIDE = 7, 11
 
 
 def _native_arm_processor() -> None:
@@ -192,7 +192,8 @@ class MipHost:
         self._points_pipe = self._pipeline("mip_points.wgsl", [
             ("float32x3", 0), ("float32x3", 12), ("float32", 24)], POINT_STRIDE)
         self._seg_pipe = self._pipeline("mip_segments.wgsl", [
-            ("float32x3", 0), ("float32x3", 12), ("float32x3", 24), ("float32", 36)], SEG_STRIDE)
+            ("float32x3", 0), ("float32x3", 12), ("float32x3", 24), ("float32", 36), ("float32", 40)],
+            SEG_STRIDE)
         BU = wgpu.BufferUsage
         self._ubuf = self.device.create_buffer(size=self.layout.bytes, usage=BU.UNIFORM | BU.COPY_DST)
         # Pick highlight is the correction cockpit's; a movie never draws it. Zeroed = no focus,

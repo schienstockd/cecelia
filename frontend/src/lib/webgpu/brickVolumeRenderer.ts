@@ -362,6 +362,7 @@ export async function createBrickVolumeRenderer(
             { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
             { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
             { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane
+            { shaderLocation: 4, offset: 40, format: 'float32' },    // end timepoint, for the fade
           ],
         }],
       },
@@ -555,6 +556,8 @@ export async function createBrickVolumeRenderer(
   let segWidthPx = 3
   let segPlaneLo = -1
   let segPlaneHi = -1
+  let tailFadeHead = 0
+  let tailFadeLength = 0
 
   /** Label style. `setLabelStyle(0, _)` disables the label pass in the shader (via `p.lab.x`);
    *  a non-zero opacity + zero contour = filled cells; non-zero contour = the viewer's outline. */
@@ -1425,6 +1428,8 @@ export async function createBrickVolumeRenderer(
     // no filter (3D volume view over the whole stack). Same convention as `mipShader.ts`.
     uniformCpu[BU.PAN + 2] = segPlaneLo
     uniformCpu[BU.PAN + 3] = segPlaneHi
+    uniformCpu[BU.TRAIL + 0] = tailFadeHead
+    uniformCpu[BU.TRAIL + 1] = tailFadeLength
     // Overlay layout: (pointSizePx, pointPlaneLo, tailWidthPx, pointPlaneHi). Two plane bounds
     // for the points share this vec4 with the two screen-space widths (points + tails).
     uniformCpu[BU.OV + 0] = pointSizePx
@@ -1736,6 +1741,10 @@ export async function createBrickVolumeRenderer(
       segWidthPx = widthPx
       segPlaneLo = planeLo
       segPlaneHi = planeHi ?? planeLo
+    },
+    setTailFade(head, length) {
+      tailFadeHead = head
+      tailFadeLength = Math.max(0, length)
     },
     setLabelStyle(opacity, contourPx) {
       labelOpacity = Math.max(0, Math.min(1, opacity))

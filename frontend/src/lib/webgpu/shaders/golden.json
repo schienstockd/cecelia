@@ -76,17 +76,18 @@
   ],
   "layout": {
     "mip": {
-      "floats": 284,
+      "floats": 288,
       "slots": {
         "cam.dist": 2,
         "vp.ortho": 7,
         "dims.zPerChannel": 15,
         "lab.paletteRows": 22,
         "pan.ribbonHi": 27,
-        "ch[0].lo": 28,
-        "ch[3].hi": 41,
-        "ch[31].visible": 154,
-        "ch[63].visible": 282
+        "trail.length": 29,
+        "ch[0].lo": 32,
+        "ch[3].hi": 45,
+        "ch[31].visible": 158,
+        "ch[63].visible": 286
       }
     },
     "tile": {
@@ -100,13 +101,14 @@
       }
     },
     "brick": {
-      "floats": 304,
+      "floats": 308,
       "slots": {
         "atlas.slotsX": 23,
         "lab.opacity": 36,
         "prevGrid.valid": 43,
-        "ch[2].visible": 58,
-        "ch[63].lo": 300
+        "trail.head": 48,
+        "ch[2].visible": 62,
+        "ch[63].lo": 304
       }
     }
   },

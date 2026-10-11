@@ -19,6 +19,7 @@ struct P {
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
   lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, POINT border width (px, 0 = no outline)
   pan:  vec4<f32>,                       // pan xy (screen µm), then z/w = track ribbon planeLo/planeHi
+  trail: vec4<f32>,                      // track tail fade: newest end timepoint shown, tail length (frames), _, _
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;

@@ -222,8 +222,9 @@ end
 
 # Iterate over the segments a frame `t` should show. Returns `(pts_raw, segs_raw)`
 # in NATIVE VOXELS — the caller projects. `segs_raw.t1` carries the arrival
-# timepoint per segment so a projector can compute a per-segment tail fade
-# (alpha ∝ (t + 1 - t1) / tail_length) that matches the browser overlay pass.
+# timepoint per segment and `segs_raw.tail` the tail length it was windowed by, for
+# the shader's tail fade (`shaders/tail_fade.wgsl`, head = t + 1). `tail` is a column
+# rather than a scalar so `merge_overlay_closures` can concatenate it like the rest.
 function _state_at(state::OverlayState, t::Int)
     pts = get(state.pts_by_t, state.has_t ? t : 0, nothing)
     segs_raw = nothing
@@ -244,7 +245,8 @@ function _state_at(state::OverlayState, t::Int)
         end
         isempty(xs0) || (segs_raw = (; x0 = xs0, y0 = ys0, z0 = zs0,
                                        x1 = xs1, y1 = ys1, z1 = zs1,
-                                       colour = cs, t1 = t1_vec))
+                                       colour = cs, t1 = t1_vec,
+                                       tail = fill(state.tail_length, length(t1_vec))))
     end
     (pts, segs_raw)
 end
@@ -964,7 +966,7 @@ end
 
 Per-t closure over the shared overlay state (`_build_overlay_state`, the same one the 2D author
 reads), in native voxel coordinates. Points: `(; x, y, z, colour)`; segments: the tail window's
-`(; x0, y0, z0, x1, y1, z1, colour, t1)`. Either is `nothing` when the frame has none.
+`(; x0, y0, z0, x1, y1, z1, colour, t1, tail)`. Either is `nothing` when the frame has none.
 """
 function build_overlays3d_for(img; value_name::AbstractString, pop_type::PopTypeArg,
                               pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,

@@ -98,6 +98,18 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
+  // One fade for the viewer's two renderers AND the movie host (which runs mip_segments.wgsl), so a
+  // tail in a recorded movie fades exactly as it does on screen.
+  for (const [k, code] of Object.entries({ SEGMENTS_WGSL, BRICK_SEGMENTS_WGSL })) {
+    it(`${k} fades tails by age with the one shared tailAlpha`, () => {
+      expect(code).toContain(expandWgsl('tail_fade.wgsl'))
+      expect(code.match(/fn tailAlpha\(/g)).toHaveLength(1)
+      expect(code).toMatch(/@location\(4\) tEnd: f32/)
+      expect(code).toMatch(/o\.alpha = tailAlpha\(tEnd\);/)
+      expect(code).toMatch(/return vec4\(in\.rgb, in\.alpha\);/)
+    })
+  }
+
   it('the TS constants are the shader constants', () => {
     expect([MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, PICK_BITSET_CAPACITY, PICK_BITSET_WORDS]).toEqual([
       SHADER_CONSTANTS.MAX_CHANNELS, SHADER_CONSTANTS.LUT_STOPS, SHADER_CONSTANTS.VIEW_HALF_ANGLE,

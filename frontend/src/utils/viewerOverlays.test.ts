@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   overlaysUrl, buildPointBuffer, buildPointBufferLayers, overlayLayersSummary, timepointRange, hexToUnit, overlaySummary,
-  buildTrackBuffer, buildMultiTrackBuffer, tailRange, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
+  buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
@@ -346,6 +346,20 @@ describe('buildTrackBuffer', () => {
     expect(planes).toContain(2)
   })
 
+  it('carries each segment\'s END timepoint, the head the fade counts age from', () => {
+    // The shader fades a hop by `trail.head - tEnd` (shaders/tail_fade.wgsl). The window tailRange
+    // draws ends at tailHead(t) at its newest, so that hop is age 0 — drawn solid.
+    const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
+    const ends = Array.from({ length: buf.count }, (_, i) => buf.data[i * SEG_STRIDE + 10])
+    expect(ends).toEqual([1, 1, 2, 2, 3, 3])
+    for (const t of [0, 1, 2]) {
+      const [first, count] = tailRange(buf, t, 2)!
+      const shown = ends.slice(first, first + count)
+      expect(Math.max(...shown)).toBe(tailHead(t))
+      expect(Math.min(...shown)).toBeGreaterThanOrEqual(tailHead(t) - 2 + 1)   // ages 0..L-1
+    }
+  })
+
   it('colours by track so adjacent tracks differ, and cycles rather than running out', () => {
     const buf = buildTrackBuffer(tracked(), meta({ nT: 4 }), PAL)
     const rgb = (i: number) => Array.from(buf.data.slice(i * SEG_STRIDE + 6, i * SEG_STRIDE + 9))
@@ -544,5 +558,12 @@ describe('buildMultiTrackBuffer — a track keeps its colour whatever its source
                           { vn: 'b', payload: p }])
     expect(alone).toEqual(hexToUnit(PAL[4 % 3]))
     expect(second).toEqual(alone)
+  })
+
+  it('carries the end timepoint for the tail fade, as the single-source buffer does', () => {
+    const p = payload({ cells: { label: [1, 2, 3], t: [0, 1, 2], x: [0, 1, 2], y: [0, 0, 0], z: [0, 0, 0],
+                                 track: [4, 4, 4] } })
+    const r = buildMultiTrackBuffer([{ vn: 'b', payload: p }], meta(), ['#ffffff'], 'track')
+    expect([r.segments.data[10], r.segments.data[SEG_STRIDE + 10]]).toEqual([1, 2])
   })
 })

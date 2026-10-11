@@ -10,6 +10,7 @@
       { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
       { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "pan",  "lanes": ["x", "y", "ribbonLo", "ribbonHi"] },
+      { "name": "trail", "lanes": ["head", "length", "unused0", "unused1"] },
       { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   },
@@ -40,6 +41,7 @@
       { "name": "lab",      "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "prevGrid", "lanes": ["nBx", "nBy", "nBz", "valid"] },
       { "name": "prevDims", "lanes": ["nx", "ny", "nz", "unused"] },
+      { "name": "trail",    "lanes": ["head", "length", "unused0", "unused1"] },
       { "name": "ch",       "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   }

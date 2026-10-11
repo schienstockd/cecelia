@@ -4,8 +4,9 @@
 // `mip_segments.wgsl`.
 
 #include "brick_common.wgsl"
+#include "tail_fade.wgsl"
 
-struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
+struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @location(1) alpha: f32 };
 
 @vertex fn vs(
   @builtin(vertex_index) vi: u32,
@@ -13,9 +14,11 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
   @location(1) b: vec3<f32>,
   @location(2) rgb: vec3<f32>,
   @location(3) plane: f32,
+  @location(4) tEnd: f32,
 ) -> SOut {
   var o: SOut;
   o.rgb = rgb;
+  o.alpha = tailAlpha(tEnd);
   if (p.pan.z >= 0.0 && (plane < p.pan.z - 0.5 || plane > p.pan.w + 0.5)) {
     o.pos = vec4(0.0, 0.0, 2.0, 1.0);
     return o;
@@ -42,5 +45,5 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32> };
 }
 
 @fragment fn fs(in: SOut) -> @location(0) vec4<f32> {
-  return vec4(in.rgb, 0.85);
+  return vec4(in.rgb, in.alpha);
 }

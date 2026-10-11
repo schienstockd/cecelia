@@ -39,7 +39,7 @@ import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 
-/** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
+/** Bytes in the uniform struct: 8 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = MIP_LAYOUT.bytes
 /** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "mip"). Slots are never written
  *  as numbers: a NEW leading vec4 shifts everything after it, and a hand-kept index then writes, say,
@@ -143,6 +143,9 @@ export interface VolumeRenderer {
    *  window. Negative `planeLo` disables the filter (3D volume view, no z-slicing). */
   setOverlaySegmentDraw(first: number, count: number, widthPx: number,
                         planeLo: number, planeHi?: number): void
+  /** The tail fade (`shaders/tail_fade.wgsl`): `head` = the newest end timepoint drawn (`tailHead`),
+   *  `length` = the tail in frames. A segment ending at `head` draws solid, older ones fade. */
+  setTailFade(head: number, length: number): void
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
    * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
@@ -542,6 +545,7 @@ export async function createVolumeRenderer(
           { shaderLocation: 1, offset: 12, format: 'float32x3' },  // to
           { shaderLocation: 2, offset: 24, format: 'float32x3' },  // rgb
           { shaderLocation: 3, offset: 36, format: 'float32' },    // z plane of the segment's END
+          { shaderLocation: 4, offset: 40, format: 'float32' },    // end timepoint, for the fade
         ],
       }],
     },
@@ -1007,6 +1011,11 @@ export async function createVolumeRenderer(
       // don't belong on.
       u[U.pan.ribbonLo] = planeLo
       u[U.pan.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+
+    setTailFade(head: number, length: number) {
+      u[U.trail.head] = head
+      u[U.trail.length] = Math.max(0, length)
     },
 
     setLabelStyle(opacity: number, contourPx: number) {

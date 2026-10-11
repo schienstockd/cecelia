@@ -728,7 +728,10 @@ function _um_per_px_3d(a, state, pixel_size_um::Real, out_h::Integer)
 end
 
 # One frame's overlays for the shader passes, in native voxel coordinates (`build_overlays3d_for`).
-# `nothing` when the frame has neither points nor tail segments.
+# `nothing` when the frame has neither points nor tail segments. Segments from the overlay author
+# carry `t1`/`tail`, sent as the per-segment end timepoint plus the frame's fade `head` (t + 1, as
+# `_state_at` windows it) and `length` — the viewer's tail fade. Without them (a card's trace) the
+# tails draw unfaded.
 function _overlays3d_state(per_t3d, t::Int)
     per_t3d === nothing && return nothing
     pts, segs = per_t3d(t)
@@ -742,6 +745,11 @@ function _overlays3d_state(per_t3d, t::Int)
         "x0" => Float64.(segs.x0), "y0" => Float64.(segs.y0), "z0" => Float64.(segs.z0),
         "x1" => Float64.(segs.x1), "y1" => Float64.(segs.y1), "z1" => Float64.(segs.z1),
         "colour" => [rgb(c) for c in segs.colour]))
+    if segs !== nothing && hasproperty(segs, :t1) && hasproperty(segs, :tail) && !isempty(segs.t1)
+        out["segments"]["t1"] = Float64.(segs.t1)
+        out["segments"]["head"] = t + 1
+        out["segments"]["length"] = maximum(segs.tail)
+    end
     out
 end
 
