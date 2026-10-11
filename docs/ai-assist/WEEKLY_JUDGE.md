@@ -228,6 +228,14 @@ than the screen, and a resize repaints it at once:
    work it (confirm on `origin/main`, its own worktree from `pixi run bootstrap-worktree fix-<key>`,
    sibling call sites, a failing test, recital, the bug key in the commit). You're in that session as usual; the queue comes back when
    you exit it. `[w] won't fix` closes a bug you don't want.
+
+   **Bundles.** Work bugs that share a reviewed branch or a file come as one card, up to 8 (verify's
+   own grouping, `verify.groups`): each bug's card without its evidence. `[f] fix now` starts one
+   session briefed on all of them, in one worktree (`fix-bundle-<first key>`). It confirms each on
+   `origin/main`, fixes the real ones, names each fixed key in the commit that fixes it, and ends by
+   saying which it left and why. Every bug in the bundle gets its own fix-session answer, and one `[z]`
+   takes them all back. `[s] one by one` splits the bundle into single cards for this session. A
+   decide bug you answer joins its file's or branch's bundle at once.
 3. **Rules.** The pass's rule proposals, one per screen: the section, what to do (`tighten` or
    `ratchet`), and the findings that broke it. `[e] edit the rule` starts a session briefed on them,
    in its own worktree (`rule-<id>-<date>`); it first says what the findings share, and stops if a

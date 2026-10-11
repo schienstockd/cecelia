@@ -6,7 +6,8 @@ and amendments to D2, D4, D9, D11). P1 merged (#1513), P1b merged (#1515). P2–
 for the old record PR). P5 audited 2026-10-09; its fixes are in (see P5). Rule proposals are answered
 in `judge-review` after the bugs (Dominik, 2026-10-09: "I will probably forget otherwise"); the
 rules-only PR only carries `EFFECTIVENESS.md`.
-**Part 4 (pooling by root cause, D16–D18, P6) proposed 2026-10-11, not built.**
+**Part 4 (pooling by root cause, D16–D18, P6) proposed 2026-10-11, not built. Part 5 (fix bundles in
+`judge-review`, D19, P7) built 2026-10-11.**
 Revises how [`../ai-assist/WEEKLY_JUDGE.md`](../ai-assist/WEEKLY_JUDGE.md) handles volume and where bugs
 live. The brief behind the issues half:
 [`../archive/JUDGE_GITHUB_ISSUES_PROMPT.md`](../archive/JUDGE_GITHUB_ISSUES_PROMPT.md). This plan
@@ -313,6 +314,40 @@ property name as the symbol. Callbacks stay unnamed: there's no name to find at 
 for the excerpt, not the pooling (D16 covers that). With no symbol, the excerpt is a window around
 the line instead of the whole function, and a moved line isn't followed.
 
+## Part 5 — fix bundles in `judge-review` (built 2026-10-11)
+
+**The ask (Dominik, 2026-10-11):** working the list one bug per session is tedious, and some bugs
+touch sites close enough that one agent could fix them together. Part 4 joins rows that are *one*
+bug. This joins *different* bugs that one session should work together.
+
+### D19. Bundle the work list by verify's grouping
+
+`judge-review` joins work items that share a reviewed branch or a file into one card, using
+`verify.groups` and its `GROUP_MAX` (8). That's the same grouping that already gave them to one
+verify agent, so no agent call is spent on it. `[f] fix now` starts one session on `bundle_brief`:
+- every bug's brief;
+- confirm each one, and leave any that isn't real;
+- one worktree, `fix-bundle-<first key>`;
+- each fixed key named in the commit that fixes it, because landed-fix detection is per bug;
+- end by listing which keys it fixed and which it left.
+
+Each bug gets its own `fix_session` event, so the issue mirror labels each issue, and one undo takes
+them all back. `[s] one by one` splits a bundle for the session. A bundle has no `[w]`: won't-fix is a
+per-bug answer, made after splitting. A decide bug you answer joins its bundle at once, because the
+queue is re-bundled after every answer.
+
+**Kept as it was:** `pending()` and the record stay per bug. Bundling happens only in the terminal
+queue (`bundles`), so the weekly pass, the issue mirror and the counts see no change.
+
+**On the 2026-10-09 record:** 19 open work cards become 10. The bundles are:
+- the 7 `ViewerWindow.vue` / seg-preview bugs;
+- BatchMovies, B29/B31;
+- notebooks install-scope, B33/B58;
+- the `perTimepoint` default, B56/B66.
+
+**What it misses:** bugs on one topic that share neither branch nor file. B2 (`_find_julia`) is an
+install bug like B33/B58 but stays single.
+
 ## Phases
 
 Each phase ships alone, P1 first, because it's the problem that bites now. Every phase also checks
@@ -393,6 +428,17 @@ D16–D18. **Tests:**
 B50 on their own (24 rows → about 17). Dominik reads the merges before the first pass that closes
 issues.
 
+### P7 — fix bundles (Part 5, D19)
+
+Built. `scripts/judge/review.py`: `bundles`, `bundle_brief`, the bundle card, `[s]`, and undo of a
+whole bundle. Tests: `BundleTest` in `test_judge_review.py` covers:
+- a shared branch or file bundles, and the rest stay single;
+- the `GROUP_MAX` split;
+- one brief and a per-bug event each;
+- one undo for all;
+- split;
+- skip.
+
 ## Rejected
 
 - **A generated index instead of issues.** It would have to be committed to be seen, which needs
@@ -411,6 +457,9 @@ issues.
 - **Pooling by `(file, branch, commit)`** (2026-10-11): that groups by the fanout pass that raised
   the findings, not by bug. One diff on one big file raises distinct bugs (B47 and the
   `labelName` four are both in `ViewerWindow.vue`), and an over-merge hides one from the owner.
+- **Bundling by topic with an agent** (2026-10-11): it would catch B2 with the install bugs, but a
+  call per review session costs more than the cases it adds. Revisit if singles on one topic keep
+  turning up.
 - **A separate clustering call over the whole open list:** it would judge from descriptions without
   the code, and it costs a call. Verify's groups already put each observed pair in front of one agent
   with the code. Revisit if duplicates turn up that share neither branch nor file.
