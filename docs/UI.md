@@ -1790,8 +1790,13 @@ Both views come out of ONE shader: a plane is a volume one deep seen face-on wit
 samples the box midpoint — exactly that plane. What 2D does need is **orthographic** projection, because
 under perspective a flat plane foreshortens towards the edges, which is wrong for a view people measure
 on; the two share a framing convention so the toggle does not jump. **Z controls:** 3D has a **Depth**
-range (↶ resets it to the whole stack); a **± planes** toggle in either view swaps it for `plane ± n` —
+range (↶ resets it to the whole stack); the **±** button at the end of the Z row swaps it for `plane ± n` —
 in 2D a top-down MIP of the neighbouring planes, in 3D the same box rotatable, moved by the Plane slider.
+**Sidebar layout:** one icon row under *View* (2D/3D, select/pan, overview or axes, reset view; the
+gear holds renderer, cache, quality, 3D projection and the cache-map toggles — the maps draw in the
+canvas's top-right column, under the overview/axes and the same size, never on the overview), then one row per slider —
+label column, slider, readout column, ± square — so Depth/Plane, ± planes, Timepoint (play + loop sit in
+the label column) and Fps start and end on the same x.
 `loadedPlanes` (`utils/volumeViewer.ts`) is the one resolver of which planes load; the window is off on
 the 2D tile path. The view state publishes them (`dims.zRange`), so a recording draws the same planes
 (Match viewer, keyframes, Fill from view → a batch's **max** / 3D range) and restoring a keyframe puts

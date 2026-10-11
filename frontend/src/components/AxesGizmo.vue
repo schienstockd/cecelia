@@ -78,8 +78,9 @@ const zoomLabel = computed(() =>
 </template>
 
 <style scoped>
+/* Placed by the parent — the viewer's top-right corner column. */
 .vw-gizmo {
-  position: absolute; top: 0.75rem; right: 0.75rem;
+  position: relative;
   background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs);
   pointer-events: auto; touch-action: none;
