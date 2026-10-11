@@ -1125,7 +1125,7 @@ and `docs/examples/plugins`. Add a field here when you add it to `ParamDef`, not
   "params": [
     { "key": "model",        "label": "Model",    "type": "select",           "options": [...] },
     { "key": "cellChannels", "label": "Channels", "type": "channelSelection", "multiple": true, "default": [] },
-    { "key": "cellDiameter", "label": "Diameter", "type": "int", "min": 1, "max": 500, "default": 10 }
+    { "key": "cellDiameter", "label": "Diameter", "type": "float", "min": 2, "max": 60, "default": 10 }
   ]
 }
 ```

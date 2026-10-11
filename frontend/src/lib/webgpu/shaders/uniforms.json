@@ -22,6 +22,7 @@
       { "name": "vp",   "lanes": ["nch", "canvasW", "canvasH", "unused"] },
       { "name": "ext",  "lanes": ["x", "y", "unused0", "unused1"] },
       { "name": "slot", "lanes": ["channelsPerSlot", "unused0", "unused1", "unused2"] },
+      { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "unused"] },
       { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   },

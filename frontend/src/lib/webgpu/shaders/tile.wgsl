@@ -31,6 +31,8 @@
 // `vp`    x = channel count, y = canvas W (px), z = canvas H (px), w = unused.
 // `ext`   x = image extent X µm, y = image extent Y µm, z/w = unused.
 // `slot`  x = channels per slot (nC — how far to step in z per channel), y/z/w = unused.
+// `lab`   x = mask opacity (0 = off), y = contour width (px, 0 = filled), z = palette rows, w = unused.
+//         Same lanes as the MIP shader's `lab`, which is what lets `label_colour.wgsl` read it.
 // `ch[]`  per-channel window: x = lo, y = hi, z = visible (0/1), w = unused.
 
 struct P {
@@ -38,11 +40,19 @@ struct P {
   vp:   vec4<f32>,
   ext:  vec4<f32>,
   slot: vec4<f32>,
+  lab:  vec4<f32>,
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>,
 };
 @group(0) @binding(0) var<uniform> p: P;
 @group(0) @binding(1) var atlas: texture_3d<u32>;
 @group(0) @binding(2) var lut: texture_2d<f32>;
+// The segmentation mask, one 'r32uint' layer per slot — layer `slot` holds the mask for the tile in
+// image slot `slot`, so a tile and its mask can never be drawn from different places. Its own texture
+// rather than more image layers: ids are u32 (a whole-slide segmentation passes 65535 cells) while the
+// image is u8/u16, and a mask is refetched on its own when it changes (a task preview re-run) without
+// touching the image bytes.
+@group(0) @binding(3) var labAtlas: texture_3d<u32>;
+@group(0) @binding(4) var pal: texture_2d<f32>;
 
 struct Inst {
   // World rect in µm (top-left corner + width/height). Screen up is -y in world, so a tile with the
@@ -56,6 +66,9 @@ struct Inst {
   // Which slot in the atlas holds this tile. Channels are stacked, so channel c reads layer
   // slot * nC + c at the tile's (px, py).
   @location(3) slotIdx: f32,
+  // 1 when the slot's mask layer holds the mask on screen, 0 when it is absent or stale — a tile drawn
+  // before its mask lands shows the image alone rather than another tile's mask.
+  @location(4) labOn: f32,
 };
 
 struct VOut {
@@ -63,6 +76,7 @@ struct VOut {
   @location(0) uv: vec2<f32>,            // 0..1 across the tile — the local sample coord
   @location(1) @interpolate(flat) slot: i32,
   @location(2) @interpolate(flat) sampledPx: vec2<f32>,
+  @location(3) @interpolate(flat) labOn: f32,
 };
 
 // Two triangles, corners in [0, 1] with (0, 0) at the top-left of the tile (uv y grows DOWNWARD in
@@ -93,6 +107,7 @@ struct VOut {
   o.uv = corner;
   o.slot = i32(inst.slotIdx);
   o.sampledPx = inst.sampledPx;
+  o.labOn = inst.labOn;
   return o;
 }
 
@@ -107,6 +122,26 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
   let b = textureLoad(lut, vec2<i32>(j, c), 0).rgb;
   return mix(a, b, f);
 }
+
+// The mask id at a pixel of this tile. Outside the tile reads as the SAME id: the neighbour lives in
+// another slot, and reading it as background would outline every cell along every tile seam.
+fn labAt(slot: i32, x: i32, y: i32, sampled: vec2<f32>, id: u32) -> u32 {
+  if (x < 0 || y < 0 || x >= i32(sampled.x) || y >= i32(sampled.y)) { return id; }
+  return textureLoad(labAtlas, vec3<i32>(x, y, slot), 0).r;
+}
+
+// The viewer's 'contour': the label's outline, w px thick (in this level's pixels), filled at w = 0.
+// Same rule as the MIP shader's `labEdge`, in-plane only.
+fn labEdge(slot: i32, x: i32, y: i32, sampled: vec2<f32>, id: u32, w: i32) -> bool {
+  if (w <= 0) { return true; }
+  for (var k = 1; k <= w; k = k + 1) {
+    if (labAt(slot, x + k, y, sampled, id) != id || labAt(slot, x - k, y, sampled, id) != id ||
+        labAt(slot, x, y + k, sampled, id) != id || labAt(slot, x, y - k, sampled, id) != id) { return true; }
+  }
+  return false;
+}
+
+#include "label_colour.wgsl"
 
 @fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
   // Local pixel coordinate in the tile's atlas layer. sampledPx is what was actually written; the
@@ -128,6 +163,13 @@ fn ramp(c: i32, n: f32) -> vec3<f32> {
     let v = f32(textureLoad(atlas, vec3<i32>(sx, sy, base + c), 0).r);
     let win = clamp((v - p.ch[c].x) / max(p.ch[c].y - p.ch[c].x, 1.0), 0.0, 1.0);
     acc = acc + ramp(c, win);
+  }
+  // The mask goes OVER the composite at its opacity — same compositing as the MIP shader.
+  if (p.lab.x > 0.0 && in.labOn > 0.5) {
+    let id = textureLoad(labAtlas, vec3<i32>(sx, sy, in.slot), 0).r;
+    if (id != 0u && labShown(id) && labEdge(in.slot, sx, sy, in.sampledPx, id, i32(p.lab.y))) {
+      acc = mix(min(acc, vec3(1.0)), labColour(id).rgb, p.lab.x);
+    }
   }
   return vec4(min(acc, vec3(1.0)), 1.0);
 }

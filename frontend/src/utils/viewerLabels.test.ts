@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, LABEL_PALETTE_N,
+import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, LABEL_PALETTE_N,
          PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, PICK_BUFFER_WORDS, PICK_BUFFER_BYTES,
          packPickBuffer, pickBufferHas, pickBufferFocus, emptyPickBuffer,
          pickBufferWgsl } from './viewerLabels'
@@ -136,5 +136,22 @@ describe('pick buffer', () => {
     expect(s).toContain('fn labInPick')
     expect(s).toContain('fn labIsFocus')
     expect(s).toContain('fn labPickContourPx')
+  })
+})
+
+describe('maskStoreFor', () => {
+  it('a preview wins over a live store of the same name; anything else is the durable store', () => {
+    expect(maskStoreFor('cells', 'cells', 'cells')).toBe('preview')
+    expect(maskStoreFor('cells', '', 'cells')).toBe('live')
+    expect(maskStoreFor('cells', 'nuc', 'nuc')).toBeUndefined()
+    expect(maskStoreFor('', '', '')).toBeUndefined()
+  })
+})
+
+describe('maskStoreQuery', () => {
+  it('points a labels read at the store, its stamp as the cache-buster', () => {
+    expect(maskStoreQuery('preview', 3)).toEqual({ preview: true, previewId: 3, live: false, liveId: undefined })
+    expect(maskStoreQuery('live', 4)).toEqual({ preview: false, previewId: undefined, live: true, liveId: 4 })
+    expect(maskStoreQuery(undefined, 5)).toEqual({ preview: false, previewId: undefined, live: false, liveId: undefined })
   })
 })

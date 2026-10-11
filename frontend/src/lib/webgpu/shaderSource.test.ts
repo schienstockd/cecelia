@@ -110,6 +110,12 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
+  it('TILE_WGSL colours its mask with the one shared labColour / labShown', () => {
+    expect(TILE_WGSL).toContain(expandWgsl('label_colour.wgsl'))
+    expect(TILE_WGSL.match(/fn labColour\(/g)).toHaveLength(1)
+    expect(TILE_WGSL).toMatch(/id != 0u && labShown\(id\)/)
+  })
+
   it('the TS constants are the shader constants', () => {
     expect([MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE, PICK_BITSET_CAPACITY, PICK_BITSET_WORDS]).toEqual([
       SHADER_CONSTANTS.MAX_CHANNELS, SHADER_CONSTANTS.LUT_STOPS, SHADER_CONSTANTS.VIEW_HALF_ANGLE,
