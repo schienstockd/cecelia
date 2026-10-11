@@ -182,6 +182,7 @@ class AutonomousClient:
     def _ws_send(self, message: dict, until, wait_s: float = 4.0) -> list[dict]:
         """Send one message on the API's /ws and collect the frames `until(frame)` accepts, for up to
         `wait_s` — enough to see an immediate refusal; progress is then polled over HTTP."""
+        from websockets.exceptions import WebSocketException
         from websockets.sync.client import connect
         seen: list[dict] = []
         try:
@@ -205,8 +206,9 @@ class AutonomousClient:
                         if frame.get("status") in _TERMINAL or str(frame.get("type", "")).endswith(
                                 ("failed", "started")):
                             break
-        except OSError as e:
-            raise ApiError(0, f"cannot reach Cecelia WebSocket at {self.base_url} ({e})") from e
+        except (OSError, WebSocketException) as e:  # refused upgrade / dropped mid-send: say which
+            raise ApiError(0, f"cannot reach Cecelia WebSocket at {self.base_url} "
+                              f"({type(e).__name__}: {e})") from e
         return seen
 
     def run_task(self, project_uid: str, fun_name: str, params: dict, image_uids: list[str],

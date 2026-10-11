@@ -30,6 +30,7 @@ dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these ca
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import urllib.error
@@ -241,7 +242,18 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         raise ApiError(0, f"Cecelia API at {loopback.resolve(base_url)} timed out after {timeout:g}s") from e
     except ConnectionError as e:
         raise ApiError(0, f"cannot reach Cecelia API ({e}). Is Cecelia running?") from e
-    return payload if raw else json.loads(payload.decode("utf-8"))
+    except (OSError, http.client.HTTPException) as e:
+        # the connection broke mid-answer (truncated body, garbled status line, TLS read error).
+        # Caught here so the agent gets a reason: anything uncaught reaches it as a bare
+        # "Error executing tool …"
+        raise ApiError(0, f"Cecelia API at {loopback.resolve(base_url)} broke off the reply to "
+                          f"{method} {path} ({type(e).__name__}: {e})") from e
+    if raw:
+        return payload
+    try:
+        return json.loads(payload.decode("utf-8"))
+    except ValueError as e:  # UnicodeDecodeError is a ValueError too
+        raise ApiError(0, f"{method} {path} answered with non-JSON: {payload[:120]!r}") from e
 
 
 class DisallowedRoute(RuntimeError):
