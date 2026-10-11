@@ -18,10 +18,14 @@
 // hard ceiling (128) so a very small nC does not spend its budget on a slot table nobody uses. The
 // tightest of the three wins.
 //
-// WHAT LIVES OUTSIDE. Overlays (points, track tails, labels) do NOT ride this pipeline yet. Wire-up
-// for them is the next commit — the tile pass exists first so the shader and geometry can be reviewed
-// in isolation. On mode switch to 3D the viewer disposes this renderer and creates the volume one
-// (WIP note in the ViewerWindow wire-up).
+// THE MASK rides a second atlas, one `r32uint` layer per slot, parallel to the image atlas: the mask
+// for the tile in slot s is layer s. Its residency is tracked per slot against a mask SOURCE id
+// (`setLabelSource`), so switching or re-running a mask (a task preview) refetches only the mask
+// bytes, never the image's channels. Allocated on the first mask upload — an image with no
+// segmentation never pays for it.
+//
+// WHAT LIVES OUTSIDE. Points and track tails do NOT ride this pipeline yet. On mode switch to 3D the
+// viewer disposes this renderer and creates the volume one.
 
 import { TILE_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
 
@@ -33,6 +37,7 @@ import {
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
+import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
 export { WebGpuUnavailable, type AdapterReport }
 import { tileKeyStr, tileFetchRect, tileSlotShape, type TileKey } from '../../utils/tileViewer'
 
@@ -116,6 +121,22 @@ export interface TileRenderer {
   touchTile(key: TileKey): void
   /** Drop this tile from the cache and free its slot. Nothing draws it after. */
   evictTile(key: TileKey): void
+  /**
+   * Which mask the frame shows: an id naming the mask STORE (`''` = none). A slot whose mask layer was
+   * uploaded under another id is stale — `needsLabel` reports it and `draw` skips its mask — so a
+   * change of mask needs no eviction, just a refetch of the mask bytes.
+   */
+  setLabelSource(sourceId: string): void
+  /** Opacity 0 switches the mask off; contour 0 draws it filled. Same contract as the volume renderer. */
+  setLabelStyle(opacity: number, contourPx: number): void
+  /** True when the tile is resident but its mask layer does not hold the current mask source. */
+  needsLabel(key: TileKey): boolean
+  /**
+   * Upload one tile's mask (`w*h` u32 ids, `(w, h)` as for `uploadTile`) into the mask layer of the
+   * tile's slot, tagged `sourceId`. False when the tile is no longer resident (evicted during the
+   * fetch) or the mask atlas could not be allocated.
+   */
+  uploadLabel(key: TileKey, ids: ArrayBuffer, sourceId: string): Promise<boolean>
   /** Every resident tile plus the entry used by `tileEvictions` — `lastUsed` is monotonic per touch,
    *  higher = fresher. */
   residentTiles(): TileEntry[]
@@ -167,13 +188,17 @@ export async function createTileRenderer(
         texture: { sampleType: 'uint', viewDimension: '3d' } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT,
         texture: { sampleType: 'float', viewDimension: '2d' } },
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'uint', viewDimension: '3d' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float', viewDimension: '2d' } },
     ],
   })
 
-  // Instance stride: worldXY (2), worldWH (2), sampledPx (2), slotIdx (1) → 7 floats, packed. Kept as
-  // one buffer with three attribute offsets rather than three buffers, because a single upload per
-  // frame is one thing to reason about — the buffer is written per draw, not per tile.
-  const INSTANCE_FLOATS = 7
+  // Instance stride: worldXY (2), worldWH (2), sampledPx (2), slotIdx (1), labOn (1) → 8 floats,
+  // packed. Kept as one buffer with several attribute offsets rather than several buffers, because a
+  // single upload per frame is one thing to reason about — the buffer is written per draw, not per tile.
+  const INSTANCE_FLOATS = 8
   const INSTANCE_STRIDE = INSTANCE_FLOATS * 4
 
   const pipeline = device.createRenderPipeline({
@@ -188,6 +213,7 @@ export async function createTileRenderer(
           { shaderLocation: 1, offset: 8,  format: 'float32x2' },   // worldWH
           { shaderLocation: 2, offset: 16, format: 'float32x2' },   // sampledPx
           { shaderLocation: 3, offset: 24, format: 'float32' },     // slotIdx
+          { shaderLocation: 4, offset: 28, format: 'float32' },     // labOn
         ],
       }],
     },
@@ -201,6 +227,18 @@ export async function createTileRenderer(
   const lutTex = device.createTexture({
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  // The label palette — the volume renderer's, written once.
+  const palTex = device.createTexture({
+    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  })
+  device.queue.writeTexture({ texture: palTex }, labelPaletteBytes(),
+                            { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1])
+  // Bound until the first mask upload allocates the mask atlas — a bind group must be complete.
+  const noLabels = device.createTexture({
+    size: [1, 1, 1], dimension: '3d', format: 'r32uint',
+    usage: GPUTextureUsage.TEXTURE_BINDING,
   })
 
   const setupError = await device.popErrorScope()
@@ -238,6 +276,12 @@ export async function createTileRenderer(
    *  discard an older allocation instead of installing it. */
   let pendingAlloc: Promise<void> | null = null
   let allocGen = 0
+  /** The mask atlas (`capacity` layers of the image atlas's slot shape) and, per slot, the mask
+   *  source its layer was uploaded under — `''` when the layer holds nothing current. */
+  let labAtlas: GPUTexture | null = null
+  let labAllocFailed = false
+  let labelSrcBySlot: string[] = []
+  let labelSource = ''
 
   /** keyStr → { entry (slot, lru...) }. Ordering is on `lastUsed` so `residentTiles()` can hand a
    *  ranker-ready list. */
@@ -258,8 +302,31 @@ export async function createTileRenderer(
         { binding: 0, resource: { buffer: uniforms } },
         { binding: 1, resource: atlas.createView() },
         { binding: 2, resource: lutTex.createView() },
+        { binding: 3, resource: (labAtlas ?? noLabels).createView() },
+        { binding: 4, resource: palTex.createView() },
       ],
     })
+  }
+
+  /** The mask atlas, allocated on first use at the image atlas's geometry. One attempt: a mask that
+   *  does not fit leaves the image drawing without it rather than shrinking the image atlas. */
+  async function ensureLabAtlas(): Promise<boolean> {
+    if (labAtlas) return true
+    if (labAllocFailed || !atlas || !usable()) return false
+    device.pushErrorScope('out-of-memory')
+    const tex = device.createTexture({
+      size: [atlasChunkX, atlasChunkY, capacity], dimension: '3d', format: 'r32uint',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    })
+    const err = await device.popErrorScope()
+    if (err !== null || !usable() || !atlas || labAtlas) {
+      tex.destroy()
+      if (err !== null) { labAllocFailed = true; onError?.('Tile mask atlas: ' + err.message) }
+      return !!labAtlas
+    }
+    labAtlas = tex
+    rebuildBindGroup()
+    return true
   }
 
   function pushUniforms() { if (usable()) device.queue.writeBuffer(uniforms, 0, u) }
@@ -284,6 +351,10 @@ export async function createTileRenderer(
     allocGen++                    // a pending allocation is for the geometry being dropped
     if (!dead) atlas?.destroy()
     atlas = null
+    if (!dead) labAtlas?.destroy()
+    labAtlas = null
+    labAllocFailed = false
+    labelSrcBySlot = []
     bindGroup = null
     tiles.clear()
     freeSlots.length = 0
@@ -377,6 +448,7 @@ export async function createTileRenderer(
       const sourceChanged = reuse && atlasSourceId !== sourceId
       if (sourceChanged) {
         tiles.clear()
+        labelSrcBySlot = []
         freeSlots.length = 0
         for (let i = 0; i < capacity; i++) freeSlots.push(i)
       }
@@ -441,6 +513,7 @@ export async function createTileRenderer(
         }
       }
       if (slot < 0) return -1                     // atlas full and nothing droppable — caller retries
+      labelSrcBySlot[slot] = ''                   // the slot's mask layer belonged to its last tenant
 
       // Use `key.level` — NOT `currentLevel`. The tile's bytes were fetched at its own level, and the
       // rect that describes them must match. `currentLevel` may have moved on since this fetch started
@@ -491,7 +564,38 @@ export async function createTileRenderer(
       const t = tiles.get(kStr)
       if (!t) return
       tiles.delete(kStr)
+      labelSrcBySlot[t.slot] = ''
       freeSlots.push(t.slot)
+    },
+
+    setLabelSource(sourceId) { labelSource = sourceId },
+    setLabelStyle(opacity, contourPx) {
+      u[U.lab.opacity] = Math.max(0, Math.min(1, opacity))
+      u[U.lab.contourPx] = Math.max(0, Math.round(contourPx))
+      u[U.lab.paletteRows] = LABEL_PALETTE_N
+    },
+    needsLabel(key) {
+      if (!labelSource) return false
+      const t = tiles.get(tileKeyStr(key))
+      return !!t && labelSrcBySlot[t.slot] !== labelSource
+    },
+
+    async uploadLabel(key, ids, sourceId) {
+      if (pendingAlloc) await pendingAlloc
+      if (!(await ensureLabAtlas()) || !labAtlas) return false
+      // Resolved AFTER the awaits: the tile may have been evicted, and its slot re-let, meanwhile.
+      const t = tiles.get(tileKeyStr(key))
+      const lvl = metaRef?.levels?.find(v => v.level === key.level)
+      if (!t || !lvl) return false
+      const rect = tileFetchRect(key.tx, key.ty, lvl)
+      const w = rect.xTo - rect.x + 1
+      const h = rect.yTo - rect.y + 1
+      if (w <= 0 || h <= 0 || w > atlasChunkX || h > atlasChunkY || ids.byteLength !== w * h * 4) return false
+      device.queue.writeTexture(
+        { texture: labAtlas, origin: [0, 0, t.slot] }, ids,
+        { bytesPerRow: w * 4, rowsPerImage: h }, [w, h, 1])
+      labelSrcBySlot[t.slot] = sourceId
+      return true
     },
     residentTiles() { return [...tiles.values()] },
     slotCapacity: () => capacity,
@@ -522,7 +626,7 @@ export async function createTileRenderer(
       // first fetch lands) and clears to the pass's colour rather than reading undefined bytes.
       const n = tilesToDraw.length
       if (n > 0) {
-        const need = n * 7 * 4
+        const need = n * INSTANCE_STRIDE
         if (!instBuf || need > instCap) {
           instBuf?.destroy()
           instCap = need
@@ -530,10 +634,10 @@ export async function createTileRenderer(
             size: instCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
           })
         }
-        const data = new Float32Array(n * 7)
+        const data = new Float32Array(n * INSTANCE_FLOATS)
         for (let i = 0; i < n; i++) {
           const t = tilesToDraw[i]
-          const o = i * 7
+          const o = i * INSTANCE_FLOATS
           data[o]     = t.worldX
           data[o + 1] = t.worldY
           data[o + 2] = t.worldW
@@ -541,6 +645,7 @@ export async function createTileRenderer(
           data[o + 4] = t.sampledX
           data[o + 5] = t.sampledY
           data[o + 6] = t.slot
+          data[o + 7] = labelSource && labelSrcBySlot[t.slot] === labelSource ? 1 : 0
         }
         device.queue.writeBuffer(instBuf, 0, data)
       }
@@ -568,7 +673,7 @@ export async function createTileRenderer(
       dropAtlas()
       instBuf?.destroy(); instBuf = null
       if (dead) return
-      lutTex.destroy(); uniforms.destroy()
+      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
       device.destroy()
     },
   }

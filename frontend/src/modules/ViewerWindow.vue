@@ -52,7 +52,7 @@ import { createBrickVolumeRenderer } from '../lib/webgpu/brickVolumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
-  tileGridDims,
+  tileGridDims, tileMaskSourceId,
   type TileKey, type ViewportL0,
 } from '../utils/tileViewer'
 import { publishUiLog } from '../lib/uiLogChannel'
@@ -96,7 +96,7 @@ import { heatUnit } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
-import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
+import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, type MaskStore } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -896,6 +896,13 @@ const liveVn = computed(() => {
   return l && l.imageUid === imageUid ? l.valueName : ''
 })
 const maskName = computed(() => previewVn.value || liveVn.value || labelName.value)
+/** Which store a mask's bytes come from (`maskStoreFor`) plus that store's rewrite stamp — the
+ *  cache-buster every mask fetch path sends. */
+function maskStoreOf(vn: string): { store: MaskStore | undefined; storeId: number | undefined } {
+  const store = maskStoreFor(vn, previewVn.value, liveVn.value)
+  return { store, storeId: store === 'preview' ? viewerStore.previewLabels?.updateId
+    : store === 'live' ? viewerStore.liveLabels?.updateId : undefined }
+}
 // The region the task preview last segmented, for THIS image, in the plane view — what seeds the
 // user's preview box (`previewBox`) the first time a preview lands.
 const previewedRegion = computed(() => {
@@ -2138,8 +2145,8 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
         // current image dims by construction (the worker uses the open image), so bypass this
         // check for previews.
-        if (vn !== previewVn.value && vn !== liveVn.value
-            && m.labelDims && labelDimsMismatch(m, vn)) {
+        const ms = maskStoreOf(vn)
+        if (!ms.store && m.labelDims && labelDimsMismatch(m, vn)) {
           return null
         }
         // A mask with fewer levels than the image has nothing at this zoom — skip it so the image
@@ -2149,16 +2156,9 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
         // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
         // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
-        const usePreview = vn === previewVn.value
-        const useLive = !usePreview && vn === liveVn.value
         const url = slabUrl({
           projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
-          preview: usePreview,
-          // Bust the browser cache when the scratch store has been rewritten — same (vn, t, z, preview=1)
-          // URL across two runs would otherwise return the FIRST run's bytes from disk cache.
-          previewId: usePreview ? viewerStore.previewLabels?.updateId : undefined,
-          live: useLive,
-          liveId: useLive ? viewerStore.liveLabels?.updateId : undefined,
+          ...maskStoreQuery(ms.store, ms.storeId),
           // Same cache-buster for the durable labels store's own rewrites.
           rev: cacheClearRev.value || undefined,
         })
@@ -2395,18 +2395,10 @@ function computeViewportL0(): ViewportL0 | null {
  *  fetches the current-t version and the ranker keeps the near-t entry around for a scrub back
  *  (see `docs/todo/VIEWER_TILES_PLAN.md` Phase F). */
 function missingTiles(): TileKey[] {
-  const tr = tileRenderer.value, m = meta.value
-  if (!tr || !m) return []
-  const level = slabLevel.value
-  const lvl = levelMeta(m, level)
-  const vp = computeViewportL0()
-  if (!lvl || !vp) return []
-  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
-  const tp = t.value
-  const zp = zPlane.value
+  const tr = tileRenderer.value
+  if (!tr) return []
   const out: TileKey[] = []
-  for (const [tx, ty] of coords) {
-    const key: TileKey = { t: tp, z: zp, level, tx, ty }
+  for (const key of viewportTileKeys()) {
     if (tr.hasTile(key)) { tr.touchTile(key); continue }
     out.push(key)
   }
@@ -2418,16 +2410,20 @@ function missingTiles(): TileKey[] {
  *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. Current-t only
  *  by design (Phase F, decision 4 — no cross-t halo in MVP). */
 function evictionKeepSet(): Set<string> {
+  return new Set(viewportTileKeys().map(tileKeyStr))
+}
+
+/** Every tile the current viewport wants (visible + halo) at the current level, t and plane. */
+function viewportTileKeys(): TileKey[] {
   const tr = tileRenderer.value, m = meta.value
-  if (!tr || !m) return new Set()
+  if (!tr || !m) return []
   const level = slabLevel.value
   const lvl = levelMeta(m, level)
   const vp = computeViewportL0()
-  if (!lvl || !vp) return new Set()
-  const coords = tilesInHalo(vp, level, lvl, HALO_RINGS)
+  if (!lvl || !vp) return []
   const tp = t.value
   const zp = zPlane.value
-  return new Set(coords.map(([tx, ty]) => tileKeyStr({ t: tp, z: zp, level, tx, ty })))
+  return tilesInHalo(vp, level, lvl, HALO_RINGS).map(([tx, ty]) => ({ t: tp, z: zp, level, tx, ty }))
 }
 
 /** Fetch one tile's channels in parallel and hand them to the atlas. Aborted by `tileAborts` when the
@@ -2517,6 +2513,82 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     tileAborts.delete(kStr)
     syncTileCacheState()
   }
+}
+
+/** The mask the tile view shows, as the id the tile renderer tags each slot's mask layer with —
+ *  `''` when none is shown. Carries the store (preview / live / durable) and its rewrite stamp, so a
+ *  preview re-run or a durable-store rewrite is a NEW source: the renderer then reports every slot's
+ *  mask stale and the pump refetches the mask bytes alone, never the image's channels. */
+const tileMaskSource = computed(() => tileMaskSourceId({
+  vn: maskName.value, hidden: maskHidden.value, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+}))
+const tileLabelAborts = new Map<string, AbortController>()
+/** `<source>@<tile key>` of mask fetches that failed — not retried for that source, or every redraw
+ *  of a mask the server cannot serve (a store with fewer levels, a 409) would refetch it. */
+const tileLabelFailed = new Set<string>()
+
+/** Fetch one resident tile's mask and hand it to the renderer's mask atlas. Same geometry as the
+ *  tile's image fetch; the dtype is the mask's own, widened to u32 like the flat path's. */
+async function fetchTileLabel(key: TileKey): Promise<boolean> {
+  const tr = tileRenderer.value, m = meta.value
+  const source = tileMaskSource.value, vn = maskName.value
+  if (!tr || !m || !source || !tr.needsLabel(key)) return false
+  const lvl = levelMeta(m, key.level)
+  if (!lvl) return false
+  const kStr = tileKeyStr(key)
+  const failKey = `${source}@${kStr}`
+  if (tileLabelAborts.has(kStr) || tileLabelFailed.has(failKey)) return false
+  // Same skips as the flat path: a durable mask segmented on another version has other dims, and a
+  // mask with fewer levels than the image has nothing at this zoom. Previews and live stores are
+  // written at the open image's geometry by construction.
+  const ms = maskStoreOf(vn)
+  const short = labelLevelsShort(m, vn)
+  if ((!ms.store && m.labelDims && labelDimsMismatch(m, vn))
+      || (short && key.level >= short.nLevels)) {
+    tileLabelFailed.add(failKey)
+    return false
+  }
+  const ac = new AbortController()
+  tileLabelAborts.set(kStr, ac)
+  const rect = tileFetchRect(key.tx, key.ty, lvl)
+  try {
+    const url = slabUrl({
+      projectUid, imageUid, valueName: valueName.value, t: key.t, c: 0, z: key.z, level: key.level,
+      enc: settings.viewerCompress ? 'zstd' : 'identity', labels: vn,
+      x: rect.x, xTo: rect.xTo, y: rect.y, yTo: rect.yTo,
+      ...maskStoreQuery(ms.store, ms.storeId),
+      rev: cacheClearRev.value || undefined,
+    })
+    const res = await fetch(url, { cache: 'default', signal: ac.signal })
+    if (!res.ok) {
+      tileLabelFailed.add(failKey)
+      // 409 is "no mask to draw here" (a live store promoted mid-fetch, a short pyramid) — not an error.
+      if (res.status !== 409) vlog('error', `Mask "${vn}" tile ${kStr} could not be loaded (${res.status})`)
+      return false
+    }
+    const ids = widenLabelSlab(await res.arrayBuffer(), labelBpv(res.headers.get('X-Slab-Bpv')))
+    // The source may have moved on during the fetch (a newer preview); tagging these bytes with the
+    // new source would show the old mask as current.
+    if (tileMaskSource.value !== source) return false
+    const ok = await tr.uploadLabel(key, ids, source)
+    if (!ok && tr.hasTile(key)) tileLabelFailed.add(failKey)
+    return ok
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return false
+    tileLabelFailed.add(failKey)
+    vlog('error', `Mask "${vn}" tile ${kStr}: ${e instanceof Error ? e.message : String(e)}`)
+    return false
+  } finally {
+    tileLabelAborts.delete(kStr)
+  }
+}
+
+/** Resident current-viewport tiles whose mask layer is not the mask on screen. */
+function tilesNeedingLabels(): TileKey[] {
+  const tr = tileRenderer.value
+  if (!tr || !tileMaskSource.value) return []
+  return viewportTileKeys().filter(key =>
+    tr.needsLabel(key) && !tileLabelFailed.has(`${tileMaskSource.value}@${tileKeyStr(key)}`))
 }
 
 /** Per-tile cache readout for Debug + the mini tile map (the spatial analog of the timecourse strip).
@@ -2685,11 +2757,18 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
   const tr = tileRenderer.value
   if (!tr) return
   const want = missingTiles()
-  await Promise.allSettled(want.map(async key => {
+  // Masks for tiles already resident (a mask switched on, or a preview re-run) — fetched alongside.
+  const labelWant = tilesNeedingLabels()
+  const labelJobs = labelWant.map(async key => {
+    if (isCurrent() && await fetchTileLabel(key)) frame.redraw()
+  })
+  await Promise.allSettled([...labelJobs, ...want.map(async key => {
     if (!isCurrent()) return
     if (tr.hasTile(key)) { tr.touchTile(key); return }
     const ok = await fetchTile(key)
     if (!ok) return
+    // Its mask follows the image — drawn without one until it lands, never with another tile's.
+    if (tr.needsLabel(key)) void fetchTileLabel(key).then(got => { if (got) frame.redraw() })
     // NO `isCurrent()` guard here — the tile is in the atlas either way, and painting it against
     // the CURRENT viewport is always correct (drawTiles filters by residency). Previously the
     // `drawTiles → scheduleTilePump` rescheduler made the pump supersede itself: `isCurrent` went
@@ -2702,7 +2781,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
     // agree, the tile is fresh for what the user is looking at (Phase F, decision 6).
     if (key.t === t.value && shownT.value !== key.t) shownT.value = key.t
     frame.redraw()
-  }))
+  })])
 }, { wait: 0, onError: e => { error.value = e instanceof Error ? e.message : String(e) } })
 
 /**
@@ -2713,6 +2792,7 @@ const tilePump = debouncedLatest<null>(async (_, isCurrent) => {
 function scheduleTilePump() {
   const keep = evictionKeepSet()
   for (const [k, ac] of [...tileAborts]) if (!keep.has(k)) ac.abort()
+  for (const [k, ac] of [...tileLabelAborts]) if (!keep.has(k)) ac.abort()
   tilePump.schedule(null)
 }
 
@@ -2728,6 +2808,9 @@ function drawTiles() {
   const resized = tr.resize()
   seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
   tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
+  // The mask on screen and its style — the same settings the volume path's frame closure applies.
+  tr.setLabelSource(tileMaskSource.value)
+  tr.setLabelStyle(tileMaskSource.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
   if (resized) scheduleTilePump()
@@ -2735,7 +2818,7 @@ function drawTiles() {
   // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
   // was fetched) — after which the atlas stayed empty until the user moved the mouse. Debounced
   // through `tilePump`, so a redraw per pointer notch does not spam.
-  if (missingTiles().length > 0) scheduleTilePump()
+  if (missingTiles().length > 0 || tilesNeedingLabels().length > 0) scheduleTilePump()
   // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
@@ -3970,12 +4053,8 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
       // allocated. `undefined` when no mask is shown, which lets the brick loader skip label
       // requests entirely on projects with no segmentation.
       labelName: wantLabels ? maskName.value : undefined,
-      labelStore: !wantLabels ? undefined
-        : maskName.value === previewVn.value ? 'preview'
-        : maskName.value === liveVn.value ? 'live' : undefined,
-      labelStoreId: !wantLabels ? undefined
-        : maskName.value === previewVn.value ? viewerStore.previewLabels?.updateId
-        : maskName.value === liveVn.value ? viewerStore.liveLabels?.updateId : undefined,
+      labelStore: wantLabels ? maskStoreOf(maskName.value).store : undefined,
+      labelStoreId: wantLabels ? maskStoreOf(maskName.value).storeId : undefined,
       // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
       // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
       // `setBrickSource`'s compare treats a rev change as a full source switch and drops the

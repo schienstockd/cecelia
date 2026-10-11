@@ -354,8 +354,8 @@ is segmented, which is most images.
 | `models[].matchAs` | select | "base" | "base" = primary, "nuc" = nucleus |
 | `models[].cellChannels` | channelSelection | [] | Channels for cell signal; merged via np.maximum |
 | `models[].nucChannels` | channelSelection | [] | Channels for nucleus signal (passed to cellpose as second channel) |
-| `models[].cellDiameter` | int (µm) | 10 | Converted to pixels using OME-XML physical size |
-| `models[].normalise` | float | 99.9 | Upper percentile for intensity clipping |
+| `models[].cellDiameter` | float (µm), 2–60 | 10 | Converted to pixels using OME-XML physical size |
+| `models[].normalise` | float, 90–99.99 | 99.9 | Upper percentile for intensity clipping |
 | `models[].medianFilter` | int | 0 | Median filter kernel (0=off) |
 | `models[].gaussianFilter` | float | 0.0 | Gaussian sigma (0=off) |
 | `models[].threshold` | int | 0 | Absolute intensity gate; pixels below set to 0 |

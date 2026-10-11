@@ -45,6 +45,7 @@ import {
 import {
   LABEL_PALETTE_N, labelPaletteBytes,
   PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer,
+  type MaskStore,
 } from '../../utils/viewerLabels'
 import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import {
@@ -70,7 +71,7 @@ export interface BrickSource {
   /** Read the mask from the task preview's scratch store or a running task's staging store instead of
    *  the registered one, with that store's stamp as the cache-buster. Part of the source identity: a
    *  new stamp means new bytes under the same URL shape, so the atlas is dropped. */
-  labelStore?: 'preview' | 'live'
+  labelStore?: MaskStore
   labelStoreId?: number
   /** Opaque revision that changes when the SAME store is rewritten in place (a task re-run
    *  overwriting `ccidSmoothed.ome.zarr`). Handled the same way as a projectUid/imageUid/valueName

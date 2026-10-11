@@ -101,10 +101,10 @@
         {
           "key": "cellDiameter",
           "label": "Cell diameter (µm)",
-          "type": "int",
-          "min": 1,
-          "max": 500,
-          "step": 1,
+          "type": "float",
+          "min": 2.0,
+          "max": 60.0,
+          "step": 0.5,
           "default": 10,
           "tip": "Expected cell diameter in µm"
         },
@@ -112,9 +112,9 @@
           "key": "normalise",
           "label": "Normalise percentile",
           "type": "float",
-          "min": 50.0,
-          "max": 100.0,
-          "step": 0.1,
+          "min": 90.0,
+          "max": 99.99,
+          "step": 0.01,
           "default": 99.9,
           "tip": "Upper percentile for intensity normalisation"
         },
@@ -159,8 +159,8 @@
               "label": "Gaussian filter (σ)",
               "type": "float",
               "min": 0.0,
-              "max": 10.0,
-              "step": 0.5,
+              "max": 5.0,
+              "step": 0.25,
               "default": 0.0,
               "tip": "Gaussian blur sigma applied before normalisation (0 = off)"
             }
@@ -217,7 +217,7 @@
           "type": "float",
           "min": 0.0,
           "max": 3.0,
-          "step": 0.25,
+          "step": 0.1,
           "default": 0.0,
           "tip": "Round wrinkled boundaries; changes measured shape"
         },
