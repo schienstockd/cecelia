@@ -21,7 +21,7 @@ const _CELLS_OUT_COLOUR = "#ff2bd6"
 # ?projectUid&imageUid&valueName&x&y[&pop][&xt…&yt… as plotmeta]
 # → { png, n, x:{channel, title, transform, extent}, y:{…}, gates:[{path, colour, kind, …display coords}] }
 # Axes as the Gate page draws them by default: raw 0 → the WHOLE segmentation's max (so walking down
-# the tree keeps the scale), grown to enclose child-gate edges near the data (`_include_edges`); a gate reaching past the axes is clipped
+# the tree keeps the scale), padded and grown to enclose child-gate edges near the data (`_display_extent`); a gate reaching past the axes is clipped
 # in the picture and stated in full in `gates`.
 function api_gating_plot_image(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -45,10 +45,13 @@ function api_gating_plot_image(req::HTTP.Request)
     yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ry[2])))
     gates = _child_gate_outlines(m, pop, x, y, xt, yt)
     gx, gy = _gate_edges(gates)
-    xext = _include_edges(xext, gx); yext = _include_edges(yext, gy)
+    # ticks label the data range on an unpadded side, as plotmeta does (`_display_extent`)
+    tick_range(t, (lo, hi), r, grew) = (grew[1] ? invert_transform(t, lo) : 0.0, grew[2] ? invert_transform(t, hi) : float(r[2]))
+    xpad, xgrew = _display_extent(xext, gx); ypad, ygrew = _display_extent(yext, gy)
+    xtr = tick_range(xt, xpad, rx, xgrew); ytr = tick_range(yt, ypad, ry, ygrew)
+    xext, yext = xpad, ypad
     png = render_gate_plot_png(xv, yv, xext, yext,
-                               _axis_ticks(xt, invert_transform(xt, xext[1]), invert_transform(xt, xext[2])),
-                               _axis_ticks(yt, invert_transform(yt, yext[1]), invert_transform(yt, yext[2])),
+                               _axis_ticks(xt, xtr[1], xtr[2]), _axis_ticks(yt, ytr[1], ytr[2]),
                                gates; xtitle = _axis_title(img, vn, "flow", x), ytitle = _axis_title(img, vn, "flow", y))
     200, JSON3.write((;
         png = base64encode(png), valueName = vn, pop = pop, n = count(isfinite, xv),

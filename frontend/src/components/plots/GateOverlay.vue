@@ -1,7 +1,9 @@
 <!--
   canvas2D gate layer over the base dot canvas (PlotLayers). Two jobs:
    1. DRAW new gates (mode = rectangle | polygon) — drag a rect, or click polygon vertices
-      (double-click / click-near-start to close, Esc cancels). Emits `draw` on completion.
+      (double-click / click-near-start to close, Esc cancels). Emits `draw` on completion. Drawing
+      reaches a little past the plot border and pins those points to it, so a gate can enclose a cloud
+      piled against an axis (plots/gateGeometry.ts → "Drawing past the plot border").
    2. EDIT existing gates (mode = off) — move / resize rectangles (corner + edge handles),
       drag / insert (dbl-click edge) / delete (right-click vertex) polygon vertices. Live local
       redraw while dragging; emits `edit` with the new spec only on release (server recomputes +
@@ -23,7 +25,7 @@ import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '..
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
 import { gateLabelPos } from '../../utils/gateLabel'
-import { isClickNotDrag, isDegeneratePolygon } from '../../plots/gateGeometry'
+import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach } from '../../plots/gateGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -72,6 +74,8 @@ function evtPx(e: MouseEvent): [number, number] {
   const r = canvasEl.value!.getBoundingClientRect()
   return [e.clientX - r.left, e.clientY - r.top]
 }
+// a new-gate point: pinned to the plot border when the cursor is past it
+function drawPx(e: MouseEvent): [number, number] { const { w, h } = size(); return clampToBox(evtPx(e), w, h) }
 
 // ── geometry helpers ──
 const clone = (g: GateSpec): GateSpec => JSON.parse(JSON.stringify(g))
@@ -355,7 +359,7 @@ function onDown(e: MouseEvent) {
     const h = hitTest(evtPx(e)); if (h) startEdit(h, evtPx(e))
     return
   }
-  if (props.mode === 'rectangle') { dragging = true; start = evtPx(e); cur = start; return }
+  if (props.mode === 'rectangle') return startRectDrag(drawPx(e))
   if (props.mode === 'polygon') return
   const h = hover.value ?? hitTest(evtPx(e))      // off mode → begin editing
   if (h) startEdit(h, evtPx(e))
@@ -368,12 +372,21 @@ function onMove(e: MouseEvent) {
       return draw()
     }
     if (shiftEdit.value) { shiftEdit.value = false; hover.value = null; cursor.value = 'crosshair'; draw() }
-    cur = evtPx(e)
-    if (props.mode === 'rectangle' && !dragging) return
+    if (dragging) return                          // a rectangle drag is tracked on the window (onDrawMove)
+    cur = drawPx(e)
+    if (props.mode === 'rectangle') return
     return draw()
   }
 }
+// the drag is tracked on the WINDOW, so it keeps following a cursor that leaves the plot (the point is
+// pinned to the border) and a release out there still commits the gate
+function startRectDrag(p: [number, number]) {
+  dragging = true; start = p; cur = p
+  window.addEventListener('mousemove', onDrawMove); window.addEventListener('mouseup', onUp)
+}
+function onDrawMove(e: MouseEvent) { cur = drawPx(e); draw() }
 function onUp() {
+  window.removeEventListener('mousemove', onDrawMove); window.removeEventListener('mouseup', onUp)
   if (props.mode === 'rectangle' && dragging && start && cur) {
     dragging = false
     const from = start, to = cur
@@ -390,7 +403,9 @@ function onUp() {
 }
 function onClick(e: MouseEvent) {
   if (props.mode !== 'polygon' || e.shiftKey) return   // Shift+click is an edit grab (onDown), not a vertex
-  const p = evtPx(e)
+  placeVertex(drawPx(e))
+}
+function placeVertex(p: [number, number]) {
   if (polyPts.value.length >= 3) {
     const [fx, fy] = polyPts.value[0]
     if (Math.hypot(p[0] - fx, p[1] - fy) < 10) return finishPolygon()
@@ -426,10 +441,41 @@ function finishPolygon() {
   polyPts.value = []; cur = null
   emit('draw', { kind: 'polygon', vertices: verts })
 }
+// ── the reach band: just outside the plot, where the tick labels sit ──
+// A press there while a draw tool is armed starts the rectangle / places the vertex as if it were on
+// the border. Only within this plot's own capture box (not a neighbouring plot's) and never on a
+// control, so the band cannot steal a click meant for something else.
+function inReachBand(e: MouseEvent): boolean {
+  const c = canvasEl.value
+  if (!c || props.readonly || props.mode === 'off' || e.shiftKey || e.button !== 0) return false
+  const t = e.target as Element | null
+  if (!t || t === c || !(c.closest('.plot-capture') ?? c.parentElement)?.contains(t)) return false
+  if (t.closest('button, input, select, textarea, a, label, [role="button"], .gate-overlay')) return false
+  const { w, h } = size()
+  return withinReach(evtPx(e), w, h)
+}
+function onBandDown(e: MouseEvent) {
+  if (!inReachBand(e)) return
+  e.preventDefault()                              // no text selection off the tick labels
+  if (props.mode === 'rectangle') startRectDrag(drawPx(e))
+}
+function onBandClick(e: MouseEvent) { if (props.mode === 'polygon' && inReachBand(e)) placeVertex(drawPx(e)) }
+function onBandDblClick(e: MouseEvent) { if (props.mode === 'polygon' && inReachBand(e)) finishPolygon() }
+// the polygon's rubber band keeps following the cursor out into the band
+function onBandMove(e: MouseEvent) {
+  if (props.mode !== 'polygon' || !polyPts.value.length || e.target === canvasEl.value) return
+  cur = drawPx(e); draw()
+}
+useWindowListener('mousedown', onBandDown)
+useWindowListener('click', onBandClick)
+useWindowListener('dblclick', onBandDblClick)
+useWindowListener('mousemove', onBandMove)
+
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     // claim the key only while drawing, so an idle overlay does not block the maximised-layout Esc
     if (props.mode !== 'off' || dragging || polyPts.value.length) e.preventDefault()
+    window.removeEventListener('mousemove', onDrawMove); window.removeEventListener('mouseup', onUp)
     dragging = false; start = cur = null; polyPts.value = []; emit('cancel'); draw()
   }
 }
@@ -450,6 +496,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   ro?.disconnect(); ro = null
   window.removeEventListener('mousemove', onEditMove); window.removeEventListener('mouseup', onEditUp)
+  window.removeEventListener('mousemove', onDrawMove); window.removeEventListener('mouseup', onUp)
   canvasEl.value?.parentElement?.removeEventListener('mousemove', onParentMove)
 })
 </script>
@@ -459,7 +506,7 @@ onBeforeUnmount(() => {
     ref="canvasEl"
     class="gate-overlay"
     :style="{ pointerEvents: pe, cursor }"
-    @mousedown="onDown" @mousemove="onMove" @mouseup="onUp"
+    @mousedown="onDown" @mousemove="onMove"
     @click="onClick" @dblclick="onDblClick" @contextmenu="onContextMenu"
   />
 </template>

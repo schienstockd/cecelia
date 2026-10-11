@@ -244,5 +244,15 @@ end
     # reach = one data span: an edge a user dragged a whole plot-width off still regrows the axes
     @test _include_edges((0.0, 10.0), [19.0]) == (0.0, 19.5)
     @test _include_edges((0.0, 10.0), [21.0]) == (0.0, 10.0)
+    # an edge ON the border, back a hair outside from a transform round trip, is on-axis — no regrow
+    @test _include_edges((0.0, 10.0), [-1e-12, 10.0 + 1e-12]) == (0.0, 10.0)
+
+    # _display_extent: padded AXIS_PAD of the span each side (10 → 0.3), then grown to the gates
+    @test _display_extent((0.0, 10.0), Float64[]) == ((-0.3, 10.3), (false, false))
+    # a gate drawn to the padded border (the overlay pins a drag past the plot to it) is already on-axis
+    @test _display_extent((0.0, 10.0), [-0.3, 10.3]) == ((-0.3, 10.3), (false, false))
+    # beyond the padding → that side grows (margin is on the padded span) and says so, for the ticks
+    ext, grew = _display_extent((0.0, 10.0), [-3.0])
+    @test grew == (true, false) && ext[2] == 10.3 && ext[1] ≈ -3.0 - 0.05 * 10.6
 end
 
