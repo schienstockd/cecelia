@@ -2,9 +2,9 @@
 
 `pixi.toml` comments carry real claims (the coastal floor, what checks it, what does not), and a
 docstring that quotes one word for word is a second copy of that claim. When the comment is rewritten,
-the copy rots silently: `test_coastal_contract` kept quoting *"Nothing catches a rollback past the
-`segment.coastal` / `opticalFlow.train` calls above"* after `pixi.toml` dropped that sentence and named
-`test_coastal_contract` itself as the check.
+the copy rots silently: `test_coastal_contract` kept quoting the coastal floor's admission that no
+check covered its calls after `pixi.toml` dropped that sentence and named `test_coastal_contract`
+itself as the check.
 
 Scope is Python prose only: docstrings and `#` comments in tracked `.py` files, where a quote of
 another file is prose rather than a string the code uses. A quote counts when its sentence attributes
@@ -67,7 +67,9 @@ def _attributed_quotes(block):
 
 
 def _tracked_python():
-    out = subprocess.run(['git', 'ls-files', '*.py'], cwd=REPO, capture_output=True, text=True)
+    # Untracked too, so a new file is checked before its first commit, not only in CI.
+    out = subprocess.run(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '*.py'],
+                         cwd=REPO, capture_output=True, text=True)
     if out.returncode != 0:
         raise unittest.SkipTest('not a git checkout — nothing to list')
     return [REPO / p for p in out.stdout.split()]

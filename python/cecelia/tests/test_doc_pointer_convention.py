@@ -104,7 +104,9 @@ _EXTERNAL_SHORTHAND = ('primevue/', 'sketches/', 'src/sketches/', 'src/webserver
 
 
 def _git_ls(*globs):
-    out = subprocess.check_output(['git', 'ls-files', *globs], cwd=_REPO).decode()
+    # Untracked too: a new doc is checked before its first commit, and a pointer to a new file resolves.
+    out = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', *globs],
+                                  cwd=_REPO).decode()
     return [p for p in out.split('\n')
             if p and not p.startswith(_SKIP_DIRS) and p not in _SKIP_FILES]
 
@@ -190,7 +192,8 @@ class DocPointerConventionTest(unittest.TestCase):
         names nothing. Shorthand can't be joined to a base dir, but it can be SUFFIX-matched against
         the tracked files: no match = stale. Several matches = ambiguous, not checkable, skipped (none
         today). Same `docs/todo/` exemption as the rooted check."""
-        tracked = subprocess.check_output(['git', 'ls-files'], cwd=_REPO).decode().split()
+        tracked = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'],
+                                          cwd=_REPO).decode().split()
         bad = []
         for rel in _git_ls('*.md'):
             if rel.startswith('docs/todo/'):
