@@ -886,6 +886,14 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   the plot queries. With it on, `plotmeta` sets each axis to `[transformed(0), transformed(full-
   dataset max)]` (the max comes from *all* cells, not the displayed pop) so the axis stays fixed
   when you select a population (FlowJo behaviour); off = autoscale to the displayed pop's extent.
+  Either way the served extent is then **padded 3% of the span on each side** (`AXIS_PAD`,
+  `_display_extent`) so a cloud piled against an axis is inside the plot, not on its border; the
+  ticks still label the data range. **Drawing reaches past the border:** a rectangle drag is tracked
+  on the window, and a press / polygon vertex up to `EDGE_REACH_PX` (24 px) outside the plot counts —
+  every such point is pinned to the border (`plots/gateGeometry.ts`). The border is the padded edge,
+  so a gate drawn to it encloses the edge cells and does not make the axes regrow. Nothing rescales
+  while drawing — the alternative (grow the axes as the cursor nears the edge) moves the dots under
+  the cursor mid-gesture.
 - **Displayed parent is owned by `GatingPlots` (per panel), not the panel.** So the manager can
   highlight the active plot's parent row and switch the highlight when you change active plots.
   Clicking a population row sets it as the active plot's parent; clicking it **again resets to

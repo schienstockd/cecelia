@@ -24,10 +24,15 @@
 // bytes, never the image's channels. Allocated on the first mask upload — an image with no
 // segmentation never pays for it.
 //
-// WHAT LIVES OUTSIDE. Points and track tails do NOT ride this pipeline yet. On mode switch to 3D the
-// viewer disposes this renderer and creates the volume one.
+// OVERLAYS. Population points and track tails are drawn in the same pass, after the tiles, from the
+// same timepoint-ordered instance buffers the volume renderers take (`setOverlayPoints` /
+// `setOverlaySegments` — identical signatures, so the viewer feeds either renderer the same way).
+// They bind only the uniform buffer, so they draw before the atlas has finished allocating. On mode
+// switch to 3D the viewer disposes this renderer and creates the volume one.
 
-import { TILE_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
+import { TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
+import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
+import { compileShader } from './compileShader'
 
 /** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "tile"). */
 const U = TILE_LAYOUT.at
@@ -150,8 +155,23 @@ export interface TileRenderer {
   setChannels(channels: ViewerChannel[]): void
   /** Match the drawing buffer to the element's CSS size. Returns true when the size changed. */
   resize(): boolean
-  /** Draw the given tiles as one instanced call over the finished atlas. Tiles that name a slot the
-   *  atlas does not currently hold are silently skipped. */
+  /** Replace the population point instances (`POINT_STRIDE` floats each, ordered by timepoint). Once
+   *  per (image, populations), never per frame — same contract as the volume renderers. */
+  setOverlayPoints(data: Float32Array): void
+  /** Which slice of the point buffer to draw, marker size + border in px, and the planes shown
+   *  (negative `planeLo` = no plane filter). */
+  setOverlayDraw(first: number, count: number, sizePx: number,
+                 planeLo: number, planeHi?: number, borderPx?: number): void
+  /** Replace the track-tail segment instances (`SEG_STRIDE` floats each). */
+  setOverlaySegments(data: Float32Array): void
+  /** Which slice of the segment buffer to draw, its width in px, and its own plane window. */
+  setOverlaySegmentDraw(first: number, count: number, widthPx: number,
+                        planeLo: number, planeHi?: number): void
+  /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
+   *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
+  setTailFade(head: number, length: number): void
+  /** Draw the given tiles as one instanced call over the finished atlas, then the overlays. Tiles
+   *  that name a slot the atlas does not currently hold are silently skipped. */
   draw(tiles: TileDraw[]): void
   /** Rejects with the reason if the device is lost. */
   readonly lost: Promise<GPUDeviceLostInfo>
@@ -174,11 +194,7 @@ export async function createTileRenderer(
   const { base: canvasFormat, viewFormat: format } = pickSrgbCanvasFormats()
   ctx.configure({ device, format: canvasFormat, viewFormats: [format], alphaMode: 'opaque' })
 
-  const module = device.createShaderModule({ code: TILE_WGSL })
-  const errs = (await module.getCompilationInfo()).messages.filter(m => m.type === 'error')
-  if (errs.length) {
-    throw new Error('Tile shader: ' + errs.map(m => `${m.lineNum}:${m.message}`).join(' | '))
-  }
+  const module = await compileShader(device, TILE_WGSL, 'Tile shader')
 
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
@@ -221,8 +237,28 @@ export async function createTileRenderer(
     primitive: { topology: 'triangle-list' },
   })
 
+  // Overlay passes bind ONLY the uniform buffer — their own layout rather than the tile one, whose
+  // atlas binding does not exist until the async allocation lands. Same uniform buffer, so the same
+  // camera: a marker cannot drift off the cell the tile pass drew.
+  const overlayLayout = device.createBindGroupLayout({
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+        buffer: { type: 'uniform', minBindingSize: TILE_UNIFORM_BYTES } },
+    ],
+  })
+  const overlayPipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [overlayLayout] })
+  const pointsPipeline = device.createRenderPipeline(overlayPipelineDescriptor(
+    await compileShader(device, TILE_POINTS_WGSL, 'Tile points shader'), overlayPipelineLayout, format,
+    POINT_VERTEX_LAYOUT))
+  const segPipeline = device.createRenderPipeline(overlayPipelineDescriptor(
+    await compileShader(device, TILE_SEGMENTS_WGSL, 'Tile segments shader'), overlayPipelineLayout, format,
+    SEG_VERTEX_LAYOUT))
+
   const uniforms = device.createBuffer({
     size: TILE_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  })
+  const overlayBindGroup = device.createBindGroup({
+    layout: overlayLayout, entries: [{ binding: 0, resource: { buffer: uniforms } }],
   })
   const lutTex = device.createTexture({
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
@@ -293,6 +329,17 @@ export async function createTileRenderer(
   /** Instance buffer — grown, never shrunk. One buffer for the whole frame. */
   let instBuf: GPUBuffer | null = null
   let instCap = 0
+
+  /** Overlay instances — grown, never shrunk; written once per (image, populations). */
+  let pointBuf: GPUBuffer | null = null
+  let pointCap = 0
+  let pointFirst = 0
+  let pointCount = 0
+  let segBuf: GPUBuffer | null = null
+  let segCap = 0
+  let segFirst = 0
+  let segCount = 0
+
 
   function rebuildBindGroup() {
     if (!atlas) { bindGroup = null; return }
@@ -606,6 +653,36 @@ export async function createTileRenderer(
     },
     setChannels: setChannelsImpl,
 
+    setOverlayPoints(data) {
+      if (!usable()) return
+      if (data.length === 0) { pointCount = 0; return }
+      ;({ buf: pointBuf, cap: pointCap } = writeInstances(device, pointBuf, pointCap, data))
+    },
+    setOverlayDraw(first, count, sizePx, planeLo, planeHi = planeLo, borderPx = 0) {
+      pointFirst = Math.max(0, Math.floor(first))
+      pointCount = Math.max(0, Math.floor(count))
+      u[U.ov.pointPx] = Math.max(1, sizePx)
+      u[U.ov.planeLo] = planeLo
+      u[U.ov.planeHi] = Math.max(planeLo, planeHi)
+      u[U.lab.pointBorderPx] = Math.max(0, borderPx)
+    },
+    setOverlaySegments(data) {
+      if (!usable()) return
+      if (data.length === 0) { segCount = 0; return }
+      ;({ buf: segBuf, cap: segCap } = writeInstances(device, segBuf, segCap, data))
+    },
+    setOverlaySegmentDraw(first, count, widthPx, planeLo, planeHi = planeLo) {
+      segFirst = Math.max(0, Math.floor(first))
+      segCount = Math.max(0, Math.floor(count))
+      u[U.ov.tailPx] = Math.max(1, widthPx)
+      u[U.ovx.ribbonLo] = planeLo
+      u[U.ovx.ribbonHi] = Math.max(planeLo, planeHi)
+    },
+    setTailFade(head, length) {
+      u[U.ovx.trailHead] = head
+      u[U.ovx.trailLength] = Math.max(0, length)
+    },
+
     resize(): boolean {
       const dpr = window.devicePixelRatio || 1
       const w = Math.max(1, Math.round(canvas.clientWidth * dpr))
@@ -616,7 +693,7 @@ export async function createTileRenderer(
     },
 
     draw(tilesToDraw) {
-      if (!usable() || !bindGroup || !atlas) return
+      if (!usable()) return
       const w = canvas.width, h = canvas.height
       u[U.cam.aspect] = w > 0 ? w / Math.max(h, 1) : 1
       u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
@@ -624,7 +701,8 @@ export async function createTileRenderer(
 
       // Instance data — one row per tile draw. Zero tiles is a legitimate frame (mount before the
       // first fetch lands) and clears to the pass's colour rather than reading undefined bytes.
-      const n = tilesToDraw.length
+      // No atlas yet (allocation in flight) → no tiles, but the overlays still draw.
+      const n = bindGroup && atlas ? tilesToDraw.length : 0
       if (n > 0) {
         const need = n * INSTANCE_STRIDE
         if (!instBuf || need > instCap) {
@@ -658,11 +736,25 @@ export async function createTileRenderer(
           clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
         }],
       })
-      if (n > 0 && instBuf) {
+      if (n > 0 && instBuf && bindGroup) {
         pass.setPipeline(pipeline)
         pass.setBindGroup(0, bindGroup)
         pass.setVertexBuffer(0, instBuf)
         pass.draw(6, n)
+      }
+      // Overlays blend over the finished tiles. Tails first, then points: a marker sits ON TOP of the
+      // path that leads to it.
+      if (segBuf && segCount > 0) {
+        pass.setPipeline(segPipeline)
+        pass.setBindGroup(0, overlayBindGroup)
+        pass.setVertexBuffer(0, segBuf)
+        pass.draw(6, segCount, 0, segFirst)
+      }
+      if (pointBuf && pointCount > 0) {
+        pass.setPipeline(pointsPipeline)
+        pass.setBindGroup(0, overlayBindGroup)
+        pass.setVertexBuffer(0, pointBuf)
+        pass.draw(6, pointCount, 0, pointFirst)
       }
       pass.end()
       device.queue.submit([enc.finish()])
@@ -672,6 +764,8 @@ export async function createTileRenderer(
       destroyed = true
       dropAtlas()
       instBuf?.destroy(); instBuf = null
+      pointBuf?.destroy(); pointBuf = null
+      segBuf?.destroy(); segBuf = null
       if (dead) return
       lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
       device.destroy()

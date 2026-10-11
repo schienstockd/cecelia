@@ -64,7 +64,7 @@ export const BU = {
   LAB: BRICK_LAYOUT.base.lab,
   PREV_GRID: BRICK_LAYOUT.base.prevGrid,
   PREV_DIMS: BRICK_LAYOUT.base.prevDims,
-  /** Track tail fade `(head, length, _, _)` — `shaders/tail_fade.wgsl`. */
+  /** Track tail fade `(head, length, _, _)` — `tailAlpha` in `shaders/overlay_quads.wgsl`. */
   TRAIL: BRICK_LAYOUT.base.trail,
   /** Per-channel `(lo, hi, visible, unused)`. `visible < 0.5` means "skip this channel". */
   CH0: BRICK_LAYOUT.base.ch,

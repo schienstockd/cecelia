@@ -209,7 +209,7 @@ class Render2DRunTest(unittest.TestCase):
         self.assertLess(off[30:34, 30:34, 1].mean(), 40)
 
     def test_an_older_hop_draws_fainter(self):
-        # The viewer's tail fade (shaders/tail_fade.wgsl): the hop arriving at `head` solid, one
+        # The viewer's tail fade (`tailAlpha` in shaders/overlay_quads.wgsl): the hop arriving at `head` solid, one
         # four frames older of a five-frame tail at 0.2 + 0.8 * (1/5). Plane 10 is dark, so the
         # green is the ribbon alone. Without `t1` (a card's trace) both draw at the peak.
         segs = {"x0": [4.0, 4.0], "y0": [8.0, 24.0], "z0": [10.0, 10.0],

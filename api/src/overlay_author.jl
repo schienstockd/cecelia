@@ -223,7 +223,7 @@ end
 # Iterate over the segments a frame `t` should show. Returns `(pts_raw, segs_raw)`
 # in NATIVE VOXELS — the caller projects. `segs_raw.t1` carries the arrival
 # timepoint per segment and `segs_raw.tail` the tail length it was windowed by, for
-# the shader's tail fade (`shaders/tail_fade.wgsl`, head = t + 1). `tail` is a column
+# the shader's tail fade (`tailAlpha` in `shaders/overlay_quads.wgsl`, head = t + 1). `tail` is a column
 # rather than a scalar so `merge_overlay_closures` can concatenate it like the rest.
 function _state_at(state::OverlayState, t::Int)
     pts = get(state.pts_by_t, state.has_t ? t : 0, nothing)

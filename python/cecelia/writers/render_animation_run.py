@@ -206,7 +206,7 @@ def _segment_instances(segs, voxel_um, origin_yx=(0.0, 0.0)):
 
 
 def trail_lanes(segs):
-    """The tail fade's lanes (``shaders/tail_fade.wgsl``) from Julia's per-frame segments — what
+    """The tail fade's lanes (``tailAlpha`` in ``shaders/overlay_quads.wgsl``) from Julia's per-frame segments — what
     ``setTailFade`` writes in the viewer. A frame without ``t1`` (a card's trace) gets length 0:
     every hop at the peak, as the shader reads it."""
     if not segs or not segs.get('t1'):

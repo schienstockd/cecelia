@@ -9,7 +9,7 @@
 // `mip_points.wgsl` for why that matters more than it looks.
 
 #include "mip_common.wgsl"
-#include "tail_fade.wgsl"
+#include "overlay_quads.wgsl"
 
 struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @location(1) alpha: f32 };
 
@@ -23,36 +23,18 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
 ) -> SOut {
   var o: SOut;
   o.rgb = rgb;
-  o.alpha = tailAlpha(tEnd);
-  // Ribbons carry their OWN plane bounds (pan.z / pan.w) so a viewer can widen the tail's z-reach
-  // independently of the points' Z reach — a track's plane is where it ends, but the tail is a
-  // continuous path and often reads best with more slack. Negative pan.z = no filter, same
-  // convention as the points path.
-  if (p.pan.z >= 0.0 && (plane < p.pan.z - 0.5 || plane > p.pan.w + 0.5)) {
-    o.pos = vec4(0.0, 0.0, 2.0, 1.0);          // outside the widened track window: clipped away
+  o.alpha = tailAlpha(tEnd, p.trail.x, p.trail.y);
+  // Ribbons carry their OWN plane bounds, so a viewer can widen the tail's z-reach independently of
+  // the points' — a track's plane is where it ends, but the tail is a continuous path.
+  if (offPlanes(plane, p.pan.z, p.pan.w)) {
+    o.pos = clippedPos();
     return o;
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
   let pa = project(a - boxCentre(), c, aspect).xy;
   let pb = project(b - boxCentre(), c, aspect).xy;
-
-  // In PIXELS, so the perpendicular is square on screen rather than stretched by the viewport aspect.
-  let sa = vec2(pa.x * p.vp.y, pa.y * p.vp.z) * 0.5;
-  let sb = vec2(pb.x * p.vp.y, pb.y * p.vp.z) * 0.5;
-  var dir = sb - sa;
-  let len = length(dir);
-  // A zero-length segment has no direction to be perpendicular to; pick one rather than emit NaN,
-  // which propagates to the whole quad and shows up as a stray triangle across the frame.
-  dir = select(vec2(1.0, 0.0), dir / max(len, 1e-6), len > 1e-6);
-  let nrm = vec2(-dir.y, dir.x) * (p.ov.z * 0.5);
-
-  var corner = array<vec2<f32>, 6>(
-    vec2(0.0, -1.0), vec2(1.0, -1.0), vec2(0.0, 1.0),
-    vec2(0.0,  1.0), vec2(1.0, -1.0), vec2(1.0, 1.0));
-  let k = corner[vi];
-  let sp2 = mix(sa, sb, k.x) + nrm * k.y;
-  o.pos = vec4(sp2.x * 2.0 / max(p.vp.y, 1.0), sp2.y * 2.0 / max(p.vp.z, 1.0), 0.0, 1.0);
+  o.pos = ribbonPos(pa, pb, vi, p.ov.z, p.vp.yz);
   return o;
 }
 

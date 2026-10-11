@@ -3,7 +3,7 @@ import GOLDEN from './shaders/golden.json'
 import UNIFORMS from './shaders/uniforms.json'
 import { expandSource, expandWgsl, packUniforms, SHADER_CONSTANTS, uniformLayout, type WgslVars } from './shaderSource'
 import { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL } from './mipShader'
-import { TILE_WGSL } from './tileShader'
+import { TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL } from './tileShader'
 import { BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL, makeBrickShader } from './brickShader'
 import { MAX_CHANNELS, LUT_STOPS, VIEW_HALF_ANGLE } from '../../utils/volumeViewer'
 import { PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, labelPaletteBytes, LABEL_PALETTE_N } from '../../utils/viewerLabels'
@@ -78,12 +78,35 @@ describe('uniforms.json matches the shader structs', () => {
 
 describe('the shaders the renderers compile', () => {
   const brick = [1, 2, 3, 4].map(n => makeBrickShader({ nAtlases: n }).code)
-  const all = { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, TILE_WGSL, BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
+  const all = { MIP_WGSL, POINTS_WGSL, SEGMENTS_WGSL, TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL, BRICK_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
                 BRICK_N2: brick[1], BRICK_N3: brick[2], BRICK_N4: brick[3] }
   for (const [k, code] of Object.entries(all)) {
     it(`${k} has nothing left to expand`, () => {
       expect(code).not.toMatch(/\$\{/)
       expect(code).not.toMatch(/^\s*#include/m)
+    })
+  }
+
+  // The tile pass and its overlays must project through the ONE tileNdc — a second copy of the
+  // orthographic maths is a marker drawn beside its cell that still looks plausible.
+  for (const [k, code] of Object.entries({ TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL })) {
+    it(`${k} projects through the one shared tileNdc`, () => {
+      expect(code.match(/fn tileNdc\(/g)).toHaveLength(1)
+      // The half-angle appears once, inside tileNdc — no pass re-derives the projection inline.
+      const halfAngle = `* ${SHADER_CONSTANTS.VIEW_HALF_ANGLE}`
+      expect(code.split(halfAngle)).toHaveLength(2)
+    })
+  }
+
+  // Every overlay pass — MIP, brick, tile — draws its quads through the ONE overlay_quads.wgsl; a pass
+  // carrying its own copy of the marker or ribbon maths is how the three drift apart.
+  const overlays = { POINTS_WGSL, SEGMENTS_WGSL, BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
+                     TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL }
+  for (const [k, code] of Object.entries(overlays)) {
+    it(`${k} uses the one shared overlay_quads`, () => {
+      expect(code).toContain(expandWgsl('overlay_quads.wgsl'))
+      expect(code.match(/smoothstep\(0\.75, 1\.0/g)).toHaveLength(1)
+      expect(code.match(/vec2\(-dir\.y, dir\.x\)/g)).toHaveLength(1)
     })
   }
 
@@ -98,14 +121,17 @@ describe('the shaders the renderers compile', () => {
     })
   }
 
-  // One fade for the viewer's two renderers AND the movie host (which runs mip_segments.wgsl), so a
+  // One fade for the viewer's three renderers AND the movie host (which runs mip_segments.wgsl), so a
   // tail in a recorded movie fades exactly as it does on screen.
-  for (const [k, code] of Object.entries({ SEGMENTS_WGSL, BRICK_SEGMENTS_WGSL })) {
+  const fades = { SEGMENTS_WGSL: 'p.trail.x, p.trail.y', BRICK_SEGMENTS_WGSL: 'p.trail.x, p.trail.y',
+                  TILE_SEGMENTS_WGSL: 'p.ovx.z, p.ovx.w' }
+  const segCode: Record<string, string> = { SEGMENTS_WGSL, BRICK_SEGMENTS_WGSL, TILE_SEGMENTS_WGSL }
+  for (const [k, lanes] of Object.entries(fades)) {
     it(`${k} fades tails by age with the one shared tailAlpha`, () => {
-      expect(code).toContain(expandWgsl('tail_fade.wgsl'))
+      const code = segCode[k]
       expect(code.match(/fn tailAlpha\(/g)).toHaveLength(1)
       expect(code).toMatch(/@location\(4\) tEnd: f32/)
-      expect(code).toMatch(/o\.alpha = tailAlpha\(tEnd\);/)
+      expect(code).toContain(`o.alpha = tailAlpha(tEnd, ${lanes});`)
       expect(code).toMatch(/return vec4\(in\.rgb, in\.alpha\);/)
     })
   }

@@ -18,6 +18,7 @@
 // the sorted-by-timepoint layout exists to avoid.
 
 #include "mip_common.wgsl"
+#include "overlay_quads.wgsl"
 
 struct POut {
   @builtin(position) pos: vec4<f32>,
@@ -33,50 +34,23 @@ struct POut {
 ) -> POut {
   var o: POut;
   o.rgb = rgb;
-  // Two triangles, corners in -1..1. Written out rather than computed from bit tricks: this is read
-  // far more often than it is executed.
-  var q = array<vec2<f32>, 6>(
-    vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0),
-    vec2(-1.0,  1.0), vec2(1.0, -1.0), vec2( 1.0, 1.0));
-  let corner = q[vi];
+  let corner = markerCorner(vi);
   o.local = corner;
-
-  // Outside the planes actually LOADED → a degenerate quad. A range, not one plane, because the 3D view
-  // can be cropped to part of the stack: filtering on a single plane there would draw the whole stack's
-  // cells against a box that only holds eight of its planes. The 2D view passes lo == hi. Negative lo
-  // means no filter at all.
-  if (p.ov.y >= 0.0 && (plane < p.ov.y - 0.5 || plane > p.ov.w + 0.5)) {
-    o.pos = vec4(0.0, 0.0, 2.0, 1.0);     // behind the far plane: clipped, no fragments
+  // Outside the planes actually LOADED → clipped. A range, not one plane, because the 3D view can be
+  // cropped to part of the stack; the 2D view passes lo == hi.
+  if (offPlanes(plane, p.ov.y, p.ov.w)) {
+    o.pos = clippedPos();
     return o;
   }
-
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
-  let ndc = project(centre - boxCentre(), c, aspect);
-  // Pixels → NDC. The quad is square ON SCREEN, so the x offset divides by the canvas WIDTH and the y
-  // by the height; using one for both stretches the marker with the window's aspect.
-  // The quad is grown by the black-outline width so the border sits OUTSIDE the fill — a fill radius
-  // of p.ov.x px and an outer radius of (p.ov.x + p.lab.w) px. Zero border keeps the old quad size.
-  let px = p.ov.x + max(p.lab.w, 0.0);
-  o.pos = vec4(ndc.x + corner.x * (2.0 * px / max(p.vp.y, 1.0)),
-               ndc.y + corner.y * (2.0 * px / max(p.vp.z, 1.0)),
-               0.0, 1.0);
+  let ndc = project(centre - boxCentre(), c, aspect).xy;
+  o.pos = markerPos(ndc, corner, p.ov.x, p.lab.w, p.vp.yz);
   return o;
 }
 
 @fragment fn fs(in: POut) -> @location(0) vec4<f32> {
-  // A round marker, and antialiased: a hard-edged square of colour over a noisy MIP reads as an
-  // artefact rather than as an annotation.
-  let r = length(in.local);
-  let a = 1.0 - smoothstep(0.75, 1.0, r);
-  if (a <= 0.001) { discard; }
-  // Fill/border seam. local runs -1..1 across a quad of outer radius (size + border) px, so the
-  // fill ends at ratio size/(size+border). Sharp on purpose: a soft ring against a coloured fill
-  // reads as blur, not as an outline.
-  let border = max(p.lab.w, 0.0);
-  if (border > 0.0) {
-    let inner = p.ov.x / max(p.ov.x + border, 0.0001);
-    if (r > inner) { return vec4(0.0, 0.0, 0.0, a); }
-  }
-  return vec4(in.rgb, a);
+  let c = markerColour(in.local, in.rgb, p.ov.x, p.lab.w);
+  if (c.a <= 0.001) { discard; }
+  return c;
 }

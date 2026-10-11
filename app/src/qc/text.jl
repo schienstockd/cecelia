@@ -65,7 +65,7 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     # sidecars re-render with this text.
     "import.photon_limited" => (
         short = "{n} mostly-zero channel{s} (up to {pct}% zero voxels)",
-        long  = "Compare the Cleanup page's per-channel facts with each task's \"Use when\" before you denoise or smooth. Channels: {channels}."),
+        long  = "Check each Cleanup task's \"Use when\" before you denoise or smooth. Channels: {channels}."),
 
 
     # HMM (hmm_states_qc_findings / hmm_transitions_qc_findings)

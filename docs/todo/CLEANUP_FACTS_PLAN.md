@@ -70,10 +70,14 @@ per cell type, gates on marker intensity. `off` smoothed inside cellpose and mer
 Neither went back to Cleanup after segmenting. So the per-channel line is the replacement.
 
 ### P1 — per-channel facts — **built**
-- `img_cleanup_facts` (`app/src/qc.jl`) on the image payload as `cleanupFacts`; `CleanupFacts.vue` at
-  the top of the Cleanup page's task column; `get_image_info` carries it, `--discovery off` drops it.
+- `img_cleanup_facts` (`app/src/qc.jl`) on the image payload as `cleanupFacts`; ~~`CleanupFacts.vue` at
+  the top of the Cleanup page's task column~~ (dropped, below); `get_image_info` carries it, `--discovery off` drops it.
   Clipped % is of SIGNAL voxels and 0 unless the structural detector saw a pile-up. An image imported
   before the sparsity fields shows no channel line until a denoise run backfills it.
+- **GUI panel dropped (2026-10-11, Dominik).** On a 29-channel IBEX image it filled half the Cleanup
+  page with "—" and "0%" and pushed the tasks below the fold; he did not use it to decide anything.
+  `CleanupFacts.vue` is gone; `img_cleanup_facts` and the payload field stay for `get_image_info` and
+  the `--discovery off` arm (D5, D7). Decision 1 now holds for the agent only.
 - Was: the image accessor, a row on the Cleanup page for the selected image, and `get_image_info` carrying
   it. Copy per `docs/ui/COPY.md`.
 

@@ -859,7 +859,7 @@ export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number
  *  band and dist didn't change, don't shift the pan either — the view would drift on further wheel
  *  notches at the clamp.
  *
- *  Sign convention: the SHADER (`shaders/tile.wgsl`, and mirrored by the volume shader) is the ground
+ *  Sign convention: the SHADER (`shaders/tile_common.wgsl` `tileNdc`, and mirrored by the volume shader) is the ground
  *  truth. It computes `ndcX = (wx - panX) / halfW` and `ndcY = -(wy + panY) / halfH`, i.e. the
  *  screen center is at world `(panX, -panY)`. So the world under the cursor is
  *     wx = panX + ndcX * halfW

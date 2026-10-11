@@ -725,11 +725,32 @@ end
 function _include_edges((lo, hi)::Tuple, edges; margin::Float64 = 0.05, reach::Float64 = 1.0)
     span = hi > lo ? hi - lo : 1.0
     lim_lo = lo - reach * span; lim_hi = hi + reach * span
-    glo = minimum((e for e in edges if isfinite(e) && lim_lo <= e < lo); init = Inf)
-    ghi = maximum((e for e in edges if isfinite(e) && hi < e <= lim_hi); init = -Inf)
+    # an edge drawn ON the border (the overlay clamps a drag that leaves the plot to it) comes back
+    # through the stored transform's invert/apply round trip a hair outside — that is still on-axis,
+    # and growing for it would rescale the plot under a gate the user just put exactly there
+    tol = 1e-9 * span
+    glo = minimum((e for e in edges if isfinite(e) && lim_lo <= e < lo - tol); init = Inf)
+    ghi = maximum((e for e in edges if isfinite(e) && hi + tol < e <= lim_hi); init = -Inf)
     nlo = isfinite(glo) ? glo - margin * span : float(lo)
     nhi = isfinite(ghi) ? ghi + margin * span : float(hi)
     (nlo, nhi)
+end
+
+# The gating plot's DISPLAY extent for one axis: the data extent `(lo, hi)` widened by `AXIS_PAD` of
+# its span on each side (FlowJo's breathing room — a cloud piled against an axis, e.g. every cell at
+# 0, otherwise sits ON the border where a gate cannot be started around it), then grown to the
+# child-gate `edges` (`_include_edges`). Padding first, so a gate drawn to the padded border is
+# already on-axis and the plot does not rescale after it is drawn.
+#
+# Also returns, per side, whether a gate grew it: the ticks keep labelling the DATA range on an
+# unmoved side (the padding is margin, not data — no "-2.9" tick under a cloud that starts at 0), and
+# span to the grown edge on a moved one, as before.
+const AXIS_PAD = 0.03
+function _display_extent((lo, hi)::Tuple, edges; pad::Float64 = AXIS_PAD)
+    span = hi > lo ? hi - lo : 1.0
+    padded = (lo - pad * span, hi + pad * span)
+    ext = _include_edges(padded, edges)
+    ext, (ext[1] != padded[1], ext[2] != padded[2])
 end
 
 # Every edge coordinate of a plotmeta `gates` list (projected child-gate outlines), per axis:
@@ -849,13 +870,11 @@ function api_gating_plotmeta(req::HTTP.Request)
     # outside the axes and be un-grabbable, so grow the display extent to it and re-derive the raw tick
     # range so ticks span the whole axis. Only the side an edge exceeds moves, and only for an edge
     # near the data — a far one is an open-ended threshold and is clipped (see `_include_edges`).
+    # The axes are padded past the data (`_display_extent`) so edge cells are inside the plot.
     gx, gy = _gate_edges(gates)
-    xext2 = _include_edges(xext, gx); yext2 = _include_edges(yext, gy)
-    if xext2 != xext || yext2 != yext
-        xext, yext = xext2, yext2
-        rxext = (invert_transform(xt, xext[1]), invert_transform(xt, xext[2]))
-        ryext = (invert_transform(yt, yext[1]), invert_transform(yt, yext[2]))
-    end
+    xext, xgrew = _display_extent(xext, gx); yext, ygrew = _display_extent(yext, gy)
+    rxext = (xgrew[1] ? invert_transform(xt, xext[1]) : rxext[1], xgrew[2] ? invert_transform(xt, xext[2]) : rxext[2])
+    ryext = (ygrew[1] ? invert_transform(yt, yext[1]) : ryext[1], ygrew[2] ? invert_transform(yt, yext[2]) : ryext[2])
     200, JSON3.write((;
         n = n, mode = mode, tracked = true,
         xExtent = [xext[1], xext[2]], yExtent = [yext[1], yext[2]],

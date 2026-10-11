@@ -425,7 +425,7 @@ export function filterPayloadByTrackSource(payload: OverlayPayload, popUid: stri
 // ── Track tails ──────────────────────────────────────────────────────────────────
 
 /** Floats per segment instance: ax, ay, az, bx, by, bz, r, g, b, plane, end timepoint. The end
- *  timepoint is what the shader fades a tail by (`shaders/tail_fade.wgsl`). */
+ *  timepoint is what the shader fades a tail by (`tailAlpha` in `shaders/overlay_quads.wgsl`). */
 export const SEG_STRIDE = 11
 
 export interface SegmentBuffer {
@@ -710,7 +710,7 @@ export function buildMultiTrackBuffer(
 
 /**
  * The newest END timepoint a tail at frame `t` shows — `t + 1`, see `tailRange`. Also the fade's
- * age-0 point (`trail.head`, `shaders/tail_fade.wgsl`), so the hop drawn solid is the hop the
+ * age-0 point (`trail.head`, `tailAlpha` in `shaders/overlay_quads.wgsl`), so the hop drawn solid is the hop the
  * window ends on.
  */
 export function tailHead(t: number): number {
@@ -743,6 +743,61 @@ export function tailRange(
   const first = buf.firstAt[clamp(lo)]
   const end = buf.endAt[clamp(hi)]
   return end > first ? [first, end - first] : null
+}
+
+/**
+ * Hand the built point + segment buffers to a renderer. Every freshly CONSTRUCTED renderer needs this:
+ * its GPU buffers start empty, and the viewer only rebuilds the buffers when the population data or
+ * visibility changes — so a renderer swapped in by a 2D↔3D, flat↔brick or ±planes switch (each can
+ * change the renderer kind) drew no points until a population toggle forced a rebuild.
+ */
+export function seedRendererOverlays(
+  r: { setOverlayPoints(data: Float32Array): void; setOverlaySegments(data: Float32Array): void },
+  points: Pick<PointBuffer, 'data'>, segments: Pick<SegmentBuffer, 'data'>,
+): void {
+  r.setOverlayPoints(points.data)
+  r.setOverlaySegments(segments.data)
+}
+
+/** How the overlays draw — the viewer's point + track settings, in the units the renderers take. */
+export interface OverlayStyle {
+  pointPx: number
+  borderPx: number
+  /** Planes either side of the window a point still draws on (a cell spans several planes). */
+  pointZTol: number
+  /** Tail length in FRAMES — see `tailRange`. 0 = no tail. */
+  tailFrames: number
+  tailPx: number
+  /** The ribbons' own z reach — usually wider than the points': a track reads best with slack. */
+  trackZTol: number
+}
+
+/**
+ * Point a renderer's overlay draws at the frame on screen: timepoint `t`'s slice of the point buffer
+ * and a tail ending at `t`, each with its own plane window — `planes` widened by the point or track
+ * tolerance. `t < 0` means nothing is on screen yet, so both draws are empty. The ONE resolver for
+ * every renderer, so the volume and tile views cannot disagree on what a frame shows.
+ */
+export function setOverlayWindow(
+  r: {
+    setOverlayDraw(first: number, count: number, sizePx: number, planeLo: number, planeHi?: number,
+                   borderPx?: number): void
+    setOverlaySegmentDraw(first: number, count: number, widthPx: number, planeLo: number,
+                          planeHi?: number): void
+    setTailFade(head: number, length: number): void
+  },
+  points: PointBuffer, segments: SegmentBuffer, t: number, planes: readonly [number, number],
+  style: OverlayStyle,
+): void {
+  const [lo, hi] = planes
+  const range = t >= 0 ? timepointRange(points, t) : null
+  const tol = Math.max(0, style.pointZTol)
+  r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0, style.pointPx, lo - tol, hi + tol, style.borderPx)
+  const tail = t >= 0 && style.tailFrames > 0 ? tailRange(segments, t, style.tailFrames) : null
+  const trackTol = Math.max(0, style.trackZTol)
+  r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, lo - trackTol, hi + trackTol)
+  // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.
+  r.setTailFade(tailHead(Math.max(0, t)), style.tailFrames)
 }
 
 // ── Colour-by ────────────────────────────────────────────────────────────────────
