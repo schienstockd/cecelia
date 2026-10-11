@@ -93,6 +93,7 @@ import {
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit } from '../utils/viewerOverlays'
+import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
 import { widenLabelSlab, labelBpv } from '../utils/viewerLabels'
@@ -741,11 +742,6 @@ function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
   if (settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(l.vn)) return false
   return p.show && !!p.labels?.length && (p.isTrack || !!p.hasTracks) && !trackPopHidden(l.vn, p.path)
 }
-/** The Tracks-legend key of a pop's cell-track ribbon — `vn::path` for gating pops (the key the
- *  colour overrides were always stored under), `vn::popType::path` for the other cell pop types; the
- *  trackclust form is `vn::trackclust::path`. The movie builds the same keys (`viewer_overlay_closure`). */
-const trackPopSourceKey = (vn: string, popType: string, path: string) =>
-  popType === 'flow' ? `${vn}::${path}` : `${vn}::${popType}::${path}`
 const overlaysErr = ref('')
 /**
  * Track ribbons are drawn from PER-SEGMENTATION payloads, one per vn the panel's track eye has
@@ -1777,7 +1773,7 @@ function rebuildOverlays() {
         if (!byLabels.nCells) continue
         const p = narrowByHighlight(tcVn, byLabels, { allowFallback: false })
         if (!p) continue
-        const key = `${tcVn}::trackclust::${pop.path}`
+        const key = trackPopSourceKey(tcVn, 'trackclust', pop.path)
         sources.push({ vn: key, payload: p, colour: overrides[key] ?? pop.colour,
                        popColour: pop.colour })
       }
@@ -4791,42 +4787,20 @@ interface ViewerCapture {
   extentUm: { x: number; y: number; unit?: string | null } | null
   imageUid: string
   valueName: string
-  overlayLayers: Record<string, { visible: true; colour?: string | null }>
+  overlayLayers: Record<string, CapturedLayer>
 }
 ;(window as unknown as { __cceceliaViewerCapture?: () => ViewerCapture }).__cceceliaViewerCapture = () => {
   const el = canvas.value
   if (!el) throw new Error('viewer canvas not ready')
   const ext = overlayExtent.value
-  const layers: Record<string, { visible: true; colour?: string | null }> = {}
-  // Track sources → the colour their tails are drawn in (null = by track / speed, no one swatch).
-  const drawn = new Map(trackSources.value.map(s => [s.vn, s.drawn]))
-  // Point pops: every population layer the viewer draws — each (segmentation, pop type) — keyed to
-  // the segmentation its pops were authored on, which is what the server resolves the layer names
-  // against. A cell-track ribbon layer alongside when the ribbon drew (gated chip, its eye on).
-  for (const l of popLayers.value) {
-    for (const p of l.payload.pops) {
-      if (popDrawn(l, p.path)) layers[`(${l.popType}) (${l.vn}) ${p.path}`] = { visible: true }
-      if (popRibbonDrawn(l, p)) layers[`(track) (${l.vn}) Tracks ${p.path}`] = { visible: true }
-    }
-  }
-  // Whole-segmentation tracks: one per vn that DREW (its "directions" eye on, not stood down for
-  // trackclust, some segments), carrying the colour its tails are drawn in so the legend names it.
-  for (const vnKey of trackPayloads.value.keys()) {
-    if (!drawn.has(vnKey)) continue
-    layers[`(track) (${vnKey}) Tracks /_tracked`] = { visible: true, colour: drawn.get(vnKey) }
-  }
-  // Trackclust ribbons: whichever pops the trackclust payload publishes as `show`, with the colour
-  // their tails are drawn in when they drew (source key as `rebuildOverlays` builds it).
-  for (const [vnKey, payload] of trackclustPayloads.value.entries()) {
-    for (const p of (payload?.pops ?? [])) {
-      if (!p.show) continue
-      const key = `${vnKey}::trackclust::${p.path}`
-      layers[`(trackclust) (${vnKey}) Tracks ${p.path}`] =
-        drawn.has(key) ? { visible: true, colour: drawn.get(key) } : { visible: true }
-    }
-  }
-  // Segmentation mask: one per visible label layer (currently ≤1 — see the multi-mask decision above).
-  if (labelName.value) layers[`(${labelName.value}) Labels`] = { visible: true }
+  const layers = captureOverlayLayers({
+    popLayers: popLayers.value.map(l => ({ layer: l, pops: l.payload.pops })),
+    pointDrawn: (l, p) => popDrawn(l, p.path), ribbonDrawn: popRibbonDrawn,
+    trackVns: trackPayloads.value.keys(),
+    trackclust: trackclustPayloads.value.entries(),
+    drawn: new Map(trackSources.value.map(s => [s.vn, s.drawn])),   // source key → tails' colour
+    labelName: labelName.value,
+  })
   return {
     png: el.toDataURL('image/png'),
     extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : null,

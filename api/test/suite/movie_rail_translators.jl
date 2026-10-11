@@ -481,3 +481,37 @@ end
     @test overlay_legend_content(nothing, "", old, nothing).populations ==
           [Dict{String,Any}("name" => "flowTom tracks", "colour" => nothing)]
 end
+
+@testset "API: overlay legend — a captured cell-track ribbon is its own row, in the tails' colour" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    # The ribbon's layer says `track`, but its pop is a flow gate — not in the `__tracks` map. It used
+    # to throw there and drop the row, so the strip showed only the points' swatch in the pop's colour.
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        gate = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                "x_min" => 0.0, "x_max" => 1000.0, "y_min" => 0.0, "y_max" => 1e9)
+        _post(api_gating_pop_add, Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+              "valueName" => "B", "popType" => "flow", "name" => "dim", "gate" => gate, "colour" => "#e11d48"))
+        img, _ = _gating_image("testpr", "KDIeEm")
+        ov = JSON3.read("""[
+            {"valueName": "B", "popType": "flow",  "path": "/dim"},
+            {"valueName": "B", "popType": "track", "path": "/dim", "colour": "#00ff00"}]""")
+        @test overlay_legend_content(img, "", ov, nothing).populations == [
+            Dict{String,Any}("name" => "dim", "colour" => "#e11d48"),           # the points: the pop's colour
+            Dict{String,Any}("name" => "dim tracks", "colour" => "#00ff00")]    # the tails: as drawn
+        # coloured by track / speed → the ribbon row has no swatch; an older snapshot → the pop's colour
+        byTrack = JSON3.read("""[{"valueName": "B", "popType": "track", "path": "/dim", "colour": null}]""")
+        @test overlay_legend_content(img, "", byTrack, nothing).populations[1]["colour"] === nothing
+        legacy = JSON3.read("""[{"valueName": "B", "popType": "track", "path": "/dim"}]""")
+        @test overlay_legend_content(img, "", legacy, nothing).populations ==
+              [Dict{String,Any}("name" => "dim tracks", "colour" => "#e11d48")]
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

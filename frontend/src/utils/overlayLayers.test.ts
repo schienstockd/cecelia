@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseOverlays, overlayPushConfig } from './overlayLayers'
+import { parseOverlays, overlayPushConfig, captureOverlayLayers, trackPopSourceKey } from './overlayLayers'
 
 describe('parseOverlays', () => {
   it('separates track ribbons from population points, ignores channels + labels', () => {
@@ -53,5 +53,48 @@ describe('overlayPushConfig', () => {
   it('is empty when nothing was overlaid', () => {
     const cfg = overlayPushConfig([])
     expect(cfg).toEqual({ trackValueNames: [], showGatedTracks: false, showTrackclust: false, popTypes: [] })
+  })
+})
+
+describe('captureOverlayLayers', () => {
+  type L = { vn: string; popType: string }; type P = { path: string }
+  const layer = (vn: string, popType: string, ...paths: string[]) =>
+    ({ layer: { vn, popType }, pops: paths.map(path => ({ path })) })
+  const capture = (drawn: [string, string | null][]) => captureOverlayLayers<L, P>({
+    popLayers: [layer('A', 'flow', '/tcells'), layer('A', 'clust', '/0')],
+    pointDrawn: () => true, ribbonDrawn: () => true,
+    trackVns: ['A'],
+    trackclust: [['A', { pops: [{ path: '/meandering', show: true }, { path: '/off', show: false }] }]],
+    drawn: new Map(drawn), labelName: 'A',
+  })
+
+  it('gives every drawn ribbon layer — cell-track, whole-segmentation, trackclust — its tails\' colour', () => {
+    const layers = capture([
+      ['A::/tcells', '#00ff00'],          // gating pop: `vn::path` (trackPopSourceKey)
+      ['A::clust::/0', null],             // other pop type: `vn::popType::path`; null = by track / speed
+      ['A', '#ff8800'],
+      ['A::trackclust::/meandering', '#123456'],
+    ])
+    expect(layers['(track) (A) Tracks /tcells']).toEqual({ visible: true, colour: '#00ff00' })
+    expect(layers['(track) (A) Tracks /0']).toEqual({ visible: true, colour: null })
+    expect(layers['(track) (A) Tracks /_tracked']).toEqual({ visible: true, colour: '#ff8800' })
+    expect(layers['(trackclust) (A) Tracks /meandering']).toEqual({ visible: true, colour: '#123456' })
+    expect(layers['(flow) (A) /tcells']).toEqual({ visible: true })     // points carry no colour
+    expect(layers['(A) Labels']).toEqual({ visible: true })
+    expect(layers['(trackclust) (A) Tracks /off']).toBeUndefined()
+    // round-trips through the legend's parser with the tails' colour
+    expect(parseOverlays(layers).find(o => o.isTrack && o.path === '/tcells')?.colour).toBe('#00ff00')
+  })
+  it('leaves colour off a ribbon with no track source, and skips an undrawn whole-segmentation track', () => {
+    const layers = capture([])
+    expect(layers['(track) (A) Tracks /tcells']).toEqual({ visible: true })
+    expect(layers['(track) (A) Tracks /_tracked']).toBeUndefined()
+  })
+})
+
+describe('trackPopSourceKey', () => {
+  it('keys gating pops by vn::path and other pop types by vn::popType::path', () => {
+    expect(trackPopSourceKey('A', 'flow', '/t')).toBe('A::/t')
+    expect(trackPopSourceKey('A', 'trackclust', '/t')).toBe('A::trackclust::/t')
   })
 })
