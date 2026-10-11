@@ -6,8 +6,6 @@ Base.@kwdef struct MeasureLabelsParams
     intensityMeasure::String   = "mean"
     gaussianFilter::Float64    = 0.0
     extendedMeasures::Bool     = false
-    blockSize::Int             = 512
-    overlap::Int               = 64
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -18,8 +16,6 @@ function parse_measure_labels_params(d::AbstractDict)::MeasureLabelsParams
         intensityMeasure   = string(get(d, "intensityMeasure", "mean")),
         gaussianFilter     = Float64(get(d, "gaussianFilter", 0.0)),
         extendedMeasures   = Bool(get(d, "extendedMeasures", false)),
-        blockSize          = Int(get(d, "blockSize", 512)),
-        overlap            = Int(get(d, "overlap", 64)),
         version = parse_version_pin(d))
 end
 
@@ -64,11 +60,12 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Image:  $im_path")
     on_log("[INFO] Output: $(joinpath(task_dir, "labelProps", p.outputValueName)).h5ad")
 
-    # Intra-task threading capped at the CPU pool's current headroom. `in_flight` already includes
+    # Intra-task workers capped at the CPU pool's current headroom. `in_flight` already includes
     # this task, so `limit - in_flight + 1` is the total worker budget it can safely spend. Racy
-    # (a peer may submit between here and thread spawn), but the cap moves down when the user
-    # tightens the PoolThrottle. Also capped at 8: the per-timepoint work is disk-bound beyond that
-    # on the typical zarr, and running more threads would just steal from peers for no wall-clock.
+    # (a peer may submit between here and worker spawn), but the cap moves down when the user
+    # tightens the PoolThrottle. Also capped at 8: each worker is a process holding one block
+    # (~0.4 GB measured), and more would just steal from peers. No tiling params: the block is a
+    # fixed, chunk-aligned size in `measure_utils` (docs/todo/MEASURE_TILING_PLAN.md, Decision 8).
     pool_headroom = try
         cpu = filter(x -> x.name == "cpu", pool_status())
         isempty(cpu) ? 1 : max(1, cpu[1].limit - cpu[1].running + 1)
@@ -84,8 +81,6 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
            intensityMeasure  = p.intensityMeasure,
            gaussianFilter    = p.gaussianFilter,
            extendedMeasures  = p.extendedMeasures,
-           blockSize         = p.blockSize,
-           overlap           = p.overlap,
            nThreads          = n_threads),
         task_run_dir(task_dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)

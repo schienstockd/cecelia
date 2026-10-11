@@ -8,14 +8,14 @@ to the fast points (centroid) route — mostly used for live images where cell s
 import numpy as np
 
 
-def build_label_meshes(vol, labels, phys, min_voxels=8):
+def build_label_meshes(vol, labels, phys, min_voxels=8, origin=None):
     """Build a physical-scaled trimesh per label via marching cubes on its submask.
 
     `vol`: 3D label volume (z, y, x, int); `labels`: label ids to build; `phys`: [sz, sy, sx] µm/voxel.
     Returns `{label: trimesh.Trimesh}` in the full-volume physical frame (vertices offset by the
     submask origin, then scaled). Cells with < `min_voxels` voxels or that fail marching cubes are
     skipped. Uses `scipy.ndimage.find_objects` so each cell is meshed from its own bounding box, not
-    the whole volume."""
+    the whole volume. `origin` (z0, y0, x0) is where `vol` sits in a larger volume, for a crop."""
     import trimesh
     from scipy import ndimage
 
@@ -36,8 +36,10 @@ def build_label_meshes(vol, labels, phys, min_voxels=8):
                 m.fill_holes()
         except Exception:
             continue
-        origin = np.array([s.start for s in sl], dtype=float)      # (z0, y0, x0)
-        m.vertices = (m.vertices + origin) * phys[: m.vertices.shape[1]]
+        start = np.array([s.start for s in sl], dtype=float)       # (z0, y0, x0)
+        if origin is not None:
+            start = start + np.asarray(origin, dtype=float)
+        m.vertices = (m.vertices + start) * phys[: m.vertices.shape[1]]
         out[lb] = m
     return out
 

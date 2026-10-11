@@ -1441,32 +1441,53 @@ Julia (measure_labels.jl)
   → resolves intensity image path from ccid.json "filepath"
   → reads label zarr paths from ccid.json "labels[outputValueName]"
   → writes JSON params to {task_dir}/tasks/measureLabels.{id}.params.json
-  → spawns  app/src/tasks/segment/measure_run.py as subprocess
+  → spawns  app/src/tasks/segment/measure_labels_run.py via run_py (nThreads = CPU-pool headroom, ≤ 8)
   → on success: writes {outputValueName} → "{outputValueName}.h5ad" to ccid.json "label_props"
 
-Python (measure_run.py)
+Python (measure_labels_run.py)
   → opens each label zarr; derives label type from filename suffix
   → constructs MeasureUtils(params, dim_utils)
-  → calls measure_from_zarr(label_zarrs, im_dat, log)
+  → calls measure_from_zarr(label_zarrs, im_dat, log, n_workers=nThreads)
 
 MeasureUtils.measure_from_zarr
-  → outer loop: T timepoints
-  → per timepoint: load base label volume + image
-  → optional gaussian pre-smooth
-  → regionprops_table for morphology (2D: full set; 3D: skimage subset)
-  → per-channel mean or median intensities (base label, then secondary types)
-  → if extendedMeasures=True: trimesh marching-cubes mesh per cell
-      → surface area, volume, convex hull, sphericity, ellipsoid axes
-      → optionally save .stl meshes to {task_dir}/meshes/{valueName}/t{NNNN}/
-  → build DataFrame → AnnData → write .h5ad
+  → pass 1, per timepoint (labels only, threads): scan_label_bboxes → every object's bbox,
+    widened by its secondary (nuc/cyto/halo) objects
+  → plan_regions: each object is OWNED by the 1024 px XY block holding its bbox start
+  → pass 2, per block (worker processes): crop = union of the owned objects' bboxes (full Z)
+      → zero everything not owned, relabel owned 1..k
+      → regionprops_table for morphology (2D: full set; 3D: skimage subset)
+      → if extendedMeasures=True: trimesh marching-cubes mesh per cell, crop origin added back
+      → per channel: read (+ Gaussian halo, smooth, trim), mean (bincount) or median intensities
+        for the base and each secondary type
+  → concat, sort by (t, label) → AnnData → write .h5ad
 ```
+
+### Bounded memory: block ownership
+
+A whole timepoint is never in RAM — a 25-channel 16898 × 20329 tile scan needs ~51 GB that way and
+was OOM-killed. Peak is now one block per worker (measured on that scan: 1.8 GB total at 4 workers,
+3.1 GB at 8; 23 s at 8 workers for 110k cells). Full design and measurements:
+[`docs/todo/MEASURE_TILING_PLAN.md`](todo/MEASURE_TILING_PLAN.md).
+
+- **Every object is measured exactly once, never dropped.** Ownership, not the old R
+  `clear_border` + dedup, which silently lost any object wider than the overlap that straddled a seam.
+  An object reaching more than `MARGIN_CAP` (512 px) past its block is measured from its own crop.
+- **Identical to a whole-plane pass.** skimage runs unchanged on the crop, and every value depends
+  only on the object's own pixels. The Gaussian halo is the kernel radius (`int(4σ + 0.5)`), so
+  smoothed values match too. Pinned by `test_measure_block_ownership.py`.
+- **No tiling params.** The block is `block_size_for(labels)`: 1024 px rounded up to whole chunks of
+  the label store (`zarr_utils.store_xy_tile`), so reads never over-fetch. Measure has no
+  `blockSize`/`overlap` in its form: inside `cellposeMeasure` a shared key would silently take
+  cellpose's tile size.
+- **Processes, not threads, for pass 2.** skimage's per-object props hold the GIL: threads stall at
+  ~2 workers, processes scale ~5× at 8. Started with `spawn` on every OS, so a caller's `__main__`
+  must be import-safe (`measure_labels_run.py` is).
 
 ### Output
 
 | File | Contents |
 |---|---|
 | `{task_dir}/labelProps/{outputValueName}.h5ad` | AnnData: obs=cell labels, X=all features, obsm["spatial"]=centroids, obsm["temporal"]=timepoints |
-| `{task_dir}/meshes/{outputValueName}/t{NNNN}/{label}.stl` | Per-cell trimesh (only when `saveMeshes=true`) |
 
 ### ccid.json `label_props` field
 
@@ -1494,7 +1515,7 @@ structural extent, not a QC measure, and nothing reads it.
 
 ### $include template system
 
-The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and measureLabels share the same `blockSize`, `overlap` definitions with no duplication. There is no Z tiling: the whole stack goes to the segmenter in one call, which stitches across Z itself.
+The `imageTiling` param section in all task JSONs under `segment/` is shared via `{"$include": "imageTiling"}` which splices in `app/src/tasks/fragments/imageTiling.json` at spec load time (resolved in `_task_spec` via `_resolve_spec_includes`). Cellpose and Optical flow share the same `blockSize`, `overlap` definitions with no duplication. Measure labels has no tiling params (see *Bounded memory: block ownership*). There is no Z tiling: the whole stack goes to the segmenter in one call, which stitches across Z itself.
 
 ---
 

@@ -1,7 +1,9 @@
 # Measure labels — bounded-memory tiling by bounding-box ownership
 
-Status: **parked** (2026-10-11, branch `fix/measure-bbox-tiling`, nothing built). Promote the
-"how it works" part into [`docs/SEGMENTATION.md`](../SEGMENTATION.md) → *Measure labels* when it ships.
+Status: **P1–P3 built** (2026-10-11, branch `fix/measure-bbox-tiling`, PR #1611); P0 skipped (P1
+replaced it the same day); P4 trigger-gated. "How it works" is promoted to
+[`docs/SEGMENTATION.md`](../SEGMENTATION.md) → *Bounded memory: block ownership*; this plan stays as
+the record of why.
 
 ## Goal
 
@@ -46,9 +48,8 @@ timepoint, in RAM") **for measure only**. A tile-scan frame is not a bounded uni
 Object extent (max of bbox height/width) in that block: p50 40 px, **p99 69 px, max 89 px**. So the
 old R default overlap (64) would already drop cells on this image.
 
-Not yet measured: whether threads scale for the morphology step (skimage props are partly Python, so
-they may hold the GIL), and the median cost at full-image scale. **P2 measures both before the worker
-model is fixed.**
+Threads vs processes was measured in P2 (below). The median cost at full-image scale is still not
+measured.
 
 ## Options considered
 
@@ -99,11 +100,13 @@ and memory per worker is about (block + 2·margin)² × channels.
 7. **Blocks are XY only.** The whole Z extent of a block column is read, matching the cellpose
    convention ("no Z tiling", `docs/SEGMENTATION.md`). 3D extended measures (trimesh) work per owned
    object inside the block crop, unchanged.
-8. **GUI: `blockSize` is the measure block, `overlap` is removed** from `measure_labels.json` because
-   it is computed (D2). Block default = the label store's chunk size rounded to it (1024 today),
-   aligned to zarr chunks so a block read never over-fetches. Check that the `cellposeMeasure`
-   composite still resolves cellpose's own `overlap` (shared fragment). If the shared include makes
-   that awkward, give measure its own one-param section rather than leaving a no-op control.
+8. **No tiling params in the measure GUI** (revised while building P3). `overlap` is computed (D2).
+   `blockSize` was dropped too: a composite passes its FULL params dict to every step and the merged
+   form dedups by key, first step wins (`docs/MODULES.md` → *Composite tasks*). So inside
+   `cellposeMeasure` a measure `blockSize` would silently be cellpose's tile size. The block is
+   `block_size_for(labels)`: 1024 rounded up to whole chunks of the label store (read with
+   `zarr_utils.store_xy_tile`), so a block read never over-fetches.
+   Python still honours a `blockSize` param (tests, REPL).
 9. **The worker budget stays the Julia CPU-pool headroom** (`measure_labels.jl`, capped at 8). That
    is consistent with ZARR_STREAMING Decision 3: no second, uncapped pool. Workers iterate **blocks**
    (across all timepoints), not timepoints. Threads vs processes is decided by measurement (P2), not
@@ -146,6 +149,25 @@ Decide:
 - Otherwise use processes, returning per-block DataFrames. Keep the budget from D9.
 Record the table in this plan.
 
+**Measured (2026-10-11, `f8gzA2`, every 3rd block = 85 blocks / 36,132 cells, i9-13950HX 24 cores,
+mean intensity, no Gaussian), pass 2 wall-clock:**
+
+| workers | threads | processes (spawn) |
+|---|---|---|
+| 1 | 39.0 s | 35.6 s |
+| 2 | 24.8 s | 18.5 s |
+| 4 | 25.7 s | 10.3 s |
+| 8 | 33.6 s | 6.7 s |
+
+Threads stall at 2 and get slower past 4: the per-object props hold the GIL. Processes scale 5.3× at
+8. **Decided: processes for pass 2, `spawn` on every OS** (Windows has nothing else and it is macOS's
+default; forking a process that has run blosc/thread pools can deadlock on Linux). The bbox scan (pass 1) is
+numpy-bound and stays on threads: 9.2 s → 2.0 s at 8.
+
+**Full image, processes:** 110k cells in **23 s at 8 workers**. Peak RSS summed over the process
+tree was **1.76 GB at 4 workers and 3.1 GB at 8**. The old code was OOM-killed past 28 GB. Output at
+4 and 8 workers is byte-identical.
+
 ### P3: GUI + docs
 `measure_labels.json` per D8. Rewrite `measure_labels_run.py`'s param docstring. Fix the
 `docs/SEGMENTATION.md` "share" claim and add a *Measure labels → tiling* section (ownership, margin,
@@ -153,8 +175,18 @@ outliers). Add a `docs/inventory/` entry for `scan_bboxes` if it becomes a share
 
 ### P4 (trigger-gated): incremental re-measure
 `segmentCorrectMeasures` re-measures the whole image after hand edits. With bboxes and ownership, it
-could re-measure only the edited labels' blocks. Build it only if correction re-measure time on a
-large image is measured as a complaint. Otherwise move it to `docs/FUTURE.md`.
+could re-measure only the edited labels' blocks, which narrows the frame-scoped re-measure already
+tracked in `docs/TODO.md` → *Frame-scoped `segment.measureLabels` for the correction composite*
+down to the edited objects. Build it with that item, not separately.
+
+## Found while building (not fixed here)
+
+- **A 2D image stored with a singleton Z is measured as 3D.** `measure_from_zarr` sets
+  `is_3d = 'Z' in dim_order`, and `f8gzA2` reports dims `T,C,Z,Y,X` with Z = 1. So the 2D slide got
+  the 3D prop set (no perimeter, solidity or Feret) plus a `centroid_z` column of zeros.
+  `DimUtils.is_3D()` (Z > 1) exists. Changing it changes the output columns of every such image, and
+  the downstream readers of `spatial_cols`, so it needs its own change and tests. Tracked in
+  `docs/TODO.md` → *Singleton-Z images measured as 3D*.
 
 ## Risks / open questions
 
