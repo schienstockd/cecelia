@@ -446,6 +446,12 @@ chosen dir, and the MSI edits the system `PATH` (juliaup's README discourages it
 extracts juliaup's portable release archive (pinned, `CECELIA_JULIAUP_VERSION`)
 into `<install>\juliaup\bin`; `cecelia-launch.cmd` puts that dir on `PATH`.
 
+Without `<install>/juliaup`, `_find_julia` next takes the Julia the installer resolved, which both
+installers record in `<install>/.cecelia-julia`, before trying PATH. The user-scope desktop entry and
+`.app` start with the session's PATH (launchd's minimal one on macOS), which can leave out where that
+Julia lives: a juliaup in `/opt/homebrew/bin` or `~/.local/bin` gets its `julia` beside it.
+`scripts/activate_juliaup.sh` appends that Julia's dir to PATH when no `julia` is on it.
+
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).
 `[feature.cellpose-v3]` (opt-in `cellpose-v3` env, `platforms = ["osx-arm64"]`) carries

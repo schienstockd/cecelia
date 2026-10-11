@@ -44,7 +44,9 @@ def _find_julia() -> str:
 
     A system-scope install also has a shared package depot (`<root>/juliaup/depot`), read-only to every
     account but the owner. A per-user writable depot goes in front of it, and the trailing empty entry
-    keeps Julia's bundled stdlib depot — without both, Julia precompiles into the read-only depot and dies."""
+    keeps Julia's bundled stdlib depot — without both, Julia precompiles into the read-only depot and dies.
+
+    Otherwise the Julia the installer recorded (`_recorded_julia`), then PATH, then `~/.juliaup`."""
     private = os.path.join(ROOT, "juliaup")
     bin_dir = os.path.join(private, "bin")
     if os.path.exists(os.path.join(bin_dir, _exe("julia"))):
@@ -56,11 +58,29 @@ def _find_julia() -> str:
         if not os.environ.get("PATH", "").startswith(bin_dir + os.pathsep):
             os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
         return os.path.join(bin_dir, _exe("julia"))
+    recorded = _recorded_julia()
+    if recorded:
+        return recorded
     found = shutil.which("julia")
     if found:
         return found
     candidate = os.path.join(os.path.expanduser("~"), ".juliaup", "bin", _exe("julia"))
     return candidate if os.path.exists(candidate) else "julia"
+
+
+def _recorded_julia() -> str:
+    """The Julia the installer set up, from `<root>/.cecelia-julia`; "" when absent or gone.
+
+    The desktop entry and the macOS `.app` start with the session's PATH (launchd's minimal one on
+    macOS), which can leave out where that Julia lives: a juliaup in `/opt/homebrew/bin` or
+    `~/.local/bin` gets its `julia` beside it, and a reused Julia can be anywhere. It is also the
+    Julia `Pkg.instantiate` ran under, so it beats whichever `julia` PATH happens to offer."""
+    try:
+        with open(os.path.join(ROOT, ".cecelia-julia"), "r", encoding="utf-8") as f:
+            path = f.read().strip()
+    except OSError:
+        return ""
+    return path if path and os.path.isfile(path) else ""
 
 
 def _find_pixi() -> str:

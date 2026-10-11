@@ -338,7 +338,9 @@ fi
 # the in-app updater knows whether it may self-update (user) or must defer to an admin (system).
 printf '%s\n' "$PROVENANCE" > "$INSTALL_DIR/.cecelia-version"
 printf '%s\n' "$SCOPE"       > "$INSTALL_DIR/.cecelia-scope"
-[ -n "$DELEGATE" ] && chown "$OWNER" "$INSTALL_DIR/.cecelia-version" "$INSTALL_DIR/.cecelia-scope"
+# The Julia resolved above, for `_find_julia` in app.py: a desktop launch's PATH may not reach it.
+printf '%s\n' "$JULIA"       > "$INSTALL_DIR/.cecelia-julia"
+[ -n "$DELEGATE" ] && chown "$OWNER" "$INSTALL_DIR/.cecelia-version" "$INSTALL_DIR/.cecelia-scope" "$INSTALL_DIR/.cecelia-julia"
 say "Installed: $PROVENANCE ($SCOPE scope)"
 
 # ── Launcher ───────────────────────────────────────────────────────────────────

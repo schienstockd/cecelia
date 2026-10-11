@@ -283,6 +283,8 @@ Pop-Location
 # Record provenance + scope (scope tells the in-app updater whether it may self-update).
 Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
 Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
+# The Julia resolved above, for `_find_julia` in app.py: a shortcut launch's PATH may not reach it.
+Set-Content -Path (Join-Path $InstallDir '.cecelia-julia')   -Value $Julia
 Say "Installed: $Provenance ($Scope scope)"
 
 # System scope: every file must carry the Program Files ACL (Users: read + execute; Administrators:
