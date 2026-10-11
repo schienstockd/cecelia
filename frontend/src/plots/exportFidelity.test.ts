@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildPlotOptions, coloursCollide, defaultNormalize, COLOUR_IS_IDENTITY } from './plot'
-import { overlaySvgBody } from './export'
+import { overlaySvgBody, figureParts } from './export'
 import type { PlotDataResponse } from './types'
 
 // Three things a board export (and the live chart) got wrong on a real agent-run record (RkJd6s):
@@ -115,5 +115,32 @@ describe('nestSvg keeps the root\'s inherited paint', () => {
     expect(out).toContain('font-family="system-ui, sans-serif"')
     expect(out).toContain('style="color:#111;font-size:11px"')
     expect(out).not.toContain('class="plot-1"')
+  })
+})
+
+describe('figureParts — what a figure export nests vs snapshots', () => {
+  // just enough of an Element: tag, children, contains
+  type El = { tagName: string; children: El[]; contains: (o: unknown) => boolean }
+  const el = (tagName: string, children: El[] = []): El => {
+    const e: El = { tagName, children, contains: o => o === e || children.some(c => c.contains(o)) }
+    return e
+  }
+  const asEl = (e: El) => e as unknown as Element
+
+  it('a Plot <figure>: the last direct <svg> is the chart, the rest are overlays', () => {
+    const legend = el('div'), chart = el('svg')
+    const p = figureParts(asEl(el('figure', [legend, chart])))
+    expect(p?.chart).toBe(chart)
+    expect(p?.overlays).toEqual([legend])
+  })
+  it('a caption key beside a plot host: the captions are snapshotted, the host is not', () => {
+    // the training-curve Detail view: its only colour key is an HTML list next to the host
+    const chart = el('svg'), captions = el('ul', [el('li', [el('svg')])]), host = el('div', [chart])
+    const p = figureParts(asEl(el('div', [captions, host])), asEl(chart))
+    expect(p?.chart).toBe(chart)
+    expect(p?.overlays).toEqual([captions])
+  })
+  it('no chart, no figure', () => {
+    expect(figureParts(asEl(el('div', [el('ul')])))).toBeNull()
   })
 })

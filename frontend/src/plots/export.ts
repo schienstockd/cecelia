@@ -419,20 +419,34 @@ export function svgWithOverlays(svg: SVGSVGElement, items: OverlayItem[]): SVGSV
 }
 
 /**
- * A Plot `<figure>` (a chart drawn with an inline `legend: true` — its legend is HTML or a ramp <svg>
- * beside the chart) as ONE light-theme SVG: the chart nested at its rect, the legend snapshotted in.
- * `svgOf` on a figure returned only its first <svg>, which dropped the legend — or WAS the legend ramp.
+ * Split a figure into its chart <svg> and the sibling overlays to snapshot around it. `chart` defaults to
+ * the figure's last direct <svg> (a Plot `<figure>`); pass it when the chart sits inside a child — a
+ * view's own caption list beside its plot host — and the child holding it is not an overlay.
  */
-export function figureToSvg(fig: Element, ink: string | null, background = 'white'): string | null {
+export function figureParts(fig: Element, chart?: Element | null): { chart: Element; overlays: Element[] } | null {
   const kids = Array.from(fig.children)
-  const chart = kids.filter(c => c.tagName.toLowerCase() === 'svg').pop()
-  if (!chart) return null
+  const c = chart ?? kids.filter(k => k.tagName.toLowerCase() === 'svg').pop()
+  if (!c) return null
+  return { chart: c, overlays: kids.filter(k => k !== c && !k.contains(c)) }
+}
+
+/**
+ * A figure (a Plot `<figure>` with an inline `legend: true`, or a view's caption key + plot host) as ONE
+ * light-theme SVG: the chart nested at its rect, the legend/captions snapshotted in. `svgOf` on a figure
+ * returned only its first <svg>, which dropped the legend — or WAS the legend ramp. An HTML swatch must be
+ * an <svg> to survive: `collectOverlayItems` snapshots text and <svg>, not CSS backgrounds.
+ */
+export function figureToSvg(fig: Element, ink: string | null, background = 'white',
+                            chartEl?: Element | null): string | null {
+  const parts = figureParts(fig, chartEl)
+  if (!parts) return null
+  const { chart, overlays } = parts
   const fr = fig.getBoundingClientRect()
   const w = (fig as HTMLElement).clientWidth || fr.width, h = (fig as HTMLElement).clientHeight || fr.height
   const k = w ? fr.width / w : 1
   const cr = chart.getBoundingClientRect()
   const body = nestSvg(new XMLSerializer().serializeToString(chart), (cr.left - fr.left) / k, (cr.top - fr.top) / k,
                        cr.width / k, cr.height / k, { overflow: 'visible' }) +
-               overlaySvgBody(collectOverlayItems(fig as HTMLElement, kids.filter(c => c !== chart), ink))
+               overlaySvgBody(collectOverlayItems(fig as HTMLElement, overlays, ink))
   return svgDoc({ width: w, height: h, background, body })
 }

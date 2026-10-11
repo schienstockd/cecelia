@@ -67,7 +67,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { usePlotResize } from '../../composables/usePlotResize'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
-import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
+import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, figureToSvg } from '../../plots/export'
 import { distinctColors } from '../../plots/plot'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { useProjectStore } from '../../stores/project'
@@ -119,6 +119,8 @@ const denoiseManifest = computed(() =>
   kind.value === 'denoise' ? (manifest.value as DenoiseManifest | null) : null)
 
 const host = useTemplateRef<HTMLElement>('host')
+// The exported figure: the Detail captions (the only colour key) + the plot host, so no export drops them.
+const fig = useTemplateRef<HTMLElement>('fig')
 // @observablehq/plot is loosely typed for our purposes; keep it as any (its types are large).
 let Plot: any = null                                   // eslint-disable-line @typescript-eslint/no-explicit-any
 let node: SVGElement | HTMLElement | null = null
@@ -394,7 +396,7 @@ function exportAs(kind: string) {
     const text = csv()
     if (text) downloadBlob(`${stem.value}.csv`, new Blob([text], { type: 'text/csv' }))
   } else if (kind === 'png' || kind === 'svg') {
-    elementToImageURL(host.value, kind, '#1f2226')
+    elementToImageURL(fig.value, kind, '#1f2226')
       .then(url => url && downloadDataUrl(`${stem.value}.${kind}`, url))
   }
 }
@@ -402,14 +404,14 @@ function exportAs(kind: string) {
 async function exportImage(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  const url = await elementToImageURL(fig.value, 'png', '#ffffff')
   forceLight.value = false; await render()
   return url
 }
 async function exportSvg(): Promise<string | null> {
   forceLight.value = true
   await nextTick(); await render()
-  const svg = svgOf(host.value)?.outerHTML ?? null
+  const svg = fig.value && node ? figureToSvg(fig.value, plotTheme(false).ink, 'white', node) : null
   forceLight.value = false; await render()
   return svg
 }
@@ -479,18 +481,23 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
       No loss curves — {{ chosen }} was trained before they were recorded. Re-train to get them.
     </p>
 
-    <!-- Per-series convergence/early-stop readout for the Detail view. HTML rather than in-plot
-         text: three similarly-shaped curves would collide both vertically and horizontally as
-         SVG marks. Empty in Simple view. -->
-    <ul v-if="detailCaptions.length" class="ftv-captions cc-fs-xs">
-      <li v-for="cap in detailCaptions" :key="cap.term">
-        <span class="ftv-cap-swatch" :style="{ background: cap.color }" />
-        <span class="ftv-cap-term">{{ cap.term }}</span>
-        <span class="cc-muted">{{ cap.text }}</span>
-      </li>
-    </ul>
+    <!-- captions + plot are ONE figure: every export captures it, so the key travels with the plot -->
+    <div ref="fig" class="ftv-fig" :class="{ 'cc-light': forceLight }">
+      <!-- Per-series convergence/early-stop readout for the Detail view. HTML rather than in-plot
+           text: three similarly-shaped curves would collide both vertically and horizontally as
+           SVG marks. Empty in Simple view. Swatch is an <svg> so the SVG export can draw it. -->
+      <ul v-if="detailCaptions.length" class="ftv-captions cc-fs-xs">
+        <li v-for="cap in detailCaptions" :key="cap.term">
+          <svg class="ftv-cap-swatch" width="8" height="8" aria-hidden="true">
+            <rect width="8" height="8" :fill="cap.color" />
+          </svg>
+          <span class="ftv-cap-term">{{ cap.term }}</span>
+          <span class="cc-muted">{{ cap.text }}</span>
+        </li>
+      </ul>
 
-    <div ref="host" class="ftv-host" />
+      <div ref="host" class="ftv-host" />
+    </div>
   </div>
 </template>
 
@@ -503,10 +510,13 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg, getCsv: csv })
 .ftv-note  { margin: 0.15rem 0 0; }
 .ftv-opt { display: flex; align-items: center; gap: 0.25rem; }
 .ftv-off { opacity: 0.45; }
+.ftv-fig  { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* the light export's ink, as the plot's (`plotTheme(false)`) — dark-theme text on white is unreadable */
+.ftv-fig.cc-light { --cc-text: #111; --cc-text-dim: #555; color: #111; background: #fff; }
 .ftv-host { flex: 1; min-height: 0; }
 .ftv-captions { list-style: none; margin: 0.1rem 6px 0.2rem; padding: 0;
                 display: flex; flex-direction: column; gap: 0.1rem; }
 .ftv-captions li { display: flex; align-items: center; gap: 0.35rem; line-height: 1.15; }
-.ftv-cap-swatch { display: inline-block; width: 8px; height: 8px; }
+.ftv-cap-swatch { flex: none; }
 .ftv-cap-term  { font-weight: 600; }
 </style>
