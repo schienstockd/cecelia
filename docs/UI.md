@@ -2202,6 +2202,14 @@ model trained before the stamp. Rule + tests: `utils/vaultScope.ts`; the stamp i
 `vault_model_origin` (`api/src/vault_api.jl`), which recovers an older model's project from its source
 image uids.
 
+**A task form's vault picker follows the same scope.** A `select` whose `optionsFrom` names a vault
+(`coastalModels`, `denoiseModels` — `vaultKindForSource`) renders as `VaultModelSelect`: options headed
+**This project** / other project names / **Origin not recorded**, another user's model suffixed with
+who trained it, and the same `pi-eye` View button (`VaultViewButton`, bound to the same settings — one
+preference, not two). Options with no vault row (`None`, a model this chain will train) sit above the
+headings. Hiding is a view only: validation still accepts every option, and the selected model stays
+listed even out of scope. Rule + tests: `vaultPickerLayout` in `utils/vaultScope.ts`.
+
 The **Analysis board** has no such toggle: its rail is always shown and swaps by the active slot's
 `rail` (`docs/ANALYSIS.md` → *The rail*).
 

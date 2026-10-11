@@ -31,6 +31,8 @@ import { paramVisColumns, uniformWarning } from './paramVis'
 import { paramFigure } from './paramFigures'
 import CcToggle from '../components/CcToggle.vue'
 import FileBrowser from '../components/FileBrowser.vue'
+import VaultModelSelect from '../components/VaultModelSelect.vue'
+import { vaultKindForSource } from '../utils/modelVaultKinds'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -83,6 +85,8 @@ const notApplicable = computed(() =>
 // array picks by image axes (first match wins). Callers still bind `v-tooltip.*` on the resolved
 // value — no per-widget branching, and no Vue file "sniffing" image axes for a string swap.
 const shownTip = computed(() => resolveParamTip(props.param, props.context?.images))
+// a select listing a model vault gets origin headings + the vault's View toggles (VaultModelSelect)
+const vaultKind = computed(() => vaultKindForSource(props.param.optionsFrom))
 
 // section (collapsible box) state
 const sectionOpen = ref(!props.param.collapsed)
@@ -800,6 +804,12 @@ const pct = computed(() => {
       :model-value="String(val ?? '')"
       :aria-label="param.label"
       @update:model-value="v => val = v as string"
+    />
+
+    <!-- select over a model vault: grouped by origin, scoped like the Model vault -->
+    <VaultModelSelect v-else-if="param.type === 'select' && vaultKind"
+      :kind="vaultKind" :options="param.options ?? []" :tip="shownTip"
+      :model-value="String(val ?? '')" @update:model-value="v => val = v"
     />
 
     <!-- select -->

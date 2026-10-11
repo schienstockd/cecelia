@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { effectScope, ref } from 'vue'
-import { useVaultModel, _resetVaultModelCache } from './useVaultModel'
+import { useVaultModel, useVaultRows, _resetVaultModelCache } from './useVaultModel'
 
 interface FetchStubMap {
   '/api/optical-flow/models'?: { ok: boolean; body: unknown }
@@ -166,6 +166,65 @@ describe('useVaultModel', () => {
     // the assertion. Without this the test flaked on 3-tick manual flushes.
     await vi.waitFor(() => expect(out.error.value).toBeTruthy())
     expect(out.kind.value).toBeNull()
+    scope.stop()
+  })
+
+  it('a name in both vaults resolves to flow', async () => {
+    stubFetch({
+      '/api/optical-flow/models': { ok: true, body: { models: [
+        { name: 'dup.pt', stem: 'dup', hasManifest: true, manifest: { from: 'flow' } }] } },
+      '/api/denoise/models': { ok: true, body: { models: [
+        { name: 'dup', stem: 'dup', hasManifest: true, manifest: { from: 'denoise' } }] } },
+    })
+    const scope = effectScope()
+    let out!: ReturnType<typeof useVaultModel>
+    scope.run(() => { out = useVaultModel(ref('dup')) })
+    await flush()
+    expect(out.kind.value).toBe('flow')
+    expect((out.manifest.value as { from?: string })?.from).toBe('flow')
+    scope.stop()
+  })
+})
+
+describe('useVaultRows', () => {
+  beforeEach(() => {
+    _resetVaultModelCache()
+    vi.unstubAllGlobals()
+  })
+
+  it('looks a row up by name or stem, within its own vault only', async () => {
+    stubFetch({
+      '/api/optical-flow/models': { ok: true, body: { models: [
+        { name: 'flowA.pt', stem: 'flowA', manifest: {}, createdBy: 'alice', projectUid: 'P1' }] } },
+      '/api/denoise/models': { ok: true, body: { models: [
+        { name: 'den', stem: 'den', manifest: {} }] } },
+    })
+    const scope = effectScope()
+    let out!: ReturnType<typeof useVaultRows>
+    scope.run(() => { out = useVaultRows(() => 'flowModels') })
+    await flush()
+    expect(out.rowFor('flowA.pt')?.createdBy).toBe('alice')
+    expect(out.rowFor('flowA')?.projectUid).toBe('P1')
+    expect(out.rowFor('den')).toBeUndefined()
+    scope.stop()
+  })
+
+  it('ensure() refetches once for an unseen value, not again for the same set', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
+      calls.push(String(url))
+      return { ok: true, json: async () => ({ models: [] }) } as Response
+    })
+    const scope = effectScope()
+    let out!: ReturnType<typeof useVaultRows>
+    scope.run(() => { out = useVaultRows(() => 'flowModels') })
+    await flush()
+    expect(calls).toHaveLength(1)
+    out.ensure(['', 'chain.pt'])
+    await flush()
+    out.ensure(['', 'chain.pt'])
+    await flush()
+    expect(calls).toHaveLength(2)
     scope.stop()
   })
 })

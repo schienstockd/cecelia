@@ -19,9 +19,10 @@ import { computed, onScopeDispose, ref, watchEffect, type Ref } from 'vue'
 import { endpointsFor, type VaultKind } from '../utils/modelVaultKinds'
 import type { FlowManifest } from '../utils/flowManifest'
 import type { DenoiseManifest } from '../utils/denoiseManifest'
+import type { VaultOrigin } from '../utils/vaultScope'
 
 // Row shape as returned by both vault endpoints (a superset — kind decides which manifest applies).
-interface VaultRow {
+interface VaultRow extends VaultOrigin {
   name: string
   stem: string
   hasManifest: boolean
@@ -46,6 +47,24 @@ const inflight: Partial<Record<VaultKind, Promise<void>>> = {}
 
 // Bump this to invalidate every reactive consumer. `refresh()` increments it; `watchEffect` reruns.
 const cacheEpoch = ref(0)
+
+// Each vault's rows by name AND stem — the one lookup every caller uses (a coastal picker carries the
+// filename, a denoise picker and the plots the stem). Module-scoped beside the cache it indexes, rebuilt
+// on `cacheEpoch`. First row wins on a clash, as a linear `find` would.
+function _buildIndex(kind: VaultKind) {
+  return computed(() => {
+    void cacheEpoch.value
+    const m = new Map<string, VaultRow>()
+    for (const r of cache[kind].rows ?? []) for (const key of [r.name, r.stem]) {
+      if (!m.has(key)) m.set(key, r)
+    }
+    return m
+  })
+}
+const index: Record<VaultKind, ReturnType<typeof _buildIndex>> = {
+  flowModels: _buildIndex('flowModels'),
+  denoiseModels: _buildIndex('denoiseModels'),
+}
 
 async function _fetchKind(kind: VaultKind): Promise<void> {
   if (cache[kind].rows !== null || cache[kind].err) return
@@ -112,23 +131,19 @@ export function useVaultModel(nameRef: Ref<string> | (() => string)): UseVaultMo
     }
   })
 
+  // flow first: a name in both vaults resolves to flow
   const kind = computed<'flow' | 'denoise' | null>(() => {
-    void cacheEpoch.value   // reactive on cache refresh
     const n = currentName.value
     if (!n) return null
-    if (cache.flowModels.rows?.some(r => r.name === n || r.stem === n))    return 'flow'
-    if (cache.denoiseModels.rows?.some(r => r.name === n || r.stem === n)) return 'denoise'
+    if (index.flowModels.value.has(n))    return 'flow'
+    if (index.denoiseModels.value.has(n)) return 'denoise'
     return null
   })
 
   const manifest = computed<FlowManifest | DenoiseManifest | null>(() => {
-    void cacheEpoch.value
-    const n = currentName.value
-    if (!n) return null
     const k = kind.value
     if (k === null) return null
-    const list = (k === 'flow' ? cache.flowModels.rows : cache.denoiseModels.rows) ?? []
-    const row = list.find(r => r.name === n || r.stem === n)
+    const row = index[k === 'flow' ? 'flowModels' : 'denoiseModels'].value.get(currentName.value)
     return (row?.manifest as FlowManifest | DenoiseManifest) ?? null
   })
 
@@ -148,6 +163,30 @@ export function useVaultModel(nameRef: Ref<string> | (() => string)): UseVaultMo
   onScopeDispose(() => { /* no-op */ })
 
   return { kind, manifest, loading, error, refresh }
+}
+
+/**
+ * One vault's rows, looked up by picker value (`name` or `stem` — coastal pickers carry the filename,
+ * denoise the stem). Shares the module cache, so every picker on a page costs one fetch per kind.
+ * `ensure(values)` re-fetches once when the picker offers a value the cache has not seen — a model
+ * trained since the last fetch — and not again for the same set, so a value no vault holds (a model
+ * this chain will train) does not refetch on every render.
+ */
+export function useVaultRows(kind: Ref<VaultKind | undefined> | (() => VaultKind | undefined)) {
+  const k = computed(() => typeof kind === 'function' ? kind() : kind.value)
+  watchEffect(() => { if (k.value) _fetchKind(k.value) })
+  const rows = computed(() => k.value ? index[k.value].value : new Map<string, VaultRow>())
+  let asked = ''
+  function ensure(values: string[]) {
+    const kind = k.value
+    if (!kind || cache[kind].rows === null) return
+    const missing = values.filter(v => v && !rows.value.has(v)).sort().join('\n')
+    if (!missing || missing === asked) return
+    asked = missing
+    cache[kind] = { rows: null, err: '' }
+    _fetchKind(kind)
+  }
+  return { rowFor: (v: string): VaultOrigin | undefined => rows.value.get(v), ensure }
 }
 
 /** Clear the module cache — for tests. Production callers should use `refresh()`. */

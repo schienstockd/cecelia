@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   vaultInScope, vaultMatchesQuery, vaultUserLabel, vaultProjectLabel, vaultOriginGroup,
+  vaultPickerLayout, THIS_PROJECT, ORIGIN_UNKNOWN, type VaultOrigin,
 } from './vaultScope'
 
 const base = { profile: 'alice', projectUid: 'P1', otherUsers: false, otherProjects: false }
@@ -63,5 +64,38 @@ describe('labels', () => {
     ])
     expect(vaultOriginGroup({ createdBy: 'bob', createdVia: 'claude' }).fields[0].value)
       .toBe('Claude for bob')
+  })
+})
+
+describe('vaultPickerLayout', () => {
+  const rows: Record<string, VaultOrigin> = {
+    'mine.pt':   { createdBy: 'alice', projectUid: 'P1', projectName: 'Tcells' },
+    'bobs.pt':   { createdBy: 'bob',   projectUid: 'P1', projectName: 'Tcells' },
+    'other.pt':  { createdBy: 'alice', projectUid: 'P2', projectName: 'Bcells' },
+    'old.pt':    {},
+  }
+  const opts = ['', 'mine.pt', 'bobs.pt', 'other.pt', 'old.pt', 'chain.pt']
+    .map(v => ({ value: v, label: v || 'None' }))
+  const lay = (s = base, sel = '') => vaultPickerLayout(opts, v => rows[v], s, sel)
+  const titles = (l: ReturnType<typeof lay>) => l.groups.map(g => g.title)
+
+  it('default: my models here, unrecorded last; no-row options loose and first', () => {
+    const l = lay()
+    expect(l.loose.map(o => o.value)).toEqual(['', 'chain.pt'])
+    expect(titles(l)).toEqual([THIS_PROJECT, ORIGIN_UNKNOWN])
+    expect(l.groups[0].options.map(o => o.value)).toEqual(['mine.pt'])
+    expect(l.hidden).toBe(2)
+  })
+  it('other projects get their own heading, between this project and unrecorded', () => {
+    expect(titles(lay({ ...base, otherProjects: true }))).toEqual([THIS_PROJECT, 'Bcells', ORIGIN_UNKNOWN])
+  })
+  it("another user's model is labelled with who trained it", () => {
+    const l = lay({ ...base, otherUsers: true })
+    expect(l.groups[0].options.map(o => o.label)).toEqual(['mine.pt', expect.stringMatching(/^bobs\.pt — /)])
+  })
+  it('the selected model stays listed even when out of scope', () => {
+    const l = lay(base, 'other.pt')
+    expect(titles(l)).toContain('Bcells')
+    expect(l.hidden).toBe(1)
   })
 })
