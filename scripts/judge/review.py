@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Weekly judge — the owner's queue, in the terminal: decide the bugs, then work them.
 
-First the bugs a verify agent sent to the owner (`decide`): keep it open (a session follows the
-agent's recommendation), answer it in your own words (a session follows yours instead), or
+First the bugs a verify agent sent to the owner (`decide`): follow the agent's recommendation (the bug
+stays open), answer it in your own words (a session follows yours instead), or
 `wont_fix` to stop carrying it. Then the rest of the open work list: `fix now` starts an
 interactive Claude Code session where the owner starts sessions (the folder holding the checkouts),
 briefed on that bug and told to make its own worktree; the queue resumes when it exits. Every answer is an append-only event in `~/.cecelia-effectiveness/review.jsonl`; an undo is a
@@ -346,7 +346,7 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 # ── the terminal queue ─────────────────────────────────────────────────────────────────────────
 
 #: How each answer reads on the prompt and after it, and its colour.
-_LABELS = {"w": ("won't fix", VERMILLION), "o": ("keep open", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
+_LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
            "f": ("fix now", BLUE), "e": ("edit the rule", BLUE), "r": ("reject", VERMILLION)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
