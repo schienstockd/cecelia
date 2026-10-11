@@ -25,7 +25,7 @@ let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     include_string(Main, cut === nothing ? src : src[1:first(cut) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
-# viewer_api.jl the same way: `read_slab` / `slab_bytes` / `_sampled_specs` are the reader half, the
+# viewer_api.jl the same way: `read_slab` / `with_slab_bytes` / `_sampled_specs` are the reader half, the
 # two route functions below them need HTTP.Stream and the config layer.
 let src = read(joinpath(REPO, "api", "src", "viewer_api.jl"), String)
     cut = findfirst("# ── GET /api/viewer/meta", src)
@@ -63,9 +63,10 @@ for uid in ("VJy1Nx", "fXgbTl")
     slab   = timeit(() -> read_slab(zp, 5, 0), 5)
     # the permute + byte view on top of the read, so neither is assumed free
     vol, sx, sy, sz = read_slab(zp, 5, 0)
-    bytes  = timeit(() -> slab_bytes(vol), 5)
-    zst    = timeit(() -> encode(ZstdEncodeOptions(; compression_level = 1), slab_bytes(vol)), 3)
-    zsize  = length(encode(ZstdEncodeOptions(; compression_level = 1), slab_bytes(vol)))
+    zstd(b) = encode(ZstdEncodeOptions(; compression_level = 1), b)
+    bytes  = timeit(() -> with_slab_bytes(length, vol), 5)
+    zst    = timeit(() -> with_slab_bytes(zstd, vol), 3)
+    zsize  = with_slab_bytes(b -> length(zstd(b)), vol)
     nbytes = sx * sy * sz * sizeof(eltype(vol))
     specs  = timeit(() -> _sampled_specs(zp, nc), 3)
 
