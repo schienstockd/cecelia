@@ -5415,31 +5415,64 @@ onUnmounted(() => {
                 @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
       </div>
-      <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
-           a small image still benefits from a corner reference while zoomed in.
-           Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
-           takes all the pointer events (click/drag to reposition). -->
-      <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
-           :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
-        <canvas ref="overviewCanvas" class="vw-overview-tissue" />
-        <svg class="vw-overview-svg"
-             :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
-             preserveAspectRatio="none"
-             @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
-             @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
-          <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
-          <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
-                :width="Math.max(2, overviewRect.w * overviewSize.w)"
-                :height="Math.max(2, overviewRect.h * overviewSize.h)"
-                class="vw-overview-vp" />
-        </svg>
+      <!-- Top-right corner column: the navigation widget (overview in 2D, axes in 3D) and, under it,
+           the cache map toggled from the Advanced popover. A column so neither has to know the
+           other's height; the map stays off the overview because the overview is for navigating. -->
+      <div class="vw-corner-tr">
+        <!-- Overview minimap. Offered for any 2D plane view — not just whole-slide tile mode — because
+             a small image still benefits from a corner reference while zoomed in.
+             Canvas holds the tissue thumbnail (fetched once); SVG on top holds the viewport rect and
+             takes all the pointer events (click/drag to reposition). -->
+        <div v-if="overviewShown && mode === 'plane' && meta && overviewRect" class="vw-overview-wrap"
+             :style="{width: overviewSize.w + 'px', height: overviewSize.h + 'px'}">
+          <canvas ref="overviewCanvas" class="vw-overview-tissue" />
+          <svg class="vw-overview-svg"
+               :viewBox="`0 0 ${overviewSize.w} ${overviewSize.h}`"
+               preserveAspectRatio="none"
+               @pointerdown="onOverviewDown" @pointermove="onOverviewMove"
+               @pointerup="onOverviewUp" @pointercancel="onOverviewUp">
+            <rect x="0" y="0" :width="overviewSize.w" :height="overviewSize.h" class="vw-overview-bg" />
+            <rect :x="overviewRect.x * overviewSize.w" :y="overviewRect.y * overviewSize.h"
+                  :width="Math.max(2, overviewRect.w * overviewSize.w)"
+                  :height="Math.max(2, overviewRect.h * overviewSize.h)"
+                  class="vw-overview-vp" />
+          </svg>
+        </div>
+        <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
+             (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
+             projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
+             mip shader, so it cannot drift off the volume behind it. -->
+        <AxesGizmo v-if="gizmoShown && mode === 'volume'"
+                   :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
+        <div v-if="tileMapGrid && tilesMapShown" class="vw-tilemap vw-cachemap"
+             v-tooltip.bottom="'Tile cache — blue is loaded, amber is fetching'"
+             :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
+                       gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
+                       width: overviewSize.w + 'px', height: overviewSize.h + 'px' }">
+          <span v-for="c in tileMapCellsView" :key="c.key"
+                class="vw-tilemap-cell" :class="'is-' + c.state" />
+        </div>
+        <div v-if="brickMapGrid && bricksMapShown" class="vw-brickmapgrid vw-cachemap"
+             v-tooltip.bottom="'Brick cache — blue is loaded, amber is fetching'"
+             :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)`,
+                       width: Math.min(overviewSize.w, overviewSize.h * brickMapSlices.gridCols * brickMapSlices.displayNBx
+                         / (Math.ceil(brickMapSlices.slices.length / brickMapSlices.gridCols) * brickMapSlices.displayNBy)) + 'px' }">
+          <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
+            <div class="vw-tilemap vw-brickmap-slice"
+                 :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
+                           gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
+                           aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
+              <span v-for="c in s.cells" :key="c.key"
+                    class="vw-tilemap-cell" :class="'is-' + c.state" />
+            </div>
+            <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
+                 plane mode `nBz === 1` so a single "z0" label just added a row of vertical
+                 space under the grid with nothing to compare it against. -->
+            <span v-if="brickMapSlices.slices.length > 1"
+                  class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
+          </div>
+        </div>
       </div>
-      <!-- 3D orientation gizmo — volume mode only. Same top-right slot as the plane-mode overview
-           (they never both mount, so no positional overlap). Yaw/pitch straight off `cam`; the
-           projection lives in `utils/axesGizmo.ts` and is derived from the same basis as the
-           mip shader, so it cannot drift off the volume behind it. -->
-      <AxesGizmo v-if="gizmoShown && mode === 'volume'"
-                 :yaw="cam.yaw" :pitch="cam.pitch" :zoom="volumeZoom" />
     </div>
 
     <!-- The controls sidebar is a CollapsiblePanel — one handle folds it away, the strip on its
@@ -5538,6 +5571,31 @@ onUnmounted(() => {
           <div v-if="bricksEnabled && tierHasNoEffect" class="cc-muted-warn cc-fs-2xs vw-adv-note">
             No effect on this image
           </div>
+          <!-- 3D projection: Ortho (default) matches the offline movie renderer's parallel-ray MIP
+               and reads head-on; Persp adds foreshortening. Hidden in 2D because the plane view is
+               always orthographic (perspective would foreshorten a flat plane). Imaris analogue. -->
+          <div v-if="mode === 'volume'" class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Projection</span>
+            <ChipSelect
+              :options="PROJECTIONS" :model-value="settings.viewerVolumeProjection"
+              variant="segmented" aria-label="3D projection"
+              @update:model-value="v => (settings.viewerVolumeProjection = v as 'ortho' | 'persp')"
+            />
+          </div>
+          <!-- Cache maps: diagnostics for the renderer above, drawn under the View row. -->
+          <div v-if="tileMapGrid || brickMapGrid" class="cc-row cc-row-tight">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">Maps</span>
+            <button v-if="tileMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': tilesMapShown }]"
+                    @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
+                    v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
+              <i class="pi pi-tiles" />
+            </button>
+            <button v-if="brickMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': bricksMapShown }]"
+                    @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
+                    v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
+              <i class="pi pi-bricks" />
+            </button>
+          </div>
         </div>
       </TeleportPopover>
       <!-- Which VERSION is on screen — read-only chip. The picker lives in the main-window
@@ -5559,15 +5617,6 @@ onUnmounted(() => {
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
             @update:model-value="v => onModeChange(v as 'plane' | 'volume')"
           />
-          <!-- 3D projection: Ortho (default) matches the offline movie renderer's parallel-ray MIP
-               and reads head-on; Persp adds foreshortening. Hidden in 2D because the plane view is
-               always orthographic (perspective would foreshorten a flat plane). Imaris analogue. -->
-          <ChipSelect
-            v-if="mode === 'volume'"
-            :options="PROJECTIONS" :model-value="settings.viewerVolumeProjection"
-            variant="segmented" aria-label="3D projection"
-            @update:model-value="v => (settings.viewerVolumeProjection = v as 'ortho' | 'persp')"
-          />
           <!-- Mode indicator + toggle. Pencil = SELECT mode (click picks cells), arrows = PAN mode
                (click does nothing, drag pans/rotates). Same knob the pop-manager pencil writes so the
                user can stay in the viewer without reaching back to the module page. Icon shows the CURRENT mode, not the ACTION. -->
@@ -5580,17 +5629,31 @@ onUnmounted(() => {
                   aria-label="Toggle selection mode">
             <i :class="selectModeActive ? 'pi pi-pencil' : 'pi pi-arrows-alt'" />
           </button>
-          <!-- Advanced viewer popover — Renderer + brick quality tier. Grouped with the mode
-               toggle so all viewer-wide controls sit next to the 2D/3D chip. -->
+          <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
+          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
+                  @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
+                  v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
+            <i class="pi pi-overview" />
+          </button>
+          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
+                  @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
+                  v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
+            <i class="pi pi-axes" />
+          </button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
+                  v-tooltip.top="'Reset view — fit the image and face it square'" aria-label="Reset view">
+            <i class="pi pi-reset-view" />
+          </button>
+          <!-- Advanced viewer popover — renderer, cache, quality, 3D projection and the cache maps:
+               the set-once knobs, so the row above stays one line in both views. -->
+          <div class="vw-grow" />
           <button ref="advancedTrigger" class="cc-btn cc-btn-ghost cc-btn-icon"
                   aria-label="Advanced viewer settings"
-                  v-tooltip.top="'Renderer and brick quality'"
+                  v-tooltip.top="'Renderer, projection and cache maps'"
                   @click="advancedOpen = !advancedOpen">
             <i class="pi pi-sliders-h" />
           </button>
-          <!-- Shortcuts sits at the far right — a reference popover, not a live control, so it
-               reads as separate from the mode/renderer group. -->
-          <div class="vw-grow" />
+          <!-- Shortcuts sits at the far right — a reference popover, not a live control. -->
           <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
                   v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
             <i class="pi pi-question-circle" />
@@ -5598,59 +5661,58 @@ onUnmounted(() => {
         </div>
         <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
              with the ±n window on — a Plane slider that moves a 2n+1 box through the stack. 2D: the
-             Plane slider, and with the window on a top-down MIP of the planes around it. Caption row
-             (label + readout) above; sliders on their own rows so they span the sidebar.
+             Plane slider, and with the window on a top-down MIP of the planes around it. One row
+             each — label column, slider, readout — like Fps below; the ± icon at the end of the Z
+             row turns the window on, and its width row appears under it.
              Depth and ± commit on `@change`, not per pointer move: each reallocates every cached
              texture. -->
         <template v-if="meta.nZ > 1">
-          <template v-if="mode === 'volume' && !zWindowActive">
-            <div class="vw-cap">
-              <span class="cc-muted cc-fs-2xs">Depth</span>
-              <span class="vw-cap-end">
-                <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                        v-tooltip.left="'Back to the whole stack'" aria-label="Reset depth"
-                        @click="resetZRange"><i class="pi pi-undo" /></button>
-                <span class="cc-readout cc-fs-2xs">{{ zRange[0] }}–{{ zRange[1] }}</span>
-              </span>
-            </div>
-            <RangeSlider
-              v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
-              :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
-              @update:lo="v => (zRange = [v, zRange[1]])"
-              @update:hi="v => (zRange = [zRange[0], v])"
-              @change="reallocate()"
-            />
-          </template>
-          <template v-else>
-            <div class="vw-cap">
-              <span class="cc-muted cc-fs-2xs">Plane</span>
-              <span class="cc-readout cc-fs-2xs">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
-            </div>
+          <div class="cc-row cc-row-tight vw-slider-row">
+            <template v-if="mode === 'volume' && !zWindowActive">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Depth</span>
+              <RangeSlider
+                v-tooltip.top="'Planes to project — fewer is faster, in proportion'"
+                :lo="zRange[0]" :hi="zRange[1]" :min="0" :max="Math.max(meta.nZ - 1, 0)" :step="1"
+                @update:lo="v => (zRange = [v, zRange[1]])"
+                @update:hi="v => (zRange = [zRange[0], v])"
+                @change="reallocate()"
+              />
+              <button v-if="!zRangeFull" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                      v-tooltip.left="'Back to the whole stack'" aria-label="Reset depth"
+                      @click="resetZRange"><i class="pi pi-undo" /></button>
+              <span class="cc-readout cc-fs-2xs vw-readout-col">{{ zRange[0] }}–{{ zRange[1] }}</span>
+            </template>
+            <template v-else>
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Plane</span>
+              <input
+                type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
+                :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
+                v-tooltip.bottom="zWindowActive
+                  ? 'Centre plane of the window — changing it reloads the timecourse'
+                  : 'Which z plane to show — changing it reloads the timecourse'"
+              >
+              <span class="cc-readout cc-fs-2xs vw-readout-col">{{ zPlane }} / {{ meta.nZ - 1 }}</span>
+            </template>
+            <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': zWindowOn }]"
+                    :disabled="zWindowBlocked" :aria-pressed="zWindowOn"
+                    @click="setZWindow(!zWindowOn)"
+                    v-tooltip.left="zWindowBlocked
+                      ? 'Not available on a whole-slide plane'
+                      : 'Show the planes either side of the current one'"
+                    aria-label="Show the planes either side">
+              <span aria-hidden="true">±</span>
+            </button>
+          </div>
+          <div v-if="zWindowActive" class="cc-row cc-row-tight vw-slider-row">
+            <span class="cc-muted cc-fs-2xs cc-lbl-col">± planes</span>
             <input
-              type="range" class="vw-grow" :min="0" :max="meta.nZ - 1" :step="1"
-              :value="zPlane" @input="stepZ(Number(($event.target as HTMLInputElement).value))"
-              v-tooltip.bottom="zWindowActive
-                ? 'Centre plane of the window — changing it reloads the timecourse'
-                : 'Which z plane to show — changing it reloads the timecourse'"
-            >
-          </template>
-          <!-- Toggle, width slider and readout on ONE row — the slider only while the window is on. -->
-          <div class="cc-row cc-row-tight">
-            <CcToggle :model-value="zWindowOn" :disabled="zWindowBlocked"
-                      v-tooltip.top="zWindowBlocked
-                        ? 'Not available on a whole-slide plane'
-                        : 'Show the planes either side of the current one'"
-                      @update:model-value="setZWindow">
-              <span class="cc-muted cc-fs-2xs">± planes</span>
-            </CcToggle>
-            <input
-              v-if="zWindowActive"
               type="range" class="vw-grow" :min="1" :max="zWindowMax" :step="1"
               :value="zWindowDraft" @input="zWindowDraft = Number(($event.target as HTMLInputElement).value)"
               @change="commitZWindow(() => { zWindowHalf = zWindowDraft })"
               v-tooltip.bottom="'Planes either side — more is slower, in proportion'"
             >
-            <span v-if="zWindowActive" class="cc-readout cc-fs-2xs">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
+            <span class="cc-readout cc-fs-2xs vw-readout-col">±{{ zWindowDraft }} · {{ zLoaded[0] }}–{{ zLoaded[1] }}</span>
+            <span class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
           </div>
         </template>
         <!-- 3D pyramid level. Auto = the finest level that fits on flat, an SSE floor on brick
@@ -5692,21 +5754,30 @@ onUnmounted(() => {
         <!-- No time = no time controls. A still image has nothing to scrub, buffer or loop, and an
              `nT == 1` slider stuck at "0 / 0" looks broken. -->
         <template v-if="nT > 1">
-          <div class="vw-cap">
-            <span class="cc-eyebrow cc-fs-2xs">Timepoint</span>
-            <span class="cc-readout cc-fs-2xs">{{ t }} / {{ nT - 1 }}</span>
-          </div>
-          <div class="cc-row cc-row-tight">
-            <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
-                    v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'">
-              <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
-            </button>
+          <div class="cc-eyebrow cc-fs-2xs">Timepoint</div>
+          <!-- Transport (play + loop) fills the label column, so this slider starts where Plane and
+               Fps start; readout and the ±-column spacer end it the same way. -->
+          <div class="cc-row cc-row-tight vw-slider-row">
+            <span class="cc-lbl-col vw-transport">
+              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="togglePlay"
+                      v-tooltip.bottom="playing ? 'Pause' : 'Play through the timecourse'"
+                      :aria-label="playing ? 'Pause' : 'Play'">
+                <i class="pi" :class="playing ? 'pi-pause' : 'pi-play'" />
+              </button>
+              <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
+                      @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
+                      v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
+                <i class="pi pi-repeat" />
+              </button>
+            </span>
             <input
               type="range" class="vw-grow" :min="0" :max="nT - 1" :step="1"
               :value="t" @pointerdown="stopPlay()"
               @input="gotoT(Number(($event.target as HTMLInputElement).value))"
               v-tooltip.bottom="'Scrub the timecourse — cached timepoints are instant'"
             >
+            <span class="cc-readout cc-fs-2xs vw-readout-col">{{ t }} / {{ nT - 1 }}</span>
+            <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
           </div>
 
           <!-- Which timepoints are in VRAM: the answer to "will scrubbing there be instant". Bucketed,
@@ -5723,9 +5794,8 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <!-- View toggles as ONE icon row, same buttons as the View row at the top (ghost icon, `-on-tint` engaged), Reset view at its end; the residency
-             maps hang below the row when their toggle is on. Fps keeps its own row — it is a slider. -->
-        <div v-if="nT > 1" class="cc-row cc-row-tight">
+        <!-- Fps keeps its own row — it is a slider. -->
+        <div v-if="nT > 1" class="cc-row cc-row-tight vw-slider-row">
           <span class="cc-muted cc-fs-2xs cc-lbl-col"
                 :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }">Fps</span>
           <input
@@ -5737,74 +5807,13 @@ onUnmounted(() => {
           <!-- Amber readout is the throttled cue; carry the state tooltip HERE — the label /
                slider have the plain description so a hover on either still explains the
                control (`uiCopy.ts` requires an `<input>` to carry its own tooltip). -->
-          <span class="cc-readout cc-fs-2xs vw-fps-val"
+          <span class="cc-readout cc-fs-2xs vw-readout-col"
                 :class="{ 'vw-fps-warn': playing && waitingFor >= 0 }"
                 v-tooltip.left="playing && waitingFor >= 0
                   ? 'Playback throttled — fetches are behind the requested Fps'
                   : 'Requested playback rate'">{{ settings.viewerFps }}</span>
+          <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
         </div>
-        <div class="cc-row cc-row-tight">
-          <button v-if="nT > 1" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerLoop }]"
-                  @click="settings.viewerLoop = !settings.viewerLoop" :aria-pressed="settings.viewerLoop"
-                  v-tooltip.top="'Loop — restart from the first timepoint at the end'" aria-label="Loop playback">
-            <i class="pi pi-repeat" />
-          </button>
-          <!-- Overview minimap in 2D; in 3D a rotated MIP has no "where am I", so the corner shows axes. -->
-          <button v-if="mode === 'plane'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': overviewShown }]"
-                  @click="overviewShown = !overviewShown" :aria-pressed="overviewShown"
-                  v-tooltip.top="'Overview in the corner — click it to jump'" aria-label="Show the overview minimap">
-            <i class="pi pi-overview" />
-          </button>
-          <button v-if="mode === 'volume'" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': gizmoShown }]"
-                  @click="gizmoShown = !gizmoShown" :aria-pressed="gizmoShown"
-                  v-tooltip.top="'XYZ axes in the corner'" aria-label="Show the orientation gizmo">
-            <i class="pi pi-axes" />
-          </button>
-          <button v-if="tileMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': tilesMapShown }]"
-                  @click="tilesMapShown = !tilesMapShown" :aria-pressed="tilesMapShown"
-                  v-tooltip.top="'Tile cache map — blue is loaded, amber is fetching'" aria-label="Show the tile cache map">
-            <i class="pi pi-tiles" />
-          </button>
-          <button v-if="brickMapGrid" :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': bricksMapShown }]"
-                  @click="bricksMapShown = !bricksMapShown" :aria-pressed="bricksMapShown"
-                  v-tooltip.top="'Brick cache map — blue is loaded, amber is fetching'" aria-label="Show the brick cache map">
-            <i class="pi pi-bricks" />
-          </button>
-          <span class="vw-grow" aria-hidden="true" />
-          <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="resetView"
-                  v-tooltip.left="'Reset view — fit the image and face it square'" aria-label="Reset view">
-            <i class="pi pi-reset-view" />
-          </button>
-        </div>
-        <!-- Residency maps: one cell per tile (2D) / brick (3D, one grid per Z slice). -->
-        <div v-if="tileMapGrid && tilesMapShown" class="vw-tilemap vw-nested-map"
-             :style="{ gridTemplateColumns: `repeat(${tileMapGrid.nTx}, 1fr)`,
-                       gridTemplateRows: `repeat(${tileMapGrid.nTy}, 1fr)`,
-                       aspectRatio: `${tileMapGrid.nTx} / ${tileMapGrid.nTy}`,
-                       width: `${3 * Math.min(1, tileMapGrid.nTx / tileMapGrid.nTy)}rem` }">
-          <span v-for="c in tileMapCellsView" :key="c.key"
-                class="vw-tilemap-cell" :class="'is-' + c.state" />
-        </div>
-        <div v-if="brickMapGrid && bricksMapShown" class="vw-brickmapgrid vw-nested-map"
-             :style="{ gridTemplateColumns: `repeat(${brickMapSlices.gridCols}, 1fr)`,
-                       width: `${3 * Math.min(1, brickMapSlices.gridCols * brickMapSlices.displayNBx
-                         / (Math.ceil(brickMapSlices.slices.length / brickMapSlices.gridCols) * brickMapSlices.displayNBy))}rem` }">
-          <div v-for="s in brickMapSlices.slices" :key="s.z" class="vw-brickmap-col">
-            <div class="vw-tilemap vw-brickmap-slice"
-                 :style="{ gridTemplateColumns: `repeat(${brickMapSlices.displayNBx}, 1fr)`,
-                           gridTemplateRows: `repeat(${brickMapSlices.displayNBy}, 1fr)`,
-                           aspectRatio: `${brickMapSlices.displayNBx} / ${brickMapSlices.displayNBy}` }">
-              <span v-for="c in s.cells" :key="c.key"
-                    class="vw-tilemap-cell" :class="'is-' + c.state" />
-            </div>
-            <!-- Only meaningful when there are MULTIPLE Z slices to disambiguate — in 2D
-                 plane mode `nBz === 1` so a single "z0" label just added a row of vertical
-                 space under the grid with nothing to compare it against. -->
-            <span v-if="brickMapSlices.slices.length > 1"
-                  class="cc-muted cc-fs-3xs vw-brickmap-zlabel">z{{ s.z }}</span>
-          </div>
-        </div>
-
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
              below: scale bar + timestamp are burnt into the render, they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
@@ -6498,8 +6507,6 @@ onUnmounted(() => {
    reads the CURRENT effect first; the other column stays legible as a reference for the swap. */
 /* Caption row above a full-width slider — label on left, readout on right. Compact so it
    reads as a slider title, not another row of controls. */
-.vw-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.4rem; }
-.vw-cap-end { display: inline-flex; align-items: center; gap: 0.25rem; }
 /* Resolved-value caption under a control in the Advanced popover: sits just under the chip, one
    line, "Using: X" — : an Auto option must show what was picked. */
 .vw-adv-using { margin: -0.15rem 0 0.15rem calc(var(--cc-lbl-col) + 0.4rem); }
@@ -6536,8 +6543,14 @@ onUnmounted(() => {
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
    translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
    navigation, not a select. */
-.vw-overview-wrap {
+.vw-corner-tr {
   position: absolute; top: 0.75rem; right: 0.75rem;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem;
+  pointer-events: none;
+}
+.vw-corner-tr > * { pointer-events: auto; }
+.vw-overview-wrap {
+  position: relative;
   background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); overflow: hidden;
   cursor: crosshair; touch-action: none;
@@ -6699,13 +6712,22 @@ onUnmounted(() => {
 .vw-brickmap-col { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
 .vw-brickmap-slice { min-width: 0; width: 100%; }
 .vw-brickmap-zlabel { line-height: 1; }
-/* Residency maps under the view icon row: the whole map fits a 3rem box. The tile map's width is set
-   inline from its aspect (`3rem × min(1, nTx/nTy)`; the brick grid's from all its slices) so a tall map shrinks in width rather than
-   stretching its cells; `align-self` stops the column's stretch from overriding it. */
-.vw-nested-map { max-width: 3rem; align-self: flex-start; }
-/* Compact Fps readout — same size language as `.cc-readout` but with a fixed slot so the digits
-   don't jitter the slider on every playback tick. */
-.vw-fps-val { min-width: 1.4rem; text-align: right; flex: none; }
+/* Cache map in the corner column: same dark panel and same box as the overview — the tile map covers
+   the same image extent, so it takes the overview's exact size; the brick grid (all its slices) fits
+   inside that box by its own aspect. `flex: none` so `.vw-tilemap`'s `flex: 1` cannot stretch it
+   down the column. */
+.vw-cachemap {
+  flex: none;
+  background: rgba(0, 0, 0, 0.78); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-xs); padding: 2px;
+}
+/* Slider rows (Depth/Plane, ± planes, Timepoint, Fps): label column, slider, readout column, then
+   the ± button's square (or a spacer the same size) — so every slider starts and ends on one x, and
+   the fixed readout slot stops digits jittering the slider on every playback tick. */
+.vw-slider-row { flex-wrap: nowrap; }
+.vw-readout-col { min-width: 2.6rem; text-align: right; flex: none; white-space: nowrap; }
+.vw-icon-spacer { display: inline-block; flex: none; }
+.vw-transport { display: inline-flex; align-items: center; gap: 0.15rem; }
 /* Debug panel readout — two-column grid so labels and values line up without a table. Flush
    with the controls above (no horizontal inset), consistent vertical rhythm. `align-items:
    center` keeps the value baselines centered against the taller label text — grid's default
