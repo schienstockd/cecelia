@@ -735,7 +735,7 @@ const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.v
 /** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
  *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a shown track-drawable
  *  pop (`isTrack` OR `hasTracks` — MULTI_POP_TRACKING_PLAN.md Decision 2), its ribbon eye on. The
- *  ribbons and the capture snapshot both ask here. */
+ *  ribbons ask here; the capture snapshot reads the sources they built (`trackSources`). */
 function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
   const su = setUid.value
   if (!su || !settings.getShowGatedTracks(su)) return false
@@ -4795,7 +4795,7 @@ interface ViewerCapture {
   const ext = overlayExtent.value
   const layers = captureOverlayLayers({
     popLayers: popLayers.value.map(l => ({ layer: l, pops: l.payload.pops })),
-    pointDrawn: (l, p) => popDrawn(l, p.path), ribbonDrawn: popRibbonDrawn,
+    pointDrawn: (l, p) => popDrawn(l, p.path),
     trackVns: trackPayloads.value.keys(),
     trackclust: trackclustPayloads.value.entries(),
     drawn: new Map(trackSources.value.map(s => [s.vn, s.drawn])),   // source key → tails' colour

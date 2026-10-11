@@ -62,9 +62,9 @@ describe('captureOverlayLayers', () => {
     ({ layer: { vn, popType }, pops: paths.map(path => ({ path })) })
   const capture = (drawn: [string, string | null][]) => captureOverlayLayers<L, P>({
     popLayers: [layer('A', 'flow', '/tcells'), layer('A', 'clust', '/0')],
-    pointDrawn: () => true, ribbonDrawn: () => true,
+    pointDrawn: () => true,
     trackVns: ['A'],
-    trackclust: [['A', { pops: [{ path: '/meandering', show: true }, { path: '/off', show: false }] }]],
+    trackclust: [['A', { pops: [{ path: '/meandering' }, { path: '/off' }] }]],
     drawn: new Map(drawn), labelName: 'A',
   })
 
@@ -85,10 +85,15 @@ describe('captureOverlayLayers', () => {
     // round-trips through the legend's parser with the tails' colour
     expect(parseOverlays(layers).find(o => o.isTrack && o.path === '/tcells')?.colour).toBe('#00ff00')
   })
-  it('leaves colour off a ribbon with no track source, and skips an undrawn whole-segmentation track', () => {
+  it('skips every ribbon that drew no tails — cell-track, whole-segmentation, trackclust', () => {
+    // Shown but empty after the pop / highlight filters, or stood down for trackclust: no track source.
     const layers = capture([])
-    expect(layers['(track) (A) Tracks /tcells']).toEqual({ visible: true })
+    expect(layers['(track) (A) Tracks /tcells']).toBeUndefined()
+    expect(layers['(track) (A) Tracks /0']).toBeUndefined()
     expect(layers['(track) (A) Tracks /_tracked']).toBeUndefined()
+    expect(layers['(trackclust) (A) Tracks /meandering']).toBeUndefined()
+    expect(layers['(flow) (A) /tcells']).toEqual({ visible: true })     // points don't depend on tails
+    expect(parseOverlays(layers).some(o => o.isTrack)).toBe(false)
   })
 })
 
