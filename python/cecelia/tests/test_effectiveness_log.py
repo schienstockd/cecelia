@@ -15,10 +15,15 @@ downstream aggregates:
 """
 from __future__ import annotations
 
+import io
 import json
+import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from cecelia.effectiveness import (
     EVENT_TYPES,
@@ -136,6 +141,42 @@ class AppendEventTest(unittest.TestCase):
     def test_read_events_on_missing_file_returns_empty(self):
         missing = pathlib.Path(self._tmp.name) / "does-not-exist.jsonl"
         self.assertEqual(list(read_events(missing)), [])
+
+
+class LogEventCliTest(unittest.TestCase):
+    """`scripts/log_event.py` stores `--commit` as the full SHA: the commit hook's `_same_change`
+    matches a hand-logged `_run` / `_finding` row against the full HEAD SHA by string."""
+
+    _REPO = pathlib.Path(__file__).resolve().parents[3]
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        sys.path.insert(0, str(self._REPO / "scripts"))
+        self.addCleanup(sys.path.remove, str(self._REPO / "scripts"))
+        import log_event
+        self.log_event = log_event
+
+    def _log(self, *argv: str, stdin: str | None = None) -> dict:
+        with mock.patch.dict(os.environ, {"CECELIA_EFFECTIVENESS_LOG": str(self.log_path)}), mock.patch.object(sys, "argv", ["log_event.py", *argv]), \
+             mock.patch.object(sys, "stdin", io.StringIO(stdin or "")), \
+             mock.patch("builtins.print"):
+            self.assertEqual(self.log_event.main(), 0)
+        return list(read_events(self.log_path))[-1]
+
+    def test_short_commit_is_stored_full(self):
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(self._REPO), capture_output=True,
+                              text=True, encoding="utf-8").stdout.strip()
+        if not head:
+            self.skipTest("not a git checkout")
+        self.assertEqual(self._log("--event", "fanout_audit_run", "--commit", head[:8])["commit"], head)
+        stdin = json.dumps({"event": "fanout_audit_run", "commit": head[:8]})
+        self.assertEqual(self._log("--stdin", stdin=stdin)["commit"], head)
+
+    def test_unresolvable_commit_is_kept(self):
+        self.assertEqual(self._log("--event", "fanout_audit_run", "--commit", "zzzz")["commit"], "zzzz")
+        self.assertIsNone(self._log("--event", "fanout_audit_run")["commit"])
 
 
 class RollupTest(unittest.TestCase):

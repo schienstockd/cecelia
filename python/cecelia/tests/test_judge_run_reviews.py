@@ -75,6 +75,16 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(len(rows), 2)
         self.assertFalse(log.exists())
 
+    def test_a_short_code_sha_is_logged_full(self):
+        import subprocess
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO), capture_output=True, text=True,
+                              encoding="utf-8").stdout.strip()
+        if not head:
+            self.skipTest("not a git checkout")
+        found = [{**v, "commit": head[:8]} for v in self.found]
+        rows = self.r.log_new(found, [], pass_ts=PASS_TS, log_path=self.log)
+        self.assertEqual({r["commit"] for r in rows}, {head})
+
     def test_agent_causes_are_listed_per_guide_and_a_two_run_guide_is_flagged(self):
         causes = {c["guide"]: c for c in self.r.agent_causes(self.found)}
         self.assertEqual(set(causes), {"intravital", None})

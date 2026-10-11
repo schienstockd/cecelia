@@ -22,9 +22,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import sys
 
 from cecelia.effectiveness import UnknownEventError, UnknownOutcomeError, append_event
+from cecelia.effectiveness.git_context import full_sha
+
+_REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
 def _parse_args() -> argparse.Namespace:
@@ -34,7 +38,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--session", help="Claude Code session id; defaults to $CLAUDE_CODE_SESSION_ID or 'unknown'.")
     p.add_argument("--source", default="live", help="'live' (default) or 'retrospective_<tag>'.")
     p.add_argument("--pr", help="PR reference, e.g. '#1240'.")
-    p.add_argument("--commit", help="Commit SHA (short).")
+    p.add_argument("--commit", help="Commit SHA or ref; stored as the full SHA "
+                                    "(the commit hook matches rows by full SHA).")
     p.add_argument("--branch", help="Git branch name — lets the rollup join to a PR via "
                                     "`gh pr list --head <branch>` when --pr is null. Especially "
                                     "worth setting on retrospective/backfill rows.")
@@ -81,7 +86,7 @@ def main() -> int:
             session=session,
             source=source,
             pr=pr,
-            commit=commit,
+            commit=full_sha(commit, cwd=str(_REPO)),
             branch=branch,
         )
     except (UnknownEventError, UnknownOutcomeError) as e:
