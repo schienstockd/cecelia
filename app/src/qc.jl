@@ -580,8 +580,8 @@ What was measured about an image that bears on Cleanup, with no verdict attached
   run measured) and `maxDriftUm` (`nothing` when the image has no physical pixel size).
 
 No cutoff and no "do this": the task text (`useWhen` / `notWhen`) says what each method needs, the
-reader matches the two. The GUI's Cleanup page and the MCP's `get_image_info` both read this, from
-the image payload — there is no separate agent tool (Decision 5). Cheap enough for a payload: the
+reader matches the two. The MCP's `get_image_info` reads this from the image payload — there is no
+separate agent tool (Decision 5) and no GUI surface. Cheap enough for a payload: the
 meta is in memory and the drift numbers are one small sidecar read per drift run.
 """
 function img_cleanup_facts(img::CciaImage)::Dict{String,Any}
