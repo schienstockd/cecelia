@@ -117,9 +117,13 @@ export interface TileRenderer {
    * If the atlas is full, evicts the tile ranked farthest from the current viewport by
    * `tileEvictions` — the RANKER is external, so this only enforces "reuse an entry named in `evict`
    * before allocating a new slot". Never evicts a tile named in `keep`.
+   *
+   * `sourceId` is the `setImage` source the bytes were FETCHED for; a tile whose store has since been
+   * swapped is refused (`-1`) rather than installed under the new store's key.
    */
   uploadTile(key: TileKey, channelBytes: ArrayBuffer[],
-             keep: ReadonlySet<string>, evict: readonly string[]): Promise<number>
+             keep: ReadonlySet<string>, evict: readonly string[],
+             sourceId?: string): Promise<number>
   hasTile(key: TileKey): boolean
   getSlot(key: TileKey): number
   /** Touch — bump this tile in the LRU order without a re-upload. */
@@ -315,6 +319,12 @@ export async function createTileRenderer(
   let labAllocFailed = false
   let labelSrcBySlot: string[] = []
   let labelSource = ''
+  /** Bumped whenever the tile map is emptied — the atlas dropped, or the store swapped under a kept
+   *  atlas. An `uploadTile` that wakes to a newer value must not register its tile: its bytes went to
+   *  a destroyed texture or describe the old store, and once registered `hasTile` says "cached" and
+   *  the pump never refetches it. Separate from `allocGen`, which a store swap must NOT bump — that
+   *  would discard a pending allocation the new store still needs. */
+  let tileGen = 0
 
   /** keyStr → { entry (slot, lru...) }. Ordering is on `lastUsed` so `residentTiles()` can hand a
    *  ranker-ready list. */
@@ -393,6 +403,7 @@ export async function createTileRenderer(
 
   function dropAtlas() {
     allocGen++                    // a pending allocation is for the geometry being dropped
+    tileGen++                     // and an upload in flight is for the atlas being dropped
     if (!dead) atlas?.destroy()
     atlas = null
     if (!dead) labAtlas?.destroy()
@@ -491,6 +502,7 @@ export async function createTileRenderer(
       // fresh fetch of the same coord uploads new pixels; keep the atlas texture so no black flash.
       const sourceChanged = reuse && atlasSourceId !== sourceId
       if (sourceChanged) {
+        tileGen++
         tiles.clear()
         labelSrcBySlot = []
         freeSlots.length = 0
@@ -532,9 +544,13 @@ export async function createTileRenderer(
       void p.finally(() => { if (pendingAlloc === p) pendingAlloc = null })
     },
 
-    async uploadTile(key, channelBytes, keep, evict) {
+    async uploadTile(key, channelBytes, keep, evict, sourceId) {
+      const gen = tileGen
+      const stale = () => gen !== tileGen || (sourceId !== undefined && sourceId !== atlasSourceId)
+      if (stale()) return -1                      // fetched for a store that has since been swapped
       if (pendingAlloc) await pendingAlloc
-      if (!usable() || !atlas) return -1
+      // A `setImage` during the wait may have dropped the atlas this upload was waiting for.
+      if (!usable() || !atlas || stale()) return -1
       const kStr = tileKeyStr(key)
       // Re-upload just refreshes the LRU position; the slot stays. A tile the pump re-fetched (level
       // moved back after a swap, for example) does not need a second slot.
@@ -589,7 +605,7 @@ export async function createTileRenderer(
         )
       }
       await device.queue.onSubmittedWorkDone()
-      if (!usable()) return -1
+      if (!usable() || stale()) return -1
       tiles.set(kStr, {
         key: kStr, t: key.t, z: key.z, level: key.level, tx: key.tx, ty: key.ty,
         lastUsed: ++touchCounter, slot,

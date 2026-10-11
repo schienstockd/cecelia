@@ -2193,8 +2193,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     vlog('error', 'Viewer timepoint ' + tp + ': ' + error.value)
     return false
   }).finally(() => {
-    inflight.delete(tp)
-    aborts.delete(tp)
+    // Only our own entries: after a `reallocate` the same `tp` may already be refetching for the new
+    // allocation, and dropping ITS abort controller leaves the next reallocate unable to stop it.
+    if (inflight.get(tp) === job) inflight.delete(tp)
+    if (aborts.get(tp) === ac) aborts.delete(tp)
     syncCacheState()
   })
 
@@ -2398,6 +2400,10 @@ function missingTiles(): TileKey[] {
  *  round cannot take a tile that is either on screen or being drawn NEXT. Both, because during a pan
  *  those two disagree — the same lesson `lruEvictions` learned in the timecourse work. Current-t only
  *  by design (Phase F, decision 4 — no cross-t halo in MVP). */
+/** The store the tile atlas is filled from — see `tileRenderer.setImage`'s `sourceId`. ONE
+ *  derivation, because a tile fetch snapshots it to prove its bytes still belong to the atlas. */
+const tileSourceId = () => `${imageUid}/${valueName.value}/${cacheClearRev.value}`
+
 function evictionKeepSet(): Set<string> {
   return new Set(viewportTileKeys().map(tileKeyStr))
 }
@@ -2427,6 +2433,9 @@ async function fetchTile(key: TileKey): Promise<boolean> {
   if (existing) return false                 // already in flight; the pump joins rather than races
   const ac = new AbortController()
   tileAborts.set(kStr, ac)
+  // The store these bytes come from — a version switch or a same-store rewrite during the fetch makes
+  // them another store's pixels, and the atlas refuses them rather than caching them under the new one.
+  const sourceId = tileSourceId()
   // Sync AT fetch start (not just at fetch end) so the mini tile-map's amber cells appear the moment
   // a request goes out, not after it lands. Cheap: one shallow copy of a bounded key set.
   syncTileCacheState()
@@ -2491,7 +2500,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
       tr.residentTiles(), Math.max(1, tr.slotCapacity() - 1), keep,
       { t: key.t, z: key.z, level: key.level, tx: centre.tx, ty: centre.ty },
     )
-    const slot = await tr.uploadTile(key, bufs, keep, evictions)
+    const slot = await tr.uploadTile(key, bufs, keep, evictions, sourceId)
     return slot >= 0
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') return false
@@ -2499,7 +2508,7 @@ async function fetchTile(key: TileKey): Promise<boolean> {
     vlog('error', 'Viewer tile ' + kStr + ': ' + error.value)
     return false
   } finally {
-    tileAborts.delete(kStr)
+    if (tileAborts.get(kStr) === ac) tileAborts.delete(kStr)   // ours only — see `fetchTimepoint`
     syncTileCacheState()
   }
 }
@@ -4011,8 +4020,7 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     // change. Without it, a fresh fetch key-collides with tiles decoded from the previous store and
     // the viewer serves old pixels. See `tileRenderer.setImage` docs.
     tr.setImage(m, slabLevel.value, effectiveCacheBytes.value,
-                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch,
-                `${imageUid}/${valueName.value}/${cacheClearRev.value}`)
+                lvl?.chunkX ?? m.nX, lvl?.chunkY ?? m.nY, nch, tileSourceId())
     tr.setChannels(m.channels)
     tr.resize()
     loadedLevel.value = slabLevel.value

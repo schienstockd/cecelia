@@ -811,7 +811,9 @@ export async function createBrickVolumeRenderer(
       .then(payload => {
         // The atlas or the level could have changed while the request was in flight — drop the
         // bytes rather than writing them into a slot that no longer represents this brick.
-        inflight.delete(key)
+        // Only our own entry: after a source/level switch cleared the map, a new fetch for the same
+        // key may own it, and dropping that one leaves the next switch unable to abort it.
+        if (inflight.get(key) === ac) inflight.delete(key)
         // Nudge the frame pump BEFORE any early-return path. `tickScheduler` runs inside `draw`,
         // and `draw` only fires on `frame.redraw`. Every early-return here (bad payload,
         // destroyed, level mismatch) skips the success-path `needsRedraw` below — so if all the
@@ -950,7 +952,7 @@ export async function createBrickVolumeRenderer(
         needsRedraw?.()
       })
       .catch(() => {
-        inflight.delete(key)
+        if (inflight.get(key) === ac) inflight.delete(key)   // ours only — see `.then` above
         // Same reason as the `.then()` early-return needsRedraw: without it, a burst of failed
         // fetches leaves the frame pump quiescent and `tickScheduler` never re-issues them.
         needsRedraw?.()

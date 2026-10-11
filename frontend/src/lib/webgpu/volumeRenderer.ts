@@ -537,6 +537,9 @@ export async function createVolumeRenderer(
   /** Monotonically-incrementing generation counter, bumped by `setZPlane`. Matches slot
    *  stamps to name freshness without a per-slot boolean that would need resetting. */
   let planeVersion = 0
+  /** Bumped by every `setImage`; an `uploadFrame` that wakes to a newer generation throws its bytes
+   *  away instead of installing them. Same discipline as the brick renderer's `allocGen`. */
+  let allocGen = 0
   /** LRU order, least recently used FIRST. */
   let order: number[] = []
   let bindGroup: GPUBindGroup | null = null
@@ -687,6 +690,7 @@ export async function createVolumeRenderer(
       // budget, so the read-ahead thought a frame was cheap and queued dozens of 326 MB requests, and
       // the server's read time went from 0.5 s to 3.7 s under its own contention.
       dropAll()
+      allocGen++
       bindGroup = null
       meta = m
       depth = Math.max(1, Math.min(zd, m.nZ))
@@ -732,6 +736,14 @@ export async function createVolumeRenderer(
       // write. Snapshot everything derived from geometry too, so no closure read after an await can
       // pick up a stale value.
       const nx = renderNX, ny = renderNY, dp = depth
+      // …and WHICH allocation these bytes were fetched for. A `setImage` at the SAME dims still makes
+      // them stale: the caller reallocated because what a frame holds changed (a mask switched on, the
+      // live store swapped for the registered one). Installed anyway, the slot reads as cached, the
+      // caller never refetches it, and the frame on screen keeps the old allocation's content — a
+      // segmentation ticked on with nothing drawn. The plane is snapshotted for the same reason:
+      // stamped after the awaits, a `setZPlane` mid-upload would label the old plane's bytes current.
+      const gen = allocGen, plane = planeVersion
+      const superseded = () => gen !== allocGen
       // Channels stacked along z in one texture: one binding, one loop in the shader.
       //
       // ALLOCATED INSIDE AN OOM ERROR SCOPE, which is the whole reason a too-large cache can no longer
@@ -779,10 +791,10 @@ export async function createVolumeRenderer(
         return
       }
       if (!usable()) return
-      // If the renderer moved to a new geometry across the OOM-scope await (a level swap raced the
-      // upload — `setImage` already ran `dropAll`), the fetched bytes describe the OLD level and the
-      // slot would render at the wrong resolution. Destroy and abandon; the caller will refetch.
-      if (nx !== renderNX || ny !== renderNY || dp !== depth) {
+      // If the renderer was reallocated across the OOM-scope await (a level swap or a mask change
+      // raced the upload — `setImage` already ran `dropAll`), the fetched bytes describe the OLD
+      // allocation. Destroy and abandon; the caller will refetch.
+      if (superseded()) {
         if (!dead) { texture.destroy(); labelTexture?.destroy() }
         return
       }
@@ -808,9 +820,9 @@ export async function createVolumeRenderer(
       await device.queue.onSubmittedWorkDone()
       // The device can go during that await, and everything below allocates against it.
       if (!usable()) { if (!dead) { texture.destroy(); labelTexture?.destroy() } return }
-      // And again — the geometry could have moved while we waited for the queue. Registering a slot
-      // whose textures don't match the current uniforms puts a wrong-resolution frame on screen.
-      if (nx !== renderNX || ny !== renderNY || dp !== depth) {
+      // And again — the renderer could have been reallocated while we waited for the queue.
+      // Registering the slot would put the old allocation's frame on screen as if it were current.
+      if (superseded()) {
         if (!dead) { texture.destroy(); labelTexture?.destroy() }
         return
       }
@@ -827,7 +839,7 @@ export async function createVolumeRenderer(
         ],
       })
       dropSlot(t)                                    // a re-upload replaces, never leaks
-      slots.set(t, { texture, labelTexture, bindGroup: bg, planeVersion })
+      slots.set(t, { texture, labelTexture, bindGroup: bg, planeVersion: plane })
       touch(t)
       for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
     },
