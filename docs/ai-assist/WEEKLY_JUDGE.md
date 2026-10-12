@@ -285,13 +285,14 @@ it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in thr
   (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
   their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
   does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
-  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and the fan-out ones by week
+  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and per reviewer by week
   raised. Numbers only.
 - **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Five panels drawn like a paper
   figure (lettered, y axes with round ticks): changes reviewed and PRs merged; findings per 100
-  changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts, one
-  panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
-  row). Partial and low-session weeks are hollow points on dashed segments; the week still running
+  changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts as
+  shares of each week's judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
+  row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
+  gets no rate (leading ones aren't drawn); the week still running
   is left out of the picture. Okabe-Ito swatches from
   `share/console_palette.json`, mid-grey ink on a transparent background so one file reads on
   GitHub's light and dark themes; the numbers are in its `<desc>` too. Every label is fixed text or a

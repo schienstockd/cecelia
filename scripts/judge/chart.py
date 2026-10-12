@@ -67,7 +67,8 @@ REF = f"refs/heads/{BRANCH}"
 SVG_NAME, DATA_NAME = "effectiveness.svg", "effectiveness.json"
 #: Weeks shown, newest last. Older weeks stay in the JSON beside the SVG.
 MAX_WEEKS = 12
-#: A week with fewer sessions than this is drawn hollow, like a partial one.
+#: A week with fewer sessions than this is drawn hollow, like a partial one, and gets no rate: a
+#: handful of findings makes any percentage.
 LOW_SESSIONS = 10
 #: The reviewer prompts (the rubric) and the rules they check against: an edit is noted on its week.
 PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md")
@@ -311,12 +312,12 @@ def _total(c: dict) -> int:
 
 def _per_100(w: dict, r: str) -> float | None:
     n = _total(w["by_reviewer"][r])
-    return 100 * n / w["changes"] if w["changes"] and n else None
+    return 100 * n / w["changes"] if w["changes"] and n and w["sessions"] >= LOW_SESSIONS else None
 
 
 def _fixed(w: dict, r: str) -> float | None:
     c = w["by_reviewer"][r]
-    return 100 * c["fixed_pre_commit"] / _total(c) if _total(c) else None
+    return 100 * c["fixed_pre_commit"] / _total(c) if _total(c) and w["sessions"] >= LOW_SESSIONS else None
 
 
 def thin(w: dict) -> bool:
@@ -340,10 +341,11 @@ def _ticks(peak: float, *, percent: bool = False) -> list[float]:
 
 
 def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel: str, weeks: list[dict],
-           series: list[tuple[str, str, list, list]], percent: bool = False, xlabel: bool = False) -> None:
+           series: list[tuple[str, str, list, list]], percent: bool = False, xlabel: bool = False,
+           n_per_week: list[int | None] | None = None) -> None:
     """One panel at (x, y), drawn like a paper figure: a letter, a title, a legend, a y axis with
     round ticks and its label, x ticks per week. `series` is (legend name, colour, value per week
-    (None = no point), hollow per week)."""
+    (None = no point), hollow per week). `n_per_week` prints each week's n under its date."""
     top, bot = y + 40, y + 170
     ax, x1 = x + 58, x + w - 10
     add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
@@ -379,8 +381,11 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
         if every or i in (0, n - 1):
             add(f'<text x="{px:.1f}" y="{bot + 17:.1f}" font-size="11" text-anchor="middle">'
                 f'{esc(_fmt_day(wk["week"]))}</text>')
+        if n_per_week and n_per_week[i] is not None:
+            add(f'<text x="{px:.1f}" y="{bot + 30:.1f}" font-size="10" text-anchor="middle">n = {n_per_week[i]}</text>')
     if xlabel:
-        add(f'<text x="{(ax + x1) / 2:.1f}" y="{bot + 35:.1f}" font-size="11" text-anchor="middle">Week starting</text>')
+        below = bot + (48 if n_per_week else 35)
+        add(f'<text x="{(ax + x1) / 2:.1f}" y="{below:.1f}" font-size="11" text-anchor="middle">Week starting</text>')
     for _, colour, vals, hollow in series:
         for i in range(n - 1):
             if vals[i] is None or vals[i + 1] is None:
@@ -400,10 +405,14 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
 def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     """The chart. Same `data`, same bytes: no clock, no random ids, fixed number formatting."""
     pal = palette or load_hex()
-    W, H = 960, 560
+    W, H = 960, 590
     left = 20
-    # a week still running is in the JSON, not the picture: a day or two of it reads as a collapse
-    weeks = [w for w in data["weeks"] if not w.get("ongoing")][-MAX_WEEKS:]
+    # a week still running is in the JSON, not the picture: a day or two of it reads as a collapse.
+    # Nor are the thin weeks before logging got going: they'd only stretch the axis.
+    weeks = [w for w in data["weeks"] if not w.get("ongoing")]
+    while weeks[1:] and weeks[0]["sessions"] < LOW_SESSIONS:
+        weeks = weeks[1:]
+    weeks = weeks[-MAX_WEEKS:]
     out: list[str] = []
     add = out.append
     title = "Agent pre-commit reviews, per week"
@@ -450,13 +459,17 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
         judged = j["by_week"].get(r, {})
         # a week the judge's pass fell inside is only partly judged
         late = [h or _ends(w) >= j["date"] for h, w in zip(hollow, weeks)]
+        # shares, not counts: a week's count says how much backlog was swept, not how good it was;
+        # no point for a week the judge has nothing from (not swept, or not yet), nor, like every
+        # rate here, for one under LOW_SESSIONS
+        n = [sum(judged[w["week"]].values()) or None
+             if w["week"] in judged and w["sessions"] >= LOW_SESSIONS else None for w in weeks]
         _panel(add, x=x, y=row[1], w=third, letter="de"[k],
                title=f"Judge: {name.lower()} ({_fmt_day(j['date'])})",
-               ylabel="Unfixed notes (n)", weeks=weeks, xlabel=True,
+               ylabel="Share of unfixed notes (%)", weeks=weeks, xlabel=True, percent=True, n_per_week=n,
                series=[(_judge_name(r, line), pal[swatch],
-                        # no point for a week the judge has nothing from: not swept, or not yet
-                        [sum(judged[w["week"]][s] for s in group) if w["week"] in judged else None
-                         for w in weeks], late)
+                        [100 * sum(judged[w["week"]][s] for s in group) / c if c else None
+                         for w, c in zip(weeks, n)], late)
                        for line, group, swatch in JUDGE_LINES])
     add(_footer(data, left, H))
     add("</svg>")
@@ -466,8 +479,11 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
 def _footer(data: dict, x: int, H: int) -> str:
     through = (f"Data through {_fmt_day(data['last_day'])} · {data['sessions']} sessions"
                if data["last_day"] else "No data yet")
-    return (f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week or under '
-            f'{LOW_SESSIONS} sessions · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
+    gloss = ("Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a "
+             "helper or sit in the wrong place · b: lower = fewer flagged, not necessarily better code")
+    return (f'<text x="{x}" y="{H - 28}" font-size="11">{esc(gloss)}</text>\n'
+            f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week or under '
+            f'{LOW_SESSIONS} sessions (no rate drawn) · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
 
 
 # ── 3. publish ─────────────────────────────────────────────────────────────────────────────────
