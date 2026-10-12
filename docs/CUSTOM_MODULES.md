@@ -128,7 +128,7 @@ Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
 }
 ```
 
-`resource_pool` is required (`"cpu"` / `"gpu"` / `"io"` / `"network"`). `scope` is `"image"`
+`resource_pool` is required (`"cpu"` / `"gpu"` / `"io"` / `"hpc"`). `scope` is `"image"`
 (default) or `"set"`.
 
 ### 2. `<category>/<name>.jl` — the code

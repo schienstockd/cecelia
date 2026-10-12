@@ -334,6 +334,9 @@ include(joinpath(@__DIR__, "suite", "ome_qc.jl"))
 
 include(joinpath(@__DIR__, "suite", "vn_pilot_writer.jl"))
 include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))
+# HPC P1: site/profile/project settings, the network→hpc pool migration, ssh/rsync resolvers and
+# the connection test (live part skips without CECELIA_HPC_TEST_HOST). docs/todo/HPC_PLAN.md.
+include(joinpath(@__DIR__, "suite", "hpc.jl"))
 
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
 #

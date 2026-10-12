@@ -9,7 +9,7 @@ export cellpose_models_dir, cellpose_model_path, list_cellpose_models, cellpose_
 export coastal_models_dir, coastal_model_path, coastal_model_manifest, list_coastal_models
 export vault_model_stem
 export projects_dir, setup_required, set_projects_dir!
-export bioformats2raw_bin, python_bin_path, rscript_bin_path, tasks_concurrent_limit
+export bioformats2raw_bin, python_bin_path, rscript_bin_path, ssh_bin, rsync_bin, tasks_concurrent_limit
 export task_worker_threads, default_task_worker_threads, set_task_worker_threads!
 export usable_cpus, task_workers_max
 export task_workers_widen, task_workers_derived, set_task_workers_widen!
@@ -413,6 +413,11 @@ include("project_io.jl")
 include("ai/agent_runner.jl")
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
+# HPC settings (site / profile identity / project override) + the ssh transport. After
+# profile_settings.jl (identity lives in the profile bag) and jobs.jl (`_kill_proc_tree`).
+# docs/todo/HPC_PLAN.md.
+include("config/hpc.jl")
+include("hpc/transport.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
@@ -435,6 +440,9 @@ export active_profile_name, active_profile_dir, set_active_profile!, kiwi_termin
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export REQUEST_VIA, author_stamp
+export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
+       set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
+       set_hpc_project_account!, hpc_test_connection
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        observer_api_url,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,

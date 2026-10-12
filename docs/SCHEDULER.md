@@ -92,13 +92,15 @@ all execution goes through `run_task` → `_pool(name)` → the pool's queue. De
 cpu     = 20   # general CPU compute — most tasks
 gpu     = 1    # the GPU — cellpose family; raise for batch segmentation
 io      = 8    # local disk IO — bioformats2raw import/convert, crop
-network = 1    # remote/SMB reads — reserved for HPC/remote tasks (no tasks assigned yet)
+hpc     = 1    # jobs dispatched to the HPC cluster at once (was "network")
 ```
 
 One pool per real bottleneck resource; the name says *what* it rations, not *how much*. Every limit is
 only a starting default — each is a live throttle (below), so you can drop `io` to 1 while importing
-over a slow SMB share without editing config or restarting. `network` is defined but unused today; it
-exists so remote/HPC task runners have a lane to land in later.
+over a slow SMB share without editing config or restarting. `hpc` is defined but no task
+uses it yet: it is the lane for tasks dispatched to a cluster, and its limit is the number of jobs
+in flight there (`docs/todo/HPC_PLAN.md` → Decision 6). It was called `network` until then;
+`init_cecelia!` renames a stored `[pools] network` in `custom.toml` (`migrate_custom_conf!`).
 
 `_pools_init!` reads `[pools]` at first use; `cpu` always exists (falls back to
 `tasks_concurrent_limit()`). A task names its pool in the `resource_pool` field of its JSON spec, a
@@ -140,7 +142,7 @@ apply immediately **plus** a merged write to the user's `custom.toml` `[pools]` 
 `set_projects_dir!`) so it survives a restart. Clamped to `[1, POOL_LIMIT_MAX]`. Exposed as
 `POST /api/pools/set` `{name, limit}`, which rejects unknown pool names so typo pools can't accumulate
 in `custom.toml`. The UI is `PoolThrottle.vue` — a compact 2×2 slider grid (`cpu`/`gpu`, then
-`io`/`network`) in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not Settings.
+`io`/`hpc`) in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not Settings.
 
 ### Reporting occupancy
 

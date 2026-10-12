@@ -184,6 +184,18 @@ all CPU cores** (`/api/config/threads`, default on). The second shows what is ru
 the server is supervised; no new shutdown path). Locked under the pixi dev/prod tasks, which always run
 `-t auto`.
 
+## Settings → HPC
+
+`components/HpcSettings.vue`, under System. One form over three storage scopes
+(`docs/todo/HPC_PLAN.md` → Decision 9): the site (machine-wide), **Your login** (username + SSH key,
+per profile) and **This project** (an account override, shown only with a project open), then a
+CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and preamble. Each field saves on
+`@change` over a `v-model` draft; a refused value shows the backend's message and snaps back. The key
+picker is `FileBrowser` in file mode opened at `~/.ssh` (`startPath`). **Test connection** runs on the
+saved settings and lists one line per check — host-key fingerprint (marked when newly trusted), remote
+folder, scheduler version — or the one brief error. On Windows the section is one line saying it is not
+available yet (Q8). The jobs-in-flight limit is the `hpc` pool slider in `PoolThrottle`, not here.
+
 ---
 
 ## Button utilities
@@ -2510,7 +2522,7 @@ in `app/src/tasks/<category>/<name>.json` should include this field:
 { "resource_pool": "cpu" }     // general CPU compute — most tasks
 { "resource_pool": "gpu" }     // the GPU — cellpose family (limit 1)
 { "resource_pool": "io" }      // local disk — import/convert/crop
-{ "resource_pool": "network" } // remote/SMB — reserved for HPC, unused today
+{ "resource_pool": "hpc" }     // jobs dispatched to the HPC cluster (no tasks yet)
 ```
 
 The `tasksLimit` field and the concurrent-task slider have been removed. `TaskDef` no longer

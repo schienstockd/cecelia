@@ -327,6 +327,7 @@ end
         "/api/kiwi/profiles",           # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 — roster
         "/api/kiwi/terminal/command",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P6 — profile-scoped shell one-liner
         "/api/profile/settings",        # USER_PROFILE_PLAN Phase 4 — per-profile settings hydration
+        "/api/hpc/settings",            # HPC_PLAN P1 — Settings → HPC
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -370,6 +371,7 @@ end
         "/api/kiwi/profiles/rename",   # USER_PROFILE_PLAN D11 amendment — rename dir + update [ai].profile
         "/api/kiwi/profiles/delete",   # USER_PROFILE_PLAN D11 amendment — rm -rf profile dir
         "/api/profile/settings/patch", # USER_PROFILE_PLAN Phase 4 — merge partial dict, null deletes
+        "/api/hpc/settings/set", "/api/hpc/test",   # HPC_PLAN P1
         "/api/projects/claim",         # USER_PROFILE_PLAN Phase 5 — add active profile to owners
         "/api/projects/unclaim",       # USER_PROFILE_PLAN Phase 5 — remove active profile from owners
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
@@ -447,6 +449,7 @@ end
         "/api/preview/run", "/api/preview/start",
         "/api/preview/stop", "/api/storage/reclaim",
         "/api/update/apply", "/api/update/revert",
+        "/api/hpc/test",   # would ssh to whatever host the config names
     ]
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 
@@ -477,7 +480,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 110 && length(POST_ROUTES) == 163
+    @test length(GET_ROUTES) == 111 && length(POST_ROUTES) == 165
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

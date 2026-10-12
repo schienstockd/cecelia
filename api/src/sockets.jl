@@ -15,7 +15,7 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # `fun` carries the task fun_name so a WS observer (mcp/) can attribute a module-page run to a
 # function for the 10-attempts pattern (chain nodes already carry `fn`; module tasks didn't).
 # `pool` ATTRIBUTES the work to what governs it — scheduler tasks get theirs from the /api/tasks
-# snapshot (cpu/gpu/io/network), but non-scheduler producers (batch movies, background jobs) never
+# snapshot (cpu/gpu/io/hpc), but non-scheduler producers (batch movies, background jobs) never
 # hit that snapshot, so they pass it here ("viewer" for a UI-serial viewer, "job" for jobs.jl work).
 # Without it those show a BLANK pool in the task console. NOT a real scheduler pool (no slot budget) —
 # purely a label so they read as intentional instead of floating unattributed. The frontend ignores

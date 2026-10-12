@@ -1,0 +1,93 @@
+name: Verify HPC connection
+
+# The HPC tier's connection test against a real sshd + SLURM (docs/todo/HPC_PLAN.md → Decision 10,
+# P1). Builds the single-node container in .github/hpc-test/, gives it a throwaway key, and runs
+# `pixi run test-hpc` with CECELIA_HPC_TEST_* pointing at it — the one testset in app/test/suite/hpc.jl
+# that the main CI matrix skips. Linux only: the container needs Docker, and dispatch from Windows is
+# deferred (Q8). Path-filtered so it runs when the HPC code or this harness changes, not on every PR.
+
+on:
+  pull_request:
+    paths:
+      - app/src/hpc/**
+      - app/src/config/hpc.jl
+      - app/src/config/binaries.jl
+      - app/test/suite/hpc.jl
+      - app/test/hpc_e2e.jl
+      - .github/hpc-test/**
+      - .github/workflows/verify-hpc.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write   # lets julia-actions/cache prune its old entries (see ci.yml)
+
+jobs:
+  connection:
+    name: ubuntu-latest — HPC connection test (sshd + SLURM container)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JULIA_CPU_TARGET: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the SLURM + sshd container
+        run: docker build -t cecelia-hpc-test .github/hpc-test
+
+      - name: Start it with a throwaway key
+        run: |
+          ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/hpc_key"
+          docker run -d --name hpc -p 127.0.0.1:2222:22 \
+            -e AUTHORIZED_KEY="$(cat "$RUNNER_TEMP/hpc_key.pub")" cecelia-hpc-test
+          for i in $(seq 1 30); do
+            nc -z 127.0.0.1 2222 && exit 0
+            sleep 1
+          done
+          docker logs hpc
+          exit 1
+
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      - name: Install Julia
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+
+      - name: Cache Julia depot
+        uses: julia-actions/cache@v3
+
+      - name: Ensure the General registry
+        run: julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General")'
+
+      - name: Instantiate Julia (package env)
+        run: pixi run julia-instantiate
+
+      # `pixi run` can exit 0 on a failed testset, so the log is checked for the failure markers too.
+      - name: HPC tests (live testset against the container)
+        env:
+          CECELIA_HPC_TEST_HOST: 127.0.0.1
+          CECELIA_HPC_TEST_PORT: "2222"
+          CECELIA_HPC_TEST_USER: cecelia
+          CECELIA_HPC_TEST_KEY: ${{ runner.temp }}/hpc_key
+          CECELIA_HPC_TEST_SCHEDULER_VERSION: slurm
+        run: |
+          set -o pipefail
+          pixi run test-hpc 2>&1 | tee "$RUNNER_TEMP/hpc.log"
+          if grep -Eq 'Some tests did not pass|Test Failed at|Error During Test' "$RUNNER_TEMP/hpc.log"; then
+            exit 1
+          fi
+          # The live testset must have RUN here, not skipped for want of the env vars.
+          ! grep -q 'HPC live connection test skipped' "$RUNNER_TEMP/hpc.log"
+
+      - name: Container diagnostics
+        if: always()
+        continue-on-error: true
+        run: |
+          docker exec hpc sinfo || true
+          docker exec hpc sh -c 'tail -n 20 /var/log/slurm/*.log' || true
+          docker logs hpc | tail -n 40

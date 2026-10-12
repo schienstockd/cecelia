@@ -486,6 +486,35 @@ _is_spawn_line(line) = !startswith(strip(line), "#") &&
     @test occursin(r"\bbioformats2raw_bin\s*\(", read(helper_path, String))
 end
 
+# ── ssh/rsync spawn ratchet ───────────────────────────────────────────────────
+# The HPC tier spawns ssh/rsync in ONE file, `app/src/hpc/transport.jl` (docs/todo/HPC_PLAN.md
+# → Decision 4), with the binary from `ssh_bin()`/`rsync_bin()` (`config/binaries.jl`). Two ways
+# to drift: a bare `ssh`/`rsync` spawn anywhere, or another file reaching for the resolvers and
+# building its own command line — which is how the host-key and BatchMode flags would quietly
+# differ between two call sites. Baseline empty.
+@testset "ssh/rsync spawn ratchet — only `hpc/transport.jl` spawns them" begin
+    banned = (r"`\s*(ssh|rsync)(?:\s|`)", r"Cmd\(\s*\[\s*\"(ssh|rsync)\"")
+    owner  = joinpath("app", "src", "hpc", "transport.jl")
+    exempt = Set([owner, joinpath("app", "src", "config", "binaries.jl")])
+    offenders = String[]
+    for root in (_app_src, _api_src), (dir, _, files) in walkdir(root), f in files
+        endswith(f, ".jl") || continue
+        path = joinpath(dir, f)
+        rel = relpath(path, _repo)
+        rel in exempt && continue
+        for (i, line) in enumerate(split(read(path, String), '\n'; keepempty = true))
+            startswith(strip(line), "#") && continue
+            hit = (_is_spawn_line(line) && any(p -> occursin(p, line), banned)) ||
+                  occursin(r"\b(ssh_bin|rsync_bin)\s*\(", line)
+            hit && push!(offenders, "$rel:$i: `$(strip(line))`")
+        end
+    end
+    isempty(offenders) ||
+        @error "ssh/rsync spawn ratchet: spawn ssh/rsync only in $owner.\n  " * join(offenders, "\n  ")
+    @test isempty(offenders)
+    @test isfile(joinpath(_repo, owner)) && occursin("ssh_bin()", read(joinpath(_repo, owner), String))
+end
+
 # ── process-kill helpers ratchet ──────────────────────────────────────────────
 # Root CLAUDE.md → *Windows compatibility* names `_kill_tree` / `free_port` as the launchers for
 # process-tree kill and port-listener kill. A bare `\`kill ...\`` / `\`pgrep ...\`` /

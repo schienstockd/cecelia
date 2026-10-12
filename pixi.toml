@@ -250,6 +250,9 @@ test-scripts  = "julia --startup-file=no -e 'for f in filter(endswith(\".jl\"), 
 # Detached-task-runner end-to-end: launches a REAL second Julia process. NOT in test-pkg — it pays a
 # full child start-up + precompile, which is minutes on a cold depot. Run it when touching app/src/runner/.
 test-runner   = { cmd = "julia --project test/runner_e2e.jl", cwd = "app" }
+# HPC settings + connection test alone (docs/todo/HPC_PLAN.md P1); its live testset needs
+# CECELIA_HPC_TEST_HOST (CI: .github/workflows/verify-hpc.yml), else it skips.
+test-hpc      = { cmd = "julia -O0 --project test/hpc_e2e.jl", cwd = "app" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 # No PYTHONPATH override on the two mcp tasks: `-m` / `-t .` already put mcp/ on sys.path, and the

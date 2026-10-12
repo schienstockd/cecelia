@@ -46,6 +46,11 @@ struct ChainNode
     # _POOLS, sized from config.toml [pools]). "" falls back to the task JSON's resource_pool,
     # else "cpu". A pool with limit 1 (e.g. "gpu") serialises that node across the process.
     resource_pool::String
+    # The ONE construction path (keyword, positional, deserialised): a pool name that has since been
+    # renamed (`_CUSTOM_CONF_RENAMES`, config.jl) is stored under its new name, so no caller can
+    # build a node the validator then refuses for naming a pool that no longer exists.
+    ChainNode(id, fn, scope, params, barrier_policy, resource_pool) =
+        new(id, fn, scope, params, barrier_policy, _renamed_pool(String(resource_pool)))
 end
 
 # Default scope for a task fun_name, read from its JSON spec's "scope" field. The task JSON is

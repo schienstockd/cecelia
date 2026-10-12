@@ -23,6 +23,49 @@ function _deep_merge(a::Dict, b::Dict)::Dict
     result
 end
 
+# custom.toml keys that were RENAMED, as `(table, old, new)`. A user who set the old key keeps their
+# value under the new name; `init_cecelia!` rewrites the file once so the old key does not linger
+# and later writers (`set_pool_limit!`) do not have two names for one setting.
+const _CUSTOM_CONF_RENAMES = (
+    ("pools", "network", "hpc"),   # the unused `network` pool became the HPC lane (HPC_PLAN.md D6)
+)
+
+"""
+    migrate_custom_conf!(cfg) -> Vector{String}
+
+Apply [`_CUSTOM_CONF_RENAMES`](@ref) to a parsed `custom.toml` in place. Returns one note per change,
+empty when nothing needed migrating. When both names are present the NEW one wins and the old is
+dropped: it was written later, by a version that already knew the new name.
+"""
+function migrate_custom_conf!(cfg::AbstractDict)::Vector{String}
+    notes = String[]
+    for (tbl, old, new) in _CUSTOM_CONF_RENAMES
+        t = get(cfg, tbl, nothing)
+        (t isa AbstractDict && haskey(t, old)) || continue
+        v = pop!(t, old)
+        if haskey(t, new)
+            push!(notes, "[$tbl] $old dropped: $new is already set")
+        else
+            t[new] = v
+            push!(notes, "[$tbl] $old renamed to $new")
+        end
+    end
+    notes
+end
+
+"""
+    _renamed_pool(name) -> String
+
+`name`, or the pool it was renamed to. For pool names stored OUTSIDE custom.toml, which
+`migrate_custom_conf!` cannot rewrite: a saved chain node's override, a drop-in module's spec.
+"""
+function _renamed_pool(name::String)::String
+    for (tbl, old, new) in _CUSTOM_CONF_RENAMES
+        tbl == "pools" && old == name && return new
+    end
+    name
+end
+
 """
     custom_toml_path([dev_dir]) -> String
 
@@ -50,7 +93,19 @@ function init_cecelia!(dev_dir::Union{String,Nothing} = nothing)
     custom = joinpath(resolved, "custom.toml")
     if isfile(custom)
         @info "Merging custom config" path = custom
-        cfg = _deep_merge(cfg, TOML.parsefile(custom))
+        user = TOML.parsefile(custom)
+        notes = migrate_custom_conf!(user)
+        if !isempty(notes)
+            # The merge below uses the migrated dict either way; a failed rewrite only means the
+            # migration runs again next launch.
+            try
+                write_atomic(io -> TOML.print(io, user), custom)
+                @info "Migrated custom config" path = custom changes = notes
+            catch e
+                @warn "Could not rewrite migrated custom config; applied in memory" path = custom exception = e
+            end
+        end
+        cfg = _deep_merge(cfg, user)
     else
         @warn "Custom config not found, using defaults only" path = custom
     end

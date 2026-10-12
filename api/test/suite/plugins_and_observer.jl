@@ -87,6 +87,24 @@ end
     end
 end
 
+@testset "API: a drop-in spec naming a renamed pool is served with the new name" begin
+    # `network` became `hpc` (docs/todo/HPC_PLAN.md D6). The pool chip is filled from the served
+    # spec, so the backend renames it once and the frontend never sees a pool that does not exist.
+    dir = joinpath(Cecelia.config_dir(), "modules", "hpcrename")
+    mkpath(dir)
+    write(joinpath(dir, "oldPool.json"),
+          """{"fun_name": "hpcrename.oldPool", "label": "Old pool", "resource_pool": "network",
+              "scope": "image", "params": []}""")
+    try
+        st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=hpcrename"))
+        @test st == 200
+        spec = only(JSON3.read(body).hpcrename)
+        @test String(spec.resource_pool) == "hpc"
+    finally
+        rm(dir; recursive = true, force = true)
+    end
+end
+
 @testset "API: a plugin's task gets a form and a nav entry" begin
     # THE P1 blocker, end to end (docs/todo/PLUGINS_PLAN.md). The Julia loader walks the modules tree
     # recursively, but both API scans did a one-level readdir — so a plugin's task registered and ran

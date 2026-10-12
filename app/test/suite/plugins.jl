@@ -778,7 +778,7 @@ end
 end
 
 @testset "Resource pool mapping" begin
-    # Pins the pool recategorisation (cpu/gpu/io/network). A task's pool comes from its JSON
+    # Pins the pool recategorisation (cpu/gpu/io/hpc). A task's pool comes from its JSON
     # resource_pool via _task_pool_name; a spec-less task falls back to "cpu".
     poolof(fn) = Cecelia._task_pool_name(_task_from_fun_name(fn))
     @test poolof("segment.cellpose")              == "gpu"
@@ -792,7 +792,7 @@ end
     @test poolof("segment.measureLabels")         == "cpu"
     # no strays: every built-in task resolves to one of the four canonical pools
     for fn in keys(Cecelia._fun_name_map())
-        @test poolof(fn) in ("cpu", "gpu", "io", "network")
+        @test poolof(fn) in ("cpu", "gpu", "io", "hpc")
     end
 end
 

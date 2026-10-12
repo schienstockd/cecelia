@@ -651,7 +651,7 @@ function applyTemplate(
         barrier_policy:  n.barrier_policy,
         // '' is a REAL value meaning "inherit from the task spec" (chain.jl ChainNode) — every chain in
         // a project stores '' unless the user overrode it. Do NOT invent a pool name here: this used to
-        // fall back to 'default', a pool that no longer exists (they were renamed cpu/gpu/io/network),
+        // fall back to 'default', a pool that no longer exists (they were renamed cpu/gpu/io/hpc),
         // so the config select got a value matching no option and rendered BLANK.
         resource_pool:   n.resource_pool || def?.resource_pool || '',
         label:           def?.label ?? n.fn.split('.').pop() ?? n.fn,

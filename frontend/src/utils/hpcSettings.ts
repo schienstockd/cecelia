@@ -1,0 +1,112 @@
+// Settings → HPC: API client + the pure display logic (docs/todo/HPC_PLAN.md P1).
+//
+//   GET  /api/hpc/settings?projectUid=   → HpcSettings
+//   POST /api/hpc/settings/set           → HpcSettings, or {error} (400) naming every problem
+//   POST /api/hpc/test                   → HpcTestResult (on the SAVED settings)
+//
+// Storage is split three ways by the backend (`app/src/config/hpc.jl`): site in custom.toml,
+// username + key per profile, account override per project. This file only shapes requests.
+
+import { svcPost } from './serviceApi'
+
+export interface HpcClassSettings {
+  queue: string
+  account: string
+  qos: string
+  directives: string
+  preamble: string
+}
+
+export interface HpcSite {
+  scheduler: string
+  host: string
+  port: number
+  remoteDir: string
+  email: string
+  cpu: HpcClassSettings
+  gpu: HpcClassSettings
+}
+
+export interface HpcSettings {
+  available: boolean
+  schedulers: { name: string; label: string; available: boolean }[]
+  site: HpcSite
+  identity: { profile: string; user: string; keyFile: string }
+  project: { projectUid: string; account: string } | null
+}
+
+export interface HpcTestResult {
+  ok: boolean
+  reachable: boolean
+  fingerprint: string
+  newHostKey: boolean
+  remoteDir: string
+  dirOk: boolean
+  scheduler: string
+  error: string
+}
+
+export type HpcClassName = 'cpu' | 'gpu'
+
+/** A partial update: any subset of the three scopes. */
+export interface HpcPatch {
+  site?: Partial<Omit<HpcSite, 'cpu' | 'gpu'>> & { cpu?: Partial<HpcClassSettings>; gpu?: Partial<HpcClassSettings> }
+  identity?: { user?: string; keyFile?: string }
+  project?: { projectUid: string; account: string }
+}
+
+export async function fetchHpcSettings(projectUid = ''): Promise<HpcSettings> {
+  const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
+  const res = await fetch(`/api/hpc/settings${q}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
+  return data as HpcSettings
+}
+
+export async function saveHpcSettings(patch: HpcPatch, projectUid = ''): Promise<HpcSettings> {
+  return await svcPost('/api/hpc/settings/set', { ...patch, projectUid }) as HpcSettings
+}
+
+/** The backend gives up after 30 s; the extra margin lets its own message arrive first. */
+export async function testHpcConnection(): Promise<HpcTestResult> {
+  return await svcPost('/api/hpc/test', {}, 40_000) as HpcTestResult
+}
+
+/** Why Test connection cannot run yet, or '' when it can. Mirrors the backend's own refusals. */
+export function hpcTestBlocker(s: HpcSettings | null): string {
+  if (!s) return 'Loading'
+  if (!s.available) return 'Not available on Windows yet'
+  if (!s.site.host.trim()) return 'Set the host first'
+  if (!s.identity.user.trim()) return 'Set your username first'
+  if (!s.identity.keyFile.trim()) return 'Select your SSH key first'
+  return ''
+}
+
+export interface HpcTestLine { ok: boolean; text: string }
+
+/** The result as short lines, one per check, in the order they happen. */
+export function hpcTestLines(r: HpcTestResult, schedulerLabel = 'SLURM'): HpcTestLine[] {
+  const lines: HpcTestLine[] = []
+  if (r.fingerprint) {
+    lines.push({ ok: true, text: `Host key ${r.fingerprint}${r.newHostKey ? ' (new, now trusted)' : ''}` })
+  }
+  if (!r.reachable) {
+    lines.push({ ok: false, text: r.error || 'Not reachable' })
+    return lines
+  }
+  lines.push({ ok: r.dirOk, text: r.dirOk ? `Folder ${r.remoteDir}` : (r.error || 'Remote folder not writable') })
+  if (r.dirOk) {
+    lines.push({ ok: !!r.scheduler, text: r.scheduler ? `${schedulerLabel}: ${r.scheduler}` : (r.error || `${schedulerLabel} not found`) })
+  }
+  return lines
+}
+
+/** Folder the key picker opens in: the current key's folder, else `~/.ssh` (relative = from home). */
+export function keyPickerStart(keyFile: string): string {
+  const k = keyFile.trim()
+  if (!k) return '.ssh'
+  const cut = Math.max(k.lastIndexOf('/'), k.lastIndexOf('\\'))
+  if (cut <= 0) return '.ssh'
+  const dir = k.slice(0, cut)
+  return dir.startsWith('~/') ? dir.slice(2) : dir === '~' ? '' : dir
+}

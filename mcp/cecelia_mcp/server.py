@@ -1632,7 +1632,7 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
         get_module_params first so the keys are real and numbers are in range.
       - `scope` — omit it. It defaults from the task's own spec, so a set-scope (picnic) task like
         behaviour.hmm or clustTracks.cluster becomes a picnic node on its own.
-      - `resource_pool` — omit unless you mean it (cpu / gpu / io / network); the task spec knows.
+      - `resource_pool` — omit unless you mean it (cpu / gpu / io / hpc); the task spec knows.
     `edges` = `[{from, to}]` — node id → node id, i.e. "to runs after from". Leave `start_targets`
     unset: the server fills it with the chain's roots, which is what makes the whiteboard's start dot
     appear. Pass it only to start a run PART-WAY in (then only that node and its descendants run).

@@ -76,6 +76,7 @@ include("kiwi_turn.jl")      # Kiwi — one structured, validated assistant turn
 include("kiwi_api.jl")       # Kiwi — the cockpit's turn routes: background run, WS steps, kept replies (Phase 4)
 include("kiwi_profile_api.jl") # Kiwi profile roster + picker (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6)
 include("profile_settings_api.jl") # Per-profile settings (USER_PROFILE_PLAN Phase 4)
+include("hpc_api.jl")          # Settings → HPC: site/profile/project settings + connection test (HPC_PLAN P1)
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -352,6 +353,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
     # Per-profile settings (USER_PROFILE_PLAN Phase 4). Hydrates the frontend Pinia store on launch.
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
+    "/api/hpc/settings"           => (req, body_bytes) -> (api_hpc_settings_get(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -474,6 +476,8 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
     # Per-profile settings — partial-dict merge (USER_PROFILE_PLAN Phase 4). Value `null` deletes.
     "/api/profile/settings/patch"   => (req, body_bytes) -> (api_profile_settings_patch(body_bytes)),
+    "/api/hpc/settings/set"         => (req, body_bytes) -> (api_hpc_settings_set(body_bytes)),
+    "/api/hpc/test"                 => (req, body_bytes) -> (api_hpc_test(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),

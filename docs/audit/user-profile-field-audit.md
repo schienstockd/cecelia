@@ -192,7 +192,7 @@ moves the profile-scoped keys. Belongs in a follow-up plan.
 | `[images]` `[images.normalise]` | — | Global invariant, not user-facing. |
 | `[zarr] imageCompressor` | **install-wide** | See above. |
 | `[tasks] concurrentLimit` `workerThreads` | **install-wide** | Machine capacity. |
-| `[pools]` cpu / gpu / io / network | **install-wide** | Hardware capacity. |
+| `[pools]` cpu / gpu / io / hpc | **install-wide** | Hardware capacity. |
 | `[ai] profile` | **install-wide** | This IS the pointer to the active profile — must stay in `custom.toml` by definition (there's nowhere else to put it before a profile is resolved). |
 | `[ai] model` | **per-profile** | Redundant with `kiwiModel` in the store; consolidate on the profile-scoped one in Phase 4. |
 | `[ai] agent_bin` | **install-wide** | Path to the `claude` CLI on this machine. |

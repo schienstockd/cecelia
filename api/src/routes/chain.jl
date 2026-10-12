@@ -24,8 +24,13 @@ function api_chains_get(req::HTTP.Request)
     path  = joinpath(_chains_dir_for_project(uid), "$(name).json")
     isfile(path) || return 404, JSON3.write((; error="Chain not found: $name"))
     # Return raw JSON — the template may contain extra fields (e.g. whiteboard positions)
-    # that the frontend added; preserve them verbatim.
-    200, read(path, String)
+    # that the frontend added; preserve them verbatim. The one exception is a node pool that has since
+    # been renamed (`network` → `hpc`): the editor's pool select offers only live pools, so the old
+    # name would render blank. Only then is the document re-serialised.
+    raw = read(path, String)
+    doc = try json_native(JSON3.read(raw)) catch; nothing end
+    (doc isa AbstractDict && Cecelia.rename_template_pools!(doc)) || return 200, raw
+    200, JSON3.write(doc)
 end
 
 function api_chains_delete(body_bytes::Vector{UInt8})

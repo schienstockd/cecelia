@@ -157,7 +157,7 @@ const SEEN_TERM  = Set{String}()
 
 # Live resource-pool occupancy (polled from GET /api/pools): per pool, its configured concurrency
 # `limit`, how many slots are `running` now, and how many tasks are `queued` for it. Rendered as a
-# small panel so you can see at a glance how much of each pool (cpu/gpu/io/network) is in use.
+# small panel so you can see at a glance how much of each pool (cpu/gpu/io/hpc) is in use.
 mutable struct PoolView
     name::String
     limit::Int
@@ -165,7 +165,7 @@ mutable struct PoolView
     queued::Int
 end
 const POOLS      = PoolView[]
-const POOL_ORDER = Dict("cpu" => 1, "gpu" => 2, "io" => 3, "network" => 4)   # canonical display order
+const POOL_ORDER = Dict("cpu" => 1, "gpu" => 2, "io" => 3, "hpc" => 4)   # canonical display order
 _poolsort(p) = (get(POOL_ORDER, p.name, 99), p.name)
 
 now_hms() = Dates.format(Dates.now(), "HH:MM:SS")
