@@ -282,8 +282,8 @@ merge). Full conventions — branch naming, commit style, how PRs are opened, re
 [`docs/DEV.md`](docs/DEV.md).
 
 **Agents: remind Dominik about worktree cleanup.** When `pixi run bootstrap-worktree` prints its
-cleanup nudge, or a PR of yours has just merged, tell him how many worktrees there are and suggest
-`pixi run prune-worktrees` (report first, `--remove` on his go-ahead). One line, not a menu — and
+cleanup nudge (how many worktrees can be removed now), or a PR of yours has just merged, relay it and
+suggest `pixi run prune-worktrees` (report first, `--remove` on his go-ahead). One line, not a menu — and
 don't run `--remove` unasked. [`docs/DEV.md`](docs/DEV.md) → *Removing worktrees*.
 
 **Agents: ask before every commit and before opening/pushing a PR — explicitly, each time; don't

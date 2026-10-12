@@ -332,12 +332,18 @@ recital = "python scripts/recital.py"
 # Live console for the effectiveness log — the recital-side twin of `pixi run console`
 # (which watches scheduler tasks). TTY: full-screen dashboard with per-mechanism counters
 # (runs, findings by marker, resolved by outcome), a recent-findings pane with the wrapped
-# description of each flag, and an activity stream at the bottom. Pipe / --stream: append-only
-# formatted event log so `... | tee out.log` gives a clean file. Reads
+# description of each flag, and an activity stream at the bottom; an agents pane on top (one
+# row per live Claude Code session). Pipe / --stream: append-only formatted event log so
+# `... | tee out.log` gives a clean file. Reads
 # ~/.cecelia-effectiveness/events.jsonl (or $CECELIA_EFFECTIVENESS_LOG). `-- --no-follow` for
 # a one-shot snapshot; `-- --tail 0` seeds from the whole history; `-- --since 24h` seeds
 # from the last day; `-- --width COLS` overrides the wrap column.
 recital-console = "python -m cecelia.effectiveness.console"
+
+# One row per live Claude Code session: worktree, branch, idle/busy, recital rounds, open findings.
+# The same pane heads `recital-console`; this shows it alone, and → lists each session's findings
+# with their outcomes. docs/todo/AGENTS_PANE_PLAN.md.
+agents = "python -m cecelia.effectiveness.console --agents"
 
 # Agent overnight run (docs/todo/AGENT_OVERNIGHT_PLAN.md): build an isolated fixture project
 # (synthetic, or a crop of an analysed image), run the hand-tuned ceiling pipeline, score a run.

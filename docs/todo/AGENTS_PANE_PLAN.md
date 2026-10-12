@@ -1,6 +1,6 @@
 # Agents pane — `pixi run recital-console` shows the live sessions
 
-Status: **planned** (2026-10-13). Nothing built.
+Status: **built** (2026-10-13) — P1 (`claude_sessions.py`, `agents.py`, the pane, `pixi run agents`) and P2 (PR + CI columns).
 
 ## Goal
 
@@ -38,7 +38,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
    | worktree | the last `"cwd"` in the transcript `~/.claude/projects/*/<sessionId>.jsonl`. The `cwd` in the session file is the launch folder and never changes |
    | branch | `git_context.git_output("branch", "--show-current", cwd=<worktree>)` |
    | PR, CI, merged | **one** `gh pr list --state all --json number,headRefName,state,statusCheckRollup` per refresh, matched by branch, cached for 60 s. Add it as a new helper in `effectiveness/git_context.py`, next to `pr_for_branch` and `merged_pr_heads`, not as an inline `gh` call |
-   | recital rounds | distinct `commit` values among the branch's `fanout_audit_run` events in the effectiveness log. `pixi run recital` writes one per round |
+   | recital rounds | the branch's `fanout_audit_run` rows in the effectiveness log. `pixi run recital` writes one per round |
    | open findings | `_finding` rows for the branch that have no `_finding_resolved` row. This is the logic the commit hook already has (`.claude/hooks/check_commit_recital.py::_untagged_slugs_on_head`). Move it into `effectiveness/log.py` and call it from both places |
 
 3. **One session reader, shared with prune-worktrees.** `python/cecelia/effectiveness/claude_sessions.py`
@@ -62,6 +62,43 @@ extras: hooks, a message bus, window control. None of those is needed here.
 - **P2: PR and CI.** One cached `gh` call per refresh. A missing `gh` leaves the columns blank.
 - The prune-worktrees in-use check (`WORKTREE_CLEANUP_PLAN.md` P1b) uses the P1 reader, so P1 is
   built first.
+
+## Built (P1 + P2, 2026-10-13)
+
+- Session `status` also takes the value `"shell"` (seen live), so it is shown as written and
+  sorted between idle and busy.
+- `claude_home()` honours `$CLAUDE_CONFIG_DIR`, which Claude Code also uses; tests point it at a
+  temp folder so they never read the machine's real sessions.
+- One refresh (sessions + two `git` calls each + a full log read) took ~70 ms with 5 sessions and a
+  5 000-row log; the pane refreshes every 5 s.
+- The commit hook's `_untagged_slugs_on_head` and the judge scripts now take the finding/resolved
+  event names from `effectiveness/log.py`.
+- Columns: `agent state worktree branch recitals open pr ci`. `ci` is the CI state while the PR is
+  open (`fail`/`running`/`pass`) and `merged`/`closed` after. `git_context.recent_prs` (100 newest
+  PRs, any state) took ~3 s, so `agents.PrCache` fetches it in a background thread at most every
+  60 s; a failed fetch keeps the last list. A one-shot snapshot (`--no-follow`, or piped) waits for it.
+- `pixi run agents`, → (← undoes, PgUp/PgDn scroll): under each session, its outcome counts
+  (`open · fixed · shipped · false pos · dropped`) and every recital finding on its branch with
+  its outcome, mechanism, `file:line` and description, plus the agent's reason under a shipped /
+  dropped / false-positive one. Asked for 2026-10-13: "how much these sessions have to fix, and
+  which ones they dropped, shipped". The join is `log.resolved_findings`, shared with the hook.
+- The → view draws each finding with the recital console's own `_render_finding_block` (head line +
+  description capped at 3 lines, no branch anchor — the session row names it), outcome in front,
+  the agent's reason (`why …`) under it. A one-line-per-finding version clipped every description
+  and read as clutter; a version listing only non-fixed findings dropped detail Dominik wanted.
+- **Which window is which:** each session has a badge — one of 4 shapes in one of 7 Okabe-Ito
+  colours, from a hash of its session id (`agents.session_badge`). The pane draws it before the
+  name; `scripts/statusline_badge.py` wraps any statusline command and draws the same badge and
+  name in that session's own statusline. Opt-in, one line in `~/.claude/settings.json`:
+  `"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"`. ~60 ms per
+  refresh on top of the wrapped command; if it fails the wrapped statusline still shows.
+- Headless `claude -p` runs (the recital's reviewers) write session files too, named after their
+  folder (`cecelia-prune-session-gate-13`) and marked `kind: "interactive"` like a window; only
+  `entrypoint: "sdk-cli"` (windows: `"cli"`) tells them apart, so `sdk*` is skipped. Names longer
+  than the column are cut.
+- Session `status` meanings, read off live sessions (not documented by Claude Code): `idle` =
+  turn over, nothing running; `shell` = turn over, a background command (e.g. a CI watch) still
+  running and will wake the agent; `busy` = mid-turn.
 
 ## Open questions (default in brackets)
 

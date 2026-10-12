@@ -23,7 +23,7 @@ import datetime as _dt
 import typing as _t
 
 from .git_context import pr_for_branch as _pr_for_branch
-from .log import OUTCOME_DISPLAY_ORDER, is_errored_run
+from .log import OUTCOME_DISPLAY_ORDER, is_errored_run, latest_resolutions_by_slug
 
 _HEADER_TEMPLATE = """# AI-assist infrastructure — effectiveness
 
@@ -88,28 +88,6 @@ def _date_range(events: _t.Sequence[dict]) -> str:
     return f", spanning {_fmt_ts(tss[0])} → {_fmt_ts(tss[-1])}"
 
 
-def _latest_resolutions_by_slug(
-    events: _t.Sequence[dict], resolved_event_names: tuple[str, ...]
-) -> dict[str, dict]:
-    """Return the newest `_finding_resolved` row per slug, keyed by slug.
-
-    Append-only log means an outcome can be revised in a later commit (rare but legal). The
-    latest resolution wins — that's what surfaces in the rendered rollup, and the older row
-    stays in the log as history a reader can walk manually.
-    """
-    latest: dict[str, dict] = {}
-    for e in events:
-        if e.get("event") not in resolved_event_names:
-            continue
-        slug = e.get("payload", {}).get("slug")
-        if not slug:
-            continue
-        prev = latest.get(slug)
-        if prev is None or (e.get("ts", "") > prev.get("ts", "")):
-            latest[slug] = e
-    return latest
-
-
 def _mechanism_section(
     title: str,
     run_event: str | tuple[str, ...],
@@ -141,7 +119,7 @@ def _mechanism_section(
     if not runs and not findings:
         return ""
 
-    resolutions_by_slug = _latest_resolutions_by_slug(events, resolved_events)
+    resolutions_by_slug = latest_resolutions_by_slug(events, resolved_events)
 
     # De-dupe findings by slug (a slug may repeat across recital re-runs of the same PR — the
     # substantive information is the same, so counting once matches how a reader would count).

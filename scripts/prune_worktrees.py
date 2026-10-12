@@ -6,7 +6,11 @@ folder is gone) are ever acted on, and only with `git worktree remove` / `git wo
 printed as a command for a person to run. Design and the reasons behind each rule:
 docs/todo/WORKTREE_CLEANUP_PLAN.md.
 
-Fact gathering (git, gh, /proc) is kept apart from `classify`, which is pure, so the tests drive
+A worktree is in use when a process runs from it (`/proc`) or a live Claude Code session is working
+in it: sessions are launched from the workspace root and `cd` into a worktree, so their own process
+cwd never points there — `claude_sessions` reads the session's current folder from its transcript.
+
+Fact gathering (git, gh, /proc, Claude Code's session files) is kept apart from `classify`, which is pure, so the tests drive
 the bucket rules with made-up facts and never touch a real repo.
 """
 from __future__ import annotations
@@ -22,6 +26,7 @@ import time
 _REPO = pathlib.Path(__file__).resolve().parents[1]
 
 sys.path.insert(0, str(_REPO / "python"))
+from cecelia.effectiveness.claude_sessions import Session, live_sessions  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, main_checkout, merged_pr_heads  # noqa: E402
 
 #: A worktree created this recently is never SAFE: an agent that has just bootstrapped one has no
@@ -51,6 +56,7 @@ class Facts:
     status: list[str] = dataclasses.field(default_factory=list)              # porcelain lines
     tracked_ts: set[str] = dataclasses.field(default_factory=set)            # for the junk rule
     pids: list[tuple[int, str]] | None = dataclasses.field(default_factory=list)
+    sessions: list[tuple[str, str]] = dataclasses.field(default_factory=list)  # (name, status)
     stashes: int = 0
 
 
@@ -85,6 +91,8 @@ def classify(f: Facts) -> tuple[str, str]:
     if f.age_seconds < FRESH_SECONDS:
         later, why = classify(dataclasses.replace(f, age_seconds=FRESH_SECONDS))
         return FRESH, f"created {f.age_seconds / 3600:.1f} h ago; otherwise {later}: {why}"
+    if f.sessions:
+        return IN_USE, ", ".join(f"session {name} ({status})" for name, status in f.sessions)
     if f.pids is None:
         return IN_USE, "can't check for processes on this OS"
     if f.pids:
@@ -163,6 +171,11 @@ def pids_under(root: str, procs: list[tuple[int, str, list[str]]] | None) -> lis
             if any(_under(p, root) or root + os.sep in p for p in paths)]
 
 
+def sessions_under(root: str, sessions: list[Session]) -> list[tuple[str, str]]:
+    """(name, status) of every Claude Code session whose current folder is inside `root`."""
+    return [(s.name, s.status) for s in sessions if s.cwd and _under(s.cwd, root)]
+
+
 def stash_counts(primary: str) -> dict[str, int]:
     """Stash entries per branch, from the `WIP on <branch>:` / `On <branch>:` subject git writes."""
     counts: dict[str, int] = {}
@@ -175,7 +188,8 @@ def stash_counts(primary: str) -> dict[str, int]:
     return counts
 
 
-def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float) -> Facts:
+def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float,
+           sessions: list[Session] = ()) -> Facts:
     path = entry["worktree"]
     branch = entry.get("branch", "").removeprefix("refs/heads/") or None
     f = Facts(path=path, branch=branch, head=entry.get("HEAD"), primary=os.path.normcase(path) == os.path.normcase(primary),
@@ -186,6 +200,7 @@ def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float
     git_file = pathlib.Path(path) / ".git"
     f.age_seconds = now - git_file.stat().st_mtime if git_file.exists() else 1e9
     f.pids = pids_under(path, procs)
+    f.sessions = sessions_under(path, list(sessions))
     f.in_main = git_output("merge-base", "--is-ancestor", f.head or "HEAD", "origin/main", cwd=primary) is not None
     if not f.in_main:
         f.merged_heads = [] if branch is None else (
@@ -199,10 +214,11 @@ def gather(entry: dict, primary: str, procs, stashes: dict[str, int], now: float
     return f
 
 
-def survey(primary: str) -> list[tuple[Facts, str, str]]:
+def survey(primary: str, sessions: list[Session]) -> list[tuple[Facts, str, str]]:
     entries = parse_worktree_list(git_output("worktree", "list", "--porcelain", cwd=primary) or "")
     procs, stashes, now = scan_processes(), stash_counts(primary), time.time()
-    return [(f, *classify(f)) for f in (gather(e, primary, procs, stashes, now) for e in entries)]
+    return [(f, *classify(f)) for f in (gather(e, primary, procs, stashes, now, sessions)
+                                        for e in entries)]
 
 
 # ── report + removal ────────────────────────────────────────────────────────────────────────
@@ -229,6 +245,26 @@ def report(rows: list[tuple[Facts, str, str]], primary: str) -> str:
     return "\n".join(lines)
 
 
+def unreadable_note(sessions: list[Session]) -> str | None:
+    """A Claude session whose files can't be read could be working in any worktree — say so."""
+    pids = [str(s.pid) for s in sessions if not s.readable]
+    return (f"! couldn't read Claude session {', '.join(pids)} — the worktree it works in isn't protected"
+            if pids else None)
+
+
+def summary(rows: list[tuple[Facts, str, str]], sessions: list[Session] = ()) -> str | None:
+    """`3 removable, 2 dead — pixi run prune-worktrees --remove`, or None when nothing can go.
+    An unreadable Claude session is appended, so the nudge never reads as all-clear past it."""
+    safe, dead = (sum(b == bucket for _, b, _ in rows) for bucket in (SAFE, DEAD))
+    if not safe and not dead:
+        return None
+    parts = [f"{safe} removable" if safe else "", f"{dead} dead" if dead else ""]
+    line = f"{', '.join(p for p in parts if p)} worktree{'s' if safe + dead != 1 else ''}" \
+        " — pixi run prune-worktrees --remove"
+    note = unreadable_note(list(sessions))
+    return f"{line}  ({note.lstrip('! ')})" if note else line
+
+
 def disk_free(path: str) -> str:
     u = shutil.disk_usage(path)
     return f"{u.free / 1e9:.0f} GB free ({100 * u.used / u.total:.0f}% used)"
@@ -245,7 +281,11 @@ def remove(rows, primary: str) -> list[str]:
             continue
         entry = next((e for e in parse_worktree_list(git_output("worktree", "list", "--porcelain", cwd=primary) or "")
                       if e["worktree"] == f.path), None)
-        now_bucket, why = classify(gather(entry, primary, scan_processes(), stash_counts(primary), time.time())) \
+        sessions = live_sessions() or []
+        if (note := unreadable_note(sessions)) and note not in log:
+            log.append(note)
+        now_bucket, why = classify(gather(entry, primary, scan_processes(), stash_counts(primary),
+                                          time.time(), sessions)) \
             if entry else (DEAD, "gone")
         if now_bucket != SAFE:
             log.append(f"skipped {f.path}: now {now_bucket} ({why})")
@@ -265,6 +305,9 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--remove", action="store_true", help="remove SAFE worktrees and prune DEAD entries")
     ap.add_argument("--no-fetch", action="store_true", help="skip `git fetch --prune origin`")
+    ap.add_argument("--summary", action="store_true",
+                    help="print only `N removable, M dead — …` (nothing when both are 0); "
+                         "the bootstrap-worktree nudge")
     args = ap.parse_args(argv)
     primary_path = main_checkout(str(_REPO))
     if primary_path is None:
@@ -273,9 +316,17 @@ def main(argv: list[str] | None = None) -> int:
     primary = str(primary_path)
     if not args.no_fetch and git_output("fetch", "--prune", "--quiet", "origin", cwd=primary) is None:
         print("! git fetch failed — merged state is as of the last fetch", file=sys.stderr)
+    sessions = live_sessions() or []
+    rows = survey(primary, sessions)
+    if args.summary:
+        line = summary(rows, sessions)
+        if line:
+            print(line)
+        return 0
     before = disk_free(primary)
-    rows = survey(primary)
     print(report(rows, primary))
+    if note := unreadable_note(sessions):
+        print(note)
     if args.remove:
         print()
         for line in remove(rows, primary):

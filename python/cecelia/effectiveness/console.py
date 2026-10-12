@@ -35,6 +35,9 @@ import textwrap
 import time
 import typing as _t
 
+from .agents import AgentRow, PrCache, agent_rows, session_badge
+from .claude_sessions import live_sessions
+from .git_context import recent_prs
 from .judge_staleness import judge_record_warning, judge_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
 from .recital import ADVISORY_MARKERS
@@ -365,6 +368,10 @@ _ACTIVITY_ROWS = 10
 #: Description lines a finding starts with; raised while every held finding still fits.
 _FINDING_DESC_LINES = 3
 
+#: How often (seconds) the agents pane re-reads sessions, git and the log. Session state changes
+#: without a log event, so it can't ride on the event drain; one refresh costs ~70 ms.
+_AGENTS_REFRESH = 5.0
+
 
 class _Tally:
     """Rolling counters over the events the console has seen — the equivalent of
@@ -473,6 +480,14 @@ class DashboardState:
         self.findings_offset = 0
         self.findings_page = 1
         self.findings_expanded = False
+        #: Agents-pane rows; None = no pane (no sessions, or liveness can't be checked here).
+        self.agents: list[AgentRow] | None = None
+        self.agents_note: str | None = None
+        #: `pixi run agents` only: → lists each session's recital findings with their outcomes;
+        #: PgUp/PgDn scroll it (`agents_offset`, step `agents_page`).
+        self.agents_expanded = False
+        self.agents_offset = 0
+        self.agents_page = 1
 
     def add(self, event: dict) -> None:
         self.tally.add(event)
@@ -483,6 +498,113 @@ class DashboardState:
             self.findings.append(event)
         self.events.append(event)
         self.last_event_ts = event.get("ts") or self.last_event_ts
+
+
+def refresh_agents(state: "DashboardState", log_path: pathlib.Path,
+                   prs: _t.Iterable[dict] = ()) -> None:
+    """Re-read live sessions and their branches' recital state into `state.agents`; `prs` is the
+    newest-first PR list the PR/CI columns join against."""
+    sessions = live_sessions()
+    if sessions is None:
+        state.agents, state.agents_note = [], "can't list sessions on this OS (needs /proc)"
+    elif not sessions:
+        state.agents, state.agents_note = [], "no live Claude Code sessions"
+    else:
+        state.agents, state.agents_note = agent_rows(sessions, list(read_events(log_path)), prs), None
+
+
+def _fit(text: str, n: int) -> str:
+    """`text` padded or cut (with `…`) to exactly `n` columns."""
+    return f"{text:<{n}}" if len(text) <= n else text[:n - 1] + "…"
+
+
+def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> str:
+    """One table row — idle in yellow (waiting for Dominik), open findings in orange (the commit
+    hook will block on them). `cols` = the worktree and branch column widths."""
+    if not row.readable:
+        return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} (session file unreadable)", use_colour=use_colour)
+    status = _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour)
+    where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
+    # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
+    name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + f" {_fit(row.name, 12)}"
+    if not row.branch:
+        return f"  {name} {status} {where}"
+    open_ = _col(_ORANGE if row.open_findings else _GREY, f"{row.open_findings:>4}", use_colour=use_colour)
+    pr = f"#{row.pr}" if row.pr else "—"
+    word, colour = _pr_word(row)
+    return (f"  {name} {status} {where} {row.rounds:>8} {open_}  {pr:<6} "
+            + _col(colour, word, use_colour=use_colour))
+
+
+def _pr_word(row: AgentRow) -> tuple[str, str]:
+    """The `ci` column: CI state while the PR is open, else what happened to the PR."""
+    if row.pr_state in ("MERGED", "CLOSED"):
+        return row.pr_state.lower(), _DIM
+    return {"fail": ("fail", _RED), "running": ("running", _YELLOW),
+            "pass": ("pass", _GREEN)}.get(row.ci or "", ("", _GREY))
+
+
+#: Outcome order in the detail view's count line: what still needs work first.
+_DETAIL_OUTCOMES = ("unresolved", "fixed_pre_commit", "shipped_with_finding", "false_positive",
+                    "dropped_no_action")
+
+
+def _agent_detail(row: AgentRow, width: int, *, use_colour: bool) -> list[str]:
+    """The → view under one session: outcome counts, then each finding as the recital console's
+    findings pane draws it (`_render_finding_block`: head line + description capped at
+    `_FINDING_DESC_LINES`), its outcome in front and the agent's reason under it."""
+    pad = " " * 6
+    if not row.branch:
+        return []
+    if not row.findings:
+        return [_col(_DIM, pad + "no recital findings", use_colour=use_colour)]
+    words = {**_OUTCOME_SHORT, "unresolved": "open"}
+    counts = {o: sum(out == o for _, out, _ in row.findings) for o in _DETAIL_OUTCOMES}
+    tally = " · ".join(_col(_OUTCOME_COLOUR.get(o, _GREY) if n else _DIM, f"{n} {words[o]}",
+                            use_colour=use_colour) for o, n in counts.items())
+    lines = [_clip(pad + tally, width)]
+    gutter = pad + " " * 10      # under the outcome word
+    for finding, outcome, res in row.findings:
+        block = _render_finding_block(finding, width=width - len(gutter), use_colour=use_colour,
+                                      desc_line_cap=_FINDING_DESC_LINES, context=False)
+        word = _col(_OUTCOME_COLOUR.get(outcome, _GREY), f"{words.get(outcome, outcome):<10}",
+                    use_colour=use_colour)
+        lines.append(pad + word + block[0])
+        lines.extend(gutter + line for line in block[1:])
+        reason = ((res or {}).get("payload") or {}).get("reason")
+        if reason:
+            why = _wrap_desc(" ".join(reason.split()), width=width - len(gutter) - 2,
+                             indent=" " * (_DESC_INDENT + 2),
+                             first_prefix=" " * _DESC_INDENT + _col(_DIM, "why ", use_colour=use_colour))
+            lines.extend(gutter + line for line in why.splitlines()[:_FINDING_DESC_LINES])
+    return lines
+
+
+def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> list[str]:
+    """`── agents ──` header, a column-title row and one row per session; [] when there is no pane.
+
+    `recitals` = `pixi run recital` runs on the session's branch; `open` = their findings with no
+    outcome tag yet."""
+    if state.agents is None:
+        return []
+    # Name, status, the counts, PR and CI take ~55 columns; worktree and branch share the rest,
+    # each no wider than its longest value (or its title).
+    share = max(12, (width - 55) // 2)
+    cols = (min(share, max([8, *(len(r.worktree or "—") for r in state.agents)])),
+            min(share, max([6, *(len(r.branch or "—") for r in state.agents)])))
+    rows = []
+    for r in state.agents:
+        rows.append(_clip(_agent_line(r, cols=cols, use_colour=use_colour), width))
+        if state.agents_expanded:
+            rows.extend(_agent_detail(r, width, use_colour=use_colour))
+    if rows:
+        title = (f"    {'agent':<12} {'state':<6} {_fit('worktree', cols[0])} {_fit('branch', cols[1])}"
+                 f" {'recitals':>8} {'open':>4}  {'pr':<6} ci")
+        rows.insert(0, _clip(_col(_DIM, title, use_colour=use_colour), width))
+    if state.agents_note:
+        rows.append(_col(_DIM, f"  {state.agents_note}", use_colour=use_colour))
+    hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → findings"
+    return [_hr("agents" + hint, width, use_colour=use_colour), *rows, ""]
 
 
 def _hr(label: str, width: int, *, use_colour: bool) -> str:
@@ -514,19 +636,20 @@ def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = Tr
 
 
 def _render_finding_block(event: dict, *, width: int, use_colour: bool,
-                          desc_line_cap: int) -> list[str]:
+                          desc_line_cap: int, context: bool = True) -> list[str]:
     """One finding for the findings pane — head + wrapped description, description capped.
 
     `desc_line_cap` bounds how many wrapped lines a single description contributes; anything
     beyond that is elided with `…`. Without a per-finding cap one long description eats the
     whole pane and pushes the counters off-screen — the failure this whole refactor exists
     to fix. The branch/commit anchor sits on its own row under the head, aligned with the
-    description text — it doesn't count against `desc_line_cap`.
+    description text — it doesn't count against `desc_line_cap`. `context=False` drops that
+    anchor row — the agents pane lists findings under their session's row, which names the branch.
     """
     # Head and ref rows clip to the width like activity rows; only the description wraps.
     out = [_clip(_finding_head_line(event, use_colour=use_colour, with_context=False), width)]
     indent = " " * _DESC_INDENT
-    ctx = _fmt_context(event)
+    ctx = _fmt_context(event) if context else ""
     if ctx:
         out.append(_clip(indent + "  " + _col(_DIM, ctx, use_colour=use_colour), width))
     desc = ((event.get("payload") or {}).get("desc") or "").strip()
@@ -543,8 +666,10 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
 
 def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
                      width: int, height: int = 40, use_colour: bool = True,
-                     judge_warning: str | None = None) -> str:
+                     judge_warning: str | None = None, agents_only: bool = False) -> str:
     """Build the full-screen dashboard as one string, sized to fit `height` rows.
+
+    `agents_only` (`pixi run agents`) renders the title and the agents pane and nothing else.
 
     Layout (mirrors `task_console.jl::render()`):
       - Title line: name · log path · current local time
@@ -566,10 +691,17 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ── Chrome (unbudgeted — a terminal that can't fit the counters isn't usable anyway) ──
-    title = _col(_BOLD, "Cecelia recital console", use_colour=use_colour)
-    path_str = _col(_DIM, str(log_path), use_colour=use_colour)
+    title = _col(_BOLD, "Cecelia agents" if agents_only else "Cecelia recital console",
+                 use_colour=use_colour)
+    # The agents view reads three sources (sessions, git, the log), so naming one path misleads.
+    path_str = "" if agents_only else _col(_DIM, str(log_path), use_colour=use_colour) + "   "
     time_str = _col(_GREY, now, use_colour=use_colour)
-    chrome: list[str] = [_clip(f"{title}  {path_str}   {time_str}", width)]
+    chrome: list[str] = [_clip(f"{title}  {path_str}{time_str}", width)]
+    if agents_only:
+        pane, state.agents_offset, state.agents_page = scroll_window(
+            agents_block(state, width, use_colour=use_colour), height - len(chrome) - 1,
+            state.agents_offset, use_colour=use_colour)
+        return "\n".join(chrome + [""] + pane)
 
     total_runs = sum(state.tally.runs.values())
     total_errored = sum(state.tally.errored_runs.values())
@@ -602,6 +734,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     if judge_warning:
         chrome.append(_clip(_col(_YELLOW, judge_warning, use_colour=use_colour), width))
     chrome.append("")
+    chrome.extend(agents_block(state, width, use_colour=use_colour))
 
     # By-mechanism block (compact — one row per mechanism, still counts as chrome so it
     # doesn't compete with the findings pane for the row budget).
@@ -902,6 +1035,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--log-path", type=pathlib.Path,
                    help="Override the log path (default: $CECELIA_EFFECTIVENESS_LOG or "
                         "~/.cecelia-effectiveness/events.jsonl).")
+    p.add_argument("--agents", action="store_true",
+                   help="Show only the agents pane: one row per live Claude Code session "
+                        "(`pixi run agents`).")
     p.add_argument("--width", type=int, default=0, metavar="COLS",
                    help="Wrap descriptions at COLS (default: terminal width, min 60).")
     return p
@@ -944,7 +1080,8 @@ def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
 
 
 def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
-                        *, out: _t.TextIO, follow: bool, key_fd: int | None = None) -> int:
+                        *, out: _t.TextIO, follow: bool, key_fd: int | None = None,
+                        agents_only: bool = False) -> int:
     """Full-screen dashboard — poll + repaint on every _REFRESH_TICK, plus SIGWINCH.
 
     The refresh tick exists to keep the title line's `HH:MM:SS` clock alive when nothing
@@ -968,6 +1105,10 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     for event in seed_events:
         state.add(event)
     judge_warning = judge_record_warning(judge_store(log_path))   # once: weekly, not mid-session
+    # A one-shot frame waits for the PR list; a live one fetches it in the background (~3 s).
+    pr_cache = PrCache() if follow else None
+    refresh_agents(state, log_path, pr_cache.get() if pr_cache else recent_prs() or ())
+    agents_at = time.monotonic()
 
     def _paint() -> None:
         width, height = _terminal_size()
@@ -979,7 +1120,8 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
         # sits under the terminal's own bottom line and the topmost row is scrolled off.
         out.write("\033[?25l\033[2J\033[3J\033[H")
         out.write(render_dashboard(state, log_path, width=width, height=height - 1,
-                                    use_colour=True, judge_warning=judge_warning))
+                                    use_colour=True, judge_warning=judge_warning,
+                                    agents_only=agents_only))
         out.write("\n")
         out.flush()
 
@@ -1027,6 +1169,9 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
             events, offset = _drain_new_events(log_path, offset)
             for event in events:
                 state.add(event)
+            if time.monotonic() - agents_at >= _AGENTS_REFRESH:
+                refresh_agents(state, log_path, pr_cache.get())
+                agents_at = time.monotonic()
             _paint()
             resize_pending[0] = False
             # Sleep in small slices so SIGWINCH can shorten the wait — a signal interrupts
@@ -1043,6 +1188,14 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                     key = poll_key(key_fd, slice_)
                 except EOFError:   # the terminal is gone; keep painting, stop reading
                     key_fd = None
+                    continue
+                if agents_only:   # the keys drive the agents pane: there is no findings pane
+                    if scroll_step(key, state.agents_page):
+                        state.agents_offset += scroll_step(key, state.agents_page)
+                        break
+                    if key in (LEFT, RIGHT):
+                        state.agents_expanded, state.agents_offset = key == RIGHT, 0
+                        break
                     continue
                 if scroll_step(key, state.findings_page):
                     state.findings_offset += scroll_step(key, state.findings_page)
@@ -1085,6 +1238,12 @@ def main(argv: _t.Sequence[str] | None = None,
 
     seed = _tail(list(read_events(log_path)), args.tail, since)
 
+    if args.agents and (args.stream or not tty):
+        # Piped: one plain snapshot of the pane — a session list has no event stream to follow.
+        state = DashboardState()
+        refresh_agents(state, log_path, recent_prs() or ())
+        print("\n".join(agents_block(state, width, use_colour=False)).rstrip(), file=out)
+        return 0
     if args.stream or not tty:
         # Pipe-friendly append-only view. Colour is off by default when piped (a `| tee`
         # target should be plain), on when explicitly connected to a TTY-but-forced-stream.
@@ -1094,7 +1253,8 @@ def main(argv: _t.Sequence[str] | None = None,
 
     keys = stdout is None and not args.no_follow and sys.stdin.isatty()
     return _run_dashboard_mode(seed, log_path, out=out, follow=not args.no_follow,
-                               key_fd=sys.stdin.fileno() if keys else None)
+                               key_fd=sys.stdin.fileno() if keys else None,
+                               agents_only=args.agents)
 
 
 if __name__ == "__main__":

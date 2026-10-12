@@ -1,6 +1,6 @@
 # Worktree cleanup — `pixi run prune-worktrees`
 
-Status: **in-progress** (2026-10-10) on `prune-worktrees` — P1 built (report, `--remove`, bootstrap nudge, CLAUDE.md reminder); P1b planned (2026-10-13: Claude-session gate, actionable nudge); P2 not started.
+Status: **in-progress** (2026-10-10) on `prune-worktrees` — P1 built (report, `--remove`, bootstrap nudge, CLAUDE.md reminder); P1b built (2026-10-13: Claude-session gate, `--summary` nudge); P2 not started.
 
 ## Goal
 
