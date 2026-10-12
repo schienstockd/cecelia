@@ -93,6 +93,8 @@ export interface AdvisorImage {
   /** valueName → segmentation label filenames (matches `CciaImage.labels`). Used by cross-image
    *  advisors to check whether a selected pop's VN is present on every image. */
   labels?: Record<string, string[]>
+  /** valueName → branch label filenames (matches `CciaImage.branchLabels`) — segment.branching's registry. */
+  branchLabels?: Record<string, string[]>
   /** display names of the image's channels (matches `CciaImage.channelNames`) — a rename changes them */
   channelNames?: string[]
   /** Source file path (pre-import). Present on newly registered, not-yet-imported rows — the
@@ -131,6 +133,10 @@ export interface AdvisorParam {
   /** `optionsFrom` on a `select` — surfaced so a key-registered advisor (`model` is used by BOTH
    *  `segment.cellpose` and `segment.coastal`) can self-gate to the source that actually applies. */
   optionsFrom?: string
+  /** `namespace` on a `valueNameInput` — which registry the name writes into (`labels`, …). */
+  namespace?: string
+  /** `outputRegistry` on a label writer's `valueNameInput` — `branch_labels` for branching. */
+  outputRegistry?: string
 }
 
 export interface ParamAdvisor {
@@ -379,6 +385,54 @@ export function imageVersionAdvisory(
       : `The selected images are on ${actives.length} different versions, so "${chosen}" is not what `
         + `the viewer shows for all of them. Check the version on each before running.`,
   }
+}
+
+// ── a label set name that is already taken ────────────────────────────────────────────────────
+//
+// Every label writer refuses an output name the image already has unless "Overwrite existing" is
+// ticked (`assert_labels_free`, app/src/segmentation.jl). This says so BEFORE Run, from the names the
+// form already holds — no fetch. Only for a task that offers the toggle (`overwrite` in the form), and
+// silent once it is ticked. The server check also counts an unregistered store left on disk, which the
+// image payload cannot see; that case is still refused at Run, with the same wording.
+export function labelsTakenAdvisory(
+  value: unknown, images: AdvisorImage[] | undefined, values: Record<string, unknown> | undefined,
+  registry: string = 'labels',
+): ParamAdvisory | null {
+  const name = typeof value === 'string' ? value.trim() : ''
+  if (!name || !images?.length || !values || !('overwrite' in values) || values.overwrite === true) {
+    return null
+  }
+  const names = registryNames(registry)
+  if (!names) return null
+  const taken = images.filter(i => name in names(i))
+  if (!taken.length) return null
+  const alt = freeLabelName(name, images, registry)
+  const on = taken.length < images.length ? ` on ${taken.length} of ${images.length} images` : ''
+  return {
+    severity: 'warn',
+    message: `Exists${on} — use '${alt}', or tick Overwrite existing`,
+    tip: `"${name}" is already ${registry === 'branch_labels' ? 'a branch set' : 'a label set'}`
+      + `${on || ' on this image'}. The run is refused unless you pick another name ("${alt}" is free) `
+      + 'or tick Overwrite existing, which replaces it and what was built on it.',
+  }
+}
+
+/** The image field holding a `LABEL_REGISTRIES` registry's names (segmentation.jl) — `null` for one
+ *  the payload does not carry, so the hint stays silent rather than check the wrong list. */
+function registryNames(registry: string): ((i: AdvisorImage) => Record<string, unknown>) | null {
+  if (registry === 'labels') return i => i.labels ?? {}
+  if (registry === 'branch_labels') return i => i.branchLabels ?? {}
+  return null
+}
+
+/** The first of `{name}_2`, `{name}_3`, … no selected image has in `registry` — the form-side twin
+ *  of `free_label_name` (segmentation.jl), which also checks the disk. */
+export function freeLabelName(name: string, images: AdvisorImage[], registry: string = 'labels'): string {
+  const names = registryNames(registry) ?? (() => ({}))
+  const used = new Set(images.flatMap(i => Object.keys(names(i))))
+  let n = 2
+  while (used.has(`${name}_${n}`)) n++
+  return `${name}_${n}`
 }
 
 // ── cellpose model backend (Mac-only opt-in v3 env) ───────────────────────────────────────────
@@ -820,6 +874,16 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Every image-version picker in every task, which is the point: the mismatch is not a property of
   // one task, it is a property of the widget. Purely local — the image payload already carries both
   // the version list and the active name, so this never awaits.
+  // A label set's output name: warn before Run when it is taken and Overwrite existing is off.
+  // Registered under the TYPE, so it checks the namespace — other `valueNameInput`s name other things.
+  valueNameInput: {
+    reloadOn: ctx => [ctx.values?.overwrite, (ctx.images ?? []).map(i =>
+      `${i.uid}:${Object.keys(i.labels ?? {}).join('|')}:${Object.keys(i.branchLabels ?? {}).join('|')}`)
+      .join(',')],
+    advise: async (value, ctx, param) => param?.namespace === 'labels'
+      ? labelsTakenAdvisory(value, ctx.images, ctx.values, param.outputRegistry ?? 'labels') : null,
+  },
+
   valueNameSelection: {
     // the active version changes under the form: a correction finishing mid-session re-points it
     reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.activeValueName ?? ''}`).join(',')],

@@ -89,6 +89,96 @@ function register_label_files!(img::CciaImage, out_value_name::AbstractString,
     label_files
 end
 
+# The label registries a writer can claim a name in: the ccid.json field, the noun its refusal uses,
+# and every file a run under `vn` writes for it. ONE table, so a new registry is a row here, not a
+# second guard. `labels` covers both `matchAs` roles; `branch_labels` (segment.branching) its skeleton
+# store and the per-branch table pops are built on.
+const LABEL_REGISTRIES = Dict{String,NamedTuple{(:noun, :paths),Tuple{String,Function}}}(
+    "labels" => (noun = "Labels", paths = (img, vn) -> [joinpath(img_labels_dir(img), f)
+        for f in segment_label_files(vn, Dict("0" => Dict("matchAs" => "base"),
+                                              "1" => Dict("matchAs" => "nuc")))]),
+    "branch_labels" => (noun = "Branches", paths = (img, vn) ->
+        [joinpath(img_branch_labels_dir(img), "$(vn).zarr"), img_branch_props_path(img, vn)]),
+)
+
+# Is `vn` claimed in `field`: registered there, or one of the files a run would write is on disk.
+function _label_name_taken(img::CciaImage, raw::AbstractDict, vn::AbstractString, field::AbstractString)::Bool
+    registered = get(raw, field, Dict{String,Any}())
+    (registered isa AbstractDict && haskey(registered, vn)) ||
+        any(ispath, LABEL_REGISTRIES[field].paths(img, vn))
+end
+
+"""
+    free_label_name(img, raw, out_value_name; field = "labels") -> String
+
+The first of `{vn}_2`, `{vn}_3`, … that is free in `field` — registry and disk both — so a refusal
+can name a concrete alternative rather than only the toggle.
+"""
+function free_label_name(img::CciaImage, raw::AbstractDict, out_value_name::AbstractString;
+                         field::AbstractString = "labels")::String
+    n = 2
+    while _label_name_taken(img, raw, "$(out_value_name)_$(n)", field)
+        n += 1
+    end
+    "$(out_value_name)_$(n)"
+end
+
+"""
+    labels_taken(img, raw, out_value_name; field = "labels") -> Union{Nothing,String}
+
+Why `out_value_name` is already taken in `field` on `img`, or `nothing`. The message is the one every
+label writer shows, and it names a free alternative FIRST: the toggle replaces the user's data, so
+the obvious next step — for a person or an agent — should be the name that does not.
+"""
+function labels_taken(img::CciaImage, raw::AbstractDict, out_value_name::AbstractString;
+                      field::AbstractString = "labels")::Union{Nothing,String}
+    _label_name_taken(img, raw, out_value_name, field) || return nothing
+    alt = free_label_name(img, raw, out_value_name; field = field)
+    "$(LABEL_REGISTRIES[field].noun) '$out_value_name' already exist — use '$alt', " *
+        "or tick Overwrite existing to replace them"
+end
+
+"""
+    output_registry(task) -> String
+
+Which `LABEL_REGISTRIES` field a writer's output name lives in, read off its spec: the
+`outputRegistry` of its output-name `valueNameInput` (`"branch_labels"` on segment.branching),
+`"labels"` when none is declared. The form's taken-name hint reads the SAME declaration
+(`labelsTakenAdvisory`), so the two cannot disagree about which registry a name is checked in.
+"""
+function output_registry(task::CciaTask)::String
+    spec = _task_spec(task)
+    for p in (isnothing(spec) ? [] : get(spec, "params", []))
+        p isa AbstractDict && get(p, "type", "") == "valueNameInput" || continue
+        reg = get(p, "outputRegistry", nothing)
+        isnothing(reg) || return string(reg)
+    end
+    "labels"
+end
+
+"""
+    assert_labels_free(img, out_value_name; field, overwrite, raw, on_log) -> Bool
+
+The guard every label writer (cellpose, coastal, ridges, label import, and branching with
+`field = "branch_labels"`) calls FIRST, before it reads or writes anything: `false` — with the reason
+logged as `[ERROR]` — when `out_value_name` is already taken in `field` on `img` and `overwrite` is
+off. The handler then returns `nothing`, so a composite stops before Measure labels too. Output names
+default to `default`, the name an image's segmentation most likely already has, so a re-run used to
+replace it — and orphan the measures and pops built on it — silently. `overwrite` is the spec's
+shared "Overwrite existing" toggle (`fragments/overwriteLabels.json`).
+"""
+function assert_labels_free(img::CciaImage, out_value_name::AbstractString;
+                            field::AbstractString = "labels",
+                            overwrite::Bool = false,
+                            raw::AbstractDict = read_ccid_raw(state_file(img)),
+                            on_log::Function = _ -> nothing)::Bool
+    overwrite && return true
+    why = labels_taken(img, raw, out_value_name; field = field)
+    isnothing(why) && return true
+    on_log("[ERROR] $why")
+    false
+end
+
 """
     segment_qc_findings(counts) -> (findings, primary_count)
 
@@ -224,14 +314,18 @@ function seg_given_diameter(models)::Union{Nothing,Float64}
 end
 
 """
-    bank_segment_qc!(img, fun_name, out_value_name, qc_out_path; diameter_um, on_log)
+    bank_segment_qc!(img, fun_name, out_value_name, qc_out_path; diameter_um, extra_findings, on_log)
 
 Shared tail of every segmenter: read the runner's `qcOutPath` JSON, turn its counts + object stats
 into findings (`segment_qc_findings` + `seg_object_qc_findings`), bank them under `fun_name`, and log
 one `[QC]` line per finding. Advisory and best-effort — a failure is logged, never raised.
+
+`extra_findings(qmeta)` adds a task's own findings from the same JSON (label import's id pairing), so
+a segmenter with one more signal still banks through here rather than a second `write_qc`.
 """
 function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_name::AbstractString,
                           qc_out_path::AbstractString; diameter_um = nothing,
+                          extra_findings::Function = _ -> Dict{String,Any}[],
                           on_log::Function = _ -> nothing)
     isfile(qc_out_path) || return nothing
     try
@@ -239,7 +333,7 @@ function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_na
         counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
         findings, primary = segment_qc_findings(counts)
         stats = get(qmeta, :objectStats, nothing)
-        seg = seg_object_qc_findings(stats; diameter_um = diameter_um)
+        seg = vcat(seg_object_qc_findings(stats; diameter_um = diameter_um), extra_findings(qmeta))
         append!(findings, seg)
         metrics = Dict{String,Any}("nCells" => primary, "byType" => counts)
         isnothing(diameter_um) || (metrics["diameterUm"] = diameter_um)

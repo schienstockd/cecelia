@@ -1145,6 +1145,7 @@ const pct = computed(() => {
        Teleport removes the dependency on what happens to be above this row. -->
   <Teleport to="body">
     <FileBrowser v-if="showFileBrowser" mode="file" :extensions="param.extensions ?? []"
+      :dir-extensions="param.dirExtensions ?? []"
       :title="param.label ? `Select ${param.label.toLowerCase()}` : ''"
       @select="(paths: string[]) => { if (paths[0]) val = paths[0]; showFileBrowser = false }"
       @close="showFileBrowser = false" />

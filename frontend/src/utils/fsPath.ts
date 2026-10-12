@@ -28,3 +28,34 @@ export function fsBreadcrumbs(current: string): Crumb[] {
   }
   return crumbs
 }
+
+/** What the picker needs of a listing entry to decide whether it may be picked. */
+export interface PickableEntry { name: string; isdir: boolean; isimage: boolean }
+
+export type FsPickMode = 'image' | 'dir' | 'bundle' | 'file'
+
+// Case-insensitive: an export is as likely to be `.XML` as `.xml`, and a filter that silently shows
+// nothing reads as "the browser is broken", not "wrong case".
+function endsWithAny(name: string, exts: string[]): boolean {
+  const n = name.toLowerCase()
+  return exts.some(x => n.endsWith(x.toLowerCase()))
+}
+
+/**
+ * Whether the browser lets `e` be picked in `mode` (dir mode picks the current folder, not an entry).
+ *
+ * `file` mode: a file whose name ends with one of `extensions` (empty = any file), or a DIRECTORY
+ * ending with one of `dirExtensions` — a format that is a folder on disk, picked as one file (an
+ * OME-Zarr store). Any other folder is navigated into, never picked, or every folder would become
+ * selectable. `bundle` mode is the `.ccbundle` case of the same rule, kept as a named mode.
+ */
+export function isPickable(e: PickableEntry, mode: FsPickMode,
+                           extensions: string[] = [], dirExtensions: string[] = []): boolean {
+  if (mode === 'image')  return e.isimage
+  if (mode === 'bundle') return e.isdir && endsWithAny(e.name, ['.ccbundle'])
+  if (mode === 'file') {
+    return e.isdir ? dirExtensions.length > 0 && endsWithAny(e.name, dirExtensions)
+                   : !extensions.length || endsWithAny(e.name, extensions)
+  }
+  return false
+}

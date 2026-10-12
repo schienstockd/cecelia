@@ -8,7 +8,8 @@ Handles opening, reading, and writing zarr arrays with support for:
   - Multiscale pyramid creation with power-of-two downsampling
 
 Zarr stores only. Source formats (TIFF, …) are converted by the import task (bioformats2raw) before
-anything here reads a pixel; reading a source file's *metadata* lives in `ome_xml_utils`.
+anything here reads a pixel; reading a source file's *metadata* lives in `ome_xml_utils`. The one
+exception is an external LABEL image (`open_label_source`), which label import reads directly.
 
 Stores are identified STRUCTURALLY, never by file extension — a bioformats2raw series wrapper is told
 from a flat store by its `multiscales` attr (`series_base`), and a store is told from a non-store by
@@ -342,6 +343,39 @@ def open_zarr(zarr_path, mode='r', multiscales=None, as_dask=False):
     if as_dask is True:
         zarr_data = zarr_data_to_dask(zarr_data)
     return zarr_data, zarr_group_info
+
+
+@contextlib.contextmanager
+def open_label_source(path):
+    """Open an EXTERNAL label image read-only at full resolution: yields ``(level0, axes)``.
+
+    The one place a source file's pixels are read without bioformats2raw in between — label import
+    (`segment.importLabels`) takes a mask made elsewhere, and converting a mask through the image
+    import would be the wrong tool. ``level0`` is chunk-addressable and never loaded whole, so a
+    caller reads it block by block:
+
+    - a zarr store (OME-Zarr multiscales or a bare array) → its level 0, through `open_zarr`;
+    - a TIFF → series 0, level 0 through tifffile's zarr view (`aszarr`). Each TIFF strip or tile is
+      one chunk, so a block read decodes only what it covers. A TIFF written as ONE uncompressed
+      strip per page still costs a whole page per read — that is the file's layout, not this reader.
+
+    ``axes`` is the upper-case axis letters when the source declares them (NGFF axes for a store),
+    else None. TIFF axes are not trusted: tifffile reports `Q`/`S` for anything ImageJ did not tag.
+    """
+    from cecelia.utils import ome_xml_utils   # lazy: owns the structural store test (as open_as_zarr)
+    if ome_xml_utils.is_zarr_store(path):
+        levels, _ = open_zarr(path)
+        axes = read_axes(path)
+        yield levels[0], ([str(a).upper() for a in axes] if axes else None)
+        return
+    if os.path.isdir(path):
+        raise ValueError(f'not a zarr store or a TIFF: {path!r}')
+    import tifffile   # lazy: only label import reads a TIFF's pixels
+    store = tifffile.imread(path, aszarr=True, series=0, level=0)
+    try:
+        yield zarr.open(store, mode='r'), None
+    finally:
+        store.close()
 
 
 def is_dask(a):

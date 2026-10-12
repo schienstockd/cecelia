@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
-  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims,
+  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims, labelsTakenAdvisory, freeLabelName,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -697,5 +697,47 @@ describe('pyramidLevelsAdvisory — pre-import level count advice', () => {
   it("uses the recommendation when `value` is missing/NaN so the user always sees SOMETHING", () => {
     const a = pyramidLevelsAdvisory(undefined, peek(4, { xy: [1111, 1057], nT: 181, nZ: 31 }))!
     expect(a.message).toMatch(/4 levels → deepest 139×133×31/)
+  })
+})
+
+describe('labelsTakenAdvisory', () => {
+  const img = (uid: string, labels: string[]) =>
+    ({ uid, labels: Object.fromEntries(labels.map(l => [l, [`${l}.zarr`]])) })
+  const off = { overwrite: false }
+  it('warns when the name is taken and Overwrite existing is off', () => {
+    const a = labelsTakenAdvisory('default', [img('a', ['default'])], off)
+    expect(a?.severity).toBe('warn')
+    expect(a?.message).toBe("Exists — use 'default_2', or tick Overwrite existing")
+  })
+  it('counts the images that have it in a mixed selection', () => {
+    expect(labelsTakenAdvisory('default', [img('a', ['default']), img('b', [])], off)?.message)
+      .toBe("Exists on 1 of 2 images — use 'default_2', or tick Overwrite existing")
+  })
+  it('is silent for a free name, once ticked, or on a task without the toggle', () => {
+    expect(labelsTakenAdvisory('new', [img('a', ['default'])], off)).toBeNull()
+    expect(labelsTakenAdvisory('default', [img('a', ['default'])], { overwrite: true })).toBeNull()
+    expect(labelsTakenAdvisory('default', [img('a', ['default'])], {})).toBeNull()
+  })
+  it('suggests the first name free on every selected image', () => {
+    expect(freeLabelName('default', [img('a', ['default', 'default_2']), img('b', ['default_3'])]))
+      .toBe('default_4')
+  })
+  it('checks the registry the spec declares — branching writes branch_labels, not labels', async () => {
+    const im = { uid: 'a', labels: { default: ['default.zarr'] }, branchLabels: { skel: ['skel.zarr'] } }
+    // a segmentation called "default" does not take branching's "default"…
+    expect(labelsTakenAdvisory('default', [im], off, 'branch_labels')).toBeNull()
+    // …but an existing branch set does, and the suggestion is free in that registry
+    expect(labelsTakenAdvisory('skel', [im], off, 'branch_labels')?.message)
+      .toBe("Exists — use 'skel_2', or tick Overwrite existing")
+    const adv = paramAdvisor({ type: 'valueNameInput' })!
+    const p = { type: 'valueNameInput', namespace: 'labels', outputRegistry: 'branch_labels' }
+    expect(await adv.advise('default', { images: [im], values: off }, p)).toBeNull()
+    expect(await adv.advise('skel', { images: [im], values: off }, p)).not.toBeNull()
+  })
+  it('runs only on a labels-namespace name', async () => {
+    const adv = paramAdvisor({ type: 'valueNameInput' })!
+    const ctx = { images: [img('a', ['default'])], values: off }
+    expect(await adv.advise('default', ctx, { type: 'valueNameInput', namespace: 'labels' })).not.toBeNull()
+    expect(await adv.advise('default', ctx, { type: 'valueNameInput', namespace: 'clusters' })).toBeNull()
   })
 })

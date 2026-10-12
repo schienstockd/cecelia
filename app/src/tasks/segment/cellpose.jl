@@ -19,6 +19,7 @@ Base.@kwdef struct CellposeSegmentParams
     clearTouchingBorder::Bool    = false
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
+    overwrite::Bool              = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -39,6 +40,7 @@ function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
         clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
         clearDepth          = Bool(get(d, "clearDepth", false)),
         normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
+        overwrite           = Bool(get(d, "overwrite", false)),
         version = parse_version_pin(d))
 end
 
@@ -165,6 +167,8 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
     assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
+    assert_labels_free(img, p.outputValueName; overwrite = p.overwrite, raw = raw, on_log = on_log) ||
+        return nothing
 
     # Resolve input image path
     filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)

@@ -7,7 +7,7 @@
 import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useLogStore } from '../stores/log'
-import { fsBreadcrumbs } from '../utils/fsPath'
+import { fsBreadcrumbs, isPickable } from '../utils/fsPath'
 
 const emit = defineEmits<{
   (e: 'select', paths: string[]): void
@@ -26,14 +26,11 @@ const props = withDefaults(defineProps<{
   mode?: 'image' | 'dir' | 'bundle' | 'file'
   /** 'file' mode: pickable suffixes, matched case-insensitively. Empty = any file. */
   extensions?: string[]
+  /** 'file' mode: suffixes of a format that is a FOLDER on disk (an OME-Zarr store), picked as one. */
+  dirExtensions?: string[]
   /** 'file'/'bundle' mode: modal title, when "Select a file" is too vague to be useful. */
   title?: string
-}>(), { mode: 'image', extensions: () => [], title: '' })
-
-// A `.ccbundle` is a DIRECTORY, so the bundle preset has to accept one; a plain file pick must not,
-// or every folder becomes selectable and navigation breaks.
-const pickExtensions = computed(() =>
-  props.mode === 'bundle' ? ['.ccbundle'] : props.extensions)
+}>(), { mode: 'image', extensions: () => [], dirExtensions: () => [], title: '' })
 
 const title = computed(() =>
   props.title ? props.title
@@ -42,21 +39,9 @@ const title = computed(() =>
   : props.mode === 'file'   ? 'Select a file'
   : 'Select images')
 
-// Which entries the current mode lets you pick (dir mode picks the current folder, not an entry).
+// Which entries the current mode lets you pick — one predicate for every mode (utils/fsPath).
 function isSelectable(e: FsEntry): boolean {
-  if (props.mode === 'image')  return e.isimage
-  if (props.mode === 'bundle') return e.isdir && matchesExtension(e)
-  if (props.mode === 'file')   return !e.isdir && matchesExtension(e)
-  return false
-}
-
-// Case-insensitive: an export is as likely to be `.XML` as `.xml`, and a filter that silently shows
-// nothing reads as "the browser is broken", not "wrong case".
-function matchesExtension(e: FsEntry): boolean {
-  const exts = pickExtensions.value
-  if (!exts.length) return true
-  const name = e.name.toLowerCase()
-  return exts.some(x => name.endsWith(x.toLowerCase()))
+  return isPickable(e, props.mode, props.extensions, props.dirExtensions)
 }
 
 interface FsEntry {
