@@ -122,6 +122,7 @@ class WeeklyTest(_WeeklyFixture):
         self.assertEqual(record["queue"], [{"kind": "bug", "ref": "B2"}])
         self.assertEqual(record["proposals"][0]["kind"], "tighten")
         self.assertEqual((record["run"]["rules_window_days"], record["run"]["min_sessions"]), (30, 3))
+        self.assertEqual(record["run"]["swept"], ["fanout", "convention"])   # the next pass reads it
 
     def test_tokens_are_kept_per_step_and_summed(self):
         tok = self.run_pass()["run"]["spend"]["tokens"]

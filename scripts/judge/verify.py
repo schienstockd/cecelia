@@ -92,7 +92,11 @@ person marked bad with a cause: `guide` (the in-app guide the agent followed did
 `platform` (the information existed but the agent couldn't see it). A person set the cause, so don't
 judge whether it is real: check whether the fix is in. Find the guide's text (`mcp/cecelia_mcp/guides.json`)
 or the tool / surface the note names, and say `fix` when it still lacks what the note asks for,
-`dismiss` only when this code already has it. Read the actual code: the flagged function, its callers and producers, and anything the
+`dismiss` only when this code already has it. A BUG marked `should reuse` is a duplicate, not a defect:
+a reviewer said new code copies a helper the codebase already has (the finding names it). Check that the
+copy is still here and whether the named helper really covers it: `fix` when the copy should call the
+helper instead, `decide` when they differ in a way only intent settles, `dismiss` when the copy is gone or
+already uses it, or the two differ on purpose. `guard` doesn't apply to a duplicate. Read the actual code: the flagged function, its callers and producers, and anything the
 bug's reasoning depends on. Trace it; don't infer. Read only: don't edit, build or run the app.
 `git log` / `git show` / `grep` are fine.
 
@@ -205,7 +209,8 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
 
     A group starts only while `reserved + group_usd <= cap_usd`, so the cap holds even if every
     agent spends its whole budget. A group that fails or isn't reached stays unverified and waits
-    for the next pass. `dismiss` sets the bug's status to `dismissed`, `guard` to `parked`.
+    for the next pass. `dismiss` sets the bug's status to `dismissed`, `guard` to `parked` (on a
+    duplicate, where it can't apply, `guard` becomes `decide`).
 
     The summary's `usd` is what the agents reported spending; `reserved_usd` is what the cap
     counted, which charges a failed agent that never said its cost its whole budget. A
@@ -240,6 +245,11 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
     out = []
     for b in bugs:
         v = verdicts.get(b["key"])
+        if v and v["verdict"] == "guard" and b.get("kind") == "duplicate":
+            # a copy can't be "not reachable yet": parking it would drop it off the work list unseen
+            v = {**{k: x for k, x in v.items() if k != "trigger"}, "verdict": "decide",
+                 "question": v.get("question") or "verify answered `guard` for a duplicate: reuse the helper, or keep the copy?",
+                 **({"recommendation": v["trigger"]} if v.get("trigger") and not v.get("recommendation") else {})}
         if v is None:
             out.append(b)
         elif v["verdict"] == "dismiss":

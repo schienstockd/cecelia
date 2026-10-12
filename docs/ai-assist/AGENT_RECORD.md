@@ -25,16 +25,17 @@ Four line panels, one point per ISO week (Monday–Sunday, UTC):
   latest logged outcome is *fixed before commit*. The rest were shipped knowingly, called a false
   positive, dropped, or have no outcome logged (mostly from before the hook required one); that
   split is in `effectiveness.json` and the image's description, not drawn.
-- **The judge's verdict on fan-out notes nobody fixed**, from the newest judge pass
-  ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), by the week each note was raised: how many are a *real
-  bug* (open, or parked: real but can't happen in today's code), *gone* (the code changed under
-  it), or *dismissed*. "Notes" because most of them are fan-out **advisories** — lower-confidence
-  calls that don't block a commit and so aren't counted as findings above — plus the findings that
-  shipped unfixed. The judge doesn't re-check convention findings (they feed its rule proposals),
-  so that panel has no convention line. A week the pass fell inside is hollow: it isn't fully
-  judged yet.
-- **Hollow points and dashed lines** mark a week that is partial (logging began inside it, or it
-  hadn't ended when the chart was drawn) or had under 10 sessions.
+- **The judge's verdicts**, from the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), one
+  panel per reviewer, by the week each note was raised. *Fan-out*: the notes nobody fixed — mostly
+  fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
+  findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
+  but can't happen in today's code), *gone* (the code changed under it) or *dismissed*.
+  *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
+  existing helper's job), *gone* or *dismissed*. Until a pass has swept convention findings, that
+  panel says so. A week the pass fell inside is hollow: it isn't fully judged yet.
+- **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
+  under 10 sessions. The week still running when the chart is drawn isn't drawn: it is in
+  `effectiveness.json`.
 
 ## What it can't tell you
 
