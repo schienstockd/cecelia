@@ -48,7 +48,7 @@ import {
   // magenta so a screenshot proves the swap works before the shader lands.
   type VolumeRenderer, type UniformState, type FrameSample, type AdapterReport,
 } from '../lib/webgpu/volumeRenderer'
-import { createBrickVolumeRenderer } from '../lib/webgpu/brickVolumeRenderer'
+import { createBrickVolumeRenderer, type BrickSource } from '../lib/webgpu/brickVolumeRenderer'
 import { createTileRenderer, type TileRenderer, type TileDraw } from '../lib/webgpu/tileRenderer'
 import {
   tileKeyStr, tileFetchRect, tilesInHalo, tileEvictions, viewportCentreTile, levelMeta,
@@ -872,8 +872,6 @@ watch(colourBy, () => { void loadOverlays() })
  * panel has more than one ticked, the first one wins deterministically. This is the visible
  * limitation the row hint below spells out.
  */
-/** The `maskName` the latest `reallocate()` started with — see the `labelName` watcher. */
-let allocatedLabel: string | null = null
 /** The `bricksEnabled` the latest `reallocate()` started with — see the `bricksEnabled` watcher. */
 let allocatedBricks: boolean | null = null
 function pickLabelName(names: string[]): string {
@@ -890,7 +888,7 @@ const previewVn = computed(() => {
   return p && p.imageUid === imageUid ? p.valueName : ''
 })
 // A running segmentation's store the user asked to watch from the viewer panel ("preview this run
-// while it writes") — read from the run's staging store, refetched on each re-stamp (`liveLabelsKey`).
+// while it writes") — read from the run's staging store, refetched on each re-stamp (`maskSourceId`).
 const liveVn = computed(() => {
   const l = viewerStore.liveLabels
   return l && l.imageUid === imageUid ? l.valueName : ''
@@ -920,20 +918,25 @@ const previewedRegion = computed(() => {
 // Session-only on/off for the mask on screen, so it can be compared against the signal it was drawn
 // from. Display state only — the mask stays loaded, so flipping it is a redraw, not a refetch.
 const maskHidden = ref(false)
-// A change of source-of-truth is a request for a new mask, and the mask rides each timepoint's slab
-// — so a change here has to `reallocate()` for the same reason a `<select>` did.
-//
-// `starting.value` guard: `labelName` recomputes when `meta.value` is set during `loadVersion` (a
-// different image can have a different first-visible label), and loadVersion is about to run its
-// own primary reallocate that reads `labelName.value` at call time. A watcher-driven reallocate
-// here would race that primary one — same Vulkan OOM shape as the show3D racer below.
-//
-// `allocatedLabel` guard: a meta refresh that flips `labelName` (a new segmentation becoming
-// known) already calls `reallocate()` itself, which reads the new name — the watcher's own
-// reallocate would be a second full reload of the same frame.
-// Keyed on the DRAWN mask: ticking another segmentation while a preview/live mask wins changes nothing
-// on screen, so it must not reload the frame.
-watch(labelName, () => { if (starting.value || maskName.value === allocatedLabel) return; reallocate() })
+// The mask on screen as one id (`tileMaskSourceId`): which segmentation, from which store, at which
+// rewrite stamp. A change of it is a MASK change — ticked off, another segmentation, a preview re-run,
+// a live run's re-stamp — and only the mask is refetched: every renderer stamps its slots with the id
+// their mask came from, and the channels already on the GPU stay (docs/todo/MASK_DECOUPLE_PLAN.md).
+// `hidden` is left out: hiding is a redraw at opacity 0, not a different mask.
+const maskSourceId = computed(() => tileMaskSourceId({
+  vn: maskName.value, hidden: false, ...maskStoreOf(maskName.value), rev: cacheClearRev.value,
+}))
+// The flat renderer budgets a timepoint WITH its mask whenever the image has a segmentation, so ticking
+// one on never changes how many timepoints fit — which would be a reallocate.
+const maskRoom = computed(() => !!maskName.value || (meta.value?.labelNames?.length ?? 0) > 0)
+/** The `maskRoom` the latest `reallocate()` budgeted — see `applyMaskSource`. */
+let allocatedMaskRoom = false
+/** The `maskSourceId` the renderer was last pointed at, by `reallocate()` or `applyMaskSource`. A path
+ *  that changes the id AND reallocates itself (a cache clear bumps `rev`) must not be applied twice. */
+let appliedMaskSource: string | null = null
+// `starting.value` guard: `maskName` recomputes when `meta.value` is set during `loadVersion`, which is
+// about to run its own reallocate reading the mask at call time.
+watch(maskSourceId, () => { if (!starting.value) applyMaskSource() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -945,7 +948,7 @@ watch(labelName, () => { if (starting.value || maskName.value === allocatedLabel
 // loadVersion, and loadVersion's own reallocate reads `bricksEnabled.value` at ensureRenderer
 // time. A watcher-driven reallocate here would race that primary one — same Vulkan OOM shape
 // as the show3D racer below.
-// `allocatedBricks`: same guard as `allocatedLabel` — a cache-clear meta refresh that changes dims
+// `allocatedBricks`: a cache-clear meta refresh that changes dims
 // enough to flip this already reallocates itself, reading the new value.
 watch(bricksEnabled, b => {
   if (meta.value === null || starting.value || b === allocatedBricks) return
@@ -992,14 +995,9 @@ const previewLabelsKey = computed(() => {
   const p = viewerStore.previewLabels
   return p && p.imageUid === imageUid ? p.updateId : 0
 })
-// A fresh preview result is shown even if the last one was hidden — that is what was asked for.
-watch(previewLabelsKey, () => { maskHidden.value = false; reallocate() })
-// Same for the live store: every re-stamp means more frames are written, so reload the frame on screen.
-const liveLabelsKey = computed(() => {
-  const l = viewerStore.liveLabels
-  return l && l.imageUid === imageUid ? l.updateId : 0
-})
-watch(liveLabelsKey, () => reallocate())
+// A fresh preview result is shown even if the last one was hidden — that is what was asked for. The
+// refetch itself is `maskSourceId`'s: the preview's stamp is part of it.
+watch(previewLabelsKey, () => { maskHidden.value = false })
 
 // P7.1: refetch whenever the AF preview for THIS image changes — a new AF run, a parameter edit or
 // a toggle-off. Every entry in the array shares one `updateId` (the store stamps them together), so
@@ -2066,10 +2064,72 @@ const syncCacheState = () => {
   }
 }
 
+/**
+ * One timepoint's mask slab, widened to u32 — `null` when the mask has nothing to draw here (another
+ * image version's dims, fewer levels than the image, a 409). Sized like the channel slabs: same depth,
+ * level and render dims the renderer currently holds. Shared by the full-frame fetch and the mask-only
+ * fetch a mask change sends for a frame already resident.
+ */
+async function fetchMaskSlab(
+  tp: number, vn: string, m: ViewerMeta, signal: AbortSignal,
+): Promise<{ buf: ArrayBuffer; serverMs: number } | null> {
+  const r = renderer.value
+  if (!r) return null
+  const zd = r.cache.zDepth
+  const zq = slabZ(zd, m.nZ, zPlane.value, zLoaded.value[0])
+  const lvl = slabLevel.value
+  const expectNX = renderNX.value, expectNY = renderNY.value
+  const enc = settings.viewerCompress ? 'zstd' : 'identity'
+  if (!vn) return null
+  // Mask store segmented on a DIFFERENT image version keeps its old spatial dims (drift
+  // correct expands the canvas, crop shrinks it). Overlaying it on the current version
+  // either mis-strides the label texture (silent wrong render) or trips the shape guard,
+  // and resample-to-fit would render a spatially-shifted overlay. Skip the fetch and let
+  // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
+  // current image dims by construction (the worker uses the open image), so bypass this
+  // check for previews.
+  const ms = maskStoreOf(vn)
+  if (!ms.store && m.labelDims && labelDimsMismatch(m, vn)) {
+    return null
+  }
+  // A mask with fewer levels than the image has nothing at this zoom — skip it so the image
+  // still draws; the sidebar flags the row. The server refuses the read (409) either way.
+  const short = labelLevelsShort(m, vn)
+  if (short && lvl >= short.nLevels) return null
+  // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
+  // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
+  // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
+  const url = slabUrl({
+    projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
+    ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
+    // Same cache-buster for the durable labels store's own rewrites.
+    rev: cacheClearRev.value || undefined,
+  })
+  const res = await fetch(url, { cache: 'default', signal })
+  if (res.status === 409) return null
+  if (!res.ok) throw new Error(`Mask "${vn}" could not be loaded (${res.status})`)
+  const buf = await res.arrayBuffer()
+  // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
+  // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
+  // width it would render as a plausible mask of something else.
+  const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
+  const bad = slabShapeError(
+    res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
+  if (bad) throw new Error(`Mask "${vn}" could not be loaded (${bad})`)
+  return { buf: widenLabelSlab(buf, bpv), serverMs: Number(res.headers.get('X-Server-Read-Ms')) || 0 }
+}
+
+/** Resident and holding the mask on screen — nothing to fetch. A resident frame whose mask is another
+ *  source's (the mask was ticked on or switched) still needs work: its mask, alone. */
+function frameComplete(tp: number): boolean {
+  const r = renderer.value
+  return !!r && r.hasTimepoint(tp) && !r.needsLabel?.(tp)
+}
+
 function fetchTimepoint(tp: number): Promise<boolean> {
   const r = renderer.value, m = meta.value
   if (!r || !m) return Promise.resolve(false)
-  if (r.hasTimepoint(tp)) { r.touch(tp); return Promise.resolve(true) }
+  if (frameComplete(tp)) { r.touch(tp); return Promise.resolve(true) }
   const missStart = performance.now()
   const running = inflight.get(tp)
   if (running) return running
@@ -2077,7 +2137,16 @@ function fetchTimepoint(tp: number): Promise<boolean> {
   const ac = new AbortController()
   aborts.set(tp, ac)
   const enc = settings.viewerCompress ? 'zstd' : 'identity'
-  const job = (async () => {
+  // The channels are already on the GPU: fetch the mask alone. `vn`/`src` are read once so a picker
+  // change mid-flight cannot install this response under another segmentation's name.
+  const maskOnly = r.hasTimepoint(tp)
+  const job = (maskOnly ? (async () => {
+    const vn = maskName.value, src = maskSourceId.value
+    const got = await fetchMaskSlab(tp, vn, m, ac.signal)
+    await r.uploadLabel?.(tp, got?.buf ?? null, src)
+    r.touch(tp)
+    return true
+  })() : (async () => {
     const t0 = performance.now()
     let serverMs = 0
     // The channels go in parallel — independent reads on the server's thread pool, and serially they
@@ -2090,13 +2159,13 @@ function fetchTimepoint(tp: number): Promise<boolean> {
     const zq = slabZ(zd, m.nZ, zPlane.value, zLoaded.value[0])
     const lvl = slabLevel.value
     const expectNX = renderNX.value, expectNY = renderNY.value
-    // The MASK goes with the channels, in the same round trip and into the same texture slot. Fetching
-    // it separately would let the two arrive apart, and an outline over the wrong frame is worse than
-    // no outline: it still looks like an answer. `vn` is read once here so a picker change mid-flight
-    // cannot label this response with a different segmentation's name.
+    // The MASK goes with the channels, in the same round trip and into the same timepoint's slot, which
+    // is stamped with the mask source it came from (`src`) — an outline over the wrong frame or from
+    // the wrong segmentation is worse than none: it still looks like an answer. Read once here so a
+    // picker change mid-flight cannot label this response with a different segmentation's name.
     // P7: the preview's vn when a task-preview is showing labels for THIS image (see `maskName`) — a
     // first-time segmentation preview must render even without a picker entry.
-    const vn = maskName.value
+    const vn = maskName.value, src = maskSourceId.value
     const [bufs, labelBuf] = await Promise.all([
       Promise.all(Array.from({ length: nChannels.value }, async (_, c) => {
         // P7.1: when an AF preview run has this channel in its corrected set, retarget its slab onto
@@ -2130,46 +2199,10 @@ function fetchTimepoint(tp: number): Promise<boolean> {
         serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
         return buf
       })),
-      (async () => {
-        if (!vn) return null
-        // Mask store segmented on a DIFFERENT image version keeps its old spatial dims (drift
-        // correct expands the canvas, crop shrinks it). Overlaying it on the current version
-        // either mis-strides the label texture (silent wrong render) or trips the shape guard,
-        // and resample-to-fit would render a spatially-shifted overlay. Skip the fetch and let
-        // the sidebar flag speak — the image frame keeps rendering. Preview writes match the
-        // current image dims by construction (the worker uses the open image), so bypass this
-        // check for previews.
-        const ms = maskStoreOf(vn)
-        if (!ms.store && m.labelDims && labelDimsMismatch(m, vn)) {
-          return null
-        }
-        // A mask with fewer levels than the image has nothing at this zoom — skip it so the image
-        // still draws; the sidebar flags the row. The server refuses the read (409) either way.
-        const short = labelLevelsShort(m, vn)
-        if (short && lvl >= short.nLevels) return null
-        // P7: when a task-preview is showing labels for THIS vn, flip to the scratch
-        // `<vn>__preview.ome.zarr` — same reader, same headers, same shape guard, only the file on
-        // disk differs. The taskPreview store clears `previewLabelsActive` on stop/error.
-        const url = slabUrl({
-          projectUid, imageUid, valueName: valueName.value, t: tp, c: 0, ...zq, enc, labels: vn, level: lvl,
-          ...maskStoreQuery(ms.store, ms.storeId, ms.liveSince),
-          // Same cache-buster for the durable labels store's own rewrites.
-          rev: cacheClearRev.value || undefined,
-        })
-        const res = await fetch(url, { cache: 'default', signal: ac.signal })
-        if (res.status === 409) return null
-        if (!res.ok) throw new Error(`Mask "${vn}" could not be loaded (${res.status})`)
-        const buf = await res.arrayBuffer()
-        // Same geometry as the image, its OWN dtype — so the guard is asked at the mask's width, which
-        // the server reports. A store narrower than UInt32 is widened rather than refused: at half the
-        // width it would render as a plausible mask of something else.
-        const bpv = labelBpv(res.headers.get('X-Slab-Bpv'))
-        const bad = slabShapeError(
-          res.headers.get('X-Slab-Shape'), buf.byteLength, m, zd, bpv, expectNX, expectNY)
-        if (bad) throw new Error(`Mask "${vn}" could not be loaded (${bad})`)
-        serverMs = Math.max(serverMs, Number(res.headers.get('X-Server-Read-Ms')) || 0)
-        return widenLabelSlab(buf, bpv)
-      })(),
+      fetchMaskSlab(tp, vn, m, ac.signal).then(got => {
+        if (got) serverMs = Math.max(serverMs, got.serverMs)
+        return got?.buf ?? null
+      }),
     ])
     const fetchMs = performance.now() - t0
 
@@ -2185,13 +2218,13 @@ function fetchTimepoint(tp: number): Promise<boolean> {
       Math.max(seenMax.value[c] ?? 0, slabMax(slabView(b, m.bytesPerVoxel), m.nX)))
 
     const t1 = performance.now()
-    await r.uploadFrame(tp, bufs, t.value, labelBuf)
+    await r.uploadFrame(tp, bufs, t.value, labelBuf, src)
     timing.value = {
       fetchMs: Math.round(fetchMs), uploadMs: Math.round(performance.now() - t1), serverMs,
     }
     lastMissMs.value = Math.round(performance.now() - missStart)
     return true
-  })().catch((e: unknown) => {
+  })()).catch((e: unknown) => {
     // An abort is the normal outcome for a prefetch the user scrubbed away from — not an error to show.
     if (e instanceof DOMException && e.name === 'AbortError') return false
     error.value = e instanceof Error ? e.message : String(e)
@@ -2259,7 +2292,7 @@ const pump = debouncedLatest<number>(async (tp, isCurrent) => {
   // loaded but unpainted. `schedulePump` aborts the in-flight fetch a new window has no use for.
   await walkPrefetch(prefetchWindow(tp, dir, m.nT, depth()), {
     isCurrent,
-    has: u => r.hasTimepoint(u),
+    has: frameComplete,
     touch: u => r.touch(u),
     fetch: async u => { const ok = await fetchTimepoint(u); syncCacheState(); return ok },
     target: () => t.value,
@@ -2922,9 +2955,11 @@ function tick() {
     // Brick renderer: advance every tick regardless of residency, so show(t) fires its
     // snap-to-boundT and the shader draws each frame with prev-t hole-fill for whatever hasn't
     // landed. Flat renderer: gate on cache residency (its frames are all-or-nothing).
+    // A flat frame is ready with its mask: after a mask is ticked on mid-movie, the walk fetches each
+    // frame's mask ahead of the playhead and playback never shows a frame without it (`frameComplete`).
     const readyProbe = bricksEnabled.value
       ? () => true
-      : (u: number) => r?.hasTimepoint(u) ?? false
+      : frameComplete
     const step = playbackAdvance(t.value, nT.value, settings.viewerLoop, readyProbe)
     if (step.ended) { stopPlay(); return }
     if (step.stalled) {
@@ -3984,10 +4019,55 @@ async function ensureRenderer() {
  * acquiring a new one; every caller either awaits or is fire-and-forget (the debounced pumps and the
  * chip/range handlers, all of which just want the effect to happen eventually).
  */
+/** What the brick renderer fetches: the image's identity plus the mask on screen (`maskName`: preview,
+ *  live store or the ticked one). No `labelName` when no mask is shown, so the brick loader skips label
+ *  requests entirely on projects with no segmentation. */
+function brickSource(): BrickSource {
+  const vn = maskName.value
+  const ms = maskStoreOf(vn)
+  return {
+    projectUid, imageUid,
+    valueName: valueName.value || undefined,
+    labelName: vn || undefined,
+    labelStore: vn ? ms.store : undefined,
+    labelStoreId: vn ? ms.storeId : undefined,
+    liveSince: vn ? ms.liveSince : undefined,
+    // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr` in place),
+    // which the projectUid/imageUid/valueName identity can't detect on its own. `setBrickSource` treats
+    // a rev change as an image switch and drops the atlas — same discipline as the tile atlas's
+    // sourceId change.
+    rev: cacheClearRev.value || undefined,
+  }
+}
+
+/**
+ * Point the renderer at the mask now on screen WITHOUT reallocating — the channels already on the GPU
+ * stay. Tiles read `tileMaskSource` every draw; the brick renderer swaps its label atlases alone; the
+ * flat renderer restamps its slots and the pump fetches each frame's mask by itself. The one reallocate:
+ * the flat cache was budgeted without room for a mask and now needs one (a first preview on an image
+ * with no segmentation).
+ */
+function applyMaskSource() {
+  if (meta.value === null || maskSourceId.value === appliedMaskSource) return
+  appliedMaskSource = maskSourceId.value
+  if (useTiles.value) { frame.redraw(); return }
+  const r = renderer.value
+  if (!r) return
+  if (r.setBrickSource) {
+    r.setBrickSource(brickSource())
+  } else {
+    if (maskRoom.value && !allocatedMaskRoom) { void reallocate(); return }
+    r.setLabelSource?.(maskSourceId.value)
+    schedulePump(t.value)
+  }
+  frame.redraw()
+}
+
 async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) = false) {
   const m = meta.value
   if (!m) return
-  allocatedLabel = maskName.value
+  allocatedMaskRoom = maskRoom.value
+  appliedMaskSource = maskSourceId.value
   allocatedBricks = bricksEnabled.value
   // The VOLUME path is a hard boundary — mode/plane/depth change is a full refetch, everything on the
   // wire is for a shape we no longer want. The TILE path is progressive: a level swap keeps the atlas
@@ -4035,9 +4115,10 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
   } else {
     const r = renderer.value
     if (!r) return
-    // P7: allocate the labels texture when the preview is showing labels for THIS image, even without
-    // a picker selection — a first-time preview would otherwise have nowhere to upload its bytes.
-    const wantLabels = !!maskName.value
+    // The brick renderer allocates its label atlases for the mask on screen (and swaps them on its own
+    // after); the flat one budgets each timepoint with room for a mask (`maskRoom`). P7: a preview
+    // showing labels for THIS image counts, even without a picker selection.
+    const wantLabels = r.setBrickSource ? !!maskName.value : maskRoom.value
     // `?bench=1`: reset the bench recorder BEFORE setImage so t0 stamps the actual boundary
     // between "nothing loaded" and "first user-visible frame". Any prior samples belonged to a
     // different image or a different mode swap and would poison the summary.
@@ -4053,24 +4134,9 @@ async function reallocate(refit: boolean | ((fit: OrbitCamera) => OrbitCamera) =
     // we make reallocate self-sufficient so the toggle path doesn't rely on that follow-up.
     r.setChannels(m.channels)
     // Brick renderer only: give the fetch loop the base URL identity — projectUid, imageUid, vn.
-    // No-op on the flat renderer via the optional chain.
-    r.setBrickSource?.({
-      projectUid, imageUid,
-      valueName: valueName.value || undefined,
-      // Fire label brick fetches for the mask on screen (`maskName`: preview, live store or the
-      // ticked one) — same predicate `wantLabels` above uses to decide whether the texture is
-      // allocated. `undefined` when no mask is shown, which lets the brick loader skip label
-      // requests entirely on projects with no segmentation.
-      labelName: wantLabels ? maskName.value : undefined,
-      labelStore: wantLabels ? maskStoreOf(maskName.value).store : undefined,
-      labelStoreId: wantLabels ? maskStoreOf(maskName.value).storeId : undefined,
-      liveSince: wantLabels ? maskStoreOf(maskName.value).liveSince : undefined,
-      // The rev flips on a same-store rewrite (task re-run overwrites `ccidSmoothed.ome.zarr`
-      // in place), which the projectUid/imageUid/valueName identity can't detect on its own.
-      // `setBrickSource`'s compare treats a rev change as a full source switch and drops the
-      // atlas — same discipline as the tile atlas's sourceId change.
-      rev: cacheClearRev.value || undefined,
-    })
+    // No-op on the flat renderer via the optional chain. Flat only: the mask its slots should hold.
+    r.setBrickSource?.(brickSource())
+    r.setLabelSource?.(maskSourceId.value)
     // Brick scheduler floor = slabLevel (dropdown). SSE picks finer as user zooms in; over-fetch
     // on wide viewports is bounded by MAX_INTERSECT_BRICKS. See the slabLevel watcher above.
     r.setLevelFloor?.(slabLevel.value)
@@ -5280,7 +5346,7 @@ onMounted(() => {
       const prev = meta.value
       // Most task-dones (gating, measures, clustering) touch nothing we draw: take the new store
       // list in place — a new segmentation becomes tickable — and keep the cache and the frame.
-      // A changed shown mask (`labelName` flipping) reloads through its own watcher.
+      // A changed shown mask (`labelName` flipping) reloads through `maskSourceId`'s watcher.
       if (!named && prev && !shownStoresChanged(prev, m, pickLabelName(m.labelNames ?? []))) {
         prev.labelNames = m.labelNames
         prev.labelDims = m.labelDims

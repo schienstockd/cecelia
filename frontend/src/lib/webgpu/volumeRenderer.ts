@@ -76,7 +76,19 @@ export interface VolumeRenderer {
    * never evicting `keep`.
    */
   uploadFrame(t: number, channelBytes: ArrayBuffer[], keep: number,
-                  labelBytes?: ArrayBuffer | null): Promise<void>
+                  labelBytes?: ArrayBuffer | null, labelSrc?: string): Promise<void>
+  /**
+   * Flat renderer only: the mask on screen, as a `tileMaskSourceId` (`''` for none). A slot whose mask
+   * came from another source draws without one until `uploadLabel` replaces it — a mask change never
+   * drops the slot's channels (docs/todo/MASK_DECOUPLE_PLAN.md). The brick renderer takes its mask
+   * through `setBrickSource`.
+   */
+  setLabelSource?(sourceId: string): void
+  /** Flat renderer only: `t` is resident but its mask is not the one on screen — fetch the mask alone. */
+  needsLabel?(t: number): boolean
+  /** Flat renderer only: install a mask for resident `t`, fetched under `sourceId`. `null` = the source
+   *  has nothing to draw there (a 409, another version's dims): stamped so it is not refetched. */
+  uploadLabel?(t: number, labelBytes: ArrayBuffer | null, sourceId: string): Promise<void>
   /**
    * Cap the cache at `n` timepoints. The effective `capacity` is the smallest of this, the byte ceiling
    * `setImage` was given, and anything the GPU turned out not to allow.
@@ -149,7 +161,7 @@ export interface VolumeRenderer {
   setTailFade(head: number, length: number): void
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
-   * a toggle is free; `setImage(..., withLabels)` is what decides whether they are fetched at all.
+   * a toggle is free; `setImage(..., withLabels)` reserves room for a mask in what a timepoint costs.
    * `contourPx` is the viewer's `contour` — an outline that many voxels thick instead of a filled region,
    * which is what lets the signal under the mask stay readable.
    */
@@ -531,6 +543,8 @@ export async function createVolumeRenderer(
   /** t → its volume texture, its mask (when one is shown) and the bind group that reads them. */
   const slots = new Map<number,
     { texture: GPUTexture; labelTexture: GPUTexture | null; bindGroup: GPUBindGroup;
+      /** The mask source (`setLabelSource`) `labelTexture` was fetched under; `''` = no mask yet. */
+      labelSrc: string;
       /** The `planeVersion` this slot's BYTES describe. On a 2D plane switch `setZPlane`
        *  bumps the renderer's counter; any slot stamped with the older number is stale (its
        *  texture holds the previous plane's data) and `show`/`hasTimepoint` treat it as a
@@ -568,6 +582,8 @@ export async function createVolumeRenderer(
   /** Whether a mask rides along in each timepoint's slot. Set by `setImage`, because it changes what a
    *  timepoint COSTS and therefore how many fit — a mask is 4 bytes a voxel against the image's 2. */
   let labels = false
+  /** The mask on screen (`setLabelSource`). Slots stamped with another source draw without a mask. */
+  let labelSource = ''
   /** Callback for the setOnOom hook — fired once per setImage cycle when a captured OOM leaves the
    *  renderer unable to hold even one timepoint. See interface doc. */
   let onOomCb: ((msg: string) => void) | null = null
@@ -616,6 +632,31 @@ export async function createVolumeRenderer(
     if (i >= 0) order.splice(i, 1)
   }
   const dropAll = () => { for (const t of [...slots.keys()]) dropSlot(t) }
+
+  /** One timepoint's bind group: its channels, and its mask or the placeholder. */
+  const slotBindGroup = (texture: GPUTexture, labelTexture: GPUTexture | null): GPUBindGroup =>
+    device.createBindGroup({
+      layout: bindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: uniforms } },
+        { binding: 1, resource: texture.createView() },
+        { binding: 2, resource: lutTex.createView() },
+        { binding: 3, resource: (labelTexture ?? noLabels).createView() },
+        { binding: 4, resource: palTex.createView() },
+        { binding: MIP_PICK_BINDING, resource: { buffer: pickBuffer } },
+      ],
+    })
+
+  /** Swap a resident slot's mask, keeping its channels. The bound slot rebinds at once. */
+  const setSlotLabel = (t: number, labelTexture: GPUTexture | null, src: string) => {
+    const slot = slots.get(t)
+    if (!slot) { if (!dead) labelTexture?.destroy(); return }
+    if (!dead) slot.labelTexture?.destroy()
+    slot.labelTexture = labelTexture
+    slot.labelSrc = src
+    slot.bindGroup = slotBindGroup(slot.texture, labelTexture)
+    if (t === boundT) bindGroup = slot.bindGroup
+  }
 
   const pushUniforms = () => { if (usable()) device.queue.writeBuffer(uniforms, 0, u) }
 
@@ -729,7 +770,7 @@ export async function createVolumeRenderer(
     },
 
     async uploadFrame(t: number, channelBytes: ArrayBuffer[], keep: number,
-                          labelBytes: ArrayBuffer | null = null) {
+                          labelBytes: ArrayBuffer | null = null, labelSrc = '') {
       const m = meta
       if (!m || !usable()) return
       const nch = Math.min(m.nC, MAX_CHANNELS)
@@ -831,19 +872,15 @@ export async function createVolumeRenderer(
         return
       }
 
-      const bg = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-          { binding: 0, resource: { buffer: uniforms } },
-          { binding: 1, resource: texture.createView() },
-          { binding: 2, resource: lutTex.createView() },
-          { binding: 3, resource: (labelTexture ?? noLabels).createView() },
-          { binding: 4, resource: palTex.createView() },
-          { binding: MIP_PICK_BINDING, resource: { buffer: pickBuffer } },
-        ],
-      })
+      // Bytes fetched under a mask that is no longer on screen are not this frame's mask.
+      const ownMask = labelTexture !== null && labelSrc === labelSource ? labelTexture : null
+      if (labelTexture !== ownMask && !dead) labelTexture?.destroy()
+      const bg = slotBindGroup(texture, ownMask)
       dropSlot(t)                                    // a re-upload replaces, never leaks
-      slots.set(t, { texture, labelTexture, bindGroup: bg, planeVersion: plane })
+      slots.set(t, {
+        texture, labelTexture: ownMask, bindGroup: bg, planeVersion: plane,
+        labelSrc: labelSrc === labelSource ? labelSrc : '',
+      })
       touch(t)
       for (const gone of lruEvictions(order, capacity, spare(keep))) dropSlot(gone)
     },
@@ -873,6 +910,55 @@ export async function createVolumeRenderer(
     hasTimepoint(t: number) {
       const slot = slots.get(t)
       return slot !== undefined && slot.planeVersion === planeVersion
+    },
+
+    setLabelSource(sourceId: string) {
+      if (sourceId === labelSource) return
+      labelSource = sourceId
+      // Every slot's mask is now another source's: draw without it (and free it) until refetched.
+      if (!usable()) return
+      for (const [t, slot] of slots) if (slot.labelSrc !== '') setSlotLabel(t, null, '')
+    },
+
+    needsLabel(t: number) {
+      const slot = slots.get(t)
+      return labels && labelSource !== '' && slot !== undefined
+        && slot.planeVersion === planeVersion && slot.labelSrc !== labelSource
+    },
+
+    async uploadLabel(t: number, labelBytes: ArrayBuffer | null, sourceId: string) {
+      const slot = slots.get(t)
+      if (!slot || !usable() || sourceId !== labelSource) return
+      const gen = allocGen, plane = planeVersion
+      const [nx, ny, dp] = [renderNX, renderNY, depth]
+      // Still the slot, plane, allocation and mask this was fetched for?
+      const current = () => usable() && gen === allocGen && plane === planeVersion
+        && slots.get(t) === slot && sourceId === labelSource
+      if (labelBytes === null) { setSlotLabel(t, null, sourceId); return }
+      // Fetched for another geometry (a level or plane swap between fetch and here) — not this slot's.
+      if (labelBytes.byteLength !== nx * ny * dp * LABEL_BPV) return
+      // Same OOM discipline as `uploadFrame`: the mask was budgeted with the timepoint (`labels`), so
+      // running out here means the GPU allows fewer slots than the budget — shrink, as uploadFrame does.
+      device.pushErrorScope('out-of-memory')
+      const labelTexture = device.createTexture({
+        size: [nx, ny, dp], dimension: '3d', format: 'r32uint',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      })
+      const oom = await device.popErrorScope()
+      if (oom) {
+        if (!dead) labelTexture.destroy()
+        allowed = Math.max(2, slots.size - 1)
+        recap()
+        for (const gone of lruEvictions(order, capacity, spare(t))) dropSlot(gone)
+        return
+      }
+      if (!current()) { if (!dead) labelTexture.destroy(); return }
+      device.queue.writeTexture(
+        { texture: labelTexture }, labelBytes,
+        { bytesPerRow: nx * LABEL_BPV, rowsPerImage: ny },
+        [nx, ny, dp],
+      )
+      setSlotLabel(t, labelTexture, sourceId)
     },
     residentTimepoints() { return [...order] },
     touch,
