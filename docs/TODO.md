@@ -201,13 +201,14 @@ manifests. Decide that separately.
 ### Notebooks on a shared install, for accounts that don't own it
 
 A system-scope install is read-only to every account but its owner
-(`docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`). Pluto keeps state inside the install. The server
-writes `pluto/.plutosecret` at launch (`api/src/notebooks_api.jl` `_secret_path`), and the fast-plot
-build writes `pluto/deps.so`, so for those accounts notebooks most likely fail on first use. That
-has not been tested.
-- **Fix:** move the per-launch state (secret, sysimage) to a per-user location under `config_dir()`.
-  An alternative for `deps.so` is to have the installer build it.
-- **Verify:** a non-owner launch in the same `bwrap` setup the plan describes.
+(`docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`). Handled in code, not yet run for real: a non-owner's
+session secret goes to `<config_dir>/pluto/.plutosecret` (`api/src/notebooks_api.jl` `_secret_path`),
+and the fast-plot build is refused with a 403 (status `shared`), since `pluto/deps.so` lives in the
+install. The owner's build serves every account.
+- **Verify:** a non-owner launch in the same `bwrap` setup the plan describes. Anything else Pluto
+  writes under `pluto/` at launch would show up there.
+- **Later:** have the installer build `deps.so`, so non-owners get fast plots without the owner
+  opening Notebooks first.
 
 ### Ship a prebuilt Notebooks sysimage in the bundle (release optimisation)
 Build-on-demand already covers every user: the Notebooks page's **Enable fast plots** builds

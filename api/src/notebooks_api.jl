@@ -4,7 +4,8 @@
 # server. Lifecycle mirrors the napari bridge: lazy-launch on first request, adopt an already-running
 # server (e.g. one from `pixi run notebooks` or a survivor of a server restart) instead of spawning a
 # duplicate. Secret auth stays ON (see launch.jl); launch.jl publishes the session secret to
-# pluto/.plutosecret and the frontend appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
+# pluto/.plutosecret (per-user for a non-owner of a shared install — `_secret_path`) and the frontend
+# appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 
 # Functions, not constants: the port follows this user's port slot (app/src/ports.jl).
 _notebooks_url() = "http://localhost:$(service_port(:notebooks))/"
@@ -14,10 +15,22 @@ _pluto_root()          = abspath(joinpath(@__DIR__, "..", "..", "pluto"))
 _repo_notebooks_dir()  = abspath(joinpath(@__DIR__, "..", "..", "notebooks"))
 _project_notebooks_dir(uid::AbstractString) = joinpath(projects_dir(), uid, "notebooks")
 
+# Can THIS account write the pluto/ env dir? On a shared (system-scope) install only the owner can
+# (docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md), so every write Pluto keeps inside the install — the
+# session secret, the fast-plot sysimage — has to go elsewhere or be refused. Memoised per dir: the
+# probe creates a file, and the status route is polled every second while the server starts.
+const _pluto_writable_cache = Dict{String,Bool}()
+_pluto_writable(root::AbstractString = _pluto_root())::Bool =
+    get!(() -> _dir_writable(root), _pluto_writable_cache, String(root))
+
 # Pluto's secret protection stays ON (see launch.jl). launch.jl writes the running session's secret
 # here; the frontend appends it to URLs (…/?secret=… and …/open?path=…&secret=…) so only this app can
 # drive the server. "" if not running / not yet written (frontend only uses URLs once running).
-_secret_path()      = joinpath(_pluto_root(), ".plutosecret")
+# pluto/.plutosecret where the install is ours (dev, user scope, the owner of a shared one — and where
+# a `pixi run notebooks` server publishes it, so adoption keeps working). A non-owner gets a per-user
+# file instead, which the launch passes to launch.jl as CECELIA_PLUTO_SECRET_FILE.
+_secret_path(root::AbstractString = _pluto_root()) =
+    _pluto_writable(root) ? joinpath(root, ".plutosecret") : joinpath(config_dir(), "pluto", ".plutosecret")
 _notebook_secret()  = isfile(_secret_path()) ? String(strip(read(_secret_path(), String))) : ""
 
 # The Pluto server's lifecycle state, one struct instead of four separately-locked Refs. Every
@@ -81,9 +94,12 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
         # Friendly first-run guidance before spawning if the env clearly isn't set up.
         _pluto_env_ready() || error("The notebook environment is not set up. $_SETUP_HINT")
 
+        secret_file = _secret_path(pluto_root)
+        mkpath(dirname(secret_file))
         julia_exe = joinpath(Sys.BINDIR, Base.julia_exename())
         cmd = Cmd(`$julia_exe --project=$pluto_root $launch_script`)
         cmd = addenv(cmd,
+            "CECELIA_PLUTO_SECRET_FILE" => secret_file,                   # launch.jl publishes it here
             "CECELIA_NOTEBOOKS_DIR" => abspath(notebooks_dir),
             "CECELIA_PLUTO_PORT"    => string(service_port(:notebooks)),   # launch.jl binds this
             "CECELIA_PLUTO_BROWSER" => "false")
@@ -147,7 +163,7 @@ function api_notebooks_launch(body_bytes::Vector{UInt8})
 end
 
 # GET /api/notebooks/status  → { running, starting, url, secret, sysimage, error }
-# sysimage: "ready" | "stale" | "building" | "error" | "absent" (see _classify_sysimage below).
+# sysimage: "ready" | "stale" | "building" | "error" | "absent" | "shared" (see _classify_sysimage below).
 function api_notebooks_status(req::HTTP.Request)
     running = _notebook_server_alive()
     # Read the two mutable fields inside the lock so a mid-transition write cannot split the pair.
@@ -188,14 +204,19 @@ const _nb_build_error = Ref{Union{String,Nothing}}(nothing)
 # Pure classifier (testable, no IO): given whether deps.so exists, its stamp contents (or nothing),
 # whether a build is running, whether the last build errored, and the current Julia + Manifest hash →
 # one of: "ready" (fresh image), "stale" (image exists but built for a different Julia/package set —
-# rebuild), "building", "error", "absent". The frontend auto-rebuilds on "absent" OR "stale".
+# rebuild), "building", "error", "absent", or "shared" (would need a build, but pluto/ is not ours to
+# write — a non-owner of a shared install; the owner's build serves every account). The frontend
+# offers the build on "absent" / "stale" / "error", and only says why on "shared".
 function _classify_sysimage(exists::Bool, stamp::Union{String,Nothing}, building::Bool, errored::Bool,
-                            julia::AbstractString, manifest::AbstractString)::String
+                            julia::AbstractString, manifest::AbstractString;
+                            writable::Bool = true)::String
     if exists
         stamp_matches(stamp, julia, manifest) && return "ready"
-        return building ? "building" : "stale"
+        building && return "building"
+        return writable ? "stale" : "shared"
     end
     building && return "building"
+    writable || return "shared"
     errored  && return "error"
     "absent"
 end
@@ -205,8 +226,11 @@ function _sysimage_status()::String
     building = p !== nothing && process_running(p)
     stamp = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
     _classify_sysimage(isfile(_sysimage_path()), stamp, building, _nb_build_error[] !== nothing,
-                       string(VERSION), _manifest_hash())
+                       string(VERSION), _manifest_hash(); writable = _pluto_writable())
 end
+
+const _SHARED_SYSIMAGE_REFUSAL =
+    "Shared installation — only the account that installed Cecelia can build fast plots. Notebooks work without them."
 
 # Kick off the background build if the image isn't already fresh or being built. Idempotent; returns
 # the resulting status. Rebuilds over a STALE image too (create_sysimage overwrites deps.so). Errors
@@ -255,7 +279,10 @@ function _ensure_sysimage_build!()::String
 end
 
 # POST /api/notebooks/build-sysimage  → { status }   (status as _sysimage_status)
+# The build writes pluto/deps.so INTO the install, so a non-owner of a shared install is refused up
+# front (same as api_system_envs_install) instead of waiting ~10 min for a generic "build failed".
 function api_notebooks_build_sysimage(body_bytes::Vector{UInt8})
+    _pluto_writable() || return 403, JSON3.write((; error = _SHARED_SYSIMAGE_REFUSAL))
     status = try
         _ensure_sysimage_build!()
     catch e
