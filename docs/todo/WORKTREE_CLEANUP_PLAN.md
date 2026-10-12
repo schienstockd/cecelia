@@ -110,8 +110,9 @@ turned out to be P1 as built, with one gate that doesn't hold on Dominik's machi
   `--remove` for SAFE (`worktree remove` + `branch -d`) and DEAD (`git worktree prune`). Unit
   tests on the classifier; one hermetic test against a throwaway repo. `docs/DEV.md` section next
   to *Creating a new worktree*.
-- **P1b — session gate + actionable nudge** (decisions 11–15). `claude_session_cwds()` in
-  `scripts/prune_worktrees.py` gathers `(name, status, cwd)` per live session; `Facts` gains
+- **P1b — session gate + actionable nudge** (decisions 11–15). The session reader is
+  `python/cecelia/effectiveness/claude_sessions.py`, which it shares with the recital-console agents
+  pane (`AGENTS_PANE_PLAN.md` P1, built first). It gives `(name, status, cwd)` per live session; `Facts` gains
   `sessions: list[tuple[str, str]]` and `classify` puts a non-empty one in IN USE ahead of the
   pid check. Tests: classifier cases with fake sessions; a parser test on a fixture `sessions/`
   dir + transcript in `tmp_path` covering a live match, a reused pid (`procStart` mismatch), a
