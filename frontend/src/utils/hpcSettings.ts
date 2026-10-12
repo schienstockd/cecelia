@@ -126,11 +126,12 @@ export function hpcFieldValue(s: HpcSettings | null, path: string): string {
   return v == null ? '' : String(v)
 }
 
-/** The save request for one field, from its draft text. `site.port` is sent as a number. */
+/** The save request for one field, from its draft text. `site.port` is sent as a number; text that is
+ *  not a whole number goes as 0, so the server's range check refuses it instead of keeping 22. */
 export function hpcFieldPatch(path: string, text: string, projectUid: string): HpcPatch {
   const [scope, a, b] = path.split('.')
   if (scope === 'project') return { project: { projectUid, account: text } }
   if (scope === 'identity') return { identity: { [a]: text } }
   if (b) return { site: { [a]: { [b]: text } } }
-  return { site: { [a]: a === 'port' ? Number(text) : text } }
+  return { site: { [a]: a === 'port' ? (/^\d+$/.test(text.trim()) ? Number(text) : 0) : text } }
 }

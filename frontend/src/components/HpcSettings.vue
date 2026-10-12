@@ -96,12 +96,12 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       </select>
 
       <label class="cc-muted">Host</label>
-      <div class="cc-row">
-        <input class="hpc-grow" v-model="d['site.host'].value" placeholder="login.cluster.org"
-               @change="commit('site.host')" v-tooltip.bottom="'Login node address'" />
-        <input class="hpc-port" type="number" min="1" max="65535" v-model="d['site.port'].value"
-               @change="commit('site.port')" v-tooltip.bottom="'SSH port'" />
-      </div>
+      <input v-model="d['site.host'].value" placeholder="login.cluster.org"
+             @change="commit('site.host')" v-tooltip.bottom="'Login node address'" />
+
+      <label class="cc-muted">Port</label>
+      <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value"
+             @change="commit('site.port')" v-tooltip.bottom="'SSH port (usually 22)'" />
 
       <label class="cc-muted">Remote folder</label>
       <input class="mono" v-model="d['site.remoteDir'].value" @change="commit('site.remoteDir')"
@@ -184,7 +184,7 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
 .hpc-classes input { min-width: 0; }
 .hpc-sub { margin: 1.1rem 0 0.5rem; }
 .hpc-grow { flex: 1; min-width: 0; }
-.hpc-port { width: 6ch; }
+.hpc-port { width: 8ch; }
 .mono { font-family: var(--cc-mono); }
 .hpc-test { margin-top: 1.1rem; }
 .hpc-result { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; word-break: break-all; }

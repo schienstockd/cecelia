@@ -71,6 +71,8 @@ describe('hpcFieldPatch / hpcFieldValue', () => {
   it('sends one field in the scope it is stored in', () => {
     expect(hpcFieldPatch('site.host', 'h', 'p')).toEqual({ site: { host: 'h' } })
     expect(hpcFieldPatch('site.port', '2222', 'p')).toEqual({ site: { port: 2222 } })
+    expect(hpcFieldPatch('site.port', ' 2222 ', 'p')).toEqual({ site: { port: 2222 } })
+    expect(hpcFieldPatch('site.port', 'abc', 'p')).toEqual({ site: { port: 0 } })   // refused by the range check
     expect(hpcFieldPatch('site.gpu.qos', 'hi', 'p')).toEqual({ site: { gpu: { qos: 'hi' } } })
     expect(hpcFieldPatch('identity.keyFile', '/k', 'p')).toEqual({ identity: { keyFile: '/k' } })
     expect(hpcFieldPatch('project.account', 'g1', 'p')).toEqual({ project: { projectUid: 'p', account: 'g1' } })
