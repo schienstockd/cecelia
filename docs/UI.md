@@ -190,7 +190,8 @@ the server is supervised; no new shutdown path). Locked under the pixi dev/prod 
 (`docs/todo/HPC_PLAN.md` → Decision 9): the site (machine-wide), **Your login** (username + SSH key,
 per profile) and **This project** (an account override, shown only with a project open), then a
 CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and preamble. Each field saves on
-`@change` over a `v-model` draft; a refused value shows the backend's message and snaps back. The key
+`@change` from its own `useFieldDraft` (`useHpcDrafts`), so a save reply never wipes another field
+being typed in; a refused value shows the backend's message and snaps back. The key
 picker is `FileBrowser` in file mode opened at `~/.ssh` (`startPath`). **Test connection** runs on the
 saved settings and lists one line per check — host-key fingerprint (marked when newly trusted), remote
 folder, scheduler version — or the one brief error. On Windows the section is one line saying it is not

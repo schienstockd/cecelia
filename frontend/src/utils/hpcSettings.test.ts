@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hpcTestBlocker, hpcTestLines, keyPickerStart, type HpcSettings, type HpcTestResult } from './hpcSettings'
+import { hpcTestBlocker, hpcTestLines, keyPickerStart, hpcFieldPatch, hpcFieldValue, HPC_DRAFT_FIELDS, type HpcSettings, type HpcTestResult } from './hpcSettings'
 
 const cls = { queue: '', account: '', qos: '', directives: '', preamble: '' }
 const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
@@ -64,5 +64,22 @@ describe('keyPickerStart', () => {
     expect(keyPickerStart('/home/a/.ssh/id_ed25519')).toBe('/home/a/.ssh')
     expect(keyPickerStart('~/keys/cluster')).toBe('keys')
     expect(keyPickerStart('C:\\Users\\a\\.ssh\\id')).toBe('C:\\Users\\a\\.ssh')
+  })
+})
+
+describe('hpcFieldPatch / hpcFieldValue', () => {
+  it('sends one field in the scope it is stored in', () => {
+    expect(hpcFieldPatch('site.host', 'h', 'p')).toEqual({ site: { host: 'h' } })
+    expect(hpcFieldPatch('site.port', '2222', 'p')).toEqual({ site: { port: 2222 } })
+    expect(hpcFieldPatch('site.gpu.qos', 'hi', 'p')).toEqual({ site: { gpu: { qos: 'hi' } } })
+    expect(hpcFieldPatch('identity.keyFile', '/k', 'p')).toEqual({ identity: { keyFile: '/k' } })
+    expect(hpcFieldPatch('project.account', 'g1', 'p')).toEqual({ project: { projectUid: 'p', account: 'g1' } })
+  })
+  it('reads every draft path, empty when absent', () => {
+    const s = settings({ project: null })
+    for (const p of HPC_DRAFT_FIELDS) expect(typeof hpcFieldValue(s, p)).toBe('string')
+    expect(hpcFieldValue(s, 'site.port')).toBe('22')
+    expect(hpcFieldValue(s, 'project.account')).toBe('')
+    expect(hpcFieldValue(null, 'site.host')).toBe('')
   })
 })

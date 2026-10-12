@@ -110,3 +110,27 @@ export function keyPickerStart(keyFile: string): string {
   const dir = k.slice(0, cut)
   return dir.startsWith('~/') ? dir.slice(2) : dir === '~' ? '' : dir
 }
+
+/** Every editable field, as a dotted path into `HpcSettings`. One draft per path (useHpcDrafts). */
+export const HPC_DRAFT_FIELDS = [
+  'site.scheduler', 'site.host', 'site.port', 'site.remoteDir', 'site.email',
+  'identity.user', 'identity.keyFile', 'project.account',
+  ...(['cpu', 'gpu'] as const).flatMap(c =>
+    (['queue', 'account', 'qos', 'directives', 'preamble'] as const).map(k => `site.${c}.${k}`)),
+] as const
+
+/** The stored value at `path`, as the text a field shows ('' when absent). */
+export function hpcFieldValue(s: HpcSettings | null, path: string): string {
+  let v: unknown = s
+  for (const k of path.split('.')) v = v == null ? undefined : (v as Record<string, unknown>)[k]
+  return v == null ? '' : String(v)
+}
+
+/** The save request for one field, from its draft text. `site.port` is sent as a number. */
+export function hpcFieldPatch(path: string, text: string, projectUid: string): HpcPatch {
+  const [scope, a, b] = path.split('.')
+  if (scope === 'project') return { project: { projectUid, account: text } }
+  if (scope === 'identity') return { identity: { [a]: text } }
+  if (b) return { site: { [a]: { [b]: text } } }
+  return { site: { [a]: a === 'port' ? Number(text) : text } }
+}
