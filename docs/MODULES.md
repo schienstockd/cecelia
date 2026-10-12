@@ -733,6 +733,11 @@ out*.
 > whiteboard, the preview layer stem and the param suggestions — **one rule, three callers**. Adding a
 > fourth place that sniffs for a particular key is the bug this replaced.
 
+**`outputRegistry`** — on a label-writer's `valueNameInput`, the `ccid.json` registry the name lands in
+when it is not `labels`: `segment.branching` writes `"outputRegistry": "branch_labels"`. The run's
+taken-name guard (`output_registry` → `assert_labels_free`, `app/src/segmentation.jl`) and the form's
+"Exists — use …" hint (`labelsTakenAdvisory`) both read it, so they check the same registry.
+
 Unlike `text`, the value is validated (`app/src/tasks/task.jl`): non-empty, no path separator. It
 becomes a filename stem, a dict key or a column suffix, so `a/b` would silently write elsewhere. Dots
 are allowed — real names use them (`flow.cyto`).

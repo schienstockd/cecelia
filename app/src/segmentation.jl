@@ -139,6 +139,24 @@ function labels_taken(img::CciaImage, raw::AbstractDict, out_value_name::Abstrac
 end
 
 """
+    output_registry(task) -> String
+
+Which `LABEL_REGISTRIES` field a writer's output name lives in, read off its spec: the
+`outputRegistry` of its output-name `valueNameInput` (`"branch_labels"` on segment.branching),
+`"labels"` when none is declared. The form's taken-name hint reads the SAME declaration
+(`labelsTakenAdvisory`), so the two cannot disagree about which registry a name is checked in.
+"""
+function output_registry(task::CciaTask)::String
+    spec = _task_spec(task)
+    for p in (isnothing(spec) ? [] : get(spec, "params", []))
+        p isa AbstractDict && get(p, "type", "") == "valueNameInput" || continue
+        reg = get(p, "outputRegistry", nothing)
+        isnothing(reg) || return string(reg)
+    end
+    "labels"
+end
+
+"""
     assert_labels_free(img, out_value_name; field, overwrite, raw, on_log) -> Bool
 
 The guard every label writer (cellpose, coastal, ridges, label import, and branching with

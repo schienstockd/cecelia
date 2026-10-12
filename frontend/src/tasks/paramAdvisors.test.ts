@@ -722,6 +722,18 @@ describe('labelsTakenAdvisory', () => {
     expect(freeLabelName('default', [img('a', ['default', 'default_2']), img('b', ['default_3'])]))
       .toBe('default_4')
   })
+  it('checks the registry the spec declares — branching writes branch_labels, not labels', async () => {
+    const im = { uid: 'a', labels: { default: ['default.zarr'] }, branchLabels: { skel: ['skel.zarr'] } }
+    // a segmentation called "default" does not take branching's "default"…
+    expect(labelsTakenAdvisory('default', [im], off, 'branch_labels')).toBeNull()
+    // …but an existing branch set does, and the suggestion is free in that registry
+    expect(labelsTakenAdvisory('skel', [im], off, 'branch_labels')?.message)
+      .toBe("Exists — use 'skel_2', or tick Overwrite existing")
+    const adv = paramAdvisor({ type: 'valueNameInput' })!
+    const p = { type: 'valueNameInput', namespace: 'labels', outputRegistry: 'branch_labels' }
+    expect(await adv.advise('default', { images: [im], values: off }, p)).toBeNull()
+    expect(await adv.advise('skel', { images: [im], values: off }, p)).not.toBeNull()
+  })
   it('runs only on a labels-namespace name', async () => {
     const adv = paramAdvisor({ type: 'valueNameInput' })!
     const ctx = { images: [img('a', ['default'])], values: off }

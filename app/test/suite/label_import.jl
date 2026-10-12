@@ -262,6 +262,8 @@ end
         any(p -> p isa AbstractDict && get(p, "type", "") == "valueNameInput" &&
                  string(get(p, "namespace", "")) in ("labels", "branches"), ps) || continue
         push!(writers, fun)
+        # the registry the spec declares is one the guard knows (one declaration, read by run + form)
+        @test Cecelia.output_registry(task) in keys(Cecelia.LABEL_REGISTRIES)
         jl = replace(Cecelia._spec_path(task), r"\.json$" => ".jl")
         txt = read(jl, String)
         g = findfirst("assert_labels_free(", txt)
@@ -269,6 +271,8 @@ end
         @test g !== nothing && r !== nothing && first(g) < first(r)
         @test any(p -> p isa AbstractDict && get(p, "key", "") == "overwrite", ps)
     end
+    @test Cecelia.output_registry(Cecelia.Branching()) == "branch_labels"
+    @test Cecelia.output_registry(Cecelia.CellposeSegment()) == "labels"
     @test sort(writers) == ["segment.branching", "segment.cellpose", "segment.coastal",
                             "segment.importLabels", "segment.ridges"]
     for (d, _, fs) in walkdir(joinpath(pkgdir(Cecelia), "src", "tasks")), f in fs

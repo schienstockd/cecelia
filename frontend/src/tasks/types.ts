@@ -97,6 +97,10 @@ export interface ParamDef {
   // layer stem. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
   namespace?: 'filepaths' | 'labels' | 'spatialGraphs' | 'tracks' | 'branches'
             | 'clusters' | 'regions' | 'stats' | 'models' | 'obsCols'
+  // valueNameInput in the `labels` namespace: which ccid.json registry the written name lands in, when
+  // it is not `labels` (segment.branching → 'branch_labels'). One declaration read by BOTH the run's
+  // taken-name guard (`output_registry`, segmentation.jl) and the form's hint (`labelsTakenAdvisory`).
+  outputRegistry?: 'labels' | 'branch_labels'
   popType?: string      // popSelection: which population type to list ('flow' | 'live' | 'clust')
   // group / section
   repeatable?: boolean

@@ -133,7 +133,7 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
     assert_unversioned_field(raw, "branch_labels", p.outputValueName)   # before the runner overwrites it
-    assert_labels_free(img, p.outputValueName; field = "branch_labels", overwrite = p.overwrite,
+    assert_labels_free(img, p.outputValueName; field = output_registry(task), overwrite = p.overwrite,
                        raw = raw, on_log = on_log) || return nothing
 
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the

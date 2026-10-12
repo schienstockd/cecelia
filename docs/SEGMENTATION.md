@@ -111,11 +111,13 @@ and replacing it silently orphans the measures, gates and tracks built on it.
 
 - **Per image.** The writers are image-scope, so the check runs at the start of each image's run; in
   a multi-image run an image with a free name still runs when another image is refused.
+- **Rename too.** `rename_value_name!` refuses a target that `_label_name_taken` finds in any
+  registry, on disk included, before anything moves.
 - **Before Run, in the form.** The output-name field warns "Exists — use 'default_2', or tick
   Overwrite existing" from the label sets the form already holds (`labelsTakenAdvisory`,
   `paramAdvisors.ts`). An unregistered store left on disk is invisible there and is still refused at
-  Run. The advisor reads the `labels` registry, so on `segment.branching` (whose output name is in the
-  `labels` namespace but registers in `branch_labels`) it can warn about a name that is free.
+  Run. It checks the registry the spec declares (`outputRegistry`, `branch_labels` on
+  `segment.branching`), the same declaration the run reads through `output_registry`.
 - **Agents.** The autonomous MCP server refuses `overwrite: true` unless every output name carries
   the session prefix, and refuses it outright with no prefix — an unattended run can only replace its
   own outputs (`output_name_violations`, `mcp/cecelia_mcp/autonomous.py`). The observer guidance tells
