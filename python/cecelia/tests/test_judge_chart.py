@@ -14,6 +14,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -113,7 +114,6 @@ class AggregateTest(_Fixture):
         self.assertEqual(data["weeks"], [])
         svg = self.c.render_svg(data)
         self.assertIn("No reviews logged yet.", svg)
-        self.assertIn("Weekly judge: no pass yet.", svg)
         self.assertTrue(svg.startswith("<svg") and svg.rstrip().endswith("</svg>"))
 
     def test_one_week_counts_changes_sessions_and_outcomes_once_per_slug(self):
@@ -151,13 +151,29 @@ class AggregateTest(_Fixture):
         data = self.c.aggregate(rows, [], prompt_edits=edits, rule_edits=[dt.date(2026, 10, 7)])
         self.assertEqual([w["prompt_edits"] for w in data["weeks"]], [1, 2])
         self.assertEqual([w["rule_edits"] for w in data["weeks"]], [0, 1])
-        svg = self.c.render_svg(data)
-        self.assertIn("reviewer prompts edited ×2", svg)
-        self.assertIn("CLAUDE.md edited ×1", svg)
 
-    def test_a_low_session_week_says_so(self):
-        rows = _week(day="2026-09-28", sessions=3) + _week(day="2026-10-06")
-        self.assertIn("few sessions (&lt;10)", self.c.render_svg(self.c.aggregate(rows, [])))
+    def test_a_week_that_ended_before_the_run_is_whole(self):
+        rows = _week(day="2026-09-28") + _week(day="2026-10-11")
+        self.assertEqual([w["partial"] for w in self.c.aggregate(rows, [])["weeks"]], [False, True])
+        whole = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 12))["weeks"]
+        self.assertEqual([w["partial"] for w in whole], [False, False])
+
+    def test_a_low_session_or_partial_week_is_drawn_hollow_and_dashed_and_gets_no_rate(self):
+        rows = _week(day="2026-09-28") + _week(day="2026-10-06", sessions=3) + _week(day="2026-10-13")
+        data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20))
+        svg = self.c.render_svg(data)
+        hollow = re.compile(r'<circle[^>]*fill="none"')
+        self.assertEqual(len(hollow.findall(svg)), 2)  # its counts in panel a; the four rate lines skip it
+        low = data["weeks"][1]
+        self.assertIsNone(self.c._per_100(low, "fanout"))
+        self.assertIsNone(self.c._fixed(low, "fanout"))
+        same = self.c.aggregate(_week(day="2026-09-28"), [], as_of=dt.date(2026, 10, 20))["weeks"][0]
+        self.assertEqual(self.c._fixed(same, "fanout"), 50)  # the same findings, enough sessions
+        self.assertIn('stroke-dasharray="4 3"', svg)
+        whole = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06"), [],
+                                                   as_of=dt.date(2026, 10, 20)))
+        self.assertFalse(hollow.findall(whole))
+        self.assertNotIn("dasharray", whole)
 
     def test_judge_summary_is_the_newest_pass_counts_only(self):
         old = {"kind": "pass", "date": "2026-10-02", "bugs": [{"status": "open", "desc": "secret text"}]}
@@ -165,16 +181,106 @@ class AggregateTest(_Fixture):
                                                               {"status": "gone"}, {"status": "dismissed"}]}
         failure = {"kind": "failure", "date": "2026-10-10", "bugs": []}
         data = self.c.aggregate(_week(), [old, new, failure])
-        self.assertEqual(data["judge"], {"date": "2026-10-09", "passes": 2, "open": 1, "parked": 0, "gone": 1,
-                                         "dismissed": 1})
+        self.assertEqual(data["judge"], {"date": "2026-10-09", "passes": 2, "swept": ["fanout"], "open": 1,
+                                         "parked": 0, "gone": 1, "dismissed": 1,
+                                         "by_week": {"fanout": {}, "convention": {}}})
         svg = self.c.render_svg(data) + json.dumps(data)
         self.assertNotIn("secret", svg)
 
+    def test_merged_prs_are_merge_commits_and_squash_subjects(self):
+        log = ("2026-10-07 Merge pull request #12 from x/y\n"
+               "2026-10-07 fix(thing): a squash merge (#13)\n"
+               "2026-10-06 a direct commit\n"
+               "2026-10-06 mentions (#14) mid-subject\n"
+               "2026-09-01 Merge pull request #1 from old/branch\n")
+        prs = self.c.pr_dates(log)
+        self.assertEqual(prs, [dt.date(2026, 9, 1), dt.date(2026, 10, 7), dt.date(2026, 10, 7)])
+        weeks = self.c.aggregate(_week(), [], prs=prs)["weeks"]
+        self.assertEqual([w["prs"] for w in weeks], [2])  # the September one predates logging
+
+    def test_findings_are_split_by_reviewer(self):
+        w = self.c.aggregate(_week(), [])["weeks"][0]
+        self.assertEqual(sum(w["by_reviewer"]["fanout"].values()), 2)
+        self.assertEqual(w["by_reviewer"]["fanout"]["fixed_pre_commit"], 1)
+        self.assertEqual(w["by_reviewer"]["convention"]["false_positive"], 1)
+        self.assertEqual(w["findings"]["fixed_pre_commit"] + w["findings"]["false_positive"] + w["findings"]["none"], 3)
+
+    def test_judge_verdicts_land_in_the_week_the_item_was_raised(self):
+        advisory = _ev("fanout_audit_advisory", "2026-09-29T01:00:00Z",
+                       {"file": "a.py", "line": 3, "marker": "plausible", "desc": "x"})
+        key = self.c._bugs._key(advisory)
+        rows = _week(day="2026-09-28") + [advisory] + _week(day="2026-10-06")
+        record = {"kind": "pass", "date": "2026-10-09", "bugs": [
+            {"key": key, "status": "parked", "first_seen": "2026-10-09"},           # an advisory, raised Sep 29
+            {"key": "fanout-1", "status": "open", "first_seen": "2026-10-09"},      # a finding, raised Sep 28
+            {"key": "fanout-9", "status": "gone", "first_seen": "2026-10-09"},      # not in the log: first seen
+            {"key": "repeat-x", "status": "dismissed", "first_seen": "2026-10-09"},  # an agent-run error: not drawn
+            {"key": "fanout-8", "status": "unjudged", "first_seen": "2026-10-09"},
+            {"key": "conv-2", "kind": "duplicate", "status": "open", "first_seen": "2026-10-09"}]}  # raised Sep 28
+        judge = self.c.aggregate(rows, [record])["judge"]
+        self.assertEqual(judge["by_week"], {"fanout": {
+            "2026-09-28": {"open": 1, "parked": 1, "gone": 0, "dismissed": 0},
+            "2026-10-05": {"open": 0, "parked": 0, "gone": 1, "dismissed": 0}}, "convention": {
+            "2026-09-28": {"open": 1, "parked": 0, "gone": 0, "dismissed": 0}}})
+        self.assertEqual(judge["dismissed"], 1)  # the totals still count every bug
+
 
 class RenderTest(_Fixture):
+    def test_a_week_still_running_is_in_the_json_not_the_picture(self):
+        rows = _week(day="2026-09-28") + _week(day="2026-10-06")
+        data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 7))
+        self.assertEqual([w["ongoing"] for w in data["weeks"]], [False, True])
+        svg = self.c.render_svg(data)
+        self.assertIn(">Sep 28<", svg)
+        self.assertNotIn(">Oct 5<", svg)
+
+    def test_a_reviewer_the_judge_hasnt_swept_says_when_it_will_be(self):
+        record = {"kind": "pass", "date": "2026-10-09", "run": {}, "bugs": []}
+        svg = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28"), [record], as_of=dt.date(2026, 10, 12)))
+        self.assertIn("Judge: fan-out audit (Oct 9)", svg)
+        self.assertIn("Judged from the next pass on.", svg)
+        swept = {**record, "run": {"swept": ["fanout", "convention"]}}
+        svg = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28"), [swept], as_of=dt.date(2026, 10, 12)))
+        self.assertIn("Judge: convention check (Oct 9)", svg)
+
+    def test_judge_panel_draws_each_verdict_as_a_share_of_the_week_with_its_n(self):
+        rows = _week(day="2026-09-28") + _week(day="2026-10-06")
+        record = {"kind": "pass", "date": "2026-10-20", "run": {"swept": ["fanout"]}, "bugs": [
+            {"key": "fanout-x1", "status": "open", "first_seen": "2026-10-07"},
+            {"key": "fanout-x2", "status": "parked", "first_seen": "2026-10-07"},
+            {"key": "fanout-x3", "status": "gone", "first_seen": "2026-10-07"},
+            {"key": "fanout-x4", "status": "dismissed", "first_seen": "2026-10-07"}]}
+        data = self.c.aggregate(rows, [record], as_of=dt.date(2026, 10, 20))
+        svg = self.c.render_svg(data)
+        self.assertIn("Share of unfixed notes (%)", svg)
+        self.assertIn(">n = 4<", svg)  # one week judged: real bug 50 %, gone 25 %, dismissed 25 %
+        self.assertEqual(svg.count(">n = "), 1)  # no n under a week the judge has nothing from
+        thin = self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06", sessions=3), [record],
+                                as_of=dt.date(2026, 10, 20))
+        self.assertNotIn(">n = ", self.c.render_svg(thin))  # a low-session week gets no share either
+
+    def test_thin_weeks_before_logging_got_going_are_in_the_json_not_the_picture(self):
+        rows = _week(day="2026-09-21", sessions=3) + _week(day="2026-09-28") + _week(day="2026-10-06")
+        data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20))
+        self.assertEqual(data["weeks"][0]["week"], "2026-09-21")
+        svg = self.c.render_svg(data)
+        self.assertNotIn(">Sep 21<", svg)
+        self.assertIn(">Sep 28<", svg)
+        only = self.c.render_svg(self.c.aggregate(_week(day="2026-09-21", sessions=3), [],
+                                                  as_of=dt.date(2026, 10, 20)))
+        self.assertIn(">Sep 21<", only)  # all there is: still drawn
+
     def test_same_numbers_same_bytes(self):
         data = self.c.aggregate(_week(), [])
         self.assertEqual(self.c.render_svg(data), self.c.render_svg(json.loads(json.dumps(data))))
+
+    def test_axis_ticks_are_round_and_cover_the_data(self):
+        self.assertEqual(self.c._ticks(234), [0, 100, 200, 300])
+        self.assertEqual(self.c._ticks(89), [0, 25, 50, 75, 100])
+        self.assertEqual(self.c._ticks(33), [0, 10, 20, 30, 40])
+        self.assertEqual(self.c._ticks(0), [0, 1])
+        self.assertEqual(self.c._ticks(3), [0, 1, 2, 3])
+        self.assertEqual(self.c._ticks(3, percent=True), [0, 25, 50, 75, 100])
 
     def test_text_is_escaped_for_xml(self):
         self.assertEqual(self.c.esc('a<b & "c"\x07'), "a&lt;b &amp; &quot;c&quot;")
@@ -182,7 +288,7 @@ class RenderTest(_Fixture):
     def test_the_numbers_are_in_the_description(self):
         svg = self.c.render_svg(self.c.aggregate(_week(), []))
         self.assertIn('role="img"', svg)
-        self.assertIn("12 changes reviewed across 12 sessions; 3 findings, 1 fixed before commit", svg)
+        self.assertIn("12 changes reviewed across 12 sessions, 0 PRs merged; 3 findings, 1 fixed before commit", svg)
 
     def test_the_svg_parses(self):
         import xml.etree.ElementTree as ET
@@ -223,7 +329,7 @@ class PublishTest(_Fixture):
 
     def test_a_changed_chart_is_pushed(self):
         self.publish()
-        self.assertIn("pushed", self.publish(svg=self.svg.replace("week by week", "week by week ")))
+        self.assertIn("pushed", self.publish(svg=self.svg.replace("per week", "per week ")))
         self.assertEqual(len(self.remote.pushes()), 2)
 
     def test_a_deleted_branch_is_pushed_again(self):

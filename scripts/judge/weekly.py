@@ -373,6 +373,7 @@ def weekly(*, ref: str = "origin/main", worktree: pathlib.Path | None = None, da
     record = _record.build(date, ts=ts, sha=sha, bugs=bugs, rules=rows, proposals=proposals, spend=spend,
                            agent_causes=_run_reviews.agent_causes(reviewed))
     record["run"].update(rules_window_days=_rules.WINDOW_DAYS, min_sessions=_rules.MIN_SESSIONS,
+                         swept=list(_bugs.SOURCES),
                          backlog_last=_record.backlog(previous["bugs"]) if previous else None,
                          **({"failed": failed} if failed else {}))
     return record

@@ -22,7 +22,7 @@ import { moduleTagStyle } from '../utils/taskModule'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
 import { useNowTick } from '../composables/useNowTick'
 import { taskElapsed } from '../utils/taskElapsed'
-import { canRerunTask } from '../utils/taskRerun'
+import { canCancelTask, canRerunTask } from '../utils/taskRerun'
 // the foreign-project LABEL now comes off the row (utils/taskRows.ts); the scope predicate stays here
 import { taskInScope } from '../utils/taskScope'
 import { profileLabel } from '../utils/authorStamp'
@@ -234,8 +234,11 @@ function cancelTask(t: TaskEntry) {
 }
 
 function rerun(t: TaskEntry) {
-  tasks.restart(t.id)
-  ws.send({ type: 'task:restart', taskId: t.id, funName: t.funName,
+  const oldId = t.id
+  const newId = tasks.restart(oldId)       // a FRESH id — see `restart` in stores/tasks.ts
+  if (!newId) return
+  if (selectedId.value === oldId) selectedId.value = newId
+  ws.send({ type: 'task:restart', taskId: newId, funName: t.funName,
             params: t.params, imageUid: t.imageUid, projectUid: t.projectUid })
 }
 
@@ -410,10 +413,10 @@ const FILTERS: ChipOption[] = [
           </template>
 
           <template #actions="{ row: r }">
-            <button v-if="r.status === 'running' || r.status === 'queued'"
+            <button v-if="r.canCancel || r.cancelling" :disabled="r.cancelling"
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(r.entry)"
-              v-tooltip.left="r.chainLabel ? 'Stop chain run' : 'Cancel task'">
-              <i class="pi pi-times" />
+              v-tooltip.left="r.cancelling ? 'Cancelling…' : r.chainLabel ? 'Stop chain run' : 'Cancel task'">
+              <i :class="['pi', r.cancelling ? 'pi-spin pi-spinner' : 'pi-times']" />
             </button>
             <button v-if="r.canRerun"
               class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(r.entry)" v-tooltip.left="'Rerun'">
@@ -466,10 +469,10 @@ const FILTERS: ChipOption[] = [
                 v-tooltip.left="'Reload log from disk'">
                 <i :class="['pi', syncing(selected) ? 'pi-spin pi-spinner' : 'pi-refresh']" />
               </button>
-              <button v-if="selected.status === 'running' || selected.status === 'queued'"
+              <button v-if="canCancelTask(selected) || selected.cancelling" :disabled="selected.cancelling"
                 class="ra-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(selected)"
-                v-tooltip.left="selected.chainRunId ? 'Stop chain run' : 'Cancel task'">
-                <i class="pi pi-times" />
+                v-tooltip.left="selected.cancelling ? 'Cancelling…' : selected.chainRunId ? 'Stop chain run' : 'Cancel task'">
+                <i :class="['pi', selected.cancelling ? 'pi-spin pi-spinner' : 'pi-times']" />
               </button>
               <button v-if="canRerun(selected)"
                 class="ra-btn cc-btn cc-btn-bare cc-btn-icon" @click="rerun(selected)" v-tooltip.left="'Rerun'">

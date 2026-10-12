@@ -1897,6 +1897,9 @@ They are kept distinguishable by `TaskEntry.history`, and that flag is doing rea
   so offering it would put the button on one row in six for no visible reason, and offering it on the
   rest would launch a task the list then has no row for (`setStatus` no-ops on an unknown id).
 - **Dismiss is hidden**, same argument.
+- **Cancel is withheld** (`canCancelTask` in `taskRerun.ts`), even on a history row still at `running`.
+  Such an entry is usually a run whose process died with the backend; a live run has its own row, which
+  the history row is dropped in favour of. A Cancel there reached nothing while looking like it worked.
 - **`seq` is 0 and the `#N` is not rendered.** That counter numbers this session's work; handing 300
   archived runs a number each would push the next real task to #301 and mean nothing.
 
@@ -1944,6 +1947,18 @@ logs a named mismatch if the two ever disagree again — the store previously he
 shown only when the current module+project has running/queued tasks. Cancels every one of them via
 the same per-task path as the individual cancel button (`task:cancel`/`chain:cancel` over WS,
 deduping so a multi-node chain run only sends one `chain:cancel`).
+
+**A task cancel is not optimistic.** Pressing Cancel sets `TaskEntry.cancelling` — the button turns
+into a disabled spinner ("Cancelling…") — and the row keeps its real status until the backend's own
+`cancelled` (or other terminal) frame arrives. If no part of the backend was running the task, its
+`task:cancel:ack {found: false}` withdraws the flag and `cancelAcked` writes the reason into the row's
+log (client-side: a backend `task:log` for a dead id would mint a zombie row in the task console). If
+neither arrives within `CANCEL_ACK_TIMEOUT_MS` (10 s — a dropped frame), the outcome poll in
+`stores/ws.ts` asks `/api/tasks` and `cancelTimedOut` takes the row's status from there
+(`expiredCancels` in `utils/runningTasks.ts`), so a still-live task gets its Cancel button back.
+**Re-run mints a fresh task id** for the row (`restart()`), so the old run's late frames can't pin it. Chain cancel
+(`cancelChainRun`) is still optimistic. Backend side: `docs/SCHEDULER.md` → *Task cancel is
+acknowledged, and duplicate runs are refused*.
 
 ---
 

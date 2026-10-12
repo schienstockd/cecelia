@@ -7,6 +7,7 @@ import { useProjectStore } from './project'
 import { useImageMetaRefresh } from '../composables/useImageMetaRefresh'
 import { clusterMeasure } from '../utils/clusterMeasure'
 import { centroidLabel, defaultTransformForCol } from '../utils/gatingAxes'
+import { channelLabel } from '../utils/channelNames'
 import { popPath } from '../utils/popName'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
@@ -129,7 +130,7 @@ export function createGatingStore(initialPopType: string) {
   const columns   = ref<string[]>([])           // gateable feature columns (raw var names)
   const obsColumns = ref<string[]>([])          // per-cell obs measures (regions.*/clusters.*/hmm.*/is.aggregate/speed…) — filter-pop measures
   const channels  = ref<string[]>([])           // intensity columns, e.g. mean_intensity_0 (ordered)
-  const channelNames = ref<string[]>([])         // display names aligned to `channels`
+  const channelNames = ref<string[]>([])         // display names by CHANNEL index — resolve a column via colLabel
   // spatial/temporal centroid axes (obsm) — gateable + visualisable scatter axes (centroid_x/_y/_z, centroid_t)
   const spatialColumns  = ref<string[]>([])
   const temporalColumns = ref<string[]>([])
@@ -162,12 +163,14 @@ export function createGatingStore(initialPopType: string) {
   // the set the gated image belongs to — keys the per-set viewer point size (see settings store)
   const viewerSetUid = () => (imageUid.value ? projStore.setUidOfImage(imageUid.value) : null) ?? ''
 
-  // resolve a raw column to its display label: intensity columns → channel name (R
-  // change_channel_names), centroids → "X position"/"Time" (centroidLabel), everything else
-  // (morphology, etc.) stays as-is.
+  // resolve a raw column to its display label: intensity columns → channel name by channel index
+  // (channelLabel — `nuc_mean_intensity_2` → "nuc_<ch2>"), centroids → "X position"/"Time"
+  // (centroidLabel), everything else (morphology, etc.) stays as-is.
   function colLabel(col: string): string {
-    const i = channels.value.indexOf(col)
-    if (i >= 0 && channelNames.value[i]) return channelNames.value[i]
+    if (channels.value.includes(col)) {
+      const name = channelLabel(col, channelNames.value)
+      if (name !== col) return name
+    }
     return centroidLabel(col)
   }
 

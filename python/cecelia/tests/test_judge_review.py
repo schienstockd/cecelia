@@ -111,6 +111,13 @@ class IssueTest(_ReviewFixture):
         self.assertIn("Don't read it", brief)
         self.assertIn("name `fanout-b3` in the commit message", brief)   # landed-fix detection still needs it
 
+    def test_a_duplicate_brief_asks_for_the_helper_not_a_failing_test(self):
+        bug = {**self.record["bugs"][2], "kind": "duplicate", "marker": "should reuse"}
+        brief = self.rv.fix_brief(self.record, bug)
+        self.assertIn("call the existing helper the finding names and delete the copy", brief)
+        self.assertIn("make sure the helper's tests cover what the copy did", brief)
+        self.assertNotIn("add a test that fails without the fix", brief)
+
     def test_a_fix_session_is_folded_in_for_the_mirror(self):
         row = self.rv.append_review("bug_work", "2026-10-05", "B3", "fix_session", path=self.log)
         applied = self.rv.apply_reviews(self.record, self.rv.read_reviews(self.log))

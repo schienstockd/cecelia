@@ -276,6 +276,9 @@ def _bug_lines(bug: dict) -> list[str]:
         lines.append(f"Live once: {v['trigger']}")
     if v.get("evidence"):
         lines.append(f"Evidence: {v['evidence']}")
+    if bug.get("kind") == "duplicate":
+        lines += ["", "This is a duplicate, not a defect: the fix is to call the existing helper the finding "
+                  "names and delete the copy, at every call site of the copy."]
     if bug.get("kind") == "stranded":
         lines += ["", "These commits were pushed to the PR's branch after it merged: "
                   + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
@@ -306,7 +309,10 @@ def fix_brief(record: dict, bug: dict) -> str:
                      "`closes`: the judge closes it once it confirms the fix.")
     lines += ["", "Confirm it on origin/main first. If it isn't real, say so and stop; I'll answer it won't-fix. "
               f"Otherwise {_worktree_line('fix-' + bug['key'])} Fix it there, including every sibling call site "
-              "with the same shape, add a test that fails without the fix, run the matching tests and recital, "
+              "with the same shape, "
+              + ("make sure the helper's tests cover what the copy did, " if bug.get("kind") == "duplicate" else
+                 "add a test that fails without the fix, ")
+              + "run the matching tests and recital, "
               f"and name `{bug['key']}` in the commit message. Ask before committing, as usual."]
     return "\n".join(lines)
 

@@ -168,14 +168,16 @@ function _axis_ticks(t::AxisTransform, rmin::Real, rmax::Real; n::Int = 6)
      end for i in 1:n]
 end
 
-# Channel display names for a table's intensity columns. They are VERSIONED (e.g. AF correction adds
-# extra channels), and the label value_name doesn't map 1:1 to a channel-name version: pick the
-# version whose length matches the number of intensity columns (`nchans`). Returns every version (for
-# a client that picks itself) and the matched names (`nothing`/empty when none matches).
-function _channel_display_names(img, nchans::Int)
+# Channel display names for a table's intensity columns (`chans`). They are VERSIONED (e.g. AF
+# correction adds extra channels), and the label value_name doesn't map 1:1 to a channel-name version:
+# pick the version whose length matches the number of channels the columns cover (`n_channels_covered`
+# — not the column count). Returns every version (for a client that picks itself) and the matched
+# names (`nothing`/empty when none matches), indexed by CHANNEL — resolve a column with
+# `_channel_label`, never by its position in `chans`.
+function _channel_display_names(img, chans::AbstractVector{<:AbstractString})
     versions = Dict{String,Any}(
         v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
-    display = get(versions, _matching_channel_version(versions, nchans;
+    display = get(versions, _matching_channel_version(versions, Cecelia.n_channels_covered(chans);
                                                       active = versioned_active(img.im_channel_names)), String[])
     versions, display
 end
@@ -189,10 +191,10 @@ function _axis_title(img, vn, pop_type, col::AbstractString)::String
     name = get(_CENTROID_TITLES, lowercase(col), String(col))
     try
         chans = channel_columns(label_props(img; value_name = vn))
-        i = findfirst(==(col), chans)
-        if i !== nothing
-            _, display = _channel_display_names(img, length(chans))
-            (display !== nothing && i <= length(display) && !isempty(display[i])) && (name = String(display[i]))
+        if col in chans
+            _, display = _channel_display_names(img, chans)
+            label = display === nothing ? col : Cecelia._channel_label(String(col), String.(display))
+            (label != col && !isempty(label)) && (name = label)
         end
     catch
     end
@@ -520,11 +522,7 @@ function api_gating_channels(req::HTTP.Request)
             cellobs  = _intersect_cols_across_vns(multi_vns,
                 v -> col_names(label_props(img; value_name = v); data_type = :obs))
         end
-        chans = channel_columns(lpc)
-        versions = Dict{String,Any}(
-            v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
-        display = get(versions, _matching_channel_version(versions, length(chans);
-                                                      active = versioned_active(img.im_channel_names)), String[])
+        _, display = _channel_display_names(img, channel_columns(lpc))
         tpath = img_track_props_path(img, scope_vn)
         tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
         pt    = get(q, "popType", "track")
@@ -571,7 +569,7 @@ function api_gating_channels(req::HTTP.Request)
         chans = _intersect_cols_across_vns(multi_vns,
             v -> channel_columns(label_props(img; value_name = v)))
     end
-    versions, display = _channel_display_names(img, length(chans))
+    versions, display = _channel_display_names(img, chans)
     # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
     # aren't in the cell obs, but the viewer colour-by broadcasts them to cells via track_id so you
     # can colour tracks by their cluster/population. Offered alongside cell obs columns.

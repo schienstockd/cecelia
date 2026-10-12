@@ -73,20 +73,22 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     fun_name  = _fun_name_from_task(task)
     pool_name = effective_pool_name(task, pool_name)
     pool      = _pool(pool_name)
+    # Throws `DuplicateRunError` if this task is already queued/running on this image with this output.
     rec       = _register_task!(task_id, fun_name, pool_name,
                                  img.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params)
+                                 chain_node_id = chain_node_id, by = by, params = params,
+                                 output_name = task_output_name(task, params))
     _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(img, fun_name, on_log)
-    job = TaskJob(task_id, task, SingleImage(img), params, done_ch,
+    job = TaskJob(task_id, rec, task, SingleImage(img), params, done_ch,
                   wrapped_log, on_progress, on_process, on_status_change)
     put!(pool.queue, job)       # non-blocking; worker picks it up when a slot is free
     result = take!(done_ch)     # blocks (yields thread) until worker posts result
-    _deregister_task!(task_id)
+    _deregister_task!(rec)
     return result
 end
 
@@ -126,16 +128,18 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     rec       = _register_task!(task_id, fun_name, pool_name, rep.uid, chain_run_id, on_status_change;
                                  project_uid = img_project_uid(rep),
                                  live_outputs = _live_outputs_for(task, params),
-                                 chain_node_id = chain_node_id, by = by, params = params)
+                                 chain_node_id = chain_node_id, by = by, params = params,
+                                 image_uids = [i.uid for i in imgs],
+                                 output_name = task_output_name(task, params))
     _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(rep, fun_name, on_log)
-    job = TaskJob(task_id, task, MultiImage(imgs), params, done_ch,
+    job = TaskJob(task_id, rec, task, MultiImage(imgs), params, done_ch,
                   wrapped_log, on_progress, on_process, on_status_change)
     put!(pool.queue, job)
     result = take!(done_ch)
-    _deregister_task!(task_id)
+    _deregister_task!(rec)
     return result
 end
 

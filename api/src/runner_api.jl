@@ -297,11 +297,15 @@ end
 
 # Cancel has to reach BOTH: the task may be in this process (fallback path, chains, background jobs) or
 # in the runner. Both are no-ops when the id is unknown, so asking twice is free and asking only one is
-# a cancel button that silently does nothing.
-function _cancel_on_runner(task_id::AbstractString)
-    _runner_enabled() || return
-    try; Cecelia.runner_cancel(_RUNNER, task_id); catch; end
-    nothing
+# a cancel button that silently does nothing. Returns whether the RUNNER had it — `false` when it is
+# off, unreachable, or (an older runner) does not say.
+function _cancel_on_runner(task_id::AbstractString)::Bool
+    _runner_enabled() || return false
+    try
+        get(Cecelia.runner_cancel(_RUNNER, task_id), "found", false) === true
+    catch
+        false
+    end
 end
 
 # ── Status for the System panel ───────────────────────────────────────────────

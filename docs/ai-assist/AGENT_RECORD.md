@@ -13,29 +13,42 @@ for new code that duplicates an existing helper or skips a convention
 commit message, and a git hook blocks the commit until it is. All of it is logged to the
 effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)).
 
-Per ISO week (Monday–Sunday, UTC):
+Five line panels, one point per ISO week (Monday–Sunday, UTC):
 
-- **Changes reviewed before commit.** One branch + parent commit a recital reviewed. Running recital
-  again on the same change counts once; a reviewer that errored counts none.
-- **What happened to the findings.** Each finding once, in the week it was first raised, with the
-  latest outcome logged for it: *fixed before commit*, *shipped knowingly* (the agent said why),
-  *called a false positive* (the agent said why), *dropped*, or *no outcome logged* (mostly from
-  before the hook required one). Shown as a share of that week's findings, with the counts beside
-  the bars; *per 100 changes* above each bar is findings ÷ changes reviewed.
-- **Notes under each week.** How many sessions; *partial week* (the first, and the one still
-  filling up); *few sessions* under 10; how many merged changes edited the reviewer prompts and
-  `CLAUDE.md` that week.
-- **The weekly judge line.** From the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)):
-  the findings nobody fixed, re-checked against `main` — how many are open bugs, parked (can't
-  happen in today's code), gone, or dismissed.
+- **Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
+  reviewed. Running recital again on the same change counts once; a reviewer that errored counts
+  none. PRs merged counts merge and squash commits on `main` (`git log --first-parent`) beside it:
+  a PR usually carries more than one reviewed change.
+- **Findings per 100 changes**, one line per reviewer (fan-out audit, convention check): the week's
+  findings ÷ its changes reviewed. Each finding counts once, in the week it was first raised. Lower
+  means fewer flagged, which isn't the same as better code: a less sensitive prompt lowers it too.
+- **Findings fixed before commit**, one line per reviewer: the share of the week's findings whose
+  latest logged outcome is *fixed before commit*. The rest were shipped knowingly, called a false
+  positive, dropped, or have no outcome logged (mostly from before the hook required one); that
+  split is in `effectiveness.json` and the image's description, not drawn.
+- **The judge's verdicts**, from the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), one
+  panel per reviewer, by the week each note was raised, each verdict as a share of that week's
+  judged notes with the week's *n* under its date: a count would mostly say how much of the backlog
+  the pass reached. *Fan-out*: the notes nobody fixed — mostly
+  fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
+  findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
+  but can't happen in today's code), *gone* (the code changed under it) or *dismissed*.
+  *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
+  existing helper's job), *gone* or *dismissed*. Until a pass has swept convention findings, that
+  panel says so. A week the pass fell inside is hollow: it isn't fully judged yet.
+- **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
+  under 10 sessions. A week under 10 sessions gets no point in the rate panels at all (a handful of
+  findings makes any percentage); its counts are still drawn. Weeks like that before logging got going
+  aren't drawn at all, nor is the week still running when the chart is drawn: both are in
+  `effectiveness.json`.
 
 ## What it can't tell you
 
 - **It starts on 2026-09-27.** A few weeks is not a trend, so none is drawn: no rolling average, no
-  fitted line. Read the weeks side by side, not as a curve.
+  fitted line: the lines only join one week's point to the next.
 - **The ruler moves.** The reviewer prompts and the rules they check against were edited most weeks
-  so far — that is what the notes under each week count. A week with more findings may have a
-  stricter reviewer, not a worse agent.
+  so far (counted per week in `effectiveness.json`). A week with more findings may have a stricter
+  reviewer, not a worse agent.
 - **Fixed before commit is the agent's own word.** The hook checks that every finding got an
   outcome, not that the outcome is true. The weekly judge re-checks the ones that weren't fixed;
   nothing re-checks the ones marked fixed.
