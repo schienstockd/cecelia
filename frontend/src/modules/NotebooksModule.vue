@@ -20,7 +20,8 @@ const errorMsg = ref('')
 // Fast-plot sysimage (pluto/deps.so): built on first visit, in the background, so notebooks are
 // usable immediately (slow first plot until it lands). See api_notebooks_build_sysimage.
 // 'stale' = an image built for a different Julia/package set (after an update) — rebuilt like 'absent'.
-type SysimageState = 'unknown' | 'absent' | 'stale' | 'building' | 'ready' | 'error'
+// 'shared' = a build is due but pluto/ is not ours to write (non-owner of a shared install).
+type SysimageState = 'unknown' | 'absent' | 'stale' | 'building' | 'ready' | 'error' | 'shared'
 const sysimage = ref<SysimageState>('unknown')
 
 // Pluto requires a secret (see launch.jl); append it so the browser is authorized.
@@ -46,6 +47,7 @@ async function buildSysimage() {
     })
     const d = await res.json().catch(() => ({}))
     if (res.ok) sysimage.value = d.status ?? 'building'
+    else if (res.status === 403) sysimage.value = 'shared'
   } catch { /* silent — the fallback (slow first plot) still works */ }
   if (sysimage.value === 'building') startBuildPoll()
 }
@@ -201,6 +203,9 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
               : 'Optional: skip the ~20 s first-plot compile. Notebooks work without it.' }}
           </span>
         </div>
+        <p v-else-if="sysimage === 'shared'" class="nb-hint cc-muted">
+          <i class="pi pi-bolt" /> Fast plots need the account that installed Cecelia — notebooks work without them.
+        </p>
         <p v-else-if="sysimage === 'ready'" class="nb-hint cc-muted">
           <i class="pi pi-bolt" /> Fast plots enabled.
         </p>

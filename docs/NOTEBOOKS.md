@@ -252,15 +252,17 @@ It now picks the recipe matching the stamped variant; `unknown`/absent → deps 
 The Pluto server is a separate process; lifecycle mirrors napari (probe :7660 → adopt or spawn).
 **Security:** Pluto's secret protection is left ON (its secure default) — Pluto is a browser-reachable
 code-execution surface, so without the secret any website you visit could drive it (CSRF/RCE). We do
-**not** disable it. `launch.jl` publishes the session secret to `pluto/.plutosecret` (git-ignored);
+**not** disable it. `launch.jl` publishes the session secret to `pluto/.plutosecret` (git-ignored), or,
+for a non-owner of a shared install, to `<config_dir>/pluto/.plutosecret` (the app passes
+`CECELIA_PLUTO_SECRET_FILE`);
 `launch`/`status` return it and the frontend appends it to URLs (`…/?secret=…`, `…/open?path=…&secret=…`).
 Routes:
 
 | Route | Purpose |
 |---|---|
 | `POST /api/notebooks/launch` | ensure the server is up (202 while starting) → `{url}` |
-| `GET  /api/notebooks/status` | `{running, starting, url, sysimage}` (`sysimage`: ready/stale/building/error/absent) |
-| `POST /api/notebooks/build-sysimage` | start the background fast-plot build (idempotent) → `{status}` |
+| `GET  /api/notebooks/status` | `{running, starting, url, sysimage}` (`sysimage`: ready/stale/building/error/absent/shared) |
+| `POST /api/notebooks/build-sysimage` | start the background fast-plot build (idempotent) → `{status}`; 403 for a non-owner of a shared install (status `shared`) |
 | `GET  /api/notebooks?projectUid=` | list notebooks (project + example scopes) with description/version/path |
 | `POST /api/notebooks/create` | new notebook from the template |
 | `POST /api/notebooks/describe` | set a notebook's description |

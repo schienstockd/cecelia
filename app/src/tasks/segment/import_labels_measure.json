@@ -1,0 +1,14 @@
+{
+  "task": "importLabelsMeasure",
+  "fun_name": "segment.importLabelsMeasure",
+  "label": "Import labels + measure",
+  "purpose": "Import a label image made elsewhere, then Measure labels",
+  "useWhen": ["The usual choice: labels alone leave nothing to gate, track or cluster"],
+  "notWhen": ["Old Cecelia (R) projects: use Migrate legacy image"],
+  "category": "Segment",
+  "group": "Import",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "composite": ["segment.importLabels", "segment.measureLabels"],
+  "qcPlot": "segmentation_qc"
+}

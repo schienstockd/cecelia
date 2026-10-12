@@ -315,5 +315,7 @@ describe('tileMaskSourceId', () => {
     expect(tileMaskSourceId(base)).toBe('cells|labels|0')
     expect(tileMaskSourceId({ ...base, rev: '3' })).toBe('cells|labels|3')
     expect(tileMaskSourceId({ ...base, store: 'live', storeId: 4 })).toBe('cells|live:4|0')
+    expect(tileMaskSourceId({ ...base, store: 'live', storeId: 4, liveSince: 's2' }))
+      .not.toBe(tileMaskSourceId({ ...base, store: 'live', storeId: 4, liveSince: 's1' }))
   })
 })

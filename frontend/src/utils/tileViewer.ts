@@ -52,10 +52,13 @@ export function tileKeyStr(k: TileKey): string {
 export function tileMaskSourceId(o: {
   vn: string; hidden: boolean
   store?: MaskStore; storeId?: number
+  /** A live store's run start: `storeId` restarts with the main window, so two runs could share one. */
+  liveSince?: string
   rev?: string | number
 }): string {
   if (!o.vn || o.hidden) return ''
-  const store = o.store ? `${o.store}:${o.storeId ?? 0}` : 'labels'
+  const run = o.store && o.liveSince ? `@${o.liveSince}` : ''
+  const store = o.store ? `${o.store}:${o.storeId ?? 0}${run}` : 'labels'
   return `${o.vn}|${store}|${o.rev || 0}`
 }
 

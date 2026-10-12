@@ -611,14 +611,15 @@ describe('seedRendererOverlays', () => {
 
 describe('setOverlayWindow', () => {
   // payload(): track 1 runs t0 → t1, so a tail at t = 1 holds its one segment.
-  const style = { pointPx: 5, borderPx: 1, pointZTol: 1, tailFrames: 2, tailPx: 3, trackZTol: 2 }
+  const style = { pointPx: 5, borderPx: 1, umPerSize: 0.5, pointZTol: 1, tailFrames: 2, tailPx: 3, trackZTol: 2 }
   const rec = () => {
-    const calls: { pts?: number[]; segs?: number[]; fade?: number[] } = {}
+    const calls: { pts?: number[]; segs?: number[]; fade?: number[]; unit?: number[] } = {}
     return {
       calls,
       setOverlayDraw: (...a: number[]) => { calls.pts = a },
       setOverlaySegmentDraw: (...a: number[]) => { calls.segs = a },
       setTailFade: (...a: number[]) => { calls.fade = a },
+      setOverlaySizeUnit: (...a: number[]) => { calls.unit = a },
     }
   }
 
@@ -634,6 +635,8 @@ describe('setOverlayWindow', () => {
     expect(r.calls.segs).toEqual([tail![0], tail![1], 3, 0, 4])
     // The fade's head is the window's newest end, so the hop arriving now draws solid.
     expect(r.calls.fade).toEqual([tailHead(1), 2])
+    // Sizes in image pixels: the renderer gets the µm per unit to convert at the camera's zoom.
+    expect(r.calls.unit).toEqual([0.5])
   })
 
   it('nothing on screen yet (t < 0) draws nothing', () => {

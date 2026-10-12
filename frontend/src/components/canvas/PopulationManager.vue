@@ -744,7 +744,7 @@ function moveTo(target: string) {
             <div class="pm-opt-row">
               <span class="pm-opt-label cc-muted cc-fs-xs">Point size</span>
               <input type="range" min="1" max="20" step="1" :value="viewerPointSize"
-                     v-tooltip.top="'Population point size on the viewer (per experiment/set)'"
+                     v-tooltip.top="'Viewer point size in image pixels (per experiment/set)'"
                      @input="viewerPointSize = parseInt(($event.target as HTMLInputElement).value)"
                      @change="g.refreshPops()" />
               <span class="pm-opt-val cc-readout cc-fs-xs">{{ viewerPointSize }}</span>

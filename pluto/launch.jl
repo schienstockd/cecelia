@@ -76,7 +76,9 @@ opts = Pluto.Configuration.Options(
 session = Pluto.ServerSession(; options = opts)
 # Publish the secret for the API server to read (git-ignored). Written before run() (which blocks and
 # brings the port up), so by the time the port answers the secret is already available.
-write(joinpath(@__DIR__, ".plutosecret"), session.secret)
+# The app passes CECELIA_PLUTO_SECRET_FILE: a per-user file when this account cannot write the install
+# (a shared one it does not own). Standalone (`pixi run notebooks`) it is pluto/.plutosecret.
+write(get(ENV, "CECELIA_PLUTO_SECRET_FILE", joinpath(@__DIR__, ".plutosecret")), session.secret)
 
 @info "Starting Pluto Playground" port = PLUTO_PORT notebooks_dir env = @__DIR__
 Pluto.run(session)

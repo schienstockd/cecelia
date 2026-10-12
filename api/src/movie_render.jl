@@ -75,12 +75,15 @@ end
 # The overlay style a movie draws with, read off an overlay config by `get(key)` (`nothing` = absent).
 # Defaults are the viewer's: a 6-px point with no border, a 2-px tail, `LABEL_OPACITY`, and its z
 # tolerances (`viewerPointZTol` / `viewerTrackZTol`, `OVERLAY_Z_TOL`) for which points and tails a 2D
-# frame shows.
+# frame shows. `size_unit` is what the point size and tail width count: "image" px — the viewer's own
+# unit, so the shader scales them with the movie's camera as the viewer does with its zoom — or
+# "screen" px of the drawn frame (the default: a hand-set size, a behaviour card's trace).
 function movie_overlay_style(get::Function = _ -> nothing)
     num(k, d) = (v = get(k); v isa Real ? Float64(v) : Float64(d))
     (; point_size_px    = max(1, round(Int, num("pointSizePx", 6))),
        segment_width_px = max(1, round(Int, num("segmentWidthPx", 2))),
        point_border_px  = max(0, round(Int, num("pointBorderPx", 0))),
+       size_unit        = get("overlaySizeUnit") == "image" ? "image" : "screen",
        mask_opacity     = clamp(num("maskOpacity", MASK_FILL_OPACITY), 0.0, 1.0),
        point_z_tol      = max(0, round(Int, num("pointZTol", OVERLAY_Z_TOL))),
        track_z_tol      = max(0, round(Int, num("trackZTol", OVERLAY_Z_TOL))))
@@ -306,7 +309,8 @@ function _view_render_params(zarr_path::AbstractString, ts; z, channels, specs, 
                               "canvasH" => H, "canvasW" => W,
                               "pointSizePx" => style.point_size_px,
                               "pointBorderPx" => style.point_border_px,
-                              "segmentWidthPx" => style.segment_width_px)
+                              "segmentWidthPx" => style.segment_width_px,
+                              "overlaySizeUnit" => style.size_unit)
     _mask_params!(params, mask)
     # Timestamp + scale bar, drawn on the encoded frame. The bar tracks the encoded µm/pixel: native
     # µm × the stride.
@@ -592,8 +596,8 @@ end
 #   - `trackSegs` / `gatedRibbons` / `hiddenTrackPops` / `showTrackclust`: the track kinds
 #     (`overlay_track_plan`; `allTracks` / `includeTracks` / `trackSources` are the legacy spelling)
 #   - `tailLength`    : segment tail window (frames)
-#   - `pointSizePx`   : dot radius in the DRAWN frame
-#   - `segmentWidthPx`: ribbon width
+#   - `pointSizePx`   : dot radius — in the DRAWN frame, or in image px when `overlaySizeUnit` = "image"
+#   - `segmentWidthPx`: ribbon width (same unit)
 #   - `popPaths`      : Vector{String} of pop paths to keep (nothing = all visible)
 #   - `trackColorMode`: "track" | "speed" | "solid"
 # The same keys and the same gate as the 2D rail's `_resolve_movie_overlays_mask`. Older animation
@@ -912,6 +916,7 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
         "pointSizePx"    => style.point_size_px,
         "pointBorderPx"  => style.point_border_px,
         "segmentWidthPx" => style.segment_width_px,
+        "overlaySizeUnit" => style.size_unit,
     )
     _mask_params!(params, movie_mask)
     # Timestamp + scale bar, same shape the CPU encoder reads. The bar is sized to the first

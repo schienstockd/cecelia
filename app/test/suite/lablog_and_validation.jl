@@ -333,7 +333,7 @@ end
 @testset "Param validation — every registered task, from its spec" begin
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
-    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "section", "group",
+    known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "filePath", "section", "group",
                        "channelSelection", "valueNameSelection", "valueNameInput", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection", "imagePicker"])
 
@@ -369,6 +369,7 @@ end
         t == "float"  && return Float64(get(p, "min", 1.0))
         t == "bool"   && return false
         t == "select" && return get(first(get(p, "options", [Dict("value" => "x")])), "value", "x")
+        t == "filePath" && return @__FILE__   # validation asks for an EXISTING file
         return "x"
     end
 
@@ -552,6 +553,8 @@ end
                     checked_selects += 1
                 elseif t == "bool"
                     rejects(resolved, with("yes"), key, "non-bool")
+                elseif t == "filePath"
+                    rejects(resolved, with(joinpath(@__DIR__, "no-such-file.tif")), key, "missing file")
                 end
             end
             end   # spec_params is a non-empty array

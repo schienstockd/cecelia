@@ -69,9 +69,10 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         # Mirrors dirPath, for a param that names ONE existing file (an external export to import).
         # Checked here rather than in the task: a path typo is the most likely thing to go wrong, and
         # failing at validation names the field, where failing in the runner names a stack.
+        # `dirExtensions` admits a DIRECTORY with one of those suffixes as one file — a zarr store.
         value isa AbstractString ||
             throw(ParamValidationError("'$key' must be a path, got: $value"))
-        isfile(String(value)) ||
+        (isfile(String(value)) || _is_dir_file(String(value), get(spec, "dirExtensions", []))) ||
             throw(ParamValidationError("'$key' is not a file: $value"))
 
     elseif type_str == "valueNameInput"
@@ -89,6 +90,14 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
                                                     "'$key' $why: \"$v\""))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
+end
+
+# A directory that is picked as ONE file (`filePath` + `dirExtensions`): an OME-Zarr store is a folder.
+# Same case-insensitive suffix match as the FileBrowser's `dirExtensions`, trailing separator ignored.
+function _is_dir_file(path::AbstractString, dir_exts)::Bool
+    isdir(path) || return false
+    name = lowercase(basename(rstrip(path, ['/', '\\'])))
+    any(e -> endswith(name, lowercase(string(e))), dir_exts)
 end
 
 """

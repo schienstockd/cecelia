@@ -31,8 +31,12 @@
       "label": "Output name",
       "type": "valueNameInput",
       "namespace": "labels",
+      "outputRegistry": "branch_labels",
       "default": "default",
       "tip": "Name for the output branch label set"
+    },
+    {
+      "$include": "overwriteLabels"
     },
     {
       "key": "refPops",

@@ -402,7 +402,7 @@ async function copyTerminalCommand(profile?: string) {
                    v-tooltip.bottom="'Overlay text size in screen pixels'" /></label>
           <label class="pref-num">Point size
             <input type="number" min="1" max="30" v-model.number="settings.viewerPointSize"
-                   v-tooltip.bottom="'Cell marker size in screen pixels'" /></label>
+                   v-tooltip.bottom="'Cell marker size in image pixels — scales with zoom'" /></label>
           <label class="pref-num">Point outline
             <input type="number" min="0" max="10" v-model.number="settings.viewerPointBorder"
                    v-tooltip.bottom="'Black outline width around each point; 0 = no outline'" /></label>
@@ -414,7 +414,7 @@ async function copyTerminalCommand(profile?: string) {
                    v-tooltip.bottom="'Track tail length in frames; 0 hides tails'" /></label>
           <label class="pref-num">Tail width
             <input type="number" min="0" max="12" v-model.number="settings.viewerTailWidth"
-                   v-tooltip.bottom="'Track tail width in screen pixels'" /></label>
+                   v-tooltip.bottom="'Track tail width in image pixels — scales with zoom'" /></label>
           <label class="pref-num">Label opacity (0-1)
             <input type="number" min="0" max="1" step="0.05" v-model.number="settings.viewerLabelOpacity"
                    v-tooltip.bottom="'Segmentation mask fill opacity; 0 = invisible, 1 = solid'" /></label>

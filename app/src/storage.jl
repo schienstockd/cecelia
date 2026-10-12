@@ -737,6 +737,16 @@ function rename_value_name!(img::CciaImage, from::AbstractString, to::AbstractSt
         error("rename_value_name!: labelProps entry for '$(to_s)' already exists on this image")
     haskey(img.branch_labels, to_s) &&
         error("rename_value_name!: branchLabels entry for '$(to_s)' already exists on this image")
+    # …and on DISK, through the label writers' canonical check: an unregistered `{to}.zarr` /
+    # `{to}_nuc.zarr` / `branchLabels/{to}.zarr` / `{to}__branch.h5ad` (a cancelled run's leftover)
+    # would otherwise pass the registry checks above and fail the rename halfway, inside `mv`.
+    let raw = read_ccid_raw(state_file(img))
+        for field in keys(LABEL_REGISTRIES)
+            _label_name_taken(img, raw, to_s, field) &&
+                error("rename_value_name!: '$(to_s)' is already taken on this image ($(field) " *
+                      "store on disk) — pick another name, e.g. '$(free_label_name(img, raw, to_s; field = field))'")
+        end
+    end
     _rename_active_task_on_vn(img, from_s) &&
         error("rename_value_name!: a task is currently running on '$(from_s)' — wait for it to finish")
     _rename_would_break_cross_image_clustering(img, from_s) &&

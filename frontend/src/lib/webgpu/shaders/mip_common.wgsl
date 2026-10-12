@@ -19,7 +19,7 @@ struct P {
   ov:   vec4<f32>,                       // overlays: point size (px), first plane shown, tail width, last plane shown
   lab:  vec4<f32>,                       // labels: opacity (0 = off), contour width (px, 0 = filled), palette rows, POINT border width (px, 0 = no outline)
   pan:  vec4<f32>,                       // pan xy (screen µm), then z/w = track ribbon planeLo/planeHi
-  trail: vec4<f32>,                      // track tail fade: newest end timepoint shown, tail length (frames), _, _
+  trail: vec4<f32>,                      // track tail fade: newest end timepoint shown, tail length (frames); µm per overlay size unit (0 = sizes are screen px), _
   ch:   array<vec4<f32>, ${MAX_CHANNELS}>, // per channel: lo, hi, visible, unused
 };
 @group(0) @binding(0) var<uniform> p: P;
@@ -54,6 +54,14 @@ fn project(world: vec3<f32>, c: Cam, aspect: f32) -> vec3<f32> {
   }
   let w = max(dot(d, -c.fwd), 1e-4);             // perspective: half-height grows with distance
   return vec3(sx / (w * ${VIEW_HALF_ANGLE} * aspect), sy / (w * ${VIEW_HALF_ANGLE}), w);
+}
+
+// Canvas px per µm at view depth `w` (project()'s third lane) — what turns an image-unit overlay size
+// into screen px (`overlayPx`, overlay_quads.wgsl). Orthographic: constant; perspective: shrinks with
+// distance, as the voxels do.
+fn pxPerUm(w: f32) -> f32 {
+  let hh = select(w * ${VIEW_HALF_ANGLE}, p.cam.z * ${VIEW_HALF_ANGLE}, p.vp.w > 0.5);
+  return p.vp.z * 0.5 / max(hh, 1e-6);
 }
 
 // The centre of the LOADED box in absolute image µm. The volume is drawn centred on the origin, so an

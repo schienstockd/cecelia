@@ -57,7 +57,9 @@ def run_task(project_uid: str, fun_name: str, params: dict, image_uids: list[str
 
     Returns `{tasks: [{taskId, imageUid, status, log}]}` — `status` is "submitted" or "failed" (an
     immediate refusal; `log` says why). Then call wait_for_tasks with the ids. A task that NAMES an
-    output (a segmentation, an HMM column) is refused unless the name carries the session prefix."""
+    output (a segmentation, an HMM column) is refused unless the name carries the session prefix.
+    A name the image already has is refused with a free one to use instead — use it. `overwrite: true`
+    is refused unless every output carries the prefix (only this session's own outputs)."""
     return _client.run_task(project_uid, fun_name, params, image_uids, set_uid)
 
 

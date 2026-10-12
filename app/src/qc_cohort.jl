@@ -47,6 +47,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "cleanupImages.flowRegister" => ["peakFlowPx", "meanFlowPx", "meanFrameCorrelation"],
     "segment.cellpose"           => ["nCells"],
     "segment.coastal"            => ["nCells"],
+    "segment.importLabels"       => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
     # optical-flow training: one model per image, so the cohort question is whether a movie trained
     # like its peers. `finalLoss` is only comparable within a set trained at the same weights and
