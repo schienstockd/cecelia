@@ -193,14 +193,16 @@ export const useSettingsStore = defineStore('settings', () => {
   // Overlay text size, in screen px. Two numbers rather than one because they annotate different
   // things — and a setting rather than a constant because "readable" depends on the window size and on
   // whether the shot is going into a talk.
-  // Overlay point size, in SCREEN px — a cell marker is annotation, so it stays legible zoomed out and
-  // must not swallow the cell zoomed in. Default 6 (inherited from the R-Shiny era).
+  // Overlay point size, in IMAGE px — the marker scales with zoom, so it keeps its size relative to the
+  // cells (screen px read as dots on big cells zoomed in, blobs on small ones zoomed out). Default 6
+  // (inherited from the R-Shiny era). A movie recorded from the viewer draws it in image px too
+  // (`viewerLook` → `overlaySizeUnit: 'image'`).
   const viewerPointSize = ref(Number(localStorage.getItem('cc.viewerPointSize') ?? '6') || 6)
-  // Optional black outline around every population point, in SCREEN px. 0 = no border (the old
+  // Optional black outline around every population point, in SCREEN px (capped at half the marker). 0 = no border (the old
   // rendering), > 0 grows the quad by `border` px and paints the outer ring black — a crowded
   // multi-population view separates the categories more clearly against a busy MIP.
   const viewerPointBorder = ref(Number(localStorage.getItem('cc.viewerPointBorder') ?? '3'))
-  // Track tails. `viewerTailLength` is in FRAMES (default 30) and `viewerTailWidth` in screen px
+  // Track tails. `viewerTailLength` is in FRAMES (default 30) and `viewerTailWidth` in image px
   // (default 4). 0 length hides them.
   const viewerTailLength = ref(Number(localStorage.getItem('cc.viewerTailLength') ?? '30') || 30)
   const viewerTailWidth = ref(Number(localStorage.getItem('cc.viewerTailWidth') ?? '4') || 4)

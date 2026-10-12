@@ -17,6 +17,7 @@ describe('buildBatchMovieConfig', () => {
     expect(c.tailWidth).toBe(4)
     expect(c.popType).toBe('flow')
     expect(c.pointsSize).toBe(6)
+    expect(c.overlaySizeUnit).toBe('screen')  // a hand-set size is output px
     expect(c.pointBorder).toBe(0)            // no outline unless the look carries the viewer's
     expect(c.labelOpacity).toBe(0.7)         // the viewer's default fill opacity
     expect([c.pointZTol, c.trackZTol]).toEqual([OVERLAY_Z_TOL, OVERLAY_Z_TOL])   // the viewer's default
@@ -36,6 +37,8 @@ describe('buildBatchMovieConfig', () => {
     expect(c.popType).toBe('clust')
     expect(c.pointsSize).toBe(10)
     expect(c.tailWidth).toBe(8)
+    // a look filled from the viewer keeps the viewer's unit
+    expect(buildBatchMovieConfig({ overlaySizeUnit: 'image' }, [], {}).overlaySizeUnit).toBe('image')
     expect(buildBatchMovieConfig({ pointBorder: 3, labelOpacity: 0 }, [], {}))
       .toMatchObject({ pointBorder: 3, labelOpacity: 0 })   // a deliberate 0 stays 0
     expect(c.colourOverrides).toEqual({ '2': '#ff1493' })

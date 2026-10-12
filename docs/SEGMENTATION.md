@@ -82,7 +82,7 @@ Stored as a `Dict{String, Vector{String}}` — value_name → list of zarr filen
 }
 ```
 
-- Set by `cellpose.jl` on task completion (derived from the `matchAs` values in params, plus `_halo` when `haloSize > 0`)
+- Set on task completion through `register_label_files!` (`segmentation.jl`) — by every segmenter (derived from the `matchAs` values in params, plus `_halo` when `haloSize > 0`) and by `segment.importLabels`
 - Read by `_load_image` in `image.jl` as `CciaImage.labels`
 - Exposed to the frontend via `_image_payload` in `routes.jl` as `labels: Record<string, string[]>`
 - Backward-compatible: bare string values in old ccid.json are wrapped in a 1-element list
@@ -111,6 +111,43 @@ level it draws the image at; a store with fewer levels answers 409 there (`label
 `api/src/viewer_api.jl`), and the viewer skips it and flags the row. Reading full resolution and
 shrinking instead is not an option on a large tilescan. Correction edits level 0 and rebuilds every
 lower level from it, so no level can still show a cell that was merged or removed.
+
+### A taken output name is refused unless "Overwrite existing" is ticked
+
+Every label writer — `segment.cellpose`, `segment.coastal`, `segment.ridges`, `segment.importLabels`
+(and so the `…Measure` composites) and `segment.branching` — first calls `assert_labels_free`
+(`segmentation.jl`), before it reads or writes anything. When the image registers the output name in
+that writer's registry, or a file a run would write already exists, the run fails with "Labels
+'default' already exist — use 'default_2', or tick Overwrite existing to replace them" ("Branches
+'…'" for branching). The suggested name is the first free `{vn}_N` (`free_label_name`, registry and
+disk), named first on purpose: the toggle replaces the user's data, so the easy next step — for a
+person or an agent — is the name that doesn't. The registries are one table, `LABEL_REGISTRIES`: `labels` (`labels/{vn}.zarr`,
+`{vn}_nuc.zarr`) and `branch_labels` (`branchLabels/{vn}.zarr` + `labelProps/{vn}__branch.h5ad`,
+which branch pops are built on); a new registry is a row there, not a second guard.
+**Overwrite existing** (one shared spec fragment, `tasks/fragments/overwriteLabels.json`, default off) lets it replace the set as before. Why: the
+output name defaults to `default`, which is the name an image's segmentation most likely already has,
+and replacing it silently orphans the measures, gates and tracks built on it.
+
+- **Per image.** The writers are image-scope, so the check runs at the start of each image's run; in
+  a multi-image run an image with a free name still runs when another image is refused.
+- **Rename too.** `rename_value_name!` refuses a target that `_label_name_taken` finds in any
+  registry, on disk included, before anything moves.
+- **Before Run, in the form.** The output-name field warns "Exists — use 'default_2', or tick
+  Overwrite existing" from the label sets the form already holds (`labelsTakenAdvisory`,
+  `paramAdvisors.ts`). An unregistered store left on disk is invisible there and is still refused at
+  Run. It checks the registry the spec declares (`outputRegistry`, `branch_labels` on
+  `segment.branching`), the same declaration the run reads through `output_registry`.
+- **Agents.** The autonomous MCP server refuses `overwrite: true` unless every output name carries
+  the session prefix, and refuses it outright with no prefix — an unattended run can only replace its
+  own outputs (`output_name_violations`, `mcp/cecelia_mcp/autonomous.py`). The observer guidance tells
+  an interactive session to take the suggested name and never set `overwrite` on a name it didn't
+  create unless the user asked.
+- **Not the preview.** The task preview never calls `_run_task` and writes no store under the real
+  name, so it is unaffected.
+- Pinned by `label writers refuse a taken output name` (`app/test/suite/label_import.jl`). Writers are
+  found from the SPEC — any task whose output is a `valueNameInput` in the `labels`/`branches`
+  namespace — and each must call the guard before its runner and offer the toggle, so a new writer
+  cannot slip past however it registers its stores.
 
 ### Stores are written staged, never in place
 
@@ -1458,6 +1495,55 @@ screen), and `/api/preview/run` is deadlined at `PREVIEW_RUN_TIMEOUT_MS` so a we
 surfaces as *"Preview timed out"* instead of a permanent "Previewing…".
 
 ---
+
+## Importing labels
+
+`segment.importLabels` takes a label image made outside Cecelia — another tool, or a segmentation
+run elsewhere — and writes it as a label set no different from one a segmenter wrote.
+`segment.importLabelsMeasure` adds **Measure labels**, so the set arrives with its `label_props` and
+is ready to gate. That is the one to run: labels alone give gating, tracking and plots nothing to read.
+Handler `app/src/tasks/segment/import_labels.jl`; the streaming is
+`python/cecelia/utils/label_import_utils.py`. Out of scope: importing a precomputed props table —
+Measure labels is the canonical producer of `label_props`.
+
+**Sources.** One path per role from the `matchAs` vocabulary: **Cell labels** (`base`, required)
+becomes `{vn}.zarr` and the cell table; **Nucleus labels** (`nuc`, optional) becomes `{vn}_nuc.zarr`
+and only adds `nuc_*` columns to it. Each is an OME-Zarr store (multiscales or a bare array — level 0
+is read) or a TIFF (series 0, level 0). The form's picker is a `filePath` with `dirExtensions`, because
+a store is a folder (`docs/MODULES.md` → *Param types*).
+
+**A taken name is refused, not replaced** — the rule every label writer follows (*A taken output name is
+refused unless "Overwrite existing" is ticked*, under *Output zarr layout*). The composite stops there too, so nothing is re-measured.
+
+**What the import enforces** — every rule a segmenter's output already satisfies:
+
+| Rule | How |
+|---|---|
+| Shape = image minus C | Checked for every source before anything is written. Only length-1 axes may differ (a 2D TIFF on a `(1, 1, Y, X)` image); any other mismatch fails naming both shapes. A store's NGFF axes must also agree, so a z-stack cannot be read as a time series. |
+| uint32 | Each block is cast; negative ids, non-integer floats and ids past uint32 are refused rather than wrapped. A bool array is refused as a binary mask. |
+| Ids unique across timepoints | A frame is renumbered (offset by the running maximum) only when its ids could collide with an earlier frame's. A movie already numbered uniquely keeps its ids; one numbered from 1 per frame, or with one id along a track, gets the segmenters' monotonic numbering. |
+| Nucleus ids name their cell | **Match nucleus ids** off (default): ids are kept, and the share of nucleus pixels inside a cell whose ids disagree is banked as `idMismatchFrac`. Above 0.25 the run banks `segment.import_ids_unpaired` (warn). On: each frame is overlap-matched with the segmenters' rule (below), unmatched nuclei dropped. |
+| The image's pyramid depth | `write_label_pyramid` with the image's level count. |
+
+Output goes through `staged_store` + `open_multiscales_for_writing(kind='labels')`, then
+`register_label_files!` and `bank_segment_qc!` under `segment.importLabels` (`segment_counts.json`,
+`nCells` banked for the cohort), as every segmenter does.
+
+**Matching is the segmenters' rule, computed sparsely.** `SegmentationUtils._match_nuc_cyto` needs
+both whole frames in RAM and a dense cell × nucleus IoU matrix — on a 45k × 28k tilescan that is ~10 GB
+of frames and a matrix of cells squared. The import accumulates per-block overlap counts instead and
+applies the same rule to the co-occurring pairs (`match_to_base`): each cell takes the nucleus with the
+highest IoU (ties to the lower id) when it reaches the threshold, and a nucleus two cells picked goes
+to the higher cell id. `test_label_import.py` pins it against `_match_nuc_cyto` as the oracle. The
+threshold is an **IoU**, as in the segmenters, so it reads low for a nucleus inside a large cell: a
+nucleus covering a third of its cell has IoU ≈ 0.33, just over the 0.3 default.
+
+**Memory is one block per source**, not a frame: blocks are chunk-aligned and up to 4096 px on a side,
+never smaller than either store's chunk. A TIFF read through tifffile's zarr view decodes one strip or
+tile per chunk, so a TIFF written as one uncompressed strip per page still costs a whole page per read
+— that is the file's layout. The pyramid's level 1 is built by `write_label_pyramid` one timepoint at a
+time, i.e. a quarter of a frame in RAM.
+
 
 ## Measure labels
 

@@ -1,5 +1,5 @@
 // Track tails. One screen-space quad per segment, widened perpendicular to the SCREEN-space
-// direction so the width is in pixels and stays constant under perspective. Own plane bounds
+// direction; the width is image pixels (screen px in a movie) via `overlayPx`. Own plane bounds
 // (`p.pan.z`/`p.pan.w`) so ribbons can be widened independently of the points' z reach. Mirrors
 // `mip_segments.wgsl`.
 
@@ -27,9 +27,9 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
-  let pa = project(a - boxCentre(), c, aspect).xy;
-  let pb = project(b - boxCentre(), c, aspect).xy;
-  o.pos = ribbonPos(pa, pb, vi, p.ov.z, p.vp.yz);
+  let pa = project(a - boxCentre(), c, aspect);
+  let pb = project(b - boxCentre(), c, aspect);
+  o.pos = ribbonPos(pa.xy, pb.xy, vi, overlayPx(p.ov.z, p.trail.z, pxPerUm(0.5 * (pa.z + pb.z))), p.vp.yz);
   return o;
 }
 

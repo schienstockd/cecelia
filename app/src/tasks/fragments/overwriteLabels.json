@@ -1,0 +1,9 @@
+[
+  {
+    "key": "overwrite",
+    "label": "Overwrite existing",
+    "type": "bool",
+    "default": false,
+    "tip": "Replace a label set of the same name on the image"
+  }
+]

@@ -1050,6 +1050,18 @@ end
     img.labels["stub"] = ["stub.zarr"]; save!(img)
     @test_throws Exception rename_value_name!(img, src_vn, "stub")
     delete!(img.labels, "stub"); save!(img)
+    # collision ON DISK with nothing registered (a cancelled run's leftover store): refused up front by
+    # the label writers' canonical check, before anything moves — not halfway through `mv`
+    for orphan in (joinpath(img._dir, "labels", "orphan_nuc.zarr"),
+                   joinpath(img._dir, "branchLabels", "orphan.zarr"),
+                   joinpath(img._dir, "labelProps", "orphan__branch.h5ad"))
+        endswith(orphan, ".h5ad") ? write(orphan, "x") : mkpath(orphan)
+        err = try; rename_value_name!(img, src_vn, "orphan"); nothing; catch e; e; end
+        @test err isa ErrorException && occursin("'orphan' is already taken", err.msg) &&
+              occursin("'orphan_2'", err.msg)
+        @test isdir(lbase) && isdir(lnuc) && isdir(bdir)                    # nothing moved
+        rm(orphan; recursive = true)
+    end
 
     # do the rename
     r = init_object(proj.uid, img.uid)

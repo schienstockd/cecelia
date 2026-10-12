@@ -367,6 +367,27 @@ Three rules keep it parallel and correct (`docs/todo/SLAB_READ_PERF_PLAN.md`):
   (*Server read cache*, `auto` = RAM/16, 256 MiB–4 GiB), not to be confused with the browser's VRAM
   `viewerCacheMB`.
 
+### Mask vs channels in the viewer — a mask change never drops the channels
+
+Every viewer renderer keeps the mask's lifecycle apart from the image's, so ticking a segmentation off
+or on, switching it, or a preview / live run re-stamping, refetches the mask alone and never the
+channels already on the GPU. The mask on screen is one id (`tileMaskSourceId`: segmentation, store,
+rewrite stamp); `ViewerWindow`'s `applyMaskSource` hands it to whichever renderer is up, never
+`reallocate()`.
+
+- **Tiles** (`tileRenderer`): each slot's mask layer is stamped with the id it came from
+  (`setLabelSource` / `needsLabel` / `uploadLabel`); the tile pump refetches stale masks.
+- **Flat** (`volumeRenderer`): the same three calls per timepoint slot; the prefetch walk counts a
+  resident frame with a stale mask as incomplete and `fetchTimepoint` fetches its mask alone. Each
+  timepoint is budgeted with room for a mask whenever the image has a segmentation (`maskRoom`), so a
+  toggle never changes how many timepoints fit.
+- **Bricks** (`brickVolumeRenderer`): `setBrickSource` splits image identity (`sameBrickImage`) from
+  mask identity (`brickLabelSourceId`). A mask change swaps only the label atlases — freed when off,
+  fresh zeroed ones for a new mask — and the tick loop backfills every resident brick's mask
+  (`labelBackfill`, timepoint on screen first). A label-atlas OOM falls back to a joint `setImage`.
+
+Design + decisions: `docs/todo/MASK_DECOUPLE_PLAN.md`.
+
 ### Multi-atlas contract (WebGPU brick renderer)
 
 The brick renderer allocates N ∈ 1..`MAX_ATLASES` (=4) atlas textures per image — where N is what

@@ -138,7 +138,9 @@ you left at defaults, and what genuinely could not be resolved yet — a populat
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
 that part is the user's. In an unattended run that also has the cecelia-autonomous server, the chain \
 IS how you run the pipeline: author it here, start it with run_chain, and the whiteboard keeps it as \
-the record of what ran.
+the record of what ran. A segmentation (or other label set) onto a name the image already has is \
+refused, and the refusal names a free one ("use 'default_2'") — take that name. Never set \
+`overwrite` on a name you did not create unless the user asked for it: it replaces their data.
 
 ON WHAT THE USER JUST SHOWED YOU. A CAPTURE here is specifically a frozen VIEWER FRAME the user \
 shared via cecelia's Share-with-Claude button — NOT a manual screenshot, an image file, or a \

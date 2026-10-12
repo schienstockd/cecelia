@@ -10,7 +10,7 @@
       { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
       { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "pan",  "lanes": ["x", "y", "ribbonLo", "ribbonHi"] },
-      { "name": "trail", "lanes": ["head", "length", "unused0", "unused1"] },
+      { "name": "trail", "lanes": ["head", "length", "umPerSize", "unused1"] },
       { "name": "ch",   "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   },
@@ -20,7 +20,7 @@
     "fields": [
       { "name": "cam",  "lanes": ["panX", "panY", "dist", "aspect"] },
       { "name": "vp",   "lanes": ["nch", "canvasW", "canvasH", "unused"] },
-      { "name": "ext",  "lanes": ["x", "y", "unused0", "unused1"] },
+      { "name": "ext",  "lanes": ["x", "y", "umPerSize", "unused1"] },
       { "name": "slot", "lanes": ["channelsPerSlot", "unused0", "unused1", "unused2"] },
       { "name": "lab",  "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "ov",   "lanes": ["pointPx", "planeLo", "tailPx", "planeHi"] },
@@ -44,7 +44,7 @@
       { "name": "lab",      "lanes": ["opacity", "contourPx", "paletteRows", "pointBorderPx"] },
       { "name": "prevGrid", "lanes": ["nBx", "nBy", "nBz", "valid"] },
       { "name": "prevDims", "lanes": ["nx", "ny", "nz", "unused"] },
-      { "name": "trail",    "lanes": ["head", "length", "unused0", "unused1"] },
+      { "name": "trail",    "lanes": ["head", "length", "umPerSize", "unused1"] },
       { "name": "ch",       "count": "MAX_CHANNELS", "lanes": ["lo", "hi", "visible", "unused"] }
     ]
   }

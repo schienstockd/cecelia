@@ -2,8 +2,8 @@
 //
 // QUADS RATHER THAN `line-list`, because WebGPU draws 1px lines only and a 1px tail over a noisy MIP is
 // close to invisible — the viewer's `tail_width` defaults to 4. Each endpoint is projected independently
-// and the quad is widened perpendicular to the SCREEN-space direction, so the width is in pixels and
-// stays constant under perspective while the geometry stays correct.
+// and the quad is widened perpendicular to the SCREEN-space direction; the width is image pixels in the
+// viewer (screen px in a movie), converted at the segment's mean depth — `overlayPx`.
 //
 // Shares the same uniform buffer, and therefore the same camera, as the raycast and the points — see
 // `mip_points.wgsl` for why that matters more than it looks.
@@ -32,9 +32,9 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
-  let pa = project(a - boxCentre(), c, aspect).xy;
-  let pb = project(b - boxCentre(), c, aspect).xy;
-  o.pos = ribbonPos(pa, pb, vi, p.ov.z, p.vp.yz);
+  let pa = project(a - boxCentre(), c, aspect);
+  let pb = project(b - boxCentre(), c, aspect);
+  o.pos = ribbonPos(pa.xy, pb.xy, vi, overlayPx(p.ov.z, p.trail.z, pxPerUm(0.5 * (pa.z + pb.z))), p.vp.yz);
   return o;
 }
 

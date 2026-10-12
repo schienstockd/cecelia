@@ -36,6 +36,9 @@
       "tip": "Name for the output label set"
     },
     {
+      "$include": "overwriteLabels"
+    },
+    {
       "key": "models",
       "label": "Segmentation models",
       "type": "group",

@@ -146,10 +146,10 @@ root-like account. That is the same outcome D1 achieves on Linux/macOS.
 
 ## Not verified here
 
-- Pluto notebooks for a non-owner of a shared install. Notebook setup and the sysimage build write
-  under `<install>/pluto`, which is outside the per-user depot, so they will most likely fail for
-  everyone but the owner. Optional pixi envs (Settings → System) are now refused with a 403 for
-  non-owners (`api/src/system_api.jl`).
+- Pluto notebooks for a non-owner of a shared install. The two known writes under `<install>/pluto`
+  are handled: the session secret goes per-user, and the sysimage build is refused with a 403, the
+  same as optional pixi envs (Settings → System, `api/src/system_api.jl`). A real non-owner launch
+  has not been run (`docs/TODO.md`).
 
 - Real lab hardware: GPU paths, and a macOS `.app` double-click by a non-admin. CI starts the
   launcher from a shell.

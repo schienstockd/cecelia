@@ -308,6 +308,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         "pointZTol"        => max(0, _cfg_int(cfg, "pointZTol", OVERLAY_Z_TOL)),
         "trackZTol"        => max(0, _cfg_int(cfg, "trackZTol", OVERLAY_Z_TOL)),
         "segmentWidthPx"   => _cfg_int(cfg, "tailWidth", 2),
+        # what those sizes count: "image" px (a look read off the viewer, which scales them with zoom)
+        # or "screen" px of the output frame (absent — a hand-set batch, older configs)
+        "overlaySizeUnit"  => _cfg_str(cfg, "overlaySizeUnit", "screen"),
     )
     if has_mask
         out["showMask"]        = true
