@@ -49,9 +49,12 @@ StateSaveLocation=/var/spool/slurmctld
 SlurmdSpoolDir=/var/spool/slurmd
 SlurmctldLogFile=/var/log/slurm/slurmctld.log
 SlurmdLogFile=/var/log/slurm/slurmd.log
-NodeName=$host CPUs=$(nproc) State=UNKNOWN
+$(slurmd -C | head -n 1) State=UNKNOWN
 PartitionName=debug Nodes=$host Default=YES MaxTime=INFINITE State=UP
 CONF
+# A container has no systemd/dbus to delegate a cgroup scope, which slurmd's cgroup/v2 plugin
+# needs at start-up; nothing here enforces limits, so the plugin is off.
+printf 'CgroupPlugin=disabled\n' > /etc/slurm/cgroup.conf
 # Best effort: P1 asserts only that the scheduler is INSTALLED. A daemon that fails here shows up
 # in `sinfo` in the workflow's diagnostics step, not as a P1 failure.
 service munge start || true
