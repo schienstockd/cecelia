@@ -101,6 +101,147 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Cancel kills the task's whole process tree ──────────────────────────────
+# The scheduler holds only the process it launched; a Python runner's own workers (or a shell's
+# background job) are children of it. A cancel that killed only the parent would leave them running
+# — and the run log would still say `cancelled`.
+@testset "Cancel kills the subprocess and its children" begin
+    if Sys.iswindows()
+        @test_skip "sh-based process tree — Unix only"
+    else
+        proj = create_project!(name="tree-cancel-$(rand(1000:9999))")
+        img  = add_image!(add_set!(proj; name="s"); name="img")
+        pid_file = joinpath(mktempdir(), "child.pid")
+        # `ps` rather than `kill -0`: a killed child is a zombie until reaped, and `kill -0` succeeds on one
+        alive(pid) = (s = strip(read(ignorestatus(`ps -o stat= -p $pid`), String)); !isempty(s) && !startswith(s, "Z"))
+
+        tid   = "tree$(rand(1000:9999))"
+        procs = Base.Process[]
+        th = Threads.@spawn run_task(_SpawnTreeTask(), img, Dict{String,Any}("pidFile" => pid_file);
+                                     task_id = tid, on_process = p -> push!(procs, p))
+        @test timedwait(() -> !isempty(procs) && isfile(pid_file) &&
+                              !isnothing(tryparse(Int, strip(read(pid_file, String)))), 30.0) === :ok
+        parent = Int(getpid(only(procs)))
+        child  = parse(Int, strip(read(pid_file, String)))
+        @test alive(parent) && alive(child)
+
+        @test cancel_task!(tid) === true                    # it was running here, so the cancel is real
+        @test timedwait(() -> istaskdone(th), 30.0) === :ok
+        @test timedwait(() -> !alive(parent) && !alive(child), 10.0) === :ok
+        alive(child) && run(ignorestatus(`kill -9 $child`))  # never leak a 5-minute sleep from a failure
+
+        rlog = filter(e -> String(get(e, "taskId", "")) == tid, read_run_log(img))
+        @test String(only(rlog)["status"]) == "cancelled"
+        @test cancel_task!(tid) === false                   # gone now — nothing left to cancel
+        forget_task_start!(tid)
+        rm(proj.root; recursive=true)
+    end
+end
+
+# ── Cancel says whether it found anything ──────────────────────────────────
+# `cancel_task!` used to return silently for an id it didn't know, and the GUI flipped the row to
+# `cancelled` regardless — so a Cancel on a task this backend wasn't running (orphaned by a crash,
+# say) read as a successful kill. The return value is what the WS handler acknowledges with.
+@testset "Cancel of an unknown or finished task returns false" begin
+    @test cancel_task!("no-such-task-$(rand(1000:9999))") === false
+    proj = create_project!(name="cancel-ack-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    rec = Cecelia._register_task!("ack$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
+    @test cancel_task!(rec.id) === true                     # queued → cancelled
+    @test rec.status === TASK_CANCELLED
+    Cecelia._deregister_task!(rec)
+    done = Cecelia._register_task!("ackd$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._set_status!(done, TASK_DONE)
+    @test cancel_task!(done.id) === false                   # a finished task cannot be cancelled
+    Cecelia._deregister_task!(done)
+    rm(proj.root; recursive=true)
+end
+
+# ── A second run of the same task, image and output is refused ─────────────
+# Nothing used to stop a second `segment.measureLabels` on an image while the first was still
+# running: both wrote the same `labelProps/<vn>.h5ad`, and a Cancel reached only whichever the row
+# pointed at. The key is (fun, image, output name); a different image or a different output runs.
+@testset "Duplicate in-flight run is refused" begin
+    proj  = create_project!(name="dup-run-$(rand(1000:9999))")
+    s     = add_set!(proj; name="s")
+    img   = add_image!(s; name="img")
+    other = add_image!(s; name="other")
+
+    _HOLD_TASK_GO[] = Channel{Nothing}(1)
+    tid = "dup$(rand(1000:9999))"
+    th = Threads.@spawn run_task(_HoldTask(), img, Dict{String,Any}(); task_id = tid)
+    try
+        @test timedwait(() -> any(r -> r.id == tid, list_tasks()), 30.0) === :ok
+        err = try
+            run_task(_HoldTask(), img, Dict{String,Any}()); nothing
+        catch e
+            e
+        end
+        @test err isa DuplicateRunError
+        @test occursin("Already running", sprint(showerror, err))
+        @test count(r -> r.image_uid == img.uid, list_tasks()) == 1   # refused before it registered
+        # the same id again — a restart of a run that is still going — is the same refusal
+        @test_throws DuplicateRunError Cecelia._register_task!(tid, "g", "cpu", other.uid, "", _ -> nothing)
+    finally
+        put!(_HOLD_TASK_GO[], nothing)
+        timedwait(() -> istaskdone(th), 30.0)
+    end
+    @test fetch(th) === true                                # the first run was untouched
+    forget_task_start!(tid)
+
+    # Through `execute_task` (what the GUI and the runner call) the refusal is an ordinary pre-job
+    # failure: an `[ERROR]` line saying why, and a terminal `failed` — never a hang or a silent drop.
+    req(id) = Cecelia.TaskRequest(task_id = id, fun_name = "testTasks.image_task", project_uid = proj.uid,
+                                  image_uid = img.uid, params = Dict{String,Any}("waitMs" => 3000))
+    first_run = Threads.@spawn Cecelia.execute_task(req("ex1$(rand(1000:9999))"))
+    @test timedwait(() -> any(r -> r.image_uid == img.uid && r.status == "running", list_tasks()), 30.0) === :ok
+    lines, statuses = String[], String[]
+    @test Cecelia.execute_task(req("ex2$(rand(1000:9999))"); on_log = l -> push!(lines, l),
+                               on_status = (st, _, _, _) -> push!(statuses, st)) === :failed
+    @test any(l -> startswith(l, "[ERROR] Already running on this image"), lines)
+    @test statuses == ["failed"]
+    @test fetch(first_run) === :done
+
+    # The key at the registry: same fun + overlapping image + same output name conflicts; any one
+    # differing does not. A set-scope run conflicts on ANY member it shares.
+    reg(id, uids, out; fun = "segment.measureLabels") =
+        Cecelia._register_task!(id, fun, "cpu", first(uids), "", _ -> nothing;
+                                image_uids = uids, output_name = out)
+    a = reg("k1", [img.uid], "default")
+    @test_throws DuplicateRunError reg("k2", [img.uid], "default")
+    b = reg("k3", [img.uid], "nuc")                                  # other output
+    c = reg("k4", [other.uid], "default")                            # other image
+    d = reg("k5", [img.uid], "default"; fun = "segment.cellpose")    # other task
+    @test_throws DuplicateRunError reg("k6", [other.uid, img.uid], "nuc")   # set run sharing `img`
+    # a FINISHED run no longer blocks — only queued/running ones do
+    Cecelia._set_status!(a, TASK_CANCELLED)
+    e = reg("k7", [img.uid], "default")
+    foreach(Cecelia._deregister_task!, (a, b, c, d, e))
+    rm(proj.root; recursive=true)
+end
+
+# ── task:restart reuses the id: the old and new runs must not overlap ──────
+# The old run's deregistration, run-log close and terminal frames are all keyed by that id. A restart
+# registered while the old run was still winding down had its record deleted by the old run's late
+# `_deregister_task!` (so it could never be cancelled) and its run-log entry stamped `cancelled`.
+@testset "A restart waits for the previous run under its id" begin
+    proj = create_project!(name="restart-race-$(rand(1000:9999))")
+    img  = add_image!(add_set!(proj; name="s"); name="img")
+    id   = "rs$(rand(1000:9999))"
+    old  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    cancel_task!(id)                                         # old run is winding down…
+    @test_throws DuplicateRunError Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)
+    Cecelia._deregister_task!(old)                           # …and gone
+    new  = Cecelia._register_task!(id, "f", "cpu", img.uid, "", _ -> nothing)   # now the restart runs
+    Cecelia._deregister_task!(old)                           # a stale deregistration is by RECORD…
+    @test any(r -> r.id == id, list_tasks())                 # …so it cannot remove the new run
+    @test cancel_task!(id) === true                          # which is still cancellable
+    @test new.status === TASK_CANCELLED
+    Cecelia._deregister_task!(new)
+    @test !any(r -> r.id == id, list_tasks())
+    rm(proj.root; recursive=true)
+end
+
 # ── A job ALWAYS releases its submitter, even if the error path itself throws ──
 # Regression: `_execute_job!` posted to `job.done` as its last statement, so any throw before that
 # (here: the crash `@warn` itself failing) escaped into the dispatcher's fire-and-forget
@@ -246,7 +387,7 @@ end
         @test row.chain_run_id == "run1" && row.chain_node_id == "n3"
         @test row.by == "alice"                    # a tab that didn't launch it can say who did
     end
-    Cecelia._deregister_task!(rec.id)
+    Cecelia._deregister_task!(rec)
 
     # a task still QUEUED has a queue time and NO start — so a client shows a wait, not a run of 0s
     rec = Cecelia._register_task!("q$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing)
@@ -255,7 +396,7 @@ end
     # …and a task registered with no params reports an EMPTY set, never a missing field: the frontend
     # reads an absent `params` as "unknown, withhold Re-run" and an empty one as "this task takes none".
     @test only(filter(r -> r.id == rec.id, list_tasks())).params == Dict{String,Any}()
-    Cecelia._deregister_task!(rec.id)
+    Cecelia._deregister_task!(rec)
 
     # The whole snapshot is written in ONE JSON3.write, so an unserialisable param value would throw and
     # take `/api/tasks` down for every row — no adoption, no console reconcile, and a quit busy-check
@@ -267,7 +408,7 @@ end
         @test isnothing(row.params)                      # all-or-nothing — NOT a partial dict
         @test JSON3.write(row) isa String                # the endpoint still answers
     end
-    Cecelia._deregister_task!(rec.id)
+    Cecelia._deregister_task!(rec)
 
     # …and the nested shapes params actually take DO survive (a group param is a dict of dicts), plus the
     # ones Julia code writes naturally, so a REPL-dispatched run isn't denied Re-run over a tuple.
@@ -280,7 +421,7 @@ end
         @test row.params == nested
         @test JSON3.write(row) isa String
     end
-    Cecelia._deregister_task!(rec.id)
+    Cecelia._deregister_task!(rec)
 
     # A whitelist, NOT a `try JSON3.write` probe: JSON3 throws on a Function but happily serialises a
     # plain struct INTO AN OBJECT, so a probe would publish that and a client would Re-run on a value
@@ -290,7 +431,7 @@ end
     rec = Cecelia._register_task!("st$(rand(1000:9999))", "f", "cpu", img.uid, "", _ -> nothing;
                                   params = Dict{String,Any}("img" => img))
     @test isnothing(only(filter(r -> r.id == rec.id, list_tasks())).params)
-    Cecelia._deregister_task!(rec.id)
+    Cecelia._deregister_task!(rec)
     rm(proj.root; recursive=true)
 end
 

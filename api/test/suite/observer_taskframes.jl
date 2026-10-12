@@ -318,3 +318,37 @@ end
     @test _tasklog_slice(log, "not a timestamp") == log
     @test _tasklog_slice("", iso(120)) == ""
 end
+
+@testset "API: task:cancel is acknowledged, and a miss says so" begin
+    # The GUI used to flip a row to `cancelled` the moment Cancel was pressed, and the backend returned
+    # silently for an id it didn't know — so a task nothing here was running (orphaned by a backend
+    # crash) read as cancelled while its process ran on. The handler now answers with
+    # `task:cancel:ack {found}` (the asking client writes the "not running" line into its own row).
+    cap = Channel{String}(64)
+    key = gensym("test-cancelack")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (fs = Any[]; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    try
+        drain()
+        handle_message(nothing, JSON3.write((; type = "task:cancel", taskId = "t-nobody")))
+        frames = drain()
+        ack = only(filter(f -> f.type == "task:cancel:ack", frames))
+        @test ack.taskId == "t-nobody" && ack.found === false
+        # no outcome is invented for it, and no log frame either — the task console would mint a row
+        # for the dead id from it that nothing ever retires
+        @test !any(f -> f.type in ("task:status", "task:log"), frames)
+
+        # a HIT: the task announces its own `cancelled`; the ack just confirms it was found
+        statuses = String[]
+        rec = Cecelia._register_task!("t-live", "f", "cpu", "img", "", r -> push!(statuses, string(r.status)))
+        drain()
+        handle_message(nothing, JSON3.write((; type = "task:cancel", taskId = "t-live")))
+        frames = drain()
+        @test only(filter(f -> f.type == "task:cancel:ack", frames)).found === true
+        @test !any(f -> f.type == "task:log", frames)
+        @test statuses == ["cancelled"]
+        Cecelia._deregister_task!(rec)
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+    end
+end

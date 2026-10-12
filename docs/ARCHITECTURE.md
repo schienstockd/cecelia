@@ -507,7 +507,8 @@ records as ones it already had — a restart that silently ate its own startup.
 | S→C | `task:progress` | `taskId`, `progress` (0–1 float) | `ws.ts` → `setProgress` |
 | S→C | `task:result` | `taskId`, `imageUid`, `meta` (Dict) | `ws.ts` → image/task store |
 | C→S | `task:run` | `taskId`, `projectUid`, `imageUid`, `module`, `task`, `params`, `poolName` | `sockets.jl` → `handle_task_run`; `poolName` (string) overrides the task-spec `resource_pool` when non-empty — set by the pool dropdown in `TaskRunner.vue` |
-| C→S | `task:cancel` | `taskId` | `sockets.jl` → `kill_task` — kills the individual task subprocess |
+| C→S | `task:cancel` | `taskId` | `sockets.jl` → `handle_task_cancel` — asks the scheduler (`cancel_task!`, kills the process tree), background jobs (`cancel_job!`) and the runner, then answers with `task:cancel:ack` |
+| S→C | `task:cancel:ack` | `taskId`, `found` | `ws.ts` → `cancelAcked`. `found: false` = nothing in this backend was running it; the row drops its "Cancelling…" and logs why. A hit needs no more — the task's own `cancelled` frame follows |
 | C→S | `chain:run` | `projectUid`, `chain`, `imageUids` | `sockets.jl` → `handle_chain_run` — starts a chain run in a `Threads.@spawn`; does not block the WS thread |
 | C→S | `chain:cancel` | `runId` | `sockets.jl` → `cancel_chain_run!(runId)` — sets the cancelled flag; nodes check it between steps (does **not** kill currently-executing subprocesses — see `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on chain cancel*) |
 | S→C | `chain:run:started` | `runId`, `projectUid` | broadcast when a chain run begins |

@@ -64,6 +64,13 @@ export interface TaskEntry {
   // instead of running through to EOF and pulling every subsequent run's output with it. Computed in
   // `utils/taskHistoryRows.ts`.
   logSliceUntil?: Date
+  // Cancel was SENT and the backend has not answered yet. The row keeps its real status until the
+  // task's own terminal frame arrives (or a `task:cancel:ack` says nothing here was running it, which
+  // clears this) — so the list never claims a cancel that didn't happen.
+  cancelling?: boolean
+  // When that cancel was sent (epoch ms). Bounds the wait: a dropped ack would otherwise leave the row
+  // at "Cancelling…" with no button until reload — `expiredCancels` (utils/runningTasks.ts).
+  cancelSentAt?: number
 }
 
 export const useTaskStore = defineStore('tasks', () => {
@@ -134,11 +141,10 @@ export const useTaskStore = defineStore('tasks', () => {
                      at: { startedAt?: Date; finishedAt?: Date; pool?: string } = {}) {
     const t = tasks.value.find(t => t.id === id)
     if (!t) return
-    // Terminal states set by the user (cancelled) are sticky — don't let a late
-    // backend "done" or "running" overwrite a cancel the user explicitly requested.
+    // `cancelled` is sticky — a late "done" or "running" frame for the same run must not resurrect it.
     if (t.status === 'cancelled' && status !== 'cancelled') return
     // A history row that comes back to LIFE stops being history. It can: a run-log row is keyed by the
-    // run's own scheduler id, so a relaunch under that id (`task:restart`) lands its frames here. The
+    // run's own scheduler id, so a run under that id (any client that reuses it) lands its frames here. The
     // flag hides the row from `forModule()` — i.e. from the per-module sidebar AND the image table's
     // status badge — so leaving it set would make a genuinely running task invisible on the very page
     // that started it. Clearing it here makes that unreachable by construction rather than by
@@ -151,8 +157,10 @@ export const useTaskStore = defineStore('tasks', () => {
     // only ever moves the number closer to the truth.
     if (at.startedAt) t.startedAt = at.startedAt
     else if (status === 'running' && !t.startedAt) t.startedAt = new Date()
-    if (status === 'done' || status === 'failed' || status === 'cancelled')
+    if (status === 'done' || status === 'failed' || status === 'cancelled') {
       t.finishedAt = at.finishedAt ?? new Date()
+      t.cancelling = t.cancelSentAt = undefined   // answered — by the cancel, or by the task finishing first
+    }
   }
 
   function setProgress(id: string, progress: number) {
@@ -160,9 +168,18 @@ export const useTaskStore = defineStore('tasks', () => {
     if (t) t.progress = progress
   }
 
-  function restart(id: string) {
+  /**
+   * Reset a finished row for a re-run and return the id to launch it under.
+   *
+   * A FRESH id, not the old one: every frame is routed to its row by id, so under a reused id the old
+   * run's late frames — its final `cancelled`, re-announced after its subprocess exits — landed on the
+   * re-run and pinned it (`cancelled` is sticky). Under a new id they match no row and are dropped. The
+   * row itself (and its `#N`) is kept, so the list doesn't grow a duplicate.
+   */
+  function restart(id: string): string | undefined {
     const t = tasks.value.find(t => t.id === id)
-    if (!t) return
+    if (!t) return undefined
+    t.id          = shortId()
     t.status      = 'queued'
     t.log         = []
     t.logSynced   = undefined   // the new run's lines are not on disk yet — re-sync when it is opened
@@ -170,10 +187,42 @@ export const useTaskStore = defineStore('tasks', () => {
     t.startedAt   = undefined
     t.finishedAt  = undefined
     t.by          = launcher()   // a re-run from this tab is this tab's launch, whoever ran it before
+    t.cancelling  = undefined
+    t.cancelSentAt = undefined
+    return t.id
   }
 
+  // Mark a cancel as SENT — the status itself changes only when the backend says so (see `cancelling`).
   function cancel(id: string) {
-    setStatus(id, 'cancelled')
+    const t = tasks.value.find(t => t.id === id)
+    if (t && (t.status === 'running' || t.status === 'queued')) {
+      t.cancelling   = true
+      t.cancelSentAt = Date.now()
+    }
+  }
+
+  // The backend's `task:cancel:ack`. A hit needs nothing: the task's own `cancelled` frame follows. A
+  // miss means nothing in the backend was running it, so the row goes back to what it was — the Cancel
+  // button returns — and its log says why.
+  function cancelAcked(id: string, found: boolean) {
+    const t = tasks.value.find(t => t.id === id)
+    if (!t || found || !t.cancelling) return
+    t.cancelling = t.cancelSentAt = undefined
+    t.log.push('[WARN] Not running in this backend — nothing to cancel.')
+  }
+
+  /**
+   * A cancel that got NO answer in time (`expiredCancels`): withdraw "Cancelling…" and take the status
+   * the backend's in-flight snapshot reports, if it still lists the task — so a live task gets its
+   * Cancel button back. A task the snapshot no longer lists keeps its status; its outcome, if the
+   * backend banked one, is the outcome poll's to recover.
+   */
+  function cancelTimedOut(id: string, live?: { status: TaskStatus; startedAt?: Date; pool?: string }) {
+    const t = tasks.value.find(t => t.id === id)
+    if (!t || !t.cancelling) return
+    t.cancelling = t.cancelSentAt = undefined
+    t.log.push('[WARN] No answer to cancel — status refreshed from the backend.')
+    if (live) setStatus(id, live.status, { startedAt: live.startedAt, pool: live.pool })
   }
 
   function cancelChainRun(runId: string) {
@@ -333,7 +382,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

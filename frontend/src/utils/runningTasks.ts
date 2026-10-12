@@ -206,6 +206,43 @@ export function staleInFlightStatuses(
   return out
 }
 
+/** How long a sent cancel may go unanswered before the row stops waiting (`expiredCancels`). */
+export const CANCEL_ACK_TIMEOUT_MS = 10_000
+
+/** A pending cancel that timed out. `id` is the STORE row; `live` is set if the snapshot still lists it. */
+export interface CancelTimeout {
+  id: string
+  live?: { status: 'queued' | 'running'; startedAt?: Date; pool?: string }
+}
+
+/**
+ * Rows whose cancel has waited longer than `timeoutMs` with neither an ack nor a terminal frame — the
+ * backstop for a dropped `task:cancel:ack`, which otherwise left the row at "Cancelling…" with no
+ * button until reload. Each is re-derived from the in-flight snapshot: still listed → its live status
+ * (the Cancel button returns); not listed → no status, and the outcome poll recovers how it ended if
+ * the backend banked it. Rows are matched by SCHEDULER id (`backendTaskId || id`), as in adoption.
+ */
+export function expiredCancels(
+  tasks: Array<{ id: string; backendTaskId?: string; cancelling?: boolean; cancelSentAt?: number }>,
+  rows: InFlightTaskRow[],
+  now: number,
+  timeoutMs: number = CANCEL_ACK_TIMEOUT_MS,
+): CancelTimeout[] {
+  const live = new Map((Array.isArray(rows) ? rows : []).map(r => [String(r?.id ?? ''), r]))
+  const out: CancelTimeout[] = []
+  for (const t of tasks) {
+    if (!t.cancelling || t.cancelSentAt === undefined || now - t.cancelSentAt < timeoutMs) continue
+    const r = live.get(t.backendTaskId || t.id)
+    const status = String(r?.status ?? '')
+    out.push(r && (status === 'queued' || status === 'running')
+      ? { id: t.id, live: { status,
+                            ...(r.started_at ? { startedAt: new Date(r.started_at) } : {}),
+                            ...(r.pool_name ? { pool: String(r.pool_name) } : {}) } }
+      : { id: t.id })
+  }
+  return out
+}
+
 /**
  * The raw snapshot, or `[]` if the check fails.
  *

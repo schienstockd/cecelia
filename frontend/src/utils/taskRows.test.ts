@@ -137,6 +137,15 @@ describe('taskRow — progress and re-run', () => {
     expect(taskRow(entry({ status: 'done', chainRunId: 'r1' }), ctx()).canRerun).toBe(false)
     expect(taskRow(entry({ status: 'done', module: 'maintenance' }), ctx()).canRerun).toBe(false)
   })
+
+  it('shows no Cancel on a history row, even one still at running', () => {
+    expect(taskRow(entry({ status: 'running' }), ctx()).canCancel).toBe(true)
+    expect(taskRow(entry({ status: 'running', history: true }), ctx()).canCancel).toBe(false)
+    // a sent cancel swaps the button for "Cancelling…" until the backend answers
+    const pending = taskRow(entry({ status: 'running', cancelling: true }), ctx())
+    expect(pending.canCancel).toBe(false)
+    expect(pending.cancelling).toBe(true)
+  })
 })
 
 describe('taskRows', () => {

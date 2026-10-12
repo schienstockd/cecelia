@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canRerunTask } from './taskRerun'
+import { canCancelTask, canRerunTask } from './taskRerun'
 import type { TaskEntry } from '../stores/tasks'
 
 type Row = Pick<TaskEntry, 'status' | 'module' | 'chainRunId' | 'paramsUnknown' | 'history'>
@@ -45,5 +45,30 @@ describe('canRerunTask', () => {
     // handle on one: most entries carry no taskId to relaunch under, and `setStatus` no-ops on an id
     // the store doesn't have, so the click would start a task with no row to show for it
     expect(canRerunTask(row({ history: true }))).toBe(false)
+  })
+})
+
+describe('canCancelTask', () => {
+  type C = Pick<TaskEntry, 'status' | 'history' | 'cancelling'>
+  const c = (over: Partial<C> = {}): C => ({ status: 'running', ...over })
+
+  it('offers Cancel on a live queued or running task', () => {
+    expect(canCancelTask(c({ status: 'running' }))).toBe(true)
+    expect(canCancelTask(c({ status: 'queued' }))).toBe(true)
+  })
+
+  it('withholds it once the task has finished', () => {
+    for (const status of ['done', 'failed', 'cancelled'] as const)
+      expect(canCancelTask(c({ status }))).toBe(false)
+  })
+
+  it('withholds it on a history row still at running', () => {
+    // a run-log entry left at `running` is usually a run whose process died with the backend — there
+    // is no live handle, and the Cancel there used to read as a successful kill while nothing happened
+    expect(canCancelTask(c({ status: 'running', history: true }))).toBe(false)
+  })
+
+  it('withholds it while a cancel is already pending', () => {
+    expect(canCancelTask(c({ cancelling: true }))).toBe(false)
   })
 })

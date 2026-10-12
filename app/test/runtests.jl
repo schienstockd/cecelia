@@ -94,6 +94,20 @@ Cecelia._run_task(::_HoldTask, ::CciaImage, ::Dict{String,Any};
                   on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
                   on_process::Function = _ -> nothing) = (take!(_HOLD_TASK_GO[]); true)
 
+# A task whose subprocess has a CHILD of its own — `sh` backgrounds one `sleep` and waits on another —
+# so a test can check that cancel kills the whole tree, not just the process the scheduler holds. The
+# shell writes the child's pid to `params["pidFile"]`. Unix only (`sh`); the Windows kill path is
+# `taskkill /T`, which this does not exercise.
+struct _SpawnTreeTask <: CciaTask end
+function Cecelia._run_task(::_SpawnTreeTask, ::CciaImage, params::Dict{String,Any};
+                           on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                           on_process::Function = _ -> nothing)
+    proc = run(`sh -c 'sleep 300 & echo $! > "$0"; sleep 300' $(params["pidFile"])`; wait = false)
+    on_process(proc)
+    wait(proc)
+    success(proc) ? true : nothing
+end
+
 # ── Fault injection: make the scheduler's OWN error path throw ────────────────────
 # `_execute_job!` must post to `job.done` no matter what, because `run_task` is blocked in `take!` and
 # a throw escaping into the dispatcher's `Threads.@spawn` is silent — the cost is a submitter blocked

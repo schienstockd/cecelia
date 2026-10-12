@@ -17,6 +17,7 @@ import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { fetchLogBackfill } from '../utils/taskLogBackfill'
+import { canCancelTask } from '../utils/taskRerun'
 import { useNowTick } from '../composables/useNowTick'
 // `taskElapsed` / `canRerunTask` are still the canonical helpers — they are just called by the row
 // mapper now (utils/taskRows.ts) rather than here, so both lists get the same answer.
@@ -41,8 +42,7 @@ const { isCopied, copy } = useCopyFlash()
 const items = computed(() => tasks.forModule(props.module, projectMeta.current?.uid))
 
 // ── list-wide actions ────────────────────────────────────────────────────────
-const activeTasks = computed(() =>
-  items.value.filter(t => t.status === 'running' || t.status === 'queued'))
+const activeTasks = computed(() => items.value.filter(canCancelTask))
 
 // Cancel everything in flight. A CHAIN run is cancelled once for the whole run, not once per node —
 // otherwise a chain of ten sends ten cancels for one thing.
@@ -89,10 +89,13 @@ const TIP: Record<TaskStatus, string> = {
 }
 
 function rerun(t: TaskEntry) {
-  tasks.restart(t.id)
+  const oldId = t.id
+  const newId = tasks.restart(oldId)       // a FRESH id — see `restart` in stores/tasks.ts
+  if (!newId) return
+  if (expanded.value.delete(oldId)) expanded.value = new Set([...expanded.value, newId])
   ws.send({
     type:       'task:restart',
-    taskId:     t.id,
+    taskId:     newId,
     funName:    t.funName,
     params:     t.params,
     imageUid:   t.imageUid,
@@ -220,10 +223,10 @@ const TL_COLUMNS: SelectionColumn[] = [
             <i :class="['pi', expanded.has(r.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
           </button>
 
-          <button v-if="r.status === 'running' || r.status === 'queued'"
+          <button v-if="r.canCancel || r.cancelling" :disabled="r.cancelling"
             class="icon-btn cc-btn cc-btn-bare cc-btn-icon danger" @click="cancelTask(r.entry)"
-            v-tooltip.left="r.chainLabel ? 'Stop chain run' : 'Cancel this task'">
-            <i class="pi pi-times" />
+            v-tooltip.left="r.cancelling ? 'Cancelling…' : r.chainLabel ? 'Stop chain run' : 'Cancel this task'">
+            <i :class="['pi', r.cancelling ? 'pi-spin pi-spinner' : 'pi-times']" />
           </button>
 
           <button v-if="r.canRerun"

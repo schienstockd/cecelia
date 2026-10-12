@@ -1,5 +1,6 @@
-// Whether a task row can be re-run — ONE predicate, used by both surfaces that show the button
-// (`tasks/TaskList.vue`, the per-module list, and `modules/TasksModule.vue`, the task manager).
+// Whether a task row can be re-run — or cancelled — ONE predicate each, used by both surfaces that
+// show the buttons (`tasks/TaskList.vue`, the per-module list, and `modules/TasksModule.vue`, the task
+// manager).
 //
 // It was two copies, and they had already drifted: the module list withheld Re-run on a chain node,
 // the manager did not — so `/tasks` offered the button on a row whose `params` are `{}`, which
@@ -34,4 +35,18 @@ export function canRerunTask(
 ): boolean {
   return TERMINAL.has(t.status) && !t.paramsUnknown && !t.chainRunId &&
          t.module !== 'maintenance' && !t.history
+}
+
+/**
+ * Cancel is offered only on a row that is a handle on a live task:
+ *
+ * - **queued or running** — nothing else can be cancelled.
+ * - **not a history row** — a run-log entry still at `running` is a record, not a handle. It is usually
+ *   a run whose process died with the backend (reaped as `interrupted` at the next project open), and a
+ *   Cancel there reached nothing while looking like it worked. A run that IS live has its own live row,
+ *   which the history row is dropped in favour of (`hasId` in `taskHistoryEntries`).
+ * - **no cancel already pending** (`cancelling`) — the row shows "Cancelling…" until the backend answers.
+ */
+export function canCancelTask(t: Pick<TaskEntry, 'status' | 'history' | 'cancelling'>): boolean {
+  return (t.status === 'running' || t.status === 'queued') && !t.history && !t.cancelling
 }
