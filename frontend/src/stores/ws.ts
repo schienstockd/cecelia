@@ -12,7 +12,7 @@ import { useLinkedSelectionStore, linkedSourceKey } from './linkedSelection'
 import { useBlackboardStore } from './blackboard'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
-import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses } from '../utils/runningTasks'
+import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses, expiredCancels } from '../utils/runningTasks'
 import { useViewerStore } from './viewer'
 import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
@@ -56,7 +56,7 @@ export const useWsStore = defineStore('ws', () => {
   // Tasks whose terminal frame we RECONSTRUCTED. If the real one then turns up late, it must be
   // swallowed: re-running the completion side effects would refetch plots, reload viewer and — the one
   // that actually corrupts something — count a second attempt in the observer's completion watch.
-  // Same idea as the console's SEEN_TERM. Cleared per id, so `task:restart` on that id works normally.
+  // Same idea as the console's SEEN_TERM. Cleared per id, so a later run under that id works normally.
   const recovered = new Set<string>()
   const OUTCOME_POLL_MS = 3000
 
@@ -439,6 +439,13 @@ export const useWsStore = defineStore('ws', () => {
       if (taskId) useTaskStore().appendLog(taskId, line)
     }
 
+    // The answer to a `task:cancel` (api/src/sockets.jl → handle_task_cancel): `found: false` means no
+    // part of the backend was running that id, so the row's pending "cancelling…" is withdrawn.
+    if (type === 'task:cancel:ack') {
+      const taskId = String(data.taskId ?? '')
+      if (taskId) useTaskStore().cancelAcked(taskId, data.found === true)
+    }
+
     if (type === 'task:status') {
       const taskId  = String(data.taskId ?? '')
       const status  = String(data.status ?? '')
@@ -725,6 +732,12 @@ export const useWsStore = defineStore('ws', () => {
       )
       dispatch(frame)
     }
+    // …and a cancel nobody answered. Asks `/api/tasks` only when one has actually timed out, so the
+    // common case adds no request. Checked again after the await, like the outcomes above.
+    const tasks = useTaskStore()
+    if (!expiredCancels(tasks.running(), [], Date.now()).length) return
+    const inFlight = await fetchInFlightTasks()
+    for (const c of expiredCancels(tasks.running(), inFlight, Date.now())) tasks.cancelTimedOut(c.id, c.live)
   }
 
   function startOutcomePoll() {

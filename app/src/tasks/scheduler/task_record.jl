@@ -1,7 +1,8 @@
 # Task record — one row per queued-or-running task, keyed by task id. `TaskStatus` enum with
 # terminal-state finality (`_set_status!` refuses to overwrite DONE/FAILED/CANCELLED),
 # `TaskRecord` mutable struct (atomic `proc` for cross-thread cancel visibility), the
-# register/deregister lifecycle, and `cancel_task!` (marks + kills the subprocess).
+# register/deregister lifecycle (with the duplicate-run guard), and `cancel_task!` (marks + kills
+# the subprocess, and says whether it found one).
 # Loaded before reporting.jl (which reads `_TASKS`) and jobs.jl (which mutates it).
 
 # Task lifecycle. Terminal states are TASK_DONE, TASK_FAILED, TASK_CANCELLED — `_set_status!`
@@ -59,24 +60,70 @@ mutable struct TaskRecord
     # without it a browser tab that reloaded mid-run knows the task's `fun_name` but nothing about
     # how it was configured, and re-running it would silently substitute the JSON spec's defaults.
     params::Dict{String,Any}
+    # What the run WRITES, for the duplicate-run guard (`_conflicting_run`): every image it touches (the
+    # whole vector for a set-scope task, so `image_uid` alone — the representative — is not enough) and
+    # the output name it writes under (`task_output_name`; `""` = the task names none, so every run of it
+    # writes to the same place).
+    image_uids::Vector{String}
+    output_name::String
 end
 
 const _TASKS      = Dict{String, TaskRecord}()
 const _TASKS_LOCK = ReentrantLock()
+
+"""
+    DuplicateRunError
+
+A run refused because the same task is already queued or running on the same image with the same
+output name — two of them would write the same file, and a Cancel could only ever reach one. Thrown by
+`_register_task!` before anything is queued, so `execute_task` reports it like any other pre-job
+failure (`[ERROR]` line + a terminal `failed`).
+"""
+struct DuplicateRunError <: Exception
+    fun_name::String
+    output_name::String
+end
+Base.showerror(io::IO, e::DuplicateRunError) =
+    print(io, "Already running on this image: ", e.fun_name,
+          isempty(e.output_name) ? "" : " → $(e.output_name)", " — wait for it or cancel it")
+
+_is_active(rec::TaskRecord) = rec.status in (TASK_QUEUED, TASK_RUNNING)
+
+# The run `new` would collide with, or `nothing`. Same id while the previous run under it is still
+# registered at all — even cancelled and winding down: its run-log close, outcome and status frames are
+# all keyed by that id, so a `task:restart` overlapping them would have its own entries stamped with the
+# old run's ending. Otherwise same fun + same output name on any shared image, among queued/running runs
+# only: a cancelled run still winding down no longer owns its output. Call holding `_TASKS_LOCK`, so the
+# check and the insert are one step.
+function _conflicting_run(new::TaskRecord)
+    for r in values(_TASKS)
+        r.id == new.id && return r
+        _is_active(r) || continue
+        r.fun_name == new.fun_name && r.output_name == new.output_name &&
+            !isdisjoint(r.image_uids, new.image_uids) && return r
+    end
+    nothing
+end
 
 function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_status_change;
                          project_uid::String = "",
                          live_outputs::Vector{LiveOutput} = LiveOutput[],
                          chain_node_id::String = "",
                          by::String = "",
-                         params::Dict{String,Any} = Dict{String,Any}())
-    # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
-    # so any start still on record belongs to the previous run and must not be inherited.
-    forget_task_start!(id)
+                         params::Dict{String,Any} = Dict{String,Any}(),
+                         image_uids::Vector{String} = String[image_uid],
+                         output_name::String = "")
     rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
-                     on_status_change, live_outputs, params)
-    lock(_TASKS_LOCK) do; _TASKS[id] = rec; end
+                     on_status_change, live_outputs, params, image_uids, output_name)
+    lock(_TASKS_LOCK) do
+        isnothing(_conflicting_run(rec)) || throw(DuplicateRunError(fun_name, output_name))
+        _TASKS[id] = rec
+    end
+    # A fresh registration is a NEW run, even under an id that has run before (`task:restart` reuses it) —
+    # so any start still on record belongs to the previous run and must not be inherited. After the
+    # guard, so a refused restart can't wipe the start of the run it collided with.
+    forget_task_start!(id)
     rec
 end
 
@@ -92,8 +139,12 @@ function _live_outputs_for(task::CciaTask, params::AbstractDict)::Vector{LiveOut
     end
 end
 
-function _deregister_task!(id)
-    lock(_TASKS_LOCK) do; delete!(_TASKS, id); end
+# By RECORD, not id: `task:restart` reuses the id, so the old run's deregistration can land after the
+# new run registered — and deleting by id removed the NEW record, leaving a run nothing could cancel.
+function _deregister_task!(rec::TaskRecord)
+    lock(_TASKS_LOCK) do
+        get(_TASKS, rec.id, nothing) === rec && delete!(_TASKS, rec.id)
+    end
 end
 
 function _set_status!(rec::TaskRecord, s::TaskStatus)
@@ -120,18 +171,24 @@ end
 # (same Cecelia module). See jobs.jl.
 
 """
-Cancel a running task: marks it cancelled and kills any active subprocess.
-Safe to call multiple times or for an already-completed task.
+    cancel_task!(task_id) -> Bool
+
+Cancel a queued or running task: marks it cancelled and kills its subprocess tree. Returns whether
+there was one to cancel — `false` for an id this process isn't running (unknown, or already done or
+failed), so a caller can say so instead of reporting a cancel that never happened (`task:cancel` in
+`api/src/sockets.jl`). Safe to call repeatedly: a task already cancelled but still winding down is
+killed again and still reads `true`.
 """
-function cancel_task!(task_id::String)
-    rec = lock(_TASKS_LOCK) do; get(_TASKS, task_id, nothing); end
-    isnothing(rec) && return
+function cancel_task!(task_id::AbstractString)::Bool
+    rec = lock(_TASKS_LOCK) do; get(_TASKS, String(task_id), nothing); end
+    (isnothing(rec) || rec.status in (TASK_DONE, TASK_FAILED)) && return false
     _set_status!(rec, TASK_CANCELLED)
     proc = @atomic rec.proc
-    isnothing(proc) && return
+    isnothing(proc) && return true
     try
         _kill_proc_tree(proc)
     catch e
         @warn "Error killing task $task_id" exception = e
     end
+    true
 end

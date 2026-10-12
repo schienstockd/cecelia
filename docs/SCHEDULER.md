@@ -395,7 +395,7 @@ waiting image threads (avoiding deadlock).
 **Race guard (start window):** if cancel arrives after the job sets `:running` but before the
 task's `on_process` callback records the subprocess handle, `cancel_task!` would find `rec.proc ==
 nothing` and skip the kill. `_execute_job!`'s `on_process` wrapper closes this: right after storing
-`rec.proc`, it re-checks `is_cancelled(job.id)` and kills immediately if so.
+`rec.proc`, it re-checks its own record (`job.rec.status === TASK_CANCELLED`) and kills immediately if so.
 
 ### Chain nodes run through `execute_task`
 
@@ -489,6 +489,37 @@ the same way. See `docs/TODO.md` → *Incremental node subprocesses not killed o
 
 A set-scope or incremental task launched from a **module page** is unaffected either way:
 `handle_task_run` already goes through `execute_task`.
+
+---
+
+## Task cancel is acknowledged, and duplicate runs are refused
+
+A user report showed three gaps around one Cancel: the row read `cancelled` while a
+`measure_labels_run.py` from an earlier run of the same task kept running.
+
+- **`cancel_task!` returns whether it cancelled anything** — `false` for an id this process isn't
+  running (unknown, or already done/failed). The `task:cancel` handler (`handle_task_cancel` in
+  `api/src/sockets.jl`) asks the scheduler, background jobs and the runner, and answers with
+  `task:cancel:ack {found}`; on a miss the asking tab logs "Not running in this backend" on the row. The
+  frontend no longer sets `cancelled` itself: it shows "Cancelling…" until the task's own terminal frame
+  or a miss-ack arrives.
+- **A duplicate in-flight run is refused.** `_register_task!` checks, under `_TASKS_LOCK` and in the same
+  step as the insert, for a queued/running record with the same `fun_name`, the same output name
+  (`task_output_name`; `""` when the task names none) and any shared image (a set-scope record carries
+  every member in `image_uids`). A hit throws `DuplicateRunError` before anything is queued, which
+  `execute_task` reports like any pre-job failure: `[ERROR] Already running on this image: …` and a
+  terminal `failed`. A cancelled run still winding down no longer counts for that key — but it still
+  blocks its own **id**: a run under a reused id (the GUI mints a fresh one per re-run, but a REPL or
+  older client may not) is refused until the previous run under the id has deregistered, because its run-log close, outcome and status frames are all keyed by the id and would
+  otherwise land on the new run.
+- **A record is deregistered by identity, not id** (`_deregister_task!(rec)`), and a job carries its
+  own record (`TaskJob.rec`) — defence in depth for the same id reuse: deleting by id let an old run's
+  late deregistration remove the new run's record, which could then never be cancelled.
+
+What this does **not** cover: a Python child orphaned by a backend *crash*. The installed-app launcher
+restarts the backend without killing its children, and nothing records the task's pid, so such a
+process is invisible to every cancel. The run-log entry it left is reaped as `interrupted` at the next
+project open; the process itself must be killed by hand.
 
 ---
 
@@ -756,9 +787,10 @@ runs; `start_node` is a transient *resume* choice made on the Live tab.
 ### In-place restart (no new task record)
 
 Resume re-uses the existing `run.id`. There is no "new task created" on resume — the run record
-is mutated in place. This also fixes the module-page rerun-button bug: the frontend sends
-`"task:restart"` (same `task_id`) instead of `"task:run"` (new ID), and the task store resets
-the existing entry rather than appending a duplicate.
+is mutated in place. A module-page **Re-run** is different: the frontend sends `"task:restart"` under
+a **fresh** task id and the task store resets the existing entry to it (`restart()` returns the new id)
+rather than appending a duplicate. Fresh, because every frame is routed to its row by id: under a
+reused id the old run's late final `cancelled` landed on the re-run and pinned it.
 
 ---
 

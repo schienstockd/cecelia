@@ -328,8 +328,8 @@ end
 function _runner_cancel(body_bytes::Vector{UInt8})
     task_id = String(get(_body_dict(body_bytes), "taskId", ""))
     isempty(task_id) && return _json(400, (; error = "taskId required"))
-    cancel_task!(task_id)
-    _json(200, (; ok = true))
+    # `found` is what lets the API server acknowledge a cancel honestly (`handle_task_cancel`).
+    _json(200, (; ok = true, found = cancel_task!(task_id)))
 end
 
 function _runner_pools_set(body_bytes::Vector{UInt8})

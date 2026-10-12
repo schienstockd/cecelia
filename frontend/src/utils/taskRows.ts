@@ -17,7 +17,7 @@
 import type { TaskEntry, TaskStatus } from '../stores/tasks'
 import { formatWhen } from './formatWhen'
 import { taskElapsed } from './taskElapsed'
-import { canRerunTask } from './taskRerun'
+import { canCancelTask, canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
@@ -59,6 +59,10 @@ export interface TaskRow {
   /** running AND reporting a fraction — i.e. there is a bar to draw */
   hasProgress: boolean
   canRerun: boolean
+  /** a live, cancellable task with no cancel pending — see `canCancelTask` */
+  canCancel: boolean
+  /** a cancel was sent and the backend has not answered yet */
+  cancelling: boolean
   /** read back from the project's run log rather than watched live — see `utils/taskHistoryRows.ts`.
    *  The manager hides the `#N` counter and the Dismiss button on these. */
   history: boolean
@@ -98,6 +102,8 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     progress:     t.progress,
     hasProgress:  t.status === 'running' && t.progress !== undefined,
     canRerun:     canRerunTask(t),
+    canCancel:    canCancelTask(t),
+    cancelling:   t.cancelling === true,
     history:      t.history === true,
     entry:        t,
   }

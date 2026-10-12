@@ -215,14 +215,7 @@ function handle_message(ws, raw::AbstractString)
         handle_task_run(ws, data)
     elseif kind === WS_TASK_CANCEL
         task_id = _wstr(data, :taskId)
-        # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in
-        # the scheduler's _TASKS: background jobs (cancel_job! kills the subprocess(es) — data
-        # patches + project export/import), and the detached runner, where a scheduler task most
-        # likely actually IS. All of these are no-ops for an unknown id, so asking all three is
-        # free; asking fewer is a Cancel button that silently does nothing depending on where the
-        # task happens to be running.
-        isempty(task_id) || (cancel_task!(task_id);
-                             cancel_job!(task_id); _cancel_on_runner(task_id))
+        isempty(task_id) || handle_task_cancel(ws, task_id)
     elseif kind === WS_MOVIE_BATCH
         handle_movie_batch(ws, data)
     elseif kind === WS_MOVIE_RECORD
@@ -247,6 +240,23 @@ function handle_message(ws, raw::AbstractString)
     else
         @warn "Unknown WS message type" type = type_str
     end
+end
+
+# An ACKNOWLEDGED cancel. Asks every place a task id can live: the scheduler here, a background job
+# (cancel_job! — data patches, project export/import, movies), and the detached runner, where a
+# scheduler task most likely actually IS. All are no-ops for an unknown id, so asking all three is free;
+# asking fewer is a Cancel that silently does nothing depending on where the task happens to run.
+#
+# `task:cancel:ack` says whether any of them had it. A hit needs nothing more — the task announces its
+# own terminal status — but a miss must be answered: the client shows "cancelling…" until one or the
+# other arrives. The miss is NOT also sent as a `task:log`: a log frame for an id the task console
+# never saw finish mints a row there that nothing retires (`api/task_console.jl`), so the client that
+# asked writes the line into its own row instead.
+function handle_task_cancel(ws, task_id::AbstractString)
+    # `|`, not `||` — every place must be asked; a task lives in only one, and which is not knowable here.
+    found = cancel_task!(task_id) | cancel_job!(task_id) | _cancel_on_runner(task_id)
+    found || @info "task:cancel — not running in this backend" task_id
+    _broadcast_task((; type = "task:cancel:ack", taskId = task_id, found = found))
 end
 
 # Project Manager Export / Import — background jobs (jobs.jl / project_io.jl) that stream over the task

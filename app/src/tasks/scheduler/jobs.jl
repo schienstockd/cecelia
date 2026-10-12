@@ -44,6 +44,9 @@ representative_image(t::MultiImage)::CciaImage  = first(t.imgs)
 
 struct TaskJob
     id::String
+    # The run's own record, carried rather than looked up by id: `task:restart` reuses the id, so a
+    # job dequeued after a restart registered would otherwise pick up — and run under — the NEW record.
+    rec::TaskRecord
     task::CciaTask
     target::TaskJobTarget       # sum type: SingleImage | MultiImage. representative_image → log/status
     params::Dict{String,Any}
@@ -71,9 +74,9 @@ function _execute_job!(job::TaskJob)
     posted = Ref(false)
     post!(result) = (posted[] || (posted[] = true; put!(job.done, result)))
 
-    rec = lock(_TASKS_LOCK) do; get(_TASKS, job.id, nothing); end
+    rec = job.rec
     # Skip if cancelled while queued
-    if isnothing(rec) || rec.status === TASK_CANCELLED
+    if rec.status === TASK_CANCELLED
         post!(nothing)
         return
     end
@@ -108,7 +111,7 @@ function _execute_job!(job::TaskJob)
                           # Race guard: if cancel arrived between :running and now, rec.proc
                           # was nothing when cancel_task! ran, so the kill was skipped. Kill
                           # here now that we hold the process handle.
-                          if is_cancelled(job.id)
+                          if rec.status === TASK_CANCELLED
                               try; _kill_proc_tree(proc); catch; end
                           end
                           Base.invokelatest(job.on_process, proc)
@@ -125,7 +128,7 @@ function _execute_job!(job::TaskJob)
             catch; end
             nothing
         end
-        final = is_cancelled(job.id) ? TASK_CANCELLED : isnothing(result) ? TASK_FAILED : TASK_DONE
+        final = rec.status === TASK_CANCELLED ? TASK_CANCELLED : isnothing(result) ? TASK_FAILED : TASK_DONE
         _set_status!(rec, final)
         # A cancel kills the subprocess outright, so the task log otherwise just STOPS mid-run and
         # reads exactly like a crash. Say which it was, in the file the user actually opens.

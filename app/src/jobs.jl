@@ -223,19 +223,22 @@ finish_job!(task_id::AbstractString) =
     lock(_JOBS_LOCK) do; delete!(_JOBS, String(task_id)); end
 
 """
-    cancel_job!(task_id)
+    cancel_job!(task_id) -> Bool
 
-Cancel the background job `task_id`: set its cancel flag AND kill every live subprocess it spawned (a
-no-op if unknown). Shared by the `task:cancel` and `maintenance:cancel` WS handlers, so it reaches data
-patches (one proc) AND a parallel project export/import (many) alike."""
-function cancel_job!(task_id::AbstractString)
+Cancel the background job `task_id`: set its cancel flag AND kill every live subprocess it spawned.
+Returns whether there was such a job (`false` = unknown id, a no-op). Shared by the `task:cancel` and
+`maintenance:cancel` WS handlers, so it reaches data patches (one proc) AND a parallel project
+export/import (many) alike."""
+function cancel_job!(task_id::AbstractString)::Bool
     procs = lock(_JOBS_LOCK) do
         j = get(_JOBS, String(task_id), nothing)
-        isnothing(j) && return Base.Process[]
+        isnothing(j) && return nothing
         j.cancelled = true
         copy(j.procs)
     end
+    isnothing(procs) && return false
     for p in procs
         try; _kill_proc_tree(p); catch e; @warn "Error cancelling job $task_id" exception = e; end
     end
+    true
 end
