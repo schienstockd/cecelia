@@ -41,6 +41,10 @@ function _spec_path(::Ridges)
     joinpath(@__DIR__, "segment", "ridges.json")
 end
 
+function _spec_path(::ImportLabels)
+    joinpath(@__DIR__, "segment", "import_labels.json")
+end
+
 function _spec_path(::SegmentCorrect)
     joinpath(@__DIR__, "segment", "correct.json")
 end
@@ -203,6 +207,9 @@ _COMPOSITE_SPEC_PATHS["segment.cellposeMeasure"] =
 _COMPOSITE_SPEC_PATHS["segment.coastalMeasure"] =
     joinpath(@__DIR__, "segment", "coastal_measure.json")
 
+_COMPOSITE_SPEC_PATHS["segment.importLabelsMeasure"] =
+    joinpath(@__DIR__, "segment", "import_labels_measure.json")
+
 _COMPOSITE_SPEC_PATHS["tracking.bayesian_track_measures"] =
     joinpath(@__DIR__, "tracking", "bayesian_track_measures.json")
 
@@ -226,6 +233,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "segment.ridges"                    => Ridges(),
+        "segment.importLabels"              => ImportLabels(),
         "segment.correct"                   => SegmentCorrect(),
         "segment.correct_carryover_snapshot" => SegmentCorrectCarryOverSnapshot(),
         "segment.correct_carryover_restore"  => SegmentCorrectCarryOverRestore(),
@@ -252,6 +260,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "clustRegions.cluster"              => ClustRegions(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "segment.coastalMeasure"            => CompositeTask("segment.coastalMeasure"),
+        "segment.importLabelsMeasure"       => CompositeTask("segment.importLabelsMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.stackAlign"          => StackAlign(),

@@ -158,6 +158,11 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Cell count jumps between frames",
         long  = "Check Cleanup → Smoothing with a temporal window before tuning this step — counts that jump between frames usually mean noise that changes from frame to frame."),
 
+    # label import (segment/import_labels.jl): nucleus ids kept as given that do not name their cells.
+    "segment.import_ids_unpaired" => (
+        short = "Nucleus ids don't match their cells",
+        long  = "Re-run Import labels with Match nucleus ids on — as imported, nucleus measures land on the wrong cells."),
+
     # skeleton branching (segment/branching.jl). These predated the catalog and were inlined at the
     # call site with the four-argument form; moved here so the wording is reviewable with the rest.
     "branching.no_branches" => (

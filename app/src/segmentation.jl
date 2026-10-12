@@ -224,14 +224,18 @@ function seg_given_diameter(models)::Union{Nothing,Float64}
 end
 
 """
-    bank_segment_qc!(img, fun_name, out_value_name, qc_out_path; diameter_um, on_log)
+    bank_segment_qc!(img, fun_name, out_value_name, qc_out_path; diameter_um, extra_findings, on_log)
 
 Shared tail of every segmenter: read the runner's `qcOutPath` JSON, turn its counts + object stats
 into findings (`segment_qc_findings` + `seg_object_qc_findings`), bank them under `fun_name`, and log
 one `[QC]` line per finding. Advisory and best-effort — a failure is logged, never raised.
+
+`extra_findings(qmeta)` adds a task's own findings from the same JSON (label import's id pairing), so
+a segmenter with one more signal still banks through here rather than a second `write_qc`.
 """
 function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_name::AbstractString,
                           qc_out_path::AbstractString; diameter_um = nothing,
+                          extra_findings::Function = _ -> Dict{String,Any}[],
                           on_log::Function = _ -> nothing)
     isfile(qc_out_path) || return nothing
     try
@@ -239,7 +243,7 @@ function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_na
         counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
         findings, primary = segment_qc_findings(counts)
         stats = get(qmeta, :objectStats, nothing)
-        seg = seg_object_qc_findings(stats; diameter_um = diameter_um)
+        seg = vcat(seg_object_qc_findings(stats; diameter_um = diameter_um), extra_findings(qmeta))
         append!(findings, seg)
         metrics = Dict{String,Any}("nCells" => primary, "byType" => counts)
         isnothing(diameter_um) || (metrics["diameterUm"] = diameter_um)

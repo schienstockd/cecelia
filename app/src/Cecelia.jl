@@ -356,6 +356,7 @@ include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
+include("tasks/segment/import_labels.jl")
 include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/segment/carry_over.jl")  # obs carry-over across measureLabels in the correction composite
 include("tasks/tracking/bayesian_tracking.jl")

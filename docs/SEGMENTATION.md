@@ -63,7 +63,7 @@ Stored as a `Dict{String, Vector{String}}` — value_name → list of zarr filen
 }
 ```
 
-- Set by `cellpose.jl` on task completion (derived from the `matchAs` values in params)
+- Set on task completion through `register_label_files!` (`segmentation.jl`) — by every segmenter (derived from the `matchAs` values in params) and by `segment.importLabels`
 - Read by `_load_image` in `image.jl` as `CciaImage.labels`
 - Exposed to the frontend via `_image_payload` in `routes.jl` as `labels: Record<string, string[]>`
 - Backward-compatible: bare string values in old ccid.json are wrapped in a 1-element list
@@ -1437,6 +1437,52 @@ screen), and `/api/preview/run` is deadlined at `PREVIEW_RUN_TIMEOUT_MS` so a we
 surfaces as *"Preview timed out"* instead of a permanent "Previewing…".
 
 ---
+
+## Importing labels
+
+`segment.importLabels` takes a label image made outside Cecelia — another tool, or a segmentation
+run elsewhere — and writes it as a label set no different from one a segmenter wrote.
+`segment.importLabelsMeasure` adds **Measure labels**, so the set arrives with its `label_props` and
+is ready to gate. That is the one to run: labels alone give gating, tracking and plots nothing to read.
+Handler `app/src/tasks/segment/import_labels.jl`; the streaming is
+`python/cecelia/utils/label_import_utils.py`. Out of scope: importing a precomputed props table —
+Measure labels is the canonical producer of `label_props`.
+
+**Sources.** One path per role from the `matchAs` vocabulary: **Cell labels** (`base`, required)
+becomes `{vn}.zarr` and the cell table; **Nucleus labels** (`nuc`, optional) becomes `{vn}_nuc.zarr`
+and only adds `nuc_*` columns to it. Each is an OME-Zarr store (multiscales or a bare array — level 0
+is read) or a TIFF (series 0, level 0). The form's picker is a `filePath` with `dirExtensions`, because
+a store is a folder (`docs/MODULES.md` → *Param types*).
+
+**What the import enforces** — every rule a segmenter's output already satisfies:
+
+| Rule | How |
+|---|---|
+| Shape = image minus C | Checked for every source before anything is written. Only length-1 axes may differ (a 2D TIFF on a `(1, 1, Y, X)` image); any other mismatch fails naming both shapes. A store's NGFF axes must also agree, so a z-stack cannot be read as a time series. |
+| uint32 | Each block is cast; negative ids, non-integer floats and ids past uint32 are refused rather than wrapped. A bool array is refused as a binary mask. |
+| Ids unique across timepoints | A frame is renumbered (offset by the running maximum) only when its ids could collide with an earlier frame's. A movie already numbered uniquely keeps its ids; one numbered from 1 per frame, or with one id along a track, gets the segmenters' monotonic numbering. |
+| Nucleus ids name their cell | **Match nucleus ids** off (default): ids are kept, and the share of nucleus pixels inside a cell whose ids disagree is banked as `idMismatchFrac`. Above 0.25 the run banks `segment.import_ids_unpaired` (warn). On: each frame is overlap-matched with the segmenters' rule (below), unmatched nuclei dropped. |
+| The image's pyramid depth | `write_label_pyramid` with the image's level count. |
+
+Output goes through `staged_store` + `open_multiscales_for_writing(kind='labels')`, then
+`register_label_files!` and `bank_segment_qc!` under `segment.importLabels` (`segment_counts.json`,
+`nCells` banked for the cohort), as every segmenter does.
+
+**Matching is the segmenters' rule, computed sparsely.** `SegmentationUtils._match_nuc_cyto` needs
+both whole frames in RAM and a dense cell × nucleus IoU matrix — on a 45k × 28k tilescan that is ~10 GB
+of frames and a matrix of cells squared. The import accumulates per-block overlap counts instead and
+applies the same rule to the co-occurring pairs (`match_to_base`): each cell takes the nucleus with the
+highest IoU (ties to the lower id) when it reaches the threshold, and a nucleus two cells picked goes
+to the higher cell id. `test_label_import.py` pins it against `_match_nuc_cyto` as the oracle. The
+threshold is an **IoU**, as in the segmenters, so it reads low for a nucleus inside a large cell: a
+nucleus covering a third of its cell has IoU ≈ 0.33, just over the 0.3 default.
+
+**Memory is one block per source**, not a frame: blocks are chunk-aligned and up to 4096 px on a side,
+never smaller than either store's chunk. A TIFF read through tifffile's zarr view decodes one strip or
+tile per chunk, so a TIFF written as one uncompressed strip per page still costs a whole page per read
+— that is the file's layout. The pyramid's level 1 is built by `write_label_pyramid` one timepoint at a
+time, i.e. a quarter of a frame in RAM.
+
 
 ## Measure labels
 

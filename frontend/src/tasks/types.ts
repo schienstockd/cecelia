@@ -86,6 +86,8 @@ export interface ParamDef {
   requiredMessage?: string
   /** filePath: pickable suffixes for the Browse dialog (e.g. ['.xml', '.csv']). Empty = any file. */
   extensions?: string[]
+  /** filePath: suffixes of a format that is a FOLDER on disk, picked as one file (['.zarr']). */
+  dirExtensions?: string[]
   multiple?: boolean
   field?: string        // valueNameSelection: which image field to read names from ('filepaths' | 'labels' | 'spatialGraphs')
   // valueNameInput: which storage namespace this param NAMES INTO — the registry entry that makes

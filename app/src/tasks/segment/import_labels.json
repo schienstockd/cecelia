@@ -1,0 +1,73 @@
+{
+  "task": "importLabels",
+  "fun_name": "segment.importLabels",
+  "label": "Import labels",
+  "purpose": "Bring in a label image segmented outside Cecelia",
+  "useWhen": [
+    "Labels made in another tool (OME-Zarr or TIFF) for this image",
+    "A segmentation run elsewhere on a larger machine"
+  ],
+  "notWhen": [
+    "You want measures too: use Import labels + measure",
+    "Old Cecelia (R) projects: use Migrate legacy image"
+  ],
+  "category": "Segment",
+  "group": "Import",
+  "env": ["local"],
+  "resource_pool": "io",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Image version the labels were made on; its shape must match"
+    },
+    {
+      "key": "outputValueName",
+      "label": "Output name",
+      "type": "valueNameInput",
+      "namespace": "labels",
+      "default": "default",
+      "tip": "Name for the imported label set"
+    },
+    {
+      "key": "labelsPath",
+      "label": "Cell labels",
+      "type": "filePath",
+      "required": true,
+      "requiredMessage": "Pick the label image to import",
+      "extensions": [".zarr", ".tif", ".tiff"],
+      "dirExtensions": [".zarr"],
+      "placeholder": "Browse for an OME-Zarr or TIFF",
+      "tip": "One id per cell, same shape as the image without channels"
+    },
+    {
+      "key": "nucLabelsPath",
+      "label": "Nucleus labels",
+      "type": "filePath",
+      "extensions": [".zarr", ".tif", ".tiff"],
+      "dirExtensions": [".zarr"],
+      "placeholder": "Optional",
+      "tip": "Optional; measured as nuc_* columns of each cell"
+    },
+    {
+      "key": "matchIds",
+      "label": "Match nucleus ids",
+      "type": "bool",
+      "default": false,
+      "tip": "Give each nucleus the id of the cell it overlaps; off if ids already pair"
+    },
+    {
+      "key": "matchThreshold",
+      "label": "Match threshold",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.05,
+      "default": 0.3,
+      "showIf": { "matchIds": true },
+      "tip": "Overlap (IoU) a nucleus needs with its cell"
+    }
+  ]
+}

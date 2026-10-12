@@ -616,7 +616,17 @@ named at the field rather than reaching the runner.
   "extensions": [".xml", ".csv", ".tsv"], "placeholder": "Browse for the exported file" }
 ```
 `FileBrowser`'s `file` mode is the generalisation of its `bundle` mode (`.ccbundle`) — one predicate
-for "which entries may be picked", so a new format is a prop rather than another branch.
+for "which entries may be picked" (`isPickable` in `utils/fsPath.ts`), so a new format is a prop
+rather than another branch.
+
+**`dirExtensions`** — on a `filePath`, suffixes of a format that is a **folder** on disk, picked as one
+file: an OME-Zarr store is a directory. Browse then offers such a folder as a pick instead of opening
+it, and validation accepts an existing directory with that suffix. Any other folder is still
+navigated into, never picked. `segment.importLabels` takes a zarr store or a TIFF this way:
+```json
+{ "key": "labelsPath", "type": "filePath", "extensions": [".zarr", ".tif", ".tiff"],
+  "dirExtensions": [".zarr"] }
+```
 
 **`dirPath`** — a destination **folder**: a text field plus a Browse button opening the shared
 `FileBrowser` in `mode="dir"` (the same picker the `.ccbundle` project export uses). Still typeable,
