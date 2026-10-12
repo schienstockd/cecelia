@@ -101,6 +101,8 @@ describe('viewerLook', () => {
   it('carries the overlay sizes, colour mode and colour-by', () => {
     const l = viewerLook(base({ colourBy: 'clusters', colourOverrides: { '1': '#00ff00' } }))
     expect([l.pointsSize, l.tailWidth, l.tailLength, l.trackColourMode]).toEqual([8, 3, 12, 'speed'])
+    // the viewer's sizes are image px — the movie has to scale them with its own camera
+    expect(l.overlaySizeUnit).toBe('image')
     expect([l.pointBorder, l.labelOpacity, l.pointZTol, l.trackZTol]).toEqual([2, 0.4, 1, 3])
     expect(l.colourBy).toBe('clusters')
     expect(l.colourOverrides).toEqual({ '1': '#00ff00' })

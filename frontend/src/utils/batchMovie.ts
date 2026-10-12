@@ -43,6 +43,9 @@ export interface TitleCardCfg {
  * two drifted, and the copy accumulated three fields nothing read (`trackValueNames`, which the builder
  * derives; `tStart`/`tEnd`, which had no control at all until the frame-range one was added).
  */
+/** What a movie's point size and tail width count — see `BatchMovieCfg.overlaySizeUnit`. */
+export type OverlaySizeUnit = 'image' | 'screen'
+
 export interface BatchMovieCfg {
   // The image versions each movie shows, in COLUMN order (docs/todo/MOVIE_COMPARE_PLAN.md). Two or
   // more record a side-by-side comparison. `valueName` is what configs saved before that carried —
@@ -114,6 +117,10 @@ export interface BatchMovieCfg {
   // config instead; a look read off the viewer carries them, so a recorded look keeps its colours.
   colourOverrides?: Record<string, string>
   pointsSize?: number
+  // What `pointsSize` / `tailWidth` count: 'image' px — the viewer's unit, so the marker scales with
+  // the movie's camera as it does with the viewer's zoom (a look read off the viewer) — or 'screen' px
+  // of the output frame. Absent = 'screen': a hand-set batch and every older config.
+  overlaySizeUnit?: OverlaySizeUnit
   // Black outline around each point (px, 0 = none) and the mask fill opacity — the viewer's own values
   // via `viewerLook`. Absent = no outline and the viewer's default opacity (`LABEL_OPACITY`).
   pointBorder?: number
@@ -178,6 +185,7 @@ export interface BatchMovieRequestConfig {
    *  segmentation's tracks in grey. */
   trackSources?: TrackSource[]
   pointsSize: number
+  overlaySizeUnit: OverlaySizeUnit
   pointBorder: number
   labelOpacity: number
   pointZTol: number
@@ -287,6 +295,7 @@ export function buildBatchMovieConfig(
     // The sources the panel shows ticked, in their colours (`batchTrackSources`).
     ...((ts => ts ? { trackSources: ts } : {})(batchTrackSources(cfg, trackedSegs))),
     pointsSize: cfg.pointsSize ?? 6,
+    overlaySizeUnit: cfg.overlaySizeUnit ?? 'screen',
     pointBorder: cfg.pointBorder ?? 0,
     labelOpacity: cfg.labelOpacity ?? LABEL_OPACITY,
     pointZTol: cfg.pointZTol ?? OVERLAY_Z_TOL,

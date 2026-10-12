@@ -43,7 +43,10 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
                          ``palette`` (default) or ``table``: ``labelColours`` = ``{ids,
                          colours}`` draws only those labels, in those colours (a population
                          mask) — an empty table draws no mask
-    ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels
+    ``pointSizePx`` / ``pointBorderPx`` / ``segmentWidthPx`` : overlay style, in output pixels —
+                         or, the size and width, in IMAGE pixels when ``overlaySizeUnit`` is
+                         ``image`` (the viewer's unit: they then scale with the camera, as in the
+                         viewer). The border is always output pixels.
     ``titleCard``      : optional; prepended after the render (``title_card.prepend_title_to_movie``)
     ``overlays``       : optional per-frame ``[{timestamp?, scaleBar?}]`` — drawn onto the encoded
                          frame
@@ -246,7 +249,8 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
          'ov.planeLo': p_lo, 'ov.planeHi': p_hi, 'pan.ribbonLo': r_lo, 'pan.ribbonHi': r_hi,
          'ov.pointPx': max(1, overlay_style['pointPx']), 'ov.tailPx': max(1, overlay_style['tailPx']),
          'lab.pointBorderPx': max(0, overlay_style['borderPx']),
-         **trail_lanes((state.get('overlays3d') or {}).get('segments'))}
+         **trail_lanes((state.get('overlays3d') or {}).get('segments')),
+         'trail.umPerSize': overlay_style.get('umPerSize', 0.0)}
     if label_style is not None:
         u['lab.opacity'] = label_style['opacity']
         u['lab.contourPx'] = label_style['contourPx']
@@ -276,7 +280,10 @@ def render_frames(params, host, log):
     overlays = params.get('overlays') if isinstance(params.get('overlays'), list) else None
     overlay_style = {'pointPx': float(params.get('pointSizePx', 6)),
                      'borderPx': float(params.get('pointBorderPx', 0)),
-                     'tailPx': float(params.get('segmentWidthPx', 2))}
+                     'tailPx': float(params.get('segmentWidthPx', 2)),
+                     # µm per size unit for `overlayPx` (overlay_quads.wgsl). The world here is in
+                     # x-voxel units, so one image px is 1; 0 = the sizes are output px.
+                     'umPerSize': 1.0 if params.get('overlaySizeUnit') == 'image' else 0.0}
 
     zarr_path = params['zarrPath']
     levels, _ = open_as_zarr(zarr_path)

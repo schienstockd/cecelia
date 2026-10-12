@@ -163,11 +163,11 @@ class Render2DRunTest(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.d, ignore_errors=True)
 
-    def _frame(self, z_range, overlays=None, plane_filter=None, **extra):
+    def _frame(self, z_range, overlays=None, plane_filter=None, zoom=1.0, **extra):
         from cecelia.writers import render_animation_run
         out = os.path.join(self.d, f"f{len(os.listdir(self.d))}.mp4")
         st = {"t": 0, "ndisplay": 2, "zRange": z_range, "snapH": N,
-              "camera": {"center": [z_range[0], N / 2, N / 2], "zoom": 1.0, "angles": [0, 0, 0]},
+              "camera": {"center": [z_range[0], N / 2, N / 2], "zoom": zoom, "angles": [0, 0, 0]},
               "specs": [{"lo": 0, "hi": 1000, "lut": [[0, 0, 0], [1, 0, 0]], "visible": True}]}
         if overlays:
             st["overlays3d"] = overlays
@@ -207,6 +207,21 @@ class Render2DRunTest(unittest.TestCase):
         off = self._frame([3, 3], overlays=ov, plane_filter={"points": [1, 5]}, pointSizePx=4)
         self.assertGreater(on[30:34, 30:34, 1].mean(), 150)
         self.assertLess(off[30:34, 30:34, 1].mean(), 40)
+
+    def test_image_px_sizes_scale_with_the_camera(self):
+        # The viewer's unit (`overlaySizeUnit` "image", `overlayPx` in shaders/overlay_quads.wgsl): a
+        # marker 3 image px across grows with the zoom, as the cell under it does — twice the zoom, about
+        # four times the area. Output px (the default) stay the same size on screen.
+        ov = {"points": {"x": [16.0], "y": [16.0], "z": [20.0], "colour": [[0.0, 1.0, 0.0]]}}
+        def area(zoom, **unit):
+            f = self._frame([20, 20], overlays=ov, zoom=zoom, pointSizePx=3, **unit)
+            return int((f[..., 1] > 128).sum())
+        img1, img2 = area(1.0, overlaySizeUnit="image"), area(2.0, overlaySizeUnit="image")
+        self.assertGreater(img1, 0)
+        self.assertGreater(img2 / img1, 3.0)
+        self.assertLess(img2 / img1, 5.0)
+        scr1, scr2 = area(1.0), area(2.0)
+        self.assertAlmostEqual(scr2 / scr1, 1.0, delta=0.35)
 
     def test_an_older_hop_draws_fainter(self):
         # The viewer's tail fade (`tailAlpha` in shaders/overlay_quads.wgsl): the hop arriving at `head` solid, one
