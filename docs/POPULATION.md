@@ -899,8 +899,9 @@ WebGL/regl layer these notes originally described was removed; see `docs/PLOTS.m
   Clicking a population row sets it as the active plot's parent; clicking it **again resets to
   root** (toggle). The panel's `parent` is a writable computed over the `update:parent` event.
 - **Channel-name labels in the UI.** The X/Y selects and axis titles show the resolved channel
-  name (`store.colLabel`: maps an intensity column to `channelNames[i]`, others unchanged) while
-  the API still receives the raw column name. Mirrors `pop_df`'s default resolution (POPULATION.md).
+  name (`store.colLabel` → `utils/channelNames.ts` `channelLabel`: by the column's channel INDEX,
+  `nuc_mean_intensity_2` → `nuc_<ch2>`, never by its position in `channels` — a secondary label
+  store interleaves its columns; others unchanged) while the API still receives the raw column name. Mirrors `pop_df`'s default resolution (POPULATION.md).
 - **Axis ticks** are abbreviated client-side (`262144` → `262.1k`, k/M/G) so labels don't crowd,
   and rendered with real tick marks + baseline lines; the plot has generous margins so axis
   titles don't sit on the box edge.

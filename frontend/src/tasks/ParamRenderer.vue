@@ -23,6 +23,7 @@ import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfie
 import ImagePickerModal from '../components/ImagePickerModal.vue'
 import { groupPopulations, singlePopType, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import { measureGroups } from '../utils/measureGroups'
+import { channelLabel } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { fetchVersions, versionChipOptions, VERSION_LATEST_CHIP } from '../utils/versions'
@@ -355,17 +356,6 @@ const popAllValues = computed(() => popMultiOptions.value.map(o => o.value))
 function resolveColValueName(): string {
   return scopeValueName(props.context?.params, props.context?.values,
                         Object.keys(props.context?.images?.[0]?.labels ?? {}))
-}
-
-// Map a var intensity column to its channel name, mirroring Julia `_channel_label`
-// (population_manager.jl): "mean_intensity_0" → channelNames[0]; "nuc_mean_intensity_0" → "nuc_<name>".
-// The stored VALUE stays the raw column; only the displayed LABEL changes.
-function channelLabel(col: string, chans: string[]): string {
-  const m = col.match(/^(?:([a-z]+)_)?(?:mean|median)_intensity_(\d+)$/)
-  if (!m) return col
-  const idx = parseInt(m[2], 10)
-  if (idx >= chans.length) return col
-  return m[1] ? `${m[1]}_${chans[idx]}` : chans[idx]
 }
 
 // labelPropsColsSelection: multi-select of per-cell measure columns for the chosen image +

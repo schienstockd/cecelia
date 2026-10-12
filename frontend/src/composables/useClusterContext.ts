@@ -14,6 +14,7 @@ import { useLogStore } from '../stores/log'
 import { useDataRefresh } from './useDataRefresh'
 import { useImageMetaRefresh } from './useImageMetaRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
+import { channelLabel } from '../utils/channelNames'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
 
@@ -70,7 +71,7 @@ export function useClusterContext(opts: {
       // population name ("B/qc/_tracked"), so the heatmap rows need that relabelling; cluster runs
       // record no labels and are unaffected.
       featureLabels.value = d.clusterFeatureLabels ?? {}
-      nameMap.value = Object.fromEntries(chans.map((c, i) => [c, names[i] ?? c]))
+      nameMap.value = Object.fromEntries(chans.map(c => [c, channelLabel(c, names)]))
       const obs: string[] = d.cellObsMeasures ?? []
       hmmStateCols.value = obs.filter(c => c.startsWith('live.cell.hmm.state.'))
       hmmTransitionCols.value = obs.filter(c => c.startsWith('live.cell.hmm.transitions.'))
