@@ -155,6 +155,11 @@ class SegmentationUtils:
         # never round to "off" — that reads as the control being broken.
         self.label_expansion = self._px_radius(params.get('labelExpansion', 0))
         self.label_erosion = self._px_radius(params.get('labelErosion', 0))
+        # Halo: a SECOND store grown from the final base labels, same ids — the base keeps its
+        # outline (nuclear stain, shape) while the halo collects a membrane marker around it. A ring
+        # (grown minus base) by default; `haloWholeCell` keeps the whole grown object. See `halo_labels`.
+        self.halo_size = self._px_radius(params.get('haloSize', 0))
+        self.halo_whole_cell = bool(params.get('haloWholeCell', False))
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
@@ -330,6 +335,8 @@ class SegmentationUtils:
             models[k].get('matchAs', 'base') for k in model_keys
         ))
         max_labels = {ma: 0 for ma in match_as_list}
+        # Every store this run writes: the segmented types, plus the halo derived from the primary.
+        store_types = match_as_list + (['halo'] if self.halo_size > 0 else [])
         # Which pass produced which labels — see `zarr_utils.write_label_passes`. Collected as the
         # run goes and stamped onto each store at the end, so a stacked run's merged labels can
         # still answer "did the cell pass or the fragment pass find this object".
@@ -345,7 +352,7 @@ class SegmentationUtils:
                 else f'{self.output_value_name}_{ma}.zarr'
             return os.path.join(labels_dir, name)
 
-        counts = {ma: 0 for ma in match_as_list}
+        counts = {ma: 0 for ma in store_types}
         # Per-timepoint object sizes of the PRIMARY type ('base' when present), for `object_stats`.
         # Kept from the `np.unique` that counts the labels anyway, so the QC costs no extra pass.
         stats_type = 'base' if 'base' in match_as_list else match_as_list[0]
@@ -411,10 +418,10 @@ class SegmentationUtils:
         # See docs/SEGMENTATION.md → *Stores are written staged, never in place*.
         with contextlib.ExitStack() as stack:
             staged = {ma: stack.enter_context(zarr_utils.staged_store(_store_path(ma)))
-                      for ma in match_as_list}
+                      for ma in store_types}
             # Open one on-disk store per label type up front; frames are streamed into level 0 below.
             stores = {ma: self._open_label_store(staged[ma], label_shape, label_axes, nscales)
-                      for ma in match_as_list}
+                      for ma in store_types}
 
             for t in range(T):
                 # Read this timepoint's image ONCE into RAM (time axis dropped → frame_axes layout), then
@@ -555,10 +562,15 @@ class SegmentationUtils:
                     frame['base'], frame['nuc'] = self._match_nuc_cyto(
                         frame['base'], frame['nuc'], None, 1)
 
+                # Last: grown from the FINAL primary labels (post-processed, matched), so its ids are
+                # exactly the objects that survived and Measure pairs them by id.
+                if self.halo_size > 0:
+                    frame['halo'] = self.halo_labels(frame[stats_type])
+
                 # Stream each type's frame to disk and tally its (globally unique) label IDs. IDs never
                 # repeat across timepoints (max_labels is monotonic), so per-frame counts sum to the
                 # whole-stack distinct-ID count the previous code returned.
-                for ma in match_as_list:
+                for ma in store_types:
                     _, level0, _ = stores[ma]
                     sl = tuple(t if i == store_la_t else
                                (0 if drop_z else slice(z0, z1)) if i == store_la_z else
@@ -582,7 +594,7 @@ class SegmentationUtils:
                         if (ax != 'Z' or store_la_z is not None)
                         and any(spans[t][ax] != (0, _extent[ax]) for t in spans)]
             if recorded:
-                for ma in match_as_list:
+                for ma in store_types:
                     zarr_utils.write_valid_box(
                         staged[ma], recorded,
                         {t: {ax: spans[t][ax] for ax in recorded} for t in sorted(spans)})
@@ -590,18 +602,19 @@ class SegmentationUtils:
             # Which pass produced which labels. Written per store, EXCEPT that a matched `nuc`
             # store's ids are not its own: `_match_nuc_cyto` rewrites every kept nucleus to the base
             # label it matched, so the base store's ranges are the ones that describe it, and its own
-            # would name ids that no longer exist.
+            # would name ids that no longer exist. A halo carries its primary's ids, so the same.
             # Same condition the matching itself ran under, in the per-frame block above.
             matched_nuc = 'base' in match_as_list and 'nuc' in match_as_list
-            for ma in match_as_list:
-                entries = pass_ranges['base'] if (ma == 'nuc' and matched_nuc) else pass_ranges[ma]
+            for ma in store_types:
+                entries = (pass_ranges['base'] if (ma == 'nuc' and matched_nuc) else
+                           pass_ranges[stats_type] if ma == 'halo' else pass_ranges[ma])
                 # Only worth recording when there was more than one pass to tell apart — a single
                 # pass would write one range covering everything, which says nothing.
                 if len({e['group'] for e in entries}) > 1:
                     zarr_utils.write_label_passes(staged[ma], entries)
 
             # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
-            for ma in match_as_list:
+            for ma in store_types:
                 g, level0, chunks = stores[ma]
                 self._finalize_label_pyramid(g, level0, label_axes, nscales, chunks)
 
@@ -929,6 +942,18 @@ class SegmentationUtils:
                 arr[:] = vol
 
         return arr
+
+    def halo_labels(self, labels):
+        """The halo store for ``labels``: each object grown by ``halo_size`` px, keeping its id.
+
+        A RING by default (the grown object minus the object itself), so a membrane marker is read
+        around the nucleus rather than diluted by its inside; ``halo_whole_cell`` keeps the whole grown
+        object. Growth stops where two objects meet (``expand_labels``), so rings never overlap.
+        """
+        grown = segmentation.expand_labels(labels, self.halo_size)
+        if not self.halo_whole_cell:
+            grown[labels > 0] = 0
+        return grown.astype(labels.dtype, copy=False)
 
     # The two Y/X faces of each axis, as an index into the LAST two axes of `vol` — so one table
     # serves a 2D [Y,X] mask and a 3D [Z,Y,X] volume (`Ellipsis` absorbs the leading axes).

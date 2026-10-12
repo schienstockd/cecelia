@@ -49,6 +49,25 @@ For a cyto+nuc run (two models, matchAs="base" and matchAs="nuc"):
 - Nuc label IDs are re-mapped to match base IDs by IoU (matchThreshold param)
 - `removeUnmatched=true` removes base cells with no matching nucleus
 
+### Halo — a grown outline from the same segmentation
+
+Not a `matchAs` type: `haloSize` (µm, 0 = off) adds `{outputValueName}_halo.zarr`, **derived** from the
+final primary labels rather than segmented — after post-processing and nuc matching, so it carries
+exactly the surviving ids. Measure reads it like any secondary store and writes
+`halo_{measure}_intensity_N` columns, paired with the base row by id.
+
+- Default: a **ring** — each object grown by `haloSize` minus the object itself, so a membrane marker
+  is read around a nucleus without the nuclear interior diluting it.
+- `haloWholeCell=true`: the whole grown object.
+- Growth is `skimage.segmentation.expand_labels`, so neighbours never overlap — they split the gap.
+  XY-isotropic in pixels, the same as `labelExpansion`.
+
+The use case is a nuclear-stain-only segmentation: gate on the nucleus (DAPI, shape) and on
+`halo_<marker>` for membrane markers. With a real membrane channel, segment it as `base` + `nuc`
+instead. Unlike `labelExpansion`, which grows the base labels **in place**, the halo keeps the
+nucleus outline. Ported from the old R version's halo mode (its Python `SegmentationUtils`,
+`haloSize` / `haloWholeCell`). The task preview shows the base labels only.
+
 ---
 
 ## ccid.json `labels` field
@@ -63,7 +82,7 @@ Stored as a `Dict{String, Vector{String}}` — value_name → list of zarr filen
 }
 ```
 
-- Set by `cellpose.jl` on task completion (derived from the `matchAs` values in params)
+- Set by `cellpose.jl` on task completion (derived from the `matchAs` values in params, plus `_halo` when `haloSize > 0`)
 - Read by `_load_image` in `image.jl` as `CciaImage.labels`
 - Exposed to the frontend via `_image_payload` in `routes.jl` as `labels: Record<string, string[]>`
 - Backward-compatible: bare string values in old ccid.json are wrapped in a 1-element list
@@ -369,6 +388,8 @@ is segmented, which is most images.
 | `cellSizeMax` | int (px) | 0 | Remove labels larger than N pixels (0 = off) |
 | `labelExpansion` | int (px) | 0 | Expand label boundaries outward |
 | `labelErosion` | int (px) | 0 | Erode label boundaries inward |
+| `haloSize` | float (µm) | 0 | Also write `{vn}_halo.zarr`, grown from the base labels (see *Halo*) |
+| `haloWholeCell` | bool | false | Halo is the whole grown object, not the ring |
 | `clearTouchingBorder` | bool | false | Remove cells touching XY image border |
 | `clearDepth` | bool | false | Remove cells touching first/last Z slice (3D only) |
 | `normaliseToWhole` | bool | true | Use lowest-res level for global percentile (timecourse-safe) |

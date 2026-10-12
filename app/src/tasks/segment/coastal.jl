@@ -16,6 +16,8 @@ Base.@kwdef struct CoastalSegmentParams
     labelSmoothing::Float64      = 0.5
     labelExpansion::Float64      = 0.0
     labelErosion::Float64        = 0.0
+    haloSize::Float64            = 0.0
+    haloWholeCell::Bool          = false
     clearTouchingBorder::Bool    = false
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
@@ -37,6 +39,8 @@ function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
         labelSmoothing      = Float64(get(d, "labelSmoothing", 0.5)),
         labelExpansion      = Float64(get(d, "labelExpansion", 0.0)),
         labelErosion        = Float64(get(d, "labelErosion", 0.0)),
+        haloSize            = Float64(get(d, "haloSize", 0.0)),
+        haloWholeCell       = Bool(get(d, "haloWholeCell", false)),
         clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
         clearDepth          = Bool(get(d, "clearDepth", false)),
         normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
@@ -185,6 +189,8 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            labelSmoothing      = p.labelSmoothing,
            labelExpansion      = p.labelExpansion,
            labelErosion        = p.labelErosion,
+           haloSize            = p.haloSize,
+           haloWholeCell       = p.haloWholeCell,
            clearTouchingBorder = p.clearTouchingBorder,
            clearDepth          = p.clearDepth,
            normaliseToWhole    = p.normaliseToWhole,
@@ -199,7 +205,7 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
 
     on_log("[INFO] Segmentation complete.")
 
-    label_files = segment_label_files(p.outputValueName, models_converted)
+    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
     register_label_files!(img, p.outputValueName, label_files)
 
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings

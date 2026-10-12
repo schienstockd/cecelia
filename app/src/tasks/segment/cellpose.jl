@@ -16,6 +16,8 @@ Base.@kwdef struct CellposeSegmentParams
     labelSmoothing::Float64      = 0.0
     labelExpansion::Float64      = 0.0
     labelErosion::Float64        = 0.0
+    haloSize::Float64            = 0.0
+    haloWholeCell::Bool          = false
     clearTouchingBorder::Bool    = false
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
@@ -36,6 +38,8 @@ function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
         labelSmoothing      = Float64(get(d, "labelSmoothing", 0.0)),
         labelExpansion      = Float64(get(d, "labelExpansion", 0.0)),
         labelErosion        = Float64(get(d, "labelErosion", 0.0)),
+        haloSize            = Float64(get(d, "haloSize", 0.0)),
+        haloWholeCell       = Bool(get(d, "haloWholeCell", false)),
         clearTouchingBorder = Bool(get(d, "clearTouchingBorder", false)),
         clearDepth          = Bool(get(d, "clearDepth", false)),
         normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
@@ -223,6 +227,8 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
            labelSmoothing      = p.labelSmoothing,
            labelExpansion      = p.labelExpansion,
            labelErosion        = p.labelErosion,
+           haloSize            = p.haloSize,
+           haloWholeCell       = p.haloWholeCell,
            clearTouchingBorder = p.clearTouchingBorder,
            clearDepth          = p.clearDepth,
            normaliseToWhole    = p.normaliseToWhole),
@@ -237,7 +243,7 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     # declaration uses, so the two can't disagree about what this run produces — then register them
     # in ccid.json, which is what makes the set appear in every `labels` picker (segmentation.jl).
     # The atomic write this block used to do inline now lives in `register_label_files!`.
-    label_files = segment_label_files(p.outputValueName, models_converted)
+    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
     register_label_files!(img, p.outputValueName, label_files)
 
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings

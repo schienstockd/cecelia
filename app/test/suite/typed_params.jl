@@ -298,6 +298,10 @@ end
         @test p.overlap === 64
         @test p.matchThreshold === 0.3
         @test p.normaliseToWhole === true         # default: normalise to whole image
+        @test p.haloSize === 0.0 && p.haloWholeCell === false   # halo off by default
+    end
+    let p = Cecelia.parse_cellpose_segment_params(Dict{String,Any}("haloSize" => 2, "haloWholeCell" => true))
+        @test p.haloSize === 2.0 && p.haloWholeCell === true
     end
 
     # CoastalSegment — same shape as cellpose plus temporalScaleMode.

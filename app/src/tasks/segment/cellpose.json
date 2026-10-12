@@ -242,6 +242,23 @@
           "tip": "Erode label boundaries inward (0 = off)"
         },
         {
+          "key": "haloSize",
+          "label": "Halo (µm)",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.25,
+          "default": 0.0,
+          "tip": "Also save a ring around each cell for membrane markers (0 = off)"
+        },
+        {
+          "key": "haloWholeCell",
+          "label": "Halo as whole cell",
+          "type": "bool",
+          "default": false,
+          "tip": "Save the grown cell instead of only the ring"
+        },
+        {
           "key": "clearTouchingBorder",
           "label": "Clear border cells",
           "type": "bool",
