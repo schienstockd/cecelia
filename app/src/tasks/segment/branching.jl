@@ -19,6 +19,7 @@ Base.@kwdef struct BranchingParams
     integrateTime::Bool            = false
     integrateTimeMode::String      = "max"
     calcFlattened::Bool            = false
+    overwrite::Bool                = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -39,6 +40,7 @@ function parse_branching_params(d::AbstractDict)::BranchingParams
         integrateTime          = Bool(get(d, "integrateTime", false)),
         integrateTimeMode      = string(get(d, "integrateTimeMode", "max")),
         calcFlattened          = Bool(get(d, "calcFlattened", false)),
+        overwrite              = Bool(get(d, "overwrite", false)),
         version = parse_version_pin(d))
 end
 
@@ -131,6 +133,8 @@ function _run_task(task::Branching, img::CciaImage, params::Dict{String,Any};
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
     assert_unversioned_field(raw, "branch_labels", p.outputValueName)   # before the runner overwrites it
+    assert_labels_free(img, p.outputValueName; field = "branch_labels", overwrite = p.overwrite,
+                       raw = raw, on_log = on_log) || return nothing
 
     # Channel names → 0-based indices for fibreChannels (Phase 3 anisotropy input). Read the
     # ACTIVE image version's channel names (nothing → `_active`; falls back to `default`) so a

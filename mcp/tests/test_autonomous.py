@@ -47,6 +47,40 @@ class OutputNames(unittest.TestCase):
             spec, {"valueName": "agentOTI", "popsToTrack": ["agentOTI/qc", "/qc"]}, "agent"), [])
 
 
+class Overwrite(unittest.TestCase):
+    """An unattended run may only replace its OWN outputs: `overwrite: true` needs the session prefix
+    on every name the task writes, and is refused outright when there is no prefix."""
+    SPEC = {"task": "cellposeSegment", "fun_name": "segment.cellpose", "params": [
+        {"key": "outputValueName", "type": "valueNameInput", "namespace": "labels", "default": "default"},
+        {"key": "overwrite", "type": "bool", "default": False},
+    ]}
+
+    def test_refused_outright_without_a_prefix(self):
+        bad = au.output_name_violations(self.SPEC, {"outputValueName": "agentA", "overwrite": True}, "")
+        self.assertEqual(len(bad), 1)
+        self.assertIn("overwrite=true is refused", bad[0])
+        self.assertIn("choose a new output name", bad[0])
+        # without the toggle, no prefix still means no check at all
+        self.assertEqual(au.output_name_violations(self.SPEC, {"outputValueName": "default"}, ""), [])
+
+    def test_refused_on_a_name_outside_the_prefix(self):
+        bad = au.output_name_violations(self.SPEC, {"outputValueName": "default", "overwrite": True}, "agent")
+        self.assertTrue(any("overwrite=true on outputValueName='default' is refused" in b for b in bad))
+        self.assertTrue(any("choose a new output name" in b for b in bad))
+
+    def test_allowed_on_the_sessions_own_output(self):
+        self.assertEqual(au.output_name_violations(
+            self.SPEC, {"outputValueName": "agentSeg", "overwrite": True}, "agent"), [])
+
+    def test_check_task_raises_lock_violation(self):
+        c = au.AutonomousClient()
+        c._definitions = {"segment": [self.SPEC]}
+        with mock.patch.dict(os.environ, {au.PREFIX_ENV: ""}):
+            with self.assertRaises(au.LockViolation) as cm:
+                c.check_task("segment.cellpose", {"outputValueName": "x", "overwrite": True})
+        self.assertIn("segment.cellpose: overwrite=true is refused", str(cm.exception))
+
+
 class Lock(unittest.TestCase):
     def test_unset_lock_refuses_everything(self):
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: ""}):

@@ -399,13 +399,24 @@ export function labelsTakenAdvisory(
   }
   const taken = images.filter(i => name in (i.labels ?? {}))
   if (!taken.length) return null
+  const alt = freeLabelName(name, images)
   const on = taken.length < images.length ? ` on ${taken.length} of ${images.length} images` : ''
   return {
     severity: 'warn',
-    message: `Exists${on} — tick Overwrite existing to replace`,
+    message: `Exists${on} — use '${alt}', or tick Overwrite existing`,
     tip: `"${name}" is already a label set${on || ' on this image'}. The run is refused unless you `
-      + 'pick another name or tick Overwrite existing, which replaces it and the measures built on it.',
+      + `pick another name ("${alt}" is free) or tick Overwrite existing, which replaces it and the `
+      + 'measures built on it.',
   }
+}
+
+/** The first of `{name}_2`, `{name}_3`, … no selected image has as a label set — the form-side twin
+ *  of `free_label_name` (segmentation.jl), which also checks the disk. */
+export function freeLabelName(name: string, images: AdvisorImage[]): string {
+  const used = new Set(images.flatMap(i => Object.keys(i.labels ?? {})))
+  let n = 2
+  while (used.has(`${name}_${n}`)) n++
+  return `${name}_${n}`
 }
 
 // ── cellpose model backend (Mac-only opt-in v3 env) ───────────────────────────────────────────

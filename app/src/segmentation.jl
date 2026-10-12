@@ -89,40 +89,73 @@ function register_label_files!(img::CciaImage, out_value_name::AbstractString,
     label_files
 end
 
-"""
-    labels_taken(raw, labels_dir, out_value_name) -> Union{Nothing,String}
+# The label registries a writer can claim a name in: the ccid.json field, the noun its refusal uses,
+# and every file a run under `vn` writes for it. ONE table, so a new registry is a row here, not a
+# second guard. `labels` covers both `matchAs` roles; `branch_labels` (segment.branching) its skeleton
+# store and the per-branch table pops are built on.
+const LABEL_REGISTRIES = Dict{String,NamedTuple{(:noun, :paths),Tuple{String,Function}}}(
+    "labels" => (noun = "Labels", paths = (img, vn) -> [joinpath(img_labels_dir(img), f)
+        for f in segment_label_files(vn, Dict("0" => Dict("matchAs" => "base"),
+                                              "1" => Dict("matchAs" => "nuc")))]),
+    "branch_labels" => (noun = "Branches", paths = (img, vn) ->
+        [joinpath(img_branch_labels_dir(img), "$(vn).zarr"), img_branch_props_path(img, vn)]),
+)
 
-Why `out_value_name` is already taken on this image, or `nothing`. Taken = the `labels` dict
-registers it, or a store for either `matchAs` role (`{vn}.zarr`, `{vn}_nuc.zarr`) sits in
-`labels_dir`. The message is the one every label writer shows.
-"""
-function labels_taken(raw::AbstractDict, labels_dir::AbstractString,
-                      out_value_name::AbstractString)::Union{Nothing,String}
-    registered = get(raw, "labels", Dict{String,Any}())
-    on_disk = [f for f in segment_label_files(out_value_name,
-                   Dict("0" => Dict("matchAs" => "base"), "1" => Dict("matchAs" => "nuc")))
-               if ispath(joinpath(labels_dir, f))]
-    (registered isa AbstractDict && haskey(registered, out_value_name)) || !isempty(on_disk) ||
-        return nothing
-    "Labels '$out_value_name' already exist — pick another name or tick Overwrite existing"
+# Is `vn` claimed in `field`: registered there, or one of the files a run would write is on disk.
+function _label_name_taken(img::CciaImage, raw::AbstractDict, vn::AbstractString, field::AbstractString)::Bool
+    registered = get(raw, field, Dict{String,Any}())
+    (registered isa AbstractDict && haskey(registered, vn)) ||
+        any(ispath, LABEL_REGISTRIES[field].paths(img, vn))
 end
 
 """
-    assert_labels_free(img, out_value_name; overwrite, raw, on_log) -> Bool
+    free_label_name(img, raw, out_value_name; field = "labels") -> String
 
-The guard every label writer (cellpose, coastal, ridges, label import) calls FIRST, before it reads
-or writes anything: `false` — with the reason logged as `[ERROR]` — when `out_value_name` is already
-taken on `img` and `overwrite` is off. The handler then returns `nothing`, so a composite stops
-before Measure labels too. Segmentation defaults to `default`, the name an image's segmentation most
-likely already has, so a re-run used to replace it — and orphan the measures built on it — silently.
-`overwrite` is the spec's shared "Overwrite existing" toggle (`fragments/overwriteLabels.json`).
+The first of `{vn}_2`, `{vn}_3`, … that is free in `field` — registry and disk both — so a refusal
+can name a concrete alternative rather than only the toggle.
+"""
+function free_label_name(img::CciaImage, raw::AbstractDict, out_value_name::AbstractString;
+                         field::AbstractString = "labels")::String
+    n = 2
+    while _label_name_taken(img, raw, "$(out_value_name)_$(n)", field)
+        n += 1
+    end
+    "$(out_value_name)_$(n)"
+end
+
+"""
+    labels_taken(img, raw, out_value_name; field = "labels") -> Union{Nothing,String}
+
+Why `out_value_name` is already taken in `field` on `img`, or `nothing`. The message is the one every
+label writer shows, and it names a free alternative FIRST: the toggle replaces the user's data, so
+the obvious next step — for a person or an agent — should be the name that does not.
+"""
+function labels_taken(img::CciaImage, raw::AbstractDict, out_value_name::AbstractString;
+                      field::AbstractString = "labels")::Union{Nothing,String}
+    _label_name_taken(img, raw, out_value_name, field) || return nothing
+    alt = free_label_name(img, raw, out_value_name; field = field)
+    "$(LABEL_REGISTRIES[field].noun) '$out_value_name' already exist — use '$alt', " *
+        "or tick Overwrite existing to replace them"
+end
+
+"""
+    assert_labels_free(img, out_value_name; field, overwrite, raw, on_log) -> Bool
+
+The guard every label writer (cellpose, coastal, ridges, label import, and branching with
+`field = "branch_labels"`) calls FIRST, before it reads or writes anything: `false` — with the reason
+logged as `[ERROR]` — when `out_value_name` is already taken in `field` on `img` and `overwrite` is
+off. The handler then returns `nothing`, so a composite stops before Measure labels too. Output names
+default to `default`, the name an image's segmentation most likely already has, so a re-run used to
+replace it — and orphan the measures and pops built on it — silently. `overwrite` is the spec's
+shared "Overwrite existing" toggle (`fragments/overwriteLabels.json`).
 """
 function assert_labels_free(img::CciaImage, out_value_name::AbstractString;
+                            field::AbstractString = "labels",
                             overwrite::Bool = false,
                             raw::AbstractDict = read_ccid_raw(state_file(img)),
                             on_log::Function = _ -> nothing)::Bool
     overwrite && return true
-    why = labels_taken(raw, img_labels_dir(img), out_value_name)
+    why = labels_taken(img, raw, out_value_name; field = field)
     isnothing(why) && return true
     on_log("[ERROR] $why")
     false

@@ -95,24 +95,38 @@ lower level from it, so no level can still show a cell that was merged or remove
 
 ### A taken output name is refused unless "Overwrite existing" is ticked
 
-Every label writer — `segment.cellpose`, `segment.coastal`, `segment.ridges`, `segment.importLabels`,
-and so the `…Measure` composites — first calls `assert_labels_free` (`segmentation.jl`), before it
-reads or writes anything. When the image registers labels under the output name, or a `{vn}.zarr` /
-`{vn}_nuc.zarr` store already sits in `labels/`, the run fails with "Labels 'default' already exist —
-pick another name or tick Overwrite existing". **Overwrite existing** (one shared spec fragment,
-`tasks/fragments/overwriteLabels.json`, default off) lets it replace the set as before. Why: the
+Every label writer — `segment.cellpose`, `segment.coastal`, `segment.ridges`, `segment.importLabels`
+(and so the `…Measure` composites) and `segment.branching` — first calls `assert_labels_free`
+(`segmentation.jl`), before it reads or writes anything. When the image registers the output name in
+that writer's registry, or a file a run would write already exists, the run fails with "Labels
+'default' already exist — use 'default_2', or tick Overwrite existing to replace them" ("Branches
+'…'" for branching). The suggested name is the first free `{vn}_N` (`free_label_name`, registry and
+disk), named first on purpose: the toggle replaces the user's data, so the easy next step — for a
+person or an agent — is the name that doesn't. The registries are one table, `LABEL_REGISTRIES`: `labels` (`labels/{vn}.zarr`,
+`{vn}_nuc.zarr`) and `branch_labels` (`branchLabels/{vn}.zarr` + `labelProps/{vn}__branch.h5ad`,
+which branch pops are built on); a new registry is a row there, not a second guard.
+**Overwrite existing** (one shared spec fragment, `tasks/fragments/overwriteLabels.json`, default off) lets it replace the set as before. Why: the
 output name defaults to `default`, which is the name an image's segmentation most likely already has,
 and replacing it silently orphans the measures, gates and tracks built on it.
 
 - **Per image.** The writers are image-scope, so the check runs at the start of each image's run; in
   a multi-image run an image with a free name still runs when another image is refused.
-- **Before Run, in the form.** The output-name field warns "Exists — tick Overwrite existing to
-  replace" from the label sets the form already holds (`labelsTakenAdvisory`, `paramAdvisors.ts`).
-  An unregistered store left on disk is invisible there and is still refused at Run.
+- **Before Run, in the form.** The output-name field warns "Exists — use 'default_2', or tick
+  Overwrite existing" from the label sets the form already holds (`labelsTakenAdvisory`,
+  `paramAdvisors.ts`). An unregistered store left on disk is invisible there and is still refused at
+  Run. The advisor reads the `labels` registry, so on `segment.branching` (whose output name is in the
+  `labels` namespace but registers in `branch_labels`) it can warn about a name that is free.
+- **Agents.** The autonomous MCP server refuses `overwrite: true` unless every output name carries
+  the session prefix, and refuses it outright with no prefix — an unattended run can only replace its
+  own outputs (`output_name_violations`, `mcp/cecelia_mcp/autonomous.py`). The observer guidance tells
+  an interactive session to take the suggested name and never set `overwrite` on a name it didn't
+  create unless the user asked.
 - **Not the preview.** The task preview never calls `_run_task` and writes no store under the real
   name, so it is unaffected.
-- Pinned by `label writers refuse a taken output name` (`app/test/suite/label_import.jl`), which
-  also fails a fifth task that registers label stores without calling the guard before its runner.
+- Pinned by `label writers refuse a taken output name` (`app/test/suite/label_import.jl`). Writers are
+  found from the SPEC — any task whose output is a `valueNameInput` in the `labels`/`branches`
+  namespace — and each must call the guard before its runner and offer the toggle, so a new writer
+  cannot slip past however it registers its stores.
 
 ### Stores are written staged, never in place
 

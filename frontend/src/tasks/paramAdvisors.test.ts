@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
-  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims, labelsTakenAdvisory,
+  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims, labelsTakenAdvisory, freeLabelName,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -707,16 +707,20 @@ describe('labelsTakenAdvisory', () => {
   it('warns when the name is taken and Overwrite existing is off', () => {
     const a = labelsTakenAdvisory('default', [img('a', ['default'])], off)
     expect(a?.severity).toBe('warn')
-    expect(a?.message).toBe('Exists — tick Overwrite existing to replace')
+    expect(a?.message).toBe("Exists — use 'default_2', or tick Overwrite existing")
   })
   it('counts the images that have it in a mixed selection', () => {
     expect(labelsTakenAdvisory('default', [img('a', ['default']), img('b', [])], off)?.message)
-      .toBe('Exists on 1 of 2 images — tick Overwrite existing to replace')
+      .toBe("Exists on 1 of 2 images — use 'default_2', or tick Overwrite existing")
   })
   it('is silent for a free name, once ticked, or on a task without the toggle', () => {
     expect(labelsTakenAdvisory('new', [img('a', ['default'])], off)).toBeNull()
     expect(labelsTakenAdvisory('default', [img('a', ['default'])], { overwrite: true })).toBeNull()
     expect(labelsTakenAdvisory('default', [img('a', ['default'])], {})).toBeNull()
+  })
+  it('suggests the first name free on every selected image', () => {
+    expect(freeLabelName('default', [img('a', ['default', 'default_2']), img('b', ['default_3'])]))
+      .toBe('default_4')
   })
   it('runs only on a labels-namespace name', async () => {
     const adv = paramAdvisor({ type: 'valueNameInput' })!

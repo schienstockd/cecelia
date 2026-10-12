@@ -117,20 +117,49 @@ def _pop_value_names(value) -> list[str]:
     return out
 
 
+def _named_output(p: dict) -> bool:
+    key = p.get("key")
+    return bool(p.get("namespace")) or key == "outputValueName" or key == "colName"
+
+
+def overwrite_violations(spec: dict, params: dict, prefix: str) -> list[str]:
+    """Why `overwrite: true` is refused: an unattended run may only replace its OWN outputs. With no
+    prefix nothing here is provably the session's, so the toggle is refused outright; with one, every
+    name the task writes must carry it. A taken name is refused by the app with a free name to use
+    instead — that is the agent's move, never flipping the toggle on the user's data."""
+    if not any(p.get("key") == "overwrite" for p in _flat_params(spec.get("params"))):
+        return []
+    if params.get("overwrite") is not True:
+        return []
+    fix = "choose a new output name (the refusal suggests a free one) instead of overwriting"
+    if not prefix:
+        return [f"overwrite=true is refused: this session has no output prefix, so nothing it could "
+                f"replace is its own — {fix}"]
+    bad = []
+    for p in _flat_params(spec.get("params")):
+        if p.get("key") and _named_output(p):
+            value = str(params.get(p["key"], p.get("default")) or "")
+            if not value.startswith(prefix):
+                bad.append(f"overwrite=true on {p['key']}={value!r} is refused: only outputs starting "
+                           f"with {prefix!r} are this session's — {fix}")
+    return bad
+
+
 def output_name_violations(spec: dict, params: dict, prefix: str) -> list[str]:
     """Why `params` would write outside the prefix: a NAMED output (a `namespace` param, or the
     legacy `outputValueName`) without it, or a label set (`field: labels|label_props`) or a
     `vn/pop` selection outside it — downstream tasks write INTO the set they read (tracks, measures,
-    HMM states). Empty list = allowed. No prefix = nothing to check."""
+    HMM states) — or `overwrite: true` on anything that isn't the session's (`overwrite_violations`).
+    Empty list = allowed. No prefix = only the overwrite rule applies."""
+    bad = overwrite_violations(spec, params, prefix)
     if not prefix:
-        return []
-    bad = []
+        return bad
     for p in _flat_params(spec.get("params")):
         key = p.get("key")
         if not key:
             continue
         value = params.get(key, p.get("default"))
-        if p.get("namespace") or key == "outputValueName" or key == "colName":
+        if _named_output(p):
             if not str(value or "").startswith(prefix):
                 bad.append(f"{key}={value!r} (output names must start with {prefix!r})")
         elif p.get("field") in ("labels", "label_props"):

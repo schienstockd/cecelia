@@ -102,15 +102,26 @@ end
     f = Cecelia.import_labels_qc_findings(Dict(:idMismatchFrac => 0.9))
     @test length(f) == 1 && f[1]["level"] == "warn" && f[1]["code"] == "segment.import_ids_unpaired"
     @test !occursin("{", f[1]["short"]) && !occursin("{", f[1]["long"])
-    # a taken name: registered, or a role store already on disk (`labels_taken`, segmentation.jl)
+    # a taken name: registered, or one of the files a run would write already on disk — and the
+    # refusal names the next free name, checked against registry AND disk
     mktempdir() do d
-        @test Cecelia.labels_taken(Dict{String,Any}(), d, "default") === nothing
-        msg = Cecelia.labels_taken(
-            Dict{String,Any}("labels" => Dict{String,Any}("default" => ["default.zarr"])), d, "default")
-        @test msg == "Labels 'default' already exist — pick another name or tick Overwrite existing"
-        mkpath(joinpath(d, "seg_nuc.zarr"))
-        @test Cecelia.labels_taken(Dict{String,Any}(), d, "seg") !== nothing
-        @test Cecelia.labels_taken(Dict{String,Any}(), d, "other") === nothing
+        img_dir = joinpath(d, "1", "uidT"); mkpath(img_dir)
+        timg = CciaImage(; uid = "uidT", name = "t", dir = img_dir)
+        none = Dict{String,Any}()
+        @test Cecelia.labels_taken(timg, none, "default") === nothing
+        reg = Dict{String,Any}("labels" => Dict{String,Any}("default" => ["default.zarr"],
+                                                            "default_2" => ["default_2.zarr"]))
+        mkpath(joinpath(img_dir, "labels", "default_3_nuc.zarr"))     # an unregistered store on disk
+        @test Cecelia.free_label_name(timg, reg, "default") == "default_4"
+        @test Cecelia.labels_taken(timg, reg, "default") ==
+              "Labels 'default' already exist — use 'default_4', or tick Overwrite existing to replace them"
+        mkpath(joinpath(img_dir, "labels", "seg_nuc.zarr"))
+        @test Cecelia.labels_taken(timg, none, "seg") !== nothing
+        # the registry is per field: a `labels` entry does not take a `branch_labels` name
+        @test Cecelia.labels_taken(timg, reg, "default"; field = "branch_labels") === nothing
+        breg = Dict{String,Any}("branch_labels" => Dict{String,Any}("seg" => ["seg.zarr"]))
+        @test startswith(Cecelia.labels_taken(timg, breg, "seg"; field = "branch_labels"),
+                         "Branches 'seg' already exist — use 'seg_2'")
     end
     # the toggle is in the form, and the composite's form too (not hidden there)
     ow = [x for x in Cecelia._task_spec(t)["params"] if get(x, "key", "") == "overwrite"]
@@ -173,7 +184,7 @@ end
         @test Cecelia._run_task(Cecelia.ImportLabels(), img, Dict{String,Any}(
             "labelsPath" => paths.basePath, "outputValueName" => "imp");
             on_log = l -> push!(logs, l)) === nothing
-        @test any(l -> occursin("Labels 'imp' already exist", l), logs)
+        @test any(l -> occursin("Labels 'imp' already exist — use 'imp_2'", l), logs)
         @test (snapshot(joinpath(img._dir, "labels")), read(state_file(img), String)) == before
         @test !any(l -> occursin("PROGRESS", l) || occursin(">> image", l), logs)  # runner never ran
         # …and the composite stops there too: no measure over the old labels
@@ -204,23 +215,25 @@ end
 # refusal needs no runner; with the toggle on, the handler gets PAST the guard — shown here by it failing
 # on the next check instead (no image registered), so no segmenter has to actually run.
 @testset "label writers refuse a taken output name" begin
-    for (fun, extra) in (("segment.cellpose", Dict{String,Any}()),
-                         ("segment.coastal", Dict{String,Any}()),
-                         ("segment.ridges", Dict{String,Any}()),
-                         ("segment.importLabels", Dict{String,Any}("labelsPath" => "/nonexistent.tif")))
+    for (fun, extra, field, sub) in (
+            ("segment.cellpose", Dict{String,Any}(), "labels", "labels"),
+            ("segment.coastal", Dict{String,Any}(), "labels", "labels"),
+            ("segment.ridges", Dict{String,Any}(), "labels", "labels"),
+            ("segment.importLabels", Dict{String,Any}("labelsPath" => "/nonexistent.tif"), "labels", "labels"),
+            ("segment.branching", Dict{String,Any}(), "branch_labels", "branchLabels"))
         mktempdir() do dir
-            img_dir = joinpath(dir, "1", "uidW"); mkpath(joinpath(img_dir, "labels", "seg.zarr"))
+            img_dir = joinpath(dir, "1", "uidW"); mkpath(joinpath(img_dir, sub, "seg.zarr"))
             img = CciaImage(; uid = "uidW", name = "w", dir = img_dir)
             write(state_file(img), JSON3.write(Dict{String,Any}(
-                "labels" => Dict{String,Any}("seg" => ["seg.zarr"]))))
+                field => Dict{String,Any}("seg" => ["seg.zarr"]))))
             before = read(state_file(img), String)
             task = Cecelia._task_from_fun_name(fun)
             logs = String[]
             params = merge(Dict{String,Any}("outputValueName" => "seg"), extra)
             @test Cecelia._run_task(task, img, params; on_log = l -> push!(logs, l)) === nothing
-            @test any(l -> occursin("Labels 'seg' already exist", l), logs)
+            @test any(l -> occursin("'seg' already exist", l), logs)
             @test read(state_file(img), String) == before
-            @test readdir(joinpath(img_dir, "labels")) == ["seg.zarr"]
+            @test readdir(joinpath(img_dir, sub)) == ["seg.zarr"]
 
             empty!(logs)
             res = try
@@ -234,22 +247,34 @@ end
         end
     end
 
-    # The four writers are exactly the tasks that register label stores, and each calls the guard
-    # BEFORE its runner and offers the shared toggle. A fifth writer fails here until it does both.
-    src = joinpath(pkgdir(Cecelia), "src", "tasks")
+    # Which tasks are writers is read off the SPEC, not off one registration call: any task whose output
+    # name is a label-set name (`valueNameInput` in the `labels`/`branches` namespace). Each must call
+    # the guard BEFORE its runner and offer the shared toggle — so a sixth writer, however it registers
+    # its stores, fails here until it does both. `register_label_files!` callers are a second net.
+    flat(ps) = reduce(vcat, [p isa AbstractDict && string(get(p, "type", "")) in ("section", "group") ?
+                                 flat(get(p, "params", [])) : [p] for p in ps]; init = Any[])
     writers = String[]
-    for (d, _, fs) in walkdir(src), f in fs
-        endswith(f, ".jl") || continue
-        txt = read(joinpath(d, f), String)
-        occursin("register_label_files!(", txt) || continue
-        push!(writers, f)
+    for (fun, task) in Cecelia._fun_name_map()
+        task isa CompositeTask && continue
+        spec = Cecelia._task_spec(task)
+        spec === nothing && continue
+        ps = flat(get(spec, "params", []))
+        any(p -> p isa AbstractDict && get(p, "type", "") == "valueNameInput" &&
+                 string(get(p, "namespace", "")) in ("labels", "branches"), ps) || continue
+        push!(writers, fun)
+        jl = replace(Cecelia._spec_path(task), r"\.json$" => ".jl")
+        txt = read(jl, String)
         g = findfirst("assert_labels_free(", txt)
         r = findfirst("run_py(", txt)
         @test g !== nothing && r !== nothing && first(g) < first(r)
-        spec = replace(joinpath(d, f), r"\.jl$" => ".json")
-        @test isfile(spec) && occursin("\"overwriteLabels\"", read(spec, String))
+        @test any(p -> p isa AbstractDict && get(p, "key", "") == "overwrite", ps)
     end
-    @test sort(writers) == ["cellpose.jl", "coastal.jl", "import_labels.jl", "ridges.jl"]
+    @test sort(writers) == ["segment.branching", "segment.cellpose", "segment.coastal",
+                            "segment.importLabels", "segment.ridges"]
+    for (d, _, fs) in walkdir(joinpath(pkgdir(Cecelia), "src", "tasks")), f in fs
+        endswith(f, ".jl") && occursin("register_label_files!(", read(joinpath(d, f), String)) || continue
+        @test occursin("assert_labels_free(", read(joinpath(d, f), String))
+    end
 
     # …and the composites a user actually runs carry the toggle (merged from their first step)
     for c in ("segment.cellposeMeasure", "segment.coastalMeasure", "segment.importLabelsMeasure")

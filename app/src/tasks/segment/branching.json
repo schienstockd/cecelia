@@ -35,6 +35,9 @@
       "tip": "Name for the output branch label set"
     },
     {
+      "$include": "overwriteLabels"
+    },
+    {
       "key": "refPops",
       "label": "Restrict to population",
       "type": "popSelection",
