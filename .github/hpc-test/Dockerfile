@@ -7,7 +7,7 @@
 # later phases' submit / cancel / exit-code tests can use the same image.
 #
 #   docker build -t cecelia-hpc-test .github/hpc-test
-#   docker run -d -p 2222:22 -e AUTHORIZED_KEY="$(cat key.pub)" cecelia-hpc-test
+#   docker run -d --privileged -p 2222:22 -e AUTHORIZED_KEY="$(cat key.pub)" cecelia-hpc-test
 FROM ubuntu:24.04
 
 RUN apt-get update \
@@ -52,9 +52,10 @@ SlurmdLogFile=/var/log/slurm/slurmd.log
 $(slurmd -C | head -n 1) State=UNKNOWN
 PartitionName=debug Nodes=$host Default=YES MaxTime=INFINITE State=UP
 CONF
-# A container has no systemd/dbus to delegate a cgroup scope, which slurmd's cgroup/v2 plugin
-# needs at start-up; nothing here enforces limits, so the plugin is off.
-printf 'CgroupPlugin=disabled\n' > /etc/slurm/cgroup.conf
+# A container has no systemd/dbus to delegate a cgroup scope, which slurmd's cgroup/v2 plugin asks
+# for at start-up; `IgnoreSystemd` makes it use the cgroup tree directly (needs a writable
+# /sys/fs/cgroup, hence `docker run --privileged` in verify-hpc.yml).
+printf 'CgroupPlugin=cgroup/v2\nIgnoreSystemd=yes\n' > /etc/slurm/cgroup.conf
 # Best effort: P1 asserts only that the scheduler is INSTALLED. A daemon that fails here shows up
 # in `sinfo` in the workflow's diagnostics step, not as a P1 failure.
 service munge start || true

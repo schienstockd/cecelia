@@ -230,11 +230,15 @@ end
 
 @testset "HPC: connection test refuses before spawning" begin
     site = HpcSite("slurm", "", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))
-    @test hpc_test_connection(site, HpcIdentity("a", "/k")).error == "Set the host first"
     site2 = HpcSite("slurm", "h", 22, "~/c", "", site.cpu, site.gpu)
-    @test hpc_test_connection(site2, HpcIdentity("", "/k")).error == "Set your username first"
-    @test hpc_test_connection(site2, HpcIdentity("a", "")).error == "Select your SSH key first"
-    @test hpc_test_connection(site2, HpcIdentity("a", "/definitely/not/here")).error == "Key file not found"
+    cases = [(site,  HpcIdentity("a", "/k"),                    "Set the host first"),
+             (site2, HpcIdentity("", "/k"),                     "Set your username first"),
+             (site2, HpcIdentity("a", ""),                      "Select your SSH key first"),
+             (site2, HpcIdentity("a", "/definitely/not/here"),  "Key file not found")]
+    for (s, id, msg) in cases
+        # Windows is refused before anything else (HPC_PLAN Q8), and says so.
+        @test hpc_test_connection(s, id).error == (hpc_available() ? msg : "Not available on Windows yet")
+    end
 end
 
 # ── Against a real sshd (+ SLURM): CI's container, or any sshd you point it at ─────────────────────

@@ -38,7 +38,7 @@ jobs:
       - name: Start it with a throwaway key
         run: |
           ssh-keygen -q -t ed25519 -N "" -f "$RUNNER_TEMP/hpc_key"
-          docker run -d --name hpc -p 127.0.0.1:2222:22 \
+          docker run -d --privileged --name hpc -p 127.0.0.1:2222:22 \
             -e AUTHORIZED_KEY="$(cat "$RUNNER_TEMP/hpc_key.pub")" cecelia-hpc-test
           for i in $(seq 1 30); do
             nc -z 127.0.0.1 2222 && exit 0
