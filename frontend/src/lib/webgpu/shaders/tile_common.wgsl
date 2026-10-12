@@ -10,7 +10,8 @@
 //         z = camera dist (µm; half-height at unit-µm-per-µm ortho = `dist * VIEW_HALF_ANGLE`),
 //         w = aspect (canvas w / h).
 // `vp`    x = channel count, y = canvas W (px), z = canvas H (px), w = unused.
-// `ext`   x = image extent X µm, y = image extent Y µm, z/w = unused.
+// `ext`   x = image extent X µm, y = image extent Y µm, z = µm per overlay size unit (0 = sizes are
+//         screen px — `overlayPx`, overlay_quads.wgsl), w = unused.
 // `slot`  x = channels per slot (nC — how far to step in z per channel), y/z/w = unused.
 // `lab`   x = mask opacity (0 = off), y = contour width (px, 0 = filled), z = palette rows,
 //         w = POINT border width (px, 0 = no outline). Same lanes as the MIP shader's `lab`, which is
@@ -33,12 +34,15 @@ struct P {
 };
 @group(0) @binding(0) var<uniform> p: P;
 
+// Half the view's height in µm — the one place the tile camera's zoom becomes a scale.
+fn tileHalfH() -> f32 { return p.cam.z * ${VIEW_HALF_ANGLE}; }
+
 // World µm (image plane centred on the origin, screen up = -y world) → NDC. Orthographic, same
 // convention as the MIP shader's project():
 //   halfH = dist * VIEW_HALF_ANGLE, halfW = halfH * aspect
 //   ndc.x = (wx - panX) / halfW,    ndc.y = -(wy + panY) / halfH
 fn tileNdc(w: vec2<f32>) -> vec2<f32> {
-  let halfH = p.cam.z * ${VIEW_HALF_ANGLE};
+  let halfH = tileHalfH();
   let halfW = halfH * max(p.cam.w, 1e-6);
   return vec2((w.x - p.cam.x) / max(halfW, 1e-6), -(w.y + p.cam.y) / max(halfH, 1e-6));
 }
@@ -46,4 +50,10 @@ fn tileNdc(w: vec2<f32>) -> vec2<f32> {
 // Absolute image µm (what the overlay buffers carry) → the centred world the tiles are drawn in.
 fn overlayNdc(abs: vec3<f32>) -> vec2<f32> {
   return tileNdc(abs.xy - p.ext.xy * 0.5);
+}
+
+// Canvas px per µm — constant, the tile view is orthographic. Turns an image-unit overlay size into
+// screen px (`overlayPx`, overlay_quads.wgsl).
+fn pxPerUm() -> f32 {
+  return p.vp.z * 0.5 / max(tileHalfH(), 1e-6);
 }

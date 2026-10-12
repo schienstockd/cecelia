@@ -9,9 +9,9 @@
 // pitch or zoom. A second camera copy for the overlays would be one number away from marking the wrong
 // cell, and it would drift silently — the overlay would still look plausible.
 //
-// SIZE IS IN SCREEN PIXELS, not µm. A cell marker is annotation: it has to stay legible when you zoom
-// out and must not swallow the cell when you zoom in — which is what the viewer's `points_size` does, and
-// what a µm-sized quad would get backwards.
+// SIZE IS IN IMAGE PIXELS in the viewer (screen px in a movie) — `overlayPx`, overlay_quads.wgsl — so a
+// marker keeps its size relative to the cell it marks as you zoom. Under perspective it is converted at
+// the point's own depth, so a far cell's marker shrinks with the cell.
 //
 // The plane filter collapses the quad to zero area rather than being a CPU filter, because the 2D view
 // changes plane from a slider: rebuilding and re-uploading the buffer per z step is exactly the cost
@@ -24,6 +24,7 @@ struct POut {
   @builtin(position) pos: vec4<f32>,
   @location(0) rgb: vec3<f32>,
   @location(1) local: vec2<f32>,          // -1..1 across the quad, for the round mask
+  @location(2) @interpolate(flat) px: vec2<f32>,   // fill size, border — screen px (`overlayPx`)
 };
 
 @vertex fn vs(
@@ -44,13 +45,16 @@ struct POut {
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
-  let ndc = project(centre - boxCentre(), c, aspect).xy;
-  o.pos = markerPos(ndc, corner, p.ov.x, p.lab.w, p.vp.yz);
+  let q = project(centre - boxCentre(), c, aspect);
+  let ndc = q.xy;
+  let sizePx = overlayPx(p.ov.x, p.trail.z, pxPerUm(q.z));
+  o.px = vec2(sizePx, overlayBorderPx(p.lab.w, sizePx, p.trail.z));
+  o.pos = markerPos(ndc, corner, o.px.x, o.px.y, p.vp.yz);
   return o;
 }
 
 @fragment fn fs(in: POut) -> @location(0) vec4<f32> {
-  let c = markerColour(in.local, in.rgb, p.ov.x, p.lab.w);
+  let c = markerColour(in.local, in.rgb, in.px.x, in.px.y);
   if (c.a <= 0.001) { discard; }
   return c;
 }

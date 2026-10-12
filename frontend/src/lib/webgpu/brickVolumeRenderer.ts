@@ -514,6 +514,7 @@ export async function createBrickVolumeRenderer(
   let segPlaneHi = -1
   let tailFadeHead = 0
   let tailFadeLength = 0
+  let overlayUmPerSize = 0    // µm per overlay size unit; 0 = sizes are screen px
 
   /** Label style. `setLabelStyle(0, _)` disables the label pass in the shader (via `p.lab.x`);
    *  a non-zero opacity + zero contour = filled cells; non-zero contour = the viewer's outline. */
@@ -1465,6 +1466,7 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.PAN + 3] = segPlaneHi
     uniformCpu[BU.TRAIL + 0] = tailFadeHead
     uniformCpu[BU.TRAIL + 1] = tailFadeLength
+    uniformCpu[BU.TRAIL + 2] = overlayUmPerSize
     // Overlay layout: (pointSizePx, pointPlaneLo, tailWidthPx, pointPlaneHi). Two plane bounds
     // for the points share this vec4 with the two screen-space widths (points + tails).
     uniformCpu[BU.OV + 0] = pointSizePx
@@ -1764,6 +1766,9 @@ export async function createBrickVolumeRenderer(
     setTailFade(head, length) {
       tailFadeHead = head
       tailFadeLength = Math.max(0, length)
+    },
+    setOverlaySizeUnit(umPerSize) {
+      overlayUmPerSize = Math.max(0, umPerSize)
     },
     setLabelStyle(opacity, contourPx) {
       labelOpacity = Math.max(0, Math.min(1, opacity))

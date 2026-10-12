@@ -174,6 +174,10 @@ export interface TileRenderer {
   /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
    *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
   setTailFade(head: number, length: number): void
+  /** µm per overlay size unit — the image's pixel size, so `setOverlayDraw`'s size and
+   *  `setOverlaySegmentDraw`'s width are IMAGE pixels and scale with zoom (`overlayPx`,
+   *  `shaders/overlay_quads.wgsl`). 0 (the default) = they are screen px, as a movie draws them. */
+  setOverlaySizeUnit(umPerSize: number): void
   /** Draw the given tiles as one instanced call over the finished atlas, then the overlays. Tiles
    *  that name a slot the atlas does not currently hold are silently skipped. */
   draw(tiles: TileDraw[]): void
@@ -515,7 +519,7 @@ export async function createTileRenderer(
       currentLevel = level
       // Publish the geometry the shader reads — always, whether we reuse or reallocate.
       const [ex, ey] = [m.nX * (m.voxelUm[0] || 1), m.nY * (m.voxelUm[1] || 1)]
-      u[U.ext.x] = ex; u[U.ext.y] = ey; u[U.ext.unused0] = 0; u[U.ext.unused1] = 0
+      u[U.ext.x] = ex; u[U.ext.y] = ey; u[U.ext.unused1] = 0
       u[U.slot.channelsPerSlot] = nch; u[U.slot.unused0] = 0; u[U.slot.unused1] = 0; u[U.slot.unused2] = 0
       u[U.vp.nch] = nch
       const bpv = m.bytesPerVoxel === 1 ? 1 : 2
@@ -697,6 +701,9 @@ export async function createTileRenderer(
     setTailFade(head, length) {
       u[U.ovx.trailHead] = head
       u[U.ovx.trailLength] = Math.max(0, length)
+    },
+    setOverlaySizeUnit(umPerSize) {
+      u[U.ext.umPerSize] = Math.max(0, umPerSize)
     },
 
     resize(): boolean {

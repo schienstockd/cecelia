@@ -159,6 +159,10 @@ export interface VolumeRenderer {
   /** The tail fade (`tailAlpha`, `shaders/overlay_quads.wgsl`): `head` = the newest end timepoint
    *  drawn (`tailHead`), `length` = the tail in frames. The hop ending at `head` draws solid. */
   setTailFade(head: number, length: number): void
+  /** µm per overlay size unit — the image's pixel size, so `setOverlayDraw`'s size and
+   *  `setOverlaySegmentDraw`'s width are IMAGE pixels and scale with zoom (`overlayPx`,
+   *  `shaders/overlay_quads.wgsl`). 0 (the default) = they are screen px, as a movie draws them. */
+  setOverlaySizeUnit(umPerSize: number): void
   /**
    * How the mask is drawn. `opacity` 0 switches it off in the shader without dropping the textures, so
    * a toggle is free; `setImage(..., withLabels)` reserves room for a mask in what a timepoint costs.
@@ -1036,6 +1040,10 @@ export async function createVolumeRenderer(
     setTailFade(head: number, length: number) {
       u[U.trail.head] = head
       u[U.trail.length] = Math.max(0, length)
+    },
+
+    setOverlaySizeUnit(umPerSize: number) {
+      u[U.trail.umPerSize] = Math.max(0, umPerSize)
     },
 
     setLabelStyle(opacity: number, contourPx: number) {

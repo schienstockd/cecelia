@@ -766,8 +766,13 @@ export function seedRendererOverlays(
 
 /** How the overlays draw — the viewer's point + track settings, in the units the renderers take. */
 export interface OverlayStyle {
+  /** Marker radius and tail width, in IMAGE pixels when `umPerSize` > 0 (they then scale with zoom,
+   *  staying the same size relative to the cells) and in screen px when it is 0. */
   pointPx: number
+  /** The marker outline, always screen px (capped at half the marker when sizes are image pixels). */
   borderPx: number
+  /** µm per size unit — the image's xy pixel size. 0 = sizes are screen px. */
+  umPerSize: number
   /** Planes either side of the window a point still draws on (a cell spans several planes). */
   pointZTol: number
   /** Tail length in FRAMES — see `tailRange`. 0 = no tail. */
@@ -790,11 +795,13 @@ export function setOverlayWindow(
     setOverlaySegmentDraw(first: number, count: number, widthPx: number, planeLo: number,
                           planeHi?: number): void
     setTailFade(head: number, length: number): void
+    setOverlaySizeUnit(umPerSize: number): void
   },
   points: PointBuffer, segments: SegmentBuffer, t: number, planes: readonly [number, number],
   style: OverlayStyle,
 ): void {
   const [lo, hi] = planes
+  r.setOverlaySizeUnit(style.umPerSize)
   const range = t >= 0 ? timepointRange(points, t) : null
   const tol = Math.max(0, style.pointZTol)
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0, style.pointPx, lo - tol, hi + tol, style.borderPx)

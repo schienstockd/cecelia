@@ -2,9 +2,12 @@
 // and tile renderers alike. CAMERA-AGNOSTIC: each pass projects with its own camera and hands NDC in,
 // so this holds no uniform access and one copy serves three uniform blocks.
 //
-// SIZES ARE SCREEN PIXELS. A cell marker is annotation: it has to stay legible when you zoom out and
-// must not swallow the cell when you zoom in — a µm-sized quad gets that backwards. Tails are quads
-// rather than `line-list` because WebGPU draws 1px lines only.
+// SIZES ARE IMAGE PIXELS IN THE VIEWER, SCREEN PIXELS IN A MOVIE. The viewer sets `umPerSize` (µm per
+// size unit = the image's pixel size), so a marker or tail keeps its size RELATIVE TO THE CELLS as you
+// zoom — as napari draws points. Screen-px markers read as small dots on big cells zoomed in and as
+// blobs swallowing small cells zoomed out. `umPerSize` 0 = the size IS screen px: a movie renders one
+// fixed camera, so it keeps the px numbers it was authored with. `overlayPx` is the one conversion.
+// Tails are quads rather than `line-list` because WebGPU draws 1px lines only.
 
 // Where an instance outside its plane window goes: behind the far plane, so it is clipped and emits
 // no fragments. Collapsing the quad rather than CPU-filtering keeps a z step free of re-uploads.
@@ -13,6 +16,22 @@ fn clippedPos() -> vec4<f32> { return vec4(0.0, 0.0, 2.0, 1.0); }
 // Outside planes [lo, hi], ± half a plane. Negative `lo` means no filter (3D over the whole stack).
 fn offPlanes(plane: f32, lo: f32, hi: f32) -> bool {
   return lo >= 0.0 && (plane < lo - 0.5 || plane > hi + 0.5);
+}
+
+// An overlay size → screen px. `pxPerUm` = canvas px per µm at the instance (each camera's `pxPerUm`).
+// Floored so a marker zoomed far out stays a visible dot rather than vanishing below a pixel.
+fn overlayPx(size: f32, umPerSize: f32, pxPerUm: f32) -> f32 {
+  if (umPerSize <= 0.0) { return size; }
+  return max(size * umPerSize * pxPerUm, ${OVERLAY_MIN_PX});
+}
+
+// The marker outline stays in SCREEN px — an outline that grows with zoom reads as a black ring, not an
+// edge — but in image units it is capped at half the fill, so a zoomed-out marker stays its colour
+// instead of collapsing to a black dot. Screen-px sizing (movies) keeps the border as given.
+fn overlayBorderPx(borderPx: f32, sizePx: f32, umPerSize: f32) -> f32 {
+  let b = max(borderPx, 0.0);
+  if (umPerSize <= 0.0) { return b; }
+  return min(b, sizePx * 0.5);
 }
 
 // Corner `vi` of a marker quad — two triangles, corners in -1..1. Written out rather than computed
