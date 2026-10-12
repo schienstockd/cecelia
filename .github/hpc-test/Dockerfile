@@ -56,6 +56,8 @@ CONF
 # for at start-up; `IgnoreSystemd` makes it use the cgroup tree directly (needs a writable
 # /sys/fs/cgroup, hence `docker run --privileged` in verify-hpc.yml).
 printf 'CgroupPlugin=cgroup/v2\nIgnoreSystemd=yes\n' > /etc/slurm/cgroup.conf
+# slurmd puts its stepd scope under system.slice, which a fresh cgroup namespace does not have.
+mkdir -p /sys/fs/cgroup/system.slice || true
 # Best effort: P1 asserts only that the scheduler is INSTALLED. A daemon that fails here shows up
 # in `sinfo` in the workflow's diagnostics step, not as a P1 failure.
 service munge start || true
