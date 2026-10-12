@@ -170,6 +170,20 @@ end
         st, body = create(tmpl("+++", [node("n1")], []))
         @test st == 400 && JSON3.read(body).suggestion == ""
 
+        # A template saved when `hpc` was still `network` is served with the new name (the editor's
+        # pool select offers only live pools); whiteboard extras survive, and an unaffected template
+        # is still served byte for byte.
+        mkpath(dirname(path("oldpool")))
+        write(path("oldpool"), JSON3.write(Dict("name" => "oldpool", "edges" => [], "layout" => Dict("x" => 1),
+            "nodes" => [Dict("id" => "n1", "fn" => "importImages.remove", "params" => rm_params,
+                             "resource_pool" => "network")])))
+        st, body = api_chains_get(HTTP.Request("GET", "/api/chains/get?projectUid=$uid&name=oldpool"))
+        @test st == 200
+        @test String(only(JSON3.read(body).nodes).resource_pool) == "hpc"
+        @test JSON3.read(body).layout.x == 1
+        st, body = api_chains_get(HTTP.Request("GET", "/api/chains/get?projectUid=$uid&name=plain-name"))
+        @test st == 200 && body == read(path("plain-name"), String)
+
         # happy path
         st, body = create(tmpl("pipeline", [node("n1"), node("n2")],
                                [Dict("from"=>"n1", "to"=>"n2")]))

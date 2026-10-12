@@ -1,7 +1,7 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
-**Status:** planning (2026-10-12), un-parked by issue #1619. Branch `docs/1619-hpc-plan`. Plan only:
-nothing is built. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
+**Status:** building. P1 built (branch `feat/1619-hpc-p1`; see *P1 as built* under *Phases*); P2–P6
+open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
 
 ## Goal
 
@@ -342,6 +342,20 @@ The counts are files touched, new and existing, including tests and docs.
   - frontend: `SettingsModule.vue`, `HpcSettings.vue` (new), `PoolThrottle.vue`;
   - CI and tests: the CI container (Dockerfile + workflow, 2 files), `app/test/suite/hpc.jl` (new);
   - docs: `docs/SCHEDULER.md` + `docs/MODULES.md` pool tables, `docs/inventory` lines.
+
+**P1 as built** (deviations from the list above):
+- Routes are in a new `api/src/hpc_api.jl`, not `routes.jl` (1 000+ lines; the per-area `*_api.jl` files
+  are the current pattern).
+- Host keys go to Cecelia's own `<config_dir>/hpc/known_hosts`, listed before `~/.ssh/known_hosts` in
+  `UserKnownHostsFile`: an existing trust is honoured, and the test never writes the user's file.
+- The probe runs as `sh -s` on stdin (works under a csh login shell) and sources `/etc/profile` once if
+  the scheduler binary is not on `PATH` (modules). P3's job submission must use the same environment.
+- Site fields cover D8's per-class queue/account/QoS/directives/preamble plus email; the GPU-flag style
+  (`--gres` vs `--gpus`), mail events and `runtime` (Q1) wait for the phases that use them.
+- Also touched: `pixi.toml` (`test-hpc`), `app/test/hpc_e2e.jl` (the standalone runner the workflow
+  calls), `FileBrowser.vue` (`startPath`, so the key picker opens in `~/.ssh`), the ssh/rsync spawn
+  ratchet, and the docs/comments that named the `network` pool.
+- The CI container lives at `.github/hpc-test/Dockerfile`, workflow `verify-hpc.yml` (path-filtered).
 
 **P2 — Remote env + code sync.**
 - **Delivers:**

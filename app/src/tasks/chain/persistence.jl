@@ -35,8 +35,32 @@ function _node_from_dict(d)::ChainNode
         Dict{String,Any}(string(k) => v
                          for (k, v) in get(d, "params", get(d, :params, Dict()))),
         parse_chain_barrier_policy(string(get(d, "barrier_policy", get(d, :barrier_policy, "all")))),
-        string(get(d, "resource_pool", get(d, :resource_pool, ""))),
+        string(get(d, "resource_pool", get(d, :resource_pool, ""))),   # renamed in ChainNode
     )
+end
+
+"""
+    rename_template_pools!(doc) -> Bool
+
+Rename every node's renamed `resource_pool` (`_renamed_pool`) in a raw chain-template document, in
+place. For readers that hand the stored JSON on as-is rather than through `ChainNode` (the template
+GET keeps whiteboard fields verbatim). Returns whether anything changed, so an unchanged template can
+still be served byte for byte.
+"""
+function rename_template_pools!(doc::AbstractDict)::Bool
+    changed = false
+    nodes = get(doc, "nodes", nothing)
+    nodes isa AbstractVector || return false
+    for n in nodes
+        n isa AbstractDict || continue
+        p = get(n, "resource_pool", nothing)
+        p isa AbstractString || continue
+        new = _renamed_pool(String(p))
+        new == p && continue
+        n["resource_pool"] = new
+        changed = true
+    end
+    changed
 end
 
 function _edge_from_dict(d)::ChainEdge

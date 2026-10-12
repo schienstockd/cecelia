@@ -34,6 +34,7 @@ import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import GpuDiagnostic from '../components/GpuDiagnostic.vue'
+import HpcSettings from '../components/HpcSettings.vue'
 
 const showPackages = ref(false)
 
@@ -1507,6 +1508,12 @@ async function switchWt(path: string) {
 
       <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
       <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
+    </section>
+
+    <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">HPC</h2>
+      <HpcSettings :project-uid="projectUid" />
     </section>
 
     <!-- ── Other MCP connections ───────────────────────────────────────── -->

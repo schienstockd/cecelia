@@ -1,4 +1,4 @@
-# External binary resolvers — bioformats2raw, python, Rscript. Split out of config.jl.
+# External binary resolvers — bioformats2raw, python, Rscript, ssh, rsync. Split out of config.jl.
 # Names live in the top-level `Cecelia` module; included from config.jl after the bootstrap.
 
 # Resolve the bioformats2raw launcher: explicit config override → the copy the installer fetched
@@ -120,3 +120,32 @@ function rscript_bin_path(configured::AbstractString = "")::String
     end
     name
 end
+
+# ── ssh + rsync: the HPC transport (docs/todo/HPC_PLAN.md → Decision 4) ──────────────────────────
+#
+# Resolution: an explicit `[dirs] ssh` / `[dirs] rsync` path wins verbatim → `PATH` → `""` on a miss.
+# Empty rather than the bare name, so the caller can say WHICH tool is missing instead of surfacing an
+# ENOENT from a spawn. Nothing is bundled: every Linux/macOS machine has an OpenSSH client, Windows
+# ships one as `ssh.exe` (`Sys.which` adds the extension), and rsync comes from the Pixi env on unix
+# (HPC_PLAN Q8). PURE core, parameterised on the lookup, so a test needs no ssh on the host.
+function _resolve_tool_bin(configured::AbstractString, name::AbstractString;
+                           which::Function = Sys.which)::String
+    c = strip(String(configured))
+    isempty(c) || return expand_user(String(c))
+    p = which(String(name))
+    isnothing(p) ? "" : String(p)
+end
+
+"""
+    ssh_bin() -> String
+
+The OpenSSH client the HPC transport spawns: `[dirs] ssh` → `PATH` → `""` when there is none.
+"""
+ssh_bin()::String = _resolve_tool_bin(_cfg_dir("ssh", ""), "ssh")
+
+"""
+    rsync_bin() -> String
+
+The rsync the HPC mirror spawns: `[dirs] rsync` → `PATH` → `""` when there is none (Windows, Q8).
+"""
+rsync_bin()::String = _resolve_tool_bin(_cfg_dir("rsync", ""), "rsync")

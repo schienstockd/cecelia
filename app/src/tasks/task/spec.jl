@@ -46,6 +46,11 @@ function _resolve_spec_includes(obj::Dict, fdir::String)::Dict{String,Any}
         elseif v isa AbstractDict
             result[sk] = _resolve_spec_includes(
                 Dict{String,Any}(String(k2) => v2 for (k2, v2) in v), fdir)
+        elseif sk == "resource_pool" && v isa AbstractString
+            # Every spec — built-in, drop-in, plugin, served or dispatched — passes through here, so a
+            # drop-in still naming a since-renamed pool (`network` → `hpc`) is renamed ONCE, for the
+            # scheduler and the frontend's pool chip alike.
+            result[sk] = _renamed_pool(String(v))
         else
             result[sk] = v
         end

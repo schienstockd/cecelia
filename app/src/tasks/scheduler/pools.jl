@@ -102,6 +102,7 @@ const _WARNED_MISSING_POOLS = Set{String}()
 
 function _pool(name::String)::ResourcePool
     _POOLS_INIT[] || _pools_init!()
+    name = _renamed_pool(name)   # a request or spec may still carry a renamed pool's old name
     lock(_POOLS_LOCK) do
         haskey(_POOLS, name) && return _POOLS[name]
         # Silent fallback to the (wide) cpu pool is dangerous — a GPU task whose
@@ -124,6 +125,7 @@ pool if absent. config.toml `[pools]` sets the defaults; this is the runtime/REP
 """
 function resize_pool!(name::String, new_limit::Int)
     new_limit < 1 && return
+    name = _renamed_pool(name)   # same as `_pool`: an old name resizes the pool it became
     _POOLS_INIT[] || _pools_init!()
     lock(_POOLS_LOCK) do
         p = get(_POOLS, name, nothing)
@@ -149,7 +151,7 @@ The Settings per-pool sliders call this. Clamps `limit` to `[1, POOL_LIMIT_MAX]`
 applied value. Merges into `custom.toml` (other keys survive), mirroring `set_projects_dir!`.
 """
 function set_pool_limit!(name::AbstractString, limit::Integer)::Int
-    nm  = string(name)
+    nm  = _renamed_pool(string(name))   # never write a renamed pool's old key back to custom.toml
     lim = clamp(Int(limit), 1, POOL_LIMIT_MAX)
     resize_pool!(nm, lim)
     cfg_path = custom_toml_path()
@@ -165,7 +167,7 @@ end
 function _task_pool_name(task::CciaTask)::String
     spec = _task_spec(task)
     isnothing(spec) && return "cpu"
-    string(get(spec, "resource_pool", "cpu"))
+    string(get(spec, "resource_pool", "cpu"))   # already renamed by `_resolve_spec_includes`
 end
 
 """

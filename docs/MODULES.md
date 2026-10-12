@@ -455,7 +455,7 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 | `cpu` | 20 | general CPU compute — most tasks (the default) |
 | `gpu` | 1 | the GPU — Cellpose family (raise for batch segmentation) |
 | `io` | 8 | local disk IO — OME-ZARR import/convert, crop |
-| `network` | 1 | remote/SMB reads — reserved for HPC/remote tasks (unused today) |
+| `hpc` | 1 | jobs dispatched to the HPC cluster at once — no tasks yet (was `network`; `docs/todo/HPC_PLAN.md` D6) |
 
 Limits are starting defaults only — each is adjustable live in the `PoolThrottle` popover (Task
 Manager, any module page, the Chain page), so throttle whenever you need (e.g. drop `io` to 1 when

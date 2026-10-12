@@ -148,7 +148,7 @@ $env:CECELIA_CHANNEL='dev'; irm https://raw.githubusercontent.com/schienstockd/c
 
 Long jobs — segmentation, tracking, chain runs — go through a background scheduler. A read-only
 terminal dashboard shows what's running, queued and finished, per-task elapsed, and per-pool
-concurrency (cpu/gpu/io/network). Run alongside the app, from the install directory:
+concurrency (cpu/gpu/io/hpc). Run alongside the app, from the install directory:
 
 ```sh
 # Linux / macOS

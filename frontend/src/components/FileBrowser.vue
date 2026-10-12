@@ -30,7 +30,10 @@ const props = withDefaults(defineProps<{
   dirExtensions?: string[]
   /** 'file'/'bundle' mode: modal title, when "Select a file" is too vague to be useful. */
   title?: string
-}>(), { mode: 'image', extensions: () => [], dirExtensions: () => [], title: '' })
+  /** Folder to open in: absolute, or relative to home (`.ssh` reaches a dot-folder the listing
+   *  hides). Falls back to home when it does not exist. Empty = home. */
+  startPath?: string
+}>(), { mode: 'image', extensions: () => [], dirExtensions: () => [], title: '', startPath: '' })
 
 const title = computed(() =>
   props.title ? props.title
@@ -77,7 +80,7 @@ const loading  = ref(false)
 const selected = ref<Set<string>>(new Set())
 const error    = ref<string | null>(null)
 
-async function navigate(path: string) {
+async function navigate(path: string, quiet = false) {
   loading.value = true
   error.value   = null
   selected.value = new Set()
@@ -91,14 +94,14 @@ async function navigate(path: string) {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     error.value = msg
-    log.error(`File browser: ${msg}`, { source: 'manageImages' })
+    if (!quiet) log.error(`File browser: ${msg}`, { source: 'manageImages' })
   } finally {
     loading.value = false
   }
 }
 
-// open at root on mount
-navigate('')
+// open at `startPath` (else home) on mount; a start folder that does not exist is not an error
+void navigate(props.startPath, !!props.startPath).then(() => { if (error.value && props.startPath) void navigate('') })
 
 function toggleSelect(entry: FsEntry) {
   if (!isSelectable(entry)) return

@@ -4,7 +4,7 @@
   it when the machine is free. Changes apply immediately (resize_pool!) and persist to custom.toml.
   Under each slider a "running / limit" line + mini bar shows how many tasks are executing in that
   pool right now (polled from /api/pools while open — there is no pool:* WS event). Compact 2×2 grid:
-  cpu/gpu on the first row, io/network on the second. Lives in a popover off the Task Manager.
+  cpu/gpu on the first row, io/hpc on the second. Lives in a popover off the Task Manager.
 
   Below the pools, the THREAD budget: how wide one task may go, as opposed to how many run at once.
   Same control because it is the same question — how hard may this machine work — and both are
@@ -25,12 +25,12 @@ import CcToggle from './CcToggle.vue'
 const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 
 interface PoolInfo { name: string; limit: number; running?: number; queued?: number }
-const POOL_ORDER = ['cpu', 'gpu', 'io', 'network']
+const POOL_ORDER = ['cpu', 'gpu', 'io', 'hpc']
 const POOL_META: Record<string, { label: string; max: number; tip: string }> = {
   cpu:     { label: 'CPU',      max: 32, tip: 'General compute — most tasks (tracking, measures, clustering, corrections).' },
   gpu:     { label: 'GPU',      max: 8,  tip: 'The GPU — cellpose segmentation/correction. 1 runs one GPU job at a time; raise for batch segmentation.' },
   io:      { label: 'Disk I/O', max: 16, tip: 'Local disk — image import/convert and crop. Drop to 1 when importing over a slow network share so copies don\'t pile up.' },
-  network: { label: 'Network',  max: 8,  tip: 'Remote/SMB reads — reserved for HPC/remote tasks. No tasks use it yet.' },
+  hpc:     { label: 'HPC',      max: 8,  tip: 'Jobs sent to the HPC cluster at once. No tasks use it yet.' },
 }
 const pools     = ref<Record<string, number>>({})                                // name → limit
 const occupancy = ref<Record<string, { running: number; queued: number }>>({})   // name → live counts
