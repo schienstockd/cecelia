@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseChannelNameList, channelNamesAsText, referenceCandidates,
-         splitByChannelCount, skippedChannelCountMsg, type ChannelSubject } from './channelNames'
+         splitByChannelCount, skippedChannelCountMsg, channelLabel, type ChannelSubject } from './channelNames'
 
 const img = (uid: string, sizeC?: number | null, channelNames?: string[]): ChannelSubject =>
   ({ uid, name: `img-${uid}`, sizeC, channelNames })
@@ -67,5 +67,19 @@ describe('skippedChannelCountMsg', () => {
     expect(msg).toContain('img-c')
     expect(msg).not.toContain('img-d')
     expect(msg).toContain('+2 more')
+  })
+})
+
+describe('channelLabel', () => {
+  const names = ['DAPI', 'CCR6', 'CD3']
+  it('names a column by its channel index, not its position in the column list', () => {
+    // a label set with a secondary store measures every channel twice, interleaved
+    const cols = ['mean_intensity_0', 'cell_mean_intensity_0', 'mean_intensity_1', 'cell_mean_intensity_1', 'mean_intensity_2']
+    expect(cols.map(c => channelLabel(c, names))).toEqual(['DAPI', 'cell_DAPI', 'CCR6', 'cell_CCR6', 'CD3'])
+  })
+  it('leaves non-intensity columns and unnamed channels as the raw column', () => {
+    expect(channelLabel('area', names)).toBe('area')
+    expect(channelLabel('median_intensity_7', names)).toBe('median_intensity_7')
+    expect(channelLabel('mean_intensity_1', ['DAPI', ''])).toBe('mean_intensity_1')
   })
 })

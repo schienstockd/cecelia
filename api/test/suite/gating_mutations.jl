@@ -318,3 +318,43 @@ end
     @test _matching_channel_version(vs, 5; active = "denoised") == "denoised"  # nothing matches → active
     @test _matching_channel_version(Dict{String,Any}(), 2; active = "default") == ""
 end
+
+# A label set with a secondary store (nuc, cell, …) measures every channel twice, interleaved:
+# `mean_intensity_0, nuc_mean_intensity_0, mean_intensity_1, …`. Names belong to a column by its
+# channel INDEX — pairing the name list with the column list by position labels the second channel
+# with the first's name, and shifts every axis after it.
+@testset "API: secondary-store intensity columns keep their channel's name" begin
+    @test Cecelia.n_channels_covered(["mean_intensity_0", "nuc_mean_intensity_0", "mean_intensity_1", "nuc_mean_intensity_1"]) == 2
+    @test Cecelia.n_channels_covered(["area"]) == 0
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir(); cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        # the fixture's 4 intensity columns, renamed in place to 2 channels × (base, nuc)
+        Cecelia.HDF5.h5open(joinpath(dir, "testpr", "1", "KDIeEm", "labelProps", "B.h5ad"), "r+") do f
+            vars = read(f["var/_index"])
+            for (old_n, new_n) in ("mean_intensity_1" => "nuc_mean_intensity_0",
+                                   "mean_intensity_2" => "mean_intensity_1",
+                                   "mean_intensity_3" => "nuc_mean_intensity_1")
+                vars[findfirst(==(old_n), vars)] = new_n
+            end
+            Cecelia.HDF5.delete_object(f, "var/_index"); f["var/_index"] = vars
+        end
+        st, b = api_gating_channels(HTTP.Request("GET",
+            "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))
+        @test st == 200
+        d = JSON3.read(b)
+        @test String.(d.channels) == ["mean_intensity_0", "nuc_mean_intensity_0", "mean_intensity_1", "nuc_mean_intensity_1"]
+        names = String.(d.channelNames)
+        @test [Cecelia._channel_label(c, names) for c in d.channels] == ["ch0", "nuc_ch0", "ch1", "nuc_ch1"]
+        img, _ = _gating_image("testpr", "KDIeEm")
+        @test _axis_title(img, "B", "flow", "mean_intensity_1") == "ch1"           # was "ch2" by position
+        @test _axis_title(img, "B", "flow", "nuc_mean_intensity_0") == "nuc_ch0"   # was "ch1"
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

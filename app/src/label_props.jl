@@ -232,9 +232,20 @@ function channel_columns(lp::LabelProps; as_channel_names::Bool=false)::Vector{S
     end
 end
 
+const _INTENSITY_COL_RE = r"^(?:(?<prefix>[a-z]+)_)?(?:mean|median)_intensity_(?<idx>\d+)$"
+
+# the 0-based channel index an intensity column measures ("nuc_mean_intensity_2" → 2), or nothing
+_channel_index(varname::AbstractString) =
+    (m = match(_INTENSITY_COL_RE, varname); isnothing(m) ? nothing : parse(Int, m[:idx]))
+
+# How many image channels a set of intensity columns covers: the highest channel index + 1, NOT the
+# column count — a label set with a secondary store (nuc, cell, …) measures every channel twice
+# (`mean_intensity_0`, `nuc_mean_intensity_0`, …), so 11 channels arrive as 22 columns.
+n_channels_covered(cols) = maximum((i + 1 for i in (_channel_index(c) for c in cols) if i !== nothing); init = 0)
+
 # map "mean_intensity_3" → channel_names[4]; "nuc_mean_intensity_0" → "nuc_<ch0>"
 function _channel_label(varname::String, chans::Vector{String})
-    m = match(r"^(?:(?<prefix>[a-z]+)_)?(?:mean|median)_intensity_(?<idx>\d+)$", varname)
+    m = match(_INTENSITY_COL_RE, varname)
     isnothing(m) && return varname
     idx = parse(Int, m[:idx])
     idx + 1 > length(chans) && return varname

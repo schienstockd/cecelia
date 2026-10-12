@@ -56,3 +56,18 @@ export function skippedChannelCountMsg(skipped: ChannelSubject[], n: number): st
   const rest  = skipped.length > 3 ? `, +${skipped.length - 3} more` : ''
   return `Skipped ${skipped.length} image(s) without ${n} channel(s): ${shown}${rest}`
 }
+
+/**
+ * An intensity column's display name, resolved by its CHANNEL INDEX — mirrors Julia `_channel_label`
+ * (app/src/label_props.jl): `mean_intensity_3` → `names[3]`, `nuc_mean_intensity_0` → `nuc_<names[0]>`.
+ * Returns `col` when it isn't an intensity column or its channel has no name.
+ *
+ * Never pair `channelNames` with a column list by position: a label set with a secondary store (nuc,
+ * cell, …) measures every channel twice, interleaved, so the i-th column is not channel i.
+ */
+export function channelLabel(col: string, names: string[]): string {
+  const m = col.match(/^(?:([a-z]+)_)?(?:mean|median)_intensity_(\d+)$/)
+  const name = m ? names[parseInt(m[2], 10)] : undefined
+  if (!m || !name) return col
+  return m[1] ? `${m[1]}_${name}` : name
+}

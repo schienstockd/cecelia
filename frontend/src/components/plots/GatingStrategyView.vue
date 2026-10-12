@@ -26,6 +26,7 @@ import { orientGate } from '../../plots/gateGeometry'
 import { defaultTransformForCol } from '../../utils/gatingAxes'
 import { dotRadiusFor } from '../../plots/density'
 import { measureGroups } from '../../utils/measureGroups'
+import { channelLabel } from '../../utils/channelNames'
 import { pairTransform } from '../../plots/pairsMatrix'
 import type { ColourBy, PanelDef } from '../../plots/montage'
 import type { VisProps } from '../../plots/plot'
@@ -88,8 +89,7 @@ const zt = computed<Kind>({ get: () => props.state.zt ?? zDefault(zChan.value), 
 const colourBy = computed<ColourBy | null>(() =>
   zChan.value ? { col: zChan.value, t: pairTransform(zt.value) } : null)
 function colLabel(col: string): string {
-  const i = channels.value.indexOf(col)
-  return i >= 0 && channelNames.value[i] ? channelNames.value[i] : col
+  return channels.value.includes(col) ? channelLabel(col, channelNames.value) : col
 }
 const tree = ref<PopTree | null>(null)
 
