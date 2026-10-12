@@ -4,6 +4,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
+  isTrackDrawable, ribbonEyeOff, toggleRibbonEye,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -642,5 +643,29 @@ describe('setOverlayWindow', () => {
     setOverlayWindow(r, pts, buildTrackBuffer(payload(), meta(), ['#ff0000']), -1, [0, 3], style)
     expect(r.calls.pts?.slice(0, 2)).toEqual([0, 0])
     expect(r.calls.segs?.slice(0, 2)).toEqual([0, 0])
+  })
+})
+
+// A pop the manager hides still gets a Tracks row, its ribbon eye seeded off — so the viewer can turn
+// its ribbons on, as it can its points.
+describe('ribbon eye', () => {
+  const pop = { labels: [1, 2], isTrack: false, hasTracks: true }
+  it('lists a track-drawable pop whatever the manager shows', () => {
+    expect(isTrackDrawable(pop)).toBe(true)
+    expect(isTrackDrawable({ ...pop, show: false } as typeof pop)).toBe(true)
+    expect(isTrackDrawable({ ...pop, hasTracks: false })).toBe(false)
+    expect(isTrackDrawable({ ...pop, labels: [] })).toBe(false)
+  })
+  it('is off for a user hide or a manager hide', () => {
+    expect(ribbonEyeOff(undefined, undefined, '/a')).toBe(false)
+    expect(ribbonEyeOff(new Set(['/a']), undefined, '/a')).toBe(true)
+    expect(ribbonEyeOff(undefined, new Set(['/a']), '/a')).toBe(true)
+  })
+  it('turns a manager-hidden pop on without storing a hide', () => {
+    const r = toggleRibbonEye(new Set(), new Set(['/a']), '/a')
+    expect(ribbonEyeOff(r.persisted, r.managerHidden, '/a')).toBe(false)
+    expect([...r.persisted]).toEqual([])
+    const back = toggleRibbonEye(r.persisted, r.managerHidden, '/a')
+    expect([...back.persisted]).toEqual(['/a'])
   })
 })

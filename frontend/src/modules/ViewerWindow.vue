@@ -92,11 +92,13 @@ import {
   filterPayloadByTrackSource,
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
-import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle } from '../utils/viewerOverlays'
+import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
+         isTrackDrawable, ribbonEyeOff, toggleRibbonEye } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
-import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, type MaskStore } from '../utils/viewerLabels'
+import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
+         type MaskStore } from '../utils/viewerLabels'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -733,14 +735,15 @@ const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}
  *  here, so they agree on what is on screen. */
 const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.vn, l.popType, path))
 /** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
- *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a shown track-drawable
- *  pop (`isTrack` OR `hasTracks` — MULTI_POP_TRACKING_PLAN.md Decision 2), its ribbon eye on. The
- *  ribbons ask here; the capture snapshot reads the sources they built (`trackSources`). */
+ *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a track-drawable pop
+ *  (`isTrackDrawable`), its ribbon eye on (`trackPopHidden` — seeded from the manager's `show` like the
+ *  point eye, so the eye is the one authority). The ribbons ask here; the capture snapshot reads the
+ *  sources they built (`trackSources`). */
 function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
   const su = setUid.value
   if (!su || !settings.getShowGatedTracks(su)) return false
   if (settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(l.vn)) return false
-  return p.show && !!p.labels?.length && (p.isTrack || !!p.hasTracks) && !trackPopHidden(l.vn, p.path)
+  return isTrackDrawable(p) && !trackPopHidden(l.vn, p.path)
 }
 const overlaysErr = ref('')
 /**
@@ -835,7 +838,12 @@ const hiddenPops = ref<Set<string>>(new Set())
  * user intent — so a persisted user-intent overlay is safe from server clobbering.
  */
 const hiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
-const trackPopHidden = (vn: string, path: string) => !!hiddenTrackPops.value.get(vn)?.has(path)
+/** Per segmentation, the pops the MANAGER hides (`!show`) — the ribbon eye's seed, reset on every fetch
+ *  exactly as `hiddenPops` is, so the viewer can show ribbons for a pop the manager hides without
+ *  storing a hide in `hiddenTrackPops` when the manager shows it again. */
+const managerHiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
+const trackPopHidden = (vn: string, path: string) =>
+  ribbonEyeOff(hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
 /**
  * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
  * and write goes to the one store the panel already uses — the same image cannot then look different
@@ -1080,13 +1088,14 @@ const summary = computed(() => overlayLayersSummary(popLayers.value))
  * Ribbon-drawable pops from the current overlays payload — pops the Tracks section enumerates as
  * per-pop layer rows (swatch/name/count/eye), mirroring the Populations section. A pop qualifies
  * when it was TYPED as a track pop (`isTrack`) OR when it currently holds cells with `track_id > 0`
- * (`hasTracks`, MULTI_POP_TRACKING_PLAN.md Decision 2). Sorted by path so the ordering is stable
+ * (`hasTracks`, MULTI_POP_TRACKING_PLAN.md Decision 2) — whatever the manager's `show`: a pop it hides
+ * lists with its ribbon eye off, so it can be turned on here. Sorted by path so the ordering is stable
  * across refetches. `count` is the pop's label count from the payload — a cell-level number that
  * matches what the Populations section shows for the same pop, so the two sections read the same.
  */
 const trackDrawablePops = computed(() =>
   popLayers.value.flatMap(l => l.payload.pops
-    .filter(p => p.show && p.labels?.length && (p.isTrack || p.hasTracks))
+    .filter(isTrackDrawable)
     .map(p => ({ vn: l.vn, path: p.path, key: popKey(l.vn, l.popType, p.path), name: p.name,
                  colour: p.colour, count: p.labels.length })))
     .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
@@ -1560,7 +1569,7 @@ const frame = usePlotResize(canvas, () => {
   // has to be complete.
   // P7: a task preview writes a labels-shaped scratch store for its output vn; render it even when the
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
-  const showLabels = !!maskName.value && !maskHidden.value
+  const showLabels = !!drawnMaskVn(maskName.value, maskHidden.value)
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
   // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
   // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
@@ -1862,6 +1871,13 @@ async function loadOverlays() {
     if (!same) settings.setTrackPopHidden(imageUid, vn, kept)
   }
   hiddenTrackPops.value = hiddenNext
+  const managerNext = new Map<string, Set<string>>()
+  for (const l of next) {
+    const mine = managerNext.get(l.vn) ?? new Set<string>()
+    for (const x of l.payload.pops) if (!x.show) mine.add(x.path)
+    managerNext.set(l.vn, mine)
+  }
+  managerHiddenTrackPops.value = managerNext
   popLayers.value = next
   rebuildOverlays()
 }
@@ -1874,9 +1890,10 @@ function togglePop(key: string) {
 }
 // Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
 function toggleTrackPop(vn: string, path: string) {
-  const mine = new Set(hiddenTrackPops.value.get(vn) ?? [])
-  mine.has(path) ? mine.delete(path) : mine.add(path)
+  const { persisted: mine, managerHidden } = toggleRibbonEye(
+    hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
   hiddenTrackPops.value = new Map(hiddenTrackPops.value).set(vn, mine)
+  managerHiddenTrackPops.value = new Map(managerHiddenTrackPops.value).set(vn, managerHidden)
   if (imageUid) settings.setTrackPopHidden(imageUid, vn, mine)
   rebuildOverlays()
 }
@@ -4888,7 +4905,7 @@ interface ViewerCapture {
     trackVns: trackPayloads.value.keys(),
     trackclust: trackclustPayloads.value.entries(),
     drawn: new Map(trackSources.value.map(s => [s.vn, s.drawn])),   // source key → tails' colour
-    labelName: labelName.value,
+    labelName: drawnMaskVn(maskName.value, maskHidden.value),
   })
   return {
     png: el.toDataURL('image/png'),
@@ -5103,7 +5120,9 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
         .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
         .filter(ch => ch.visible)
         .map(({ index, name }) => ({ index, name }))
-      const labelsVn = labelName.value    // '' when the labels layer is off — backend skips segCount
+      // '' when no durable mask is drawn (eye off, or a preview / live store covering it — those have
+      // no label_props) — backend skips segCount
+      const labelsVn = landscapeLabelsVn(maskName.value, maskHidden.value, previewVn.value, liveVn.value)
       // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
       // and the pops in it whose eye is on — so the tile counts are the dots on screen.
       const popLayersSnap = popLayers.value.map(l => ({
