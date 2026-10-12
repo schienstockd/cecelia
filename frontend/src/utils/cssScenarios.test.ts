@@ -392,6 +392,20 @@ describe('form controls', () => {
     'modules/SettingsModule.vue | .mono | font-size: var(--cc-fs-sm)',
   ]
 
+  // `[type="text"]` matches the ATTRIBUTE, not the field: a bare `<input v-model>` has no type, is a
+  // text field all the same, and fell through every base rule to the browser's grey default box — 40+
+  // fields app-wide, a whole settings page of them at once. So each base state (rest, :hover, :focus)
+  // must name the untyped input alongside the typed one.
+  it('covers the untyped <input> in every base state', () => {
+    const rules = cssRules(RAW['/src/style.css'] ?? '').filter(r => r.selector.includes('input[type="text"]'))
+    expect(rules.length).toBeGreaterThanOrEqual(3)
+    for (const r of rules) {
+      const state = r.selector.match(/input\[type="text"\](:\w+)?/)?.[1] ?? ''
+      // :hover/:focus go through :where() — kept below a component's single-class rule
+      expect(r.selector, r.selector).toContain(state ? `input:where(:not([type]))${state}` : 'input:not([type])')
+    }
+  })
+
   it('never re-state what the global input base already gives', () => {
     const base = inputBase(RAW['/src/style.css'] ?? '')
     expect(base['background']).toBeTruthy()          // the base rule was found and parsed
