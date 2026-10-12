@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
-  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims,
+  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims, labelsTakenAdvisory,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -697,5 +697,31 @@ describe('pyramidLevelsAdvisory — pre-import level count advice', () => {
   it("uses the recommendation when `value` is missing/NaN so the user always sees SOMETHING", () => {
     const a = pyramidLevelsAdvisory(undefined, peek(4, { xy: [1111, 1057], nT: 181, nZ: 31 }))!
     expect(a.message).toMatch(/4 levels → deepest 139×133×31/)
+  })
+})
+
+describe('labelsTakenAdvisory', () => {
+  const img = (uid: string, labels: string[]) =>
+    ({ uid, labels: Object.fromEntries(labels.map(l => [l, [`${l}.zarr`]])) })
+  const off = { overwrite: false }
+  it('warns when the name is taken and Overwrite existing is off', () => {
+    const a = labelsTakenAdvisory('default', [img('a', ['default'])], off)
+    expect(a?.severity).toBe('warn')
+    expect(a?.message).toBe('Exists — tick Overwrite existing to replace')
+  })
+  it('counts the images that have it in a mixed selection', () => {
+    expect(labelsTakenAdvisory('default', [img('a', ['default']), img('b', [])], off)?.message)
+      .toBe('Exists on 1 of 2 images — tick Overwrite existing to replace')
+  })
+  it('is silent for a free name, once ticked, or on a task without the toggle', () => {
+    expect(labelsTakenAdvisory('new', [img('a', ['default'])], off)).toBeNull()
+    expect(labelsTakenAdvisory('default', [img('a', ['default'])], { overwrite: true })).toBeNull()
+    expect(labelsTakenAdvisory('default', [img('a', ['default'])], {})).toBeNull()
+  })
+  it('runs only on a labels-namespace name', async () => {
+    const adv = paramAdvisor({ type: 'valueNameInput' })!
+    const ctx = { images: [img('a', ['default'])], values: off }
+    expect(await adv.advise('default', ctx, { type: 'valueNameInput', namespace: 'labels' })).not.toBeNull()
+    expect(await adv.advise('default', ctx, { type: 'valueNameInput', namespace: 'clusters' })).toBeNull()
   })
 })

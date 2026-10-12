@@ -25,6 +25,7 @@ Base.@kwdef struct RidgesParams
     darkRidges::Bool               = false
     perZ::Bool                     = true
     minSizePx::Int                 = 5
+    overwrite::Bool                = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -40,6 +41,7 @@ function parse_ridges_params(d::AbstractDict)::RidgesParams
         darkRidges      = Bool(get(d, "darkRidges", false)),
         perZ            = Bool(get(d, "perZ", true)),
         minSizePx       = Int(get(d, "minSizePx", 5)),
+        overwrite       = Bool(get(d, "overwrite", false)),
         version = parse_version_pin(d))
 end
 
@@ -74,6 +76,8 @@ function _run_task(task::Ridges, img::CciaImage, params::Dict{String,Any};
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
     assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
+    assert_labels_free(img, p.outputValueName; overwrite = p.overwrite, raw = raw, on_log = on_log) ||
+        return nothing
 
     if !(p.filter in _RIDGES_FILTERS)
         on_log("[ERROR] Unknown filter '$(p.filter)'; expected one of $(join(_RIDGES_FILTERS, ", "))")

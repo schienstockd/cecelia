@@ -20,6 +20,7 @@ Base.@kwdef struct CoastalSegmentParams
     clearDepth::Bool             = false
     normaliseToWhole::Bool       = true
     temporalScaleMode::String    = "frames"
+    overwrite::Bool              = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -41,6 +42,7 @@ function parse_coastal_segment_params(d::AbstractDict)::CoastalSegmentParams
         clearDepth          = Bool(get(d, "clearDepth", false)),
         normaliseToWhole    = Bool(get(d, "normaliseToWhole", true)),
         temporalScaleMode   = String(get(d, "temporalScaleMode", "frames")),
+        overwrite           = Bool(get(d, "overwrite", false)),
         version = parse_version_pin(d))
 end
 
@@ -140,6 +142,8 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     ccid = state_file(img)
     raw  = read_ccid_raw(ccid)
     assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
+    assert_labels_free(img, p.outputValueName; overwrite = p.overwrite, raw = raw, on_log = on_log) ||
+        return nothing
 
     filename = versioned_get_field_at(raw, "filepath", p.valueName; version = p.version)
     if isnothing(filename)

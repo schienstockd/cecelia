@@ -13,7 +13,9 @@
   ],
   "category": "Segment",
   "group": "Import",
-  "env": ["local"],
+  "env": [
+    "local"
+  ],
   "resource_pool": "io",
   "params": [
     {
@@ -32,13 +34,22 @@
       "tip": "Name for the imported label set"
     },
     {
+      "$include": "overwriteLabels"
+    },
+    {
       "key": "labelsPath",
       "label": "Cell labels",
       "type": "filePath",
       "required": true,
       "requiredMessage": "Pick the label image to import",
-      "extensions": [".zarr", ".tif", ".tiff"],
-      "dirExtensions": [".zarr"],
+      "extensions": [
+        ".zarr",
+        ".tif",
+        ".tiff"
+      ],
+      "dirExtensions": [
+        ".zarr"
+      ],
       "placeholder": "Browse for an OME-Zarr or TIFF",
       "tip": "One id per cell, same shape as the image without channels"
     },
@@ -46,28 +57,44 @@
       "key": "nucLabelsPath",
       "label": "Nucleus labels",
       "type": "filePath",
-      "extensions": [".zarr", ".tif", ".tiff"],
-      "dirExtensions": [".zarr"],
+      "extensions": [
+        ".zarr",
+        ".tif",
+        ".tiff"
+      ],
+      "dirExtensions": [
+        ".zarr"
+      ],
       "placeholder": "Optional",
       "tip": "Optional; measured as nuc_* columns of each cell"
     },
     {
-      "key": "matchIds",
-      "label": "Match nucleus ids",
-      "type": "bool",
-      "default": false,
-      "tip": "Give each nucleus the id of the cell it overlaps; off if ids already pair"
-    },
-    {
-      "key": "matchThreshold",
-      "label": "Match threshold",
-      "type": "float",
-      "min": 0.0,
-      "max": 1.0,
-      "step": 0.05,
-      "default": 0.3,
-      "showIf": { "matchIds": true },
-      "tip": "Overlap (IoU) a nucleus needs with its cell"
+      "key": "nucMatching",
+      "label": "Nucleus matching",
+      "type": "section",
+      "collapsed": false,
+      "params": [
+        {
+          "key": "matchIds",
+          "label": "Match nucleus ids",
+          "type": "bool",
+          "default": false,
+          "tip": "Give each nucleus the id of the cell it overlaps; off if ids already pair"
+        },
+        {
+          "key": "matchThreshold",
+          "label": "Match threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "default": 0.3,
+          "showIf": {
+            "matchIds": true
+          },
+          "tip": "Overlap (IoU) a nucleus needs with its cell"
+        }
+      ]
     }
   ]
 }

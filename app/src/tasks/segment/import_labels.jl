@@ -14,6 +14,7 @@ Base.@kwdef struct ImportLabelsParams
     nucLabelsPath::String          = ""
     matchIds::Bool                 = false
     matchThreshold::Float64        = 0.3
+    overwrite::Bool                = false
     version::Union{String,Nothing} = nothing   # P3 chain-pinning (docs/todo/VN_VERSIONING_PLAN.md)
 end
 
@@ -25,6 +26,7 @@ function parse_import_labels_params(d::AbstractDict)::ImportLabelsParams
         nucLabelsPath   = strip(string(something(get(d, "nucLabelsPath", ""), ""))),
         matchIds        = Bool(get(d, "matchIds", false)),
         matchThreshold  = Float64(get(d, "matchThreshold", 0.3)),
+        overwrite       = Bool(get(d, "overwrite", false)),
         version = parse_version_pin(d))
 end
 
@@ -67,6 +69,8 @@ function _run_task(task::ImportLabels, img::CciaImage, params::Dict{String,Any};
     p    = parse_import_labels_params(params)
     raw  = read_ccid_raw(state_file(img))
     assert_unversioned_field(raw, "labels", p.outputValueName)   # before the runner overwrites it
+    assert_labels_free(img, p.outputValueName; overwrite = p.overwrite, raw = raw, on_log = on_log) ||
+        return nothing
 
     if isempty(p.labelsPath)
         on_log("[ERROR] No cell labels given — pick the label image to import")

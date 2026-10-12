@@ -90,6 +90,45 @@ function register_label_files!(img::CciaImage, out_value_name::AbstractString,
 end
 
 """
+    labels_taken(raw, labels_dir, out_value_name) -> Union{Nothing,String}
+
+Why `out_value_name` is already taken on this image, or `nothing`. Taken = the `labels` dict
+registers it, or a store for either `matchAs` role (`{vn}.zarr`, `{vn}_nuc.zarr`) sits in
+`labels_dir`. The message is the one every label writer shows.
+"""
+function labels_taken(raw::AbstractDict, labels_dir::AbstractString,
+                      out_value_name::AbstractString)::Union{Nothing,String}
+    registered = get(raw, "labels", Dict{String,Any}())
+    on_disk = [f for f in segment_label_files(out_value_name,
+                   Dict("0" => Dict("matchAs" => "base"), "1" => Dict("matchAs" => "nuc")))
+               if ispath(joinpath(labels_dir, f))]
+    (registered isa AbstractDict && haskey(registered, out_value_name)) || !isempty(on_disk) ||
+        return nothing
+    "Labels '$out_value_name' already exist — pick another name or tick Overwrite existing"
+end
+
+"""
+    assert_labels_free(img, out_value_name; overwrite, raw, on_log) -> Bool
+
+The guard every label writer (cellpose, coastal, ridges, label import) calls FIRST, before it reads
+or writes anything: `false` — with the reason logged as `[ERROR]` — when `out_value_name` is already
+taken on `img` and `overwrite` is off. The handler then returns `nothing`, so a composite stops
+before Measure labels too. Segmentation defaults to `default`, the name an image's segmentation most
+likely already has, so a re-run used to replace it — and orphan the measures built on it — silently.
+`overwrite` is the spec's shared "Overwrite existing" toggle (`fragments/overwriteLabels.json`).
+"""
+function assert_labels_free(img::CciaImage, out_value_name::AbstractString;
+                            overwrite::Bool = false,
+                            raw::AbstractDict = read_ccid_raw(state_file(img)),
+                            on_log::Function = _ -> nothing)::Bool
+    overwrite && return true
+    why = labels_taken(raw, img_labels_dir(img), out_value_name)
+    isnothing(why) && return true
+    on_log("[ERROR] $why")
+    false
+end
+
+"""
     segment_qc_findings(counts) -> (findings, primary_count)
 
 Pure QC helper (drift pattern): objective per-type segment counts → advisory findings + the primary

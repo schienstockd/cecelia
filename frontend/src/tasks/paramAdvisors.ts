@@ -131,6 +131,8 @@ export interface AdvisorParam {
   /** `optionsFrom` on a `select` — surfaced so a key-registered advisor (`model` is used by BOTH
    *  `segment.cellpose` and `segment.coastal`) can self-gate to the source that actually applies. */
   optionsFrom?: string
+  /** `namespace` on a `valueNameInput` — which registry the name writes into (`labels`, …). */
+  namespace?: string
 }
 
 export interface ParamAdvisor {
@@ -378,6 +380,31 @@ export function imageVersionAdvisory(
         + `writes its output against a different canvas. Pick "${actives[0]}", or make "${chosen}" active first.`
       : `The selected images are on ${actives.length} different versions, so "${chosen}" is not what `
         + `the viewer shows for all of them. Check the version on each before running.`,
+  }
+}
+
+// ── a label set name that is already taken ────────────────────────────────────────────────────
+//
+// Every label writer refuses an output name the image already has unless "Overwrite existing" is
+// ticked (`assert_labels_free`, app/src/segmentation.jl). This says so BEFORE Run, from the names the
+// form already holds — no fetch. Only for a task that offers the toggle (`overwrite` in the form), and
+// silent once it is ticked. The server check also counts an unregistered store left on disk, which the
+// image payload cannot see; that case is still refused at Run, with the same wording.
+export function labelsTakenAdvisory(
+  value: unknown, images: AdvisorImage[] | undefined, values: Record<string, unknown> | undefined,
+): ParamAdvisory | null {
+  const name = typeof value === 'string' ? value.trim() : ''
+  if (!name || !images?.length || !values || !('overwrite' in values) || values.overwrite === true) {
+    return null
+  }
+  const taken = images.filter(i => name in (i.labels ?? {}))
+  if (!taken.length) return null
+  const on = taken.length < images.length ? ` on ${taken.length} of ${images.length} images` : ''
+  return {
+    severity: 'warn',
+    message: `Exists${on} — tick Overwrite existing to replace`,
+    tip: `"${name}" is already a label set${on || ' on this image'}. The run is refused unless you `
+      + 'pick another name or tick Overwrite existing, which replaces it and the measures built on it.',
   }
 }
 
@@ -820,6 +847,15 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
   // Every image-version picker in every task, which is the point: the mismatch is not a property of
   // one task, it is a property of the widget. Purely local — the image payload already carries both
   // the version list and the active name, so this never awaits.
+  // A label set's output name: warn before Run when it is taken and Overwrite existing is off.
+  // Registered under the TYPE, so it checks the namespace — other `valueNameInput`s name other things.
+  valueNameInput: {
+    reloadOn: ctx => [ctx.values?.overwrite,
+      (ctx.images ?? []).map(i => `${i.uid}:${Object.keys(i.labels ?? {}).join('|')}`).join(',')],
+    advise: async (value, ctx, param) =>
+      param?.namespace === 'labels' ? labelsTakenAdvisory(value, ctx.images, ctx.values) : null,
+  },
+
   valueNameSelection: {
     // the active version changes under the form: a correction finishing mid-session re-points it
     reloadOn: ctx => [(ctx.images ?? []).map(i => `${i.uid}:${i.activeValueName ?? ''}`).join(',')],

@@ -93,6 +93,27 @@ level it draws the image at; a store with fewer levels answers 409 there (`label
 shrinking instead is not an option on a large tilescan. Correction edits level 0 and rebuilds every
 lower level from it, so no level can still show a cell that was merged or removed.
 
+### A taken output name is refused unless "Overwrite existing" is ticked
+
+Every label writer — `segment.cellpose`, `segment.coastal`, `segment.ridges`, `segment.importLabels`,
+and so the `…Measure` composites — first calls `assert_labels_free` (`segmentation.jl`), before it
+reads or writes anything. When the image registers labels under the output name, or a `{vn}.zarr` /
+`{vn}_nuc.zarr` store already sits in `labels/`, the run fails with "Labels 'default' already exist —
+pick another name or tick Overwrite existing". **Overwrite existing** (one shared spec fragment,
+`tasks/fragments/overwriteLabels.json`, default off) lets it replace the set as before. Why: the
+output name defaults to `default`, which is the name an image's segmentation most likely already has,
+and replacing it silently orphans the measures, gates and tracks built on it.
+
+- **Per image.** The writers are image-scope, so the check runs at the start of each image's run; in
+  a multi-image run an image with a free name still runs when another image is refused.
+- **Before Run, in the form.** The output-name field warns "Exists — tick Overwrite existing to
+  replace" from the label sets the form already holds (`labelsTakenAdvisory`, `paramAdvisors.ts`).
+  An unregistered store left on disk is invisible there and is still refused at Run.
+- **Not the preview.** The task preview never calls `_run_task` and writes no store under the real
+  name, so it is unaffected.
+- Pinned by `label writers refuse a taken output name` (`app/test/suite/label_import.jl`), which
+  also fails a fifth task that registers label stores without calling the guard before its runner.
+
 ### Stores are written staged, never in place
 
 A run does not write `{outputValueName}.zarr` directly. It streams into a `{outputValueName}.zarr.partial`
@@ -1453,6 +1474,9 @@ becomes `{vn}.zarr` and the cell table; **Nucleus labels** (`nuc`, optional) bec
 and only adds `nuc_*` columns to it. Each is an OME-Zarr store (multiscales or a bare array — level 0
 is read) or a TIFF (series 0, level 0). The form's picker is a `filePath` with `dirExtensions`, because
 a store is a folder (`docs/MODULES.md` → *Param types*).
+
+**A taken name is refused, not replaced** — the rule every label writer follows (*A taken output name is
+refused unless "Overwrite existing" is ticked*, under *Output zarr layout*). The composite stops there too, so nothing is re-measured.
 
 **What the import enforces** — every rule a segmenter's output already satisfies:
 

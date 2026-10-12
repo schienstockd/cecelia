@@ -31,6 +31,9 @@
       "tip": "Name for the resulting label set"
     },
     {
+      "$include": "overwriteLabels"
+    },
+    {
       "key": "channel",
       "label": "Fibre channel",
       "type": "channelSelection",
