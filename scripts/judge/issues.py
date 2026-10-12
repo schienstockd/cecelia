@@ -58,7 +58,9 @@ LABEL = "judge-bug"
 #: The one pinned issue each pass comments on (D12): found by this label + title + creator.
 STATUS_LABEL, STATUS_TITLE = "judge-status", "Judge status"
 #: Every label the mirror sets, created on first use (`gh label create --force` is idempotent).
-LABELS = {LABEL: "5319e7", "fix": "d73a4a", "decide": "fbca04", "fix-landed": "0e8a16", "parked": "c5def5",
+#: A duplicate's extra label: it copies an existing helper, it doesn't misbehave.
+DUPLICATE_LABEL = "duplication"
+LABELS = {LABEL: "5319e7", DUPLICATE_LABEL: "a2eeef", "fix": "d73a4a", "decide": "fbca04", "fix-landed": "0e8a16", "parked": "c5def5",
           "in-progress": "1d76db", STATUS_LABEL: "bfdadc"}
 #: Issues created per pass, and the gap between creates. More are reported and filed next pass.
 MAX_CREATES = 20
@@ -205,6 +207,7 @@ def filed(b: dict) -> bool:
 def title(b: dict) -> str:
     """Structured only, no prose: the key (which recovery finds it by), the verdict, where."""
     where = (f"stranded commits, PR {b.get('pr')}" if b.get("kind") == "stranded" else
+             f"duplicate at {b['file']}:{b['line']}" if b.get("kind") == "duplicate" else
              f"{b['file']}:{b['line']}" if b.get("file") else
              f"{'repeated ' if b.get('repeat') else ''}agent error in {b.get('tool') or '?'}")
     return f"[{b['key']}] {_verdict(b) or 'open'}: {where}"
@@ -225,7 +228,8 @@ FOOTER = "⚖️ Filed by the weekly judge from its local record."
 def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
     v = b.get("verify") or {}
     d = lambda s: defuse(s, uids)   # noqa: E731
-    lines = [f"**Judge bug** `{b['key']}` · verdict **{_verdict(b) or 'open'}** · first seen {b.get('first_seen') or '?'}", ""]
+    what = "Judge duplicate" if b.get("kind") == "duplicate" else "Judge bug"
+    lines = [f"**{what}** `{b['key']}` · verdict **{_verdict(b) or 'open'}** · first seen {b.get('first_seen') or '?'}", ""]
     if b.get("kind") == "stranded":
         lines += [f"**Where:** commits pushed to `{b.get('branch')}` after https://github.com/{repo}/pull/{b.get('pr')} "
                   "merged, which never reached main: " + ", ".join(f"`{c[:8]}`" for c in b.get("commits", [])), ""]
@@ -286,6 +290,7 @@ def _closing(b: dict, uids: _t.Collection[str] = ()) -> tuple[str, str] | None:
 
 def _labels(b: dict) -> list[str]:
     out = [LABEL]
+    out += [DUPLICATE_LABEL] if b.get("kind") == "duplicate" else []
     out += [_verdict(b)] if _verdict(b) in FILED_VERDICTS else []
     out += ["fix-landed"] if b.get("fix_landed") else []
     out += ["parked"] if b["status"] == "parked" else []

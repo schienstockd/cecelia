@@ -3,6 +3,7 @@
 Once a week, a pass reads the effectiveness log's reviewer findings and answers two questions:
 
 - **Which findings nobody fixed are still bugs in shipped code?** The work list a session fixes from.
+  Duplicates count too: code a convention check said copies an existing helper, still not reused.
 - **Which CLAUDE.md rules keep breaking, across sessions?** The input for tightening a rule or making
   it a mechanical check.
 
@@ -50,6 +51,16 @@ test whether an agent can actually use the framework.
      it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
      the check is a proxy, and a busy file would otherwise send its every parked bug back each
      week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
+
+   **Duplicates** (`kind: "duplicate"`, key `conv-…`): convention findings marked `should reuse` that
+   were never fixed. New code copying a helper doesn't misbehave, so the judge's question for these is
+   whether the copy is still there and does the job of the helper the finding names; when the
+   finding gives that helper's `path:line`, the judge sees its code beside the copy's. Same verdicts
+   and statuses; verify's `guard` doesn't apply. Issues get the `duplication` label, and the fix
+   brief asks for the helper to be used and the copy deleted, not for a failing test. `wrong home`
+   findings (comment placement) and the convention advisories stay rules-only (step 5). The pass
+   records the sources it swept (`run.swept`); a source the previous pass didn't sweep is read from
+   the start of the log, so the first pass that sweeps duplicates judges their whole backlog once.
 
    Errors the autonomous runs hit (`agent_run_finding`, one per error key, counting the runs that hit
    it) are candidates too. One with a `file:line` from a backend stacktrace goes through the checks
@@ -274,14 +285,15 @@ it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in thr
   (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
   their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
   does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
-  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and the fan-out ones by week
+  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and per reviewer by week
   raised. Numbers only.
-- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Four small line panels:
-  changes reviewed and PRs merged; findings per 100 changes and share fixed before commit, one line per reviewer;
-  and the newest pass's verdicts on fan-out findings and advisories, by the week raised (the
-  judge's own `bugs._key` joins a record's bug to its log row). Partial and low-session weeks are
-  hollow points on dashed segments. A week is partial until the run's date is past its
-  Sunday. Okabe-Ito swatches from
+- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Five panels drawn like a paper
+  figure (lettered, y axes with round ticks): changes reviewed and PRs merged; findings per 100
+  changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts as
+  shares of each week's judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
+  row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
+  gets no rate (leading ones aren't drawn); the week still running
+  is left out of the picture. Okabe-Ito swatches from
   `share/console_palette.json`, mid-grey ink on a transparent background so one file reads on
   GitHub's light and dark themes; the numbers are in its `<desc>` too. Every label is fixed text or a
   number, XML-escaped anyway; an outcome the code doesn't know is drawn as *no outcome logged*.

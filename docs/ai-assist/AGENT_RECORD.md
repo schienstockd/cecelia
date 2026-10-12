@@ -13,28 +13,34 @@ for new code that duplicates an existing helper or skips a convention
 commit message, and a git hook blocks the commit until it is. All of it is logged to the
 effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)).
 
-Four line panels, one point per ISO week (Monday–Sunday, UTC):
+Five line panels, one point per ISO week (Monday–Sunday, UTC):
 
 - **Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
   reviewed. Running recital again on the same change counts once; a reviewer that errored counts
   none. PRs merged counts merge and squash commits on `main` (`git log --first-parent`) beside it:
   a PR usually carries more than one reviewed change.
 - **Findings per 100 changes**, one line per reviewer (fan-out audit, convention check): the week's
-  findings ÷ its changes reviewed. Each finding counts once, in the week it was first raised.
+  findings ÷ its changes reviewed. Each finding counts once, in the week it was first raised. Lower
+  means fewer flagged, which isn't the same as better code: a less sensitive prompt lowers it too.
 - **Findings fixed before commit**, one line per reviewer: the share of the week's findings whose
   latest logged outcome is *fixed before commit*. The rest were shipped knowingly, called a false
   positive, dropped, or have no outcome logged (mostly from before the hook required one); that
   split is in `effectiveness.json` and the image's description, not drawn.
-- **The judge's verdict on fan-out notes nobody fixed**, from the newest judge pass
-  ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), by the week each note was raised: how many are a *real
-  bug* (open, or parked: real but can't happen in today's code), *gone* (the code changed under
-  it), or *dismissed*. "Notes" because most of them are fan-out **advisories** — lower-confidence
-  calls that don't block a commit and so aren't counted as findings above — plus the findings that
-  shipped unfixed. The judge doesn't re-check convention findings (they feed its rule proposals),
-  so that panel has no convention line. A week the pass fell inside is hollow: it isn't fully
-  judged yet.
-- **Hollow points and dashed lines** mark a week that is partial (logging began inside it, or it
-  hadn't ended when the chart was drawn) or had under 10 sessions.
+- **The judge's verdicts**, from the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), one
+  panel per reviewer, by the week each note was raised, each verdict as a share of that week's
+  judged notes with the week's *n* under its date: a count would mostly say how much of the backlog
+  the pass reached. *Fan-out*: the notes nobody fixed — mostly
+  fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
+  findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
+  but can't happen in today's code), *gone* (the code changed under it) or *dismissed*.
+  *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
+  existing helper's job), *gone* or *dismissed*. Until a pass has swept convention findings, that
+  panel says so. A week the pass fell inside is hollow: it isn't fully judged yet.
+- **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
+  under 10 sessions. A week under 10 sessions gets no point in the rate panels at all (a handful of
+  findings makes any percentage); its counts are still drawn. Weeks like that before logging got going
+  aren't drawn at all, nor is the week still running when the chart is drawn: both are in
+  `effectiveness.json`.
 
 ## What it can't tell you
 

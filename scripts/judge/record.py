@@ -34,7 +34,8 @@ _HOW_TO_USE = (
     "Point a session at this file. To fix bugs, work the `open` ones under *Bugs*. To tighten a "
     "rule, take a proposal under *Rules*. Generated from `{json}`; edit the JSON, never this page.")
 _BUGS_HOW_TO = (
-    "Possible bugs in shipped code, from fanout findings nobody fixed, checked against the pinned SHA. "
+    "Possible bugs in shipped code, from fanout findings nobody fixed, checked against the pinned SHA, "
+    "and duplicates: code a convention check said copies an existing helper, still unfixed. "
     "To work them: for each `open` bug, read the code at `file:line` on `origin/main`, confirm it, "
     "and fix it on a normal branch (recital, PR), naming the bug's key in the commit message. "
     "A bug an agent verified says how: `fix` is live, `decide` waits for the owner's answer; an *Owner's "
@@ -298,7 +299,7 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
             out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
                     f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
-            out += [f"**Finding** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
+            out += [f"**{'Duplicate' if b.get('kind') == 'duplicate' else 'Finding'}** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                     f"first seen {b['first_seen']}): {b['desc']}", ""]
         out += [f"**Also raised** (`{a['key']}`, branch `{a.get('branch') or '?'}`): {a['desc']}"
                 for a in b.get("also", [])]

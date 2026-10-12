@@ -46,6 +46,12 @@ def _advisory(file="a.py", line=3, desc="maybe", **kw):
     return _row("fanout_audit_advisory", {"file": file, "line": line, "desc": desc, "marker": "plausible"}, **kw)
 
 
+def _duplicate(slug, file="a.py", line=5, marker="should reuse", desc=None, **kw):
+    return _row("convention_check_finding",
+                {"slug": slug, "file": file, "line": line, "marker": marker,
+                 "desc": desc or f"added a copy, closest canonical `helper` (`b.py:3`) {slug}"}, **kw)
+
+
 def _run_error(key, tool="create_chain", error="400 Bad Request: unknown step", ts="2026-10-04T00:30:00Z", **kw):
     """An `agent_run_finding` row, shaped like the run harness writes it: no branch, the run's SHA."""
     return {"event": "agent_run_finding", "ts": ts, "branch": None, "commit": "d" * 40,
@@ -72,7 +78,7 @@ class _Repo(unittest.TestCase):
     def judge(self, verdict="live_bug", only=None):
         def fn(prompt):
             self.prompts.append(prompt)
-            keys = re.findall(r"^FINDING (\S+) ", prompt, re.M)
+            keys = re.findall(r"^(?:FINDING|DUPLICATE) (\S+) ", prompt, re.M)
             return {"items": [{"key": k, "verdict": verdict, "why": "w"} for k in keys
                               if only is None or k in only]}, 0.1
         return fn
@@ -97,8 +103,7 @@ class CandidatesTest(_Repo):
                   _finding("fanout-00000003"), _resolved("fanout-00000003", "shipped_with_finding"),
                   _finding("fanout-00000004"),                                        # never tagged
                   _finding("fanout-00000005", ts="2026-09-01T00:00:00Z"),             # before the window
-                  _row("convention_check_finding", {"slug": "conv-00000006", "file": "a.py", "line": 1,
-                                                    "desc": "d", "marker": "should reuse"}),
+                  _duplicate("conv-00000006", marker="wrong home"),                  # comment placement: rules only
                   _advisory(), _advisory()]                                           # one key, twice
         keys = [c["key"] for c in self.b.candidates(events, since="2026-09-28")]
         # a false_positive is the agent's claim, so it's judged like a shipped one
@@ -106,8 +111,44 @@ class CandidatesTest(_Repo):
         self.assertEqual(len(keys), 4)
         self.assertTrue(keys[3].startswith("fanout-"))   # the advisory, keyed like recital slugs it
 
+    def test_unfixed_should_reuse_findings_are_duplicates(self):
+        events = [_duplicate("conv-00000001"),
+                  _duplicate("conv-00000002"), _row("convention_check_finding_resolved",
+                                                    {"slug": "conv-00000002", "outcome": "fixed_pre_commit"}),
+                  _duplicate("conv-00000003"), _row("convention_check_finding_resolved",
+                                                    {"slug": "conv-00000003", "outcome": "dropped_no_action"}),
+                  _duplicate("conv-00000004", marker="wrong home"),
+                  _duplicate("conv-00000005", ts="2026-09-01T00:00:00Z")]
+        found = self.b.candidates(events, since="2026-09-28")
+        self.assertEqual([(c["key"], c.get("kind")) for c in found],
+                         [("conv-00000001", "duplicate"), ("conv-00000003", "duplicate")])
+        backlog = self.b.candidates(events, since="2026-09-28", convention_since="")
+        self.assertEqual([c["key"] for c in backlog], ["conv-00000005", "conv-00000001", "conv-00000003"])
+
 
 class SweepTest(_Repo):
+    def test_a_duplicate_is_judged_beside_the_helper_it_should_reuse(self):
+        self.commit("b.py", "".join(f"helper {i}\n" for i in range(1, 30)))
+        self.sha = self.git("rev-parse", "HEAD")
+        events = [_duplicate("conv-00000001"), _finding("fanout-00000002", line=5)]
+        bugs, _ = self.sweep(events, previous={"run": {"ts": "2026-09-28", "swept": ["fanout", "convention"]}, "bugs": []})
+        self.assertIn("DUPLICATE conv-00000001 (should reuse, a.py:5", self.prompts[0])
+        self.assertIn("CANONICAL b.py:3\n", self.prompts[0])
+        self.assertIn("helper 3", self.prompts[0])
+        # same file and line as a fanout finding, but a duplicate is its own bug
+        self.assertEqual({b["key"]: (b.get("kind"), b["status"]) for b in bugs},
+                         {"conv-00000001": ("duplicate", "open"), "fanout-00000002": (None, "open")})
+        self.assertNotIn("canonical", bugs[0])   # the excerpt is for the judge, not the record
+
+    def test_the_first_pass_that_sweeps_conventions_takes_their_backlog(self):
+        old = _duplicate("conv-00000001", ts="2026-09-01T00:00:00Z")
+        before = {"run": {"ts": "2026-09-28"}, "bugs": []}   # a record from before conventions were swept
+        bugs, _ = self.sweep([old], previous=before)
+        self.assertEqual([b["key"] for b in bugs], ["conv-00000001"])
+        after = {"run": {"ts": "2026-09-28", "swept": ["fanout", "convention"]}, "bugs": []}
+        bugs, _ = self.sweep([old], previous=after)
+        self.assertEqual(bugs, [])
+
     def test_the_judge_sees_a_false_positive_and_its_reason(self):
         events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "false_positive", "caller filters it"),
                   _finding("fanout-00000002", line=40), _resolved("fanout-00000002", "false_positive")]
