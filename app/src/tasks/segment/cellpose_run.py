@@ -29,6 +29,8 @@ Parameter contract (JSON written by Julia):
   cellSizeMax       - remove objects larger than this AREA in um^2 (0 = off)
   labelExpansion    - expand labels by N um (0 = off)
   labelErosion      - erode labels by N um (0 = off)
+  haloSize          - also write {vn}_halo.zarr: labels grown by N um, same ids (0 = off)
+  haloWholeCell     - halo keeps the whole grown object instead of the ring (default false)
   clearTouchingBorder - remove cells touching image XY border
   clearDepth        - remove cells touching first/last Z slice (3D only)
   normaliseToWhole  - use lowest-res level for global percentile (default true)

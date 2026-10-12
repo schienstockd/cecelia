@@ -32,6 +32,11 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # no models at all (REPL call, malformed params) still names the primary store
         @test Cecelia.segment_label_files("X", nothing) == ["X.zarr"]
         @test Cecelia.segment_label_files("X", Dict{String,Any}()) == ["X.zarr"]
+        # a halo is one more sibling store, after the matchAs ones (segmentation_utils `store_types`)
+        @test Cecelia.segment_label_files("X", Dict("0" => Dict("matchAs" => "base"),
+                                                   "1" => Dict("matchAs" => "nuc")); halo = true) ==
+              ["X.zarr", "X_nuc.zarr", "X_halo.zarr"]
+        @test Cecelia.segment_label_files("X", nothing; halo = true) == ["X.zarr", "X_halo.zarr"]
     end
 
     @testset "preview params are translated the way the RUN translates them" begin
@@ -331,6 +336,9 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         @test lo[1].files == ["X.zarr.partial", "X_nuc.zarr.partial"]
         @test lo[1].files ==
               Cecelia.staging_store_path.(Cecelia.segment_label_files("X", params["models"]))
+        # a halo run streams its third store too, so the viewer can watch it fill
+        @test Cecelia.live_outputs(Cecelia.CellposeSegment(), merge(params, Dict("haloSize" => 2.0)))[1].files ==
+              ["X.zarr.partial", "X_nuc.zarr.partial", "X_halo.zarr.partial"]
         # falls back to the default value_name like the task itself does
         @test Cecelia.live_outputs(Cecelia.CellposeSegment(),
                                    Dict{String,Any}())[1].value_name == Cecelia.VERSIONED_DEFAULT_VAL

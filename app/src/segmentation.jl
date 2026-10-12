@@ -16,23 +16,25 @@
 # See docs/SEGMENTATION.md.
 
 """
-    segment_label_files(out_value_name, models) -> Vector{String}
+    segment_label_files(out_value_name, models; halo = false) -> Vector{String}
 
 The label zarr filenames a segmentation run writes for `out_value_name`: the primary `base` type
-becomes `{vn}.zarr`, and every other `matchAs` type gets a `{vn}_{ma}.zarr` sibling.
+becomes `{vn}.zarr`, every other `matchAs` type gets a `{vn}_{ma}.zarr` sibling, and a run with a
+halo (`haloSize > 0`) adds `{vn}_halo.zarr` — grown from the primary labels, same ids.
 
 This mirrors `_store_path` in `segmentation_utils.py` — the writer — and is the ONE derivation shared
 by the post-run `ccid.json` registration and the live-preview declaration, so a preview can never
 name a different file than the run actually produces. `models` is the raw param value: a
 `JSON3.Object` from the WS, a `Dict` from the REPL, or `nothing` (treated as a single `base` model).
 """
-function segment_label_files(out_value_name::AbstractString, models)::Vector{String}
+function segment_label_files(out_value_name::AbstractString, models; halo::Bool = false)::Vector{String}
     match_as = models isa AbstractDict ?
         unique([string(get(m, "matchAs", "base")) for (_, m) in models if m isa AbstractDict]) :
         String["base"]
     isempty(match_as) && (match_as = String["base"])
     vcat(["$(out_value_name).zarr"],
-         ["$(out_value_name)_$(ma).zarr" for ma in match_as if ma != "base"])
+         ["$(out_value_name)_$(ma).zarr" for ma in match_as if ma != "base"],
+         halo ? ["$(out_value_name)_halo.zarr"] : String[])
 end
 
 """
@@ -55,7 +57,8 @@ still names the layer `({vn})`, which is what the recolour and layer-eviction lo
 """
 function segment_live_outputs(params::AbstractDict)::Vector{LiveOutput}
     out_value_name = string(get(params, "outputValueName", VERSIONED_DEFAULT_VAL))
-    label_files = segment_label_files(out_value_name, get(params, "models", nothing))
+    label_files = segment_label_files(out_value_name, get(params, "models", nothing);
+                                      halo = Float64(get(params, "haloSize", 0.0)) > 0)
     LiveOutput[(kind = "labels", value_name = out_value_name,
                 files = staging_store_path.(label_files))]
 end
@@ -91,12 +94,12 @@ end
 
 # The label registries a writer can claim a name in: the ccid.json field, the noun its refusal uses,
 # and every file a run under `vn` writes for it. ONE table, so a new registry is a row here, not a
-# second guard. `labels` covers both `matchAs` roles; `branch_labels` (segment.branching) its skeleton
+# second guard. `labels` covers both `matchAs` roles and the halo; `branch_labels` (segment.branching) its skeleton
 # store and the per-branch table pops are built on.
 const LABEL_REGISTRIES = Dict{String,NamedTuple{(:noun, :paths),Tuple{String,Function}}}(
     "labels" => (noun = "Labels", paths = (img, vn) -> [joinpath(img_labels_dir(img), f)
         for f in segment_label_files(vn, Dict("0" => Dict("matchAs" => "base"),
-                                              "1" => Dict("matchAs" => "nuc")))]),
+                                              "1" => Dict("matchAs" => "nuc")); halo = true)]),
     "branch_labels" => (noun = "Branches", paths = (img, vn) ->
         [joinpath(img_branch_labels_dir(img), "$(vn).zarr"), img_branch_props_path(img, vn)]),
 )

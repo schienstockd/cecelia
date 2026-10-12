@@ -117,6 +117,8 @@ end
               "Labels 'default' already exist — use 'default_4', or tick Overwrite existing to replace them"
         mkpath(joinpath(img_dir, "labels", "seg_nuc.zarr"))
         @test Cecelia.labels_taken(timg, none, "seg") !== nothing
+        mkpath(joinpath(img_dir, "labels", "ring_halo.zarr"))          # a halo store alone takes it too
+        @test Cecelia.labels_taken(timg, none, "ring") !== nothing
         # the registry is per field: a `labels` entry does not take a `branch_labels` name
         @test Cecelia.labels_taken(timg, reg, "default"; field = "branch_labels") === nothing
         breg = Dict{String,Any}("branch_labels" => Dict{String,Any}("seg" => ["seg.zarr"]))
