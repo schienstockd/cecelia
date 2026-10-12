@@ -25,7 +25,7 @@ struct SOut { @builtin(position) pos: vec4<f32>, @location(0) rgb: vec3<f32>, @l
   }
   let pa = overlayNdc(a);
   let pb = overlayNdc(b);
-  o.pos = ribbonPos(pa, pb, vi, p.ov.z, p.vp.yz);
+  o.pos = ribbonPos(pa, pb, vi, overlayPx(p.ov.z, p.ext.z, pxPerUm()), p.vp.yz);
   return o;
 }
 

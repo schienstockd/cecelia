@@ -1072,7 +1072,8 @@ const segCount = ref(0)
  *  tolerance exists because a cell spans several planes: a marker only on its CENTROID's plane shows a
  *  handful of points against a mask full of cells, which reads as random rather than as a strict slice. */
 const overlayStyle = computed<OverlayStyle>(() => ({
-  pointPx: pointSize.value, borderPx: pointBorder.value, pointZTol: settings.viewerPointZTol,
+  pointPx: pointSize.value, borderPx: pointBorder.value, umPerSize: meta.value?.voxelUm[0] ?? 0,
+  pointZTol: settings.viewerPointZTol,
   tailFrames: settings.viewerTailLength, tailPx: settings.viewerTailWidth, trackZTol: settings.viewerTrackZTol,
 }))
 const summary = computed(() => overlayLayersSummary(popLayers.value))
@@ -6221,7 +6222,7 @@ onUnmounted(() => {
                 <input
                   type="range" class="vw-grow" :min="2" :max="24" :step="1"
                   v-model.number="pointSize" @input="frame.redraw()"
-                  v-tooltip.bottom="'Marker size on screen, not in µm'"
+                  v-tooltip.bottom="'Marker size in image pixels — scales with zoom'"
                 >
                 <span class="cc-readout cc-fs-2xs vw-num">{{ pointSize }}</span>
               </div>
@@ -6322,7 +6323,7 @@ onUnmounted(() => {
               <input
                 type="range" class="vw-grow" :min="1" :max="12" :step="1"
                 v-model.number="settings.viewerTailWidth" @input="frame.redraw()"
-                v-tooltip.bottom="'Tail thickness on screen, not in µm'"
+                v-tooltip.bottom="'Tail thickness in image pixels — scales with zoom'"
               >
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerTailWidth }}</span>
             </div>

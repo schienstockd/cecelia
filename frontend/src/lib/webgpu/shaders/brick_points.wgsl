@@ -1,6 +1,6 @@
 // Overlay points, alpha-blended over the raycast in the SAME pass. Two triangles per instance,
-// scaled in SCREEN pixels via `p.ov.x` so a marker stays legible when zoomed out and doesn't
-// swallow the cell when zoomed in. Plane filter uses `p.ov.y`/`p.ov.w` (the loaded z range);
+// sized by `p.ov.x` in image pixels (screen px in a movie) via `overlayPx`, so a marker keeps its
+// size relative to the cell as you zoom. Plane filter uses `p.ov.y`/`p.ov.w` (the loaded z range);
 // negative `p.ov.y` disables the filter. Mirrors `mip_points.wgsl` — same camera,
 // same project(), so a marker sits on the cell rather than beside it.
 
@@ -11,6 +11,7 @@ struct POut {
   @builtin(position) pos: vec4<f32>,
   @location(0) rgb: vec3<f32>,
   @location(1) local: vec2<f32>,          // -1..1 across the quad, for the round mask
+  @location(2) @interpolate(flat) px: vec2<f32>,   // fill size, border — screen px (`overlayPx`)
 };
 
 @vertex fn vs(
@@ -31,13 +32,16 @@ struct POut {
   }
   let aspect = p.vp.y / max(p.vp.z, 1.0);
   let c = camera();
-  let ndc = project(centre - boxCentre(), c, aspect).xy;
-  o.pos = markerPos(ndc, corner, p.ov.x, p.lab.w, p.vp.yz);
+  let q = project(centre - boxCentre(), c, aspect);
+  let ndc = q.xy;
+  let sizePx = overlayPx(p.ov.x, p.trail.z, pxPerUm(q.z));
+  o.px = vec2(sizePx, overlayBorderPx(p.lab.w, sizePx, p.trail.z));
+  o.pos = markerPos(ndc, corner, o.px.x, o.px.y, p.vp.yz);
   return o;
 }
 
 @fragment fn fs(in: POut) -> @location(0) vec4<f32> {
-  let c = markerColour(in.local, in.rgb, p.ov.x, p.lab.w);
+  let c = markerColour(in.local, in.rgb, in.px.x, in.px.y);
   if (c.a <= 0.001) { discard; }
   return c;
 }
