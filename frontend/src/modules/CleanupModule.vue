@@ -9,25 +9,13 @@ const { defs: cleanupDefs, reload: reloadDefs } = useTaskDefs('cleanupImages')
 <template>
   <ModuleLayout module="cleanup" :show-attrs="true" :show-filter="true">
     <template #right="{ selectedUids, selectedNames }">
-      <div class="cleanup-right">
-        <TaskRunner
-          :defs="cleanupDefs"
-          :on-reload-defs="reloadDefs"
-          module="cleanup"
-          :selected-uids="selectedUids"
-          :selected-names="selectedNames"
-        />
-      </div>
+      <TaskRunner
+        :defs="cleanupDefs"
+        :on-reload-defs="reloadDefs"
+        module="cleanup"
+        :selected-uids="selectedUids"
+        :selected-names="selectedNames"
+      />
     </template>
   </ModuleLayout>
 </template>
-
-<style scoped>
-.cleanup-right {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  height: 100%;
-  min-height: 0;
-}
-</style>
