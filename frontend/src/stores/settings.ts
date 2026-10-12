@@ -195,8 +195,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // whether the shot is going into a talk.
   // Overlay point size, in IMAGE px — the marker scales with zoom, so it keeps its size relative to the
   // cells (screen px read as dots on big cells zoomed in, blobs on small ones zoomed out). Default 6
-  // (inherited from the R-Shiny era). A movie still draws the number as screen px — `viewerLook`
-  // copies it unconverted.
+  // (inherited from the R-Shiny era). A movie recorded from the viewer draws it in image px too
+  // (`viewerLook` → `overlaySizeUnit: 'image'`).
   const viewerPointSize = ref(Number(localStorage.getItem('cc.viewerPointSize') ?? '6') || 6)
   // Optional black outline around every population point, in SCREEN px (capped at half the marker). 0 = no border (the old
   // rendering), > 0 grows the quad by `border` px and paints the outer ring black — a crowded

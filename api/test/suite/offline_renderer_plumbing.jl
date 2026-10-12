@@ -93,6 +93,10 @@ end
     style = movie_overlay_style()
     @test (style.point_z_tol, style.track_z_tol, style.point_border_px) == (OVERLAY_Z_TOL, OVERLAY_Z_TOL, 0)
     @test movie_overlay_style(k -> k == "pointZTol" ? 0 : nothing).point_z_tol == 0
+    # the size unit: output px unless the config says image px (anything else is not a unit)
+    @test style.size_unit == "screen"
+    @test movie_overlay_style(k -> k == "overlaySizeUnit" ? "image" : nothing).size_unit == "image"
+    @test movie_overlay_style(k -> k == "overlaySizeUnit" ? "bogus" : nothing).size_unit == "screen"
     zr, filt = _plane_window(5, 10, (; point_z_tol = 2, track_z_tol = 3))
     @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [2, 8]
     zr, filt = _plane_window(nothing, 10, style)

@@ -23,6 +23,10 @@
     @test ov isa AbstractDict
     @test ov["popType"] == "flow"
     @test ov["pointSizePx"] == 8
+    # a hand-set size is output px; a look read off the viewer says its sizes are image px
+    @test ov["overlaySizeUnit"] == "screen"
+    @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true,
+                                                     "overlaySizeUnit" => "image"), false)["overlaySizeUnit"] == "image"
     @test isempty(ov["trackSegs"])
     @test ov["gatedRibbons"] === false
     @test ov["showTrackclust"] === false

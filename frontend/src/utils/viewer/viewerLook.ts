@@ -101,6 +101,8 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     // the Tracks-legend colours of every ribbon source (`vn`, `vn::path`, `vn::trackclust::path`)
     ...(Object.keys(i.trackSourceColours).length ? { trackSourceColours: i.trackSourceColours } : {}),
     pointsSize: i.pointSize,
+    // the viewer's sizes are image px (they scale with its zoom), so the movie scales them with its camera
+    overlaySizeUnit: 'image',
     pointBorder: i.pointBorder,
     labelOpacity: i.labelOpacity,
     pointZTol: i.pointZTol,

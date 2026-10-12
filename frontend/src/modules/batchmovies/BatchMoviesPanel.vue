@@ -173,6 +173,8 @@ const tailWidth    = computed<number>({ get: () => cfg.value.tailWidth ?? 4,    
 // every track kind (plain, cell-track, trackclust) draws its ribbons at `tailWidth`
 const showTail     = computed<boolean>(() => drawsTails(cfg.value))
 const pointsSize   = computed<number>({ get: () => cfg.value.pointsSize ?? 6,        set: v => patch({ pointsSize: v }) })
+// a look filled from the viewer counts tail + point sizes in image px (`BatchMovieCfg.overlaySizeUnit`)
+const sizeUnit = computed(() => cfg.value.overlaySizeUnit === 'image' ? 'image px' : 'px')
 
 // Title card — merge-patch so each control keeps the others' values.
 function patchTitle(p: Partial<TitleCardCfg>) {
@@ -609,13 +611,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-batchmovies-pane')
           <template v-if="showTail">
             <span class="bm-lbl cc-muted">tail</span>
             <input type="range" min="1" max="20" step="1" v-model.number="tailWidth"
-                   class="bm-range" v-tooltip.bottom="'Thickness of the track tail'" />
+                   class="bm-range" v-tooltip.bottom="`Thickness of the track tail, ${sizeUnit}`" />
             <span class="bm-val">{{ tailWidth }}</span>
           </template>
           <template v-if="showPops">
             <span class="bm-lbl cc-muted">size</span>
             <input type="range" min="1" max="20" step="1" v-model.number="pointsSize"
-                   class="bm-range" v-tooltip.bottom="'Diameter of the population points'" />
+                   class="bm-range" v-tooltip.bottom="`Size of the population points, ${sizeUnit}`" />
             <span class="bm-val">{{ pointsSize }}</span>
           </template>
         </div>

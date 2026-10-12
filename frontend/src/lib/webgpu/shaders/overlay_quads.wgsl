@@ -2,11 +2,12 @@
 // and tile renderers alike. CAMERA-AGNOSTIC: each pass projects with its own camera and hands NDC in,
 // so this holds no uniform access and one copy serves three uniform blocks.
 //
-// SIZES ARE IMAGE PIXELS IN THE VIEWER, SCREEN PIXELS IN A MOVIE. The viewer sets `umPerSize` (µm per
-// size unit = the image's pixel size), so a marker or tail keeps its size RELATIVE TO THE CELLS as you
-// zoom — as napari draws points. Screen-px markers read as small dots on big cells zoomed in and as
-// blobs swallowing small cells zoomed out. `umPerSize` 0 = the size IS screen px: a movie renders one
-// fixed camera, so it keeps the px numbers it was authored with. `overlayPx` is the one conversion.
+// SIZES ARE IMAGE PIXELS when `umPerSize` (µm per size unit = the image's pixel size) is set — always in
+// the viewer, and in a movie whose look came from the viewer (`overlaySizeUnit` "image") — so a marker or
+// tail keeps its size RELATIVE TO THE CELLS as the camera zooms, as napari draws points. Screen-px markers
+// read as small dots on big cells zoomed in and as blobs swallowing small cells zoomed out. `umPerSize`
+// 0 = the size IS screen px of the drawn frame: a hand-set movie size, a behaviour card's trace.
+// `overlayPx` is the one conversion.
 // Tails are quads rather than `line-list` because WebGPU draws 1px lines only.
 
 // Where an instance outside its plane window goes: behind the far plane, so it is clipped and emits
@@ -27,7 +28,7 @@ fn overlayPx(size: f32, umPerSize: f32, pxPerUm: f32) -> f32 {
 
 // The marker outline stays in SCREEN px — an outline that grows with zoom reads as a black ring, not an
 // edge — but in image units it is capped at half the fill, so a zoomed-out marker stays its colour
-// instead of collapsing to a black dot. Screen-px sizing (movies) keeps the border as given.
+// instead of collapsing to a black dot. Screen-px sizing keeps the border as given.
 fn overlayBorderPx(borderPx: f32, sizePx: f32, umPerSize: f32) -> f32 {
   let b = max(borderPx, 0.0);
   if (umPerSize <= 0.0) { return b; }
