@@ -50,6 +50,9 @@ on_log:            log line strings (default: println)
 on_progress:       (n::Int, total::Int) progress ticks
 on_process:        called with Base.Process when one starts (for cancellation)
 on_status_change:  called with TaskRecord on every status transition
+target:            `TARGET_HPC` dispatches the task's `run_py` calls to the cluster (docs/todo/HPC_PLAN.md);
+                   the task must list `"hpc"` in its spec's `env`, and it waits in the `hpc` pool
+hpc:               the run's resource overrides `{cpus, memGb, gpus, walltimeMin}` over the spec's `"hpc"`
 """
 function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   task_id::String            = gen_uid(),
@@ -57,10 +60,19 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  target::RunTarget          = TARGET_LOCAL,
+                  hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
                   on_status_change::Function = _ -> nothing)
+    # A cluster run is refused first — before params or the image are looked at — when the task is not
+    # ported or the resources asked for are malformed (`hpc_resources` throws naming the field).
+    if target === TARGET_HPC
+        task_runs_on_hpc(task) || throw(ArgumentError("$(_fun_name_from_task(task)) cannot run on the cluster"))
+        hpc_resources(task, hpc)
+        pool_name = "hpc"
+    end
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
     params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
@@ -79,7 +91,8 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                                  project_uid = img_project_uid(img),
                                  live_outputs = _live_outputs_for(task, params),
                                  chain_node_id = chain_node_id, by = by, params = params,
-                                 output_name = task_output_name(task, params))
+                                 output_name = task_output_name(task, params),
+                                 target = target, hpc = hpc)
     _set_status!(rec, TASK_QUEUED)
 
     done_ch     = Channel{Any}(1)
@@ -105,11 +118,15 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  target::RunTarget          = TARGET_LOCAL,
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
                   on_status_change::Function = _ -> nothing)
     isempty(imgs) && error("run_task (set-scope): no images")
+    # A set-scope run spans images the mirror would have to stage together; not ported (HPC_PLAN P3).
+    target === TARGET_HPC &&
+        throw(ArgumentError("$(_fun_name_from_task(task)) runs over a whole set and cannot run on the cluster"))
     params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     params = _apply_group_order(task, params)  # resolve `<group>Order` into the group (see task.jl)
     params = _apply_spec_defaults(task, params)  # the spec's `default` is the ONE default (see task.jl)
@@ -156,6 +173,8 @@ function run_task(proj_uid::String, img_uid::String;
                   chain_run_id::String       = "",
                   chain_node_id::String      = "",
                   by::String                 = active_profile_name(),
+                  target::RunTarget          = TARGET_LOCAL,
+                  hpc::Dict{String,Any}      = Dict{String,Any}(),
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
@@ -163,7 +182,7 @@ function run_task(proj_uid::String, img_uid::String;
     task = _task_from_fun_name(fun_name)
     img  = init_object(proj_uid, img_uid)
     img isa CciaImage || error("UID '$img_uid' in project '$proj_uid' is not an image")
-    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by,
+    run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, target, hpc,
              on_log, on_progress, on_process, on_status_change)
 end
 

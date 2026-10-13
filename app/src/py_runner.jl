@@ -201,12 +201,28 @@ Cecelia spawns a Python subprocess — the Julia analogue of the old R `self\$py
 env, i.e. `default`. A Symbol like `:cellpose_v3` resolves to `.pixi/envs/cellpose-v3/bin/python`;
 a missing env fails LOUDLY with a message pointing at the in-app install action (never a silent
 fallback to `default` — that would run a v3 model under v4 and produce different results).
+
+`reads` / `writes` declare, as absolute local paths under the project (or the models folder for
+reads), what the runner reads and writes. They make the call able to run on a cluster: in a task
+dispatched there (`HPC_DISPATCH`, `hpc/dispatch.jl`) the inputs are synced, the job runs remotely and
+exactly the declared outputs come back. A call without them refuses to run in a dispatched task.
+Locally they are not used. Porting a task: docs/MODULES.md → *Porting a task to HPC*.
 """
 function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
                 on_log::Function      = line -> println(line),
                 on_progress::Function = (n, t) -> nothing,
                 on_process::Function  = _ -> nothing,
-                env::Union{Symbol,Nothing} = nothing)::Bool
+                env::Union{Symbol,Nothing} = nothing,
+                reads::AbstractVector{<:AbstractString} = String[],
+                writes::AbstractVector{<:AbstractString} = String[])::Bool
+    d = HPC_DISPATCH[]
+    if !isnothing(d)
+        if isempty(reads) && isempty(writes)
+            on_log("[ERROR] $(script_rel) cannot run on the cluster: it declares no reads or writes")
+            return false
+        end
+        return _run_py_hpc(script_rel, params, task_dir, d; reads, writes, env, on_log, on_progress)
+    end
     py_root   = _python_dir()
     # Resolve the script:
     #  • absolute  → a custom (user drop-in) task's own `_run.py`.

@@ -31,7 +31,9 @@ resolving against its own `projects_dir()`); the old R version hand-translated
 `envParams("local")\$dirs\$task` vs `envParams("hpc")\$dirs\$task` for exactly this reason. Putting an
 absolute path in here is the one change that would have to be undone to get there, so don't.
 
-`target` is `"local"` today and exists so a job record never has to be reshaped to grow a second one.
+`target` is where the work runs (`RunTarget`, wire `"local"`/`"hpc"`). `hpc` carries the run's own
+cluster resource overrides (`{cpus, memGb, gpus, walltimeMin}`, any subset) — numbers, not paths, so
+the rule above holds. See docs/todo/HPC_PLAN.md.
 """
 Base.@kwdef struct TaskRequest
     task_id::String
@@ -41,7 +43,8 @@ Base.@kwdef struct TaskRequest
     image_uids::Vector{String}   = String[]
     pool_name::String            = ""
     params::Dict{String,Any}     = Dict{String,Any}()
-    target::String               = "local"
+    target::RunTarget            = TARGET_LOCAL
+    hpc::Dict{String,Any}        = Dict{String,Any}()
     # Set when this task IS a chain node, so the `TaskRecord` carries the correlation handles a client
     # needs to match it to the node it sees in `chain:node:*` (the GUI keys a chain row
     # `runId::nodeId::imageUid`). They live here rather than in the chain executor because the chain
@@ -61,7 +64,8 @@ end
 task_request_dict(r::TaskRequest)::Dict{String,Any} = Dict{String,Any}(
     "taskId"     => r.task_id,   "funName"    => r.fun_name, "projectUid" => r.project_uid,
     "imageUid"   => r.image_uid, "imageUids"  => r.image_uids,
-    "poolName"   => r.pool_name, "params"     => r.params,   "target"     => r.target,
+    "poolName"   => r.pool_name, "params"     => r.params,   "target"     => string(r.target),
+    "hpc"        => r.hpc,
     "chainRunId" => r.chain_run_id, "chainNodeId" => r.chain_node_id, "by" => r.by)
 
 function task_request(d::AbstractDict)::TaskRequest
@@ -74,7 +78,8 @@ function task_request(d::AbstractDict)::TaskRequest
         image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
         pool_name   = s("poolName"),
         params      = Dict{String,Any}(String(k) => v for (k, v) in get(d, "params", Dict{String,Any}())),
-        target      = s("target", "local"),
+        target      = run_target(s("target", "local")),
+        hpc         = Dict{String,Any}(String(k) => v for (k, v) in get(d, "hpc", Dict{String,Any}())),
         chain_run_id  = s("chainRunId"),
         chain_node_id = s("chainNodeId"),
         by            = s("by"))
@@ -128,7 +133,8 @@ function execute_task(req::TaskRequest;
     end
 
     # Bind the pool into every status call below, so neither path can announce a transition without it.
-    pool   = effective_pool_name(task_struct, req.pool_name)
+    # A cluster run waits in the `hpc` pool, whatever the spec's local pool (HPC_PLAN D6).
+    pool   = effective_pool_name(task_struct, req.target === TARGET_HPC ? "hpc" : req.pool_name)
     status = (st, uid, uids) -> on_status(st, uid, uids, pool)
     if task_scope(task_struct) == "set"
         return _execute_set_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result)
@@ -165,6 +171,7 @@ function _execute_set_task(req::TaskRequest, task_struct, pool::String;
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           by               = _request_by(req),
+                          target           = req.target,
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
@@ -203,6 +210,8 @@ function _execute_image_task(req::TaskRequest, task_struct, pool::String;
                           chain_run_id     = req.chain_run_id,
                           chain_node_id    = req.chain_node_id,
                           by               = _request_by(req),
+                          target           = req.target,
+                          hpc              = req.hpc,
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin
@@ -238,7 +247,9 @@ Base.@kwdef struct ChainRequest
     image_uids::Vector{String} = String[]
     run_id::String             = ""
     start_node::String         = ""
-    target::String             = "local"
+    # Chains run locally (docs/todo/HPC_PLAN.md → Non-goals); typed like TaskRequest's so a chain asked
+    # to run elsewhere is refused by `execute_chain` rather than quietly run here.
+    target::RunTarget          = TARGET_LOCAL
     by::String                 = ""   # as TaskRequest.by — who started the run
 end
 
@@ -247,7 +258,7 @@ _request_by(req)::String = isempty(req.by) ? active_profile_name() : req.by
 
 chain_request_dict(r::ChainRequest)::Dict{String,Any} = Dict{String,Any}(
     "projectUid" => r.project_uid, "chain" => r.chain_name, "imageUids" => r.image_uids,
-    "runId" => r.run_id, "startNode" => r.start_node, "target" => r.target, "by" => r.by)
+    "runId" => r.run_id, "startNode" => r.start_node, "target" => string(r.target), "by" => r.by)
 
 chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     project_uid = string(get(d, "projectUid", "")),
@@ -255,7 +266,7 @@ chain_request(d::AbstractDict)::ChainRequest = ChainRequest(
     image_uids  = String[string(u) for u in get(d, "imageUids", String[])],
     run_id      = string(get(d, "runId", "")),
     start_node  = string(get(d, "startNode", "")),
-    target      = string(get(d, "target", "local")),
+    target      = run_target(string(get(d, "target", "local"))),
     by          = string(get(d, "by", "")))
 
 """
@@ -277,6 +288,7 @@ function execute_chain(req::ChainRequest;
                        on_log::Function      = _ -> nothing,
                        on_finished::Function = (ok, err) -> nothing)::Bool
     try
+        req.target === TARGET_LOCAL || throw(ArgumentError("Chains run on this computer, not the cluster"))
         proj = load_project(req.project_uid)
         if isempty(req.run_id)
             run_chain(proj, req.image_uids; chain = req.chain_name, by = _request_by(req),

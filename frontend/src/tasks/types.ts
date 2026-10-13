@@ -151,6 +151,8 @@ export interface TaskDef {
   env: string[]
   params: ParamDef[]
   resource_pool?: string  // default resource profile for this task
+  // Cluster job defaults when `env` lists "hpc" (docs/todo/HPC_PLAN.md; utils/hpcRun.ts).
+  hpc?: { cpus?: number; mem_gb?: number; gpus?: number; walltime_min?: number }
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
   outputValueName?: string // the value_name this task produces (e.g. "driftCorrected"); read by the
                            // whiteboard to prefill a downstream node's input valueName. Absent when

@@ -54,7 +54,7 @@ function list_tasks()
            chain_node_id=rec.chain_node_id, by=rec.by,
            status=string(rec.status), queued_at=iso_utc(rec.queued_at),
            started_at=iso_utc(rec.started_at), live_outputs=rec.live_outputs,
-           params=_publishable_params(rec.params))
+           params=_publishable_params(rec.params), target=string(rec.target))
          for rec in values(_TASKS)]
     end
 end

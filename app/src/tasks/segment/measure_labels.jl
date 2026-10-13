@@ -71,6 +71,9 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
         isempty(cpu) ? 1 : max(1, cpu[1].limit - cpu[1].running + 1)
     catch; 1 end
     n_threads = min(pool_headroom, 8)
+    # On a cluster the job's own allocation is the budget, not this machine's pool (HPC_PLAN code reality 7).
+    n_threads = something(hpc_task_cpus(), n_threads)
+    h5ad_path = joinpath(task_dir, "labelProps", "$(p.outputValueName).h5ad")
 
     ok = run_py("tasks/segment/measure_labels_run.py",
         (; imPath            = im_path,
@@ -83,6 +86,8 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
            extendedMeasures  = p.extendedMeasures,
            nThreads          = n_threads),
         task_run_dir(task_dir);
+        reads  = vcat([im_path], [joinpath(label_dir, f) for f in label_files]),
+        writes = [h5ad_path],
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 

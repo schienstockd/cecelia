@@ -1,7 +1,7 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
-**Status:** building. P1 merged (#1632). P2 built (branch `feat/1619-hpc-p2`; see *P2 as built*). P3–P6
-open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
+**Status:** building. P1 merged (#1632). P2 built (#1637; see *P2 as built*). P3 built (branch
+`feat/1619-hpc-p3`; see *P3 as built*). P4–P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
 
 ## Goal
 
@@ -418,6 +418,36 @@ The counts are files touched, new and existing, including tests and docs.
   - the three task `.jl` + `.json` pairs (counted as 3);
   - tests: `app/test/suite/hpc.jl`;
   - docs: `docs/MODULES.md` ("porting a task to HPC").
+
+**P3 as built** (deviations from the list above):
+- **No handle type.** A dispatched `run_py` has no local process, so `TaskRecord.proc` stays a
+  `Base.Process` and is simply never set. Cancel is the record's status, which `cancel_task!` already
+  sets: the job's watch loop polls `is_cancelled(task_id)` and runs `scancel` (code reality 6).
+- **The dispatch reaches `run_py` through a scoped value** (`HPC_DISPATCH`), not task-local storage: a
+  composite's steps and any task a handler spawns inherit it. Set by `_with_run_target` in the job
+  executor, which also fails the task before its handler starts when the cluster is unconfigured or
+  unreachable.
+- **`target` is a `RunTarget` enum** on `TaskRequest` and `TaskRecord` (wire `"local"`/`"hpc"`), and
+  `task:run` gains `hpc` (`{cpus, memGb, gpus, walltimeMin}` overrides). `list_tasks` reports `target`.
+  Chains stay local.
+- **A composite runs every step with its own class and `"hpc"` block.** `segment.cellposeMeasure` is
+  `gpu`, so its measure step also runs on the GPU class. Simpler than per-step classes; revisit if a
+  site's GPU queue is the bottleneck.
+- **Assets are `<config_dir>/models` only.** Built-in cellpose weights are fetched by cellpose on the
+  compute node into `<root>/assets/cellpose` (`CELLPOSE_LOCAL_MODELS_PATH`), like pixi in P2.
+- **The params travel inside the job script** (a quoted heredoc), so submitting is one call.
+- **The mirror marker holds `hostname:local project path`.** A mismatch refuses, naming the owner and
+  the folder to remove.
+- **The undeclared-change check** ignores `tasks/`, `logs/` and `*.normstats` (a cache, code reality 4).
+- **Ported:** `segment.cellpose`, `segment.coastal`, `segment.measureLabels` and both composites. The
+  `"hpc"` blocks (8 CPUs, 64 GB, 4–8 h) are unmeasured guesses for whole-slide images.
+- **Tests:** a real `segment.measureLabels` runs end to end with the local backend. It is checked for
+  the same table as a local run, a rerun that sends 0 B, a purged mirror that resyncs, an undeclared
+  write that is named, a foreign mirror that is refused, and a cancel that reaches the job. CI runs the
+  same task against the SLURM container. A **cellpose** run in the container is not here: its 1.2 GB
+  weights download would dominate the job, so it is left to the real-site acceptance (P6).
+- **Frontend:** `utils/hpcRun.ts` + the env chip as a `ChipSelect` (local/hpc) with the resource fields
+  under it, remembered per function. The Task Manager sub-status is P4.
 
 **P4 — Task Manager surface + cancel retry + reattach-by-rerun.**
 - **Delivers:** the cluster sub-status (Q4), a retried `scancel` (Q5), and `tasks/<stem>.hpc.json`

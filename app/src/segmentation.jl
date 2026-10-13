@@ -38,6 +38,27 @@ function segment_label_files(out_value_name::AbstractString, models; halo::Bool 
 end
 
 """
+    segment_model_reads(models; manifests = false) -> Vector{String}
+
+The model files a segmenter's runner reads, for its `run_py` `reads` declaration (HPC dispatch): every
+model given as a path (a custom checkpoint; a built-in is a name and needs no file), plus, with
+`manifests`, the `<name>.json` beside it (coastal reads its training manifest from there).
+"""
+function segment_model_reads(models; manifests::Bool = false)::Vector{String}
+    out = String[]
+    models isa AbstractDict || return out
+    for (_, m) in models
+        m isa AbstractDict || continue
+        p = string(get(m, "model", ""))
+        isabspath(p) || continue
+        push!(out, p)
+        j = splitext(p)[1] * ".json"
+        manifests && isfile(j) && push!(out, j)
+    end
+    unique(out)
+end
+
+"""
     segment_live_outputs(params) -> Vector{LiveOutput}
 
 The `live_outputs` declaration for any segmentation backend that streams through

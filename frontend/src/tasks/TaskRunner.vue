@@ -15,8 +15,11 @@
   it on the way back.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import { profileStorage } from '../utils/profileStorage'
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS,
+  type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
 import { cachedPyramidRecommendation } from './pyramidPeek'
@@ -125,6 +128,39 @@ const throttleOpen = ref(false)
 watch(taskDef, (def) => {
   if (def) selectedPool.value = def.resource_pool ?? 'cpu'
 })
+
+// Where the run goes: the env chip is the local ⇄ hpc switch for a task that lists "hpc" in `env`
+// (docs/todo/HPC_PLAN.md P3). Remembered per function, with the resources the user changed.
+const runChoice = ref<RunTargetChoice>({ target: 'local', resources: {} })
+const canHpc = computed(() => hpcEligible(taskDef.value))
+const onHpc = computed(() => canHpc.value && runChoice.value.target === 'hpc')
+const hpcForm = computed<HpcResourcesForm | null>(() =>
+  taskDef.value ? { ...hpcDefaults(taskDef.value), ...runChoice.value.resources } : null)
+const TARGET_OPTIONS: ChipOption[] = [
+  { value: 'local', label: 'local', tip: 'Run on this computer' },
+  { value: 'hpc',   label: 'hpc',   tip: 'Run on the cluster (Settings → HPC)' },
+]
+watch(() => taskDef.value?.fun_name, (fn) => {
+  runChoice.value = parseRunTargetChoice(fn ? profileStorage.getItem(runTargetKey(fn)) : null)
+}, { immediate: true })
+function saveRunChoice(next: RunTargetChoice) {
+  runChoice.value = next
+  if (taskDef.value) profileStorage.setItem(runTargetKey(taskDef.value.fun_name), JSON.stringify(next))
+}
+function setTarget(v: string | string[]) {
+  saveRunChoice({ ...runChoice.value, target: v === 'hpc' ? 'hpc' : 'local' })
+}
+// One draft per field, committed on change (useFieldDraft); text that is not a whole number snaps back.
+const hpcDrafts = Object.fromEntries(HPC_RESOURCE_FIELDS.map(f =>
+  [f.key, useFieldDraft(() => hpcForm.value?.[f.key] ?? '')])) as Record<keyof HpcResourcesForm, Ref<string>>
+function setResource(key: keyof HpcResourcesForm) {
+  const n = Number(hpcDrafts[key].value.trim())
+  if (!Number.isInteger(n) || !hpcDrafts[key].value.trim()) {
+    hpcDrafts[key].value = String(hpcForm.value?.[key] ?? '')
+    return
+  }
+  saveRunChoice({ ...runChoice.value, resources: { ...runChoice.value.resources, [key]: n } })
+}
 
 // param values — populated from the object's remembered funParams (image → set → task-defaults),
 // mirroring the old R moduleFunParams. Persistence is server-side (saved on run, to each processed
@@ -604,7 +640,7 @@ function run() {
       projectUid: projectUid.value,
       // what was ASKED for, shown while it waits; the first `task:status` replaces it with the pool
       // the scheduler actually queued it in (an unconfigured name falls back to cpu)
-      pool:       selectedPool.value,
+      pool:       onHpc.value ? 'hpc' : selectedPool.value,
     })
 
     ws.send({
@@ -616,6 +652,7 @@ function run() {
       projectUid: projectUid.value,
       setUid:     setUid.value,
       poolName:   selectedPool.value,
+      ...hpcRunFields(def, runChoice.value),
     })
     // Status is driven by the backend: 'running' if a slot was free, 'queued' otherwise.
   }
@@ -755,17 +792,28 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
       <div v-if="taskDef" class="fn-meta">
         <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
-        <span class="env-badge"
-          v-for="env in taskDef.env"
-          :key="env"
-          v-tooltip.right="`Runs in the ${env} environment`">
-          {{ env }}
-        </span>
+        <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
+          :model-value="runChoice.target" aria-label="Where to run" @update:model-value="setTarget" />
+        <template v-else>
+          <span class="env-badge"
+            v-for="env in taskDef.env"
+            :key="env"
+            v-tooltip.right="`Runs in the ${env} environment`">
+            {{ env }}
+          </span>
+        </template>
         <span
           v-if="activeTaskGatingReason"
           class="env-badge"
           v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
+      </div>
+      <div v-if="onHpc && hpcForm" class="hpc-res cc-row cc-row-loose cc-fs-xs">
+        <label v-for="f in HPC_RESOURCE_FIELDS" :key="f.key" class="cc-row-group" v-tooltip.bottom="f.tip">
+          <input class="cc-input-xs hpc-res-num" type="text" inputmode="numeric"
+                 v-model="hpcDrafts[f.key].value" @change="setResource(f.key)" />
+          <span class="cc-muted">{{ f.label }}</span>
+        </label>
       </div>
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
@@ -1023,6 +1071,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   color: var(--cc-text-dim);
   border: 1px solid var(--cc-border);
 }
+
+.hpc-res { margin-top: 0.35rem; }
+.hpc-res-num { width: 6ch; }
 
 /* params */
 .params-section {

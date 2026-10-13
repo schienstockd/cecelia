@@ -176,6 +176,9 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
     on_log("[INFO] Models: $(length(models_converted))")
 
     qc_out_path = joinpath(task_run_dir(task_dir), "segment_counts.json")
+    # The zarr filenames the runner writes — the same derivation the live-preview declaration uses, so
+    # the two can't disagree — and, with the model files, the run's I/O declaration (HPC dispatch).
+    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
 
     ok = run_py("tasks/segment/coastal_run.py",
         (; imPath              = im_path,
@@ -204,12 +207,13 @@ function _run_task(task::CoastalSegment, img::CciaImage, params::Dict{String,Any
            # from this list is honoured on screen and ignored by the run.
            temporalScaleMode   = p.temporalScaleMode),
         task_run_dir(task_dir);
+        reads  = vcat([im_path], segment_model_reads(models_converted; manifests = true)),
+        writes = vcat([joinpath(task_dir, "labels", f) for f in label_files], [qc_out_path]),
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
     on_log("[INFO] Segmentation complete.")
 
-    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
     register_label_files!(img, p.outputValueName, label_files)
 
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings
