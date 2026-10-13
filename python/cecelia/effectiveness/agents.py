@@ -61,6 +61,11 @@ class AgentRow:
     pr: int | None = None
     pr_state: str | None = None    # "OPEN" / "MERGED" / "CLOSED"
     ci: str | None = None          # "fail" / "running" / "pass"; None = no checks or no PR
+    conflict: bool = False         # the open PR conflicts with its base (GitHub says CONFLICTING)
+    #: Its turn is over and its last reply asked Dominik something — waiting for him, even while
+    #: a background command (a CI watch) keeps the status at "shell".
+    asks: bool = False
+    judge: bool = False            # opened by `pixi run judge-review`, whose queue waits on it
     #: The branch's slugged findings, each with its outcome ("unresolved" until tagged) and the
     #: resolution row (None while unresolved) — the detail view (→) lists them.
     findings: tuple[tuple[dict, str, dict | None], ...] = ()
@@ -114,17 +119,25 @@ def pr_by_branch(prs: _t.Iterable[dict]) -> dict[str, dict]:
 def _rank(r: AgentRow) -> float:
     """Idle is waiting for Dominik (0) — unless its PR's CI is still running: then it waits on CI
     and will be woken by it (0.75). Done (merged, close the window) sits between the two."""
+    if r.judge and r.status != "busy":
+        return -2   # the judge-review queue is blocked until Dominik deals with it
+    if r.asks:
+        return -1
     if r.done:
         return 0.5
-    if r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN":
+    if r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN" and not r.conflict:
         return 0.75
     return _STATUS_RANK.get(r.status, 1)
 
 
 def sort_rows(rows: _t.Iterable[AgentRow]) -> list[AgentRow]:
-    """Idle first (waiting for Dominik) — idle with failed CI before the rest — then done (merged,
-    close the window), idle waiting on running CI, other states, busy; unreadable rows last."""
-    return sorted(rows, key=lambda r: (not r.readable, _rank(r), r.ci != "fail", r.name))
+    """A judge-review session that isn't working first (its queue waits on it), then a session
+    asking Dominik something, then idle (waiting for him) — idle with failed
+    CI or a merge conflict before the rest —
+    then done (merged, close the window), idle waiting on running CI, other states, busy;
+    unreadable rows last."""
+    return sorted(rows, key=lambda r: (not r.readable, _rank(r), not (r.ci == "fail" or r.conflict),
+                                       r.name))
 
 
 class PrCache:
@@ -181,6 +194,8 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                              pr=pr.get("number") if pr else None,
                              pr_state=pr.get("state") if pr else None,
                              ci=ci_state(pr.get("statusCheckRollup") or ()) if pr else None,
+                             conflict=bool(pr and pr.get("state") == "OPEN"
+                                           and pr.get("mergeable") == "CONFLICTING"),
                              findings=tuple(findings), session_id=s.session_id, recap=s.recap,
-                             context_pct=s.context_pct))
+                             context_pct=s.context_pct, asks=s.asks and s.status != "busy", judge=s.judge))
     return sort_rows(rows)

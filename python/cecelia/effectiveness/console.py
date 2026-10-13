@@ -531,18 +531,32 @@ def _fit(text: str, n: int) -> str:
     return f"{text:<{n}}" if len(text) <= n else text[:n - 1] + "…"
 
 
+#: Marks a session `pixi run judge-review` opened; the pane header explains it when one is shown.
+JUDGE_MARK = "*"
+
+
+def _name_cell(row: AgentRow) -> str:
+    """The name in 12 columns, `*` right after it for a judge-review session (kept when cut)."""
+    if not row.judge:
+        return _fit(row.name, 12)
+    name = row.name if len(row.name) <= 11 else row.name[:10] + "…"
+    return f"{name + JUDGE_MARK:<12}"
+
+
 def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> str:
     """One table row — idle in yellow (waiting for Dominik), open findings in orange (the commit
     hook will block on them). `cols` = the worktree and branch column widths."""
     if not row.readable:
         return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} {'—':<8} (session file unreadable)",
                     use_colour=use_colour)
-    # `done` (merged, not working) replaces the state: close the window, then prune the worktree.
-    status = (_col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
+    # `asks` (its last reply is a question to Dominik; magenta, apart from idle's yellow) replaces
+    # the state, then `done` (merged, not working: close the window, then prune the worktree).
+    status = (_col(_MAGENTA, f"{'asks':<6}", use_colour=use_colour) if row.asks else
+              _col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
               _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
-    name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + f" {_fit(row.name, 12)}"
+    name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + " " + _name_cell(row)
     status += " " + context_bar(row.context_pct, use_colour=use_colour)
     if not row.branch:
         return f"  {name} {status} {where}"
@@ -572,9 +586,12 @@ def context_bar(pct: float | None, *, use_colour: bool) -> str:
 
 
 def _pr_word(row: AgentRow) -> tuple[str, str]:
-    """The `ci` column: CI state while the PR is open, else what happened to the PR."""
+    """The `ci` column: CI state while the PR is open — `conflict` instead when it conflicts with
+    its base, since its CI says nothing until it is rebased — else what happened to the PR."""
     if row.pr_state in ("MERGED", "CLOSED"):
         return row.pr_state.lower(), _DIM
+    if row.conflict:
+        return "conflict", _RED
     return {"fail": ("fail", _RED), "running": ("running", _YELLOW),
             "pass": ("pass", _GREEN)}.get(row.ci or "", ("", _GREY))
 
@@ -647,6 +664,8 @@ def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> li
     if state.agents_note:
         rows.append(_col(_DIM, f"  {state.agents_note}", use_colour=use_colour))
     hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → recaps + findings"
+    if any(r.judge for r in state.agents or ()):
+        hint += f" · {JUDGE_MARK} judge-review"
     return [_hr("agents" + hint, width, use_colour=use_colour), *rows, ""]
 
 

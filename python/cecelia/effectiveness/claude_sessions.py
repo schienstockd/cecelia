@@ -16,7 +16,9 @@ A headless `claude -p` run (the recital's reviewers) writes a session file too �
 is no one's window, so `sdk*` entrypoints are skipped.
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
-written while the window sits unattended — which `latest_recap` reads.
+written while the window sits unattended — which `latest_recap` reads — and the session's last
+reply, which `ends_with_question` reads: a turn that ended on a question is waiting for Dominik,
+whatever still runs in the background.
 
 How full a session's context is reaches only its statusline (`context_window.used_percentage` in
 the JSON Claude Code pipes to it), so `scripts/statusline_badge.py` saves it per session
@@ -59,11 +61,33 @@ class Session:
     recent_cwds: tuple[str, ...] = ()   # newest first, `cwd` included (`recent_cwds()`)
     recap: tuple[str, str] | None = None   # (timestamp, text) — `latest_recap()`
     context_pct: float | None = None       # % of the context window in use — `read_context()`
+    asks: bool = False                     # its last reply ends on a question — `ends_with_question()`
+    judge: bool = False                    # opened by `pixi run judge-review` — `from_judge_review()`
 
 
 def claude_home() -> pathlib.Path:
     """`$CLAUDE_CONFIG_DIR` when set (Claude Code keeps its state there instead), else `~/.claude`."""
     return pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR") or pathlib.Path.home() / ".claude")
+
+
+#: `pixi run judge-review` runs this script, which opens each bug's session as its child `claude`.
+JUDGE_REVIEW_SCRIPT = ("judge", "review.py")
+
+
+def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
+    """Whether one of the session's nearest `depth` parent processes runs `scripts/judge/review.py`
+    — a queue that resumes only once Dominik has dealt with the session and closed it."""
+    for _ in range(depth):
+        try:
+            stat = (proc / str(pid) / "stat").read_text(encoding="utf-8", errors="replace")
+            pid = int(stat.rsplit(")", 1)[-1].split()[1])   # field 4, ppid
+            argv = (proc / str(pid) / "cmdline").read_bytes().split(b"\0")
+        except (OSError, ValueError, IndexError):
+            return False
+        if any(pathlib.PurePath(a.decode("utf-8", "replace")).parts[-2:] == JUDGE_REVIEW_SCRIPT
+               for a in argv if a):
+            return True
+    return False
 
 
 def proc_start(pid: int, proc: pathlib.Path) -> str | None:
@@ -139,6 +163,26 @@ def latest_recap(transcript: pathlib.Path, tail_bytes: int = RECAP_TAIL_BYTES) -
     return None
 
 
+def ends_with_question(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> bool:
+    """Whether the newest turn ended with a reply to Dominik that ends in `?`. The newest message
+    decides: a prompt, tool result or notification after the reply means the session has moved on;
+    a reply ending in a tool call means it isn't done. Trailing markdown (`**Go?**`) is ignored."""
+    for entry in _tail_entries(transcript, tail_bytes):
+        if entry.get("type") == "user":
+            return False
+        if entry.get("type") != "assistant":
+            continue   # system entries (recaps), attachments, bookkeeping
+        content = (entry.get("message") or {}).get("content")
+        blocks = content if isinstance(content, list) else [{"type": "text", "text": content}]
+        kinds = {b.get("type") for b in blocks if isinstance(b, dict)}
+        if kinds <= {"thinking", "redacted_thinking"}:
+            continue   # thinking is written as its own entry before the reply
+        last = blocks[-1] if isinstance(blocks[-1], dict) else {}
+        text = last.get("text") if last.get("type") == "text" else None
+        return isinstance(text, str) and text.rstrip().rstrip("*_`)").endswith("?")
+    return False
+
+
 def context_dir() -> pathlib.Path:
     """Where each session's context fill is kept: `$XDG_CACHE_HOME/cecelia-agents`, else
     `~/.cache/cecelia-agents`."""
@@ -206,6 +250,13 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         return None
     if str(meta.get("entrypoint") or "").startswith("sdk"):
         return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window
+    session = _transcript_session(pid, name, status, meta, sid, projects, context)
+    return dataclasses.replace(session, judge=from_judge_review(pid, proc))
+
+
+def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
+                        projects: pathlib.Path, context: pathlib.Path | None) -> Session:
+    """The session, filled in from its transcript and saved context fill."""
     ctx = read_context(sid, context)
     transcript = next(projects.glob(f"*/{sid}.jsonl"), None)
     if transcript is None:   # nothing written yet: still at the launch folder
@@ -213,7 +264,8 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
     try:
         cwds = recent_cwds(transcript)
         return Session(pid, name, status, cwds[0] if cwds else meta.get("cwd"), session_id=sid,
-                       recent_cwds=cwds, recap=latest_recap(transcript), context_pct=ctx)
+                       recent_cwds=cwds, recap=latest_recap(transcript), context_pct=ctx,
+                       asks=ends_with_question(transcript))
     except OSError:
         return Session(pid, name, status, None, readable=False, session_id=sid, context_pct=ctx)
 

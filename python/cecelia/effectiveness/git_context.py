@@ -179,16 +179,18 @@ def merged_prs_since(since: str, cwd: str | None = None) -> list[dict] | None:
 
 def recent_prs(limit: int = 100, cwd: str | None = None) -> list[dict] | None:
     """The repo's newest `limit` PRs in any state, newest first, each with `number`, `headRefName`,
-    `state` and `statusCheckRollup` (its CI checks). One call answers "which PR and what CI" for
-    every live branch at once — the agents pane's PR/CI columns. ~3 s, so callers cache it. None on
-    any failure. Same ladder as `pr_for_branch`."""
+    `state`, `statusCheckRollup` (its CI checks) and `mergeable` (`MERGEABLE` / `CONFLICTING` /
+    `UNKNOWN` — GitHub works it out only once asked, so a PR reads UNKNOWN until a later call). One
+    call answers "which PR, what CI, does it conflict" for every live branch at once — the agents
+    pane's PR/CI columns. ~3 s, so callers cache it. None on any failure. Same ladder as
+    `pr_for_branch`."""
     gh = shutil.which("gh")
     if gh is None:
         return None
     try:
         result = subprocess.run(
             [gh, "pr", "list", "--state", "all", "--limit", str(limit),
-             "--json", "number,headRefName,state,statusCheckRollup"],
+             "--json", "number,headRefName,state,statusCheckRollup,mergeable"],
             capture_output=True, text=True, timeout=30.0, check=False, encoding="utf-8", cwd=cwd,
         )
     except (subprocess.TimeoutExpired, OSError):

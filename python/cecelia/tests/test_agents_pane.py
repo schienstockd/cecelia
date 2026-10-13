@@ -20,7 +20,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from cecelia.effectiveness import console
+from cecelia.effectiveness import agents, console
 import subprocess
 import sys
 import threading
@@ -29,14 +29,14 @@ import time
 from cecelia.effectiveness.agents import (
     BADGE_SHAPES, AgentRow, PrCache, branch_recital, ci_state, pr_by_branch, session_badge, sort_rows)
 from cecelia.effectiveness.claude_sessions import (
-    Session, context_used, latest_recap, live_sessions, proc_start, read_context, recent_cwds,
+    Session, context_used, ends_with_question, latest_recap, live_sessions, proc_start, read_context, recent_cwds,
     save_context, session_name)
 from cecelia.effectiveness.log import unresolved_findings
 
 
-def _stat_line(pid: int, start: str, comm: str = "claude") -> str:
-    """A `/proc/<pid>/stat` line with `start` as field 22."""
-    rest = ["S"] + ["0"] * 18 + [start] + ["0"] * 30   # fields 3..52; index 19 = field 22
+def _stat_line(pid: int, start: str, comm: str = "claude", ppid: int = 0) -> str:
+    """A `/proc/<pid>/stat` line with `ppid` as field 4 and `start` as field 22."""
+    rest = ["S", str(ppid)] + ["0"] * 17 + [start] + ["0"] * 30   # fields 3..52; index 19 = field 22
     return f"{pid} ({comm}) " + " ".join(rest)
 
 
@@ -85,9 +85,11 @@ class _FakeHome(unittest.TestCase):
         (self.home / "projects" / "-ws").mkdir(parents=True)
         self.proc.mkdir()
 
-    def process(self, pid: int, start: str, comm: str = "claude") -> None:
+    def process(self, pid: int, start: str, comm: str = "claude", ppid: int = 0,
+                argv: tuple[str, ...] = ("claude",)) -> None:
         (self.proc / str(pid)).mkdir()
-        (self.proc / str(pid) / "stat").write_text(_stat_line(pid, start, comm), encoding="utf-8")
+        (self.proc / str(pid) / "stat").write_text(_stat_line(pid, start, comm, ppid), encoding="utf-8")
+        (self.proc / str(pid) / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
 
     def session(self, pid: int, start: str, sid: str, *, name: str = "s", status: str = "idle",
                 cwd: str = "/ws", transcript_cwds: list[str] | None = None) -> None:
@@ -115,6 +117,17 @@ class LiveSessionsTest(_FakeHome):
         self.session(10, "500", "a", transcript_cwds=["/ws"])
         save_context("a", 42.0, self.home / "ctx")
         self.assertEqual(self.live()[0].context_pct, 42.0)
+
+    def test_a_session_opened_by_judge_review_is_marked(self):
+        self.process(5, "1", argv=("pixi", "run", "judge-review"))
+        self.process(6, "1", ppid=5, argv=("/env/bin/python", "scripts/judge/review.py"))
+        self.process(10, "500", ppid=6)
+        self.process(11, "501", ppid=5)
+        self.process(12, "502", argv=("python", "scripts/other/review.py"))
+        self.process(13, "503", ppid=12)
+        for pid, start, sid in ((10, "500", "a"), (11, "501", "b"), (13, "503", "c")):
+            self.session(pid, start, sid, transcript_cwds=["/ws"])
+        self.assertEqual({s.session_id: s.judge for s in self.live()}, {"a": True, "b": False, "c": False})
 
     def test_session_name_looks_up_the_id_without_proc(self):
         self.session(10, "500", "abc", name="cecelia-56")
@@ -178,6 +191,36 @@ class RecentCwdsTest(unittest.TestCase):
             path.write_text("\n".join(json.dumps({"cwd": c}) for c in ("/a", "/wt", "/ws", "/wt", "/ws")),
                             encoding="utf-8")
             self.assertEqual(recent_cwds(path), ("/ws", "/wt", "/a"))
+
+
+class EndsWithQuestionTest(unittest.TestCase):
+    def asks(self, *entries: dict) -> bool:
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "t.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+            return ends_with_question(path)
+
+    @staticmethod
+    def said(*blocks: dict) -> dict:
+        return {"type": "assistant", "message": {"content": list(blocks)}}
+
+    text = staticmethod(lambda t: {"type": "text", "text": t})
+    thinking = {"type": "thinking", "thinking": "…"}
+
+    def test_a_reply_ending_on_a_question_asks_after_thinking_and_bookkeeping(self):
+        self.assertTrue(self.asks(self.said(self.thinking), self.said(self.text("Push it?\n")),
+                                  {"type": "system", "subtype": "away_summary"}, {"type": "attachment"}))
+        self.assertTrue(self.asks(self.said(self.text("**Go?**"))))
+
+    def test_a_statement_a_tool_call_or_anything_newer_from_the_user_does_not(self):
+        self.assertFalse(self.asks(self.said(self.text("I'll report when CI finishes."))))
+        self.assertFalse(self.asks(self.said(self.text("Go?"), {"type": "tool_use"})))
+        for after in ({"type": "user", "message": {"content": "go"}},
+                      {"type": "user", "message": {"content": [{"type": "tool_result"}]}},
+                      {"type": "user", "origin": {"kind": "task-notification"},
+                       "message": {"content": "<task-notification>"}}):
+            self.assertFalse(self.asks(self.said(self.text("Go?")), after))
+        self.assertFalse(self.asks({"type": "system"}))
 
 
 class LatestRecapTest(unittest.TestCase):
@@ -301,6 +344,54 @@ class PrCiTest(unittest.TestCase):
                 AgentRow("z", "idle", "w", "y"),
                 AgentRow("p", "idle", "w", "x", pr=3, pr_state="OPEN", ci="pass")]
         self.assertEqual([r.name for r in sort_rows(rows)], ["p", "z", "d", "a", "s"])
+
+    def test_a_conflicting_open_pr_shows_conflict_and_sorts_with_failed_ci(self):
+        rows = [AgentRow("a", "idle", "w", "x", pr=1, pr_state="OPEN", ci="pass"),
+                AgentRow("c", "idle", "w", "y", pr=2, pr_state="OPEN", ci="running", conflict=True)]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["c", "a"])
+        self.assertEqual(console._pr_word(rows[1])[0], "conflict")
+        self.assertEqual(console._pr_word(rows[0])[0], "pass")
+
+    def test_conflict_is_read_only_from_an_open_pr_marked_conflicting(self):
+        prs = [{"number": 1, "headRefName": "x", "state": "OPEN", "mergeable": "CONFLICTING"},
+               {"number": 2, "headRefName": "y", "state": "OPEN", "mergeable": "UNKNOWN"},
+               {"number": 3, "headRefName": "z", "state": "MERGED", "mergeable": "CONFLICTING"}]
+        sessions = [Session(1, "s1", "idle", "/x"), Session(2, "s2", "idle", "/y"),
+                    Session(3, "s3", "idle", "/z")]
+        with mock.patch.object(agents, "_checkout", side_effect=lambda s: s.cwd), \
+                mock.patch.object(agents, "git_output", side_effect=lambda *a, cwd: cwd[1:]):
+            rows = {r.name: r.conflict for r in agents.agent_rows(sessions, [], prs)}
+        self.assertEqual(rows, {"s1": True, "s2": False, "s3": False})
+
+    def test_a_session_asking_sorts_first_and_says_asks(self):
+        rows = [AgentRow("f", "idle", "w", "x", pr=1, pr_state="OPEN", ci="fail"),
+                AgentRow("q", "shell", "w", "y", pr=2, pr_state="OPEN", ci="running", asks=True)]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["q", "f"])
+        state = console.DashboardState()
+        state.agents = rows
+        self.assertEqual(console.agents_block(state, 100, use_colour=False)[3].split()[1], "asks")
+        coloured = console.agents_block(state, 100, use_colour=True)[3]
+        self.assertIn(console._MAGENTA + "asks", coloured)   # apart from idle's yellow
+
+    def test_a_waiting_judge_review_session_comes_first_and_carries_a_star(self):
+        rows = [AgentRow("q", "idle", "w", "y", asks=True),
+                AgentRow("cecelia-28", "shell", "w", "x", judge=True),
+                AgentRow("j", "busy", "w", "z", judge=True)]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["cecelia-28", "q", "j"])
+        state = console.DashboardState()
+        state.agents = sort_rows(rows)
+        lines = console.agents_block(state, 100, use_colour=False)
+        self.assertIn("* judge-review", lines[0])
+        self.assertEqual(lines[2].split()[0], "cecelia-28*")
+        self.assertEqual(lines[2].index(" shell"), lines[3].index(" asks"))   # columns still line up
+        self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
+                         "cecelia-pr…*")
+
+    def test_a_busy_session_never_asks(self):
+        sessions = [Session(1, "s1", "busy", "/x", asks=True), Session(2, "s2", "shell", "/y", asks=True)]
+        with mock.patch.object(agents, "_checkout", return_value=None):
+            self.assertEqual({r.name: r.asks for r in agents.agent_rows(sessions, [], [])},
+                             {"s1": False, "s2": True})
 
     def test_idle_with_failed_ci_sorts_first(self):
         rows = [AgentRow("a", "idle", "w", "x", ci="pass"), AgentRow("b", "idle", "w", "y", ci="fail")]

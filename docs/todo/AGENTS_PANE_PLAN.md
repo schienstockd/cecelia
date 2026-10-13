@@ -47,7 +47,13 @@ extras: hooks, a message bus, window control. None of those is needed here.
    (`WORKTREE_CLEANUP_PLAN.md` decision 11), the same way it already imports `git_context`.
 4. **The session files are undocumented, so failures show.** If a file can't be parsed, the row
    reads `? (unreadable)` rather than disappearing. A missing `~/.claude/sessions/` hides the pane.
-5. **Rows are sorted by what needs Dominik:** idle with a failed CI run, then idle, then done,
+5. **Rows are sorted by what needs Dominik:** a `pixi run judge-review` session that isn't working
+   (`*` after its name; found by `scripts/judge/review.py` among its parent processes,
+   `claude_sessions.from_judge_review` — the review queue resumes only once he has dealt with it
+   and closed it), then a session asking him something (`asks`: its turn is
+   over and its last reply ends in `?` — `claude_sessions.ends_with_question`; status alone can't
+   say, a background CI watch keeps it at `shell`), then idle with a failed CI run or a merge
+   conflict (`conflict` in the ci column, from the PR's `mergeable`), then idle, then done,
    then idle with its PR's CI still running (it waits on CI, not him), then busy. Idle on a
    foreground session in practice means waiting for him.
 6. **No plan-mode column.** Dominik keeps sessions in auto mode, so it would never change.
