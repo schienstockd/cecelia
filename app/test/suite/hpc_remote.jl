@@ -75,7 +75,7 @@ end
     blank = HpcIdentity("", "")
     @test_throws HpcError hpc_conn(_hpc_test_site(), blank)
     e = try; hpc_conn(HpcSite("slurm", "", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", "")), blank); catch x; x; end
-    @test e isa HpcError && occursin("host", e.msg)
+    @test e isa HpcError && occursin(Sys.iswindows() ? "not available on Windows" : "host", e.msg)
     e = try; hpc_backend(HpcSite("pbs", "h", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))); catch x; x; end
     @test e isa HpcError && occursin("not supported yet", e.msg)
     # rsync's -e is split by rsync: single quotes, doubled to escape.
@@ -130,6 +130,8 @@ end
         @test st1.files_transferred == 4 && st2.files_transferred == 0 && st2.bytes_sent == 0
         e = try; hpc_rsync(c, joinpath(repo, "missing") * "/", dest; what = "Up"); catch x; x; end
         @test e isa HpcError && startswith(e.msg, "Up: ")
+        e = try; hpc_exec!(c, "no-such-scheduler-cmd --version\n"; what = "Submit"); catch x; x; end
+        @test e isa HpcError && startswith(e.msg, "Submit: not installed on the cluster (")
     end
 end
 

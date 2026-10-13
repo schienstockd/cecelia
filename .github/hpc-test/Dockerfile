@@ -3,8 +3,9 @@
 # A single-node SLURM cluster reachable over SSH — the CI stand-in for an institute's login node
 # (docs/todo/HPC_PLAN.md → Decision 10). Used by .github/workflows/verify-hpc.yml; never shipped.
 #
-# P1 needs sshd + `sbatch --version`; P2 submits, cancels and times out real jobs, and installs the
-# Python env with pixi (curl fetches pixi, as on a real site).
+# P1 needs sshd + `sbatch --version`; P2 submits, cancels and times out real jobs, syncs code (rsync,
+# which every real login node has) and installs the Python env with pixi (curl fetches pixi, as on a
+# real site).
 #
 #   docker build -t cecelia-hpc-test .github/hpc-test
 #   docker run -d --privileged -p 2222:22 -e AUTHORIZED_KEY="$(cat key.pub)" cecelia-hpc-test
@@ -12,7 +13,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      openssh-server slurm-wlm munge ca-certificates curl \
+      openssh-server slurm-wlm munge ca-certificates curl rsync \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -m -s /bin/bash cecelia \
  && mkdir -p /run/sshd /var/spool/slurmctld /var/spool/slurmd /var/log/slurm \

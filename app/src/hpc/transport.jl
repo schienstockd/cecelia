@@ -335,6 +335,7 @@ function hpc_exec!(c::HpcConn, script::AbstractString; what::AbstractString, tim
     r.code == 0 && return r.out
     why = r.timed_out ? "no reply within $(timeout_s) s" :
           (c isa HpcSshConn && r.code == 255) ? _ssh_error_line(r.err) :
+          r.code == 127 ? "not installed on the cluster (" * _last_line(r.err, "command not found") * ")" :
           _last_line(r.err, "exit code $(r.code)")
     throw(HpcError("$what: $why"))
 end
@@ -416,6 +417,7 @@ function hpc_rsync(c::HpcConn, src::AbstractString, dest::AbstractString; up::Bo
         r = _hpc_capture(cmd, ""; timeout_s = timeout_s)
         r.code == 0 && return _rsync_stats(r.out)
         why = r.timed_out ? "timed out" :
+              occursin("remote command not found", r.err) ? "rsync is not installed on the cluster" :
               (c isa HpcSshConn && occursin("connection unexpectedly closed", r.err)) ? _ssh_error_line(r.err) :
               _last_line(r.err, "rsync exit code $(r.code)")
         throw(HpcError("$what: $why"))
