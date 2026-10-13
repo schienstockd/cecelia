@@ -155,7 +155,7 @@ function hpc_site_errors(s::HpcSite)::Vector{String}
     end
     _hpc_token!(errs, "Host", s.host)
     1 <= s.port <= 65535 || push!(errs, "Port must be 1–65535")
-    isempty(s.remote_dir) && push!(errs, "Remote folder is required")
+    isempty(s.remote_dir) && push!(errs, "Set the remote folder in Preferences → HPC")
     any(c -> c in ('\n', '\r', '\0'), s.remote_dir) && push!(errs, "Remote folder must be one line")
     _hpc_token!(errs, "Email", s.email)
     for (cls, c) in (("CPU", s.cpu), ("GPU", s.gpu))

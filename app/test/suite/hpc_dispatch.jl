@@ -170,6 +170,8 @@ _hpc_table(path) = (lp = label_props(path); (n_obs(lp), sort(collect(lp |> as_df
         prev_poll = Cecelia.HPC_POLL_S[]
         Cecelia.HPC_POLL_S[] = 0.2
         Cecelia._HPC_TRANSPORT_OVERRIDE[] = (HpcLocalConn(), LocalShellBackend())
+        # It starts from "no env on the cluster": a previous run's local remote must not carry over.
+        rm(joinpath(config_dir(), "hpc-local"); force = true, recursive = true)
         try
             mktempdir() do dir
                 img, paths = _label_import_project(dir)

@@ -211,9 +211,9 @@ function hpc_test_connection(site::HpcSite = hpc_site(), ident::HpcIdentity = hp
                                  [hpc_known_hosts_path(), "~/.ssh/known_hosts"])::HpcTestResult
     fail(e) = HpcTestResult(false, false, "", false, "", false, "", e)
     hpc_available() || return fail("Not available on Windows yet")
-    isempty(site.host)     && return fail("Set the host first")
-    isempty(ident.user)    && return fail("Set your username first")
-    isempty(ident.key_file) && return fail("Select your SSH key first")
+    isempty(site.host)     && return fail("Set the cluster host in Settings → HPC")
+    isempty(ident.user)    && return fail("Set your username in Preferences → HPC")
+    isempty(ident.key_file) && return fail("Select your SSH key in Preferences → HPC")
     errs = hpc_site_errors(site)
     isempty(errs) || return fail(first(errs))
     ke = hpc_key_file_error(ident.key_file)
@@ -268,8 +268,8 @@ function hpc_conn(site::HpcSite = hpc_site(), ident::HpcIdentity = hpc_identity(
                       [hpc_known_hosts_path(), "~/.ssh/known_hosts"])::HpcSshConn
     hpc_available() || throw(HpcError("HPC is not available on Windows yet"))
     isempty(site.host)      && throw(HpcError("Set the HPC host in Settings → HPC"))
-    isempty(ident.user)     && throw(HpcError("Set your HPC username in Settings → HPC"))
-    isempty(ident.key_file) && throw(HpcError("Select your SSH key in Settings → HPC"))
+    isempty(ident.user)     && throw(HpcError("Set your HPC username in Preferences → HPC"))
+    isempty(ident.key_file) && throw(HpcError("Select your SSH key in Preferences → HPC"))
     errs = hpc_site_errors(site)
     isempty(errs) || throw(HpcError(first(errs)))
     ke = hpc_key_file_error(ident.key_file)

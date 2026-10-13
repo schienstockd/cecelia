@@ -116,7 +116,9 @@ partition flags are **configuration, not assumptions** (`extra_directives`, `pre
 2026-10-13 (Dominik): only scheduler, host and port are shared (`custom.toml`); everything else —
 remote folder, email, queues, account, QoS, directives, preamble — is per profile, beside the
 username and key. A remote folder is usually `/scratch/<user>/…`, and accounts follow a person's
-group. The split below is the original proposal, kept for the record.* They are modelled
+group. The per-profile fields are edited in **Preferences → HPC** (the profile's own dialog), the
+shared ones and the environment install on Settings → HPC. The split below is the original
+proposal, kept for the record.* They are modelled
 on the old R project-settings HPC box (`old-R-shiny-version/inst/app/modules/ui/projectSettingsUI.R:28-140`,
 `inst/config.yml` `hpc:`). That box is a reference, not gospel. *Proposed* split, for review:
 

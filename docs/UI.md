@@ -184,12 +184,16 @@ all CPU cores** (`/api/config/threads`, default on). The second shows what is ru
 the server is supervised; no new shutdown path). Locked under the pixi dev/prod tasks, which always run
 `-t auto`.
 
-## Settings → HPC
+## Settings → HPC and Preferences → HPC
 
-`components/HpcSettings.vue`, under System. One form over three storage scopes
-(`docs/todo/HPC_PLAN.md` → Decision 9): the site (machine-wide), **Your login** (username + SSH key,
-per profile) and **This project** (an account override, shown only with a project open), then a
-CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and preamble. Each field saves on
+`components/HpcSettings.vue`, mounted twice by who owns the fields (`docs/todo/HPC_PLAN.md` →
+Decision 9). `scope="machine"` on Settings: the cluster (scheduler, host, port), a button to
+Preferences → HPC (`openPreferences('hpc')`), **This project** (an account override, shown only with
+a project open) and the **Cluster environment** row with Install on cluster. `scope="user"` in the
+Preferences dialog: a read-only "Cluster: host:port · scheduler" line, the login (username, SSH key),
+remote folder, email, then a CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and
+preamble. Both have Test connection; its disabled tooltip names the other surface when the missing
+field lives there. Settings re-reads when Preferences closes. Each field saves on
 `@change` from its own `useFieldDraft` (`useHpcDrafts`), so a save reply never wipes another field
 being typed in; a refused value shows the backend's message and snaps back. The key
 picker is `FileBrowser` in file mode opened at `~/.ssh` (`startPath`). **Test connection** runs on the
