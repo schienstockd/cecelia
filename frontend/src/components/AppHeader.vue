@@ -160,7 +160,7 @@ const statusTip: Record<string, string> = {
             data-guide="header.profileChip"
             v-tooltip.bottom="`Active profile: ${appCtl.activeProfileDisplayName} — click to switch`"
             aria-label="Active profile — open Preferences"
-            @click="openPreferences()">
+            @click="openPreferences">
       <i class="pi pi-user" />
       {{ appCtl.activeProfileDisplayName }}
     </button>

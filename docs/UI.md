@@ -187,8 +187,7 @@ the server is supervised; no new shutdown path). Locked under the pixi dev/prod 
 ## Settings → HPC and Preferences → HPC
 
 `components/HpcSettings.vue`, mounted twice by who owns the fields (`docs/todo/HPC_PLAN.md` →
-Decision 9). `scope="machine"` on Settings: the cluster (scheduler, host, port), a button to
-Preferences → HPC (`openPreferences('hpc')`), **This project** (an account override, shown only with
+Decision 9). `scope="machine"` on Settings: the cluster (scheduler, host, port), **This project** (an account override, shown only with
 a project open) and the **Cluster environment** row with Install on cluster. `scope="user"` in the
 Preferences dialog: a read-only "Cluster: host:port · scheduler" line, the login (username, SSH key),
 remote folder, email, then a CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and

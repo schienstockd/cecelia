@@ -36,8 +36,7 @@ handler continues: register labels, QC, run log
 | **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
-Preferences opens from the profile chip in the header, or from the button on Settings → HPC. Test
-connection is on both.
+Preferences opens from the profile chip in the header. Test connection is on both.
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.
@@ -161,7 +160,7 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 1. **Before:** a Cecelia build that has HPC in Settings, running on Linux or macOS. SSH to the login
    node with a key (a passphrase key loaded in `ssh-agent`; no MFA). The compute nodes must be Linux
    x86_64 with HTTPS access, and the remote folder needs about 15 GB.
-2. **Settings → HPC:** scheduler, host and port. Then **Preferences → HPC** (the button there):
+2. **Settings → HPC:** scheduler, host and port. Then **Preferences → HPC** (the profile chip in the header):
    username, key, a remote folder on scratch or project space (not in home), the queue/account/QoS
    you normally use, and a preamble if jobs need `module load`. Click **Test connection**: three
    green lines (host key, folder, SLURM version).

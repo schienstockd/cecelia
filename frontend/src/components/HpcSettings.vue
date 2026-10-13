@@ -19,7 +19,7 @@ import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, h
   keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
   type HpcEnvStatus } from '../utils/hpcSettings'
-import { openPreferences, isPreferencesOpen } from '../lib/preferencesOpen'
+import { isPreferencesOpen } from '../lib/preferencesOpen'
 
 const props = defineProps<{ projectUid: string; scope: HpcScope }>()
 const machine = computed(() => props.scope === 'machine')
@@ -132,11 +132,6 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value"
              @change="commit('site.port')" v-tooltip.bottom="'SSH port (usually 22)'" />
     </div>
-    <div class="cc-row hpc-note">
-      <span class="cc-muted cc-fs-sm">Your login, folder and queues are per profile</span>
-      <button class="cc-btn cc-btn-ghost" @click="openPreferences('hpc')"
-              v-tooltip.top="'Open Preferences → HPC'"><i class="pi pi-user" /> Preferences → HPC</button>
-    </div>
 
     <template v-if="s.project">
       <h3 class="cc-eyebrow hpc-sub">This project</h3>
@@ -235,7 +230,6 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
 .hpc-classes input { min-width: 0; }
 .hpc-sub { margin: 1.1rem 0 0.5rem; }
 .hpc-first { margin-top: 0; }
-.hpc-note { margin: 0.6rem 0 0; gap: 0.5rem; }
 .hpc-cluster { display: flex; margin: 0 0 0.8rem; }
 .hpc-grow { flex: 1; min-width: 0; }
 .hpc-port { width: 8ch; }

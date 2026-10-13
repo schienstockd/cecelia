@@ -13,7 +13,6 @@ import { ref, computed, onMounted } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import { renameLiveMirrorOwner } from '../utils/profileStorage'
-import { preferencesPane, type PreferencesPane } from '../lib/preferencesOpen'
 import BaseModal from './BaseModal.vue'
 import CcToggle from './CcToggle.vue'
 import ConfirmButton from './ConfirmButton.vue'
@@ -33,7 +32,7 @@ const appCtl   = useAppControlStore()
 // Profiles is FIRST — it's the identity primitive every other pane's setting hangs off, and the
 // answer to "how do I switch" needs to be one click away. The other panes follow roughly by how
 // often they get touched.
-type CategoryId = PreferencesPane
+type CategoryId = 'profiles' | 'interface' | 'viewer' | 'movies' | 'layout' | 'kiwi' | 'lablog' | 'hpc'
 const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'profiles',  label: 'Profiles',  icon: 'pi-user' },
   { id: 'interface', label: 'Interface', icon: 'pi-sliders-h' },
@@ -44,7 +43,7 @@ const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'lablog',    label: 'Lab log',   icon: 'pi-book' },
   { id: 'hpc',       label: 'HPC',       icon: 'pi-server' },
 ]
-const active = ref<CategoryId>(preferencesPane.value)
+const active = ref<CategoryId>('profiles')
 
 // ── Profiles pane state ──────────────────────────────────────────────────────
 // Roster is server truth (custom.toml [ai].profile + user-profiles subdirectories). Local state is

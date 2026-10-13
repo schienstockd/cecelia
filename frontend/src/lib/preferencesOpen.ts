@@ -6,13 +6,8 @@
 import { ref } from 'vue'
 
 export const isPreferencesOpen = ref(false)
-export type PreferencesPane = 'profiles' | 'interface' | 'viewer' | 'movies' | 'layout' | 'kiwi' | 'lablog' | 'hpc'
 
-/** The pane the modal opens on; a caller may name one (Settings → HPC links to `hpc`). */
-export const preferencesPane = ref<PreferencesPane>('profiles')
-
-export function openPreferences(pane: PreferencesPane = 'profiles') {
-  preferencesPane.value = pane
+export function openPreferences() {
   isPreferencesOpen.value = true
 }
 
