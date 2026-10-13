@@ -41,12 +41,17 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import failure_text, read_result, resolve_claude_bin  # noqa: E402
+# one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
+from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
+from cecelia.effectiveness.palette import BLUISH_GREEN, GREY, ORANGE, SKY_BLUE, VERMILLION  # noqa: E402
 
 
 def _load_review():
@@ -57,6 +62,7 @@ def _load_review():
 
 
 _rv = _load_review()
+_bugs = _rv._load_sibling("bugs")
 
 #: What the agent reports per bug: `fixed` (in its diff), `not_real` (nothing to fix) or `left`.
 OUTCOMES = ("fixed", "not_real", "left")
@@ -165,7 +171,8 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
               "what the copy did), and run the matching tests. One you can't finish (it needs a decision this "
               "brief doesn't settle, or a fix you can't test): undo your changes for it and report it `left` "
               "with why, rather than guess.",
-              "", "Report every key. `title` is the commit's subject line; `summary` is its body: what was wrong "
+              "", "Report every key. Open each `reason` with one short sentence that says it all (for `left`: "
+              "what stopped you); the detail follows. `title` is the commit's subject line; `summary` is its body: what was wrong "
               "and what changed, naming each fixed bug's key. Set `draft` if the fix changes what is drawn on "
               "screen: the owner looks at those before they merge."]
     return "\n".join(lines)
@@ -181,29 +188,146 @@ def tags_brief(recital: str) -> str:
             "empty list if it has none.")
 
 
+def describe_call(name: str, inp: dict, cwd: pathlib.Path | None = None) -> str:
+    """One tool call, short: `Edit app/src/x.jl`, `Bash pixi run test-py`."""
+    arg = str(inp.get("file_path") or inp.get("command") or inp.get("pattern") or inp.get("path") or "")
+    arg = arg.strip().splitlines()[0] if arg.strip() else ""
+    if cwd and arg.startswith(f"{cwd}/"):
+        arg = arg[len(str(cwd)) + 1:]
+    return f"{name} {arg}".strip()
+
+
+class Progress:
+    """A long step's live line: spinner, the step, elapsed time and, for an agent, its tool calls and the
+    latest. On exit a `✓` (or `✗`) line with what it took; off a terminal, only that line."""
+    FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, label: str, *, out: _t.TextIO | None = None, cwd: pathlib.Path | None = None):
+        self.label, self.out, self.cwd = label, out or sys.stdout, cwd
+        self.tty = self.out.isatty()
+        self.calls, self.last, self.note, self.failed = 0, "", "", False
+        self.t0 = time.monotonic()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+
+    def __enter__(self) -> "Progress":
+        if self.tty:
+            self._thread.start()
+        return self
+
+    def __exit__(self, kind, *exc) -> None:
+        self._stop.set()
+        if self.tty:
+            self._thread.join()
+            self.out.write("\r\033[K")
+        bad = self.failed or kind is not None
+        mark = _col(VERMILLION if bad else BLUISH_GREEN, "✗" if bad else "✓", use_colour=self.tty)
+        print(f"  {mark} {self.label}" + _col(_DIM, self.stats(), use_colour=self.tty), file=self.out, flush=True)
+
+    def stats(self) -> str:
+        calls = [f"{self.calls} tool call{'s' if self.calls != 1 else ''}"] if self.calls else []
+        return " · " + " · ".join([_fmt_duration(time.monotonic() - self.t0), *calls, *([self.note] if self.note else [])])
+
+    def event(self, ev: dict) -> None:
+        """A `stream-json` event: counts its tool calls."""
+        for call in agent_sandbox.tool_uses(ev):
+            self.calls += 1
+            self.last = describe_call(call["tool"], call["input"], self.cwd)
+
+    def line(self, frame: int) -> str:
+        spin = _col(SKY_BLUE, self.FRAMES[frame % len(self.FRAMES)], use_colour=self.tty)
+        tail = self.stats() + (f" · {self.last}" if self.last else "")
+        return _clip(f"  {spin} {self.label}" + _col(_DIM, tail, use_colour=self.tty), _terminal_size()[0] - 1)
+
+    def _spin(self) -> None:
+        frame = 0
+        while not self._stop.wait(0.1):
+            self.out.write("\r\033[K" + self.line(frame))
+            self.out.flush()
+            frame += 1
+
+
+#: An outcome's word and colour, in the session's rows and on the run's landed lines.
+_OUTCOME = {"fixed": ("fixed", BLUISH_GREEN), "not_real": ("not real", GREY), "left": ("left", ORANGE),
+            "landed": ("landed", GREY), "failed": ("failed", VERMILLION)}
+_REASON_LINES = 2   # the card and auto_fix.jsonl keep the whole reason
+
+
+def _width() -> int:
+    return min(_terminal_size()[0], _rv._MAX_WIDTH)
+
+
+def outcome_rows(rows: _t.Sequence[tuple[str, str, str]], *, use_colour: bool) -> list[str]:
+    """`fixed  fanout-1a2b  Its first sentence of why…` per (key, outcome, reason), the reason wrapped
+    under itself and cut at `_REASON_LINES`."""
+    keyw = max((len(k) for k, _, _ in rows), default=0)
+    out = []
+    for key, outcome, reason in rows:
+        word, colour = _OUTCOME.get(outcome, (outcome, GREY))
+        head = f"    {word:<8}  {key:<{keyw}}  "
+        first = _rv._SENTENCE.split(" ".join(str(reason).split()))[0] or "—"
+        lines = _wrap_desc(first, width=_width(), indent=" " * len(head), first_prefix=head).splitlines()
+        if len(lines) > _REASON_LINES:
+            lines = lines[:_REASON_LINES]
+            lines[-1] = lines[-1].rstrip() + " …"
+        lines = [lines[0][:len(head)] + _rv._highlight(lines[0][len(head):], use_colour=use_colour),
+                 *(" " * len(head) + _rv._highlight(ln[len(head):], use_colour=use_colour) for ln in lines[1:])]
+        lines[0] = ("    " + _col(colour, f"{word:<8}", use_colour=use_colour) + "  "
+                    + _col(_BOLD, f"{key:<{keyw}}", use_colour=use_colour) + lines[0][len(head) - 2:])
+        out += lines
+    return out
+
+
 def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str | None = None,
-                    main: pathlib.Path, budget_usd: float = SESSION_USD,
+                    main: pathlib.Path, label: str = "agent working", out: _t.TextIO | None = None,
+                    budget_usd: float = SESSION_USD,
                     timeout: float = TIMEOUT_SEC) -> tuple[dict | None, float, str | None, str | None]:
-    """One fenced `claude -p` in `cwd`. (structured answer, cost, session id, failure); the answer is
-    None when it failed. Raises `RateLimited` when the seat is out of quota."""
+    """One fenced `claude -p` in `cwd`, streamed so `Progress` can show it working. (structured answer,
+    cost, session id, failure); the answer is None when it failed. Raises `RateLimited` when the seat
+    is out of quota."""
     claude = resolve_claude_bin()
     if not claude:
         return None, 0.0, None, "claude CLI not on PATH"
     argv = [claude, "-p", "--permission-mode", "acceptEdits", "--settings", json.dumps(settings(main)),
-            "--tools", TOOLS, "--strict-mcp-config", "--output-format", "json",
+            "--tools", TOOLS, "--strict-mcp-config", "--output-format", "stream-json", "--verbose",
             "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)]
     if resume:
         argv += ["--resume", resume]
+    result, timed_out = {}, threading.Event()
     try:
-        proc = subprocess.run(argv, input=prompt, cwd=str(cwd), env=agent_sandbox.agent_env(),
-                              capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired) as e:
+        with tempfile.TemporaryFile("w+", encoding="utf-8") as err, Progress(label, out=out, cwd=cwd) as progress:
+            proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=str(cwd),
+                                    env=agent_sandbox.agent_env(), text=True, encoding="utf-8")
+            timer = threading.Timer(timeout, lambda: (timed_out.set(), proc.kill()))
+            timer.start()
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+                for line in proc.stdout:
+                    try:
+                        ev = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(ev, dict):
+                        progress.event(ev)
+                        result = ev if ev.get("type") == "result" else result
+                code = proc.wait()
+            finally:
+                timer.cancel()
+            progress.note = f"${float(result.get('total_cost_usd') or 0.0):.2f}"
+            progress.failed = code != 0 or timed_out.is_set() or not isinstance(result.get("structured_output"), dict)
+            err.seek(0)
+            stderr = err.read()
+    except OSError as e:
         return None, 0.0, None, f"session failed: {e}"
-    out = read_result(proc)
+    if timed_out.is_set():
+        return None, 0.0, result.get("session_id"), f"session failed: timed out after {timeout:.0f}s"
+    done = subprocess.CompletedProcess(argv, code, json.dumps(result) if result else "", stderr)
+    out = read_result(done)
     answer = out.get("structured_output")
     cost = float(out.get("total_cost_usd") or 0.0)
-    if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
-        return None, cost, out.get("session_id"), f"session failed (exit {proc.returncode}): {failure_text(proc, out)}"
+    if code != 0 or out.get("is_error") or not isinstance(answer, dict):
+        return None, cost, out.get("session_id"), f"session failed (exit {code}): {failure_text(done, out)}"
     return answer, cost, out.get("session_id"), None
 
 
@@ -287,49 +411,61 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
     name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
     branch = name
     tree = main.parent / f"cecelia-{name}"
-    say = lambda msg: print(f"  {msg}", file=out, flush=True)   # noqa: E731
+    colour = out.isatty()
+
+    def say(msg: str, *, bad: bool = False) -> None:
+        mark = _col(VERMILLION, "✗", use_colour=colour) + " " if bad else "  "
+        print(f"  {mark}" + (msg if bad else _col(_DIM, msg, use_colour=colour)), file=out, flush=True)
     if tree.exists():
-        say(f"{tree} exists already: skipped (remove it, or finish it by hand)")
+        say(f"{tree} exists already: skipped (remove it, or finish it by hand)", bad=True)
         return 0.0
-    made = sh(["pixi", "run", "bootstrap-worktree", name, branch, "origin/main"], main)
+    with Progress("worktree", out=out) as step:
+        made = sh(["pixi", "run", "bootstrap-worktree", name, branch, "origin/main"], main)
+        step.failed = made.returncode != 0
     if made.returncode != 0:
-        say(f"bootstrap-worktree failed: {_tail(made)}")
+        say(f"bootstrap-worktree failed: {_tail(made)}", bad=True)
         return 0.0
     with tempfile.TemporaryDirectory(prefix="auto-fix-hooks-") as hooks_dir:
         return _work(record, bugs, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say,
-                     session=session, sh=sh, path=path, auto_log=auto_log)
+                     out=out, session=session, sh=sh, path=path, auto_log=auto_log)
 
 
-def _work(record, bugs, tree, branch, hooks, *, main, say, session, sh, path, auto_log) -> float:
+def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, path, auto_log) -> float:
     before = snapshot(tree)
-    answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main)
+    answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main,
+                                         label="agent fixing", out=out)
     if failed:
         _log_failed(record, bugs, f"{failed} (${spent:.2f})", auto_log)
-        say(f"{failed} (${spent:.2f}); worktree removed, tried again next run")
+        say(f"{failed}; worktree removed, tried again next run", bad=True)
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
         return spent
-    for r in answer["bugs"]:
-        say(f"{r['key']}: {r['outcome']} — {r['reason']}")
+    for line in outcome_rows([(r["key"], r["outcome"], r["reason"]) for r in answer["bugs"]],
+                             use_colour=out.isatty()):
+        print(line, file=out)
     if not _fixed_keys(answer):
         _log(record, bugs, answer, "", auto_log)
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
+        say("nothing fixed: no PR, worktree removed")
         return spent
 
     def stop(why: str) -> float:
         _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"{why}; worktree left at {tree}")
+        say(f"{why}; worktree left at {tree}", bad=True)
         return spent
 
     why, diff = guard(tree, before, hooks, sh)
     if why:
         return stop(why)
-    rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
-    recital = rec.stdout or ""
+    with Progress("recital", out=out) as step:
+        rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
+        recital = rec.stdout or ""
+        step.failed = "_Recital stamp:" not in recital
     if "_Recital stamp:" not in recital:
         return stop(f"recital failed: {_tail(rec)}")
-    tagged, cost, _, failed = session(tags_brief(recital), tree, TAGS_SCHEMA, resume=sid, main=main)
+    tagged, cost, _, failed = session(tags_brief(recital), tree, TAGS_SCHEMA, resume=sid, main=main,
+                                      label="agent acting on the recital", out=out)
     spent += cost
     if failed:
         return stop(f"tagging the recital: {failed}")
@@ -359,8 +495,27 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, session, sh, path, au
     for b in bugs:
         if b["key"] in _fixed_keys(answer):
             _rv.append_review("bug_work", record["date"], b["id"], "fix_session", note=f"auto PR {pr}", path=path)
-    say(f"PR{' (draft)' if answer['draft'] else ''}: {pr}")
+    print(f"  {_col(BLUISH_GREEN, '→', use_colour=out.isatty())} "
+          + _col(_BOLD, f"{'draft PR' if answer['draft'] else 'PR'} {pr}", use_colour=out.isatty()), file=out, flush=True)
     return spent
+
+
+def landed(record: dict, keys: _t.Iterable[str], main: pathlib.Path) -> dict[str, list[dict]]:
+    """Keys a commit on origin/main names since the record's run: fixed by hand after the pass."""
+    return _bugs.landed_fixes(keys, (record.get("run") or {}).get("sha"), "origin/main", main)
+
+
+def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[dict]:
+    """`items` with the bugs of `keys` taken out of their bundles; a bundle left empty, dropped."""
+    out = []
+    for it in items:
+        refs = [r for r in it.get("refs") or [it["ref"]] if by_id[r]["key"] not in keys]
+        if refs == (it.get("refs") or [it["ref"]]):
+            out.append(it)
+        elif refs:
+            out.append({"kind": "bundle", "ref": refs[0], "refs": refs} if len(refs) > 1
+                       else {"kind": "work", "ref": refs[0]})
+    return out
 
 
 def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO = sys.stdout,
@@ -370,26 +525,45 @@ def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO =
     main = main or _rv.main_checkout()
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
-    n = sum(len(it.get("refs") or [it["ref"]]) for it in items)
-    print(f"judge-review --auto: {record['date']} · {n} fix bug(s) in {len(items)} session(s) · running "
-          f"{min(limit, len(items))}" + (" (dry run)" if dry_run else ""), file=out)
-    spent, ran = 0.0, 0
-    if items[:limit] and not dry_run:
+    colour, width = out.isatty(), _width()
+    if items and not dry_run:
         fetched = (kw.get("sh") or default_sh)(["git", "fetch", "-q", "origin"], main)
         if fetched.returncode != 0:
-            print(f"  git fetch failed: {_tail(fetched)}", file=out)
+            print(f"  {_col(VERMILLION, '✗', use_colour=colour)} git fetch failed: {_tail(fetched)}", file=out)
             return 0
+    keys = {by_id[r]["key"]: by_id[r] for it in items for r in it.get("refs") or [it["ref"]]}
+    done = landed(record, keys, main) if items else {}
+    rows = []
+    for k, commits in done.items():
+        c = commits[0]
+        why = f"{c['commit'][:8]} {c['subject']}" + (f" (#{c['pr']})" if c.get("pr") else "")
+        rows.append((k, "landed", why))
+        if not dry_run:
+            _rv.append_auto({"record": record["date"], "ref": keys[k]["id"], "key": k, "outcome": "landed",
+                             "reason": why, "pr_url": ""}, auto_log)
+    items = _without(items, by_id, done)
+    n = sum(len(it.get("refs") or [it["ref"]]) for it in items)
+    print(_col(_BOLD, "judge-review --auto", use_colour=colour)
+          + _col(_DIM, f" · {record['date']} · {n} fix bug(s) in {len(items)} session(s)"
+                 + (f" · {len(done)} already fixed on main" if done else "")
+                 + f" · running {min(limit, len(items))}" + (" · dry run" if dry_run else ""), use_colour=colour),
+          file=out, flush=True)
+    for line in outcome_rows(rows, use_colour=colour):
+        print(line, file=out)
+    spent, ran = 0.0, 0
     for item in items[:limit]:
         bugs = [by_id[r] for r in item.get("refs") or [item["ref"]]]
-        label = " + ".join(f"{b['id']} {b['key']}" for b in bugs)
+        label = (f"{bugs[0]['id']} {bugs[0]['key']}" if len(bugs) == 1
+                 else " + ".join(b["id"] for b in bugs) + f" · {len(bugs)} bugs, one session")
+        print("\n" + _hr(label, width, use_colour=colour), file=out, flush=True)
         if dry_run:
             name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
-            print(f"\n── {label} ──\n" + fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
+            print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
             continue
-        print(f"{label}:", file=out, flush=True)
         spent += work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
         ran += 1
     if not dry_run:
         left = len(items) - ran
-        print(f"{ran} session(s) · ${spent:.2f} spent" + (f" · {left} left: run again" if left > 0 else ""), file=out)
+        print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {left} left: run again" if left > 0 else ""),
+                         width, use_colour=colour), file=out)
     return ran

@@ -372,16 +372,17 @@ def append_auto(row: dict, path: pathlib.Path | None = None) -> None:
 
 def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = (),
                tried: _t.Mapping[str, dict] = {}) -> list[dict]:
-    """The pending work `--auto` may take, bundled: every bug verify called `fix`, except one an auto
-    session already called `not_real` or `left`, or failed on `AUTO_ATTEMPTS` times (its card says
-    why; the owner takes it from there)."""
+    """The pending work `--auto` may take, bundled: every bug verify called `fix` with no landed fix
+    (`fix_landed`), except one an auto session already called `not_real` or `left`, found `landed`
+    on main, or failed on `AUTO_ATTEMPTS` times (its card says why; the owner takes it from there)."""
     by_id = {b["id"]: b for b in record.get("bugs", [])}
 
     def eligible(ref: str) -> bool:
         b = by_id[ref]
         last = tried.get(b["key"]) or {}
         return ((b.get("verify") or {}).get("verdict") == "fix"
-                and last.get("outcome") not in ("not_real", "left")
+                and not b.get("fix_landed")   # a commit naming it landed: the next pass re-checks it
+                and last.get("outcome") not in ("not_real", "left", "landed")
                 and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
     return bundles(record, [it for it in pending(record, reviews, older)
                             if it["kind"] == "work" and eligible(it["ref"])])

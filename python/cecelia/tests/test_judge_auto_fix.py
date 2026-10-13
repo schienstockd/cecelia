@@ -11,6 +11,7 @@ import subprocess
 import unittest
 from unittest import mock
 
+from cecelia.effectiveness.console import _ANSI_RE
 from cecelia.tests.test_judge_record import _bug, _Fixture
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
@@ -68,7 +69,7 @@ class _AutoFixture(_Fixture):
         it = iter(answers)
         self.prompts = []
 
-        def run(prompt, cwd, schema, *, resume=None, main):
+        def run(prompt, cwd, schema, *, resume=None, main, **_):
             self.prompts.append((prompt, resume))
             if touch:
                 (cwd / touch).parent.mkdir(parents=True, exist_ok=True)
@@ -99,8 +100,32 @@ class ItemsTest(_AutoFixture):
         self.rv.append_review("bug_work", "2026-10-05", "B1", "fix_session", path=self.log)
         self.assertEqual(self.rv.auto_items(self.record, self.rv.read_reviews(self.log)), [])
         self.assertEqual(self.rv.auto_items(self.record, [], tried={"fanout-b1": {"outcome": "left"}}), [])
+        landed = {**self.record, "bugs": [{**self.record["bugs"][0], "fix_landed": [{"commit": "e44eada5"}]},
+                                          *self.record["bugs"][1:]]}
+        self.assertEqual(self.rv.auto_items(landed, []), [])
         # a failed session logged nothing per bug: tried again
         self.assertEqual(len(self.rv.auto_items(self.record, [], tried={})), 1)
+
+
+class LandedTest(_AutoFixture):
+    def test_a_bug_whose_fix_landed_on_main_gets_no_session(self):
+        fix = {"commit": "e44eada5" + "0" * 32, "subject": "fix(viewer): swatch (fanout-b1)", "pr": 12}
+        out = io.StringIO()
+        with mock.patch.object(self.af, "landed", return_value={"fanout-b1": [fix]}), \
+                mock.patch.object(self.af, "work_one") as work:
+            ran = self.af.run(self.record, out=out, path=self.log, auto_log=self.auto, main=self.main,
+                              sh=lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+        self.assertEqual((ran, work.call_count), (0, 0))
+        self.assertIn("0 fix bug(s) in 0 session(s) · 1 already fixed on main", out.getvalue())
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["reason"]), ("landed", "e44eada5 fix(viewer): swatch (fanout-b1) (#12)"))
+        self.assertEqual(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto)), [])
+
+    def test_a_landed_bug_leaves_its_bundle(self):
+        by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
+        items = [{"kind": "bundle", "ref": "B1", "refs": ["B1", "B2"]}, {"kind": "work", "ref": "B3"}]
+        self.assertEqual(self.af._without(items, by_id, {"a"}), [{"kind": "work", "ref": "B2"}, items[1]])
+        self.assertEqual(self.af._without(items, by_id, {"c"}), [items[0]])
 
 
 class OnlyNewestTest(_AutoFixture):
@@ -132,16 +157,35 @@ class FenceTest(_AutoFixture):
         self.assertTrue(any(d.startswith("Edit(") and d.endswith("cecelia-feijoa/**)") for d in deny))
         self.assertIn("Write(~/.ssh/**)", deny)
 
-    def test_the_session_is_fenced_and_never_skips_permissions(self):
+    def session(self, *events, code=0):
         seen = {}
 
-        def run(argv, **kw):
-            seen.update(argv=argv, env=kw["env"], cwd=kw["cwd"])
-            return subprocess.CompletedProcess(argv, 0, '{"structured_output": {"tags": []}, "session_id": "s"}', "")
+        class Popen:
+            def __init__(self, argv, **kw):
+                seen.update(argv=argv, env=kw["env"], cwd=kw["cwd"])
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO("".join(json.dumps(e) + "\n" for e in events) + "not json\n")
+
+            def wait(self):
+                seen["prompt"] = self.stdin.getvalue() if not self.stdin.closed else "closed"
+                return code
+
+            def kill(self):
+                pass
+        err = io.StringIO()
         with mock.patch.object(self.af, "resolve_claude_bin", return_value="claude"), \
-                mock.patch.object(self.af.subprocess, "run", run):
-            answer, _, sid, failed = self.af.default_session("p", self.tmp, {}, resume="s0", main=self.main)
-        self.assertEqual((answer, sid, failed), ({"tags": []}, "s", None))
+                mock.patch.object(self.af.subprocess, "Popen", Popen), mock.patch("sys.stdout", err):
+            got = self.af.default_session("p", self.tmp, {}, resume="s0", main=self.main)
+        return got, seen, err.getvalue()
+
+    def test_the_session_is_fenced_and_never_skips_permissions(self):
+        tool = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Edit", "input": {"file_path": f"{self.tmp}/app/src/a.jl"}}]}}
+        result = {"type": "result", "structured_output": {"tags": []}, "session_id": "s", "total_cost_usd": 0.4}
+        (answer, cost, sid, failed), seen, progress = self.session(tool, result)
+        self.assertEqual((answer, cost, sid, failed), ({"tags": []}, 0.4, "s", None))
+        # not a terminal: no spinner, one line when it's done
+        self.assertEqual(progress, "  ✓ agent working · 0.0s · 1 tool call · $0.40\n")
         argv = seen["argv"]
         self.assertNotIn("--dangerously-skip-permissions", argv)
         self.assertEqual(argv[argv.index("--permission-mode") + 1], "acceptEdits")
@@ -149,6 +193,30 @@ class FenceTest(_AutoFixture):
         self.assertEqual(argv[argv.index("--resume") + 1], "s0")
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(seen["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
+        self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
+
+    def test_a_session_without_a_result_fails(self):
+        (answer, _, _, failed), _, _ = self.session({"type": "system"}, code=1)
+        self.assertIsNone(answer)
+        self.assertIn("exit 1", failed)
+
+    def test_the_progress_line(self):
+        tty = mock.Mock(isatty=lambda: True)
+        p = self.af.Progress("agent fixing", out=tty, cwd=pathlib.Path("/w"))
+        plain = lambda line: _ANSI_RE.sub("", line)   # noqa: E731
+        self.assertRegex(plain(p.line(0)), r"^  ⠋ agent fixing · 0\.\ds$")
+        p.event({"message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "pixi run test-py\nx"}}]}})
+        self.assertTrue(plain(p.line(1)).endswith("· 1 tool call · Bash pixi run test-py"))
+        self.assertIn("\x1b[", p.line(1))   # a terminal gets colour
+        self.assertEqual(tty.write.call_count, 0)   # nothing until entered
+
+    def test_outcome_rows_wrap_under_the_reason_and_stop_at_two_lines(self):
+        long = "Real: " + "word " * 60 + ". A second sentence that never shows."
+        rows = self.af.outcome_rows([("fanout-1", "left", long), ("conv-22", "not_real", "Already fixed.")],
+                                    use_colour=False)
+        self.assertEqual(rows[0][:30], "    left      fanout-1  Real: ")
+        self.assertTrue(rows[1].startswith(" " * 24) and rows[1].endswith(" …"))
+        self.assertEqual(rows[2], "    not real  conv-22   Already fixed.")
 
     def test_the_agent_env_holds_no_token(self):
         with mock.patch.dict(self.af.os.environ, {"GH_TOKEN": "t", "GITHUB_TOKEN": "t", "DBUS_SESSION_BUS_ADDRESS": "b"}):
@@ -187,10 +255,12 @@ class WorkTest(_AutoFixture):
         self.assertEqual([(r["ref"], r["value"], r["note"]) for r in rows],
                          [("B1", "fix_session", "auto PR https://github.com/o/r/pull/9")])
         self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "fixed")
-        self.assertIn("PR (draft): https://github.com/o/r/pull/9", out)
+        self.assertIn("→ draft PR https://github.com/o/r/pull/9", out)
 
     def test_not_real_commits_nothing_removes_the_worktree_and_shows_on_the_card(self):
-        self.work(_answer("not_real"))
+        _, out = self.work(_answer("not_real"))
+        self.assertIn("not real  fanout-b1  because", out)
+        self.assertIn("nothing fixed: no PR", out)
         self.assertFalse(any(c[:2] in (["git", "commit"], ["git", "push"]) for c in self.calls))
         self.assertIn(["remove_worktree", str(self.main.parent / "cecelia-fix-fanout-b1")], self.calls)
         self.assertEqual(self.rv.read_reviews(self.log), [])   # stays in the owner's queue

@@ -92,6 +92,14 @@ class StreamSignals:
     rate_limited: str | None = None
 
 
+def tool_uses(ev: dict) -> list[dict]:
+    """One `stream-json` event's `tool_use` calls, `{tool, input}` each: for a reader of the live stream."""
+    msg = ev.get("message")
+    return [{"tool": c.get("name", ""), "input": c.get("input", {}) or {}}
+            for c in ((msg.get("content", []) or []) if isinstance(msg, dict) else [])
+            if isinstance(c, dict) and c.get("type") == "tool_use"]
+
+
 def parse_stream_json(stdout: str) -> StreamSignals:
     """Every `tool_use` block in order, plus the terminal `result` event's cost, turns, text and
     whether it was a usage-limit refusal. A malformed line is counted in `parse_errors` and skipped."""
@@ -107,11 +115,7 @@ def parse_stream_json(stdout: str) -> StreamSignals:
             continue
         if not isinstance(ev, dict):
             continue
-        msg = ev.get("message")
-        if isinstance(msg, dict):
-            for c in msg.get("content", []) or []:
-                if isinstance(c, dict) and c.get("type") == "tool_use":
-                    sig.tool_calls.append({"tool": c.get("name", ""), "input": c.get("input", {}) or {}})
+        sig.tool_calls += tool_uses(ev)
         if ev.get("type") == "result":
             sig.cost_usd = float(ev.get("total_cost_usd") or 0.0)
             sig.turns = int(ev.get("num_turns") or 0)
