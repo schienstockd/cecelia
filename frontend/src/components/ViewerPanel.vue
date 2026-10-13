@@ -59,7 +59,20 @@ const recordingTask = computed(() => taskStore.tasks.some(t =>
   (t.funName ?? '').startsWith('movie.') && (t.status === 'queued' || t.status === 'running')
 ))
 
-const selectedValueName = ref('')
+// The version the viewer is showing: the remembered pick while the image still has it, else the
+// active version (`activeValueName` mirrors what the server opens when no valueName is passed).
+// Resolved live — the image is patched IN PLACE (`updateImageMeta`) and the pick is written from
+// elsewhere (a version delete, a prune, the pop-out, another tab), none of which re-fires an
+// `openedImage` watch. Writing it persists the pick, which the pop-out follows.
+const selectedValueName = computed<string>({
+  get: () => {
+    const img = openedImage.value
+    if (!img) return ''
+    const names = Object.keys(img.filepaths ?? {})
+    return resolveValueName(settings.getImageVersion(img.uid), names, names, activeValueName(img))
+  },
+  set: v => { const uid = openedImage.value?.uid; if (uid) settings.setImageVersion(uid, v) },
+})
 const visibleLabels     = ref<Record<string, boolean>>({})
 // Master "show cell-track ribbons" toggle: draws ribbons for flow pops whose cells have
 // `track_id > 0` (a hand-drawn cell gate over cells that were later tracked). Distinct from
@@ -331,27 +344,26 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 watch(openedImage, (img) => {
   // restore the remembered preference rather than always starting hidden
   labelsExpanded.value = false                 // a different image is a different list
-  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; obsCols.value = []; return }
+  if (!img) { visibleLabels.value = {}; obsCols.value = []; return }
   // Tracks are seeded over BOTH registries (labels ∪ branchLabels) — a points-only set is exactly
   // the one whose tracks you want. Label visibility below is NOT unioned — there are no pixels to
   // show for a set with no `labels` registry.
-  // The version the viewer is showing: the remembered pick while the image still has it, else the
-  // active version (`activeValueName` mirrors what the server opens when no valueName is passed).
-  const names = Object.keys(img.filepaths ?? {})
-  selectedValueName.value = resolveValueName(settings.getImageVersion(img.uid), names, names, activeValueName(img))
   // Restore remembered label visibility for this image; unknown labels default to true.
   visibleLabels.value = settings.getLabelVisibility(img.uid, Object.keys(img.labels ?? {}))
-  loadObsCols()                       // colour-by options for the selected segmentation
 }, { immediate: true })
+// Colour-by options follow the image AND the version shown on it — however the version moved.
+watch(() => [openedImage.value?.uid, selectedValueName.value], () => loadObsCols(), { immediate: true })
 
 // Follow the server's active version into the popup viewer when a TASK swaps `_active` for the image
-// on screen (e.g. a denoise run produces "smoothed" and marks it active). The dropdown already re-seeds
-// via the watch above, but the viewer only reacts to `cc.viewerImageVersion`. Without a mirror the user
+// on screen (e.g. a denoise run produces "smoothed" and marks it active). Watches the active version
+// itself: the image object is patched in place, so a watch on `openedImage` misses the swap. The
+// viewer only reacts to `cc.viewerImageVersion`. Without a mirror the user
 // has to toggle the dropdown back and forth to force a switch. Guard with `lastServerActive` so we only
 // follow when the persisted pick was tracking the OLD active (empty or equal to it) — never override a
 // user pick that intentionally names a different version.
 const lastServerActive = ref<Record<string, string>>({})
-watch(openedImage, (img) => {
+watch(() => [openedImage.value?.uid, openedImage.value?.activeValueName], () => {
+  const img = openedImage.value
   if (!img) return
   const uid = img.uid
   const active = img.activeValueName ?? ''
@@ -359,8 +371,6 @@ watch(openedImage, (img) => {
   const picked = settings.getImageVersion(uid)
   if (prev && active && prev !== active && (picked === '' || picked === prev)) {
     settings.setImageVersion(uid, active)
-    selectedValueName.value = active
-    loadObsCols()
   }
   lastServerActive.value[uid] = active
 }, { immediate: true })
@@ -729,15 +739,12 @@ const versionNote = computed(() => {
 
 function onValueNameChange(e: Event) {
   const name = (e.target as HTMLSelectElement).value
-  selectedValueName.value = name
-  loadObsCols()
   // Broadcast to the popup viewer — the panel is the single source of truth for the version now
   // (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). The popup's storage-event bridge (P2) picks this
   // up via settings.setImageVersion → `cc.viewerImageVersion` and calls its `changeVersion`
   // internally, so the two windows never disagree about the version on screen. If no popup is up
   // yet, `openInViewer` opens one on the picked version.
-  const openUid = projectStore.openImageUid
-  if (openUid) settings.setImageVersion(openUid, name)
+  if (projectStore.openImageUid) selectedValueName.value = name
   else openInViewer(name)
 }
 
@@ -851,9 +858,7 @@ function onTaskResult(data: Record<string, unknown>) {
     // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
     // so setting the dropdown alone left the panel naming the new version over the old pixels.
     // Auto-update off: neither moves.
-    selectedValueName.value = addedValueName
     settings.setImageVersion(imageUid, addedValueName)
-    loadObsCols()
     reloadViewer()
     // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
     // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
