@@ -255,6 +255,14 @@ class RenderTest(_Fixture):
         self.assertIn("Share of unfixed notes (%)", svg)
         self.assertIn(">n = 4<", svg)  # one week judged: real bug 50 %, gone 25 %, dismissed 25 %
         self.assertEqual(svg.count(">n = "), 1)  # no n under a week the judge has nothing from
+        # one stacked bar (legend swatches are 10 by 10, bars a computed width): real bug (open + parked) 50 %, gone 25 %, dismissed 25 %, bottom-up to 100 %
+        bars = [(float(y), float(h), fill) for y, h, fill in
+                re.findall(r'<rect x="[\d.]+" y="([\d.]+)" width="\d+\.\d" height="([\d.]+)" fill="(#\w+)"/>', svg)]
+        pal = self.c.load_hex()
+        self.assertEqual([b[2] for b in bars], [pal[sw] for _, _, sw in self.c.JUDGE_LINES])
+        self.assertEqual([round(4 * h / sum(b[1] for b in bars)) for _, h, _ in bars], [2, 1, 1])
+        for (y, _, _), (above, h, _) in zip(bars, bars[1:]):   # each segment sits on the one below
+            self.assertAlmostEqual(above + h, y, delta=0.15)
         thin = self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06", sessions=3), [record],
                                 as_of=dt.date(2026, 10, 20))
         self.assertNotIn(">n = ", self.c.render_svg(thin))  # a low-session week gets no share either
