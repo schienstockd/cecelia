@@ -314,6 +314,35 @@ exact params your runner expects as the second arg (a `NamedTuple` or `Dict`).
 > and read them with `script_utils.channel_indices` / `channel_index`, which name the translator and the
 > fix when a name slips through. Enforced by `NoBareChannelCoercionTest`.
 
+### Porting a task to HPC
+
+A task can run its Python half on a batch cluster (`docs/todo/HPC_PLAN.md`). The handler still runs
+here, unchanged; only `run_py` calls leave. Porting is three edits, and the ratchet
+`HPC dispatch: ported tasks declare every run_py` (`app/test/suite/hpc_dispatch.jl`) holds them:
+
+1. **Declare the I/O of every `run_py` call**, as absolute local paths:
+   ```julia
+   ok = run_py("tasks/<category>/<name>_run.py", params, task_run_dir(img._dir);
+       reads  = [im_path, label_store],                 # files or whole stores (dirs)
+       writes = [joinpath(img._dir, "labelProps", "$vn.h5ad"), qc_out_path],
+       on_log = on_log, on_progress = on_progress, on_process = on_process)
+   ```
+   Reads must sit under the project or the models folder (`<config_dir>/models`); writes under the
+   project. On the cluster the reads are synced to the project's mirror, every path in the params is
+   rewritten to the mirror's, and exactly the writes come back, through a staging path and a rename.
+   Locally the two lists are unused.
+2. **List `"hpc"` in the spec's `env`** and give it the whole `"hpc"` block of job defaults (all four
+   keys; there are no class defaults): `"hpc": {"cpus": 8, "mem_gb": 64, "gpus": 1, "walltime_min": 240}`. The env chip under the function
+   name then offers local ⇄ hpc, and the run form shows these, editable per run. A composite can list
+   `"hpc"` only when every step does; its steps run with the composite's block.
+3. **Size anything from the machine with `hpc_task_cpus()`** when dispatched: the job's allocation, not
+   this machine's pool (`measure_labels.jl` sizes its workers this way).
+
+A missed read fails fast: any other absolute path in the params refuses the run before submitting,
+naming the path. A missed write is lost, and the log names it (`[WARN] The cluster job also changed …`);
+the dispatch end-to-end test asserts there are none. Not portable yet: set-scope tasks, custom tasks,
+and runs needing a non-default pixi env.
+
 > **Migration note:** several existing tasks (cleanup/segment/tracking) still inline the spawn loop
 > and bootstrap `sys.path` in their runner — that older pattern works but is being migrated to
 > `run_py`. **New tasks must use `run_py`.** `clustPops.cluster` is the reference example.

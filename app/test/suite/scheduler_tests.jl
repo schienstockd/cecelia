@@ -689,13 +689,13 @@ end
     @test back.project_uid == req.project_uid && back.image_uid == req.image_uid
     @test back.image_uids == req.image_uids && back.pool_name == req.pool_name
     @test back.params["blockSize"] == 512 && back.params["name"] == "x"
-    @test back.target == "local"          # the field a second target lands in, defaulted not omitted
+    @test back.target === TARGET_LOCAL    # typed at the boundary, defaulted not omitted
 
     # A request off the wire with only the required keys must not throw — a sender on older code
     # omitting an optional field is a compatibility case, not an error.
     minimal = task_request(Dict{String,Any}("taskId" => "t2", "funName" => "f", "projectUid" => "p"))
     @test minimal.image_uids == String[] && minimal.params == Dict{String,Any}()
-    @test minimal.target == "local"
+    @test minimal.target === TARGET_LOCAL
 end
 
 # ── The detached task runner ──────────────────────────────────────────────────

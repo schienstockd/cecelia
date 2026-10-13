@@ -429,6 +429,8 @@ include(joinpath(@__DIR__, "suite", "segmentation.jl"))
 # `segment.importLabels` params/validation/QC helper, and the end-to-end path a user runs: a temp
 # project → import (TIFF + zarr) → registered labels → Measure labels → `label_props`.
 include(joinpath(@__DIR__, "suite", "label_import.jl"))
+# After label_import.jl: its fixture project is what the dispatch end-to-end runs on.
+include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 
 # ── chipSelect param type ────────────────────────────────────────────────────
 # "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.

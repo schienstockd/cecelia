@@ -214,6 +214,9 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
            (isnothing(py_env) ? "" : "  (cellpose v3 env)"))
 
     qc_out_path = joinpath(task_run_dir(task_dir), "segment_counts.json")
+    # The zarr filenames the runner writes — the same derivation the live-preview declaration uses, so
+    # the two can't disagree — and, with the model files, the run's I/O declaration (HPC dispatch).
+    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
 
     ok = run_py("tasks/segment/cellpose_run.py",
         (; imPath              = im_path,
@@ -237,17 +240,16 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
            clearDepth          = p.clearDepth,
            normaliseToWhole    = p.normaliseToWhole),
         task_run_dir(task_dir);
+        reads  = vcat([im_path], segment_model_reads(models_converted)),
+        writes = vcat([joinpath(task_dir, "labels", f) for f in label_files], [qc_out_path]),
         on_log = on_log, on_progress = on_progress, on_process = on_process,
         env = py_env)
     ok || return nothing
 
     on_log("[INFO] Segmentation complete.")
 
-    # The zarr filenames the Python code will have written — the same derivation the live-preview
-    # declaration uses, so the two can't disagree about what this run produces — then register them
-    # in ccid.json, which is what makes the set appear in every `labels` picker (segmentation.jl).
-    # The atomic write this block used to do inline now lives in `register_label_files!`.
-    label_files = segment_label_files(p.outputValueName, models_converted; halo = p.haloSize > 0)
+    # Register the stores in ccid.json, which is what makes the set appear in every `labels` picker
+    # (segmentation.jl).
     register_label_files!(img, p.outputValueName, label_files)
 
     # QC (advisory): the per-type cell count every segmenter banks, plus the `seg.*` shape findings

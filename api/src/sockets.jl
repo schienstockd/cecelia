@@ -732,6 +732,15 @@ function handle_task_run(ws, data)
     set_uid     = _wstr(data, :setUid)
     pool_name   = _wstr(data, :poolName)
     params      = _to_str_dict(get(data, :params, nothing))
+    # Where it runs (the env chip, HPC_PLAN code reality 11) and the run's cluster resources.
+    target = try
+        run_target(_wstr(data, :target))
+    catch e
+        ws_log(ws, task_id, "[ERROR] $(e.msg)")
+        ws_status(ws, task_id, "failed"; fun=fun_name)
+        return
+    end
+    hpc = _to_str_dict(get(data, :hpc, nothing))
 
     proj_root = joinpath(projects_dir(), project_uid)
     if !isdir(proj_root)
@@ -764,7 +773,7 @@ function handle_task_run(ws, data)
     # detached runner executes the identical code rather than a second copy of it.
     # See docs/todo/TASK_RUNNER_PLAN.md (Decision 1).
     req = TaskRequest(; task_id, fun_name, project_uid, image_uid, image_uids, pool_name, params,
-                        by = active_profile_name())
+                        target, hpc, by = active_profile_name())
 
     # Run it in THIS process — the fallback whenever no runner takes it. Dies with this server.
     run_in_process() = execute_task(req;

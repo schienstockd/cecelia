@@ -5,6 +5,7 @@
 
 using Test
 using Cecelia
+using JSON3
 
 # Hermetic, exactly as `runtests.jl` does it: never the user's config dir.
 if !haskey(ENV, "CECELIA_DEV_DIR")
@@ -18,4 +19,6 @@ init_cecelia!()
 @testset "HPC" begin
     include(joinpath(@__DIR__, "suite", "hpc.jl"))
     include(joinpath(@__DIR__, "suite", "hpc_remote.jl"))
+    include(joinpath(@__DIR__, "suite", "label_import.jl"))    # its fixture project, for dispatch
+    include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 end

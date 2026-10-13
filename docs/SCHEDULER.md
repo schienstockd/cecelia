@@ -97,9 +97,10 @@ hpc     = 1    # jobs dispatched to the HPC cluster at once (was "network")
 
 One pool per real bottleneck resource; the name says *what* it rations, not *how much*. Every limit is
 only a starting default — each is a live throttle (below), so you can drop `io` to 1 while importing
-over a slow SMB share without editing config or restarting. `hpc` is defined but no task
-uses it yet: it is the lane for tasks dispatched to a cluster, and its limit is the number of jobs
-in flight there (`docs/todo/HPC_PLAN.md` → Decision 6). It was called `network` until then;
+over a slow SMB share without editing config or restarting. `hpc` is the lane for tasks dispatched
+to a cluster (`run_task(...; target = TARGET_HPC)`, whatever the spec's own pool): its limit is the
+number of jobs in flight there, and a dispatched task holds no local `cpu`/`gpu` slot
+(`docs/todo/HPC_PLAN.md` → Decision 6; dispatch in `app/src/hpc/dispatch.jl`). It was called `network` until then;
 `init_cecelia!` renames a stored `[pools] network` in `custom.toml` (`migrate_custom_conf!`).
 
 `_pools_init!` reads `[pools]` at first use; `cpu` always exists (falls back to

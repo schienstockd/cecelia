@@ -14,10 +14,9 @@
   ],
   "category": "Segment",
   "group": "Segment",
-  "env": [
-    "local"
-  ],
+  "env": ["local", "hpc"],
   "resource_pool": "gpu",
+  "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 1, "walltime_min": 240},
   "requires": {
     "axes": [
       "T"

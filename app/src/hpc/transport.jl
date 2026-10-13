@@ -397,10 +397,25 @@ otherwise the remote `src` to the local `dest`. `args` are extra rsync flags (fi
 `-s` keeps paths with spaces whole on the remote; `--partial-dir` keeps an interrupted file out of
 the destination, so a half-sent chunk is never mistaken for a whole one.
 """
-function hpc_rsync(c::HpcConn, src::AbstractString, dest::AbstractString; up::Bool = true,
-                   args::AbstractVector{<:AbstractString} = String[],
-                   files_from::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
-                   what::AbstractString = "Sync", timeout_s::Real = 24 * 3600)::HpcRsyncStats
+hpc_rsync(c::HpcConn, src::AbstractString, dest::AbstractString; kw...)::HpcRsyncStats =
+    _rsync_stats(_hpc_rsync_run(c, src, dest; kw...))
+
+"""
+    hpc_rsync_itemize(conn, src, dest; up = false, args) -> Vector{String}
+
+The files a pull of the remote `src` WOULD change locally (a dry run: nothing is written), relative to
+`src`. What the undeclared-change check (dispatch.jl) asks.
+"""
+function hpc_rsync_itemize(c::HpcConn, src::AbstractString, dest::AbstractString; up::Bool = false,
+                           args::AbstractVector{<:AbstractString} = String[])::Vector{String}
+    out = _hpc_rsync_run(c, src, dest; up, args = vcat(["-n", "-i"], args), what = "Check")
+    String[m[1] for m in eachmatch(r"(?m)^[<>]f\S* (.+)$", out)]
+end
+
+function _hpc_rsync_run(c::HpcConn, src::AbstractString, dest::AbstractString; up::Bool = true,
+                        args::AbstractVector{<:AbstractString} = String[],
+                        files_from::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                        what::AbstractString = "Sync", timeout_s::Real = 24 * 3600)::String
     rsync = rsync_bin()
     isempty(rsync) && throw(HpcError("rsync not found on this machine"))
     list = nothing
@@ -415,7 +430,7 @@ function hpc_rsync(c::HpcConn, src::AbstractString, dest::AbstractString; up::Bo
     cmd = Cmd([rsync; flags; _rsync_transport(c); args; from; to])
     try
         r = _hpc_capture(cmd, ""; timeout_s = timeout_s)
-        r.code == 0 && return _rsync_stats(r.out)
+        r.code == 0 && return r.out
         why = r.timed_out ? "timed out" :
               occursin("remote command not found", r.err) ? "rsync is not installed on the cluster" :
               (c isa HpcSshConn && occursin("connection unexpectedly closed", r.err)) ? _ssh_error_line(r.err) :

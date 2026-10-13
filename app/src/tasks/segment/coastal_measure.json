@@ -7,8 +7,9 @@
   "notWhen": ["No trained flow model yet: run Train flow model first"],
   "category": "Segment",
   "group": "Segment",
-  "env": ["local"],
+  "env": ["local", "hpc"],
   "resource_pool": "gpu",
+  "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 1, "walltime_min": 480},
   "composite": ["segment.coastal", "segment.measureLabels"],
   "qcPlot": "segmentation_qc"
 }

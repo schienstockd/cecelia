@@ -102,6 +102,10 @@ function _execute_job!(job::TaskJob)
         # set-scope job runs _run_task over the whole image vector at once; else single image.
         job_target = run_task_target(job.target)
         result = try
+          # On `TARGET_HPC` the handler still runs here; its `run_py` calls go to the cluster
+          # (hpc/dispatch.jl). A dispatch that cannot be set up fails the task before it starts.
+          _with_run_target(rec, job.task, representative_image(job.target),
+                           line -> Base.invokelatest(job.on_log, line)) do
             _run_task(job.task, job_target,
                       merge(job.params, Dict("_task_id" => job.id, "_by" => rec.by));
                       on_log      = line -> Base.invokelatest(job.on_log, line),
@@ -116,6 +120,7 @@ function _execute_job!(job::TaskJob)
                           end
                           Base.invokelatest(job.on_process, proc)
                       end)
+          end
         catch e
             bt = catch_backtrace()
             @warn "Unhandled error in task" task_id = job.id exception = (e, bt)

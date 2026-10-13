@@ -19,6 +19,28 @@ const _TASK_STATUS_STR = Dict(
 )
 Base.string(s::TaskStatus) = _TASK_STATUS_STR[s]
 
+"""
+Where a task's work runs: this machine, or a batch cluster (docs/todo/HPC_PLAN.md — the handler always
+runs here; on `TARGET_HPC` its `run_py` calls are dispatched). Wire form `"local"` / `"hpc"`, parsed
+once at the request boundary by `run_target`.
+"""
+@enum RunTarget TARGET_LOCAL TARGET_HPC
+Base.string(t::RunTarget) = t === TARGET_HPC ? "hpc" : "local"
+
+"""
+    run_target(s) -> RunTarget
+
+`"local"` / `""` → `TARGET_LOCAL`, `"hpc"` → `TARGET_HPC`; anything else is an `ArgumentError`, so a typo
+never silently runs a task somewhere it was not asked to.
+"""
+function run_target(s::AbstractString)::RunTarget
+    t = lowercase(strip(String(s)))
+    (isempty(t) || t == "local") && return TARGET_LOCAL
+    t == "hpc" && return TARGET_HPC
+    throw(ArgumentError("Unknown run target '$s' (local or hpc)"))
+end
+run_target(t::RunTarget)::RunTarget = t
+
 mutable struct TaskRecord
     id::String
     fun_name::String
@@ -66,6 +88,11 @@ mutable struct TaskRecord
     # writes to the same place).
     image_uids::Vector{String}
     output_name::String
+    # Where the work runs, and the run's own cluster resource overrides (`{cpus, memGb, gpus,
+    # walltimeMin}`, any subset; empty for a local run). Resolved against the spec's `"hpc"` block when
+    # the job starts (`hpc_dispatch_for`).
+    target::RunTarget
+    hpc::Dict{String,Any}
 end
 
 const _TASKS      = Dict{String, TaskRecord}()
@@ -112,10 +139,12 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
                          by::String = "",
                          params::Dict{String,Any} = Dict{String,Any}(),
                          image_uids::Vector{String} = String[image_uid],
-                         output_name::String = "")
+                         output_name::String = "",
+                         target::RunTarget = TARGET_LOCAL,
+                         hpc::Dict{String,Any} = Dict{String,Any}())
     rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
-                     on_status_change, live_outputs, params, image_uids, output_name)
+                     on_status_change, live_outputs, params, image_uids, output_name, target, hpc)
     lock(_TASKS_LOCK) do
         isnothing(_conflicting_run(rec)) || throw(DuplicateRunError(fun_name, output_name))
         _TASKS[id] = rec

@@ -13,8 +13,9 @@
   ],
   "category": "Segment",
   "group": "Measure",
-  "env": ["local"],
+  "env": ["local", "hpc"],
   "resource_pool": "cpu",
+  "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 0, "walltime_min": 240},
   "qcPlot": "segmentation_qc",
   "requires": { "scale": ["xy"] },
   "params": [
