@@ -266,6 +266,20 @@ add one comment (your words, defused like a body; on a bug filed that pass, righ
 create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
 *issue not filed yet*.
 
+**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works the `fix` bugs without
+you, one session per bundle, one after another (`--dry-run` prints the briefs). The agent never
+holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<key>` /
+`fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with
+`acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
+to act on the findings and tag them, and commits, pushes and opens the PR itself: a draft when the
+fix changes what is drawn on screen. It never merges. A fixed bug gets the same answer `[f]` gives,
+noting the PR. One the agent called not real, or left, stays in your queue with its reason on the
+card (`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is. A
+commit or push that fails leaves the worktree for you. The agent can't run recital itself (its
+reviewers are `claude -p` runs, which need the network), so this was deferred until the record
+routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
+you in them; read the first few auto PRs for sibling call sites the agent missed.
+
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.
@@ -319,6 +333,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-rules` | The rule table + proposals, printed |
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
+| `pixi run judge-review --auto` | Work the `fix` bugs unattended, one PR per session (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |
 | `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
