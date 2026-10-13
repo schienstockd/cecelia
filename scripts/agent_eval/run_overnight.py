@@ -21,7 +21,6 @@ import copy
 import datetime as dt
 import importlib.util
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -275,7 +274,7 @@ def run(a, runner=default_runner) -> dict:
         return {}
 
     checkout = make_checkout(root)
-    env = {**os.environ, "CECELIA_DEV_DIR": state["devDir"], "CECELIA_OBSERVER_NO_PAIR": "1"}
+    env = agent_sandbox.agent_env(CECELIA_DEV_DIR=state["devDir"])
     for k in [k for k in env if k.startswith("CLAUDE_CODE_") or k in ("CLAUDECODE", "CLAUDE_PID")]:
         env.pop(k)                                           # a fresh session, not a child of this one
     started = dt.datetime.now(dt.timezone.utc)

@@ -14,9 +14,14 @@ Last, the record's rule proposals: `edit the rule` starts a session briefed on t
 and the findings that broke it; `reject` drops it. Either way the next pass counts only the findings
 made after the answer, so a rule is proposed again only if sessions keep breaking it.
 
+`--auto` works the bugs verify called `fix` without the owner, one sandboxed session per bundle,
+each ending in a PR; never a merge (`auto_fix.py`).
+
 Usage:
     pixi run judge-review                # the newest record
     pixi run judge-review --date 2026-10-06
+    pixi run judge-review --auto --dry-run      # the briefs it would send
+    pixi run judge-review --auto [--limit 3]    # work the first session(s)
 """
 from __future__ import annotations
 
@@ -36,7 +41,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import git_context, read_events  # noqa: E402
-from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
+from cecelia.effectiveness.claude_cli import RateLimited, limit_exit, resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import (  # noqa: E402
     _BOLD, _DIM, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, LEFT, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc,
@@ -84,19 +89,26 @@ def append_review(event: str, record_date: str, ref: str, value: str | None, *,
     if event not in REVIEW_EVENTS:
         raise ValueError(f"unknown review event {event!r}")
     row = {"schema_version": REVIEW_SCHEMA_VERSION, "id": uuid.uuid4().hex[:12],
-           "ts": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-           "event": event, "record": record_date, "ref": ref, "value": value}
+           "ts": _now(), "event": event, "record": record_date, "ref": ref, "value": value}
     if note:
         row["note"] = note
     if corrects:
         row["corrects"] = corrects
-    path = path or review_path()
+    _append_jsonl(path or review_path(), row)
+    return row
+
+
+def _now() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _append_jsonl(path: pathlib.Path, row: dict) -> None:
+    """One row, flushed to disk: the owner's logs are append-only."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, ensure_ascii=False) + "\n")
         fh.flush()
         os.fsync(fh.fileno())
-    return row
 
 
 def read_reviews(path: pathlib.Path | None = None) -> list[dict]:
@@ -340,6 +352,41 @@ def bundle_brief(record: dict, bugs: _t.Sequence[dict]) -> str:
     return "\n".join(lines)
 
 
+#: Sessions `--auto` spends on a bug before leaving it to the owner.
+AUTO_ATTEMPTS = 2
+
+
+def auto_path() -> pathlib.Path:
+    """`auto_fix.jsonl` beside `review.jsonl`: what each `--auto` session said about each bug."""
+    return review_path().parent / "auto_fix.jsonl"
+
+
+def read_auto(path: pathlib.Path | None = None) -> dict[str, dict]:
+    """Bug key → the latest `--auto` outcome for it, over every record."""
+    return {row["key"]: row for row in read_events(path or auto_path()) if row.get("key")}
+
+
+def append_auto(row: dict, path: pathlib.Path | None = None) -> None:
+    _append_jsonl(path or auto_path(), {"ts": _now(), **row})
+
+
+def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = (),
+               tried: _t.Mapping[str, dict] = {}) -> list[dict]:
+    """The pending work `--auto` may take, bundled: every bug verify called `fix`, except one an auto
+    session already called `not_real` or `left`, or failed on `AUTO_ATTEMPTS` times (its card says
+    why; the owner takes it from there)."""
+    by_id = {b["id"]: b for b in record.get("bugs", [])}
+
+    def eligible(ref: str) -> bool:
+        b = by_id[ref]
+        last = tried.get(b["key"]) or {}
+        return ((b.get("verify") or {}).get("verdict") == "fix"
+                and last.get("outcome") not in ("not_real", "left")
+                and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
+    return bundles(record, [it for it in pending(record, reviews, older)
+                            if it["kind"] == "work" and eligible(it["ref"])])
+
+
 def rule_answers(records: _t.Iterable[dict], reviews: _t.Iterable[dict]) -> dict[str, str]:
     """rule → when the owner last accepted or rejected a proposal for it, over every record. The
     rules step counts only the findings after it, as after an edit of the section (`rules.since_edit`)."""
@@ -419,8 +466,9 @@ _LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", BLUISH
            "r": ("reject", VERMILLION)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
-_SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Your answer", REDDISH_PURPLE),
-             ("Recommendation", BLUISH_GREEN), ("Live once", YELLOW), ("Evidence", GREY))
+_SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Auto-fix", BLUE),
+             ("Your answer", REDDISH_PURPLE), ("Recommendation", BLUISH_GREEN), ("Live once", YELLOW),
+             ("Evidence", GREY))
 _MAX_WIDTH = 100   # the recital console's wrap target
 #: `file.ext:12`, `file.ext:12-16,40`, and a bare `:368` that continues the previous file.
 _REF = re.compile(r"(?<![\w/])(?:[\w./-]+\.\w+)?:\d+(?:[-,:]\s?:?\d+)*")
@@ -518,7 +566,9 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
     if note:
         out.append("  " + _col(_DIM, note, use_colour=use_colour))
     decide = item["kind"] == "decide"
-    texts = {"Question": (v.get("question") or b["desc"]) if decide else None,
+    auto = read_auto().get(b["key"]) or {}
+    texts = {"Auto-fix": f"{auto['outcome'].replace('_', ' ')}: {auto.get('reason') or '—'}" if auto else None,
+             "Question": (v.get("question") or b["desc"]) if decide else None,
              "Bug": None if decide else b["desc"], "Verified": None if decide else v.get("effect"),
              "Your answer": b.get("owner_answer"),
              "Recommendation": None if b.get("owner_answer") else v.get("recommendation"),
@@ -738,6 +788,9 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="record to review (default: the newest pass record)")
+    ap.add_argument("--auto", action="store_true", help="work the `fix` bugs unattended, one PR per session")
+    ap.add_argument("--limit", type=int, default=1, help="--auto: sessions to run (default 1)")
+    ap.add_argument("--dry-run", action="store_true", help="--auto: print the briefs, run nothing")
     args = ap.parse_args(argv)
     try:
         if args.date:
@@ -755,6 +808,19 @@ def main(argv: list[str] | None = None) -> int:
     if record.get("kind") == "failure":
         print(f"judge-review: {record['date']} is a failure record; nothing to review", file=sys.stderr)
         return 1
+    if args.auto:
+        newest = (_record.pass_records() or [{}])[-1].get("date")
+        if record["date"] != newest:
+            # a newer record carries these bugs with the answers given since: an older one would redo them
+            print(f"judge-review --auto: {record['date']} isn't the newest record ({newest}); --auto works "
+                  "only the newest", file=sys.stderr)
+            return 1
+        auto_fix = _load_sibling("auto_fix")
+        try:
+            auto_fix.run(record, limit=args.limit, dry_run=args.dry_run, older=older)
+        except RateLimited as e:
+            return limit_exit("judge-review --auto", e)
+        return 0
     tty = sys.stdout.isatty()
     run_queue(record, press=read_key if tty and sys.stdin.isatty() else None, use_colour=tty, fullscreen=tty,
               older=older)
