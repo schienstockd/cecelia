@@ -13,11 +13,9 @@ Environment=REPO=%h/.cecelia-effectiveness/judge-worktree
 # PATH must include `pixi` (~/.pixi/bin) and `claude` (~/.local/bin). Adjust with
 # `systemctl --user edit weekly-judge.service` if either lives elsewhere.
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-# Reset it to origin/main first, so every pass runs today's code. `--detach` first: the last pass
-# left it on its `judge-run/*` branch, and a reset there would move that branch. The fetch retries
-# because this machine's resolver drops lookups now and then; if it never succeeds the pass runs the
-# local origin/main.
-ExecStartPre=/bin/bash -c 'for i in 1 2 3 4 5; do git -C "$${REPO}" fetch --quiet origin && break; echo "fetch failed ($$i/5)" >&2; sleep 30; done; git -C "$${REPO}" checkout --quiet --detach && git -C "$${REPO}" reset --quiet --hard origin/main'
+# Reset it to origin/main first, so every pass runs today's code (cron_pass.sh `--sync`: fetch with
+# retries, detach, reset, under the cron lock).
+ExecStartPre=/bin/bash -c 'exec "$${REPO}/scripts/judge/cron_pass.sh" --sync'
 ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/judge/cron_pass.sh" --pinned'
 # `pixi install` in the worktree the first time, the sweep, up to $10 of verify agents (20 min each,
 # grouped), the rule mapping, then recital + the PR: up to ~3h. A pass stopped by the usage limit is

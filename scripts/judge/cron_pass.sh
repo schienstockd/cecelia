@@ -12,14 +12,21 @@
 # lock stays held through the wait: an overnight agent run would hit the same limit. A rerun pins
 # the same commit: `--ref HEAD` is this checkout, and a pass that stops on the limit never commits.
 #
+# `--sync` resets this checkout to origin/main (the judge unit's ExecStartPre); `--chart` does that
+# and redraws the README's chart (systemd/weekly-chart.service). Both under the same lock, so neither
+# resets the worktree under a running pass.
+#
 # Called by systemd/weekly-judge.service — see that dir's README. Fails loudly (exit non-zero) so
 # `systemctl --user status weekly-judge.service` shows red. Design: docs/ai-assist/WEEKLY_JUDGE.md.
 
 set -euo pipefail
 
 TASK_ARGS=()
+MODE=pass
 case "${1:-}" in
     --pinned) TASK_ARGS=(--ref HEAD) ;;
+    --sync) MODE=sync ;;
+    --chart) MODE=chart ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,7 +41,7 @@ AFTER_RESET_SEC=300
 SLEEP="${CECELIA_JUDGE_SLEEP:-sleep}"   # tests stand `true` in
 mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG_FILE="$LOG_DIR/judge-$TS.log"
+LOG_FILE="$LOG_DIR/$([ "$MODE" = chart ] && echo chart || echo judge)-$TS.log"
 
 log() { echo "$(date -Is) $*" | tee -a "$LOG_FILE" >&2; }
 
@@ -54,12 +61,33 @@ run_pass() {   # $1 = attempt; returns the pass's exit code
     return "${PIPESTATUS[0]}"
 }
 
+sync_worktree() {   # this checkout to origin/main; the fetch retries because this machine's resolver drops
+    # lookups now and then, and if it never succeeds the local origin/main is used. `--detach` first:
+    # a pass leaves it on its `judge-run/*` branch, and a reset there would move that branch.
+    local i
+    for i in 1 2 3 4 5; do
+        git -C "$REPO_ROOT" fetch --quiet origin && break
+        log "fetch failed ($i/5)"
+        "$SLEEP" 30
+    done
+    git -C "$REPO_ROOT" checkout --quiet --detach
+    git -C "$REPO_ROOT" reset --quiet --hard origin/main
+}
+
 main() {
     exec 200>"$LOG_DIR/.lock"
     if ! flock -n 200; then
         log "another cron pass holds the lock; exiting"
         exit 0
     fi
+    case "$MODE" in
+        sync) sync_worktree; return 0 ;;
+        chart)
+            sync_worktree
+            cd "$REPO_ROOT"
+            nice -n 10 pixi run effectiveness-chart -- --push 2>&1 | tee -a "$LOG_FILE"
+            return "${PIPESTATUS[0]}" ;;
+    esac
     local attempt=1 rc retry reset reset_s wait_s
     while :; do
         rm -f "$LIMIT_FILE"

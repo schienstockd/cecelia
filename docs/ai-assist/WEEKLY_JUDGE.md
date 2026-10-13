@@ -109,6 +109,12 @@ test whether an agent can actually use the framework.
    *Fix landed: … — awaiting re-check* until it does, or verify dismisses it. So a fix you landed with `pixi run
    judge-review` shows up even on a pass whose judge failed. On 2026-10-05, 6 of the 7 carried open
    bugs had a fix commit naming their key on main; the judge never ran, so the record said "0 fixed".
+   A bug with a landed fix that is still `open` after the judge (it said `live_bug`, failed, or the
+   bug has no code to excerpt) and has a verify verdict goes back to verify this pass (`reverify`):
+   that verdict predates the fix. The excerpt judge can't close it alone, because the excerpt can
+   miss the fix: on 2026-10-13, 9 bugs whose fixes had merged stayed open, the judge saying the
+   fixed code wasn't in its excerpt, and verify skipped them for already having a verdict. The old
+   verdict stands until a new one replaces it.
 
    Then tool-less judge calls read the excerpts as data and mark each bug `live_bug` / `gone` /
    `not_a_bug`, 40 per call (`BATCH_ITEMS`: it bounds the prompt, not the spend). Calls continue until
@@ -127,7 +133,8 @@ test whether an agent can actually use the framework.
    last pass (`N waiting for the judge (last pass M)`), and the recital console warns when it grew
    two passes in a row: the budget no longer covers the inflow, and you decide whether to raise
    `SWEEP_USD`. Nothing ages out.
-4. **Verify** (`verify.py`). Each open bug that no agent has checked yet goes to a read-only
+4. **Verify** (`verify.py`). Each open bug that no agent has checked yet, or checked before its fix
+   landed (`reverify`, step 3), goes to a read-only
    `claude -p` agent in a sandboxed checkout at the SHA (`agent_sandbox.py`: no network, `~` is
    write-denied, no MCP). Bugs that share a branch or a file go to the same agent, and so do one
    run's errors. The verdict is
@@ -173,7 +180,7 @@ test whether an agent can actually use the framework.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
-   - closed as completed when the judge confirms it `gone`;
+   - closed as completed when the judge confirms it `gone`, or verify dismisses it after a fix landed;
    - closed as not planned when it's `dismissed` (the comment says by whom: the owner, verify or the
      judge), `wont_fix` or `parked`;
    - closed too when GitHub still lists it open but the record no longer has its bug live, whatever
@@ -191,12 +198,14 @@ test whether an agent can actually use the framework.
    second; the rest wait. A mirror that fails says so on `run.issues` and leaves the pass standing.
    Design: [`docs/todo/JUDGE_WORKFLOW_PLAN.md`](../todo/JUDGE_WORKFLOW_PLAN.md) D7–D11, D14.
 9. **Chart** (`chart.py`, best-effort, last). The README's chart is rendered from the log and the
-   store and pushed to the `judge-assets` branch; *The chart* below. With `--no-pr` it is rendered
+   store and pushed to the `judge-assets` branch; *The chart* below. Its own timer
+   (`weekly-chart.timer`, Monday 00:30) draws it too, the night a week completes. With `--no-pr` it is rendered
    but not pushed. Whatever happens is kept on `run.chart` (`pushed`, `skipped`, or `error`) and
    printed; a chart failure never fails the pass.
 
 The record PR's headline is **Bugs: N open** (K verified, X new): K counts the open bugs a verify agent has
-a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug. Then the
+a verdict on, so an agent-run error nobody has traced yet doesn't read like a checked bug (nor does a
+verdict from before a landed fix that verify didn't reach). Then the
 parked count (and how many of them are due a re-check), what was fixed since the last pass, and the backlog against the last pass.
 
 A crash at any stage still writes a failure record and its PR. So does a **usage limit** (HTTP 429,

@@ -1,0 +1,15 @@
+[Unit]
+Description=Weekly effectiveness chart — Monday 00:30
+Documentation=file://%h/.cecelia-effectiveness/judge-worktree/docs/ai-assist/WEEKLY_JUDGE.md
+
+[Timer]
+# The chart leaves out the week still running, so a week appears once it ends on Sunday. The judge
+# pass (Tuesday) draws it too, but that left the README's chart up to 9 days behind.
+OnCalendar=Mon *-*-* 00:30:00
+# Unlike the judge: a render costs nothing and the same numbers give the same bytes (the push is
+# skipped then), so a Monday the machine was off runs at the next boot.
+Persistent=true
+Unit=weekly-chart.service
+
+[Install]
+WantedBy=timers.target

@@ -123,8 +123,10 @@ class VerifyError(RuntimeError):
 
 
 def eligible(bugs: _t.Sequence[dict]) -> list[dict]:
-    """Open bugs no agent has verified yet. A stranded commit needs no agent: it is a fact."""
-    return [b for b in bugs if b.get("status") == "open" and not b.get("verify") and b.get("kind") != "stranded"]
+    """Open bugs no agent has verified yet, or verified before a fix naming them landed (`reverify`).
+    A stranded commit needs no agent: it is a fact."""
+    return [b for b in bugs if b.get("status") == "open" and (not b.get("verify") or b.get("reverify"))
+            and b.get("kind") != "stranded"]
 
 
 def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
@@ -252,7 +254,9 @@ def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,
                  **({"recommendation": v["trigger"]} if v.get("trigger") and not v.get("recommendation") else {})}
         if v is None:
             out.append(b)
-        elif v["verdict"] == "dismiss":
+            continue
+        b = {k: x for k, x in b.items() if k != "reverify"}
+        if v["verdict"] == "dismiss":
             out.append({**b, "verify": v, "status": "dismissed", "why": f"verified: {v['effect']}"})
         elif v["verdict"] == "guard":
             out.append({**b, "verify": v, "status": "parked", "why": _record.parked_why(v)})

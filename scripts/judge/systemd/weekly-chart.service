@@ -1,0 +1,15 @@
+[Unit]
+Description=Weekly effectiveness chart — the README's chart, the Monday a week completes
+Documentation=file://%h/.cecelia-effectiveness/judge-worktree/docs/ai-assist/WEEKLY_JUDGE.md
+
+[Service]
+Type=oneshot
+# The judge's own worktree, reset to origin/main (cron_pass.sh `--chart`): the chart counts PRs and
+# doc edits on main, not on a dev checkout. Same REPO and PATH as weekly-judge.service. It takes the
+# judge's cron lock; while a pass holds it this skips, and that pass draws the chart anyway.
+Environment=REPO=%h/.cecelia-effectiveness/judge-worktree
+Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/judge/cron_pass.sh" --chart'
+TimeoutStartSec=15min
+StandardOutput=journal
+StandardError=journal

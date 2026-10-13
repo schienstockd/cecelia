@@ -33,6 +33,11 @@ case "$step" in
 esac
 """
 _SLEEP = '#!/usr/bin/env bash\necho "$1" >> "$STUB_DIR/sleeps"\n'
+# `git` fails `fetch` as often as $FETCH_FAILS says, then succeeds; every call is recorded
+_GIT = r"""#!/usr/bin/env bash
+echo "${*:3}" >> "$STUB_DIR/git"
+if [ "$3" = fetch ] && [ "$(grep -c '^fetch' "$STUB_DIR/git")" -le "${FETCH_FAILS:-0}" ]; then exit 1; fi
+"""
 
 
 @unittest.skipUnless(sys.platform.startswith("linux") and all(shutil.which(t) for t in ("flock", "ionice", "bash")),
@@ -44,17 +49,17 @@ class CronPassTest(unittest.TestCase):
         self.tmp = pathlib.Path(tmp.name)
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
-        for name, text in (("pixi", _PIXI), ("fake-sleep", _SLEEP)):
+        for name, text in (("pixi", _PIXI), ("fake-sleep", _SLEEP), ("git", _GIT)):
             (self.bin / name).write_text(text, encoding="utf-8")
             (self.bin / name).chmod(0o755)
         (self.tmp / "state").mkdir()
 
-    def run_wrapper(self, plan: str) -> subprocess.CompletedProcess:
+    def run_wrapper(self, plan: str, mode: str = "--pinned", **env_extra: str) -> subprocess.CompletedProcess:
         env = {"PATH": f"{self.bin}{os.pathsep}/usr/bin{os.pathsep}/bin", "HOME": str(self.tmp), "PLAN": plan,
                "STUB_DIR": str(self.tmp), "STATE_DIR": str(self.tmp / "state"),
                "CECELIA_EFFECTIVENESS_LOG": str(self.tmp / "state" / "events.jsonl"),
-               "CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron"), "CECELIA_JUDGE_SLEEP": "fake-sleep"}
-        return subprocess.run(["bash", str(_SCRIPT), "--pinned"], env=env, capture_output=True, text=True,
+               "CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron"), "CECELIA_JUDGE_SLEEP": "fake-sleep", **env_extra}
+        return subprocess.run(["bash", str(_SCRIPT), mode], env=env, capture_output=True, text=True,
                               encoding="utf-8", timeout=60, check=False)
 
     def lines(self, name: str) -> list[str]:
@@ -94,6 +99,30 @@ class CronPassTest(unittest.TestCase):
     def test_another_failure_is_not_retried(self):
         self.assertEqual(self.run_wrapper("1").returncode, 1)
         self.assertEqual(len(self.lines("calls")), 1)
+
+    _RESET = ["checkout --quiet --detach", "reset --quiet --hard origin/main"]
+
+    def test_sync_resets_to_origin_main_retrying_the_fetch_and_runs_nothing(self):
+        proc = self.run_wrapper("0", "--sync", FETCH_FAILS="2")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.lines("git"), ["fetch --quiet origin"] * 3 + self._RESET)
+        self.assertEqual((self.lines("sleeps"), self.lines("calls")), (["30", "30"], []))
+
+    def test_chart_resets_then_pushes_the_chart(self):
+        proc = self.run_wrapper("0", "--chart")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self.lines("git"), ["fetch --quiet origin", *self._RESET])
+        self.assertEqual(self.lines("calls"), [" run effectiveness-chart -- --push"])   # no JUDGE_RETRY_LEFT
+        self.assertEqual(self.run_wrapper("1", "--chart").returncode, 1)   # a failed push shows red
+
+    def test_chart_and_sync_skip_while_a_pass_holds_the_lock(self):
+        import fcntl   # POSIX only; the class runs on Linux alone
+        (self.tmp / "cron").mkdir()
+        with open(self.tmp / "cron" / ".lock", "wb") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)   # a pass's lock: flock(1) locks the same way
+            for mode in ("--chart", "--sync"):
+                self.assertEqual(self.run_wrapper("0", mode).returncode, 0)
+        self.assertEqual((self.lines("git"), self.lines("calls")), ([], []))
 
 
 if __name__ == "__main__":

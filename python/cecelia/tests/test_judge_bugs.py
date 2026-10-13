@@ -478,6 +478,28 @@ class LandedTest(_Repo):
         self.assertIn("(a commit naming this key landed: fix: the thing (fanout-00000001) "
                       f"({self.fix[:8]}))", self.prompts[-1])
 
+    def test_a_verdict_from_before_the_fix_goes_back_to_verify_when_the_judge_cant_see_it(self):
+        self.previous["bugs"] = [{**b, "verify": {"verdict": "fix", "date": "2026-10-05"}} for b in self.first]
+        def boom(prompt):
+            raise self.b._judge.JudgeError("down")
+        for judge in (self.judge("live_bug"), boom):   # the excerpt missed the fix, or the call failed
+            bugs, _ = self.sweep([], previous=self.previous, judge=judge)
+            self.assertEqual([(b["status"], b["verify"]["verdict"], b.get("reverify")) for b in bugs],
+                             [("open", "fix", True), ("open", "fix", True)])
+        spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
+        record = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(record)
+        md = "\n".join(record._render_bugs([{**b, "id": f"B{i}"} for i, b in enumerate(bugs, 1)]))
+        self.assertIn("**Verified** (fix, 2026-10-05, before the fix landed; *re-check due*)", md)
+        # verify didn't reach them (its cap): the next pass, with no new commit, still re-checks them
+        later = {"run": {"ts": "2026-10-12T00:00:00Z", "sha": self.sha}, "bugs": bugs}
+        again, _ = self.sweep([], previous=later)
+        self.assertEqual([(len(b["fix_landed"]), b.get("reverify")) for b in again], [(1, True), (1, True)])
+        # verified since (the flag gone): the old evidence isn't carried, nothing to re-check
+        done = [{k: v for k, v in b.items() if k != "reverify"} for b in again]
+        again, _ = self.sweep([], previous={**later, "bugs": done})
+        self.assertEqual([(b.get("fix_landed"), b.get("reverify")) for b in again], [(None, None), (None, None)])
+
     def test_the_judge_still_decides_gone(self):
         bugs, _ = self.sweep([], previous=self.previous, judge=self.judge("gone"))
         self.assertEqual([(b["status"], len(b["fix_landed"])) for b in bugs], [("gone", 1), ("gone", 1)])
