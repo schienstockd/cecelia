@@ -34,8 +34,8 @@ function parseOutcome(v: unknown): BlackboardOutcome | undefined {
 }
 
 /** AGENT_RUN_REVIEW_PLAN — an unattended agent run's record. `agentRun` is set once by the run's
- *  harness; `sectionIds` names its decision sections (`d01`…) so the list can show "3 / 15 marked"
- *  without reading the body. */
+ *  harness; `sectionIds` is the harness's list of decision sections (`d01`…) at create. The list's
+ *  "3 / 15 marked" comes from the row's `sectionCount`, which tracks the live body. */
 export interface AgentRun {
   copyProjectUid: string
   copyProjectName?: string

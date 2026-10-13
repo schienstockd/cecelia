@@ -6,8 +6,9 @@
 # carried unchanged through every other write (`_BB_PASSTHROUGH_KEYS` in `_write_bb_meta!`):
 #
 #   agentRun         — set once at create by the harness: `{copyProjectUid, startedAt, images,
-#                      sectionIds, …}`. Marks the entry as a run record (the list's filter) and says
-#                      which sections there are without reading entry.md.
+#                      sectionIds, …}`. Marks the entry as a run record (the list's filter). Its
+#                      `sectionIds` is the harness's list at create; the count reads meta's own
+#                      `sectionIds`, which tracks the live entry.md.
 #   sectionOutcomes  — `{sectionId: {verdict, note, cause?, by, at}}`. A verdict on ONE section
 #                      (Decision 7): `good | bad | unsure`, note required for `bad`. On a run record a
 #                      `bad` also names its `cause` (`docs/todo/GUIDE_RUNS_PLAN.md` Decision 2): `guide`
@@ -81,13 +82,9 @@ function _bb_section_ids(uid::AbstractString, id::AbstractString)::Vector{String
     isfile(p) ? _bb_section_ids(read(p, String)) : String[]
 end
 
-# The sections the live entry has: `sectionIds` from meta; a run record written before that field
-# falls back to the ids its harness listed.
+# The sections the live entry has: `sectionIds` from meta (absent = none).
 function _bb_live_section_ids(meta)::Vector{String}
     s = get(meta, "sectionIds", nothing)
-    s isa AbstractVector && return String.(s)
-    ar = get(meta, "agentRun", nothing)
-    s = ar isa AbstractDict ? get(ar, "sectionIds", nothing) : nothing
     s isa AbstractVector ? String.(s) : String[]
 end
 
