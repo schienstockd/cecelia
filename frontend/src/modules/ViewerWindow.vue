@@ -1151,6 +1151,19 @@ const lastMissMs = ref(0)
  *  timepoint), so without saying so on screen a working playback is indistinguishable from a hang. */
 const waitingFor = ref(-1)
 const lostDevice = ref(false)
+/**
+ * The error chip clears itself after 20 s while the viewer is still showing a frame — the same error is
+ * already in the log rail, so a stale chip only covers the image. It STAYS while nothing is on the
+ * canvas or the GPU is gone: there the chip is the only explanation for a blank viewer.
+ */
+const ERROR_CHIP_MS = 20_000
+let errorChipTimer: number | null = null
+watch(() => [error.value, lostDevice.value, shownT.value >= 0] as const, ([msg, lost, live]) => {
+  if (errorChipTimer) { clearTimeout(errorChipTimer); errorChipTimer = null }
+  if (!msg || lost || !live) return
+  errorChipTimer = window.setTimeout(() => { error.value = ''; errorChipTimer = null }, ERROR_CHIP_MS)
+})
+onUnmounted(() => { if (errorChipTimer) clearTimeout(errorChipTimer) })
 const nChannels = computed(() => Math.min(meta.value?.nC ?? 0, MAX_CHANNELS))
 const clipped = computed(() => (meta.value?.nC ?? 0) > MAX_CHANNELS)
 const nT = computed(() => meta.value?.nT ?? 0)
