@@ -23,6 +23,10 @@
 # the radius is in µm). Python (`cell_neighbours_run.py`) reads centroids through the sanctioned
 # LabelPropsView, scales them, runs squidpy, and writes the graph. squidpy attribution: a bundled
 # dependency (THIRD_PARTY.md); the graph modes are squidpy's, not ported CytoMAP code.
+#
+# Per frame on a timecourse BY DEFAULT (`perTimepoint`): one graph over every frame's centroids links a
+# cell to where its neighbours were — and to itself — in other frames, and every consumer inherits those
+# edges. Pooling all frames is an explicit opt-in. A still image has no frames; both build one graph.
 
 using DataFrames: nrow, groupby
 
@@ -32,7 +36,7 @@ Base.@kwdef struct CellNeighboursParams
     neighbourMethod::String = "delaunay"
     pops::Vector{String}    = String[]
     graphSuffix::String     = "default"
-    perTimepoint::Bool      = false
+    perTimepoint::Bool      = true
     neighbourRadius::Float64 = 30.0
     nNeighbours::Int        = 6
 end
@@ -42,7 +46,7 @@ function parse_cell_neighbours_params(d::AbstractDict)::CellNeighboursParams
         neighbourMethod = string(get(d, "neighbourMethod", "delaunay")),
         pops            = _str_list(d, "pops"),
         graphSuffix     = string(get(d, "graphSuffix", "default")),
-        perTimepoint    = Bool(get(d, "perTimepoint", false)),
+        perTimepoint    = Bool(get(d, "perTimepoint", true)),
         neighbourRadius = Float64(get(d, "neighbourRadius", 30.0)),
         nNeighbours     = Int(get(d, "nNeighbours", 6)))
 end

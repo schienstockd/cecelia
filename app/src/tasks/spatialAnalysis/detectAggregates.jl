@@ -9,6 +9,10 @@
 # DBSCAN on centroids is a simple density op — so this needs no Python round-trip (the celltrackR
 # track-measures precedent). Writes `<popType>.cell.is.aggregate` (0/1) + `<popType>.cell.aggregate.id`
 # back via the sanctioned label-props writer.
+#
+# Per timepoint on a timecourse BY DEFAULT: pooled x/y/z would cluster a cell with where its neighbours
+# were (or it itself was) in other frames, so a slow track alone reads as an "aggregate". Pooling all
+# frames is an explicit opt-in (`perTimepoint = false`). A still image has no frames; both are one pass.
 
 using DataFrames: nrow, DataFrame
 using Clustering: dbscan
@@ -19,7 +23,7 @@ Base.@kwdef struct DetectAggregatesParams
     pops::Vector{String}     = String[]
     clustDiameter::Float64   = 15.0
     minCells::Int            = 5
-    perTimepoint::Bool       = false
+    perTimepoint::Bool       = true
 end
 
 function parse_detect_aggregates_params(d::AbstractDict)::DetectAggregatesParams
@@ -27,7 +31,7 @@ function parse_detect_aggregates_params(d::AbstractDict)::DetectAggregatesParams
         pops          = _str_list(d, "pops"),
         clustDiameter = Float64(get(d, "clustDiameter", 15.0)),
         minCells      = Int(get(d, "minCells", 5)),
-        perTimepoint  = Bool(get(d, "perTimepoint", false)))
+        perTimepoint  = Bool(get(d, "perTimepoint", true)))
 end
 
 # DBSCAN cluster ids for one coord block (rows = points, cols = spatial dims); 0 = noise, 1..k = cluster.
@@ -38,6 +42,20 @@ function _aggregate_ids(coords::AbstractMatrix{<:Real}, eps::Real, min_cells::In
     r = dbscan(permutedims(Float64.(coords)), Float64(eps);
                min_neighbors = max(1, min_cells - 1), min_cluster_size = min_cells)
     r.assignments
+end
+
+# DBSCAN per frame (offset ids so they stay unique across frames), or once over every row when
+# `frames === nothing` (still image, or pooling opted into).
+function _aggregate_ids_by_frame(coords::AbstractMatrix{<:Real}, frames, eps::Real, min_cells::Integer)::Vector{Int}
+    frames === nothing && return _aggregate_ids(coords, eps, min_cells)
+    ids = zeros(Int, size(coords, 1)); offset = 0
+    for tv in sort(unique(frames))
+        m = frames .== tv
+        sub = _aggregate_ids(coords[m, :], eps, min_cells)
+        ids[m] = [i == 0 ? 0 : i + offset for i in sub]
+        offset += maximum(sub; init = 0)
+    end
+    ids
 end
 
 function _aggregate_qc_findings(n_cells::Integer, frac::Real)
@@ -66,25 +84,15 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
                        restrict_to = value_name, centroids = :physical)
     nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(p.pops)"); return nothing)
 
-    lp    = label_props(img_label_props_path(img, value_name))
+    props = img_label_props_path(img, value_name)
+    lp    = label_props(props)
     scols = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only
     tcols = temporal_columns(lp)
     coords = hcat((Float64.(cdf[!, c]) for c in scols)...)
     on_progress(2, 3)
 
-    # DBSCAN — per timepoint for live (offset ids so they stay unique across t), else once
-    ids = zeros(Int, nrow(cdf))
-    if p.perTimepoint && !isempty(tcols) && tcols[1] in names(cdf)
-        tvals = cdf[!, tcols[1]]; offset = 0
-        for tv in sort(unique(tvals))
-            m = tvals .== tv
-            sub = _aggregate_ids(coords[m, :], p.clustDiameter, p.minCells)
-            ids[m] = [i == 0 ? 0 : i + offset for i in sub]
-            offset += maximum(sub; init = 0)
-        end
-    else
-        ids = _aggregate_ids(coords, p.clustDiameter, p.minCells)
-    end
+    frames = (p.perTimepoint && !isempty(tcols) && tcols[1] in names(cdf)) ? cdf[!, tcols[1]] : nothing
+    ids = _aggregate_ids_by_frame(coords, frames, p.clustDiameter, p.minCells)
 
     is_agg = Float64.(ids .> 0)
     out = DataFrame("label" => cdf.label,

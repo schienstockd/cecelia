@@ -52,6 +52,49 @@ end
     @test all(Cecelia._aggregate_ids([0.0 0.0; 0.1 0.1], 0.5, 5) .== 0)
 end
 
+# On a timecourse aggregates are found per frame. One stationary cell seen in 6 frames is 6 coincident
+# points: pooled (`nothing` frames) they are an "aggregate" of one cell; per frame each is alone → noise.
+# Two real 3-cell blobs in different frames keep distinct ids (offset across frames).
+@testset "aggregate DBSCAN is per frame" begin
+    track = zeros(6, 2); tT = Float64.(0:5)
+    @test all(Cecelia._aggregate_ids_by_frame(track, nothing, 1.0, 3) .== 1)
+    @test all(Cecelia._aggregate_ids_by_frame(track, tT, 1.0, 3) .== 0)
+    blobs = [0.0 0.0; 0.1 0.0; 0.0 0.1; 0.0 0.0; 0.1 0.0; 0.0 0.1]; bT = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    ids = Cecelia._aggregate_ids_by_frame(blobs, bT, 1.0, 3)
+    @test ids[1:3] == [1, 1, 1] && ids[4:6] == [2, 2, 2]
+    # the DEFAULT run splits by frame — pooling is the opt-in
+    @test Cecelia.parse_detect_aggregates_params(Dict{String,Any}()).perTimepoint === true
+end
+
+# End to end on a real tracked timecourse with DEFAULT params: every aggregate lies within one frame.
+@testset "detectAggregates aggregates within a frame (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "detectAggregates per-frame (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "all"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", -1e12, 1e12, -1e12, 1e12))
+        save_pop_map!(m, img)
+        res = Cecelia._run_task(DetectAggregates(), img,
+                                Dict{String,Any}("pops" => ["B/all"], "clustDiameter" => 30.0, "minCells" => 3);
+                                on_log = _ -> nothing)
+        @test res !== nothing
+        out = label_props(img; value_name="B") |> select_cols(["flow.cell.aggregate.id", "centroid_t"]) |> as_df
+        frames_of = Dict{Float64,Set{Float64}}()
+        for (a, t) in zip(out[!, "flow.cell.aggregate.id"], out.centroid_t)
+            (ismissing(a) || a <= 0) && continue
+            push!(get!(frames_of, a, Set{Float64}()), t)
+        end
+        @test !isempty(frames_of)
+        @test all(length(ts) == 1 for ts in values(frames_of))
+        rm(td; recursive=true)
+    end
+end
+
 
 
 @testset "cellContacts target-name sanitisation" begin

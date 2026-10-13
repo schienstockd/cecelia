@@ -51,8 +51,8 @@
       "key": "perTimepoint",
       "label": "Per timepoint",
       "type": "bool",
-      "default": false,
-      "tip": "Detect aggregates per timepoint; off = pool all"
+      "default": true,
+      "tip": "Detect aggregates within each frame; off = pool all frames"
     }
   ]
 }

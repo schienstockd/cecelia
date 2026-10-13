@@ -624,7 +624,7 @@ end
     end
     let p = Cecelia.parse_cell_neighbours_params(Dict{String,Any}())
         @test p.neighbourMethod == "delaunay"
-        @test p.perTimepoint === false
+        @test p.perTimepoint === true      # per-frame graph by default; pooling frames is opt-in
         @test p.neighbourRadius === 30.0
     end
     let p = Cecelia.parse_contacts_meshes_params(Dict{String,Any}(
