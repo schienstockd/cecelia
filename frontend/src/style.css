@@ -638,8 +638,13 @@ body {
 /* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
 /* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */
 /* may refine spacing, but should not reintroduce old-school borders/backgrounds.  */
+/* `input:not([type])` is load-bearing: an <input> with no type IS a text field,    */
+/* but `[type="text"]` only matches the attribute, so without it a bare             */
+/* <input v-model> falls back to the browser's grey default box.                   */
+/* Its :hover/:focus use :where() so they don't outrank a component's own class     */
+/* (an accent-bordered inline edit must stay accent on hover).                      */
 
-select,
+select, input:not([type]),
 input[type="text"], input[type="number"], input[type="search"],
 input[type="password"], input[type="email"], textarea {
   font: inherit;
@@ -657,10 +662,10 @@ input[type="password"], input[type="email"], textarea {
   transition: border-color 0.12s, box-shadow 0.12s;
   outline: none;
 }
-select:hover,
+select:hover, input:where(:not([type])):hover,
 input[type="text"]:hover, input[type="number"]:hover, input[type="search"]:hover,
 input[type="password"]:hover, input[type="email"]:hover, textarea:hover { border-color: #484f58; }
-select:focus,
+select:focus, input:where(:not([type])):focus,
 input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus,
 input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
   border-color: var(--cc-accent);
