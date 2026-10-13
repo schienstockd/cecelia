@@ -117,27 +117,28 @@ def pr_by_branch(prs: _t.Iterable[dict]) -> dict[str, dict]:
 
 
 def _rank(r: AgentRow) -> float:
-    """Idle is waiting for Dominik (0) — unless its PR's CI is still running: then it waits on CI
-    and will be woken by it (0.75). Done (merged, close the window) sits between the two."""
-    if r.judge and r.status != "busy":
-        return -2   # the judge-review queue is blocked until Dominik deals with it
+    """Asking Dominik something (-1), then idle — waiting for him (0) — unless its PR's CI is still
+    running: then it waits on CI and will be woken by it (0.75). Done (merged, close the window)
+    sits between the two. A judge-review session waiting for him (-1 or 0) comes before all of
+    them: the review queue is blocked until he deals with it."""
     if r.asks:
-        return -1
-    if r.done:
-        return 0.5
-    if r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN" and not r.conflict:
-        return 0.75
-    return _STATUS_RANK.get(r.status, 1)
+        rank = -1.0
+    elif r.done:
+        rank = 0.5
+    elif r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN" and not r.conflict:
+        rank = 0.75
+    else:
+        rank = _STATUS_RANK.get(r.status, 1)
+    return -2 if r.judge and rank <= 0 else rank
 
 
 def sort_rows(rows: _t.Iterable[AgentRow]) -> list[AgentRow]:
-    """A judge-review session that isn't working first (its queue waits on it), then a session
-    asking Dominik something, then idle (waiting for him) — idle with failed
-    CI or a merge conflict before the rest —
-    then done (merged, close the window), idle waiting on running CI, other states, busy;
-    unreadable rows last."""
+    """A judge-review session waiting for Dominik first (its queue waits on it), then a session
+    asking him something, then idle (waiting for him) — idle with failed CI or a merge conflict
+    before the rest — then done (merged, close the window), idle waiting on running CI, other
+    states, busy; unreadable rows last. Within each, judge-review sessions lead."""
     return sorted(rows, key=lambda r: (not r.readable, _rank(r), not (r.ci == "fail" or r.conflict),
-                                       r.name))
+                                       not r.judge, r.name))
 
 
 class PrCache:

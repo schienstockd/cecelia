@@ -47,7 +47,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
    (`WORKTREE_CLEANUP_PLAN.md` decision 11), the same way it already imports `git_context`.
 4. **The session files are undocumented, so failures show.** If a file can't be parsed, the row
    reads `? (unreadable)` rather than disappearing. A missing `~/.claude/sessions/` hides the pane.
-5. **Rows are sorted by what needs Dominik:** a `pixi run judge-review` session that isn't working
+5. **Rows are sorted by what needs Dominik:** a `pixi run judge-review` session waiting for him
    (`*` after its name; found by `scripts/judge/review.py` among its parent processes,
    `claude_sessions.from_judge_review` — the review queue resumes only once he has dealt with it
    and closed it), then a session asking him something (`asks`: its turn is

@@ -375,7 +375,7 @@ class PrCiTest(unittest.TestCase):
 
     def test_a_waiting_judge_review_session_comes_first_and_carries_a_star(self):
         rows = [AgentRow("q", "idle", "w", "y", asks=True),
-                AgentRow("cecelia-28", "shell", "w", "x", judge=True),
+                AgentRow("cecelia-28", "idle", "w", "x", judge=True),
                 AgentRow("j", "busy", "w", "z", judge=True)]
         self.assertEqual([r.name for r in sort_rows(rows)], ["cecelia-28", "q", "j"])
         state = console.DashboardState()
@@ -383,9 +383,15 @@ class PrCiTest(unittest.TestCase):
         lines = console.agents_block(state, 100, use_colour=False)
         self.assertIn("* judge-review", lines[0])
         self.assertEqual(lines[2].split()[0], "cecelia-28*")
-        self.assertEqual(lines[2].index(" shell"), lines[3].index(" asks"))   # columns still line up
+        self.assertEqual(lines[2].index(" idle"), lines[3].index(" asks"))   # columns still line up
         self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
                          "cecelia-pr…*")
+
+    def test_a_judge_review_session_waiting_on_ci_waits_with_the_others_but_leads_them(self):
+        rows = [AgentRow("a", "idle", "w", "x", pr=1, pr_state="OPEN", ci="running"),
+                AgentRow("j", "idle", "w", "y", pr=2, pr_state="OPEN", ci="running", judge=True),
+                AgentRow("p", "idle", "w", "z", pr=3, pr_state="OPEN", ci="pass")]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["p", "j", "a"])
 
     def test_a_busy_session_never_asks(self):
         sessions = [Session(1, "s1", "busy", "/x", asks=True), Session(2, "s2", "shell", "/y", asks=True)]
