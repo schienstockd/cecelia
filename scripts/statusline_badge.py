@@ -7,7 +7,8 @@ Claude Code pipes a JSON object to the statusline command on every refresh; its 
 which session this window is. This prints that session's badge (`agents.session_badge` — the same
 shape and colour the agents pane draws, `pixi run agents`) and name (`cecelia-56`), then runs the
 wrapped command with the same input and appends its output. So a window and its agents-pane row
-can be matched by eye.
+can be matched by eye. It also saves how full the session's context is (`claude_sessions.
+save_context`) — only the statusline is told — for the pane's `ctx` column.
 
 Never breaks the statusline it wraps: if the badge can't be worked out, the wrapped output is
 printed alone; if the wrapped command fails, the badge is printed alone. Stdlib only, run by any
@@ -25,15 +26,21 @@ sys.path.insert(0, str(_REPO / "python"))
 
 
 def badge_for(stdin: bytes) -> str:
-    """`● cecelia-56` for the session named in the statusline input; "" when unknown."""
+    """`● cecelia-56` for the session named in the statusline input, saving its context fill on
+    the way; "" when unknown."""
     try:
         from cecelia.effectiveness.agents import session_badge
-        from cecelia.effectiveness.claude_sessions import session_name
-        sid = json.loads(stdin or b"{}").get("session_id") or ""
+        from cecelia.effectiveness.claude_sessions import context_used, save_context, session_name
+        data = json.loads(stdin or b"{}")
+        sid = data.get("session_id") or ""
     except Exception:   # a broken import or input must not blank the statusline
         return ""
     if not sid:
         return ""
+    try:
+        save_context(sid, context_used(data))
+    except Exception:   # a full disk or a read-only cache must not blank it either
+        pass
     name = session_name(sid)
     return f"{session_badge(sid)} {name}" if name else session_badge(sid)
 

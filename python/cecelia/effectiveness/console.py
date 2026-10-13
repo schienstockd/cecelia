@@ -314,6 +314,19 @@ def _ts_dt(ts: str) -> _dt.datetime | None:
         return None
 
 
+def _fmt_ago(ts: str, now: _dt.datetime | None = None) -> str:
+    """How long ago `ts` was, in its largest whole unit — `40s` / `13m` / `2h` / `3d`; "?" when
+    `ts` doesn't parse."""
+    then = _ts_dt(ts)
+    if then is None or then.tzinfo is None:
+        return "?"
+    s = max(0, int(((now or _dt.datetime.now(_dt.timezone.utc)) - then).total_seconds()))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if s >= size:
+            return f"{s // size}{unit}"
+    return f"{s}s"
+
+
 def _fmt_duration(seconds: float) -> str:
     """Compact duration — `0.1s` / `12.3s` / `1m 23s`. Matches the roundup's `median N.Ns`."""
     if seconds < 60:
@@ -483,7 +496,7 @@ class DashboardState:
         #: Agents-pane rows; None = no pane (no sessions, or liveness can't be checked here).
         self.agents: list[AgentRow] | None = None
         self.agents_note: str | None = None
-        #: `pixi run agents` only: → lists each session's recital findings with their outcomes;
+        #: `pixi run agents` only: → shows each session's recap and recital findings with outcomes;
         #: PgUp/PgDn scroll it (`agents_offset`, step `agents_page`).
         self.agents_expanded = False
         self.agents_offset = 0
@@ -522,13 +535,15 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
     """One table row — idle in yellow (waiting for Dominik), open findings in orange (the commit
     hook will block on them). `cols` = the worktree and branch column widths."""
     if not row.readable:
-        return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} (session file unreadable)", use_colour=use_colour)
+        return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} {'—':<8} (session file unreadable)",
+                    use_colour=use_colour)
     # `done` (merged, not working) replaces the state: close the window, then prune the worktree.
     status = (_col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
               _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
     name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + f" {_fit(row.name, 12)}"
+    status += " " + context_bar(row.context_pct, use_colour=use_colour)
     if not row.branch:
         return f"  {name} {status} {where}"
     open_ = _col(_ORANGE if row.open_findings else _GREY, f"{row.open_findings:>4}", use_colour=use_colour)
@@ -536,6 +551,24 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
     word, colour = _pr_word(row)
     return (f"  {name} {status} {where} {row.rounds:>8} {open_}  {pr:<6} "
             + _col(colour, word, use_colour=use_colour))
+
+
+#: Context fill at which the `ctx` column turns amber, then red; below it stays grey.
+_CONTEXT_WARN, _CONTEXT_HIGH = 60, 80
+#: No full block: `█` fills the whole cell and touches the row above.
+_BAR_LEVELS = "▁▂▃▄▅▆▇"
+
+
+def context_bar(pct: float | None, *, use_colour: bool) -> str:
+    """`▄▁▁ 15%`: three cells, each a third of the scale filled in sevenths, then the percent —
+    one scale (`used_percentage`, of the full window) for both. `—` when unknown. 8 columns."""
+    if pct is None:
+        return f"{'—':<8}"
+    pct = min(100.0, max(0.0, pct))
+    cells = "".join(_BAR_LEVELS[round(min(1.0, max(0.0, pct / 100 * 3 - i)) * (len(_BAR_LEVELS) - 1))]
+                    for i in range(3))
+    colour = _RED if pct >= _CONTEXT_HIGH else _ORANGE if pct >= _CONTEXT_WARN else _GREY
+    return _col(colour, f"{cells} {round(pct):>3}%", use_colour=use_colour)
 
 
 def _pr_word(row: AgentRow) -> tuple[str, str]:
@@ -552,19 +585,27 @@ _DETAIL_OUTCOMES = ("unresolved", "fixed_pre_commit", "shipped_with_finding", "f
 
 
 def _agent_detail(row: AgentRow, width: int, *, use_colour: bool) -> list[str]:
-    """The → view under one session: outcome counts, then each finding as the recital console's
-    findings pane draws it (`_render_finding_block`: head line + description capped at
-    `_FINDING_DESC_LINES`), its outcome in front and the agent's reason under it."""
+    """The → view under one session: Claude Code's recap of it (when one is current) with its
+    age — a busy session may have moved on since — then outcome
+    counts, then each finding as the recital console's findings pane draws it
+    (`_render_finding_block`: head line + description capped at `_FINDING_DESC_LINES`), its
+    outcome in front and the agent's reason under it."""
     pad = " " * 6
+    lines = []
+    if row.recap:
+        ts, text = row.recap
+        recap = _wrap_desc(text, width=width - len(pad), indent=" " * 16,
+                           first_prefix=_col(_DIM, f"recap {_fmt_ago(ts) + ' ago':<10}", use_colour=use_colour))
+        lines.extend(pad + line for line in recap.splitlines())
     if not row.branch:
-        return []
+        return lines
     if not row.findings:
-        return [_col(_DIM, pad + "no recital findings", use_colour=use_colour)]
+        return [*lines, _col(_DIM, pad + "no recital findings", use_colour=use_colour)]
     words = {**_OUTCOME_SHORT, "unresolved": "open"}
     counts = {o: sum(out == o for _, out, _ in row.findings) for o in _DETAIL_OUTCOMES}
     tally = " · ".join(_col(_OUTCOME_COLOUR.get(o, _GREY) if n else _DIM, f"{n} {words[o]}",
                             use_colour=use_colour) for o, n in counts.items())
-    lines = [_clip(pad + tally, width)]
+    lines.append(_clip(pad + tally, width))
     gutter = pad + " " * 10      # under the outcome word
     for finding, outcome, res in row.findings:
         block = _render_finding_block(finding, width=width - len(gutter), use_colour=use_colour,
@@ -585,13 +626,13 @@ def _agent_detail(row: AgentRow, width: int, *, use_colour: bool) -> list[str]:
 def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> list[str]:
     """`── agents ──` header, a column-title row and one row per session; [] when there is no pane.
 
-    `recitals` = `pixi run recital` runs on the session's branch; `open` = their findings with no
-    outcome tag yet."""
+    `ctx` = how full the session's context is (`context_bar`); `recitals` = `pixi run recital` runs
+    on the session's branch; `open` = their findings with no outcome tag yet."""
     if state.agents is None:
         return []
-    # Name, status, the counts, PR and CI take ~55 columns; worktree and branch share the rest,
-    # each no wider than its longest value (or its title).
-    share = max(12, (width - 55) // 2)
+    # Name, status, context, the counts, PR and CI take 63 columns; worktree and branch share the
+    # rest, each no wider than its longest value (or its title), so 80 columns still fit.
+    share = max(8, (width - 63) // 2)
     cols = (min(share, max([8, *(len(r.worktree or "—") for r in state.agents)])),
             min(share, max([6, *(len(r.branch or "—") for r in state.agents)])))
     rows = []
@@ -600,12 +641,12 @@ def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> li
         if state.agents_expanded:
             rows.extend(_agent_detail(r, width, use_colour=use_colour))
     if rows:
-        title = (f"    {'agent':<12} {'state':<6} {_fit('worktree', cols[0])} {_fit('branch', cols[1])}"
+        title = (f"    {'agent':<12} {'state':<6} {'ctx':<8} {_fit('worktree', cols[0])} {_fit('branch', cols[1])}"
                  f" {'recitals':>8} {'open':>4}  {'pr':<6} ci")
         rows.insert(0, _clip(_col(_DIM, title, use_colour=use_colour), width))
     if state.agents_note:
         rows.append(_col(_DIM, f"  {state.agents_note}", use_colour=use_colour))
-    hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → findings"
+    hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → recaps + findings"
     return [_hr("agents" + hint, width, use_colour=use_colour), *rows, ""]
 
 

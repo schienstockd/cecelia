@@ -65,6 +65,8 @@ class AgentRow:
     #: resolution row (None while unresolved) — the detail view (→) lists them.
     findings: tuple[tuple[dict, str, dict | None], ...] = ()
     session_id: str = ""
+    recap: tuple[str, str] | None = None   # (timestamp, text): Claude Code's recap of the session
+    context_pct: float | None = None       # % of the context window in use; None = unknown
 
     @property
     def done(self) -> bool:
@@ -170,5 +172,6 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                              pr=pr.get("number") if pr else None,
                              pr_state=pr.get("state") if pr else None,
                              ci=ci_state(pr.get("statusCheckRollup") or ()) if pr else None,
-                             findings=tuple(findings), session_id=s.session_id))
+                             findings=tuple(findings), session_id=s.session_id, recap=s.recap,
+                             context_pct=s.context_pct))
     return sort_rows(rows)

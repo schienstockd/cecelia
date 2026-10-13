@@ -439,9 +439,10 @@ re-checked just before it is removed. Design: `docs/todo/WORKTREE_CLEANUP_PLAN.m
 worktrees — …`, or nothing when none can go; agents relay it.
 
 `pixi run agents` lists every live Claude Code session with its worktree, branch, PR + CI and
-recital state (→: each session's findings with their outcomes — open, fixed, shipped, dropped — and
-the agent's reason); the same pane heads `pixi run recital-console`. Each row starts with the
-session's badge (shape + colour); to see the same badge in each window, wrap your statusline:
+recital state (→: Claude Code's recap of each session, then its findings with their outcomes — open,
+fixed, shipped, dropped — and the agent's reason); the same pane heads `pixi run recital-console`.
+Each row starts with the session's badge (shape + colour); to see the same badge in each window, and
+fill the `ctx` column (how full each session's context is), wrap your statusline:
 `"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"` in
 `~/.claude/settings.json`. Design:
 `docs/todo/AGENTS_PANE_PLAN.md`.

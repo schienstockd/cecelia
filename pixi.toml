@@ -350,8 +350,8 @@ recital = "python scripts/recital.py"
 recital-console = "python -m cecelia.effectiveness.console"
 
 # One row per live Claude Code session: worktree, branch, idle/busy, recital rounds, open findings.
-# The same pane heads `recital-console`; this shows it alone, and → lists each session's findings
-# with their outcomes. docs/todo/AGENTS_PANE_PLAN.md.
+# The same pane heads `recital-console`; this shows it alone, and → shows each session's recap and
+# its findings with their outcomes. docs/todo/AGENTS_PANE_PLAN.md.
 agents = "python -m cecelia.effectiveness.console --agents"
 
 # Agent overnight run (docs/todo/AGENT_OVERNIGHT_PLAN.md): build an isolated fixture project
