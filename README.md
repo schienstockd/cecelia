@@ -185,6 +185,22 @@ Guide: [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md). Two runnable examples
 
 Running from source with hot-reload (`pixi run dev`) is covered in [`docs/DEV.md`](docs/DEV.md).
 
+### Terminal tools
+
+| Command | What it does |
+|---|---|
+| `pixi run bootstrap-worktree <name>` | New git worktree, ready to run (own env, `.env`, `npm ci`) |
+| `pixi run prune-worktrees` | Lists worktrees safe to remove; `--remove` removes them |
+| `pixi run console` | Live view of the task scheduler: running, queued, finished, per-pool load (see [*Monitoring tasks*](#monitoring-tasks-terminal-console) above) |
+| `pixi run agents` | One row per live Claude Code session: state, context fill, branch, PR + CI; → shows each session's recap and recital findings |
+| `pixi run recital` | Runs the pre-commit reviewers on the current diff |
+| `pixi run recital-console` | Live view of reviewer runs and findings, with the agents pane on top |
+| `pixi run judge-review` | Walks you through the weekly judge's open bugs, one Claude session each |
+
+Details: [`docs/DEV.md`](docs/DEV.md) → *Creating a new worktree*, *Removing worktrees* (also
+`agents`), *Commits* (`recital`); [`docs/ai-assist/WEEKLY_JUDGE.md`](docs/ai-assist/WEEKLY_JUDGE.md)
+→ *Working the record* (`judge-review`).
+
 ---
 
 ## How this software was built
