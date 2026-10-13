@@ -118,7 +118,7 @@ class CronPassTest(unittest.TestCase):
     def test_chart_and_sync_skip_while_a_pass_holds_the_lock(self):
         import fcntl   # POSIX only; the class runs on Linux alone
         (self.tmp / "cron").mkdir()
-        with open(self.tmp / "cron" / ".lock", "w") as held:
+        with open(self.tmp / "cron" / ".lock", "wb") as held:
             fcntl.flock(held, fcntl.LOCK_EX)   # a pass's lock: flock(1) locks the same way
             for mode in ("--chart", "--sync"):
                 self.assertEqual(self.run_wrapper("0", mode).returncode, 0)
