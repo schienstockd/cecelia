@@ -29,7 +29,7 @@ import time
 from cecelia.effectiveness.agents import (
     BADGE_SHAPES, AgentRow, PrCache, branch_recital, ci_state, pr_by_branch, session_badge, sort_rows)
 from cecelia.effectiveness.claude_sessions import (
-    Session, last_cwd, live_sessions, proc_start, session_name)
+    Session, live_sessions, proc_start, recent_cwds, session_name)
 from cecelia.effectiveness.log import unresolved_findings
 
 
@@ -71,7 +71,8 @@ class LiveSessionsTest(_FakeHome):
     def test_live_session_takes_the_last_transcript_cwd(self):
         self.process(10, "500")
         self.session(10, "500", "a", name="cecelia-56", transcript_cwds=["/ws", "/ws/wt-a", "/ws/wt-b"])
-        self.assertEqual(self.live(), [Session(10, "cecelia-56", "idle", "/ws/wt-b", session_id="a")])
+        self.assertEqual(self.live(), [Session(10, "cecelia-56", "idle", "/ws/wt-b", session_id="a",
+                                               recent_cwds=("/ws/wt-b", "/ws/wt-a", "/ws"))])
 
     def test_session_name_looks_up_the_id_without_proc(self):
         self.session(10, "500", "abc", name="cecelia-56")
@@ -117,7 +118,7 @@ class LiveSessionsTest(_FakeHome):
         self.assertIsNone(proc_start(11, self.proc))
 
 
-class LastCwdTest(unittest.TestCase):
+class RecentCwdsTest(unittest.TestCase):
     def test_reads_only_the_tail_and_skips_a_cut_first_line(self):
         with tempfile.TemporaryDirectory() as d:
             path = pathlib.Path(d) / "t.jsonl"
@@ -125,9 +126,16 @@ class LastCwdTest(unittest.TestCase):
             late = [json.dumps({"type": "progress"}), json.dumps({"cwd": "/late"}),
                     json.dumps({"type": "summary"})]
             path.write_text("\n".join([early, *late]) + "\n", encoding="utf-8")
-            self.assertEqual(last_cwd(path, tail_bytes=200), "/late")
+            self.assertEqual(recent_cwds(path, tail_bytes=200), ("/late",))
             path.write_text(early + "\n" + late[0] + "\n", encoding="utf-8")
-            self.assertIsNone(last_cwd(path, tail_bytes=60))   # only a cut line has a cwd
+            self.assertEqual(recent_cwds(path, tail_bytes=60), ())   # only a cut line has a cwd
+
+    def test_newest_first_without_repeats(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "t.jsonl"
+            path.write_text("\n".join(json.dumps({"cwd": c}) for c in ("/a", "/wt", "/ws", "/wt", "/ws")),
+                            encoding="utf-8")
+            self.assertEqual(recent_cwds(path), ("/ws", "/wt", "/a"))
 
 
 def _row(event: str, branch: str, slug: str | None = None, commit: str = "c1", **payload) -> dict:
@@ -193,6 +201,16 @@ class PrCiTest(unittest.TestCase):
         prs = [{"number": 9, "headRefName": "a"}, {"number": 3, "headRefName": "a"},
                {"number": 5, "headRefName": "b"}]
         self.assertEqual({b: p["number"] for b, p in pr_by_branch(prs).items()}, {"a": 9, "b": 5})
+
+    def test_a_merged_session_that_is_not_working_is_done_and_sorts_after_idle(self):
+        rows = [AgentRow("b", "busy", "w", "x"), AgentRow("d", "idle", "w", "y", pr_state="MERGED"),
+                AgentRow("i", "idle", "w", "z"), AgentRow("m", "busy", "w", "v", pr_state="MERGED")]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["i", "d", "b", "m"])
+        self.assertTrue(rows[1].done)
+        self.assertFalse(rows[3].done)      # still working after the merge
+        state = console.DashboardState()
+        state.agents = [rows[1]]
+        self.assertEqual(console.agents_block(state, 100, use_colour=False)[2].split()[1], "done")
 
     def test_idle_with_failed_ci_sorts_first(self):
         rows = [AgentRow("a", "idle", "w", "x", ci="pass"), AgentRow("b", "idle", "w", "y", ci="fail")]
@@ -309,9 +327,9 @@ class PaneTest(unittest.TestCase):
         self.assertEqual(console.agents_block(console.DashboardState(), 80, use_colour=False), [])
 
     def test_piped_agents_prints_one_snapshot(self):
+        # No live sessions on any OS — macOS and Windows have no /proc, which reads as "unknown".
         with tempfile.TemporaryDirectory() as d, \
-                mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": d}):
-            (pathlib.Path(d) / "sessions").mkdir()
+                mock.patch.object(console, "live_sessions", return_value=[]):
             buf = io.StringIO()
             with mock.patch.object(console, "recent_prs", return_value=None):
                 rc = console.main(["--agents", "--log-path", str(pathlib.Path(d) / "e.jsonl")],

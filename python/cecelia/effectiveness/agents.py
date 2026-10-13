@@ -66,6 +66,12 @@ class AgentRow:
     findings: tuple[tuple[dict, str, dict | None], ...] = ()
     session_id: str = ""
 
+    @property
+    def done(self) -> bool:
+        """The PR merged and the session isn't working: the window can be closed — after which
+        `prune-worktrees` can remove its worktree (a session sitting in it keeps it IN USE)."""
+        return self.pr_state == "MERGED" and self.status != "busy"
+
 
 def branch_recital(events: _t.Iterable[dict], branch: str
                    ) -> tuple[int, list[tuple[dict, str, dict | None]]]:
@@ -104,9 +110,9 @@ def pr_by_branch(prs: _t.Iterable[dict]) -> dict[str, dict]:
 
 
 def sort_rows(rows: _t.Iterable[AgentRow]) -> list[AgentRow]:
-    """Idle first (waiting for Dominik) — idle with failed CI before the rest — then other
-    states, then busy; unreadable rows last."""
-    return sorted(rows, key=lambda r: (not r.readable, _STATUS_RANK.get(r.status, 1),
+    """Idle first (waiting for Dominik) — idle with failed CI before the rest — then done (merged,
+    close the window), other states, busy; unreadable rows last."""
+    return sorted(rows, key=lambda r: (not r.readable, 0.5 if r.done else _STATUS_RANK.get(r.status, 1),
                                        r.ci != "fail", r.name))
 
 
@@ -138,6 +144,16 @@ class PrCache:
             return self._prs
 
 
+def _checkout(s: Session) -> str | None:
+    """Top folder of the newest git checkout the session worked in (its shell may since have
+    been reset to the workspace root, which is no checkout)."""
+    for cwd in s.recent_cwds or ((s.cwd,) if s.cwd else ()):
+        top = git_output("rev-parse", "--show-toplevel", cwd=cwd)
+        if top:
+            return top
+    return None
+
+
 def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                prs: _t.Iterable[dict] = ()) -> list[AgentRow]:
     """One sorted row per session. Runs two `git` calls per readable session; `prs` is a
@@ -145,7 +161,7 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
     by_branch = pr_by_branch(prs)
     rows = []
     for s in sessions:
-        top = git_output("rev-parse", "--show-toplevel", cwd=s.cwd) if s.cwd else None
+        top = _checkout(s)
         branch = (git_output("branch", "--show-current", cwd=top) or None) if top else None
         rounds, findings = branch_recital(events, branch) if branch else (0, [])
         pr = by_branch.get(branch) if branch else None

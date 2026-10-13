@@ -523,7 +523,9 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
     hook will block on them). `cols` = the worktree and branch column widths."""
     if not row.readable:
         return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} (session file unreadable)", use_colour=use_colour)
-    status = _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour)
+    # `done` (merged, not working) replaces the state: close the window, then prune the worktree.
+    status = (_col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
+              _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
     name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + f" {_fit(row.name, 12)}"

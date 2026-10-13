@@ -96,6 +96,14 @@ extras: hooks, a message bus, window control. None of those is needed here.
   folder (`cecelia-prune-session-gate-13`) and marked `kind: "interactive"` like a window; only
   `entrypoint: "sdk-cli"` (windows: `"cli"`) tells them apart, so `sdk*` is skipped. Names longer
   than the column are cut.
+- `done` replaces the state when the PR merged and the session isn't busy: close that window,
+  then `prune-worktrees` can take the worktree (the session gate keeps it IN USE until then).
+  Sorts after idle, before shell/busy.
+- A session's shell can be reset to the launch folder (the workspace root, no checkout) while
+  its work stays in a worktree, so the pane takes the newest *checkout* among the transcript's recent
+  `cwd`s, and the prune gate protects every worktree among them.
+- macOS / Windows: no `/proc`, so the pane reads "can't list sessions" and the prune gate falls back
+  to IN USE-unknown as before. The statusline wrapper writes UTF-8 bytes (cp1252 has no badge shapes).
 - Session `status` meanings, read off live sessions (not documented by Claude Code): `idle` =
   turn over, nothing running; `shell` = turn over, a background command (e.g. a CI watch) still
   running and will wake the agent; `busy` = mid-turn.

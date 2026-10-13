@@ -4,7 +4,7 @@ Claude Code writes `~/.claude/sessions/<pid>.json` per running session (`session
 `status` busy/idle, `procStart`) and a transcript `~/.claude/projects/<slug>/<sessionId>.jsonl`
 whose entries each carry the session's `cwd` at that moment. The session file's own `cwd` is the
 launch folder and never changes, so a session launched from the workspace root that `cd`s into a
-worktree is only found there through the transcript's LAST `cwd`.
+worktree is only found there through the transcript's recent `cwd`s (`Session.recent_cwds`).
 
 Both are undocumented Claude Code formats. A file that exists but can't be read yields a session
 with `cwd=None` and `readable=False`, so a format change shows up as a visible row rather than
@@ -38,6 +38,7 @@ class Session:
     cwd: str | None        # current working folder; None when unknown
     readable: bool = True
     session_id: str = ""
+    recent_cwds: tuple[str, ...] = ()   # newest first, `cwd` included (`recent_cwds()`)
 
 
 def claude_home() -> pathlib.Path:
@@ -58,22 +59,27 @@ def proc_start(pid: int, proc: pathlib.Path) -> str | None:
     return rest[19] if len(rest) > 19 else None
 
 
-def last_cwd(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> str | None:
-    """The `cwd` of the newest transcript entry that has one, read from the file's last `tail_bytes`."""
+def recent_cwds(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> tuple[str, ...]:
+    """The distinct `cwd`s of the transcript's last `tail_bytes`, newest first.
+
+    Newest alone isn't enough: the shell can be reset to the launch folder (the workspace root,
+    no checkout) between commands while the session is still working in a worktree, so a caller
+    that wants the worktree takes the newest one inside a checkout."""
     with transcript.open("rb") as fh:
         size = fh.seek(0, 2)
         fh.seek(max(0, size - tail_bytes))
         lines = fh.read().split(b"\n")
     if size > tail_bytes:
         lines = lines[1:]   # the first line is cut mid-entry
+    out: list[str] = []
     for raw in reversed(lines):
         try:
             cwd = json.loads(raw).get("cwd")
         except (ValueError, AttributeError):
             continue
-        if isinstance(cwd, str) and cwd:
-            return cwd
-    return None
+        if isinstance(cwd, str) and cwd and cwd not in out:
+            out.append(cwd)
+    return tuple(out)
 
 
 def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path) -> Session | None:
@@ -96,7 +102,9 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path) -> 
     if transcript is None:   # nothing written yet: still at the launch folder
         return Session(pid, name, status, meta.get("cwd"), session_id=sid)
     try:
-        return Session(pid, name, status, last_cwd(transcript) or meta.get("cwd"), session_id=sid)
+        cwds = recent_cwds(transcript)
+        return Session(pid, name, status, cwds[0] if cwds else meta.get("cwd"), session_id=sid,
+                       recent_cwds=cwds)
     except OSError:
         return Session(pid, name, status, None, readable=False, session_id=sid)
 

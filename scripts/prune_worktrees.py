@@ -172,8 +172,11 @@ def pids_under(root: str, procs: list[tuple[int, str, list[str]]] | None) -> lis
 
 
 def sessions_under(root: str, sessions: list[Session]) -> list[tuple[str, str]]:
-    """(name, status) of every Claude Code session whose current folder is inside `root`."""
-    return [(s.name, s.status) for s in sessions if s.cwd and _under(s.cwd, root)]
+    """(name, status) of every Claude Code session that worked inside `root` recently — any of
+    its recent folders, not only the newest: its shell may have been reset to the workspace root
+    while the work is still in this worktree. Over-protecting is the safe failure."""
+    return [(s.name, s.status) for s in sessions
+            if any(_under(c, root) for c in (s.recent_cwds or ((s.cwd,) if s.cwd else ())))]
 
 
 def stash_counts(primary: str) -> dict[str, int]:

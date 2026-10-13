@@ -126,6 +126,9 @@ class HelpersTest(unittest.TestCase):
                     S(2, "b", "busy", f"{sep}ws{sep}cecelia-x2"),
                     S(3, "c", "?", None, readable=False)]
         self.assertEqual(P.sessions_under(f"{sep}ws{sep}cecelia-x", sessions), [("a", "idle")])
+        # The shell was reset to the workspace root; the worktree is still among its recent folders.
+        reset = [S(4, "d", "idle", f"{sep}ws", recent_cwds=(f"{sep}ws", f"{sep}ws{sep}cecelia-x"))]
+        self.assertEqual(P.sessions_under(f"{sep}ws{sep}cecelia-x", reset), [("d", "idle")])
 
     def test_summary_names_what_can_go_and_is_silent_otherwise(self):
         row = lambda b: (_facts(), b, "")   # noqa: E731

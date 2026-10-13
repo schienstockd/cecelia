@@ -50,7 +50,9 @@ def main(argv: list[str]) -> int:
             wrapped = ""
     first, nl, rest = wrapped.partition("\n")
     line = "  ".join(p for p in (badge, first) if p)
-    sys.stdout.write(line + nl + rest if nl else line + "\n")
+    # Bytes, UTF-8: the badge shapes don't exist in Windows' default cp1252 stdout encoding.
+    sys.stdout.buffer.write((line + nl + rest if nl else line + "\n").encode("utf-8"))
+    sys.stdout.flush()
     return 0
 
 
