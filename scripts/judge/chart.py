@@ -45,9 +45,11 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
-from cecelia.effectiveness.log import OUTCOME_DISPLAY_ORDER, OUTCOME_VOCABULARY, is_errored_run  # noqa: E402
+from cecelia.effectiveness.log import (  # noqa: E402
+    FINDING_EVENTS as _FINDING_EVENTS, OUTCOME_DISPLAY_ORDER, OUTCOME_VOCABULARY,
+    RESOLVED_EVENTS as _RESOLVED_EVENTS, is_errored_run, latest_resolutions_by_slug)
 from cecelia.effectiveness.palette import load_hex  # noqa: E402
-from cecelia.effectiveness.rollup import _REDTEAM_SLUGS, _latest_resolutions_by_slug  # noqa: E402
+from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
 from cecelia.effectiveness.state import state_dir  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
@@ -74,8 +76,6 @@ LOW_SESSIONS = 10
 PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md")
 RULE_DOCS = ("CLAUDE.md",)
 _RUN_EVENTS = ("fanout_audit_run", "convention_check_run")
-_FINDING_EVENTS = ("fanout_audit_finding", "convention_check_finding")
-_RESOLVED_EVENTS = ("fanout_audit_finding_resolved", "convention_check_finding_resolved")
 #: Legend text and swatch per outcome in the log's closed vocabulary, plus `none`: no outcome logged,
 #: or one this map doesn't know. The chart never echoes a value from the log.
 _OUTCOME_LOOK = {
@@ -172,7 +172,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
                 slugless.append(e)
             elif slug not in first or e.get("ts", "") < first[slug].get("ts", ""):
                 first[slug] = e
-    resolved = _latest_resolutions_by_slug(events, _RESOLVED_EVENTS)
+    resolved = latest_resolutions_by_slug(events, _RESOLVED_EVENTS)
     found: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
     for e, outcome in [(e, ((resolved.get(s) or {}).get("payload") or {}).get("outcome")) for s, e in first.items()] \
             + [(e, (e.get("payload") or {}).get("outcome")) for e in slugless]:

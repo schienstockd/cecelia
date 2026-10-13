@@ -24,11 +24,13 @@ from __future__ import annotations
 import datetime as _dt
 import io
 import json
+import os
 import pathlib
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 from cecelia.effectiveness import append_event, console
 from cecelia.effectiveness.console import (
@@ -431,6 +433,15 @@ class MainTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.log_path = pathlib.Path(self._tmp.name) / "events.jsonl"
+        # The agents pane reads Claude Code's session files; point it at an empty folder, not
+        # the machine's real sessions.
+        env = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self._tmp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        # …and never ask the real `gh` for the PR/CI columns.
+        gh = mock.patch.object(console, "recent_prs", return_value=None)
+        gh.start()
+        self.addCleanup(gh.stop)
 
     def test_no_follow_stream_prints_backlog_and_exits(self):
         # Non-TTY / --stream path: append-only formatted event stream, no dashboard.
