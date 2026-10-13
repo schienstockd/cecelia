@@ -63,6 +63,7 @@ class Session:
     context_pct: float | None = None       # % of the context window in use — `read_context()`
     asks: bool = False                     # its last reply ends on a question — `ends_with_question()`
     judge: bool = False                    # opened by `pixi run judge-review` — `from_judge_review()`
+    recital: bool = False                  # `pixi run recital` runs under it — `running_recital()`
 
 
 def claude_home() -> pathlib.Path:
@@ -87,6 +88,42 @@ def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
         if any(pathlib.PurePath(a.decode("utf-8", "replace")).parts[-2:] == JUDGE_REVIEW_SCRIPT
                for a in argv if a):
             return True
+    return False
+
+
+#: `pixi run recital` runs this script; under a session it means the session is mid-commit.
+RECITAL_SCRIPT = ("scripts", "recital.py")
+
+
+def child_pids(proc: pathlib.Path) -> dict[int, list[int]]:
+    """Every live pid's children, from field 4 (ppid) of each `/proc/<pid>/stat` — one pass,
+    shared by every session's `running_recital`."""
+    children: dict[int, list[int]] = {}
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+            children.setdefault(int(stat.rsplit(")", 1)[-1].split()[1]), []).append(int(entry.name))
+        except (OSError, ValueError, IndexError):
+            continue
+    return children
+
+
+def running_recital(pid: int, proc: pathlib.Path, children: dict[int, list[int]]) -> bool:
+    """Whether any process under the session runs `scripts/recital.py` — its reviewers take
+    minutes, so the pane says so rather than a bare `busy`."""
+    todo = list(children.get(pid, ()))
+    while todo:
+        child = todo.pop()
+        try:
+            argv = (proc / str(child) / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if any(pathlib.PurePath(a.decode("utf-8", "replace")).parts[-2:] == RECITAL_SCRIPT
+               for a in argv if a):
+            return True
+        todo.extend(children.get(child, ()))
     return False
 
 
@@ -234,7 +271,8 @@ def read_context(session_id: str, folder: pathlib.Path | None = None) -> float |
 
 
 def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
-             context: pathlib.Path | None = None) -> Session | None:
+             context: pathlib.Path | None = None,
+             children: dict[int, list[int]] | None = None) -> Session | None:
     """One session file → a Session, or None when its process is gone (a stale file)."""
     try:
         pid = int(path.stem)
@@ -251,7 +289,8 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
     if str(meta.get("entrypoint") or "").startswith("sdk"):
         return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window
     session = _transcript_session(pid, name, status, meta, sid, projects, context)
-    return dataclasses.replace(session, judge=from_judge_review(pid, proc))
+    return dataclasses.replace(session, judge=from_judge_review(pid, proc),
+                               recital=running_recital(pid, proc, children or {}))
 
 
 def _transcript_session(pid: int, name: str, status: str, meta: dict, sid: str,
@@ -280,7 +319,8 @@ def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib
         return []
     if not proc.is_dir():
         return None
-    found = (_session(p, home / "projects", proc, context) for p in sessions_dir.glob("*.json"))
+    children = child_pids(proc)
+    found = (_session(p, home / "projects", proc, context, children) for p in sessions_dir.glob("*.json"))
     return sorted((s for s in found if s is not None), key=lambda s: s.pid)
 
 

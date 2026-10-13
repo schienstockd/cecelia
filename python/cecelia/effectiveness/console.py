@@ -550,9 +550,11 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
         return _col(_DIM, f"    {_fit(row.name, 12)} {'?':<6} {'—':<8} (session file unreadable)",
                     use_colour=use_colour)
     # `asks` (its last reply is a question to Dominik; magenta, apart from idle's yellow) replaces
-    # the state, then `done` (merged, not working: close the window, then prune the worktree).
+    # the state, then `done` (merged, not working: close the window, then prune the worktree),
+    # then `recite` (its commit's recital reviewers are running — minutes, not a stuck turn).
     status = (_col(_MAGENTA, f"{'asks':<6}", use_colour=use_colour) if row.asks else
               _col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
+              _col(_CYAN, f"{'recite':<6}", use_colour=use_colour) if row.recital else
               _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.

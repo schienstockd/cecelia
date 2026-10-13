@@ -129,6 +129,17 @@ class LiveSessionsTest(_FakeHome):
             self.session(pid, start, sid, transcript_cwds=["/ws"])
         self.assertEqual({s.session_id: s.judge for s in self.live()}, {"a": True, "b": False, "c": False})
 
+    def test_a_session_with_recital_anywhere_below_it_is_marked(self):
+        self.process(10, "500")
+        self.process(20, "1", ppid=10, argv=("bash", "-c", "pixi run recital"))
+        self.process(21, "1", ppid=20, argv=("/env/bin/python", "scripts/recital.py"))
+        self.process(11, "501")
+        self.process(30, "1", ppid=11, argv=("python", "scripts/other.py"))
+        self.process(12, "502", ppid=21)   # recital *above* a session doesn't count
+        for pid, start, sid in ((10, "500", "a"), (11, "501", "b"), (12, "502", "c")):
+            self.session(pid, start, sid, transcript_cwds=["/ws"])
+        self.assertEqual({s.session_id: s.recital for s in self.live()}, {"a": True, "b": False, "c": False})
+
     def test_session_name_looks_up_the_id_without_proc(self):
         self.session(10, "500", "abc", name="cecelia-56")
         self.assertEqual(session_name("abc", self.home), "cecelia-56")
@@ -479,6 +490,13 @@ class PaneTest(unittest.TestCase):
                         AgentRow("cecelia-02", "busy", "w", "b", session_id="t")]
         lines = console.agents_block(state, 100, use_colour=False)
         self.assertEqual(lines[2].index(" busy"), lines[3].index(" busy"))
+
+    def test_a_session_running_recital_shows_recite_in_the_state_column(self):
+        state = console.DashboardState()
+        state.agents = [AgentRow("a", "busy", "w", "b", recital=True), AgentRow("b", "busy", "w", "b")]
+        lines = console.agents_block(state, 100, use_colour=False)
+        self.assertEqual(lines[2].split()[1], "recite")
+        self.assertEqual(lines[2].index("recite"), lines[3].index("busy"))
 
     def test_right_arrow_view_lists_every_finding_like_the_recital_console(self):
         finding = _row("fanout_audit_finding", "x", "f1", file="a.py", line=3, desc="guard missing",
