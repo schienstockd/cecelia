@@ -22,9 +22,14 @@ describe('hpcTestBlocker', () => {
   it('names the first missing piece, in the order the backend checks', () => {
     expect(hpcTestBlocker(null)).toBe('Loading')
     expect(hpcTestBlocker(settings({ available: false }))).toBe('Not available on Windows yet')
-    expect(hpcTestBlocker(settings({ site: { ...settings().site, host: ' ' } }))).toBe('Set the host first')
-    expect(hpcTestBlocker(settings({ identity: { profile: 'p', user: '', keyFile: 'k' } }))).toBe('Set your username first')
-    expect(hpcTestBlocker(settings({ identity: { profile: 'p', user: 'u', keyFile: '' } }))).toBe('Select your SSH key first')
+    expect(hpcTestBlocker(settings({ site: { ...settings().site, host: ' ' } }))).toBe('Set the cluster host first')
+    expect(hpcTestBlocker(settings({ identity: { profile: 'p', user: '', keyFile: 'k' } }))).toBe('Set your username in Preferences → HPC first')
+    expect(hpcTestBlocker(settings({ identity: { profile: 'p', user: 'u', keyFile: '' } }))).toBe('Select your SSH key in Preferences → HPC first')
+    expect(hpcTestBlocker(settings({ site: { ...settings().site, remoteDir: '' } }))).toBe('Set the remote folder in Preferences → HPC first')
+  })
+  it('names the other surface only for a field that lives there', () => {
+    expect(hpcTestBlocker(settings({ site: { ...settings().site, host: '' } }), 'user')).toBe('Set the cluster host in Settings → HPC first')
+    expect(hpcTestBlocker(settings({ identity: { profile: 'p', user: '', keyFile: 'k' } }), 'user')).toBe('Set your username first')
   })
 })
 

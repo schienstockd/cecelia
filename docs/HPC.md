@@ -28,13 +28,15 @@ handler continues: register labels, QC, run log
 - **The workstation is authoritative.** The cluster copy is a cache: delete it and the next run
   re-uploads what it needs.
 
-## Setup — Settings → HPC
+## Setup — Settings → HPC and Preferences → HPC
 
-| Group | Fields | Stored in | Why there |
+| Where | Fields | Stored in | Why there |
 |---|---|---|---|
-| **Cluster** | scheduler, host, port | `custom.toml` `[hpc]` | which cluster this machine reaches is not personal |
-| **Yours** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
-| **This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
+| **Settings → HPC** | scheduler, host, port; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches is not personal |
+| **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
+| **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
+
+Preferences opens from the profile chip in the header. Test connection is on both.
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.
@@ -158,9 +160,10 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 1. **Before:** a Cecelia build that has HPC in Settings, running on Linux or macOS. SSH to the login
    node with a key (a passphrase key loaded in `ssh-agent`; no MFA). The compute nodes must be Linux
    x86_64 with HTTPS access, and the remote folder needs about 15 GB.
-2. **Settings → HPC:** fill in Cluster and Yours. Put the remote folder on scratch or project space,
-   not in home. Set the queue/account/QoS you normally use, and add a preamble if jobs need
-   `module load`. Click **Test connection**: three green lines (host key, folder, SLURM version).
+2. **Settings → HPC:** scheduler, host and port. Then **Preferences → HPC** (the profile chip in the header):
+   username, key, a remote folder on scratch or project space (not in home), the queue/account/QoS
+   you normally use, and a preamble if jobs need `module load`. Click **Test connection**: three
+   green lines (host key, folder, SLURM version).
 3. **Install on cluster.** Follow it in the Task Manager until "Environment ready".
 4. **Cellpose segment + measure** on a small calibrated image. Switch the chip to **hpc**, lower the
    job size for a quick queue, and Run. The row goes uploading → queued → running → downloading, and
@@ -172,7 +175,7 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
      there should be no second job;
    - run a whole slide.
 6. **Send back:**
-   - the Settings → HPC screen;
+   - the Settings → HPC and Preferences → HPC screens;
    - each run's task log;
    - for a failure: `jobs/<…>/job.sh` and `job.log`, plus
      `sacct -j <id> --format=JobID,State,ExitCode,Elapsed,MaxRSS,ReqMem`;

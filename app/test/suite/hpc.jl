@@ -160,7 +160,7 @@ end
         @test occursin("Unknown HPC setting", refused(Dict("hostname" => "x")))
         @test occursin("Unknown HPC setting", refused(Dict("cpu" => Dict("partition" => "x"))))
         @test occursin("GPU queue", refused(Dict("gpu" => Dict("queue" => "a b"))))
-        @test occursin("Remote folder", refused(Dict("remoteDir" => "")))
+        @test occursin("remote folder in Preferences", refused(Dict("remoteDir" => "")))
         @test read(joinpath(tmp, "custom.toml"), String) == before          # nothing written
     end
 end
@@ -251,9 +251,9 @@ end
 @testset "HPC: connection test refuses before spawning" begin
     site = HpcSite("slurm", "", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))
     site2 = HpcSite("slurm", "h", 22, "~/c", "", site.cpu, site.gpu)
-    cases = [(site,  HpcIdentity("a", "/k"),                    "Set the host first"),
-             (site2, HpcIdentity("", "/k"),                     "Set your username first"),
-             (site2, HpcIdentity("a", ""),                      "Select your SSH key first"),
+    cases = [(site,  HpcIdentity("a", "/k"),                    "Set the cluster host in Settings → HPC"),
+             (site2, HpcIdentity("", "/k"),                     "Set your username in Preferences → HPC"),
+             (site2, HpcIdentity("a", ""),                      "Select your SSH key in Preferences → HPC"),
              (site2, HpcIdentity("a", "/definitely/not/here"),  "Key file not found")]
     for (s, id, msg) in cases
         # Windows is refused before anything else (HPC_PLAN Q8), and says so.

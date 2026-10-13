@@ -18,6 +18,7 @@ import CcToggle from './CcToggle.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
+import HpcSettings from './HpcSettings.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
@@ -31,7 +32,7 @@ const appCtl   = useAppControlStore()
 // Profiles is FIRST — it's the identity primitive every other pane's setting hangs off, and the
 // answer to "how do I switch" needs to be one click away. The other panes follow roughly by how
 // often they get touched.
-type CategoryId = 'profiles' | 'interface' | 'viewer' | 'movies' | 'layout' | 'kiwi' | 'lablog'
+type CategoryId = 'profiles' | 'interface' | 'viewer' | 'movies' | 'layout' | 'kiwi' | 'lablog' | 'hpc'
 const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'profiles',  label: 'Profiles',  icon: 'pi-user' },
   { id: 'interface', label: 'Interface', icon: 'pi-sliders-h' },
@@ -40,6 +41,7 @@ const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'layout',    label: 'Layout',    icon: 'pi-window-maximize' },
   { id: 'kiwi',      label: 'Kiwi',      icon: 'pi-comments' },
   { id: 'lablog',    label: 'Lab log',   icon: 'pi-book' },
+  { id: 'hpc',       label: 'HPC',       icon: 'pi-server' },
 ]
 const active = ref<CategoryId>('profiles')
 
@@ -528,6 +530,13 @@ async function copyTerminalCommand(profile?: string) {
           <CcToggle v-model="settings.labLogShowNames"
                     label="Show image names in the lab log (else UIDs)"
                     v-tooltip.bottom="'Show human-readable names instead of the stable UIDs'" />
+        </template>
+
+        <!-- ── HPC ───────────────────────────────────────────────────────── -->
+        <!-- Your cluster login and job classes (HPC_PLAN D9). The cluster itself (scheduler, host,
+             port) and the environment install are machine-wide, on Settings → HPC. -->
+        <template v-else-if="active === 'hpc'">
+          <HpcSettings scope="user" project-uid="" />
         </template>
 
       </section>

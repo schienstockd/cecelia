@@ -1513,7 +1513,7 @@ async function switchWt(path: string) {
     <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
     <section class="settings-section">
       <h2 class="section-title">HPC</h2>
-      <HpcSettings :project-uid="projectUid" />
+      <HpcSettings scope="machine" :project-uid="projectUid" />
     </section>
 
     <!-- ── Other MCP connections ───────────────────────────────────────── -->

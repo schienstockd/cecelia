@@ -72,13 +72,18 @@ export async function testHpcConnection(): Promise<HpcTestResult> {
   return await svcPost('/api/hpc/test', {}, 40_000) as HpcTestResult
 }
 
-/** Why Test connection cannot run yet, or '' when it can. Mirrors the backend's own refusals. */
-export function hpcTestBlocker(s: HpcSettings | null): string {
+export type HpcScope = 'machine' | 'user'
+
+/** Why Test connection cannot run yet, or '' when it can, in the backend's order. `scope` is where the button is: a missing field that lives on
+ *  the OTHER surface (Settings → HPC holds the cluster, Preferences → HPC the login) names it. */
+export function hpcTestBlocker(s: HpcSettings | null, scope: HpcScope = 'machine'): string {
   if (!s) return 'Loading'
   if (!s.available) return 'Not available on Windows yet'
-  if (!s.site.host.trim()) return 'Set the host first'
-  if (!s.identity.user.trim()) return 'Set your username first'
-  if (!s.identity.keyFile.trim()) return 'Select your SSH key first'
+  const where = (home: HpcScope) => home === scope ? '' : ` in ${home === 'machine' ? 'Settings' : 'Preferences'} → HPC`
+  if (!s.site.host.trim()) return `Set the cluster host${where('machine')} first`
+  if (!s.identity.user.trim()) return `Set your username${where('user')} first`
+  if (!s.identity.keyFile.trim()) return `Select your SSH key${where('user')} first`
+  if (!s.site.remoteDir.trim()) return `Set the remote folder${where('user')} first`
   return ''
 }
 
