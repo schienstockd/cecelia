@@ -1,8 +1,10 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
-**Status:** building. P1 merged (#1632). P2 built (#1637; see *P2 as built*). P3 built (branch
-`feat/1619-hpc-p3`; see *P3 as built*). P5 built (#1639). P4 built (branch `feat/1619-hpc-p4`; see
-*P4 as built*). P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
+**Status:** P1–P5 merged (#1632, #1637, #1638, #1639, #1640), plus the per-user settings split
+(#1641). Durable docs are now [`docs/HPC.md`](../HPC.md); this plan is the design record. P6 remains:
+the first real-site run (Cellpose on SLURM; the procedure is in `docs/HPC.md` → *Testing on a real
+cluster*). Its findings decide what comes next. More ports (ridges and branching are traced) wait
+for it.
 
 ## Goal
 
