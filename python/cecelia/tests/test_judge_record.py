@@ -142,6 +142,17 @@ class RenderTest(_Fixture):
                 _bug("B3", fix_landed=fix)]
         self.assertEqual(self.rec.landed_counts(bugs), (3, 2))
 
+    def test_a_held_back_bug_s_earlier_fix_is_not_called_this_pass_s(self):
+        # a parked bug waiting for a re-check slot carries an earlier pass's `fix_landed`
+        fix = [{"commit": "abcdef0123", "subject": "fix"}]
+        guard = {"verdict": "guard", "date": "2026-09-28", "effect": "e", "trigger": "t"}
+        record = self.build(bugs=[_bug("B1", status="parked", verify=guard, fix_landed=fix,
+                                       recheck="a commit naming its key landed")])
+        md = self.rec.render_markdown(record)
+        self.assertIn("A fix landed for 1 bug(s) (a commit names the bug's key): 0 confirmed fixed, 1 awaiting"
+                      " re-check.", md)
+        self.assertNotIn("since the last pass", md)
+
     def test_a_record_without_tokens_says_so(self):
         self.assertIn("| Tokens | not recorded |", self.rec.render_markdown(self.build()))
 

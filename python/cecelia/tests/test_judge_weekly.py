@@ -237,7 +237,7 @@ class WeeklyTest(_WeeklyFixture):
         md = self.rec.render_markdown(record)
         self.assertIn("**Fix landed:** `abcdef01` #1430 — awaiting re-check", md)
         self.assertIn("**Fix landed:** `abcdef01` — confirmed fixed", md)
-        self.assertIn("A fix landed for 3 bug(s) since the last pass (a commit names the bug's key): "
+        self.assertIn("A fix landed for 3 bug(s) (a commit names the bug's key): "
                       "1 confirmed fixed, 2 awaiting re-check.", md)
         self.assertIn("· `fanout-b4` — still there · fix landed `abcdef01` #1430", md)
 

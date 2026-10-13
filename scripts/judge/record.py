@@ -239,8 +239,9 @@ _CONFIRMED = ("gone", "dismissed")
 
 
 def landed_counts(bugs: _t.Sequence[dict]) -> tuple[int, int]:
-    """(bugs a fix landed for since the last pass, of those confirmed fixed: the judge said `gone` or
-    verify dismissed it)."""
+    """(bugs with a landed fix, of those confirmed fixed: the judge said `gone` or verify dismissed it).
+    Not only this pass's: a parked bug waiting for a re-check slot keeps an earlier pass's `fix_landed`
+    (`bugs.py` `sweep`), so it counts on every pass until it is re-checked."""
     landed = [b for b in bugs if b.get("fix_landed")]
     return len(landed), sum(b["status"] in _CONFIRMED for b in landed)
 
@@ -271,7 +272,7 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
            " · ".join(f"{n} {s.replace('_', ' ')}" for s, n in counts.items() if n), ""]
     landed, confirmed = landed_counts(bugs)
     if landed:
-        out += [f"A fix landed for {landed} bug(s) since the last pass (a commit names the bug's key): "
+        out += [f"A fix landed for {landed} bug(s) (a commit names the bug's key): "
                 f"{confirmed} confirmed fixed, {landed - confirmed} awaiting re-check.", ""]
     for b in (b for b in bugs if b["status"] not in ("unjudged", "parked") and not b.get("muted")):
         v = b.get("verify") or {}
