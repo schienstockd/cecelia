@@ -802,6 +802,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"judge-review: {record['date']} is a failure record; nothing to review", file=sys.stderr)
         return 1
     if args.auto:
+        newest = (_record.pass_records() or [{}])[-1].get("date")
+        if record["date"] != newest:
+            # a newer record carries these bugs with the answers given since: an older one would redo them
+            print(f"judge-review --auto: {record['date']} isn't the newest record ({newest}); --auto works "
+                  "only the newest", file=sys.stderr)
+            return 1
         auto_fix = _load_sibling("auto_fix")
         try:
             auto_fix.run(record, limit=args.limit, dry_run=args.dry_run, older=older)

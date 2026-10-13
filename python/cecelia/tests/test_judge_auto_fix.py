@@ -91,6 +91,16 @@ class ItemsTest(_AutoFixture):
         self.assertEqual(len(self.rv.auto_items(self.record, [], tried={})), 1)
 
 
+class OnlyNewestTest(_AutoFixture):
+    def test_auto_refuses_an_older_record(self):
+        self.rec.write(self.record)
+        self.rec.write(self.build(date="2026-10-12", bugs=[_bug("B1", verify=FIX | {"date": "2026-10-12"})]))
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            self.assertEqual(self.rv.main(["--auto", "--dry-run", "--date", "2026-10-05"]), 1)
+        self.assertIn("isn't the newest record (2026-10-12)", err.getvalue())
+
+
 class FenceTest(_AutoFixture):
     def test_the_agent_is_sandboxed_without_credentials_and_cant_write_the_main_checkout(self):
         s = self.af.settings(self.main)
