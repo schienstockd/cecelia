@@ -9,25 +9,35 @@ credential: this script does what touches the outside world, the agent only edit
    write-deny on `~` (the worktree is a sibling checkout under `~`): `acceptEdits` keeps file edits
    in the worktree, the sandbox keeps Bash's writes there, and nothing reaches the network,
    `~/.config/gh` or `~/.ssh`. It confirms, fixes, tests, and reports per bug.
-3. This script stages the worktree and runs `pixi run recital` (its reviewers are `claude -p` runs,
-   which the sandbox can't make), then resumes the agent with the body: it acts on the findings
-   and returns a `[slug: outcome]` tag per finding, as CLAUDE.md asks of any commit.
+3. This script stages the worktree and runs the recital on the staged diff (its reviewers are
+   `claude -p` runs, which the sandbox can't make), then resumes the agent with the body: it acts on
+   the findings and returns a `[slug: outcome]` tag per finding, as CLAUDE.md asks of any commit.
 4. This script commits (the commit-msg hook checks the tags as for any commit), pushes, and opens
    the PR: a draft when the agent says the fix changes what is drawn on screen. Never a merge.
 
+What runs outside the sandbox after the agent is this checkout's, never the worktree's: the recital
+and the commit-msg hook run from here with this env's python, and git runs with the hooks path
+pointed here. Before each of those steps, nothing the agent wrote may reach them: the worktree's
+`EXEC_SURFACE` (its `.git` pointer, `.githooks`, `.claude`, `.mcp.json`, tracked or not) must be as
+bootstrap left it, and the diff may not touch `PROTECTED` (CI runs a pushed workflow with the repo's
+secrets; the rest is the fence and what the next session runs under) or hold a credential.
+
 A fixed bug gets the `fix_session` event a `fix now` gets (its note names the PR); a bug the agent
 called `not_real` or `left` is logged in `auto_fix.jsonl` with why, stays in the queue, shows the
-reason on its card, and isn't tried again. A session that fails logs nothing per bug, so the next
-run tries it again; a commit or push that fails leaves the worktree for the owner.
+reason on its card, and isn't tried again. A session that fails is logged `failed` and its worktree
+removed, so the next run tries it again, up to `review.AUTO_ATTEMPTS` sessions; a guard, commit or
+push that stops leaves the worktree for the owner, and the bug `left`, so nothing is pushed twice.
 """
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util as _importlib_util
 import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -73,6 +83,11 @@ TIMEOUT_SEC = 3 * 3600
 #: into the worktree, this script pushes. GitHub, Anthropic and SSH-key shapes.
 SECRET_RE = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|sk-ant-[A-Za-z0-9_-]{20,})"
                        r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+#: What the script runs or reads in the worktree after the agent, outside the sandbox.
+EXEC_SURFACE = (".git", ".githooks", ".claude", ".mcp.json")
+#: What an unattended PR may not touch (a `/` suffix: the directory; `CLAUDE.md`: at any depth).
+PROTECTED = (".github/", ".githooks/", ".claude/", ".mcp.json", "pixi.toml", "pixi.lock", "CLAUDE.md",
+             "scripts/judge/auto_fix.py", "python/cecelia/effectiveness/agent_sandbox.py")
 TRAILER = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 PR_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
@@ -95,6 +110,42 @@ def settings(main: pathlib.Path) -> dict:
              "~/.julia/environments/**", "~/.bashrc", "~/.profile", "~/.gitconfig"]
     s["permissions"]["deny"] = keep + [f"{tool}({p})" for tool in ("Write", "Edit", "NotebookEdit") for p in named]
     return s
+
+
+def snapshot(tree: pathlib.Path) -> dict[str, str]:
+    """Each file (or link) of the worktree's `EXEC_SURFACE`, ignored ones included → its hash (or target)."""
+    out = {}
+    for name in EXEC_SURFACE:
+        top = tree / name
+        if top.is_symlink() or top.is_file():
+            files = [top]
+        elif top.is_dir():
+            files = sorted(f for f in top.rglob("*") if f.is_symlink() or f.is_file())
+        else:
+            continue
+        for f in files:
+            out[f.relative_to(tree).as_posix()] = (f"-> {os.readlink(f)}" if f.is_symlink()
+                                                  else hashlib.sha256(f.read_bytes()).hexdigest())
+    return out
+
+
+def protected(path: str) -> bool:
+    return path.rsplit("/", 1)[-1] == "CLAUDE.md" or any(
+        path.startswith(p) if p.endswith("/") else path == p for p in PROTECTED)
+
+
+def trusted_hooks(where: pathlib.Path) -> pathlib.Path:
+    """A hooks dir whose commit-msg runs this checkout's check, not the worktree's."""
+    hook = where / "commit-msg"
+    check = _REPO / ".claude" / "hooks" / "check_commit_recital.py"
+    hook.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} {shlex.quote(str(check))} --commit-msg "$1"\n',
+                    encoding="utf-8")
+    hook.chmod(0o755)
+    return where
+
+
+def git(hooks: pathlib.Path, *args: str) -> list[str]:
+    return ["git", "-c", "core.fsmonitor=false", "-c", f"core.hooksPath={hooks}", *args]
 
 
 def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str) -> str:
@@ -144,7 +195,7 @@ def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str
     if resume:
         argv += ["--resume", resume]
     try:
-        proc = subprocess.run(argv, input=prompt, cwd=str(cwd), env={**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"},
+        proc = subprocess.run(argv, input=prompt, cwd=str(cwd), env=agent_sandbox.agent_env(),
                               capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, 0.0, None, f"session failed: {e}"
@@ -156,8 +207,9 @@ def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str
     return answer, cost, out.get("session_id"), None
 
 
-def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, timeout: float = 3600) -> subprocess.CompletedProcess:
-    return subprocess.run(list(argv), cwd=str(cwd), capture_output=True, text=True, encoding="utf-8",
+def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, input: str | None = None,
+               timeout: float = 3600) -> subprocess.CompletedProcess:
+    return subprocess.run(list(argv), cwd=str(cwd), input=input, capture_output=True, text=True, encoding="utf-8",
                           timeout=timeout, check=False)
 
 
@@ -202,6 +254,32 @@ def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log:
                          "reason": reason, "pr_url": pr if outcome == "fixed" else ""}, auto_log)
 
 
+def _log_failed(record: dict, bugs: _t.Sequence[dict], why: str, auto_log: pathlib.Path | None) -> None:
+    tried = _rv.read_auto(auto_log)
+    for b in bugs:
+        last = tried.get(b["key"]) or {}
+        attempt = last.get("attempt", 1) + 1 if last.get("outcome") == "failed" else 1
+        _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": "failed",
+                         "reason": why, "attempt": attempt, "pr_url": ""}, auto_log)
+
+
+def guard(tree: pathlib.Path, before: dict[str, str], hooks: pathlib.Path, sh: _t.Callable) -> tuple[str | None, str]:
+    """Stage the worktree, if the agent left what runs outside the sandbox alone. (why it stops, staged diff)."""
+    now = snapshot(tree)
+    changed = sorted(k for k in before.keys() | now.keys() if before.get(k) != now.get(k))
+    if changed:
+        return f"the agent changed {', '.join(changed[:5])}, which run outside its sandbox: nothing run there", ""
+    sh(git(hooks, "add", "-A"), tree)
+    names = (sh(git(hooks, "diff", "--cached", "--name-only"), tree).stdout or "").split("\n")
+    touched = [n for n in names if n and protected(n)]
+    if touched:
+        return f"the diff touches {', '.join(touched[:5])} (CI, hooks or the fence): fix it by hand", ""
+    diff = sh(git(hooks, "diff", "--cached"), tree).stdout or ""
+    if SECRET_RE.search(diff):
+        return "the staged diff holds what looks like a credential: not committed", ""
+    return None, diff
+
+
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
              session: _t.Callable = default_session, sh: _t.Callable = default_sh,
              path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float:
@@ -217,9 +295,19 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
     if made.returncode != 0:
         say(f"bootstrap-worktree failed: {_tail(made)}")
         return 0.0
+    with tempfile.TemporaryDirectory(prefix="auto-fix-hooks-") as hooks_dir:
+        return _work(record, bugs, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say,
+                     session=session, sh=sh, path=path, auto_log=auto_log)
+
+
+def _work(record, bugs, tree, branch, hooks, *, main, say, session, sh, path, auto_log) -> float:
+    before = snapshot(tree)
     answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main)
     if failed:
-        say(f"{failed} (${spent:.2f}); worktree left at {tree}")
+        _log_failed(record, bugs, f"{failed} (${spent:.2f})", auto_log)
+        say(f"{failed} (${spent:.2f}); worktree removed, tried again next run")
+        agent_sandbox.remove_worktree(main, tree)
+        sh(["git", "branch", "-D", branch], main)
         return spent
     for r in answer["bugs"]:
         say(f"{r['key']}: {r['outcome']} — {r['reason']}")
@@ -228,34 +316,33 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
         return spent
-    sh(["git", "add", "-A"], tree)
-    rec = sh(["pixi", "run", "recital"], tree)
+
+    def stop(why: str) -> float:
+        _log(record, bugs, answer, "", auto_log, fixed_as="left")
+        say(f"{why}; worktree left at {tree}")
+        return spent
+
+    why, diff = guard(tree, before, hooks, sh)
+    if why:
+        return stop(why)
+    rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
     recital = rec.stdout or ""
     if "_Recital stamp:" not in recital:
-        _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"recital failed: {_tail(rec)}; worktree left at {tree}")
-        return spent
+        return stop(f"recital failed: {_tail(rec)}")
     tagged, cost, _, failed = session(tags_brief(recital), tree, TAGS_SCHEMA, resume=sid, main=main)
     spent += cost
     if failed:
-        _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"tagging the recital: {failed}; worktree left at {tree}")
-        return spent
-    sh(["git", "add", "-A"], tree)
-    if SECRET_RE.search(sh(["git", "diff", "--cached"], tree).stdout or ""):
-        _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"the staged diff holds what looks like a credential: not committed; worktree left at {tree}")
-        return spent
+        return stop(f"tagging the recital: {failed}")
+    why, _ = guard(tree, before, hooks, sh)
+    if why:
+        return stop(why)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
         fh.write(commit_message(record, bugs, answer, tagged["tags"], recital))
     try:
-        steps = [["git", "commit", "-F", fh.name], ["git", "push", "-u", "origin", branch]]
-        for argv in steps:
+        for argv in (git(hooks, "commit", "-F", fh.name), git(hooks, "push", "-u", "origin", branch)):
             done = sh(argv, tree)
             if done.returncode != 0:
-                _log(record, bugs, answer, "", auto_log, fixed_as="left")
-                say(f"`{' '.join(argv[:2])}` failed: {_tail(done)}; worktree left at {tree}")
-                return spent
+                return stop(f"`git {argv[5]}` failed: {_tail(done)}")
     finally:
         os.unlink(fh.name)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as fh:
@@ -266,9 +353,7 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
     finally:
         os.unlink(fh.name)
     if opened.returncode != 0:
-        _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"gh pr create failed: {_tail(opened)}; branch {branch} is pushed")
-        return spent
+        return stop(f"gh pr create failed: {_tail(opened)}; branch {branch} is pushed")
     pr = (opened.stdout or "").strip().splitlines()[-1]
     _log(record, bugs, answer, pr, auto_log)
     for b in bugs:

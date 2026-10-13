@@ -272,10 +272,15 @@ holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<k
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with
 `acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
 to act on the findings and tag them, and commits, pushes and opens the PR itself: a draft when the
-fix changes what is drawn on screen. It never merges. A fixed bug gets the same answer `[f]` gives,
-noting the PR. One the agent called not real, or left, stays in your queue with its reason on the
-card (`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is. A
-commit or push that fails leaves the worktree for you. The agent can't run recital itself (its
+fix changes what is drawn on screen. It never merges. After the agent, nothing of the worktree's
+runs outside the sandbox: recital and the commit-msg hook run from your checkout, and git with the
+hooks path pointed there. The script stops, worktree left, if the agent changed the worktree's
+`.git` pointer, `.githooks`, `.claude` or `.mcp.json` (ignored files included), if the diff touches
+`.github/`, the hooks, `pixi.toml`/`.lock`, any `CLAUDE.md` or the fence itself (`PROTECTED`), or
+if it holds a credential. A fixed bug gets the same answer `[f]` gives, noting the PR. One the
+agent called not real, or left, stays in your queue with its reason on the card
+(`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is removed and
+tried once more. A guard, commit or push that stops leaves the worktree for you. The agent can't run recital itself (its
 reviewers are `claude -p` runs, which need the network), so this was deferred until the record
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.

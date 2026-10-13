@@ -352,6 +352,10 @@ def bundle_brief(record: dict, bugs: _t.Sequence[dict]) -> str:
     return "\n".join(lines)
 
 
+#: Sessions `--auto` spends on a bug before leaving it to the owner.
+AUTO_ATTEMPTS = 2
+
+
 def auto_path() -> pathlib.Path:
     """`auto_fix.jsonl` beside `review.jsonl`: what each `--auto` session said about each bug."""
     return review_path().parent / "auto_fix.jsonl"
@@ -369,13 +373,16 @@ def append_auto(row: dict, path: pathlib.Path | None = None) -> None:
 def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = (),
                tried: _t.Mapping[str, dict] = {}) -> list[dict]:
     """The pending work `--auto` may take, bundled: every bug verify called `fix`, except one an auto
-    session already called `not_real` or `left` (its card says why; the owner takes it from there)."""
+    session already called `not_real` or `left`, or failed on `AUTO_ATTEMPTS` times (its card says
+    why; the owner takes it from there)."""
     by_id = {b["id"]: b for b in record.get("bugs", [])}
 
     def eligible(ref: str) -> bool:
         b = by_id[ref]
+        last = tried.get(b["key"]) or {}
         return ((b.get("verify") or {}).get("verdict") == "fix"
-                and (tried.get(b["key"]) or {}).get("outcome") not in ("not_real", "left"))
+                and last.get("outcome") not in ("not_real", "left")
+                and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
     return bundles(record, [it for it in pending(record, reviews, older)
                             if it["kind"] == "work" and eligible(it["ref"])])
 

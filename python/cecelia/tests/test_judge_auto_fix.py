@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import pathlib
+import shutil
 import subprocess
 import unittest
 from unittest import mock
@@ -43,33 +44,44 @@ class _AutoFixture(_Fixture):
         removed.start()
         self.addCleanup(removed.stop)
 
-    def sh(self, fail=(), diff=""):
-        def run(argv, cwd, **_):
+    def sh(self, fail=(), diff="", names="a.py\n"):
+        def run(argv, cwd, input=None, **_):
+            argv = list(argv)
+            if argv[0] == "git":   # drop the `-c` overrides; `self.git_c` keeps what they were
+                while argv[1] == "-c":
+                    self.git_c.add(argv[2].split("=")[0])
+                    del argv[1:3]
+            elif argv[1].endswith("recital.py"):
+                argv = ["pixi", "run", "recital"] + argv[2:]
+                self.recital_input = input
+            self.calls.append(argv)
             if argv[:3] == ["git", "diff", "--cached"]:
-                self.calls.append(list(argv))
-                return subprocess.CompletedProcess(argv, 0, diff, "")
-            self.calls.append(list(argv))
+                return subprocess.CompletedProcess(argv, 0, names if "--name-only" in argv else diff, "")
             if argv[:2] == ["git", "commit"]:
                 self.messages.append(pathlib.Path(argv[3]).read_text(encoding="utf-8"))
             out = {"recital": RECITAL, "create": "https://github.com/o/r/pull/9\n"}.get(argv[2] if len(argv) > 2 else "", "")
             return subprocess.CompletedProcess(argv, 1 if argv[1] in fail else 0, out, "boom" if argv[1] in fail else "")
+        self.git_c = set()
         return run
 
-    def session(self, *answers):
+    def session(self, *answers, touch=None):
         it = iter(answers)
         self.prompts = []
 
         def run(prompt, cwd, schema, *, resume=None, main):
             self.prompts.append((prompt, resume))
+            if touch:
+                (cwd / touch).parent.mkdir(parents=True, exist_ok=True)
+                (cwd / touch).write_text("x", encoding="utf-8")
             a = next(it)
             return (a, 1.5, "sid-1", None) if a is not None else (None, 0.5, None, "session failed (exit 1): x")
         return run
 
-    def work(self, *answers, fail=(), diff=""):
+    def work(self, *answers, fail=(), diff="", names="a.py\n", touch=None):
         out = io.StringIO()
         bugs = [self.record["bugs"][0]]
-        spent = self.af.work_one(self.record, bugs, main=self.main, out=out, session=self.session(*answers),
-                                 sh=self.sh(fail, diff), path=self.log, auto_log=self.auto)
+        spent = self.af.work_one(self.record, bugs, main=self.main, out=out, session=self.session(*answers, touch=touch),
+                                 sh=self.sh(fail, diff, names), path=self.log, auto_log=self.auto)
         return spent, out.getvalue()
 
 
@@ -99,6 +111,14 @@ class OnlyNewestTest(_AutoFixture):
         with mock.patch("sys.stderr", err):
             self.assertEqual(self.rv.main(["--auto", "--dry-run", "--date", "2026-10-05"]), 1)
         self.assertIn("isn't the newest record (2026-10-12)", err.getvalue())
+
+    def test_the_newest_record_runs(self):
+        self.rec.write(self.record)
+        seen = {}
+        fake = mock.Mock(run=lambda record, **kw: seen.update(date=record["date"], **kw))
+        with mock.patch.object(self.rv, "_load_sibling", return_value=fake):
+            self.assertEqual(self.rv.main(["--auto", "--dry-run"]), 0)
+        self.assertEqual((seen["date"], seen["dry_run"]), ("2026-10-05", True))
 
 
 class FenceTest(_AutoFixture):
@@ -130,6 +150,18 @@ class FenceTest(_AutoFixture):
         self.assertIn("--strict-mcp-config", argv)
         self.assertEqual(seen["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
 
+    def test_the_agent_env_holds_no_token(self):
+        with mock.patch.dict(self.af.os.environ, {"GH_TOKEN": "t", "GITHUB_TOKEN": "t", "DBUS_SESSION_BUS_ADDRESS": "b"}):
+            env = self.af.agent_sandbox.agent_env()
+        self.assertFalse({"GH_TOKEN", "GITHUB_TOKEN", "DBUS_SESSION_BUS_ADDRESS"} & env.keys())
+
+    def test_protected_paths(self):
+        for p in (".github/workflows/ci.yml", ".githooks/commit-msg", ".claude/settings.json", "pixi.toml",
+                  "app/CLAUDE.md", "scripts/judge/auto_fix.py"):
+            self.assertTrue(self.af.protected(p), p)
+        for p in ("scripts/judge/review.py", "app/src/a.jl", "app/CLAUDE.md.bak"):
+            self.assertFalse(self.af.protected(p), p)
+
 
 class WorkTest(_AutoFixture):
     def test_a_fix_is_committed_with_its_tags_pushed_and_opened_as_a_pr(self):
@@ -148,6 +180,9 @@ class WorkTest(_AutoFixture):
         create = next(c for c in self.calls if c[:3] == ["gh", "pr", "create"])
         self.assertIn("--draft", create)
         self.assertFalse(any(c[:3] == ["gh", "pr", "merge"] for c in self.calls))
+        # git never runs the worktree's hooks or fsmonitor; the recital reads the diff we staged
+        self.assertEqual(self.git_c, {"core.fsmonitor", "core.hooksPath"})
+        self.assertEqual(self.recital_input, "")
         rows = self.rv.read_reviews(self.log)
         self.assertEqual([(r["ref"], r["value"], r["note"]) for r in rows],
                          [("B1", "fix_session", "auto PR https://github.com/o/r/pull/9")])
@@ -177,10 +212,34 @@ class WorkTest(_AutoFixture):
         self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
         self.assertIn("looks like a credential", out)
 
-    def test_a_failed_session_logs_nothing_so_the_next_run_tries_again(self):
+    def test_a_failed_session_is_tried_again_up_to_the_cap(self):
         self.work(None)
-        self.assertEqual(self.rv.read_auto(self.auto), {})
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["attempt"]), ("failed", 1))
+        self.assertIn(["remove_worktree", str(self.main.parent / "cecelia-fix-fanout-b1")], self.calls)
         self.assertEqual(self.rv.read_reviews(self.log), [])
+        self.assertEqual(len(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto))), 1)
+        self.work(None)
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["attempt"], 2)
+        self.assertEqual(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto)), [])
+
+    def test_an_agent_that_writes_what_runs_outside_its_sandbox_stops_before_it_runs(self):
+        for touch in (".githooks/commit-msg", ".claude/settings.local.json", ".git"):
+            with self.subTest(touch=touch):
+                self.calls.clear()
+                self.auto.unlink(missing_ok=True)
+                tree = self.main.parent / "cecelia-fix-fanout-b1"
+                _, out = self.work(_answer(), touch=touch)
+                self.assertEqual([c for c in self.calls if c[0] != "pixi"], [])   # not even `git add`
+                self.assertIn("run outside its sandbox", out)
+                self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
+                shutil.rmtree(tree)
+
+    def test_a_diff_into_ci_or_the_fence_is_never_pushed(self):
+        _, out = self.work(_answer(), names="a.py\n.github/workflows/ci.yml\n")
+        self.assertFalse(any(c[:2] in (["git", "commit"], ["git", "push"]) for c in self.calls))
+        self.assertFalse(any(c[:3] == ["pixi", "run", "recital"] for c in self.calls))
+        self.assertIn(".github/workflows/ci.yml", out)
 
     def test_an_existing_worktree_is_never_reused(self):
         (self.main.parent / "cecelia-fix-fanout-b1").mkdir()

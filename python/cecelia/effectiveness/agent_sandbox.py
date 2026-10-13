@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -15,6 +16,9 @@ import tempfile
 import uuid
 
 from cecelia.effectiveness.claude_cli import rate_limit
+
+#: The keyring's, ssh-agent's and gpg-agent's sockets (Linux): out of Bash's reach.
+_RUNTIME = [p for p in ([f"/run/user/{os.getuid()}"] if hasattr(os, "getuid") else []) if os.path.isdir(p)]
 
 # Probed against Claude Code: the sandbox wraps Bash only (bubblewrap on Linux; needs an AppArmor profile
 # for `bwrap` on Ubuntu 24.04); `permissions.deny` covers the file tools, and still holds under
@@ -27,7 +31,7 @@ SANDBOX_SETTINGS = {
         "network": {"deniedDomains": ["*"]},  # `allowedDomains` is auto-approved under skip-permissions
         # Julia's caches only, so `julia --project=app` can precompile; the installed packages
         # (`environments`, `packages`, `registries`) stay read-only.
-        "filesystem": {"denyRead": ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.claude"],
+        "filesystem": {"denyRead": ["~/.ssh", "~/.gnupg", "~/.config/gh", "~/.claude", *_RUNTIME],
                        "allowWrite": ["~/.julia/compiled", "~/.julia/logs", "~/.julia/scratchspaces"]},
     },
     "permissions": {
@@ -36,6 +40,18 @@ SANDBOX_SETTINGS = {
                  "Read(~/.claude/**)", "WebFetch", "WebSearch"],
     },
 }
+
+#: Kept out of every sandboxed agent's env: tokens, and the session bus the keyring answers on.
+CREDENTIAL_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+                  "DBUS_SESSION_BUS_ADDRESS")
+
+
+def agent_env(**extra: str) -> dict[str, str]:
+    """This process's env for a sandboxed agent: without `CREDENTIAL_ENV`, with `CECELIA_OBSERVER_NO_PAIR`
+    (a throwaway session mustn't re-pair the owner's project), plus `extra`."""
+    env = {k: v for k, v in os.environ.items() if k not in CREDENTIAL_ENV}
+    return {**env, "CECELIA_OBSERVER_NO_PAIR": "1", **extra}
+
 
 #: Outside `~`: the `~/**` write denies above would otherwise block the agent's own checkout.
 WORKTREE_ROOT = pathlib.Path(tempfile.gettempdir()) / "cecelia-eval"

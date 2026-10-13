@@ -28,7 +28,6 @@ import argparse
 import datetime as _dt
 import importlib.util as _importlib_util
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -187,7 +186,7 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
              "--settings", json.dumps(agent_sandbox.SANDBOX_SETTINGS), "--tools", TOOLS,
              "--strict-mcp-config", "--no-session-persistence", "--output-format", "json",
              "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(SCHEMA)],
-            input=prompt, cwd=str(dest), env={**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"},
+            input=prompt, cwd=str(dest), env=agent_sandbox.agent_env(),
             capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise VerifyError(f"verify agent failed: {e}") from e
