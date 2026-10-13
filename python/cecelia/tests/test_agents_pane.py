@@ -253,8 +253,10 @@ class BadgeTest(unittest.TestCase):
             wrapped = [sys.executable, "-c", "import sys; sys.stdin.read(); print('first'); print('second')"]
 
             def run(stdin: bytes, argv: list[str]) -> str:
+                # The wrapped command's own line endings pass through untouched: `\r\n` on Windows.
                 return subprocess.run([sys.executable, str(script), *argv], input=stdin, env=env,
-                                      capture_output=True, check=True).stdout.decode("utf-8")
+                                      capture_output=True, check=True
+                                      ).stdout.decode("utf-8").replace("\r\n", "\n")
 
             out = run(b'{"session_id": "abc"}', wrapped)
             self.assertEqual(out, f"{session_badge('abc')} cecelia-56  first\nsecond\n")
