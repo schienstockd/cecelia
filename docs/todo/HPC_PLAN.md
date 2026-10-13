@@ -1,7 +1,7 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
 **Status:** building. P1 merged (#1632). P2 built (#1637; see *P2 as built*). P3 built (branch
-`feat/1619-hpc-p3`; see *P3 as built*). P4–P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
+`feat/1619-hpc-p3`; see *P3 as built*). P5 built (branch `feat/1619-hpc-p5`; see *P5 as built*). P4, P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
 
 ## Goal
 
@@ -462,6 +462,22 @@ The counts are files touched, new and existing, including tests and docs.
 - **Tested by:** golden render (already pinned in P3), then an OpenPBS container job in CI running the
   same end-to-end suite, parameterised over the backend.
 - **Touchpoints ≈ 4:** `hpc/backends/pbs.jl`, the CI container + workflow, the test parameterisation.
+
+**P5 as built:**
+- `hpc/backends/pbs.jl` (`PbsBackend`, `pbs_exit_reason`). PBS means PBS Pro / OpenPBS; Torque is not
+  covered (no `select`, no `qstat -x`). Settings offers it.
+- Status comes from `qselect -u <me> -s <state>`, once per state: the `qstat` table truncates long job ids,
+  and `qselect` prints them whole.
+- The log path is absolute: PBS resolves a relative `-o` against the execution host's home.
+- A vanished job's reason comes from `qstat -x -f`: PBS Pro's kill codes (`Exit_status` -29 is walltime,
+  -27 memory) or its `comment`.
+- `-A` carries the account. Sites that use `-P` add it under Directives; making that a setting waits
+  for a site that needs it.
+- **Tested without a PBS server:** the golden render and the parsers, plus the backend's own shell end to
+  end through shim `qsub`/`qselect`/`qdel` on this machine (submit, log, exit code, cancel).
+- **Not done:** an OpenPBS container in CI. There is no maintained image (the old `pbspro/pbspro` one is
+  CentOS 7, whose mirrors are gone), and building OpenPBS from source in CI is a project of its own.
+  Acceptance on a real PBS site joins P6.
 
 **P6 — Acceptance + promotion.**
 - **Delivers:** a run on the reporter's real site at the next release; durable docs in `docs/HPC.md`,

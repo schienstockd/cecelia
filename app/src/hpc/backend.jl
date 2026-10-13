@@ -11,8 +11,9 @@
 # backend-independent: the common body writes `<dir>/.exit` with the job's exit status, so a finished
 # job reads the same on every scheduler.
 #
-# Backends: `SlurmBackend` (backends/slurm.jl), `LocalShellBackend` (backends/local.jl — a background
-# `bash`, HPC_PLAN Q7, for the tests and CI legs without a scheduler). PBS is P5.
+# Backends: `SlurmBackend` (backends/slurm.jl), `PbsBackend` (backends/pbs.jl — PBS Pro / OpenPBS),
+# `LocalShellBackend` (backends/local.jl — a background `bash`, HPC_PLAN Q7, for the tests and CI legs
+# without a scheduler).
 
 """Where a submitted job is, as far as the scheduler knows. `JOB_GONE` = no longer queued or running."""
 @enum RemoteJobState JOB_QUEUED JOB_RUNNING JOB_GONE
@@ -222,6 +223,7 @@ The backend for the configured scheduler. Throws `HpcError` for one not built ye
 """
 function hpc_backend(site::HpcSite = hpc_site())::HpcBackend
     site.scheduler == "slurm" && return SlurmBackend(site)
+    site.scheduler == "pbs" && return PbsBackend(site)
     throw(HpcError("$(site.scheduler) is not supported yet"))
 end
 

@@ -19,6 +19,7 @@ init_cecelia!()
 @testset "HPC" begin
     include(joinpath(@__DIR__, "suite", "hpc.jl"))
     include(joinpath(@__DIR__, "suite", "hpc_remote.jl"))
+    include(joinpath(@__DIR__, "suite", "hpc_pbs.jl"))
     include(joinpath(@__DIR__, "suite", "label_import.jl"))    # its fixture project, for dispatch
     include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 end
