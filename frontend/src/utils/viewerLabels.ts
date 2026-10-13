@@ -74,6 +74,21 @@ export function maskStoreFor(vn: string, previewVn: string, liveVn: string): Mas
   return vn === previewVn ? 'preview' : vn === liveVn ? 'live' : undefined
 }
 
+/** The mask actually on screen: the mask slot (`maskName` — preview, then live, then the ticked
+ *  store) unless its eye is off. What a capture names in its legend. */
+export function drawnMaskVn(maskName: string, maskHidden: boolean): string {
+  return maskHidden ? '' : maskName
+}
+
+/** The vn a landscape tile's `segCount` is read for: the drawn mask, but only a durable store — a
+ *  preview or live store has no `label_props`, and counting the ticked store while one of those
+ *  covers it would describe a mask that isn't on screen. '' = no segCount. */
+export function landscapeLabelsVn(maskName: string, maskHidden: boolean,
+                                  previewVn: string, liveVn: string): string {
+  const vn = drawnMaskVn(maskName, maskHidden)
+  return maskStoreFor(vn, previewVn, liveVn) ? '' : vn
+}
+
 /** The slab-query fields that point a labels read at `store`, `storeId` riding as the cache-buster
  *  (identical URLs across two preview runs would otherwise return the first run's bytes). */
 export function maskStoreQuery(store: MaskStore | undefined, storeId: number | undefined,

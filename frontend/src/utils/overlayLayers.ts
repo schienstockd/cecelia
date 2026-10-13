@@ -71,7 +71,7 @@ export function captureOverlayLayers<L extends { vn: string; popType: string }, 
   for (const [vn, payload] of o.trackclust) {
     for (const p of payload?.pops ?? []) ribbon(`(trackclust) (${vn}) Tracks ${p.path}`, trackPopSourceKey(vn, 'trackclust', p.path))
   }
-  // Segmentation mask: one per visible label layer (currently ≤1).
+  // Segmentation mask: the one on screen (`drawnMaskVn` — '' when none is drawn).
   if (o.labelName) layers[`(${o.labelName}) Labels`] = { visible: true }
   return layers
 }

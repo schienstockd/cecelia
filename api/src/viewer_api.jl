@@ -504,7 +504,10 @@ function try_serve_slab(stream::HTTP.Stream, target::AbstractString)::Bool
         elseif preview_labels
             zpp, perr = preview_labels_store_path(
                 get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)
-            perr === nothing || return false
+            # 409 like `live=1`, for the same reason: a stop sweeping the scratch store while a fetch
+            # is still in flight is the ordinary end of a preview — the popup viewer only hears that
+            # the preview ended through the localStorage bridge — not a mask that failed to load.
+            perr === nothing || return _slab_json_error(stream, 409, perr)
             zp = zpp
         else
             zp, lerr = label_store_path(get(q, "projectUid", ""), get(q, "imageUid", ""), lbl)

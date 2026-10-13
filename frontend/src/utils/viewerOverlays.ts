@@ -73,6 +73,31 @@ export interface OverlayPop {
   labels: number[]
 }
 
+/** Whether a pop gets a Tracks row (and so can draw a ribbon) — data eligibility only, `isTrack` OR
+ *  `hasTracks` (MULTI_POP_TRACKING_PLAN.md Decision 2). NOT the manager's `show`: that only seeds the
+ *  ribbon eye (`ribbonEyeOff`), the way it seeds the point eye, so the viewer can override it. */
+export function isTrackDrawable(p: Pick<OverlayPop, 'labels' | 'isTrack' | 'hasTracks'>): boolean {
+  return !!p.labels?.length && (p.isTrack || !!p.hasTracks)
+}
+
+/** A pop's ribbon eye, per segmentation: off when the user hid it (`persisted`, user intent kept
+ *  across fetches) or when the manager hides the pop (`managerHidden`, reseeded from `!show` on every
+ *  fetch, so a viewer override lasts until the next one — as for the point eye). */
+export function ribbonEyeOff(persisted: ReadonlySet<string> | undefined,
+                             managerHidden: ReadonlySet<string> | undefined, path: string): boolean {
+  return !!persisted?.has(path) || !!managerHidden?.has(path)
+}
+
+/** Flip a pop's ribbon eye. Turning one ON clears both sources; turning one OFF is a user hide and
+ *  only that is persisted — a manager-hidden pop shown here must not become a stored hide. */
+export function toggleRibbonEye(persisted: ReadonlySet<string> | undefined,
+                                managerHidden: ReadonlySet<string> | undefined, path: string,
+): { persisted: Set<string>; managerHidden: Set<string> } {
+  const p = new Set(persisted ?? []), m = new Set(managerHidden ?? [])
+  if (ribbonEyeOff(p, m, path)) { p.delete(path); m.delete(path) } else p.add(path)
+  return { persisted: p, managerHidden: m }
+}
+
 export interface OverlayPayload {
   nCells: number
   nDropped: number
