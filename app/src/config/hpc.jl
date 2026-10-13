@@ -1,11 +1,18 @@
-# HPC settings — the three-way split of docs/todo/HPC_PLAN.md → Decision 9:
+# HPC settings — the split of docs/todo/HPC_PLAN.md → Decision 9 (revised 2026-10-13):
 #
-#   site      `custom.toml` `[hpc]`                       machine-wide: the site is a property of the
-#                                                          network this machine is on, not of the data
-#   identity  `user-profiles/<name>/settings.toml`        username + SSH key path: a person's login, so
-#             (`hpcUser`, `hpcKeyFile`)                    two profiles on one workstation never submit
-#                                                          under one account
+#   cluster   `custom.toml` `[hpc]`                       scheduler, host, port — machine-wide: which
+#                                                          cluster this machine reaches is not personal
+#   personal  `user-profiles/<name>/settings.toml`        everything else: username + SSH key
+#             (`hpcUser`, `hpcKeyFile`, `hpc` table)       (`hpcUser`/`hpcKeyFile`), and the remote folder,
+#                                                          email and CPU/GPU queue/account/QoS/directives/
+#                                                          preamble (`hpc`). A remote folder is usually
+#                                                          `/scratch/<user>/…`, and accounts and queues
+#                                                          follow a person's group, so two profiles on one
+#                                                          workstation must not share them
 #   project   `<project>/settings/hpc.json` `account`     billing follows the grant, which is per project
+#
+# `HpcSite` is the EFFECTIVE view — the shared cluster + this profile's part — so nothing downstream
+# needs to know which file a field came from.
 #
 # Readers and validated writers only. Nothing here spawns a process: that is `hpc/transport.jl`.
 # Included from Cecelia.jl after `config/profile_settings.jl` (identity reads the profile bag).
@@ -51,6 +58,10 @@ end
 
 const _HPC_CLASS_KEYS = ("queue", "account", "qos", "directives", "preamble")
 const _HPC_SITE_KEYS  = ("scheduler", "host", "port", "remoteDir", "email")
+# Which of the site's keys are shared by every profile (custom.toml); the rest are the profile's own.
+const _HPC_SHARED_KEYS   = ("scheduler", "host", "port")
+const _HPC_PERSONAL_KEYS = ("remoteDir", "email", HPC_CLASSES...)
+const _HPC_PROFILE_KEY   = "hpc"
 const _HPC_DEFAULT_REMOTE_DIR = "~/cecelia"
 
 """
@@ -78,11 +89,30 @@ function _hpc_site(d::AbstractDict)::HpcSite
 end
 
 """
-    hpc_site() -> HpcSite
+    hpc_site(name = active_profile_name()) -> HpcSite
 
-The site settings in effect. Never throws: a missing `[hpc]` reads as an unconfigured site.
+The settings in effect for profile `name`: the shared cluster from `custom.toml` `[hpc]`, with the
+profile's own part on top. Never throws: anything missing reads as unconfigured.
+
+A personal key still in `custom.toml` (written there before the split) is read as a fallback for a
+profile that has not set its own; the profile's first save moves it out (`set_hpc_site!`).
 """
-hpc_site()::HpcSite = _hpc_site(get(cecelia_conf(), "hpc", Dict{String,Any}()))
+function hpc_site(name::AbstractString = active_profile_name();
+                  config_root::AbstractString = config_dir())::HpcSite
+    shared = get(cecelia_conf(), "hpc", Dict{String,Any}())
+    shared isa AbstractDict || (shared = Dict{String,Any}())
+    mine = _hpc_profile_part(name; config_root)
+    merged = Dict{String,Any}(String(k) => v for (k, v) in shared)
+    merge!(merged, mine)
+    _hpc_site(merged)
+end
+
+function _hpc_profile_part(name::AbstractString; config_root::AbstractString = config_dir())::Dict{String,Any}
+    bag = read_profile_settings(name; config_root = config_root)
+    d = get(bag, _HPC_PROFILE_KEY, nothing)
+    d isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in d if String(k) in _HPC_PERSONAL_KEYS) :
+                         Dict{String,Any}()
+end
 
 hpc_class_dict(c::HpcClass)::Dict{String,Any} =
     Dict{String,Any}("queue" => c.queue, "account" => c.account, "qos" => c.qos,
@@ -137,19 +167,21 @@ function hpc_site_errors(s::HpcSite)::Vector{String}
 end
 
 """
-    set_hpc_site!(patch) -> HpcSite
+    set_hpc_site!(patch; name = active_profile_name()) -> HpcSite
 
 Merge `patch` (any subset of `scheduler, host, port, remoteDir, email, cpu{…}, gpu{…}`) into the
-user's `custom.toml` `[hpc]`, validate the RESULT, write it and hot-reload. Throws `ArgumentError`
-naming every problem; nothing is written then. Unknown keys are refused rather than stored, so a
-typo cannot accumulate in `custom.toml` (the same rule as `POST /api/pools/set`).
+settings in effect, validate the RESULT, then write each part where it lives: scheduler/host/port to
+`custom.toml` `[hpc]` (hot-reloaded), the rest to profile `name`. Throws `ArgumentError` naming every
+problem; nothing is written then. Unknown keys are refused rather than stored, so a typo cannot
+accumulate (the same rule as `POST /api/pools/set`).
 """
-function set_hpc_site!(patch::AbstractDict)::HpcSite
+function set_hpc_site!(patch::AbstractDict; name::AbstractString = active_profile_name(),
+                       config_root::AbstractString = config_dir())::HpcSite
     p = Dict{String,Any}(String(k) => v for (k, v) in patch)
     for k in keys(p)
         (k in _HPC_SITE_KEYS || k in HPC_CLASSES) || throw(ArgumentError("Unknown HPC setting '$k'"))
     end
-    merged = hpc_site_dict(hpc_site())
+    merged = hpc_site_dict(hpc_site(name; config_root))
     for (k, v) in p
         if k in HPC_CLASSES
             v isa AbstractDict || throw(ArgumentError("'$k' must be an object"))
@@ -168,13 +200,17 @@ function set_hpc_site!(patch::AbstractDict)::HpcSite
     site = _hpc_site(merged)
     errs = hpc_site_errors(site)
     isempty(errs) || throw(ArgumentError(join(errs, "; ")))
+    full = hpc_site_dict(site)
+    patch_profile_settings!(Dict{String,Any}(_HPC_PROFILE_KEY =>
+        Dict{String,Any}(k => full[k] for k in _HPC_PERSONAL_KEYS)), name; config_root = config_root)
     ensure_config_dir()
     cfg_path = custom_toml_path()
     cfg = isfile(cfg_path) ? TOML.parsefile(cfg_path) : Dict{String,Any}()
-    cfg["hpc"] = hpc_site_dict(site)
+    # Only the shared part; a personal key left from before the split is dropped (now in the profile).
+    cfg["hpc"] = Dict{String,Any}(k => full[k] for k in _HPC_SHARED_KEYS)
     write_atomic(io -> TOML.print(io, cfg), cfg_path)
     init_cecelia!()
-    hpc_site()
+    hpc_site(name; config_root)
 end
 
 # ── Identity (per profile) ─────────────────────────────────────────────────────────────────────────

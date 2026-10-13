@@ -1,7 +1,8 @@
 <!--
-  HpcSettings — the body of Settings → HPC (docs/todo/HPC_PLAN.md P1, Decision 9). Three scopes on one
-  form, each stored by the backend where it belongs: the SITE (custom.toml [hpc], machine-wide), YOUR
-  LOGIN (username + SSH key, per profile) and THIS PROJECT (an account override). Each field saves on
+  HpcSettings — the body of Settings → HPC (docs/todo/HPC_PLAN.md Decision 9). Three scopes on one form,
+  each stored by the backend where it belongs: the CLUSTER (scheduler, host, port — custom.toml, shared
+  by every profile), YOURS (login, remote folder, email, job classes — this profile) and THIS PROJECT
+  (an account override). Each field saves on
   change (blur / Enter), like the other Settings controls, from its own draft (useHpcDrafts); a refused
   value shows the backend's message and snaps back.
 
@@ -108,6 +109,7 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
   <p v-if="s && !s.available" class="cc-muted cc-fs-md">Not available on Windows yet.</p>
 
   <div v-else-if="s" class="hpc" :class="{ busy: saving }">
+    <h3 class="cc-eyebrow hpc-sub hpc-first" v-tooltip.right="'Shared by every profile on this computer'">Cluster</h3>
     <div class="hpc-grid">
       <label class="cc-muted">Scheduler</label>
       <select v-model="d['site.scheduler'].value" @change="commit('site.scheduler')"
@@ -124,17 +126,9 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       <label class="cc-muted">Port</label>
       <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value"
              @change="commit('site.port')" v-tooltip.bottom="'SSH port (usually 22)'" />
-
-      <label class="cc-muted">Remote folder</label>
-      <input class="mono" v-model="d['site.remoteDir'].value" @change="commit('site.remoteDir')"
-             v-tooltip.bottom="'Where Cecelia keeps its files on the cluster'" />
-
-      <label class="cc-muted">Email</label>
-      <input v-model="d['site.email'].value" placeholder="optional" @change="commit('site.email')"
-             v-tooltip.bottom="'Job notifications; optional'" />
     </div>
 
-    <h3 class="cc-eyebrow hpc-sub">Your login</h3>
+    <h3 class="cc-eyebrow hpc-sub" v-tooltip.right="'This profile only'">Yours</h3>
     <div class="hpc-grid">
       <label class="cc-muted">Username</label>
       <input v-model="d['identity.user'].value" @change="commit('identity.user')"
@@ -148,16 +142,15 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
         <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="showKeyBrowser = true"
                 v-tooltip.top="'Browse for the key file'"><i class="pi pi-folder-open" /></button>
       </div>
-    </div>
 
-    <template v-if="s.project">
-      <h3 class="cc-eyebrow hpc-sub">This project</h3>
-      <div class="hpc-grid">
-        <label class="cc-muted">Account</label>
-        <input v-model="d['project.account'].value" placeholder="site account" @change="commit('project.account')"
-               v-tooltip.bottom="'Billing account for this project only'" />
-      </div>
-    </template>
+      <label class="cc-muted">Remote folder</label>
+      <input class="mono" v-model="d['site.remoteDir'].value" @change="commit('site.remoteDir')"
+             v-tooltip.bottom="'Where Cecelia keeps your files on the cluster'" />
+
+      <label class="cc-muted">Email</label>
+      <input v-model="d['site.email'].value" placeholder="optional" @change="commit('site.email')"
+             v-tooltip.bottom="'Job notifications; optional'" />
+    </div>
 
     <div class="hpc-classes">
       <span />
@@ -172,6 +165,15 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
         </template>
       </template>
     </div>
+
+    <template v-if="s.project">
+      <h3 class="cc-eyebrow hpc-sub">This project</h3>
+      <div class="hpc-grid">
+        <label class="cc-muted">Account</label>
+        <input v-model="d['project.account'].value" placeholder="your account" @change="commit('project.account')"
+               v-tooltip.bottom="'Billing account for this project only'" />
+      </div>
+    </template>
 
     <div class="cc-row hpc-test">
       <button class="cc-btn cc-btn-primary" :disabled="testing || !!blocker" @click="runTest"
@@ -218,6 +220,7 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
 .hpc-classes textarea { resize: vertical; min-width: 0; }
 .hpc-classes input { min-width: 0; }
 .hpc-sub { margin: 1.1rem 0 0.5rem; }
+.hpc-first { margin-top: 0; }
 .hpc-grow { flex: 1; min-width: 0; }
 .hpc-port { width: 8ch; }
 .mono { font-family: var(--cc-mono); }

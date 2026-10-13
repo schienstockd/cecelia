@@ -51,12 +51,13 @@ gpu     = 1    # the GPU — cellpose family; raise for batch segmentation
 io      = 8    # local disk IO — bioformats2raw import/convert, crop
 hpc     = 1    # jobs dispatched to the HPC cluster at once (docs/todo/HPC_PLAN.md D6; was "network")
 
-# The HPC site tasks can be sent to (Settings → HPC). Machine-wide: the site is a property of the
-# network this machine is on, not of the data. The username and SSH key are per PROFILE
-# (`user-profiles/<name>/settings.toml`) and a project may override `account`
-# (`<project>/settings/hpc.json`). See docs/todo/HPC_PLAN.md → Decision 9.
+# The HPC cluster tasks can be sent to (Settings → HPC). Only scheduler, host and port are machine-wide
+# (`custom.toml`); everything else here is a DEFAULT for each profile's own settings
+# (`user-profiles/<name>/settings.toml`: username, SSH key, and the `hpc` table — remote folder, email,
+# the job classes). A project may override `account` (`<project>/settings/hpc.json`).
+# See docs/todo/HPC_PLAN.md → Decision 9 (config/hpc.jl).
 [hpc]
-scheduler = "slurm"     # "slurm"; "pbs" is planned
+scheduler = "slurm"     # "slurm" or "pbs" (PBS Pro / OpenPBS)
 host      = ""          # login node, e.g. "login.cluster.example.org"
 port      = 22
 remoteDir = "~/cecelia" # Cecelia's working dir on the cluster; `~` is the remote home

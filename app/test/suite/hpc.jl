@@ -126,8 +126,29 @@ end
         @test s.gpu.queue == ""
         cfg = Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))
         @test cfg["dirs"]["projects"] == "/tmp"                             # merged, not replaced
-        @test cfg["hpc"]["host"] == "login.example.org" && cfg["hpc"]["cpu"]["queue"] == "normal"
+        @test cfg["hpc"] == Dict("scheduler" => "slurm", "host" => "login.example.org", "port" => 2222)
         @test hpc_site() == s                                               # hot-reloaded
+
+        # Only the cluster is shared: another profile sees the host, not this one's queue or folder.
+        set_hpc_site!(Dict("remoteDir" => "/scratch/alice/cecelia"))
+        @test Cecelia.read_profile_settings(Cecelia.active_profile_name())["hpc"]["cpu"]["queue"] == "normal"
+        bob = hpc_site("bob")
+        @test bob.host == "login.example.org" && bob.port == 2222
+        @test bob.cpu.queue == "" && bob.remote_dir == "~/cecelia"
+        b2 = set_hpc_site!(Dict("email" => "bob@uni.edu", "gpu" => Dict("account" => "lab2")); name = "bob")
+        @test b2.email == "bob@uni.edu" && hpc_site().email == "" && hpc_site().remote_dir == "/scratch/alice/cecelia"
+        @test set_hpc_site!(Dict("host" => "new.example.org"); name = "bob").host == "new.example.org"
+        @test hpc_site().host == "new.example.org"                         # the cluster is shared
+
+        # A personal key written to custom.toml before the split: read as the fallback, moved on save.
+        cfg = Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))
+        cfg["hpc"]["email"] = "legacy@uni.edu"
+        open(io -> Cecelia.TOML.print(io, cfg), joinpath(tmp, "custom.toml"), "w"); init_cecelia!()
+        @test hpc_site("carol").email == "legacy@uni.edu"
+        set_hpc_site!(Dict("port" => 22); name = "carol")
+        @test !haskey(Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))["hpc"], "email")
+        @test hpc_site("carol").email == "legacy@uni.edu"                 # kept, now in carol's profile
+        set_hpc_site!(Dict("host" => "login.example.org", "port" => 2222))
 
         before = read(joinpath(tmp, "custom.toml"), String)
         refused(p) = try set_hpc_site!(p); "" catch e; e isa ArgumentError ? e.msg : rethrow() end
