@@ -428,12 +428,23 @@ pixi run prune-worktrees --remove   # remove the SAFE ones, prune dead entries
 
 Only **SAFE** worktrees are removed: merged (in `origin/main`, or a merged PR at the same head — so
 squash merges count and commits pushed after the merge don't), clean, nothing running from them
-(`/proc`, Linux only), no stash, and created more than 24 h ago. **Dead** entries (folder already
+(`/proc`, Linux only) and no Claude Code session working in them, no stash, and created more than
+24 h ago. A session counts by its current folder — the last `cwd` in its transcript — because
+sessions are launched from the workspace root and `cd` into a worktree. **Dead** entries (folder already
 gone) are pruned. Everything else is listed for a person to decide — the tool never uses `--force`,
 `git branch -D` or `kill`, and prints the command where one would be needed. Each SAFE worktree is
 re-checked just before it is removed. Design: `docs/todo/WORKTREE_CLEANUP_PLAN.md`.
 
-`bootstrap-worktree` prints a one-line nudge when the worktree list has grown; agents relay it.
+`bootstrap-worktree` ends with `prune-worktrees --summary` — one line, `N removable, M dead
+worktrees — …`, or nothing when none can go; agents relay it.
+
+`pixi run agents` lists every live Claude Code session with its worktree, branch, PR + CI and
+recital state (→: each session's findings with their outcomes — open, fixed, shipped, dropped — and
+the agent's reason); the same pane heads `pixi run recital-console`. Each row starts with the
+session's badge (shape + colour); to see the same badge in each window, wrap your statusline:
+`"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"` in
+`~/.claude/settings.json`. Design:
+`docs/todo/AGENTS_PANE_PLAN.md`.
 
 ## Dev worktree switch (Settings → System)
 

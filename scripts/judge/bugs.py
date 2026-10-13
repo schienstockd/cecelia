@@ -73,6 +73,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
+from cecelia.effectiveness.log import RESOLVED_EVENTS  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, merged_prs_since  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
 
@@ -213,7 +214,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     events = list(events)
     convention_since = since if convention_since is None else convention_since
     resolved = {r["payload"]["slug"]: r["payload"] for r in events
-                if r.get("event") in ("fanout_audit_finding_resolved", "convention_check_finding_resolved")
+                if r.get("event") in RESOLVED_EVENTS
                 and (r.get("payload") or {}).get("slug")}
     out: dict[str, dict] = {}
     for r in events:

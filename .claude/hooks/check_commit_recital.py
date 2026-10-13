@@ -82,6 +82,7 @@ import sys
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
+from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
 from cecelia.effectiveness.recital import MARKERS, STAMP_RE, outside_code  # noqa: E402
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
@@ -352,15 +353,6 @@ def write_resolutions(
     return written
 
 
-#: Finding-emitting events gate 3 considers. `_finding` events land in the log atomically with
-#: the reviewer spawn (`recital.py::_run_reviewer`).
-_FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
-#: Their resolution counterparts.
-_RESOLVED_EVENTS = frozenset({
-    "fanout_audit_finding_resolved", "convention_check_finding_resolved",
-})
-
-
 def _where(row: dict) -> str:
     """`file:line (marker)` of a `_finding` row, for naming it in a block message."""
     p = row.get("payload") or {}
@@ -370,28 +362,14 @@ def _where(row: dict) -> str:
 
 def _untagged_slugs_on_head(head_sha: str, branch: str,
                             tagged_slugs: set[str]) -> dict[str, dict]:
-    """Slugs the recital emitted for this change (`_same_change`: SHA + branch) that neither
-    `tagged_slugs` nor any prior resolution covers, mapped to their `_finding` row.
+    """Slugs the recital emitted for this change (SHA + branch, see `_same_change`) that neither
+    `tagged_slugs` nor any prior resolution on the branch covers, mapped to their `_finding` row.
     Log-read failure → empty."""
-    findings_on_head: dict[str, dict] = {}
-    resolved_slugs: set[str] = set()
     try:
-        for row in read_events():
-            event = row.get("event")
-            slug = (row.get("payload") or {}).get("slug")
-            if not slug:
-                continue
-            if event in _FINDING_EVENTS and _same_change(row, head_sha, branch):
-                findings_on_head.setdefault(slug, row)
-            elif event in _RESOLVED_EVENTS and row.get("branch") == branch:
-                # Same branch, any SHA: an earlier commit on this branch may have resolved it.
-                # Not other branches — slugs carry no branch, so two worktrees flagging the
-                # same file:line share a slug, and one's resolution mustn't hide the other's.
-                resolved_slugs.add(slug)
+        pending = unresolved_findings(read_events(), branch, commit=head_sha)
     except OSError:
         return {}
-    return {s: e for s, e in findings_on_head.items()
-            if s not in resolved_slugs and s not in tagged_slugs}
+    return {s: e for s, e in pending.items() if s not in tagged_slugs}
 
 
 #: Git state files present while a git-generated commit is being made. Their messages carry no

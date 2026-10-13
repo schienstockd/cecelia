@@ -60,6 +60,11 @@ class ClassifyTest(unittest.TestCase):
     def test_a_running_process_wins_over_merged_and_clean(self):
         self.assertEqual(self.bucket(pids=[(42, "pixi run dev")]), P.IN_USE)
 
+    def test_a_claude_session_working_in_it_wins_over_merged_and_clean(self):
+        bucket, why = P.classify(_facts(sessions=[("cecelia-56", "idle")]))
+        self.assertEqual(bucket, P.IN_USE)
+        self.assertIn("session cecelia-56 (idle)", why)
+
     def test_no_proc_means_in_use_not_safe(self):
         self.assertEqual(self.bucket(pids=None), P.IN_USE)
 
@@ -114,6 +119,27 @@ class HelpersTest(unittest.TestCase):
     def test_unknown_processes_stay_unknown(self):
         self.assertIsNone(P.pids_under("/ws/cecelia-x", None))
 
+    def test_a_session_counts_by_its_current_folder_not_a_longer_named_sibling(self):
+        sep = os.sep
+        S = P.Session
+        sessions = [S(1, "a", "idle", f"{sep}ws{sep}cecelia-x{sep}frontend"),
+                    S(2, "b", "busy", f"{sep}ws{sep}cecelia-x2"),
+                    S(3, "c", "?", None, readable=False)]
+        self.assertEqual(P.sessions_under(f"{sep}ws{sep}cecelia-x", sessions), [("a", "idle")])
+        # The shell was reset to the workspace root; the worktree is still among its recent folders.
+        reset = [S(4, "d", "idle", f"{sep}ws", recent_cwds=(f"{sep}ws", f"{sep}ws{sep}cecelia-x"))]
+        self.assertEqual(P.sessions_under(f"{sep}ws{sep}cecelia-x", reset), [("d", "idle")])
+
+    def test_summary_names_what_can_go_and_is_silent_otherwise(self):
+        row = lambda b: (_facts(), b, "")   # noqa: E731
+        self.assertIsNone(P.summary([row(P.IN_USE), row(P.UNMERGED)]))
+        self.assertEqual(P.summary([row(P.SAFE)]),
+                         "1 removable worktree — pixi run prune-worktrees --remove")
+        self.assertEqual(P.summary([row(P.SAFE), row(P.SAFE), row(P.DEAD)]),
+                         "2 removable, 1 dead worktrees — pixi run prune-worktrees --remove")
+        unreadable = [P.Session(9, "9", "?", None, readable=False)]
+        self.assertIn("couldn't read Claude session 9", P.summary([row(P.SAFE)], unreadable))
+
 
 def _git(*args, cwd):
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=str(cwd),
@@ -152,20 +178,22 @@ class EndToEndTest(unittest.TestCase):
         for p in (self.merged, self.ahead, self.dirty):
             os.utime(p / ".git", (old, old))
 
-        for name, value in (("merged_pr_heads", lambda *a, **k: []), ("scan_processes", lambda: [])):
+        self.sessions = []   # what `live_sessions` reports during `remove`'s re-check
+        for name, value in (("merged_pr_heads", lambda *a, **k: []), ("scan_processes", lambda: []),
+                            ("live_sessions", lambda: self.sessions)):
             patcher = mock.patch.object(P, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
     def buckets(self):
-        return {pathlib.Path(f.path).name: b for f, b, _ in P.survey(str(self.primary))}
+        return {pathlib.Path(f.path).name: b for f, b, _ in P.survey(str(self.primary), self.sessions)}
 
     def test_survey_then_remove(self):
         self.assertEqual(self.buckets(), {
             "cecelia-feijoa": P.PRIMARY, "cecelia-merged": P.SAFE, "cecelia-ahead": P.UNMERGED,
             "cecelia-dirty": P.DIRTY, "cecelia-gone": P.DEAD})
 
-        log = P.remove(P.survey(str(self.primary)), str(self.primary))
+        log = P.remove(P.survey(str(self.primary), self.sessions), str(self.primary))
 
         self.assertFalse(self.merged.exists())
         self.assertTrue(self.ahead.exists() and self.dirty.exists())
@@ -177,11 +205,22 @@ class EndToEndTest(unittest.TestCase):
         self.assertTrue(any("pruned 1" in line for line in log), log)
 
     def test_a_worktree_that_changed_since_the_survey_is_skipped(self):
-        rows = P.survey(str(self.primary))
+        rows = P.survey(str(self.primary), self.sessions)
         (self.merged / "late.txt").write_text("written after the survey\n", encoding="utf-8")
         log = P.remove(rows, str(self.primary))
         self.assertTrue(self.merged.exists())
         self.assertTrue(any("skipped" in line and "dirty" in line for line in log), log)
+
+    def test_a_session_in_a_merged_worktree_keeps_it(self):
+        self.sessions = [P.Session(7, "cecelia-56", "idle", str(self.merged))]
+        self.assertEqual(self.buckets()["cecelia-merged"], P.IN_USE)
+
+    def test_a_session_that_moved_in_after_the_survey_stops_the_removal(self):
+        rows = P.survey(str(self.primary), [])
+        self.sessions = [P.Session(7, "cecelia-56", "busy", str(self.merged / "sub"))]
+        log = P.remove(rows, str(self.primary))
+        self.assertTrue(self.merged.exists())
+        self.assertTrue(any("skipped" in line and "session cecelia-56" in line for line in log), log)
 
 
 if __name__ == "__main__":
