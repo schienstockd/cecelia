@@ -47,8 +47,9 @@ extras: hooks, a message bus, window control. None of those is needed here.
    (`WORKTREE_CLEANUP_PLAN.md` decision 11), the same way it already imports `git_context`.
 4. **The session files are undocumented, so failures show.** If a file can't be parsed, the row
    reads `? (unreadable)` rather than disappearing. A missing `~/.claude/sessions/` hides the pane.
-5. **Rows are sorted by what needs Dominik:** idle with a failed CI run, then idle, then
-   busy. Idle on a foreground session in practice means waiting for him.
+5. **Rows are sorted by what needs Dominik:** idle with a failed CI run, then idle, then done,
+   then idle with its PR's CI still running (it waits on CI, not him), then busy. Idle on a
+   foreground session in practice means waiting for him.
 6. **No plan-mode column.** Dominik keeps sessions in auto mode, so it would never change.
 7. **`pixi run agents` is an alias** that opens `recital-console` with only the agents pane. It is
    for the second terminal.

@@ -111,11 +111,20 @@ def pr_by_branch(prs: _t.Iterable[dict]) -> dict[str, dict]:
     return out
 
 
+def _rank(r: AgentRow) -> float:
+    """Idle is waiting for Dominik (0) — unless its PR's CI is still running: then it waits on CI
+    and will be woken by it (0.75). Done (merged, close the window) sits between the two."""
+    if r.done:
+        return 0.5
+    if r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN":
+        return 0.75
+    return _STATUS_RANK.get(r.status, 1)
+
+
 def sort_rows(rows: _t.Iterable[AgentRow]) -> list[AgentRow]:
     """Idle first (waiting for Dominik) — idle with failed CI before the rest — then done (merged,
-    close the window), other states, busy; unreadable rows last."""
-    return sorted(rows, key=lambda r: (not r.readable, 0.5 if r.done else _STATUS_RANK.get(r.status, 1),
-                                       r.ci != "fail", r.name))
+    close the window), idle waiting on running CI, other states, busy; unreadable rows last."""
+    return sorted(rows, key=lambda r: (not r.readable, _rank(r), r.ci != "fail", r.name))
 
 
 class PrCache:

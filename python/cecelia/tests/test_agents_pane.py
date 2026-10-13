@@ -294,6 +294,14 @@ class PrCiTest(unittest.TestCase):
         state.agents = [rows[1]]
         self.assertEqual(console.agents_block(state, 100, use_colour=False)[2].split()[1], "done")
 
+    def test_idle_waiting_on_running_ci_sorts_after_idle_and_done_but_before_shell(self):
+        rows = [AgentRow("a", "idle", "w", "x", pr=1, pr_state="OPEN", ci="running"),
+                AgentRow("s", "shell", "w", "x"),
+                AgentRow("d", "idle", "w", "x", pr=2, pr_state="MERGED", ci="pass"),
+                AgentRow("z", "idle", "w", "y"),
+                AgentRow("p", "idle", "w", "x", pr=3, pr_state="OPEN", ci="pass")]
+        self.assertEqual([r.name for r in sort_rows(rows)], ["p", "z", "d", "a", "s"])
+
     def test_idle_with_failed_ci_sorts_first(self):
         rows = [AgentRow("a", "idle", "w", "x", ci="pass"), AgentRow("b", "idle", "w", "y", ci="fail")]
         self.assertEqual([r.name for r in sort_rows(rows)], ["b", "a"])
