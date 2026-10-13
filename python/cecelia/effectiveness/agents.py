@@ -61,10 +61,17 @@ class AgentRow:
     pr: int | None = None
     pr_state: str | None = None    # "OPEN" / "MERGED" / "CLOSED"
     ci: str | None = None          # "fail" / "running" / "pass"; None = no checks or no PR
+    conflict: bool = False         # the open PR conflicts with its base (GitHub says CONFLICTING)
+    #: Its turn is over and its last reply asked Dominik something — waiting for him, even while
+    #: a background command (a CI watch) keeps the status at "shell".
+    asks: bool = False
+    judge: bool = False            # opened by `pixi run judge-review`, whose queue waits on it
     #: The branch's slugged findings, each with its outcome ("unresolved" until tagged) and the
     #: resolution row (None while unresolved) — the detail view (→) lists them.
     findings: tuple[tuple[dict, str, dict | None], ...] = ()
     session_id: str = ""
+    recap: tuple[str, str] | None = None   # (timestamp, text): Claude Code's recap of the session
+    context_pct: float | None = None       # % of the context window in use; None = unknown
 
     @property
     def done(self) -> bool:
@@ -109,11 +116,29 @@ def pr_by_branch(prs: _t.Iterable[dict]) -> dict[str, dict]:
     return out
 
 
+def _rank(r: AgentRow) -> float:
+    """Asking Dominik something (-1), then idle — waiting for him (0) — unless its PR's CI is still
+    running: then it waits on CI and will be woken by it (0.75). Done (merged, close the window)
+    sits between the two. A judge-review session waiting for him (-1 or 0) comes before all of
+    them: the review queue is blocked until he deals with it."""
+    if r.asks:
+        rank = -1.0
+    elif r.done:
+        rank = 0.5
+    elif r.status == "idle" and r.ci == "running" and r.pr_state == "OPEN" and not r.conflict:
+        rank = 0.75
+    else:
+        rank = _STATUS_RANK.get(r.status, 1)
+    return -2 if r.judge and rank <= 0 else rank
+
+
 def sort_rows(rows: _t.Iterable[AgentRow]) -> list[AgentRow]:
-    """Idle first (waiting for Dominik) — idle with failed CI before the rest — then done (merged,
-    close the window), other states, busy; unreadable rows last."""
-    return sorted(rows, key=lambda r: (not r.readable, 0.5 if r.done else _STATUS_RANK.get(r.status, 1),
-                                       r.ci != "fail", r.name))
+    """A judge-review session waiting for Dominik first (its queue waits on it), then a session
+    asking him something, then idle (waiting for him) — idle with failed CI or a merge conflict
+    before the rest — then done (merged, close the window), idle waiting on running CI, other
+    states, busy; unreadable rows last. Within each, judge-review sessions lead."""
+    return sorted(rows, key=lambda r: (not r.readable, _rank(r), not (r.ci == "fail" or r.conflict),
+                                       not r.judge, r.name))
 
 
 class PrCache:
@@ -170,5 +195,8 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                              pr=pr.get("number") if pr else None,
                              pr_state=pr.get("state") if pr else None,
                              ci=ci_state(pr.get("statusCheckRollup") or ()) if pr else None,
-                             findings=tuple(findings), session_id=s.session_id))
+                             conflict=bool(pr and pr.get("state") == "OPEN"
+                                           and pr.get("mergeable") == "CONFLICTING"),
+                             findings=tuple(findings), session_id=s.session_id, recap=s.recap,
+                             context_pct=s.context_pct, asks=s.asks and s.status != "busy", judge=s.judge))
     return sort_rows(rows)

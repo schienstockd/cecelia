@@ -47,8 +47,15 @@ extras: hooks, a message bus, window control. None of those is needed here.
    (`WORKTREE_CLEANUP_PLAN.md` decision 11), the same way it already imports `git_context`.
 4. **The session files are undocumented, so failures show.** If a file can't be parsed, the row
    reads `? (unreadable)` rather than disappearing. A missing `~/.claude/sessions/` hides the pane.
-5. **Rows are sorted by what needs Dominik:** idle with a failed CI run, then idle, then
-   busy. Idle on a foreground session in practice means waiting for him.
+5. **Rows are sorted by what needs Dominik:** a `pixi run judge-review` session waiting for him
+   (`*` after its name; found by `scripts/judge/review.py` among its parent processes,
+   `claude_sessions.from_judge_review` — the review queue resumes only once he has dealt with it
+   and closed it), then a session asking him something (`asks`: its turn is
+   over and its last reply ends in `?` — `claude_sessions.ends_with_question`; status alone can't
+   say, a background CI watch keeps it at `shell`), then idle with a failed CI run or a merge
+   conflict (`conflict` in the ci column, from the PR's `mergeable`), then idle, then done,
+   then idle with its PR's CI still running (it waits on CI, not him), then busy. Idle on a
+   foreground session in practice means waiting for him.
 6. **No plan-mode column.** Dominik keeps sessions in auto mode, so it would never change.
 7. **`pixi run agents` is an alias** that opens `recital-console` with only the agents pane. It is
    for the second terminal.
@@ -77,7 +84,11 @@ extras: hooks, a message bus, window control. None of those is needed here.
   open (`fail`/`running`/`pass`) and `merged`/`closed` after. `git_context.recent_prs` (100 newest
   PRs, any state) took ~3 s, so `agents.PrCache` fetches it in a background thread at most every
   60 s; a failed fetch keeps the last list. A one-shot snapshot (`--no-follow`, or piped) waits for it.
-- `pixi run agents`, → (← undoes, PgUp/PgDn scroll): under each session, its outcome counts
+- `pixi run agents`, → (← undoes, PgUp/PgDn scroll): under each session, first Claude Code's own
+  recap of it (`claude_sessions.latest_recap`: the newest `away_summary` entry in the transcript,
+  dropped once Dominik has typed a prompt after it — notifications and peer messages don't count).
+  Asked for 2026-10-13: most rows just said idle; the recap says what the session is waiting on.
+  Then its outcome counts
   (`open · fixed · shipped · false pos · dropped`) and every recital finding on its branch with
   its outcome, mechanism, `file:line` and description, plus the agent's reason under a shipped /
   dropped / false-positive one. Asked for 2026-10-13: "how much these sessions have to fix, and
@@ -92,6 +103,13 @@ extras: hooks, a message bus, window control. None of those is needed here.
   name in that session's own statusline. Opt-in, one line in `~/.claude/settings.json`:
   `"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"`. ~60 ms per
   refresh on top of the wrapped command; if it fails the wrapped statusline still shows.
+- **`ctx` column** (asked for 2026-10-13: "a small status bar how full the context is", no token
+  counts): `▄▁▁ 15%` — three cells, each a third of the scale in eighths, and the percent, both on
+  one scale: Claude Code's `context_window.used_percentage`, of the full window. Grey below 60%,
+  amber, red from 80%. Only the statusline is told the fill, so the wrapper saves it per session
+  to `~/.cache/cecelia-agents/<sessionId>.json` (`claude_sessions.save_context`, rewritten only on
+  change) and the pane reads it; `—` for a session whose statusline isn't wrapped, and right after
+  `/compact` (Claude Code sends null).
 - Headless `claude -p` runs (the recital's reviewers) write session files too, named after their
   folder (`cecelia-prune-session-gate-13`) and marked `kind: "interactive"` like a window; only
   `entrypoint: "sdk-cli"` (windows: `"cli"`) tells them apart, so `sdk*` is skipped. Names longer
