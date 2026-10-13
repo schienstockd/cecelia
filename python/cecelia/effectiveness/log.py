@@ -252,3 +252,59 @@ def read_events(log_path: pathlib.Path | None = None) -> _t.Iterator[dict]:
                 yield json.loads(line)
             except json.JSONDecodeError:
                 continue
+
+
+#: Per-finding rows the recital writes, and the rows the commit hook writes when a slug is tagged.
+FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
+RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved"})
+
+
+def latest_resolutions_by_slug(events: _t.Iterable[dict],
+                               resolved_event_names: _t.Collection[str] = RESOLVED_EVENTS
+                               ) -> dict[str, dict]:
+    """The newest `_finding_resolved` row per slug (greatest `ts`; the first row wins a tie).
+
+    Append-only log means an outcome can be revised in a later commit (rare but legal). The
+    latest resolution wins — that's what surfaces in the rendered rollup, the agents pane and the
+    effectiveness chart, and the older row stays in the log as history a reader can walk manually.
+    """
+    latest: dict[str, dict] = {}
+    for e in events:
+        if e.get("event") not in resolved_event_names:
+            continue
+        slug = (e.get("payload") or {}).get("slug")
+        if not slug:
+            continue
+        prev = latest.get(slug)
+        if prev is None or (e.get("ts", "") > prev.get("ts", "")):
+            latest[slug] = e
+    return latest
+
+
+def resolved_findings(rows: _t.Iterable[dict], branch: str,
+                      commit: str | None = None) -> dict[str, tuple[dict, dict | None]]:
+    """Slugged `_finding` rows on `branch`, keyed by slug, each with its newest `_finding_resolved`
+    row on the branch (None while unresolved).
+
+    `commit` narrows the findings to one change (that parent SHA) — the commit hook's view;
+    without it every round on the branch counts — the agents pane's view. Resolutions count
+    from any SHA on the same branch, never another branch: slugs carry no branch, so two
+    worktrees flagging the same `file:line` share a slug, and one's resolution mustn't hide
+    the other's. Advisory findings carry no slug and never resolve, so they are left out.
+    """
+    on_branch = [r for r in rows if r.get("branch") == branch]
+    findings: dict[str, dict] = {}
+    for row in on_branch:
+        slug = (row.get("payload") or {}).get("slug")
+        if (slug and row.get("event") in FINDING_EVENTS
+                and (commit is None or row.get("commit") == commit)):
+            findings.setdefault(slug, row)
+    resolution = latest_resolutions_by_slug(on_branch)
+    return {s: (row, resolution.get(s)) for s, row in findings.items()}
+
+
+def unresolved_findings(rows: _t.Iterable[dict], branch: str,
+                        commit: str | None = None) -> dict[str, dict]:
+    """The `resolved_findings` with no resolution yet — what the commit hook blocks on."""
+    return {s: row for s, (row, res) in resolved_findings(rows, branch, commit).items()
+            if res is None}
