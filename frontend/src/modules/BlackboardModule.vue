@@ -643,7 +643,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
                 <i v-if="e.knowledge" class="pi pi-book bb-list-pin"
                    v-tooltip.top="'Lab knowledge — carried into agent runs on this project'" />
                 <i v-if="e.agentRun" class="pi pi-sparkles bb-list-pin"
-                   v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.sectionCount ?? e.agentRun.sectionIds.length} decisions marked`" />
+                   v-tooltip.top="`Agent run — ${e.sectionsMarked ?? 0} of ${e.sectionCount ?? 0} decisions marked`" />
                 <i v-else-if="e.sectionCount" class="pi pi-list-check bb-list-pin"
                    v-tooltip.top="`${e.sectionsMarked ?? 0} of ${e.sectionCount} sections marked`" />
                 {{ e.title || '(untitled)' }}

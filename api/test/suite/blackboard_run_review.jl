@@ -74,6 +74,10 @@
         # a revise that removes every section: no stale harness ids, no count
         @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid, "content" => "gone"))[1] == 200
         @test !haskey(row(), :sectionCount)
+        # the count reads meta's `sectionIds` only — the harness's ids never stand in
+        m = JSON3.read(read(mp, String), Dict{String,Any})
+        @test !haskey(m, "sectionIds") && m["agentRun"]["sectionIds"] == ["d01", "d02"]
+        @test !haskey(row(), :sectionCount)
         @test _post(api_blackboard_revise, Dict("projectUid" => uid, "entryId" => eid,
                                                  "content" => content * "\n### m01 · gate · img1 · missed\n- QC gate\n"))[1] == 200
         @test !haskey(entry().sectionOutcomes, :d02)
