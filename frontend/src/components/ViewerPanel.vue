@@ -87,10 +87,18 @@ const POP_TYPE_UI: Record<CellPopType, { icon: string; label: string }> = {
   region: { icon: 'pi-map',           label: 'spatial-region populations' },
 }
 const POP_TYPES = CELL_POP_TYPES.map(key => ({ key, ...POP_TYPE_UI[key] }))
-const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
-const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation branch-overlay visibility
-const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
+// Read straight off the settings store, not copied on image open: other surfaces write these for the
+// image already open (cell cards' / the cockpit's Show, a strip frame's zoom-to-source, another tab),
+// and a copy left the toggle showing — and the next toggle writing back — the old state.
+const trackVns          = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation track-overlay visibility
+  ? settings.getTrackVisibility(openedImage.value.uid, trackableValueNames(openedImage.value)) : {})
+const branchVns         = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation branch-overlay visibility
+  ? settings.getBranchVisibility(openedImage.value.uid, Object.keys(openedImage.value.branchLabels ?? {})) : {})
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
+// The set's colour-by column, shown only when this image's segmentation has it (segmentations differ
+// across a set) — the stored per-set value is kept for the images that do. '' = default.
+const storedColourBy    = computed(() => currentSetUid.value ? settings.getColourBy(currentSetUid.value) : '')
+const colourByCol       = computed(() => obsCols.value.includes(storedColourBy.value) ? storedColourBy.value : '')
 
 // The image the user is focused on — whichever viewer is open. The read is `openImageUid`: the
 // panel gates its content on ANY viewer being open. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
@@ -322,14 +330,11 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 // can no longer affect what actually reaches the viewer (it once did: see useOverlayAutoShow's rules).
 watch(openedImage, (img) => {
   // restore the remembered preference rather than always starting hidden
-  colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   labelsExpanded.value = false                 // a different image is a different list
-  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
+  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; obsCols.value = []; return }
   // Tracks are seeded over BOTH registries (labels ∪ branchLabels) — a points-only set is exactly
   // the one whose tracks you want. Label visibility below is NOT unioned — there are no pixels to
   // show for a set with no `labels` registry.
-  trackVns.value = settings.getTrackVisibility(img.uid, trackableValueNames(img))
-  branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
   // The version the viewer is showing: the remembered pick while the image still has it, else the
   // active version (`activeValueName` mirrors what the server opens when no valueName is passed).
   const names = Object.keys(img.filepaths ?? {})
@@ -605,8 +610,7 @@ function toggleTrack(vn: string) {
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
-  trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
-  if (uid) settings.setTrackVisibility(uid, trackVns.value)
+  if (uid) settings.setTrackVisibility(uid, { ...trackVns.value, [vn]: !trackVns.value[vn] })
   pingViewerOverlays()
 }
 
@@ -620,8 +624,7 @@ function toggleBranch(vn: string) {
     return
   }
   const wasVisible = branchVns.value[vn] ?? true
-  branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
-  if (uid) settings.setBranchVisibility(uid, branchVns.value)
+  if (uid) settings.setBranchVisibility(uid, { ...branchVns.value, [vn]: !wasVisible })
   pingViewerOverlays()
 }
 
@@ -659,17 +662,12 @@ async function loadObsCols() {
       obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
     } else obsCols.value = []
   } catch { obsCols.value = [] }
-  // this image's segmentation may not have the SET's colour-by column (segmentations differ across a
-  // set) — don't select/apply it here, but do NOT clear the persisted per-set value: another image in
-  // the set may have it, and it's restored per image from the set on open.
-  if (colourByCol.value && !obsCols.value.includes(colourByCol.value)) colourByCol.value = ''
 }
 
 // User picked a colour-by column: persist per-set; the WebGPU viewer picks it up via the overlay
 // tick and re-derives label + track colours from the settings bag.
 function onColourBy(e: Event) {
   const col = (e.target as HTMLSelectElement).value
-  colourByCol.value = col
   if (currentSetUid.value) settings.setColourBy(currentSetUid.value, col)   // per-set
   resetColourLegend()
   pingViewerOverlays()
