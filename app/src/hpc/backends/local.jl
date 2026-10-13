@@ -1,0 +1,34 @@
+# LocalShellBackend — the job script run by a background `bash` on the connection's machine, with no
+# scheduler (docs/todo/HPC_PLAN.md → Q7). Over `HpcLocalConn` that is this machine: the dispatch,
+# mirror, env-install and cancel paths then run end-to-end on the Linux and macOS CI legs with no
+# container. Not offered in Settings. Never queues; the job id is the pid.
+
+struct LocalShellBackend <: HpcBackend end
+
+hpc_render_script(::LocalShellBackend, spec::HpcJobSpec)::String = "#!/bin/bash\n" * hpc_job_body(spec)
+
+# `nohup` + every stream redirected, so the job outlives the `sh -s` that started it.
+hpc_submit(b::LocalShellBackend, c::HpcConn, spec::HpcJobSpec)::String = begin
+    out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec),
+                                          "nohup bash $(HPC_JOB_SCRIPT) > $(HPC_JOB_LOG) 2>&1 < /dev/null &\necho \$!");
+                    what = "Submit")
+    id = _last_line(out, "")
+    occursin(r"^\d+$", id) || throw(HpcError("Submit: no pid"))
+    id
+end
+
+_hpc_status_script(::LocalShellBackend, ids::AbstractVector{<:AbstractString}) =
+    join(["kill -0 $(_sh_quote(i)) 2>/dev/null && echo '$(_HPC_STATUS_TAG) $i RUNNING'\n" for i in ids]) * "true\n"
+
+_hpc_parse_status(::LocalShellBackend, out::AbstractString) =
+    Dict{String,RemoteJobState}(m[1] => JOB_RUNNING
+                                for m in eachmatch(Regex("^$(_HPC_STATUS_TAG) (\\S+) RUNNING", "m"), out))
+
+# Children first, then the job's own bash: the task's Python must not outlive a cancel. This runs on
+# the job's machine as script text (the remote side), not as a local spawn.
+hpc_cancel(::LocalShellBackend, c::HpcConn, id::AbstractString) = (hpc_exec!(c, """
+    k() { for c in \$(pgrep -P "\$1" 2>/dev/null); do k "\$c"; done; kill -TERM "\$1" 2>/dev/null; }
+    k $(_sh_quote(id)); true
+    """; what = "Cancel"); nothing)
+
+hpc_exit_reason(::LocalShellBackend, ::HpcConn, ::AbstractString)::String = ""

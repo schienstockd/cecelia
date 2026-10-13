@@ -419,6 +419,12 @@ include("config/profile_settings.jl")
 # docs/todo/HPC_PLAN.md.
 include("config/hpc.jl")
 include("hpc/transport.jl")
+# The scheduler-backend tier (D7) and the code + env on the cluster (Q1/P2). After py_runner.jl
+# (`_app_dir`) and utils.jl (`_file_sha256`).
+include("hpc/backend.jl")
+include("hpc/backends/slurm.jl")
+include("hpc/backends/local.jl")
+include("hpc/remote_env.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
@@ -443,7 +449,12 @@ export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, pr
 export REQUEST_VIA, author_stamp
 export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
        set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
-       set_hpc_project_account!, hpc_test_connection
+       set_hpc_project_account!, hpc_test_connection,
+       HpcError, HpcConn, HpcSshConn, HpcLocalConn, hpc_conn, hpc_exec, hpc_exec!, hpc_rsync,
+       hpc_remote_root, HpcBackend, SlurmBackend, LocalShellBackend, HpcJobSpec, RemoteJobState,
+       JOB_QUEUED, JOB_RUNNING, JOB_GONE, hpc_backend, hpc_render_script, hpc_submit, hpc_poll,
+       hpc_cancel, hpc_exit_reason, hpc_watch_job, hpc_sync_code!, hpc_lock_hash, hpc_env_status,
+       hpc_install_env!, hpc_require_env
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        observer_api_url,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,

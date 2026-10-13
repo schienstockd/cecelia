@@ -1,10 +1,12 @@
 name: Verify HPC connection
 
-# The HPC tier's connection test against a real sshd + SLURM (docs/todo/HPC_PLAN.md → Decision 10,
-# P1). Builds the single-node container in .github/hpc-test/, gives it a throwaway key, and runs
-# `pixi run test-hpc` with CECELIA_HPC_TEST_* pointing at it — the one testset in app/test/suite/hpc.jl
-# that the main CI matrix skips. Linux only: the container needs Docker, and dispatch from Windows is
-# deferred (Q8). Path-filtered so it runs when the HPC code or this harness changes, not on every PR.
+# The HPC tier against a real sshd + SLURM (docs/todo/HPC_PLAN.md → Decision 10). Builds the
+# single-node container in .github/hpc-test/, gives it a throwaway key, and runs `pixi run test-hpc`
+# with CECELIA_HPC_TEST_* pointing at it — the live testsets in app/test/suite/hpc.jl (P1: connection
+# test) and hpc_remote.jl (P2: submit / cancel / walltime kill, code sync, a real `pixi install` of
+# the env) that the main CI matrix skips. Linux only: the container needs Docker, and dispatch from
+# Windows is deferred (Q8). Path-filtered so it runs when the HPC code, this harness or the env's
+# dependencies change, not on every PR.
 
 on:
   pull_request:
@@ -13,7 +15,12 @@ on:
       - app/src/config/hpc.jl
       - app/src/config/binaries.jl
       - app/test/suite/hpc.jl
+      - app/test/suite/hpc_remote.jl
       - app/test/hpc_e2e.jl
+      - api/src/hpc_api.jl
+      # the cluster env is built from these: a dependency bump must still install there
+      - pixi.toml
+      - pixi.lock
       - .github/hpc-test/**
       - .github/workflows/verify-hpc.yml
   workflow_dispatch:
@@ -26,11 +33,15 @@ jobs:
   connection:
     name: ubuntu-latest — HPC connection test (sshd + SLURM container)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       JULIA_CPU_TARGET: "generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
     steps:
       - uses: actions/checkout@v7
+
+      # The live env install puts a second full Python env (CUDA torch) in the container.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
 
       - name: Build the SLURM + sshd container
         run: docker build -t cecelia-hpc-test .github/hpc-test
@@ -75,6 +86,7 @@ jobs:
           CECELIA_HPC_TEST_USER: cecelia
           CECELIA_HPC_TEST_KEY: ${{ runner.temp }}/hpc_key
           CECELIA_HPC_TEST_SCHEDULER_VERSION: slurm
+          CECELIA_HPC_TEST_ENV_INSTALL: "1"
         run: |
           set -o pipefail
           pixi run test-hpc 2>&1 | tee "$RUNNER_TEMP/hpc.log"
@@ -82,12 +94,14 @@ jobs:
             exit 1
           fi
           # The live testset must have RUN here, not skipped for want of the env vars.
-          ! grep -q 'HPC live connection test skipped' "$RUNNER_TEMP/hpc.log"
+          ! grep -q 'HPC live .* test skipped' "$RUNNER_TEMP/hpc.log"
 
       - name: Container diagnostics
         if: always()
         continue-on-error: true
         run: |
           docker exec hpc sinfo || true
+          docker exec hpc squeue || true
+          docker exec hpc sh -c 'for f in /home/cecelia/cecelia-test/jobs/*/job.log; do echo "== $f"; tail -n 30 "$f"; done' || true
           docker exec hpc sh -c 'tail -n 20 /var/log/slurm/*.log' || true
           docker logs hpc | tail -n 40

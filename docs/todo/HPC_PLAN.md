@@ -1,6 +1,6 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
-**Status:** building. P1 built (branch `feat/1619-hpc-p1`; see *P1 as built* under *Phases*); P2–P6
+**Status:** building. P1 merged (#1632). P2 built (branch `feat/1619-hpc-p2`; see *P2 as built*). P3–P6
 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
 
 ## Goal
@@ -366,6 +366,31 @@ The counts are files touched, new and existing, including tests and docs.
   cause.
 - **Touchpoints ≈ 6:** `hpc/remote_env.jl` (new), the job body template (new), `HpcSettings.vue`,
   `routes.jl`, `pixi.toml` (rsync dep), `app/test/suite/hpc.jl`.
+
+**P2 as built** (deviations from the list above):
+- **The backend tier moved here from P3.** The install is the first cluster job, so it needs submit,
+  poll and cancel: `hpc/backend.jl` (`HpcJobSpec`, `hpc_poll` = one remote call for every job in flight,
+  `hpc_watch_job`), `backends/slurm.jl`, `backends/local.jl` (Q7). P3 keeps dispatch, the mirror and the
+  handle abstraction.
+- **A connection layer under everything** (`hpc/transport.jl`): `HpcConn` with an ssh kind and a local
+  kind (this machine as the "remote"), so the sync, the install and submit/cancel run end-to-end in the
+  package tests with no sshd. Calls share one ssh master, opened on its own (`-M -f`, output discarded):
+  a `ControlPersist` master started by a call whose output is captured keeps that pipe open until it exits.
+- **The version check is the env's pixi.lock hash, not `PY_CONTRACT_VERSION`.** The code runs from a
+  content-hashed tree (`code/<hash>/`) synced before each run, so runner and params are always the same
+  revision and the contract cannot drift remotely. The env can: `hpc_require_env` refuses a missing one
+  by name ("Install it in Settings → HPC"), and Settings shows the lock hash it is ready for.
+- **pixi is fetched by the install job** from its GitHub release (`HPC_PIXI_VERSION`, the version CI
+  pins), and its cache lives under the remote folder (cluster home quotas are small). So the compute
+  node needs outbound HTTPS. A site without it is the Q1 (b)/(c) case, still open.
+- **Linux x86_64 only on the cluster** (the platform pixi.lock has). The job refuses anything else by name.
+- **Install job size:** 2 CPUs, 8 GB, 2 h (the CI node has 4 cores and 16 GB). Unmeasured on a real site.
+- **An install already on the cluster is attached to** (`env/<lock>/.install-job`), not repeated: the
+  first piece of Q6.
+- **rsync is a conda-forge dependency on unix** (`[target.unix.dependencies]`), as Q8 recommended.
+- **Not here:** built-in cellpose weights on the cluster. They belong with the assets root (P3).
+- Routes `GET /api/hpc/env`, `POST /api/hpc/env/install` (`api/src/hpc_api.jl`); the job is
+  `hpc-env-install` on the task rail.
 
 **P3 — Dispatch + mirror + SLURM backend + the first ports.**
 - **Delivers:**

@@ -69,6 +69,12 @@ simpleitk = ">=2.3"
 # every platform and pixi maps it onto squidpy's PyPI req.
 pyproj = ">=3.7"
 
+# rsync for the HPC mirror (docs/todo/HPC_PLAN.md → Q8): the same rsync on every unix machine —
+# macOS ships openrsync, which lacks options the mirror uses — first on PATH under `pixi run`, so
+# `rsync_bin()` finds it. Windows has none: HPC is deferred there.
+[target.unix.dependencies]
+rsync = ">=3.2"
+
 [pypi-dependencies]
 # cecelia's own Python helpers (top-level python/, sibling to app/), installed editable. This ALSO
 # pulls the IO tier (numpy, zarr>=3, dask, tifffile, ome-types, scipy, scikit-image, tqdm)

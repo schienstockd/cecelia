@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hpcTestBlocker, hpcTestLines, keyPickerStart, hpcFieldPatch, hpcFieldValue, HPC_DRAFT_FIELDS, type HpcSettings, type HpcTestResult } from './hpcSettings'
+import { hpcTestBlocker, hpcTestLines, keyPickerStart, hpcFieldPatch, hpcFieldValue, hpcEnvLine, HPC_DRAFT_FIELDS, type HpcSettings, type HpcTestResult } from './hpcSettings'
 
 const cls = { queue: '', account: '', qos: '', directives: '', preamble: '' }
 const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
@@ -83,5 +83,20 @@ describe('hpcFieldPatch / hpcFieldValue', () => {
     expect(hpcFieldValue(s, 'site.port')).toBe('22')
     expect(hpcFieldValue(s, 'project.account')).toBe('')
     expect(hpcFieldValue(null, 'site.host')).toBe('')
+  })
+})
+
+describe('hpcEnvLine', () => {
+  const base = { configured: true, lock: 'abc123', installed: false, job: '', installing: false, error: '' }
+  it('says what the cluster has, and offers Install only when it helps', () => {
+    expect(hpcEnvLine(null)).toEqual({ text: 'Checking the cluster…', canInstall: false })
+    expect(hpcEnvLine({ ...base, installed: true })).toEqual({ severity: 'ok', text: 'Environment ready (abc123)', canInstall: false })
+    expect(hpcEnvLine(base)).toEqual({ severity: 'fail', text: 'Not installed for this version', canInstall: true })
+    expect(hpcEnvLine({ ...base, installing: true }).canInstall).toBe(false)
+    // A job from an earlier session: Install attaches to it rather than starting another.
+    expect(hpcEnvLine({ ...base, job: '42' })).toEqual({ text: 'Installing on the cluster (job 42)', canInstall: true })
+    expect(hpcEnvLine({ ...base, configured: false, error: 'Set the HPC host in Settings → HPC' }).canInstall).toBe(false)
+    expect(hpcEnvLine({ ...base, error: 'Remote folder: Host not found' })).toEqual(
+      { severity: 'fail', text: 'Remote folder: Host not found', canInstall: true })
   })
 })
