@@ -105,7 +105,7 @@ def build_block_diagonal_graph(coords, times, method="delaunay", radius=30.0, n_
 
 
 def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_neighs=6,
-                             per_timepoint=False):
+                             per_timepoint=True):
     """Pool ONE image's cells across its segmentations into a single spatial graph — so a cell in
     segmentation B and a nearby cell in segmentation T are neighbours (cross-segmentation). THE graph
     builder: only `spatialAnalysis.cellNeighbours` calls it, and everything else loads what it persisted.
@@ -119,9 +119,9 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     obs_df has `valueName` + `label` per row in adata's row order. NO population codes — a labelling is
     attached later by `pop_codes_for`. Returns (None, None) if no cells were found.
 
-    `per_timepoint=True` (LIVE imaging): build the graph FRAME BY FRAME (block-diagonal over the
-    temporal column) so neighbourhoods — and hence regions — are per-timepoint and can change over time
-    (behaviour regions). Falls back to a single pooled graph if no temporal column is present; when it
+    `per_timepoint=True` (the default; LIVE imaging): build the graph FRAME BY FRAME (block-diagonal over
+    the temporal column) so no edge links two frames, and neighbourhoods — hence regions — can change over
+    time (behaviour regions). `False` pools every frame into one graph (opt-in). Falls back to a single pooled graph if no temporal column is present; when it
     applies, the frame index is kept as obs `_t` so downstream nulls can shuffle WITHIN a frame."""
     import anndata as ad
     import pandas as pd

@@ -4,6 +4,7 @@
 Pure/headless — no squidpy, no anndata, no I/O. Pins the composition formula: per cell, the
 normalised frequency of each population among its graph neighbours (the CytoMAP / cecelia "i-niche"
 feature; legacy cellRegionsStats `freq = n / sum(n)`). See docs/todo/SPATIAL_REGIONS_PLAN.md."""
+import os
 import unittest
 
 import numpy as np
@@ -304,6 +305,35 @@ class TestBlockDiagonalGraph(unittest.TestCase):
         self.assertGreater(conn.nnz, 0)
         for i, j in zip(conn.row, conn.col):
             self.assertEqual(times[i], times[j])                  # 0/2/4 link only to each other, 1/3/5 likewise
+
+
+class TestPooledImageGraphPerFrame(unittest.TestCase):
+    """The persisted neighbour graph is per frame BY DEFAULT: on a real tracked timecourse, no edge links
+    two frames unless pooling is asked for. Needs squidpy + the committed KDIeEm fixture."""
+    _ROOT = os.environ.get("CECELIA_TEST_DATA") or os.path.normpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "test-data", "projects"))
+    _B = os.path.join(_ROOT, "testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+
+    def _edges_by_frame(self, **kw):
+        from cecelia.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.spatial_utils import build_pooled_image_graph
+        if not os.path.isfile(self._B):
+            self.skipTest("KDIeEm fixture missing")
+        segs = [{"valueName": "B", "propsPath": self._B, "labels": None}]
+        adata, obs = build_pooled_image_graph(segs, [1.0, 1.0, 1.0], method="delaunay", radius=30.0, **kw)
+        view = LabelPropsView(self._B).only_centroid_cols()
+        d = view.as_df(); tcol = view.temporal_columns()[0]; view.close()
+        t_of = dict(zip(d["label"].to_numpy(), d[tcol].to_numpy()))
+        t = np.array([t_of[lb] for lb in obs["label"].to_numpy()])
+        conn = adata.obsp["spatial_connectivities"].tocoo()
+        self.assertGreater(conn.nnz, 0)
+        return t[conn.row] == t[conn.col]
+
+    def test_default_graph_has_no_cross_frame_edges(self):
+        self.assertTrue(self._edges_by_frame().all())
+
+    def test_pooling_is_opt_in_and_does_cross_frames(self):
+        self.assertFalse(self._edges_by_frame(per_timepoint=False).all())
 
 
 if __name__ == "__main__":

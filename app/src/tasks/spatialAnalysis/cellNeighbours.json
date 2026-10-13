@@ -68,8 +68,8 @@
       "key": "perTimepoint",
       "label": "Per timepoint",
       "type": "bool",
-      "default": false,
-      "tip": "Link cells only within the same frame (live imaging)"
+      "default": true,
+      "tip": "Link cells only within the same frame; off = pool all frames"
     }
   ]
 }

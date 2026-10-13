@@ -35,7 +35,7 @@ def run(params):
     method     = script_utils.get_param(params, "neighbourMethod", default="delaunay")
     radius     = float(script_utils.get_param(params, "neighbourRadius", default=30.0))
     k          = int(script_utils.get_param(params, "nNeighbours", default=6))
-    per_t      = bool(script_utils.get_param(params, "perTimepoint", default=False))
+    per_t      = bool(script_utils.get_param(params, "perTimepoint", default=True))
     qc_path    = script_utils.get_param(params, "qcOutPath", default=None)
 
     if len(segments) == 0 or graph_path is None:

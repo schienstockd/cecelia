@@ -241,6 +241,11 @@ per (cell, t). Behaviour regions (Phase 7) default to **aggregated-across-time**
 behaviour-cluster distribution, since a "zone" is a persistent territory; per-timepoint offered for
 transition analysis. `centroid_t` is excluded from the distance space either way.
 
+**Amended — default is now ON** (`cellNeighbours` and `detectAggregates`). A graph (or DBSCAN) pooled
+across frames is not a time-aggregated composition: it links a cell to where its neighbours were, and
+to itself, in other frames, so a slow track reads as a neighbourhood or an aggregate. Pooling stays as
+an explicit opt-in. A time-aggregated zone should aggregate per-frame compositions, not pool centroids.
+
 ### Decision 8 — storage of the four data objects
 
 1. **Neighbour graph** → squidpy's native `obsp` (`spatial_connectivities`/`spatial_distances`) in a
