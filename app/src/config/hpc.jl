@@ -13,11 +13,11 @@
 """
 The batch systems the Settings select offers, served to the frontend so the list is not duplicated
 in Vue. `probe` is the binary the connection test looks for; `available = false` is shown as coming
-and refused on save (HPC_PLAN P5 builds PBS).
+and refused on save (the slot for the next backend). PBS means PBS Pro / OpenPBS (backends/pbs.jl).
 """
 const HPC_SCHEDULERS = (
     (; name = "slurm", label = "SLURM", probe = "sbatch", available = true),
-    (; name = "pbs",   label = "PBS",   probe = "qstat",  available = false),
+    (; name = "pbs",   label = "PBS",   probe = "qstat",  available = true),
 )
 
 """Job classes; the class picks queue, account and QoS (HPC_PLAN D8). Defaults from `resource_pool`."""

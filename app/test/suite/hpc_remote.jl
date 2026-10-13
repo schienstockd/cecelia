@@ -76,7 +76,8 @@ end
     @test_throws HpcError hpc_conn(_hpc_test_site(), blank)
     e = try; hpc_conn(HpcSite("slurm", "", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", "")), blank); catch x; x; end
     @test e isa HpcError && occursin(Sys.iswindows() ? "not available on Windows" : "host", e.msg)
-    e = try; hpc_backend(HpcSite("pbs", "h", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))); catch x; x; end
+    @test hpc_backend(HpcSite("pbs", "h", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))) isa PbsBackend
+    e = try; hpc_backend(HpcSite("lsf", "h", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))); catch x; x; end
     @test e isa HpcError && occursin("not supported yet", e.msg)
     # rsync's -e is split by rsync: single quotes, doubled to escape.
     @test Cecelia._rsync_e_word("UserKnownHostsFile=\"/a b\"") == "'UserKnownHostsFile=\"/a b\"'"

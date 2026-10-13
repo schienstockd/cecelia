@@ -133,7 +133,6 @@ end
         refused(p) = try set_hpc_site!(p); "" catch e; e isa ArgumentError ? e.msg : rethrow() end
         @test occursin("Host", refused(Dict("host" => "-oProxyCommand=touch /tmp/x")))
         @test occursin("Host", refused(Dict("host" => "two words")))
-        @test occursin("coming", refused(Dict("scheduler" => "pbs")))
         @test occursin("Unknown scheduler", refused(Dict("scheduler" => "lsf")))
         @test occursin("Port", refused(Dict("port" => 0)))
         @test occursin("Port", refused(Dict("port" => "abc")))

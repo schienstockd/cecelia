@@ -338,6 +338,7 @@ include(joinpath(@__DIR__, "suite", "viewer_cache.jl"))
 # the connection test (live part skips without CECELIA_HPC_TEST_HOST). docs/todo/HPC_PLAN.md.
 include(joinpath(@__DIR__, "suite", "hpc.jl"))
 include(joinpath(@__DIR__, "suite", "hpc_remote.jl"))
+include(joinpath(@__DIR__, "suite", "hpc_pbs.jl"))
 
 # ── Every directory whose params a USER actually sees ─────────────────────────────────────────
 #
