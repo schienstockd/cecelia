@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .claude/hooks/check_commit_recital.py"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_commit_recital.py\""
           }
         ]
       }
