@@ -1397,7 +1397,9 @@ pixels per axis and centred on the view (`frontend/src/utils/viewer/visibleRegio
 user owns: panning leaves it where it is, and a parameter change re-runs the same box, so settings are
 compared on the same cells. Edges and corners resize it (clamped at the budget), the grip moves it, the
 pencil draws a new one, and the refresh button drops it onto the current view. Switching the preview
-off or opening another image discards it. Geometry: `frontend/src/utils/viewer/previewBox.ts`; bridged
+off or opening another image discards it. The box is clipped to the canvas, its button bar kept
+inside it (`placeBox`) when the corner is off-screen. An image within the budget on both axes has no box: it is
+previewed whole (`previewBoxNeeded`). Geometry: `frontend/src/utils/viewer/previewBox.ts`; bridged
 across windows as `viewerStore.previewBox`. 3D views ignore it.
 
 **Where the compute happens.** `preview/preview_worker.py`, a resident process on **:7656** (like the
