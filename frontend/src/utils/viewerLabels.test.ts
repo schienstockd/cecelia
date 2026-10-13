@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { hslCssToRgb, labelPaletteBytes, widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, LABEL_PALETTE_N,
+         drawnMaskVn, landscapeLabelsVn,
          PICK_BITSET_CAPACITY, PICK_BITSET_WORDS, PICK_BUFFER_WORDS, PICK_BUFFER_BYTES,
          packPickBuffer, pickBufferHas, pickBufferFocus, emptyPickBuffer,
          pickBufferWgsl } from './viewerLabels'
@@ -136,6 +137,29 @@ describe('pick buffer', () => {
     expect(s).toContain('fn labInPick')
     expect(s).toContain('fn labIsFocus')
     expect(s).toContain('fn labPickContourPx')
+  })
+})
+
+// The capture legend and the landscape segCount name the mask ON SCREEN — not the ticked store a
+// preview or live mask covers, and nothing while the mask eye is off.
+describe('drawnMaskVn', () => {
+  it('is the mask slot, or nothing when its eye is off', () => {
+    expect(drawnMaskVn('flowKat', false)).toBe('flowKat')
+    expect(drawnMaskVn('flowKat', true)).toBe('')
+    expect(drawnMaskVn('', false)).toBe('')
+  })
+})
+
+describe('landscapeLabelsVn', () => {
+  it('counts the drawn durable store', () => {
+    expect(landscapeLabelsVn('default', false, '', '')).toBe('default')
+  })
+  it('counts nothing with the mask eye off', () => {
+    expect(landscapeLabelsVn('default', true, '', '')).toBe('')
+  })
+  it('counts nothing while a preview or live store is drawn — no label_props, and the ticked one is covered', () => {
+    expect(landscapeLabelsVn('flowKat', false, 'flowKat', '')).toBe('')
+    expect(landscapeLabelsVn('runVn', false, '', 'runVn')).toBe('')
   })
 })
 

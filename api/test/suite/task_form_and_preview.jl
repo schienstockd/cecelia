@@ -286,6 +286,20 @@ end
         _, err = preview_labels_store_path(proj.uid, img.uid, "flowKat")
         @test err !== nothing && occursin("preview labels store not on disk", err)
 
+        # …and the ROUTE answers that 409, as `live=1` does: a stop sweeping the scratch store under an
+        # in-flight fetch is the ordinary end of a preview, and the viewer reads only 409 as "no mask"
+        # (anything else throws `Mask … could not be loaded`).
+        srv = HTTP.listen!(s -> try_serve_slab(s, s.message.target) ||
+                                (HTTP.setstatus(s, 404); HTTP.startwrite(s)), "127.0.0.1", 0)
+        try
+            r = HTTP.get("http://127.0.0.1:$(HTTP.port(srv))/api/viewer/slab?projectUid=$(proj.uid)" *
+                         "&imageUid=$(img.uid)&labels=flowKat&preview=1&t=0";
+                         status_exception = false, retry = false)
+            @test r.status == 409
+        finally
+            close(srv)
+        end
+
         # Put the scratch store where the worker's convention says it goes — the labels DIR of the
         # image's meta dir. No ccid.json entry needed.
         labels_dir = joinpath(img._dir, "labels"); mkpath(labels_dir)
