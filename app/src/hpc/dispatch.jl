@@ -89,7 +89,12 @@ struct HpcDispatch
     class::String
     resources::HpcResources
     account::String             # the project's override, "" = the class account
+    on_stage::Function          # (::HpcStage, job_id) → the task record + the `task:hpc` frame
 end
+
+HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account) =
+    HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
+                (stage, job) -> nothing)
 
 """The active dispatch, `nothing` for a local run. Set by `_with_run_target`."""
 const HPC_DISPATCH = Base.ScopedValues.ScopedValue{Union{Nothing,HpcDispatch}}(nothing)
@@ -115,26 +120,32 @@ end
 Resolve a cluster run's connection, remote folder, class, resources and account. Throws `HpcError`
 (an unconfigured or unreachable cluster) or `ArgumentError` (bad resources) with a brief message.
 """
-function hpc_dispatch_for(rec::TaskRecord, task::CciaTask, img::CciaImage)::HpcDispatch
+function hpc_dispatch_for(rec::TaskRecord, task::CciaTask, img::CciaImage;
+                          on_stage::Function = (stage, job) -> nothing)::HpcDispatch
     conn, backend = _hpc_transport()
+    conn isa HpcSshConn && hpc_load_pending_cancels!()
     root = conn isa HpcLocalConn ? hpc_remote_root(conn, joinpath(config_dir(), "hpc-local")) :
                                    hpc_remote_root(conn)
     proj = dirname(dirname(img._dir))
     account = read_hpc_project_settings(proj)["account"]
     HpcDispatch(rec.id, conn, backend, root, proj, config_dir(), hpc_task_class(task),
-                hpc_resources(task, rec.hpc), account)
+                hpc_resources(task, rec.hpc), account, on_stage)
 end
 
 """
-    _with_run_target(f, rec, task, img, on_log)
+    _with_run_target(f, rec, task, img, on_log, on_hpc = (stage, job) -> nothing)
 
 Run `f()` (the handler) locally, or inside an `HPC_DISPATCH` scope for a cluster run. A dispatch that
-cannot be set up fails the task with its brief reason, before the handler starts.
+cannot be set up fails the task with its brief reason, before the handler starts. The run's stage is
+kept on `rec` (for `list_tasks`) and announced through `on_hpc`.
 """
-function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::CciaImage, on_log::Function)
+function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::CciaImage, on_log::Function,
+                          on_hpc::Function = (stage, job) -> nothing)
     rec.target === TARGET_LOCAL && return f()
+    stage!(stage::HpcStage, job) = (rec.hpc_stage = stage; rec.hpc_job = String(job);
+                                    try; on_hpc(string(stage), rec.hpc_job); catch; end)
     d = try
-        hpc_dispatch_for(rec, task, img)
+        hpc_dispatch_for(rec, task, img; on_stage = stage!)
     catch e
         (e isa HpcError || e isa ArgumentError) || rethrow()
         on_log("[ERROR] " * (e isa HpcError ? e.msg : e.msg))
@@ -142,7 +153,11 @@ function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::Cci
     end
     on_log("[HPC] Running on the cluster: $(d.class) class, $(d.resources.cpus) CPUs, " *
            "$(d.resources.mem_gb) GB, $(d.resources.gpus) GPUs, $(d.resources.walltime_min) min")
-    Base.ScopedValues.with(f, HPC_DISPATCH => d)
+    try
+        Base.ScopedValues.with(f, HPC_DISPATCH => d)
+    finally
+        stage!(HPC_STAGE_NONE, "")
+    end
 end
 
 # ── Paths: local ↔ mirror ──────────────────────────────────────────────────────────────────────────
@@ -370,34 +385,72 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
         isempty(outside) || throw(HpcError("Cannot send $(first(outside)) to the cluster: it is outside the " *
                                            "project. This task needs porting before it can run there"))
         _hpc_classify(d, writes, "Output")
-        _hpc_claim_mirror!(d; on_log)
-        _hpc_sync_reads!(d, reads; on_log)
 
-        # The params travel inside the job script (a quoted heredoc), so submitting is one call.
+        # Reattach by rerun (HPC_PLAN Q6): a job this exact run submitted before — same script,
+        # params, code, env, resources and inputs — is followed or collected instead of submitted
+        # again. The record lives beside the params file and goes once the outputs are home.
         stem = splitext(basename(String(script_rel)))[1]
-        jobname = d.task_id * "-" * stem * "-" * string(rand(UInt32); base = 16)
-        dir = d.remote_root * "/jobs/" * jobname
-        eof = "CECELIA_PARAMS_" * string(rand(UInt64); base = 16)
-        body = _hpc_job_env(d, code.dir) *
-               "cat > params.json <<'$eof'\n$(JSON3.write(p))\n$eof\n" *
-               "$(_sh_quote(py)) $(_sh_quote(code.dir * "/" * rel_script)) --params params.json\n"
-        r = d.resources
-        spec = HpcJobSpec(; name = jobname, dir = dir, body = body, class = d.class, cpus = r.cpus,
-                          mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min, account = d.account)
-        id = hpc_submit(d.backend, d.conn, spec)
-        on_log("[HPC] Submitted job $id")
-        line(l) = (m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", l);
-                   isnothing(m) ? on_log(l) : on_progress(parse(Int, m[1]), parse(Int, m[2])))
-        state(s) = on_log(s === JOB_QUEUED ? "[HPC] Queued on the cluster (job $id)" :
-                          s === JOB_RUNNING ? "[HPC] Running on the cluster (job $id)" : "[HPC] Job $id ended")
-        w = hpc_watch_job(d.backend, d.conn, id, dir; on_log = line, on_state = state,
-                          cancelled = () -> is_cancelled(d.task_id), poll_s = HPC_POLL_S[])
-        w.cancelled && (on_log("[HPC] Cancelled job $id"); return false)
-        if w.exit != 0
-            on_log("[ERROR] Cluster job $id failed: $(w.reason)")
-            return false
+        fp = hpc_run_fingerprint(d, script_rel, p, code.hash, reads, writes)
+        record = joinpath(task_dir, stem * HPC_JOB_RECORD_SUFFIX)
+        prev = hpc_read_job_record(record, fp)
+        id, dir, done = "", "", false
+        if !isnothing(prev)
+            r = only(hpc_poll(d.backend, d.conn, [HpcPollJob(prev.id, prev.dir, 0)]))
+            if r.exit == 0
+                id, dir, done = prev.id, prev.dir, true
+                on_log("[HPC] Job $id had already finished: copying its results back")
+            elseif isnothing(r.exit) && r.state !== JOB_GONE
+                id, dir = prev.id, prev.dir
+                on_log("[HPC] Re-attached to job $id, still on the cluster")
+            else
+                rm(record; force = true)
+            end
         end
+
+        if isempty(id)
+            d.on_stage(HPC_STAGE_SYNC, "")
+            _hpc_claim_mirror!(d; on_log)
+            _hpc_sync_reads!(d, reads; on_log)
+            # The params travel inside the job script (a quoted heredoc), so submitting is one call.
+            jobname = d.task_id * "-" * stem * "-" * string(rand(UInt32); base = 16)
+            dir = d.remote_root * "/jobs/" * jobname
+            eof = "CECELIA_PARAMS_" * string(rand(UInt64); base = 16)
+            body = _hpc_job_env(d, code.dir) *
+                   "cat > params.json <<'$eof'\n$(JSON3.write(p))\n$eof\n" *
+                   "$(_sh_quote(py)) $(_sh_quote(code.dir * "/" * rel_script)) --params params.json\n"
+            r = d.resources
+            spec = HpcJobSpec(; name = jobname, dir = dir, body = body, class = d.class, cpus = r.cpus,
+                              mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min, account = d.account)
+            id = hpc_submit(d.backend, d.conn, spec)
+            hpc_write_job_record(record, fp, id, dir)
+            on_log("[HPC] Submitted job $id")
+        end
+        if !done
+            line(l) = (m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", l);
+                       isnothing(m) ? on_log(l) : on_progress(parse(Int, m[1]), parse(Int, m[2])))
+            state(st) = begin
+                st === JOB_GONE || d.on_stage(st === JOB_QUEUED ? HPC_STAGE_QUEUED : HPC_STAGE_RUNNING, id)
+                on_log(st === JOB_QUEUED ? "[HPC] Queued on the cluster (job $id)" :
+                       st === JOB_RUNNING ? "[HPC] Running on the cluster (job $id)" : "[HPC] Job $id ended")
+            end
+            w = hpc_watch_job(d.backend, d.conn, id, dir; on_log = line, on_state = state,
+                              cancelled = () -> is_cancelled(d.task_id), poll_s = HPC_POLL_S[])
+            if w.cancelled
+                rm(record; force = true)
+                on_log("[HPC] Cancelled job $id")
+                return false
+            end
+            if w.exit != 0
+                rm(record; force = true)
+                on_log("[ERROR] Cluster job $id failed: $(w.reason)")
+                return false
+            end
+        end
+        d.on_stage(HPC_STAGE_PULL, id)
         _hpc_pull_writes!(d, writes; on_log)
+        # Only now: a pull that failed (the network, a full disk) keeps the record, so a rerun collects
+        # the finished job instead of running it again.
+        rm(record; force = true)
         for f in hpc_undeclared_changes(d, reads, writes)
             on_log("[WARN] The cluster job also changed $f — not copied back (not declared)")
         end

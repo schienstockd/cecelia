@@ -26,6 +26,10 @@ export interface TaskEntry {
   // `task:status` / `chain:node:*` frames, the in-flight snapshot or the run log. Undefined when no
   // carrier has named it yet (a run-log entry written before pools were recorded): unknown, not `cpu`.
   pool?: string
+  // A cluster run's stage ("sync" | "queued" | "running" | "pull") and job id — the `task:hpc` frame or
+  // the in-flight snapshot (docs/todo/HPC_PLAN.md Q4). Undefined for a local run, or once it is over.
+  hpcStage?: string
+  hpcJob?: string
   // The profile that launched it — the run log / `list_tasks` for others' rows, the active profile for
   // this tab's own (one person per machine, so that IS who launched it). Absent on older runs.
   by?: string
@@ -166,6 +170,11 @@ export const useTaskStore = defineStore('tasks', () => {
   function setProgress(id: string, progress: number) {
     const t = tasks.value.find(t => t.id === id)
     if (t) t.progress = progress
+  }
+
+  function setHpc(id: string, stage: string, job: string) {
+    const t = tasks.value.find(t => t.id === id)
+    if (t) { t.hpcStage = stage || undefined; t.hpcJob = job || undefined }
   }
 
   /**
@@ -382,7 +391,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, setHpc, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

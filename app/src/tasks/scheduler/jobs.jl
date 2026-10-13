@@ -55,6 +55,7 @@ struct TaskJob
     on_progress::Function
     on_process::Function
     on_status_change::Function
+    on_hpc::Function            # (stage, job_id) — a cluster run's progress (HPC_PLAN Q4)
 end
 
 """
@@ -105,7 +106,8 @@ function _execute_job!(job::TaskJob)
           # On `TARGET_HPC` the handler still runs here; its `run_py` calls go to the cluster
           # (hpc/dispatch.jl). A dispatch that cannot be set up fails the task before it starts.
           _with_run_target(rec, job.task, representative_image(job.target),
-                           line -> Base.invokelatest(job.on_log, line)) do
+                           line -> Base.invokelatest(job.on_log, line),
+                           (stage, id) -> Base.invokelatest(job.on_hpc, stage, id)) do
             _run_task(job.task, job_target,
                       merge(job.params, Dict("_task_id" => job.id, "_by" => rec.by));
                       on_log      = line -> Base.invokelatest(job.on_log, line),

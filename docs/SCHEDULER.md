@@ -342,6 +342,13 @@ So `startedAt` (and the live elapsed timer) counts from the real slot acquisitio
 the image thread reached the node. With `gpu = 1` and three images, the live grid shows one
 `:running` and two `:queued`, and each task's elapsed reflects its own ~2 min, not 2/4/6 min.
 
+**A cluster run has a second queue.** Its local `running` means it holds an `hpc` slot. The cluster may
+still be holding the job in its own queue, so the run also reports its cluster stage — *uploading* →
+*queued* → *running* → *downloading* — as `task:hpc` frames (`on_hpc` through `run_task` /
+`execute_task`; `hpc_stage`/`hpc_job` in `list_tasks`). The Task Manager shows the stage next to the
+pool tag (`hpc · queued`), with the job id in the tooltip. A long cluster queue must not look like a hang
+(`docs/todo/HPC_PLAN.md` → Q4).
+
 > **Pitfall (tests):** `node:running` fires from the job's own task while `node:done`
 > fires from the image thread, so a size-1 pool has a benign running/done handoff overlap (both
 > contend on `run._lock`). Assert serialisation by **wall-clock** (sum of durations), not by

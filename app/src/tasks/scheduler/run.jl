@@ -50,6 +50,7 @@ on_log:            log line strings (default: println)
 on_progress:       (n::Int, total::Int) progress ticks
 on_process:        called with Base.Process when one starts (for cancellation)
 on_status_change:  called with TaskRecord on every status transition
+on_hpc:            `(stage, job_id)` as a cluster run moves: "sync", "queued", "running", "pull", then ""
 target:            `TARGET_HPC` dispatches the task's `run_py` calls to the cluster (docs/todo/HPC_PLAN.md);
                    the task must list `"hpc"` in its spec's `env`, and it waits in the `hpc` pool
 hpc:               the run's resource overrides `{cpus, memGb, gpus, walltimeMin}` over the spec's `"hpc"`
@@ -65,7 +66,8 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
-                  on_status_change::Function = _ -> nothing)
+                  on_status_change::Function = _ -> nothing,
+                  on_hpc::Function           = (stage, job) -> nothing)
     # A cluster run is refused first — before params or the image are looked at — when the task is not
     # ported or the resources asked for are malformed (`hpc_resources` throws naming the field).
     if target === TARGET_HPC
@@ -98,7 +100,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(img, fun_name, on_log)
     job = TaskJob(task_id, rec, task, SingleImage(img), params, done_ch,
-                  wrapped_log, on_progress, on_process, on_status_change)
+                  wrapped_log, on_progress, on_process, on_status_change, on_hpc)
     put!(pool.queue, job)       # non-blocking; worker picks it up when a slot is free
     result = take!(done_ch)     # blocks (yields thread) until worker posts result
     _deregister_task!(rec)
@@ -122,7 +124,8 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
-                  on_status_change::Function = _ -> nothing)
+                  on_status_change::Function = _ -> nothing,
+                  on_hpc::Function           = (stage, job) -> nothing)
     isempty(imgs) && error("run_task (set-scope): no images")
     # A set-scope run spans images the mirror would have to stage together; not ported (HPC_PLAN P3).
     target === TARGET_HPC &&
@@ -153,7 +156,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
     done_ch     = Channel{Any}(1)
     wrapped_log = _wrap_log_with_file(rep, fun_name, on_log)
     job = TaskJob(task_id, rec, task, MultiImage(imgs), params, done_ch,
-                  wrapped_log, on_progress, on_process, on_status_change)
+                  wrapped_log, on_progress, on_process, on_status_change, on_hpc)
     put!(pool.queue, job)
     result = take!(done_ch)
     _deregister_task!(rec)
@@ -178,12 +181,13 @@ function run_task(proj_uid::String, img_uid::String;
                   on_log::Function           = line -> println(line),
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
-                  on_status_change::Function = _ -> nothing)
+                  on_status_change::Function = _ -> nothing,
+                  on_hpc::Function           = (stage, job) -> nothing)
     task = _task_from_fun_name(fun_name)
     img  = init_object(proj_uid, img_uid)
     img isa CciaImage || error("UID '$img_uid' in project '$proj_uid' is not an image")
     run_task(task, img, params; task_id, pool_name, chain_run_id, chain_node_id, by, target, hpc,
-             on_log, on_progress, on_process, on_status_change)
+             on_log, on_progress, on_process, on_status_change, on_hpc)
 end
 
 """

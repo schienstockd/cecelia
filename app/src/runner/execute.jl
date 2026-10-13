@@ -99,6 +99,7 @@ Announcements, all optional:
 | `on_progress` | `(n::Int, total::Int)` | task-reported progress |
 | `on_status` | `(status::String, image_uid::String, image_uids::Vector{String}, pool::String)` | every transition |
 | `on_result` | `(image_uid::String, meta)` | once, before the terminal status, if the task returned one |
+| `on_hpc` | `(stage::String, job_id::String)` | a cluster run's stage changes (`"sync"`, `"queued"`, `"running"`, `"pull"`, `""` when done) |
 
 `pool` is where the task runs, resolved ONCE up front (`effective_pool_name`), so every frame names the
 pool the scheduler actually queued it in, including a fallback. `""` only when the `fun_name` is unknown.
@@ -122,7 +123,8 @@ function execute_task(req::TaskRequest;
                       on_log::Function      = _ -> nothing,
                       on_progress::Function = (n, t) -> nothing,
                       on_status::Function   = (status, uid, uids, pool) -> nothing,
-                      on_result::Function   = (uid, meta) -> nothing)::Symbol
+                      on_result::Function   = (uid, meta) -> nothing,
+                      on_hpc::Function      = (stage, job) -> nothing)::Symbol
 
     task_struct = try
         _task_from_fun_name(req.fun_name)
@@ -139,7 +141,7 @@ function execute_task(req::TaskRequest;
     if task_scope(task_struct) == "set"
         return _execute_set_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result)
     end
-    _execute_image_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result)
+    _execute_image_task(req, task_struct, pool; on_log, on_progress, on_status = status, on_result, on_hpc)
 end
 
 # Set-scope (e.g. behaviour.hmm): one run over the whole selected image vector. The frontend sends
@@ -191,7 +193,7 @@ function _execute_set_task(req::TaskRequest, task_struct, pool::String;
 end
 
 function _execute_image_task(req::TaskRequest, task_struct, pool::String;
-                             on_log, on_progress, on_status, on_result)::Symbol
+                             on_log, on_progress, on_status, on_result, on_hpc = (s, j) -> nothing)::Symbol
     img = try
         obj = init_object(req.project_uid, req.image_uid)
         obj isa CciaImage || error("Not a CciaImage")
@@ -212,6 +214,7 @@ function _execute_image_task(req::TaskRequest, task_struct, pool::String;
                           by               = _request_by(req),
                           target           = req.target,
                           hpc              = req.hpc,
+                          on_hpc           = on_hpc,
                           on_log           = on_log,
                           on_progress      = on_progress,
                           on_status_change = rec -> begin

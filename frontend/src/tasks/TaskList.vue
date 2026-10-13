@@ -199,7 +199,8 @@ const TL_COLUMNS: SelectionColumn[] = [
               <i v-if="r.chainLabel" class="pi pi-sitemap chain-badge" v-tooltip.right="r.chainTip" />
               <span class="tl-label">{{ r.task }}</span>
               <span v-if="r.pool" class="tl-pool cc-pool-tag"
-                v-tooltip.right="`Resource pool: ${r.pool}`"><i class="pi pi-server" />{{ r.pool }}</span>
+                v-tooltip.right="r.hpcTip || `Resource pool: ${r.pool}`"><i class="pi pi-server" />{{ r.pool }}<template
+                v-if="r.hpc"> · {{ r.hpc }}</template></span>
             </span>
             <span class="tl-sub cc-muted cc-fs-2xs" v-tooltip.right="`UID: ${r.imageUid}`">
               <span class="cc-uid task-uid">{{ r.imageUid }}</span>{{ r.image }}

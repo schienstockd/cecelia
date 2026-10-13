@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields } from './hpcRun'
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel } from './hpcRun'
 import type { TaskDef } from '../tasks/types'
 
 const def = (over: Partial<TaskDef> = {}): TaskDef => ({
@@ -35,5 +35,13 @@ describe('hpcRun', () => {
       .toEqual({ target: 'hpc', hpc: { memGb: 128 } })
     // a stored hpc choice for a task that is no longer ported runs locally
     expect(hpcRunFields(def({ env: ['local'] }), { target: 'hpc', resources: {} })).toEqual({})
+  })
+
+  it('names the stage of a cluster run, with its job once it has one', () => {
+    expect(hpcStageLabel(undefined)).toBeNull()
+    expect(hpcStageLabel('')).toBeNull()
+    expect(hpcStageLabel('sync')).toEqual({ short: 'uploading', tip: 'On the cluster: uploading' })
+    expect(hpcStageLabel('queued', '4211')).toEqual({ short: 'queued', tip: 'On the cluster: queued (job 4211)' })
+    expect(hpcStageLabel('pull', '4211')?.short).toBe('downloading')
   })
 })

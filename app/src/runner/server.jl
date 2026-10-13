@@ -311,7 +311,9 @@ function _runner_submit(body_bytes::Vector{UInt8})
                 on_progress = (n, t) -> _emit_progress(treq.task_id, n, t),
                 on_status   = (st, uid, uids, pool) ->
                                   _emit_status(treq.task_id, st, uid, uids, treq.fun_name, pool),
-                on_result   = (uid, meta) -> _emit_result(treq.task_id, uid, meta))
+                on_result   = (uid, meta) -> _emit_result(treq.task_id, uid, meta),
+                on_hpc      = (stage, job) -> runner_emit(Dict{String,Any}(
+                                  "type" => "task:hpc", "taskId" => treq.task_id, "stage" => stage, "jobId" => job)))
         catch e
             # execute_task already guarantees a terminal frame on every path it knows about. This is
             # the backstop for a throw it cannot know about (an emit failing, a callback bug) — without

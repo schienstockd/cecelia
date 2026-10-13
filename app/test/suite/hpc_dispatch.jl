@@ -147,7 +147,7 @@ end
 end
 
 # Run Measure labels on `img` with `target`, returning (result, log lines, the task record's target).
-function _hpc_run_measure(img, vn; target = TARGET_HPC, hpc = Dict{String,Any}())
+function _hpc_run_measure(img, vn; target = TARGET_HPC, hpc = Dict{String,Any}(), stages = nothing)
     # Measure labels reports microns, so `run_task` refuses an uncalibrated image; the fixture's OME
     # says 0.5 µm, which an import would have copied into `meta`.
     img.meta["PhysicalSizeX"] = "0.5"; img.meta["PhysicalSizeY"] = "0.5"
@@ -156,6 +156,7 @@ function _hpc_run_measure(img, vn; target = TARGET_HPC, hpc = Dict{String,Any}()
     res = run_task(Cecelia._task_from_fun_name("segment.measureLabels"), img,
                    Dict{String,Any}("outputValueName" => vn, "intensityValueName" => "default");
                    target, hpc, on_log = l -> push!(log, l),
+                   on_hpc = (st, job) -> isnothing(stages) || push!(stages, (st, job)),
                    on_status_change = rec -> (seen[] = (rec.target, rec.pool_name)))
     res, log, seen[]
 end

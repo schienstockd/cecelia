@@ -434,6 +434,12 @@ export const useWsStore = defineStore('ws', () => {
       if (taskId) useTaskStore().setProgress(taskId, progress)
     }
 
+    // A cluster run's stage (hpc_api / dispatch.jl): uploading → queued → running → downloading.
+    if (type === 'task:hpc') {
+      const taskId = String(data.taskId ?? '')
+      if (taskId) useTaskStore().setHpc(taskId, String(data.stage ?? ''), String(data.jobId ?? ''))
+    }
+
     if (type === 'task:log') {
       const taskId = String(data.taskId ?? '')
       const line   = String(data.line   ?? '')
