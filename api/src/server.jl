@@ -354,6 +354,7 @@ const _GET_ROUTES = Dict{String, Function}(
     # Per-profile settings (USER_PROFILE_PLAN Phase 4). Hydrates the frontend Pinia store on launch.
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
     "/api/hpc/settings"           => (req, body_bytes) -> (api_hpc_settings_get(req)),
+    "/api/hpc/env"                => (req, body_bytes) -> (api_hpc_env_get(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -478,6 +479,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/profile/settings/patch"   => (req, body_bytes) -> (api_profile_settings_patch(body_bytes)),
     "/api/hpc/settings/set"         => (req, body_bytes) -> (api_hpc_settings_set(body_bytes)),
     "/api/hpc/test"                 => (req, body_bytes) -> (api_hpc_test(body_bytes)),
+    "/api/hpc/env/install"          => (req, body_bytes) -> (api_hpc_env_install(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),

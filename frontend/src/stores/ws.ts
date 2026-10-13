@@ -17,6 +17,7 @@ import { useViewerStore } from './viewer'
 import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
+import { HPC_ENV_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
 import { writtenImageVersion } from '../utils/taskResultVersion'
 
 // `signedOut`: the backend is up but refuses this browser — it has no sign-in cookie (the API token,
@@ -478,6 +479,10 @@ export const useWsStore = defineStore('ws', () => {
         // Prefix check keeps the invalidation scoped: no other task type touches this cache.
         if (taskId.startsWith('system-env-install:') && (status === 'done' || status === 'failed')) {
           invalidateSystemEnvs()
+        }
+        // The cluster env install (hpc_api.jl) — Settings → HPC re-reads the env state.
+        if (taskId === HPC_ENV_JOB_ID && (status === 'done' || status === 'failed' || status === 'cancelled')) {
+          notifyHpcEnvChanged()
         }
         if (imageUid) {
           if (status === 'running') {

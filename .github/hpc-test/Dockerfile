@@ -3,8 +3,8 @@
 # A single-node SLURM cluster reachable over SSH — the CI stand-in for an institute's login node
 # (docs/todo/HPC_PLAN.md → Decision 10). Used by .github/workflows/verify-hpc.yml; never shipped.
 #
-# P1 needs only sshd + `sbatch --version`. slurmctld/slurmd are started too (best effort) so the
-# later phases' submit / cancel / exit-code tests can use the same image.
+# P1 needs sshd + `sbatch --version`; P2 submits, cancels and times out real jobs, and installs the
+# Python env with pixi (curl fetches pixi, as on a real site).
 #
 #   docker build -t cecelia-hpc-test .github/hpc-test
 #   docker run -d --privileged -p 2222:22 -e AUTHORIZED_KEY="$(cat key.pub)" cecelia-hpc-test
@@ -12,7 +12,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      openssh-server slurm-wlm munge ca-certificates \
+      openssh-server slurm-wlm munge ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -m -s /bin/bash cecelia \
  && mkdir -p /run/sshd /var/spool/slurmctld /var/spool/slurmd /var/log/slurm \
@@ -58,8 +58,8 @@ CONF
 printf 'CgroupPlugin=cgroup/v2\nIgnoreSystemd=yes\n' > /etc/slurm/cgroup.conf
 # slurmd puts its stepd scope under system.slice, which a fresh cgroup namespace does not have.
 mkdir -p /sys/fs/cgroup/system.slice || true
-# Best effort: P1 asserts only that the scheduler is INSTALLED. A daemon that fails here shows up
-# in `sinfo` in the workflow's diagnostics step, not as a P1 failure.
+# Best effort here: a daemon that fails shows up in `sinfo` in the workflow's diagnostics step, and
+# as the P2 live job tests failing.
 service munge start || true
 slurmctld || true
 slurmd || true

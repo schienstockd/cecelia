@@ -64,3 +64,67 @@ end
 
 # Blocking for up to HPC_TEST_TIMEOUT_S; the router serves each request on its own task.
 api_hpc_test(_body_bytes) = 200, JSON3.write(Cecelia.hpc_test_dict(hpc_test_connection()))
+
+# ── The cluster environment (HPC_PLAN P2) ─────────────────────────────────────────────────────────
+#
+#   GET  /api/hpc/env           → {configured, lock, installed, job, installing, error}
+#   POST /api/hpc/env/install   → 202 {started, jobId} — a background job on the task rail
+#                                 (`hpc-env-install`, cancellable from the Task Manager)
+#
+# The GET asks the cluster (one ssh call) unless this backend is installing, when the rail already
+# says what is happening and an ssh call per poll would only add load on the login node.
+
+const _HPC_ENV_JOB_ID = "hpc-env-install"
+
+function api_hpc_env_get(_req)
+    lock = Cecelia.hpc_lock_hash()
+    base = Dict{String,Any}("configured" => false, "lock" => lock, "installed" => false, "job" => "",
+                            "installing" => job_active(_HPC_ENV_JOB_ID), "error" => "")
+    base["installing"] && return 200, JSON3.write(merge(base, Dict("configured" => true)))
+    try
+        c = hpc_conn()
+        base["configured"] = true
+        b = hpc_backend()
+        merge!(base, Cecelia.hpc_env_status_dict(hpc_env_status(b, c, hpc_remote_root(c); lock)))
+    catch e
+        e isa HpcError || rethrow()
+        base["error"] = e.msg
+    end
+    200, JSON3.write(base)
+end
+
+function api_hpc_env_install(_body_bytes)
+    c, b = try
+        (hpc_conn(), hpc_backend())
+    catch e
+        e isa HpcError || rethrow()
+        return 400, JSON3.write((; error = e.msg))
+    end
+    claim_job!(_HPC_ENV_JOB_ID) && Threads.@spawn _run_hpc_env_install(c, b)
+    202, JSON3.write((; started = true, jobId = _HPC_ENV_JOB_ID))
+end
+
+# The same task-rail pattern as `_run_env_install` (system_api.jl): running → log lines → done|failed,
+# `pool = "job"`. Cancel arrives through `cancel_job!`, which the watch loop polls via `job_cancelled`.
+function _run_hpc_env_install(c, b)
+    id = _HPC_ENV_JOB_ID
+    fun = "hpc:install-env"
+    ws_status(nothing, id, "running", ""; fun = fun, pool = "job")
+    ok = false
+    try
+        ws_progress(nothing, id, 0.02)
+        r = hpc_install_env!(b, c, hpc_remote_root(c);
+                             on_log = l -> ws_log(nothing, id, l),
+                             on_state = s -> ws_progress(nothing, id, s == JOB_RUNNING ? 0.3 : 0.1),
+                             cancelled = () -> job_cancelled(id))
+        ws_log(nothing, id, r.ok ? "[DONE] $(r.message)" : "[ERROR] $(r.message)")
+        ok = r.ok
+    catch e
+        ws_log(nothing, id, "[ERROR] " * (e isa HpcError ? e.msg : sprint(showerror, e)))
+    finally
+        ok && ws_progress(nothing, id, 1.0)
+        ws_status(nothing, id, ok ? "done" : (job_cancelled(id) ? "cancelled" : "failed"), "";
+                  fun = fun, pool = "job")
+        finish_job!(id)
+    end
+end

@@ -17,4 +17,5 @@ init_cecelia!()
 
 @testset "HPC" begin
     include(joinpath(@__DIR__, "suite", "hpc.jl"))
+    include(joinpath(@__DIR__, "suite", "hpc_remote.jl"))
 end

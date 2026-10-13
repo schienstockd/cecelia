@@ -10,13 +10,14 @@
   not a field here. Windows is deferred (Q8): the section says so instead of rendering controls.
 -->
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import FileBrowser from './FileBrowser.vue'
 import InlineNote from './InlineNote.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
-  keyPickerStart, hpcFieldPatch, hpcFieldValue, type HpcSettings, type HpcPatch, type HpcTestResult,
-  type HpcClassName, type HpcClassSettings } from '../utils/hpcSettings'
+  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged,
+  type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
+  type HpcEnvStatus } from '../utils/hpcSettings'
 
 const props = defineProps<{ projectUid: string }>()
 
@@ -68,7 +69,28 @@ async function runTest() {
   try { result.value = await testHpcConnection() }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { testing.value = false }
+  if (result.value?.ok) void loadEnv()
 }
+
+// The cluster environment (P2): asked of the cluster once the login is filled in, again after a
+// passing test and when the install job ends.
+const env = ref<HpcEnvStatus | null>(null)
+const envLine = computed(() => hpcEnvLine(env.value))
+async function loadEnv() {
+  if (blocker.value) return
+  env.value = null
+  try { env.value = await fetchHpcEnv() }
+  catch (e) { env.value = { configured: false, lock: '', installed: false, job: '', installing: false,
+                            error: e instanceof Error ? e.message : String(e) } }
+}
+async function install() {
+  try { await installHpcEnv(); env.value = env.value && { ...env.value, installing: true, error: '' } }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+}
+let offEnv: (() => void) | null = null
+onMounted(() => { offEnv = onHpcEnvChanged(() => void loadEnv()) })
+onUnmounted(() => offEnv?.())
+watch(blocker, b => { if (!b && !env.value) void loadEnv() }, { immediate: true })
 
 const CLASSES: { name: HpcClassName; label: string }[] = [
   { name: 'cpu', label: 'CPU jobs' }, { name: 'gpu', label: 'GPU jobs' },
@@ -160,6 +182,19 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
     <div v-if="lines.length" class="hpc-result cc-fs-sm">
       <InlineNote v-for="(l, i) in lines" :key="i" :short="l.text" :severity="l.ok ? 'ok' : 'fail'" />
     </div>
+
+    <template v-if="!blocker">
+      <h3 class="cc-eyebrow hpc-sub">Cluster environment</h3>
+      <div class="cc-row hpc-env">
+        <InlineNote class="cc-fs-sm hpc-grow" :short="envLine.text" :severity="envLine.severity" />
+        <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="!env" @click="loadEnv"
+                v-tooltip.top="'Check again'"><i class="pi pi-refresh" /></button>
+        <button v-if="envLine.canInstall" class="cc-btn cc-btn-primary" @click="install"
+                v-tooltip.top="'Install Cecelia\'s Python environment on the cluster, as a job'">
+          <i class="pi pi-download" /> Install on cluster
+        </button>
+      </div>
+    </template>
   </div>
 
   <p v-if="error" class="cc-muted-error">{{ error }}</p>
@@ -187,5 +222,6 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
 .hpc-port { width: 8ch; }
 .mono { font-family: var(--cc-mono); }
 .hpc-test { margin-top: 1.1rem; }
+.hpc-env { gap: 0.5rem; }
 .hpc-result { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; word-break: break-all; }
 </style>

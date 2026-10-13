@@ -135,3 +135,54 @@ export function hpcFieldPatch(path: string, text: string, projectUid: string): H
   if (b) return { site: { [a]: { [b]: text } } }
   return { site: { [a]: a === 'port' ? (/^\d+$/.test(text.trim()) ? Number(text) : 0) : text } }
 }
+
+// ── The cluster environment (HPC_PLAN P2) ──────────────────────────────────────────────────────────
+//
+//   GET  /api/hpc/env          → HpcEnvStatus (one ssh call, skipped while installing)
+//   POST /api/hpc/env/install  → 202 {jobId}; the job runs on the task rail as `hpc-env-install`
+
+export interface HpcEnvStatus {
+  configured: boolean
+  lock: string          // this version's pixi.lock hash: the env dir on the cluster
+  installed: boolean
+  job: string           // an install job queued or running on the cluster, '' if none
+  installing: boolean   // this backend is running the install
+  error: string
+}
+
+/** The rail's task id for the install; `stores/ws.ts` tells `onHpcEnvChanged` listeners when it ends. */
+export const HPC_ENV_JOB_ID = 'hpc-env-install'
+
+export async function fetchHpcEnv(): Promise<HpcEnvStatus> {
+  const res = await fetch('/api/hpc/env')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
+  return data as HpcEnvStatus
+}
+
+export async function installHpcEnv(): Promise<void> {
+  await svcPost('/api/hpc/env/install', {})
+}
+
+/** The environment's state as one line (no severity = in progress, an info note), and whether
+ *  Install is offered. */
+export function hpcEnvLine(e: HpcEnvStatus | null): { severity?: 'ok' | 'fail'; text: string; canInstall: boolean } {
+  if (!e) return { text: 'Checking the cluster…', canInstall: false }
+  if (e.installing) return { text: 'Installing — follow it in the Task Manager', canInstall: false }
+  if (e.error) return { severity: 'fail', text: e.error, canInstall: e.configured }
+  if (e.installed) return { severity: 'ok', text: `Environment ready (${e.lock})`, canInstall: false }
+  if (e.job) return { text: `Installing on the cluster (job ${e.job})`, canInstall: true }
+  return { severity: 'fail', text: 'Not installed for this version', canInstall: true }
+}
+
+const _envListeners = new Set<() => void>()
+
+/** Run `cb` when the install job ends. Returns the unsubscribe. */
+export function onHpcEnvChanged(cb: () => void): () => void {
+  _envListeners.add(cb)
+  return () => { _envListeners.delete(cb) }
+}
+
+export function notifyHpcEnvChanged(): void {
+  for (const cb of [..._envListeners]) cb()
+}
