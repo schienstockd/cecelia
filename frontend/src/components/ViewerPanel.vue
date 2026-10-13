@@ -66,7 +66,8 @@ const visibleLabels     = ref<Record<string, boolean>>({})
 // "gated tracks" — a future track-poptype pop gated on TRACK measures (speed, straightness);
 // see docs/TRACKING.md → "Track-property gating — backend done, frontend deferred".
 // The internal setting key is still `showGatedTracks` for continuity with persisted user state.
-const gatedTracksShown  = ref(false)
+const gatedTracksShown  = computed(() =>
+  currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
@@ -321,7 +322,6 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 // can no longer affect what actually reaches the viewer (it once did: see useOverlayAutoShow's rules).
 watch(openedImage, (img) => {
   // restore the remembered preference rather than always starting hidden
-  gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
   colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
   labelsExpanded.value = false                 // a different image is a different list
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
@@ -627,9 +627,7 @@ function toggleBranch(vn: string) {
 
 // Master toggle for cell-track ribbons (see the ref comment above), matching the Show populations toggle.
 function toggleGatedTracks() {
-  const next = !gatedTracksShown.value
-  gatedTracksShown.value = next
-  if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, next)
+  if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, !gatedTracksShown.value)
   pingViewerOverlays()
 }
 

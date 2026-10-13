@@ -4,7 +4,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
-  isTrackDrawable, ribbonEyeOff, toggleRibbonEye,
+  isTrackDrawable, ribbonEyeOff, toggleRibbonEye, soleRibbonEyes,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -670,5 +670,27 @@ describe('ribbon eye', () => {
     expect([...r.persisted]).toEqual([])
     const back = toggleRibbonEye(r.persisted, r.managerHidden, '/a')
     expect([...back.persisted]).toEqual(['/a'])
+  })
+})
+
+describe('soleRibbonEyes', () => {
+  const listed = [{ vn: 'A', path: '/a' }, { vn: 'A', path: '/b' }, { vn: 'B', path: '/a' }]
+  it('leaves only the target on, across segmentations', () => {
+    const r = soleRibbonEyes(listed, { vn: 'A', path: '/a' }, new Map(), new Map())
+    const off = (vn: string, path: string) => ribbonEyeOff(r.persisted.get(vn), r.managerHidden.get(vn), path)
+    expect(off('A', '/a')).toBe(false)
+    expect(off('A', '/b')).toBe(true)
+    expect(off('B', '/a')).toBe(true)   // same path, other segmentation — a different pop
+  })
+  it('clears a hide on the target from both sources, keeps unlisted hides', () => {
+    const r = soleRibbonEyes(listed, { vn: 'A', path: '/a' },
+      new Map([['A', new Set(['/a', '/gone'])]]), new Map([['A', new Set(['/a'])]]))
+    expect(ribbonEyeOff(r.persisted.get('A'), r.managerHidden.get('A'), '/a')).toBe(false)
+    expect(r.persisted.get('A')!.has('/gone')).toBe(true)
+  })
+  it('does not mutate its inputs', () => {
+    const persisted = new Map([['A', new Set(['/a'])]])
+    soleRibbonEyes(listed, { vn: 'A', path: '/a' }, persisted, new Map())
+    expect([...persisted.get('A')!]).toEqual(['/a'])
   })
 })
