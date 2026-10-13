@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveBox, resizeBox, drawnBox, PREVIEW_BOX_MIN_SIDE } from './previewBox'
+import { moveBox, resizeBox, drawnBox, previewBoxNeeded, PREVIEW_BOX_MIN_SIDE } from './previewBox'
 import { visibleRegion, PREVIEW_REGION_MAX_SIDE } from './visibleRegion'
 
 const lim = { imageW: 4000, imageH: 3000 }
@@ -70,5 +70,15 @@ describe('visibleRegion with a box', () => {
   it('3D ignores the box', () => {
     const r = visibleRegion({ view, box, imageW: 800, imageH: 600, currentZ: 2, currentT: 1, ndisplay: 3 })
     expect(r.xy).toEqual({ X: [0, 800], Y: [0, 600] })
+  })
+})
+
+describe('previewBoxNeeded', () => {
+  it('an image inside the budget on both axes needs no box', () => {
+    expect(previewBoxNeeded(PREVIEW_REGION_MAX_SIDE, 512)).toBe(false)
+  })
+  it('either axis over the budget needs one', () => {
+    expect(previewBoxNeeded(PREVIEW_REGION_MAX_SIDE + 1, 512)).toBe(true)
+    expect(previewBoxNeeded(512, 4000)).toBe(true)
   })
 })

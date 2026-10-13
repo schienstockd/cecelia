@@ -43,6 +43,12 @@ function fit(r: L0Rect, { imageW, imageH, maxSide = PREVIEW_REGION_MAX_SIDE }: L
   return { x0, y0, x1, y1 }
 }
 
+/** Whether the image needs a preview box at all: one that fits the budget on both axes is previewed
+ *  whole, so there is nothing to restrict and no box is shown. */
+export function previewBoxNeeded(imageW: number, imageH: number, maxSide = PREVIEW_REGION_MAX_SIDE): boolean {
+  return imageW > maxSide || imageH > maxSide
+}
+
 /** Translate by (dx, dy) L0 px, sliding along an image edge rather than leaving it. */
 export function moveBox(b: L0Rect, dx: number, dy: number, lim: Limits): L0Rect {
   const w = b.x1 - b.x0, h = b.y1 - b.y0

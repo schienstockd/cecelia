@@ -82,7 +82,8 @@ import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
 import { screenToImagePx, cameraViewL0, l0RectToScreen, screenToL0, type L0Rect } from '../utils/viewerPick'
-import { BOX_HANDLES, resizeBox, drawnBox, type BoxHandle } from '../utils/viewer/previewBox'
+import { placeBox } from '../utils/anchorPosition'
+import { BOX_HANDLES, resizeBox, drawnBox, previewBoxNeeded, type BoxHandle } from '../utils/viewer/previewBox'
 import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/drawGeometry'
 import { debouncedSave } from '../utils/debouncedSave'
 import { isViewerOom } from '../utils/gpuErrors'
@@ -3574,9 +3575,18 @@ const canvasPartial = computed(() =>
 // view, capped), then panning leaves it alone and a parameter change re-runs the same box. Edges and
 // corners resize, the grip moves, the pencil draws a new one (`drawGeometry`'s rect gesture). Geometry
 // is `utils/viewer/previewBox.ts`; the box itself is bridged through `viewerStore.previewBox`.
+// An image that fits the budget has no box: the whole image is the region (`previewRegionBox`).
+const boxNeeded = computed(() => !!meta.value && previewBoxNeeded(meta.value.nX, meta.value.nY))
 const ownPreviewBox = computed(() => {
   const b = viewerStore.previewBox
-  return b && b.imageUid === imageUid ? b : null
+  return boxNeeded.value && b && b.imageUid === imageUid ? b : null
+})
+/** The box the region is computed from: the user's, or the whole image when it needs none — so a pan
+ *  doesn't re-run the preview there either. */
+const previewRegionBox = computed<L0Rect | null>(() => {
+  const m = meta.value
+  if (m && !boxNeeded.value) return { x0: 0, y0: 0, x1: m.nX, y1: m.nY }
+  return ownPreviewBox.value
 })
 /** a drag in flight — drawn locally, written to the store on release so the preview re-runs once */
 const boxDraft = ref<L0Rect | null>(null)
@@ -3587,7 +3597,7 @@ const boxLimits = () => ({ imageW: meta.value?.nX ?? 1, imageH: meta.value?.nY ?
 
 // Seed: the first preview that lands for this image becomes the box.
 watch(previewedRegion, r => {
-  if (!r || ownPreviewBox.value) return
+  if (!r || !boxNeeded.value || ownPreviewBox.value) return
   viewerStore.setPreviewBox({ imageUid, x0: r.xy.X[0], x1: r.xy.X[1], y0: r.xy.Y[0], y1: r.xy.Y[1] })
 })
 
@@ -3597,6 +3607,25 @@ const previewBoxScreen = computed(() => {
   const m = meta.value, el = canvas.value
   if (!r || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
   return l0RectToScreen(r, cam.value, m, el.clientWidth, el.clientHeight)
+})
+/** the box's button bar, measured once it renders — `placeBox` needs its size */
+const pboxBarSize = ref({ width: 0, height: 0 })
+function measurePboxBar(el: unknown) {
+  if (!(el instanceof HTMLElement)) return
+  const { offsetWidth: width, offsetHeight: height } = el
+  if (width !== pboxBarSize.value.width || height !== pboxBarSize.value.height) pboxBarSize.value = { width, height }
+}
+/** The bar above the box's top-left corner, kept inside the canvas — the box is clipped to it, so a
+ *  bar that followed the corner off-screen would take the controls with it. */
+const previewBarStyle = computed(() => {
+  const b = previewBoxScreen.value, el = canvas.value
+  if (!b || !el) return undefined
+  const p = placeBox({
+    anchor: { left: b.x, top: b.y, width: b.w, height: b.h }, box: pboxBarSize.value,
+    viewport: { width: el.clientWidth, height: el.clientHeight },
+    placement: 'top-start', gap: 6, margin: 4, fallbacks: [],
+  })
+  return { left: p.left + 'px', top: p.top + 'px' }
 })
 
 /** canvas-relative L0 point under a pointer event */
@@ -4506,7 +4535,7 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
   if (!m || !c) { viewerStore.setVisibleRegion(null); return }
   const region = computeVisibleRegion({
     view: cameraViewL0(cam.value, m, Math.max(1, c.clientWidth), Math.max(1, c.clientHeight)),
-    box: ownPreviewBox.value,
+    box: previewRegionBox.value,
     imageW: m.nX, imageH: m.nY,
     // The ±n window's centre in 3D too — it IS where the user is looking, unlike mid-stack.
     currentZ: mode.value === 'plane' || zWindowActive.value ? zPlane.value : Math.floor((m.nZ - 1) / 2),
@@ -4519,7 +4548,7 @@ const publishRegionSink = debouncedLatest<void>(async (_v, isCurrent) => {
 }, { wait: 100 })
 
 watch([() => cam.value.panX, () => cam.value.panY, () => cam.value.dist,
-       zPlane, t, mode, meta, zWindowActive, ownPreviewBox],
+       zPlane, t, mode, meta, zWindowActive, previewRegionBox],
       () => publishRegionSink.schedule(undefined))
 
 // ── Publish a viewState alongside the visibleRegion ──────────────────────────
@@ -5453,27 +5482,30 @@ onUnmounted(() => {
            :style="{ left: dragRect.x + 'px', top: dragRect.y + 'px',
                      width: dragRect.w + 'px', height: dragRect.h + 'px' }" />
       <!-- The task preview's box (see `ownPreviewBox`): edges/corners resize, the bar moves / redraws /
-           resets it. The interior passes pointer events through, so panning inside it still works. -->
-      <div v-if="previewBoxScreen" class="vw-preview-box"
-           :style="{ left: previewBoxScreen.x + 'px', top: previewBoxScreen.y + 'px',
-                     width: previewBoxScreen.w + 'px', height: previewBoxScreen.h + 'px' }">
-        <template v-if="!boxDrawing">
-          <div v-for="h in BOX_HANDLES" :key="h" :class="['vw-pbox-h', `vw-pbox-h-${h}`]"
-               @pointerdown.stop="onBoxDown($event, h)" @pointermove="onBoxMove"
-               @pointerup="onBoxUp" @pointercancel="onBoxUp" />
-          <div class="vw-pbox-bar">
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-pbox-grip"
-                    v-tooltip.top="'Move preview region'" aria-label="Move preview region"
-                    @pointerdown.stop="onBoxDown($event, 'move')" @pointermove="onBoxMove"
-                    @pointerup="onBoxUp" @pointercancel="onBoxUp"><i class="pi pi-arrows-alt" /></button>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                    v-tooltip.top="'Draw a new preview region'" aria-label="Draw a new preview region"
-                    @click="boxDrawing = true"><i class="pi pi-pencil" /></button>
-            <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
-                    v-tooltip.top="'Preview the current view'" aria-label="Preview the current view"
-                    @click="previewBoxToView"><i class="pi pi-refresh" /></button>
-          </div>
-        </template>
+           resets it. The interior passes pointer events through, so panning inside it still works.
+           Clipped to the canvas so it never paints over the side panel. -->
+      <div v-if="previewBoxScreen" class="vw-pbox-clip">
+        <div class="vw-preview-box"
+             :style="{ left: previewBoxScreen.x + 'px', top: previewBoxScreen.y + 'px',
+                       width: previewBoxScreen.w + 'px', height: previewBoxScreen.h + 'px' }">
+          <template v-if="!boxDrawing">
+            <div v-for="h in BOX_HANDLES" :key="h" :class="['vw-pbox-h', `vw-pbox-h-${h}`]"
+                 @pointerdown.stop="onBoxDown($event, h)" @pointermove="onBoxMove"
+                 @pointerup="onBoxUp" @pointercancel="onBoxUp" />
+          </template>
+        </div>
+        <div v-if="!boxDrawing" :ref="measurePboxBar" class="vw-pbox-bar" :style="previewBarStyle">
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro vw-pbox-grip"
+                  v-tooltip.top="'Move preview region'" aria-label="Move preview region"
+                  @pointerdown.stop="onBoxDown($event, 'move')" @pointermove="onBoxMove"
+                  @pointerup="onBoxUp" @pointercancel="onBoxUp"><i class="pi pi-arrows-alt" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  v-tooltip.top="'Draw a new preview region'" aria-label="Draw a new preview region"
+                  @click="boxDrawing = true"><i class="pi pi-pencil" /></button>
+          <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                  v-tooltip.top="'Preview the current view'" aria-label="Preview the current view"
+                  @click="previewBoxToView"><i class="pi pi-refresh" /></button>
+        </div>
       </div>
       <div v-if="boxDrawing && !boxDraft" class="vw-status-chip vw-pbox-hint">Drag to draw the preview region</div>
       <!-- `chrome="fixed"`: on a full-bleed interactive canvas the still's proportional sizing renders a
@@ -6739,6 +6771,7 @@ onUnmounted(() => {
 /* Rubber-band rectangle overlay for a select-mode drag. Bright enough to see over any content,
    but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
    the pointerup that ends the gesture (that would strand the drag). */
+.vw-pbox-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .vw-preview-box {
   position: absolute; pointer-events: none;
   border: 1px dashed var(--cc-accent-strong);
@@ -6761,7 +6794,7 @@ onUnmounted(() => {
 .vw-pbox-h-ne { top: -5px; right: -5px; cursor: nesw-resize; }
 .vw-pbox-h-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
 .vw-pbox-bar {
-  position: absolute; bottom: 100%; left: 0; margin-bottom: 6px;
+  position: absolute;
   display: flex; gap: 2px; pointer-events: auto;
   background: rgba(0, 0, 0, 0.78); border-radius: var(--cc-radius-xs); color: #fff;
 }
