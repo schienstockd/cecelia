@@ -197,7 +197,8 @@ def _pr_body(record: dict) -> str:
     bugs = record["bugs"]
     n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "parked")}
     new = sum(_record.newly_open(b, date) for b in bugs)
-    verified = sum(b["status"] == "open" and bool(b.get("verify")) for b in bugs)
+    # a `reverify` bug verify didn't reach still holds its verdict from before the fix: not checked
+    verified = sum(b["status"] == "open" and bool(b.get("verify")) and not b.get("reverify") for b in bugs)
     decide = len(record["queue"])
     landed, confirmed = _record.landed_counts(bugs)
     # fixed: what the judge called gone, and a landed fix verify dismissed (`landed_counts` confirms both)

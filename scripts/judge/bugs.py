@@ -420,7 +420,8 @@ def default_judge(prompt: str) -> tuple[dict, float, dict]:
 
 def _strip(b: dict) -> dict:
     return {k: v for k, v in b.items()
-            if k not in ("id", "status", "why", "code", "canonical", "symbol", "carried", "was", "muted", "recheck")}
+            if k not in ("id", "status", "why", "code", "canonical", "symbol", "carried", "was", "muted", "recheck",
+                         "reverify")}
 
 
 def _not_judged(b: dict, date: str, why: str) -> dict:
@@ -430,6 +431,14 @@ def _not_judged(b: dict, date: str, why: str) -> dict:
     if b.get("was") == "open":
         return {**_strip(b), "status": "open", "opened": _opened(b, date), "why": f"still open; {why}"}
     return {**_strip(b), "status": "unjudged", "why": why}
+
+
+def _reverify(b: dict) -> dict:
+    """An `open` bug verify judged before a commit naming its key landed (`fix_landed` is found
+    afresh each pass, so the verdict predates it): verify looks again this pass. The excerpt judge
+    alone can't close it, since a moved or out-of-function fix isn't in its excerpt. The old verdict
+    stays until a new one replaces it, so a verify that doesn't reach it leaves the bug as it was."""
+    return {**b, "reverify": True} if b["status"] == "open" and b.get("fix_landed") and b.get("verify") else b
 
 
 def _verified_live(b: dict) -> bool:
@@ -525,13 +534,15 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
     # `fix_landed` is found afresh, except on a parked bug still waiting for a re-check slot
-    # (`recheck`): its fix landed before `previous sha`, so only the record still knows it. One verify
-    # parked again drops it, or the same landed fix would send it back every pass. A fix session
+    # (`recheck`) or an open one verify didn't reach (`reverify`): its fix landed before `previous
+    # sha`, so only the record still knows it. One verify drops the flag, or the same landed fix
+    # would send it back every pass. A fix session
     # started before the previous pass had that whole pass to land its fix: it's dropped, so the
     # issue's `in-progress` label lasts one pass
     last_ts = (previous or {}).get("run", {}).get("ts") or ""
     carried = {b["key"]: {**{k: v for k, v in _strip(b).items()
-                             if (k != "fix_landed" or b.get("recheck")) and (k != "fix_session" or v >= last_ts)},
+                             if (k != "fix_landed" or b.get("recheck") or b.get("reverify"))
+                             and (k != "fix_session" or v >= last_ts)},
                           "carried": True, "was": b.get("status"),
                           **({"closed_runs": b.get("closed_runs") or b.get("runs") or 1}
                              if b.get("repeat") and b.get("status") == "dismissed" else {})}
@@ -654,6 +665,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         if commits:
             bugs.append({**_stranded_bug(pr, commits, date, repo), "status": "open", "opened": date,
                          "why": "stranded-commit scan: pushed after the merge, so the merge never took them"})
+    bugs = [_reverify(b) for b in bugs]
     order = {s: i for i, s in enumerate(_record.BUG_STATUSES)}
     bugs.sort(key=lambda b: (order[b["status"]], b.get("first_seen") or "", b["key"]))
     for i, b in enumerate(bugs, 1):

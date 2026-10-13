@@ -74,6 +74,18 @@ class VerifyTest(unittest.TestCase):
                 _bug("d", kind="stranded"), _bug("e", status="unjudged")]
         self.assertEqual([b["key"] for b in self.v.eligible(bugs)], ["a"])
 
+    def test_a_verdict_from_before_a_landed_fix_is_verified_again_and_replaced(self):
+        landed = [{"commit": "f" * 40, "subject": "fix: it (b)"}]
+        bugs = [_bug("b", verify={"verdict": "fix", "date": "2026-10-03"}, fix_landed=landed, reverify=True)]
+        self.assertEqual([b["key"] for b in self.v.eligible(bugs)], ["b"])
+        out, _ = self.v.verify(bugs, date="2026-10-10", sha="s" * 40, agent=self.agent({"b": "dismiss"}))
+        self.assertEqual((out[0]["status"], out[0]["verify"]["date"], "reverify" in out[0]),
+                         ("dismissed", "2026-10-10", False))
+        self.assertIn("(a commit naming this key landed: fix: it (b) (ffffffff))", self.prompts[0])
+        # over the cap: the old verdict stands, so the bug stays on the work list as it was
+        out, _ = self.v.verify(bugs, date="2026-10-10", sha="s", agent=self.agent(), cap_usd=0)
+        self.assertEqual((out[0]["status"], out[0]["verify"]["verdict"]), ("open", "fix"))
+
     def test_verdicts_land_on_their_bugs_and_dismiss_closes_one(self):
         bugs = [_bug("a"), _bug("b"), _bug("c", status="gone")]
         out, summary = self.v.verify(bugs, date="2026-10-03", sha="s" * 40,

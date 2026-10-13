@@ -240,6 +240,16 @@ class MirrorTest(_IssuesFixture):
                          ["Dismissed by the owner: ask `@x`", "Dismissed by verify: nothing breaks",
                           "Dismissed by the judge: the caller checks it"])
 
+    def test_a_landed_fix_verify_confirmed_closes_as_completed(self):
+        record = self.build(bugs=[_fix("B1")])
+        self.mirror(record)
+        later = self.build("2026-10-12", bugs=[
+            {**record["bugs"][0], "status": "dismissed", "fix_landed": [{"commit": "f" * 40, "subject": "fix"}],
+             "verify": {"verdict": "dismiss", "effect": "the ribbon takes its drawn colour"}}])
+        self.mirror(later, previous=record)
+        self.assertEqual((self.github.issues[1]["reason"], self.github.issues[1]["comments"][-1]),
+                         ("completed", "Fix confirmed by verify: the ribbon takes its drawn colour"))
+
     def test_a_bug_answered_before_its_issue_existed_gets_the_answer_when_filed(self):
         record = self.build(bugs=[_bug("B1", verify={"verdict": "decide", "date": "x"}, owner_decision="open",
                                        owner_answer="keep the guard")])

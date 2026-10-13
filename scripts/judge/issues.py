@@ -8,10 +8,10 @@ a number counts only if the record maps the bug to it. Bodies, comments and labe
 so an outsider's text can't reach an agent, and an edit is overwritten at the bug's next change.
 
 What gets an issue: an `open` bug verify called `fix` or `decide`, stranded commits, and a repeated
-agent error. A filed issue then follows its bug: closed when it is `gone` (completed) or `dismissed`
-/ `wont_fix` / `parked` (not planned), reopened when it is live again, labelled `fix-landed` when a
-commit names its key, `in-progress` once a fix session started from `judge-review`, and a comment
-with the owner's answer to a `decide` bug. Every issue is locked once filed, so only collaborators
+agent error. A filed issue then follows its bug: closed when it is `gone` or verify dismissed a
+landed fix (completed), or `dismissed` / `wont_fix` / `parked` (not planned), reopened when it is
+live again, labelled `fix-landed` when a commit names its key, `in-progress` once a fix session
+started from `judge-review`, and a comment with the owner's answer to a `decide` bug. Every issue is locked once filed, so only collaborators
 can comment on it.
 
 Bodies are built from the record's structured fields (D11); the prose fields are defused (`@name`
@@ -247,7 +247,7 @@ def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
         lines += ["**Finding** (reviewer output, quoted):", ""] + [f"> {ln}" if ln else ">" for ln in d(b["desc"]).splitlines()] + [""]
     if b.get("fix_landed"):
         lines += ["**Fix landed:** " + ", ".join(f"`{c['commit'][:8]}`" for c in b["fix_landed"])
-                  + ", awaiting the judge's re-check.", ""]
+                  + ", awaiting the judge's or verify's re-check.", ""]
     lines += ["---", FOOTER]
     return "\n".join(lines) + "\n"
 
@@ -274,6 +274,9 @@ def _closing(b: dict, uids: _t.Collection[str] = ()) -> tuple[str, str] | None:
             return "not planned", safe("Dismissed by the owner" + (f": {defuse(b['owner_answer'], uids)}"
                                                                    if b.get("owner_answer") else "."),
                                        "Dismissed by the owner.", uids)
+        if v.get("verdict") == "dismiss" and b.get("fix_landed"):   # a landed fix verify confirmed
+            return "completed", safe("Fix confirmed by verify" + (f": {defuse(v['effect'], uids)}" if v.get("effect") else "."),
+                                     "Fix confirmed by verify.", uids)
         if v.get("verdict") in ("dismiss", "not_a_bug"):
             return "not planned", safe("Dismissed by verify" + (f": {defuse(v['effect'], uids)}" if v.get("effect") else "."),
                                        "Dismissed by verify.", uids)

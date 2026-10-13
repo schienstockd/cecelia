@@ -240,8 +240,9 @@ _CONFIRMED = ("gone", "dismissed")
 
 def landed_counts(bugs: _t.Sequence[dict]) -> tuple[int, int]:
     """(bugs with a landed fix, of those confirmed fixed: the judge said `gone` or verify dismissed it).
-    Not only this pass's: a parked bug waiting for a re-check slot keeps an earlier pass's `fix_landed`
-    (`bugs.py` `sweep`), so it counts on every pass until it is re-checked."""
+    Not only this pass's: a parked bug waiting for a re-check slot, or an open one verify didn't reach
+    (`reverify`), keeps an earlier pass's `fix_landed` (`bugs.py` `sweep`), so it counts on every pass
+    until it is re-checked."""
     landed = [b for b in bugs if b.get("fix_landed")]
     return len(landed), sum(b["status"] in _CONFIRMED for b in landed)
 
@@ -284,7 +285,9 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
         if b.get("owner_answer"):
             out += [f"**Owner's answer** (follow this, not the recommendation): {b['owner_answer']}", ""]
         if v:
-            out += [f"**Verified** ({v['verdict']}, {v.get('date')}): {v.get('effect', '')}",
+            out += [f"**Verified** ({v['verdict']}, {v.get('date')}"
+                    + (", before the fix landed; *re-check due*" if b.get("reverify") else "")
+                    + f"): {v.get('effect', '')}",
                     *([f"- Question: {v['question']}"] if v.get("question") else []),
                     *([f"- Recommendation: {v['recommendation']}"] if v.get("recommendation") else []),
                     *([f"- Live once: {v['trigger']}"] if v.get("trigger") else []),

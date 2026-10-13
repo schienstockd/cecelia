@@ -17,9 +17,9 @@ Then install the units:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp scripts/judge/systemd/weekly-judge.{service,timer} ~/.config/systemd/user/
+cp scripts/judge/systemd/weekly-{judge,chart}.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now weekly-judge.timer
+systemctl --user enable --now weekly-judge.timer weekly-chart.timer
 loginctl enable-linger "$USER"   # fire when you're not logged in
 ```
 
@@ -41,6 +41,10 @@ journalctl --user -u weekly-judge.service -f
 
 Won't fire on battery (`ConditionACPower=true`), and won't fire on boot for a missed Tuesday
 (`Persistent=` omitted): the next pass sweeps from the last record, so nothing is lost.
+
+`weekly-chart.timer` redraws the README's chart Monday at 00:30, the night a week completes, so the
+chart isn't a week behind waiting for Tuesday's pass. It costs nothing, so it does fire on boot for a
+missed Monday (`Persistent=true`), and it skips while a judge pass holds the cron lock.
 
 ## Issues are the default
 
@@ -70,8 +74,8 @@ log: `usage limit, lifts …: waiting …s, then attempt 2/3`. Details:
 `systemctl --user edit weekly-judge.timer` to override `OnCalendar=` (`systemd.time(7)`).
 
 ```bash
-systemctl --user disable --now weekly-judge.timer
-rm ~/.config/systemd/user/weekly-judge.{service,timer}
+systemctl --user disable --now weekly-judge.timer weekly-chart.timer
+rm ~/.config/systemd/user/weekly-{judge,chart}.{service,timer}
 systemctl --user daemon-reload
 ```
 
