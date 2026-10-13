@@ -8,6 +8,8 @@
 _broadcast_task(msg::NamedTuple) = broadcast_ws(Dict{String,Any}(String(k) => v for (k, v) in pairs(msg)))
 
 ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",      taskId=task_id, line=line))
+# A cluster run's stage (HPC_PLAN Q4): "sync" | "queued" | "running" | "pull" | "" (over), + the job id.
+ws_hpc(_ws, task_id, stage, job)       = _broadcast_task((; type="task:hpc", taskId=task_id, stage=stage, jobId=job))
 # `image_uids` carries ALL images a task touched — for a set/combined task, `uid` is just the
 # representative (first) member, so the frontend needs the full list to invalidate every member's plots
 # (task-refresh; see docs/todo/TASK_DATA_REFRESH_PLAN.md). Defaults empty → single-image tasks fall back
@@ -781,7 +783,8 @@ function handle_task_run(ws, data)
         on_progress = (n, t) -> ws_progress(ws, task_id, n, t),
         on_status   = (status, uid, uids, pool) ->
                           ws_status(ws, task_id, status, uid; image_uids=uids, fun=fun_name, pool),
-        on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta))
+        on_result   = (uid, meta) -> ws_result(ws, task_id, uid, meta),
+        on_hpc      = (stage, job) -> ws_hpc(ws, task_id, stage, job))
 
     # Hand it to the detached runner if there is one — then this server can restart without taking the
     # run with it, and its frames arrive back through the relay into these same sinks.

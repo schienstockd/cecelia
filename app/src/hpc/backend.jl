@@ -203,7 +203,14 @@ function hpc_watch_job(b::HpcBackend, c::HpcConn, id::AbstractString, dir::Abstr
         t0 = time()
         while time() - t0 < poll_s
             if cancelled()
-                try; hpc_cancel(b, c, id); catch e; on_log("[WARN] Cancel: $(sprint(showerror, e))"); end
+                try
+                    hpc_cancel(b, c, id)
+                catch e
+                    e isa HpcError || rethrow()
+                    # The cluster is out of reach: the job would run on. Kept and retried (hpc/job.jl).
+                    hpc_queue_cancel!(b, c, id)
+                    on_log("[WARN] Could not cancel job $id on the cluster yet ($(e.msg)); retrying in the background")
+                end
                 return (; exit = nothing, reason = "Cancelled", cancelled = true)
             end
             sleep(min(0.5, poll_s))

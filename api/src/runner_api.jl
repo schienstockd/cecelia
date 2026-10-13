@@ -50,6 +50,8 @@ function _relay_runner_frame(f::Dict{String,Any})
         ws_progress(nothing, id, Float64(get(f, "progress", 0.0)))
     elseif t == "task:result"
         ws_result(nothing, id, String(get(f, "imageUid", "")), get(f, "meta", nothing))
+    elseif t == "task:hpc"
+        ws_hpc(nothing, id, String(get(f, "stage", "")), String(get(f, "jobId", "")))
     elseif startswith(t, "chain:")
         # Chain frames are already in their final client shape (`subscribe_chain_frames!` built them in
         # the runner, from the same builder this server uses in-process), so they are broadcast
@@ -115,6 +117,10 @@ function _reconcile_with_runner()
             ws_status(nothing, String(get(t, "id", "")), "running", String(get(t, "image_uid", ""));
                       fun = String(get(t, "fun_name", "")), pool = String(get(t, "pool_name", "")),
                       started_at = String(get(t, "started_at", "")))
+            # A cluster run's stage changes rarely (a job can sit `queued` for hours), so it is replayed
+            # rather than left for the next change.
+            st = String(get(t, "hpc_stage", ""))
+            isempty(st) || ws_hpc(nothing, String(get(t, "id", "")), st, String(get(t, "hpc_job", "")))
         end
     catch e
         @warn "Runner reconcile: could not read in-flight tasks" exception = e

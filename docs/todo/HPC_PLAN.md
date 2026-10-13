@@ -1,7 +1,8 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
 **Status:** building. P1 merged (#1632). P2 built (#1637; see *P2 as built*). P3 built (branch
-`feat/1619-hpc-p3`; see *P3 as built*). P5 built (branch `feat/1619-hpc-p5`; see *P5 as built*). P4, P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
+`feat/1619-hpc-p3`; see *P3 as built*). P5 built (#1639). P4 built (branch `feat/1619-hpc-p4`; see
+*P4 as built*). P6 open. Un-parked by issue #1619. Renamed from `HPC_NEXTFLOW_PLAN.md` when Nextflow was dropped (Decision 2).
 
 ## Goal
 
@@ -456,6 +457,27 @@ The counts are files touched, new and existing, including tests and docs.
   second submission.
 - **Touchpoints ≈ 7:** `hpc/job.jl`, `task_record.jl`, `stores/tasks.ts`, `TaskList.vue`,
   `TasksModule.vue`, the test, `docs/SCHEDULER.md`.
+
+**P4 as built:**
+- **The stage reaches the Task Manager as `task:hpc` frames**: *uploading*, *queued*, *running*,
+  *downloading*, then `""`. They come through an `on_hpc` callback that `run_task` and `execute_task`
+  carry, as they carry `on_progress`, so the detached runner relays them like any task frame. The stage
+  and job id also sit on the `TaskRecord` (`list_tasks` `hpc_stage`/`hpc_job`), so a reloaded browser
+  shows them. The row shows `hpc · queued` on the pool tag, with the job id in its tooltip.
+- **A cancel that cannot reach the cluster is kept** (`hpc_queue_cancel!`) and retried every 60 s for up
+  to a day. A job already gone counts as done, which is checked by asking the scheduler, not inferred from
+  the cancel's error. Cluster cancels persist in `<config_dir>/hpc/pending_cancels.json` and are picked up
+  on the next dispatch to the same host and login.
+- **Reattach by rerun** uses `<task dir>/<runner>.hpc.json`: the job id and dir, plus a fingerprint of
+  the runner, its rewritten params, the code and env revision, the class/resources/account, the outputs,
+  and every input file's size and mtime here. A rerun with an equal fingerprint follows the job (still
+  out), collects its outputs (finished), or submits afresh (failed or gone). The record is removed only
+  after the outputs are home, so a failed pull is retried by a rerun without running the job again.
+  A changed input or parameter is a different run.
+- No automatic background reattach without a rerun (Q6 keeps that for when it is needed).
+- Tested on the local remote: the stage sequence of a real run, a backend "crash" mid-job followed by a
+  rerun that submits nothing and gets the same table, a cancel that fails twice and then lands, and pending
+  cancels across a "restart". All live in `app/test/suite/hpc_job.jl`.
 
 **P5 — PBS backend.**
 - **Delivers:** `PbsBackend` (`qsub`/`qstat -x`/`qdel`, select-statement resources).

@@ -36,6 +36,16 @@ export function hpcDefaults(def: TaskDef): HpcResourcesForm {
   return { cpus: b.cpus ?? 1, memGb: b.mem_gb ?? 1, gpus: b.gpus ?? 0, walltimeMin: b.walltime_min ?? 1 }
 }
 
+/** A cluster run's stage as the Task Manager shows it (the `task:hpc` frame, `list_tasks` hpc_stage). */
+const HPC_STAGE_TEXT: Record<string, string> = {
+  sync: 'uploading', queued: 'queued', running: 'running', pull: 'downloading',
+}
+export function hpcStageLabel(stage?: string, job?: string): { short: string; tip: string } | null {
+  if (!stage) return null
+  const s = HPC_STAGE_TEXT[stage] ?? stage
+  return { short: s, tip: `On the cluster: ${s}${job ? ` (job ${job})` : ''}` }
+}
+
 /** What the user chose for this function, remembered per function (profile storage). */
 export interface RunTargetChoice { target: RunTarget; resources: Partial<HpcResourcesForm> }
 

@@ -32,6 +32,9 @@ export interface InFlightTaskRow {
   id: string
   fun_name?: string
   pool_name?: string
+  /** a cluster run's stage and job id (`list_tasks` hpc_stage / hpc_job); '' for a local run */
+  hpc_stage?: string
+  hpc_job?: string
   image_uid?: string
   chain_run_id?: string
   /** which node of that run — needed to rebuild the store's `runId::nodeId::imageUid` key */
@@ -151,6 +154,7 @@ export function adoptableTasks(
       // from when this tab noticed. `''`/absent = queued, or a backend too old to send it.
       startedAt:  r.started_at ? new Date(r.started_at) : undefined,
       ...(r.pool_name ? { pool: String(r.pool_name) } : {}),
+      ...(r.hpc_stage ? { hpcStage: String(r.hpc_stage), hpcJob: String(r.hpc_job ?? '') || undefined } : {}),
       ...(r.by ? { by: String(r.by) } : {}),
       // Only a real object counts. Left `undefined` otherwise, which is what withholds Re-run — an
       // older backend sends nothing, and defaulting to `{}` would present "no params" as the answer.

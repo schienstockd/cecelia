@@ -19,6 +19,7 @@ import { formatWhen } from './formatWhen'
 import { taskElapsed } from './taskElapsed'
 import { canCancelTask, canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
+import { hpcStageLabel } from './hpcRun'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
 export interface TaskRow {
@@ -30,6 +31,9 @@ export interface TaskRow {
   task: string
   /** the resource pool it ran in (`cpu`, `gpu`, …); `''` when no carrier named it (older run-log rows) */
   pool: string
+  /** a live cluster run's stage (`queued`, …) and its tooltip; `''` otherwise */
+  hpc: string
+  hpcTip: string
   /** the image NAME — what the Image column sorts by (the uid is chrome, not an ordering) */
   image: string
   imageUid: string
@@ -79,6 +83,12 @@ export interface TaskRowContext {
   now: number
 }
 
+// Only while the run is live: a finished row says where it ran (the pool), not where it last was.
+function hpcCells(t: TaskEntry): { hpc: string; hpcTip: string } {
+  const l = (t.status === 'queued' || t.status === 'running') ? hpcStageLabel(t.hpcStage, t.hpcJob) : null
+  return { hpc: l?.short ?? '', hpcTip: l?.tip ?? '' }
+}
+
 export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
   const elapsed = taskElapsed(t.startedAt, t.finishedAt, ctx.now)
   return {
@@ -88,6 +98,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     module:  t.module,
     task:    t.label,
     pool:    t.pool ?? '',
+    ...hpcCells(t),
     image:   t.imageName,
     imageUid: t.imageUid,
     projectLabel: taskProjectLabel(t, ctx.currentProjectUid, ctx.thisProjectOnly, ctx.nameOfProject),

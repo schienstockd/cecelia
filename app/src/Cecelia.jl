@@ -429,6 +429,8 @@ include("hpc/remote_env.jl")
 # Dispatch (P3): `run_py` → a cluster job. Needs the scheduler's `TaskRecord`/`is_cancelled` and
 # `_task_spec`, all loaded above.
 include("hpc/dispatch.jl")
+# What outlives a process: reattach-by-rerun records and cancels retried until they land (P4).
+include("hpc/job.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
@@ -459,7 +461,9 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        JOB_QUEUED, JOB_RUNNING, JOB_GONE, hpc_backend, hpc_render_script, hpc_submit, hpc_poll,
        hpc_cancel, hpc_exit_reason, hpc_watch_job, hpc_sync_code!, hpc_lock_hash, hpc_env_status,
        hpc_install_env!, hpc_require_env, RunTarget, TARGET_LOCAL, TARGET_HPC, run_target,
-       task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus
+       HpcStage, HPC_STAGE_NONE, HPC_STAGE_SYNC, HPC_STAGE_QUEUED, HPC_STAGE_RUNNING, HPC_STAGE_PULL,
+       task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
+       hpc_pending_cancels, hpc_retry_cancels!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
        observer_api_url,
        OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,

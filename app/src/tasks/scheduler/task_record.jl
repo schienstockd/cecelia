@@ -41,6 +41,16 @@ function run_target(s::AbstractString)::RunTarget
 end
 run_target(t::RunTarget)::RunTarget = t
 
+"""
+Where a cluster run is (docs/todo/HPC_PLAN.md → Q4): inputs going up, queued or running on the
+cluster, outputs coming back; `HPC_STAGE_NONE` for a local run or one that is over. Wire form
+`""`/`"sync"`/`"queued"`/`"running"`/`"pull"` (the `task:hpc` frame, `list_tasks`).
+"""
+@enum HpcStage HPC_STAGE_NONE HPC_STAGE_SYNC HPC_STAGE_QUEUED HPC_STAGE_RUNNING HPC_STAGE_PULL
+const _HPC_STAGE_STR = Dict(HPC_STAGE_NONE => "", HPC_STAGE_SYNC => "sync", HPC_STAGE_QUEUED => "queued",
+                            HPC_STAGE_RUNNING => "running", HPC_STAGE_PULL => "pull")
+Base.string(s::HpcStage) = _HPC_STAGE_STR[s]
+
 mutable struct TaskRecord
     id::String
     fun_name::String
@@ -93,6 +103,11 @@ mutable struct TaskRecord
     # the job starts (`hpc_dispatch_for`).
     target::RunTarget
     hpc::Dict{String,Any}
+    # Where a cluster run is (HPC_PLAN Q4): "sync" → "queued" → "running" → "pull", and the cluster's
+    # job id once it has one; "" otherwise. Set by the dispatch (`_with_run_target`), reported by
+    # `list_tasks` so a browser that reloads mid-run can show it.
+    hpc_stage::HpcStage
+    hpc_job::String
 end
 
 const _TASKS      = Dict{String, TaskRecord}()
@@ -144,7 +159,7 @@ function _register_task!(id, fun_name, pool_name, image_uid, chain_run_id, on_st
                          hpc::Dict{String,Any} = Dict{String,Any}())
     rec = TaskRecord(id, fun_name, pool_name, image_uid, project_uid, chain_run_id, chain_node_id, by, TASK_QUEUED,
                      Dates.now(UTC), nothing, nothing,
-                     on_status_change, live_outputs, params, image_uids, output_name, target, hpc)
+                     on_status_change, live_outputs, params, image_uids, output_name, target, hpc, HPC_STAGE_NONE, "")
     lock(_TASKS_LOCK) do
         isnothing(_conflicting_run(rec)) || throw(DuplicateRunError(fun_name, output_name))
         _TASKS[id] = rec
