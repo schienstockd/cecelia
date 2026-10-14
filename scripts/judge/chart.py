@@ -342,22 +342,29 @@ def _ticks(peak: float, *, percent: bool = False) -> list[float]:
 
 def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel: str, weeks: list[dict],
            series: list[tuple[str, str, list, list]], percent: bool = False, xlabel: bool = False,
-           n_per_week: list[int | None] | None = None) -> None:
+           n_per_week: list[int | None] | None = None, stacked: bool = False) -> None:
     """One panel at (x, y), drawn like a paper figure: a letter, a title, a legend, a y axis with
     round ticks and its label, x ticks per week. `series` is (legend name, colour, value per week
-    (None = no point), hollow per week). `n_per_week` prints each week's n under its date."""
+    (None = no point), hollow per week). `n_per_week` prints each week's n under its date.
+    `stacked`: one bar per week, the series stacked bottom-up in order, for shares of one whole
+    (lines would hide the total, and equal shares would draw on top of each other)."""
     top, bot = y + 40, y + 170
     ax, x1 = x + 58, x + w - 10
     add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
     add(f'<text x="{x + 18:.1f}" y="{y:.1f}" font-size="13" font-weight="700">{esc(title)}</text>')
     lx = x + 18
     for name, colour, _, _ in series:
-        add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
-            f'stroke-width="2"/>')
-        add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
+        if stacked:
+            add(f'<rect x="{lx + 3:.1f}" y="{y + 14:.1f}" width="10" height="10" fill="{colour}"/>')
+        else:
+            add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
+                f'stroke-width="2"/>')
+            add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
         add(f'<text x="{lx + 21:.1f}" y="{y + 23:.1f}" font-size="11">{esc(name)}</text>')
         lx += 21 + 6.2 * len(name) + 14
-    ticks = _ticks(max([v for _, _, vals, _ in series for v in vals if v is not None] or [1]), percent=percent)
+    tops = ([sum(vals[i] or 0 for _, _, vals, _ in series) for i in range(len(weeks))] if stacked else
+            [v for _, _, vals, _ in series for v in vals if v is not None])
+    ticks = _ticks(max(tops or [1]), percent=percent)
     peak = ticks[-1]
     # axes: left and bottom spines, ticks outward
     add(f'<path d="M{ax:.1f},{top:.1f} V{bot:.1f} H{x1:.1f}" fill="none" stroke="{INK}" stroke-width="1"/>')
@@ -371,8 +378,12 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
     n = len(weeks)
     every = n <= 6  # a date under every tick while they fit; past that, the first and the last
 
+    # the last week sits 10 px in from the axis end; a bar's half-width further in, so it doesn't overhang
+    bw = min(26.0, (x1 - ax - 30) / max(n - 1, 1) / 2) if stacked else 0.0
+    span = x1 - ax - 30 - bw / 2
+
     def at(i: int, v: float) -> tuple[float, float]:
-        px = (ax + 20 + x1) / 2 if n == 1 else ax + 20 + (x1 - ax - 30) * i / (n - 1)
+        px = (ax + 20 + x1) / 2 if n == 1 else ax + 20 + span * i / (n - 1)
         return px, bot - (bot - top) * v / peak
 
     for i, wk in enumerate(weeks):
@@ -386,6 +397,19 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
     if xlabel:
         below = bot + (48 if n_per_week else 35)
         add(f'<text x="{(ax + x1) / 2:.1f}" y="{below:.1f}" font-size="11" text-anchor="middle">Week starting</text>')
+    if stacked:
+        # a bar no wider than half the gap between weeks; a hollow week's segments are outlines
+        for i in range(n):
+            base = 0.0
+            for _, colour, vals, hollow in series:
+                if not vals[i]:
+                    continue
+                px, ytop = at(i, base + vals[i])
+                ybot = at(i, base)[1]
+                fill = f'fill="none" stroke="{colour}" stroke-width="1.5"' if hollow[i] else f'fill="{colour}"'
+                add(f'<rect x="{px - bw / 2:.1f}" y="{ytop:.1f}" width="{bw:.1f}" height="{ybot - ytop:.1f}" {fill}/>')
+                base += vals[i]
+        return
     for _, colour, vals, hollow in series:
         for i in range(n - 1):
             if vals[i] is None or vals[i + 1] is None:
@@ -466,7 +490,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
              if w["week"] in judged and w["sessions"] >= LOW_SESSIONS else None for w in weeks]
         _panel(add, x=x, y=row[1], w=third, letter="de"[k],
                title=f"Judge: {name.lower()} ({_fmt_day(j['date'])})",
-               ylabel="Share of unfixed notes (%)", weeks=weeks, xlabel=True, percent=True, n_per_week=n,
+               ylabel="Share of unfixed notes (%)", weeks=weeks, xlabel=True, percent=True, n_per_week=n, stacked=True,
                series=[(_judge_name(r, line), pal[swatch],
                         [100 * sum(judged[w["week"]][s] for s in group) / c if c else None
                          for w, c in zip(weeks, n)], late)

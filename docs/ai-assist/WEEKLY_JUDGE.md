@@ -318,7 +318,7 @@ it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in thr
 - **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Five panels drawn like a paper
   figure (lettered, y axes with round ticks): changes reviewed and PRs merged; findings per 100
   changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts as
-  shares of each week's judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
+  one stacked bar per week, shares of its judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
   row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
   gets no rate (leading ones aren't drawn); the week still running
   is left out of the picture. Okabe-Ito swatches from

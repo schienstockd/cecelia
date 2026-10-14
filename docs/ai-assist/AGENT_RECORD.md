@@ -13,7 +13,7 @@ for new code that duplicates an existing helper or skips a convention
 commit message, and a git hook blocks the commit until it is. All of it is logged to the
 effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)).
 
-Five line panels, one point per ISO week (Monday–Sunday, UTC):
+Five panels, one point or bar per ISO week (Monday–Sunday, UTC): three of lines, two of stacked bars:
 
 - **Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
   reviewed. Running recital again on the same change counts once; a reviewer that errored counts
@@ -27,15 +27,15 @@ Five line panels, one point per ISO week (Monday–Sunday, UTC):
   positive, dropped, or have no outcome logged (mostly from before the hook required one); that
   split is in `effectiveness.json` and the image's description, not drawn.
 - **The judge's verdicts**, from the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), one
-  panel per reviewer, by the week each note was raised, each verdict as a share of that week's
-  judged notes with the week's *n* under its date: a count would mostly say how much of the backlog
+  panel per reviewer, by the week each note was raised: one bar per week, its verdicts stacked as
+  shares of that week's judged notes (so it reaches 100 %), with the week's *n* under its date: a count would mostly say how much of the backlog
   the pass reached. *Fan-out*: the notes nobody fixed — mostly
   fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
   findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
   but can't happen in today's code), *gone* (the code changed under it) or *dismissed*.
   *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
   existing helper's job), *gone* or *dismissed*. Until a pass has swept convention findings, that
-  panel says so. A week the pass fell inside is hollow: it isn't fully judged yet.
+  panel says so. A week the pass fell inside is drawn as outlines: it isn't fully judged yet.
 - **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
   under 10 sessions. A week under 10 sessions gets no point in the rate panels at all (a handful of
   findings makes any percentage); its counts are still drawn. Weeks like that before logging got going
