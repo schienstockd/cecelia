@@ -420,7 +420,7 @@ class PrCiTest(unittest.TestCase):
         self.assertIn("* judge-review", lines[0])
         self.assertEqual(lines[2].split()[0], "cecelia-28*")
         self.assertEqual(lines[2].index(" idle"), lines[3].index(" asks"))   # columns still line up
-        self.assertEqual(console._name_cell(AgentRow("auto-fix", "busy", "w", "x", auto=True)), "auto-fix↻   ")
+        self.assertEqual(console._name_cell(AgentRow("auto-fix", "busy", "w", "x", auto=True)), "auto-fix^   ")
         self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
                          "cecelia-pr…*")
 

@@ -536,11 +536,11 @@ JUDGE_MARK = "*"
 
 
 #: Marks `judge-review --auto`'s fix agent (unattended: nothing to answer).
-AUTO_MARK = "↻"
+AUTO_MARK = "^"
 
 
 def _name_cell(row: AgentRow) -> str:
-    """The name in 12 columns, `*` right after it for a judge-review session, `↻` for its `--auto`
+    """The name in 12 columns, `*` right after it for a judge-review session, `^` for its `--auto`
     fix agent (kept when cut)."""
     if row.auto:
         return f"{row.name[:11] + AUTO_MARK:<12}"
