@@ -143,7 +143,8 @@ def groups(bugs: _t.Sequence[dict]) -> list[list[dict]]:
         # one run's errors: one agent; a repeat spans runs, so it joins none
         run = (("review", b.get("entry")) if b.get("review") else
                b.get("commit") if b.get("kind") == "agent_run" and not b.get("repeat") else None)
-        for k in (("branch", b.get("branch")), ("file", b.get("file")), ("run", run)):
+        file = None if b.get("file") == _record.NO_FILE else b.get("file")   # `?` is no file: joins nothing
+        for k in (("branch", b.get("branch")), ("file", file), ("run", run)):
             if k[1] is None:
                 continue
             if k in seen:

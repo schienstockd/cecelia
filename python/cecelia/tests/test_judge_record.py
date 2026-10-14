@@ -81,6 +81,17 @@ class RecordTest(_Fixture):
         self.assertEqual(self.rec.validate(record), [])
         self.assertIn("`abc`", self.rec.render_markdown(record))
 
+    def test_a_finding_logged_without_a_location_says_so_or_takes_verifys(self):
+        loc = self.rec.bug_location
+        self.assertEqual(loc(_bug("B1", file="?", line=0)), "no file:line named")
+        ev = {"verdict": "fix", "evidence": "api/src/notebooks_api.jl:72-80 `_alive` treats any reply as alive; :87 too"}
+        self.assertEqual(loc(_bug("B1", file="?", line=0, verify=ev)), "api/src/notebooks_api.jl:72 (from verify)")
+        self.assertEqual(loc(_bug("B1", file="a.py", line=0)), "a.py")
+        self.assertEqual(loc(_bug("B1")), "a.py:3")
+        self.assertEqual(self.rec.located_at(_bug("B1", file="?", line=0, verify=ev)),
+                         ("api/src/notebooks_api.jl", 72, True))
+        self.assertIsNone(self.rec.located_at(_bug("B1", file="?", line=0)))
+
     def test_an_existing_record_needs_force(self):
         self.rec.write(self.build())
         with self.assertRaises(self.rec.RecordError):

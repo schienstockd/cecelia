@@ -569,6 +569,13 @@ class PrefilterTest(_Repo):
         self.assertEqual([(b["key"], b.get("sources")) for b in bugs],
                          [("fanout-00000001", ["fanout-00000001", "fanout-00000002"])])
 
+    def test_findings_that_named_no_location_stay_apart(self):
+        # the recital parser stores `?`:0 for each: a shared placeholder, not a shared place
+        bugs, _ = self.sweep([_finding("fanout-00000001", file="?", line=0),
+                              _finding("fanout-00000002", file="?", line=0)])
+        self.assertEqual(sorted((b["key"], b.get("sources")) for b in bugs),
+                         [("fanout-00000001", None), ("fanout-00000002", None)])
+
     def test_the_judge_sees_the_whole_function_even_after_its_line_moved(self):
         at = self.commit("m.py", _PY_SRC)
         self.sha = self.commit("m.py", "".join(f"# pad {i}\n" for i in range(150)) + _PY_SRC)

@@ -349,6 +349,17 @@ class BodyTest(_IssuesFixture):
         record["run"]["sha"] = "b" * 40   # the next pass
         self.assertEqual(self.mirror(record)["updated"], [])
 
+    def test_a_finding_logged_without_a_location_links_where_verify_found_it(self):
+        ev = {"verdict": "fix", "sha": "d" * 40, "evidence": "api/src/notebooks_api.jl:72-80 treats any reply as alive"}
+        b = _bug("B1", file="?", line=0, commit="c" * 40, verify=ev)
+        text = self.i.body(b, repo=REPO, sha="a" * 40)
+        self.assertIn(f"[`api/src/notebooks_api.jl:72`](https://github.com/{REPO}/blob/{'d' * 40}/"
+                      "api/src/notebooks_api.jl#L72) at `dddddddd` (from verify; the finding named none)", text)
+        self.assertEqual(self.i.title(b), "[fanout-b1] fix: api/src/notebooks_api.jl:72 (from verify)")
+        bare = _bug("B2", file="?", line=0, verify={"verdict": "fix"})
+        self.assertIn("**Where:** the finding named no file:line", self.i.body(bare, repo=REPO, sha="a" * 40))
+        self.assertNotIn("?:0", self.i.title(bare) + self.i.body(bare, repo=REPO, sha="a" * 40))
+
     def test_an_agent_error_shows_its_form_not_its_message(self):
         b = _bug("B1", kind="agent_run", file=None, line=None, tool="get_cohort_qc", repeat=True, runs=4,
                  error="HTTP 400: No cohort metrics for fun 'x' in project abcDEF", template="No cohort metrics for fun",

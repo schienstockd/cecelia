@@ -127,7 +127,7 @@ _CONVENTION_EVENT = "convention_check_finding"
 #: The convention marker swept as a duplicate; the rest are rules-only.
 DUPLICATE_MARKER = "should reuse"
 #: A `path/file.ext:123` the duplicate's finding names: the canonical it should have reused.
-_CANONICAL_AT = re.compile(r"([\w./-]+\.\w+):(\d+)")
+_CANONICAL_AT = _record.FILE_LINE
 #: Lines either side of the canonical's line.
 CANONICAL_LINES = 20
 #: Findings per judge call: bounds the prompt, not the spend.
@@ -280,6 +280,8 @@ def locate(b: dict, sha: str, repo: pathlib.Path) -> dict:
     window around the line when there is none or it's too long.
     """
     file, line = b.get("file"), int(b.get("line") or 0)
+    if file == _record.NO_FILE:   # the finding named no location: nothing to excerpt, nothing gone
+        return {"code": None, "symbol": None, "gone": None}
     now = git_output("show", f"{sha}:{file}", cwd=str(repo)) if file else None
     if now is None:
         return {"code": None, "symbol": None, "gone": f"`{file}` isn't in {sha[:8]}" if file else None}
@@ -470,8 +472,11 @@ def _touched(b: dict, sha: str, repo: pathlib.Path) -> str | None:
         return f"an agent run hit it again on {seen}, after it was parked" if seen > at else None
     if not v.get("sha"):
         return "parked with no verify SHA to compare against"
-    commits = (git_output("log", "--format=%h", f"{v['sha']}..{sha}", "--", b["file"], cwd=str(repo)) or "").split()
-    return (f"`{b['file']}` changed since it was verified ({len(commits)} commit(s), latest {commits[0]})"
+    found = _record.located_at(b)
+    if found is None:   # a finding that named no file, nor did verify: no file to watch
+        return None
+    commits = (git_output("log", "--format=%h", f"{v['sha']}..{sha}", "--", found[0], cwd=str(repo)) or "").split()
+    return (f"`{found[0]}` changed since it was verified ({len(commits)} commit(s), latest {commits[0]})"
             if commits else None)
 
 
@@ -496,7 +501,7 @@ def _unpark(fired: list[tuple[dict, str]], date: str) -> list[dict]:
 def _prompt(batch: _t.Sequence[dict]) -> str:
     return _BRIEF + "\n\n".join(
         f"{'DUPLICATE' if b.get('kind') == 'duplicate' else 'FINDING'} {b['key']} "
-        f"({b['marker']}, {b['file']}:{b['line']}, branch {b.get('branch') or '?'}):\n"
+        f"({b['marker']}, {_record.bug_location(b)}, branch {b.get('branch') or '?'}):\n"
         f"{b['desc']}\n"
         + (f"(tagged {b['outcome']}" + (f": {b['reason']}" if b.get("reason") else "") + ")\n"
            if b.get("outcome") else "")
@@ -599,14 +604,16 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date), "why": why})
             continue
         if not _landed(b.get("branch"), b.get("commit"), sha, repo):
-            waits.setdefault((b.get("branch"), b.get("file"), b.get("line")), []).append(b)
+            # `?` (no location) names no place to merge on: its own key
+            waits.setdefault((b.get("branch"), b.get("file"),
+                              b["key"] if b.get("file") == _record.NO_FILE else b.get("line")), []).append(b)
             continue
         where = locate(b, sha, repo)
         if where["gone"]:
             if b.get("carried") or where["symbol"]:   # a missing file on a new finding: nothing to say
                 bugs.append({**_strip(b), "status": "gone", "why": where["gone"]})
             continue
-        g = (b.get("file"), where["symbol"] or f"line {b.get('line')}",
+        g = (b.get("file"), b["key"] if b.get("file") == _record.NO_FILE else where["symbol"] or f"line {b.get('line')}",
              # never merged: its run count and a `wont_fix` are carried by its own key
              b["key"] if b.get("kind") == "agent_run" else b.get("kind"))   # a duplicate joins duplicates
         groups.setdefault(g, []).append({**b, "code": where["code"],

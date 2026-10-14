@@ -52,6 +52,10 @@ class VerifyTest(unittest.TestCase):
         gs = self.v.groups(bugs)
         self.assertEqual(sorted(sorted(b["key"] for b in g) for g in gs), [["a", "b", "c"], ["d"]])
 
+    def test_findings_that_named_no_location_dont_share_an_agent_by_it(self):
+        bugs = [_bug("a", file="?", branch="b1"), _bug("b", file="?", branch="b2")]
+        self.assertEqual(sorted(sorted(b["key"] for b in g) for g in self.v.groups(bugs)), [["a"], ["b"]])
+
     def test_one_runs_errors_go_to_one_agent_and_name_their_tool(self):
         run = {"kind": "agent_run", "marker": "agent run", "file": None, "line": None, "branch": None}
         bugs = [_bug("r1", **run, tool="create_chain", commit="d" * 40, runs=2),
