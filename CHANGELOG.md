@@ -31,6 +31,7 @@ _Changes on `main` that have not yet been tagged in a release._
 
 ### Fixed
 
+- **Example notebooks are now included in installed versions.**
 - **Project manager shows the default profile as `peanut`.** The Owners column still said `default`;
   it now uses the same name as the header and profile picker.
 - **Other accounts can start a shared install.** Julia used to fail for any account except the one
