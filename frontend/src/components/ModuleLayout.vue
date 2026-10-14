@@ -436,7 +436,7 @@ const visibleUids = computed<string[]>(() =>
                below reaches it without touching the CollapsibleSection primitive. -->
           <CollapsibleSection v-if="$slots.plots && activeSet"
             data-guide="layout.plotsSection" class="plots-section"
-            :label="plotsLabel" max-height="none"
+            :label="plotsLabel" max-height="none" :fill="isMaximised"
             :storage-key="plotsOpenKey">
             <slot name="plots"
               :set-uid="activeSet.uid"
@@ -601,23 +601,18 @@ const visibleUids = computed<string[]>(() =>
    a modal or popover opened from inside the maximised panel must still paint on top of it. Floating
    panels (Viewer, Lab log, Kiwi, …) lift to PANEL_Z_LIFTED = 210 while this is up, so they float
    over it rather than hide under it — keep 200 between those two numbers.
-   The plots section takes the space left under the (capped) Images section; flex-basis 0 in a
-   definite-height column gives it a definite height, so plots that ask for `height: 100%`
-   (TabbedCanvas, SummaryCanvas) fill it. The min-height keeps them usable on a short screen with
-   Images open — .panel-scroll scrolls instead. */
+   The plots section takes the space left under the (capped) Images section via CollapsibleSection's
+   `fill` (bound to isMaximised); flex-basis 0 in a definite-height column gives it a definite height,
+   so plots that ask for `height: 100%` (TabbedCanvas, SummaryCanvas) fill it. The min-height keeps
+   them usable on a short screen with Images open — .panel-scroll scrolls instead. It names `.cs-fill`
+   so it outranks the primitive's own `min-height: 0` (same specificity otherwise). */
 .image-panel.is-plots-maximised {
   position: fixed;
   inset: 0;
   z-index: 200;
   background: var(--cc-bg);
 }
-.is-plots-maximised .plots-section {
-  flex: 1 1 0;
+.is-plots-maximised .plots-section.cs-fill {
   min-height: 50vh;
-}
-.is-plots-maximised .plots-section :deep(.cs-body) {
-  flex: 1;
-  min-height: 0;
-  max-height: none !important;
 }
 </style>

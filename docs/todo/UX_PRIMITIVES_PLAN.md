@@ -34,6 +34,7 @@ read these; do not re-derive one by grep.
 | `findRawValues` | `cssScenarios.ts` | literal `font-size` / `border-radius`, incl. inline `style=` | exact list (1 documented exception) |
 | `findRawColours` + `colourTokens` | `cssScenarios.ts` | a hex a token already holds exactly; any `var(--x, #hex)` fallback | must be empty |
 | `findRestatedInputBase` + `inputBase` | `cssScenarios.ts` | form-control rules re-stating the global input base | exact list (2 survivors, each a class shared with a non-input element) |
+| `findDeepFillOverrides` | `cssScenarios.ts` | a `:deep(.cs-body)` rule setting flex / min-height / max-height — CollapsibleSection's `fill` prop, hand-rolled | must be empty |
 | `findDeadTokenRefs` | `cssTokens.ts` | a reference to a `--*` property `style.css` never declares | must be empty |
 | `findNonRootTokenDecls` | `cssTokens.ts` | the global scale declared anywhere but `:root` (declared ≠ *reachable*) | must be empty |
 | the ladder-order assertion | `cssScenarios.test.ts` | `.cc-fs-*` must be declared AFTER every scenario base that sets a font-size — equal specificity, so source order decides | must hold |
