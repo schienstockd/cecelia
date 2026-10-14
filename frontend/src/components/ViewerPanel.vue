@@ -73,7 +73,10 @@ const selectedValueName = computed<string>({
   },
   set: v => { const uid = openedImage.value?.uid; if (uid) settings.setImageVersion(uid, v) },
 })
-const visibleLabels     = ref<Record<string, boolean>>({})
+// Label visibility for the open image, read live like the version above — a label set added or
+// removed in place must read as the viewer draws it. Unknown names default to true.
+const visibleLabels     = computed<Record<string, boolean>>(() => openedImage.value
+  ? settings.getLabelVisibility(openedImage.value.uid, Object.keys(openedImage.value.labels ?? {})) : {})
 // Master "show cell-track ribbons" toggle: draws ribbons for flow pops whose cells have
 // `track_id > 0` (a hand-drawn cell gate over cells that were later tracked). Distinct from
 // "gated tracks" — a future track-poptype pop gated on TRACK measures (speed, straightness);
@@ -103,6 +106,8 @@ const POP_TYPES = CELL_POP_TYPES.map(key => ({ key, ...POP_TYPE_UI[key] }))
 // Read straight off the settings store, not copied on image open: other surfaces write these for the
 // image already open (cell cards' / the cockpit's Show, a strip frame's zoom-to-source, another tab),
 // and a copy left the toggle showing — and the next toggle writing back — the old state.
+// Tracks span BOTH registries (labels ∪ branchLabels) — a points-only set is exactly the one whose
+// tracks you want. Label visibility is NOT unioned: a set with no `labels` has no pixels to show.
 const trackVns          = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation track-overlay visibility
   ? settings.getTrackVisibility(openedImage.value.uid, trackableValueNames(openedImage.value)) : {})
 const branchVns         = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation branch-overlay visibility
@@ -338,19 +343,9 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 })
 
 
-// These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
-// useOverlayAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
-// can no longer affect what actually reaches the viewer (it once did: see useOverlayAutoShow's rules).
-watch(openedImage, (img) => {
-  // restore the remembered preference rather than always starting hidden
-  labelsExpanded.value = false                 // a different image is a different list
-  if (!img) { visibleLabels.value = {}; obsCols.value = []; return }
-  // Tracks are seeded over BOTH registries (labels ∪ branchLabels) — a points-only set is exactly
-  // the one whose tracks you want. Label visibility below is NOT unioned — there are no pixels to
-  // show for a set with no `labels` registry.
-  // Restore remembered label visibility for this image; unknown labels default to true.
-  visibleLabels.value = settings.getLabelVisibility(img.uid, Object.keys(img.labels ?? {}))
-}, { immediate: true })
+// The toggle state above drives the TOGGLE UI only. The layers themselves are (re)pushed by the
+// app-level useOverlayAutoShow (on open) and onGatingChange — neither reads the panel's state.
+watch(() => openedImage.value?.uid, () => { labelsExpanded.value = false })   // a different image is a different list
 // Colour-by options follow the image AND the version shown on it — however the version moved.
 watch(() => [openedImage.value?.uid, selectedValueName.value], () => loadObsCols(), { immediate: true })
 
@@ -798,7 +793,6 @@ function toggleLabel(valueName: string) {
   ])
   const bag: Record<string, boolean> = {}
   for (const n of allNames) bag[n] = next && n === valueName
-  visibleLabels.value = bag
   if (uid) settings.setLabelVisibility(uid, bag)
   pingViewerOverlays()
 }
@@ -886,7 +880,6 @@ function onTaskResult(data: Record<string, unknown>) {
     const bag: Record<string, boolean> = {}
     for (const n of Object.keys(openedImage.value?.labels ?? {})) bag[n] = n === labelValueName
     bag[labelValueName] = true
-    visibleLabels.value = bag
     if (uid) settings.setLabelVisibility(uid, bag)
     nextTick(() => pingViewerOverlays())
   }
