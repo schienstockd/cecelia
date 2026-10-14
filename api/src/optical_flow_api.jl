@@ -216,8 +216,8 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     # exactly what this route did until it was called for real.
     reply = try
         _with_preview() do
-            w = _preview()
-            w === nothing && error("preview worker is not running")
+            w = _ready_preview()
+            w === nothing && return nothing   # switched or stopped since `_ensure_preview!`
             send(w, preview_request(String(zp), String(task_dir), prepared, region;
                                     value_name = value_name,
                                     fun_name = want_prob ? "opticalFlow.probability"
@@ -227,6 +227,8 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
+    reply === nothing && return 202, JSON3.write((; starting = true,
+                                                   message = "Preview worker is starting."))
 
     haskey(reply, "planes") ||
         return 500, JSON3.write((; error = "preview worker returned no planes: " *

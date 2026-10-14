@@ -445,6 +445,43 @@ end
     @test occursin("_pluto_state.proc === proc || break", nb)
 end
 
+@testset "API: a preview send takes a READY worker, read when it sends" begin
+    # `_ensure_preview!()` returning true holds only under its own lock. An env `:switch` or a toggle-off
+    # landing before the send swaps in a STARTING worker (unbound port: a 500 "connection refused") or
+    # clears the handle (`send(nothing, …)`: a MethodError that `_is_probe_code_bug` rethrows, so stills
+    # never fell back to the one-off renderer).
+    try
+        _preview_ref[] = nothing
+        @test _ready_preview() === nothing
+        w = PreviewWorker(; port = 17656 + rand(0:999))
+        _preview_ref[] = w
+        for st in (Cecelia.PREVIEW_IDLE, Cecelia.PREVIEW_STARTING, Cecelia.PREVIEW_STOPPING,
+                   Cecelia.PREVIEW_STOPPED)
+            w.state = st
+            @test _ready_preview() === nothing
+        end
+        w.state = Cecelia.PREVIEW_READY
+        @test _ready_preview() === w
+        # a READY worker in the other env is not the one `_ensure_preview!(env)` vouched for (#1555)
+        @test _ready_preview(nothing) === w
+        @test _ready_preview(:cellpose_v3) === nothing
+        w.env = :cellpose_v3
+        @test _ready_preview(:cellpose_v3) === w && _ready_preview(nothing) === nothing
+    finally
+        _preview_ref[] = nothing
+    end
+    # Every send site takes its worker from `_ready_preview()`, not the bare handle.
+    for f in ("preview_api.jl", "optical_flow_api.jl", "movie_render.jl")
+        src = read(joinpath(API_TEST_DIR, "..", "src", f), String)
+        @test !occursin("send(_preview_ref[]", src) && !occursin("send(_preview()", src)
+        for m in eachmatch(r"(?m)^[^#\n]*\bsend\(w,", src)   # code lines, not comments
+            before = src[max(1, m.offset - 800):m.offset + length(m.match)]
+            occursin("function _preview_ping_env", before) && continue   # the ping probes any worker
+            @test occursin("w = _ready_preview(", before)
+        end
+    end
+end
+
 @testset "API: preview refuses a client path it would write or delete under" begin
     # The worker removes and rewrites `{taskDir}/labels/{vn}__preview.ome.zarr`, and on stop deletes
     # every preview store under `{taskDir}`. So the vn must be one path component (400 before anything
