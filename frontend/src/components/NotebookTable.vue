@@ -9,6 +9,7 @@ import { useWsStore } from '../stores/ws'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { parseAuthorStamp, authorSummary } from '../utils/authorStamp'
+import { notebookOpenUrl } from '../utils/notebookOpen'
 
 const props = defineProps<{
   projectUid: string
@@ -226,10 +227,8 @@ const commitEdit = (nb: Notebook) => commit(nb.file, nb.description, async val =
   }
 })
 
-function openUrl(nb: Notebook) {
-  const s = props.serverSecret ? `&secret=${encodeURIComponent(props.serverSecret)}` : ''
-  return `${props.serverUrl}open?path=${encodeURIComponent(nb.path)}${s}`
-}
+// null for a shipped example: Pluto saves back to the opened file, which is inside the install
+const openUrl = (nb: Notebook) => notebookOpenUrl(nb, props.serverUrl, props.serverSecret)
 
 onMounted(refresh)
 watch(() => props.projectUid, refresh)
@@ -296,10 +295,10 @@ defineExpose({ refresh })
       </template>
 
       <template #actions="{ row: nb }">
-            <a v-if="serverRunning" class="cc-btn cc-btn-ghost" :href="openUrl(nb)" target="_blank"
+            <a v-if="serverRunning && openUrl(nb)" class="cc-btn cc-btn-ghost" :href="openUrl(nb)!" target="_blank"
                rel="noopener" v-tooltip.top="'Open in Pluto'"><i class="pi pi-external-link" /></a>
             <button v-else class="cc-btn cc-btn-ghost" disabled
-                    v-tooltip.top="'Start the server first'"><i class="pi pi-external-link" /></button>
+                    v-tooltip.top="nb.scope === 'project' ? 'Start the server first' : 'Duplicate to open'"><i class="pi pi-external-link" /></button>
 
             <button class="cc-btn cc-btn-ghost" :disabled="busy" @click="duplicate(nb)"
                     v-tooltip.top="'Duplicate into this project'"><i class="pi pi-copy" /></button>
