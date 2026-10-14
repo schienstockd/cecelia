@@ -5,6 +5,9 @@ URL/param building, body shaping, and error mapping — the logic that keeps the
 """
 import io
 import json
+import os
+import pathlib
+import tempfile
 import unittest
 import urllib.error
 from unittest import mock
@@ -842,6 +845,31 @@ class ClientTest(unittest.TestCase):
                 self.c.read_lab_log("p")
         self.assertEqual(ctx.exception.status, 0)
         self.assertIn("cannot reach Cecelia API", ctx.exception.message)
+
+
+class DefaultBaseUrlTest(unittest.TestCase):
+    """With no `CECELIA_API_URL`, the MCP reaches THIS user's backend (their port slot), never slot 0's
+    :8080 — on a shared machine that is another user's backend, which rejects this user's token."""
+
+    def test_clients_follow_the_port_slot(self):
+        # `pixi run mcp` from a plain shell: no CECELIA_API_URL, no inherited slot — only the sticky
+        # `<config_dir>/port-slot` the user's backend wrote.
+        from cecelia_mcp.autonomous import AutonomousClient
+
+        with tempfile.TemporaryDirectory() as cfg:
+            with open(os.path.join(cfg, "port-slot"), "w", encoding="utf-8") as f:
+                f.write("1\n")
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("CECELIA_API_URL", "CECELIA_PORT", "CECELIA_PORT_SLOT")}
+            env["CECELIA_DEV_DIR"] = cfg
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(CeceliaClient().base_url, "http://127.0.0.1:8090")
+                self.assertEqual(AutonomousClient().base_url, "http://127.0.0.1:8090")
+
+    def test_no_hardcoded_default_port(self):
+        pkg = pathlib.Path(__file__).resolve().parents[1] / "cecelia_mcp"
+        offenders = [p.name for p in pkg.glob("*.py") if "127.0.0.1:8080" in p.read_text(encoding="utf-8")]
+        self.assertEqual(offenders, [], "use loopback.default_base_url() — it reads the port slot")
 
 
 if __name__ == "__main__":

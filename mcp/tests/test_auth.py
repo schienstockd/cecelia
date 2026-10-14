@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from cecelia.utils import loopback
 from cecelia_mcp import auth
 
 
@@ -36,7 +37,7 @@ class AuthTest(unittest.TestCase):
                 f.write(f"CECELIA_DEV_DIR={cfg}\n")  # DEV-DIR-OK: temp dir
             with open(os.path.join(cfg, "api-token"), "w", encoding="utf-8") as f:
                 f.write("dotenvtok")
-            with mock.patch.object(auth, "_REPO_ROOT", pathlib.Path(root)), \
+            with mock.patch.object(loopback, "_REPO_ROOT", pathlib.Path(root)), \
                  mock.patch.dict(os.environ, {}, clear=True):
                 self.assertEqual(auth.api_token(), "dotenvtok")
 

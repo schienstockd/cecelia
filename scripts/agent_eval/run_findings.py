@@ -43,6 +43,7 @@ import app_project  # noqa: E402
 import run_record  # noqa: E402
 from cecelia.effectiveness.git_context import full_sha as _full_sha  # noqa: E402
 from cecelia.effectiveness.log import append_event, read_events  # noqa: E402
+from cecelia.utils.loopback import default_base_url  # noqa: E402
 
 EVENT = "agent_run_finding"
 MISUSE_EVENT = "agent_run_misuse"
@@ -243,7 +244,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("root", nargs="+", help="a run's directory (run.json, trace.jsonl, record.json); "
                                              "several are emitted in the order given")
-    ap.add_argument("--api-url", default=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
+    ap.add_argument("--api-url", default=default_base_url())
     ap.add_argument("--commit", default=None, help="the SHA the run's app was on (default: from the record)")
     ap.add_argument("--dry-run", action="store_true", help="print the findings; log nothing")
     a = ap.parse_args(argv)

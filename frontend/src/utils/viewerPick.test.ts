@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { screenToImagePx } from './viewerPick'
-import { fitCamera, extentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
+import { cameraViewL0, screenToImagePx } from './viewerPick'
+import { fitCamera, extentUm, visibleExtentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
 
 /** 100 x 80 image, 1 µm/px in x and y — a click at the canvas centre with a face-on fitted camera
  *  should land on the image centre pixel. Anything else is a bug. */
@@ -102,5 +102,19 @@ describe('screenToImagePx', () => {
     expect(p0.x).toBeGreaterThanOrEqual(49); expect(p0.x).toBeLessThanOrEqual(50)
     expect(p1.x).toBeGreaterThanOrEqual(24); expect(p1.x).toBeLessThanOrEqual(25)
     expect(p1.in).toBe(true)
+  })
+})
+
+describe('cameraViewL0', () => {
+  it('spans exactly what visibleExtentUm says is on screen, centred on the pan', () => {
+    const m = meta({ voxelUm: [0.5, 2, 1] })
+    const W = 300, H = 200
+    const cam: OrbitCamera = { ...fittedCam(m, W, H), panX: 7, panY: -3 }
+    const v = cameraViewL0(cam, m, W, H)
+    const [w, h] = visibleExtentUm(cam.dist, W / H)
+    expect((v.x1 - v.x0) * 0.5).toBeCloseTo(w)
+    expect((v.y1 - v.y0) * 2).toBeCloseTo(h)
+    expect(((v.x0 + v.x1) / 2) * 0.5).toBeCloseTo(7 + (100 * 0.5) / 2)   // panX + image half-width, µm
+    expect(((v.y0 + v.y1) / 2) * 2).toBeCloseTo(3 + (80 * 2) / 2)      // -panY + image half-height, µm
   })
 })

@@ -15,6 +15,8 @@ Any other host is untouched: verified with the default context, never swapped. S
 """
 from __future__ import annotations
 
+import os
+import pathlib
 import ssl
 import urllib.error
 import urllib.parse
@@ -24,8 +26,70 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _SWAP = {"http": "https", "https": "http", "ws": "wss", "wss": "ws"}
 _NOVERIFY = ssl._create_unverified_context()
 
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]   # python/cecelia/utils/ → the checkout
+
 # configured base URL → the one that last worked (only differs after a scheme swap)
 _WORKING: dict[str, str] = {}
+
+
+def port_slot() -> int:
+    """The slot of this user's running (or most recent) Cecelia — the Python twin of
+    `current_port_slot` (app/src/ports.jl): `CECELIA_PORT_SLOT` (a task inherits it), else the sticky
+    `<config_dir>/port-slot` the backend writes, else 0. The file is what a plain shell has to go on."""
+    env = os.environ.get("CECELIA_PORT_SLOT", "").strip()
+    if env:
+        return int(env)
+    try:
+        with open(os.path.join(config_dir(), "port-slot"), encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return 0
+
+
+def default_base_url() -> str:
+    """This user's backend: `CECELIA_API_URL` if given, else 127.0.0.1 on this user's port
+    (`CECELIA_PORT`, or 8080 + 10 × `port_slot()` — app/src/ports.jl). Never a bare :8080 — on a
+    shared machine that is slot 0's backend, another user's. The scheme here is only a first guess;
+    `open_url` finds the one the server speaks."""
+    url = os.environ.get("CECELIA_API_URL", "").strip()
+    if url:
+        return url
+    port = os.environ.get("CECELIA_PORT", "").strip() or str(8080 + 10 * port_slot())
+    return f"http://127.0.0.1:{port}"
+
+
+def config_dir(root: str | os.PathLike | None = None) -> str:
+    """This user's config dir: the Python twin of `config_dir` (app/src/config_dir.jl), same order —
+    `CECELIA_DEV_DIR` env, then `CECELIA_DEV_DIR` in `<root>/.env` (default: this checkout), then
+    `~/.cecelia` (the installed app has neither, so it lands there)."""
+    val = os.environ.get("CECELIA_DEV_DIR")
+    if not val:
+        try:
+            with open(os.path.join(root or _REPO_ROOT, ".env"), encoding="utf-8") as f:
+                for line in f:
+                    key, sep, rest = line.strip().partition("=")
+                    if sep and key == "CECELIA_DEV_DIR":
+                        val = rest.strip()
+        except OSError:
+            pass
+    # normpath: `~/x` expands to `C:\Users\u/x` on Windows; Julia's `expand_user` canonicalises it.
+    return os.path.normpath(os.path.expanduser(val or os.path.join("~", ".cecelia")))
+
+
+def api_token(root: str | os.PathLike | None = None) -> str:
+    """The API token every request but /api/health must carry (app/src/api_token.jl): `CECELIA_API_TOKEN`,
+    else the file `CECELIA_API_TOKEN_FILE` names, else `<config_dir>/api-token` — so a notebook or script
+    gets it without being handed it. "" when none can be read (the request then fails with a 401 that
+    says why)."""
+    tok = os.environ.get("CECELIA_API_TOKEN", "").strip()
+    if tok:
+        return tok
+    try:
+        with open(os.environ.get("CECELIA_API_TOKEN_FILE") or os.path.join(config_dir(root), "api-token"),
+                  encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def is_loopback(url: str) -> bool:

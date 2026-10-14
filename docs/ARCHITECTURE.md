@@ -795,7 +795,7 @@ REPL. So every port answers only requests carrying the **API token** (`app/src/a
   ACL). It is created by the first backend (or `pixi run dev`) and kept across restarts. Delete it to
   rotate; every browser then signs in again.
 - **Programmatic clients** send `Authorization: Bearer <token>`. They all run as you and read the file,
-  or get it from the env. The backend exports `CECELIA_API_TOKEN` to everything it spawns (runner,
+  or get it from the env (Python: `loopback.api_token`, so a notebook's `CeceliaClient()` needs no token passed). The backend exports `CECELIA_API_TOKEN` to everything it spawns (runner,
   preview worker, task subprocesses). The observer MCP registration passes the file *path*
   (`CECELIA_API_TOKEN_FILE`), never the secret, because Claude's config is not owner-only.
 - **The browser** signs in once through the launch link `/api/auth?token=…`, which `app.py` opens and

@@ -16,8 +16,8 @@ my current project in cecelia" a sufficient prompt; **a tool added here must be 
 assistant never offers it (``mcp/tests/test_server.py`` fails if it isn't).
 
 Run:   pixi run mcp          (or:  PYTHONPATH=mcp:python python -m cecelia_mcp.server)
-Talks to the Julia API at $CECELIA_API_URL (default http://127.0.0.1:8080), so `pixi run dev` must
-be running. See mcp/README.md for wiring this into Claude Code.
+Talks to the Julia API at $CECELIA_API_URL (default: this user's port slot, `loopback.default_base_url`),
+so `pixi run dev` must be running. See mcp/README.md for wiring this into Claude Code.
 
 This is Phase 1 of the arc in docs/ai-assist/OBSERVER.md. Phase 2 (write tools: submit_task,
 adjust_params, acknowledge_flag) is deliberately NOT wired here.
@@ -32,6 +32,7 @@ import os
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from cecelia.utils import loopback
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.discovery import discovery_enabled
@@ -50,7 +51,7 @@ CLAUDE_AUTHOR = "Claude"
 # still injected server-side (append_lab_log!), so neither is forgeable from the prompt.
 LAB_LOG_SOURCES = {"claude": CLAUDE_AUTHOR, "labarchives": "LabArchives"}
 
-_API_URL = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
+_API_URL = loopback.default_base_url()
 _client = CeceliaClient(base_url=_API_URL)
 _monitor = SessionMonitor()
 # `instructions` reaches the client in the `initialize` response and lands in its system prompt, which

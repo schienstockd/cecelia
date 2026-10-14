@@ -43,7 +43,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[1] / "mcp"))
 from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
-from cecelia.utils.loopback import open_url  # noqa: E402 — http or https, whichever the app serves
+from cecelia.utils.loopback import default_base_url, open_url  # noqa: E402 — http or https, whichever the app serves
 
 import app_project  # noqa: E402
 import stage_boards  # noqa: E402
@@ -564,7 +564,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("root", help="a run's directory (run.json, trace.jsonl, record.json)")
     ap.add_argument("--projects-dir", default=None)
-    ap.add_argument("--api-url", default=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
+    ap.add_argument("--api-url", default=default_base_url())
     ap.add_argument("--dry-run", default=None, help="write entry.md + pictures here; post nothing")
     ap.add_argument("--ask-why", action="store_true")
     ap.add_argument("--claude", default="claude")

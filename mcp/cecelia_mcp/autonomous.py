@@ -27,7 +27,7 @@ import time
 from cecelia_mcp import gating_views as gv
 from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
-from cecelia_mcp.client import ApiError, DEFAULT_BASE_URL, DisallowedRoute, http_json
+from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
 PROJECT_ENV = "CECELIA_MCP_PROJECT"
@@ -175,8 +175,8 @@ def output_name_violations(spec: dict, params: dict, prefix: str) -> list[str]:
 # ── client ─────────────────────────────────────────────────────────────────────────────────────────
 
 class AutonomousClient:
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: float = 60.0):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str | None = None, timeout: float = 60.0):
+        self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
         self._definitions: dict | None = None
         # task id → (project, fun, image uid, local submit time): the history fallback's lookup key,

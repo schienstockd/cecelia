@@ -8,7 +8,6 @@ Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp:pytho
 from __future__ import annotations
 
 import functools
-import os
 
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -26,7 +25,7 @@ INSTRUCTIONS = (
     "ran; run_task is for a single task outside a chain. Everything you do is recorded."
 )
 
-_client = AutonomousClient(base_url=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
+_client = AutonomousClient()   # this user's backend: loopback.default_base_url()
 mcp = MCPServer("cecelia-autonomous", instructions=INSTRUCTIONS)
 
 
