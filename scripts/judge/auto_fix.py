@@ -31,6 +31,7 @@ push that stops leaves the worktree for the owner, and the bug `left`, so nothin
 from __future__ import annotations
 
 import copy
+import datetime as _dt
 import hashlib
 import importlib.util as _importlib_util
 import json
@@ -49,7 +50,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
-    RateLimited, failure_text, rate_limit, read_result, resolve_claude_bin)
+    RateLimited, failure_text, rate_limit, read_result, reset_at, resolve_claude_bin)
 from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
@@ -287,22 +288,58 @@ def outcome_rows(rows: _t.Sequence[tuple[str, str, str]], *, use_colour: bool) -
     return out
 
 
+#: What a session cut off by the usage limit is resumed with once it lifts: Claude Code's own words.
+RESUME_PROMPT = ("Your usage limit has reset. Continue the task you were working on when the limit was "
+                 "reached; do not repeat work that is already complete.")
+#: Longer than this to the reset (a weekly limit), and the run stops instead of waiting.
+MAX_WAIT = _dt.timedelta(hours=6)
+_sleep = time.sleep   # tests replace it
+
+
+def wait_for_reset(message: str, *, out: _t.TextIO | None = None, now: _dt.datetime | None = None) -> bool:
+    """Wait out the usage limit `message` names, a minute past its reset, behind a live line. False,
+    without waiting, when that is more than `MAX_WAIT` away."""
+    now = now or _dt.datetime.now().astimezone()
+    lifts = reset_at(message, now) + _dt.timedelta(minutes=1)
+    if lifts - now > MAX_WAIT:
+        return False
+    with Progress(f"usage limit · resumes {lifts:%H:%M}", out=out):
+        _sleep(max(0.0, (lifts - now).total_seconds()))
+    return True
+
+
 def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str | None = None,
                     main: pathlib.Path, label: str = "agent working", out: _t.TextIO | None = None,
                     budget_usd: float = SESSION_USD,
                     timeout: float = TIMEOUT_SEC) -> tuple[dict | None, float, str | None, str | None]:
     """One fenced `claude -p` in `cwd`, streamed so `Progress` can show it working. (structured answer,
-    cost, session id, failure); the answer is None when it failed. Raises `RateLimited` when the seat
-    is out of quota."""
+    cost, session id, failure); the answer is None when it failed. Cut off by the usage limit, it waits
+    for the reset and resumes the same session (`RESUME_PROMPT`); raises `RateLimited` only when the
+    reset is more than `MAX_WAIT` away."""
+    spent = 0.0
+    while True:
+        answer, cost, sid, failed, limited = _one_session(prompt, cwd, schema, resume=resume, main=main, label=label,
+                                                          out=out, budget_usd=budget_usd, timeout=timeout)
+        spent += cost
+        if not limited:
+            return answer, spent, sid, failed
+        if not wait_for_reset(limited, out=out):
+            raise RateLimited(limited)
+        if sid or resume:   # else it was cut off before it began: the same prompt again
+            prompt, resume = RESUME_PROMPT, sid or resume
+
+
+def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, timeout):
+    """One `claude -p` run: `default_session`'s tuple plus the usage-limit message when it hit one."""
     claude = resolve_claude_bin()
     if not claude:
-        return None, 0.0, None, "claude CLI not on PATH"
+        return None, 0.0, None, "claude CLI not on PATH", None
     argv = [claude, "-p", "--permission-mode", "acceptEdits", "--settings", json.dumps(settings(main)),
             "--tools", TOOLS, "--strict-mcp-config", "--output-format", "stream-json", "--verbose",
             "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)]
     if resume:
         argv += ["--resume", resume]
-    result, timed_out = {}, threading.Event()
+    result, sid, timed_out = {}, resume, threading.Event()
     try:
         with tempfile.TemporaryFile("w+", encoding="utf-8") as err, Progress(label, out=out, cwd=cwd) as progress:
             proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=str(cwd),
@@ -319,6 +356,7 @@ def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str
                         continue
                     if isinstance(ev, dict):
                         progress.event(ev)
+                        sid = ev.get("session_id") or sid
                         result = ev if ev.get("type") == "result" else result
                 code = proc.wait()
             finally:
@@ -328,16 +366,19 @@ def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str
             err.seek(0)
             stderr = err.read()
     except OSError as e:
-        return None, 0.0, None, f"session failed: {e}"
+        return None, 0.0, None, f"session failed: {e}", None
     if timed_out.is_set():
-        return None, 0.0, result.get("session_id"), f"session failed: timed out after {timeout:.0f}s"
+        return None, 0.0, sid, f"session failed: timed out after {timeout:.0f}s", None
+    cost = float(result.get("total_cost_usd") or 0.0)
+    limited = rate_limit(result)
+    if limited:
+        return None, cost, sid, None, limited
     done = subprocess.CompletedProcess(argv, code, json.dumps(result) if result else "", stderr)
-    out = read_result(done)
-    answer = out.get("structured_output")
-    cost = float(out.get("total_cost_usd") or 0.0)
-    if code != 0 or out.get("is_error") or not isinstance(answer, dict):
-        return None, cost, out.get("session_id"), f"session failed (exit {code}): {failure_text(done, out)}"
-    return answer, cost, out.get("session_id"), None
+    res = read_result(done)
+    answer = res.get("structured_output")
+    if code != 0 or res.get("is_error") or not isinstance(answer, dict):
+        return None, cost, sid, f"session failed (exit {code}): {failure_text(done, res)}", None
+    return answer, cost, sid, None, None
 
 
 def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, input: str | None = None,
@@ -494,14 +535,19 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
     tags: list[str] = []
     for n in range(1, RECITAL_ROUNDS + 1):
         round_ = "" if n == 1 else f" · round {n}"
-        with Progress("recital" + round_, out=out) as step:
-            rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
-            recital = rec.stdout or ""
-            step.failed = "_Recital stamp:" not in recital or ERROR_MARKER in recital
-        if "_Recital stamp:" not in recital:
-            return stop(f"recital failed: {_tail(rec)}")
-        if ERROR_MARKER in recital:   # it printed, but a reviewer didn't run: nothing to commit on
+        while True:
+            with Progress("recital" + round_, out=out) as step:
+                rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
+                recital = rec.stdout or ""
+                step.failed = "_Recital stamp:" not in recital or ERROR_MARKER in recital
+            if "_Recital stamp:" not in recital:
+                return stop(f"recital failed: {_tail(rec)}")
+            if ERROR_MARKER not in recital:
+                break
+            # it printed, but a reviewer didn't run: nothing to commit on. The limit: wait, run it again
             limited = rate_limit({"is_error": True, "result": recital})
+            if limited and wait_for_reset(limited, out=out):
+                continue
             stop(f"recital's reviewers errored{' on the usage limit' if limited else ''} (round {n})")
             if limited:
                 raise RateLimited(limited)

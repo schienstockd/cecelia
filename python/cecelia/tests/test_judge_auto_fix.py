@@ -211,6 +211,49 @@ class FenceTest(_AutoFixture):
         self.assertEqual(seen["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
         self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
 
+    def test_a_session_cut_off_by_the_usage_limit_waits_and_resumes_itself(self):
+        limit = "You've hit your session limit · resets 2:20pm (Australia/Sydney)"
+        runs = iter([[{"type": "system", "session_id": "s1"},
+                      {"type": "result", "is_error": True, "result": limit, "session_id": "s1", "total_cost_usd": 1.0}],
+                     [{"type": "result", "structured_output": {"tags": []}, "session_id": "s1", "total_cost_usd": 0.5}]])
+        seen = []
+
+        class Popen:
+            def __init__(self, argv, **kw):
+                seen.append(argv)
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO("".join(json.dumps(e) + "\n" for e in next(runs)))
+                self.stdin.close = lambda: seen.append(self.stdin.getvalue())
+
+            def wait(self):
+                return 0
+
+            def kill(self):
+                pass
+        waited = []
+        with mock.patch.object(self.af, "resolve_claude_bin", return_value="claude"), \
+                mock.patch.object(self.af.subprocess, "Popen", Popen), mock.patch("sys.stdout", io.StringIO()), \
+                mock.patch.object(self.af, "wait_for_reset", lambda m, **kw: waited.append(m) or True):
+            got = self.af.default_session("fix it", self.tmp, {}, main=self.main)
+        self.assertEqual(got, ({"tags": []}, 1.5, "s1", None))
+        self.assertEqual(waited, [limit])
+        first, prompt1, second, prompt2 = seen
+        self.assertNotIn("--resume", first)
+        self.assertEqual(prompt1, "fix it")
+        self.assertEqual(second[second.index("--resume") + 1], "s1")   # the same session, carried on
+        self.assertEqual(prompt2, self.af.RESUME_PROMPT)
+
+    def test_waiting_out_the_limit(self):
+        import datetime as dt
+        zone = __import__("zoneinfo").ZoneInfo("Australia/Sydney")
+        now = dt.datetime(2026, 10, 14, 13, 0, tzinfo=zone)
+        slept = []
+        with mock.patch.object(self.af, "_sleep", slept.append), mock.patch("sys.stdout", io.StringIO()) as out:
+            self.assertTrue(self.af.wait_for_reset("limit · resets 2:20pm (Australia/Sydney)", now=now))
+            self.assertFalse(self.af.wait_for_reset("limit · resets 11pm (Australia/Sydney)", now=now))   # 10h: stop
+        self.assertEqual(slept, [81 * 60])   # one wait: to a minute past the reset
+        self.assertIn("usage limit · resumes 14:21", out.getvalue())
+
     def test_a_session_without_a_result_fails(self):
         (answer, _, _, failed), _, _ = self.session({"type": "system"}, code=1)
         self.assertIsNone(answer)
@@ -357,7 +400,8 @@ class WorkTest(_AutoFixture):
                    "{}\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
         tree = self.main.parent / "cecelia-fix-fanout-b1"
         for text, raises in (("boom", False), ("You've hit your session limit · resets 2:20pm", True)):
-            with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)):
+            with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)), \
+                    mock.patch.object(self.af, "wait_for_reset", return_value=False):   # a weekly limit: no wait
                 self.calls.clear()
                 out = io.StringIO()
                 run = lambda: self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out,   # noqa: E731
@@ -372,6 +416,26 @@ class WorkTest(_AutoFixture):
                 self.assertIn("recital's reviewers errored" + (" on the usage limit" if raises else ""), out.getvalue())
                 self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["tree"], str(tree))
                 shutil.rmtree(tree, ignore_errors=True)
+
+    def test_a_recital_cut_off_by_the_limit_waits_and_runs_again(self):
+        limited = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
+                   "You've hit your session limit · resets 2:20pm\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+        bodies = iter([limited, RECITAL])
+        inner = self.sh()
+
+        def sh(argv, cwd, **kw):
+            done = inner(argv, cwd, **kw)
+            if len(argv) > 1 and str(argv[1]).endswith("recital.py"):
+                done = subprocess.CompletedProcess(argv, 0, next(bodies), "")
+            return done
+        out = io.StringIO()
+        with mock.patch.object(self.af, "wait_for_reset", return_value=True) as wait:
+            self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out,
+                             session=self.session(_answer(), {"tags": []}), sh=sh, path=self.log, auto_log=self.auto)
+        self.assertEqual(wait.call_count, 1)
+        self.assertEqual(len([c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]), 2)
+        self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
+        self.assertIn("→ PR https://github.com/o/r/pull/9", out.getvalue())
 
     def test_a_failed_push_briefs_f_on_the_commit_not_a_staged_diff(self):
         tree = self.main.parent / "cecelia-fix-fanout-b1"
