@@ -278,3 +278,18 @@ export async function fetchInFlightTasks(): Promise<InFlightTaskRow[]> {
 export async function runningTaskCount(): Promise<number> {
   return (await fetchInFlightTasks()).length
 }
+
+/**
+ * How many in-flight tasks a plain backend restart (or dev worktree switch) would kill — `0` when the
+ * detached task runner is up, since it holds the work and outlives the restart (docs/RUNNER.md).
+ * Otherwise tasks run in-process and die with the server, so it is `runningTaskCount()`. A failed
+ * runner probe counts as "no runner": the cautious answer, unlike the count's own fail-open.
+ */
+export async function tasksLostOnRestart(): Promise<number> {
+  try {
+    const r = await fetch('/api/runner/status')
+    const d = r.ok ? await r.json() : null
+    if (d?.enabled === true && d?.running === true) return 0
+  } catch { /* can't ask → assume in-process */ }
+  return runningTaskCount()
+}

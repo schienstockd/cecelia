@@ -12,6 +12,7 @@ import { applyProfile } from '../utils/viewProfiles'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { runningTaskCount } from '../utils/runningTasks'
 import { quitConfirmTooltip } from '../utils/quitWarning'
+import { useToast } from '../composables/useToast'
 import ProjectPanel from './ProjectPanel.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import PanelLaunchers from './PanelLaunchers.vue'
@@ -27,6 +28,11 @@ const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
 async function armQuit(arm: () => void) {
   arm()                                        // arm first: the confirm must appear immediately
   quitTasks.value = await runningTaskCount()   // then fill in what it will cost
+}
+// The footer has no status line, so a refused restart (tasks would die, or not supervised) is a toast.
+async function restartBackend() {
+  const err = await appCtl.restartBackend()
+  if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
 }
 const customModules = useCustomModulesStore()
 const viewProfiles = useViewProfilesStore()
@@ -192,7 +198,7 @@ function isNavDisabled(item: NavItem): boolean {
             <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
           </template>
         </ConfirmButton>
-        <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
+        <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="restartBackend"
                 v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
           <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" />
         </button>

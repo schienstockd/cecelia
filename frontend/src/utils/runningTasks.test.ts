@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { runningTaskCount, adoptableTasks, staleInFlightStatuses,
+import { runningTaskCount, tasksLostOnRestart, adoptableTasks, staleInFlightStatuses,
          type InFlightTaskRow } from './runningTasks'
 
 const okJson = (body: unknown) =>
@@ -244,5 +244,33 @@ describe('runningTaskCount counts the whole snapshot', () => {
       { id: 'b', image_uid: 'ZZZZZZ', status: 'running' },
     ]))
     expect(await runningTaskCount()).toBe(2)
+  })
+})
+
+// A route-keyed fetch stub: `/api/runner/status` and `/api/tasks` answer independently.
+const routes = (status: unknown, tasks: unknown[]) => vi.fn((url: string) =>
+  url === '/api/runner/status'
+    ? (status instanceof Error ? Promise.reject(status) : Promise.resolve({ ok: true, json: () => Promise.resolve(status) }))
+    : Promise.resolve({ ok: true, json: () => Promise.resolve(tasks) }))
+
+describe('tasksLostOnRestart', () => {
+  it('counts the running tasks when there is no runner — they run in-process and die', async () => {
+    vi.stubGlobal('fetch', routes({ enabled: false, running: false }, [{ id: 'a' }, { id: 'b' }]))
+    expect(await tasksLostOnRestart()).toBe(2)
+  })
+
+  it('is 0 when the runner is up — it holds the work across a restart', async () => {
+    vi.stubGlobal('fetch', routes({ enabled: true, running: true }, [{ id: 'a' }]))
+    expect(await tasksLostOnRestart()).toBe(0)
+  })
+
+  it('counts them when the runner is enabled but down — tasks fell back to in-process', async () => {
+    vi.stubGlobal('fetch', routes({ enabled: true, running: false }, [{ id: 'a' }]))
+    expect(await tasksLostOnRestart()).toBe(1)
+  })
+
+  it('counts them when the runner probe fails', async () => {
+    vi.stubGlobal('fetch', routes(new Error('offline'), [{ id: 'a' }]))
+    expect(await tasksLostOnRestart()).toBe(1)
   })
 })

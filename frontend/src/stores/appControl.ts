@@ -1,6 +1,8 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
 import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
+import { tasksLostOnRestart } from '../utils/runningTasks'
+import { quitTaskPhrase } from '../utils/quitWarning'
 
 /** A PR merged on the dev branch since the installed build (`/api/update/check?channel=dev`). */
 export interface MergedPr { number: number; title: string }
@@ -237,9 +239,20 @@ export const useAppControlStore = defineStore('appControl', () => {
     message.value = 'Cecelia is shutting down — you can close this window.'
   }
 
+  // A restart kills tasks running in-process (no task runner), and the server does not check — so
+  // every relaunch path asks first and refuses rather than silently dropping them.
+  async function _refuseIfTasksDie(): Promise<string | null> {
+    const n = await tasksLostOnRestart()
+    if (n <= 0) return null
+    message.value = `${quitTaskPhrase(n)} — finish or cancel them, then restart`
+    return message.value
+  }
+
   // dev-only backend restart: the supervisor relaunches; poll /api/health until it's back, then clear.
-  // Returns an error string if the server refused (e.g. not supervised), else null.
+  // Returns an error string if refused (tasks would die, or not supervised), else null.
   async function restartBackend(): Promise<string | null> {
+    const refused = await _refuseIfTasksDie()
+    if (refused) return refused
     busy.value = true; message.value = 'Backend restarting…'
     const err = await _restart({}, 60000, () => { message.value = 'Backend restarting — reconnecting…' })
     busy.value = false; message.value = err ?? 'Backend restarted.'
@@ -276,6 +289,8 @@ export const useAppControlStore = defineStore('appControl', () => {
   // dev-only: relaunch the backend from another worktree. Same lifecycle as restartBackend — the
   // supervisor exits the current server and relaunches in the target checkout; we poll /api/health.
   async function switchWorktree(path: string): Promise<string | null> {
+    const refused = await _refuseIfTasksDie()
+    if (refused) return refused
     busy.value = true; message.value = 'Switching worktree…'
     try {
       const res = await _post('/api/app/switch-worktree', { path })
