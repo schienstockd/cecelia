@@ -313,6 +313,66 @@ class WorkTest(_AutoFixture):
         self.assertIn("back in your judge-review queue", out)
         shutil.rmtree(self.main.parent / "cecelia-fix-fanout-b1", ignore_errors=True)
 
+    def limited(self, *answers):
+        """`session` that answers `answers`, then hits the usage limit."""
+        inner = self.session(*answers)
+        it = iter(answers)
+
+        def run(prompt, cwd, schema, **kw):
+            if next(it, None) is None:
+                raise self.af.RateLimited("You've hit your limit · resets 1:40am")
+            return inner(prompt, cwd, schema, **kw)
+        return run
+
+    def test_a_usage_limit_during_the_fix_starts_the_bundle_afresh_next_run(self):
+        out = io.StringIO()
+        with self.assertRaises(self.af.RateLimited):
+            self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out,
+                             session=self.limited(), sh=self.sh(), path=self.log, auto_log=self.auto)
+        self.assertIn(["remove_worktree", str(self.main.parent / "cecelia-fix-fanout-b1")], self.calls)
+        self.assertEqual(self.rv.read_auto(self.auto), {})   # no attempt counted
+        self.assertEqual(len(self.rv.auto_items(self.record, [], tried={})), 1)
+        self.assertIn("usage limit during the fix", out.getvalue())
+
+    def test_a_usage_limit_after_the_fix_keeps_it_for_f(self):
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        out = io.StringIO()
+        session = self.limited(_answer())
+
+        def touched(prompt, cwd, schema, **kw):
+            (cwd / "a.py").parent.mkdir(parents=True, exist_ok=True)
+            (cwd / "a.py").write_text("x", encoding="utf-8")
+            return session(prompt, cwd, schema, **kw)
+        with self.assertRaises(self.af.RateLimited):
+            self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out,
+                             session=touched, sh=self.sh(), path=self.log, auto_log=self.auto)
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["tree"]), ("left", str(tree)))
+        self.assertIn("back in your judge-review queue", out.getvalue())
+        self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
+        shutil.rmtree(tree)
+
+    def test_a_recital_whose_reviewers_errored_commits_nothing(self):
+        errored = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
+                   "{}\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        for text, raises in (("boom", False), ("You've hit your session limit · resets 2:20pm", True)):
+            with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)):
+                self.calls.clear()
+                out = io.StringIO()
+                run = lambda: self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out,   # noqa: E731
+                                               session=self.session(_answer()), sh=self.sh(), path=self.log,
+                                               auto_log=self.auto)
+                if raises:
+                    self.assertRaises(self.af.RateLimited, run)
+                else:
+                    run()
+                self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
+                self.assertEqual(len(self.prompts), 1)   # the agent never acted on it
+                self.assertIn("recital's reviewers errored" + (" on the usage limit" if raises else ""), out.getvalue())
+                self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["tree"], str(tree))
+                shutil.rmtree(tree, ignore_errors=True)
+
     def test_a_failed_push_briefs_f_on_the_commit_not_a_staged_diff(self):
         tree = self.main.parent / "cecelia-fix-fanout-b1"
         self.work(_answer(), {"tags": []}, fail=("push",), touch="a.py")

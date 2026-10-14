@@ -48,7 +48,9 @@ import typing as _t
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
-from cecelia.effectiveness.claude_cli import failure_text, read_result, resolve_claude_bin  # noqa: E402
+from cecelia.effectiveness.claude_cli import (  # noqa: E402
+    RateLimited, failure_text, rate_limit, read_result, resolve_claude_bin)
+from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
 from cecelia.effectiveness.palette import BLUISH_GREEN, GREY, ORANGE, SKY_BLUE, VERMILLION  # noqa: E402
@@ -446,8 +448,16 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
 
 def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, path, auto_log) -> float:
     before = snapshot(tree)
-    answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main,
-                                         label="agent fixing", out=out)
+    try:
+        answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main,
+                                             label="agent fixing", out=out)
+    except RateLimited:
+        # cut short by quota, not the agent's doing: its half-done edits go, no attempt is counted,
+        # and the next run starts the bundle afresh (a worktree left behind would skip it for good)
+        say("usage limit during the fix: worktree removed, tried again next run", bad=True)
+        agent_sandbox.remove_worktree(main, tree)
+        sh(["git", "branch", "-D", branch], main)
+        raise
     if failed:
         _log_failed(record, bugs, f"{failed} (${spent:.2f})", auto_log)
         say(f"{failed}; worktree removed, tried again next run", bad=True)
@@ -487,11 +497,21 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         with Progress("recital" + round_, out=out) as step:
             rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
             recital = rec.stdout or ""
-            step.failed = "_Recital stamp:" not in recital
+            step.failed = "_Recital stamp:" not in recital or ERROR_MARKER in recital
         if "_Recital stamp:" not in recital:
             return stop(f"recital failed: {_tail(rec)}")
-        tagged, cost, _, failed = session(tags_brief(recital, n), tree, TAGS_SCHEMA, resume=sid, main=main,
-                                          label="agent acting on the recital" + round_, out=out)
+        if ERROR_MARKER in recital:   # it printed, but a reviewer didn't run: nothing to commit on
+            limited = rate_limit({"is_error": True, "result": recital})
+            stop(f"recital's reviewers errored{' on the usage limit' if limited else ''} (round {n})")
+            if limited:
+                raise RateLimited(limited)
+            return spent
+        try:
+            tagged, cost, _, failed = session(tags_brief(recital, n), tree, TAGS_SCHEMA, resume=sid, main=main,
+                                              label="agent acting on the recital" + round_, out=out)
+        except RateLimited as e:   # the fix is done: keep it, for [f]
+            stop(f"usage limit during recital round {n}: {str(e)[:120]}")
+            raise
         spent += cost
         if failed:
             return stop(f"tagging the recital: {failed}")
