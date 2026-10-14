@@ -277,7 +277,8 @@ create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's c
 
 **Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works the `fix` bugs without
 you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
-per step: spinner, elapsed time, the agent's tool calls and its latest. A bug with a landed fix
+per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
+the agent as `auto-fix↻`. A bug with a landed fix
 (`fix_landed` on the record, or a commit naming its key on origin/main since) gets no session. The agent never
 holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<key>` /
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with

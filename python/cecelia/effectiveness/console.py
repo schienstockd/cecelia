@@ -535,8 +535,15 @@ def _fit(text: str, n: int) -> str:
 JUDGE_MARK = "*"
 
 
+#: Marks `judge-review --auto`'s fix agent (unattended: nothing to answer).
+AUTO_MARK = "↻"
+
+
 def _name_cell(row: AgentRow) -> str:
-    """The name in 12 columns, `*` right after it for a judge-review session (kept when cut)."""
+    """The name in 12 columns, `*` right after it for a judge-review session, `↻` for its `--auto`
+    fix agent (kept when cut)."""
+    if row.auto:
+        return f"{row.name[:11] + AUTO_MARK:<12}"
     if not row.judge:
         return _fit(row.name, 12)
     name = row.name if len(row.name) <= 11 else row.name[:10] + "…"
@@ -668,6 +675,8 @@ def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> li
     hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → recaps + findings"
     if any(r.judge for r in state.agents or ()):
         hint += f" · {JUDGE_MARK} judge-review"
+    if any(r.auto for r in state.agents or ()):
+        hint += f" · {AUTO_MARK} judge-review --auto"
     return [_hr("agents" + hint, width, use_colour=use_colour), *rows, ""]
 
 
