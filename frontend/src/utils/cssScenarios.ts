@@ -262,6 +262,38 @@ export function findHandRolledIconButtons(
   return out
 }
 
+// ── Hand-rolled CollapsibleSection fill ───────────────────────────────────────────────────────────
+
+/** A scoped rule that reaches into CollapsibleSection's body to make it fill — the `fill` prop's job. */
+export interface DeepFillOverride {
+  path:     string
+  selector: string
+}
+
+// The sizing properties that make up fill-to-height. Padding/background tweaks on the body are fine.
+const FILL_SIZING = /(?:^|[;\s])(?:flex(?:-grow|-basis)?|min-height|max-height)\s*:/
+
+/**
+ * `:deep(.cs-body) { flex / min-height / max-height }` outside CollapsibleSection — a private copy of
+ * the `fill` prop's rules (docs/ui/PRIMITIVES.md → Collapsible section), which drifts from the
+ * primitive's own.
+ */
+export function findDeepFillOverrides(
+  sources: Array<{ path: string, text: string }>,
+): DeepFillOverride[] {
+  const out: DeepFillOverride[] = []
+  for (const { path, text } of sources) {
+    if (path.endsWith('CollapsibleSection.vue')) continue
+    for (const block of styleBlocks(text)) {
+      for (const rule of cssRules(block)) {
+        if (/:deep\(\s*\.cs-body\s*\)/.test(rule.selector) && FILL_SIZING.test(rule.body))
+          out.push({ path, selector: rule.selector })
+      }
+    }
+  }
+  return out
+}
+
 // ── Utilities shadowed by a scoped class on the same element ──────────────────────────────────────
 
 /** A global utility that another class on the same element overrides, so it does nothing. */

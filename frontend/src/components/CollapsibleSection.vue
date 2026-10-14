@@ -15,7 +15,8 @@
     fill        bool     ACCORDION FILL: while open, the section takes the remaining height of its flex-column
                          parent and its body scrolls inside it (closed, it is header-only). The parent must be
                          a height-bounded flex column. Overrides `maxHeight`. Kiwi's cockpit and the viewer
-                         side panel use it — one open section, using all the room the others are not.
+                         side panel use it — one open section, using all the room the others are not — and
+                         so does ModuleLayout's maximised plots section (no accordion, same fill).
 -->
 <script setup lang="ts">
 import { ref, watch, computed, onBeforeUnmount } from 'vue'

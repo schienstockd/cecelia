@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   styleBlocks, cssRules, scenarioFor, findReimplementedScenarios, findRawValues,
   findHandRolledIconButtons, findRawColours, colourTokens, findRestatedInputBase, inputBase,
-  findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities,
+  findScopedUtilityOverride, utilityRules, SCENARIO_HINT, findShadowedUtilities, findDeepFillOverrides,
 } from './cssScenarios'
 
 describe('styleBlocks', () => {
@@ -471,5 +471,42 @@ describe('tooltip sizing', () => {
     // Every selector that sizes a tooltip must anchor on `.cc-tooltip` itself (`.cc-tooltip.qc-tip`),
     // never on a descendant — a descendant is not the box that gets measured.
     for (const sel of widened) expect(sel).toMatch(/^\.cc-tooltip(\.[\w-]+)*$/)
+  })
+})
+
+describe('CollapsibleSection fill', () => {
+  // A section that should take the rest of its flex-column parent uses the `fill` prop, never a
+  // `:deep(.cs-body)` sizing override (docs/ui/PRIMITIVES.md → Collapsible section).
+  const src = (text: string) => [{ path: 'components/X.vue', text: `<style scoped>${text}</style>` }]
+
+  it('the detector flags the fill shape and passes a padding tweak or a comment', () => {
+    expect(findDeepFillOverrides(src('.x :deep(.cs-body) {\n  flex: 1;\n  min-height: 0;\n}'))).toHaveLength(1)
+    expect(findDeepFillOverrides(src('.x :deep(.cs-body) { max-height: none !important; }'))).toHaveLength(1)
+    expect(findDeepFillOverrides(src('.x :deep(.cs-body) { padding: 0.35rem; background: red; }'))).toEqual([])
+    expect(findDeepFillOverrides(src('/* :deep(.cs-body) { flex: 1 } */ .y { top: 0 }'))).toEqual([])
+  })
+
+  it('no component hand-rolls it', () => {
+    const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
+    expect(findDeepFillOverrides(sources).map(h => `${h.path} | ${h.selector}`)).toEqual([])
+  })
+
+  it('the primitive covers what the override did: section + body flex to fill, inline maxHeight dropped', () => {
+    const cs = RAW['/src/components/CollapsibleSection.vue']
+    const rules = styleBlocks(cs).flatMap(cssRules)
+    const body = (sel: string) => rules.find(r => r.selector === sel)?.body ?? ''
+    for (const sel of ['.collapsible-section.cs-fill', '.collapsible-section.cs-fill > .cs-body']) {
+      expect(body(sel)).toMatch(/flex:\s*1 1 0;/)
+      expect(body(sel)).toMatch(/min-height:\s*0;/)
+    }
+    expect(cs).toMatch(/:style="fill \? undefined :/)
+  })
+
+  it('the maximised plots section fills via the prop and keeps its floor above .cs-fill', () => {
+    const ml = RAW['/src/components/ModuleLayout.vue']
+    expect(ml).toMatch(/class="plots-section"[\s\S]*?:fill="isMaximised"/)
+    // `.collapsible-section.cs-fill` sets min-height: 0 at equal specificity — naming .cs-fill outranks it
+    const floor = styleBlocks(ml).flatMap(cssRules).find(r => r.selector === '.is-plots-maximised .plots-section.cs-fill')
+    expect(floor?.body).toMatch(/min-height:\s*50vh/)
   })
 })
