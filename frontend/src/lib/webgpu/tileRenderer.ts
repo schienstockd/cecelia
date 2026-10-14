@@ -33,6 +33,7 @@
 import { TILE_WGSL, TILE_POINTS_WGSL, TILE_SEGMENTS_WGSL, TILE_UNIFORM_BYTES, TILE_LAYOUT } from './tileShader'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
+import { retireDestroyed } from './retireDestroyed'
 
 /** f32 slot of every uniform lane, by name (`shaders/uniforms.json` → "tile"). */
 const U = TILE_LAYOUT.at
@@ -432,15 +433,15 @@ export async function createTileRenderer(
   /**
    * Allocate and install the atlas for the geometry `setImage` just recorded. Same discipline as
    * the brick atlas (`brickVolumeRenderer.ts` → `allocateAtlas`):
-   *  - Dawn frees a destroyed texture's memory only once the queue has retired the work that used
-   *    it, so after a drop, wait for the queue before allocating — otherwise old + new (up to
+   *  - Dawn frees a destroyed texture's memory only once the queue has moved past it, so after a
+   *    drop, release it (`retireDestroyed`) before allocating — otherwise old + new (up to
    *    `maxBufferSize` each) must fit at once.
    *  - The OOM scope is AWAITED and the texture installed only if it allocated; an OOM halves the
    *    slot count and retries (VRAM other tenants hold is invisible to WebGPU). Only a 1-slot
    *    failure reaches `onError`.
    */
   async function allocateAtlas(gen: number, waitForFree: boolean, fmt: GPUTextureFormat, cap: number) {
-    if (waitForFree) await device.queue.onSubmittedWorkDone()
+    if (waitForFree) await retireDestroyed(device)
     let lastErr = ''
     for (let c = cap; c >= 1; c = Math.floor(c / 2)) {
       if (gen !== allocGen || !usable()) return
@@ -463,7 +464,7 @@ export async function createTileRenderer(
       }
       lastErr = err.message
       tex.destroy()
-      await device.queue.onSubmittedWorkDone()   // let the failed attempt's memory go too
+      await retireDestroyed(device)   // let the failed attempt's memory go too
     }
     onError?.('Tile atlas: ' + lastErr)
   }

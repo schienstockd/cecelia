@@ -38,6 +38,7 @@ export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
+import { retireDestroyed } from './retireDestroyed'
 import { LABEL_PALETTE_N, labelPaletteBytes, type MaskStore } from '../../utils/viewerLabels'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
@@ -592,13 +593,15 @@ export async function createVolumeRenderer(
    *  renderer unable to hold even one timepoint. See interface doc. */
   let onOomCb: ((msg: string) => void) | null = null
   let oomReported = false
-  /** The queue draining after a BULK free (`setImage`'s `dropAll`, `setLabelSource` dropping every
-   *  mask). Dawn frees a destroyed texture's memory only once the queue has retired the work that used
-   *  it, so the next allocation waits on this — otherwise old + new must fit at once, and a cache
-   *  filled near VRAM reads a false OOM (→ a needless swap to the brick renderer). Same discipline as
-   *  the brick and tile atlases' `allocateAtlas`. Not per eviction: the LRU frees one slot per frame
-   *  and a wait per scrub frame would cost the queue's ~100 ms quantum each time. */
+  /** The VRAM of a BULK free (`setImage`'s `dropAll`, `setLabelSource` dropping every mask) being
+   *  released (`retireDestroyed`). The next allocation waits on it — otherwise old + new must fit at
+   *  once, and a cache filled near VRAM reads a false OOM (→ a needless swap to the brick renderer).
+   *  Same discipline as the brick and tile atlases' `allocateAtlas`. Not per eviction: the LRU frees
+   *  one slot per frame and a wait per scrub frame would cost the queue's ~100 ms quantum each time. */
   let freeing: Promise<unknown> | null = null
+  const retireFreed = () => {
+    if (usable()) freeing = retireDestroyed(device).catch(() => {})
+  }
   const awaitFreed = async () => {
     const f = freeing
     if (!f) return
@@ -751,8 +754,9 @@ export async function createVolumeRenderer(
       // 2D plane while the client fetched whole volumes: the cache reported capacity 170 for a 4-volume
       // budget, so the read-ahead thought a frame was cheap and queued dozens of 326 MB requests, and
       // the server's read time went from 0.5 s to 3.7 s under its own contention.
-      if (slots.size > 0 && usable()) freeing = device.queue.onSubmittedWorkDone().catch(() => {})
+      const hadSlots = slots.size > 0
       dropAll()
+      if (hadSlots) retireFreed()
       allocGen++
       bindGroup = null
       meta = m
@@ -941,7 +945,7 @@ export async function createVolumeRenderer(
       for (const [t, slot] of slots) {
         if (slot.labelSrc !== '') { setSlotLabel(t, null, ''); freed = true }
       }
-      if (freed) freeing = device.queue.onSubmittedWorkDone().catch(() => {})
+      if (freed) retireFreed()
     },
 
     needsLabel(t: number) {

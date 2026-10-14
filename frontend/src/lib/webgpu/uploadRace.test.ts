@@ -25,6 +25,8 @@ function noopProxy(): unknown {
 
 /** Textures created so far — the flat renderer's allocations, counted to see WHEN one happens. */
 let created = 0
+/** Queue submits so far — a free is released only by work submitted AFTER it. */
+let submits = 0
 
 const fakeDevice = new Proxy({} as Record<string, unknown>, {
   get(_t, prop) {
@@ -38,7 +40,7 @@ const fakeDevice = new Proxy({} as Record<string, unknown>, {
       return new Proxy({}, {
         get: (_q, p) => p === 'onSubmittedWorkDone'
           ? () => new Promise<void>(res => { releaseQueue = res })
-          : () => undefined,
+          : p === 'submit' ? () => { submits++ } : () => undefined,
       })
     }
     if (prop === 'lost') return new Promise(() => {})
@@ -136,13 +138,16 @@ describe('flat renderer — allocating after a bulk free', () => {
     await tick(); release(); await up
     expect(r.hasTimepoint(0)).toBe(true)
 
+    const submitted = submits
     r.setImage(meta, 1e9, 1, 0, true)             // destroys t=0's texture
+    expect(submits).toBeGreaterThan(submitted)     // work after the destroy, so the serial advances
     const before = created
     const next = r.uploadFrame(0, frame(), 0, labelBytes(), 'm')
     await tick()
     expect(created).toBe(before)                   // nothing allocated while the free is pending
-    release()                                      // the queue retires the old texture's work
-    await tick()
+    release(); await tick()                        // first round of `retireDestroyed`
+    expect(created).toBe(before)
+    release(); await tick()                        // second round — the memory is released
     expect(created).toBeGreaterThan(before)
     release(); await next
     expect(r.hasTimepoint(0)).toBe(true)
@@ -166,11 +171,15 @@ describe('flat renderer — allocating after a bulk free', () => {
     await tick(); release(); await up
     expect(r.needsLabel!(0)).toBe(false)
 
+    const submitted = submits
     r.setLabelSource!('b')                         // destroys t=0's mask
+    expect(submits).toBeGreaterThan(submitted)
     expect(r.needsLabel!(0)).toBe(true)
     const before = created
     const lab = r.uploadLabel!(0, labelBytes(), 'b')
     await tick()
+    expect(created).toBe(before)
+    release(); await tick()
     expect(created).toBe(before)
     release(); await lab
     expect(created).toBeGreaterThan(before)
