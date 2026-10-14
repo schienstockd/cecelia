@@ -21,7 +21,7 @@ Usage:
     pixi run judge-review                # the newest record
     pixi run judge-review --date 2026-10-06
     pixi run judge-review --auto --dry-run      # the briefs it would send
-    pixi run judge-review --auto [--limit 3]    # work the first session(s)
+    pixi run judge-review --auto [--limit 3]    # work every `fix` bug (or the first 3 sessions)
 """
 from __future__ import annotations
 
@@ -311,6 +311,29 @@ def _worktree_line(name: str) -> str:
             f"the worktree it creates, never in `{main}` itself.")
 
 
+def auto_tree(bug: dict, tried: _t.Mapping[str, dict] | None = None) -> pathlib.Path | None:
+    """The worktree an `--auto` session stopped in with its work staged for this bug, while it exists."""
+    tree = ((read_auto() if tried is None else tried).get(bug["key"]) or {}).get("tree")
+    return pathlib.Path(tree) if tree and pathlib.Path(tree).is_dir() else None
+
+
+#: How far a stopped `--auto` session's work got (`auto_fix.jsonl` `stage`), as the `[f]` brief says it.
+_STAGED = {"staged": "was stopped before its commit; its changes are staged there (`git diff --cached`)",
+           "committed": "committed its work there but the push failed (`git log origin/main..HEAD`)",
+           "pushed": "committed and pushed its branch, but opening the PR failed: the PR is all that is missing",
+           "pr": "opened its PR, but was stopped there: CI still red, main still conflicting, or a step of a "
+                 "follow-up fix failed"}
+
+
+def _staged_line(tree: pathlib.Path, bugs: _t.Sequence[dict]) -> str:
+    row = read_auto().get(bugs[0]["key"]) or {}
+    return (f"An unattended `judge-review --auto` session already worked this in `{tree}` and "
+            f"{_STAGED.get(row.get('stage'), _STAGED['staged'])}."
+            + (f" Its PR: {row['pr_url']} (`gh pr view` shows its checks)." if row.get("pr_url") else "")
+            + f" What it said: {row.get('reason', '')} Work in "
+            "that worktree, not a new one: read its work first, keep what is right, and finish or correct the rest.")
+
+
 def fix_brief(record: dict, bug: dict) -> str:
     """The opening prompt of a fix session: the bug, what verify found, and how to work it."""
     lines = [f"Work bug {bug['id']} (`{bug['key']}`) from {_record_line(record)}.", "", *_bug_lines(bug)]
@@ -319,8 +342,10 @@ def fix_brief(record: dict, bug: dict) -> str:
         lines.append(f"Tracked as issue #{issue}. Don't read it: this brief is the whole task, and the issue "
                      f"is a mirror of the record. Say `Refs #{issue}` in the commit message, never `fixes` or "
                      "`closes`: the judge closes it once it confirms the fix.")
+    tree = auto_tree(bug)
+    where = _staged_line(tree, [bug]) if tree else _worktree_line("fix-" + bug["key"])
     lines += ["", "Confirm it on origin/main first. If it isn't real, say so and stop; I'll answer it won't-fix. "
-              f"Otherwise {_worktree_line('fix-' + bug['key'])} Fix it there, including every sibling call site "
+              f"Otherwise {where} Fix it there, including every sibling call site "
               "with the same shape, "
               + ("make sure the helper's tests cover what the copy did, " if bug.get("kind") == "duplicate" else
                  "add a test that fails without the fix, ")
@@ -340,8 +365,10 @@ def bundle_brief(record: dict, bugs: _t.Sequence[dict]) -> str:
             lines.append(f"Tracked as issue #{_issue_of(b)}.")
     issues = [f"#{_issue_of(b)}" for b in bugs if _issue_of(b)]
     keys = ", ".join(f"`{b['key']}`" for b in bugs)
+    tree = next(filter(None, map(auto_tree, bugs)), None)
+    where = _staged_line(tree, bugs) if tree else _worktree_line("fix-bundle-" + bugs[0]["key"])
     lines += ["", "Confirm each on origin/main first. One that isn't real: say so and leave it; I'll answer it "
-              f"won't-fix. Then {_worktree_line('fix-bundle-' + bugs[0]['key'])} Fix the real ones there, "
+              f"won't-fix. Then {where} Fix the real ones there, "
               "including every sibling call site with the same shape, add a test per fix that fails without it, "
               f"run the matching tests and recital, and name each fixed bug's key ({keys}) in the commit that "
               "fixes it."
@@ -372,16 +399,17 @@ def append_auto(row: dict, path: pathlib.Path | None = None) -> None:
 
 def auto_items(record: dict, reviews: _t.Iterable[dict], older: _t.Sequence[dict] = (),
                tried: _t.Mapping[str, dict] = {}) -> list[dict]:
-    """The pending work `--auto` may take, bundled: every bug verify called `fix`, except one an auto
-    session already called `not_real` or `left`, or failed on `AUTO_ATTEMPTS` times (its card says
-    why; the owner takes it from there)."""
+    """The pending work `--auto` may take, bundled: every bug verify called `fix` with no landed fix
+    (`fix_landed`), except one an auto session already called `not_real` or `left`, found `landed`
+    on main, or failed on `AUTO_ATTEMPTS` times (its card says why; the owner takes it from there)."""
     by_id = {b["id"]: b for b in record.get("bugs", [])}
 
     def eligible(ref: str) -> bool:
         b = by_id[ref]
         last = tried.get(b["key"]) or {}
         return ((b.get("verify") or {}).get("verdict") == "fix"
-                and last.get("outcome") not in ("not_real", "left")
+                and not b.get("fix_landed")   # a commit naming it landed: the next pass re-checks it
+                and last.get("outcome") not in ("not_real", "left", "landed")
                 and not (last.get("outcome") == "failed" and last.get("attempt", 1) >= AUTO_ATTEMPTS))
     return bundles(record, [it for it in pending(record, reviews, older)
                             if it["kind"] == "work" and eligible(it["ref"])])
@@ -567,7 +595,12 @@ def describe(record: dict, item: dict, *, width: int = _MAX_WIDTH, use_colour: b
         out.append("  " + _col(_DIM, note, use_colour=use_colour))
     decide = item["kind"] == "decide"
     auto = read_auto().get(b["key"]) or {}
-    texts = {"Auto-fix": f"{auto['outcome'].replace('_', ' ')}: {auto.get('reason') or '—'}" if auto else None,
+    staged = auto_tree(b)
+    said = (auto.get("reason") or "—").rstrip()
+    texts = {"Auto-fix": f"{auto['outcome'].replace('_', ' ')}: {said}"
+                         + (("" if said.endswith((".", "!", "?")) else ".")
+                            + f" Its work is in `{staged.name}`: [f] picks it up there." if staged else "")
+             if auto else None,
              "Question": (v.get("question") or b["desc"]) if decide else None,
              "Bug": None if decide else b["desc"], "Verified": None if decide else v.get("effect"),
              "Your answer": b.get("owner_answer"),
@@ -789,7 +822,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="record to review (default: the newest pass record)")
     ap.add_argument("--auto", action="store_true", help="work the `fix` bugs unattended, one PR per session")
-    ap.add_argument("--limit", type=int, default=1, help="--auto: sessions to run (default 1)")
+    ap.add_argument("--limit", type=int, default=None, help="--auto: at most this many sessions (default: all)")
     ap.add_argument("--dry-run", action="store_true", help="--auto: print the briefs, run nothing")
     args = ap.parse_args(argv)
     try:

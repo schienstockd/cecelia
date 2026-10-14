@@ -47,6 +47,11 @@ _FANOUT_DOC = "docs/ai-assist/FANOUT_AUDIT.md"
 _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
 
 
+#: Heads a reviewer's section when it errored: the recital still prints, stamp included, but that
+#: reviewer didn't run (`judge-review --auto` stops on it rather than commit unreviewed).
+ERROR_MARKER = "RECITAL SCRIPT ERROR"
+
+
 class RecitalError(RuntimeError):
     """Raised when a reviewer subprocess fails hard (non-zero exit, timeout, missing CLI).
 
@@ -306,7 +311,7 @@ def _run_reviewer(
     if error is not None:
         # Not `tail_none`: "no audit needed" under an error would say the reviewer ran and cleared it.
         return (
-            f"_{title} (evidence):_\n\n> **RECITAL SCRIPT ERROR** — {error}\n\n"
+            f"_{title} (evidence):_\n\n> **{ERROR_MARKER}** — {error}\n\n"
             f"_{title}: not run — the reviewer errored_"
         )
 

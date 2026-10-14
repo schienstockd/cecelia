@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import typing as _t
 
@@ -247,16 +248,37 @@ def landed_counts(bugs: _t.Sequence[dict]) -> tuple[int, int]:
     return len(landed), sum(b["status"] in _CONFIRMED for b in landed)
 
 
+#: The first `path/file.ext:line` in a piece of prose.
+FILE_LINE = re.compile(r"([\w./-]+\.\w+):(\d+)")
+#: The recital parser's file for a finding that named no location (`recital.py`: `("?", 0)`).
+NO_FILE = "?"
+
+
+def located_at(b: dict) -> tuple[str, int, bool] | None:
+    """A finding's (file, line, from_verify): its own, else the first `file:line` verify's evidence
+    names when it was logged without one (`NO_FILE`); None when neither has one. Not for agent-run
+    errors or stranded commits (no `file`)."""
+    if b.get("file") and b["file"] != NO_FILE:
+        return b["file"], int(b.get("line") or 0), False
+    found = FILE_LINE.search((b.get("verify") or {}).get("evidence") or "") if b.get("file") else None
+    return (found[1], int(found[2]), True) if found else None
+
+
 def bug_location(b: dict) -> str:
     """Where a bug is, as plain text: `file:line`, the PR of stranded commits, or the tool an agent
-    run's error came from when there was no stacktrace."""
+    run's error came from when there was no stacktrace. A finding logged without one (`?`, as the
+    recital parser stores it) takes the first `file:line` verify's evidence names, marked so."""
     if b.get("kind") == "stranded":
         return f"PR #{b.get('pr')}"
     if b.get("review"):
         return f"run review · {b.get('cause') or '?'} · {b.get('section') or '?'}"
     if not b.get("file"):
         return f"{'repeated agent error' if b.get('repeat') else 'agent run'} · {b.get('tool') or '?'}"
-    return f"{b['file']}:{b['line']}"
+    at = located_at(b)
+    if at is None:
+        return "no file:line named"
+    file, line, from_verify = at
+    return (f"{file}:{line}" if line else file) + (" (from verify)" if from_verify else "")
 
 
 def _bug_where(b: dict) -> str:

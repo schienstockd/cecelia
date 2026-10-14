@@ -275,13 +275,21 @@ add one comment (your words, defused like a body; on a bug filed that pass, righ
 create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
 *issue not filed yet*.
 
-**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works the `fix` bugs without
-you, one session per bundle, one after another (`--dry-run` prints the briefs). The agent never
+**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug (or
+the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
+per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
+the agent as `auto-fix^`. On the usage limit it waits for the reset and resumes the same
+session (a recital round runs again); a reset more than 6 h off (`MAX_WAIT`) stops the run instead. A bug with a landed fix
+(`fix_landed` on the record, or a commit naming its key on origin/main since) gets no session. The agent never
 holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<key>` /
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with
 `acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
-to act on the findings and tag them, and commits, pushes and opens the PR itself: a draft when the
-fix changes what is drawn on screen. It never merges. After the agent, nothing of the worktree's
+to act on the findings and tag them, and runs recital again while that changed the diff (up to
+`RECITAL_ROUNDS`, then it goes back to you), and commits, pushes and opens the PR itself, its body flagged
+when the fix changes what is drawn on screen (look before you merge). Then it waits for the PR's CI and mergeability: red CI goes back to the same
+session with the failed jobs' log excerpts (an unrelated failure is re-run once), a conflict with main
+as a merge the agent resolves; after `CI_ROUNDS` (2) still red, the bundle goes back to you. A bug
+counts as fixed only once its PR is green and mergeable. It never merges. After the agent, nothing of the worktree's
 runs outside the sandbox: recital and the commit-msg hook run from your checkout, and git with the
 hooks path pointed there. The script stops, worktree left, if the agent changed the worktree's
 `.git` pointer, `.githooks`, `.claude` or `.mcp.json` (ignored files included), if the diff touches
@@ -289,7 +297,9 @@ hooks path pointed there. The script stops, worktree left, if the agent changed 
 if it holds a credential. A fixed bug gets the same answer `[f]` gives, noting the PR. One the
 agent called not real, or left, stays in your queue with its reason on the card
 (`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is removed and
-tried once more. A guard, commit or push that stops leaves the worktree for you. The agent can't run recital itself (its
+tried once more. A guard, recital, commit or push that stops puts the bundle back in your queue, `left`; its card
+names the worktree, and `[f]` opens a session on that work instead of a fresh worktree (not when
+the agent changed what runs outside its sandbox: then `[f]` starts fresh). The agent can't run recital itself (its
 reviewers are `claude -p` runs, which need the network), so this was deferred until the record
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.

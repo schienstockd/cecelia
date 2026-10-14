@@ -207,8 +207,8 @@ def filed(b: dict) -> bool:
 def title(b: dict) -> str:
     """Structured only, no prose: the key (which recovery finds it by), the verdict, where."""
     where = (f"stranded commits, PR {b.get('pr')}" if b.get("kind") == "stranded" else
-             f"duplicate at {b['file']}:{b['line']}" if b.get("kind") == "duplicate" else
-             f"{b['file']}:{b['line']}" if b.get("file") else
+             f"duplicate at {_record.bug_location(b)}" if b.get("kind") == "duplicate" else
+             _record.bug_location(b) if b.get("file") else
              f"{'repeated ' if b.get('repeat') else ''}agent error in {b.get('tool') or '?'}")
     return f"[{b['key']}] {_verdict(b) or 'open'}: {where}"
 
@@ -234,9 +234,14 @@ def body(b: dict, *, repo: str, sha: str, uids: _t.Collection[str] = ()) -> str:
         lines += [f"**Where:** commits pushed to `{b.get('branch')}` after https://github.com/{repo}/pull/{b.get('pr')} "
                   "merged, which never reached main: " + ", ".join(f"`{c[:8]}`" for c in b.get("commits", [])), ""]
     elif b.get("file"):   # the line number is the finding's, so it links at the finding's commit
-        at = b.get("commit") or sha
-        lines += [f"**Where:** [`{b['file']}:{b['line']}`](https://github.com/{repo}/blob/{at}/{b['file']}#L{b['line']})"
-                  f" at `{at[:8]}`", ""]
+        found = _record.located_at(b)
+        if found is None:
+            lines += ["**Where:** the finding named no file:line", ""]
+        else:   # verify's line numbers are at the SHA it read
+            file, line, from_verify = found
+            at = (v.get("sha") if from_verify else b.get("commit")) or sha
+            lines += [f"**Where:** [`{file}:{line}`](https://github.com/{repo}/blob/{at}/{file}#L{line})"
+                      f" at `{at[:8]}`" + (" (from verify; the finding named none)" if from_verify else ""), ""]
     else:
         lines += [f"**Where:** {_agent_error(b)}", ""]
     lines += [f"**Effect:** {d(v['effect'])}", ""] if v.get("effect") else []

@@ -172,6 +172,31 @@ class LiveSessionsTest(_FakeHome):
             json.dumps({**meta, "kind": "interactive", "entrypoint": "sdk-cli"}), encoding="utf-8")
         self.assertEqual(self.live(), [])
 
+    def test_the_auto_fix_agent_is_shown_but_not_its_recital_reviewers(self):
+        def headless(pid, sid):
+            self.session(pid, "500", sid, name="cecelia-9", transcript_cwds=["/ws/cecelia-fix-x"])
+            meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+            (self.home / "sessions" / f"{pid}.json").write_text(
+                json.dumps({**meta, "entrypoint": "sdk-cli"}), encoding="utf-8")
+        review = ("python", "scripts/judge/review.py", "--auto", "--limit", "2")
+        self.process(5, "100", comm="python", argv=review)
+        self.process(10, "500", ppid=5)                                                # the fix agent
+        self.process(6, "100", comm="python", ppid=5, argv=("python", "/ws/scripts/recital.py", "--stdin"))
+        self.process(11, "500", ppid=6)                                                # a reviewer
+        headless(10, "a")
+        headless(11, "b")
+        live = self.live()
+        self.assertEqual([(s.pid, s.name, s.auto, s.judge, s.cwd) for s in live],
+                         [(10, "auto-fix", True, False, "/ws/cecelia-fix-x")])
+
+    def test_the_daemons_warm_spare_is_not_a_session_but_a_background_job_is(self):
+        for pid, extra in ((10, {"kind": "bg", "spare": True}), (11, {"kind": "bg"})):
+            self.process(pid, "500")
+            self.session(pid, "500", f"s{pid}", name=f"n{pid}")
+            meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+            (self.home / "sessions" / f"{pid}.json").write_text(json.dumps({**meta, **extra}), encoding="utf-8")
+        self.assertEqual([s.name for s in self.live()], ["n11"])
+
     def test_no_sessions_folder_means_no_sessions(self):
         self.assertEqual(live_sessions(self.home / "missing", proc=self.proc), [])
 
@@ -395,6 +420,7 @@ class PrCiTest(unittest.TestCase):
         self.assertIn("* judge-review", lines[0])
         self.assertEqual(lines[2].split()[0], "cecelia-28*")
         self.assertEqual(lines[2].index(" idle"), lines[3].index(" asks"))   # columns still line up
+        self.assertEqual(console._name_cell(AgentRow("auto-fix", "busy", "w", "x", auto=True)), "auto-fix^   ")
         self.assertEqual(console._name_cell(AgentRow("cecelia-prune-x", "idle", "w", "x", judge=True)),
                          "cecelia-pr…*")
 

@@ -13,7 +13,10 @@ silently dropping the session. Liveness needs `/proc` (a pid plus `procStart`, f
 
 A headless `claude -p` run (the recital's reviewers) writes a session file too — `kind:
 "interactive"` like a window, but `entrypoint: "sdk-cli"` where a terminal window has `"cli"` — and
-is no one's window, so `sdk*` entrypoints are skipped.
+is no one's window, so `sdk*` entrypoints are skipped, but for the fix agent `judge-review --auto`
+runs (`from_auto_fix`): it works a worktree unattended, and the pane shows it as `auto-fix`.
+Claude Code's daemon also keeps a `spare: true` background session warm for the next background
+job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown.
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
 written while the window sits unattended — which `latest_recap` reads — and the session's last
@@ -64,6 +67,7 @@ class Session:
     asks: bool = False                     # its last reply ends on a question — `ends_with_question()`
     judge: bool = False                    # opened by `pixi run judge-review` — `from_judge_review()`
     recital: bool = False                  # `pixi run recital` runs under it — `running_recital()`
+    auto: bool = False                     # `judge-review --auto`'s headless fix agent — `from_auto_fix()`
 
 
 def claude_home() -> pathlib.Path:
@@ -75,20 +79,32 @@ def claude_home() -> pathlib.Path:
 JUDGE_REVIEW_SCRIPT = ("judge", "review.py")
 
 
-def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
-    """Whether one of the session's nearest `depth` parent processes runs `scripts/judge/review.py`
-    — a queue that resumes only once Dominik has dealt with the session and closed it."""
+def _parent_argvs(pid: int, proc: pathlib.Path, depth: int) -> _t.Iterator[list[str]]:
+    """The argv of each of the nearest `depth` parent processes, nearest first."""
     for _ in range(depth):
         try:
             stat = (proc / str(pid) / "stat").read_text(encoding="utf-8", errors="replace")
             pid = int(stat.rsplit(")", 1)[-1].split()[1])   # field 4, ppid
             argv = (proc / str(pid) / "cmdline").read_bytes().split(b"\0")
         except (OSError, ValueError, IndexError):
-            return False
-        if any(pathlib.PurePath(a.decode("utf-8", "replace")).parts[-2:] == JUDGE_REVIEW_SCRIPT
-               for a in argv if a):
-            return True
-    return False
+            return
+        yield [a.decode("utf-8", "replace") for a in argv if a]
+
+
+def _runs_judge_review(argv: _t.Sequence[str]) -> bool:
+    return any(pathlib.PurePath(a).parts[-2:] == JUDGE_REVIEW_SCRIPT for a in argv)
+
+
+def from_judge_review(pid: int, proc: pathlib.Path, depth: int = 3) -> bool:
+    """Whether one of the session's nearest `depth` parent processes runs `scripts/judge/review.py`
+    — a queue that resumes only once Dominik has dealt with the session and closed it."""
+    return any(_runs_judge_review(argv) for argv in _parent_argvs(pid, proc, depth))
+
+
+def from_auto_fix(pid: int, proc: pathlib.Path) -> bool:
+    """Whether the session's parent is `review.py --auto`: its fix agent. Not a recital reviewer
+    under it, whose parent is `recital.py`."""
+    return any(_runs_judge_review(argv) and "--auto" in argv for argv in _parent_argvs(pid, proc, 1))
 
 
 #: `pixi run recital` runs this script; under a session it means the session is mid-commit.
@@ -284,10 +300,13 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         sid, name, status = meta["sessionId"], meta.get("name") or str(pid), meta.get("status") or "?"
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return Session(pid, str(pid), "?", None, readable=False) if proc_start(pid, proc) else None
-    if proc_start(pid, proc) != started:
-        return None
+    if proc_start(pid, proc) != started or meta.get("spare"):
+        return None   # gone, or the daemon's warm spare — nobody's work yet
     if str(meta.get("entrypoint") or "").startswith("sdk"):
-        return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window
+        if not from_auto_fix(pid, proc):
+            return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window
+        session = _transcript_session(pid, "auto-fix", status, meta, sid, projects, context)
+        return dataclasses.replace(session, auto=True, asks=False)   # it never waits for Dominik
     session = _transcript_session(pid, name, status, meta, sid, projects, context)
     return dataclasses.replace(session, judge=from_judge_review(pid, proc),
                                recital=running_recital(pid, proc, children or {}))
