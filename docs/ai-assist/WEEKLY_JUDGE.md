@@ -292,7 +292,9 @@ hooks path pointed there. The script stops, worktree left, if the agent changed 
 if it holds a credential. A fixed bug gets the same answer `[f]` gives, noting the PR. One the
 agent called not real, or left, stays in your queue with its reason on the card
 (`~/.cecelia-effectiveness/auto_fix.jsonl`) and isn't tried again; a failed session is removed and
-tried once more. A guard, commit or push that stops leaves the worktree for you. The agent can't run recital itself (its
+tried once more. A guard, recital, commit or push that stops puts the bundle back in your queue, `left`; its card
+names the worktree, and `[f]` opens a session on that work instead of a fresh worktree (not when
+the agent changed what runs outside its sandbox: then `[f]` starts fresh). The agent can't run recital itself (its
 reviewers are `claude -p` runs, which need the network), so this was deferred until the record
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.

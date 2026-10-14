@@ -289,12 +289,22 @@ class WorkTest(_AutoFixture):
         card = "\n".join(self.rv.describe(self.record, {"kind": "work", "ref": "B1"}, use_colour=False))
         self.assertIn("not real: because", card)
 
+    def test_a_failed_push_briefs_f_on_the_commit_not_a_staged_diff(self):
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        self.work(_answer(), {"tags": []}, fail=("push",), touch="a.py")
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["stage"], "committed")
+        with mock.patch.object(self.rv, "auto_path", return_value=self.auto):
+            brief = self.rv.fix_brief(self.record, self.record["bugs"][0])
+        self.assertIn("committed its work there but the push failed", brief)
+        self.assertEqual(set(self.rv._STAGED), set(self.af.STAGES))   # every stage has its brief
+        shutil.rmtree(tree)
+
     def test_a_blocked_commit_leaves_the_bug_for_the_owner(self):
         _, out = self.work(_answer(), {"tags": []}, fail=("commit",))
         self.assertEqual(self.rv.read_reviews(self.log), [])
         self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
         self.assertFalse(any(c[:2] == ["git", "push"] for c in self.calls))
-        self.assertIn("worktree left at", out)
+        self.assertIn("back in your judge-review queue: B1 fanout-b1", out)
 
     def test_a_credential_in_the_diff_is_never_committed(self):
         token = "+x = 'ghp_" + "a" * 36 + "'\n"
@@ -323,14 +333,34 @@ class WorkTest(_AutoFixture):
                 _, out = self.work(_answer(), touch=touch)
                 self.assertEqual([c for c in self.calls if c[0] != "pixi"], [])   # not even `git add`
                 self.assertIn("run outside its sandbox", out)
-                self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "left")
+                self.assertIn("[f] there starts fresh", out)
+                row = self.rv.read_auto(self.auto)["fanout-b1"]
+                self.assertEqual((row["outcome"], row.get("tree")), ("left", None))   # never worked in again
                 shutil.rmtree(tree)
 
     def test_a_diff_into_ci_or_the_fence_is_never_pushed(self):
-        _, out = self.work(_answer(), names="a.py\n.github/workflows/ci.yml\n")
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        _, out = self.work(_answer(), names="a.py\n.github/workflows/ci.yml\n", touch="a.py")
         self.assertFalse(any(c[:2] in (["git", "commit"], ["git", "push"]) for c in self.calls))
         self.assertFalse(any(c[:3] == ["pixi", "run", "recital"] for c in self.calls))
         self.assertIn(".github/workflows/ci.yml", out)
+        # back in the owner's queue, and [f] there picks the work up in the worktree
+        self.assertIn("back in your judge-review queue: B1 fanout-b1 · [f] there opens a session on the work in "
+                      "cecelia-fix-fanout-b1", out)
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["tree"]), ("left", str(tree)))
+        self.assertTrue(row["reason"].startswith("Stopped before the PR: the diff touches .github/workflows/ci.yml"))
+        bug = self.record["bugs"][0]
+        with mock.patch.object(self.rv, "auto_path", return_value=self.auto):
+            self.assertEqual(self.rv.auto_tree(bug), tree)
+            brief = self.rv.fix_brief(self.record, bug)
+            card = "\n".join(self.rv.describe(self.record, {"kind": "work", "ref": "B1"}, use_colour=False))
+        self.assertIn(f"already worked this in `{tree}`", brief)
+        self.assertNotIn("bootstrap-worktree", brief)
+        self.assertIn("because. Its work is in `cecelia-fix-fanout-b1`: [f] picks it up there", " ".join(card.split()))
+        shutil.rmtree(tree)
+        with mock.patch.object(self.rv, "auto_path", return_value=self.auto):
+            self.assertIsNone(self.rv.auto_tree(bug))   # pruned: [f] starts fresh again
 
     def test_an_existing_worktree_is_never_reused(self):
         (self.main.parent / "cecelia-fix-fanout-b1").mkdir()

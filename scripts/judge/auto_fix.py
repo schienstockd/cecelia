@@ -66,6 +66,8 @@ _bugs = _rv._load_sibling("bugs")
 
 #: What the agent reports per bug: `fixed` (in its diff), `not_real` (nothing to fix) or `left`.
 OUTCOMES = ("fixed", "not_real", "left")
+#: How far a session stopped before its PR got: what `[f]` finds in the worktree (`review._STAGED`).
+STAGES = ("staged", "committed", "pushed")
 FIX_SCHEMA = {
     "type": "object",
     "properties": {
@@ -367,17 +369,20 @@ def _fixed_keys(answer: dict) -> set[str]:
 
 
 def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log: pathlib.Path | None,
-         *, fixed_as: str | None = None) -> None:
-    """One `auto_fix.jsonl` row per bug. `fixed_as`: what a fixed bug becomes when its PR didn't open (`left`)."""
+         *, stopped: str | None = None, tree: pathlib.Path | None = None, stage: str = "staged") -> None:
+    """One `auto_fix.jsonl` row per bug. `stopped`: why the script stopped before the PR, its work staged
+    in `tree`; a fixed bug is then `left`, and every row names `tree` (`[f]` picks the work up there)."""
     said = {r.get("key"): r for r in answer.get("bugs", [])}
     for b in bugs:
         r = said.get(b["key"]) or {"outcome": "left", "reason": "the session didn't report it"}
         outcome = r.get("outcome") if r.get("outcome") in OUTCOMES else "left"
         reason = r.get("reason") or ""
-        if outcome == "fixed" and fixed_as:
-            outcome, reason = fixed_as, f"{reason} — then {pr}"
+        if outcome == "fixed" and stopped:
+            outcome, reason = "left", f"Stopped before the PR: {stopped}. The agent had fixed it: {reason}"
         _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": outcome,
-                         "reason": reason, "pr_url": pr if outcome == "fixed" else ""}, auto_log)
+                         "reason": reason, "pr_url": pr if outcome == "fixed" else "",
+                         **({"tree": str(tree), "stage": stage if stage in STAGES else "staged"}
+                            if stopped and tree else {})}, auto_log)
 
 
 def _log_failed(record: dict, bugs: _t.Sequence[dict], why: str, auto_log: pathlib.Path | None) -> None:
@@ -389,21 +394,23 @@ def _log_failed(record: dict, bugs: _t.Sequence[dict], why: str, auto_log: pathl
                          "reason": why, "attempt": attempt, "pr_url": ""}, auto_log)
 
 
-def guard(tree: pathlib.Path, before: dict[str, str], hooks: pathlib.Path, sh: _t.Callable) -> tuple[str | None, str]:
-    """Stage the worktree, if the agent left what runs outside the sandbox alone. (why it stops, staged diff)."""
+def guard(tree: pathlib.Path, before: dict[str, str], hooks: pathlib.Path,
+          sh: _t.Callable) -> tuple[str | None, str, bool]:
+    """Stage the worktree, if the agent left what runs outside the sandbox alone. (why it stops, staged
+    diff, whether the worktree may still be worked in: not once the agent changed `EXEC_SURFACE`)."""
     now = snapshot(tree)
     changed = sorted(k for k in before.keys() | now.keys() if before.get(k) != now.get(k))
     if changed:
-        return f"the agent changed {', '.join(changed[:5])}, which run outside its sandbox: nothing run there", ""
+        return f"the agent changed {', '.join(changed[:5])}, which run outside its sandbox: nothing run there", "", False
     sh(git(hooks, "add", "-A"), tree)
     names = (sh(git(hooks, "diff", "--cached", "--name-only"), tree).stdout or "").split("\n")
     touched = [n for n in names if n and protected(n)]
     if touched:
-        return f"the diff touches {', '.join(touched[:5])} (CI, hooks or the fence): fix it by hand", ""
+        return f"the diff touches {', '.join(touched[:5])} (CI, hooks or the fence): not pushed unattended", "", True
     diff = sh(git(hooks, "diff", "--cached"), tree).stdout or ""
     if SECRET_RE.search(diff):
-        return "the staged diff holds what looks like a credential: not committed", ""
-    return None, diff
+        return "the staged diff holds what looks like a credential: not committed", "", True
+    return None, diff, True
 
 
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
@@ -452,14 +459,21 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         say("nothing fixed: no PR, worktree removed")
         return spent
 
-    def stop(why: str) -> float:
-        _log(record, bugs, answer, "", auto_log, fixed_as="left")
-        say(f"{why}; worktree left at {tree}", bad=True)
+    def stop(why: str, *, trusted: bool = True, stage: str = "staged") -> float:
+        """`trusted`: the worktree may be worked in. Not after the agent changed what runs outside its
+        sandbox: a session or a commit there would run it, so `[f]` starts fresh. `stage`: how far the
+        work got (`STAGES`), for the `[f]` brief."""
+        _log(record, bugs, answer, "", auto_log, stopped=why, tree=tree if trusted else None, stage=stage)
+        say(why, bad=True)
+        queued = ", ".join(b["id"] + " " + b["key"] for b in bugs)
+        say(f"back in your judge-review queue: {queued} · "
+            + (f"[f] there opens a session on the work in {tree.name}" if trusted else
+               f"[f] there starts fresh; {tree.name} is left for you to inspect, not to work in"))
         return spent
 
-    why, diff = guard(tree, before, hooks, sh)
+    why, diff, trusted = guard(tree, before, hooks, sh)
     if why:
-        return stop(why)
+        return stop(why, trusted=trusted)
     with Progress("recital", out=out) as step:
         rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
         recital = rec.stdout or ""
@@ -471,16 +485,17 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
     spent += cost
     if failed:
         return stop(f"tagging the recital: {failed}")
-    why, _ = guard(tree, before, hooks, sh)
+    why, _, trusted = guard(tree, before, hooks, sh)
     if why:
-        return stop(why)
+        return stop(why, trusted=trusted)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
         fh.write(commit_message(record, bugs, answer, tagged["tags"], recital))
     try:
-        for argv in (git(hooks, "commit", "-F", fh.name), git(hooks, "push", "-u", "origin", branch)):
+        for argv, reached in ((git(hooks, "commit", "-F", fh.name), "staged"),
+                              (git(hooks, "push", "-u", "origin", branch), "committed")):
             done = sh(argv, tree)
             if done.returncode != 0:
-                return stop(f"`git {argv[5]}` failed: {_tail(done)}")
+                return stop(f"`git {argv[5]}` failed: {_tail(done)}", stage=reached)
     finally:
         os.unlink(fh.name)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as fh:
@@ -491,7 +506,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
     finally:
         os.unlink(fh.name)
     if opened.returncode != 0:
-        return stop(f"gh pr create failed: {_tail(opened)}; branch {branch} is pushed")
+        return stop(f"gh pr create failed: {_tail(opened)}; branch {branch} is pushed", stage="pushed")
     pr = (opened.stdout or "").strip().splitlines()[-1]
     _log(record, bugs, answer, pr, auto_log)
     for b in bugs:
