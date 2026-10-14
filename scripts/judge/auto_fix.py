@@ -575,10 +575,44 @@ def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str]
                       *([""] + list(tags) if tags else []), "", recital.strip(), "", TRAILER]) + "\n"
 
 
+def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *, main: pathlib.Path,
+          say: _t.Callable, sh: _t.Callable, auto_log: pathlib.Path | None) -> bool:
+    """The bundle's worktree is there already with no `auto_fix.jsonl` row: an earlier run died mid-way
+    (before it could log). Its work goes back to the owner's queue, for `[f]`, as a stop's would; True.
+    Without a baseline its `EXEC_SURFACE` can't be checked, so `[f]` gets it only when its `.git`
+    pointer is this repo's and nothing it changed is `PROTECTED`. Holding no work, it is removed and
+    the bundle is run afresh; False."""
+    pointer = tree / ".git"
+    text = pointer.read_text(encoding="utf-8", errors="replace").strip() if pointer.is_file() else ""
+    gitdir = pathlib.Path(text.removeprefix("gitdir: ")) if text.startswith("gitdir: ") else None
+    ours = bool(gitdir and gitdir.parent == main / ".git" / "worktrees" and (gitdir / "gitdir").is_file()
+                and (gitdir / "gitdir").read_text(encoding="utf-8").strip() == str(pointer))
+    plain = git(pathlib.Path(os.devnull))   # read-only git that runs none of the worktree's hooks
+    lines = lambda *a: [f for f in (sh([*plain, *a], tree).stdout or "").split("\n") if f]   # noqa: E731
+    changed = lines("diff", "--name-only", "HEAD") + lines("ls-files", "--others", "--exclude-standard") if ours else []
+    ahead = ours and int((sh([*plain, "rev-list", "--count", "origin/main..HEAD"], tree).stdout or "0").strip() or 0) > 0
+    if ours and not changed and not ahead:
+        agent_sandbox.remove_worktree(main, tree)
+        sh(["git", "branch", "-D", branch], main)
+        return False
+    trusted = ours and not any(protected(f) for f in changed)
+    why = "an earlier --auto run stopped without a record (it died mid-way)"
+    for b in bugs:
+        _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": "left",
+                         "reason": f"Stopped before the PR: {why}; its work is in {tree.name}.", "pr_url": "",
+                         **({"tree": str(tree), "stage": "staged" if changed else "committed"} if trusted else {})},
+                        auto_log)
+    say(f"{tree.name} is there already: {why}", bad=True)
+    say(f"back in your judge-review queue: {', '.join(b['id'] + ' ' + b['key'] for b in bugs)} · "
+        + (f"[f] there opens a session on the work in {tree.name}" if trusted else
+           f"[f] there starts fresh; {tree.name} is left for you to inspect, not to work in"))
+    return True
+
+
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
              session: _t.Callable = default_session, sh: _t.Callable = default_sh,
-             path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float:
-    """One bundle through to a PR. Returns what its sessions spent."""
+             path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float | None:
+    """One bundle through to a PR. Returns what its sessions spent; None when it ran none (`adopt`)."""
     name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
     branch = name
     tree = main.parent / f"cecelia-{name}"
@@ -587,9 +621,8 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
     def say(msg: str, *, bad: bool = False) -> None:
         mark = _col(VERMILLION, "✗", use_colour=colour) + " " if bad else "  "
         print(f"  {mark}" + (msg if bad else _col(_DIM, msg, use_colour=colour)), file=out, flush=True)
-    if tree.exists():
-        say(f"{tree} exists already: skipped (remove it, or finish it by hand)", bad=True)
-        return 0.0
+    if tree.exists() and adopt(record, bugs, tree, branch, main=main, say=say, sh=sh, auto_log=auto_log):
+        return None
     with Progress("worktree", out=out) as step:
         made = sh(["pixi", "run", "bootstrap-worktree", name, branch, "origin/main"], main)
         step.failed = made.returncode != 0
@@ -823,10 +856,11 @@ def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[di
     return out
 
 
-def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO = sys.stdout,
+def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
         path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
         main: pathlib.Path | None = None, **kw) -> int:
-    """Up to `limit` bundles from `review.auto_items`, one after another. Returns the sessions run."""
+    """Every bundle from `review.auto_items` (up to `limit` sessions), one after another. Returns the
+    sessions run."""
     main = main or _rv.main_checkout()
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
@@ -847,6 +881,7 @@ def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO =
             _rv.append_auto({"record": record["date"], "ref": keys[k]["id"], "key": k, "outcome": "landed",
                              "reason": why, "pr_url": ""}, auto_log)
     items = _without(items, by_id, done)
+    limit = len(items) if limit is None else limit
     n = sum(len(it.get("refs") or [it["ref"]]) for it in items)
     print(_col(_BOLD, "judge-review --auto", use_colour=colour)
           + _col(_DIM, f" · {record['date']} · {n} fix bug(s) in {len(items)} session(s)"
@@ -855,8 +890,10 @@ def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO =
           file=out, flush=True)
     for line in outcome_rows(rows, use_colour=colour):
         print(line, file=out)
-    spent, ran = 0.0, 0
-    for item in items[:limit]:
+    spent, ran, handed = 0.0, 0, 0
+    for item in items:
+        if ran >= limit or dry_run and items.index(item) >= limit:
+            break
         bugs = [by_id[r] for r in item.get("refs") or [item["ref"]]]
         label = (f"{bugs[0]['id']} {bugs[0]['key']}" if len(bugs) == 1
                  else " + ".join(b["id"] for b in bugs) + f" · {len(bugs)} bugs, one session")
@@ -868,10 +905,15 @@ def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO =
             name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
             print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
             continue
-        spent += work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
-        ran += 1
+        cost = work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
+        if cost is not None:   # an earlier run's worktree handed back instead: not a session, take the next
+            spent += cost
+            ran += 1
+        else:
+            handed += 1
     if not dry_run:
-        left = len(items) - ran
-        print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {left} left: run again" if left > 0 else ""),
+        left = len(items) - ran - handed
+        print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {handed} handed back" if handed else "")
+                         + (f" · {left} left: run again" if left > 0 else ""),
                          width, use_colour=colour), file=out)
     return ran

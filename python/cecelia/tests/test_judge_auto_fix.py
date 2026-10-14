@@ -46,7 +46,7 @@ class _AutoFixture(_Fixture):
         self.record = self.build(bugs=[_bug("B1", verify=FIX, issue={"number": 7}), _bug("B2"),
                                        _bug("B3", verify={"verdict": "decide", "date": "2026-10-05"}, file="b.py")])
         self.calls, self.messages, self.bodies = [], [], []
-        self.views, self.conflicted, self.unstaged = [GREEN], "", ""
+        self.views, self.conflicted, self.unstaged, self.changed = [GREEN], "", "", ""
         slept = mock.patch.object(self.af, "_sleep", lambda s: None)
         slept.start()
         self.addCleanup(slept.stop)
@@ -76,6 +76,8 @@ class _AutoFixture(_Fixture):
                 return subprocess.CompletedProcess(argv, 0, self.conflicted, "")
             if argv == ["git", "diff", "--name-only"]:   # what the agent changed during a merge
                 return subprocess.CompletedProcess(argv, 0, self.unstaged, "")
+            if argv == ["git", "diff", "--name-only", "HEAD"]:   # what a left-behind worktree holds
+                return subprocess.CompletedProcess(argv, 0, self.changed, "")
             if argv[:3] == ["gh", "pr", "view"]:   # `self.views`: the PR's states in turn, the last one from then on
                 view = self.views[0] if len(self.views) == 1 else self.views.pop(0)
                 return subprocess.CompletedProcess(argv, 0, json.dumps(view), "")
@@ -131,6 +133,7 @@ class ItemsTest(_AutoFixture):
 
 
 class LandedTest(_AutoFixture):
+
     def test_a_bug_whose_fix_landed_on_main_gets_no_session(self):
         fix = {"commit": "e44eada5" + "0" * 32, "subject": "fix(viewer): swatch (fanout-b1)", "pr": 12}
         out = io.StringIO()
@@ -153,6 +156,21 @@ class LandedTest(_AutoFixture):
         self.assertIn("── B1 fanout-b1 ", text)
         self.assertIn("desc B1", text)   # the card, as the `[f]` queue shows it
         self.assertLess(text.index("desc B1"), text.index("── 1 session(s)"))
+
+    def test_with_no_limit_it_works_every_bundle_and_a_handed_back_one_costs_none(self):
+        record = self.build(bugs=[_bug("B1", verify=FIX), _bug("B4", verify=FIX, file="c.py", branch="feat/y"),
+                                  _bug("B5", verify=FIX, file="d.py", branch="feat/z")])
+        WorkTest.left_behind(self, "cecelia-fix-fanout-b1")
+        self.changed = "a.py\n"
+        out = io.StringIO()
+        answers = [_answer("not_real") | {"bugs": [{"key": k, "outcome": "not_real", "reason": "no"}]}
+                   for k in ("fanout-b4", "fanout-b5")]
+        with mock.patch.object(self.af, "landed", return_value={}):
+            ran = self.af.run(record, out=out, path=self.log, auto_log=self.auto, main=self.main,
+                              session=self.session(*answers), sh=self.sh())
+        self.assertEqual(ran, 2)
+        self.assertIn("running 3", out.getvalue())
+        self.assertIn("── 2 session(s) · $3.00 · 1 handed back ─", out.getvalue())
 
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
@@ -613,11 +631,43 @@ class WorkTest(_AutoFixture):
         with mock.patch.object(self.rv, "auto_path", return_value=self.auto):
             self.assertIsNone(self.rv.auto_tree(bug))   # pruned: [f] starts fresh again
 
-    def test_an_existing_worktree_is_never_reused(self):
-        (self.main.parent / "cecelia-fix-fanout-b1").mkdir()
-        _, out = self.work(_answer())
-        self.assertEqual(self.calls, [])
-        self.assertIn("exists already", out)
+    def left_behind(self, name="cecelia-fix-fanout-b1", pointer=True):
+        """A worktree an earlier run left with no record, its `.git` pointer this repo's."""
+        tree = self.main.parent / name
+        gitdir = self.main / ".git" / "worktrees" / name
+        tree.mkdir()
+        gitdir.mkdir(parents=True)
+        (gitdir / "gitdir").write_text(str(tree / ".git") + "\n", encoding="utf-8")
+        (tree / ".git").write_text(f"gitdir: {gitdir if pointer else '/elsewhere'}\n", encoding="utf-8")
+        return tree
+
+    def test_a_worktree_left_without_a_record_goes_back_to_the_queue(self):
+        tree = self.left_behind()
+        self.changed = "a.py\n"
+        spent, out = self.work(_answer())
+        self.assertIsNone(spent)   # not a session
+        self.assertEqual(self.prompts, [])
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["tree"], row["stage"]), ("left", str(tree), "staged"))
+        self.assertIn("back in your judge-review queue: B1 fanout-b1 · [f] there opens a session on the work", out)
+
+    def test_one_whose_pointer_isnt_ours_or_that_touches_the_fence_is_not_worked_in(self):
+        for pointer, changed in ((False, "a.py\n"), (True, ".githooks/commit-msg\n")):
+            with self.subTest(pointer=pointer):
+                self.auto.unlink(missing_ok=True)
+                tree = self.left_behind(pointer=pointer)
+                self.changed = changed
+                _, out = self.work(_answer())
+                self.assertIsNone(self.rv.read_auto(self.auto)["fanout-b1"].get("tree"))
+                self.assertIn("[f] there starts fresh", out)
+                shutil.rmtree(tree)
+                shutil.rmtree(self.main / ".git")
+
+    def test_an_empty_one_is_removed_and_the_bundle_runs(self):
+        tree = self.left_behind()
+        self.work(_answer("not_real"))
+        self.assertIn(["remove_worktree", str(tree)], self.calls)
+        self.assertEqual(len(self.prompts), 1)   # the bundle ran
 
 
 if __name__ == "__main__":

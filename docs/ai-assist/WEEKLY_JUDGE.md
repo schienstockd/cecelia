@@ -275,8 +275,8 @@ add one comment (your words, defused like a body; on a bug filed that pass, righ
 create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's create cap says
 *issue not filed yet*.
 
-**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works the `fix` bugs without
-you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
+**Unattended: `--auto`.** `pixi run judge-review --auto [--limit N]` works every `fix` bug (or
+the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
 per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
 the agent as `auto-fix↻`. On the usage limit it waits for the reset and resumes the same
 session (a recital round runs again); a reset more than 6 h off (`MAX_WAIT`) stops the run instead. A bug with a landed fix

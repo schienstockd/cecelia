@@ -21,7 +21,7 @@ Usage:
     pixi run judge-review                # the newest record
     pixi run judge-review --date 2026-10-06
     pixi run judge-review --auto --dry-run      # the briefs it would send
-    pixi run judge-review --auto [--limit 3]    # work the first session(s)
+    pixi run judge-review --auto [--limit 3]    # work every `fix` bug (or the first 3 sessions)
 """
 from __future__ import annotations
 
@@ -822,7 +822,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--date", help="record to review (default: the newest pass record)")
     ap.add_argument("--auto", action="store_true", help="work the `fix` bugs unattended, one PR per session")
-    ap.add_argument("--limit", type=int, default=1, help="--auto: sessions to run (default 1)")
+    ap.add_argument("--limit", type=int, default=None, help="--auto: at most this many sessions (default: all)")
     ap.add_argument("--dry-run", action="store_true", help="--auto: print the briefs, run nothing")
     args = ap.parse_args(argv)
     try:
