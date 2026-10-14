@@ -13,7 +13,7 @@ credential: this script does what touches the outside world, the agent only edit
    `claude -p` runs, which the sandbox can't make), then resumes the agent with the body: it acts on
    the findings and returns a `[slug: outcome]` tag per finding, as CLAUDE.md asks of any commit.
 4. This script commits (the commit-msg hook checks the tags as for any commit), pushes, and opens
-   the PR: a draft when the agent says the fix changes what is drawn on screen. Never a merge.
+   the PR, flagged in its body when the agent says the fix changes what is drawn on screen. Never a merge.
 
 What runs outside the sandbox after the agent is this checkout's, never the worktree's: the recital
 and the commit-msg hook run from here with this env's python, and git runs with the hooks path
@@ -76,8 +76,8 @@ FIX_SCHEMA = {
             "required": ["key", "outcome", "reason"], "additionalProperties": False}},
         "title": {"type": "string"},
         "summary": {"type": "string"},
-        "draft": {"type": "boolean"}},
-    "required": ["bugs", "title", "summary", "draft"], "additionalProperties": False}
+        "visual": {"type": "boolean"}},
+    "required": ["bugs", "title", "summary", "visual"], "additionalProperties": False}
 TAGS_SCHEMA = {
     "type": "object",
     "properties": {"tags": {"type": "array", "items": {"type": "string"}}},
@@ -173,7 +173,7 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
               "with why, rather than guess.",
               "", "Report every key. Open each `reason` with one short sentence that says it all (for `left`: "
               "what stopped you); the detail follows. `title` is the commit's subject line; `summary` is its body: what was wrong "
-              "and what changed, naming each fixed bug's key. Set `draft` if the fix changes what is drawn on "
+              "and what changed, naming each fixed bug's key. Set `visual` if the fix changes what is drawn on "
               "screen: the owner looks at those before they merge."]
     return "\n".join(lines)
 
@@ -357,6 +357,8 @@ def pr_body(record: dict, bugs: _t.Sequence[dict], answer: dict) -> str:
             f"{said.get(b['key'], {}).get('reason', '')}" for b in bugs]
     return "\n".join([answer["summary"].strip(), "", f"From the weekly judge record of {record['date']}, "
                       "worked unattended by `pixi run judge-review --auto`. Nothing here is merged until you merge it.",
+                      *(["", "**Changes what is drawn on screen:** look at it before you merge."]
+                        if answer.get("visual") else []),
                       "", *rows, "", PR_FOOTER]) + "\n"
 
 
@@ -485,7 +487,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         fh.write(pr_body(record, bugs, answer))
     try:
         opened = sh(["gh", "pr", "create", "--base", "main", "--head", branch, "--title", answer["title"].strip(),
-                     "--body-file", fh.name, *(["--draft"] if answer["draft"] else [])], tree)
+                     "--body-file", fh.name], tree)
     finally:
         os.unlink(fh.name)
     if opened.returncode != 0:
@@ -496,7 +498,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         if b["key"] in _fixed_keys(answer):
             _rv.append_review("bug_work", record["date"], b["id"], "fix_session", note=f"auto PR {pr}", path=path)
     print(f"  {_col(BLUISH_GREEN, '→', use_colour=out.isatty())} "
-          + _col(_BOLD, f"{'draft PR' if answer['draft'] else 'PR'} {pr}", use_colour=out.isatty()), file=out, flush=True)
+          + _col(_BOLD, f"PR {pr}" + (" · changes what is drawn: look first" if answer.get("visual") else ""), use_colour=out.isatty()), file=out, flush=True)
     return spent
 
 

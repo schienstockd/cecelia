@@ -39,7 +39,7 @@ class _AutoFixture(_Fixture):
         self.main.mkdir(parents=True)
         self.record = self.build(bugs=[_bug("B1", verify=FIX, issue={"number": 7}), _bug("B2"),
                                        _bug("B3", verify={"verdict": "decide", "date": "2026-10-05"}, file="b.py")])
-        self.calls, self.messages = [], []
+        self.calls, self.messages, self.bodies = [], [], []
         removed = mock.patch.object(self.af.agent_sandbox, "remove_worktree",
                                     lambda repo, dest: self.calls.append(["remove_worktree", str(dest)]))
         removed.start()
@@ -60,6 +60,8 @@ class _AutoFixture(_Fixture):
                 return subprocess.CompletedProcess(argv, 0, names if "--name-only" in argv else diff, "")
             if argv[:2] == ["git", "commit"]:
                 self.messages.append(pathlib.Path(argv[3]).read_text(encoding="utf-8"))
+            if argv[:3] == ["gh", "pr", "create"]:
+                self.bodies.append(pathlib.Path(argv[argv.index("--body-file") + 1]).read_text(encoding="utf-8"))
             out = {"recital": RECITAL, "create": "https://github.com/o/r/pull/9\n"}.get(argv[2] if len(argv) > 2 else "", "")
             return subprocess.CompletedProcess(argv, 1 if argv[1] in fail else 0, out, "boom" if argv[1] in fail else "")
         self.git_c = set()
@@ -86,9 +88,9 @@ class _AutoFixture(_Fixture):
         return spent, out.getvalue()
 
 
-def _answer(outcome="fixed", draft=False):
+def _answer(outcome="fixed", visual=False):
     return {"bugs": [{"key": "fanout-b1", "outcome": outcome, "reason": "because"}], "title": "fix(a): b",
-            "summary": "What broke; fanout-b1 fixed.", "draft": draft}
+            "summary": "What broke; fanout-b1 fixed.", "visual": visual}
 
 
 class ItemsTest(_AutoFixture):
@@ -250,7 +252,7 @@ class FenceTest(_AutoFixture):
 
 class WorkTest(_AutoFixture):
     def test_a_fix_is_committed_with_its_tags_pushed_and_opened_as_a_pr(self):
-        spent, out = self.work(_answer(draft=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
         self.assertEqual(spent, 3.0)
         firsts = [c[:3] for c in self.calls]
         self.assertEqual(firsts[0], ["pixi", "run", "bootstrap-worktree"])
@@ -263,7 +265,9 @@ class WorkTest(_AutoFixture):
             self.assertIn(part, msg)
         self.assertNotIn("Fixes #7", msg)
         create = next(c for c in self.calls if c[:3] == ["gh", "pr", "create"])
-        self.assertIn("--draft", create)
+        self.assertNotIn("--draft", create)   # a normal PR; the body says to look first
+        body = next(m for m in self.bodies)
+        self.assertIn("Changes what is drawn on screen", body)
         self.assertFalse(any(c[:3] == ["gh", "pr", "merge"] for c in self.calls))
         # git never runs the worktree's hooks or fsmonitor; the recital reads the diff we staged
         self.assertEqual(self.git_c, {"core.fsmonitor", "core.hooksPath"})
@@ -272,7 +276,7 @@ class WorkTest(_AutoFixture):
         self.assertEqual([(r["ref"], r["value"], r["note"]) for r in rows],
                          [("B1", "fix_session", "auto PR https://github.com/o/r/pull/9")])
         self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["outcome"], "fixed")
-        self.assertIn("→ draft PR https://github.com/o/r/pull/9", out)
+        self.assertIn("→ PR https://github.com/o/r/pull/9 · changes what is drawn: look first", out)
 
     def test_not_real_commits_nothing_removes_the_worktree_and_shows_on_the_card(self):
         _, out = self.work(_answer("not_real"))

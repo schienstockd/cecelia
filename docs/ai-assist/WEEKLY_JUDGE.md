@@ -283,8 +283,8 @@ the agent as `auto-fix↻`. A bug with a landed fix
 holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<key>` /
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with
 `acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
-to act on the findings and tag them, and commits, pushes and opens the PR itself: a draft when the
-fix changes what is drawn on screen. It never merges. After the agent, nothing of the worktree's
+to act on the findings and tag them, and commits, pushes and opens the PR itself, its body flagged
+when the fix changes what is drawn on screen (look before you merge). It never merges. After the agent, nothing of the worktree's
 runs outside the sandbox: recital and the commit-msg hook run from your checkout, and git with the
 hooks path pointed there. The script stops, worktree left, if the agent changed the worktree's
 `.git` pointer, `.githooks`, `.claude` or `.mcp.json` (ignored files included), if the diff touches
