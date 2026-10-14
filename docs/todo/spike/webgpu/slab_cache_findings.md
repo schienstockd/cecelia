@@ -35,7 +35,7 @@ The pipe (TLS + HTTP/2 + socket) is ~20 ms per brick — not the bottleneck.
 | Codec | blosc / zstd, dimension separator `/` |
 | Brick | 128 x 128 x 31 z x 4 c, level 0 = 4,063,232 bytes. Matches `brickVolumeRenderer.ts` (`BRICK_XY=128`, `brickZ=min(128, nZ)`, `cTo=nC-1`) |
 | Request list | 64 bricks, one per timepoint (t spread evenly over 0–180), x/y brick position varied. Every request touches chunks no other request in the list touches |
-| Transport | `https://127.0.0.1:8080`, HTTP/2 (the server is TLS-only when a cert exists; plain http gets a connection reset) |
+| Transport | `https://127.0.0.1:8080`, HTTP/2 (the server was TLS-only when a cert existed at the time of this run; TLS is now off by default and the server speaks plain HTTP/1.1 unless `CECELIA_TLS` / `[tls].enabled` turns it on — see `api/src/server.jl`) |
 | Machine | 16 cores, 247 GB RAM, store on NVMe (`nvme0n1`) |
 | Server | running `pixi` dev server, Julia 1.13.1, `-t auto` |
 
