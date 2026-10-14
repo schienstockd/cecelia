@@ -28,7 +28,7 @@
 //    renderer's 2D branch computes a crop from `center` + `zoom` — so this only affects animations
 //    authored from the volume mode.
 
-import type { ViewerMeta, OrbitCamera } from '../volumeViewer'
+import { visibleExtentUm, type ViewerMeta, type OrbitCamera } from '../volumeViewer'
 import { viewerColormapForHex } from '../viewerColormap'
 import { toHex } from '../colour'
 
@@ -120,7 +120,7 @@ export function buildViewState(input: BuildViewStateInput): ViewerViewState {
     ? Math.max(0, Math.floor((meta.nZ - 1) / 2))          // 3D: rotate around volume centre
     : zPlane                                              // 2D: the plane the user is on
 
-  const visibleHeightUm = 2 * Math.max(cam.dist, 0) * viewHalfAngle
+  const visibleHeightUm = visibleExtentUm(cam.dist, 1, viewHalfAngle)[1]
   const visibleL0H = Math.max(1, visibleHeightUm / umPerL0Y)
   const zoom = Math.max(1e-6, canvasH / visibleL0H)
 

@@ -4,6 +4,7 @@ Real sockets on 127.0.0.1 (ephemeral port) — no running app needed.
 """
 import json
 import os
+import tempfile
 import threading
 import unittest
 import urllib.error
@@ -33,10 +34,15 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 class DefaultBaseUrlTest(unittest.TestCase):
+    def setUp(self):
+        self._cfg = tempfile.TemporaryDirectory()   # never this machine's real sticky slot
+        self.addCleanup(self._cfg.cleanup)
+        self.clean = {k: v for k, v in os.environ.items()
+                      if k not in ("CECELIA_API_URL", "CECELIA_PORT", "CECELIA_PORT_SLOT")}
+        self.clean["CECELIA_DEV_DIR"] = self._cfg.name  # DEV-DIR-OK: temp dir
+
     def test_slot_and_overrides(self):
-        clean = {k: v for k, v in os.environ.items()
-                 if k not in ("CECELIA_API_URL", "CECELIA_PORT", "CECELIA_PORT_SLOT")}
-        with mock.patch.dict(os.environ, clean, clear=True):
+        with mock.patch.dict(os.environ, self.clean, clear=True):
             self.assertEqual(default_base_url(), "http://127.0.0.1:8080")
             os.environ["CECELIA_PORT_SLOT"] = "2"   # another user on this machine: app/src/ports.jl
             self.assertEqual(default_base_url(), "http://127.0.0.1:8100")
@@ -44,6 +50,31 @@ class DefaultBaseUrlTest(unittest.TestCase):
             self.assertEqual(default_base_url(), "http://127.0.0.1:9000")
             os.environ["CECELIA_API_URL"] = "https://127.0.0.1:8443"
             self.assertEqual(default_base_url(), "https://127.0.0.1:8443")
+
+    def test_plain_shell_follows_the_sticky_slot(self):
+        # `pixi run mcp` or a notebook started from a shell has no CECELIA_PORT_SLOT: the slot the
+        # backend persisted (`<config_dir>/port-slot`) is what says which backend is this user's.
+        with open(os.path.join(self._cfg.name, "port-slot"), "w", encoding="utf-8") as f:
+            f.write("1\n")
+        with mock.patch.dict(os.environ, self.clean, clear=True):
+            self.assertEqual(default_base_url(), "http://127.0.0.1:8090")
+            os.environ["CECELIA_PORT_SLOT"] = "3"   # an inherited slot still wins
+            self.assertEqual(default_base_url(), "http://127.0.0.1:8110")
+
+
+class TokenLookupTest(unittest.TestCase):
+    """Outside a backend-spawned task (a notebook, a script) there is no `CECELIA_API_TOKEN`: the client
+    reads `<config_dir>/api-token` like every other client, instead of sending no token and getting 401s."""
+
+    def test_token_file_when_env_has_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "api-token"), "w", encoding="utf-8") as f:
+                f.write("filetok\n")
+            with mock.patch.dict(os.environ, {"CECELIA_DEV_DIR": d}, clear=True):  # DEV-DIR-OK: temp dir
+                self.assertEqual(CeceliaClient().token, "filetok")
+                os.environ["CECELIA_API_TOKEN"] = "envtok"   # a spawned task's env wins
+                self.assertEqual(CeceliaClient().token, "envtok")
+                self.assertEqual(CeceliaClient(token="given").token, "given")
 
 
 class SchemeAndTokenTest(unittest.TestCase):

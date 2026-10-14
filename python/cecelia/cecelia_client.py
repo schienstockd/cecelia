@@ -11,23 +11,12 @@ API server is running in both (it is what launches production tasks).
 Uses only the stdlib (`urllib`) so it adds no dependency to the napari venv.
 """
 import json
-import os
 import urllib.parse
 
 import numpy as np
 
 from cecelia.utils import loopback
-
-
-def default_base_url() -> str:
-    """This user's backend: `CECELIA_API_URL` if given, else 127.0.0.1 on this user's port
-    (`CECELIA_PORT`, or 8080 + 10 × `CECELIA_PORT_SLOT` — app/src/ports.jl; a task inherits both).
-    The scheme here is only a first guess; `loopback.open_url` finds the one the server speaks."""
-    url = os.environ.get("CECELIA_API_URL", "").strip()
-    if url:
-        return url
-    port = os.environ.get("CECELIA_PORT", "").strip() or str(8080 + 10 * int(os.environ.get("CECELIA_PORT_SLOT", "0") or 0))
-    return f"http://127.0.0.1:{port}"
+from cecelia.utils.loopback import default_base_url  # re-exported: callers import it from here
 
 
 class CeceliaClient:
@@ -36,8 +25,8 @@ class CeceliaClient:
                  token: str | None = None):
         self.base_url = (base_url or default_base_url()).rstrip("/")
         # The API only answers its own user (app/src/api_token.jl). A task the backend spawned has the
-        # token in its env; anywhere else, pass it (`<config_dir>/api-token`).
-        self.token = token if token is not None else os.environ.get("CECELIA_API_TOKEN", "")
+        # token in its env; a notebook or script reads it from `<config_dir>/api-token`.
+        self.token = token if token is not None else loopback.api_token()
         self.project_uid = project_uid
         self.image_uid = image_uid
         self.timeout = timeout

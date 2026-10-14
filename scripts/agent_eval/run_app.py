@@ -44,6 +44,7 @@ import trace_view  # noqa: E402
 from cecelia.effectiveness import claude_cli  # noqa: E402
 from cecelia.utils import vn_versioning  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
+from cecelia.utils.loopback import default_base_url  # noqa: E402
 
 DEFAULT_BRIEF = "Hey. can you track the cells in these images and analyse their behaviour?"
 # what the app rewrites when the USER opens a project (lastOpenedAt, runlog normalisation, lab-log
@@ -296,7 +297,7 @@ def main(argv=None) -> int:
     ap.add_argument("--timeout-s", type=int, default=3 * 3600)
     ap.add_argument("--model", default=None)
     ap.add_argument("--prefix", default="")
-    ap.add_argument("--api-url", default=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
+    ap.add_argument("--api-url", default=default_base_url())
     ap.add_argument("--claude", default="claude")
     signal.signal(signal.SIGTERM, _raise_on_sigterm)   # so a stopped run still tears down the agent
     rec = run(ap.parse_args(argv))

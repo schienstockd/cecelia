@@ -1220,7 +1220,7 @@ const camZoom = computed(() => {
   const c = canvas.value
   const m = meta.value
   if (!c || !m) return 1
-  const visibleHeightUm = 2 * Math.max(cam.value.dist, 0) * VIEW_HALF_ANGLE
+  const visibleHeightUm = visibleExtentUm(cam.value.dist, 1)[1]
   const visibleL0Y = visibleHeightUm / (m.voxelUm[1] || 1)
   const devicePxY = Math.max(c.clientHeight * (window.devicePixelRatio || 1), 1)
   return visibleL0Y / devicePxY

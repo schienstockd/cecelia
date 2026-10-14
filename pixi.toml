@@ -266,7 +266,7 @@ test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 
 test-mcp      = { cmd = "python -m unittest discover -s tests -t . -v", cwd = "mcp" }
 
 # MCP observer server (stdio) — read-only Claude access to the running project (needs `pixi run dev`
-# on :8080). See mcp/README.md for wiring into Claude Code. Override the API with CECELIA_API_URL.
+# on this user's port slot — :8080 for slot 0). See mcp/README.md for wiring into Claude Code. Override the API with CECELIA_API_URL.
 mcp           = { cmd = "python -m cecelia_mcp.server", cwd = "mcp" }
 
 # Frontend — Vite (port 5173). NOTE: `pixi run dev` already starts this; run it standalone ONLY when

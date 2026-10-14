@@ -169,7 +169,7 @@ Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHE
 
 ## Running it
 
-1. Start the Cecelia backend: `pixi run dev` (serves the API on `:8080`).
+1. Start the Cecelia backend: `pixi run dev` (serves the API on `:8080`, or your port slot's port — the MCP follows it unless `CECELIA_API_URL` says otherwise).
 2. Start this server: `pixi run mcp` (stdio). Override the API with `CECELIA_API_URL`.
 
 ### Wire into Claude Code

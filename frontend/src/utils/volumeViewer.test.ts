@@ -792,6 +792,17 @@ describe('the scale bar is drawn against what is on screen', () => {
     const [close] = visibleExtentUm(500, 1)
     expect(close).toBeCloseTo(wide / 2)
   })
+  it('is the one derivation of what is on screen: nothing else multiplies the distance by the half-angle', () => {
+    // The scale bar, pan, cursor zoom, picking, the tile viewport/minimap, the LOD zoom and the brick
+    // scheduler all need the visible extent. A copy of the expression drifts the day the projection changes.
+    const sources = import.meta.glob(['/src/**/*.ts', '/src/**/*.vue', '!/src/**/*.test.ts'],
+      { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+    const copies = Object.entries(sources).flatMap(([path, src]) =>
+      src.split('\n').flatMap((line, i) =>
+        /dist\b[^;]*\*\s*(VIEW_HALF_ANGLE|viewHalfAngle|halfAngle)\b/i.test(line) && !/^\s*(\*|\/\/)/.test(line)
+          ? [`${path}:${i + 1}`] : []))
+    expect(copies).toEqual([expect.stringMatching(/^\/src\/utils\/volumeViewer\.ts:\d+$/)])
+  })
 })
 
 describe('carryCamera — 2D↔3D keeps the place and the zoom', () => {

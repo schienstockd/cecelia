@@ -36,7 +36,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(REPO / "mcp"))
 from cecelia_mcp.auth import auth_headers  # noqa: E402 — the API only answers its token
-from cecelia.utils.loopback import open_url  # noqa: E402 — http or https, whichever the app serves
+from cecelia.utils.loopback import default_base_url, open_url  # noqa: E402 — http or https, whichever the app serves
 
 import trace_view  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
@@ -45,7 +45,7 @@ from cecelia.effectiveness.state import state_dir, try_lock  # noqa: E402
 PROJECTS = HERE / "guide_projects.json"
 GUIDES = REPO / "mcp" / "cecelia_mcp" / "guides.json"
 BRIEF = "Use the {name} guide to process the images in this project."
-DEFAULT_API = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
+DEFAULT_API = default_base_url()
 
 
 class GuideRunError(Exception):

@@ -20,7 +20,7 @@ import type { VirtualBrick } from './pageTable'
 import { brickKey } from './pageTable'
 import { sseDesiredLevel, sseLevelWithHysteresis } from './sseLod'
 import {
-  VIEW_HALF_ANGLE, extentUm, cameraBasis, type ViewerMeta, type OrbitCamera, type Vec3,
+  VIEW_HALF_ANGLE, extentUm, visibleExtentUm, cameraBasis, type ViewerMeta, type OrbitCamera, type Vec3,
 } from './volumeViewer'
 
 /**
@@ -340,7 +340,7 @@ export function brickViewportFromCamera(
       distanceUm,
     }
   }
-  const halfH = Math.max(1e-3, cam.dist * VIEW_HALF_ANGLE)
+  const halfH = Math.max(1e-3, visibleExtentUm(cam.dist, 1)[1] / 2)
   const { right, up } = cameraBasis(cam.yaw, cam.pitch)
   const aim = [0, 1, 2].map(a => right[a] * cam.panX + up[a] * cam.panY)
   return {

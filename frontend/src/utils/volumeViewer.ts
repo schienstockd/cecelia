@@ -812,9 +812,12 @@ export function carryCamera(
  * distance converts to µm identically along any direction, at any yaw or pitch. (An earlier version of
  * this hid the bar unless the camera was face-on, reasoning that a rotated horizontal axis would mix x
  * and z — true of the VOXEL grid, not of the space actually rendered.)
+ *
+ * `halfAngle` is for a caller that takes the constant as an input (`viewer/viewState.ts`); everyone
+ * else leaves the default.
  */
-export function visibleExtentUm(dist: number, aspect: number): [number, number] {
-  const h = 2 * Math.max(dist, 0) * VIEW_HALF_ANGLE
+export function visibleExtentUm(dist: number, aspect: number, halfAngle = VIEW_HALF_ANGLE): [number, number] {
+  const h = 2 * Math.max(dist, 0) * halfAngle
   return [h * Math.max(aspect, 1e-6), h]
 }
 
@@ -842,7 +845,7 @@ export function orbitDrag(cam: OrbitCamera, dx: number, dy: number, width: numbe
  * camera moves the other way. Drag right and the eye moves left, so the image comes with you.
  */
 export function panDrag(cam: OrbitCamera, dx: number, dy: number, height: number): OrbitCamera {
-  const umPerPx = (2 * Math.max(cam.dist, 0) * VIEW_HALF_ANGLE) / Math.max(height, 1)
+  const umPerPx = visibleExtentUm(cam.dist, 1)[1] / Math.max(height, 1)
   return { ...cam, panX: cam.panX - dx * umPerPx, panY: cam.panY + dy * umPerPx }
 }
 
@@ -882,10 +885,10 @@ export function orbitZoom(
   const d = cam.dist * Math.exp(deltaY * 0.001)
   const nextDist = Math.max(fitDist * band.min, Math.min(fitDist * band.max, d))
   if (!anchor || nextDist === cam.dist) return { ...cam, dist: nextDist }
-  const halfH_old = cam.dist * VIEW_HALF_ANGLE
-  const halfH_new = nextDist * VIEW_HALF_ANGLE
-  const dHalfH = halfH_new - halfH_old
-  const dHalfW = dHalfH * anchor.aspect
+  const [wOld, hOld] = visibleExtentUm(cam.dist, anchor.aspect)
+  const [wNew, hNew] = visibleExtentUm(nextDist, anchor.aspect)
+  const dHalfW = (wNew - wOld) / 2
+  const dHalfH = (hNew - hOld) / 2
   return {
     ...cam,
     dist: nextDist,

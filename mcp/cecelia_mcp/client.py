@@ -42,8 +42,6 @@ from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8080"
-
 # (method, path) → the ONLY routes the observer may ever call. Read-only except the three writes below.
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
@@ -283,8 +281,8 @@ class ApiError(RuntimeError):
 
 
 class CeceliaClient:
-    def __init__(self, base_url: str = DEFAULT_BASE_URL, timeout: float = 30.0):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str | None = None, timeout: float = 30.0):
+        self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
         # Auto-pair cache: project_uid → (socket_path, token) already POSTed for this session.
         # Skips the round-trip after the first tool call per project as long as the env vars

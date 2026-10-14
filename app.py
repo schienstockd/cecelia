@@ -104,21 +104,8 @@ def _find_pixi() -> str:
 
 
 def _config_dir() -> str:
-    """The per-user dir holding `custom.toml`: the Python twin of `config_dir` in app/src/config.jl,
-    same order — `CECELIA_DEV_DIR` env, then `CECELIA_DEV_DIR` in `<root>/.env`, then `~/.cecelia`
-    (the installed app has neither, so it lands there)."""
-    val = os.environ.get("CECELIA_DEV_DIR")
-    if not val:
-        try:
-            with open(os.path.join(ROOT, ".env"), encoding="utf-8") as f:
-                for line in f:
-                    key, sep, rest = line.strip().partition("=")
-                    if sep and key == "CECELIA_DEV_DIR":
-                        val = rest.strip()
-        except OSError:
-            pass
-    # normpath: `~/x` expands to `C:\Users\u/x` on Windows; Julia's `expand_user` canonicalises it.
-    return os.path.normpath(os.path.expanduser(val or os.path.join("~", ".cecelia")))
+    """The per-user dir holding `custom.toml` (`loopback.config_dir`, with this launcher's `.env`)."""
+    return loopback.config_dir(ROOT)
 
 
 def _multithreaded_setting() -> bool:
@@ -209,14 +196,7 @@ def _api_token() -> str:
     so only this account can drive Cecelia. The server creates `<config_dir>/api-token` before it
     takes the lock, so it exists once `_launched_port` has returned. Empty when unreadable — the
     request then fails with a 401, which says why."""
-    tok = os.environ.get("CECELIA_API_TOKEN", "").strip()
-    if tok:
-        return tok
-    try:
-        with open(os.path.join(_config_dir(), "api-token"), encoding="utf-8") as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+    return loopback.api_token(ROOT)
 
 
 def _server_ready(timeout: float = 180.0) -> bool:

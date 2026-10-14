@@ -16,7 +16,7 @@
 //
 // See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
 
-import { VIEW_HALF_ANGLE, type OrbitCamera, type ViewerMeta } from './volumeViewer'
+import { visibleExtentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
 
 export interface PickCoord {
   /** Image pixel column, 0-based, floored. */
@@ -51,11 +51,11 @@ export function screenToImagePx(
   // Level-N voxel size: `ext / nLevel`. Reduces to `meta.voxelUm[..]` at level 0.
   const vxL = extX / Math.max(nX, 1)
   const vyL = extY / Math.max(nY, 1)
-  // Visible extent in world µm at the current zoom. Half-height = dist * VIEW_HALF_ANGLE (from
-  // `visibleExtentUm`) — same formula the shader inverts to build the ray origin.
-  const aspect = Math.max(canvasW, 1) / Math.max(canvasH, 1)
-  const halfH = cam.dist * VIEW_HALF_ANGLE
-  const halfW = halfH * aspect
+  // Visible extent in world µm at the current zoom (`visibleExtentUm`) — the extent the shader inverts
+  // to build the ray origin.
+  const [visW, visH] = visibleExtentUm(cam.dist, Math.max(canvasW, 1) / Math.max(canvasH, 1))
+  const halfW = visW / 2
+  const halfH = visH / 2
   // NDC — right is +, up is +. Canvas y is top-down so it flips.
   const ndcX = (2 * cx) / Math.max(canvasW, 1) - 1
   const ndcY = 1 - (2 * cy) / Math.max(canvasH, 1)
@@ -99,8 +99,9 @@ export function cameraViewL0(
 ): L0Rect {
   const vx = meta.voxelUm[0] || 1
   const vy = meta.voxelUm[1] || 1
-  const halfH = cam.dist * VIEW_HALF_ANGLE
-  const halfW = halfH * (Math.max(canvasW, 1) / Math.max(canvasH, 1))
+  const [visW, visH] = visibleExtentUm(cam.dist, Math.max(canvasW, 1) / Math.max(canvasH, 1))
+  const halfW = visW / 2
+  const halfH = visH / 2
   // Same shader convention as `screenToImagePx`: screen centre sits at image µm (panX + extX/2,
   // -panY + extY/2).
   const cx = cam.panX + (meta.nX * vx) / 2
