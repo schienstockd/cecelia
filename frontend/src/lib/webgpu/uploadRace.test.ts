@@ -23,9 +23,13 @@ function noopProxy(): unknown {
   })
 }
 
+/** Textures created so far — the flat renderer's allocations, counted to see WHEN one happens. */
+let created = 0
+
 const fakeDevice = new Proxy({} as Record<string, unknown>, {
   get(_t, prop) {
     if (prop === 'then') return undefined
+    if (prop === 'createTexture') return () => { created++; return noopProxy() }
     if (prop === 'popErrorScope') return async () => null
     if (prop === 'createShaderModule') {
       return () => ({ getCompilationInfo: async () => ({ messages: [] }) })
@@ -116,6 +120,61 @@ describe('flat renderer — an upload that straddles a setImage', () => {
     release()
     await up
     expect(r.hasTimepoint(0)).toBe(false)
+  })
+})
+
+// Dawn frees a destroyed texture's memory only once the queue retires the work that used it. A
+// reallocate destroys a full cache, so allocating before that drain needs old + new resident at once —
+// a false OOM that swaps the viewer to the brick renderer. The allocation must wait for the queue.
+describe('flat renderer — allocating after a bulk free', () => {
+  const labelBytes = () => new ArrayBuffer(4 * 4 * 4)
+
+  it('waits for the queue before the first frame after a reallocate', async () => {
+    const r = await renderer()
+    r.setImage(meta, 1e9, 1, 0, false)
+    const up = r.uploadFrame(0, frame(), 0)
+    await tick(); release(); await up
+    expect(r.hasTimepoint(0)).toBe(true)
+
+    r.setImage(meta, 1e9, 1, 0, true)             // destroys t=0's texture
+    const before = created
+    const next = r.uploadFrame(0, frame(), 0, labelBytes(), 'm')
+    await tick()
+    expect(created).toBe(before)                   // nothing allocated while the free is pending
+    release()                                      // the queue retires the old texture's work
+    await tick()
+    expect(created).toBeGreaterThan(before)
+    release(); await next
+    expect(r.hasTimepoint(0)).toBe(true)
+  })
+
+  it('does not wait when nothing was freed', async () => {
+    const r = await renderer()
+    r.setImage(meta, 1e9, 1, 0, false)
+    const before = created
+    const up = r.uploadFrame(0, frame(), 0)
+    await tick()
+    expect(created).toBeGreaterThan(before)
+    release(); await up
+  })
+
+  it('waits for the queue before a mask allocation after the mask source drops every mask', async () => {
+    const r = await renderer()
+    r.setImage(meta, 1e9, 1, 0, true)
+    r.setLabelSource!('a')
+    const up = r.uploadFrame(0, frame(), 0, labelBytes(), 'a')
+    await tick(); release(); await up
+    expect(r.needsLabel!(0)).toBe(false)
+
+    r.setLabelSource!('b')                         // destroys t=0's mask
+    expect(r.needsLabel!(0)).toBe(true)
+    const before = created
+    const lab = r.uploadLabel!(0, labelBytes(), 'b')
+    await tick()
+    expect(created).toBe(before)
+    release(); await lab
+    expect(created).toBeGreaterThan(before)
+    expect(r.needsLabel!(0)).toBe(false)
   })
 })
 

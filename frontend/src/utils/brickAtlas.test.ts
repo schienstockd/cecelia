@@ -195,6 +195,15 @@ describe('pickAtlasLayout — real-world sizing', () => {
     expect(l).toHaveLength(1)
   })
 
+  it('the cache chips count atlases through atlasCountForBudget, never a second ceil', () => {
+    // A hand-rolled `Math.ceil(mb / perAtlasMB)` drops the 1 % tolerance, so a chip just over a
+    // multiple of maxBufferSize names one atlas more than the picker allocates.
+    const src = Object.values(import.meta.glob('/src/modules/ViewerWindow.vue',
+      { query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0]
+    expect(src).toBeTruthy()
+    expect(src.match(/Math\.ceil\([^\n]*perAtlasMB/g) ?? []).toEqual([])
+  })
+
   it('stays at N=1 when budget only fits one atlas', () => {
     // Budget exactly fits one atlas — nAtlases must be 1, never 0.
     const REAL_2GB: DeviceLimits = { maxTextureDimension3D: 2048, maxBufferSize: 4 * 1024 * 1024 * 1024 }
