@@ -45,7 +45,9 @@ working" and "my fix isn't loaded" are indistinguishable. Its Restart refuses wh
 press again to force.
 
 If you are iterating on task code and would rather not think about it, turn the toggle off — tasks then
-run in the backend and Restart is enough for everything.
+run in the backend and Restart is enough for everything. They also die with it, so with the runner off
+(or down) Restart and the worktree switch refuse while a task is in flight (`tasksLostOnRestart` in
+`frontend/src/utils/runningTasks.ts`).
 
 ### If it is not there when you press Run
 
