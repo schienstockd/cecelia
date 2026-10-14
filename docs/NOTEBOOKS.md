@@ -11,6 +11,10 @@ the work the old R Markdown vignettes did, now versioned and organised. Notebook
 
 - **From the app:** the **Notebooks** sidebar item (Analysis group). *Launch server* starts Pluto;
   *Open Notebooks* opens it in a new tab. The table below manages this project's notebooks.
+- **Shipped examples are never opened in place** — no *Open in Pluto* on an example row; *Duplicate*
+  it into the project first. Pluto saves a notebook back to the file it opened on every edit and run,
+  and an example lives in the install: the owner would rewrite the shipped copy, a non-owner of a
+  shared install would fail to save (`utils/notebookOpen.ts`).
 - **From the terminal:** `pixi run notebooks` (Pluto on **:7660**), `pixi run stop-notebooks`.
 - **First plot is slow (~20 s)** until the fast-plot sysimage is built. Build it from the Notebooks
   page — an **Enable fast plots** button (background, ~10 min); after an update it becomes a
