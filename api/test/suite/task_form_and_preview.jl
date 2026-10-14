@@ -445,6 +445,32 @@ end
     @test occursin("_pluto_state.proc === proc || break", nb)
 end
 
+@testset "API: toggle-off stops an ADOPTED preview worker too" begin
+    # A backend restart re-adopts the worker on the port as a `PreviewWorker()` with no process handle,
+    # so `close!` is a no-op on it. Toggle-off has to free the port as well, or the worker keeps running
+    # (and holding VRAM) while the UI reports it stopped. A child julia listening on an unused port
+    # stands in for the worker — never :7656, which a dev worker may hold.
+    port = 17656 + rand(0:999)
+    child = run(pipeline(`$(Base.julia_cmd()) --startup-file=no -e
+                          "using Sockets; s = listen(ip\"127.0.0.1\", $port); println(\"up\"); sleep(120)"`;
+                         stdout = (out = Pipe())); wait = false)
+    try
+        close(out.in)
+        @test readline(out) == "up"
+        w = PreviewWorker(; port)
+        w.state = Cecelia.PREVIEW_READY      # the adopted shape: READY, `proc === nothing`
+        _preview_ref[] = w
+        st, body = _post(api_preview_stop, Dict{String,Any}())
+        @test st == 200 && JSON3.read(body).stopped == true
+        @test _preview() === nothing
+        for _ in 1:40; process_running(child) || break; sleep(0.25); end
+        @test !process_running(child)
+    finally
+        _preview_ref[] = nothing
+        process_running(child) && kill(child)
+    end
+end
+
 @testset "API: a preview send takes a READY worker, read when it sends" begin
     # `_ensure_preview!()` returning true holds only under its own lock. An env `:switch` or a toggle-off
     # landing before the send swaps in a STARTING worker (unbound port: a 500 "connection refused") or

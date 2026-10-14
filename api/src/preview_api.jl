@@ -50,8 +50,10 @@ shutdown/restart (`_stop_children_for_exit`), because "stop the worker" must mea
 however it is reached — every code path (toggle, shutdown, restart) comes through here so a stopped
 worker is stopped everywhere.
 
-Best-effort by design: a worker we merely ADOPTED, or one that outlived a crash, has no process handle
-to close, so callers follow this with a port-level kill.
+A worker we merely ADOPTED (a backend restart found it on the port) has no process handle, so
+`close!` alone is a no-op on it — the held worker's port is freed here too, or toggle-off would leave
+it running and holding VRAM while the UI says stopped. A worker nothing holds (one that outlived a
+crash and was never adopted) is the shutdown path's own port-level kill.
 """
 function _stop_preview_worker!()
     lock(_preview_lock) do
@@ -60,6 +62,7 @@ function _stop_preview_worker!()
             @warn "Could not stop preview worker" exception = e
         end
         _preview_ref[] = nothing
+        w === nothing || _free_preview_port!(w.port)
     end
 end
 
@@ -166,8 +169,7 @@ function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
         action === :wait  && return false
         if action === :switch
             @info "Switching preview worker to the $(Cecelia.pixi_env_name(env)) env"
-            _stop_preview_worker!()
-            _free_preview_port!()
+            _stop_preview_worker!()   # frees the port too — the replacement must be able to bind
         elseif _preview_ref[] === nothing
             probe = PreviewWorker()
             ok, protocol, probe_env = _preview_ping_env(probe)
@@ -221,9 +223,9 @@ _preview_env_symbol(name::AbstractString) =
 # …and WAIT, because the kill is asynchronous: launching straight away races the old process's exit, the
 # replacement loses the bind and dies, which `launch!` reports as an error the user sees once before
 # the next attempt succeeds. Cheap to just wait.
-function _free_preview_port!()
-    probe = PreviewWorker()
-    Cecelia._kill_listeners_on_port(service_port(:preview))
+function _free_preview_port!(port::Int = service_port(:preview))
+    probe = PreviewWorker(; port)
+    Cecelia._kill_listeners_on_port(port)
     for _ in 1:20
         first(_preview_ping(probe)) || break
         sleep(0.25)
