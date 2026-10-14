@@ -51,9 +51,14 @@ jobs:
           # quieter still (no preview worker to spawn; an observer registered against a directory
           # that isn't there). Before removing anything here, check the `release bundle ships every
           # runtime path` testset in app/test/suite.jl, which pins the load-bearing ones.
+          # frontend/src/lib/webgpu/shaders: api/src/shader_constants.jl reads constants.json at server
+          # load, and the offline renderer (wgsl_utils.py) reads the *.wgsl + JSON for stills/movies.
+          # notebooks: the example notebooks (notebooks_api.jl `_repo_notebooks_dir`, pluto/launch.jl) —
+          # an isdir guard hides their absence, so installs just show no examples.
           tar -czf out/cecelia.tar.gz \
             api app pluto preview mcp python scripts app.py pixi.toml pixi.lock VERSION \
             frontend/dist frontend/src/lib/kiwiRef.schema.json frontend/src/plots/palettes.json \
+            frontend/src/lib/webgpu/shaders notebooks \
             install.sh install.ps1 uninstall.sh uninstall.ps1 README.md LICENSE THIRD_PARTY.md docs
           # SHA-256 beside the bundle, so the in-app updater and the installers can verify what they
           # downloaded. `cd out` first: sha256sum records the path it was GIVEN, and a digest naming
