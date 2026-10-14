@@ -57,7 +57,11 @@ class _AutoFixture(_Fixture):
                 self.recital_input = input
             self.calls.append(argv)
             if argv[:3] == ["git", "diff", "--cached"]:
-                return subprocess.CompletedProcess(argv, 0, names if "--name-only" in argv else diff, "")
+                if "--name-only" in argv:
+                    return subprocess.CompletedProcess(argv, 0, names, "")
+                # a list: the staged diff each time it is read, the last one from then on
+                out = diff if isinstance(diff, str) else (diff.pop(0) if len(diff) > 1 else diff[0])
+                return subprocess.CompletedProcess(argv, 0, out, "")
             if argv[:2] == ["git", "commit"]:
                 self.messages.append(pathlib.Path(argv[3]).read_text(encoding="utf-8"))
             if argv[:3] == ["gh", "pr", "create"]:
@@ -288,6 +292,26 @@ class WorkTest(_AutoFixture):
         self.assertEqual(self.rv.auto_path(), self.auto)   # the card reads the default log
         card = "\n".join(self.rv.describe(self.record, {"kind": "work", "ref": "B1"}, use_colour=False))
         self.assertIn("not real: because", card)
+
+    def test_recital_runs_again_while_acting_on_it_changes_the_diff(self):
+        tags = lambda t: {"tags": [t]}   # noqa: E731
+        _, out = self.work(_answer(), tags("[fanout-x1: fixed_pre_commit]"), tags("[fanout-x2: fixed_pre_commit]"),
+                           tags("[fanout-x1: fixed_pre_commit]"), diff=["d1", "d2", "d3", "d3"])
+        recitals = [c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]
+        self.assertEqual(len(recitals), 3)   # d1, then d2 and d3 after the agent changed it; d3 again: done
+        self.assertIn("✓ recital · round 3", out)
+        self.assertIn("round 2, after your changes", self.prompts[2][0])
+        msg = self.messages[0]
+        self.assertEqual(msg.count("[fanout-x1: fixed_pre_commit]"), 1)   # every round's tags, once
+        self.assertIn("[fanout-x2: fixed_pre_commit]", msg)
+
+    def test_a_diff_that_never_settles_goes_back_to_the_owner(self):
+        rounds = self.af.RECITAL_ROUNDS
+        _, out = self.work(_answer(), *[{"tags": []}] * rounds, diff=[f"d{i}" for i in range(rounds + 2)])
+        self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
+        self.assertIn(f"its diff still changed after {rounds} recital rounds", out)
+        self.assertIn("back in your judge-review queue", out)
+        shutil.rmtree(self.main.parent / "cecelia-fix-fanout-b1", ignore_errors=True)
 
     def test_a_failed_push_briefs_f_on_the_commit_not_a_staged_diff(self):
         tree = self.main.parent / "cecelia-fix-fanout-b1"

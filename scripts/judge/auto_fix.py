@@ -86,6 +86,9 @@ TAGS_SCHEMA = {
     "required": ["tags"], "additionalProperties": False}
 TOOLS = "Read,Edit,Write,Glob,Grep,Bash"
 SESSION_USD = 10.0   # each phase's budget
+#: Recital rounds before a diff that keeps changing goes back to the owner. Interactive sessions
+#: re-run it when their diff changed: 2 rounds on 100 of 505 commits, 3 on 38, 4+ on 39 (2026-10-14).
+RECITAL_ROUNDS = 4
 TIMEOUT_SEC = 3 * 3600
 #: A credential in the staged diff: the agent's sandbox can't reach the network, but what it writes
 #: into the worktree, this script pushes. GitHub, Anthropic and SSH-key shapes.
@@ -180,9 +183,11 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
     return "\n".join(lines)
 
 
-def tags_brief(recital: str) -> str:
-    """Phase 2: the recital of the staged diff; act on it and tag each finding."""
-    return ("Your changes are staged and `pixi run recital` reviewed them. Its body:\n\n" + recital + "\n\n"
+def tags_brief(recital: str, n: int = 1) -> str:
+    """Phase 2: the recital of the staged diff; act on it and tag each finding. Round `n` > 1 reviewed
+    the diff as the last round left it."""
+    again = "" if n == 1 else f" again (round {n}, after your changes for the last one)"
+    return (f"Your changes are staged and `pixi run recital` reviewed them{again}. Its body:\n\n" + recital + "\n\n"
             "Act on the findings as CLAUDE.md → *Git & commits* says: fix what should be fixed (in the same "
             "worktree, then re-run the matching tests). Then return one `[<slug>: <outcome>]` tag per "
             "outcome-tagged finding (copy each slug verbatim; `fixed_pre_commit`, or "
@@ -474,22 +479,33 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
     why, diff, trusted = guard(tree, before, hooks, sh)
     if why:
         return stop(why, trusted=trusted)
-    with Progress("recital", out=out) as step:
-        rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
-        recital = rec.stdout or ""
-        step.failed = "_Recital stamp:" not in recital
-    if "_Recital stamp:" not in recital:
-        return stop(f"recital failed: {_tail(rec)}")
-    tagged, cost, _, failed = session(tags_brief(recital), tree, TAGS_SCHEMA, resume=sid, main=main,
-                                      label="agent acting on the recital", out=out)
-    spent += cost
-    if failed:
-        return stop(f"tagging the recital: {failed}")
-    why, _, trusted = guard(tree, before, hooks, sh)
-    if why:
-        return stop(why, trusted=trusted)
+    # Another round whenever acting on the last one changed the diff, as interactive sessions do;
+    # every round's tags go in the commit, the last round's body with them.
+    tags: list[str] = []
+    for n in range(1, RECITAL_ROUNDS + 1):
+        round_ = "" if n == 1 else f" · round {n}"
+        with Progress("recital" + round_, out=out) as step:
+            rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
+            recital = rec.stdout or ""
+            step.failed = "_Recital stamp:" not in recital
+        if "_Recital stamp:" not in recital:
+            return stop(f"recital failed: {_tail(rec)}")
+        tagged, cost, _, failed = session(tags_brief(recital, n), tree, TAGS_SCHEMA, resume=sid, main=main,
+                                          label="agent acting on the recital" + round_, out=out)
+        spent += cost
+        if failed:
+            return stop(f"tagging the recital: {failed}")
+        tags += [t for t in tagged["tags"] if t not in tags]
+        why, now, trusted = guard(tree, before, hooks, sh)
+        if why:
+            return stop(why, trusted=trusted)
+        if now == diff:
+            break
+        diff = now
+    else:
+        return stop(f"its diff still changed after {RECITAL_ROUNDS} recital rounds")
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as fh:
-        fh.write(commit_message(record, bugs, answer, tagged["tags"], recital))
+        fh.write(commit_message(record, bugs, answer, tags, recital))
     try:
         for argv, reached in ((git(hooks, "commit", "-F", fh.name), "staged"),
                               (git(hooks, "push", "-u", "origin", branch), "committed")):
