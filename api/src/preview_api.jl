@@ -32,6 +32,16 @@ _preview()::Union{PreviewWorker,Nothing} = _preview_ref[]
 # beside it that every path had to remember to reset.
 _preview_starting()::Bool = (w = _preview_ref[]; w !== nothing && w.state === Cecelia.PREVIEW_STARTING)
 
+# The held worker when it is READY — bound and answering — else `nothing`. Every send to the worker
+# takes its handle from here, at the moment it sends: `_ensure_preview!` returning true holds only as
+# of its own lock, and an env `:switch` or a toggle-off in between swaps in a STARTING worker (port not
+# bound yet — connection refused) or clears the handle (`send(nothing, …)` is a MethodError).
+# `env` is what the caller passed `_ensure_preview!`: a switch can finish its warm-up while a request
+# waits on `_with_preview`, and a model is never run in the other env (#1555).
+_ready_preview(env::Union{Symbol,Nothing} = :any)::Union{PreviewWorker,Nothing} =
+    (w = _preview_ref[]; w !== nothing && w.state === Cecelia.PREVIEW_READY &&
+                         (env === :any || w.env === env) ? w : nothing)
+
 """
     _stop_preview_worker!()
 
@@ -310,11 +320,10 @@ function api_preview_stop(body_bytes::Vector{UInt8})
     if task_dir !== nothing
         try
             _with_preview() do
-                w = _preview()
                 # Only a READY worker is bound to answer. One still starting has written nothing to
                 # sweep, and the send would only fail against an unbound port.
-                (w === nothing || w.state !== Cecelia.PREVIEW_READY) ||
-                    send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
+                w = _ready_preview()
+                w === nothing || send(w, Dict{String,Any}("type" => "cleanup", "taskDir" => task_dir))
             end
         catch e
             @warn "Preview scratch sweep failed" exception = e
@@ -447,8 +456,8 @@ function api_preview_run(body_bytes::Vector{UInt8})
 
     reply = try
         _with_preview() do
-            w = _preview()
-            w === nothing && error("preview worker is not running")
+            w = _ready_preview(env)
+            w === nothing && return nothing   # switched or stopped since `_ensure_preview!`
             send(w, preview_request(open_zarr_path, task_dir, params, region;
                                     value_name = value_name,
                                     fun_name = _wstr(data, "funName"),
@@ -465,6 +474,10 @@ function api_preview_run(body_bytes::Vector{UInt8})
                                        code = "no-preview-backend", detail = raw))
         return 500, JSON3.write((; error = raw))
     end
+    reply === nothing && return 202, JSON3.write((; starting = true, alive = false,
+                                                   env = (w = _preview(); w === nothing ? nothing :
+                                                          Cecelia.pixi_env_name(w.env)),
+                                                   message = "Preview worker is starting."))
 
     # Sanity-check the reply shape (labels layer needs valueName/path on disk; AF `previewImages`
     # entries need the same plus `sourceChannel`). Flow-plane replies (`planes`) skip this — they

@@ -227,12 +227,15 @@ end
 # renderer — which also starts the worker for next time (`_ensure_preview!` launches in the background
 # and answers at once). Either way the same `render_stills`, so the pixels do not depend on the route.
 function _stills_via_worker(params::AbstractDict, task_dir::AbstractString; on_log::Function = println)
-    if _ensure_preview!()
+    # The handle is read again after `_ensure_preview!` lets go of the lock: a stop or env switch in
+    # between leaves none, or one not bound yet — the one-off renders it then.
+    if _ensure_preview!() && (w = _ready_preview()) !== nothing
         try
             # Not under `_with_preview`: that lock serialises everything sent to the worker, which would
             # queue a card sheet behind a cellpose preview. The worker orders requests itself — renders
-            # and previews under separate locks, one connection each.
-            send(_preview_ref[], Dict{String,Any}("type" => "render", "params" => params))
+            # and previews under separate locks, one connection each. A stop that lands mid-send closes
+            # the socket, which is caught below.
+            send(w, Dict{String,Any}("type" => "render", "params" => params))
             return nothing
         catch e
             Cecelia._is_probe_code_bug(e) && rethrow()
