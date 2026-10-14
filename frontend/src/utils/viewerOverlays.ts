@@ -98,6 +98,24 @@ export function toggleRibbonEye(persisted: ReadonlySet<string> | undefined,
   return { persisted: p, managerHidden: m }
 }
 
+/** The ribbon eyes after "show only this pop" — a row switched on while the cell-track ribbons are off,
+ *  which turns them on: every listed pop becomes a user hide except `target`, whose eye is cleared
+ *  from both sources. Hides on pops not listed are kept. Keyed by segmentation, as the eyes are. */
+export function soleRibbonEyes(
+  listed: readonly { vn: string; path: string }[], target: { vn: string; path: string },
+  persisted: ReadonlyMap<string, ReadonlySet<string>>,
+  managerHidden: ReadonlyMap<string, ReadonlySet<string>>,
+): { persisted: Map<string, Set<string>>; managerHidden: Map<string, Set<string>> } {
+  const p = new Map([...persisted].map(([vn, s]) => [vn, new Set(s)]))
+  const m = new Map([...managerHidden].map(([vn, s]) => [vn, new Set(s)]))
+  for (const { vn, path } of listed) {
+    if (!p.has(vn)) p.set(vn, new Set())
+    if (vn === target.vn && path === target.path) { p.get(vn)!.delete(path); m.get(vn)?.delete(path) }
+    else p.get(vn)!.add(path)
+  }
+  return { persisted: p, managerHidden: m }
+}
+
 export interface OverlayPayload {
   nCells: number
   nDropped: number

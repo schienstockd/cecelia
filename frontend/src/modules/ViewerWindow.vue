@@ -94,7 +94,7 @@ import {
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
-         isTrackDrawable, ribbonEyeOff, toggleRibbonEye } from '../utils/viewerOverlays'
+         isTrackDrawable, ribbonEyeOff, toggleRibbonEye, soleRibbonEyes } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
@@ -743,8 +743,13 @@ const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.v
 function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
   const su = setUid.value
   if (!su || !settings.getShowGatedTracks(su)) return false
-  if (settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(l.vn)) return false
+  if (trackclustHolds(l.vn)) return false
   return isTrackDrawable(p) && !trackPopHidden(l.vn, p.path)
+}
+/** Trackclust is drawing this segmentation, which stands its cell-track ribbons down. */
+function trackclustHolds(vn: string): boolean {
+  const su = setUid.value
+  return !!su && settings.getPopVisible(su, 'trackclust') && trackclustPayloads.value.has(vn)
 }
 const overlaysErr = ref('')
 /**
@@ -1097,7 +1102,8 @@ const trackDrawablePops = computed(() =>
   popLayers.value.flatMap(l => l.payload.pops
     .filter(isTrackDrawable)
     .map(p => ({ vn: l.vn, path: p.path, key: popKey(l.vn, l.popType, p.path), name: p.name,
-                 colour: p.colour, count: p.labels.length })))
+                 colour: p.colour, count: p.labels.length,
+                 drawn: popRibbonDrawn(l, p), clusterHeld: trackclustHolds(l.vn) })))
     .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
 /** The population layers with something to list, for the Populations section — a segmentation
  *  header above each group when more than one segmentation draws. */
@@ -1902,7 +1908,20 @@ function togglePop(key: string) {
   rebuildOverlays()
 }
 // Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
+// The row shows `drawn`, so with the cell-track ribbons off every row reads off: switching one on
+// turns the ribbons on with only that pop shown, rather than releasing every pop whose eye was on.
 function toggleTrackPop(vn: string, path: string) {
+  const su = setUid.value
+  if (su && !settings.getShowGatedTracks(su)) {
+    const next = soleRibbonEyes(trackDrawablePops.value, { vn, path },
+                                hiddenTrackPops.value, managerHiddenTrackPops.value)
+    hiddenTrackPops.value = next.persisted
+    managerHiddenTrackPops.value = next.managerHidden
+    if (imageUid) for (const [v, hidden] of next.persisted) settings.setTrackPopHidden(imageUid, v, hidden)
+    settings.setShowGatedTracks(su, true)
+    rebuildOverlays()
+    return
+  }
   const { persisted: mine, managerHidden } = toggleRibbonEye(
     hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
   hiddenTrackPops.value = new Map(hiddenTrackPops.value).set(vn, mine)
@@ -6380,9 +6399,10 @@ onUnmounted(() => {
                             :open="openSection === 'tracks'"
                             @update:open="v => setSection('tracks', v)" fill>
           <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
-               section colours + shapes the ribbons. Empty state names both the "nothing ticked" case
-               and the "ticked but no tracked cells" case rather than showing an empty block. -->
-          <template v-if="segCount > 0">
+               section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
+               drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
+               that turn them back on must stay. -->
+          <template v-if="segCount > 0 || trackDrawablePops.length > 0">
             <!-- Per-pop ribbon rows: one line per gated pop with tracks (isTrack || hasTracks),
                  mirroring the Populations section above (swatch/name/count/toggle). The eye hides
                  the ribbon layer WITHOUT touching the point layer's eye — `hiddenTrackPops` is a
@@ -6392,8 +6412,8 @@ onUnmounted(() => {
               <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
               <span class="cc-readout cc-fs-3xs">{{ pop.count }}</span>
               <CcToggle
-                :model-value="!trackPopHidden(pop.vn, pop.path)"
-                v-tooltip.bottom="'Draw this population as a track ribbon layer'"
+                :model-value="pop.drawn" :disabled="pop.clusterHeld"
+                v-tooltip.bottom="pop.clusterHeld ? 'Track clusters are drawing this segmentation' : 'Draw this population as a track ribbon layer'"
                 :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop.vn, pop.path)"
               />
             </div>

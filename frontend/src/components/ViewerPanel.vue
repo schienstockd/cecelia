@@ -59,14 +59,31 @@ const recordingTask = computed(() => taskStore.tasks.some(t =>
   (t.funName ?? '').startsWith('movie.') && (t.status === 'queued' || t.status === 'running')
 ))
 
-const selectedValueName = ref('')
-const visibleLabels     = ref<Record<string, boolean>>({})
+// The version the viewer is showing: the remembered pick while the image still has it, else the
+// active version (`activeValueName` mirrors what the server opens when no valueName is passed).
+// Resolved live — the image is patched IN PLACE (`updateImageMeta`) and the pick is written from
+// elsewhere (a version delete, a prune, the pop-out, another tab), none of which re-fires an
+// `openedImage` watch. Writing it persists the pick, which the pop-out follows.
+const selectedValueName = computed<string>({
+  get: () => {
+    const img = openedImage.value
+    if (!img) return ''
+    const names = Object.keys(img.filepaths ?? {})
+    return resolveValueName(settings.getImageVersion(img.uid), names, names, activeValueName(img))
+  },
+  set: v => { const uid = openedImage.value?.uid; if (uid) settings.setImageVersion(uid, v) },
+})
+// Label visibility for the open image, read live like the version above — a label set added or
+// removed in place must read as the viewer draws it. Unknown names default to true.
+const visibleLabels     = computed<Record<string, boolean>>(() => openedImage.value
+  ? settings.getLabelVisibility(openedImage.value.uid, Object.keys(openedImage.value.labels ?? {})) : {})
 // Master "show cell-track ribbons" toggle: draws ribbons for flow pops whose cells have
 // `track_id > 0` (a hand-drawn cell gate over cells that were later tracked). Distinct from
 // "gated tracks" — a future track-poptype pop gated on TRACK measures (speed, straightness);
 // see docs/TRACKING.md → "Track-property gating — backend done, frontend deferred".
 // The internal setting key is still `showGatedTracks` for continuity with persisted user state.
-const gatedTracksShown  = ref(false)
+const gatedTracksShown  = computed(() =>
+  currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. WHICH pop types these are is defined once, in
@@ -86,10 +103,20 @@ const POP_TYPE_UI: Record<CellPopType, { icon: string; label: string }> = {
   region: { icon: 'pi-map',           label: 'spatial-region populations' },
 }
 const POP_TYPES = CELL_POP_TYPES.map(key => ({ key, ...POP_TYPE_UI[key] }))
-const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
-const branchVns         = ref<Record<string, boolean>>({})   // per-segmentation branch-overlay visibility
-const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
+// Read straight off the settings store, not copied on image open: other surfaces write these for the
+// image already open (cell cards' / the cockpit's Show, a strip frame's zoom-to-source, another tab),
+// and a copy left the toggle showing — and the next toggle writing back — the old state.
+// Tracks span BOTH registries (labels ∪ branchLabels) — a points-only set is exactly the one whose
+// tracks you want. Label visibility is NOT unioned: a set with no `labels` has no pixels to show.
+const trackVns          = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation track-overlay visibility
+  ? settings.getTrackVisibility(openedImage.value.uid, trackableValueNames(openedImage.value)) : {})
+const branchVns         = computed<Record<string, boolean>>(() => openedImage.value   // per-segmentation branch-overlay visibility
+  ? settings.getBranchVisibility(openedImage.value.uid, Object.keys(openedImage.value.branchLabels ?? {})) : {})
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
+// The set's colour-by column, shown only when this image's segmentation has it (segmentations differ
+// across a set) — the stored per-set value is kept for the images that do. '' = default.
+const storedColourBy    = computed(() => currentSetUid.value ? settings.getColourBy(currentSetUid.value) : '')
+const colourByCol       = computed(() => obsCols.value.includes(storedColourBy.value) ? storedColourBy.value : '')
 
 // The image the user is focused on — whichever viewer is open. The read is `openImageUid`: the
 // panel gates its content on ANY viewer being open. See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md P1.
@@ -316,37 +343,22 @@ const movieTitleCardModel = computed<TitleCardCfg>({
 })
 
 
-// These refs drive the TOGGLE UI only. The layers themselves are (re)pushed by the app-level
-// useOverlayAutoShow (on open) and onGatingChange — neither reads these refs, so this watcher's timing
-// can no longer affect what actually reaches the viewer (it once did: see useOverlayAutoShow's rules).
-watch(openedImage, (img) => {
-  // restore the remembered preference rather than always starting hidden
-  gatedTracksShown.value = currentSetUid.value ? settings.getShowGatedTracks(currentSetUid.value) : false
-  colourByCol.value = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''   // per-set
-  labelsExpanded.value = false                 // a different image is a different list
-  if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; branchVns.value = {}; obsCols.value = []; return }
-  // Tracks are seeded over BOTH registries (labels ∪ branchLabels) — a points-only set is exactly
-  // the one whose tracks you want. Label visibility below is NOT unioned — there are no pixels to
-  // show for a set with no `labels` registry.
-  trackVns.value = settings.getTrackVisibility(img.uid, trackableValueNames(img))
-  branchVns.value = settings.getBranchVisibility(img.uid, Object.keys(img.branchLabels ?? {}))
-  // The version the viewer is showing: the remembered pick while the image still has it, else the
-  // active version (`activeValueName` mirrors what the server opens when no valueName is passed).
-  const names = Object.keys(img.filepaths ?? {})
-  selectedValueName.value = resolveValueName(settings.getImageVersion(img.uid), names, names, activeValueName(img))
-  // Restore remembered label visibility for this image; unknown labels default to true.
-  visibleLabels.value = settings.getLabelVisibility(img.uid, Object.keys(img.labels ?? {}))
-  loadObsCols()                       // colour-by options for the selected segmentation
-}, { immediate: true })
+// The toggle state above drives the TOGGLE UI only. The layers themselves are (re)pushed by the
+// app-level useOverlayAutoShow (on open) and onGatingChange — neither reads the panel's state.
+watch(() => openedImage.value?.uid, () => { labelsExpanded.value = false })   // a different image is a different list
+// Colour-by options follow the image AND the version shown on it — however the version moved.
+watch(() => [openedImage.value?.uid, selectedValueName.value], () => loadObsCols(), { immediate: true })
 
 // Follow the server's active version into the popup viewer when a TASK swaps `_active` for the image
-// on screen (e.g. a denoise run produces "smoothed" and marks it active). The dropdown already re-seeds
-// via the watch above, but the viewer only reacts to `cc.viewerImageVersion`. Without a mirror the user
+// on screen (e.g. a denoise run produces "smoothed" and marks it active). Watches the active version
+// itself: the image object is patched in place, so a watch on `openedImage` misses the swap. The
+// viewer only reacts to `cc.viewerImageVersion`. Without a mirror the user
 // has to toggle the dropdown back and forth to force a switch. Guard with `lastServerActive` so we only
 // follow when the persisted pick was tracking the OLD active (empty or equal to it) — never override a
 // user pick that intentionally names a different version.
 const lastServerActive = ref<Record<string, string>>({})
-watch(openedImage, (img) => {
+watch(() => [openedImage.value?.uid, openedImage.value?.activeValueName], () => {
+  const img = openedImage.value
   if (!img) return
   const uid = img.uid
   const active = img.activeValueName ?? ''
@@ -354,8 +366,6 @@ watch(openedImage, (img) => {
   const picked = settings.getImageVersion(uid)
   if (prev && active && prev !== active && (picked === '' || picked === prev)) {
     settings.setImageVersion(uid, active)
-    selectedValueName.value = active
-    loadObsCols()
   }
   lastServerActive.value[uid] = active
 }, { immediate: true })
@@ -605,8 +615,7 @@ function toggleTrack(vn: string) {
   // signal has fired. Before P6 the persist was gated on `viewerImageUid=null`, which meant the
   // WebGPU viewer never saw the write.
   const uid = projectStore.openImageUid
-  trackVns.value = { ...trackVns.value, [vn]: !trackVns.value[vn] }
-  if (uid) settings.setTrackVisibility(uid, trackVns.value)
+  if (uid) settings.setTrackVisibility(uid, { ...trackVns.value, [vn]: !trackVns.value[vn] })
   pingViewerOverlays()
 }
 
@@ -620,16 +629,13 @@ function toggleBranch(vn: string) {
     return
   }
   const wasVisible = branchVns.value[vn] ?? true
-  branchVns.value = { ...branchVns.value, [vn]: !wasVisible }
-  if (uid) settings.setBranchVisibility(uid, branchVns.value)
+  if (uid) settings.setBranchVisibility(uid, { ...branchVns.value, [vn]: !wasVisible })
   pingViewerOverlays()
 }
 
 // Master toggle for cell-track ribbons (see the ref comment above), matching the Show populations toggle.
 function toggleGatedTracks() {
-  const next = !gatedTracksShown.value
-  gatedTracksShown.value = next
-  if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, next)
+  if (currentSetUid.value) settings.setShowGatedTracks(currentSetUid.value, !gatedTracksShown.value)
   pingViewerOverlays()
 }
 
@@ -661,17 +667,12 @@ async function loadObsCols() {
       obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
     } else obsCols.value = []
   } catch { obsCols.value = [] }
-  // this image's segmentation may not have the SET's colour-by column (segmentations differ across a
-  // set) — don't select/apply it here, but do NOT clear the persisted per-set value: another image in
-  // the set may have it, and it's restored per image from the set on open.
-  if (colourByCol.value && !obsCols.value.includes(colourByCol.value)) colourByCol.value = ''
 }
 
 // User picked a colour-by column: persist per-set; the WebGPU viewer picks it up via the overlay
 // tick and re-derives label + track colours from the settings bag.
 function onColourBy(e: Event) {
   const col = (e.target as HTMLSelectElement).value
-  colourByCol.value = col
   if (currentSetUid.value) settings.setColourBy(currentSetUid.value, col)   // per-set
   resetColourLegend()
   pingViewerOverlays()
@@ -733,15 +734,12 @@ const versionNote = computed(() => {
 
 function onValueNameChange(e: Event) {
   const name = (e.target as HTMLSelectElement).value
-  selectedValueName.value = name
-  loadObsCols()
   // Broadcast to the popup viewer — the panel is the single source of truth for the version now
   // (VIEWER_CONTROLS_SPLIT_PLAN.md P3 extended). The popup's storage-event bridge (P2) picks this
   // up via settings.setImageVersion → `cc.viewerImageVersion` and calls its `changeVersion`
   // internally, so the two windows never disagree about the version on screen. If no popup is up
   // yet, `openInViewer` opens one on the picked version.
-  const openUid = projectStore.openImageUid
-  if (openUid) settings.setImageVersion(openUid, name)
+  if (projectStore.openImageUid) selectedValueName.value = name
   else openInViewer(name)
 }
 
@@ -795,7 +793,6 @@ function toggleLabel(valueName: string) {
   ])
   const bag: Record<string, boolean> = {}
   for (const n of allNames) bag[n] = next && n === valueName
-  visibleLabels.value = bag
   if (uid) settings.setLabelVisibility(uid, bag)
   pingViewerOverlays()
 }
@@ -855,9 +852,7 @@ function onTaskResult(data: Record<string, unknown>) {
     // Switch the dropdown AND the viewer together — the viewer only follows `cc.viewerImageVersion`,
     // so setting the dropdown alone left the panel naming the new version over the old pixels.
     // Auto-update off: neither moves.
-    selectedValueName.value = addedValueName
     settings.setImageVersion(imageUid, addedValueName)
-    loadObsCols()
     reloadViewer()
     // Task result carrying an intensity vn means THAT store's pixels changed. Scope the rev to
     // `(imageUid, valueName)` so only the viewers rendering this exact vn reallocate — a viewer
@@ -885,7 +880,6 @@ function onTaskResult(data: Record<string, unknown>) {
     const bag: Record<string, boolean> = {}
     for (const n of Object.keys(openedImage.value?.labels ?? {})) bag[n] = n === labelValueName
     bag[labelValueName] = true
-    visibleLabels.value = bag
     if (uid) settings.setLabelVisibility(uid, bag)
     nextTick(() => pingViewerOverlays())
   }
