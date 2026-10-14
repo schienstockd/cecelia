@@ -52,8 +52,8 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
     catch e
         @warn "Shutdown: stopping the preview worker failed" exception = e
     end
-    # belt-and-suspenders: also free the child ports by force, covering a child we only ADOPTED or
-    # that outlived a crash (no process handle to close!) — so shutdown/restart never leaves a zombie
+    # belt-and-suspenders: also free the child ports by force, covering a child we hold no handle to at
+    # all (it outlived a crash and was never adopted) — so shutdown/restart never leaves a zombie
     # on :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
     try; Cecelia._kill_listeners_on_port(service_port(:preview));   catch; end
     try; Cecelia._kill_listeners_on_port(service_port(:notebooks)); catch; end
