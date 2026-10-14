@@ -192,8 +192,8 @@ def describe_call(name: str, inp: dict, cwd: pathlib.Path | None = None) -> str:
     """One tool call, short: `Edit app/src/x.jl`, `Bash pixi run test-py`."""
     arg = str(inp.get("file_path") or inp.get("command") or inp.get("pattern") or inp.get("path") or "")
     arg = arg.strip().splitlines()[0] if arg.strip() else ""
-    if cwd and arg.startswith(f"{cwd}/"):
-        arg = arg[len(str(cwd)) + 1:]
+    if cwd:   # the worktree is where it works anyway: `cd <tree> && x` → `x`, `<tree>/a.py` → `a.py`
+        arg = re.sub(rf"^cd {re.escape(str(cwd))}/?\s*(?:&&|;)\s*", "", arg).replace(f"{cwd}/", "")
     return f"{name} {arg}".strip()
 
 
@@ -556,6 +556,9 @@ def run(record: dict, *, limit: int = 1, dry_run: bool = False, out: _t.TextIO =
         label = (f"{bugs[0]['id']} {bugs[0]['key']}" if len(bugs) == 1
                  else " + ".join(b["id"] for b in bugs) + f" · {len(bugs)} bugs, one session")
         print("\n" + _hr(label, width, use_colour=colour), file=out, flush=True)
+        # the bugs as the `[f]` queue shows them; the brief carries the evidence
+        print("\n".join(_rv.describe(record, item, width=width, use_colour=colour, evidence=False)) + "\n",
+              file=out, flush=True)
         if dry_run:
             name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
             print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)

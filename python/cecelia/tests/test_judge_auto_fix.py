@@ -121,6 +121,16 @@ class LandedTest(_AutoFixture):
         self.assertEqual((row["outcome"], row["reason"]), ("landed", "e44eada5 fix(viewer): swatch (fanout-b1) (#12)"))
         self.assertEqual(self.rv.auto_items(self.record, [], tried=self.rv.read_auto(self.auto)), [])
 
+    def test_each_session_opens_with_its_bug_card(self):
+        out = io.StringIO()
+        with mock.patch.object(self.af, "landed", return_value={}), mock.patch.object(self.af, "work_one", return_value=0.0):
+            self.af.run(self.record, out=out, path=self.log, auto_log=self.auto, main=self.main,
+                        sh=lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+        text = out.getvalue()
+        self.assertIn("── B1 fanout-b1 ", text)
+        self.assertIn("desc B1", text)   # the card, as the `[f]` queue shows it
+        self.assertLess(text.index("desc B1"), text.index("── 1 session(s)"))
+
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
         items = [{"kind": "bundle", "ref": "B1", "refs": ["B1", "B2"]}, {"kind": "work", "ref": "B3"}]
@@ -209,6 +219,13 @@ class FenceTest(_AutoFixture):
         self.assertTrue(plain(p.line(1)).endswith("· 1 tool call · Bash pixi run test-py"))
         self.assertIn("\x1b[", p.line(1))   # a terminal gets colour
         self.assertEqual(tty.write.call_count, 0)   # nothing until entered
+
+    def test_a_tool_call_drops_the_worktree_path(self):
+        w = pathlib.Path("/h/cecelia-fix-x")
+        self.assertEqual(self.af.describe_call("Bash", {"command": f"cd {w}; grep -n a {w}/b.py"}, w), "Bash grep -n a b.py")
+        self.assertEqual(self.af.describe_call("Bash", {"command": f"cd {w}/frontend && npx vitest"}, w),
+                         "Bash cd frontend && npx vitest")
+        self.assertEqual(self.af.describe_call("Read", {"file_path": f"{w}/app/a.jl"}, w), "Read app/a.jl")
 
     def test_outcome_rows_wrap_under_the_reason_and_stop_at_two_lines(self):
         long = "Real: " + "word " * 60 + ". A second sentence that never shows."
