@@ -680,7 +680,8 @@ Cecelia.live_outputs(::_BadLiveTask, ::AbstractDict) = error("boom")
         # live stale worker to exercise.
         api_src = read(joinpath(dirname(dirname(pathof(Cecelia))), "..", "api", "src",
                                 "preview_api.jl"), String)
-        @test occursin("_kill_listeners_on_port(service_port(:preview))", api_src)
+        @test occursin("function _free_preview_port!(port::Int = service_port(:preview))", api_src)
+        @test occursin("Cecelia._kill_listeners_on_port(port)", api_src)
         # CODE only — the comment above that call names `close!(probe)` to say why it is wrong, and a
         # naive text search cannot tell an explanation from the thing it warns about.
         api_code = filter(l -> !startswith(strip(l), "#"), split(api_src, '\n'))
