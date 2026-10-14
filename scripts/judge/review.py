@@ -320,13 +320,17 @@ def auto_tree(bug: dict, tried: _t.Mapping[str, dict] | None = None) -> pathlib.
 #: How far a stopped `--auto` session's work got (`auto_fix.jsonl` `stage`), as the `[f]` brief says it.
 _STAGED = {"staged": "was stopped before its commit; its changes are staged there (`git diff --cached`)",
            "committed": "committed its work there but the push failed (`git log origin/main..HEAD`)",
-           "pushed": "committed and pushed its branch, but opening the PR failed: the PR is all that is missing"}
+           "pushed": "committed and pushed its branch, but opening the PR failed: the PR is all that is missing",
+           "pr": "opened its PR, but was stopped there: CI still red, main still conflicting, or a step of a "
+                 "follow-up fix failed"}
 
 
 def _staged_line(tree: pathlib.Path, bugs: _t.Sequence[dict]) -> str:
     row = read_auto().get(bugs[0]["key"]) or {}
     return (f"An unattended `judge-review --auto` session already worked this in `{tree}` and "
-            f"{_STAGED.get(row.get('stage'), _STAGED['staged'])}. What it said: {row.get('reason', '')} Work in "
+            f"{_STAGED.get(row.get('stage'), _STAGED['staged'])}."
+            + (f" Its PR: {row['pr_url']} (`gh pr view` shows its checks)." if row.get("pr_url") else "")
+            + f" What it said: {row.get('reason', '')} Work in "
             "that worktree, not a new one: read its work first, keep what is right, and finish or correct the rest.")
 
 

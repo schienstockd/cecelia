@@ -286,7 +286,10 @@ holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<k
 `acceptEdits` keeping edits in the worktree, then stages the diff, runs recital, resumes the agent
 to act on the findings and tag them, and runs recital again while that changed the diff (up to
 `RECITAL_ROUNDS`, then it goes back to you), and commits, pushes and opens the PR itself, its body flagged
-when the fix changes what is drawn on screen (look before you merge). It never merges. After the agent, nothing of the worktree's
+when the fix changes what is drawn on screen (look before you merge). Then it waits for the PR's CI and mergeability: red CI goes back to the same
+session with the failed jobs' log excerpts (an unrelated failure is re-run once), a conflict with main
+as a merge the agent resolves; after `CI_ROUNDS` (2) still red, the bundle goes back to you. A bug
+counts as fixed only once its PR is green and mergeable. It never merges. After the agent, nothing of the worktree's
 runs outside the sandbox: recital and the commit-msg hook run from your checkout, and git with the
 hooks path pointed there. The script stops, worktree left, if the agent changed the worktree's
 `.git` pointer, `.githooks`, `.claude` or `.mcp.json` (ignored files included), if the diff touches

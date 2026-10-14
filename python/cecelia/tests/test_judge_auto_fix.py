@@ -25,6 +25,12 @@ def _load(name):
 
 
 FIX = {"verdict": "fix", "date": "2026-10-05", "effect": "breaks", "evidence": "a.py:3"}
+def _check(name, conclusion="SUCCESS", status="COMPLETED", job=None):
+    return {"name": name, "status": status, "conclusion": conclusion,
+            **({"detailsUrl": f"https://github.com/o/r/actions/runs/5/job/{job}"} if job else {})}
+
+
+GREEN = {"statusCheckRollup": [_check("py"), _check("julia")], "mergeable": "MERGEABLE"}
 RECITAL = "_Fanout audit: run_\n[fanout-x1] **confirmed** …\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n"
 
 
@@ -40,6 +46,10 @@ class _AutoFixture(_Fixture):
         self.record = self.build(bugs=[_bug("B1", verify=FIX, issue={"number": 7}), _bug("B2"),
                                        _bug("B3", verify={"verdict": "decide", "date": "2026-10-05"}, file="b.py")])
         self.calls, self.messages, self.bodies = [], [], []
+        self.views, self.conflicted, self.unstaged = [GREEN], "", ""
+        slept = mock.patch.object(self.af, "_sleep", lambda s: None)
+        slept.start()
+        self.addCleanup(slept.stop)
         removed = mock.patch.object(self.af.agent_sandbox, "remove_worktree",
                                     lambda repo, dest: self.calls.append(["remove_worktree", str(dest)]))
         removed.start()
@@ -62,7 +72,14 @@ class _AutoFixture(_Fixture):
                 # a list: the staged diff each time it is read, the last one from then on
                 out = diff if isinstance(diff, str) else (diff.pop(0) if len(diff) > 1 else diff[0])
                 return subprocess.CompletedProcess(argv, 0, out, "")
-            if argv[:2] == ["git", "commit"]:
+            if argv[:2] == ["git", "diff"] and "--diff-filter=U" in argv:
+                return subprocess.CompletedProcess(argv, 0, self.conflicted, "")
+            if argv == ["git", "diff", "--name-only"]:   # what the agent changed during a merge
+                return subprocess.CompletedProcess(argv, 0, self.unstaged, "")
+            if argv[:3] == ["gh", "pr", "view"]:   # `self.views`: the PR's states in turn, the last one from then on
+                view = self.views[0] if len(self.views) == 1 else self.views.pop(0)
+                return subprocess.CompletedProcess(argv, 0, json.dumps(view), "")
+            if argv[:2] == ["git", "commit"] and argv[2] == "-F":
                 self.messages.append(pathlib.Path(argv[3]).read_text(encoding="utf-8"))
             if argv[:3] == ["gh", "pr", "create"]:
                 self.bodies.append(pathlib.Path(argv[argv.index("--body-file") + 1]).read_text(encoding="utf-8"))
@@ -436,6 +453,92 @@ class WorkTest(_AutoFixture):
         self.assertEqual(len([c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]), 2)
         self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
         self.assertIn("→ PR https://github.com/o/r/pull/9", out.getvalue())
+
+    RED = {"statusCheckRollup": [_check("py", "FAILURE", job=7), _check("julia")], "mergeable": "MERGEABLE"}
+
+    def test_red_ci_goes_back_to_the_agent_with_its_log_and_the_fix_is_shipped(self):
+        self.views = [self.RED, GREEN]
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "The test fixture needed a seed."},
+                           {"tags": ["[fanout-x9: fixed_pre_commit]"]})
+        self.assertIn(["gh", "api", "repos/{owner}/{repo}/actions/jobs/7/logs"], self.calls)
+        self.assertIn("CI failed: py", self.prompts[2][0])
+        self.assertEqual(self.prompts[2][1], "sid-1")   # the same session
+        self.assertEqual(len(self.messages), 2)   # the fix, then the CI fix, each through recital
+        self.assertTrue(self.messages[1].startswith("fix: The test fixture needed a seed\n"))
+        self.assertIn("[fanout-x9: fixed_pre_commit]", self.messages[1])
+        self.assertIn("green and mergeable: https://github.com/o/r/pull/9", out)
+        self.assertEqual([r["value"] for r in self.rv.read_reviews(self.log)], ["fix_session"])
+
+    def test_the_log_excerpt_is_what_led_to_the_error(self):
+        log = "\n".join([f"2026-10-13T22:44:{i:02d}.0Z line {i}" for i in range(300)]
+                        + ["2026-10-13T22:46:58.8Z FAILED (failures=1)", "2026-10-13T22:47:00.6Z ##[error]Process completed",
+                           "2026-10-13T22:47:02.5Z Cleaning up orphan processes"] + ["x"] * 50)
+        got = self.af.log_excerpt(log, lines=5).splitlines()
+        self.assertEqual(got[:5], ["line 296", "line 297", "line 298", "line 299", "FAILED (failures=1)"])
+        self.assertIn("##[error]Process completed", got)
+        self.assertEqual(self.af.log_excerpt("a\nb\nc", lines=2), "b\nc")   # no error line: the tail
+
+    def test_an_unrelated_failure_is_re_run_once_not_changed(self):
+        self.views = [self.RED, GREEN]
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "unrelated", "summary": "A runner timeout."})
+        self.assertIn(["gh", "run", "rerun", "5", "--failed"], self.calls)
+        self.assertEqual(len(self.messages), 1)
+        self.assertIn("green and mergeable", out)
+
+    def test_a_conflict_with_main_is_merged_and_resolved_by_the_agent(self):
+        self.views, self.conflicted = [{"statusCheckRollup": [], "mergeable": "CONFLICTING"}, GREEN], "a.py\n"
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "Kept both imports."},
+                           fail=("merge",), touch="a.py")
+        self.assertIn(["git", "merge", "--no-edit", "origin/main"], self.calls)
+        self.assertIn("`a.py`", self.prompts[2][0])   # the conflicted files
+        self.assertIn(["git", "commit", "--no-edit"], self.calls)   # the merge commit
+        self.assertIn("green and mergeable", out)
+        shutil.rmtree(self.main.parent / "cecelia-fix-fanout-b1")
+
+    def test_a_resolution_that_strays_beyond_the_conflicted_files_is_not_committed(self):
+        # a merge commit skips recital: the agent may touch only what conflicted
+        self.views, self.conflicted = [{"statusCheckRollup": [], "mergeable": "CONFLICTING"}], "a.py\n"
+        self.unstaged = "a.py\nb.py\n"
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "Resolved."},
+                           fail=("merge",), touch="a.py")
+        self.assertNotIn(["git", "commit", "--no-edit"], self.calls)
+        self.assertIn(["git", "merge", "--abort"], self.calls)
+        self.assertIn("it touched b.py", out)
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["stage"], row["pr_url"]), ("pr", "https://github.com/o/r/pull/9"))   # any stop after the PR
+        with mock.patch.object(self.rv, "auto_path", return_value=self.auto):
+            brief = self.rv.fix_brief(self.record, self.record["bugs"][0])
+        self.assertIn("Its PR: https://github.com/o/r/pull/9", brief)
+        self.assertTrue(row["reason"].startswith("Stopped at its PR https://github.com/o/r/pull/9: resolving"))
+        shutil.rmtree(self.main.parent / "cecelia-fix-fanout-b1")
+
+    def test_a_weekly_limit_while_fixing_ci_hands_the_pr_back(self):
+        self.views = [self.RED]
+        tree = self.main.parent / "cecelia-fix-fanout-b1"
+        session = self.limited(_answer(), {"tags": []})
+
+        def touched(prompt, cwd, schema, **kw):
+            (cwd / "a.py").parent.mkdir(parents=True, exist_ok=True)
+            (cwd / "a.py").write_text("x", encoding="utf-8")
+            return session(prompt, cwd, schema, **kw)
+        out = io.StringIO()
+        with self.assertRaises(self.af.RateLimited):
+            self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=out, session=touched,
+                             sh=self.sh(), path=self.log, auto_log=self.auto)
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["stage"], row["tree"]), ("left", "pr", str(tree)))
+        self.assertIn("usage limit while fixing CI", out.getvalue())
+        shutil.rmtree(tree)
+
+    def test_still_red_after_its_rounds_goes_back_to_the_owner_with_the_pr(self):
+        self.views = [self.RED]
+        fixed = {"outcome": "fixed", "summary": "Tried again."}
+        _, out = self.work(_answer(), {"tags": []}, *[fixed, {"tags": []}] * self.af.CI_ROUNDS, touch="a.py")
+        self.assertIn(f"CI still fails after {self.af.CI_ROUNDS} rounds of fixes: https://github.com/o/r/pull/9", out)
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual((row["outcome"], row["stage"]), ("left", "pr"))
+        self.assertEqual(self.rv.read_reviews(self.log), [])   # not answered: back in the queue
+        shutil.rmtree(self.main.parent / "cecelia-fix-fanout-b1")
 
     def test_a_failed_push_briefs_f_on_the_commit_not_a_staged_diff(self):
         tree = self.main.parent / "cecelia-fix-fanout-b1"
