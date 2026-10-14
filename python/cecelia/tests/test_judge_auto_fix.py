@@ -47,6 +47,7 @@ class _AutoFixture(_Fixture):
                                        _bug("B3", verify={"verdict": "decide", "date": "2026-10-05"}, file="b.py")])
         self.calls, self.messages, self.bodies = [], [], []
         self.views, self.conflicted, self.unstaged, self.changed = [GREEN], "", "", ""
+        self.porcelain, self.head = " M a.py\n", "b" * 40
         slept = mock.patch.object(self.af, "_sleep", lambda s: None)
         slept.start()
         self.addCleanup(slept.stop)
@@ -78,6 +79,10 @@ class _AutoFixture(_Fixture):
                 return subprocess.CompletedProcess(argv, 0, self.unstaged, "")
             if argv == ["git", "diff", "--name-only", "HEAD"]:   # what a left-behind worktree holds
                 return subprocess.CompletedProcess(argv, 0, self.changed, "")
+            if argv == ["git", "status", "--porcelain"]:   # the worktree after a follow-up
+                return subprocess.CompletedProcess(argv, 0, self.porcelain, "")
+            if argv == ["git", "rev-parse", "HEAD"]:
+                return subprocess.CompletedProcess(argv, 0, self.head + "\n", "")
             if argv[:3] == ["gh", "pr", "view"]:   # `self.views`: the PR's states in turn, the last one from then on
                 view = self.views[0] if len(self.views) == 1 else self.views.pop(0)
                 return subprocess.CompletedProcess(argv, 0, json.dumps(view), "")
@@ -256,9 +261,9 @@ class FenceTest(_AutoFixture):
         class Popen:
             def __init__(self, argv, **kw):
                 seen.append(argv)
-                self.stdin = io.StringIO()
+                # the prompt, recorded as written: a recording `close` would run again when GC finalises it
+                self.stdin = mock.Mock(write=seen.append)
                 self.stdout = io.StringIO("".join(json.dumps(e) + "\n" for e in next(runs)))
-                self.stdin.close = lambda: seen.append(self.stdin.getvalue())
 
             def wait(self):
                 return 0
@@ -476,13 +481,14 @@ class WorkTest(_AutoFixture):
 
     def test_red_ci_goes_back_to_the_agent_with_its_log_and_the_fix_is_shipped(self):
         self.views = [self.RED, GREEN]
-        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "The test fixture needed a seed."},
+        _, out = self.work(_answer(), {"tags": []},
+                           {"outcome": "fixed", "title": "fix(test): seed the fixture", "summary": "The fixture needed a seed."},
                            {"tags": ["[fanout-x9: fixed_pre_commit]"]})
         self.assertIn(["gh", "api", "repos/{owner}/{repo}/actions/jobs/7/logs"], self.calls)
         self.assertIn("CI failed: py", self.prompts[2][0])
         self.assertEqual(self.prompts[2][1], "sid-1")   # the same session
         self.assertEqual(len(self.messages), 2)   # the fix, then the CI fix, each through recital
-        self.assertTrue(self.messages[1].startswith("fix: The test fixture needed a seed\n"))
+        self.assertTrue(self.messages[1].startswith("fix(test): seed the fixture\n"))   # the agent's subject
         self.assertIn("[fanout-x9: fixed_pre_commit]", self.messages[1])
         self.assertIn("green and mergeable: https://github.com/o/r/pull/9", out)
         self.assertEqual([r["value"] for r in self.rv.read_reviews(self.log)], ["fix_session"])
@@ -496,16 +502,32 @@ class WorkTest(_AutoFixture):
         self.assertIn("##[error]Process completed", got)
         self.assertEqual(self.af.log_excerpt("a\nb\nc", lines=2), "b\nc")   # no error line: the tail
 
+    def test_the_checks_of_a_commit_not_yet_on_the_pr_are_not_read(self):
+        # just after a push GitHub still shows the last head, and its failed checks
+        stale = {**self.RED, "headRefOid": "a" * 40}
+        self.views = [stale, stale, {**GREEN, "headRefOid": self.head}]
+        _, out = self.work(_answer(), {"tags": []})
+        self.assertEqual(len(self.prompts), 2)   # no CI round: the red belonged to another commit
+        self.assertIn("green and mergeable", out)
+
+    def test_a_ci_follow_up_that_changes_nothing_isnt_shipped(self):
+        self.views, self.porcelain = [self.RED, GREEN], ""
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "title": "", "summary": "Already fixed."})
+        self.assertEqual(len(self.messages), 1)
+        self.assertEqual(len([c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]), 1)
+        self.assertIn("the agent changed nothing: Already fixed.", out)
+        self.assertIn("green and mergeable", out)
+
     def test_an_unrelated_failure_is_re_run_once_not_changed(self):
         self.views = [self.RED, GREEN]
-        _, out = self.work(_answer(), {"tags": []}, {"outcome": "unrelated", "summary": "A runner timeout."})
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "unrelated", "title": "", "summary": "A runner timeout."})
         self.assertIn(["gh", "run", "rerun", "5", "--failed"], self.calls)
         self.assertEqual(len(self.messages), 1)
         self.assertIn("green and mergeable", out)
 
     def test_a_conflict_with_main_is_merged_and_resolved_by_the_agent(self):
         self.views, self.conflicted = [{"statusCheckRollup": [], "mergeable": "CONFLICTING"}, GREEN], "a.py\n"
-        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "Kept both imports."},
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "title": "", "summary": "Kept both imports."},
                            fail=("merge",), touch="a.py")
         self.assertIn(["git", "merge", "--no-edit", "origin/main"], self.calls)
         self.assertIn("`a.py`", self.prompts[2][0])   # the conflicted files
@@ -517,7 +539,7 @@ class WorkTest(_AutoFixture):
         # a merge commit skips recital: the agent may touch only what conflicted
         self.views, self.conflicted = [{"statusCheckRollup": [], "mergeable": "CONFLICTING"}], "a.py\n"
         self.unstaged = "a.py\nb.py\n"
-        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "summary": "Resolved."},
+        _, out = self.work(_answer(), {"tags": []}, {"outcome": "fixed", "title": "", "summary": "Resolved."},
                            fail=("merge",), touch="a.py")
         self.assertNotIn(["git", "commit", "--no-edit"], self.calls)
         self.assertIn(["git", "merge", "--abort"], self.calls)
@@ -550,7 +572,7 @@ class WorkTest(_AutoFixture):
 
     def test_still_red_after_its_rounds_goes_back_to_the_owner_with_the_pr(self):
         self.views = [self.RED]
-        fixed = {"outcome": "fixed", "summary": "Tried again."}
+        fixed = {"outcome": "fixed", "title": "fix: again", "summary": "Tried again."}
         _, out = self.work(_answer(), {"tags": []}, *[fixed, {"tags": []}] * self.af.CI_ROUNDS, touch="a.py")
         self.assertIn(f"CI still fails after {self.af.CI_ROUNDS} rounds of fixes: https://github.com/o/r/pull/9", out)
         row = self.rv.read_auto(self.auto)["fanout-b1"]
