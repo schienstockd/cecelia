@@ -38,6 +38,7 @@ export { WebGpuUnavailable, type AdapterReport }
 import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
+import { retireDestroyed } from './retireDestroyed'
 import { LABEL_PALETTE_N, labelPaletteBytes, type MaskStore } from '../../utils/viewerLabels'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
@@ -592,6 +593,21 @@ export async function createVolumeRenderer(
    *  renderer unable to hold even one timepoint. See interface doc. */
   let onOomCb: ((msg: string) => void) | null = null
   let oomReported = false
+  /** The VRAM of a BULK free (`setImage`'s `dropAll`, `setLabelSource` dropping every mask) being
+   *  released (`retireDestroyed`). The next allocation waits on it — otherwise old + new must fit at
+   *  once, and a cache filled near VRAM reads a false OOM (→ a needless swap to the brick renderer).
+   *  Same discipline as the brick and tile atlases' `allocateAtlas`. Not per eviction: the LRU frees
+   *  one slot per frame and a wait per scrub frame would cost the queue's ~100 ms quantum each time. */
+  let freeing: Promise<unknown> | null = null
+  const retireFreed = () => {
+    if (usable()) freeing = retireDestroyed(device).catch(() => {})
+  }
+  const awaitFreed = async () => {
+    const f = freeing
+    if (!f) return
+    await f
+    if (freeing === f) freeing = null
+  }
   let steps = 256
   let destroyed = false
   /** Overlay instances, grown on demand. One buffer for the whole movie — see `setOverlayPoints`. */
@@ -733,12 +749,14 @@ export async function createVolumeRenderer(
     setImage(m: ViewerMeta, budgetBytes: number, zd = m.nZ, zLo = 0, withLabels = false,
              nxRender = m.nX, nyRender = m.nY) {
       // NOT gated on the device being alive, deliberately. Nothing here touches the GPU except
-      // `dropAll()` and `setChannels`, which guard themselves — while what it DOES set is the geometry
+      // `dropAll()`, `setChannels` and the post-free queue wait, which guard themselves — while what it DOES set is the geometry
       // every later decision is derived from. A `!usable()` early return left the renderer describing a
       // 2D plane while the client fetched whole volumes: the cache reported capacity 170 for a 4-volume
       // budget, so the read-ahead thought a frame was cheap and queued dozens of 326 MB requests, and
       // the server's read time went from 0.5 s to 3.7 s under its own contention.
+      const hadSlots = slots.size > 0
       dropAll()
+      if (hadSlots) retireFreed()
       allocGen++
       bindGroup = null
       meta = m
@@ -793,6 +811,8 @@ export async function createVolumeRenderer(
       // stamped after the awaits, a `setZPlane` mid-upload would label the old plane's bytes current.
       const gen = allocGen, plane = planeVersion
       const superseded = () => gen !== allocGen
+      await awaitFreed()
+      if (!usable() || superseded()) return
       // Channels stacked along z in one texture: one binding, one loop in the shader.
       //
       // ALLOCATED INSIDE AN OOM ERROR SCOPE, which is the whole reason a too-large cache can no longer
@@ -921,7 +941,11 @@ export async function createVolumeRenderer(
       labelSource = sourceId
       // Every slot's mask is now another source's: draw without it (and free it) until refetched.
       if (!usable()) return
-      for (const [t, slot] of slots) if (slot.labelSrc !== '') setSlotLabel(t, null, '')
+      let freed = false
+      for (const [t, slot] of slots) {
+        if (slot.labelSrc !== '') { setSlotLabel(t, null, ''); freed = true }
+      }
+      if (freed) retireFreed()
     },
 
     needsLabel(t: number) {
@@ -941,6 +965,8 @@ export async function createVolumeRenderer(
       if (labelBytes === null) { setSlotLabel(t, null, sourceId); return }
       // Fetched for another geometry (a level or plane swap between fetch and here) — not this slot's.
       if (labelBytes.byteLength !== nx * ny * dp * LABEL_BPV) return
+      await awaitFreed()
+      if (!current()) return
       // Same OOM discipline as `uploadFrame`: the mask was budgeted with the timepoint (`labels`), so
       // running out here means the GPU allows fewer slots than the budget — shrink, as uploadFrame does.
       device.pushErrorScope('out-of-memory')

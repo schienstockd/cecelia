@@ -1468,7 +1468,7 @@ const CACHE_MB_OPTIONS = computed(() => BASE_CACHE_OPTIONS.map(o => {
     label,
     disabled: overCap,
     tip: overCap
-      ? `Would need ${Math.ceil(o.mb / Math.max(1, perAtlasMB.value))} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
+      ? `Would need ${atlasCountForBudget(o.mb, Math.max(1, perAtlasMB.value))} atlases — beyond this GPU's ${cacheHardCapMB.value} MB ceiling (max ${MAX_ATLASES} × maxBufferSize)`
       : o.tip,
   }
 }))

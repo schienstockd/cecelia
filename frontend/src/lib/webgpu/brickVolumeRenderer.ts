@@ -51,6 +51,7 @@ import { POINT_STRIDE, SEG_STRIDE } from '../../utils/viewerOverlays'
 import { sameBrickImage, brickLabelSourceId, labelBackfill } from '../../utils/brickLabels'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
+import { retireDestroyed } from './retireDestroyed'
 import {
   BRICK_POINTS_WGSL, BRICK_SEGMENTS_WGSL,
   BRICK_UNIFORM_BYTES, BU, EMPTY_SLOT,
@@ -632,9 +633,8 @@ export async function createBrickVolumeRenderer(
 
   const allocateLabels = async (a: AtlasState, want: string, gen: number): Promise<void> => {
     const stale = () => gen !== labelGen || atlas !== a || destroyed
-    // Same reason as `allocateAtlas`: a just-destroyed label atlas frees its memory only once the
-    // queue has retired the work that used it.
-    await device.queue.onSubmittedWorkDone()
+    // Same reason as `allocateAtlas`: a just-destroyed label atlas holds its memory until released.
+    await retireDestroyed(device)
     if (stale()) return
     device.pushErrorScope('out-of-memory')
     const tex = createLabelTextures(a.layouts)
@@ -817,12 +817,12 @@ export async function createBrickVolumeRenderer(
     //  - Dawn frees a destroyed texture's VkDeviceMemory only once the GPU has retired the work
     //    that used it. Re-creating straight after `dropAtlas()` (every 2D↔3D toggle: the brick
     //    shape changes) needs old + new resident at once — 24 GB for a 12 GB cache. So when
-    //    an atlas was just dropped, wait for the queue to drain first.
+    //    an atlas was just dropped, release its memory first (`retireDestroyed`).
     //  - Other tenants (the desktop, another tab, a CUDA job) own VRAM WebGPU can't see. So an
     //    OOM steps down one atlas and retries, rather than failing the brick renderer outright;
     //    only a single atlas failing reaches `onError` (→ the flat fallback in ViewerWindow).
     const allocateAtlas = async (): Promise<void> => {
-      if (hadAtlas) await device.queue.onSubmittedWorkDone()
+      if (hadAtlas) await retireDestroyed(device)
       let lastErr = ''
       for (let n = layouts.length; n >= 1; n--) {
         if (gen !== allocGen || destroyed) return
@@ -847,7 +847,7 @@ export async function createBrickVolumeRenderer(
         }
         lastErr = oom.message
         destroyAtlasState(next)
-        await device.queue.onSubmittedWorkDone()   // let the failed attempt's memory go too
+        await retireDestroyed(device)   // let the failed attempt's memory go too
       }
       onError?.(`Brick atlas: ${lastErr}`)
     }
