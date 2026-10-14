@@ -134,7 +134,6 @@ _Changes on `main` that have not yet been tagged in a release._
 - **Install:** native Julia on Apple Silicon (#1374); movies on Apple Silicon (#1364); macOS installs
   no longer need system git (#1461); Windows shared install fixes (#1443, #1446); the launcher finds
   Julia from a desktop launch (#1587); *Install* buttons show their errors (#1561).
-- **Example notebooks are now included in installed versions** — no release had shipped them.
 - **Claude can find Claude Code off your PATH**, with Re-check in Settings (#1506).
 
 ## [0.2.10] — 2026-10-02
