@@ -15,6 +15,8 @@ A headless `claude -p` run (the recital's reviewers) writes a session file too �
 "interactive"` like a window, but `entrypoint: "sdk-cli"` where a terminal window has `"cli"` — and
 is no one's window, so `sdk*` entrypoints are skipped, but for the fix agent `judge-review --auto`
 runs (`from_auto_fix`): it works a worktree unattended, and the pane shows it as `auto-fix`.
+Claude Code's daemon also keeps a `spare: true` background session warm for the next background
+job (`kind: "bg"`): no transcript, no work, so it is skipped; a real background job is shown.
 
 The transcript also carries Claude Code's recap — a `system` entry with `subtype: "away_summary"`,
 written while the window sits unattended — which `latest_recap` reads — and the session's last
@@ -298,8 +300,8 @@ def _session(path: pathlib.Path, projects: pathlib.Path, proc: pathlib.Path,
         sid, name, status = meta["sessionId"], meta.get("name") or str(pid), meta.get("status") or "?"
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return Session(pid, str(pid), "?", None, readable=False) if proc_start(pid, proc) else None
-    if proc_start(pid, proc) != started:
-        return None
+    if proc_start(pid, proc) != started or meta.get("spare"):
+        return None   # gone, or the daemon's warm spare — nobody's work yet
     if str(meta.get("entrypoint") or "").startswith("sdk"):
         if not from_auto_fix(pid, proc):
             return None   # a headless `claude -p` run (a recital reviewer, an eval) — nobody's window

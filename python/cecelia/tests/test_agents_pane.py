@@ -189,6 +189,14 @@ class LiveSessionsTest(_FakeHome):
         self.assertEqual([(s.pid, s.name, s.auto, s.judge, s.cwd) for s in live],
                          [(10, "auto-fix", True, False, "/ws/cecelia-fix-x")])
 
+    def test_the_daemons_warm_spare_is_not_a_session_but_a_background_job_is(self):
+        for pid, extra in ((10, {"kind": "bg", "spare": True}), (11, {"kind": "bg"})):
+            self.process(pid, "500")
+            self.session(pid, "500", f"s{pid}", name=f"n{pid}")
+            meta = json.loads((self.home / "sessions" / f"{pid}.json").read_text(encoding="utf-8"))
+            (self.home / "sessions" / f"{pid}.json").write_text(json.dumps({**meta, **extra}), encoding="utf-8")
+        self.assertEqual([s.name for s in self.live()], ["n11"])
+
     def test_no_sessions_folder_means_no_sessions(self):
         self.assertEqual(live_sessions(self.home / "missing", proc=self.proc), [])
 
