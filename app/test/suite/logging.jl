@@ -201,7 +201,9 @@ end
                                               "PYTHONPATH" => joinpath(repo, "python")); lifeline = true)
         c2 = Cecelia.spawn_logged("t", addenv(`$jl --startup-file=no -e 'include(ENV["LL"]); exit_with_parent!(); sleep(300)'`,
                                               "LL" => joinpath(repo, "app", "src", "lifeline.jl")); lifeline = true)
-        c3 = run(`$jl --startup-file=no -e "sleep(300)"`; wait = false)
+        # Detached: on Windows libuv puts every non-detached child in a kill-on-close job object, so a
+        # plain child dies with its parent there regardless — it would prove nothing.
+        c3 = run(Cmd(`$jl --startup-file=no -e "sleep(300)"`; detach = true); wait = false)
         sleep(3)   # both watchers are up
         write(out, join(Int.(Libc.getpid.((c1, c2, c3))), " "))
         sleep(300)
