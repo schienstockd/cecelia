@@ -97,10 +97,17 @@ extras: hooks, a message bus, window control. None of those is needed here.
   description capped at 3 lines, no branch anchor — the session row names it), outcome in front,
   the agent's reason (`why …`) under it. A one-line-per-finding version clipped every description
   and read as clutter; a version listing only non-fixed findings dropped detail Dominik wanted.
-- **Which window is which:** each session has a badge — one of 4 shapes in one of 7 Okabe-Ito
-  colours, from a hash of its session id (`agents.session_badge`). The pane draws it before the
-  name; `scripts/statusline_badge.py` wraps any statusline command and draws the same badge and
-  name in that session's own statusline. Opt-in, one line in `~/.claude/settings.json`:
+- **Which window is which:** each session has a badge, a `●` in its own colour, one of 8 hues kept
+  apart from the state column's (`agents.session_badge`). Each live session holds a slot until it
+  closes; a new one takes the lowest free slot, so colours differ until more than 8 are open
+  (`agents.badge_slots`, saved to `~/.cache/cecelia-agents/badge_slots.json`). The pane and
+  `scripts/statusline_badge.py` both read and assign there. The pane draws the badge before the
+  name; the recital console's findings pane puts it with the short name (`● c4`) on each finding
+  the session raised (#1692); the wrapper draws badge and name in front of any statusline
+  command. Asked for 2026-10-15: a hash of the session id into 4 shapes × 7 Okabe-Ito colours gave
+  three orange rows out of five, the shapes were too small to tell apart, and the colours were the
+  state column's own. Colouring the name instead of a dot was tried and dropped: he preferred the
+  dots. Opt-in, one line in `~/.claude/settings.json`:
   `"command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"`. ~60 ms per
   refresh on top of the wrapped command; if it fails the wrapped statusline still shows.
 - **`ctx` column** (asked for 2026-10-13: "a small status bar how full the context is", no token
@@ -121,7 +128,7 @@ extras: hooks, a message bus, window control. None of those is needed here.
   its work stays in a worktree, so the pane takes the newest *checkout* among the transcript's recent
   `cwd`s, and the prune gate protects every worktree among them.
 - macOS / Windows: no `/proc`, so the pane reads "can't list sessions" and the prune gate falls back
-  to IN USE-unknown as before. The statusline wrapper writes UTF-8 bytes (cp1252 has no badge shapes).
+  to IN USE-unknown as before. The statusline wrapper writes UTF-8 bytes (cp1252 has no `●`).
 - Session `status` meanings, read off live sessions (not documented by Claude Code): `idle` =
   turn over, nothing running; `shell` = turn over, a background command (e.g. a CI watch) still
   running and will wake the agent; `busy` = mid-turn.

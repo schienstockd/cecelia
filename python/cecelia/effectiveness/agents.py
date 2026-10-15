@@ -11,15 +11,21 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import itertools
+import json
 import os
+import pathlib
 import threading
 import time
 import typing as _t
 
-from .claude_sessions import Session
+from cecelia.utils.atomic_io import write_json_atomic
+
+from .claude_sessions import Session, context_dir, live_sessions
 from .git_context import git_output, recent_prs
 from .log import resolved_findings
-from .palette import PALETTE
+from .palette import BADGES as BADGE_COLOURS
+from .state import try_lock
 
 #: One recital round writes one of these (`pixi run recital` spawns the fanout audit every time).
 ROUND_EVENT = "fanout_audit_run"
@@ -32,21 +38,70 @@ _CI_FAILED = frozenset({"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", 
                         "ERROR"})
 
 
-#: A session's badge is one of these shapes in one of these colours (Okabe-Ito, CVD-safe): 28
-#: combinations, so ten sessions rarely share one — and the name beside it settles it when they do.
-BADGE_SHAPES = ("●", "■", "▲", "◆")
-BADGE_SWATCHES = ("vermillion", "orange", "yellow", "bluish_green", "sky_blue", "blue",
-                  "reddish_purple")
+#: A session's badge: a `●` in one of the palette's `badges` colours (`BADGE_COLOURS`), identity
+#: hues kept apart from the state column's. Live sessions each hold their own (`badge_slots`);
+#: beyond the palette they repeat.
+BADGE = "●"
+
+#: Which colour each live session holds: `{session id: slot}`, beside the context-fill files.
+_SLOTS_FILE = "badge_slots.json"
 
 
-def session_badge(session_id: str, *, use_colour: bool = True) -> str:
-    """The session's fixed shape-and-colour mark, derived from its id, so the agents pane and the
-    session's own statusline (`scripts/statusline_badge.py`) draw the same one."""
-    n = int(hashlib.sha1(session_id.encode("utf-8")).hexdigest(), 16)
-    shape = BADGE_SHAPES[n % len(BADGE_SHAPES)]
-    if not use_colour:
-        return shape
-    return f"{PALETTE[BADGE_SWATCHES[n // len(BADGE_SHAPES) % len(BADGE_SWATCHES)]]}{shape}\033[0m"
+def _hash_slot(session_id: str) -> int:
+    """The colour for a session no slot is known for (no `/proc` to tell who is live)."""
+    return int(hashlib.sha1(session_id.encode("utf-8")).hexdigest(), 16) % len(BADGE_COLOURS)
+
+
+def badge_slots(live_ids: _t.Sequence[str], folder: pathlib.Path | None = None) -> dict[str, int]:
+    """Each live session's colour slot. A session keeps its slot while it lives; a new one takes
+    the lowest slot no live session holds, so the colours on screen differ until there are more
+    sessions than colours. Dead sessions are dropped, freeing theirs. Kept in a file, under a lock,
+    because the pane and every window's statusline (`scripts/statusline_badge.py`) assign."""
+    folder = folder or context_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / _SLOTS_FILE
+    # No lock on Windows (`try_lock`): two first sightings at once could share a slot.
+    with try_lock(folder / (_SLOTS_FILE + ".lock"), wait=True):
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            saved = {}
+        live = set(live_ids)
+        slots = {k: v for k, v in saved.items() if k in live and isinstance(v, int)} \
+            if isinstance(saved, dict) else {}
+        for sid in live_ids:
+            if sid and sid not in slots:
+                held = set(slots.values())
+                slots[sid] = next(i for i in itertools.count() if i not in held)
+        if slots != saved:
+            write_json_atomic(path, slots)
+    return slots
+
+
+def session_slot(session_id: str, folder: pathlib.Path | None = None) -> int:
+    """The session's colour slot, as the pane shows it: the saved one, else assigned now against
+    the live sessions; the hash where liveness can't be checked."""
+    try:
+        saved = json.loads(((folder or context_dir()) / _SLOTS_FILE).read_text(encoding="utf-8"))
+        if isinstance(saved.get(session_id), int):
+            return saved[session_id]
+    except (OSError, ValueError, AttributeError):
+        pass
+    live = live_sessions(context=folder)
+    if not live:
+        return _hash_slot(session_id)
+    return badge_slots([s.session_id for s in live] + [session_id], folder)[session_id]
+
+
+def badge_colour(session_id: str, slot: int | None = None) -> str:
+    """The escape for the session's colour: `slot` when known, else its hash."""
+    return BADGE_COLOURS[(_hash_slot(session_id) if slot is None else slot) % len(BADGE_COLOURS)]
+
+
+def session_badge(session_id: str, *, slot: int | None = None, use_colour: bool = True) -> str:
+    """The session's `●` in its colour — the same in the agents pane, on the findings it raised
+    and in its own statusline (`scripts/statusline_badge.py`), so they can be matched by eye."""
+    return f"{badge_colour(session_id, slot)}{BADGE}\033[0m" if use_colour else BADGE
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,6 +129,7 @@ class AgentRow:
     session_id: str = ""
     recap: tuple[str, str] | None = None   # (timestamp, text): Claude Code's recap of the session
     context_pct: float | None = None       # % of the context window in use; None = unknown
+    badge: int | None = None               # its colour slot (`badge_slots`); None = from its id
 
     @property
     def done(self) -> bool:
@@ -186,6 +242,11 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
     """One sorted row per session. Runs two `git` calls per readable session; `prs` is a
     newest-first PR list (`recent_prs`, usually through `PrCache`)."""
     by_branch = pr_by_branch(prs)
+    sessions = list(sessions)
+    try:
+        slots = badge_slots([s.session_id for s in sessions if s.session_id])
+    except OSError:   # an unwritable cache: colours from the ids
+        slots = {}
     rows = []
     for s in sessions:
         top = _checkout(s)
@@ -201,5 +262,6 @@ def agent_rows(sessions: _t.Iterable[Session], events: _t.Sequence[dict],
                                            and pr.get("mergeable") == "CONFLICTING"),
                              findings=tuple(findings), session_id=s.session_id, recap=s.recap,
                              context_pct=s.context_pct, asks=s.asks and s.status != "busy", judge=s.judge,
-                             recital=s.recital, auto=s.auto))
+                             recital=s.recital, auto=s.auto,
+                             badge=slots.get(s.session_id)))
     return sort_rows(rows)

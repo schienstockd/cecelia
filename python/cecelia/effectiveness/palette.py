@@ -54,12 +54,7 @@ def _hex_to_ansi(hex_str: str) -> str:
     return f"\033[38;2;{r};{g};{b}m"
 
 
-def load_hex(path: pathlib.Path | None = None) -> dict[str, str]:
-    """Return `{swatch_name: "#RRGGBB"}` from `share/console_palette.json` — for output that takes
-    the hex itself (the effectiveness chart's SVG) rather than a terminal escape.
-
-    `path` overrides the default location — used by tests to point at a fixture.
-    """
+def _load_json(path: pathlib.Path | None) -> dict:
     p = path or _PALETTE_PATH
     if not p.exists():
         raise PaletteError(
@@ -67,9 +62,19 @@ def load_hex(path: pathlib.Path | None = None) -> dict[str, str]:
         )
     try:
         with p.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
+            return json.load(fh)
     except json.JSONDecodeError as e:
         raise PaletteError(f"palette JSON malformed ({p}): {e}") from e
+
+
+def load_hex(path: pathlib.Path | None = None) -> dict[str, str]:
+    """Return `{swatch_name: "#RRGGBB"}` from `share/console_palette.json` — for output that takes
+    the hex itself (the effectiveness chart's SVG) rather than a terminal escape.
+
+    `path` overrides the default location — used by tests to point at a fixture.
+    """
+    p = path or _PALETTE_PATH
+    data = _load_json(p)
     swatches = data.get("swatches") or {}
     missing = [k for k in _REQUIRED_SWATCHES if k not in swatches]
     if missing:
@@ -88,6 +93,15 @@ def load_palette(path: pathlib.Path | None = None) -> dict[str, str]:
     return {name: _hex_to_ansi(hex_str) for name, hex_str in load_hex(path).items()}
 
 
+def load_badges(path: pathlib.Path | None = None) -> tuple[str, ...]:
+    """The session-badge colours (`badges` in the JSON) as ANSI escapes, in slot order — identity
+    colours for the agents pane, kept apart from the semantic swatches."""
+    badges = _load_json(path).get("badges")
+    if not isinstance(badges, list) or not badges:
+        raise PaletteError(f"palette {path or _PALETTE_PATH} has no `badges` list")
+    return tuple(_hex_to_ansi(h) for h in badges)
+
+
 #: Loaded once at import — a palette load failure is a hard startup error, not a first-
 #: paint runtime one. Callers get a plain `dict[str, str]` they can index into.
 PALETTE: dict[str, str] = load_palette()
@@ -103,3 +117,4 @@ SKY_BLUE: _t.Final[str] = PALETTE["sky_blue"]
 BLUE: _t.Final[str] = PALETTE["blue"]
 REDDISH_PURPLE: _t.Final[str] = PALETTE["reddish_purple"]
 GREY: _t.Final[str] = PALETTE["grey"]
+BADGES: _t.Final[tuple[str, ...]] = load_badges()

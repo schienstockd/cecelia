@@ -18,5 +18,7 @@
     "blue":           "#0072B2",
     "reddish_purple": "#CC79A7",
     "grey":           "#8C8C8C"
-  }
+  },
+  "_badges": "Identity, not meaning: one per live Claude Code session in the recital console's agents pane (`agents.session_badge`). Hues spread round the wheel and kept apart from the swatches above, which the pane's state column uses, so a badge doesn't read as a state. Python only.",
+  "badges": ["#FF5C5C", "#FFE14D", "#5CD65C", "#4DD2FF", "#5C7CFF", "#B870FF", "#FF70C8", "#E8E8E8"]
 }

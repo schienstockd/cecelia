@@ -566,7 +566,8 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
               _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
-    name = (session_badge(row.session_id, use_colour=use_colour) if row.session_id else " ") + " " + _name_cell(row)
+    name = (session_badge(row.session_id, slot=row.badge, use_colour=use_colour) if row.session_id
+            else " ") + " " + _name_cell(row)
     status += " " + context_bar(row.context_pct, use_colour=use_colour)
     if not row.branch:
         return f"  {name} {status} {where}"
@@ -715,10 +716,11 @@ def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = Tr
 
 
 def _finding_badge(row: AgentRow, *, use_colour: bool) -> str:
-    """The session's badge and its name without the `cecelia-` every window shares (`◆ 99`): 28
-    badges for a handful of sessions collide often, so the name is what tells two apart."""
+    """The session's badge and its name without the `cecelia-` every window shares (`● 99`): the
+    colours run out past 8 live sessions, so the name is what tells two apart."""
     name = row.name.removeprefix("cecelia-")
-    return session_badge(row.session_id, use_colour=use_colour) + " " + _col(_BOLD, name, use_colour=use_colour)
+    return (session_badge(row.session_id, slot=row.badge, use_colour=use_colour) + " "
+            + _col(_BOLD, name, use_colour=use_colour))
 
 
 def _finding_badges(agents: _t.Iterable[AgentRow], findings: _t.Sequence[dict], *,
