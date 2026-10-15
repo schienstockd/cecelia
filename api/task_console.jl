@@ -71,29 +71,28 @@ _swatch(name::AbstractString) = _hex_to_ansi(String(_PALETTE.swatches[Symbol(nam
 const GREY           = _swatch("grey")
 const VERMILLION     = _swatch("vermillion")      # alerts (failed)
 const ORANGE         = _swatch("orange")          # warnings (queued)
-const YELLOW         = _swatch("yellow")          # attention
-const BLUISH_GREEN   = _swatch("bluish_green")    # positive (done)
-const SKY_BLUE       = _swatch("sky_blue")        # info (running)
+const YELLOW         = _swatch("yellow")          # in progress (running)
+const SKY_BLUE       = _swatch("sky_blue")        # positive (done)
 const BLUE           = _swatch("blue")            # neutral
 const REDDISH_PURPLE = _swatch("reddish_purple")  # distinctive (cancelled)
 
-# Legacy aliases — the render code below reads `RED`/`GREEN`/`CYAN`/`MAGENTA` by their
+# Legacy aliases — the render code below reads `RED`/`MAGENTA` by their
 # standard names; rebinding to the CVD-safe swatch is a one-line swap for each call site,
-# and the semantic (alert / positive / info / distinctive) is what matters at the use site.
+# and the semantic (alert / distinctive) is what matters at the use site.
 const RED = VERMILLION
-const GREEN = BLUISH_GREEN
-const CYAN = SKY_BLUE
+# Good is sky blue, not green: it sits beside red's failed, and red against green is the pair
+# red-green colour blindness loses. Same rule as `pixi run recital-console`. Asked for 2026-10-15.
+const GOOD = SKY_BLUE
 const MAGENTA = REDDISH_PURPLE
 
 col(c, s) = STREAM_MODE ? s : string(c, s, RESET)
 
 function status_colour(s::AbstractString)
-    # Semantic-colour mapping over the CVD-safe swatches. `queued` uses ORANGE (warning
-    # hue) rather than YELLOW: Okabe pale yellow reads as very low-contrast on dark
-    # terminal backgrounds, and a queued-vs-running pair needs to pop.
-    s == "running"   ? SKY_BLUE        :
+    # Semantic-colour mapping over the CVD-safe swatches: in progress yellow (as the recital
+    # console's CI `running`), waiting orange, good sky blue, bad vermillion.
+    s == "running"   ? YELLOW          :
     s == "queued"    ? ORANGE          :
-    s == "done"      ? BLUISH_GREEN    :
+    s == "done"      ? GOOD            :
     s == "failed"    ? VERMILLION      :
     s == "cancelled" ? REDDISH_PURPLE  : GREY
 end
@@ -631,7 +630,7 @@ function handle_ws(raw::AbstractString)
 
         elseif type == "task:result"
             id = String(get(msg, :taskId, ""))
-            push_event!("result", string(col(BOLD, short(id)), " result ready"); colour = GREEN)
+            push_event!("result", string(col(BOLD, short(id)), " result ready"); colour = GOOD)
 
         elseif startswith(type, "chain:node:")
             node   = replace(type, "chain:node:" => "")
@@ -665,7 +664,7 @@ function handle_ws(raw::AbstractString)
                             haskey(msg, :error) ? col(RED, "  $(clean_line(String(msg.error)))") : "")
             push_event!(type, detail;
                         colour = endswith(type, "failed") ? RED :
-                                 endswith(type, "done")   ? GREEN : BLUE)
+                                 endswith(type, "done")   ? GOOD : BLUE)
         end
         # ping/pong and anything else are ignored.
     end
@@ -676,7 +675,7 @@ end
 function progress_bar(p::Float64, width::Int=14)
     p < 0 && return col(DIM, rpad("—", width + 5))
     filled = round(Int, p * width)
-    bar = string("[", col(GREEN, repeat("█", filled)), repeat("·", width - filled), "]")
+    bar = string("[", col(YELLOW, repeat("█", filled)), repeat("·", width - filled), "]")
     string(bar, " ", lpad(string(round(Int, p * 100)), 3), "%")
 end
 
@@ -717,20 +716,20 @@ function render()
     print(io, "\e[H\e[2J")
     print(io, col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"),
           "   ", col(GREY, Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")), "\n")
-    print(io, col(CYAN, "$n_run running"), col(DIM, " · "), col(YELLOW, "$n_q queued"),
-          col(DIM, " · "), col(GREEN, "$(TALLY["done"]) done"),
+    print(io, col(YELLOW, "$n_run running"), col(DIM, " · "), col(ORANGE, "$n_q queued"),
+          col(DIM, " · "), col(GOOD, "$(TALLY["done"]) done"),
           col(DIM, " · "), col(RED, "$(TALLY["failed"]) failed"),
           TALLY["cancelled"] > 0 ? string(col(DIM, " · "), col(MAGENTA, "$(TALLY["cancelled"]) cancelled")) : "",
           TALLY["ended"] > 0 ? string(col(DIM, " · "), col(GREY, "$(TALLY["ended"]) ended")) : "",
           "\n")
 
     # pools panel — configured concurrency limit vs slots in use now (+ any queued) for each pool.
-    # Running count coloured (cyan when busy, dim when idle); queued shown in yellow when non-zero.
+    # Running count coloured (yellow when busy, dim when idle); queued shown in orange when non-zero.
     if havePools
         parts = map(sort(POOLS, by = _poolsort)) do p
             string(col(BOLD, p.name), " ",
-                   col(p.running > 0 ? CYAN : DIM, "$(p.running)/$(p.limit)"),
-                   p.queued > 0 ? col(YELLOW, " +$(p.queued)q") : "")
+                   col(p.running > 0 ? YELLOW : DIM, "$(p.running)/$(p.limit)"),
+                   p.queued > 0 ? col(ORANGE, " +$(p.queued)q") : "")
         end
         print(io, col(DIM, "pools  "), join(parts, col(DIM, "   ")), "\n")
     end
