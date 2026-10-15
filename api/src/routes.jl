@@ -290,6 +290,9 @@ function api_task_definitions(req::HTTP.Request)
                     end
                 end
                 collect_req!(get(spec, "requires", nothing))
+                # Each step's measured cluster-memory model (`"hpc".mem`), so the runner's memory
+                # hint covers the hungriest step without the composite repeating its steps' numbers.
+                mem_models = Any[]
                 for fn_ref in composite
                     sub = get(by_fun, string(fn_ref), nothing)
                     isnothing(sub) && continue
@@ -303,8 +306,14 @@ function api_task_definitions(req::HTTP.Request)
                         push!(merged, p)
                     end
                     collect_req!(get(sub, "requires", nothing))
+                    sub_hpc = get(sub, "hpc", nothing)
+                    sub_hpc isa AbstractDict && append!(mem_models, get(sub_hpc, "mem", Any[]))
                 end
                 spec["params"] = merged
+                hpc = get(spec, "hpc", nothing)
+                if hpc isa AbstractDict && !haskey(hpc, "mem") && !isempty(mem_models)
+                    hpc["mem"] = mem_models
+                end
                 if !isempty(req_axes) || !isempty(req_scale)
                     req = Dict{String,Any}()
                     isempty(req_axes)  || (req["axes"]  = sort!(collect(req_axes)))

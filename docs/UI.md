@@ -191,7 +191,9 @@ Decision 9). `scope="machine"` on Settings: the cluster (scheduler, host, port),
 a project open) and the **Cluster environment** row with Install on cluster. `scope="user"` in the
 Preferences dialog: a read-only "Cluster: host:port · scheduler" line, the login (username, SSH key),
 remote folder, email, then a CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and
-preamble. Both have Test connection; its disabled tooltip names the other surface when the missing
+preamble. Both surfaces open with one line saying what HPC is for (many or large images), and the job grid sits under one line pointing to the cluster's support team for these names. Every empty field shows a
+grey generic `e.g.` example (`cpu,long`, `proj1234`, `module load cuda/12`; directives follow the chosen
+scheduler) — never a real site's values. Both have Test connection; its disabled tooltip names the other surface when the missing
 field lives there. Settings re-reads when Preferences closes. Each field saves on
 `@change` from its own `useFieldDraft` (`useHpcDrafts`), so a save reply never wipes another field
 being typed in; a refused value shows the backend's message and snaps back. The key

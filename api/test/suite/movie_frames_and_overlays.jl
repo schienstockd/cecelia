@@ -77,7 +77,7 @@ end
         @test axis_dims(ax3, ndims(a3)) == axis_dims(ax2, ndims(a2))
 
         @test image_geometry(v2) == image_geometry(v3)
-        @test image_geometry(v2) == (sizeX = 64, sizeY = 64, sizeZ = 3, sizeT = 3)
+        @test image_geometry(v2) == (sizeX = 64, sizeY = 64, sizeZ = 3, sizeT = 3, sizeC = 4, bytesPerVoxel = 2)
 
         # identical pixels across formats — this is also what proves v3 needs no byte-order branch:
         # v3 keeps `endian` in the `bytes` codec INSIDE the pipeline Zarr.jl executes, unlike v2 where
