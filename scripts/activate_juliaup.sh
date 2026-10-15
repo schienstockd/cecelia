@@ -24,12 +24,28 @@ fi
 if [ -d "$_cecelia_juliaup/depot" ]; then
   export JULIA_DEPOT_PATH="$HOME/.cecelia/julia-depot:$_cecelia_juliaup/depot:"
 fi
-# No `julia` on PATH (a desktop launch's minimal PATH): fall back to the Julia the installer recorded,
-# as `_recorded_julia` in app.py does. Appended, not prepended: its dir can be /opt/homebrew/bin,
-# whose python would otherwise shadow the pixi env's.
-if ! command -v julia >/dev/null 2>&1 && [ -f "$PIXI_PROJECT_ROOT/.cecelia-julia" ]; then
+# Otherwise the Julia the installer recorded beats whichever `julia` PATH offers, as in `_find_julia` in
+# app.py: it is the Julia `Pkg.instantiate` ran under, so `prod`, `doctor`, `julia-instantiate` must
+# use it too, not just `app`. Its dir can't go first on PATH (it can be /opt/homebrew/bin, whose python
+# would shadow the pixi env's), so a per-user dir holding only a `julia` symlink to it goes first. Keyed
+# by the target's checksum, so installs recording different Julias never share one. If that dir can't
+# be made, the recorded dir is appended, which still covers a desktop launch's minimal PATH.
+if [ ! -x "$_cecelia_juliaup/bin/julia" ] && [ -f "$PIXI_PROJECT_ROOT/.cecelia-julia" ]; then
   _cecelia_julia="$(head -n 1 "$PIXI_PROJECT_ROOT/.cecelia-julia")"
-  [ -x "$_cecelia_julia" ] && export PATH="$PATH:${_cecelia_julia%/*}"
+  if [ -x "$_cecelia_julia" ] && [ "$(command -v julia 2>/dev/null)" != "$_cecelia_julia" ]; then
+    _cecelia_shim="$HOME/.cecelia/julia-shim/$(printf '%s' "$_cecelia_julia" | cksum | cut -d ' ' -f 1)"
+    case "$PATH" in
+      "$_cecelia_shim:"*) ;;  # sourced again (nested `pixi shell`)
+      *)
+        if [ -L "$_cecelia_shim/julia" ] \
+           || { mkdir -p "$_cecelia_shim" 2>/dev/null && ln -sf "$_cecelia_julia" "$_cecelia_shim/julia" 2>/dev/null; }; then
+          export PATH="$_cecelia_shim:$PATH"
+        elif ! command -v julia >/dev/null 2>&1; then
+          export PATH="$PATH:${_cecelia_julia%/*}"
+        fi ;;
+    esac
+    unset _cecelia_shim
+  fi
   unset _cecelia_julia
 fi
 unset _cecelia_juliaup

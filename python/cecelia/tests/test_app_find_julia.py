@@ -98,34 +98,81 @@ class FindJuliaTest(unittest.TestCase):
             self.assertEqual(os.environ["PATH"], "/usr/local/bin:/usr/bin")
 
 
+def _fake_julia(dir_):
+    os.makedirs(dir_, exist_ok=True)
+    julia = os.path.join(dir_, "julia")
+    with open(julia, "w", encoding="utf-8") as f:
+        f.write("#!/bin/sh\n")
+    os.chmod(julia, 0o755)
+    return julia
+
+
 @unittest.skipIf(os.name == "nt", "pixi sources activate_juliaup.sh on unix only")
 class ActivateRecordedJuliaTest(unittest.TestCase):
-    """``scripts/activate_juliaup.sh`` falls back to the recorded Julia like ``_recorded_julia``,
-    appending its dir so it never shadows the pixi env's own binaries."""
+    """``scripts/activate_juliaup.sh`` ranks the recorded Julia like ``_find_julia``: ahead of PATH, so
+    ``prod``/``doctor``/``julia-instantiate`` run the Julia ``Pkg.instantiate`` ran under. It goes first
+    through a dir holding only a ``julia`` symlink, so its real dir (``/opt/homebrew/bin``) never
+    shadows the pixi env's python."""
 
-    def _activate(self, root):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        self.addCleanup(shutil.rmtree, self.home)
+        self.recorded = _fake_julia(os.path.join(self.root, "hb"))
+        with open(os.path.join(self.root, ".cecelia-julia"), "w", encoding="utf-8") as f:
+            f.write(self.recorded + "\n")
+
+    def _activate(self, path, home=None, twice=False):
         script = APP_PY.parent / "scripts" / "activate_juliaup.sh"
-        out = subprocess.run(["/bin/sh", "-c", '. "$1"; echo "$PATH"', "sh", str(script)],
-                             env={"PATH": "/usr/bin:/bin", "PIXI_PROJECT_ROOT": root},
-                             capture_output=True, text=True, encoding="utf-8", check=True)
-        return out.stdout.strip()
+        src = '. "$1"; . "$1"; ' if twice else '. "$1"; '
+        out = subprocess.run(["/bin/sh", "-c", src + 'echo "$PATH"; command -v julia', "sh", str(script)],
+                             env={"PATH": path, "PIXI_PROJECT_ROOT": self.root, "HOME": home or self.home},
+                             capture_output=True, text=True, encoding="utf-8")
+        lines = out.stdout.splitlines()
+        return lines[0], (lines[1] if len(lines) > 1 else "")
 
-    def test_recorded_julia_dir_is_appended_when_no_julia_on_path(self):
-        root = tempfile.mkdtemp()
-        bin_dir = os.path.join(root, "hb")
-        os.makedirs(bin_dir)
-        julia = os.path.join(bin_dir, "julia")
-        with open(julia, "w", encoding="utf-8") as f:
-            f.write("#!/bin/sh\n")
-        os.chmod(julia, 0o755)
-        with open(os.path.join(root, ".cecelia-julia"), "w", encoding="utf-8") as f:
-            f.write(julia + "\n")
+    def test_recorded_julia_beats_the_one_on_path(self):
+        other = os.path.dirname(_fake_julia(os.path.join(self.root, "other")))
+        path, julia = self._activate(other + ":/usr/bin:/bin")
+        self.assertEqual(os.path.realpath(julia), os.path.realpath(self.recorded))
+        shim = os.path.dirname(julia)
+        self.assertEqual(os.listdir(shim), ["julia"])  # nothing else from the recorded dir comes first
+        self.assertEqual(path, f"{shim}:{other}:/usr/bin:/bin")
+
+    def test_recorded_julia_found_off_path(self):
         if shutil.which("julia", path="/usr/bin:/bin"):
             self.skipTest("a julia in /usr/bin or /bin already satisfies PATH")
-        self.assertEqual(self._activate(root), "/usr/bin:/bin:" + bin_dir)
+        _, julia = self._activate("/usr/bin:/bin")
+        self.assertEqual(os.path.realpath(julia), os.path.realpath(self.recorded))
+
+    def test_sourced_twice_does_not_grow_path(self):
+        once, _ = self._activate("/usr/bin:/bin")
+        twice, _ = self._activate("/usr/bin:/bin", twice=True)
+        self.assertEqual(once, twice)
+
+    def test_already_first_on_path_leaves_path_alone(self):
+        hb = os.path.dirname(self.recorded)
+        self.assertEqual(self._activate(f"{hb}:/usr/bin:/bin")[0], f"{hb}:/usr/bin:/bin")
+
+    def test_unwritable_home_falls_back_to_appending(self):
+        if shutil.which("julia", path="/usr/bin:/bin"):
+            self.skipTest("a julia in /usr/bin or /bin already satisfies PATH")
+        os.chmod(self.home, 0o500)
+        self.addCleanup(os.chmod, self.home, 0o700)
+        if os.access(self.home, os.W_OK):
+            self.skipTest("running as root: chmod can't make HOME unwritable")
+        path, _ = self._activate("/usr/bin:/bin")
+        self.assertEqual(path, "/usr/bin:/bin:" + os.path.dirname(self.recorded))
+
+    def test_install_owned_juliaup_still_wins(self):
+        bin_dir = os.path.dirname(_fake_julia(os.path.join(self.root, "juliaup", "bin")))
+        _, julia = self._activate("/usr/bin:/bin")
+        self.assertEqual(julia, os.path.join(bin_dir, "julia"))
 
     def test_no_record_leaves_path_alone(self):
-        self.assertEqual(self._activate(tempfile.mkdtemp()), "/usr/bin:/bin")
+        os.remove(os.path.join(self.root, ".cecelia-julia"))
+        self.assertEqual(self._activate("/usr/bin:/bin")[0], "/usr/bin:/bin")
 
 
 class FindPixiTest(unittest.TestCase):

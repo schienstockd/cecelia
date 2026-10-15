@@ -459,7 +459,11 @@ Without `<install>/juliaup`, `_find_julia` next takes the Julia the installer re
 installers record in `<install>/.cecelia-julia`, before trying PATH. The user-scope desktop entry and
 `.app` start with the session's PATH (launchd's minimal one on macOS), which can leave out where that
 Julia lives: a juliaup in `/opt/homebrew/bin` or `~/.local/bin` gets its `julia` beside it.
-`scripts/activate_juliaup.sh` appends that Julia's dir to PATH when no `julia` is on it.
+`scripts/activate_juliaup.sh` gives every other `pixi run` task (`prod`, `doctor`, `julia-instantiate`,
+…) the same Julia, also ahead of PATH, because `Pkg.instantiate` ran under it. It puts
+`~/.cecelia/julia-shim/<cksum>/` first on PATH. That dir holds only a `julia` symlink, so the real dir
+(e.g. `/opt/homebrew/bin` and its python) never shadows the pixi env. If the shim can't be written, the
+script appends the real dir, and only when no `julia` is on PATH.
 
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).
