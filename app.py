@@ -40,7 +40,8 @@ def _find_julia() -> str:
     A juliaup inside the install (`<root>/juliaup`) wins. install.sh puts one there for system scope,
     and on Apple Silicon when the Julia it found was an Intel build. That juliaup keeps its own state,
     so point JULIAUP_DEPOT_PATH at it, and put it first on PATH for anything that runs bare `julia`.
-    Every `pixi run` already gets this from scripts/activate_juliaup.sh; this covers a launch that bypasses pixi.
+    Every `pixi run` already gets this from scripts/activate_juliaup.sh (.bat on Windows); this covers a
+    launch that bypasses pixi.
 
     A system-scope install also has a shared package depot (`<root>/juliaup/depot`), read-only to every
     account but the owner. A per-user writable depot goes in front of it, and the trailing empty entry

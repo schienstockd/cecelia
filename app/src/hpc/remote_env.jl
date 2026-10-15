@@ -101,10 +101,11 @@ hpc_env_python(remote_root::AbstractString, lock::AbstractString)::String =
     hpc_env_dir(remote_root, lock) * "/.pixi/envs/default/bin/python"
 
 # What `pixi install` needs: the manifest, the lock, the editable `cecelia` it installs from python/,
-# and the activation script the manifest names (pixi checks it exists).
+# and the activation scripts the manifest names (pixi checks they exist; the .bat is Windows-only but
+# named in the same manifest).
 hpc_env_files(; root::AbstractString = _hpc_repo_root())::Vector{String} =
     vcat(["pixi.toml", "pixi.lock"],
-         filter(f -> isfile(joinpath(root, f)), ["scripts/activate_juliaup.sh"]),
+         filter(f -> isfile(joinpath(root, f)), ["scripts/activate_juliaup.sh", "scripts/activate_juliaup.bat"]),
          _hpc_tree(root, "python", _hpc_pyfile))
 
 """

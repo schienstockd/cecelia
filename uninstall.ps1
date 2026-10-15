@@ -168,6 +168,7 @@ if ($InstallDir) {
 
 # ── Your data ─────────────────────────────────────────────────────────────────
 Remove-Path (Join-Path $ConfigDir 'julia-depot')   # per-user Julia cache for a shared install - always
+Remove-Path (Join-Path $ConfigDir 'julia-shim')    # activate_juliaup.bat's julia.cmd; remade on the next `pixi run` - always
 if ($WipeProjects -and $Projects.Count -gt 0) {
   Say "Deleting $($Projects.Count) project(s)..."
   foreach ($p in $Projects) { Remove-Path $p.FullName }

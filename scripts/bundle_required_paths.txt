@@ -47,8 +47,9 @@ app/src/Cecelia.jl
 python/cecelia/utils/zarr_utils.py
 pixi.toml
 pixi.lock
-# Sourced by pixi before EVERY task ([target.unix.activation]) — missing ⇒ no `pixi run` works.
+# Run by pixi before EVERY task ([target.unix.activation] / [target.win.activation]) — missing ⇒ no `pixi run` works.
 scripts/activate_juliaup.sh
+scripts/activate_juliaup.bat
 
 # Shared frontend/Julia JSON — read at server load. The frontend imports the same file at build
 # time (inlined into dist/), so a stable install still needs the raw JSON on disk for the Julia
