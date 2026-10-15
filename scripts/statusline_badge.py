@@ -4,8 +4,8 @@
                    "command": "python3 <repo>/scripts/statusline_badge.py <your statusline command>"}
 
 Claude Code pipes a JSON object to the statusline command on every refresh; its `session_id` says
-which session this window is. This prints that session's badge (`agents.session_badge` — the same
-shape and colour the agents pane draws, `pixi run agents`) and name (`cecelia-56`), then runs the
+which session this window is. This prints that session's badge (`agents.session_badge` — the `●` in
+the colour the agents pane draws, `pixi run agents`) and name (`cecelia-56`), then runs the
 wrapped command with the same input and appends its output. So a window and its agents-pane row
 can be matched by eye. It also saves how full the session's context is (`claude_sessions.
 save_context`) — only the statusline is told — for the pane's `ctx` column.
@@ -29,7 +29,7 @@ def badge_for(stdin: bytes) -> str:
     """`● cecelia-56` for the session named in the statusline input, saving its context fill on
     the way; "" when unknown."""
     try:
-        from cecelia.effectiveness.agents import session_badge
+        from cecelia.effectiveness.agents import session_badge, session_slot
         from cecelia.effectiveness.claude_sessions import context_used, save_context, session_name
         data = json.loads(stdin or b"{}")
         sid = data.get("session_id") or ""
@@ -41,8 +41,12 @@ def badge_for(stdin: bytes) -> str:
         save_context(sid, context_used(data))
     except Exception:   # a full disk or a read-only cache must not blank it either
         pass
+    try:
+        slot = session_slot(sid)
+    except Exception:   # nor an unreadable cache: the colour from the id
+        slot = None
     name = session_name(sid)
-    return f"{session_badge(sid)} {name}" if name else session_badge(sid)
+    return f"{session_badge(sid, slot=slot)} {name}" if name else session_badge(sid, slot=slot)
 
 
 def main(argv: list[str]) -> int:
@@ -57,7 +61,7 @@ def main(argv: list[str]) -> int:
             wrapped = ""
     first, nl, rest = wrapped.partition("\n")
     line = "  ".join(p for p in (badge, first) if p)
-    # Bytes, UTF-8: the badge shapes don't exist in Windows' default cp1252 stdout encoding.
+    # Bytes, UTF-8: the badge doesn't exist in Windows' default cp1252 stdout encoding.
     sys.stdout.buffer.write((line + nl + rest if nl else line + "\n").encode("utf-8"))
     sys.stdout.flush()
     return 0

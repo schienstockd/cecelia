@@ -25,6 +25,8 @@ from cecelia.effectiveness.palette import (
     PaletteError,
     _hex_to_ansi,
     _REQUIRED_SWATCHES,
+    BADGES,
+    load_badges,
     load_palette,
 )
 
@@ -36,6 +38,17 @@ class PaletteLoaderTest(unittest.TestCase):
                           f"required swatch {name!r} missing from shipped palette")
             self.assertTrue(PALETTE[name].startswith("\033[38;2;"),
                             f"swatch {name!r} isn't a truecolor SGR escape")
+
+    def test_badges_are_truecolor_and_apart_from_the_swatches(self):
+        # Identity colours: a badge in a state colour reads as that state.
+        self.assertGreaterEqual(len(BADGES), 7)
+        self.assertEqual(len(set(BADGES)), len(BADGES))
+        self.assertFalse(set(BADGES) & set(PALETTE.values()))
+        with tempfile.TemporaryDirectory() as d:
+            p = pathlib.Path(d) / "p.json"
+            p.write_text(json.dumps({"swatches": {}}), encoding="utf-8")
+            with self.assertRaises(PaletteError):
+                load_badges(p)
 
     def test_hex_to_ansi_produces_correct_sgr(self):
         # #D55E00 → RGB(213, 94, 0). The SGR family that renders in every modern terminal

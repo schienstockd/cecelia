@@ -33,6 +33,7 @@ import unittest
 from unittest import mock
 
 from cecelia.effectiveness import append_event, console
+from cecelia.effectiveness.palette import PALETTE
 from cecelia.effectiveness.console import (
     DashboardState,
     _parse_since,
@@ -619,6 +620,14 @@ class DashboardTest(unittest.TestCase):
         out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
                                width=120, use_colour=False)
         self.assertIn("2 runs (1 errored)", out)
+
+    def test_good_and_bad_colours_mean_one_thing(self):
+        # Pass/fail, done, fixed/unresolved: blue against vermillion, not green against red (red-green
+        # colour blindness loses that pair). And "good" is only good: no mechanism label wears it.
+        self.assertNotEqual(console._GOOD, PALETTE["bluish_green"])
+        self.assertEqual(console._OUTCOME_COLOUR["fixed_pre_commit"], console._GOOD)
+        self.assertEqual(console._OUTCOME_COLOUR["unresolved"], console._RED)
+        self.assertNotIn(console._GOOD, {c for _, c in console._MECHANISM_STYLE.values()})
 
     def test_findings_pane_shows_descriptions(self):
         # The whole cockpit point: recent findings render with their wrapped description so

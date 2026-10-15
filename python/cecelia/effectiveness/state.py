@@ -6,7 +6,7 @@ worktree and lock there; guide runs keep their traces, log and lock there.
 
 `try_lock(path)` takes an exclusive, non-blocking lock on `path` and returns the open file (hold it,
 or use it as a context manager, for as long as the job runs; closing it releases the lock), or `None`
-when another process holds it. POSIX only: on Windows, where neither job runs, it always succeeds.
+when another process holds it; `wait=True` waits for it instead (a short read-modify-write). POSIX only: on Windows, where neither job runs, it always succeeds.
 """
 from __future__ import annotations
 
@@ -22,14 +22,15 @@ def state_dir() -> pathlib.Path:
     return default_log_path().parent
 
 
-def try_lock(path: pathlib.Path) -> _t.TextIO | None:
-    """The lock on `path` as an open file, or None when another process holds it."""
+def try_lock(path: pathlib.Path, *, wait: bool = False) -> _t.TextIO | None:
+    """The lock on `path` as an open file, or None when another process holds it (never with
+    `wait`: it waits until the holder lets go)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     f = open(path, "w", encoding="utf-8")
     if os.name == "posix":
         import fcntl
         try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             f.close()
             return None

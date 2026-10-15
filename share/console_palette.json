@@ -18,5 +18,7 @@
     "blue":           "#0072B2",
     "reddish_purple": "#CC79A7",
     "grey":           "#8C8C8C"
-  }
+  },
+  "_badges": "Identity, not meaning: one per live Claude Code session in the recital console's agents pane (`agents.session_badge`). Paul Tol's 'bright' scheme (https://personal.sron.nl/~pault/), CVD-safe like the swatches. The hues overlap the swatches' (cyan ~ sky_blue, rose ~ vermillion, sand ~ yellow); the badge's own column is what tells it from a state. Python only.",
+  "badges": ["#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB"]
 }

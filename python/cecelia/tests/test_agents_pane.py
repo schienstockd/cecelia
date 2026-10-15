@@ -27,7 +27,8 @@ import threading
 import time
 
 from cecelia.effectiveness.agents import (
-    BADGE_SHAPES, AgentRow, PrCache, branch_recital, ci_state, pr_by_branch, session_badge, sort_rows)
+    BADGE_COLOURS, AgentRow, PrCache, badge_slots, branch_recital, ci_state, pr_by_branch, session_badge,
+    sort_rows)
 from cecelia.effectiveness.claude_sessions import (
     Session, context_used, ends_with_question, latest_recap, live_sessions, proc_start, read_context, recent_cwds,
     save_context, session_name)
@@ -38,6 +39,21 @@ def _stat_line(pid: int, start: str, comm: str = "claude", ppid: int = 0) -> str
     """A `/proc/<pid>/stat` line with `ppid` as field 4 and `start` as field 22."""
     rest = ["S", str(ppid)] + ["0"] * 17 + [start] + ["0"] * 30   # fields 3..52; index 19 = field 22
     return f"{pid} ({comm}) " + " ".join(rest)
+
+
+#: `agent_rows` saves badge slots under `$XDG_CACHE_HOME`: made-up sessions must not overwrite the
+#: real file, which would hand every open window a new colour.
+_cache = tempfile.TemporaryDirectory()
+_env = mock.patch.dict(os.environ, {"XDG_CACHE_HOME": _cache.name})
+
+
+def setUpModule():
+    _env.start()
+
+
+def tearDownModule():
+    _env.stop()
+    _cache.cleanup()
 
 
 class ContextTest(unittest.TestCase):
@@ -462,10 +478,22 @@ class PrCiTest(unittest.TestCase):
 
 
 class BadgeTest(unittest.TestCase):
-    def test_a_session_always_gets_the_same_badge_and_ids_spread_over_shapes(self):
-        self.assertEqual(session_badge("abc"), session_badge("abc"))
-        self.assertIn(session_badge("abc", use_colour=False), BADGE_SHAPES)
-        self.assertGreater(len({session_badge(f"id-{i}") for i in range(40)}), 10)
+    def test_live_sessions_hold_different_colours_until_they_run_out(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = pathlib.Path(d)
+            self.assertEqual(badge_slots(["a", "b", "c"], folder), {"a": 0, "b": 1, "c": 2})
+            # b closes: a and c keep theirs, the newcomer takes the freed one.
+            self.assertEqual(badge_slots(["a", "c", "d"], folder), {"a": 0, "c": 2, "d": 1})
+            ids = [f"id-{i}" for i in range(len(BADGE_COLOURS) + 1)]
+            slots = badge_slots(ids, folder)
+            self.assertEqual(len({slots[i] for i in ids[:-1]}), len(BADGE_COLOURS))
+            self.assertEqual(slots[ids[-1]], len(BADGE_COLOURS))     # past the palette: wraps
+            self.assertEqual(session_badge("x", slot=len(BADGE_COLOURS)), session_badge("y", slot=0))
+
+    def test_the_badge_is_a_dot_in_its_colour(self):
+        self.assertEqual(session_badge("abc", use_colour=False), "●")
+        self.assertEqual(session_badge("abc", slot=3), f"{BADGE_COLOURS[3]}●\033[0m")
+        self.assertEqual(session_badge("abc"), session_badge("abc"))   # no slot: from the id
 
     def test_the_statusline_wrapper_puts_badge_and_name_before_the_wrapped_line(self):
         script = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "statusline_badge.py"
@@ -484,10 +512,14 @@ class BadgeTest(unittest.TestCase):
                                       ).stdout.decode("utf-8").replace("\r\n", "\n")
 
             out = run(b'{"session_id": "abc"}', wrapped)
-            self.assertEqual(out, f"{session_badge('abc')} cecelia-56  first\nsecond\n")
+            # Its slot as the pane assigns it: the first free one, saved for the pane to read back;
+            # without `/proc` (macOS) liveness can't be checked, so the colour comes from the id.
+            slot = 0 if pathlib.Path("/proc").is_dir() else None
+            badge = f"{session_badge('abc', slot=slot)} cecelia-56"
+            self.assertEqual(out, f"{badge}  first\nsecond\n")
             self.assertEqual(run(b"not json", wrapped), "first\nsecond\n")    # badge unknown
             self.assertEqual(run(b'{"session_id": "abc"}', ["/no/such/cmd"]),
-                             f"{session_badge('abc')} cecelia-56\n")             # wrapped failed
+                             f"{badge}\n")                                     # wrapped failed
             run(b'{"session_id": "abc", "context_window": {"used_percentage": 15}}', wrapped)
             self.assertEqual(read_context("abc", pathlib.Path(d) / "cecelia-agents"), 15.0)
 
