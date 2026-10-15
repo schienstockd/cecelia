@@ -5,11 +5,13 @@
 > Three premises didn't match the code: the colour never encoded state (it was a hash of the
 > session id into 4 shapes × 7 Okabe-Ito colours, the state column's own hues, so it looked like
 > state); it was already truecolor; and the hash was there so `scripts/statusline_badge.py`, a
-> separate process per window, draws the same mark. What shipped: a plain `●` in one of 8 hues apart
-> from the state colours (also on each finding's branch row, `● c4`, from #1692), the lowest free slot per live session saved in
-> `~/.cache/cecelia-agents/badge_slots.json`, which the pane and the statusline both read. Not
-> done: no 256-colour fallback (the console is truecolor throughout), no LRU or style axis past 8
-> (colours wrap), no collapsing of done rows.
+> separate process per window, draws the same mark. What shipped: a plain `●` in one of 7
+> CVD-safe hues (Paul Tol's 'bright'), told from the state colours by column, also on each finding's branch
+> row (`● c4`, from #1692); the lowest free slot per live session, saved in
+> `~/.cache/cecelia-agents/badge_slots.json`, which the pane and the statusline both read. The
+> console's positive colour (pass, done, fixed, resolved) moved from green to sky blue, away from
+> red, and the `invt`/`mlnt`/`cite` labels left sky blue for grey. Not done: no 256-colour fallback (the console is truecolor throughout), no LRU or style
+> axis past 7 (colours wrap), no collapsing of done rows.
 
 # Task: fix agent icons in the agents console table
 

@@ -95,7 +95,7 @@ def load_palette(path: pathlib.Path | None = None) -> dict[str, str]:
 
 def load_badges(path: pathlib.Path | None = None) -> tuple[str, ...]:
     """The session-badge colours (`badges` in the JSON) as ANSI escapes, in slot order — identity
-    colours for the agents pane, kept apart from the semantic swatches."""
+    colours for the agents pane, separate from the semantic swatches."""
     badges = _load_json(path).get("badges")
     if not isinstance(badges, list) or not badges:
         raise PaletteError(f"palette {path or _PALETTE_PATH} has no `badges` list")

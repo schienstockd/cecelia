@@ -97,9 +97,10 @@ extras: hooks, a message bus, window control. None of those is needed here.
   description capped at 3 lines, no branch anchor — the session row names it), outcome in front,
   the agent's reason (`why …`) under it. A one-line-per-finding version clipped every description
   and read as clutter; a version listing only non-fixed findings dropped detail Dominik wanted.
-- **Which window is which:** each session has a badge, a `●` in its own colour, one of 8 hues kept
-  apart from the state column's (`agents.session_badge`). Each live session holds a slot until it
-  closes; a new one takes the lowest free slot, so colours differ until more than 8 are open
+- **Which window is which:** each session has a badge, a `●` in its own colour, one of 7 CVD-safe
+  hues (Paul Tol's 'bright'; `agents.session_badge`). Their hues overlap the state colours (any
+  CVD-safe set does), so the badge's own column before the name is what tells it from a state. Each live
+  session holds a slot until it closes; a new one takes the lowest free slot, so colours differ until more than 7 are open
   (`agents.badge_slots`, saved to `~/.cache/cecelia-agents/badge_slots.json`). The pane and
   `scripts/statusline_badge.py` both read and assign there. The pane draws the badge before the
   name; the recital console's findings pane puts it with the short name (`● c4`) on each finding

@@ -52,7 +52,6 @@ from .recital import ADVISORY_MARKERS
 # user isn't necessarily CVD-safe. Source & rationale: `palette.py` docstring.
 from .palette import (
     BLUE as _BLUE,
-    BLUISH_GREEN as _BLUISH_GREEN,
     GREY as _GREY,
     ORANGE as _ORANGE,
     REDDISH_PURPLE as _REDDISH_PURPLE,
@@ -65,13 +64,14 @@ _RESET = "\033[0m"
 _BOLD = "\033[1m"
 _DIM = "\033[2m"
 
-# Legacy aliases — call sites below reference `_RED`/`_GREEN`/`_CYAN`/`_MAGENTA` by their
-# standard names; rebinding to the CVD-safe swatch is a one-line swap for each. The names
-# stay because the semantic (alert / positive / info / distinctive) is what matters at the
-# use site, not the exact hue.
+# Legacy aliases — call sites below reference `_RED`/`_MAGENTA` by their standard
+# names; rebinding to the CVD-safe swatch is a one-line swap for each. The names stay because
+# the semantic (alert / distinctive) is what matters at the use site, not the exact hue.
 _RED = _VERMILLION
-_GREEN = _BLUISH_GREEN
-_CYAN = _SKY_BLUE
+# Positive (pass, done, fixed, resolved) is blue, not green: it always sits beside red's
+# negative, and red against green is the pair red-green colour blindness loses. Asked for
+# 2026-10-15.
+_GOOD = _SKY_BLUE
 _MAGENTA = _REDDISH_PURPLE
 
 
@@ -166,9 +166,10 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "fanout_audit": ("fnut", _BLUE),
     "sibling_audit": ("fnut", _BLUE),  # pre-rename rows fold under the same header (see rollup.py)
     "convention_check": ("conv", _MAGENTA),
-    "inventory_coverage": ("invt", _CYAN),
-    "maintainability_lint": ("mlnt", _CYAN),
-    "citation_currency": ("cite", _CYAN),  # retired check — old log rows still render
+    # Grey, not sky blue: sky blue is the console's "good" (`_GOOD`), and a label in it read as a pass.
+    "inventory_coverage": ("invt", _GREY),
+    "maintainability_lint": ("mlnt", _GREY),
+    "citation_currency": ("cite", _GREY),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
     "agent_run": ("agnt", _RED),  # platform errors an unattended agent run hit (run_findings.py)
     "claude_md_eval": ("cmd ", _GREY),  # retired eval — old log rows still render
@@ -249,7 +250,7 @@ _MARKER_COLOUR: dict[str, str] = {
     "repeat": _YELLOW,                 # same 4xx across separate agent runs — guidance gap
 }
 _OUTCOME_COLOUR: dict[str, str] = {
-    "fixed_pre_commit": _GREEN,
+    "fixed_pre_commit": _GOOD,
     "shipped_with_finding": _YELLOW,
     "false_positive": _GREY,
     "dropped_no_action": _GREY,
@@ -561,8 +562,8 @@ def _agent_line(row: AgentRow, *, cols: tuple[int, int], use_colour: bool) -> st
     # the state, then `done` (merged, not working: close the window, then prune the worktree),
     # then `recite` (its commit's recital reviewers are running — minutes, not a stuck turn).
     status = (_col(_MAGENTA, f"{'asks':<6}", use_colour=use_colour) if row.asks else
-              _col(_GREEN, f"{'done':<6}", use_colour=use_colour) if row.done else
-              _col(_CYAN, f"{'recite':<6}", use_colour=use_colour) if row.recital else
+              _col(_GOOD, f"{'done':<6}", use_colour=use_colour) if row.done else
+              _col(_BLUE, f"{'recite':<6}", use_colour=use_colour) if row.recital else
               _col(_YELLOW if row.status == "idle" else _GREY, f"{row.status:<6}", use_colour=use_colour))
     where = f"{_fit(row.worktree or '—', cols[0])} {_fit(row.branch or '—', cols[1])}"
     # The badge the session's own statusline shows (`scripts/statusline_badge.py`): which window.
@@ -604,7 +605,7 @@ def _pr_word(row: AgentRow) -> tuple[str, str]:
     if row.conflict:
         return "conflict", _RED
     return {"fail": ("fail", _RED), "running": ("running", _YELLOW),
-            "pass": ("pass", _GREEN)}.get(row.ci or "", ("", _GREY))
+            "pass": ("pass", _GOOD)}.get(row.ci or "", ("", _GREY))
 
 
 #: Outcome order in the detail view's count line: what still needs work first.
@@ -717,7 +718,7 @@ def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = Tr
 
 def _finding_badge(row: AgentRow, *, use_colour: bool) -> str:
     """The session's badge and its name without the `cecelia-` every window shares (`● 99`): the
-    colours run out past 8 live sessions, so the name is what tells two apart."""
+    colours run out past 7 live sessions, so the name is what tells two apart."""
     name = row.name.removeprefix("cecelia-")
     return (session_badge(row.session_id, slot=row.badge, use_colour=use_colour) + " "
             + _col(_BOLD, name, use_colour=use_colour))
@@ -831,7 +832,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
                                  txt + (f" + {advisory} advisory" if advisory else ""),
                                  use_colour=use_colour))
     if total_resolved:
-        header_parts.append(_col(_GREEN, f"{total_resolved} resolved", use_colour=use_colour))
+        header_parts.append(_col(_GOOD, f"{total_resolved} resolved", use_colour=use_colour))
     chrome.append(_col(_DIM, " · ", use_colour=use_colour).join(header_parts) or
                   _col(_DIM, "no events yet", use_colour=use_colour))
     if judge_warning:

@@ -41,7 +41,7 @@ class PaletteLoaderTest(unittest.TestCase):
 
     def test_badges_are_truecolor_and_apart_from_the_swatches(self):
         # Identity colours: a badge in a state colour reads as that state.
-        self.assertGreaterEqual(len(BADGES), 8)
+        self.assertGreaterEqual(len(BADGES), 7)
         self.assertEqual(len(set(BADGES)), len(BADGES))
         self.assertFalse(set(BADGES) & set(PALETTE.values()))
         with tempfile.TemporaryDirectory() as d:

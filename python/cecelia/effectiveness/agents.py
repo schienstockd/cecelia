@@ -38,8 +38,9 @@ _CI_FAILED = frozenset({"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", 
                         "ERROR"})
 
 
-#: A session's badge: a `●` in one of the palette's `badges` colours (`BADGE_COLOURS`), identity
-#: hues kept apart from the state column's. Live sessions each hold their own (`badge_slots`);
+#: A session's badge: a `●` in one of the palette's `badges` colours (`BADGE_COLOURS`). Their hues
+#: overlap the state colours' (any CVD-safe set does); the badge's own column, before the name,
+#: is what keeps it from reading as a state. Live sessions each hold their own (`badge_slots`);
 #: beyond the palette they repeat.
 BADGE = "●"
 
