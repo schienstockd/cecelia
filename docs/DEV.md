@@ -722,7 +722,8 @@ Revise reloads function bodies on save. Struct/macro changes still need a restar
 
 **Another user already running Cecelia on this machine?** Nothing to do. `pixi run dev` takes the next
 **port slot** (8090/5183/…, then 8100/5193/…), logs `[dev] using port slot N`, and prints the frontend
-URL. The slot is sticky per config dir, so `pixi run stop` and `pixi run console` find it. Details:
+URL. The slot is sticky per config dir, so `pixi run stop`, `pixi run console` and the standalone
+`pixi run runner` / `preview` / `notebooks` find it. Details:
 `docs/ARCHITECTURE.md` → *Ports*.
 
 **"Not signed in" in the header?** Every Cecelia port only answers the user who launched it (the API

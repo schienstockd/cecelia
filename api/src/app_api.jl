@@ -21,8 +21,9 @@
 # child is stopped by both. See docs/todo/TASK_RUNNER_PLAN.md → Decision 3.
 #
 # NOTE for whoever adds the next child: the runtests assertion below counts `_kill_listeners_on_port`
-# calls against the ports `api_diagnostics` reports. The runner is reported there too but is stopped
-# CONDITIONALLY, so it is asserted separately rather than by that count.
+# calls against the ports `api_diagnostics` reports. Every child is now stopped through an owner-checking
+# helper (`_free_preview_port!`, `runner_stop!`, `_free_notebooks_port!` — another Cecelia's can sit on
+# those ports), so that count is zero and each helper is asserted by name.
 function _stop_children_for_exit(; stop_runner::Bool = true)
     # In-flight TASK subprocesses. Nothing else kills these: the `exit` below just reparents them, so a
     # Quit during a cellpose run left the Python child alive — finishing, writing its zarr, and never
@@ -43,7 +44,7 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
         @warn "Shutdown: cancelling in-flight tasks failed" exception = e
     end
     try
-        _shutdown_notebook_server!()        # stops a Pluto server we spawned (no-op otherwise)
+        _shutdown_notebook_server!()        # ours (spawned or adopted); never another Cecelia's
     catch e
         @warn "Shutdown: stopping notebooks failed" exception = e
     end
@@ -55,8 +56,8 @@ function _stop_children_for_exit(; stop_runner::Bool = true)
     # belt-and-suspenders: also free the child ports by force, covering a child we hold no handle to at
     # all (it outlived a crash and was never adopted) — so shutdown/restart never leaves a zombie
     # on :7656 / :7660. Mirrors `pixi run stop`. No-op when the graceful stop already freed it.
-    try; Cecelia._kill_listeners_on_port(service_port(:preview));   catch; end
-    try; Cecelia._kill_listeners_on_port(service_port(:notebooks)); catch; end
+    try; _free_preview_port!();   catch; end
+    try; _free_notebooks_port!(); catch; end
     # …and the task runner, but ONLY on the routes that mean "stop everything". A restart leaving it
     # alive is not an oversight to be tidied up later — it is the feature.
     stop_runner && try; Cecelia.runner_stop!(_RUNNER); catch; end

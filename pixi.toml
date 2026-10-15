@@ -274,7 +274,7 @@ mcp           = { cmd = "python -m cecelia_mcp.server", cwd = "mcp" }
 frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload
 build    = { cmd = "npm run build", cwd = "frontend" }  # static production build
 
-# Task-preview worker (port 7656) standalone — normally the backend launches it on the first preview;
+# Task-preview worker (port 7656, or this user's port slot's) standalone — normally the backend launches it on the first preview;
 # run this to debug it alone. Resident because a process that can segment costs 17.7s of imports before
 # it can answer (measured), which is fatal per preview and irrelevant once. PYTHONPATH so it resolves
 # `import cecelia.*` the same way run_py sets it up for task runners.
@@ -284,7 +284,7 @@ preview = { cmd = "python3 preview_worker.py", cwd = "preview", env = { PYTHONPA
 # Reporting only (no run/cancel); safe alongside the GUI. `-- --stream` for append-only log output.
 console = { cmd = "julia --project task_console.jl", cwd = "api" }
 
-# Notebook Playground (Pluto, port 7660) — pure-Julia downstream analysis. Runs its OWN Julia
+# Notebook Playground (Pluto, port 7660, or this user's port slot's) — pure-Julia downstream analysis. Runs its OWN Julia
 # session (the pluto/ env path-sources Cecelia), NOT the API server. Point it at a project's
 # notebooks via CECELIA_NOTEBOOKS_DIR; defaults to the shipped examples in notebooks/. The server
 # launches WITHOUT a sysimage (it's just Pluto); notebook WORKERS pick up pluto/deps.so if built

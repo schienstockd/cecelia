@@ -523,6 +523,40 @@ end
     end
 end
 
+@testset "API: another Cecelia's preview worker is neither adopted nor waited on" begin
+    # The sticky slot does not check the preview port, so another config dir's worker can hold it. It
+    # refuses our token (401), so it was never adopted — but a launch of ours then could not bind, and
+    # waited out its whole readiness timeout before failing with nothing to say why. A stand-in worker:
+    # 401 without ITS token, as `_check_token` (preview_worker.py) answers.
+    srv = HTTP.listen!("127.0.0.1", 0) do stream
+        HTTP.setstatus(stream, 401)
+        HTTP.startwrite(stream)
+        Cecelia.write_http_body!(stream, "not authorized for this preview worker\n")
+    end
+    port = Int(HTTP.port(srv))
+    try
+        _preview_ref[] = nothing
+        withenv("CECELIA_PREVIEW_PORT" => string(port), "CECELIA_API_TOKEN" => "ours") do
+            @test _preview_port_foreign(port)
+            @test_throws PreviewPortForeign _ensure_preview!()
+            @test _preview_ref[] === nothing                           # no doomed launch in flight
+            code, body = api_preview_start(UInt8[])
+            @test code == 409 && JSON3.read(body).code == "preview-port-foreign"
+            # Status says so, for the Settings row's confirmed "Stop it"…
+            @test JSON3.read(api_preview_status(HTTP.Request("GET", "/api/preview/status"))[2]).foreign === true
+            # …and a plain stop (toggle-off) or shutdown's port free leaves it alone (a regression kills
+            # THIS process). The forced stop is exercised out of process in suite/shutdown.jl.
+            @test first(api_preview_stop(UInt8[])) == 200
+            @test _preview_port_foreign(port)
+            @test_logs (:warn, r"belongs to another Cecelia") (@test !_free_preview_port!(port))
+        end
+    finally
+        _preview_ref[] = nothing
+        close(srv)
+    end
+    @test !_preview_port_foreign(port; token = "ours")                # nothing listening
+end
+
 @testset "API: preview refuses a client path it would write or delete under" begin
     # The worker removes and rewrites `{taskDir}/labels/{vn}__preview.ome.zarr`, and on stop deletes
     # every preview store under `{taskDir}`. So the vn must be one path component (400 before anything

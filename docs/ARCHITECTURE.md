@@ -772,11 +772,21 @@ computed — never hardcode a number.
   launch never moves it. Stable ports keep the URL and the observer MCP registration valid.
 - **Who reads it back:** `app.py` reads the server-chosen port from `cecelia.lock`; `pixi run stop*`
   pass service names to `api/portkill.jl`, which maps them through the sticky slot, so a stop never
-  aims at another user's Cecelia.
+  aims at another user's Cecelia. Standalone `pixi run runner` / `preview` / `notebooks` bind the
+  sticky slot's port too (`current_port_slot`; Python: `loopback.service_port`), so this user's
+  backend finds them.
 - **Per-service overrides still win:** `CECELIA_PORT`, `CECELIA_FRONTEND_PORT`,
   `CECELIA_PREVIEW_PORT`, `CECELIA_RUNNER_PORT`, `CECELIA_PLUTO_PORT`.
-- **Ownership:** the runner reports its config dir on `/ping`, and `runner_launch!` will not adopt or
-  stop a foreign runner. *Access* is the API token's job (next section): slots stop collisions, the
+- **Ownership:** the sticky slot checks only backend + frontend, so another config dir's child can be
+  on our child ports. Nothing adopts or kills one: the runner reports its config dir on `/ping`
+  (`runner_launch!`, `runner_stop!`); Pluto 403s our session secret (`_notebook_server_probe`,
+  `_free_notebooks_port!`); the preview worker 401s our API token (`_free_preview_port!`; `_ensure_preview!` raises
+  `PreviewPortForeign`, a coded 409, instead of launching one that cannot bind). The dev
+  supervisor's teardown and `pixi run stop*` ask the same questions through `PortKill.foreign_owner`.
+- **Children die with their backend** (`spawn_logged(…; lifeline = true)`, `app/src/lifeline.jl`): the
+  preview worker and the Pluto a backend launches exit when it dies by any route, so a crash leaves
+  nothing on the ports. What can still be there is a live standalone run (`pixi run preview` /
+  `notebooks`) — or the detached runner, which outlives the backend by design and idles out. *Access* is the API token's job (next section): slots stop collisions, the
   token stops another account from using your ports.
 
 The runner's port **deliberately outlives the API server**, so two checkouts that share a

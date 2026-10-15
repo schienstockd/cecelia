@@ -229,7 +229,9 @@ end
 function _stills_via_worker(params::AbstractDict, task_dir::AbstractString; on_log::Function = println)
     # The handle is read again after `_ensure_preview!` lets go of the lock: a stop or env switch in
     # between leaves none, or one not bound yet — the one-off renders it then.
-    if _ensure_preview!() && (w = _ready_preview()) !== nothing
+    # Another Cecelia's worker on the port: the one-off renders it, as when none is up.
+    up = try; _ensure_preview!(); catch e; e isa PreviewPortForeign || rethrow(); false; end
+    if up && (w = _ready_preview()) !== nothing
         try
             # Not under `_with_preview`: that lock serialises everything sent to the worker, which would
             # queue a card sheet behind a cellpose preview. The worker orders requests itself — renders

@@ -1,7 +1,8 @@
 module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
-export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user
+export init_cecelia!, cecelia_conf, cecelia_version, config_dir, ensure_config_dir, custom_toml_path, expand_user,
+       pluto_secret_path, read_pluto_secret
 export service_port, port_slot
 export read_api_token, ensure_api_token!, api_auth_header, api_launch_url
 export acquire_single_instance!, release_single_instance!, single_instance_lock_path, AlreadyRunningError
@@ -277,6 +278,7 @@ include("single_instance.jl")  # at-most-one Cecelia per host — before any HTT
 # The log rail: the canonical console-record shape, the tee a server installs, and `spawn_logged`
 # (the only sanctioned way to start a long-lived child, because `run(cmd; wait=false)` swallows its
 # stdio). Early — napari, the preview worker and the notebook server all launch through it.
+include("lifeline.jl")       # Base-only: also included standalone by pluto/launch.jl
 include("log_stream.jl")
 include("py_runner.jl")
 # OS process control (kill primitives) + the background-job registry (track/cancel by task_id) shared

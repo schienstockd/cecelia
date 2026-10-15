@@ -138,6 +138,14 @@ end
         @test occursin("spawn_logged(", body)
         @test !occursin(r"\.proc = run\(", body)          # the swallowing shape, gone
     end
+    # The backend's own children carry a lifeline (they die with it — app/src/lifeline.jl), and each
+    # end watches it: the preview worker and the Pluto it launches. The sysimage build does not: it
+    # is a one-shot job, not a server holding a port.
+    @test occursin("lifeline = true", read(joinpath(src, "preview.jl"), String))
+    api_nb = read(joinpath(src, "..", "..", "api", "src", "notebooks_api.jl"), String)
+    @test occursin("spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd; lifeline = true)", api_nb)
+    @test occursin("lifeline.exit_with_parent(", read(joinpath(src, "..", "..", "preview", "preview_worker.py"), String))
+    @test occursin("exit_with_parent!(", read(joinpath(src, "..", "..", "pluto", "launch.jl"), String))
 
     # The RUNNER is the deliberate exception and must stay one: it is `detach = true` so it outlives
     # the backend, and a pipe this process owns becomes a broken pipe on the restart it exists to
@@ -173,4 +181,52 @@ end
     end
     @test LOG_SOURCE_BACKEND ∉ CHILD_LOG_SOURCES     # the backend is never hidden by default
     @test length(LOG_SOURCES) == length(CHILD_LOG_SOURCES) + 1
+end
+
+# A child spawned with `lifeline = true` must die with its launcher however the launcher dies — the
+# crash/SIGKILL case is the whole point (app/src/lifeline.jl): Quit and Restart already stop it. So
+# the launcher here is a real separate process, SIGKILLed; nothing in it gets to run a cleanup. Both
+# watchers are exercised (Python: the preview worker's; Base-only Julia: launch.jl's), plus a control
+# with no lifeline, which must survive — otherwise the test measures the kill, not the lifeline.
+@testset "a lifeline child exits when its launcher dies, by any route" begin
+    repo = dirname(dirname(dirname(pathof(Cecelia))))
+    jl   = Base.julia_cmd().exec[1]
+    out  = tempname()
+    script = raw"""
+        using Cecelia
+        repo, out = ARGS
+        jl = Base.julia_cmd().exec[1]
+        py = Cecelia.python_bin_path()
+        c1 = Cecelia.spawn_logged("t", addenv(`$py -c "from cecelia.utils import lifeline; import time; lifeline.exit_with_parent(); time.sleep(300)"`,
+                                              "PYTHONPATH" => joinpath(repo, "python")); lifeline = true)
+        c2 = Cecelia.spawn_logged("t", addenv(`$jl --startup-file=no -e 'include(ENV["LL"]); exit_with_parent!(); sleep(300)'`,
+                                              "LL" => joinpath(repo, "app", "src", "lifeline.jl")); lifeline = true)
+        # Detached: on Windows libuv puts every non-detached child in a kill-on-close job object, so a
+        # plain child dies with its parent there regardless — it would prove nothing.
+        c3 = run(Cmd(`$jl --startup-file=no -e "sleep(300)"`; detach = true); wait = false)
+        sleep(3)   # both watchers are up
+        write(out, join(Int.(Libc.getpid.((c1, c2, c3))), " "))
+        sleep(300)
+        """
+    launcher = run(pipeline(`$jl --project=$(joinpath(repo, "app")) --startup-file=no -e $script $repo $out`;
+                            stdout = devnull, stderr = devnull); wait = false)
+    pids = Int[]
+    try
+        for _ in 1:600
+            (isfile(out) && !isempty(read(out, String))) && break
+            process_running(launcher) || break
+            sleep(0.5)
+        end
+        pids = parse.(Int, split(read(out, String)))
+        @test all(Cecelia._pid_alive, pids)                      # all three up while it lives
+        kill(launcher, Base.SIGKILL); wait(launcher)
+        gone(pid) = (for _ in 1:150; Cecelia._pid_alive(pid) || return true; sleep(0.1); end; false)
+        @test gone(pids[1])                                       # Python watcher (preview worker)
+        @test gone(pids[2])                                       # Julia watcher (launch.jl)
+        @test Cecelia._pid_alive(pids[3])                         # no lifeline → still running
+    finally
+        process_running(launcher) && kill(launcher, Base.SIGKILL)
+        for p in pids; Cecelia._pid_alive(p) && Cecelia._kill_tree(p); end
+        rm(out; force = true)
+    end
 end

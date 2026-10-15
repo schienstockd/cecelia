@@ -102,6 +102,7 @@ class LaunchCommandTest(unittest.TestCase):
              mock.patch.object(self.app.subprocess, "Popen", return_value=proc) as popen:
             self.assertEqual(self.app.main(), 0)
         (cmd,), kw = popen.call_args
+        self.kw = kw
         return cmd, kw["env"]
 
     def test_default_launch_is_multithreaded(self):
@@ -109,6 +110,9 @@ class LaunchCommandTest(unittest.TestCase):
         self.assertEqual(cmd, ["julia", "--project", "-t", "auto", "src/server.jl"])
         self.assertEqual(env["CECELIA_LAUNCH_THREADS"], "auto")
         self.assertEqual(env["CECELIA_SUPERVISED"], "1")
+        # the server's lifeline: it stops if this launcher dies by any route (app/src/lifeline.jl)
+        self.assertEqual(env["CECELIA_EXIT_WITH_PARENT"], "1")
+        self.assertEqual(self.kw["stdin"], self.app.subprocess.PIPE)
 
     def test_setting_off_launches_one_thread(self):
         with open(os.path.join(self.cfg, "custom.toml"), "w", encoding="utf-8") as f:

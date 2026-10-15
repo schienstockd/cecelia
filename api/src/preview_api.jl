@@ -159,6 +159,17 @@ perfectly good, and a second process on the port would just fail to bind. It is 
 its `PREVIEW_PROTOCOL` matches and it names the wanted env: a worker running older code pings fine and
 then fails the real request, so a mismatch is STOPPED and replaced rather than trusted.
 """
+# Another Cecelia's worker holds our preview port (`_preview_port_foreign`): it refuses our token, so
+# it is never adopted, and a launch of ours could not bind — it would wait out its whole readiness
+# timeout and fail with nothing to say why. Raised instead; a route answers it as a coded 409.
+struct PreviewPortForeign <: Exception
+    port::Int
+end
+Base.showerror(io::IO, e::PreviewPortForeign) =
+    print(io, "Port $(e.port) is held by another Cecelia's preview worker.")
+_preview_foreign_error(e::PreviewPortForeign) =
+    (409, JSON3.write((; error = sprint(showerror, e), code = "preview-port-foreign")))
+
 function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
     lock(_preview_lock) do
         env in (nothing, :any) || Cecelia.python_bin_for(env)   # raises when the env isn't installed
@@ -188,6 +199,8 @@ function _ensure_preview!(env::Union{Symbol,Nothing} = :any)::Bool
                           "$PREVIEW_PROTOCOL (its code predates a change to what a preview answers — " *
                           "the reply shape, the previewable tasks, or a bug fixed since)")
                 _free_preview_port!()
+            elseif _preview_port_foreign(probe.port)
+                throw(PreviewPortForeign(probe.port))
             end
         end
         env === :any && (env = nothing)   # nothing up and no preference: the default env
@@ -223,12 +236,38 @@ _preview_env_symbol(name::AbstractString) =
 # …and WAIT, because the kill is asynchronous: launching straight away races the old process's exit, the
 # replacement loses the bind and dies, which `launch!` reports as an error the user sees once before
 # the next attempt succeeds. Cheap to just wait.
-function _free_preview_port!(port::Int = service_port(:preview))
+# Never another Cecelia's worker (`_preview_port_foreign`): the slot does not protect this port — only
+# the user's explicit `force` (Settings → Stop it). Returns whether it killed.
+function _free_preview_port!(port::Int = service_port(:preview); force::Bool = false)::Bool
+    if !force && _preview_port_foreign(port)
+        @warn "Not stopping the preview worker on this port — it belongs to another Cecelia" port
+        return false
+    end
     probe = PreviewWorker(; port)
     Cecelia._kill_listeners_on_port(port)
     for _ in 1:20
         first(_preview_ping(probe)) || break
         sleep(0.25)
+    end
+    true
+end
+
+# Is the worker on `port` another Cecelia's? It refuses a handshake without the token of the backend
+# that launched it with 401 (ours gets 426 — a GET that is not an upgrade), and the sticky slot only
+# checks API + frontend (app/src/ports.jl), so another config dir's orphaned worker can sit on our
+# slot's preview port. No token of ours, or nothing answering, reads as "not foreign" (the kill
+# proceeds as it always did). `api/portkill.jl` asks the same question for `pixi run stop` and dev.jl.
+function _preview_port_foreign(port::Integer;
+                               token::Union{AbstractString,Nothing} = Cecelia.read_api_token())::Bool
+    token === nothing && return false
+    try
+        r = HTTP.get("http://127.0.0.1:$port/"; headers = [Cecelia.api_auth_header(token)],
+                     retry = false, redirect = false, connect_timeout = 2, read_idle_timeout = 3,
+                     status_exception = false)
+        r.status == 401
+    catch e
+        Cecelia._is_probe_code_bug(e) && rethrow()
+        false
     end
 end
 
@@ -244,6 +283,9 @@ function api_preview_status(req::HTTP.Request)
     200, JSON3.write((;
         alive    = _preview_worker_alive(),
         starting = _preview_starting(),
+        # another Cecelia's worker holds our port (only probed when we hold none) — Settings offers
+        # the confirmed stop
+        foreign  = w === nothing && _preview_port_foreign(service_port(:preview)),
         port     = service_port(:preview),
         # the pixi env of the worker held (running or starting), so the toggle can say a warm-up is
         # cellpose 3's; `nothing` when none is held
@@ -267,7 +309,7 @@ function api_preview_start(body_bytes::Vector{UInt8})
     ready = try
         _ensure_preview!(env)
     catch e
-        return _preview_env_error(e)
+        return e isa PreviewPortForeign ? _preview_foreign_error(e) : _preview_env_error(e)
     end
     w = _preview()
     200, JSON3.write((; alive = ready, starting = _preview_starting(), port = service_port(:preview),
@@ -332,6 +374,8 @@ function api_preview_stop(body_bytes::Vector{UInt8})
         end
     end
     _stop_preview_worker!()
+    # `force`: the user's confirmed "Stop it" on another Cecelia's worker holding our port
+    _wbool(data, "force") && _free_preview_port!(; force = true)
     200, JSON3.write((; alive = false, stopped = true))
 end
 
@@ -410,7 +454,7 @@ function api_preview_run(body_bytes::Vector{UInt8})
     ready = try
         _ensure_preview!(env)
     catch e
-        return _preview_env_error(e)
+        return e isa PreviewPortForeign ? _preview_foreign_error(e) : _preview_env_error(e)
     end
     ready || return 202, JSON3.write((; starting = true, alive = false,
                                         env = (w = _preview(); w === nothing ? nothing :

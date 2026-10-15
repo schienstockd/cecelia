@@ -202,7 +202,7 @@ manifests. Decide that separately.
 
 A system-scope install is read-only to every account but its owner
 (`docs/todo/INSTALL_OWNER_UNINSTALL_PLAN.md`). Handled in code, not yet run for real: a non-owner's
-session secret goes to `<config_dir>/pluto/.plutosecret` (`api/src/notebooks_api.jl` `_secret_path`),
+session secret goes to `<config_dir>/pluto/.plutosecret` like everyone's (`pluto_secret_path`, app/src/config_dir.jl),
 and the fast-plot build is refused with a 403 (status `shared`), since `pluto/deps.so` lives in the
 install. The owner's build serves every account.
 - **Verify:** a non-owner launch in the same `bwrap` setup the plan describes. Anything else Pluto

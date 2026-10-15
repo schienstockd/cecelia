@@ -678,10 +678,10 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 // Stop only. Starting a preview means previewing SOMETHING — it needs a task's params and an open
 // image, which this panel has neither of; a Start button here would either do nothing visible or need
 // to invent params. The task page owns starting; this owns the off switch.
-async function previewStop() {
+async function previewStop(foreign = false) {
   svcBusy.value = 'preview'; svcMsg.value = ''
   try {
-    await previewApi.stop()
+    await (foreign ? previewApi.stopForeign() : previewApi.stop())
     svcMsg.value = 'Preview stopped — GPU memory released.'
   } catch { svcMsg.value = 'Could not stop the preview worker.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
@@ -716,14 +716,16 @@ async function runnerRestart(force = false) {
   } catch { svcMsg.value = 'Could not restart the task runner.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }
-async function notebooksAction(kind: 'start' | 'stop' | 'restart') {
+// 'replace' = the confirmed repair for another Cecelia's server on our port: stop it, start ours.
+async function notebooksAction(kind: 'start' | 'stop' | 'restart' | 'replace') {
   svcBusy.value = 'notebooks'; svcMsg.value = ''
   try {
     if (kind === 'stop') await notebooksApi.shutdown()
     else if (kind === 'start') await notebooksApi.launch(projectUid.value)
+    else if (kind === 'replace') { await notebooksApi.shutdown(true); await notebooksApi.launch(projectUid.value) }
     else await notebooksApi.restart(projectUid.value)
-    svcMsg.value = kind === 'stop' ? 'Notebooks stopped.' : kind === 'start' ? 'Notebooks starting…' : 'Notebooks restarting…'
-  } catch { svcMsg.value = 'Notebooks action failed.' }
+    svcMsg.value = kind === 'stop' ? 'Notebooks stopped.' : kind === 'restart' ? 'Notebooks restarting…' : 'Notebooks starting…'
+  } catch (e) { svcMsg.value = e instanceof Error ? e.message : 'Notebooks action failed.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
 }
 // app-level actions (Quit / dev Restart) live in the shared appControl store — same logic the sidebar
@@ -1392,7 +1394,20 @@ async function switchWt(path: string) {
         <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
         <span class="svc-actions">
-          <button v-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
+          <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
+                         v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
+                    v-tooltip.top="'Another Cecelia\'s server holds this port — stop it and start this one'">
+              <i class="pi pi-power-off" /> Stop it
+            </button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
+                <i class="pi pi-check" /> Stop it
+              </button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+          <button v-else-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
                   v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
             <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-play']" /> Start
@@ -1416,7 +1431,20 @@ async function switchWt(path: string) {
         <span class="svc-pill" :class="stateInfo(previewSt).tone"><span class="dot" /> {{ stateInfo(previewSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
         <span class="svc-actions">
-          <button v-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
+          <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
+                         v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'preview'" @click="arm"
+                    v-tooltip.top="'Another Cecelia\'s preview worker holds this port — stop it'">
+              <i class="pi pi-power-off" /> Stop it
+            </button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its previews stop'">
+                <i class="pi pi-check" /> Stop it
+              </button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+          <button v-else-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
                   @click="previewStop()"
                   v-tooltip.top="'Stop the preview worker and free its GPU memory'">
             <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-spinner' : 'pi-stop-circle']" /> Stop

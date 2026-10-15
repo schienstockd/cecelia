@@ -911,22 +911,17 @@ const _PROTOCOL = Ref{String}("HTTP/1.1")
 # can no longer take us with it, and we would sit on :8080 with no UI attached and nothing able to
 # reach us. Watching for it is the cheap half of the trade.
 #
-# Reparenting is the signal: when our parent dies we are re-parented (to init/systemd), so `getppid`
-# changes. Polled, because there is no portable "parent died" notification. Unix only — Windows has no
-# `getppid`; there `pixi run stop` remains the recovery, which is what it was everywhere before.
+# The signal is our lifeline (app/src/lifeline.jl): both supervisors (`api/dev.jl`, `app.py`) hand us
+# a stdin pipe only they hold, which the OS closes when they die by any route — on every OS. No
+# lifeline (a bare `julia src/server.jl`) → nothing to watch.
 function _watch_supervisor!()
-    (haskey(ENV, "CECELIA_SUPERVISED") && !Sys.iswindows()) || return
-    parent = ccall(:getppid, Cint, ())
-    parent > 1 || return                      # already orphaned, or no supervisor to speak of
     # EVERY step here is wrapped, because of WHERE this runs: the supervisor owned our stdout/stderr,
     # so by the time this fires those streams are usually a closed pipe or a dead PTY (the terminal
     # window was closed — that is the case this exists for). An unguarded `@warn` then throws EIO,
     # kills this task, and the shutdown it was about to do never happens. Measured exactly that: the
     # watchdog fired, died on its own log line, and left the backend holding :8080.
-    errormonitor(Threads.@spawn while true
-        sleep(2)
-        ccall(:getppid, Cint, ()) == parent && continue
-        try; @warn "Supervisor exited without stopping us — shutting down" was_parent = parent; catch; end
+    Cecelia.exit_with_parent!(; on_exit = () -> begin
+        try; @warn "Supervisor exited without stopping us — shutting down"; catch; end
         try; _stop_children_for_exit(); catch; end
         _exit_now(0)                                   # flushes defensively; never throws
     end)

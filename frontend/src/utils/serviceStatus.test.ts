@@ -7,6 +7,7 @@ describe('notebooksState', () => {
     expect(notebooksState({ running: false, starting: true })).toBe('starting')
     expect(notebooksState({ running: false, starting: false })).toBe('stopped')
     expect(notebooksState(null)).toBe('stopped')
+    expect(notebooksState({ running: false, foreign: true })).toBe('foreign')   // another Cecelia's
   })
 })
 
@@ -31,6 +32,7 @@ describe('stateInfo', () => {
     expect(stateInfo('running')).toEqual({ label: 'Running', tone: 'ok' })
     expect(stateInfo('starting')).toEqual({ label: 'Starting…', tone: 'warn' })
     expect(stateInfo('stopped')).toEqual({ label: 'Stopped', tone: 'idle' })
+    expect(stateInfo('foreign')).toEqual({ label: 'Other Cecelia', tone: 'warn' })
   })
 })
 

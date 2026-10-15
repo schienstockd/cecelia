@@ -16,7 +16,13 @@ Pkg.activate(@__DIR__)
 
 using Pluto
 
-const PLUTO_PORT = parse(Int, get(ENV, "CECELIA_PLUTO_PORT", "7660"))
+# `CECELIA_PLUTO_PORT` when the backend launches it; standalone (`pixi run notebooks`) this user's port
+# slot, the way `pixi run runner` does — a bare 7660 is slot 0's, another user's on a shared machine,
+# and our backend would never find it on its own slot's port. Base-only includes, as api/dev.jl does.
+include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
+include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
+include(joinpath(@__DIR__, "..", "app", "src", "lifeline.jl"))
+const PLUTO_PORT = service_port(:notebooks; slot = current_port_slot())
 
 # Notebooks directory: explicit env override, else the repo's shipped examples (../notebooks).
 notebooks_dir = abspath(get(ENV, "CECELIA_NOTEBOOKS_DIR", joinpath(@__DIR__, "..", "notebooks")))
@@ -76,9 +82,16 @@ opts = Pluto.Configuration.Options(
 session = Pluto.ServerSession(; options = opts)
 # Publish the secret for the API server to read (git-ignored). Written before run() (which blocks and
 # brings the port up), so by the time the port answers the secret is already available.
-# The app passes CECELIA_PLUTO_SECRET_FILE: a per-user file when this account cannot write the install
-# (a shared one it does not own). Standalone (`pixi run notebooks`) it is pluto/.plutosecret.
-write(get(ENV, "CECELIA_PLUTO_SECRET_FILE", joinpath(@__DIR__, ".plutosecret")), session.secret)
+# The app passes CECELIA_PLUTO_SECRET_FILE; standalone (`pixi run notebooks`) it is the same
+# `pluto_secret_path()` (app/src/config_dir.jl) — per config dir, because the secret is also how a
+# backend tells its own Pluto from another Cecelia's.
+let secret_file = get(ENV, "CECELIA_PLUTO_SECRET_FILE", pluto_secret_path())
+    mkpath(dirname(secret_file))
+    write(secret_file, session.secret)
+end
 
 @info "Starting Pluto Playground" port = PLUTO_PORT notebooks_dir env = @__DIR__
+# Launched by the backend: exit with it, by any route (app/src/lifeline.jl) — an orphan would hold
+# the port for the next launch. A standalone `pixi run notebooks` is not watched.
+exit_with_parent!(; on_exit = () -> @info("The backend that launched this notebook server is gone — exiting"))
 Pluto.run(session)

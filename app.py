@@ -21,7 +21,7 @@ import subprocess
 import urllib.error
 import webbrowser
 
-from cecelia.utils import loopback   # `pixi run app` puts python/ on PYTHONPATH (pixi.toml [activation.env])
+from cecelia.utils import lifeline, loopback   # `pixi run app` puts python/ on PYTHONPATH (pixi.toml [activation.env])
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
@@ -400,12 +400,17 @@ def main() -> int:
         _reexec_if_launcher_changed(launcher, browser_opened=not first)
         # Read per iteration, so Settings → "Use all CPU cores" lands on the in-app Restart.
         targs, applied = _thread_args()
-        env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied}
+        # LIFELINE: the server's stdin is a pipe only we hold (`proc.stdin`), which the OS closes when
+        # this launcher dies by any route — the window closed, a kill — and the server stops on that
+        # EOF (`_watch_supervisor!`, app/src/lifeline.jl), on every OS.
+        env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied,
+               lifeline.LIFELINE_ENV: "1"}
         launched_at = time.time()
         proc = subprocess.Popen(
             [julia, "--project", *targs, "src/server.jl"],
             cwd=os.path.join(ROOT, "api"),
             env=env,
+            stdin=subprocess.PIPE,
         )
         try:
             print("Starting Cecelia…")

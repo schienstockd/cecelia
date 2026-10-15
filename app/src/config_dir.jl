@@ -98,3 +98,14 @@ function ensure_config_dir(dev_dir::Union{String,Nothing} = nothing)::String
     mkpath(d)
     d
 end
+
+# Where Pluto's session secret is published for this config dir — `pluto/launch.jl` writes it; the API
+# (`api/src/notebooks_api.jl`) and `pixi run stop*` / the dev supervisor (`api/portkill.jl`) read it.
+# Per config dir, never in the install: the secret is also how a backend tells its own Pluto from
+# another Cecelia's, so two config dirs on one checkout must not share it. Here because every one of
+# those loads this file (Base-only), and a drift between copies would misjudge whose Pluto it is.
+pluto_secret_path(cfg::AbstractString = config_dir())::String = joinpath(cfg, "pluto", ".plutosecret")
+
+"The published Pluto session secret, or \"\" when none is."
+read_pluto_secret(cfg::AbstractString = config_dir())::String =
+    (f = pluto_secret_path(cfg); isfile(f) ? String(strip(read(f, String))) : "")

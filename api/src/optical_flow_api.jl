@@ -173,7 +173,11 @@ function api_optical_flow_inspect(body_bytes::Vector{UInt8})
                                    code = "params-not-previewable"))
     end
 
-    ready = _ensure_preview!()
+    ready = try
+        _ensure_preview!()
+    catch e
+        e isa PreviewPortForeign ? (return _preview_foreign_error(e)) : rethrow()
+    end
     ready || return 202, JSON3.write((; starting = true,
                                         message = "Preview worker is starting."))
 

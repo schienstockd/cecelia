@@ -2,10 +2,9 @@
 # Launch / probe the Pluto notebook server (`service_port(:notebooks)`, 7660 in slot 0) and list a project's notebooks. The Pluto
 # server runs as its OWN Julia process (the pluto/ env, which path-sources Cecelia) — NOT this API
 # server. Lifecycle mirrors the napari bridge: lazy-launch on first request, adopt an already-running
-# server (e.g. one from `pixi run notebooks` or a survivor of a server restart) instead of spawning a
+# server of this config dir (e.g. one from `pixi run notebooks`) instead of spawning a
 # duplicate. Secret auth stays ON (see launch.jl); launch.jl publishes the session secret to
-# pluto/.plutosecret (per-user for a non-owner of a shared install — `_secret_path`) and the frontend
-# appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
+# `<config_dir>/pluto/.plutosecret` (`pluto_secret_path`) and the frontend appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 
 # Functions, not constants: the port follows this user's port slot (app/src/ports.jl).
 _notebooks_url() = "http://localhost:$(service_port(:notebooks))/"
@@ -26,12 +25,10 @@ _pluto_writable(root::AbstractString = _pluto_root())::Bool =
 # Pluto's secret protection stays ON (see launch.jl). launch.jl writes the running session's secret
 # here; the frontend appends it to URLs (…/?secret=… and …/open?path=…&secret=…) so only this app can
 # drive the server. "" if not running / not yet written (frontend only uses URLs once running).
-# pluto/.plutosecret where the install is ours (dev, user scope, the owner of a shared one — and where
-# a `pixi run notebooks` server publishes it, so adoption keeps working). A non-owner gets a per-user
-# file instead, which the launch passes to launch.jl as CECELIA_PLUTO_SECRET_FILE.
-_secret_path(root::AbstractString = _pluto_root()) =
-    _pluto_writable(root) ? joinpath(root, ".plutosecret") : joinpath(config_dir(), "pluto", ".plutosecret")
-_notebook_secret()  = isfile(_secret_path()) ? String(strip(read(_secret_path(), String))) : ""
+# Per config dir (`pluto_secret_path`, app/src/config_dir.jl): it is also how we tell OUR Pluto from
+# another Cecelia's (`_notebook_server_probe`). The launch passes the path to launch.jl as
+# CECELIA_PLUTO_SECRET_FILE; a standalone `pixi run notebooks` defaults to the same one.
+_notebook_secret() = read_pluto_secret()
 
 # The Pluto server's lifecycle state, one struct instead of four separately-locked Refs. Every
 # transition (spawn / mark starting / clear starting / record an error) went through `_nb_lock`,
@@ -58,34 +55,79 @@ const _SETUP_HINT = "Run `pixi run notebooks-instantiate` once to set up the not
 # below; this pre-check just gives the friendly hint before we even spawn when the Manifest is absent.
 _pluto_env_ready() = isfile(joinpath(_pluto_root(), "Manifest.toml"))
 
-# Alive = the Pluto HTTP server answers on the port. Any HTTP response (200 with secret disabled)
-# counts; a refused connection throws → not alive.
+# Is the Pluto on our port OURS? `NB_NONE` (nothing answers), `NB_OURS`, or `NB_FOREIGN`.
+#
+# The session secret is the ownership token: we ask for `/auth-check` (Pluto's cheapest authenticated
+# route — "OK!") WITH our secret, and Pluto answers 403 when it is not its own. A slot does not protect this port (the sticky check is API + frontend only —
+# app/src/ports.jl), so another config dir's orphaned Pluto (the installed app's, while you run dev)
+# can be listening here; adopting it opened ITS notebooks dir with OUR secret, every link 403'd, and
+# we never launched our own. A server with the secret disabled accepts any secret and reads as ours,
+# as does a `pixi run notebooks` server of this config dir (it publishes to the same secret file).
 #
 # `Cecelia._is_probe_code_bug` rethrows the two Julia-language shapes that must surface (see its
 # docstring — this is the shared predicate every "is the worker there" probe uses). Everything else
-# is treated as "not there" the way the original bare `catch` did, but a rename of `HTTP.get` or an
-# ambiguous export can no longer hide as "not there" and drive a duplicate-launch loop.
+# is "nothing there", but a rename of `HTTP.get` or an ambiguous export can no longer hide as "not
+# there" and drive a duplicate-launch loop.
 #
 # Unlike `_preview_worker_alive`, this can't shortcut through a proc handle: the Pluto server is
 # addressed by URL rather than by process, and adoption of a pre-existing Pluto is a normal
 # lifecycle here, so the ping IS the alive check. Frontend polling is much sparser than the preview
 # case, so the per-call ping cost is not the hot-path concern it is there.
-function _notebook_server_alive()::Bool
+@enum NotebookServer NB_NONE NB_OURS NB_FOREIGN
+
+function _notebook_server_probe(; url::AbstractString = _notebooks_url(),
+                                  secret::AbstractString = _notebook_secret())::NotebookServer
     try
-        HTTP.get(_notebooks_url(); retry = false, redirect = false,
-                 connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
-        true
+        r = HTTP.get(url * "auth-check?secret=" * HTTP.escapeuri(secret); retry = false, redirect = false,
+                     connect_timeout = 2, read_idle_timeout = 3, status_exception = false)
+        r.status == 403 ? NB_FOREIGN : NB_OURS
     catch e
         Cecelia._is_probe_code_bug(e) && rethrow()
-        false
+        NB_NONE
     end
+end
+
+_notebook_server_alive()::Bool = _notebook_server_probe() === NB_OURS
+# Is ANY Pluto answering — ours or another Cecelia's? The guards on a notebook FILE ask this: two config
+# dirs can point at one projects dir, so another Cecelia's Pluto may have this very file open.
+_notebook_server_up()::Bool = _notebook_server_probe() !== NB_NONE
+
+# Short = the problem; the Notebooks page offers the repair (stop it, start ours) beside it.
+_foreign_pluto_message() = "Port $(service_port(:notebooks)) is held by another Cecelia's notebook server."
+
+# Kill whatever holds the notebooks port — unless it is another Cecelia's Pluto, which a Quit/Restart
+# here must leave alone (same reason as `_notebook_server_probe`): it may be a live standalone server
+# with someone's work in it. Only the user, on the Notebooks page, stops one (`force`). Returns
+# whether it killed.
+function _free_notebooks_port!(; force::Bool = false)::Bool
+    if !force && _notebook_server_probe() === NB_FOREIGN
+        @warn "Not stopping the notebook server on this port — it belongs to another Cecelia" port = service_port(:notebooks)
+        return false
+    end
+    Cecelia._kill_listeners_on_port(service_port(:notebooks))
+    true
+end
+
+# The command that launches OUR Pluto — pure but for creating the secret's dir, so the suite builds it.
+function _pluto_launch_cmd(notebooks_dir::AbstractString)::Cmd
+    pluto_root  = _pluto_root()
+    secret_file = pluto_secret_path()
+    mkpath(dirname(secret_file))
+    julia_exe = joinpath(Sys.BINDIR, Base.julia_exename())
+    addenv(Cmd(`$julia_exe --project=$pluto_root $(joinpath(pluto_root, "launch.jl"))`),
+        "CECELIA_PLUTO_SECRET_FILE" => secret_file,                   # launch.jl publishes it here
+        "CECELIA_NOTEBOOKS_DIR" => abspath(notebooks_dir),
+        "CECELIA_PLUTO_PORT"    => string(service_port(:notebooks)),   # launch.jl binds this
+        "CECELIA_PLUTO_BROWSER" => "false")
 end
 
 # Ensure the Pluto server is up. Returns true if already serving, false if a launch was just kicked
 # off (still starting). `notebooks_dir` points Pluto's file picker at the active project's notebooks.
 function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
     _with_pluto_state_lock() do
-        _notebook_server_alive() && return true
+        probe = _notebook_server_probe()
+        probe === NB_OURS && return true
+        probe === NB_FOREIGN && error(_foreign_pluto_message())
         _pluto_state.starting && return false
 
         pluto_root    = _pluto_root()
@@ -94,21 +136,15 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
         # Friendly first-run guidance before spawning if the env clearly isn't set up.
         _pluto_env_ready() || error("The notebook environment is not set up. $_SETUP_HINT")
 
-        secret_file = _secret_path(pluto_root)
-        mkpath(dirname(secret_file))
-        julia_exe = joinpath(Sys.BINDIR, Base.julia_exename())
-        cmd = Cmd(`$julia_exe --project=$pluto_root $launch_script`)
-        cmd = addenv(cmd,
-            "CECELIA_PLUTO_SECRET_FILE" => secret_file,                   # launch.jl publishes it here
-            "CECELIA_NOTEBOOKS_DIR" => abspath(notebooks_dir),
-            "CECELIA_PLUTO_PORT"    => string(service_port(:notebooks)),   # launch.jl binds this
-            "CECELIA_PLUTO_BROWSER" => "false")
+        cmd = _pluto_launch_cmd(notebooks_dir)
 
         @info "Launching Pluto notebook server..." notebooks_dir port = service_port(:notebooks)
         # Onto the log rail with the other children (`spawn_logged`, app/src/log_stream.jl). Pluto was
         # already wired to the parent's streams, so this loses nothing from the terminal — it ADDS the
         # console, which is where a "not instantiated" precompile failure is actually read from.
-        proc = spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd)
+        # `lifeline`: our Pluto exits when this backend dies by any route (app/src/lifeline.jl), so a
+        # crash never leaves it holding the port for the next launch to puzzle over.
+        proc = spawn_logged(LOG_SOURCE_NOTEBOOKS, cmd; lifeline = true)
         # ONE atomic transition into "starting" — the three fields move together.
         _pluto_state.proc     = proc
         _pluto_state.starting = true
@@ -118,14 +154,18 @@ function _ensure_notebook_server!(notebooks_dir::AbstractString)::Bool
         @async begin
             try
                 for _ in 1:120   # up to ~120 s cold start (first Pluto boot precompiles)
-                    _notebook_server_alive() && break
+                    probe = _notebook_server_probe()
+                    probe === NB_OURS && break
                     # A shutdown during startup moves `_pluto_state.proc` off this launch — that exit
                     # is the user's stop, not a failure, so it records no error.
                     _pluto_state.proc === proc || break
-                    if process_exited(proc) && !_notebook_server_alive()
+                    # Another Cecelia's server took the port first: ours cannot bind, and the reason is
+                    # that, not a missing env.
+                    if probe === NB_FOREIGN || process_exited(proc)
                         _with_pluto_state_lock() do
                             _pluto_state.proc === proc &&
-                                (_pluto_state.error = "The notebook server exited during startup. $_SETUP_HINT")
+                                (_pluto_state.error = probe === NB_FOREIGN ? _foreign_pluto_message() :
+                                                      "The notebook server exited during startup. $_SETUP_HINT")
                         end
                         break
                     end
@@ -150,6 +190,8 @@ function api_notebooks_launch(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
 
+    _notebook_server_probe() === NB_FOREIGN &&
+        return 409, JSON3.write((; error = _foreign_pluto_message(), foreign = true))
     nb_dir = _project_notebooks_dir(uid)
     mkpath(nb_dir)
     ready = try
@@ -165,14 +207,16 @@ end
 # GET /api/notebooks/status  → { running, starting, url, secret, sysimage, error }
 # sysimage: "ready" | "stale" | "building" | "error" | "absent" | "shared" (see _classify_sysimage below).
 function api_notebooks_status(req::HTTP.Request)
-    running = _notebook_server_alive()
+    probe   = _notebook_server_probe()
+    running = probe === NB_OURS
     # Read the two mutable fields inside the lock so a mid-transition write cannot split the pair.
     starting, err = _with_pluto_state_lock() do
         (_pluto_state.starting, _pluto_state.error)
     end
     200, JSON3.write((; running = running, starting = starting, url = _notebooks_url(),
                         secret = _notebook_secret(), sysimage = _sysimage_status(),
-                        error = running ? nothing : err))
+                        foreign = probe === NB_FOREIGN,
+                        error = running ? nothing : probe === NB_FOREIGN ? _foreign_pluto_message() : err))
 end
 
 # ── Fast-plot sysimage (pluto/deps.so), built on first run ───────────────────────
@@ -292,10 +336,11 @@ function api_notebooks_build_sysimage(body_bytes::Vector{UInt8})
     200, JSON3.write((; status = status))
 end
 
-# Stop the Pluto server. We can only kill a server THIS process spawned (we hold its handle); killing
-# the launcher process terminates Pluto and its Malt workers follow (they exit when the parent drops).
-# An adopted/externally-launched one (e.g. `pixi run notebooks`) isn't ours → direct to stop-by-port.
-function _shutdown_notebook_server!()::Tuple{Bool,String}
+# Stop the Pluto server. One THIS process spawned is killed by its handle (the launcher process; its
+# Malt workers exit when the parent drops). One we adopted (a `pixi run notebooks` of this config dir,
+# a survivor of a backend restart) has no handle, so its port is freed. Another Cecelia's only with
+# `force` — the user's explicit "stop it" on the Notebooks page.
+function _shutdown_notebook_server!(; force::Bool = false)::Tuple{Bool,String}
     _with_pluto_state_lock() do
         proc = _pluto_state.proc
         # ONE atomic transition back to idle — the three fields move together.
@@ -306,15 +351,19 @@ function _shutdown_notebook_server!()::Tuple{Bool,String}
             kill(proc)
             return true, "stopped"
         end
-        _notebook_server_alive() &&
-            return false, "The notebook server is running but wasn't started by this app — stop it with `pixi run stop-notebooks`."
-        true, "not running"
+        probe = _notebook_server_probe()
+        probe === NB_NONE && return true, "not running"
+        probe === NB_FOREIGN && !force && return false, _foreign_pluto_message()
+        _free_notebooks_port!(; force)
+        true, "stopped"
     end
 end
 
-# POST /api/notebooks/shutdown  → { ok, message }
+# POST /api/notebooks/shutdown  { force? }  → { ok, message }
 function api_notebooks_shutdown(body_bytes::Vector{UInt8})
-    ok, msg = _shutdown_notebook_server!()
+    body = _parse_body(body_bytes; allow_empty = true)
+    body isa Tuple && return body
+    ok, msg = _shutdown_notebook_server!(; force = _wbool(body, :force))
     (ok ? 200 : 409), JSON3.write((; ok = ok, message = msg))
 end
 
@@ -323,7 +372,7 @@ function api_notebooks_restart(body_bytes::Vector{UInt8})
     ok, msg = _shutdown_notebook_server!()
     ok || return 409, JSON3.write((; error = msg))
     for _ in 1:20                        # let the port free before rebinding
-        _notebook_server_alive() || break
+        _notebook_server_up() || break
         sleep(0.25)
     end
     api_notebooks_launch(body_bytes)
@@ -669,7 +718,8 @@ function api_notebooks_delete(body_bytes::Vector{UInt8})
     (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
     # Guard: Pluto owns an open notebook's file and can re-create it after deletion. If the server is
     # up, require an explicit `force` (the UI's confirm supplies it) and tell the user to close it.
-    if get(body, :force, false) !== true && _notebook_server_alive()
+    # ANY Pluto, not just ours (`_notebook_server_up`).
+    if get(body, :force, false) !== true && _notebook_server_up()
         return 409, JSON3.write((; error = "The notebook server is running — if \"$file\" is open there, close that tab first (an open notebook can be re-created after deletion), then confirm.", serverRunning = true))
     end
     dest = joinpath(_project_notebooks_dir(uid), file)
@@ -786,7 +836,8 @@ function api_notebooks_restore(body_bytes::Vector{UInt8})
     isfile(chosen) || return 404, JSON3.write((; error = "Snapshot v$ver not found"))
     # Guard: restoring overwrites the live file, which Pluto may have open (and could re-save its own
     # copy over). If the server is up, require explicit `force` (UI confirm) and warn to close it.
-    if get(body, :force, false) !== true && _notebook_server_alive()
+    # ANY Pluto, not just ours (`_notebook_server_up`).
+    if get(body, :force, false) !== true && _notebook_server_up()
         return 409, JSON3.write((; error = "The notebook server is running — if \"$file\" is open there, close that tab first (Pluto may re-save its copy over the restore), then confirm.", serverRunning = true))
     end
 
