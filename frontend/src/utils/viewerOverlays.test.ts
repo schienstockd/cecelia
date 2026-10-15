@@ -628,7 +628,7 @@ describe('setOverlayWindow', () => {
     const pts = buildPointBuffer(payload(), meta())
     const segs = buildTrackBuffer(payload(), meta(), ['#ff0000'])
     const r = rec()
-    setOverlayWindow(r, pts, segs, 1, [2, 2], style)
+    setOverlayWindow(r, pts, segs, 1, [2, 2], style, 'plane')
     const [first, count] = timepointRange(pts, 1)!
     expect(r.calls.pts).toEqual([first, count, 5, 1, 3, 1])
     const tail = tailRange(segs, 1, 2)
@@ -640,10 +640,19 @@ describe('setOverlayWindow', () => {
     expect(r.calls.unit).toEqual([0.5])
   })
 
+  it.each(['plane', 'volume'] as const)('a range draws exactly its planes (%s) — no reach', mode => {
+    const pts = buildPointBuffer(payload(), meta())
+    const segs = buildTrackBuffer(payload(), meta(), ['#ff0000'])
+    const r = rec()
+    setOverlayWindow(r, pts, segs, 1, [4, 10], style, mode)
+    expect(r.calls.pts?.slice(3, 5)).toEqual([4, 10])
+    expect(r.calls.segs?.slice(3, 5)).toEqual([4, 10])
+  })
+
   it('nothing on screen yet (t < 0) draws nothing', () => {
     const pts = buildPointBuffer(payload(), meta())
     const r = rec()
-    setOverlayWindow(r, pts, buildTrackBuffer(payload(), meta(), ['#ff0000']), -1, [0, 3], style)
+    setOverlayWindow(r, pts, buildTrackBuffer(payload(), meta(), ['#ff0000']), -1, [0, 3], style, 'plane')
     expect(r.calls.pts?.slice(0, 2)).toEqual([0, 0])
     expect(r.calls.segs?.slice(0, 2)).toEqual([0, 0])
   })

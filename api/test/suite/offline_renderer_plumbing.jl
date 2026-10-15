@@ -99,6 +99,14 @@ end
     @test movie_overlay_style(k -> k == "overlaySizeUnit" ? "bogus" : nothing).size_unit == "screen"
     zr, filt = _plane_window(5, 10, (; point_z_tol = 2, track_z_tol = 3))
     @test zr == [5, 5] && filt["points"] == [3, 7] && filt["tracks"] == [2, 8]
+    # a range — the 2D ±n window, or a 3D crop — is drawn exactly: no reach past it
+    tol = (; point_z_tol = 2, track_z_tol = 3)
+    for flat in (true, false)
+        zr, filt = _plane_window(4:10, 34, tol; flat)
+        @test zr == [4, 10] && filt["points"] == [4, 10] && filt["tracks"] == [4, 10]
+    end
+    # a 3D view cropped to one plane is still a box: no reach either
+    @test _plane_window(5:5, 34, tol; flat = false)[2]["points"] == [5, 5]
     zr, filt = _plane_window(nothing, 10, style)
     @test zr == [0, 9] && filt === nothing                       # the whole stack: every overlay
     @test _plane_window(2:4, 10, style)[1] == [2, 4]

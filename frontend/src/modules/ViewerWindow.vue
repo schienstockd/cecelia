@@ -1581,7 +1581,7 @@ const frame = usePlotResize(canvas, () => {
   // timestamp. The planes are the ones actually LOADED: one in the 2D view, the crop range or ±n window
   // otherwise. Not "-1 for 3D" — a view cropped to eight planes would then draw the whole stack's cells
   // against a box holding eight.
-  setOverlayWindow(r, points, segments, shownT.value, zLoaded.value, overlayStyle.value)
+  setOverlayWindow(r, points, segments, shownT.value, zLoaded.value, overlayStyle.value, mode.value)
   // Mask style, here for the same reason as the rest: it is display state, and a watcher that set it
   // elsewhere could disagree with the frame on screen. Opacity 0 with no segmentation picked is what
   // switches the shader's label path off — the placeholder texture stays bound, because a bind group
@@ -2920,7 +2920,7 @@ function drawTiles() {
   const tp = t.value
   const zp = zPlane.value
   // Overlays for the (t, z) on screen — the one plane the tile view shows.
-  setOverlayWindow(tr, points, segments, tp, [zp, zp], overlayStyle.value)
+  setOverlayWindow(tr, points, segments, tp, [zp, zp], overlayStyle.value, 'plane')
   const entries = tr.residentTiles().filter(e => e.t === tp && e.z === zp).slice()
     .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
@@ -6357,7 +6357,7 @@ onUnmounted(() => {
                 {{ colourLegend.levels.length }} levels
               </div>
 
-              <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
+              <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
                 <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
                 <input
                   type="range" class="vw-grow" :min="0" :max="10" :step="1"
@@ -6450,7 +6450,7 @@ onUnmounted(() => {
                 <span class="cc-readout cc-fs-3xs">{{ src.count }}</span>
               </div>
             </template>
-            <div v-if="mode === 'plane' && meta!.nZ > 1" class="cc-row cc-row-tight">
+            <div v-if="singlePlane && meta!.nZ > 1" class="cc-row cc-row-tight">
               <span class="cc-muted cc-fs-2xs cc-lbl-col">Z reach</span>
               <input
                 type="range" class="vw-grow" :min="0" :max="10" :step="1"
