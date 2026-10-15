@@ -657,13 +657,6 @@ function onChannelUpdate(next: string[]) {
   }
 }
 
-// range for slider display
-const pct = computed(() => {
-  if (props.param.type !== 'int' && props.param.type !== 'float') return 0
-  const min = props.param.min ?? 0
-  const max = props.param.max ?? 100
-  return (((val.value as number) - min) / (max - min)) * 100
-})
 </script>
 
 <template>
@@ -700,7 +693,6 @@ const pct = computed(() => {
         @input="val = param.type === 'int'
           ? parseInt(($event.target as HTMLInputElement).value)
           : parseFloat(($event.target as HTMLInputElement).value)"
-        :style="`--pct: ${pct}%`"
         v-tooltip.bottom="`${val} (range ${param.min}–${param.max})`"
       />
       <span class="slider-val">{{ val }}</span>
@@ -1190,24 +1182,8 @@ const pct = computed(() => {
   align-items: center;
   gap: 0.5rem;
 }
-.slider {
-  flex: 1;
-  appearance: none;
-  height: 4px;
-  border-radius: var(--cc-radius-xs);
-  background: linear-gradient(to right,
-    var(--cc-accent) 0%, var(--cc-accent) var(--pct, 0%),
-    var(--cc-surface-2) var(--pct, 0%), var(--cc-surface-2) 100%);
-  cursor: pointer;
-}
-.slider::-webkit-slider-thumb {
-  appearance: none;
-  width: 13px; height: 13px;
-  border-radius: var(--cc-radius-pill);
-  background: var(--cc-accent);
-  cursor: pointer;
-  box-shadow: 0 0 4px #a78bfa55;
-}
+/* the look is the global slider base (style.css → Sliders) */
+.slider { flex: 1; }
 .slider-val {
   font-size: var(--cc-fs-sm);
   font-family: var(--cc-mono);

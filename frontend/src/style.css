@@ -13,6 +13,8 @@
    Note this is NOT what `cssTokens.test.ts` checks — the tokens were all correctly *declared*. The
    blind spot is reachability: declared in a scope the element never sees. */
 :root {
+  /* a slider's fill, 0–100% — written per element by `v-range-fill` (Sliders, below) */
+  --cc-range-pct: 0%;
   /* backgrounds */
   --cc-bg:         #0f1117;
   --cc-surface-1:  #161b22;
@@ -702,7 +704,59 @@ select {
 select option { background: var(--cc-surface-1); color: var(--cc-text); }
 
 /* tinted native widgets to the accent */
-input[type="range"] { accent-color: var(--cc-accent); cursor: pointer; }
+/* Sliders — ONE look for every single-value slider, the same rail / fill / thumb `RangeSlider` draws
+   for two thumbs: a 3px rail, accent fill up to the thumb, an 11px round thumb. The fill stops at
+   `--cc-range-pct`, written by `v-range-fill` (directives/rangeFill.ts), which vite.config.ts adds to
+   every range input at compile time; Firefox paints it natively via `::-moz-range-progress`. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 1rem;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+input[type="range"]:disabled { opacity: 0.45; cursor: default; }
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: var(--cc-radius-xs);
+  background: linear-gradient(to right,
+    var(--cc-accent) 0%, var(--cc-accent) var(--cc-range-pct, 0%),
+    var(--cc-surface-2) var(--cc-range-pct, 0%), var(--cc-surface-2) 100%);
+  box-shadow: 0 0 0 1px var(--cc-border);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;                 /* (3px rail − 11px thumb) / 2 */
+  border-radius: var(--cc-radius-pill);
+  background: var(--cc-accent);
+  border: 1px solid var(--cc-bg);
+}
+input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: var(--cc-radius-xs);
+  background: var(--cc-surface-2);
+  box-shadow: 0 0 0 1px var(--cc-border);
+}
+input[type="range"]::-moz-range-progress {
+  height: 3px;
+  border-radius: var(--cc-radius-xs);
+  background: var(--cc-accent);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  border-radius: var(--cc-radius-pill);
+  background: var(--cc-accent);
+  border: 1px solid var(--cc-bg);
+}
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--cc-accent-soft); }
+input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--cc-accent-soft); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cursor: pointer; }
 
 /* ── CanvasPanel auto-hide control overlays ────────────────────────────────── */

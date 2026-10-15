@@ -232,7 +232,7 @@ async function deleteKeyframe(s: AnimSnapshot) {
 .tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
 .tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }
-.tl-durrange { width: 68px; accent-color: var(--cc-accent); }
+.tl-durrange { width: 68px; }
 .tl-durval { min-width: 1.8rem; text-align: left; }
 /* + .cc-eyebrow .cc-fs-3xs on the cell — only the spacing is the timeline's business */
 .tl-group .tl-rowhead { padding-top: 0.7rem; padding-bottom: 0.2rem; }
