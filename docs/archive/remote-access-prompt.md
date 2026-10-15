@@ -1,12 +1,17 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
-> time. It is not a description of how the code works now, and not instructions to re-run.
+> time. It is not a description of how the code works now, and not instructions to re-run. Current
+> design lives in [`docs/todo/REMOTE_BOX_PLAN.md`](../todo/REMOTE_BOX_PLAN.md).
 >
-> **Outcome:** not run when archived (2026-10-15). It covers a different setup from
-> [`docs/todo/REMOTE_ACCESS_PLAN.md`](../todo/REMOTE_ACCESS_PLAN.md): a physical GPU box in the lab
-> that users can walk to but would rather reach remotely. That plan covers a cloud VM, using an SSH
-> tunnel to the laptop's browser (`scripts/remote-launcher/`). Both setups are wanted, and this brief
-> rules out the tunnel only for the box. Nothing here (`setup-box.sh`, `remote-check.sh`, the
-> NoMachine handout) exists.
+> **Outcome:** not run as written. It covers a physical GPU box in the lab that users can walk to but
+> would rather reach remotely, which complements the cloud-VM SSH tunnel in
+> [`docs/todo/REMOTE_ACCESS_PLAN.md`](../todo/REMOTE_ACCESS_PLAN.md). A spike on the real box
+> (2026-10-16) replaced several premises:
+> - the box is Ubuntu 26.04, which is **Wayland only**, so "X11, not Wayland" cannot be met
+> - **GNOME Remote Desktop in Remote Login mode** (plain RDP, built in) gets the GPU, so NoMachine is
+>   not used
+> - production has no separate frontend service to put under systemd
+> - a dummy Xorg driver would take the session off the GPU
+> - "lock disabled" is unsafe on a console people walk up to
 
 # Task: Remote-access setup for the Cecelia GPU box
 

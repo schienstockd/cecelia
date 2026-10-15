@@ -402,6 +402,9 @@ effectiveness-chart = "python scripts/judge/chart.py"
 # check that catches a load-time `include` of a file the bundle forgot (#540). Unix only; the
 # Windows equivalent is running the same steps by hand. See docs/SHIPPING.md → Building & releasing.
 bundle-check = "bash scripts/bundle_check.sh"
+# Lab GPU box reached by remote desktop: read-only check of GPU, session renderer, remote-desktop
+# service and that every Cecelia port is loopback-only. Linux only. See docs/todo/REMOTE_BOX_PLAN.md.
+remote-check = "sh scripts/remote-box/box-check.sh"
 
 # Update the env to the latest versions allowed by pixi.toml (console update path; the in-app
 # "Update" button hits /api/update, which runs the same). Refreshes pixi.lock.
