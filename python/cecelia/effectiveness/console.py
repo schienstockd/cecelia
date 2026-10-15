@@ -496,7 +496,8 @@ class DashboardState:
         #: Agents-pane rows; None = no pane (no sessions, or liveness can't be checked here).
         self.agents: list[AgentRow] | None = None
         self.agents_note: str | None = None
-        #: `pixi run agents` only: → shows each session's recap and recital findings with outcomes;
+        #: `pixi run agents` only (in `recital-console` the arrows drive the findings pane, whose
+        #: rows carry the session badge instead): → shows each session's recap and recital findings with outcomes;
         #: PgUp/PgDn scroll it (`agents_offset`, step `agents_page`).
         self.agents_expanded = False
         self.agents_offset = 0
@@ -649,8 +650,12 @@ def _agent_detail(row: AgentRow, width: int, *, use_colour: bool) -> list[str]:
     return lines
 
 
-def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> list[str]:
+def agents_block(state: "DashboardState", width: int, *, use_colour: bool,
+                 keys: bool = False) -> list[str]:
     """`── agents ──` header, a column-title row and one row per session; [] when there is no pane.
+
+    `keys`: ← / → open and close this pane's detail view (`pixi run agents`), so the header says so;
+    in `recital-console` the arrows belong to the findings pane.
 
     `ctx` = how full the session's context is (`context_bar`); `recitals` = `pixi run recital` runs
     on the session's branch; `open` = their findings with no outcome tag yet."""
@@ -672,7 +677,8 @@ def agents_block(state: "DashboardState", width: int, *, use_colour: bool) -> li
         rows.insert(0, _clip(_col(_DIM, title, use_colour=use_colour), width))
     if state.agents_note:
         rows.append(_col(_DIM, f"  {state.agents_note}", use_colour=use_colour))
-    hint = "" if not state.agents else " · ← counts only" if state.agents_expanded else " · → recaps + findings"
+    hint = ("" if not (keys and state.agents) else
+            " · ← counts only" if state.agents_expanded else " · → recaps + findings")
     if any(r.judge for r in state.agents or ()):
         hint += f" · {JUDGE_MARK} judge-review"
     if any(r.auto for r in state.agents or ()):
@@ -708,8 +714,28 @@ def _finding_head_line(event: dict, *, use_colour: bool, with_context: bool = Tr
             f"{ctx_str}")
 
 
+def _finding_badge(row: AgentRow, *, use_colour: bool) -> str:
+    """The session's badge and its name without the `cecelia-` every window shares (`◆ 99`): 28
+    badges for a handful of sessions collide often, so the name is what tells two apart."""
+    name = row.name.removeprefix("cecelia-")
+    return session_badge(row.session_id, use_colour=use_colour) + " " + _col(_BOLD, name, use_colour=use_colour)
+
+
+def _finding_badges(agents: _t.Iterable[AgentRow], findings: _t.Sequence[dict], *,
+                    use_colour: bool) -> list[str]:
+    """Per finding, the badge of the live session that raised it ("" when none is live), so it
+    reads back to its row in the agents pane. The row's `session` names it, and outlives the
+    session moving to another branch; rows logged as `unknown` (no `CLAUDE_CODE_SESSION_ID`)
+    fall back to whichever live session is on the row's branch."""
+    agents = [r for r in agents if r.session_id]
+    by_session = {r.session_id: _finding_badge(r, use_colour=use_colour) for r in agents}
+    by_branch = {r.branch: _finding_badge(r, use_colour=use_colour) for r in agents if r.branch}
+    return [by_session.get(f.get("session") or "", "") if f.get("session") not in (None, "", "unknown")
+            else by_branch.get(f.get("branch") or "", "") for f in findings]
+
+
 def _render_finding_block(event: dict, *, width: int, use_colour: bool,
-                          desc_line_cap: int, context: bool = True) -> list[str]:
+                          desc_line_cap: int, context: bool = True, badge: str = "") -> list[str]:
     """One finding for the findings pane — head + wrapped description, description capped.
 
     `desc_line_cap` bounds how many wrapped lines a single description contributes; anything
@@ -718,13 +744,15 @@ def _render_finding_block(event: dict, *, width: int, use_colour: bool,
     to fix. The branch/commit anchor sits on its own row under the head, aligned with the
     description text — it doesn't count against `desc_line_cap`. `context=False` drops that
     anchor row — the agents pane lists findings under their session's row, which names the branch.
+    `badge` leads the anchor row: which live session is on that branch (`_finding_badge`).
     """
     # Head and ref rows clip to the width like activity rows; only the description wraps.
     out = [_clip(_finding_head_line(event, use_colour=use_colour, with_context=False), width)]
     indent = " " * _DESC_INDENT
     ctx = _fmt_context(event) if context else ""
     if ctx:
-        out.append(_clip(indent + "  " + _col(_DIM, ctx, use_colour=use_colour), width))
+        out.append(_clip(indent + (badge + " " if badge else "  ") + _col(_DIM, ctx, use_colour=use_colour),
+                         width))
     desc = ((event.get("payload") or {}).get("desc") or "").strip()
     if not desc or desc_line_cap <= 0:
         return out
@@ -772,7 +800,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     chrome: list[str] = [_clip(f"{title}  {path_str}{time_str}", width)]
     if agents_only:
         pane, state.agents_offset, state.agents_page = scroll_window(
-            agents_block(state, width, use_colour=use_colour), height - len(chrome) - 1,
+            agents_block(state, width, use_colour=use_colour, keys=True), height - len(chrome) - 1,
             state.agents_offset, use_colour=use_colour)
         return "\n".join(chrome + [""] + pane)
 
@@ -831,10 +859,11 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     if have_findings and budget > activity_budget:
         findings_budget = budget - activity_budget
         newest = list(reversed(state.findings))  # newest first — a fresh flag lands on top
+        badges = _finding_badges(state.agents or (), newest, use_colour=use_colour)
 
         def _blocks(cap: int) -> list[list[str]]:
-            return [_render_finding_block(f, width=width, use_colour=use_colour,
-                                          desc_line_cap=cap) for f in newest]
+            return [_render_finding_block(f, width=width, use_colour=use_colour, desc_line_cap=cap,
+                                          badge=b) for f, b in zip(newest, badges)]
 
         # Uncap descriptions one line at a time while every held finding still fits, so a
         # tall terminal shows full text instead of `…`; stop once nothing more unfolds.

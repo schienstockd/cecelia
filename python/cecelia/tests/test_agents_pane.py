@@ -535,11 +535,11 @@ class PaneTest(unittest.TestCase):
         state.agents = [AgentRow("s", "idle", "w", "x", findings=(
                             (finding, "dropped_no_action", res), (fixed, "fixed_pre_commit", None))),
                         AgentRow("t", "busy", "v", "y")]
-        collapsed = console.agents_block(state, 100, use_colour=False)
+        collapsed = console.agents_block(state, 100, use_colour=False, keys=True)
         self.assertIn("→ recaps + findings", collapsed[0])
         self.assertNotIn("guard missing", "\n".join(collapsed))
         state.agents_expanded = True
-        lines = console.agents_block(state, 100, use_colour=False)
+        lines = console.agents_block(state, 100, use_colour=False, keys=True)
         text = "\n".join(lines)
         self.assertIn("0 open · 1 fixed · 0 shipped · 0 false pos · 1 dropped", text)
         # The recital console's own head line, the outcome in front, the description under it.
@@ -550,6 +550,32 @@ class PaneTest(unittest.TestCase):
         self.assertIn("fixed", next(line for line in lines if "b.py:9" in line))
         self.assertIn("no recital findings", text)
         self.assertTrue(all(len(line) <= 100 for line in lines))
+
+    def test_recital_console_offers_no_arrow_and_badges_each_finding_with_its_session(self):
+        # There ← / → open the findings pane's full text, so the agents header must not offer
+        # them; instead a finding's branch row leads with the badge and short name of the session
+        # on that branch — two sessions can share a badge, never a name.
+        state = console.DashboardState()
+        state.agents = [AgentRow("cecelia-99", "idle", "w", "feat/x", session_id="abc")]
+        state.add(_row("fanout_audit_finding", "feat/x", "f1", file="a.py", line=3, desc="d",
+                       marker="confirmed"))
+        state.add(_row("fanout_audit_finding", "gone", "f2", file="b.py", line=4, desc="d",
+                       marker="confirmed"))
+        # Its session has moved on to feat/x since; the row's `session` still names it.
+        state.add({**_row("fanout_audit_finding", "earlier", "f3", file="c.py", line=5, desc="d",
+                          marker="confirmed"), "session": "abc"})
+        # Logged by a session that has closed: another session now on the branch didn't raise it.
+        state.add({**_row("fanout_audit_finding", "feat/x", "f4", file="d.py", line=6, desc="d",
+                          marker="confirmed"), "session": "closed"})
+        frame = console.render_dashboard(state, pathlib.Path("/x"), width=100, height=60,
+                                         use_colour=False).splitlines()
+        rows = [line.strip() for line in frame]
+        badge = session_badge("abc", use_colour=False)
+        self.assertNotIn("recaps", next(line for line in frame if "── agents" in line))
+        self.assertIn(f"{badge} 99 x@c1", rows)          # no `session` logged: matched by branch
+        self.assertIn(f"{badge} 99 earlier@c1", rows)
+        self.assertEqual(rows.count("x@c1"), 1)          # the closed session's finding
+        self.assertIn("gone@c1", rows)                   # no live session: no badge
 
     def test_right_arrow_view_shows_the_recap_above_the_findings(self):
         state = console.DashboardState()
