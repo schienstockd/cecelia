@@ -862,16 +862,16 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </label>
       </div>
       <div v-if="hpcMemory" class="cc-row hpc-res-foot">
-        <InlineNote class="cc-fs-2xs hpc-grow" :short="hpcMemory.short" :detail="hpcMemory.detail" :severity="hpcMemory.severity" />
+        <InlineNote class="hpc-note hpc-grow" :short="hpcMemory.short" :detail="hpcMemory.detail" :severity="hpcMemory.severity" />
         <button v-if="hpcMemory.suggestGb" class="cc-btn cc-btn-ghost cc-btn-micro" @click="setMemory(hpcMemory.suggestGb)"
                 v-tooltip.bottom="'Set memory to the smallest size that fits'">Use {{ hpcMemory.suggestGb }} GB</button>
       </div>
       <div v-if="onHpc && hpcForm" class="cc-row hpc-res-foot">
-        <InlineNote class="cc-fs-2xs hpc-grow" short="Per image; too small fails, too big queues longer" />
+        <InlineNote class="hpc-note hpc-grow" short="Per image; too small fails, too big queues longer" />
         <button v-if="hpcChanged" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetResources"
                 v-tooltip.bottom="hpcResetTip"><i class="pi pi-undo" /></button>
       </div>
-      <InlineNote v-if="onHpc && hpcDestination" class="hpc-dest cc-fs-xs" :icon="hpcDestination.severity ? undefined : 'pi-server'"
+      <InlineNote v-if="onHpc && hpcDestination" class="hpc-note" :icon="hpcDestination.severity ? undefined : 'pi-server'"
                   :short="hpcDestination.short" :detail="hpcDestination.detail" :severity="hpcDestination.severity" />
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
@@ -1141,9 +1141,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .hpc-res-cell { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
 .hpc-res-head { display: flex; justify-content: space-between; gap: 0.4rem; }
 .hpc-res-val { font-family: var(--cc-mono); }
-.hpc-res-foot { margin-top: 0.15rem; max-width: 22rem; }
+.hpc-res-foot { margin-top: 0.35rem; max-width: 22rem; align-items: flex-start; }
 .hpc-grow { flex: 1; min-width: 0; }
-.hpc-dest { display: flex; margin-top: 0.25rem; }
+/* the same shape as a param advisory (ParamRenderer `.param-advisory`): the panel's text size, icon on the first line */
+.hpc-note { display: flex; align-items: flex-start; margin-top: 0.35rem; }
+.hpc-res-foot .hpc-note { margin-top: 0; }
 
 /* params */
 .params-section {
