@@ -32,13 +32,12 @@
     diag  = JSON3.read(api_diagnostics(HTTP.Request("GET", "/api/diagnostics"))[2])
     child = [k for k in keys(diag) if endswith(String(k), "Port") && String(k) != "port"]
     @test length(child) == 3            # preview, notebooks, runner — deliberately, not silently
-    # The runner is reported by diagnostics but is NOT freed by an unconditional
-    # `_kill_listeners_on_port` — it is stopped through `runner_stop!`, and only when `stop_runner` is
-    # true. So the count covers the other two and the runner is asserted on its own below.
-    @test count(_ -> true, eachmatch(r"_kill_listeners_on_port\(", body)) == length(child) - 1
-
-    for c in ("service_port(:preview)", "service_port(:notebooks)")
-        @test occursin(c, body)
+    # None is freed by an unconditional `_kill_listeners_on_port`: another Cecelia's child can sit on
+    # these ports (the sticky slot checks API + frontend only), so each goes through a helper that
+    # skips a foreign one — and the runner only when `stop_runner` is true.
+    @test !occursin("_kill_listeners_on_port(", body)
+    for helper in ("_free_preview_port!()", "_free_notebooks_port!()", "runner_stop!(")
+        @test occursin(helper, body)
     end
 
     # ── The runner's asymmetry, which is the whole point of it ──────────────────
@@ -97,7 +96,8 @@
     # `wait = false`, because the fire-and-forget `taskkill` on the Windows path legitimately wants
     # devnull and would make a count meaningless.
     @test occursin(r"run\(pipeline\(Cmd\(cmd; dir = fe\); stdout = stdout, stderr = stderr\)", dev)  # Vite
-    @test occursin(r"run\(pipeline\(bcmd; stdin = stdin, stdout = stdout, stderr = stderr\)", dev)   # backend
+    # backend — its stdin is its lifeline (app/src/lifeline.jl), not the terminal
+    @test occursin(r"run\(pipeline\(addenv\(bcmd, LIFELINE_ENV => \"1\"\); stdin = lifeline\[\], stdout = stdout,\s+stderr = stderr\)", dev)
     # …but a CRASH must not reach that teardown, or the runner it is supposed to protect dies with the
     # server that crashed. The relaunch decision is real code, loaded and called here rather than
     # grepped for: whether SIGTERM counts as a fault is exactly the kind of thing a text assertion
@@ -207,8 +207,11 @@ end
     # `wait` returns normally, and the crash classifier RELAUNCHES the app the user just stopped.
     @test occursin("detach = true", dev)
     # …which in turn means a hard-killed supervisor can no longer take the backend down, so the server
-    # watches for it. Without this pairing, `detach` trades one orphan for another.
-    @test occursin("_watch_supervisor!", server) && occursin(":getppid", server)
+    # watches for it — through its lifeline, which the supervisor must hand it. Without this pairing,
+    # `detach` trades one orphan for another. (The lifeline itself, against a SIGKILLed launcher, is
+    # app/test/suite/logging.jl.)
+    @test occursin("_watch_supervisor!", server) && occursin("exit_with_parent!", server)
+    @test occursin("LIFELINE_ENV => \"1\"", dev) && occursin("stdin = lifeline[]", dev)
     # Server: an `atexit` hook, NEVER `exit_on_sigint(false)`. Under `-t auto` the InterruptException
     # goes to whichever task is at a safepoint — routinely an idle worker inside the scheduler's own
     # `poptask`, which has no handler — so the process dies with `fatal: error thrown and no exception
@@ -301,5 +304,144 @@ end
         # Base-only, deliberately: `stop` has to work when a manifest is broken, which is when you
         # reach for it. `--project` here would make the emergency stop depend on the thing that broke.
         @test !occursin("--project", stop_line)
+    end
+end
+
+@testset "API: a stop never kills another config dir's child" begin
+    # Kill-by-port trusts the port, and the child ports are the ones the sticky slot does not check —
+    # so the installed app's runner can be mid-task on our slot's runner port (or its Pluto / preview
+    # worker orphaned on ours) while `pixi run dev` runs against CECELIA_DEV_DIR. In-process stops
+    # skip a foreign one; the dev supervisor's teardown and `pixi run stop*` cannot load Cecelia and
+    # ask the same questions through PortKill.
+    PK = DevSupervisor.PortKill
+    @test PK.ping_config_dir("HTTP/1.0 200 OK\r\n\r\n{\"pid\":1,\"configDir\":\"C:\\\\Users\\\\a b\\/c \\u00e9\"}") ==
+          "C:\\Users\\a b/c é"                       # JSON-unescaped, so a Windows path compares equal
+    @test PK.ping_config_dir("{\"pid\":1}") === nothing   # a runner too old to report one…
+    @test PK.foreign_runner_dir(1, "/x") === nothing      # …and nothing listening both read as ours
+    @test PK.http_status("HTTP/1.1 403 Forbidden\r\n\r\n") == 403
+    @test PK.http_status("") === nothing
+    @test PK.pluto_is_foreign(1, "x") == false          # nothing listening → not foreign
+    @test PK.preview_is_foreign(1, "x") == false
+    @test PK.preview_is_foreign(1, nothing) == false      # no token of ours proves nothing
+
+    # A stand-in child in its OWN process (a stop that wrongly fires must not take this suite down
+    # with it). `reply(request)` → the raw HTTP response; spliced into the child's source.
+    function fake_child(reply::AbstractString)
+        port = let (p, s) = PK.Sockets.listenany(PK.Sockets.localhost, 30000); close(s); Int(p); end
+        code = """
+            using Sockets
+            reply = $reply
+            srv = listen(Sockets.localhost, $port)
+            while true
+                s = accept(srv)
+                @async try
+                    write(s, reply(readuntil(s, "\\r\\n\\r\\n")))
+                finally
+                    close(s)
+                end
+            end"""
+        proc = run(pipeline(`$(Base.julia_cmd()) --startup-file=no -e $code`;
+                            stdout = devnull, stderr = devnull); wait = false)
+        for _ in 1:600
+            isempty(PK._http_get_raw(port, "/")) || break
+            sleep(0.1)
+        end
+        proc, port
+    end
+    resp(status, body = "") = "HTTP/1.0 $status\r\nContent-Length: $(sizeof(body))\r\n\r\n$body"
+    # A runner `/ping` reporting `dir`; a Pluto that 403s unless the request carries ITS secret (Pluto's
+    # auth middleware); a preview worker that 401s without ITS token and 426s a non-upgrade GET with it.
+    fake_runner(dir)  = fake_child("_ -> $(repr(resp("200 OK", JSON3.write(Dict("protocol" => 1, "configDir" => dir)))))")
+    fake_pluto(sec)   = fake_child("req -> occursin($(repr("secret=" * sec * " ")), req) ? " *
+                                   "$(repr(resp("200 OK"))) : $(repr(resp("403 Forbidden")))")
+    fake_preview(tok) = fake_child("req -> $(repr("Authorization: Bearer " * tok)) in split(req, \"\\r\\n\") ? " *
+                                   "$(repr(resp("426 Upgrade Required"))) : $(repr(resp("401 Unauthorized")))")
+
+    gone(proc) = (for _ in 1:50; process_running(proc) || break; sleep(0.1); end; !process_running(proc))
+    stop_script(svc) = read(Cmd(`$(Base.julia_cmd()) --startup-file=no portkill.jl $svc`;
+                                dir = joinpath(API_TEST_DIR, "..")), String)   # `pixi run stop-<svc>`
+
+    # Each child, foreign then ours: dev.jl's Ctrl-C teardown (`_free_child`), the `pixi run stop-*`
+    # script and the in-app stop (`runner_stop!`, the Quit/Restart backstops) must all leave another
+    # Cecelia's running, and must still stop ours (the check must not make teardown a no-op). One
+    # stand-in for both sides pins each in-process check to its Base-only PortKill twin.
+    function check(svc, env, (theirs, ours); in_app = nothing)
+        proc, port = theirs()
+        try
+            withenv(env => string(port)) do
+                @test PK.foreign_owner(svc, port, DevSupervisor.config_dir(); token = read_api_token(), secret = read_pluto_secret()) !== nothing
+                DevSupervisor._free_child(svc)
+                @test occursin("left $svc($port) running", stop_script(svc))
+                in_app === nothing || @test_logs (:warn, r"belongs to another Cecelia") match_mode = :any in_app(port)
+            end
+            sleep(0.5)
+            @test process_running(proc)
+        finally
+            kill(proc, Base.SIGKILL)
+        end
+        for stop in (port -> withenv(() -> DevSupervisor._free_child(svc), env => string(port)),
+                     (in_app === nothing ? () : (in_app,))...)
+            proc, port = ours()
+            try
+                @test PK.foreign_owner(svc, port, DevSupervisor.config_dir(); token = read_api_token(), secret = read_pluto_secret()) === nothing
+                stop(port)
+                @test gone(proc)
+            finally
+                process_running(proc) && kill(proc, Base.SIGKILL)
+            end
+        end
+    end
+
+    cfg = DevSupervisor.config_dir()
+    @test cfg == Cecelia.config_dir()                  # the scripts resolve the dir the runner reports
+    check(:runner, "CECELIA_RUNNER_PORT",
+          (() -> fake_runner(joinpath(mktempdir(), "another cecelia")), () -> fake_runner(cfg));
+          in_app = port -> Cecelia.runner_stop!(Cecelia.RunnerHandle(; port)))
+
+    # Ours = the secret this install published (`pluto_secret_path`, read by the API and by PortKill alike).
+    # Reuse a live one rather than overwrite it — a running Pluto of this checkout would lose its links.
+    created = !isfile(pluto_secret_path())
+    created && (mkpath(dirname(pluto_secret_path())); write(pluto_secret_path(), "oursecret" * string(rand(UInt32); base = 16)))
+    try
+        check(:notebooks, "CECELIA_PLUTO_PORT",
+              (() -> fake_pluto("theirsecret456"), () -> fake_pluto(_notebook_secret()));
+              in_app = port -> withenv(_free_notebooks_port!, "CECELIA_PLUTO_PORT" => string(port)))
+        # Shut down (the Notebooks page): ours, adopted with no handle, is stopped by its port; another
+        # Cecelia's only on the user's explicit `force` — the page's confirmed "Stop it".
+        for (mk, force) in ((() -> fake_pluto(_notebook_secret()), false), (() -> fake_pluto("theirsecret456"), true))
+            proc, port = mk()
+            try
+                withenv("CECELIA_PLUTO_PORT" => string(port)) do
+                    if force
+                        @test first(_shutdown_notebook_server!()) == false
+                        sleep(0.5)
+                        @test process_running(proc)
+                    end
+                    @test _shutdown_notebook_server!(; force) == (true, "stopped")
+                end
+                @test gone(proc)
+            finally
+                process_running(proc) && kill(proc, Base.SIGKILL)
+            end
+        end
+    finally
+        created && rm(pluto_secret_path(); force = true)
+    end
+
+    # The token is handed in env, as the backend hands it to its children; the script inherits it.
+    withenv("CECELIA_API_TOKEN" => "ourtoken" * string(rand(UInt32); base = 16)) do
+        check(:preview, "CECELIA_PREVIEW_PORT",
+              (() -> fake_preview("theirtoken"), () -> fake_preview(read_api_token()));
+              in_app = port -> _free_preview_port!(port))
+        # Settings → "Stop it" on another Cecelia's worker: the user's explicit, confirmed `force`.
+        proc, port = fake_preview("theirtoken")
+        try
+            withenv("CECELIA_PREVIEW_PORT" => string(port)) do
+                @test first(api_preview_stop(Vector{UInt8}(JSON3.write(Dict("force" => true))))) == 200
+            end
+            @test gone(proc)
+        finally
+            process_running(proc) && kill(proc, Base.SIGKILL)
+        end
     end
 end

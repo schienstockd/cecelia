@@ -4,7 +4,7 @@
 #   • `include`d by `dev.jl`, the standalone supervisor — it has no Cecelia loaded, so it cannot call
 #     `Cecelia._kill_listeners_on_port` (app/src/jobs.jl), which is the same job for in-process callers;
 #   • run as a script by the `pixi run stop*` tasks: `julia portkill.jl 8080 5173 …`.
-# Base only — no packages, no `--project` needed — so `pixi run stop` still works when a manifest is
+# Base + Sockets only — no packages, no `--project` needed — so `pixi run stop` still works when a manifest is
 # broken or the env is half-installed, which is exactly when you reach for it. That also let the six
 # `stop*` tasks drop their three per-OS shell variants (18 strings) for one call each.
 #
@@ -128,9 +128,133 @@ function free_port(port::Integer; grace::Real = KILL_GRACE)::Bool
     return isempty(listener_pids(port))
 end
 
+# ── Whose child is this? ──────────────────────────────────────────────────────────────────────────
+# Kill-by-port trusts the port, and the child ports are ones a slot does NOT protect: the sticky slot
+# only checks API + frontend (app/src/ports.jl). So another config dir's runner, Pluto or preview
+# worker (same OS user — say the installed app, while you run `pixi run dev` against CECELIA_DEV_DIR)
+# can be sitting on our slot's ports. In-process, `runner_stop!` (`runner_is_foreign`),
+# `_free_notebooks_port!` and `_free_preview_port!` (api/src/) refuse to stop one; the dev
+# supervisor's teardown and `pixi run stop*` cannot load Cecelia, so they ask the same questions here.
+
+import Sockets
+
+# GET `path` on 127.0.0.1:`port` and return the raw response ("" when nothing answers). Sockets only —
+# this file must not need HTTP.jl. HTTP/1.0 so the reply is never chunked; the watchdog closes the
+# socket if the far end never finishes, so a wedged listener cannot hang a teardown.
+function _http_get_raw(port::Integer, path::AbstractString; headers::AbstractString = "",
+                       secs::Real = 2)::String
+    sock = try
+        Sockets.connect(Sockets.localhost, port)
+    catch
+        return ""
+    end
+    wd = Timer(_ -> close(sock), secs)
+    out = try
+        write(sock, "GET $path HTTP/1.0\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n$headers\r\n")
+        String(read(sock))
+    catch
+        ""
+    end
+    close(wd)
+    close(sock)
+    return out
+end
+
+# The `configDir` field of a runner `/ping` reply, JSON-unescaped (a Windows path arrives as
+# `C:\\Users\\…`), or `nothing` when absent. Pure, so the suite pins it.
+function ping_config_dir(raw::AbstractString)::Union{String,Nothing}
+    m = match(r"\"configDir\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", raw)
+    m === nothing && return nothing
+    replace(m.captures[1], r"\\(u[0-9a-fA-F]{4}|.)" => function (esc)
+        c = esc[2:end]
+        startswith(c, "u") ? string(Char(parse(UInt16, c[2:end]; base = 16))) :
+        c == "n" ? "\n" : c == "t" ? "\t" : c == "r" ? "\r" : c == "b" ? "\b" : c == "f" ? "\f" : c
+    end)
+end
+
+"""
+    foreign_runner_dir(port, cfg) -> Union{String,Nothing}
+
+The config dir of the task runner on `port` when it is NOT `cfg` — i.e. another Cecelia's runner,
+which a stop must leave alone — else `nothing`. Nothing answering, a reply without `configDir` (a
+runner too old to report one) and a non-runner all read as "not foreign", exactly as
+`runner_is_foreign` reads them, so the stop proceeds as it always did. Never throws.
+"""
+function foreign_runner_dir(port::Integer, cfg::AbstractString)::Union{String,Nothing}
+    d = try
+        ping_config_dir(_http_get_raw(port, "/ping"))
+    catch
+        nothing
+    end
+    (d !== nothing && d != cfg) ? d : nothing
+end
+
+# HTTP status code of a raw response, or `nothing` when there is none. Pure, so the suite pins it.
+http_status(raw::AbstractString)::Union{Int,Nothing} =
+    (m = match(r"^HTTP/\d(?:\.\d)? (\d{3})", raw); m === nothing ? nothing : parse(Int, m.captures[1]))
+
+"""
+    pluto_is_foreign(port, secret) -> Bool
+
+Does the Pluto on `port` refuse our `secret`? Pluto answers `/auth-check` with 403 to a secret that is
+not its own, so a server that rejects ours belongs to another Cecelia. Nothing answering, or a server
+with the secret disabled (accepts anything), reads as "not foreign". Never throws.
+"""
+function pluto_is_foreign(port::Integer, secret::AbstractString)::Bool
+    try
+        http_status(_http_get_raw(port, "/auth-check?secret=" * _escape_query(secret))) == 403
+    catch
+        false
+    end
+end
+
+"""
+    preview_is_foreign(port, token) -> Bool
+
+Does the preview worker on `port` refuse our API `token`? It answers a handshake without the token of
+the backend that launched it with 401 (and ours with 426, a GET that is not a WebSocket upgrade), so a
+401 means another Cecelia's. No token of ours proves nothing — every worker refuses that — and reads as
+"not foreign", as does nothing answering. Never throws.
+"""
+function preview_is_foreign(port::Integer, token::Union{AbstractString,Nothing})::Bool
+    token === nothing && return false
+    try
+        http_status(_http_get_raw(port, "/"; headers = "Authorization: Bearer $token\r\n")) == 401
+    catch
+        false
+    end
+end
+
+_escape_query(s::AbstractString) =
+    join(isletter(c) && isascii(c) || isdigit(c) || c in "-_.~" ? string(c) :
+         join("%" * uppercase(string(b; base = 16, pad = 2)) for b in codeunits(string(c))) for c in s)
+
+"""
+    foreign_owner(svc, port, cfg; token, secret) -> Union{String,Nothing}
+
+Why a stop must leave `svc`'s listener on `port` alone — another Cecelia owns it — else `nothing`.
+`:runner` asks `/ping` for its config dir (`foreign_runner_dir`); `:notebooks` checks whether Pluto
+accepts our session `secret` (`pluto_is_foreign`; callers pass `read_pluto_secret()`, which this
+Base-only module cannot reach); `:preview` whether the worker accepts our API `token`
+(`preview_is_foreign`). Backend and frontend are ours by the slot itself.
+"""
+function foreign_owner(svc::Symbol, port::Integer, cfg::AbstractString;
+                       token::Union{AbstractString,Nothing} = nothing,
+                       secret::AbstractString = "")::Union{String,Nothing}
+    if svc === :runner
+        d = foreign_runner_dir(port, cfg)
+        return d === nothing ? nothing : "config dir $d"
+    elseif svc === :notebooks
+        return pluto_is_foreign(port, secret) ? "it rejects this install's session secret" : nothing
+    elseif svc === :preview
+        return preview_is_foreign(port, token) ? "it rejects this install's API token" : nothing
+    end
+    nothing
+end
+
 end # module
 
-using .PortKill: free_port, listener_pids
+using .PortKill: free_port, listener_pids, foreign_runner_dir, foreign_owner
 
 # ── Script entry point ────────────────────────────────────────────────────────────────────────────
 #   julia portkill.jl <service> [<service> …]         — backend/frontend/preview/runner/notebooks
@@ -142,6 +266,7 @@ using .PortKill: free_port, listener_pids
 if abspath(PROGRAM_FILE) == @__FILE__
     include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
     include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
+    include(joinpath(@__DIR__, "..", "app", "src", "api_token.jl"))   # Base + Random: the preview check
     args = ARGS
     targets = Pair{String,Int}[]
     if !isempty(args) && all(a -> Symbol(a) in keys(SERVICE_PORT_BASE), args)
@@ -159,6 +284,13 @@ if abspath(PROGRAM_FILE) == @__FILE__
     stuck = String[]
     done  = String[]
     for (label, port) in targets
+        # Never another config dir's child — see `foreign_owner`.
+        if label in ("runner", "notebooks", "preview") &&
+           (why = foreign_owner(Symbol(label), port, config_dir(); token = read_api_token(),
+                                                             secret = read_pluto_secret())) !== nothing
+            println("left $label($port) running — it belongs to another Cecelia ($why)")
+            continue
+        end
         (free_port(port) ? done : stuck) |> v -> push!(v, "$label($port)")
     end
     isempty(done)  || println("stopped ", join(done, "/"))

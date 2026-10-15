@@ -24,7 +24,7 @@ apply is worse than no control.
 |---|---|
 | Port | **7657** in port slot 0, `service_port(:runner)` in general — `docs/ARCHITECTURE.md` → *Ports* |
 | Start | with the backend, or `pixi run runner` standalone |
-| Stop | `pixi run stop-runner`, `pixi run stop`, Quit, or Ctrl-C on the supervisor |
+| Stop | `pixi run stop-runner`, `pixi run stop`, Quit, or Ctrl-C on the supervisor — each asks `/ping` first and leaves a runner whose `configDir` is not ours running (`runner_stop!`; the scripts via `PortKill.foreign_runner_dir`) |
 | Survives | **Settings → Restart** and the worktree switch |
 | Watch it with no backend | `CECELIA_PORT=7657 pixi run console` |
 

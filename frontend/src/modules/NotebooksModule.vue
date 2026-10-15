@@ -7,6 +7,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import NotebookTable from '../components/NotebookTable.vue'
 import ModulePage from '../components/ModulePage.vue'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import { notebooksApi } from '../utils/serviceApi'
 
 const projectMeta = useProjectMetaStore()
@@ -16,6 +17,8 @@ const server = ref<ServerState>('unknown')
 const url = ref('http://localhost:7660/')
 const secret = ref('')
 const errorMsg = ref('')
+// Another Cecelia's Pluto holds our port (the backend will not adopt or stop it on its own).
+const foreign = ref(false)
 
 // Fast-plot sysimage (pluto/deps.so): built on first visit, in the background, so notebooks are
 // usable immediately (slow first plot until it lands). See api_notebooks_build_sysimage.
@@ -80,6 +83,7 @@ async function refreshStatus() {
     secret.value = d.secret ?? ''
     server.value = d.running ? 'running' : (d.starting ? 'starting' : 'stopped')
     sysimage.value = d.sysimage ?? 'unknown'
+    foreign.value = d.foreign === true
     if (d.error) errorMsg.value = d.error
     else if (d.running) errorMsg.value = ''
   } catch {
@@ -100,7 +104,20 @@ async function launch() {
   } catch (e) {
     server.value = 'stopped'
     errorMsg.value = e instanceof Error ? e.message : String(e)
+    await refreshStatus()   // learns `foreign` when that was the reason
   }
+}
+
+// The repair for a foreign server: stop it (the user confirmed), then start ours.
+async function replaceForeign() {
+  try {
+    await notebooksApi.shutdown(true)
+  } catch (e) {
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+    return
+  }
+  foreign.value = false
+  await launch()
 }
 
 async function restart() {
@@ -116,6 +133,7 @@ async function restart() {
   } catch (e) {
     server.value = 'stopped'
     errorMsg.value = e instanceof Error ? e.message : String(e)
+    await refreshStatus()   // learns `foreign` when that was the reason
   }
 }
 
@@ -174,7 +192,23 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         <p v-if="server === 'starting'" class="nb-hint cc-muted">
           First launch precompiles — this can take up to a minute.
         </p>
-        <p v-if="errorMsg" class="nb-error"><i class="pi pi-exclamation-triangle" /> {{ errorMsg }}</p>
+        <p v-if="errorMsg" class="nb-error">
+          <i class="pi pi-exclamation-triangle" /> {{ errorMsg }}
+          <ConfirmButton v-if="foreign" @confirm="replaceForeign" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="cc-btn cc-btn-ghost" @click="arm"
+                    v-tooltip.top="'Stop that server and start this project\'s'">
+              <i class="pi pi-power-off" /> Stop it
+            </button>
+            <template v-else>
+              <button class="cc-btn cc-btn-danger" @click="confirm"
+                      v-tooltip.top="'Its open notebooks stop running'">
+                <i class="pi pi-check" /> Stop it
+              </button>
+              <button class="cc-btn cc-btn-ghost cc-btn-icon" aria-label="Cancel" @click="cancel"
+                      v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
+            </template>
+          </ConfirmButton>
+        </p>
 
         <!-- Fast-plot cache: an optional compiled sysimage that makes the first plot fast. Built on
              demand (this button); notebooks work without it, just slow-first-plot. -->

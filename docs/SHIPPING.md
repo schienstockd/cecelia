@@ -553,8 +553,8 @@ Because the image is stamped, a shipped one that predates the user's Julia/deps 
 
 The Pluto server keeps its **secret token ON** (Pluto's secure default): it's a browser-reachable
 code-execution surface, so the secret guards against other local sites/processes driving it (CSRF/RCE).
-`launch.jl` writes the session secret to `pluto/.plutosecret` (git-ignored; per-user under `config_dir()`
-for a non-owner of a shared install) and the API threads it into
+`launch.jl` writes the session secret to `<config_dir>/pluto/.plutosecret` (per user, never in the
+install) and the API threads it into
 the URLs. Do not bind it to a public host. Launched/stopped by port: `pixi run notebooks` (7660) /
 `pixi run stop-notebooks`, and the app launches it via `POST /api/notebooks/launch`.
 

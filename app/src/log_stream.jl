@@ -342,13 +342,40 @@ survives the backend restart it exists to survive.
 
 The pump task runs until EOF. That matters: a child whose reader stopped would BLOCK on write once the
 64 KB pipe filled, so the loop is kept free of anything that can throw.
+
+`lifeline = true` also makes the child exit when THIS process dies, by any route (`app/src/lifeline.jl`):
+its stdin is a pipe whose write end only we hold, and `LIFELINE_ENV` tells it to watch for the EOF.
+The child must call `exit_with_parent!` (Julia) / `lifeline.exit_with_parent` (Python).
 """
-function spawn_logged(source::AbstractString, cmd::Base.AbstractCmd)::Base.Process
+function spawn_logged(source::AbstractString, cmd::Base.AbstractCmd; lifeline::Bool = false)::Base.Process
     out  = Pipe()
-    proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
+    proc = if lifeline
+        line = Pipe()
+        p = run(pipeline(addenv(cmd, LIFELINE_ENV => "1"); stdin = line, stdout = out, stderr = out);
+                wait = false)
+        close(line.out)               # the child's end; ours is `line.in`, held until the child exits
+        _hold_lifeline!(p, line)
+        p
+    else
+        run(pipeline(cmd; stdout = out, stderr = out); wait = false)
+    end
     close(out.in)
     Threads.@spawn _pump_child!(String(source), out)
     proc
+end
+
+# Our end of each lifeline, rooted here: a Pipe the GC finalised would close it, and the child would
+# exit as if we had died. Released (and closed) once the child exits.
+const _LIFELINES = Set{Pipe}()
+const _LIFELINES_LOCK = ReentrantLock()
+function _hold_lifeline!(proc::Base.Process, line::Pipe)
+    lock(() -> push!(_LIFELINES, line), _LIFELINES_LOCK)
+    Threads.@spawn begin
+        try; wait(proc); catch; end
+        lock(() -> delete!(_LIFELINES, line), _LIFELINES_LOCK)
+        try; close(line); catch; end
+    end
+    nothing
 end
 
 function _pump_child!(source::String, out::Pipe)

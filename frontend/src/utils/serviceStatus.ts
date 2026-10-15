@@ -2,13 +2,16 @@
 // into a single {running|starting|stopped} state + a display label/tone. Kept out of the SFC so it's
 // unit-testable (see serviceStatus.test.ts) — the component only maps state → which buttons to show.
 
-export type ServiceState = 'running' | 'starting' | 'stopped'
+// 'foreign' = another Cecelia's process holds this service's port (the backend neither adopts nor
+// stops it on its own; the row offers a confirmed stop).
+export type ServiceState = 'running' | 'starting' | 'stopped' | 'foreign'
 export type Tone = 'ok' | 'warn' | 'idle'
 
 /** `{alive, starting}` → running/starting/stopped. Shared by services that report health as an
  *  alive flag plus a start-in-progress flag (the preview worker; historically viewer too). */
-function aliveState(s: { alive?: boolean; starting?: boolean } | null | undefined): ServiceState {
+function aliveState(s: { alive?: boolean; starting?: boolean; foreign?: boolean } | null | undefined): ServiceState {
   if (!s) return 'stopped'
+  if (s.foreign) return 'foreign'
   if (s.starting) return 'starting'
   return s.alive ? 'running' : 'stopped'
 }
@@ -21,8 +24,9 @@ function aliveState(s: { alive?: boolean; starting?: boolean } | null | undefine
 export const previewState = aliveState
 
 /** GET /api/notebooks/status → { running, starting, … } */
-export function notebooksState(s: { running?: boolean; starting?: boolean } | null | undefined): ServiceState {
+export function notebooksState(s: { running?: boolean; starting?: boolean; foreign?: boolean } | null | undefined): ServiceState {
   if (!s) return 'stopped'
+  if (s.foreign) return 'foreign'
   if (s.starting) return 'starting'
   return s.running ? 'running' : 'stopped'
 }
@@ -44,6 +48,7 @@ export function stateInfo(state: ServiceState): { label: string; tone: Tone } {
   switch (state) {
     case 'running':  return { label: 'Running',   tone: 'ok' }
     case 'starting': return { label: 'Starting…', tone: 'warn' }
+    case 'foreign':  return { label: 'Other Cecelia', tone: 'warn' }
     default:         return { label: 'Stopped',   tone: 'idle' }
   }
 }

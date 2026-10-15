@@ -44,6 +44,14 @@ describe('svcPost', () => {
     vi.stubGlobal('fetch', f)
     await notebooksApi.shutdown()
     expect(f.mock.calls[0][0]).toBe('/api/notebooks/shutdown')
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({})
+  })
+
+  it('only an explicit force stops another Cecelia\'s notebook server', async () => {
+    const f = mockFetch(200, {})
+    vi.stubGlobal('fetch', f)
+    await notebooksApi.shutdown(true)
+    expect(JSON.parse(f.mock.calls[0][1].body)).toEqual({ force: true })
   })
 })
 

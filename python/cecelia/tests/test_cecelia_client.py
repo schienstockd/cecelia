@@ -9,6 +9,7 @@ import threading
 import unittest
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from unittest import mock
 
 from cecelia.cecelia_client import CeceliaClient, default_base_url
@@ -60,6 +61,34 @@ class DefaultBaseUrlTest(unittest.TestCase):
             self.assertEqual(default_base_url(), "http://127.0.0.1:8090")
             os.environ["CECELIA_PORT_SLOT"] = "3"   # an inherited slot still wins
             self.assertEqual(default_base_url(), "http://127.0.0.1:8110")
+
+
+class ServicePortTest(unittest.TestCase):
+    """`loopback.service_port` is the Python twin of `service_port` (app/src/ports.jl): a standalone
+    worker (`pixi run preview`) binds this user's slot port, not slot 0's."""
+
+    def test_slot_and_pin(self):
+        with tempfile.TemporaryDirectory() as cfg:
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("CECELIA_PORT_SLOT", "CECELIA_PREVIEW_PORT", "CECELIA_PLUTO_PORT")}
+            env["CECELIA_DEV_DIR"] = cfg  # DEV-DIR-OK: temp dir
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(loopback.service_port("preview"), 7656)
+                self.assertEqual(loopback.service_port("notebooks"), 7660)
+                os.environ["CECELIA_PORT_SLOT"] = "1"
+                self.assertEqual(loopback.service_port("preview"), 7666)
+                self.assertEqual(loopback.service_port("runner"), 7667)
+                os.environ["CECELIA_PREVIEW_PORT"] = "7999"   # pinned by the launching backend
+                self.assertEqual(loopback.service_port("preview"), 7999)
+
+    def test_matches_ports_jl(self):
+        # Same table as SERVICE_PORT_BASE / SERVICE_PORT_ENV — a drift would put the worker on a port
+        # its backend never probes.
+        src = (Path(loopback.__file__).resolve().parents[3] / "app" / "src" / "ports.jl").read_text(encoding="utf-8")
+        for svc, (base, env) in loopback._SERVICE_PORTS.items():
+            self.assertRegex(src, rf"\b{svc} = {base}\b")
+            self.assertRegex(src, rf'\b{svc} = "{env}"')
+        self.assertIn(f"PORT_SLOT_STRIDE = {loopback._PORT_SLOT_STRIDE}", src)
 
 
 class TokenLookupTest(unittest.TestCase):

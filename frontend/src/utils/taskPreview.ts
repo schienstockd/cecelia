@@ -193,6 +193,7 @@ const ERROR_SHORT: Record<string, string> = {
   'no-preview-backend':     'Not previewable',
   'env-missing':            'Cellpose 3 not installed',
   'weights-downloading':    'Downloading model',
+  'preview-port-foreign':   'Port held by another Cecelia',
 }
 
 /**

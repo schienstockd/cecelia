@@ -173,6 +173,8 @@ function launch!(w::PreviewWorker)::PreviewWorker
     # no stack. The traceback now reaches the console under `source = "preview"`.
     # The env comes from the model (`PreviewWorker.env`); the worker echoes `CECELIA_PY_ENV` in its
     # ping so a worker adopted after a backend restart can be matched against what a preview needs.
+    # `lifeline`: the worker exits when this backend dies by any route (app/src/lifeline.jl) — an
+    # orphan would hold VRAM and the port forever, since nothing else stops it.
     proc = w.proc = spawn_logged(LOG_SOURCE_PREVIEW,
                           addenv(`$(python_bin_for(w.env)) $PREVIEW_WORKER`,
                                  "PYTHONPATH" => _python_dir(),
@@ -185,7 +187,8 @@ function launch!(w::PreviewWorker)::PreviewWorker
                                  # uncapped a preview forks a worker per core — while a real task is
                                  # running, and for a region the size of the viewport. See
                                  # `_py_task_env` in py_runner.jl.
-                                 "LOKY_MAX_CPU_COUNT" => string(task_worker_threads())))
+                                 "LOKY_MAX_CPU_COUNT" => string(task_worker_threads()));
+                          lifeline = true)
     deadline = time() + 90
     squatter = nothing
     while time() < deadline

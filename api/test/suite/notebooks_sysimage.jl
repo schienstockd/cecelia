@@ -70,12 +70,81 @@ end
     @test _classify_sysimage(true, "{\"julia\":\"1.11\",\"manifest\":\"abc\"}", false, false,
                              "1.11", "abc"; writable = false) == "ready"                   # owner's image serves all
 
-    # fanout-557c5a75: the launch publishes the session secret per-user, not into the install.
-    _with_pluto_readonly() do
-        p = _secret_path()
-        @test !startswith(p, _pluto_root())
-        @test startswith(p, config_dir())
+    # fanout-557c5a75: the launch publishes the session secret per-user, not into the install — for
+    # an install we own too: the secret is how a backend tells its Pluto from another Cecelia's, so
+    # two config dirs on one checkout must not share the file. Built for real: the launch command
+    # hands launch.jl exactly the file the API reads its secret from.
+    for readonly in (true, false)
+        cmd = readonly ? _with_pluto_readonly(() -> _pluto_launch_cmd(mktempdir())) : _pluto_launch_cmd(mktempdir())
+        env = Dict(split(kv, "="; limit = 2) for kv in cmd.env)
+        @test env["CECELIA_PLUTO_SECRET_FILE"] == pluto_secret_path() == joinpath(config_dir(), "pluto", ".plutosecret")
+        @test env["CECELIA_PLUTO_PORT"] == string(service_port(:notebooks))
+        @test isdir(dirname(pluto_secret_path()))
     end
     # launch.jl writes where the API reads: it honours the path the launch hands it.
     @test occursin("CECELIA_PLUTO_SECRET_FILE", read(joinpath(_pluto_root(), "launch.jl"), String))
+end
+
+@testset "API: a standalone `pixi run notebooks` binds this user's slot port" begin
+    # The backend pins CECELIA_PLUTO_PORT; standalone, a bare 7660 is slot 0's — another user's on a
+    # shared machine, and our backend probes its own slot's port. Same rule as `pixi run runner`.
+    src = read(joinpath(_pluto_root(), "launch.jl"), String)
+    @test occursin("const PLUTO_PORT = service_port(:notebooks; slot = current_port_slot())", src)
+    @test !occursin("\"7660\"", src)
+    # …and publishes its secret where this config dir's backend reads it.
+    @test occursin("get(ENV, \"CECELIA_PLUTO_SECRET_FILE\", pluto_secret_path())", src)
+end
+
+@testset "API: notebooks never adopt another Cecelia's Pluto" begin
+    # The sticky port slot does not check :7660+, so another config dir's orphaned Pluto can answer on
+    # our notebooks port. Ownership = it accepts OUR session secret; a stand-in Pluto here answers 403
+    # unless the request carries its own secret, exactly as Pluto's auth middleware does.
+    theirs = "their-secret-" * string(rand(UInt64); base = 16)
+    paths  = String[]
+    srv = HTTP.listen!("127.0.0.1", 0) do stream
+        uri = HTTP.URI(stream.message.target)
+        push!(paths, uri.path)
+        ok = get(HTTP.queryparams(uri), "secret", "") == theirs
+        HTTP.setstatus(stream, ok ? 200 : 403)
+        HTTP.startwrite(stream)
+        Cecelia.write_http_body!(stream, ok ? "OK!" : "Not yet authenticated")
+    end
+    port = Int(HTTP.port(srv))
+    url  = "http://localhost:$port/"
+    uid  = "nbforeign" * string(rand(UInt32); base = 16)
+    mkpath(joinpath(projects_dir(), uid))
+    try
+        @test _notebook_server_probe(; url, secret = theirs) === NB_OURS
+        @test _notebook_server_probe(; url, secret = "ours") === NB_FOREIGN
+        @test _notebook_server_probe(; url, secret = "") === NB_FOREIGN      # no secret file yet
+        # The cheap authenticated route, never the index page the status poll would otherwise fetch.
+        @test !isempty(paths) && all(==("/auth-check"), paths)
+        # Our port, our secret file (which cannot hold `theirs`): refused rather than adopted, and the
+        # routes say so, flagged `foreign` so the Notebooks page offers the repair.
+        withenv("CECELIA_PLUTO_PORT" => string(port)) do
+            @test !_notebook_server_alive()
+            @test_throws r"another Cecelia" _ensure_notebook_server!(mktempdir())
+            d = JSON3.read(api_notebooks_status(HTTP.Request("GET", "/api/notebooks/status"))[2])
+            @test d.running === false && d.foreign === true
+            @test occursin("another Cecelia", String(d.error))
+            code, body = _post(api_notebooks_launch, Dict("projectUid" => uid))
+            @test code == 409 && JSON3.read(body).foreign === true
+            # A notebook FILE is guarded against ANY Pluto: two config dirs can share a projects dir,
+            # so another Cecelia's may have this very file open.
+            nbdir = _project_notebooks_dir(uid); mkpath(nbdir); write(joinpath(nbdir, "x.jl"), "")
+            code, _ = _post(api_notebooks_delete, Dict("projectUid" => uid, "file" => "x.jl"))
+            @test code == 409 && isfile(joinpath(nbdir, "x.jl"))
+            # Shut down without the user's explicit `force` leaves it running (the forced stop kills by
+            # port — exercised against an out-of-process stand-in in suite/shutdown.jl).
+            code, body = api_notebooks_shutdown(UInt8[])
+            @test code == 409 && occursin("another Cecelia", String(JSON3.read(body).message))
+            # Quit/Restart's port-level backstop leaves it alone too (a regression kills THIS process).
+            @test_logs (:warn, r"belongs to another Cecelia") (@test !_free_notebooks_port!())
+            @test _notebook_server_probe(; url, secret = theirs) === NB_OURS
+        end
+    finally
+        close(srv)
+        rm(joinpath(projects_dir(), uid); recursive = true, force = true)
+    end
+    @test _notebook_server_probe(; url, secret = theirs) === NB_NONE       # nothing listening
 end

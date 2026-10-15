@@ -55,7 +55,8 @@ export async function svcPost(url: string, body?: object, timeoutMs?: number): P
 export const notebooksApi = {
   launch: (projectUid: string) => svcPost('/api/notebooks/launch', { projectUid }),
   restart: (projectUid: string) => svcPost('/api/notebooks/restart', { projectUid }),
-  shutdown: () => svcPost('/api/notebooks/shutdown'),
+  /** `force` also stops another Cecelia's server holding our port — only on the user's explicit ask. */
+  shutdown: (force = false) => svcPost('/api/notebooks/shutdown', force ? { force: true } : undefined),
 }
 
 /**
@@ -81,6 +82,8 @@ export const previewApi = {
    *  callers that don't know the open image (Settings module), but a normal toggle-off from a viewer
    *  window MUST pass it so the scratch bytes don't outlive the toggle. */
   stop: (taskDir?: string) => svcPost('/api/preview/stop', { taskDir }),
+  /** Stop another Cecelia's worker holding our port — only on the user's explicit, confirmed ask. */
+  stopForeign: () => svcPost('/api/preview/stop', { force: true }),
   /**
    * One plane of the task's real compute. Deadlined because the control shows "Previewing…" for the
    * whole round trip and the scheduler treats a run as in flight until it settles — so a request that

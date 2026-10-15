@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import ome_types
@@ -464,6 +465,39 @@ class PreviewWorkerTokenTest(unittest.TestCase):
         self.assertFalse(ok('s3cret', token='s3cret'))
         self.assertFalse(ok(None, token='s3cret'))
 
+    def test_standalone_worker_reads_the_token_file(self):
+        # `pixi run preview` is not handed the token; it reads this user's file, as every client does,
+        # so this user's backend can drive it — and still fails closed when there is none.
+        with tempfile.TemporaryDirectory() as cfg:
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ('CECELIA_API_TOKEN', 'CECELIA_API_TOKEN_FILE')}
+            env['CECELIA_DEV_DIR'] = cfg  # DEV-DIR-OK: temp dir
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(_load_worker()._TOKEN, '')
+                with open(os.path.join(cfg, 'api-token'), 'w', encoding='utf-8') as f:
+                    f.write('filetok\n')
+                self.assertEqual(_load_worker()._TOKEN, 'filetok')
+                os.environ['CECELIA_API_TOKEN'] = 'envtok'      # the backend's hand-over wins
+                self.assertEqual(_load_worker()._TOKEN, 'envtok')
+
     def test_no_token_fails_closed(self):
         self.assertFalse(self.worker._authorized('Bearer ', token=''))
         self.assertFalse(self.worker._authorized(None, token=''))
+
+
+@unittest.skipUnless(_WORKER.is_file(), f'worker not present at {_WORKER}')
+class PreviewWorkerPortTest(unittest.TestCase):
+    """A standalone `pixi run preview` binds THIS user's slot port — the one their backend probes —
+    not slot 0's 7656, which on a shared machine is another user's (app/src/ports.jl)."""
+
+    def test_standalone_worker_follows_the_port_slot(self):
+        with tempfile.TemporaryDirectory() as cfg:   # never this machine's real sticky slot
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ('CECELIA_PREVIEW_PORT', 'CECELIA_PORT_SLOT')}
+            env['CECELIA_DEV_DIR'] = cfg  # DEV-DIR-OK: temp dir
+            with open(os.path.join(cfg, 'port-slot'), 'w', encoding='utf-8') as f:
+                f.write('2\n')
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertEqual(_load_worker().PORT, 7676)       # the saved slot, plain shell
+                os.environ['CECELIA_PREVIEW_PORT'] = '7999'       # the backend pins it
+                self.assertEqual(_load_worker().PORT, 7999)

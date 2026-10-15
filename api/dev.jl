@@ -23,6 +23,7 @@ const RESTART_EXIT_CODE = 42
 include(joinpath(@__DIR__, "..", "app", "src", "config_dir.jl"))
 include(joinpath(@__DIR__, "..", "app", "src", "ports.jl"))
 include(joinpath(@__DIR__, "..", "app", "src", "api_token.jl"))   # the backend only answers its token
+include(joinpath(@__DIR__, "..", "app", "src", "lifeline.jl"))    # the backend dies with us (Base-only)
 
 # The backend's OWN children — napari, the preview worker, Pluto. Killing the backend does not take them
 # with it (they are grandchildren, in their own process groups), and only the in-app Quit/Restart runs
@@ -77,6 +78,19 @@ function _free_port(port::Integer)
     catch e
         @warn "[dev] could not free port $port" exception = e
     end
+end
+
+# Free one of CHILD_SERVICES' ports at teardown — except a child that belongs to another config dir.
+# The sticky slot does not check those ports (app/src/ports.jl), so the installed app's runner can be
+# mid-task there while you run dev; `runner_stop!` skips it the same way (`foreign_owner`).
+function _free_child(svc::Symbol)
+    port = service_port(svc)
+    if (why = foreign_owner(svc, port, config_dir(); token = read_api_token(),
+                                                   secret = read_pluto_secret())) !== nothing
+        @warn "[dev] leaving $svc on port $port running — it belongs to another Cecelia" why
+        return
+    end
+    _free_port(port)
 end
 
 # Start the frontend (Vite) for a worktree in the background. `npm` needs a shell wrapper on Windows.
@@ -246,6 +260,7 @@ function supervise()
     # kill, and the backend julia (which SURVIVES a bare terminal SIGINT) + Vite were orphaned on their
     # ports. Now Ctrl-C interrupts `wait`, and `finally` kills BOTH children by handle + frees the ports.
     backend = Ref{Union{Base.Process,Nothing}}(nothing)
+    lifeline = Ref{Union{Pipe,Nothing}}(nothing)   # rooted for the backend's life: a GC'd Pipe closes
     crashes = Float64[]                # fault timestamps inside CRASH_WINDOW — the loop breaker
     try
         while true
@@ -268,11 +283,16 @@ function supervise()
             # (`_stop_backend!`), which is the orderly path, instead of racing it.
             #
             # The cost is that a supervisor killed outright (SIGKILL, or the terminal window closed)
-            # can no longer take the backend with it — so `start` (src/server.jl) watches for us going
-            # away and stops itself. `pixi run stop` remains the blunt backstop.
+            # can no longer take the backend with it — so it gets a LIFELINE (app/src/lifeline.jl): its
+            # stdin is a pipe only we hold, the OS closes it when we die by any route, and
+            # `_watch_supervisor!` (src/server.jl) stops the server on that EOF.
             bcmd = ignorestatus(Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`;
                                     dir = workdir, detach = true))
-            backend[] = run(pipeline(bcmd; stdin = stdin, stdout = stdout, stderr = stderr); wait = false)
+            lifeline[] === nothing || close(lifeline[])   # the last backend's, which has exited
+            lifeline[] = Pipe()
+            backend[] = run(pipeline(addenv(bcmd, LIFELINE_ENV => "1"); stdin = lifeline[], stdout = stdout,
+                                     stderr = stderr); wait = false)
+            close(lifeline[].out)                         # the backend's end; ours stays open
             try
                 wait(backend[])                           # block until it exits; Ctrl-C interrupts HERE
             catch e
@@ -323,7 +343,7 @@ function supervise()
             # that catches them. Ordered after the backend is dead, so a supervisor still running
             # cannot relaunch one mid-teardown.
             for svc in CHILD_SERVICES
-                _free_port(service_port(svc))
+                _free_child(svc)
             end
         end
     end

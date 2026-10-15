@@ -84,6 +84,7 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.slice_utils as slice_utils
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils import lifeline, loopback
 from cecelia.utils.dim_utils import DimUtils
 
 #: Task dirs we have staged preview stores into this session, for `atexit` cleanup and for the
@@ -266,7 +267,9 @@ _AF_TRANSLATOR = 'af_combinations_for_python (af_correct.jl)'
 _CELLPOSE_TRANSLATOR = 'cellpose_models_for_python (cellpose.jl)'
 
 HOST = "127.0.0.1"
-PORT = int(os.environ.get("CECELIA_PREVIEW_PORT", "7656"))
+#: `CECELIA_PREVIEW_PORT` (the backend pins it), else this user's port slot — so a standalone
+#: `pixi run preview` binds the port this user's backend probes, not slot 0's (another user's).
+PORT = loopback.service_port("preview")
 #: The pixi env this worker was launched in (`preview_env_name`, app/src/preview.jl), echoed in the ping.
 ENV_NAME = os.environ.get("CECELIA_PY_ENV", "default")
 
@@ -1498,11 +1501,13 @@ async def handle(ws):
         await ws.send(json.dumps(reply))
 
 
-#: The API token (app/src/api_token.jl), handed over by the backend in the env. Loopback is shared by
-#: every account on the machine, and this worker runs compute over whatever paths it is sent, with
-#: YOUR file access — so the handshake must carry `Authorization: Bearer <token>`. No token → every
-#: connection is refused: fail closed rather than serve anyone.
-_TOKEN = os.environ.get("CECELIA_API_TOKEN", "").strip()
+#: The API token (app/src/api_token.jl): handed over by the backend in the env, or read from
+#: `<config_dir>/api-token` by a standalone `pixi run preview` (`loopback.api_token`), so this user's
+#: backend can drive it. Loopback is shared by every account on the machine, and this worker runs
+#: compute over whatever paths it is sent, with YOUR file access — so the handshake must carry
+#: `Authorization: Bearer <token>`. No token → every connection is refused: fail closed rather than
+#: serve anyone.
+_TOKEN = loopback.api_token()
 
 
 def _authorized(authorization: str | None, token: str = _TOKEN) -> bool:
@@ -1528,5 +1533,13 @@ async def main():
         await asyncio.Future()
 
 
+def _backend_gone():
+    print("preview worker: the backend that launched it is gone — exiting", flush=True)
+    _atexit_sweep()   # os._exit skips atexit
+
+
 if __name__ == "__main__":
+    # Launched by the backend: exit with it, by any route (`lifeline`) — nothing else would stop an
+    # orphan, which then holds VRAM and the port. A standalone `pixi run preview` is not watched.
+    lifeline.exit_with_parent(on_exit=_backend_gone)
     asyncio.run(main())

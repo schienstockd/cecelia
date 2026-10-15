@@ -15,7 +15,7 @@ the work the old R Markdown vignettes did, now versioned and organised. Notebook
   it into the project first. Pluto saves a notebook back to the file it opened on every edit and run,
   and an example lives in the install: the owner would rewrite the shipped copy, a non-owner of a
   shared install would fail to save (`utils/notebookOpen.ts`).
-- **From the terminal:** `pixi run notebooks` (Pluto on **:7660**), `pixi run stop-notebooks`.
+- **From the terminal:** `pixi run notebooks` (Pluto on **:7660**, or your port slot's port), `pixi run stop-notebooks`.
 - **First plot is slow (~20 s)** until the fast-plot sysimage is built. Build it from the Notebooks
   page — an **Enable fast plots** button (background, ~10 min); after an update it becomes a
   **Rebuild** prompt. `pixi run notebooks-sysimage` is the manual/dev path. See *Sysimage* below.
@@ -254,18 +254,23 @@ It now picks the recipe matching the stamped variant; `unknown`/absent → deps 
 ## API surface (`api/src/notebooks_api.jl`)
 
 The Pluto server is a separate process; lifecycle mirrors napari (probe :7660 → adopt or spawn).
+The probe asks Pluto's `/auth-check` with **our** session secret (`_notebook_server_probe`): a server
+that answers 403 is another Cecelia's (another config dir's orphaned or standalone Pluto can sit on
+our slot's notebooks port — the sticky slot only checks API + frontend). It is never adopted, and
+nothing stops it on its own (Quit, Restart, `pixi run stop*` leave it); `status` flags it `foreign`
+and the page offers **Stop it** (confirmed), which shuts it down with `force` and starts ours.
 **Security:** Pluto's secret protection is left ON (its secure default) — Pluto is a browser-reachable
 code-execution surface, so without the secret any website you visit could drive it (CSRF/RCE). We do
-**not** disable it. `launch.jl` publishes the session secret to `pluto/.plutosecret` (git-ignored), or,
-for a non-owner of a shared install, to `<config_dir>/pluto/.plutosecret` (the app passes
-`CECELIA_PLUTO_SECRET_FILE`);
+**not** disable it. `launch.jl` publishes the session secret to `<config_dir>/pluto/.plutosecret`
+(`pluto_secret_path`; the app passes `CECELIA_PLUTO_SECRET_FILE`, a standalone run defaults to the same) —
+per config dir, since the secret is also the ownership check;
 `launch`/`status` return it and the frontend appends it to URLs (`…/?secret=…`, `…/open?path=…&secret=…`).
 Routes:
 
 | Route | Purpose |
 |---|---|
-| `POST /api/notebooks/launch` | ensure the server is up (202 while starting) → `{url}` |
-| `GET  /api/notebooks/status` | `{running, starting, url, sysimage}` (`sysimage`: ready/stale/building/error/absent/shared) |
+| `POST /api/notebooks/launch` | ensure the server is up (202 while starting) → `{url}`; 409 `{foreign: true}` when another Cecelia's holds the port |
+| `GET  /api/notebooks/status` | `{running, starting, foreign, url, sysimage}` (`sysimage`: ready/stale/building/error/absent/shared) |
 | `POST /api/notebooks/build-sysimage` | start the background fast-plot build (idempotent) → `{status}`; 403 for a non-owner of a shared install (status `shared`) |
 | `GET  /api/notebooks?projectUid=` | list notebooks (project + example scopes) with description/version/path |
 | `POST /api/notebooks/create` | new notebook from the template |
@@ -277,17 +282,17 @@ Routes:
 | `GET  /api/notebooks/snapshots?projectUid=&file=` | list a notebook's snapshots |
 | `POST /api/notebooks/restore` | restore a snapshot into the live notebook |
 | `POST /api/notebooks/prune` | keep only the current version's snapshot, delete the older ones (description untouched) |
-| `POST /api/notebooks/shutdown` | stop the server (only one this app spawned) |
+| `POST /api/notebooks/shutdown` | `{force?}` stop our server (spawned or adopted); another Cecelia's only with `force` |
 | `POST /api/notebooks/restart` | stop + relaunch |
 
 ### Lifecycle & cleanup
 
-The server is spawned by the API server (`wait=false`) and is **not** bound to it — so it must be
-stopped explicitly, exactly like the napari bridge. Three ways: the **Shut down** / **Restart**
-buttons on the page, `pixi run stop-notebooks` (or `pixi run stop`, which also does :7660), and an
-`atexit` hook that kills a server *this* API process spawned when the server exits cleanly (won't fire
-on SIGKILL — that's what stop-by-port is for). Shutdown/restart can only kill a server this app
-spawned (it holds the process handle); one started by `pixi run notebooks` must be stopped by port.
+The server is spawned by the API server with a **lifeline** (`spawn_logged(…; lifeline = true)`,
+`app/src/lifeline.jl`): it exits when that backend dies by any route, crash and SIGKILL included, so
+it never outlives it. Stopping it while the backend runs: the **Shut down** / **Restart** buttons on
+the page, `pixi run stop-notebooks` (or `pixi run stop`, which also does :7660), and Quit. A standalone
+`pixi run notebooks` has no lifeline; stop it with Ctrl-C or by port. Shutdown/restart kill a server this app spawned by its
+handle and an adopted one of ours (e.g. `pixi run notebooks`) by its port.
 Destructive ops (`delete`/`restore`) require `force` when the server is up (the UI's confirm supplies
 it) — see *Versioning*. First-run: if the `pluto/` env isn't set up, launch fails with a hint to run
 `pixi run notebooks-instantiate`.

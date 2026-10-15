@@ -46,6 +46,28 @@ def port_slot() -> int:
         return 0
 
 
+#: Slot-0 port and pinning env var per service — the Python twin of `SERVICE_PORT_BASE` /
+#: `SERVICE_PORT_ENV` (app/src/ports.jl); a slot adds `_PORT_SLOT_STRIDE` × slot to every one.
+_SERVICE_PORTS = {
+    "backend": (8080, "CECELIA_PORT"),
+    "frontend": (5173, "CECELIA_FRONTEND_PORT"),
+    "preview": (7656, "CECELIA_PREVIEW_PORT"),
+    "runner": (7657, "CECELIA_RUNNER_PORT"),
+    "notebooks": (7660, "CECELIA_PLUTO_PORT"),
+}
+_PORT_SLOT_STRIDE = 10
+
+
+def service_port(service: str) -> int:
+    """This user's port for `service` — the Python twin of `service_port(svc; slot =
+    current_port_slot())` (app/src/ports.jl): its env var when pinned (the backend pins it for every
+    child it launches), else the slot-0 port + 10 × `port_slot()`. So a standalone run (`pixi run
+    preview`) binds the port this user's backend probes, not slot 0's."""
+    base, env = _SERVICE_PORTS[service]
+    pinned = os.environ.get(env, "").strip()
+    return int(pinned) if pinned else base + _PORT_SLOT_STRIDE * port_slot()
+
+
 def default_base_url() -> str:
     """This user's backend: `CECELIA_API_URL` if given, else 127.0.0.1 on this user's port
     (`CECELIA_PORT`, or 8080 + 10 × `port_slot()` — app/src/ports.jl). Never a bare :8080 — on a
@@ -54,8 +76,7 @@ def default_base_url() -> str:
     url = os.environ.get("CECELIA_API_URL", "").strip()
     if url:
         return url
-    port = os.environ.get("CECELIA_PORT", "").strip() or str(8080 + 10 * port_slot())
-    return f"http://127.0.0.1:{port}"
+    return f"http://127.0.0.1:{service_port('backend')}"
 
 
 def config_dir(root: str | os.PathLike | None = None) -> str:

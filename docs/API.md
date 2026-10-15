@@ -245,9 +245,9 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/hmm_state_cards` | `{projectUid,rootUid,valueName?,hmmCol?,maxPx?,padPx?}` → one medoid card per HMM state plus `availableValueNames`/`availableHmmCols` pickers (`api_hmm_state_cards`, `api/src/hmm_state_cards_api.jl`) |
 | GET | `/api/notebooks?projectUid` | List project notebooks plus shipped examples — `{notebooks: [{name, file, scope, path, description, version}]}` (`api_notebooks_list`, `api/src/notebooks_api.jl`) |
 | GET | `/api/notebooks/content?projectUid&file` | **READ-ONLY**: a notebook's current source, project dir first then examples — `{file, scope, content}` (`api_notebooks_content`, `api/src/notebooks_api.jl`) |
-| GET | `/api/notebooks/status` | Pluto server state — `{running, starting, url, secret, sysimage, error}` (`api_notebooks_status`, `api/src/notebooks_api.jl`) |
+| GET | `/api/notebooks/status` | Pluto server state — `{running, starting, foreign, url, secret, sysimage, error}` (`api_notebooks_status`, `api/src/notebooks_api.jl`) |
 | GET | `/api/notebooks/snapshots?projectUid&file` | A notebook's snapshots, newest first — `{snapshots: [{version, file}]}` (`api_notebooks_snapshots`, `api/src/notebooks_api.jl`) |
-| POST | `/api/notebooks/launch` | `{projectUid}` → starts (or reuses) the Pluto server; `{url, secret, starting}`, 202 while starting (`api_notebooks_launch`, `api/src/notebooks_api.jl`) |
+| POST | `/api/notebooks/launch` | `{projectUid}` → starts (or reuses) the Pluto server; `{url, secret, starting}`, 202 while starting, 409 `{foreign}` when another Cecelia's holds the port (`api_notebooks_launch`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/write` | `{projectUid, name, cells, description?}` → creates a NEW notebook from cells (409 if name exists) and snapshots v1; `{ok, file}` (`api_notebooks_write`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/create` | `{projectUid, name, description?}` → creates a notebook from the blank template (409 if exists); `{ok, file}` (`api_notebooks_create`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/describe` | `{projectUid, file, description}` → sets a notebook's registry description; `{ok}` (`api_notebooks_describe`, `api/src/notebooks_api.jl`) |
@@ -257,7 +257,7 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/notebooks/snapshot` | `{projectUid, file}` → freezes a copy to `.snapshots/<name>@v<N>.jl` and sets `current`; `{ok, snapshot, version}` (`api_notebooks_snapshot`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/restore` | `{projectUid, file, version, force?}` → overwrites the live notebook with snapshot `version` (no new snapshot); `{ok, restoredFrom, version}` (`api_notebooks_restore`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/prune` | `{projectUid, file}` → deletes every snapshot except the current version; `{ok, kept, removed}` (`api_notebooks_prune`, `api/src/notebooks_api.jl`) |
-| POST | `/api/notebooks/shutdown` | Stops the Pluto server this process spawned (409 if externally started); `{ok, message}` (`api_notebooks_shutdown`, `api/src/notebooks_api.jl`) |
+| POST | `/api/notebooks/shutdown` | `{force?}` → stops our Pluto server (spawned or adopted); another Cecelia's only with `force`, else 409; `{ok, message}` (`api_notebooks_shutdown`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/restart` | `{projectUid}` → stops the Pluto server then relaunches it (as `/api/notebooks/launch`); `{url, secret, starting}` (`api_notebooks_restart`, `api/src/notebooks_api.jl`) |
 | POST | `/api/notebooks/build-sysimage` | Starts the background fast-plot sysimage build if needed; `{status}` (`api_notebooks_build_sysimage`, `api/src/notebooks_api.jl`) |
 | GET | `/api/blackboard?projectUid` | List Blackboard entries newest-first (ensures the `profile` entry exists) — `{entries: [{entryId, title, current, updatedAt, attachmentsCount, status, outcome?, fingerprint?}]}` (`api_blackboard_list`, `api/src/blackboard_api.jl`) |
