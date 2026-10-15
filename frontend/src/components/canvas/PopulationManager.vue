@@ -1,8 +1,8 @@
 <!--
   Floating, collapsible population manager — shared across canvases (gating today; track-gating and
-  the universal canvas next). Flat list (indented by depth): colour swatch, name (rename inline),
-  count + %parent, an EYE that toggles whether the pop is colour-highlighted on the plots, viewer
-  visibility, and delete. Clicking a row sets it as the displayed parent on the active plot.
+  the universal canvas next). Flat list (indented by depth): colour swatch, name (renamed inline,
+  from the ⋯ menu), count + %parent, an EYE that toggles whether the pop is colour-highlighted on
+  the plots, viewer visibility, and delete. Clicking a row sets it as the displayed parent on the active plot.
 
   Population SOURCE is its canvas's gating store (`useGatingStore()`), which is pop_type-agnostic
   (`g.popType` = flow / live / clust) — the manager renders whatever populations the store holds,
@@ -362,9 +362,9 @@ const popBoolSummary = (p: FlatPop) => booleanSummary(p.boolean, popLabel)
 // ── Row actions overflow menu (⋯) ────────────────────────────────────────────────────────────
 // Same shape as the image table's per-image menu (TeleportPopover + the shared `.cc-actions-*`
 // utilities in style.css). The row keeps only what the user toggles WHILE reading it — colour,
-// highlight, viewer visibility — and everything episodic (convert the gate, open its plot, re-parent,
-// delete) moves in here. This panel is ~250px wide, so each icon added to a row came straight out of
-// the name and the count; the actions were also outgrowing what fits beside them.
+// highlight, viewer visibility — and everything episodic (rename, convert the gate, open its plot,
+// re-parent, delete) moves in here. This panel is ~250px wide, so each icon added to a row came
+// straight out of the name and the count; the actions were also outgrowing what fits beside them.
 const actionsPath   = ref<string | null>(null)
 const actionsAnchor = ref<HTMLElement | null>(null)   // the clicked ⋯ button (drives placement)
 const actionsPop    = computed(() => actionsPath.value
@@ -562,8 +562,9 @@ function moveTo(target: string) {
             @update:model-value="c => g.updatePop(p.path, { colour: c })"
           />
 
-          <span v-if="!isEditing(p.path)" class="pm-name"
-                @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
+          <!-- rename lives in the ⋯ menu, not on a double-click of the name: the first click of a
+               double-click also picks the row, so renaming re-parented the active plot. -->
+          <span v-if="!isEditing(p.path)" class="pm-name">{{ p.name }}</span>
           <input v-else class="pm-rename" v-model="editName" :ref="focusInput"
                  v-tooltip.top="'Enter to save the new name'"
                  @keyup.enter="commitRename(p)" @keyup.esc="cancelRename"
@@ -603,7 +604,7 @@ function moveTo(target: string) {
                   @click.stop="toggleViewer(p)">
             <i class="pi pi-images" />
           </button>
-          <!-- everything episodic (gate shape, its plot, move, delete) is one ⋯ menu — same pattern
+          <!-- everything episodic (rename, gate shape, its plot, move, delete) is one ⋯ menu — same pattern
                as the image table's row menu. Read-only surfaces keep only the gate's plot. -->
           <button v-if="!readonly || !!p.gate" class="pm-icon pm-actions-btn cc-btn cc-btn-bare cc-btn-icon"
                   :class="{ on: actionsPath === p.path }" v-tooltip.left="'More'"
@@ -657,6 +658,10 @@ function moveTo(target: string) {
                 {{ armed ? 'Click again — the gate widens' : convertTip(actionsPop) }}
               </button>
             </ConfirmButton>
+            <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
+                    @click.stop="runAction(() => beginRename(actionsPop!))">
+              <i class="pi pi-pencil" /> Rename
+            </button>
             <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
                     @click.stop="moveMode = true">
               <i class="pi pi-arrows-h" /> Move under…
