@@ -251,8 +251,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .pt-cell-head { display: flex; justify-content: space-between; align-items: baseline; }
 .pt-label { font-size: var(--cc-fs-sm); color: var(--cc-text); }
 .pt-val { font-size: var(--cc-fs-sm); font-variant-numeric: tabular-nums; color: var(--cc-accent, var(--cc-text)); }
-.pt-slider { width: 100%; accent-color: var(--cc-accent); cursor: pointer; }
-.pt-slider:disabled { opacity: 0.5; cursor: default; }
+.pt-slider { width: 100%; }
 
 /* live occupancy readout under each slider — dim when idle, brightens when the pool is busy */
 .pt-occ { display: flex; justify-content: space-between; align-items: baseline; gap: 0.3rem; }

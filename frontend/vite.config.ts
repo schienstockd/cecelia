@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import { rangeFillTransform } from './src/utils/rangeFillTransform'
 import { createLogger } from 'vite'
 import { backendDownNoise } from './src/utils/devProxyNoise'
 
@@ -44,7 +45,8 @@ const [httpScheme, wsScheme] = backendTls ? ['https', 'wss'] : ['http', 'ws']
 
 export default defineConfig({
   customLogger: logger,
-  plugins: [vue()],
+  // every `<input type="range">` gets `v-range-fill` (the base slider's fill) — see utils/rangeFillTransform.ts
+  plugins: [vue({ template: { compilerOptions: { nodeTransforms: [rangeFillTransform] } } })],
   resolve: {
     alias: feijoaAlias,
     // feijoa marks vue as peer; keep a single Vue instance across the two entry points.

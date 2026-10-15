@@ -13,6 +13,7 @@ import { useViewerStore } from './stores/viewer'
 import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
 import { tooltip } from './directives/tooltip'
+import { rangeFill } from './directives/rangeFill'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -127,6 +128,7 @@ app.use(router)
 // module pages under App.vue's <KeepAlive> go inert while hidden — see composables/useKeepAlive.ts
 app.use(keepAlivePause)
 app.directive('tooltip', tooltip)
+app.directive('range-fill', rangeFill)
 
 // ── The browser's own failures → the console ─────────────────────────────────
 // The console reported everything the SERVER side could go wrong with and nothing this half could. A
