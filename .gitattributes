@@ -7,6 +7,11 @@
 # golden/snapshot test would hit the same wall. Julia, Node and Python all read LF fine on Windows.
 * text=auto eol=lf
 
+# cmd.exe misreads `goto`/labels in an LF batch file, and pixi runs scripts/activate_juliaup.bat on
+# every Windows `pixi run`.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
 # Binary — never line-ending-convert or diff these. `text=auto` already detects them, but being
 # explicit means a corrupt fixture can't be blamed on heuristics.
 *.png   binary

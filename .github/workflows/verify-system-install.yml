@@ -17,6 +17,7 @@ on:
       - uninstall.sh
       - uninstall.ps1
       - scripts/activate_juliaup.sh
+      - scripts/activate_juliaup.bat
       - app.py
       - .github/workflows/verify-system-install.yml
   workflow_dispatch:

@@ -212,6 +212,7 @@ fi
 
 # ── Your data ─────────────────────────────────────────────────────────────────
 remove_file "$CONFIG_DIR/julia-depot"        # per-user Julia cache for a shared install — always
+remove_file "$CONFIG_DIR/julia-shim"         # activate_juliaup.sh's julia symlinks; remade on the next `pixi run` — always
 if [ "$WIPE_PROJECTS" = "1" ] && [ "$N_PROJECTS" -gt 0 ]; then
   say "Deleting $N_PROJECTS project(s)…"
   printf '%s' "$PROJECTS" | while IFS= read -r p; do [ -n "$p" ] && rm -rf "$p" && echo "    removed $p"; done

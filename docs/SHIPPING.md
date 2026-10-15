@@ -465,6 +465,13 @@ Julia lives: a juliaup in `/opt/homebrew/bin` or `~/.local/bin` gets its `julia`
 (e.g. `/opt/homebrew/bin` and its python) never shadows the pixi env. If the shim can't be written, the
 script appends the real dir, and only when no `julia` is on PATH.
 
+On Windows, `scripts/activate_juliaup.bat` applies the same order: it adds the install's juliaup and
+depot, which system-scope terminal tasks otherwise miss outside `cecelia-launch.cmd`, and then the
+recorded Julia. Symlinks need Developer Mode there, so the shim is
+`%USERPROFILE%\.cecelia\julia-shim\julia.cmd`, which runs `%CECELIA_JULIA%`. install.ps1 records the
+`julia` PATH offered, so the shim only comes into play once PATH's `julia` changes after install. When
+it does, Ctrl-C in a terminal task ends with cmd's "Terminate batch job (Y/N)?".
+
 ### cellpose lives in TWO features
 `[feature.cellpose-v4]` (default env) carries `cellpose >= 4.2` (Cellpose-SAM, `cpsam_v2`).
 `[feature.cellpose-v3]` (opt-in `cellpose-v3` env, `platforms = ["osx-arm64"]`) carries
