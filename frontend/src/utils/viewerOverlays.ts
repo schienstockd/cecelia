@@ -830,6 +830,11 @@ export interface OverlayStyle {
  * and a tail ending at `t`, each with its own plane window — `planes` widened by the point or track
  * tolerance. `t < 0` means nothing is on screen yet, so both draws are empty. The ONE resolver for
  * every renderer, so the volume and tile views cannot disagree on what a frame shows.
+ *
+ * The tolerance is a single-plane rule (2D, `lo === hi`): one plane alone shows only the few cells
+ * centred on it, which reads as random against a mask full of cells. A range — the ±n window, 2D or
+ * 3D, or the 3D Depth crop — is itself the selection, so it is drawn exactly: widened, it would mark
+ * cells with no signal in the MIP, or in 3D put markers outside the box.
  */
 export function setOverlayWindow(
   r: {
@@ -841,15 +846,16 @@ export function setOverlayWindow(
     setOverlaySizeUnit(umPerSize: number): void
   },
   points: PointBuffer, segments: SegmentBuffer, t: number, planes: readonly [number, number],
-  style: OverlayStyle,
+  style: OverlayStyle, mode: 'plane' | 'volume',
 ): void {
   const [lo, hi] = planes
+  const reach = mode === 'plane' && lo === hi
   r.setOverlaySizeUnit(style.umPerSize)
   const range = t >= 0 ? timepointRange(points, t) : null
-  const tol = Math.max(0, style.pointZTol)
+  const tol = reach ? Math.max(0, style.pointZTol) : 0
   r.setOverlayDraw(range ? range[0] : 0, range ? range[1] : 0, style.pointPx, lo - tol, hi + tol, style.borderPx)
   const tail = t >= 0 && style.tailFrames > 0 ? tailRange(segments, t, style.tailFrames) : null
-  const trackTol = Math.max(0, style.trackZTol)
+  const trackTol = reach ? Math.max(0, style.trackZTol) : 0
   r.setOverlaySegmentDraw(tail ? tail[0] : 0, tail ? tail[1] : 0, style.tailPx, lo - trackTol, hi + trackTol)
   // Fade by age so a tail reads as a trail in time: the hop arriving now solid, older hops fainter.
   r.setTailFade(tailHead(Math.max(0, t)), style.tailFrames)

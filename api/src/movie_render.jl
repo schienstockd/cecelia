@@ -121,15 +121,16 @@ function _label_colouring!(params::AbstractDict, colours::AbstractDict)
     params
 end
 
-# A 2D frame's z: one plane, a range, or the whole stack (`nothing`) → the planes `[lo, hi]` the
-# runner uploads, and the viewer's overlay windows around them (`setOverlayDraw`: the slab ± the z
-# tolerance). The whole stack draws every point and tail.
-function _plane_window(z, nz::Int, style)
+# A frame's z: one plane, a range, or the whole stack (`nothing`) → the planes `[lo, hi]` the
+# runner uploads, and the viewer's overlay windows around them — `setOverlayWindow`'s rule: one 2D
+# plane ± the z tolerance; a range (the ±n window, or a 3D crop, `flat = false`) exactly, since a
+# widened range marks cells with no signal in it. The whole stack draws every point and tail.
+function _plane_window(z, nz::Int, style; flat::Bool = true)
     lo, hi = z === nothing ? (0, nz - 1) : z isa Integer ? (Int(z), Int(z)) : (first(z), last(z))
     lo = clamp(lo, 0, nz - 1); hi = clamp(hi, lo, nz - 1)
+    pt, tt = flat && lo == hi ? (style.point_z_tol, style.track_z_tol) : (0, 0)
     filt = z === nothing ? nothing :
-        Dict{String,Any}("points" => [lo - style.point_z_tol, hi + style.point_z_tol],
-                         "tracks" => [lo - style.track_z_tol, hi + style.track_z_tol])
+        Dict{String,Any}("points" => [lo - pt, hi + pt], "tracks" => [lo - tt, hi + tt])
     (Int[lo, hi], filt)
 end
 
@@ -906,8 +907,8 @@ function _view_state_render_params(zarr_path::AbstractString, states::AbstractVe
             plane_filter === nothing || (py_states[i]["planeFilter"] = plane_filter)
         elseif a.zrange !== nothing && (first(a.zrange) > 0 || last(a.zrange) < nZ - 1)
             # A 3D view cropped to part of the stack (the ±n window, or Depth): only those planes,
-            # and the overlays near them — the viewer's own box and z cut.
-            z_range, plane_filter = _plane_window(a.zrange, nZ, style)
+            # and the overlays inside them — the viewer's own box and z cut.
+            z_range, plane_filter = _plane_window(a.zrange, nZ, style; flat = false)
             py_states[i]["zRange"] = z_range
             py_states[i]["planeFilter"] = plane_filter
         end

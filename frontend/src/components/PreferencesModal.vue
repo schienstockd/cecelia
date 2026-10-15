@@ -425,10 +425,10 @@ async function copyTerminalCommand(profile?: string) {
                    v-tooltip.bottom="'Outline width in voxels; 0 = filled mask'" /></label>
           <label class="pref-num">Point z-tolerance
             <input type="number" min="0" max="20" v-model.number="settings.viewerPointZTol"
-                   v-tooltip.bottom="'How many z planes either side still draw a cell marker'" /></label>
+                   v-tooltip.bottom="'Planes either side of a single 2D plane that still show a cell'" /></label>
           <label class="pref-num">Track z-tolerance
             <input type="number" min="0" max="20" v-model.number="settings.viewerTrackZTol"
-                   v-tooltip.bottom="'How many z planes either side still draw a track tail'" /></label>
+                   v-tooltip.bottom="'Planes either side of a single 2D plane that still show a tail'" /></label>
         </template>
 
         <!-- ── Movies ────────────────────────────────────────────────────── -->

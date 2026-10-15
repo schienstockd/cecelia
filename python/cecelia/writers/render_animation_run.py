@@ -31,7 +31,8 @@ slab of planes (one plane = one sample; several = their max), at the pyramid lev
         ``zRange``     : the level-0 planes ``[lo, hi]`` shown (default: all) — a 2D frame's slab, or
                          a 3D view cropped to part of the stack (the viewer's ±n window / Depth)
         ``planeFilter``: ``{points: [lo, hi], tracks: [lo, hi]}``, the planes whose points / tail ends
-                         are drawn (the viewer's z tolerances around ``zRange``); absent = all
+                         are drawn (``zRange``, ± the viewer's z tolerances when it is one 2D
+                         plane — ``_plane_window``); absent = all
     ``canvasH``/``canvasW`` : output frame size
     ``zAniso``         : physical_z / physical_x
     ``renderQuality``  : ``draft`` | ``standard`` | ``high`` — 128 / 256 / 512 ray steps; the viewer's
@@ -235,8 +236,8 @@ def frame_uniforms(state, dims_czyx, l0_zyx, voxel_um, canvas_h, steps, label_st
     flat = int(state.get('ndisplay', 3)) == 2
     cam = wgpu_host.view_camera(state.get('camera') or {}, state.get('snapH'), nx0, ny0, voxel_um, canvas_h)
     perspective = not flat and float((state.get('camera') or {}).get('perspective') or 0) > 0
-    # Overlay plane filters (-1 = off): a 2D frame's state carries the viewer's own windows, the
-    # slab ± its z tolerances (`setOverlayDraw` / `setOverlaySegmentDraw`).
+    # Overlay plane filters (-1 = off): the state carries the viewer's own windows, resolved by
+    # `_plane_window` (one 2D plane ± its z tolerances; a range exactly) — applied as given here.
     pf = state.get('planeFilter') or {}
     p_lo, p_hi = (pf.get('points') or (-1, -1))
     r_lo, r_hi = (pf.get('tracks') or (-1, -1))
