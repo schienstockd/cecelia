@@ -59,7 +59,7 @@ from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
-from cecelia.effectiveness.palette import BLUISH_GREEN, GREY, ORANGE, SKY_BLUE, VERMILLION  # noqa: E402
+from cecelia.effectiveness.palette import GREY, ORANGE, SKY_BLUE, VERMILLION, YELLOW  # noqa: E402
 
 
 def _load_review():
@@ -249,7 +249,7 @@ class Progress:
             self._thread.join()
             self.out.write("\r\033[K")
         bad = self.failed or kind is not None
-        mark = _col(VERMILLION if bad else BLUISH_GREEN, "✗" if bad else "✓", use_colour=self.tty)
+        mark = _col(VERMILLION if bad else SKY_BLUE, "✗" if bad else "✓", use_colour=self.tty)
         print(f"  {mark} {self.label}" + _col(_DIM, self.stats(), use_colour=self.tty), file=self.out, flush=True)
 
     def stats(self) -> str:
@@ -263,7 +263,7 @@ class Progress:
             self.last = describe_call(call["tool"], call["input"], self.cwd)
 
     def line(self, frame: int) -> str:
-        spin = _col(SKY_BLUE, self.FRAMES[frame % len(self.FRAMES)], use_colour=self.tty)
+        spin = _col(YELLOW, self.FRAMES[frame % len(self.FRAMES)], use_colour=self.tty)
         tail = self.stats() + (f" · {self.last}" if self.last else "")
         return _clip(f"  {spin} {self.label}" + _col(_DIM, tail, use_colour=self.tty), _terminal_size()[0] - 1)
 
@@ -276,7 +276,8 @@ class Progress:
 
 
 #: An outcome's word and colour, in the session's rows and on the run's landed lines.
-_OUTCOME = {"fixed": ("fixed", BLUISH_GREEN), "not_real": ("not real", GREY), "left": ("left", ORANGE),
+#: Good is sky blue, bad vermillion (red against green is lost to red-green colour blindness).
+_OUTCOME = {"fixed": ("fixed", SKY_BLUE), "not_real": ("not real", GREY), "left": ("left", ORANGE),
             "landed": ("landed", GREY), "failed": ("failed", VERMILLION)}
 _REASON_LINES = 2   # the card and auto_fix.jsonl keep the whole reason
 
@@ -763,7 +764,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
     if opened.returncode != 0:
         return stop(f"gh pr create failed: {_tail(opened)}; branch {branch} is pushed", stage="pushed")
     pr = opened_pr = (opened.stdout or "").strip().splitlines()[-1]
-    print(f"  {_col(BLUISH_GREEN, '→', use_colour=out.isatty())} "
+    print(f"  {_col(SKY_BLUE, '→', use_colour=out.isatty())} "
           + _col(_BOLD, f"PR {pr}" + (" · changes what is drawn: look first" if answer.get("visual") else ""),
                  use_colour=out.isatty()), file=out, flush=True)
 

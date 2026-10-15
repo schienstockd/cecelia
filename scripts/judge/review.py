@@ -47,7 +47,7 @@ from cecelia.effectiveness.console import (  # noqa: E402
     _BOLD, _DIM, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, LEFT, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc,
     poll_key, scroll_step, scroll_window)
 from cecelia.effectiveness.palette import (  # noqa: E402
-    BLUE, BLUISH_GREEN, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
+    BLUE, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
 
 
 def _load_sibling(name: str):
@@ -488,14 +488,15 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 
 # ── the terminal queue ─────────────────────────────────────────────────────────────────────────
 
-#: How each answer reads on the prompt and after it, and its colour.
-_LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", BLUISH_GREEN), "a": ("answer", SKY_BLUE),
+#: How each answer reads on the prompt and after it, and its colour. Following the recommendation
+#: is sky blue against won't-fix's vermillion, not green (lost to red-green colour blindness).
+_LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", SKY_BLUE), "a": ("answer", REDDISH_PURPLE),
            "f": ("fix now", BLUE), "s": ("one by one", GREY), "e": ("edit the rule", BLUE),
            "r": ("reject", VERMILLION)}
 _VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
-_SECTIONS = (("Question", SKY_BLUE), ("Bug", SKY_BLUE), ("Verified", ORANGE), ("Auto-fix", BLUE),
-             ("Your answer", REDDISH_PURPLE), ("Recommendation", BLUISH_GREEN), ("Live once", YELLOW),
+_SECTIONS = (("Question", BLUE), ("Bug", BLUE), ("Verified", ORANGE), ("Auto-fix", BLUE),
+             ("Your answer", REDDISH_PURPLE), ("Recommendation", SKY_BLUE), ("Live once", YELLOW),
              ("Evidence", GREY))
 _MAX_WIDTH = 100   # the recital console's wrap target
 #: `file.ext:12`, `file.ext:12-16,40`, and a bare `:368` that continues the previous file.
@@ -546,7 +547,7 @@ def describe_rule(record: dict, p: dict, findings: _t.Sequence[dict], *, width: 
     """The card for one rule proposal: the section, what to do about it, and the findings behind it."""
     file, _, heading = p["rule"].partition(" → ")
     out = [f"  {_col(ORANGE, p['kind'], use_colour=use_colour)}  {_col(_BOLD, file + ' → ' + heading, use_colour=use_colour)}",
-           "", "  " + _col(SKY_BLUE, "Proposal", use_colour=use_colour)]
+           "", "  " + _col(BLUE, "Proposal", use_colour=use_colour)]
     out += _paragraph(f"{_why(p)}. {_RULE_HOW[p['kind']]}", width=width, use_colour=use_colour)
     out += ["", "  " + _col(GREY, f"Findings ({len(p['sources'])})", use_colour=use_colour)]
     for f in findings[:_CARD_FINDINGS]:
@@ -701,7 +702,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                     + (f" · {counts['rule']} rule proposal(s)" if counts["rule"] else ""), use_colour=use_colour))
     if not items:
         print(title, file=out)
-        print(_col(BLUISH_GREEN, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)
+        print(_col(SKY_BLUE, "  nothing to review: every open bug and rule proposal is answered", use_colour=use_colour), file=out)
         return 0
     done: list[tuple[list[dict], str, str]] = []   # (event rows, key, card ref) per answer this session, for undo
     status = ""   # the last answer, shown under the title of the next card
@@ -770,7 +771,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
                 event, value = keys[key]
                 note = None
                 if key == "a":
-                    note = read("  " + _col(SKY_BLUE, "your answer", use_colour=use_colour)
+                    note = read("  " + _col(REDDISH_PURPLE, "your answer", use_colour=use_colour)
                                 + _col(_DIM, " (a session follows it instead of the recommendation)",
                                        use_colour=use_colour)
                                 + f" {_col(_BOLD, '›', use_colour=use_colour)} ").strip()

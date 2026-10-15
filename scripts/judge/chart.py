@@ -78,10 +78,12 @@ RULE_DOCS = ("CLAUDE.md",)
 _RUN_EVENTS = ("fanout_audit_run", "convention_check_run")
 #: Legend text and swatch per outcome in the log's closed vocabulary, plus `none`: no outcome logged,
 #: or one this map doesn't know. The chart never echoes a value from the log.
+#: Good is sky blue and bad vermillion, here and in the recital console: not green against red,
+#: the pair red-green colour blindness loses. Sky blue means nothing else on the chart.
 _OUTCOME_LOOK = {
-    "fixed_pre_commit": ("fixed before commit", "bluish_green"),
+    "fixed_pre_commit": ("fixed before commit", "sky_blue"),
     "shipped_with_finding": ("shipped knowingly", "orange"),
-    "false_positive": ("called a false positive", "sky_blue"),
+    "false_positive": ("called a false positive", "reddish_purple"),
     "dropped_no_action": ("dropped", "vermillion"),
 }
 assert set(_OUTCOME_LOOK) == OUTCOME_VOCABULARY, "a new outcome needs a legend entry and a swatch here"
@@ -95,7 +97,7 @@ INK = "#7F7F7F"
 #: The two reviewers: key, legend name, swatch.
 REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"))
 #: Merged PRs, beside the changes reviewed: how many checks went into each PR.
-PR_SWATCH = "sky_blue"
+PR_SWATCH = "reddish_purple"
 _REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention"}
 
 
@@ -214,7 +216,7 @@ assert set(JUDGE_STATUSES) <= set(_record.BUG_STATUSES)
 #: real bugs (parked: can't happen in today's code yet).
 JUDGE_LINES = (
     ("real bug", ("open", "parked"), "vermillion"),
-    ("gone", ("gone",), "bluish_green"),
+    ("gone", ("gone",), "sky_blue"),
     ("dismissed", ("dismissed",), "grey"),
 )
 assert {s for _, group, _ in JUDGE_LINES for s in group} == set(JUDGE_STATUSES)
