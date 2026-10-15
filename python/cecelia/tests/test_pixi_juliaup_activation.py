@@ -114,7 +114,8 @@ class WindowsActivationTest(unittest.TestCase):
         with open(driver, "w", encoding="utf-8", newline="\r\n") as f:
             f.write("\n".join(lines) + "\n")
         env = {"PATH": path, "PIXI_PROJECT_ROOT": self.root, "USERPROFILE": self.profile,
-               "SystemRoot": os.environ["SystemRoot"], "PATHEXT": ".COM;.EXE;.BAT;.CMD"}
+               "SystemRoot": os.environ["SystemRoot"], "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+               "COMSPEC": os.environ["COMSPEC"]}  # `for /f` runs `where` through it
         out = subprocess.run(["cmd", "/d", "/c", driver], env=env, capture_output=True, text=True,
                              encoding="utf-8")
         got = dict(line.split("=", 1) for line in out.stdout.splitlines()[:3])

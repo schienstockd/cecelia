@@ -7,9 +7,11 @@ rem ran under, and system scope's terminal tasks missed its shared juliaup and d
 rem
 rem No parenthesised block may expand %PATH%: a "C:\Program Files (x86)" entry ends the block early.
 rem Hence the gotos. Variables set here are the env pixi captures, so no setlocal.
+rem Paths are compared in their 8.3 short form, so a long and a short spelling of one file (C:\Users\
+rem runneradmin vs C:\Users\RUNNER~1) still match.
 
 set "_cecelia_first="
-for /f "delims=" %%J in ('where julia 2^>nul') do if not defined _cecelia_first set "_cecelia_first=%%J"
+for /f "delims=" %%J in ('where julia 2^>nul') do if not defined _cecelia_first set "_cecelia_first=%%~sJ"
 
 rem A juliaup inside the install (`<root>\juliaup`, always there for system scope) wins, with juliaup
 rem pointed at its own state. Its shared depot is read-only to every account but the owner: a per-user
@@ -20,7 +22,7 @@ if not exist "%_cecelia_juliaup%\bin\julia.exe" goto :cecelia_recorded
 set "JULIAUP_DEPOT_PATH=%_cecelia_juliaup%"
 if exist "%_cecelia_juliaup%\depot\" set "JULIA_DEPOT_PATH=%USERPROFILE%\.cecelia\julia-depot;%_cecelia_juliaup%\depot;"
 set "_cecelia_dir=%_cecelia_juliaup%\bin"
-if /i "%_cecelia_first%"=="%_cecelia_dir%\julia.exe" goto :cecelia_done
+for %%F in ("%_cecelia_dir%\julia.exe") do if /i "%%~sF"=="%_cecelia_first%" goto :cecelia_done
 set "PATH=%_cecelia_dir%;%PATH%"
 goto :cecelia_done
 
@@ -35,11 +37,11 @@ set "_cecelia_julia="
 set /p _cecelia_julia=<"%PIXI_PROJECT_ROOT%\.cecelia-julia"
 if not defined _cecelia_julia goto :cecelia_done
 if not exist "%_cecelia_julia%" goto :cecelia_done
-if /i "%_cecelia_first%"=="%_cecelia_julia%" goto :cecelia_done
+for %%F in ("%_cecelia_julia%") do if /i "%%~sF"=="%_cecelia_first%" goto :cecelia_done
 set "CECELIA_JULIA=%_cecelia_julia%"
 set "_cecelia_dir=%USERPROFILE%\.cecelia\julia-shim"
 rem sourced again (nested `pixi shell`)
-if /i "%_cecelia_first%"=="%_cecelia_dir%\julia.cmd" goto :cecelia_done
+for %%F in ("%_cecelia_dir%\julia.cmd") do if /i "%%~sF"=="%_cecelia_first%" goto :cecelia_done
 if exist "%_cecelia_dir%\julia.cmd" goto :cecelia_shim
 mkdir "%_cecelia_dir%" 2>nul
 rem Written aside and moved in, so a concurrent `pixi run` never runs a half-written shim.
