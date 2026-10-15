@@ -88,7 +88,7 @@ def session_slot(session_id: str, folder: pathlib.Path | None = None) -> int:
     except (OSError, ValueError, AttributeError):
         pass
     live = live_sessions(context=folder)
-    if not live:
+    if live is None:
         return _hash_slot(session_id)
     return badge_slots([s.session_id for s in live] + [session_id], folder)[session_id]
 

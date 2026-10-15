@@ -512,8 +512,10 @@ class BadgeTest(unittest.TestCase):
                                       ).stdout.decode("utf-8").replace("\r\n", "\n")
 
             out = run(b'{"session_id": "abc"}', wrapped)
-            # Its slot as the pane assigns it: the first free one, saved for the pane to read back.
-            badge = f"{session_badge('abc', slot=0)} cecelia-56"
+            # Its slot as the pane assigns it: the first free one, saved for the pane to read back;
+            # without `/proc` (macOS) liveness can't be checked, so the colour comes from the id.
+            slot = 0 if pathlib.Path("/proc").is_dir() else None
+            badge = f"{session_badge('abc', slot=slot)} cecelia-56"
             self.assertEqual(out, f"{badge}  first\nsecond\n")
             self.assertEqual(run(b"not json", wrapped), "first\nsecond\n")    # badge unknown
             self.assertEqual(run(b'{"session_id": "abc"}', ["/no/such/cmd"]),
