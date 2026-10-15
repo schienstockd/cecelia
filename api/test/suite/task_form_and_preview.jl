@@ -35,6 +35,21 @@
     @test by_fun["segment.measureLabels"].previewable == false
 end
 
+@testset "API: a composite serves its steps' cluster memory models" begin
+    # The runner's memory hint (frontend/src/utils/hpcRun.ts hpcMemoryHint) reads `hpc.mem` off the
+    # served spec. A composite runs every step in one cluster job, so it must carry each step's model —
+    # merged here rather than copied into its own JSON, where the numbers could drift apart.
+    st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=segment"))
+    @test st == 200
+    by_fun = Dict(String(s.fun_name) => s for s in JSON3.read(body).segment if haskey(s, :fun_name))
+    mem(fn) = [Dict(String(k) => v for (k, v) in pairs(m)) for m in by_fun[fn].hpc.mem]
+    @test length(mem("segment.cellpose")) == 1
+    @test mem("segment.cellposeMeasure") == vcat(mem("segment.cellpose"), mem("segment.measureLabels"))
+    @test mem("segment.coastalMeasure") == vcat(mem("segment.coastal"), mem("segment.measureLabels"))
+    # the resources themselves are untouched — dispatch reads those, not the model
+    @test by_fun["segment.cellposeMeasure"].hpc.walltime_min == 480
+end
+
 @testset "API: the served form resolves optionsFrom and defaultFrom" begin
     # The picker the USER sees comes from this route, not from `_task_spec` — the route walks the spec
     # FILES (it must serve a category's forms whether or not every fun_name resolves to a registered

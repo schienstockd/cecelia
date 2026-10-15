@@ -15,10 +15,12 @@
   it on the way back.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
-import { useFieldDraft } from '../composables/useFieldDraft'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { fetchHpcSettings, type HpcSettings } from '../utils/hpcSettings'
+import { isPreferencesOpen } from '../lib/preferencesOpen'
 import { profileStorage } from '../utils/profileStorage'
 import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS,
+  hpcRunDestination, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
   type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
@@ -34,6 +36,7 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
 import InlineNote from '../components/InlineNote.vue'
@@ -138,7 +141,7 @@ const hpcForm = computed<HpcResourcesForm | null>(() =>
   taskDef.value ? { ...hpcDefaults(taskDef.value), ...runChoice.value.resources } : null)
 const TARGET_OPTIONS: ChipOption[] = [
   { value: 'local', label: 'local', tip: 'Run on this computer' },
-  { value: 'hpc',   label: 'hpc',   tip: 'Run on the cluster (Settings → HPC)' },
+  { value: 'hpc',   label: 'hpc',   tip: 'Run on the cluster: for many or large images; this computer stays free' },
 ]
 watch(() => taskDef.value?.fun_name, (fn) => {
   runChoice.value = parseRunTargetChoice(fn ? profileStorage.getItem(runTargetKey(fn)) : null)
@@ -150,17 +153,54 @@ function saveRunChoice(next: RunTargetChoice) {
 function setTarget(v: string | string[]) {
   saveRunChoice({ ...runChoice.value, target: v === 'hpc' ? 'hpc' : 'local' })
 }
-// One draft per field, committed on change (useFieldDraft); text that is not a whole number snaps back.
-const hpcDrafts = Object.fromEntries(HPC_RESOURCE_FIELDS.map(f =>
-  [f.key, useFieldDraft(() => hpcForm.value?.[f.key] ?? '')])) as Record<keyof HpcResourcesForm, Ref<string>>
-function setResource(key: keyof HpcResourcesForm) {
-  const n = Number(hpcDrafts[key].value.trim())
-  if (!Number.isInteger(n) || !hpcDrafts[key].value.trim()) {
-    hpcDrafts[key].value = String(hpcForm.value?.[key] ?? '')
-    return
-  }
-  saveRunChoice({ ...runChoice.value, resources: { ...runChoice.value.resources, [key]: n } })
+// One stepped slider per field (HPC_STEPS, with the default and the current size kept as stops). A
+// drag only moves `hpcDrag`; the choice is saved once, on release.
+const hpcFields = computed(() => taskDef.value ? hpcFieldsFor(taskDef.value) : [])
+const hpcDefaultsNow = computed(() => taskDef.value ? hpcDefaults(taskDef.value) : null)
+const hpcDrag = ref<Partial<HpcResourcesForm>>({})
+const hpcValue = (key: keyof HpcResourcesForm) => hpcDrag.value[key] ?? hpcForm.value?.[key] ?? 0
+const hpcStops = computed(() => Object.fromEntries(HPC_RESOURCE_FIELDS.map(f =>
+  [f.key, hpcSteps(f.key, hpcDefaultsNow.value?.[f.key] ?? NaN, hpcForm.value?.[f.key] ?? NaN)])) as
+  Record<keyof HpcResourcesForm, number[]>)
+function commitResource(key: keyof HpcResourcesForm) {
+  const n = hpcDrag.value[key]
+  hpcDrag.value = {}
+  if (n !== undefined) saveRunChoice({ ...runChoice.value, resources: { ...runChoice.value.resources, [key]: n } })
 }
+const hpcChanged = computed(() => !!hpcForm.value && !!hpcDefaultsNow.value &&
+  hpcFields.value.some(f => hpcForm.value![f.key] !== hpcDefaultsNow.value![f.key]))
+const hpcResetTip = computed(() => hpcDefaultsNow.value
+  ? `Back to this task's size: ${hpcFields.value.map(f => `${f.label} ${formatResource(f.key, hpcDefaultsNow.value![f.key])}`).join(', ')}` : '')
+function resetResources() { saveRunChoice({ ...runChoice.value, resources: {} }) }
+function setMemory(gb: number) { saveRunChoice({ ...runChoice.value, resources: { ...runChoice.value.resources, memGb: gb } }) }
+
+// The memory the largest selected image needs (the spec's measured model): frame sizes come from the
+// cached `/api/images/geometry` reads the param advisors already make.
+const hpcFrames = ref<FrameSize[]>([])
+watch([onHpc, () => props.selectedUids.join(',')], async ([on]) => {
+  if (!on) return
+  const uids = props.selectedUids
+  const pu = projectMeta.current?.uid ?? ''
+  const got = (await Promise.all(uids.map(u => frameGeometry(pu, u)))).filter((g): g is NonNullable<typeof g> => !!g)
+  if (uids.join(',') === props.selectedUids.join(',')) hpcFrames.value = got   // a newer selection wins
+}, { immediate: true })
+const hpcMemory = computed(() => onHpc.value && taskDef.value && hpcForm.value
+  ? hpcMemoryHint(taskDef.value, hpcFrames.value, hpcForm.value) : null)
+// Where the cluster run goes (class → queue → host), or what is missing: read when hpc is picked and
+// again when Preferences closes, since that is where the login and queues are edited.
+const hpcSettings = ref<HpcSettings | null>(null)
+const hpcSettingsError = ref('')
+async function loadHpcSettings() {
+  if (!onHpc.value) return
+  try { hpcSettings.value = await fetchHpcSettings(projectMeta.current?.uid ?? ''); hpcSettingsError.value = '' }
+  catch (e) { hpcSettingsError.value = e instanceof Error ? e.message : String(e) }
+}
+watch(onHpc, on => { if (on) void loadHpcSettings() }, { immediate: true })
+watch(isPreferencesOpen, open => { if (!open) void loadHpcSettings() })
+const hpcDestination = computed(() => {
+  if (hpcSettingsError.value) return { short: 'Cluster settings could not be read', detail: hpcSettingsError.value, severity: 'warn' as const }
+  return taskDef.value ? hpcRunDestination(hpcSettings.value, taskDef.value) : null
+})
 
 // param values — populated from the object's remembered funParams (image → set → task-defaults),
 // mirroring the old R moduleFunParams. Persistence is server-side (saved on run, to each processed
@@ -808,13 +848,31 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           v-tooltip.right="'Selected images do not carry the axes this task needs'"
         >{{ activeTaskGatingReason }}</span>
       </div>
-      <div v-if="onHpc && hpcForm" class="hpc-res cc-row cc-row-loose cc-fs-xs">
-        <label v-for="f in HPC_RESOURCE_FIELDS" :key="f.key" class="cc-row-group" v-tooltip.bottom="f.tip">
-          <input class="cc-input-xs hpc-res-num" type="text" inputmode="numeric"
-                 v-model="hpcDrafts[f.key].value" @change="setResource(f.key)" />
-          <span class="cc-muted">{{ f.label }}</span>
+      <div v-if="onHpc && hpcForm" class="hpc-res cc-fs-xs">
+        <label v-for="f in hpcFields" :key="f.key" class="hpc-res-cell">
+          <span class="hpc-res-head">
+            <span class="cc-muted">{{ f.label }}</span>
+            <span class="hpc-res-val">{{ formatResource(f.key, hpcValue(f.key)) }}</span>
+          </span>
+          <input type="range" min="0" :max="hpcStops[f.key].length - 1" step="1" :aria-label="f.label"
+                 :value="hpcStops[f.key].indexOf(hpcValue(f.key))"
+                 @input="hpcDrag[f.key] = hpcStops[f.key][+($event.target as HTMLInputElement).value]"
+                 @change="commitResource(f.key)"
+                 v-tooltip.bottom="`${f.tip}; default ${formatResource(f.key, hpcDefaultsNow?.[f.key] ?? 0)}`" />
         </label>
       </div>
+      <div v-if="hpcMemory" class="cc-row hpc-res-foot">
+        <InlineNote class="cc-fs-2xs hpc-grow" :short="hpcMemory.short" :detail="hpcMemory.detail" :severity="hpcMemory.severity" />
+        <button v-if="hpcMemory.suggestGb" class="cc-btn cc-btn-ghost cc-btn-micro" @click="setMemory(hpcMemory.suggestGb)"
+                v-tooltip.bottom="'Set memory to the smallest size that fits'">Use {{ hpcMemory.suggestGb }} GB</button>
+      </div>
+      <div v-if="onHpc && hpcForm" class="cc-row hpc-res-foot">
+        <InlineNote class="cc-fs-2xs hpc-grow" short="Per image; too small fails, too big queues longer" />
+        <button v-if="hpcChanged" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="resetResources"
+                v-tooltip.bottom="hpcResetTip"><i class="pi pi-undo" /></button>
+      </div>
+      <InlineNote v-if="onHpc && hpcDestination" class="hpc-dest cc-fs-xs" :icon="hpcDestination.severity ? undefined : 'pi-server'"
+                  :short="hpcDestination.short" :detail="hpcDestination.detail" :severity="hpcDestination.severity" />
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
         <i class="pi pi-info-circle" />
@@ -1072,8 +1130,20 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   border: 1px solid var(--cc-border);
 }
 
-.hpc-res { margin-top: 0.35rem; }
-.hpc-res-num { width: 6ch; }
+.hpc-res {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 1rem;
+  margin-top: 0.4rem;
+  max-width: 22rem;
+}
+.hpc-res input[type="range"] { width: 100%; min-width: 0; }
+.hpc-res-cell { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.hpc-res-head { display: flex; justify-content: space-between; gap: 0.4rem; }
+.hpc-res-val { font-family: var(--cc-mono); }
+.hpc-res-foot { margin-top: 0.15rem; max-width: 22rem; }
+.hpc-grow { flex: 1; min-width: 0; }
+.hpc-dest { display: flex; margin-top: 0.25rem; }
 
 /* params */
 .params-section {

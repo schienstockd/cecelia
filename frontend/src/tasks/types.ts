@@ -141,6 +141,13 @@ export interface ParamDef {
   figure?: string
 }
 
+/** One step's measured peak memory on the cluster, in GB: base + per_plane·Z + per_frame·frame +
+ *  CPUs·(per_cpu + per_cpu_frame·frame), where frame = one timepoint in memory (C·Z·Y·X·bytes, GB). A
+ *  task lists one per Python step; the hint uses the largest. docs/HPC.md → *Memory hint*. */
+export interface HpcMemModel {
+  base_gb: number; per_frame?: number; per_plane_gb?: number; per_cpu_gb?: number; per_cpu_frame?: number
+}
+
 export interface TaskDef {
   fun_name: string      // canonical "category.task" identifier, e.g. "importImages.omezarr"
   task: string
@@ -152,7 +159,7 @@ export interface TaskDef {
   params: ParamDef[]
   resource_pool?: string  // default resource profile for this task
   // Cluster job defaults when `env` lists "hpc" (docs/todo/HPC_PLAN.md; utils/hpcRun.ts).
-  hpc?: { cpus?: number; mem_gb?: number; gpus?: number; walltime_min?: number }
+  hpc?: { cpus?: number; mem_gb?: number; gpus?: number; walltime_min?: number; mem?: HpcMemModel[] }
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
   outputValueName?: string // the value_name this task produces (e.g. "driftCorrected"); read by the
                            // whiteboard to prefill a downstream node's input valueName. Absent when

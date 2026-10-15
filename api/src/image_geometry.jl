@@ -220,14 +220,16 @@ end
 """
     image_geometry(zarr_path) -> NamedTuple
 
-`(sizeX, sizeY, sizeZ, sizeT)` of a version's level-0 array. Missing axes report 1, so a 2D still and
-a 5D movie answer the same shape of question.
+`(sizeX, sizeY, sizeZ, sizeT, sizeC, bytesPerVoxel)` of a version's level-0 array. Missing axes report
+1, so a 2D still and a 5D movie answer the same shape of question. `sizeC` and `bytesPerVoxel` size one
+frame in memory (the task runner's cluster memory hint).
 """
 function image_geometry(zarr_path::AbstractString)
     arr, caxes = open_level0(zarr_path)
     d = axis_dims(caxes, ndims(arr))
     dim(name) = haskey(d, name) ? size(arr, d[name]) : 1
-    (sizeX = dim("x"), sizeY = dim("y"), sizeZ = dim("z"), sizeT = dim("t"))
+    (sizeX = dim("x"), sizeY = dim("y"), sizeZ = dim("z"), sizeT = dim("t"), sizeC = dim("c"),
+     bytesPerVoxel = sizeof(eltype(arr)))
 end
 
 """
@@ -495,7 +497,7 @@ function api_image_stores(req::HTTP.Request)
     200, JSON3.write((; versions = out, labels = lout))
 end
 
-# GET /api/images/geometry?projectUid=&imageUid=&valueName= → {sizeX,sizeY,sizeZ,sizeT,valueName}
+# GET /api/images/geometry?projectUid=&imageUid=&valueName= → {sizeX,sizeY,sizeZ,sizeT,sizeC,bytesPerVoxel,valueName,voxelUm}
 #
 # The frame extent of ONE image version. `valueName` omitted ⇒ the ACTIVE version, which is what a
 # task will run against — the reason this exists rather than a stored per-image size (see the note at
@@ -524,7 +526,7 @@ function api_image_geometry(req::HTTP.Request)
         catch
             [1.0, 1.0, 1.0]
         end
-        200, JSON3.write((; g.sizeX, g.sizeY, g.sizeZ, g.sizeT, valueName = vn,
+        200, JSON3.write((; g.sizeX, g.sizeY, g.sizeZ, g.sizeT, g.sizeC, g.bytesPerVoxel, valueName = vn,
                             voxelUm = voxel_um))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))

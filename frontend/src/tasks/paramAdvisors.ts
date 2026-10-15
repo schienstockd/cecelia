@@ -108,6 +108,10 @@ export interface FrameGeometry {
   sizeX: number
   sizeY: number
   sizeT: number
+  /** planes, channels and bytes per voxel — one frame's size in memory (the cluster memory hint) */
+  sizeZ?: number
+  sizeC?: number
+  bytesPerVoxel?: number
   /** µm per pixel; unchanged by drift correction (which moves the canvas, not the sampling) */
   umPerPx?: number | null
 }
@@ -964,9 +968,11 @@ export function frameGeometry(
     try {
       const res = await fetch(`/api/images/geometry?projectUid=${projectUid}&imageUid=${imageUid}`)
       if (!res.ok) return null
-      const d = await res.json() as { sizeX?: number; sizeY?: number; sizeT?: number }
+      const d = await res.json() as { sizeX?: number; sizeY?: number; sizeT?: number; sizeZ?: number
+                                      sizeC?: number; bytesPerVoxel?: number }
       if (!d.sizeX || !d.sizeY) return null
-      return { sizeX: d.sizeX, sizeY: d.sizeY, sizeT: d.sizeT ?? 1 }
+      return { sizeX: d.sizeX, sizeY: d.sizeY, sizeT: d.sizeT ?? 1, sizeZ: d.sizeZ ?? 1, sizeC: d.sizeC ?? 1,
+               bytesPerVoxel: d.bytesPerVoxel ?? 2 }
     } catch {
       return null      // an advisory is never load-bearing; silence beats an error banner
     }

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel } from './hpcRun'
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination,
+  hpcSteps, hpcFieldsFor, formatResource, hpcMemoryHint, frameGb } from './hpcRun'
+import type { HpcSettings } from './hpcSettings'
 import type { TaskDef } from '../tasks/types'
 
 const def = (over: Partial<TaskDef> = {}): TaskDef => ({
@@ -43,5 +45,79 @@ describe('hpcRun', () => {
     expect(hpcStageLabel('sync')).toEqual({ short: 'uploading', tip: 'On the cluster: uploading' })
     expect(hpcStageLabel('queued', '4211')).toEqual({ short: 'queued', tip: 'On the cluster: queued (job 4211)' })
     expect(hpcStageLabel('pull', '4211')?.short).toBe('downloading')
+  })
+
+  it('reads a walltime as a person would', () => {
+    expect(formatWalltime(45)).toBe('45 min')
+    expect(formatWalltime(60)).toBe('1 h')
+    expect(formatWalltime(90)).toBe('1 h 30')
+    expect(formatWalltime(240)).toBe('4 h')
+    expect(formatWalltime(2880)).toBe('2 d')
+    expect(formatWalltime(1505)).toBe('1 d 1 h 05')
+  })
+
+  const cls = (over = {}) => ({ queue: '', account: '', qos: '', directives: '', preamble: '', ...over })
+  const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
+    available: true, schedulers: [],
+    site: { scheduler: 'slurm', host: 'hpc.example.edu', port: 22, remoteDir: '~/cecelia', email: '',
+            cpu: cls({ queue: 'cpu,long', account: 'p1' }), gpu: cls({ queue: 'gpu-a100', account: 'p2', qos: 'gpu' }) },
+    identity: { profile: 'default', user: 'jsmith', keyFile: '~/.ssh/id_ed25519' },
+    project: null, ...over,
+  })
+
+  it('names where a cluster run goes, by the task pool', () => {
+    expect(hpcRunDestination(settings(), def()))
+      .toEqual({ short: 'GPU job → queue gpu-a100 on hpc.example.edu',
+                 detail: 'Account p2 · QoS gpu · GPU jobs are set in Preferences → HPC' })
+    // the class follows the task's pool, not its GPU count (dispatch.jl hpc_task_class)
+    expect(hpcRunDestination(settings(), def({ resource_pool: 'cpu' })).short).toBe('CPU job → queue cpu,long on hpc.example.edu')
+    const s = settings({ project: { projectUid: 'x', account: 'grant9' } })
+    expect(hpcRunDestination(s, def()).detail).toMatch(/^Account grant9 \(this project\)/)
+    const empty = settings()
+    empty.site.gpu.queue = ''
+    expect(hpcRunDestination(empty, def()).short).toBe('GPU job → default queue on hpc.example.edu')
+  })
+
+  it('names the missing setup, and where it lives, before a cluster run can go', () => {
+    const noHost = settings(); noHost.site.host = ''
+    expect(hpcRunDestination(noHost, def())).toMatchObject({ short: 'Set the cluster host in Settings → HPC first', severity: 'warn' })
+    const noUser = settings({ identity: { profile: 'default', user: '', keyFile: '' } })
+    expect(hpcRunDestination(noUser, def()).short).toBe('Set your username in Preferences → HPC first')
+    expect(hpcRunDestination(null, def()).severity).toBeUndefined()
+  })
+
+  it('slider stops keep the default and the current size reachable', () => {
+    expect(hpcSteps('cpus')).toEqual([1, 2, 4, 8, 16, 32, 64])
+    expect(hpcSteps('cpus', 8, 12)).toEqual([1, 2, 4, 8, 12, 16, 32, 64])
+    expect(hpcSteps('memGb', NaN)).toEqual([4, 8, 16, 32, 64, 128, 256, 512])
+    expect(formatResource('memGb', 64)).toBe('64 GB')
+    expect(formatResource('walltimeMin', 480)).toBe('8 h')
+    expect(formatResource('cpus', 8)).toBe('8')
+  })
+
+  it('shows GPUs only for a GPU task', () => {
+    expect(hpcFieldsFor(def()).map(f => f.key)).toContain('gpus')
+    expect(hpcFieldsFor(def({ resource_pool: 'cpu' })).map(f => f.key)).not.toContain('gpus')
+  })
+
+  it('sizes one frame in memory', () => {
+    expect(frameGb({ sizeX: 1000, sizeY: 1000, sizeZ: 10, sizeC: 2, bytesPerVoxel: 2 })).toBeCloseTo(0.04)
+    expect(frameGb({ sizeX: 1000, sizeY: 1000 })).toBeCloseTo(0.002)     // 2D, one channel, uint16
+  })
+
+  it('names the memory the most demanding image needs, from the largest step model', () => {
+    const seg = { base_gb: 2, per_plane_gb: 0.05, per_frame: 4 }
+    const measure = { base_gb: 1, per_cpu_gb: 0.5, per_cpu_frame: 1 }
+    const d = def({ hpc: { cpus: 8, mem_gb: 64, gpus: 1, walltime_min: 240, mem: [seg, measure] } })
+    const form = { cpus: 8, memGb: 16, gpus: 1, walltimeMin: 240 }
+    const small = { sizeX: 1000, sizeY: 1000, sizeZ: 10, sizeC: 2, bytesPerVoxel: 2 }      // 0.04 GB
+    const big = { sizeX: 2000, sizeY: 2000, sizeZ: 50, sizeC: 2, bytesPerVoxel: 2 }        // 0.8 GB
+    // seg: 2 + 2.5 + 3.2 = 7.7 · measure: 1 + 8·(0.5 + 0.8) = 11.4 → 12, fits in 16
+    expect(hpcMemoryHint(d, [small, big], form)).toMatchObject({ severity: 'ok', short: 'Enough memory: needs about 12 GB' })
+    expect(hpcMemoryHint(d, [small, big], form)?.detail).toMatch(/^Largest: 800 MB|^Largest: 0\.8/)
+    // more CPUs → more measure workers: 1 + 12·1.3 = 16.6 → 17 > 16: warn, offer the next stop
+    expect(hpcMemoryHint(d, [big], { ...form, cpus: 12 })).toMatchObject({ severity: 'warn', suggestGb: 32 })
+    expect(hpcMemoryHint(d, [], form)).toBeNull()
+    expect(hpcMemoryHint(def(), [big], form)).toBeNull()     // no model in the spec
   })
 })

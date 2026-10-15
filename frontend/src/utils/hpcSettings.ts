@@ -75,8 +75,9 @@ export async function testHpcConnection(): Promise<HpcTestResult> {
 export type HpcScope = 'machine' | 'user'
 
 /** Why Test connection cannot run yet, or '' when it can, in the backend's order. `scope` is where the button is: a missing field that lives on
- *  the OTHER surface (Settings → HPC holds the cluster, Preferences → HPC the login) names it. */
-export function hpcTestBlocker(s: HpcSettings | null, scope: HpcScope = 'machine'): string {
+ *  the OTHER surface (Settings → HPC holds the cluster, Preferences → HPC the login) names it; `'run'`
+ *  (the task runner) names both. */
+export function hpcTestBlocker(s: HpcSettings | null, scope: HpcScope | 'run' = 'machine'): string {
   if (!s) return 'Loading'
   if (!s.available) return 'Not available on Windows yet'
   const where = (home: HpcScope) => home === scope ? '' : ` in ${home === 'machine' ? 'Settings' : 'Preferences'} → HPC`

@@ -65,9 +65,16 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 
 1. Pick a task whose spec lists `"hpc"` in `env`. The **env chip** under the function name becomes a
    **local / hpc** switch.
-2. On **hpc**, the job size appears: CPUs, GB, GPUs, minutes. The defaults come from the spec's
-   `"hpc"` block, and your changes are remembered per function.
-3. The run waits in the `hpc` pool, then goes through these stages, shown on the Task Manager's pool
+2. On **hpc**, the job size appears as a 2×2 grid of stepped sliders, sized per image: CPUs (1–64),
+   memory (4–512 GB), GPUs (0–4, GPU tasks only) and time limit (15 min–2 d). The task's default from
+   the spec's `"hpc"` block is always a stop and is named in each tooltip; changes are saved on release,
+   remembered per function, and an undo button puts the defaults back.
+3. Under it, one line says where the job goes: `GPU job → queue gpu-a100 on <host>`, with the account
+   and QoS on hover. The class is the task's pool, so a GPU task sent with 0 GPUs still uses the GPU
+   queue. While the setup is incomplete, the line names the first missing field and where to set it.
+4. Above that, a **memory line** says whether the memory covers the most demanding selected image
+   (*Memory hint* below), with a **Use N GB** button when it does not.
+5. The run waits in the `hpc` pool, then goes through these stages, shown on the Task Manager's pool
    tag (`hpc · queued`, with the job id in the tooltip):
 
 | Stage | What happens |
@@ -100,6 +107,51 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 
 Built-in Cellpose weights are downloaded by Cellpose on the compute node into `<remote>/assets/cellpose`
 on first use. Custom models from `<config_dir>/models` are synced to `<remote>/assets/models`.
+
+### Memory hint
+
+The runner estimates each selected image's peak memory from the image size, using a model measured for
+each step and stored in the step's spec as `"hpc".mem`:
+
+```
+GB = base_gb + per_plane_gb·Z + per_frame·frame + CPUs·(per_cpu_gb + per_cpu_frame·frame)
+frame = one timepoint in memory, C·Z·Y·X·bytes, in GB      (/api/images/geometry)
+```
+
+A composite gets its steps' models merged in by `/api/tasks/definitions` and uses the largest. Only one
+timepoint is held at a time (`predict_from_zarr` streams frames), so T does not appear in the model.
+
+| Step | base_gb | per_plane_gb | per_frame | per_cpu_gb | per_cpu_frame | What drives it |
+|---|---|---|---|---|---|---|
+| `segment.cellpose` | 2 | 0.06 | 4.5 | | | model ~1.4 GB; per-frame label and stitch buffers |
+| `segment.coastal` | 5.5 | 0.1 | 7.5 | | | model ~5 GB at a 512 px tile; the temporal window of frames |
+| `segment.measureLabels` | 1 | | | 0.65 | 0.75 | one spawned worker per job CPU |
+
+**How these were measured.** A probe ran each step's Python on synthetic 2-channel uint16 images and
+sampled the peak memory of the whole process tree (PSS, so spawned workers' shared libraries are not
+counted twice). The per-frame slope used a stub in place of the model call, so frames from 0.04 to
+1.3 GB ran in seconds. The fixed cost and the per-plane cost came from real Cellpose-SAM and Coastal
+runs on 512 × 512 frames at 4 and 16 planes. The coefficients are rounded up from the fits, and the
+measure-labels one is a hand-set bound that covers every measured point (1–8 workers).
+
+Measured rise over the ~0.6 GB a Python process starts at, in GB (model call stubbed for the two
+segmentation columns):
+
+| frame (GB) | Cellpose, per-frame part | Coastal, per-frame part | measure, 8 workers | measure, 1 worker |
+|---|---|---|---|---|
+| 0.04 | 0.2 | 0.8 | 2.0 | |
+| 0.34 | 1.5 | 2.9 | 6.7 | 0.6 |
+| 0.67 | 2.8 | | 9.0 | 0.7 |
+| 1.34 | 5.5 | | 11.2 | |
+
+**Not measured:**
+- a CPU-only run of a GPU step;
+- a `blockSize` other than 512 (a bigger tile raises the model's share);
+- a Coastal model with temporal scales other than 1–8;
+- a real cluster.
+
+Treat the hint as a floor with some headroom, not a guarantee. If a job is stopped for memory, the
+scheduler's reason appears in the log, and the measured numbers above should be updated.
 
 ## On the cluster
 

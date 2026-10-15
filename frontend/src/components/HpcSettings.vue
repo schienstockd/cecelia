@@ -101,13 +101,27 @@ watch(blocker, b => { if (!b && !env.value) void loadEnv() }, { immediate: true 
 const CLASSES: { name: HpcClassName; label: string }[] = [
   { name: 'cpu', label: 'CPU jobs' }, { name: 'gpu', label: 'GPU jobs' },
 ]
-const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; multi?: boolean }[] = [
-  { key: 'queue',      label: 'Queue',      tip: 'Partition (SLURM) or queue (PBS); empty = site default' },
-  { key: 'account',    label: 'Account',    tip: 'Account jobs are billed to; empty = your default' },
-  { key: 'qos',        label: 'QoS',        tip: 'Quality of service; empty = none' },
-  { key: 'directives', label: 'Directives', tip: 'Extra scheduler lines, one per line', multi: true },
-  { key: 'preamble',   label: 'Preamble',   tip: 'Shell lines run before the task, e.g. module load', multi: true },
-]
+// What this is for, on both surfaces: most people open it once, to segment more or bigger images than
+// the workstation can.
+const WHAT = 'For segmenting many or large images on your institute\'s cluster'
+const WHAT_DETAIL = 'Needs a cluster account and an SSH key; your support team has the host and queue names'
+
+// Grey "e.g." examples (generic, never a real site's values): someone looking at an empty form can
+// tell what shape each field wants. Directives are written for the chosen scheduler.
+const pbs = computed(() => s.value?.site.scheduler === 'pbs')
+const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip: string; ph: Record<HpcClassName, string>; multi?: boolean }[]>(() => [
+  { key: 'queue',      label: 'Queue',      tip: 'Partition (SLURM) or queue (PBS); SLURM takes a comma list; empty = site default',
+    ph: { cpu: 'e.g. cpu,long', gpu: 'e.g. gpu-a100' } },
+  { key: 'account',    label: 'Account',    tip: 'Project or group jobs are billed to; empty = your default',
+    ph: { cpu: 'e.g. proj1234', gpu: 'e.g. proj1234' } },
+  { key: 'qos',        label: 'QoS',        tip: 'Quality of service; most sites need none',
+    ph: { cpu: 'e.g. normal', gpu: 'e.g. gpu' } },
+  { key: 'directives', label: 'Directives', tip: `Extra ${pbs.value ? '#PBS' : '#SBATCH'} lines, used as written, one per line`,
+    ph: pbs.value ? { cpu: 'e.g. #PBS -l place=excl', gpu: 'e.g. #PBS -l place=excl' }
+                  : { cpu: 'e.g. #SBATCH --constraint=avx2', gpu: 'e.g. #SBATCH --constraint=a100' }, multi: true },
+  { key: 'preamble',   label: 'Preamble',   tip: 'Shell lines run on the node before the task',
+    ph: { cpu: 'e.g. module purge', gpu: 'e.g. module load cuda/12' }, multi: true },
+])
 </script>
 
 <template>
@@ -115,6 +129,7 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
 
   <div v-else-if="s" class="hpc" :class="{ busy: saving }">
    <template v-if="machine">
+    <InlineNote class="cc-fs-sm hpc-what" :short="WHAT" :detail="WHAT_DETAIL" />
     <div class="hpc-grid">
       <label class="cc-muted">Scheduler</label>
       <select v-model="d['site.scheduler'].value" @change="commit('site.scheduler')"
@@ -125,11 +140,11 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       </select>
 
       <label class="cc-muted">Host</label>
-      <input v-model="d['site.host'].value" placeholder="login.cluster.org"
+      <input v-model="d['site.host'].value" placeholder="e.g. hpc.university.edu"
              @change="commit('site.host')" v-tooltip.bottom="'Login node address'" />
 
       <label class="cc-muted">Port</label>
-      <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value"
+      <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value" placeholder="22"
              @change="commit('site.port')" v-tooltip.bottom="'SSH port (usually 22)'" />
     </div>
 
@@ -137,8 +152,8 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       <h3 class="cc-eyebrow hpc-sub">This project</h3>
       <div class="hpc-grid">
         <label class="cc-muted">Account</label>
-        <input v-model="d['project.account'].value" placeholder="your account" @change="commit('project.account')"
-               v-tooltip.bottom="'Billing account for this project only'" />
+        <input v-model="d['project.account'].value" placeholder="e.g. proj1234" @change="commit('project.account')"
+               v-tooltip.bottom="'Billing account for this project only; empty = your own'" />
       </div>
     </template>
    </template>
@@ -146,9 +161,10 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
    <template v-else>
     <InlineNote class="cc-fs-sm hpc-cluster" icon="pi-server" detail="Set in Settings → HPC, shared by every profile"
                 :short="`Cluster: ${s.site.host ? `${s.site.host}:${s.site.port}` : 'not set'} · ${schedLabel}`" />
+    <InlineNote class="cc-fs-sm hpc-what" :short="WHAT" :detail="WHAT_DETAIL" />
     <div class="hpc-grid">
       <label class="cc-muted">Username</label>
-      <input v-model="d['identity.user'].value" @change="commit('identity.user')"
+      <input v-model="d['identity.user'].value" placeholder="e.g. jsmith" @change="commit('identity.user')"
              v-tooltip.bottom="'Your cluster username, for this profile'" />
 
       <label class="cc-muted">SSH key</label>
@@ -161,14 +177,17 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
       </div>
 
       <label class="cc-muted">Remote folder</label>
-      <input class="mono" v-model="d['site.remoteDir'].value" @change="commit('site.remoteDir')"
-             v-tooltip.bottom="'Where Cecelia keeps your files on the cluster'" />
+      <input class="mono" v-model="d['site.remoteDir'].value" placeholder="e.g. /scratch/proj1234/jsmith/cecelia"
+             @change="commit('site.remoteDir')"
+             v-tooltip.bottom="'Where Cecelia keeps your files on the cluster; scratch space, it holds the images'" />
 
       <label class="cc-muted">Email</label>
-      <input v-model="d['site.email'].value" placeholder="optional" @change="commit('site.email')"
-             v-tooltip.bottom="'Job notifications; optional'" />
+      <input v-model="d['site.email'].value" placeholder="optional, e.g. you@university.edu" @change="commit('site.email')"
+             v-tooltip.bottom="'Mails you when a job ends or fails; optional'" />
     </div>
 
+    <InlineNote class="cc-fs-sm hpc-ask" short="Ask your cluster's support team for these names"
+                detail="Most sites need only a queue. GPU tasks (Cellpose, Coastal) use the GPU column" />
     <div class="hpc-classes">
       <span />
       <h3 v-for="c in CLASSES" :key="c.name" class="cc-eyebrow">{{ c.label }}</h3>
@@ -176,8 +195,8 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
         <label class="cc-muted">{{ f.label }}</label>
         <template v-for="c in CLASSES" :key="c.name">
           <textarea v-if="f.multi" class="cc-input-xs mono" rows="2" v-model="d[classPath(c.name, f.key)].value"
-                    @change="commit(classPath(c.name, f.key))" v-tooltip.bottom="f.tip" />
-          <input v-else v-model="d[classPath(c.name, f.key)].value" @change="commit(classPath(c.name, f.key))"
+                    :placeholder="f.ph[c.name]" @change="commit(classPath(c.name, f.key))" v-tooltip.bottom="f.tip" />
+          <input v-else v-model="d[classPath(c.name, f.key)].value" :placeholder="f.ph[c.name]" @change="commit(classPath(c.name, f.key))"
                  v-tooltip.bottom="f.tip" />
         </template>
       </template>
@@ -225,12 +244,14 @@ const CLASS_FIELDS: { key: keyof HpcClassSettings; label: string; tip: string; m
   gap: 0.4rem 0.6rem;
   align-items: center;
 }
-.hpc-classes { grid-template-columns: 7.5rem 1fr 1fr; margin-top: 1.1rem; }
+.hpc-classes { grid-template-columns: 7.5rem 1fr 1fr; margin-top: 0.5rem; }
+.hpc-ask { display: flex; margin-top: 1.1rem; }
 .hpc-classes textarea { resize: vertical; min-width: 0; }
 .hpc-classes input { min-width: 0; }
 .hpc-sub { margin: 1.1rem 0 0.5rem; }
 .hpc-first { margin-top: 0; }
 .hpc-cluster { display: flex; margin: 0 0 0.8rem; }
+.hpc-what { display: flex; margin: 0 0 0.8rem; }
 .hpc-grow { flex: 1; min-width: 0; }
 .hpc-port { width: 8ch; }
 .mono { font-family: var(--cc-mono); }

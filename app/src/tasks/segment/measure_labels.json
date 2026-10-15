@@ -15,7 +15,8 @@
   "group": "Measure",
   "env": ["local", "hpc"],
   "resource_pool": "cpu",
-  "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 0, "walltime_min": 240},
+  "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 0, "walltime_min": 240,
+          "mem": [{"base_gb": 1, "per_cpu_gb": 0.65, "per_cpu_frame": 0.75}]},
   "qcPlot": "segmentation_qc",
   "requires": { "scale": ["xy"] },
   "params": [
