@@ -17,7 +17,7 @@
   "env": ["local", "hpc"],
   "resource_pool": "gpu",
   "hpc": {"cpus": 8, "mem_gb": 64, "gpus": 1, "walltime_min": 240,
-          "mem": [{"base_gb": 2, "per_plane_gb": 0.06, "per_frame": 4.5}]},
+          "mem": [{"base_gb": 2.5, "per_plane_gb": 0.06, "per_frame": 4.5}]},
   "requires": { "scale": ["xy"] },
   "params": [
     {

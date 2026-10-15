@@ -123,19 +123,24 @@ timepoint is held at a time (`predict_from_zarr` streams frames), so T does not 
 
 | Step | base_gb | per_plane_gb | per_frame | per_cpu_gb | per_cpu_frame | What drives it |
 |---|---|---|---|---|---|---|
-| `segment.cellpose` | 2 | 0.06 | 4.5 | | | model ~1.4 GB; per-frame label and stitch buffers |
-| `segment.coastal` | 5.5 | 0.1 | 7.5 | | | model ~5 GB at a 512 px tile; the temporal window of frames |
+| `segment.cellpose` | 2.5 | 0.06 | 4.5 | | | model ~1.4 GB; per-frame label and stitch buffers |
+| `segment.coastal` | 8 | 0.1 | 30 | | | model ~5 GB at one tile, ~8 GB once a frame spans several; window features |
 | `segment.measureLabels` | 1 | | | 0.65 | 0.75 | one spawned worker per job CPU |
 
 **How these were measured.** A probe ran each step's Python on synthetic 2-channel uint16 images and
 sampled the peak memory of the whole process tree (PSS, so spawned workers' shared libraries are not
-counted twice). The per-frame slope used a stub in place of the model call, so frames from 0.04 to
-1.3 GB ran in seconds. The fixed cost and the per-plane cost came from real Cellpose-SAM and Coastal
-runs on 512 × 512 frames at 4 and 16 planes. The coefficients are rounded up from the fits, and the
-measure-labels one is a hand-set bound that covers every measured point (1–8 workers).
+counted twice).
+- **Cellpose and measure-labels:** the per-frame slope used a stub in place of the model call, so
+  frames from 0.04 to 1.3 GB ran in seconds. The fixed and per-plane costs came from real Cellpose-SAM
+  runs on 512 × 512 frames at 4 and 16 planes. The measure-labels coefficient is a hand-set bound that
+  covers every measured point (1–8 workers).
+- **Coastal:** the stub did not work. Real Coastal holds window features that grow with the frame,
+  about 4× what the stub showed, so its model is fitted to real runs only (*Checked against real runs*
+  below). Growth flattens as frames get bigger, so a straight line is conservative beyond 0.17 GB,
+  where it has not been measured.
 
-Measured rise over the ~0.6 GB a Python process starts at, in GB (model call stubbed for the two
-segmentation columns):
+Measured rise over the ~0.6 GB a Python process starts at, in GB (model call stubbed; the Coastal
+column is the stub's and is NOT what the model uses):
 
 | frame (GB) | Cellpose, per-frame part | Coastal, per-frame part | measure, 8 workers | measure, 1 worker |
 |---|---|---|---|---|
@@ -143,6 +148,18 @@ segmentation columns):
 | 0.34 | 1.5 | 2.9 | 6.7 | 0.6 |
 | 0.67 | 2.8 | | 9.0 | 0.7 |
 | 1.34 | 5.5 | | 11.2 | |
+
+**Checked against real runs** (GPU, peak total in GB; Coastal with 20 timepoints and a model with
+temporal scales 1–8):
+
+| Step | Frame | Real | Model |
+|---|---|---|---|
+| Cellpose | 1024 × 1024 × 10, 0.042 GB | 2.8 | 3.3 |
+| measure-labels, 8 workers | same | 1.9 | 6.5 |
+| Coastal | 512 × 512 × 4 / × 16 | 5.5 / 6.6 | 8.5 / 9.7 |
+| Coastal | 1024 × 1024 × 10, 0.042 GB | 9.6 | 10.3 |
+| Coastal | 1536 × 1536 × 10, 0.094 GB | 11.6 | 11.8 |
+| Coastal | 2048 × 2048 × 10, 0.168 GB | 12.8 | 14.0 |
 
 **Not measured:**
 - a CPU-only run of a GPU step;
