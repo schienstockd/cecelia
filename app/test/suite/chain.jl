@@ -363,6 +363,60 @@ end
     rm(proj.root; recursive=true)
 end
 
+# ── Chain run — stored params outside a since-tightened spec range ───────
+# A chain node keeps the params it was saved with; when the spec later narrows a range (cellpose
+# `cellDiameter` 1–500 → 2–60) the stored value used to fail `validate_params` on every run, and only
+# when `run_task` reached that node. Stored values are now clamped (logged); a value passed NOW — an
+# override, or a direct `run_task` — stays strict and fails at launch.
+@testset "Chain run — stored params are clamped to the current spec range" begin
+    spec = joinpath(mktempdir(), "rangedParam.json")
+    write(spec, JSON3.write(Dict(
+        "fun_name" => "customTest.rangedParam", "task" => "rangedParam",
+        "label" => "Ranged param task", "resource_pool" => "cpu",
+        "params" => Any[
+            Dict("key" => "diameter", "type" => "float", "min" => 2.0, "max" => 60.0, "default" => 10),
+            Dict("key" => "adv", "type" => "section", "params" => Any[
+                Dict("key" => "iters", "type" => "int", "min" => 0, "max" => 10, "default" => 0)]),
+            Dict("key" => "models", "type" => "group", "params" => Any[
+                Dict("key" => "size", "type" => "int", "min" => 1, "max" => 5, "default" => 1)])])))
+    task = _RangedParamTask()
+    register_task!("customTest.rangedParam", task; spec = spec)
+
+    moved = Tuple{String,Any,Any}[]
+    stored = Dict{String,Any}("diameter" => 99, "label" => 99, "adv" => Dict("iters" => 50),
+                              "models" => Dict("0" => Dict("size" => 0)))
+    c = Cecelia._clamp_to_spec(task, stored; on_clamp = (k, f, t) -> push!(moved, (k, f, t)))
+    @test c["diameter"] == 60.0 && c["label"] == 99
+    @test c["adv"]["iters"] == 10 && c["models"]["0"]["size"] == 1
+    @test stored["diameter"] == 99 && stored["adv"]["iters"] == 50   # input untouched
+    @test ("diameter", 99, 60.0) in moved
+    @test Cecelia._clamp_to_spec(task, Dict{String,Any}("diameter" => 30)) == Dict("diameter" => 30)
+
+    proj = create_project!(name="chain-clamp-$(rand(1000:9999))")
+    s    = add_set!(proj; name="s")
+    img  = add_image!(s; name="img-a")
+    save_chain_template!(proj, ChainTemplate("clamp-chain",
+        [ChainNode(id="n1", fn="customTest.rangedParam", scope="image",
+                   params=Dict{String,Any}("diameter" => 99, "adv" => Dict("iters" => 50)))],
+        ChainEdge[]))
+
+    logs = String[]
+    run = run_chain(proj, [img.uid]; chain="clamp-chain", on_log = line -> push!(logs, line))
+    st = run.image_states[img.uid]["n1"]
+    @test st.status == NODE_DONE
+    @test st.result["diameter"] == 60.0 && st.result["iters"] == 10
+    @test any(l -> contains(l, "[$(img.uid)/n1]") && contains(l, "'diameter' = 99") &&
+                   contains(l, "running with 60.0"), logs)
+
+    # This run's own override is not clamped: refused at launch, before any node runs.
+    @test_throws ChainTemplateError run_chain(proj, [img.uid]; chain="clamp-chain",
+        overrides = Dict{String,Any}("n1" => Dict("diameter" => 99)))
+    # Nor is a direct call.
+    @test_throws Cecelia.ParamValidationError run_task(task, img, Dict{String,Any}("diameter" => 99))
+
+    rm(proj.root; recursive=true)
+end
+
 # ── Chain start dot — end-to-end run prunes to the reachable subgraph ─────
 # Reservation guard: pruning to a start dot must still work when the reachable subgraph contains a
 # picnic (set-scope barrier) node. The target becomes a root — its dropped upstream doesn't block

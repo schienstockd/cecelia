@@ -68,13 +68,7 @@ function validate_chain_template(t::ChainTemplate)
         (isempty(n.resource_pool) || n.resource_pool in pools) ||
             throw(ChainTemplateError("node '$(n.id)': resource_pool '$(n.resource_pool)' is not " *
                                      "configured — known pools: " * join(sort(collect(pools)), ", ")))
-        try
-            validate_params(task, n.params;
-                            extra_options = _chain_produced_names(t, n.id))
-        catch e
-            e isa ParamValidationError || rethrow()
-            throw(ChainTemplateError("node '$(n.id)' ($(n.fn)): $(e.msg)"))
-        end
+        _validate_node_params(t, n, task, n.params)
     end
 
     # Both endpoints must exist. A dangling `from` is a run-time KeyError in `_topo_sort`; a dangling
@@ -97,6 +91,34 @@ function validate_chain_template(t::ChainTemplate)
         throw(ChainTemplateError(sprint(showerror, e)))
     end
     nothing
+end
+
+function _validate_node_params(t::ChainTemplate, n::ChainNode, task, params::Dict{String,Any})
+    try
+        validate_params(task, params; extra_options = _chain_produced_names(t, n.id))
+    catch e
+        e isa ParamValidationError || rethrow()
+        throw(ChainTemplateError("node '$(n.id)' ($(n.fn)): $(e.msg)"))
+    end
+end
+
+"""
+    _validate_run_params(t, overrides; skip = Set{String}())
+
+Check every node's params AS THE EXECUTOR WILL RUN THEM (`_node_run_params`: stored values clamped to
+the current spec, this run's overrides on top) before anything starts. Without it a bad value — a
+stale stored one the clamp cannot repair, or a bad override — surfaces only when `run_task` reaches
+that node, after everything upstream has already run. Params only: an unknown `fn` stays the
+executor's per-node failure, so the rest of the chain still runs. `skip` names nodes a resume will not
+re-run.
+"""
+function _validate_run_params(t::ChainTemplate, overrides::Dict{String,Any};
+                              skip::Set{String} = Set{String}())
+    for n in t.nodes
+        n.id in skip && continue
+        task = try _task_from_fun_name(n.fn) catch; continue end
+        _validate_node_params(t, n, task, _node_run_params(task, n, overrides, _ -> nothing))
+    end
 end
 
 # ── Template content cache ─────────────────────────────────────────────────────

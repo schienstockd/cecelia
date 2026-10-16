@@ -688,6 +688,14 @@ user pressed Run. **`validate_chain_template` (`chain.jl`) is the gate**: unknow
 check intent or anything per-image (`requires`/axis gating is evaluated against a real image at run
 time; selection params name project state) — a valid template is well-formed, not sensible.
 
+**Stored params meet a spec that moved.** A template outlives a spec edit, so a value saved under a
+wider range (cellpose `cellDiameter` 1–500 → 2–60) would fail every run. The executor runs each node
+with `_node_run_params`: stored int/float values clamped to the CURRENT `[min, max]`
+(`_clamp_to_spec`, one log line per moved value), then this run's `overrides` on top, unclamped.
+`run_chain` checks those params for every node before starting (`_validate_run_params`, skipping
+nodes a resume won't re-run), so a bad override fails at launch rather than mid-run. The whiteboard
+clamps the same way when it loads a chain (`clampParamsToSpec`). A direct `run_task` is never clamped.
+
 **Running is a separate right.** There is exactly one launch path, the WS message `chain:run`
 (`api/src/sockets.jl` → `handle_chain_run`), with no HTTP equivalent — which is what keeps chain runs
 a user action even though Claude can author the chain. `handle_chain_run` also owns the guards

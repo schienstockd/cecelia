@@ -197,6 +197,16 @@ function _apply_overrides(params::Dict{String,Any}, node_id::String,
     merge(params, Dict{String,Any}(string(k) => v for (k, v) in node_ov))
 end
 
+# What a node actually runs with: its STORED params clamped to the current spec (`_clamp_to_spec`, one
+# log line per moved value), then this run's overrides on top, unclamped — those are the caller's own
+# values, so a bad one should still fail. Resume hashes stay on `effective_params` (unclamped), so a
+# node that finished before its spec's range tightened is not re-run for it.
+function _node_run_params(task, node::ChainNode, overrides::Dict{String,Any}, log::Function)
+    clamped = _clamp_to_spec(task, node.params; on_clamp = (k, from, to) ->
+        log("stored '$k' = $from is outside the current range of $(node.fn); running with $to"))
+    _apply_overrides(clamped, node.id, overrides)
+end
+
 function _execute_image_chain!(run::ChainRun, image_uid::String,
                                 ordered_nodes::Vector{ChainNode},
                                 overrides::Dict{String,Any};
@@ -293,6 +303,8 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             continue
         end
 
+        run_params = _node_run_params(task_struct, node, overrides,
+                                      line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"))
         tid = gen_uid()
         # Mark :queued, not :running. Concurrency is enforced by the global scheduler
         # pool (run_task → _pool, sized from config [pools]); a node whose resource_pool
@@ -316,7 +328,7 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
                               project_uid  = run.project_uid,
                               image_uid    = image_uid,
                               pool_name    = node.resource_pool,
-                              params       = effective_params,
+                              params       = run_params,
                               chain_run_id = run.id,
                               chain_node_id = node.id,
                               by           = chain_run_as(run));
@@ -493,7 +505,8 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
                           image_uid    = first(imgs).uid,
                           image_uids   = participating_uids,
                           pool_name    = node.resource_pool,
-                          params       = effective_params,
+                          params       = _node_run_params(task_struct, node, overrides,
+                              line -> Base.invokelatest(on_log, "[$(first(imgs).uid)/$(node.id)] $line")),
                           chain_run_id = run.id,
                           chain_node_id = node.id,
                           by           = chain_run_as(run));
@@ -562,6 +575,8 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
         return
     end
 
+    run_params = _node_run_params(task_struct, node, overrides,
+                                  line -> Base.invokelatest(on_log, "[incr/$(node.id)] $line"))
     debounce_s = Float64(get(node.params, "debounce_ms", 500)) / 1000.0
     n_total    = length(run.image_uids)
     comp_lock  = ReentrantLock()
@@ -569,7 +584,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
 
     function run_plot!(imgs_snap::Vector{CciaImage})
         result = try
-            _run_task(task_struct, imgs_snap, _flatten_sections(task_struct, effective_params);
+            _run_task(task_struct, imgs_snap, _flatten_sections(task_struct, run_params);
                       on_log     = line -> Base.invokelatest(on_log, "[incr/$(node.id)] $line"),
                       on_process = _ -> nothing)
         catch e

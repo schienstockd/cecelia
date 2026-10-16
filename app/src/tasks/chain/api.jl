@@ -106,6 +106,9 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         ordered_nodes = _topo_sort(run.template_snapshot)
         _reset_stale_nodes!(run, overrides, ordered_nodes)
         isnothing(start_node) || _force_restart_from!(run, start_node)
+        _validate_run_params(run.template_snapshot, overrides;
+                             skip = Set(n.id for n in ordered_nodes
+                                        if all(s[n.id].status == NODE_DONE for s in values(run.image_states))))
         run.resumed_by = by
         _save_run!(run)
     else
@@ -117,6 +120,7 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         # effective template — targets are roots, unreachable branches simply don't exist for this run.
         template      = _prune_to_start(load_chain_template(proj, chain))
         isempty(template.nodes) && error("run_chain: start dot reaches no nodes (nothing to run)")
+        _validate_run_params(template, overrides)
         ordered_nodes = _topo_sort(template)
 
         image_states  = Dict{String,Dict{String,ImageNodeState}}(
