@@ -55,7 +55,11 @@
           "stitchThreshold": 0.2,
           "threshold": 0,
           "medianFilter": 0,
-          "gaussianFilter": 0.0
+          "gaussianFilter": 0.0,
+          "cellprobThreshold": 0.0,
+          "flowThreshold": 1.0,
+          "invert": false,
+          "augment": false
         }
       },
       "tip": "One entry per model; pair 'base' + 'nuc' for nucleus-anchored",
@@ -166,6 +170,40 @@
               "step": 0.25,
               "default": 0.0,
               "tip": "Gaussian blur sigma applied before normalisation (0 = off)"
+            },
+            {
+              "key": "cellprobThreshold",
+              "label": "Cell probability threshold",
+              "type": "float",
+              "min": -6.0,
+              "max": 6.0,
+              "step": 0.5,
+              "default": 0.0,
+              "tip": "Lower grows masks into dimmer signal; higher shrinks them"
+            },
+            {
+              "key": "flowThreshold",
+              "label": "Flow threshold",
+              "type": "float",
+              "min": 0.0,
+              "max": 2.0,
+              "step": 0.1,
+              "default": 1.0,
+              "tip": "Higher keeps more masks cellpose doubts; 0 = keep all"
+            },
+            {
+              "key": "invert",
+              "label": "Invert",
+              "type": "bool",
+              "default": false,
+              "tip": "Cells are darker than the background"
+            },
+            {
+              "key": "augment",
+              "label": "Test-time augmentation",
+              "type": "bool",
+              "default": false,
+              "tip": "Smoother masks from flipped passes; about 3× slower"
             }
           ]
         }

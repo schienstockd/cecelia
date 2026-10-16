@@ -94,6 +94,12 @@ class TestCellposeV3CallPath(unittest.TestCase):
         self.assertIn('cyto2', str(ctx.exception))
         self.assertIn('cyto3', str(ctx.exception))
 
+    def test_knobs_and_normalize_off_reach_v3(self):
+        self.seg.predict_slice(self.plane[None], self._params(cellprobThreshold=1.0, flowThreshold=0.6))
+        kw = self._last_kwargs()
+        self.assertIs(kw['normalize'], False)
+        self.assertEqual((kw['cellprob_threshold'], kw['flow_threshold']), (1.0, 0.6))
+
 
 class TestCellposeMajorVersion(unittest.TestCase):
 
