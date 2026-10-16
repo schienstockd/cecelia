@@ -108,6 +108,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-user-plus', lucide: 'user-plus', means: 'Add a Kiwi profile (a separate credential + MCP scope)' },
       { icon: 'pi-user-minus', lucide: 'user-minus', means: 'Retire a Kiwi profile — non-selectable after, data stays on disk' },
       { icon: 'pi-sign-in', lucide: 'log-in', means: 'Copy a login one-liner for this profile — paste in a terminal' },
+      { icon: 'pi-sign-out', lucide: 'log-out', means: 'Log this profile out of Claude' },
       { icon: 'pi-pencil', lucide: 'pencil', means: 'Edit or rename' },
       { icon: 'pi-save', lucide: 'save', means: 'Save' },
       { icon: 'pi-copy', lucide: 'copy', means: 'Copy — to the clipboard, or a copy of this' },

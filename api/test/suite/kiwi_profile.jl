@@ -216,3 +216,49 @@ end
         init_cecelia!()   # restore
     end
 end
+
+@testset "Kiwi profile — Claude login routes + one-login policy" begin
+    # Validation paths only: a success path spawns the real CLI, and the default profile is the real
+    # `~/.claude` even under a hermetic config dir — a test must never log it out.
+    mktempdir() do tmp
+        write(joinpath(tmp, "custom.toml"), "[dirs]\nprojects = '$(tmp)'\n")
+        withenv("CECELIA_DEV_DIR" => tmp) do
+            init_cecelia!()
+            api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "bob"))))
+            alice = joinpath(tmp, "user-profiles", "alice")
+
+            # name → CLAUDE_CONFIG_DIR: "" = active, default = "", typo/invalid = an error response
+            @test _kiwi_claude_dir("default") == ""
+            @test _kiwi_claude_dir("alice") == alice
+            @test _kiwi_claude_dir("") == active_profile_dir()
+            @test _kiwi_claude_dir("ghost")[1] == 404          # the CLI would mint a stray dir
+            @test _kiwi_claude_dir("ghost"; must_exist = false) == joinpath(tmp, "user-profiles", "ghost")
+            @test _kiwi_claude_dir("Bad Name")[1] == 400
+
+            req(q) = HTTP.Request("GET", "/api/kiwi/profiles/auth?" * q)
+            @test api_kiwi_profiles_auth(req("profile=ghost"))[1] == 404
+            @test api_kiwi_profiles_auth(req("profile=Bad%20Name"))[1] == 400
+            @test api_kiwi_profiles_logout(Vector{UInt8}("{}"))[1] == 400
+            @test api_kiwi_profiles_logout(Vector{UInt8}(JSON3.write((; name = "ghost"))))[1] == 404
+
+            # Policy off (the default): picking logs nobody out.
+            @test isempty(_one_claude_login_targets("alice"))
+            code, body = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
+            @test code == 200 && JSON3.read(body).loggingOut == 0
+
+            # Policy on: every OTHER profile, default (`""` = ~/.claude) and retired ones included.
+            api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "bob"))))
+            set_shared_workstation!("oneClaudeLogin", true)
+            try
+                @test sort(_one_claude_login_targets("alice")) ==
+                      sort(["", joinpath(tmp, "user-profiles", "bob")])
+                @test _one_claude_login_targets("default") ==
+                      [alice, joinpath(tmp, "user-profiles", "bob")]
+            finally
+                set_shared_workstation!("oneClaudeLogin", false)
+            end
+        end
+        init_cecelia!()   # restore
+    end
+end

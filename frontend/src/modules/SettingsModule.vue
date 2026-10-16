@@ -35,6 +35,8 @@ import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
 import GpuDiagnostic from '../components/GpuDiagnostic.vue'
 import HpcSettings from '../components/HpcSettings.vue'
+import { sharedWorkstationRows, fetchSharedWorkstation, setSharedWorkstation,
+         type SharedWorkstationRow } from '../utils/sharedWorkstation'
 
 const showPackages = ref(false)
 
@@ -121,6 +123,24 @@ async function changeKeepPrev(value: boolean) {
   try { keepPrev.value.current = await setKeepPrevVersion(value) }
   catch (e: any) { keepPrevError.value = e?.message ?? 'Could not change the toggle' }
   finally { keepPrevBusy.value = false }
+}
+
+// Shared workstation — install-wide policies for a box several people use. Shown to the default
+// profile (peanut) only: a visibility gate so other users don't change them, not security.
+// One toggle per item, no master switch — see utils/sharedWorkstation.ts.
+const sharedRows  = ref<SharedWorkstationRow[]>([])
+const sharedBusy  = ref('')
+const sharedError = ref('')
+const showShared  = computed(() => appCtl.activeProfileName === 'default' && sharedRows.value.length > 0)
+async function loadShared() {
+  try { sharedRows.value = sharedWorkstationRows(await fetchSharedWorkstation()) }
+  catch { /* optional section — a failure must not break the Settings page */ }
+}
+async function changeShared(key: string, value: boolean) {
+  sharedBusy.value = key; sharedError.value = ''
+  try { sharedRows.value = sharedWorkstationRows(await setSharedWorkstation(key, value)) }
+  catch (e: any) { sharedError.value = e?.message ?? 'Could not change the setting' }
+  finally { sharedBusy.value = '' }
 }
 
 async function scanStorage() {
@@ -434,6 +454,7 @@ onMounted(loadDiag)
 onMounted(loadCompressor)
 onMounted(loadLayout)
 onMounted(loadKeepPrev)
+onMounted(loadShared)
 
 // Decoded-chunk cache budget — applies to the running server at once (no restart).
 const chunkCache      = ref<ChunkCacheSettings | null>(null)
@@ -1542,6 +1563,19 @@ async function switchWt(path: string) {
     <section class="settings-section">
       <h2 class="section-title">HPC</h2>
       <HpcSettings scope="machine" :project-uid="projectUid" />
+    </section>
+
+    <!-- ── Shared workstation (app/src/config/shared_workstation.jl) ─────── -->
+    <section v-if="showShared" class="settings-section" data-guide="settings.sharedWorkstation">
+      <h2 class="section-title">Shared workstation</h2>
+      <div v-for="r in sharedRows" :key="r.key" class="field">
+        <CcToggle class="toggle-row"
+          :model-value="r.value" :disabled="!!sharedBusy" :label="r.label"
+          v-tooltip.bottom="r.tip"
+          @update:model-value="changeShared(r.key, $event)" />
+        <span class="field-hint cc-muted cc-fs-xs">{{ r.hint }}</span>
+      </div>
+      <span v-if="sharedError" class="field-hint cc-muted-error cc-fs-xs">{{ sharedError }}</span>
     </section>
 
     <!-- ── Other MCP connections ───────────────────────────────────────── -->

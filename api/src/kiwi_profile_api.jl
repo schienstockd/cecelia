@@ -1,8 +1,9 @@
-# ── Kiwi profile API — routes for LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 + D11 ──────────────────
+# ── Kiwi profile API — routes for LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 + P8 + D11 ─────────────
 #
-# All routes are read-cheap or additive-write; no route ever spawns `claude login` itself. The
-# profile picker drives these; the "Open profile terminal" button uses the one-liner from
-# GET /api/kiwi/terminal/command; the retire button POSTs to /api/kiwi/profiles/retire.
+# No route ever spawns `claude login` itself — logging in is interactive, so the user pastes the
+# one-liner from GET /api/kiwi/terminal/command. The CLI's non-interactive `auth status` / `auth
+# logout` ARE spawned (`claude_auth.jl`), for the login label and Log out (P8). The profile picker
+# drives these; the retire button POSTs to /api/kiwi/profiles/retire.
 #
 # Routes (see server.jl for wiring):
 #
@@ -11,6 +12,8 @@
 #   POST /api/kiwi/profiles/create            → { name }               ; mkpath under user-profiles/
 #   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` marker (D11)
 #   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
+#   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
+#   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
 #
 # Server-active-profile model: `[ai].profile` in custom.toml is the single source of truth. All
 # `claude` spawns pick it up via `active_profile_name()`. Per-tab handoff (Q2 recommendation in the
@@ -120,8 +123,30 @@ function api_kiwi_profiles_select(body_bytes::Vector{UInt8})
                 error = "Profile `$(name)` is retired and can't be selected."))
     end
     set_active_profile!(name)
-    200, JSON3.write((; ok = true, active = name))
+    200, JSON3.write((; ok = true, active = name, loggingOut = _enforce_one_claude_login(name)))
 end
+
+# Shared workstation → "One Claude login at a time": picking a profile logs every OTHER profile out
+# of Claude, so the previous person's login doesn't outlive the next pick (the launch picker selects
+# on every reload — that is the hand-over moment). Includes `default`, whose login is `~/.claude`.
+# In the background: each logout is a ~1 s CLI spawn and the picker is waiting. Returns how many
+# were queued.
+function _enforce_one_claude_login(keep::AbstractString)::Int
+    dirs = _one_claude_login_targets(keep)
+    (isempty(dirs) || isnothing(Cecelia.agent_bin_path(Cecelia.observer_agent_bin()))) && return 0
+    Threads.@spawn for d in dirs
+        ok, msg = claude_auth_logout!(d)
+        ok || @warn "Shared workstation: could not log a profile out of Claude" dir = d message = msg
+    end
+    length(dirs)
+end
+
+# The profile dirs that policy logs out when `keep` is picked — every other profile, retired ones
+# too (their credentials are still on disk), `""` being the default profile. Empty when the policy
+# is off. Split out so a test can check the list without logging anything out.
+_one_claude_login_targets(keep::AbstractString)::Vector{String} =
+    Cecelia.shared_workstation("oneClaudeLogin") ?
+        String[p["dir"] for p in _kiwi_list_profiles() if p["name"] != keep] : String[]
 
 # Retire a profile — write the sentinel marker so the picker grays it out and select rejects it.
 # The dir + credentials stay on disk (D11 immutable-name lifecycle). If the retired profile is
@@ -235,17 +260,47 @@ function api_kiwi_terminal_command(req::HTTP.Request)
     # `profile` query param names which profile the terminal one-liner is for; absent → active.
     q = HTTP.queryparams(HTTP.URI(req.target))
     name = get(q, "profile", "")
-    dir = if isempty(name)
-        active_profile_dir()             # active
-    elseif name == "default"
-        ""
-    else
-        _valid_kiwi_profile_name(name) ||
-            return 400, JSON3.write((; ok = false, error = "Invalid profile name."))
-        joinpath(config_dir(), "user-profiles", name)
-    end
+    dir = _kiwi_claude_dir(name; must_exist = false)
+    dir isa Tuple && return dir
     200, JSON3.write((; ok = true,
                         profile = isempty(name) ? active_profile_name() : name,
                         profileDir = dir,
                         command = kiwi_terminal_command(dir)))
+end
+
+# A profile name → its `CLAUDE_CONFIG_DIR` (`""` for `default`), or an error response tuple. An empty
+# name means the active profile. `must_exist`: a named profile's dir must already be on disk — the
+# CLI creates a missing one, so logging out or probing a typo would mint a stray profile.
+function _kiwi_claude_dir(name::AbstractString; must_exist::Bool = true)
+    isempty(name) && return active_profile_dir()
+    name == "default" && return active_profile_dir(name)
+    _valid_kiwi_profile_name(name) ||
+        return (400, JSON3.write((; ok = false, error = "Invalid profile name.")))
+    dir = active_profile_dir(name)
+    must_exist && !isdir(dir) &&
+        return (404, JSON3.write((; ok = false, error = "Profile `$(name)` not found.")))
+    dir
+end
+
+# Who a profile is logged in to Claude as. `fresh=1` skips the short status cache (the Preferences
+# refresh button). `state` is `loggedIn` / `loggedOut` / `unknown` (no CLI, or it failed).
+function api_kiwi_profiles_auth(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    name = get(q, "profile", "")
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    a = claude_auth_status(dir; fresh = get(q, "fresh", "") == "1")
+    200, JSON3.write((; ok = true, profile = isempty(name) ? active_profile_name() : name,
+                        state = String(a.state), email = a.email, method = a.method, org = a.org))
+end
+
+function api_kiwi_profiles_logout(body_bytes::Vector{UInt8})
+    body = try; JSON3.read(String(body_bytes)); catch; nothing; end
+    name = body isa AbstractDict ? String(get(body, :name, "")) : ""
+    isempty(name) && return 400, JSON3.write((; ok = false, error = "Missing `name`."))
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    ok, msg = claude_auth_logout!(dir)
+    ok || return 500, JSON3.write((; ok = false, error = isempty(msg) ? "Logout failed." : msg))
+    200, JSON3.write((; ok = true, name = name))
 end
