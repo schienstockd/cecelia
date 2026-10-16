@@ -325,6 +325,17 @@ class PublishTest(_Fixture):
         self.assertEqual([line.split("\t")[1] for line in tree.splitlines()[1:]],
                          ["README.md", "effectiveness.json", "effectiveness.svg"])
 
+    def test_the_flow_chart_is_published_beside_the_weekly_one_and_a_flow_change_pushes(self):
+        flow = self.c._flow.render_svg(self.c._flow.aggregate([], []))
+        result = self.c.publish(self.svg, self.data, git=self.git(), state_path=self.state, flow_svg=flow)
+        [commit] = [c for c in self.remote.calls if c[0] == "commit-tree"]
+        tree = self.remote.objects[commit[1]]
+        self.assertIn("findings-flow.svg", [line.split("\t")[1] for line in tree.splitlines()[1:]])
+        self.assertIn("pushed", result)
+        changed = flow.replace("Recital", "Recital ")
+        self.assertIn("pushed", self.c.publish(self.svg, self.data, git=self.git(), state_path=self.state,
+                                               flow_svg=changed))
+
     def test_an_empty_history_is_published_too(self):
         empty = self.c.aggregate([], [])
         result = self.c.publish(self.c.render_svg(empty), empty, git=self.git(), state_path=self.state)

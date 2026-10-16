@@ -65,9 +65,10 @@ branch, session id or uid leaves the machine. Every label in the image is fixed 
 
 ## Where it lives
 
-`pixi run effectiveness-chart` (`scripts/judge/chart.py`) renders the SVG and the numbers behind it
-(`effectiveness.json`) from the local log and the judge's records. The weekly judge runs it after
+`pixi run effectiveness-chart` (`scripts/judge/chart.py`) renders the weekly SVG, the findings flow
+(`findings-flow.svg`, `scripts/judge/flow_chart.py`) and the numbers behind both (`effectiveness.json`)
+from the local log and the judge's records. The weekly judge runs it after
 each pass and force-pushes both, as the only commit, to the orphan
 [`judge-assets`](https://github.com/schienstockd/cecelia/tree/judge-assets) branch. The README
-embeds the SVG from there, so `main` gets no weekly commits. Operator notes:
+embeds both SVGs from there, so `main` gets no weekly commits. Operator notes:
 [`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md) → *The chart*.

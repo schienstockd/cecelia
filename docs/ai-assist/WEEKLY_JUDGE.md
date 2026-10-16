@@ -320,8 +320,10 @@ No fix runs unattended: an unattended fix agent is deferred, see
 
 ## The chart
 
-The README embeds `effectiveness.svg` from the orphan `judge-assets` branch: what it shows and what
-it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in three steps:
+The README embeds two SVGs from the orphan `judge-assets` branch: `effectiveness.svg`, the weekly
+chart, and `findings-flow.svg`, where every finding went (`flow_chart.py`: recital → bug check →
+verify agent → real bugs, cumulative since logging began, each column to its own scale). What they show
+and what they can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds them in three steps:
 
 - **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), PRs merged
   (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
@@ -336,14 +338,15 @@ it can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds it in thr
   row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
   gets no rate (leading ones aren't drawn); the week still running
   is left out of the picture. Okabe-Ito swatches from
-  `share/console_palette.json`, mid-grey ink on a transparent background so one file reads on
-  GitHub's light and dark themes; the numbers are in its `<desc>` too. Every label is fixed text or a
+  `share/console_palette.json` on the README figures' shared light surface and dark ink
+  (`figure_style.py`), so it reads the same on GitHub's light and dark themes; the numbers are in its
+  `<desc>` too. The flow chart is drawn the same way, its counts under `flow` in `effectiveness.json`. Every label is fixed text or a
   number, XML-escaped anyway; an outcome the code doesn't know is drawn as *no outcome logged*.
 - **Publish.** A blob per file, a tree and a commit with no parent (`git hash-object` / `mktree` /
   `commit-tree`: no checkout is touched), force-pushed to `refs/heads/judge-assets`, so the branch
   is always one commit. The `git` runner (`chart.Git`) allows only those calls, `ls-remote` of that
   ref, and a push of a bare SHA to it: nothing else runs on the owner's credentials. The push is
-  skipped when the SVG is byte-identical to the last one pushed and the branch still holds that
+  skipped when both SVGs are byte-identical to the last ones pushed and the branch still holds that
   commit (`~/.cecelia-effectiveness/chart/pushed.json`); a deleted branch is pushed again. A failed
   push writes nothing, so the next pass tries again.
 
