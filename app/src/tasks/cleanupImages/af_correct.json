@@ -27,12 +27,12 @@
     },
     {
       "key": "afCombinations",
-      "label": "Channel combinations",
+      "label": "Channels to correct",
       "type": "group",
       "repeatable": true,
       "labelKey": "targetChannel",
       "default": {},
-      "tip": "One entry per channel, with the channels it competes with",
+      "tip": "One entry per channel to correct",
       "params": [
         {
           "key": "targetChannel",
@@ -40,22 +40,28 @@
           "type": "channelSelection",
           "multiple": false,
           "default": [],
-          "tip": "The channel to correct"
+          "tip": "The marker channel to clean up"
         },
         {
-          "key": "competingChannels",
-          "label": "Competing channels",
-          "type": "channelSelection",
-          "multiple": true,
-          "default": [],
-          "tip": "Channels that share signal with this one"
+          "key": "channelRoles",
+          "label": "Other channels",
+          "type": "channelRoles",
+          "exclude": "targetChannel",
+          "default": {},
+          "options": [
+            { "label": "Competes", "value": "competing" },
+            { "label": "AF", "value": "af" }
+          ],
+          "figure": "afRoles",
+          "tip": "Competes takes its share; AF zeroes this channel where it is bright"
         },
         {
           "key": "exclusive",
           "label": "Different cell types",
           "type": "bool",
           "default": true,
-          "tip": "Turn off if cells can carry both markers"
+          "showIf": { "channelRoles": { "minItems": 1, "equals": "competing" } },
+          "tip": "Turn off if one cell can carry both markers"
         }
       ]
     },

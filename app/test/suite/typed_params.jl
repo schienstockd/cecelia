@@ -106,6 +106,38 @@
         @test combos["1"]["exclusive"] === false
         @test combos["2"]["exclusive"] === true
     end
+    # AF channels reach Python as indices, never include the target, and take a channel OUT of the
+    # competitors when named in both — a reference masks, a competitor splits by brightness, and
+    # doing both to one channel would apply the second on top of the first.
+    let raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+                "default" => ["SHG", "CART", "AF"], "_active" => "default")),
+        combos = Cecelia.af_combinations_for_python(Dict{String,Any}(
+            "afCombinations" => Dict{String,Any}(
+                "CART" => Dict{String,Any}("targetChannel" => ["CART"],
+                                           "competingChannels" => ["SHG", "AF"],
+                                           "afChannels" => ["AF", "CART"]),
+                "SHG" => Dict{String,Any}("targetChannel" => ["SHG"],
+                                          "competingChannels" => ["CART"]))), raw)
+        @test combos["1"]["afChannels"] == [2]
+        @test combos["1"]["competingChannels"] == [0]
+        @test combos["0"]["afChannels"] == Int[]          # absent → none
+    end
+    # What the form sends: per target, one role per OTHER channel. Within a target a channel cannot
+    # both compete and be AF; across targets it may (AF for GFP, a competitor of TOM).
+    let raw = Dict{String,Any}("imChannelNames" => Dict{String,Any}(
+                "default" => ["SHG", "GFP", "TOM", "AF"], "_active" => "default")),
+        combos = Cecelia.af_combinations_for_python(Dict{String,Any}(
+            "afCombinations" => Dict{String,Any}(
+                "0" => Dict{String,Any}("targetChannel" => ["GFP"],
+                        "channelRoles" => Dict{String,Any}("TOM" => "competing", "AF" => "af",
+                                                           "SHG" => "")),
+                "1" => Dict{String,Any}("targetChannel" => ["TOM"],
+                        "channelRoles" => Dict{String,Any}("AF" => "competing"),
+                        "exclusive" => false))), raw)
+        @test combos["1"]["competingChannels"] == [2] && combos["1"]["afChannels"] == [3]
+        @test combos["2"]["competingChannels"] == [3] && combos["2"]["afChannels"] == Int[]
+        @test combos["2"]["exclusive"] === false
+    end
     # AfChannelStats round-trips the Python-side per-channel block and carries a Dict{String,Float64}
     # bleedthrough. A missing bleedthrough is a legal shape (no leaks detected) → empty Dict.
     let s = Cecelia.parse_af_channel_stats(Dict{String,Any}(

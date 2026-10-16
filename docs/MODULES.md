@@ -785,6 +785,21 @@ Reach for it whenever a param is "some of these", instead of asking the user to 
 list — a text field there is a parse error waiting to happen, and the values usually reach a runner
 that fails much later and much less clearly.
 
+**`channelRoles`** — one ROLE per channel of the selected images, `{ channelName: role }`, drawn as
+one row per channel with a segmented `ChipSelect` (`—` plus the spec's `options`). Reach for it
+instead of several `channelSelection` lists when each channel plays exactly one part: separate lists
+let one channel sit in all of them, and nothing on screen says which wins. `validate_params` checks
+each role against `options` (`""` = unused); the task's translator resolves the names. `exclude`
+names a sibling `channelSelection` whose channels get no row. Inside a repeatable group it works per
+entry — a group entry's params see that entry's values (`showIf`, figures, `exclude`) on both sides.
+Value helpers: `frontend/src/utils/channelRoles.ts`. Used by AF correction: per channel to correct,
+each other channel `competing` / `af` / unused.
+
+```json
+{ "key": "channelRoles", "label": "Other channels", "type": "channelRoles", "exclude": "targetChannel",
+  "default": {}, "options": [{ "label": "Competes", "value": "competing" }, { "label": "AF", "value": "af" }] }
+```
+
 **`imagePicker`** — a spatial selection AUTHORED on the image. Instead of eight int fields, the row
 shows a summary + a **Draw…** button that opens `ImagePickerModal` — a coloured z-MIP + rectangle
 draw + z/t range sliders (backend: the reused `/api/crop/*` endpoints in `api/src/crop_api.jl`). The
@@ -882,6 +897,13 @@ param it is about. Keys are AND-ed; a list within one key is OR-ed:
 { "key": "maxDistance", "label": "Match distance (px)", "type": "float", "showIf": { "mode": "attach" } }
 { "key": "sigma",       "label": "Sigma",  "type": "float", "showIf": { "method": ["gaussian", "bilateral"] } }
 ```
+
+Two operator forms read the value rather than matching it: `{ "csvPath": { "notEndsWith": ".xml" } }`
+(also `endsWith`) for a path's extension, and `{ "correctChannels": { "minItems": 2 } }` for a
+multi-select holding at least n entries — add `"equals": v` to count only entries equal to v, of a
+list or of a map's values (AF correction's "different cell types" is
+`{ "channelRoles": { "minItems": 1, "equals": "competing" } }`: it only means something when
+something competes). An operator neither side implements satisfies nothing.
 
 Comparison is on the **string** form: a spec is JSON and a control's value is whatever the widget
 emits, so `"1"` in a spec matches the number `1` a slider produced. Without that the same condition

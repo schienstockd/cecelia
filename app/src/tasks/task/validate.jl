@@ -54,6 +54,18 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
                 throw(ParamValidationError("'$key' contains \"$v\", not a valid option. " *
                                            "Valid: $(join(valid, ", "))"))
         end
+    elseif type_str == "channelRoles"
+        # One role per channel, `{name => role}` — a channel cannot hold two. Values are checked
+        # against `options` (or `""`, unused); the NAMES are resolved by the task's translator, which
+        # refuses one the image does not have.
+        value isa AbstractDict ||
+            throw(ParamValidationError("'$key' must map channel names to roles, got: $value"))
+        valid = [string(get(o, "value", "")) for o in get(spec, "options", [])]
+        for (ch, r) in value
+            (string(r) == "" || string(r) ∈ valid) ||
+                throw(ParamValidationError("'$key': channel \"$ch\" has role \"$r\", not one of " *
+                                           "$(join(valid, ", "))"))
+        end
     elseif type_str == "dirPath"
         # A destination FOLDER, typed or picked with the FileBrowser. Empty is legal — every consumer
         # falls back to its own default — and a path that does not exist yet is legal too, because a
@@ -219,6 +231,14 @@ function _show_if_satisfied(p::AbstractDict, params::AbstractDict;
         got = string(have)
         # Operator form — `{"csvPath": {"notEndsWith": ".xml"}}`. Mirrors the frontend exactly, or the
         # Run button and the server would disagree about which params are in play.
+        if want isa AbstractDict && haskey(want, "minItems")
+            items = have isa AbstractVector ? collect(have) :
+                    have isa AbstractDict   ? collect(values(have)) : (isempty(got) ? Any[] : Any[have])
+            eq = get(want, "equals", nothing)
+            n = isnothing(eq) ? length(items) : count(i -> string(i) == string(eq), items)
+            n >= Int(want["minItems"]) || return false
+            continue
+        end
         if want isa AbstractDict
             sfx(key) = (v = get(want, key, nothing);
                         isnothing(v) ? nothing :

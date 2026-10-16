@@ -26,6 +26,7 @@ import { measureGroups } from '../utils/measureGroups'
 import { channelLabel } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import { asRoleMap, setChannelRole } from '../utils/channelRoles'
 import { fetchVersions, versionChipOptions, VERSION_LATEST_CHIP } from '../utils/versions'
 import ParamFigure from '../components/ParamFigure.vue'
 import { paramVisColumns, uniformWarning } from './paramVis'
@@ -622,6 +623,13 @@ function duplicateGroupEntry(key: string) {
   val.value = v
 }
 
+// A group entry's params see the ENTRY's values over the form's — so a sub-param's `showIf`, figure
+// or `exclude` reads its own entry, as `_validate_params_against_spec` already does server-side.
+function entryContext(vals: ParamValues | undefined) {
+  return props.context ? { ...props.context, values: { ...(props.context.values ?? {}), ...(vals ?? {}) } }
+                       : props.context
+}
+
 function updateGroupEntry(entryKey: string, paramKey: string, newVal: unknown) {
   const v = (val.value ?? {}) as GroupValues
   val.value = { ...v, [entryKey]: { ...(v[entryKey] ?? {}), [paramKey]: newVal } }
@@ -645,6 +653,24 @@ const chipOptions = computed<ChipOption[]>(() => {
 // an advisory.
 const optionHelp = computed(() =>
   props.param.type === 'select' ? selectedOptionHelp(props.param.options, val.value) : '')
+
+// channelRoles: one row per channel, one role each — `utils/channelRoles.ts` owns the map. '—' (value
+// '') is an explicit chip rather than a re-click on the active one, so "takes no part" is visible.
+const roleOptions = computed<ChipOption[]>(() => [
+  { value: '', label: '—', tip: 'Not used' },
+  ...(props.param.options ?? []).map(o => ({ value: String(o.value), label: o.label })),
+])
+const roleMap = computed(() => asRoleMap(val.value))
+// `exclude` names a sibling channelSelection whose channels get no row (a target is not its own
+// competitor) — and, through `setChannelRole`, lose any role they held
+const roleChannels = computed(() => {
+  const ex = props.param.exclude ? props.context?.values?.[props.param.exclude] : undefined
+  const skip = new Set((Array.isArray(ex) ? ex : ex == null ? [] : [ex]).map(String))
+  return availableChannels.value.filter(c => !skip.has(c))
+})
+function onRoleUpdate(channel: string, role: string) {
+  val.value = setChannelRole(val.value, channel, role, roleChannels.value)
+}
 
 // channelSelection stores an array even when single (`multiple === false`) — so route through a handler
 // that keeps only the newly-added value in the single case, preserving the old replace-on-click behaviour.
@@ -890,6 +916,20 @@ function onChannelUpdate(next: string[]) {
         :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
+    <!-- channelRoles: one row per channel of the selected images, a segmented role choice each. -->
+    <div v-else-if="param.type === 'channelRoles'" class="channel-roles">
+      <div v-if="availableChannels.length === 0" class="channel-empty cc-muted">
+        No channels — select images first.
+      </div>
+      <template v-else>
+        <template v-for="ch in roleChannels" :key="ch">
+          <span class="channel-role-name cc-fs-xs">{{ ch }}</span>
+          <ChipSelect variant="segmented" :options="roleOptions" :aria-label="`Role of ${ch}`"
+            :model-value="roleMap[ch] ?? ''" @update:model-value="v => onRoleUpdate(ch, v as string)" />
+        </template>
+      </template>
+    </div>
+
     <!-- imagePicker — visual spatial selection (crop box today; box2d/point/line/polygon later).
          The row shows a summary + Draw button; the modal owns preview + drawing. -->
     <div v-else-if="param.type === 'imagePicker'" class="cc-row cc-row-tight image-picker">
@@ -1110,7 +1150,7 @@ function onChannelUpdate(next: string[]) {
                 :param="sp"
                 :modelValue="entry.vals[sp.key]"
                 @update:modelValue="updateGroupEntry(entry.key, sp.key, $event)"
-                :context="context"
+                :context="entryContext(entry.vals)"
         @commit="(k, v) => emit('commit', k, v)"
         @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
               />
@@ -1121,7 +1161,7 @@ function onChannelUpdate(next: string[]) {
             :param="p"
             :modelValue="entry.vals[p.key]"
             @update:modelValue="updateGroupEntry(entry.key, p.key, $event)"
-            :context="context"
+            :context="entryContext(entry.vals)"
         @commit="(k, v) => emit('commit', k, v)"
         @update:groupOrder="(k, v) => emit('update:groupOrder', k, v)"
           />
@@ -1219,6 +1259,15 @@ function onChannelUpdate(next: string[]) {
 
 /* channel selection */
 .channel-select-wrap { width: 100%; }
+.channel-roles {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(3rem, max-content) 1fr;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+}
+.channel-roles > .channel-empty { grid-column: 1 / -1; }
+.channel-role-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* P6 — the version chip strip sits directly under the valueNameSelection <select>; the small top
    margin keeps it visually attached but distinct. Auto width so a strip with three chips doesn't
    claim a whole column. */

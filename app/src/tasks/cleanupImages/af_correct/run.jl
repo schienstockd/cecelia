@@ -64,7 +64,9 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
     # log the RESOLVED sets, not just a count: names that match no channel are dropped here, and so is
     # a target named inside its own competitor list — both silent otherwise
     for k in sort(collect(keys(af_combos)))
-        on_log("[INFO] ch$k competes with $(get(af_combos[k], "competingChannels", Int[]))")
+        refs = get(af_combos[k], "afChannels", Int[])
+        on_log("[INFO] ch$k competes with $(get(af_combos[k], "competingChannels", Int[]))" *
+               (isempty(refs) ? "" : ", masked by AF channels $refs"))
     end
 
     qc_out_path = joinpath(task_run_dir(img._dir), "af_output_stats.json")
