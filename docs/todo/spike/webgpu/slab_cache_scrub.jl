@@ -14,6 +14,7 @@ let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     include_string(Main, src[1:first(findfirst("function api_image_stores", src)) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
+enable_blosc_nolock!()                     # the server's state, on purpose: no lock
 Blosc.set_num_threads(1)
 
 const ZP     = String(expanduser(rstrip(ARGS[1], '/')))

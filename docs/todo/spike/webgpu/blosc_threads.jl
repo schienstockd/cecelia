@@ -9,7 +9,8 @@
 # N x one decompress, they are SERIALISING on a global lock (safe, and the concurrency is fake). If they
 # cost roughly one, they are genuinely parallel (and then the absence of a lock is the worry).
 #
-# Run from the repo root:
+# Run from the repo root (as-is = c-blosc's global lock, the arm the header asks about; with
+# BLOSC_NOLOCK=1 = whether internal threads > 1 scale per-context, slab_cache_findings.md):
 #   pixi run julia --project=api -t auto docs/todo/spike/webgpu/blosc_threads.jl
 
 using Statistics, Printf, JSON3, Blosc, Zarr, HTTP, PNGFiles, ColorTypes, FixedPointNumbers
@@ -20,6 +21,7 @@ let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     include_string(Main, src[1:first(cut) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
+const NOLOCK = blosc_lock_as_launched!()    # its load sets BLOSC_NOLOCK, which would hide the lock
 
 const ZP = expanduser("~/cecelia-feijoa/projects/zolIMa/0/Dml3RG/ccidSmoothed.ome.zarr")
 arr, caxes = open_level0(ZP)
@@ -37,7 +39,7 @@ function conc(n, reps)
     round(med(ms); digits = 1)
 end
 
-@printf("julia threads = %d\n\n", Threads.nthreads())
+@printf("julia threads = %d, BLOSC_NOLOCK = %s\n\n", Threads.nthreads(), NOLOCK ? "1" : "unset")
 out = Dict{String,Any}()
 for nthr in (1, 4, 8)
     Blosc.set_num_threads(nthr)
@@ -55,7 +57,8 @@ for nthr in (1, 4, 8)
 end
 Blosc.set_num_threads(1)
 
-write(joinpath(@__DIR__, "p2_blosc_threads.json"),
+const OUT = joinpath(@__DIR__, NOLOCK ? "p2_blosc_threads_nolock.json" : "p2_blosc_threads.json")
+write(OUT,
       JSON3.write(Dict("version" => 1, "image" => "Dml3RG", "channel_mb" => 81.5,
-                       "julia_threads" => Threads.nthreads(), "scaling" => out)))
-println("\nwrote ", joinpath(@__DIR__, "p2_blosc_threads.json"))
+                       "julia_threads" => Threads.nthreads(), "blosc_nolock" => NOLOCK, "scaling" => out)))
+println("\nwrote ", OUT)

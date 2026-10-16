@@ -543,6 +543,35 @@ end
     end
 end
 
+@testset "API: a lock-measuring spike runs in the arm it was launched with" begin
+    # image_render.jl's load sets BLOSC_NOLOCK, so a spike that reads the variable after including it
+    # always sees "1" and always runs lock-free — its with-lock arm silently becomes a second NOLOCK run.
+    # `blosc_lock_as_launched!` is the one way back; a child process, because the arm is set at launch.
+    render = joinpath(@__DIR__, "..", "..", "src", "image_render.jl")
+    proj = dirname(Base.active_project())
+    arm(env) = withenv("BLOSC_NOLOCK" => env) do
+        read(`$(Base.julia_cmd()) --project=$proj -e 'include(ARGS[1]); print(blosc_lock_as_launched!(), " ", blosc_nolock())' $render`, String)
+    end
+    @test arm(nothing) == "false false"   # launched without it: the lock is back, and c-blosc sees that
+    @test arm("1") == "true true"
+
+    # Every spike that decodes concurrently states its arm after loading image_render.jl — the launch
+    # arm (`blosc_lock_as_launched!`) or NOLOCK on purpose (`enable_blosc_nolock!`) — and none reads the
+    # launch arm from ENV, which by then only says what the load set.
+    spikes = joinpath(@__DIR__, "..", "..", "..", "docs", "todo", "spike", "webgpu")
+    undeclared, env_reads = String[], String[]
+    for f in filter(endswith(".jl"), readdir(spikes))
+        src = read(joinpath(spikes, f), String)
+        inc = findfirst("image_render.jl\"))", src)
+        (inc === nothing || !occursin("Threads.@spawn", src)) && continue
+        after = src[last(inc):end]
+        occursin(r"blosc_lock_as_launched!\(\)|enable_blosc_nolock!\(\)", after) || push!(undeclared, f)
+        occursin(r"ENV\s*,\s*\"BLOSC_NOLOCK\"|ENV\[\"BLOSC_NOLOCK\"\]", src) && push!(env_reads, f)
+    end
+    @test isempty(undeclared)
+    @test isempty(env_reads)
+end
+
 import Random
 
 @testset "API: decoded-chunk cache — same bytes as an uncached read, bounded, invalidated by a rewrite" begin
