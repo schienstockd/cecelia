@@ -238,9 +238,24 @@ Mechanical checks also flag new files or routes the docs don't list, and code th
 structural rules in [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md). Each finding must be
 resolved in the commit message (fixed, shipped anyway, false positive, or dropped), and a git hook
 blocks the commit otherwise. Outcomes are logged (`pixi run recital-console`). Once a week, a judge
-re-checks the fan-out notes and the duplicated helpers nobody fixed against `main`, files the
-ones that are still live as issues, and counts which `CLAUDE.md` rules keep breaking across sessions. This is recent and still
-being measured: [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+does two things with them: it re-checks the notes nobody fixed against `main` and files the live ones
+as issues, and it counts which `CLAUDE.md` rules keep breaking: one broken in 3+ sessions becomes a
+proposal to reword it or make it a mechanical check. This is recent and still being measured:
+[`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+
+| Finding | At commit | Weekly bug check | Weekly rule count |
+|---|---|---|---|
+| Fan-out **confirmed**: a fix missed a sibling call site | must be resolved | yes, unless fixed | yes, unless fixed |
+| Fan-out **plausible**: might have missed one | listed | yes | no |
+| Convention **should reuse**: duplicates an existing helper | must be resolved | yes, unless fixed | yes, unless fixed |
+| Convention **wrong home**: a comment that belongs in a doc | must be resolved | no | yes, unless fixed |
+| Convention **potential duplicate** | listed | no | no |
+| Mechanical: undocumented file or route, structural rule | listed | no | no |
+
+*Unless fixed* means "unless fixed in that commit". Everything else goes in: shipped anyway, dropped,
+never resolved, and also *false positive*, since that's the agent's own call and the judge re-checks it.
+A fix that's caught before it lands shows the check working, not the rule failing, so it doesn't count
+against the rule.
 
 <p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Weekly chart of the agents' pre-commit reviews since logging began on 27 September 2026: five panels: changes reviewed and PRs merged per week; findings per 100 changes and the share fixed before commit, for each of the two reviewers (fan-out audit and convention check); and, per reviewer, stacked bars of the weekly judge's verdicts on the notes nobody fixed (fan-out: real bug, gone, dismissed; convention: duplicate still there, gone, dismissed). Early data, no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
 
