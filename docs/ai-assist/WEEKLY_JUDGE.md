@@ -322,7 +322,9 @@ No fix runs unattended: an unattended fix agent is deferred, see
 
 The README embeds two SVGs from the orphan `judge-assets` branch: `effectiveness.svg`, the weekly
 chart, and `findings-flow.svg`, where every finding went (`flow_chart.py`: recital → bug check →
-verify agent → real bugs, cumulative since logging began, each column to its own scale). What they show
+verify agent → real bugs, cumulative since logging began, each column to its own scale; under it, the
+lines from recital's unfixed notes to the bug check's total, which add up: wrong home, gone before the
+judge listed them, logged since the last pass, merged per function, and what else feeds it). What they show
 and what they can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds them in three steps:
 
 - **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), PRs merged

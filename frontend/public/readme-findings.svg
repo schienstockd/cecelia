@@ -2,8 +2,12 @@
   <!-- Where a pre-commit reviewer finding goes. Kept in sync with scripts/judge/bugs.py `candidates`,
        scripts/judge/rules.py `tally` and docs/ai-assist/WEEKLY_JUDGE.md. -->
   <defs>
-    <marker id="arrowF" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/>
+    <!-- a line is coloured by where it goes: vermillion into the bug check, reddish purple into the rule count -->
+    <marker id="arrowBug" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#D55E00"/>
+    </marker>
+    <marker id="arrowRule" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#CC79A7"/>
     </marker>
     <marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/>
@@ -14,9 +18,9 @@
   <!-- gate: a finding either was fixed in its commit (down: caught, ends) or not (on); a plausible note's tag is optional -->
   <rect x="250" y="86" rx="10" ry="10" width="90" height="202" fill="#ffffff" stroke="#6b6b66" stroke-width="1.5" stroke-dasharray="5 5"/>
   <text x="295" y="78" text-anchor="middle" font-size="13" fill="#6b6b66">fixed in the commit?</text>
-  <text x="372" y="78" font-size="13" font-weight="600" fill="#d94a86">no →</text>
+  <text x="346" y="93" font-size="12" font-weight="700" fill="#2a2a2a">no</text>
   <path d="M295,292 L295,318" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
-  <text x="304" y="310" font-size="13" font-weight="600" fill="#6b6b66">yes: caught</text>
+  <text x="302" y="309" font-size="12" font-weight="700" fill="#2a2a2a">yes</text>
   <rect x="235" y="324" rx="9" ry="9" width="120" height="36" fill="#f0f0ee" stroke="#6b6b66" stroke-width="1.5"/>
   <text x="295" y="347" text-anchor="middle" font-size="14" fill="#2a2a2a">Ends at commit</text>
 
@@ -89,16 +93,20 @@
     <path d="M622,334 L642,334" />
   </g>
 
-  <g stroke="#d94a86" stroke-width="2.5" fill="none" marker-end="url(#arrowF)">
+  <g stroke="#D55E00" stroke-width="2.5" fill="none" marker-end="url(#arrowBug)">
     <path d="M220,101 L380,101 C440,101 440,116 495,116" />
     <path d="M220,159 L380,159 C440,159 440,134 495,134" />
+    <path d="M380,217 C440,217 440,152 495,152" />
+  </g>
+  <g stroke="#CC79A7" stroke-width="2.5" fill="none" marker-end="url(#arrowRule)">
     <path d="M380,159 C440,159 440,236 495,236" />
-    <path d="M220,217 L380,217 C440,217 440,152 495,152" />
-    <path d="M380,217 C440,217 440,254 495,254" />
+    <path d="M220,217 L380,217 C440,217 440,254 495,254" />
     <path d="M220,275 L330,275 C420,275 420,272 495,272" />
   </g>
+  <!-- the shared stretch of a line that splits, in ink: it goes both ways -->
+  <path d="M220,159 L380,159 M220,217 L380,217" fill="none" stroke="#2a2a2a" stroke-width="2.5"/>
   <text x="295" y="120" text-anchor="middle" font-size="11" fill="#6b6b66">tag optional</text>
-  <g fill="#d94a86">
+  <g fill="#2a2a2a">
     <circle cx="380" cy="159" r="5"/>
     <circle cx="380" cy="217" r="5"/>
   </g>

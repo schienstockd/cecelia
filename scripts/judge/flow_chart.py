@@ -4,7 +4,8 @@ Four columns, each a stacked bar to its own scale (the last is a few dozen again
 hundreds), joined by a band from the part that flows on:
 
 1. **Recital** — findings since logging began: fixed in the commit, not fixed, plausible notes.
-2. **Bug check** — the weekly judge's bugs (plausible notes on one function merge into one).
+2. **Bug check** — the weekly judge's bugs, with the steps from column 1's unfixed notes printed below
+   (notes on one function merge into one bug; one already gone when the judge read it isn't listed).
 3. **Verify agent** — what the agents it sent bugs to said.
 4. **Real bugs** — fixed, open with an issue, not filed yet, won't fix.
 
@@ -84,6 +85,10 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
             required.setdefault(p["slug"], e)
         elif e.get("event") == _PLAUSIBLE_EVENT and p.get("marker") == "plausible":
             plausible.setdefault(_bugs._key(e), e)
+    # the notes behind the Recital's not-fixed and untagged-plausible segments, by the sweep's key
+    unfixed = {**{s: e for s, e in required.items() if outcome(s) != _FIXED},
+               **{_bugs._key(e): e for e in slugless if (e.get("payload") or {}).get("outcome") != _FIXED},
+               **{k: e for k, e in plausible.items() if outcome(k) != _FIXED}}
     days = sorted(e["ts"][:10] for e in (*required.values(), *slugless, *plausible.values()) if e.get("ts"))
     req_fixed = (sum(outcome(s) == _FIXED for s in required)
                  + sum((e.get("payload") or {}).get("outcome") == _FIXED for e in slugless))
@@ -98,6 +103,8 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
     check = {"settled": 0, "waiting": 0, "verify": 0}
     verify = {"not_a_bug": 0, "parked": 0, "unchecked": 0, "real": 0}
     real = {"fixed": 0, "open_issue": 0, "not_filed": 0, "wont_fix": 0}
+    into = _into_check(unfixed, latest.values(), max((r.get("run") or {}).get("ts") or "" for r in records)
+                       if records else "")
     for b in latest.values():
         col, vcol = _bug_class(b)
         check[col] += 1
@@ -111,8 +118,34 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
                     "plausible": len(plausible) - pl_fixed},
         "required": n_required, "required_fixed": req_fixed,
         "plausible_total": len(plausible), "plausible_fixed": pl_fixed,
-        "check": check, "verify": verify, "real": real,
+        "check": check, "verify": verify, "real": real, "into_check": into,
     }
+
+
+def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: str) -> dict[str, int]:
+    """How the Recital's unfixed notes become the bug check's bugs, line by line: the step a reader
+    can't see from the two column totals. `unfixed`: those notes by the sweep's key; `bugs`: every
+    bug at its newest record; `last_pass`: the newest pass's `run.ts`. The lines add up:
+    `notes - rules_only - not_listed - since_pass - merged + tagged_later + agent_run + stranded`
+    is the bug check's total."""
+    bugs = list(bugs)
+    eligible = {k for k, e in unfixed.items() if _bugs.swept(e)}
+    reached: set[str] = set()
+    from_notes = tagged_later = 0
+    for b in bugs:
+        if b.get("kind") in ("agent_run", "stranded"):
+            continue
+        mine = set(b.get("sources") or [b["key"]]) & eligible
+        reached |= mine
+        from_notes += bool(mine)
+        tagged_later += not mine       # its notes were tagged fixed after the judge listed it
+    unseen = [unfixed[k] for k in eligible - reached]
+    since = sum((e.get("ts") or "") >= last_pass for e in unseen)
+    return {"notes": len(unfixed), "rules_only": len(unfixed) - len(eligible),
+            "not_listed": len(unseen) - since, "since_pass": since, "merged": len(reached) - from_notes,
+            "tagged_later": tagged_later, "last_pass": last_pass[:10] or None,
+            "agent_run": sum(b.get("kind") == "agent_run" for b in bugs),
+            "stranded": sum(b.get("kind") == "stranded" for b in bugs)}
 
 
 def _fmt_day(day: str) -> str:
@@ -147,7 +180,8 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
             (rl["not_filed"], _style.NEUTRAL_LIGHT, "open, not filed yet"),
             (rl["wont_fix"], _style.NEUTRAL, "won't fix")], None),
     ]
-    W, H, top, bh, bw = 1000, 436, 114, 250, 22
+    ledger = _ledger(data["into_check"], n_check)
+    W, H, top, bh, bw = 1000, 436 + 31 + 17 * len(ledger), 114, 250, 22
     xs = (24, 290, 540, 790)
     out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" role="img" '
            f'font-family="{_style.FONT}" fill="{_style.INK}">',
@@ -196,12 +230,38 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
             f'<text x="290" y="22" font-size="13" font-weight="600">Weekly judge</text>',
             f'<text x="290" y="38" font-size="12" fill="{_style.DIM}">unattended: checks, verifies, files the issues</text>',
             f'<path d="M290,46 L{W - 24},46" stroke="{_style.DIM}" stroke-width="1.5"/>']
+    # the step the two totals can't explain: how the unfixed notes became the bug check's bugs
+    y = 404
+    out.append(f'<text x="24" y="{y}" font-size="13" font-weight="700">From {ledger[0][1]} notes to {n_check} '
+               'bugs</text>')
+    for sign, n, label in ledger:
+        y += 17
+        if sign == "=":
+            y += 5
+            out.append(f'<path d="M30,{y - 15} L300,{y - 15}" stroke="{_style.DIM}" stroke-width="1"/>')
+        bold = ' font-weight="700"' if sign in ("", "=") else ""
+        out.append(f'<text x="70" y="{y}" font-size="13" text-anchor="end"{bold}>{sign} {n}</text>'
+                   f'<text x="80" y="{y}" font-size="13">{label}</text>')
     span = (f"{_fmt_day(data['first_day'])} to {_fmt_day(data['last_day'])}" if data["first_day"]
             else "Nothing logged yet")
-    out += [f'<text x="24" y="{H - 34}" font-size="12" fill="{_style.DIM}">{span}. Each column is drawn to its own '
+    out += [f'<text x="24" y="{H - 16}" font-size="12" fill="{_style.DIM}">{span}. Each column is drawn to its own '
             'scale; the shaded band is what flows on to the next.</text>',
-            f'<text x="24" y="{H - 16}" font-size="12" fill="{_style.DIM}">Plausible notes on the same function '
-            'merge into one bug. Their tag is optional: an untagged note may have been fixed in its commit, '
-            'and shows here as "already gone".</text>',
             "</svg>"]
     return "\n".join(out) + "\n"
+
+
+def _ledger(into: dict, bugs: int) -> list[tuple[str, int, str]]:
+    """`_into_check` as lines to print, down to `bugs` (the bug check's total): (sign, count, label),
+    a line with nothing on it left out."""
+    since = (f"logged since the last pass ({_fmt_day(into['last_pass'])}): judged at the next"
+             if into["last_pass"] else "logged before the first pass: judged at it")
+    lines = [("", into["notes"], "not fixed, or plausible and untagged"),
+             ("−", into["rules_only"], "wrong home: these feed only the rule count"),
+             ("−", into["not_listed"], "already gone when the judge first read them: not listed"),
+             ("−", into["since_pass"], since),
+             ("−", into["merged"], "on a function another note names: one bug between them"),
+             ("+", into["tagged_later"], "tagged fixed only after the judge had listed them"),
+             ("+", into["agent_run"], "errors hit by unattended agent runs"),
+             ("+", into["stranded"], "commits pushed to a PR after it merged"),
+             ("=", bugs, "bugs in the bug check")]
+    return [ln for ln in lines if ln[1] or ln[0] in ("", "=")]

@@ -161,7 +161,8 @@ class AggregateTest(_Fixture):
     def test_a_low_session_or_partial_week_is_drawn_hollow_and_dashed_and_gets_no_rate(self):
         rows = _week(day="2026-09-28") + _week(day="2026-10-06", sessions=3) + _week(day="2026-10-13")
         data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 20))
-        svg = self.c.render_svg(data)
+        with mock.patch.object(self.c, "MIN_LINE_WEEKS", 1):   # lines, to see the dashes
+            svg = self.c.render_svg(data)
         hollow = re.compile(r'<circle[^>]*fill="none"')
         self.assertEqual(len(hollow.findall(svg)), 2)  # its counts in panel a; the four rate lines skip it
         low = data["weeks"][1]
@@ -170,10 +171,22 @@ class AggregateTest(_Fixture):
         same = self.c.aggregate(_week(day="2026-09-28"), [], as_of=dt.date(2026, 10, 20))["weeks"][0]
         self.assertEqual(self.c._fixed(same, "fanout"), 50)  # the same findings, enough sessions
         self.assertIn('stroke-dasharray="4 3"', svg)
-        whole = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06"), [],
-                                                   as_of=dt.date(2026, 10, 20)))
+        with mock.patch.object(self.c, "MIN_LINE_WEEKS", 1):
+            whole = self.c.render_svg(self.c.aggregate(_week(day="2026-09-28") + _week(day="2026-10-06"), [],
+                                                       as_of=dt.date(2026, 10, 20)))
         self.assertFalse(hollow.findall(whole))
         self.assertNotIn("dasharray", whole)
+
+    def test_under_min_line_weeks_the_points_are_dots_with_their_values_not_joined(self):
+        def weeks(n):
+            days = ("2026-09-28", "2026-10-05", "2026-10-12", "2026-10-19")[:n]
+            rows = [r for d in days for r in _week(day=d)]
+            return self.c.render_svg(self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 27)))
+        joins = re.compile(r'<line x1="[\d.]+" y1="[\d.]+" x2="[\d.]+" y2="[\d.]+" stroke="#\w+" stroke-width="1.75"')
+        few = weeks(self.c.MIN_LINE_WEEKS - 1)
+        self.assertFalse(joins.findall(few))
+        self.assertIn(">12</text>", few)   # 12 changes reviewed, printed beside its dot
+        self.assertTrue(joins.findall(weeks(self.c.MIN_LINE_WEEKS)))
 
     def test_judge_summary_is_the_newest_pass_counts_only(self):
         old = {"kind": "pass", "date": "2026-10-02", "bugs": [{"status": "open", "desc": "secret text"}]}
@@ -251,11 +264,13 @@ class RenderTest(_Fixture):
             {"key": "fanout-x3", "status": "gone", "first_seen": "2026-10-07"},
             {"key": "fanout-x4", "status": "dismissed", "first_seen": "2026-10-07"}]}
         data = self.c.aggregate(rows, [record], as_of=dt.date(2026, 10, 20))
-        svg = self.c.render_svg(data)
+        self.assertIn('fill="none" stroke="#D55E00"', self.c.render_svg(data))   # 4 notes: under LOW_NOTES, outlines
+        with mock.patch.object(self.c, "LOW_NOTES", 1):
+            svg = self.c.render_svg(data)
         self.assertIn("Share of unfixed notes (%)", svg)
-        self.assertIn(">n = 4<", svg)  # one week judged: real bug 50 %, gone 25 %, dismissed 25 %
+        self.assertIn(">n = 4<", svg)  # one week judged: real bug 50 %, gone 25 %, not a bug 25 %
         self.assertEqual(svg.count(">n = "), 1)  # no n under a week the judge has nothing from
-        # one stacked bar (legend swatches are 10 by 10, bars a computed width): real bug (open + parked) 50 %, gone 25 %, dismissed 25 %, bottom-up to 100 %
+        # one stacked bar (legend swatches are 10 by 10, bars a computed width): real bug (open + parked) 50 %, gone 25 %, not a bug 25 %, bottom-up to 100 %
         bars = [(float(y), float(h), fill) for y, h, fill in
                 re.findall(r'<rect x="[\d.]+" y="([\d.]+)" width="\d+\.\d" height="([\d.]+)" fill="(#\w+)"/>', svg)]
         pal = self.c.load_hex()
