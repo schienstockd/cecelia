@@ -12,6 +12,8 @@
 > - production has no separate frontend service to put under systemd
 > - a dummy Xorg driver would take the session off the GPU
 > - "lock disabled" is unsafe on a console people walk up to
+> - pinning the driver would split it from the kernel modules Ubuntu updates with it, and block
+>   security fixes
 
 # Task: Remote-access setup for the Cecelia GPU box
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Read-only health check for a lab GPU box reached by remote desktop. No sudo.
-# Reports the GPU, driver pin, Vulkan device, desktop session, browser, the remote-desktop service,
+# Reports the GPU (and a driver update waiting for a reboot), Vulkan device, desktop session, browser, the remote-desktop service,
 # and every Cecelia listener's bind address. Exits non-zero if any check FAILs.
 #
 # Run it INSIDE the remote session to see what that session gets. See docs/todo/REMOTE_BOX_PLAN.md.
@@ -14,13 +14,20 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 check_gpu() {
   echo "GPU"
-  if have nvidia-smi && gpu=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null); then
-    ok "$gpu"
+  if ! have nvidia-smi; then fail "nvidia-smi missing"; return; fi
+  if out=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>&1); then
+    ok "$out"
   else
-    fail "nvidia-smi missing or no NVIDIA GPU visible"
+    case "$out" in
+      # An automatic driver update replaced the libraries but the old kernel module is still loaded;
+      # new GPU programs fail until the box is rebooted.
+      *mismatch*) fail "driver updated but not yet loaded: reboot the box" ;;
+      *) fail "no NVIDIA GPU visible: $(echo "$out" | head -n1)" ;;
+    esac
   fi
-  held=$(apt-mark showhold 2>/dev/null | grep -E '^(nvidia|cuda|libnvidia)' | tr '\n' ' ')
-  [ -n "$held" ] && ok "held: $held" || warn "no NVIDIA/CUDA packages held (apt-mark hold)"
+  if grep -qs nvidia /var/run/reboot-required.pkgs; then
+    warn "an NVIDIA update is waiting for a reboot"
+  fi
 }
 
 check_vulkan() {
