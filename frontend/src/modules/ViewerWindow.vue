@@ -2050,13 +2050,16 @@ function applySolo(m: ViewerMeta, keep = m.channels.findIndex(ch => ch.visible))
   const vis = soloVisibility(m.channels.length, keep)
   m.channels.forEach((ch, i) => { ch.visible = vis[i] })
 }
-/** Step the shown channel up/down the list (wraps), for the arrows beside the toggle. */
+/** Step the shown channel up/down the list (wraps) — the canvas chip's arrows and ↑/↓. */
 function stepSolo(dir: 1 | -1) {
   const m = meta.value
   if (!m) return
   const next = stepChannel(m.channels.findIndex(ch => ch.visible), dir, Math.min(m.channels.length, MAX_CHANNELS))
   if (next >= 0) setChannelVisible(next, true)
 }
+/** Index of the channel on screen in one-at-a-time mode, for the canvas chip; -1 when none is. */
+const soloIndex = computed(() =>
+  (meta.value?.channels.slice(0, MAX_CHANNELS) ?? []).findIndex(ch => ch.visible))
 watch(soloChannel, on => {
   const m = meta.value
   if (!on || !m) return
@@ -3422,6 +3425,7 @@ const SHORTCUTS: { keys: string; pan: string; select: string }[] = [
   { keys: 'Alt + click',   pan: '—',                      select: 'Toggle cell in selection' },
   { keys: 'Space',         pan: 'Play / pause',           select: 'Play / pause' },
   { keys: '← / →',         pan: 'Prev / next frame',      select: 'Prev / next frame' },
+  { keys: '↑ / ↓',         pan: 'Prev / next channel (one at a time)', select: 'Prev / next channel (one at a time)' },
   { keys: 'Mode icon',     pan: 'Switch to select',       select: 'Switch to pan' },
 ]
 const keysOpen = ref(false)
@@ -4915,6 +4919,11 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
   if (e.key === ' ') { e.preventDefault(); togglePlay(); return }
+  if (soloChannel.value && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault()
+    stepSolo(e.key === 'ArrowUp' ? -1 : 1)
+    return
+  }
   const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
   if (step === 0 || nT.value <= 1) return
   e.preventDefault()
@@ -5628,6 +5637,27 @@ onUnmounted(() => {
                 @click="dismissShareToast" v-tooltip.top="'Dismiss'"
                 aria-label="Dismiss share notice"><i class="pi pi-times" /></button>
       </div>
+      <!-- One-at-a-time stepper, on the canvas: the user is looking at the image while flipping
+           markers, and the chip names the channel on screen (the sidebar may be folded away).
+           ↑/↓ match the keys (see `onKey`); ←/→ are already time. Top-centre: the other three
+           corners and bottom-left are taken (timestamp, overview, scale bar, status chip). -->
+      <div v-if="soloChannel && soloIndex >= 0" class="vw-status-chip vw-solo-chip">
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense vw-solo-step"
+                @click="stepSolo(-1)" v-tooltip.bottom="'Previous channel (↑)'" aria-label="Show previous channel">
+          <i class="pi pi-chevron-up" />
+        </button>
+        <!-- Every name in one grid cell, only the current one visible: the chip sizes to the LONGEST
+             name, so it keeps one width and the arrows stay put while stepping. -->
+        <span class="vw-solo-names">
+          <span v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c"
+                :class="['vw-solo-name', { 'vw-solo-name-on': c === soloIndex }]"
+                :aria-hidden="c !== soloIndex">{{ ch.name }}</span>
+        </span>
+        <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-dense vw-solo-step"
+                @click="stepSolo(1)" v-tooltip.bottom="'Next channel (↓)'" aria-label="Show next channel">
+          <i class="pi pi-chevron-down" />
+        </button>
+      </div>
       <!-- Top-right corner column: the navigation widget (overview in 2D, axes in 3D) and, under it,
            the cache map toggled from the Advanced popover. A column so neither has to know the
            other's height; the map stays off the overview because the overview is for navigating. -->
@@ -5824,7 +5854,16 @@ onUnmounted(() => {
       </div>
 
       <template v-if="meta">
-        <div class="cc-eyebrow cc-fs-2xs">View</div>
+        <!-- Shortcuts rides on the heading line — a reference popover, not a live control, and the row
+             below stays one line in a narrow sidebar. -->
+        <div class="cc-row cc-row-tight">
+          <span class="cc-eyebrow cc-fs-2xs">View</span>
+          <div class="vw-grow" />
+          <button ref="keysBtn" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" @click="keysOpen = !keysOpen"
+                  v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
+            <i class="pi pi-question-circle" />
+          </button>
+        </div>
         <div class="cc-row cc-row-tight">
           <ChipSelect
             :options="MODES" :model-value="mode" variant="segmented" aria-label="View mode"
@@ -5865,11 +5904,6 @@ onUnmounted(() => {
                   v-tooltip.top="'Renderer, projection and cache maps'"
                   @click="advancedOpen = !advancedOpen">
             <i class="pi pi-sliders-h" />
-          </button>
-          <!-- Shortcuts sits at the far right — a reference popover, not a live control. -->
-          <button ref="keysBtn" class="cc-btn cc-btn-ghost cc-btn-icon" @click="keysOpen = !keysOpen"
-                  v-tooltip.left="'Mouse and keyboard shortcuts'" aria-label="Shortcuts">
-            <i class="pi pi-question-circle" />
           </button>
         </div>
         <!-- Z controls, one block for both views. 3D: the Depth range (whole stack by default), or —
@@ -6112,10 +6146,13 @@ onUnmounted(() => {
                             :open="openSection === 'channels'"
                             @update:open="v => setSection('channels', v)" fill>
           <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
-               colours, one at a time + its stepper), contrast and card layout on the right. Pressed
+               colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
                state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
-               labelled `CcToggle` rows, so the section header is one line. -->
+               labelled `CcToggle` rows, so the section header is one line. Each side is a non-wrapping
+               `.cc-row-group`, so a narrow sidebar breaks the row BETWEEN the two clusters (the right
+               one keeps its right edge) instead of stranding an icon or two on a second line. -->
           <div class="cc-row cc-row-tight vw-ch-master">
+            <div class="cc-row-group">
             <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allChannelsVisible }]"
                     @click="setAllChannels(!allChannelsVisible)" :aria-pressed="allChannelsVisible"
                     v-tooltip.right="allChannelsVisible ? 'Hide every channel' : 'Show every channel'"
@@ -6134,17 +6171,8 @@ onUnmounted(() => {
                     aria-label="Show one channel at a time">
               <i class="pi pi-dot-circle" />
             </button>
-            <template v-if="soloChannel">
-              <button class="cc-btn cc-btn-ghost cc-btn-icon"
-                      @click="stepSolo(-1)" v-tooltip.top="'Previous channel'" aria-label="Show previous channel">
-                <i class="pi pi-chevron-up" />
-              </button>
-              <button class="cc-btn cc-btn-ghost cc-btn-icon"
-                      @click="stepSolo(1)" v-tooltip.top="'Next channel'" aria-label="Show next channel">
-                <i class="pi pi-chevron-down" />
-              </button>
-            </template>
-            <span class="vw-grow" aria-hidden="true" />
+            </div>
+            <div class="cc-row-group vw-ch-master-end">
             <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="autoAllContrast"
                     v-tooltip.left="'Auto contrast on every channel'"
                     aria-label="Auto contrast every channel">
@@ -6180,6 +6208,7 @@ onUnmounted(() => {
                     :aria-label="allCardsCompact ? 'Expand every channel' : 'Compact every channel'">
               <i :class="['pi', allCardsCompact ? 'pi-angle-double-down' : 'pi-angle-double-up']" />
             </button>
+            </div>
           </div>
           <div v-for="(ch, c) in meta!.channels.slice(0, MAX_CHANNELS)" :key="c"
                :class="['vw-ch cc-card cc-card-2', { 'vw-ch-compact': isCompact(channelsCompact, channelFlips, c) }]">
@@ -6754,6 +6783,20 @@ onUnmounted(() => {
 .vw-status-chip-btn { margin-left: 0.35rem; color: #fff; }
 .vw-status-chip-dismiss { margin-left: 0.15rem; color: #fff; opacity: 0.8; }
 .vw-status-chip-dismiss:hover { opacity: 1; }
+/* The one-at-a-time stepper borrows the chip's look, top-centre. The light border keeps it visible on a
+   black frame, where the chip's dark fill alone disappears. */
+.vw-solo-chip {
+  top: 0.75rem; bottom: auto; left: 50%; transform: translateX(-50%);
+  pointer-events: auto; gap: 0.15rem; padding: 0.15rem 0.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.35); font-size: var(--cc-fs-sm);
+}
+.vw-solo-step { color: #fff; }
+.vw-solo-names { display: grid; min-width: 0; text-align: center; }
+.vw-solo-name {
+  grid-area: 1 / 1; visibility: hidden; padding: 0 0.15rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vw-solo-name-on { visibility: visible; }
 /* Overview minimap — top-right of the canvas. Same visual language as the status chip (dark
    translucent panel) so it reads as a peer overlay. Cursor is `crosshair` because a click is a
    navigation, not a select. */
@@ -6878,6 +6921,7 @@ onUnmounted(() => {
    that, or they sit on the card's border. */
 .vw-ch { padding-left: 0.7rem; padding-right: 0.7rem; }
 .vw-ch-master { margin-bottom: 0.35rem; }
+.vw-ch-master-end { margin-left: auto; }
 /* min-width sized for the widest reading ("0–65535") — without it the readout column shrinks as
    `hi` drops, the flex-1 slider gains width, and the histogram silhouette appears to breathe with
    every drag. Same fix as .vw-num above. `tabular-nums` on .cc-readout keeps
