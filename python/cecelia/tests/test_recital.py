@@ -637,3 +637,32 @@ class DefaultRunnerTest(unittest.TestCase):
                 mock.patch.object(r.subprocess, "run", side_effect=OSError(7, "Argument list too long")):
             with self.assertRaises(RecitalError):
                 r._default_runner("p")
+
+
+class RecitalCliMergeTest(unittest.TestCase):
+    """`pixi run recital` during a merge: main's reviewed code would yield findings nothing closes."""
+
+    def _cli(self):
+        import importlib.util
+        path = pathlib.Path(__file__).resolve().parents[3] / "scripts" / "recital.py"
+        spec = importlib.util.spec_from_file_location("recital_cli", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_a_merge_in_progress_skips_without_reviewing_or_logging(self):
+        cli = self._cli()
+        with mock.patch.object(cli, "in_sequencer_commit", return_value=True), \
+             mock.patch.object(cli, "run_recital", side_effect=AssertionError("reviewed a merge")), \
+             mock.patch.object(cli, "_get_diff", side_effect=AssertionError("read a merge diff")), \
+             mock.patch.object(cli.sys, "argv", ["recital"]):
+            self.assertEqual(cli.main(), 0)
+
+    def test_stdin_still_reviews_what_it_is_given(self):
+        cli = self._cli()
+        with mock.patch.object(cli, "in_sequencer_commit", return_value=True), \
+             mock.patch.object(cli, "_get_diff", return_value="diff --git a/x b/x\n"), \
+             mock.patch.object(cli, "run_recital", return_value="body") as run, \
+             mock.patch.object(cli.sys, "argv", ["recital", "--stdin"]):
+            self.assertEqual(cli.main(), 0)
+        run.assert_called_once()
