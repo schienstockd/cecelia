@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <!-- Where a pre-commit reviewer finding goes. Kept in sync with scripts/judge/bugs.py `candidates`,
+       scripts/judge/rules.py `tally` and docs/ai-assist/WEEKLY_JUDGE.md. -->
+  <defs>
+    <marker id="arrowF" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d94a86"/>
+    </marker>
+    <marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/>
+    </marker>
+  </defs>
+  <rect width="900" height="380" fill="#fafaf7"/>
+
+  <!-- gate: a must-resolve finding either was fixed in its commit (down: caught, ends) or not (on) -->
+  <rect x="250" y="138" rx="10" ry="10" width="90" height="150" fill="#ffffff" stroke="#6b6b66" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <text x="295" y="130" text-anchor="middle" font-size="13" fill="#6b6b66">fixed in the commit?</text>
+  <text x="372" y="130" font-size="13" font-weight="600" fill="#d94a86">no →</text>
+  <path d="M295,292 L295,318" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+  <text x="304" y="310" font-size="13" font-weight="600" fill="#6b6b66">yes: caught</text>
+  <rect x="235" y="324" rx="9" ry="9" width="120" height="36" fill="#f0f0ee" stroke="#6b6b66" stroke-width="1.5"/>
+  <text x="295" y="347" text-anchor="middle" font-size="14" fill="#2a2a2a">Ends at commit</text>
+
+  <!-- where the left column comes from -->
+  <text x="16" y="30" font-size="16" fill="#2a2a2a"><tspan font-weight="700">Recital</tspan><tspan fill="#6b6b66">&#160;· before each commit</tspan></text>
+  <text x="16" y="50" font-size="12" fill="#6b6b66">two reviewer agents and the mechanical checks read the diff</text>
+  <path d="M16,62 L340,62" fill="none" stroke="#6b6b66" stroke-width="1.5"/>
+
+  <!-- findings: fan-out audit (blue), convention check (yellow) -->
+  <g stroke="#2a2a2a" stroke-width="3">
+    <rect x="16" y="82"  rx="9" ry="9" width="200" height="38" fill="#dbeaf3"/>
+    <rect x="16" y="140" rx="9" ry="9" width="200" height="38" fill="#dbeaf3"/>
+    <rect x="16" y="198" rx="9" ry="9" width="200" height="38" fill="#efeecf"/>
+    <rect x="16" y="256" rx="9" ry="9" width="200" height="38" fill="#efeecf"/>
+  </g>
+  <g fill="#2a2a2a" text-anchor="middle" font-size="15">
+    <text x="116" y="106">Fan-out <tspan font-weight="700">plausible</tspan></text>
+    <text x="116" y="164">Fan-out <tspan font-weight="700">confirmed</tspan></text>
+    <text x="116" y="222">Convention <tspan font-weight="700">should reuse</tspan></text>
+    <text x="116" y="280">Convention <tspan font-weight="700">wrong home</tspan></text>
+  </g>
+
+  <!-- listed only: no outcome tag, never judged -->
+  <rect x="16" y="320" rx="9" ry="9" width="200" height="44" fill="#f0f0ee" stroke="#6b6b66" stroke-width="1.5"/>
+  <text x="116" y="338" text-anchor="middle" font-size="13" fill="#2a2a2a"><tspan font-weight="700">Potential duplicate</tspan></text>
+  <text x="116" y="356" text-anchor="middle" font-size="13" fill="#2a2a2a">Mechanical checks</text>
+  <path d="M220,342 L229,342" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
+
+  <!-- weekly judge -->
+  <g stroke="#2a2a2a" stroke-width="3">
+    <rect x="500" y="90"  rx="10" ry="10" width="160" height="76" fill="#fbe7d4"/>
+    <rect x="500" y="206" rx="10" ry="10" width="160" height="76" fill="#f7d0e0"/>
+  </g>
+  <g fill="#2a2a2a" text-anchor="middle">
+    <text x="580" y="122" font-size="18" font-weight="700">Bug check</text>
+    <text x="580" y="148" font-size="13" fill="#6b6b66">still on main?</text>
+    <text x="580" y="238" font-size="18" font-weight="700">Rule count</text>
+    <text x="580" y="264" font-size="13" fill="#6b6b66">3+ sessions?</text>
+  </g>
+  <path d="M675,100 Q695,100 695,120 L695,252 Q695,272 675,272" fill="none" stroke="#6b6b66" stroke-width="1.5"/>
+  <text x="708" y="182" font-size="14" fill="#6b6b66">weekly judge</text>
+
+  <!-- what happens to its output: the GitHub chain above the bug check, the proposal below the rule count -->
+  <g fill="#ffffff" stroke="#2a2a2a" stroke-width="1.5">
+    <rect x="500" y="14"  rx="9" ry="9" width="120" height="44"/>
+    <rect x="648" y="14"  rx="9" ry="9" width="120" height="44"/>
+    <rect x="796" y="14"  rx="9" ry="9" width="90"  height="44"/>
+    <rect x="500" y="312" rx="9" ry="9" width="120" height="44"/>
+    <rect x="648" y="312" rx="9" ry="9" width="200" height="44"/>
+  </g>
+  <g fill="#2a2a2a" text-anchor="middle" font-size="15">
+    <text x="560" y="34">GitHub issue</text>
+    <text x="708" y="34">Fix PR</text>
+    <text x="841" y="34">Closed</text>
+    <text x="560" y="332">Proposal</text>
+    <text x="748" y="332">Rule edited, or rejected</text>
+  </g>
+  <g fill="#6b6b66" text-anchor="middle" font-size="11">
+    <text x="560" y="50">after verify</text>
+    <text x="708" y="50">Dominik or auto-fix</text>
+    <text x="841" y="50">once gone</text>
+    <text x="560" y="348">in a rules PR</text>
+    <text x="748" y="348">Dominik, in judge-review</text>
+  </g>
+  <g stroke="#6b6b66" stroke-width="2" fill="none" marker-end="url(#arrowDim)">
+    <path d="M560,88 L560,64" />
+    <path d="M622,36 L642,36" />
+    <path d="M770,36 L790,36" />
+    <path d="M560,284 L560,306" />
+    <path d="M622,334 L642,334" />
+  </g>
+
+  <g stroke="#d94a86" stroke-width="2.5" fill="none" marker-end="url(#arrowF)">
+    <path d="M220,101 L330,101 C420,101 420,116 495,116" />
+    <path d="M220,159 L380,159 C440,159 440,134 495,134" />
+    <path d="M380,159 C440,159 440,236 495,236" />
+    <path d="M220,217 L380,217 C440,217 440,152 495,152" />
+    <path d="M380,217 C440,217 440,254 495,254" />
+    <path d="M220,275 L330,275 C420,275 420,272 495,272" />
+  </g>
+  <g fill="#d94a86">
+    <circle cx="380" cy="159" r="5"/>
+    <circle cx="380" cy="217" r="5"/>
+  </g>
+</svg>

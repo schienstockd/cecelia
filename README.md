@@ -243,19 +243,10 @@ as issues, and it counts which `CLAUDE.md` rules keep breaking: one broken in 3+
 proposal to reword it or make it a mechanical check. This is recent and still being measured:
 [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
 
-| Finding | At commit | Weekly bug check | Weekly rule count |
-|---|---|---|---|
-| Fan-out **confirmed**: a fix missed a sibling call site | must be resolved | yes, unless fixed | yes, unless fixed |
-| Fan-out **plausible**: might have missed one | listed | yes | no |
-| Convention **should reuse**: duplicates an existing helper | must be resolved | yes, unless fixed | yes, unless fixed |
-| Convention **wrong home**: a comment that belongs in a doc | must be resolved | no | yes, unless fixed |
-| Convention **potential duplicate** | listed | no | no |
-| Mechanical: undocumented file or route, structural rule | listed | no | no |
+<p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go straight to the weekly bug check. Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Convention potential duplicates and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; Dominik or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; Dominik edits the rule or rejects it in judge-review." width="100%"></p>
 
-*Unless fixed* means "unless fixed in that commit". Everything else goes in: shipped anyway, dropped,
-never resolved, and also *false positive*, since that's the agent's own call and the judge re-checks it.
-A fix that's caught before it lands shows the check working, not the rule failing, so it doesn't count
-against the rule.
+*Not fixed* includes *false positive*: that's the agent's own call, so the judge re-checks it. The
+bug check also takes errors from unattended agent runs, and runs Dominik reviewed as bad.
 
 <p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Weekly chart of the agents' pre-commit reviews since logging began on 27 September 2026: five panels: changes reviewed and PRs merged per week; findings per 100 changes and the share fixed before commit, for each of the two reviewers (fan-out audit and convention check); and, per reviewer, stacked bars of the weekly judge's verdicts on the notes nobody fixed (fan-out: real bug, gone, dismissed; convention: duplicate still there, gone, dismissed). Early data, no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
 
