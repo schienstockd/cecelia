@@ -27,9 +27,56 @@ function buildGroupEntry(params: TaskDef['params'][number]['params'], saved: Par
   const out: ParamValues = {}
   for (const p of params ?? []) {
     if (p.type === 'section') {
-      for (const sp of p.params ?? []) out[sp.key] = saved[sp.key] ?? sp.default ?? null
+      for (const sp of p.params ?? []) out[sp.key] = clampToSpec(sp, saved[sp.key] ?? sp.default ?? null)
     } else {
-      out[p.key] = saved[p.key] ?? p.default ?? null
+      out[p.key] = clampToSpec(p, saved[p.key] ?? p.default ?? null)
+    }
+  }
+  return out
+}
+
+/**
+ * A stored `int`/`float` pulled into the spec's CURRENT `[min, max]`; anything else passes through.
+ *
+ * A stored value outlives a range change. When a spec tightens a bound (`cellDiameter` went from
+ * 1–500 to 2–60), a remembered value outside it is restored verbatim, shown with the slider pegged at
+ * the end, and then rejected by `validate_params` ("exceeds maximum") on every run until the user
+ * happens to move it. Clamping where stored values meet the current spec means the form never offers
+ * a value the server will refuse — and the user sees the value it actually runs with.
+ */
+export function clampToSpec(p: ParamDef, v: unknown): unknown {
+  if ((p.type !== 'int' && p.type !== 'float') || typeof v !== 'number' || !Number.isFinite(v)) return v
+  if (p.min !== undefined && v < p.min) return p.min
+  if (p.max !== undefined && v > p.max) return p.max
+  return v
+}
+
+/**
+ * `clampToSpec` over a raw stored param bag (a chain node's `params`), leaving its shape alone:
+ * top-level keys, section children whether stored flat or nested, and repeatable-group entries.
+ * Keys the spec does not declare pass through untouched.
+ */
+export function clampParamsToSpec(def: TaskDef, params: ParamValues): ParamValues {
+  const out: ParamValues = { ...params }
+  const clampKey = (bag: ParamValues, p: ParamDef) => {
+    if (bag[p.key] !== undefined) bag[p.key] = clampToSpec(p, bag[p.key])
+  }
+  for (const p of def.params) {
+    if (p.type === 'section') {
+      const nested = out[p.key]
+      if (nested && typeof nested === 'object') out[p.key] = { ...(nested as ParamValues) }
+      for (const sp of p.params ?? []) {
+        clampKey(out, sp)
+        if (nested && typeof nested === 'object') clampKey(out[p.key] as ParamValues, sp)
+      }
+    } else if (p.type === 'group') {
+      const g = out[p.key]
+      if (g && typeof g === 'object') {
+        out[p.key] = Object.fromEntries(Object.entries(g as Record<string, ParamValues>).map(
+          ([k, entry]) => [k, clampParamsToSpec({ ...def, params: p.params ?? [] }, entry ?? {})]))
+      }
+    } else {
+      clampKey(out, p)
     }
   }
   return out
@@ -77,7 +124,7 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
       const savedSection = ((saved[p.key] ?? {}) as ParamValues)
       const sectionVals: ParamValues = {}
       for (const sp of p.params ?? []) {
-        sectionVals[sp.key] = savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null
+        sectionVals[sp.key] = clampToSpec(sp, savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null)
       }
       vals[p.key] = sectionVals
     } else if (p.type === 'group') {
@@ -88,7 +135,7 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
       }
       vals[p.key] = groupVals
     } else {
-      vals[p.key] = saved[p.key] ?? p.default ?? null
+      vals[p.key] = clampToSpec(p, saved[p.key] ?? p.default ?? null)
     }
   }
   // The order chips' sibling keys, which no walk of `def.params` can see. Absent stays absent — an

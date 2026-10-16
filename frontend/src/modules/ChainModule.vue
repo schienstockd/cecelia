@@ -20,6 +20,7 @@ import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
+import { clampParamsToSpec } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -647,7 +648,8 @@ function applyTemplate(
       data: {
         fn:              n.fn,
         scope:           n.scope,
-        params:          { ...defaults, ...n.params },
+        // Clamped: a stored value outside a since-tightened min/max would fail validation on every run.
+        params:          def ? clampParamsToSpec(def, { ...defaults, ...n.params }) : { ...defaults, ...n.params },
         barrier_policy:  n.barrier_policy,
         // '' is a REAL value meaning "inherit from the task spec" (chain.jl ChainNode) — every chain in
         // a project stores '' unless the user overrode it. Do NOT invent a pool name here: this used to
