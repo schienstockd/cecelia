@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buildCaptureAddress, normalisePoint, rectToOverlayGeom, pointsToOverlayGeom,
+  buildCaptureAddress, captureTimeS, normalisePoint, rectToOverlayGeom, pointsToOverlayGeom,
 } from './captureAddress'
 
 describe('buildCaptureAddress', () => {
@@ -26,6 +26,23 @@ describe('buildCaptureAddress', () => {
     expect(buildCaptureAddress({ projectUid: 'p', plotSpec: { specId: '' } }).plotSpec).toBeUndefined()
     expect(buildCaptureAddress({ projectUid: 'p', plotSpec: { specId: 'motility.speed' } }).plotSpec)
       .toEqual({ specId: 'motility.speed' })
+  })
+})
+
+describe('captureTimeS', () => {
+  it('frame index × interval (minutes in the meta) → seconds', () => {
+    expect(captureTimeS(113, 0.5)).toEqual({ elapsed: 3390, interval: 30 })
+    expect(captureTimeS(0, 2)).toEqual({ elapsed: 0, interval: 120 })
+  })
+  it('no interval, or no frame → undefined (t stays an index)', () => {
+    expect(captureTimeS(3, null)).toBeUndefined()
+    expect(captureTimeS(3, 0)).toBeUndefined()
+    expect(captureTimeS(-1, 1)).toBeUndefined()
+  })
+  it('buildCaptureAddress keeps a valid timeS, drops a bad one', () => {
+    expect(buildCaptureAddress({ projectUid: 'p', timeS: { elapsed: 60, interval: 30 } }).timeS)
+      .toEqual({ elapsed: 60, interval: 30 })
+    expect(buildCaptureAddress({ projectUid: 'p', timeS: { elapsed: 60, interval: 0 } }).timeS).toBeUndefined()
   })
 })
 

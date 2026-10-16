@@ -33,6 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
+import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
@@ -110,12 +111,12 @@ import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
-import { computeLandscape, readCanvasImageData, augmentLandscape,
+import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
-import { buildCaptureAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
+import { buildCaptureAddress, captureTimeS, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { announceShareOutcome, shareFailMessage } from '../utils/shareOutcome'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -5141,9 +5142,8 @@ function closeCaptureView() { captureView.value = null }
 
 // Landscape overlay (BIDIR PR #6, Decision 14): a categorical heatmap over the same tiles as
 // GridOverlay. Recompute on toggle / density / frame changes; the categorical output is a small
-// prior for Claude AND a pass at "where is the interesting stuff" for the eye. Publishing to the
-// backend lets `get_landscape` MCP tool read the same view the user is looking at — one
-// computation, two consumers (Decision 13's "standalone Vue feature first" pattern).
+// prior for Claude AND a pass at "where is the interesting stuff" for the eye. The overlay is for
+// the eye; what Claude reads (Share, MCP `get_landscape`) is `snapshotLandscape()` below.
 const landscape = ref<LandscapeResult | null>(null)
 // One category pass over the current canvas at the grid density. Shared by the overlay's
 // recompute AND by Share, which snapshots a landscape whether or not the overlay is on.
@@ -5174,8 +5174,8 @@ const recomputeLandscapeSched = debouncedLatest<void>(
     landscape.value = result
     if (!result) return
     if (projectUid) {
-      // Fire-and-forget publish so MCP get_landscape can see the same thing. A failed publish
-      // just leaves the last-published copy stale for a beat — the UI is unaffected.
+      // Fire-and-forget publish for Kiwi's landscape refs (`kiwi_refs.jl`). MCP `get_landscape`
+      // does not read this — it asks for `snapshotLandscape()`. A failed publish is harmless.
       fetch('/api/viewer/landscape', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5218,6 +5218,108 @@ function onReannotate(payload: {
   }
 }
 
+// The landscape as the viewer shows it NOW — what Share attaches and what an MCP `get_landscape`
+// request gets back (`viewer:landscape-request`). Overlay on or off: the toggle only decides whether
+// the user SEES it. Always a fresh category pass — the overlay's copy trails a pan by its debounce,
+// and the backend half below is registered to the camera at this instant.
+async function snapshotLandscape(): Promise<LandscapeResult | null> {
+  // `view` = the image rectangle on screen; the backend tiles exactly that, so "C4" is one region
+  // in both halves. No flat rectangle (rotated / perspective 3D) ⇒ category only.
+  // Augment the frontend-computed category landscape with backend-only fields
+  // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a + 2b): per-channel mean/SNR untangled
+  // from the colour-blend, per-tile segCount from label_props centroids, and per-tile
+  // pops from the current pop manager's visible populations. Visibility rule (Decision 3):
+  // only channels currently ticked on, the currently-shown labels vn, and the pop
+  // manager's active (vn, popType) travel — the response only carries what the user is
+  // looking at, matching the RGB composite. Every field optional; failure is soft
+  // (category-only stays a valid v1).
+  let landscapeSnapshot: LandscapeResult | null = null
+  const el = canvas.value
+  if (!el) return null
+  const canvasW = Math.max(1, el.clientWidth)
+  const canvasH = Math.max(1, el.clientHeight)
+  const baseLandscape = meta.value && shownT.value >= 0 ? await readViewLandscape() : null
+  const landscapeView = meta.value ? landscapeViewL0({
+    mode: mode.value, cam: cam.value, meta: meta.value, canvasW, canvasH,
+    perspective: settings.viewerVolumeProjection === 'persp',
+  }) : null
+  if (baseLandscape && meta.value) {
+    const visibleChannels = meta.value.channels
+      .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
+      .filter(ch => ch.visible)
+      .map(({ index, name }) => ({ index, name }))
+    // '' when no durable mask is drawn (eye off, or a preview / live store covering it — those have
+    // no label_props) — backend skips segCount
+    const labelsVn = landscapeLabelsVn(maskName.value, maskHidden.value, previewVn.value, liveVn.value)
+    // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
+    // and the pops in it whose eye is on — so the tile counts are the dots on screen.
+    const popLayersSnap = popLayers.value.map(l => ({
+      valueName: l.vn, popType: l.popType,
+      paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
+    })).filter(l => l.paths.length > 0)
+    // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
+    // "one at a time" discipline `labelName` uses for the labels layer — the backend
+    // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
+    const trackVn = (() => {
+      const names = cellTableNames()
+      if (!imageUid || !names.length) return ''
+      const vis = settings.getTrackVisibility(imageUid, names)
+      return names.find(n => vis[n]) ?? ''
+    })()
+    // At least one augmentable dimension has to be on before we ask; if the frontend has
+    // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
+    const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
+                       popLayersSnap.length > 0 || !!trackVn
+    if (anyAugment && projectUid && landscapeView) {
+      // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
+      // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
+      // looking at.
+      //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
+      //            neighbouring-plane cells the same way the gating page's pick-rect scope
+      //            defaults to). Channels still read the single plane at `z`.
+      //   volume → the loaded planes (Depth range or ±n window) — channels MIP over them and
+      //            counts filter to them, so both match what the volume view actually paints.
+      //            A 2D ±n window is a MIP too, so it asks as `volume` over the same planes.
+      // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
+      // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
+      const nZ = Math.max(1, meta.value?.nZ ?? 1)
+      const maxZ = nZ - 1
+      const rm: 'plane' | 'volume' = singlePlane.value ? 'plane' : 'volume'
+      const [zLo, zHi] = rm === 'volume'
+        ? zLoaded.value
+        : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
+      try {
+        const cRes = await fetch('/api/viewer/landscape/compute', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectUid, imageUid, valueName: valueName.value,
+            t: shownT.value, z: zPlane.value,
+            renderMode: rm, zLo, zHi, view: landscapeView,
+            cols: baseLandscape.grid.cols, rows: baseLandscape.grid.rows,
+            channels: visibleChannels,
+            ...(labelsVn ? { labelsValueName: labelsVn } : {}),
+            ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
+            ...(trackVn ? { tracksValueName: trackVn } : {}),
+          }),
+        })
+        if (cRes.ok) {
+          const cJson = await cRes.json() as {
+            tiles?: AugmentTile[],
+            sourceRun?: LandscapeResult['sourceRun'],
+            viewport?: { renderMode: string; zLo?: number; zHi?: number; view?: L0Rect },
+          }
+          if (Array.isArray(cJson.tiles)) {
+            landscapeSnapshot = augmentLandscape(baseLandscape, cJson.tiles,
+                                                 cJson.sourceRun, cJson.viewport)
+          }
+        }
+      } catch { /* soft fail — fall through to category-only */ }
+    }
+    landscapeSnapshot ??= baseLandscape
+  }
+  return landscapeSnapshot
+}
+
 async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
   const el = canvas.value
   if (!el || !projectUid) { drawMode.value = false; return }
@@ -5234,6 +5336,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       t: shownT.value >= 0 ? shownT.value : undefined,
       z: zPlane.value >= 0 ? zPlane.value : undefined,
       extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : undefined,
+      timeS: captureTimeS(shownT.value, meta.value?.frameIntervalMin),
     })
     // Full viewState snapshot so a later Refocus / Blackboard-attachment click can restore the
     // exact camera + channels the user saw when they shared — same shape ImageStripView's
@@ -5249,97 +5352,9 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       perspective: settings.viewerVolumeProjection === 'persp',
     }) : null
     // Snapshot the CURRENT landscape into the capture envelope, so `get_capture(id)` returns
-    // pixels + marks + view state + landscape in one call. Whole point of the landscape: hand
-    // Claude a semantic prior over the same tiles it's looking at. The live in-memory landscape
-    // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
-    // Attached on EVERY share, overlay on or off: the overlay toggle only decides whether the user
-    // sees it. Off ⇒ one category pass now, at the grid density the Annotations slider sets.
-    // Augment the frontend-computed category landscape with backend-only fields
-    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a + 2b): per-channel mean/SNR untangled
-    // from the colour-blend, per-tile segCount from label_props centroids, and per-tile
-    // pops from the current pop manager's visible populations. Visibility rule (Decision 3):
-    // only channels currently ticked on, the currently-shown labels vn, and the pop
-    // manager's active (vn, popType) travel — the response only carries what the user is
-    // looking at, matching the RGB composite. Every field optional; failure is soft
-    // (category-only stays a valid v1).
-    let landscapeSnapshot: LandscapeResult | null = null
-    const baseLandscape = meta.value && shownT.value >= 0
-      ? (settings.viewerLandscape && landscape.value) || await readViewLandscape()
-      : null
-    if (baseLandscape && meta.value) {
-      const visibleChannels = meta.value.channels
-        .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
-        .filter(ch => ch.visible)
-        .map(({ index, name }) => ({ index, name }))
-      // '' when no durable mask is drawn (eye off, or a preview / live store covering it — those have
-      // no label_props) — backend skips segCount
-      const labelsVn = landscapeLabelsVn(maskName.value, maskHidden.value, previewVn.value, liveVn.value)
-      // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
-      // and the pops in it whose eye is on — so the tile counts are the dots on screen.
-      const popLayersSnap = popLayers.value.map(l => ({
-        valueName: l.vn, popType: l.popType,
-        paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
-      })).filter(l => l.paths.length > 0)
-      // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
-      // "one at a time" discipline `labelName` uses for the labels layer — the backend
-      // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
-      const trackVn = (() => {
-        const names = cellTableNames()
-        if (!imageUid || !names.length) return ''
-        const vis = settings.getTrackVisibility(imageUid, names)
-        return names.find(n => vis[n]) ?? ''
-      })()
-      // At least one augmentable dimension has to be on before we ask; if the frontend has
-      // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
-      const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
-                         popLayersSnap.length > 0 || !!trackVn
-      if (anyAugment && projectUid) {
-        // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
-        // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
-        // looking at.
-        //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
-        //            neighbouring-plane cells the same way the gating page's pick-rect scope
-        //            defaults to). Channels still read the single plane at `z`.
-        //   volume → the loaded planes (Depth range or ±n window) — channels MIP over them and
-        //            counts filter to them, so both match what the volume view actually paints.
-        //            A 2D ±n window is a MIP too, so it asks as `volume` over the same planes.
-        // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
-        // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
-        const nZ = Math.max(1, meta.value?.nZ ?? 1)
-        const maxZ = nZ - 1
-        const rm: 'plane' | 'volume' = singlePlane.value ? 'plane' : 'volume'
-        const [zLo, zHi] = rm === 'volume'
-          ? zLoaded.value
-          : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
-        try {
-          const cRes = await fetch('/api/viewer/landscape/compute', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectUid, imageUid, valueName: valueName.value,
-              t: shownT.value, z: zPlane.value,
-              renderMode: rm, zLo, zHi,
-              cols: baseLandscape.grid.cols, rows: baseLandscape.grid.rows,
-              channels: visibleChannels,
-              ...(labelsVn ? { labelsValueName: labelsVn } : {}),
-              ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
-              ...(trackVn ? { tracksValueName: trackVn } : {}),
-            }),
-          })
-          if (cRes.ok) {
-            const cJson = await cRes.json() as {
-              tiles?: AugmentTile[],
-              sourceRun?: LandscapeResult['sourceRun'],
-              viewport?: { renderMode: string; zLo?: number; zHi?: number },
-            }
-            if (Array.isArray(cJson.tiles)) {
-              landscapeSnapshot = augmentLandscape(baseLandscape, cJson.tiles,
-                                                   cJson.sourceRun, cJson.viewport)
-            }
-          }
-        } catch { /* soft fail — fall through to category-only */ }
-      }
-      landscapeSnapshot ??= baseLandscape
-    }
+    // pixels + marks + view state + landscape in one call. The live in-memory landscape bag is
+    // ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
+    const landscapeSnapshot = await snapshotLandscape()
     // KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: read the toggle values ONCE here so a toggle flip while
     // the POST is in flight doesn't split the request/response semantics — the flags decide both
     // what we ask the backend to do and what we do locally afterwards.
@@ -5404,7 +5419,27 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
 }
 function onDrawCancel() { drawMode.value = false }
 
+// MCP `get_landscape` (api/src/landscape_api.jl `api_viewer_landscape_request`): the server asks
+// every window; the one showing this image answers with the landscape it shows now, tagged with the
+// request id the server is waiting on. Overlay toggle irrelevant — same snapshot Share attaches.
+const ws = useWsStore()
+async function onLandscapeRequest(data: Record<string, unknown>) {
+  if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
+  const requestId = String(data.requestId ?? '')
+  if (!requestId || !meta.value || shownT.value < 0) return
+  const snap = await snapshotLandscape()
+  if (!snap) return
+  fetch('/api/viewer/landscape', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectUid, imageUid, valueName: valueName.value,
+      t: shownT.value, z: zPlane.value, landscape: snap, requestId,
+    }),
+  }).catch(() => { /* the server's wait times out into "no_viewer" */ })
+}
+
 onMounted(() => {
+  ws.on('viewer:landscape-request', onLandscapeRequest)
   // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
   // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
@@ -5498,6 +5533,7 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopImageMetaWatch?.(); stopImageMetaWatch = null
+  ws.off('viewer:landscape-request', onLandscapeRequest)
   stopPlay()
   pump.cancel()
   zPump.cancel()

@@ -90,6 +90,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/notebooks/write"),
             ("POST", "/api/observer/labarchives/set"),
             ("POST", "/api/push/target"),
+            ("POST", "/api/viewer/landscape/request"),  # asks the viewer to compute; in-memory reply only
             ("POST", "/api/viewer/marks/cells"),
             ("POST", "/api/viewer/marks/freeform"),
             ("POST", "/api/viewer/marks/plot"),

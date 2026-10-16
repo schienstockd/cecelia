@@ -178,7 +178,7 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   frame yet, ASK them to (Share button in the viewer panel) rather than making up a captureId.
 - `mark_tile(image_uid, cell_id, label?, ttl_s?)` — highlight ONE grid tile (`"B3"`) when there is \
   no segmented object to name and no capture in hand. Pairs with `get_landscape(...)`: read the \
-  landscape's category per tile, then point at the tile that matters. Coarser than mark_cells / \
+  landscape's tiles, then point at the tile that matters. Coarser than mark_cells / \
   mark_tracks — use when a REGION is the answer, not an object.
 - `list_plots(project_uid)` — enumerate plot panels currently on the user's screen; call BEFORE \
   `mark_plot` to resolve "the UMAP" / "that heatmap" to a live `plot_id` instead of guessing. \
@@ -203,13 +203,13 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   when the target spans more than one image or population — sequential calls overwrite the bag. \
   Get ids first via `get_object_ids`.
 
-ON THE LANDSCAPE HEATMAP. `get_landscape(image_uid, value_name, t?, z?)` returns the user's \
-current LANDSCAPE OVERLAY — a cheap categorical map over the viewer's grid tiles \
-(`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`). Read it BEFORE reading raw \
-pixels from a capture — it's a rough semantic prior at tile resolution, not a segmentation. Use \
-it to say "row 2 is dominated by bright-textured tiles" or to pick a tile for `mark_tile`. If \
-the landscape hasn't been computed (`{landscape: null}`), the overlay is off in the viewer — \
-every viewer capture still carries one, so read the latest capture's; don't invent tiles.
+ON THE LANDSCAPE. `get_landscape(image_uid)` asks the open viewer for what it shows NOW — per \
+grid tile a cheap category (`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`) plus \
+the MEASURED data on screen: per-channel mean/SNR, cell counts, population counts, tracks. Every \
+viewer capture carries the same thing. Read it BEFORE reasoning from raw pixels: the measured \
+fields are the raw multi-channel data and the segmentation, which a rendered RGB frame cannot \
+give you. The user's Landscape overlay toggle plays no part. `{landscape: null, reason: \
+"no_viewer"}` means no viewer of that image is open — ask the user to open it; don't invent tiles.
 
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 

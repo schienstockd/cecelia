@@ -17,6 +17,8 @@
 // (that IS the current state; the landscape has to add something).
 
 import { clampDensity, GRID_DENSITY_DEFAULT, cellLabel } from './gridOverlay'
+import { cameraViewL0, type L0Rect } from './viewerPick'
+import type { OrbitCamera, ViewerMeta } from './volumeViewer'
 
 /** How many k-means clusters the landscape splits tiles into. Small on purpose: five buckets a
  *  domain reader can name at a glance (dark / bright-uniform / bright-textured / edge / mixed).
@@ -112,6 +114,26 @@ export interface LandscapeViewport {
   renderMode: 'plane' | 'volume'
   zLo?: number
   zHi?: number
+  /** The level-0 image rectangle the tiles cut (`landscapeViewL0`) — present whenever the backend
+   *  half was computed, so tile ↔ image px is one division. */
+  view?: L0Rect
+}
+
+/** The image rectangle (level-0 px) the screen shows, when ONE flat rectangle does: the 2D view, or a
+ *  3D view looking straight down orthographically (the shader's basis there matches the 2D one, so
+ *  `cameraViewL0` holds). A rotated or perspective 3D view has no such rectangle — `null`, and the
+ *  caller sends only the screen-read category layer, never per-tile counts it cannot place. */
+export function landscapeViewL0(opts: {
+  mode: 'plane' | 'volume'; cam: OrbitCamera; meta: ViewerMeta
+  canvasW: number; canvasH: number; perspective: boolean
+}): L0Rect | null {
+  const { mode, cam, meta, canvasW, canvasH, perspective } = opts
+  if (canvasW <= 0 || canvasH <= 0) return null
+  if (mode === 'volume') {
+    const faceOn = Math.abs(Math.sin(cam.yaw)) < 1e-3 && Math.cos(cam.yaw) > 0 && Math.abs(cam.pitch) < 1e-3
+    if (perspective || !faceOn) return null
+  }
+  return cameraViewL0(cam, meta, canvasW, canvasH)
 }
 
 export interface LandscapeResult {
@@ -154,7 +176,7 @@ export interface AugmentTile {
 export function augmentLandscape(
   base: LandscapeResult, augment: AugmentTile[],
   sourceRun?: LandscapeResult['sourceRun'],
-  viewport?: { renderMode?: string; zLo?: number; zHi?: number },
+  viewport?: { renderMode?: string; zLo?: number; zHi?: number; view?: L0Rect },
 ): LandscapeResult {
   const byId = new Map<string, AugmentTile>()
   for (const a of augment) byId.set(a.tileId, a)
@@ -185,6 +207,10 @@ export function augmentLandscape(
     const vp: LandscapeViewport = { renderMode: viewport.renderMode }
     if (typeof viewport.zLo === 'number' && Number.isFinite(viewport.zLo)) vp.zLo = viewport.zLo
     if (typeof viewport.zHi === 'number' && Number.isFinite(viewport.zHi)) vp.zHi = viewport.zHi
+    const v = viewport.view
+    if (v && [v.x0, v.y0, v.x1, v.y1].every(n => typeof n === 'number' && Number.isFinite(n))) {
+      vp.view = { x0: v.x0, y0: v.y0, x1: v.x1, y1: v.y1 }
+    }
     out.viewport = vp
   }
   return out
