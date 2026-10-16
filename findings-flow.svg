@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 436" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" fill="#2a2a2a">
+<title>Where the reviewers' findings went</title>
+<rect width="1000" height="436" fill="#fafaf7"/>
+<path d="M46,206.7 C168.0,206.7 168.0,114 290,114 L290,364 C168.0,364 168.0,364.0 46,364.0 Z" fill="#CC79A7" fill-opacity="0.13"/>
+<path d="M312,228.2 C426.0,228.2 426.0,114 540,114 L540,364 C426.0,364 426.0,364.0 312,364.0 Z" fill="#CC79A7" fill-opacity="0.13"/>
+<path d="M562,286.0 C676.0,286.0 676.0,114 790,114 L790,364 C676.0,364 676.0,364.0 562,364.0 Z" fill="#CC79A7" fill-opacity="0.13"/>
+<text x="24" y="70" font-size="16" font-weight="700">Recital</text>
+<text x="24" y="90" font-size="13" fill="#6b6b66">898 findings</text>
+<rect x="24" y="115.0" width="22" height="90.7" rx="3" fill="#56B4E9"/>
+<text x="54" y="165.4" font-size="13"><tspan font-weight="700">333</tspan> fixed in the commit <tspan fill="#6b6b66">37%</tspan></text>
+<text x="54" y="182.4" font-size="12" fill="#6b6b66">83% of the 400 that must be resolved</text>
+<rect x="24" y="207.7" width="22" height="16.7" rx="3" fill="#E69F00"/>
+<text x="54" y="221.0" font-size="13"><tspan font-weight="700">67</tspan> not fixed <tspan fill="#6b6b66">7%</tspan></text>
+<rect x="24" y="226.4" width="22" height="136.6" rx="3" fill="#0072B2"/>
+<text x="54" y="299.7" font-size="13"><tspan font-weight="700">498</tspan> plausible notes, untagged <tspan fill="#6b6b66">55%</tspan></text>
+<text x="290" y="70" font-size="16" font-weight="700">Bug check</text>
+<text x="290" y="90" font-size="13" fill="#6b6b66">289 bugs</text>
+<rect x="290" y="115.0" width="22" height="89.7" rx="3" fill="#b9b6ad"/>
+<text x="320" y="164.8" font-size="13"><tspan font-weight="700">106</tspan> already gone, or not a bug <tspan fill="#6b6b66">37%</tspan></text>
+<rect x="290" y="206.7" width="22" height="20.5" rx="3" fill="#dedbd2"/>
+<text x="320" y="221.9" font-size="13"><tspan font-weight="700">26</tspan> waiting (unmerged, backlog) <tspan fill="#6b6b66">9%</tspan></text>
+<rect x="290" y="229.2" width="22" height="133.8" rx="3" fill="#CC79A7"/>
+<text x="320" y="301.1" font-size="13"><tspan font-weight="700">157</tspan> to a verify agent <tspan fill="#6b6b66">54%</tspan></text>
+<text x="540" y="70" font-size="16" font-weight="700">Verify agent</text>
+<text x="540" y="90" font-size="13" fill="#6b6b66">157 bugs</text>
+<rect x="540" y="115.0" width="22" height="114.2" rx="3" fill="#b9b6ad"/>
+<text x="570" y="177.1" font-size="13"><tspan font-weight="700">73</tspan> not a bug <tspan fill="#6b6b66">46%</tspan></text>
+<rect x="540" y="231.2" width="22" height="50.5" rx="3" fill="#dedbd2"/>
+<text x="570" y="261.5" font-size="13"><tspan font-weight="700">33</tspan> parked: not live yet <tspan fill="#6b6b66">21%</tspan></text>
+<rect x="540" y="283.8" width="22" height="1.5" rx="3" fill="#dedbd2"/>
+<text x="570" y="289.4" font-size="13"><tspan font-weight="700">2</tspan> not checked yet <tspan fill="#6b6b66">1%</tspan></text>
+<rect x="540" y="287.0" width="22" height="76.0" rx="3" fill="#CC79A7"/>
+<text x="570" y="330.0" font-size="13"><tspan font-weight="700">49</tspan> real <tspan fill="#6b6b66">31%</tspan></text>
+<text x="790" y="70" font-size="16" font-weight="700">Real bugs</text>
+<text x="790" y="90" font-size="13" fill="#6b6b66">49 bugs</text>
+<rect x="790" y="115.0" width="22" height="74.5" rx="3" fill="#56B4E9"/>
+<text x="820" y="157.3" font-size="13"><tspan font-weight="700">15</tspan> fixed <tspan fill="#6b6b66">31%</tspan></text>
+<rect x="790" y="191.5" width="22" height="140.9" rx="3" fill="#E69F00"/>
+<text x="820" y="267.0" font-size="13"><tspan font-weight="700">28</tspan> open, issue filed <tspan fill="#6b6b66">57%</tspan></text>
+<rect x="790" y="334.4" width="22" height="18.4" rx="3" fill="#dedbd2"/>
+<text x="820" y="348.6" font-size="13"><tspan font-weight="700">4</tspan> open, not filed yet <tspan fill="#6b6b66">8%</tspan></text>
+<rect x="790" y="354.8" width="22" height="8.2" rx="3" fill="#b9b6ad"/>
+<text x="820" y="365.6" font-size="13"><tspan font-weight="700">2</tspan> won't fix <tspan fill="#6b6b66">4%</tspan></text>
+<text x="24" y="22" font-size="13" font-weight="600">Before each commit</text>
+<text x="24" y="38" font-size="12" fill="#6b6b66">in the session that commits</text>
+<path d="M24,46 L240,46" stroke="#6b6b66" stroke-width="1.5"/>
+<text x="290" y="22" font-size="13" font-weight="600">Weekly judge</text>
+<text x="290" y="38" font-size="12" fill="#6b6b66">unattended: checks, verifies, files the issues</text>
+<path d="M290,46 L976,46" stroke="#6b6b66" stroke-width="1.5"/>
+<text x="24" y="402" font-size="12" fill="#6b6b66">27 September 2026 to 16 October 2026. Each column is drawn to its own scale; the shaded band is what flows on to the next.</text>
+<text x="24" y="420" font-size="12" fill="#6b6b66">Plausible notes on the same function merge into one bug. Their tag is optional: an untagged note may have been fixed in its commit, and shows here as "already gone".</text>
+</svg>

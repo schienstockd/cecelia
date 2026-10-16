@@ -1,0 +1,217 @@
+{
+  "first_day": "2026-09-27",
+  "flow": {
+    "check": {
+      "settled": 106,
+      "verify": 157,
+      "waiting": 26
+    },
+    "first_day": "2026-09-27",
+    "last_day": "2026-10-16",
+    "plausible_fixed": 0,
+    "plausible_total": 498,
+    "real": {
+      "fixed": 15,
+      "not_filed": 4,
+      "open_issue": 28,
+      "wont_fix": 2
+    },
+    "recital": {
+      "fixed": 333,
+      "not_fixed": 67,
+      "plausible": 498
+    },
+    "required": 400,
+    "required_fixed": 333,
+    "verify": {
+      "not_a_bug": 73,
+      "parked": 33,
+      "real": 49,
+      "unchecked": 2
+    }
+  },
+  "judge": {
+    "by_week": {
+      "convention": {
+        "2026-09-28": {
+          "dismissed": 2,
+          "gone": 0,
+          "open": 0,
+          "parked": 0
+        },
+        "2026-10-05": {
+          "dismissed": 1,
+          "gone": 1,
+          "open": 1,
+          "parked": 0
+        }
+      },
+      "fanout": {
+        "2026-09-28": {
+          "dismissed": 0,
+          "gone": 2,
+          "open": 2,
+          "parked": 6
+        },
+        "2026-10-05": {
+          "dismissed": 26,
+          "gone": 15,
+          "open": 29,
+          "parked": 23
+        },
+        "2026-10-12": {
+          "dismissed": 16,
+          "gone": 1,
+          "open": 1,
+          "parked": 2
+        }
+      }
+    },
+    "date": "2026-10-13",
+    "dismissed": 49,
+    "gone": 19,
+    "open": 34,
+    "parked": 31,
+    "passes": 6,
+    "swept": [
+      "fanout",
+      "convention"
+    ]
+  },
+  "last_day": "2026-10-16",
+  "sessions": 147,
+  "weeks": [
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 0,
+          "none": 2,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 1,
+          "fixed_pre_commit": 2,
+          "none": 5,
+          "shipped_with_finding": 0
+        }
+      },
+      "changes": 9,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 1,
+        "fixed_pre_commit": 2,
+        "none": 7,
+        "shipped_with_finding": 0
+      },
+      "ongoing": false,
+      "partial": true,
+      "prompt_edits": 1,
+      "prs": 17,
+      "rule_edits": 4,
+      "sessions": 5,
+      "week": "2026-09-21"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 6,
+          "false_positive": 0,
+          "fixed_pre_commit": 58,
+          "none": 2,
+          "shipped_with_finding": 2
+        },
+        "fanout": {
+          "dropped_no_action": 8,
+          "false_positive": 5,
+          "fixed_pre_commit": 75,
+          "none": 4,
+          "shipped_with_finding": 8
+        }
+      },
+      "changes": 196,
+      "findings": {
+        "dropped_no_action": 14,
+        "false_positive": 5,
+        "fixed_pre_commit": 133,
+        "none": 6,
+        "shipped_with_finding": 10
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 4,
+      "prs": 149,
+      "rule_edits": 10,
+      "sessions": 53,
+      "week": "2026-09-28"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 1,
+          "false_positive": 0,
+          "fixed_pre_commit": 68,
+          "none": 8,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 78,
+          "none": 2,
+          "shipped_with_finding": 2
+        }
+      },
+      "changes": 236,
+      "findings": {
+        "dropped_no_action": 1,
+        "false_positive": 0,
+        "fixed_pre_commit": 146,
+        "none": 10,
+        "shipped_with_finding": 2
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 1,
+      "prs": 148,
+      "rule_edits": 8,
+      "sessions": 59,
+      "week": "2026-10-05"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 32,
+          "none": 1,
+          "shipped_with_finding": 1
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 1,
+          "fixed_pre_commit": 20,
+          "none": 3,
+          "shipped_with_finding": 5
+        }
+      },
+      "changes": 125,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 1,
+        "fixed_pre_commit": 52,
+        "none": 4,
+        "shipped_with_finding": 6
+      },
+      "ongoing": true,
+      "partial": true,
+      "prompt_edits": 0,
+      "prs": 69,
+      "rule_edits": 3,
+      "sessions": 37,
+      "week": "2026-10-12"
+    }
+  ]
+}
