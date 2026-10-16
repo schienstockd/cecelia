@@ -16,6 +16,10 @@ Exit codes:
     1 — one or more reviewer subprocesses failed hard. Recital still printed with an error
         note in the failed reviewer's section; log records the attempt with an `error` field.
     2 — invocation error (bad args, no staged diff to review).
+
+A merge, cherry-pick or revert in progress is skipped (exit 0, nothing logged): its staged diff is
+other commits' already-reviewed changes, so the reviewers would flag main's code and leave
+findings nothing can close (the commit hook doesn't ask for tags on such a commit).
 """
 from __future__ import annotations
 
@@ -23,6 +27,7 @@ import argparse
 import subprocess
 import sys
 
+from cecelia.effectiveness.git_context import in_sequencer_commit
 from cecelia.effectiveness.recital import RecitalError, run_recital
 
 
@@ -46,6 +51,11 @@ def _get_diff(from_stdin: bool) -> str:
 
 def main() -> int:
     args = _parse_args()
+    if not args.stdin and in_sequencer_commit():
+        print("recital: skipped — a merge, cherry-pick or revert is in progress; its changes were "
+              "reviewed in their own commits, and the commit hook doesn't ask for a recital here.",
+              file=sys.stderr)
+        return 0
     diff = _get_diff(args.stdin)
     if not diff.strip():
         print("recital: no staged diff — nothing to review.", file=sys.stderr)

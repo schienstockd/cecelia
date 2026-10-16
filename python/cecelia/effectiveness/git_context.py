@@ -246,6 +246,14 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
         return None
     return result.stdout.strip() if result.returncode == 0 else None
 
+#: Git state refs present while git itself is making a commit (a merge, cherry-pick, revert).
+SEQUENCER_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
+
+
+def in_sequencer_commit(cwd: str | None = None) -> bool:
+    """Is a merge, cherry-pick or revert in progress? Its staged diff is other commits' already-
+    reviewed changes: the commit hook doesn't ask for a recital, and recital doesn't run one."""
+    return any(git_output("rev-parse", "-q", "--verify", ref, cwd=cwd) for ref in SEQUENCER_STATE)
 
 
 def full_sha(sha: str | None, cwd: str | None = None) -> str | None:

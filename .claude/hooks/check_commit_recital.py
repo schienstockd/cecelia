@@ -89,6 +89,7 @@ from cecelia.effectiveness.git_context import (  # noqa: E402
     current_head_sha as _current_head_sha,
     current_pr as _current_pr,
     git_output as _git,
+    in_sequencer_commit as _in_sequencer_commit,
 )
 
 #: Every finding line in the recital carries one of these bold markers — built from recital's
@@ -372,10 +373,6 @@ def _untagged_slugs_on_head(head_sha: str, branch: str,
     return {s: e for s, e in pending.items() if s not in tagged_slugs}
 
 
-#: Git state files present while a git-generated commit is being made. Their messages carry no
-#: recital, and gate 3 on them would demand tags for the branch's pending findings.
-_SEQUENCER_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
-
 _HOOKS_PATH = ".githooks"
 
 
@@ -384,10 +381,6 @@ def _read_message(path: str) -> str:
     from the commit anyway; a commented-out finding must not count)."""
     text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
     return "\n".join(line for line in text.splitlines() if not line.startswith("#"))
-
-
-def _in_sequencer_commit() -> bool:
-    return any(_git("rev-parse", "-q", "--verify", ref) for ref in _SEQUENCER_STATE)
 
 
 def agent_recital_gate() -> str | None:

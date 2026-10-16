@@ -390,6 +390,9 @@ hook blocks the commit while any `_finding` row recital logged for this change (
 or an earlier one on the branch, and lists them by slug and `file:line`. Nothing closes a finding
 for you: a fixed one says `fixed_pre_commit`, an abandoned one says `dropped_no_action`.
 
+**A merge of main needs no recital:** its changes were reviewed in their own PRs. The hook doesn't
+ask for one, and `pixi run recital` skips it: reviewing main's code logs findings no commit can close.
+
 Bypass with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …` for real emergencies.
 
 ---

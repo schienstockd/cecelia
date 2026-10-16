@@ -6,7 +6,10 @@ must never raise. The tests pin the "returns None on failure" contract because t
 """
 from __future__ import annotations
 
+import os
+import pathlib
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -115,6 +118,37 @@ class CurrentBranchTest(unittest.TestCase):
                  side_effect=subprocess.TimeoutExpired(cmd="git", timeout=10.0),
              ):
             self.assertIsNone(git_context.current_branch())
+
+
+class InSequencerCommitTest(unittest.TestCase):
+    """A real throwaway repo: the merge state is a ref git writes, so mocking git would test nothing."""
+
+    def _repo(self, d: str) -> None:
+        def git(*args):
+            subprocess.run(["git", *args], cwd=d, check=True, capture_output=True, encoding="utf-8",
+                           env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        git("init", "-q", "-b", "main")
+        (pathlib.Path(d) / "a.txt").write_text("base\n", encoding="utf-8")
+        git("add", "a.txt")
+        git("commit", "-q", "-m", "base")
+        git("checkout", "-q", "-b", "side")
+        (pathlib.Path(d) / "b.txt").write_text("side\n", encoding="utf-8")
+        git("add", "b.txt")
+        git("commit", "-q", "-m", "side")
+        git("checkout", "-q", "main")
+        self.git = git
+
+    def test_a_merge_in_progress_is_a_sequencer_commit_and_a_plain_one_is_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._repo(d)
+            self.assertFalse(git_context.in_sequencer_commit(cwd=d))
+            self.git("merge", "--no-commit", "--no-ff", "side")
+            self.assertTrue(git_context.in_sequencer_commit(cwd=d))
+
+    def test_not_a_repo_is_not_a_sequencer_commit(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(git_context.in_sequencer_commit(cwd=d))
 
 
 if __name__ == "__main__":
