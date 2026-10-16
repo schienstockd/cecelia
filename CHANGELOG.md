@@ -15,8 +15,70 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.11] — 2026-10-16
+
+### Read this first
+
+- **Sign in once per browser.** Cecelia now only answers the person who launched it (#1574). The
+  launcher opens a sign-in link for you; after that the browser remembers you for a year. Other
+  accounts on the machine, and other web pages, can no longer reach your projects.
+- **The address is now `http://`, not `https://`** (#1592). It is faster. A bookmarked `https://`
+  link stops working; use the one the launcher opens. If you turned HTTPS on in Settings, it stays on.
+- **Re-running a segmentation into a name that already exists is refused** (#1626). Tick
+  **Overwrite existing**, or use the free name it suggests (e.g. `default_2`). This applies to
+  Cellpose, Coastal, ridges, branching and label import. Saved chains that re-segment into the same
+  name need the box ticked.
+- **Tile seams are now joined by default** (#1383). The seam stitch never worked before; it does
+  now, and its default moved from 0 to 0.25. A cell crossing a tile seam gets one label instead of
+  two. Images that saved their own settings keep them.
+- **Neighbours and aggregates are per frame on time-lapses** (#1649). `cellNeighbours` and
+  `detectAggregates` used to pool every frame, pairing cells across time. Results already on disk
+  are not recomputed; saved settings that turn pooling on still pool. `cellContacts` was also fixed
+  to search within each frame (#1497).
+- **Single-plane images are measured as 2D** (#1615). Images stored with one Z plane now get the 2D
+  shape measures (perimeter, solidity, eccentricity, Feret). Existing tables change only when you
+  re-measure; a gate on a 3D-only measure on such an image is lost on re-measure.
+- **Re-measuring or re-tracking clears that table's clusters** (#1424). This always happened, but
+  silently. Now the stale cluster runs are dropped and the log says which clustering to re-run.
+  Your cluster populations are kept, empty until you re-run it.
+- **Newly imported images use 512 px chunks** (#1576), which load about 4x faster in the viewer.
+  Corrections now keep their source image's chunk size. Images imported earlier keep 1024.
+- **Masks get their image's zoom levels** (#1488). Masks from ridges, branching and correction made
+  before this update show only when fully zoomed in; re-run the task to fix them.
+- **The installed app uses all CPU cores** (#1508). Turn it off in Settings → System → *Use all CPU
+  cores*.
+- **Per-person settings follow your profile, not the browser** (#1355). On a shared browser, the
+  first profile to open after the update inherits the current panel and filter state.
+- **Removed: the Cleanup correction-plan recommender** (#1548, #1609). Old `plan.json` files are
+  left on disk but are no longer read.
+- **Removed: Measure's tile size and overlap fields** (#1611). They never did anything; measuring
+  now tiles itself.
+- **HPC pool renamed** (#1632). The reserved `network` pool is now `hpc`; your settings are
+  migrated on start.
+
 ### Added
 
+- **Run tasks on an HPC cluster (SLURM or PBS)** (#1632, #1637, #1638, #1639, #1640). Set up the
+  cluster in Settings → HPC and your login in Preferences → HPC (#1641, #1648), install the
+  environment with one click, then pick the cluster from a task's environment chip. The Task Manager
+  shows the job's stage. Jobs are sized with sliders, and a memory hint offers more memory when the
+  selected images need it (#1688, #1690). Not available on Windows yet.
+- **Import external labels** (#1626). Bring in an OME-Zarr or TIFF label image, optionally measured
+  straight away.
+- **Halo mode** (#1631). One segmentation gives two outlines: the nucleus, and a grown ring for
+  membrane markers (`halo_` columns on the Gate page).
+- **Editable preview box** (#1567). Drag the task-preview region on the viewer, QuPath-style.
+- **Delete one analysis run** from Manage images → Runs (#1415).
+- **Who did it.** Tasks, notebooks, chains and blackboard entries show which profile, or Claude,
+  wrote them (#1355, #1365).
+- **Model vault scoped to you and this project**, with search and toggles for other users and
+  projects (#1379, #1597).
+- **Track tails fade with age** in the viewer and movies (#1604).
+- **"One at a time" channel toggle** with up/down stepping (#1368); every channel shown on compact
+  cards (#1580).
+- **Task picker explains each task** — what it is for and when to use it (#1483, #1491, #1496).
+- **What's New on the dev channel** lists the PRs merged since your build (#1565).
+- **Several people can run Cecelia on one machine** — each gets its own set of ports (#1568).
 - **Uninstaller.** `uninstall.sh` and `uninstall.ps1` remove Cecelia: the app, its environment and
   its menu entry. Your settings and projects are kept unless you choose to delete them. It asks on a
   terminal, or you can pass `--wipe-settings` / `--wipe-projects`. Projects are deleted one by one;
@@ -28,6 +90,33 @@ _Changes on `main` that have not yet been tagged in a release._
   installer as your admin account, without `sudo`. It asks for your password only to create
   `/opt/cecelia` and the menu entry. Downloads and caches no longer pile up in `/root`, and the admin
   can update it without `sudo`.
+- **Model weights download in the background** — during install, at app start, or as a Task Manager
+  job — instead of timing out a preview (#1569).
+- **Movies and stills draw exactly what the viewer draws** — same shaders, same tracks, populations
+  from every segmentation, the same colours (#1349, #1371, #1393, #1477, #1504, #1630).
+- **Viewer shows populations from every segmentation**, grouped in the sidebar (#1504).
+- **Flat 3D picks the sharpest level that fits** in Auto (#1370); the 2D/3D toggle keeps your
+  position and zoom (#1474).
+- **Restart to update.** After an update installs, the header says *Restart to update* instead of
+  offering it again (#1507).
+- **Duplicate runs are refused.** A second run of the same task and output on an image waits for you
+  to cancel the first; Cancel now shows *Cancelling…* until confirmed (#1625).
+- **Restart refuses while tasks would be lost** (#1677).
+- **The intravital recipe follows the paper's workflow**, with cellpose by default (#1437).
+- **New look for icons, tooltips and toasts** (#1373, #1377, #1378), and one look for every slider
+  (#1691).
+- **Rename a population from its ⋯ menu** in the population manager. Double-clicking the name no
+  longer renames it, so it no longer changes the plot's parent by accident (#1693).
+- **A z range draws exactly its planes.** Dots and tracks no longer reach past a Plane ± window or
+  the 3D depth crop, in the viewer and in movies. *Z reach* now applies only to a single 2D plane
+  (#1695).
+- **Saved settings outside a task's range are pulled into it.** When a task's limits change (Cellpose
+  cell diameter is now 2–60), remembered and chain values are clamped, with a log line, instead of
+  failing every run. A chain whose settings still can't run is refused at launch, before any step
+  starts (#1700, #1701).
+- **Small images get no preview box**; the preview covers the whole image (#1646).
+- **Notebooks and scripts using `CeceliaClient()`** find your backend and sign-in token on their own
+  (#1686).
 
 ### Fixed
 
@@ -39,6 +128,38 @@ _Changes on `main` that have not yet been tagged in a release._
   now gets its own small writable Julia folder. On Windows, other accounts also couldn't run the
   installed Python ("Access is denied"). On Linux, other accounts could write into the shared folder.
   Both are fixed, and every OS is now tested in CI with a second, non-admin account.
+- **Gate axes named the wrong channel** when a segmentation had a nucleus, cell or halo store (#1624).
+- **Gate and cluster labels follow a channel rename** without reopening (#1385, #1367).
+- **One label per cell after cellpose Z stitching** — two cells planes apart no longer share an id
+  (#1376).
+- **Segmenting a large single-plane image no longer crashes** (Cellpose and Coastal) (#1562).
+- **Measuring a whole-slide image no longer runs out of memory** (#1611).
+- **Cellpose 3 previews really use cellpose 3** instead of quietly switching to SAM (#1570).
+- **Motif discovery reads the HMM states** the HMM run wrote (#1498).
+- **Viewer:** new segmentations appear without reopening (#1472); masks in the whole-slide tile view
+  (#1605); dots and track tails scale with zoom (#1628); overlays survive view switches (#1602); no
+  reload unless a shown store changed (#1484); out-of-memory and stutter fixes on large 3D images
+  (#1583, #1585, #1606); no false out-of-memory switch to bricks after a mask toggle or level swap
+  (#1683); the Tracks controls stay when every ribbon is off (#1674); the preview box stays inside
+  the canvas (#1646).
+- **Several people on one machine:** stopping Cecelia no longer kills another person's runner,
+  notebook server or preview worker. One that belongs to someone else is reported, with a confirmed
+  *Stop it*, instead of being used. The preview worker and notebook server now close when Cecelia
+  crashes, so they no longer hold the port and GPU memory (#1689).
+- **Preview:** turning it off after a restart frees its GPU memory (#1682); flow inspection and
+  stills export no longer fail while the preview worker restarts (#1678).
+- **Movies** honour the viewer's plane window and depth crop (#1481); title cards name what is drawn
+  (#1421, #1425).
+- **Gate plots:** open-ended thresholds no longer zoom the axes out (#1452); axes are padded so you
+  can draw past the border (#1603); prev/next keeps the segmentation (#1411).
+- **Board exports keep their legends** (#1459).
+- **Shipped example notebooks are no longer overwritten** when opened; duplicate them to open (#1680).
+  On a shared install, non-owners get a clear message instead of a failed fast-plot build (#1629).
+- **Install:** native Julia on Apple Silicon (#1374); movies on Apple Silicon (#1364); macOS installs
+  no longer need system git (#1461); Windows shared install fixes (#1443, #1446); the launcher finds
+  Julia from a desktop launch (#1587); *Install* buttons show their errors (#1561); terminal
+  `pixi run` tasks use the Julia the installer recorded, not another one on PATH (#1696, #1698).
+- **Claude can find Claude Code off your PATH**, with Re-check in Settings (#1506).
 
 ## [0.2.10] — 2026-10-02
 
@@ -1225,7 +1346,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/schienstockd/cecelia/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/schienstockd/cecelia/compare/v0.2.7...v0.2.8
