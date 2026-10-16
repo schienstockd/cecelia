@@ -24,6 +24,7 @@ export ngff_version, chunk_separator, set_store_layout!
 export NGFF_VERSION_DEFAULT, CHUNK_SEPARATOR_DEFAULT
 export store_layout, STORE_LAYOUT_CHOICES, STORE_LAYOUT_DEFAULT, STORE_LAYOUT_MEASURED_ON
 export keep_previous_version, set_keep_previous_version!, KEEP_PREVIOUS_VERSION_DEFAULT
+export shared_workstation, shared_workstation_settings, set_shared_workstation!
 export viewer_chunk_cache_setting, viewer_chunk_cache_bytes, viewer_chunk_cache_auto_bytes, set_viewer_chunk_cache!, VIEWER_CACHE_CHOICES
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
@@ -414,6 +415,7 @@ include("project_io.jl")
 # scheduler.jl (uses _kill_proc_tree). The lab log's one-off "Ask Claude" pass was removed 2026-09-24:
 # Kiwi's validated turn supersedes it; interactive sessions still write the lab log via append_lab_log.
 include("ai/agent_runner.jl")
+include("ai/claude_auth.jl")   # per-profile Claude login: status + logout (uses _run_claude_cli)
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
 # HPC settings (site / profile identity / project override) + the ssh transport. After
@@ -452,6 +454,7 @@ export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export spatial_summary, contact_matrix
 export active_profile_name, active_profile_dir, set_active_profile!, kiwi_terminal_command
+export ClaudeAuth, claude_auth_status, claude_auth_logout!
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export REQUEST_VIA, author_stamp

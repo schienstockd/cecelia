@@ -821,6 +821,28 @@ function api_threads_set(body_bytes)
     200, JSON3.write(_api_threads_payload())
 end
 
+# ── Shared workstation (Settings → Shared workstation) ─────────────────────────────
+# GET → { items: { <key>: Bool, … } }; POST { key, value } → same. Install-wide policies for a box
+# several people use (`app/src/config/shared_workstation.jl`). The section is shown to the default
+# profile only — a visibility gate, so this route does not check who is asking.
+api_shared_workstation_get(_req) =
+    (200, JSON3.write((; items = Cecelia.shared_workstation_settings())))
+
+function api_shared_workstation_set(body_bytes)
+    data = _parse_body(body_bytes)
+    data isa Tuple && return data
+    key, value = get(data, :key, nothing), get(data, :value, nothing)
+    key isa AbstractString || return 400, JSON3.write((; error = "key (string) required"))
+    value isa Bool || return 400, JSON3.write((; error = "value (bool) required"))
+    try
+        Cecelia.set_shared_workstation!(key, value)
+    catch e
+        e isa ArgumentError || rethrow()
+        return 400, JSON3.write((; error = e.msg))
+    end
+    api_shared_workstation_get(nothing)
+end
+
 # ── Store LAYOUT defaults (zarr format + chunk separator) ─────────────────────────
 # GET → { current, default, measuredOn, choices: [...] }. Shaped like the compressor endpoint on
 # purpose: it is the same kind of decision and Settings renders it the same way, as a TABLE with the

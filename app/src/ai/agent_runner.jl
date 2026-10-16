@@ -670,6 +670,30 @@ observer_shadow_dirs(locals::Vector{Pair{String,Any}}, want::AbstractDict)::Vect
 shadowing_observer_dirs(want::AbstractDict)::Vector{String} =
     observer_shadow_dirs(read_local_observer_specs(), want)
 
+# Run one short `claude` CLI command under a profile's env and capture its output — the shared shape of
+# every non-turn spawn (`mcp add-json` / `mcp remove`, `auth status` / `auth logout`). Bounded by a
+# timeout, stdin closed (a CLI that wants to prompt must fail, not hang the request), and checks
+# `termsignal` too: libuv reports exitcode 0 for a signal-killed child, so a timed-out command would
+# otherwise read as success. Returns `(ok, output)`; a spawn failure is `(false, <error>)`, never a throw.
+function _run_claude_cli(cmd::Cmd; profile_dir::AbstractString = _active_claude_profile_dir!(),
+                         timeout_s::Real = 30)::Tuple{Bool,String}
+    out = Pipe()
+    output = ""
+    ok = try
+        proc = run(pipeline(_apply_claude_env(_agent_spawn_cmd(cmd), profile_dir);
+                            stdin = devnull, stdout = out, stderr = out); wait = false)
+        close(out.in)
+        timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
+        output = read(out, String)
+        wait(proc)
+        close(timer)
+        proc.exitcode == 0 && proc.termsignal == 0
+    catch e
+        output = sprint(showerror, e); false
+    end
+    (ok, output)
+end
+
 # Clear the shadowing local-scope entries. `claude mcp remove -s local` acts on the process's cwd, so
 # each removal is spawned IN the offending directory — which is why `_agent_spawn_cmd` preserves `dir`.
 # Best-effort and fully reported: returns `(removed, failed)` so the UI can say which folders were
@@ -679,16 +703,7 @@ function remove_shadowing_observer_mcps(a::ClaudeAgent, dirs::Vector{String}; ti
     removed, failed = String[], String[]
     for d in dirs
         isdir(d) || continue
-        ok = try
-            proc = run(pipeline(_apply_claude_env(_agent_spawn_cmd(_build_mcp_remove_cmd(a; scope = "local", dir = d)));
-                                stdout = devnull, stderr = devnull); wait = false)
-            timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
-            wait(proc)
-            close(timer)
-            proc.exitcode == 0 && proc.termsignal == 0
-        catch
-            false
-        end
+        ok, _ = _run_claude_cli(_build_mcp_remove_cmd(a; scope = "local", dir = d); timeout_s)
         push!(ok ? removed : failed, d)
     end
     (removed, failed)
@@ -711,29 +726,10 @@ function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
                                prior_json::AbstractString = "",
                                scope::AbstractString = "user", timeout_s::Int = 30)
     agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
-    _run_quiet(cmd) = try
-        run(pipeline(_apply_claude_env(_agent_spawn_cmd(cmd)), stdout = devnull, stderr = devnull); wait = true); true
-    catch
-        false
-    end
+    _run_quiet(cmd) = first(_run_claude_cli(cmd; timeout_s))
     # Nothing registered → nothing to remove, so a failed add can't lose anything.
     isempty(prior_json) || _run_quiet(_build_mcp_remove_cmd(a; scope))
-    # Same spawn idiom as _run_observer_once: pipe + timeout timer, and check termsignal too (libuv
-    # reports exitcode 0 for signal-kills).
-    out = Pipe()
-    local output = ""
-    ok = try
-        proc = run(pipeline(_apply_claude_env(_agent_spawn_cmd(_build_mcp_register_cmd(a, spec_json; scope)));
-                            stdout = out, stderr = out); wait = false)
-        close(out.in)
-        timer = Timer(_ -> (try; _kill_proc_tree(proc); catch; end), timeout_s)
-        output = read(out, String)
-        wait(proc)
-        close(timer)
-        proc.exitcode == 0 && proc.termsignal == 0
-    catch e
-        output = sprint(showerror, e); false
-    end
+    ok, output = _run_claude_cli(_build_mcp_register_cmd(a, spec_json; scope); timeout_s)
     # Put the user's previous entry back if we removed it and the replacement didn't land. Best-effort
     # and reported either way — never silently leave them with less than they started with.
     if !ok && !isempty(prior_json)

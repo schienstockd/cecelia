@@ -263,6 +263,29 @@ If a future consumer genuinely needs the value written to disk (e.g. for a query
 that filters JSON on the field), the migration is trivial to add later — the read-time
 default keeps that door open, doesn't close it.
 
+### P8 — Seeing and ending a login (SHIPPED, branch `audit/claude-login-management`)
+The isolation above keeps logins apart; nothing ended one. On a shared box a person forgets to
+switch (the next person bills them through Kiwi) or to log out (their login stays on disk). Built
+on the CLI's own non-interactive verbs, never by touching credential files (macOS keeps them in the
+Keychain): `claude auth status --json` and `claude auth logout`, both measured on Linux (CLI
+2.1.301) to honour `CLAUDE_CONFIG_DIR`, take ~1 s, and leave the home login untouched.
+
+- **See it**: Preferences → Profiles shows each profile's Claude account; Kiwi shows the account
+  its turns bill (read-only — Decision 3 of `USER_PROFILE_PLAN.md` still holds).
+- **End it**: a Log out button per logged-in profile. For `default` that is `~/.claude`, which
+  terminal `claude` on the same OS account shares — the tooltip says so.
+- **Policy**: Settings → *Shared workstation* → *One Claude login at a time* — picking a profile
+  logs every other profile out, so the previous person's login doesn't outlive the next pick (the
+  launch picker selects on every reload). Off by default. The section shows to the default profile
+  only: a visibility gate, not security, since anyone can pick `default`. Individual toggles per
+  item, deliberately no master "this is a shared machine" switch.
+- **Not done**: idle timeout back to the picker; a mid-session "hand over" button. Revisit if the
+  policy above proves not enough.
+- **Unverified — macOS.** Nothing here (or in P2) has confirmed that `CLAUDE_CONFIG_DIR` scopes
+  the Keychain entry. If it doesn't, profiles on a Mac share one login and logout ends all of them.
+  Needs a Mac with two logins — tracked in `docs/TODO.md` → *macOS: does CLAUDE_CONFIG_DIR scope
+  the Claude Keychain login?*
+
 ## Interaction with `KIWI_ASSISTANT_PLAN.md`
 
 - The pointer near Decision 2 to this plan already landed in #1201 — no change needed here.

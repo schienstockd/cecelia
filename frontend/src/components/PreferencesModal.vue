@@ -22,7 +22,8 @@ import HpcSettings from './HpcSettings.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
-         type ProfileRoster } from '../utils/profileApi'
+         fetchClaudeLogin, logoutClaude, claudeLoginLabel,
+         type Profile, type ProfileRoster, type ClaudeLogin } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -66,7 +67,37 @@ async function refreshRoster() {
     profilesError.value = e instanceof Error ? e.message : String(e)
   }
 }
-onMounted(() => { void refreshRoster() })
+onMounted(async () => { await refreshRoster(); void refreshLogins() })
+
+// Each profile's Claude login (who it bills, or "Not logged in") + Log out. One ~1 s CLI probe per
+// profile server-side (cached briefly), so they run in parallel and fill in after the roster.
+const logins = ref<Record<string, ClaudeLogin>>({})
+const loggingOut = ref('')
+const loginsChecking = ref(false)
+async function refreshLogins(fresh = false) {
+  loginsChecking.value = true
+  try {
+    const names = roster.value.profiles.map(p => p.name)
+    const rs = await Promise.all(names.map(n => fetchClaudeLogin(n, fresh)))
+    logins.value = Object.fromEntries(names.map((n, i) => [n, rs[i]]))
+  } finally { loginsChecking.value = false }
+}
+async function logoutProfile(name: string) {
+  if (loggingOut.value) return
+  loggingOut.value = name
+  profilesError.value = null
+  try {
+    const r = await logoutClaude(name)
+    if (!r.ok) profilesError.value = r.error ?? 'Log out failed'
+    logins.value = { ...logins.value, [name]: await fetchClaudeLogin(name, true) }
+    if (name === roster.value.active) void appCtl.refreshClaudeLogin()   // Kiwi's account row
+  } finally { loggingOut.value = '' }
+}
+function loginTip(p: Profile): string {
+  const l = logins.value[p.name]
+  if (l?.state === 'loggedOut') return 'Copy a login command to log in'
+  return [l?.method, l?.org].filter(Boolean).join(' · ') || 'Claude account'
+}
 
 // Switching the profile mid-session works but half the app is already mounted against the
 // previous identity (per-profile settings, project filter, MCP registration). The plan is
@@ -244,6 +275,11 @@ async function copyTerminalCommand(profile?: string) {
                   <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
                   <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
                   <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
+                  <span v-if="claudeLoginLabel(logins[p.name])" class="pp-login cc-fs-2xs"
+                        :class="{ 'cc-muted': logins[p.name]?.state !== 'loggedIn' }"
+                        v-tooltip.bottom="loginTip(p)">
+                    Claude: {{ claudeLoginLabel(logins[p.name]) }}
+                  </span>
                 </span>
                 <span class="cc-row cc-row-tight">
                   <!-- Switch: any non-active, non-retired profile — INCLUDING `default`. Excluding
@@ -270,6 +306,28 @@ async function copyTerminalCommand(profile?: string) {
                             : `Copy a login command for ${p.name} — paste in a terminal, then run /login inside claude`">
                     <i :class="['pi', termFetching === p.name ? 'pi-spin pi-spinner' : 'pi-sign-in']" />
                   </button>
+                  <!-- Log out of Claude: only when logged in. For `default` that is `~/.claude`, the
+                       same login terminal `claude` on this OS account uses — the tooltip says so. -->
+                  <ConfirmButton v-if="logins[p.name]?.state === 'loggedIn'"
+                                 @confirm="logoutProfile(p.name)" v-slot="{ armed, arm, confirm, cancel }">
+                    <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
+                            :disabled="!!loggingOut" @click="arm"
+                            v-tooltip.bottom="p.isDefault
+                              ? 'Log out of Claude — terminal claude on this account too'
+                              : `Log ${profileDisplayName(p)} out of Claude`">
+                      <i :class="['pi', loggingOut === p.name ? 'pi-spin pi-spinner' : 'pi-sign-out']" />
+                    </button>
+                    <template v-else>
+                      <button class="cc-btn cc-btn-danger cc-btn-icon cc-fs-xs" @click="confirm"
+                              v-tooltip.bottom="'Confirm log out'">
+                        <i class="pi pi-check" />
+                      </button>
+                      <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" @click="cancel"
+                              v-tooltip.bottom="'Cancel'">
+                        <i class="pi pi-times" />
+                      </button>
+                    </template>
+                  </ConfirmButton>
                   <!-- Rename: not offered for `default` (magic name) or retired profiles (the
                        retired marker is a stable reference — renaming would silently invalidate
                        both semantics). See USER_PROFILE_PLAN Decision 11. -->
@@ -311,6 +369,11 @@ async function copyTerminalCommand(profile?: string) {
               <i :class="['pi', termFetching === '__active__' ? 'pi-spin pi-spinner'
                                 : termCopied() ? 'pi-check' : 'pi-sign-in']" />
               {{ termCopied() ? 'Copied' : 'Copy login command' }}
+            </button>
+            <!-- After logging in from a terminal: skip the server's short status cache. -->
+            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" :disabled="loginsChecking"
+                    @click="refreshLogins(true)" v-tooltip.top="'Re-check Claude logins'">
+              <i :class="['pi', loginsChecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
             </button>
             <!-- Retire (LOGIN_CREDENTIAL_ISOLATION_PLAN D11). Only offered when the active
                  profile is a named, non-retired one — retiring `default` is meaningless. -->
@@ -610,4 +673,5 @@ async function copyTerminalCommand(profile?: string) {
 .pp-rename-input { flex: 1; min-width: 6rem; }
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }
+.pp-login { padding-inline: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

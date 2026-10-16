@@ -210,6 +210,16 @@ install. The owner's build serves every account.
 - **Later:** have the installer build `deps.so`, so non-owners get fast plots without the owner
   opening Notebooks first.
 
+### macOS: does CLAUDE_CONFIG_DIR scope the Claude Keychain login?
+
+Per-profile Claude logins (`docs/todo/LOGIN_CREDENTIAL_ISOLATION_PLAN.md`) and the Log out button +
+*One Claude login at a time* policy (P8 there) assume each `CLAUDE_CONFIG_DIR` holds its own login.
+Verified on Linux, where credentials are a file in that dir. On macOS Claude Code keeps them in the
+Keychain, and nothing has confirmed the entry is keyed per config dir. Check on a Mac: log profile A
+in, then `CLAUDE_CONFIG_DIR=<B> claude auth status --json` must say `loggedIn: false`, and
+`claude auth logout` under B must leave A logged in. If they share one entry, profiles on a Mac are
+not isolated at all — say so in Preferences → Profiles and the plan.
+
 ### Ship a prebuilt Notebooks sysimage in the bundle (release optimisation)
 Build-on-demand already covers every user: the Notebooks page's **Enable fast plots** builds
 `pluto/deps.so` in the background and re-stamps it when Julia/deps move. What is left is the

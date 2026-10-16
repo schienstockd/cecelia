@@ -6,6 +6,8 @@
 //   POST /api/kiwi/profiles/create            → { name }               ; mkpath under user-profiles/
 //   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` sentinel (D11)
 //   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
+//   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
+//   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
 //
 // The picker in `KiwiCockpit.vue` reads/writes the active profile through these; the "Open profile
 // terminal" button copies the one-liner. Server-side single-active-profile is the model — per-tab
@@ -218,4 +220,50 @@ export function isValidProfileName(name: string,
     if (!ok) return false
   }
   return true
+}
+
+/** A profile's Claude login, as `claude auth status` reports it. `unknown` = the CLI is missing or
+ *  failed — never shown as "not logged in", which would invite a pointless re-login. */
+export type ClaudeLoginState = 'loggedIn' | 'loggedOut' | 'unknown'
+export interface ClaudeLogin {
+  profile: string
+  state: ClaudeLoginState
+  email: string
+  method: string
+  org: string
+}
+
+/** Who a profile is logged in to Claude as. Omit `profile` for the active one; `fresh` skips the
+ *  server's few-second cache (an explicit refresh). Any failure ⇒ `unknown`. */
+export async function fetchClaudeLogin(profile?: string, fresh = false,
+                                       apiBase = ''): Promise<ClaudeLogin> {
+  const unknown: ClaudeLogin = { profile: profile ?? '', state: 'unknown', email: '', method: '', org: '' }
+  try {
+    const qs = new URLSearchParams()
+    if (profile) qs.set('profile', profile)
+    if (fresh) qs.set('fresh', '1')
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/auth?${qs}`)
+    if (!res.ok) return unknown
+    return { ...unknown, ...(await _json(res)) } as ClaudeLogin
+  } catch { return unknown }
+}
+
+/** Log a profile out of Claude (`claude auth logout` in its own config dir). */
+export async function logoutClaude(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/logout`,
+      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
+    const body = await _json(res)
+    return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
+/** One-line label for a login: the account email, "Not logged in", or `''` when unknown (render
+ *  nothing rather than a guess). */
+export function claudeLoginLabel(l: ClaudeLogin | null | undefined): string {
+  if (!l || l.state === 'unknown') return ''
+  if (l.state === 'loggedOut') return 'Not logged in'
+  return l.email || 'Logged in'
 }

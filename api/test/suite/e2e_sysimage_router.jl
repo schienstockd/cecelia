@@ -325,6 +325,8 @@ end
         "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
         "/api/kiwi/profiles",           # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 — roster
         "/api/kiwi/terminal/command",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P6 — profile-scoped shell one-liner
+        "/api/kiwi/profiles/auth",      # P8 — a profile's Claude login
+        "/api/config/shared-workstation",
         "/api/profile/settings",        # USER_PROFILE_PLAN Phase 4 — per-profile settings hydration
         "/api/hpc/settings",            # HPC_PLAN P1 — Settings → HPC
         "/api/hpc/env",                 # HPC_PLAN P2 — refuses without a configured host (no ssh)
@@ -370,6 +372,8 @@ end
         "/api/kiwi/profiles/retire",   # LOGIN_CREDENTIAL_ISOLATION_PLAN D11
         "/api/kiwi/profiles/rename",   # USER_PROFILE_PLAN D11 amendment — rename dir + update [ai].profile
         "/api/kiwi/profiles/delete",   # USER_PROFILE_PLAN D11 amendment — rm -rf profile dir
+        "/api/kiwi/profiles/logout",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P8 — claude auth logout
+        "/api/config/shared-workstation/set",
         "/api/profile/settings/patch", # USER_PROFILE_PLAN Phase 4 — merge partial dict, null deletes
         "/api/hpc/settings/set", "/api/hpc/test",   # HPC_PLAN P1
         "/api/hpc/env/install",                     # HPC_PLAN P2
@@ -483,7 +487,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 111 && length(POST_ROUTES) == 167
+    @test length(GET_ROUTES) == 113 && length(POST_ROUTES) == 169
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

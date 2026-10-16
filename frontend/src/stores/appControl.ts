@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchProfiles, profileNameLabel } from '../utils/profileApi'
+import { fetchProfiles, profileNameLabel, fetchClaudeLogin, type ClaudeLogin } from '../utils/profileApi'
 import { tasksLostOnRestart } from '../utils/runningTasks'
 import { quitTaskPhrase } from '../utils/quitWarning'
 
@@ -33,6 +33,12 @@ export const useAppControlStore = defineStore('appControl', () => {
   // identity should show this, not the raw API name.
   const activeProfileDisplayName = computed(() => profileNameLabel(activeProfileName.value))
   const profileCount = ref<number>(1)
+  // The active profile's Claude login — the account Kiwi turns bill. Shared so Kiwi's read-only row
+  // and Preferences' Log out agree without each holding its own copy. `null` = not checked yet.
+  const claudeLogin = ref<ClaudeLogin | null>(null)
+  async function refreshClaudeLogin(fresh = false) {
+    claudeLogin.value = await fetchClaudeLogin(undefined, fresh)
+  }
 
   const _post = (url: string, body: unknown = {}) =>
     fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -308,6 +314,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   }
 
   return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, activeProfileDisplayName, profileCount, worktrees, canSwitch,
+           claudeLogin, refreshClaudeLogin,
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, updateBehindBy, updateMergedPrs, canApplyUpdate,

@@ -72,6 +72,7 @@ include(joinpath(@__DIR__, "suite", "logging.jl"))
 # file loads inside this file's aggregating testset scope, so any helpers defined earlier
 # in suite.jl are still in scope for the extracted fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "observer.jl"))
+include(joinpath(@__DIR__, "suite", "claude_auth.jl"))
 
 # ── Model + storage + observer-state testsets ─────────────────────────
 # 11 sections covering: create project + image, per-image bookmarking (starred), REPL /

@@ -34,6 +34,8 @@ import FloatingPanel from '../FloatingPanel.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
+import { useAppControlStore } from '../../stores/appControl'
+import { claudeLoginLabel } from '../../utils/profileApi'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
@@ -78,11 +80,19 @@ const observer = useObserverStore()
 const { isOpen: sectionOpen, toggle: toggleSection } =
   useSingleOpenSection('cc.kiwi.openSection', 'ask')
 
-// USER_PROFILE_PLAN Phase 6: the entire profile row is gone from Kiwi. Identity is chosen at
-// launch (AppProfilePicker), managed in Preferences → Profiles, and pairing/share/ask below
-// operate on whatever the active profile happens to be. Nothing about profiles needs to appear
-// here — the launch picker + Preferences own the surface end-to-end.
+// USER_PROFILE_PLAN Phase 6: the profile picker is gone from Kiwi. Identity is chosen at launch
+// (AppProfilePicker) and managed in Preferences → Profiles. Kiwi only SHOWS the Claude account its
+// turns will bill — read-only (Decision 3), so a shared-box user who didn't switch sees it before
+// sending. Re-checked when the window regains focus: a login in a terminal happens elsewhere.
 const pm = useProjectMetaStore()
+const appCtl = useAppControlStore()
+const onFocusLogin = () => { void appCtl.refreshClaudeLogin() }
+onMounted(() => { void appCtl.refreshClaudeLogin(); window.addEventListener('focus', onFocusLogin) })
+onUnmounted(() => window.removeEventListener('focus', onFocusLogin))
+const accountLabel = computed(() => claudeLoginLabel(appCtl.claudeLogin))
+const accountTip = computed(() => appCtl.claudeLogin?.state === 'loggedOut'
+  ? 'Log in from Preferences → Profiles'
+  : `Assistant turns run on this account (profile ${appCtl.activeProfileDisplayName})`)
 
 // Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
 // showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
@@ -278,9 +288,16 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       </button>
     </template>
     <div class="kiwi-body">
-      <!-- USER_PROFILE_PLAN Phase 6: the Profile row (picker + create + terminal one-liner +
-           retire) was removed from Kiwi. Identity is chosen at launch (AppProfilePicker) and
-           managed in Preferences → Profiles; nothing about profiles needs to appear here. -->
+      <!-- Read-only: the Claude account Kiwi bills. Managing it lives in Preferences → Profiles
+           (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
+      <div v-if="accountLabel" class="kiwi-row" data-guide="kiwi.account">
+        <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Account</span>
+        <span class="kiwi-chip cc-fs-xs"
+              :class="{ 'kiwi-chip-warn': appCtl.claudeLogin?.state === 'loggedOut' }"
+              v-tooltip.bottom="accountTip">
+          {{ accountLabel }}
+        </span>
+      </div>
 
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">
         Open a project to pair with your assistant.
@@ -517,6 +534,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 .kiwi-chip { padding-inline: 0.35rem; line-height: 1; align-self: center;
              transition: color 0.15s ease; color: var(--cc-text-dim); }
 .kiwi-chip-paired { color: var(--cc-kiwi); }
+.kiwi-chip-warn   { color: var(--cc-sev-warn); }
 .kiwi-chip-sent   { color: var(--cc-sev-ok, var(--cc-kiwi)); font-weight: 600; }
 .kiwi-help { color: var(--cc-text-dim); }
 .kiwi-help:hover { color: var(--cc-accent); }

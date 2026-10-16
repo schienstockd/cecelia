@@ -7,6 +7,9 @@ import {
   retireProfile,
   fetchTerminalCommand,
   profileNameLabel,
+  fetchClaudeLogin,
+  logoutClaude,
+  claudeLoginLabel,
 } from './profileApi'
 
 describe('profileNameLabel', () => {
@@ -154,5 +157,49 @@ describe('kiwi profile API round-trip', () => {
     fetchMock.mockResolvedValue(jsonRes(400, { error: 'bad name' }))
     const r = await fetchTerminalCommand('Bad Name')
     expect(r).toBeNull()
+  })
+})
+
+describe('Claude login per profile', () => {
+  const originalFetch = globalThis.fetch
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+  })
+  afterEach(() => { globalThis.fetch = originalFetch })
+  const res = (status: number, body: object) =>
+    ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response
+
+  it('fetchClaudeLogin passes profile + fresh and returns the server shape', async () => {
+    fetchMock.mockResolvedValue(res(200, { profile: 'alice', state: 'loggedIn', email: 'a@lab.org',
+                                           method: 'claude.ai', org: 'Lab' }))
+    const l = await fetchClaudeLogin('alice', true)
+    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/auth?profile=alice&fresh=1')
+    expect(l.state).toBe('loggedIn')
+    expect(l.email).toBe('a@lab.org')
+  })
+
+  it('fetchClaudeLogin is `unknown` on an error status or network failure — never "logged out"', async () => {
+    fetchMock.mockResolvedValue(res(404, { ok: false }))
+    expect((await fetchClaudeLogin('ghost')).state).toBe('unknown')
+    fetchMock.mockRejectedValue(new Error('network'))
+    expect((await fetchClaudeLogin()).state).toBe('unknown')
+  })
+
+  it('logoutClaude surfaces the server error', async () => {
+    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'No assistant CLI found.' }))
+    expect(await logoutClaude('alice')).toEqual({ ok: false, error: 'No assistant CLI found.' })
+    fetchMock.mockResolvedValue(res(200, { ok: true, name: 'alice' }))
+    expect(await logoutClaude('alice')).toEqual({ ok: true })
+  })
+
+  it('claudeLoginLabel: email, not-logged-in, or nothing when unknown', () => {
+    const base = { profile: 'a', method: '', org: '' }
+    expect(claudeLoginLabel({ ...base, state: 'loggedIn', email: 'a@lab.org' })).toBe('a@lab.org')
+    expect(claudeLoginLabel({ ...base, state: 'loggedIn', email: '' })).toBe('Logged in')
+    expect(claudeLoginLabel({ ...base, state: 'loggedOut', email: '' })).toBe('Not logged in')
+    expect(claudeLoginLabel({ ...base, state: 'unknown', email: '' })).toBe('')
+    expect(claudeLoginLabel(null)).toBe('')
   })
 })

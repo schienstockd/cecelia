@@ -290,6 +290,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/versions" => (req, body_bytes) -> (api_versions_list(req)),
     "/api/versions/inventory" => (req, body_bytes) -> (api_versions_inventory(req)),
     "/api/config/tls" => (req, body_bytes) -> (api_tls_get(req)),
+    "/api/config/shared-workstation" => (req, body_bytes) -> (api_shared_workstation_get(req)),
     "/api/config/threads" => (req, body_bytes) -> (api_threads_get(req)),
     "/api/tasks" => (req, body_bytes) -> (api_tasks_list(req)),
     "/api/chains" => (req, body_bytes) -> (api_chains_list(req)),
@@ -350,6 +351,7 @@ const _GET_ROUTES = Dict{String, Function}(
     # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
     "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
     "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
+    "/api/kiwi/profiles/auth"     => (req, body_bytes) -> (api_kiwi_profiles_auth(req)),
     # Per-profile settings (USER_PROFILE_PLAN Phase 4). Hydrates the frontend Pinia store on launch.
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
     "/api/hpc/settings"           => (req, body_bytes) -> (api_hpc_settings_get(req)),
@@ -368,6 +370,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/storage/keep-previous-version/set" => (req, body_bytes) -> (api_keep_previous_version_set(body_bytes)),
     "/api/viewer/chunk-cache/set" => (req, body_bytes) -> (api_viewer_chunk_cache_set(body_bytes)),
     "/api/config/tls/set" => (req, body_bytes) -> (api_tls_set(body_bytes)),
+    "/api/config/shared-workstation/set" => (req, body_bytes) -> (api_shared_workstation_set(body_bytes)),
     "/api/config/threads/set" => (req, body_bytes) -> (api_threads_set(body_bytes)),
     "/api/tasks/custom-modules/reload" => (req, body_bytes) -> (api_custom_modules_reload(body_bytes)),
     "/api/tasks/validate" => (req, body_bytes) -> (api_task_validate(req, body_bytes)),
@@ -474,6 +477,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/retire"     => (req, body_bytes) -> (api_kiwi_profiles_retire(body_bytes)),
     "/api/kiwi/profiles/rename"     => (req, body_bytes) -> (api_kiwi_profiles_rename(body_bytes)),
     "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
+    "/api/kiwi/profiles/logout"     => (req, body_bytes) -> (api_kiwi_profiles_logout(body_bytes)),
     # Per-profile settings — partial-dict merge (USER_PROFILE_PLAN Phase 4). Value `null` deletes.
     "/api/profile/settings/patch"   => (req, body_bytes) -> (api_profile_settings_patch(body_bytes)),
     "/api/hpc/settings/set"         => (req, body_bytes) -> (api_hpc_settings_set(body_bytes)),
