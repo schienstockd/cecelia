@@ -11,10 +11,10 @@
   </defs>
   <rect width="900" height="380" fill="#fafaf7"/>
 
-  <!-- gate: a must-resolve finding either was fixed in its commit (down: caught, ends) or not (on) -->
-  <rect x="250" y="138" rx="10" ry="10" width="90" height="150" fill="#ffffff" stroke="#6b6b66" stroke-width="1.5" stroke-dasharray="5 5"/>
-  <text x="295" y="130" text-anchor="middle" font-size="13" fill="#6b6b66">fixed in the commit?</text>
-  <text x="372" y="130" font-size="13" font-weight="600" fill="#d94a86">no →</text>
+  <!-- gate: a finding either was fixed in its commit (down: caught, ends) or not (on); a plausible note's tag is optional -->
+  <rect x="250" y="86" rx="10" ry="10" width="90" height="202" fill="#ffffff" stroke="#6b6b66" stroke-width="1.5" stroke-dasharray="5 5"/>
+  <text x="295" y="78" text-anchor="middle" font-size="13" fill="#6b6b66">fixed in the commit?</text>
+  <text x="372" y="78" font-size="13" font-weight="600" fill="#d94a86">no →</text>
   <path d="M295,292 L295,318" fill="none" stroke="#6b6b66" stroke-width="2" marker-end="url(#arrowDim)"/>
   <text x="304" y="310" font-size="13" font-weight="600" fill="#6b6b66">yes: caught</text>
   <rect x="235" y="324" rx="9" ry="9" width="120" height="36" fill="#f0f0ee" stroke="#6b6b66" stroke-width="1.5"/>
@@ -90,13 +90,14 @@
   </g>
 
   <g stroke="#d94a86" stroke-width="2.5" fill="none" marker-end="url(#arrowF)">
-    <path d="M220,101 L330,101 C420,101 420,116 495,116" />
+    <path d="M220,101 L380,101 C440,101 440,116 495,116" />
     <path d="M220,159 L380,159 C440,159 440,134 495,134" />
     <path d="M380,159 C440,159 440,236 495,236" />
     <path d="M220,217 L380,217 C440,217 440,152 495,152" />
     <path d="M380,217 C440,217 440,254 495,254" />
     <path d="M220,275 L330,275 C420,275 420,272 495,272" />
   </g>
+  <text x="295" y="120" text-anchor="middle" font-size="11" fill="#6b6b66">tag optional</text>
   <g fill="#d94a86">
     <circle cx="380" cy="159" r="5"/>
     <circle cx="380" cy="217" r="5"/>
