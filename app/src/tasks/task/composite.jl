@@ -183,6 +183,17 @@ function _task_spec(task::CompositeTask)::Union{Dict{String,Any}, Nothing}
     end
 end
 
+# Composite: clamp through each step's spec (the same walk `validate_params` makes), then its own.
+function _clamp_to_spec(task::CompositeTask, params::Dict{String,Any};
+                        on_clamp::Function = (key, from, to) -> nothing)::Dict{String,Any}
+    for sub in _composite_steps(task)
+        params = _clamp_to_spec(sub, params; on_clamp)
+    end
+    spec = _task_spec(task)
+    isnothing(spec) && return params
+    _clamp_to_spec_params(get(spec, "params", nothing), params, on_clamp)
+end
+
 function validate_params(task::CompositeTask, params::Dict{String,Any};
                          extra_options::Set{String} = Set{String}(),
                          in_composite::Bool = false)

@@ -624,9 +624,9 @@ end
 
     # Both the log and the error line interpolate a real uid.
     @test occursin("[\$(first(imgs).uid)/\$(node.id)]", src)
-    # log line, error line, and the set-wide axis SKIP. The per-image SKIP uses the loop's own `uid`,
-    # which is the same rule the image-scope path follows.
-    @test length(collect(eachmatch(r"\[\$\(first\(imgs\)\.uid\)/\$\(node\.id\)\]", src))) == 3
+    # log line, error line, the set-wide axis SKIP and the stored-param clamp line. The per-image SKIP
+    # uses the loop's own `uid`, which is the same rule the image-scope path follows.
+    @test length(collect(eachmatch(r"\[\$\(first\(imgs\)\.uid\)/\$\(node\.id\)\]", src))) == 4
     @test occursin("SKIP [\$uid/\$(node.id)]", src)
 end
 

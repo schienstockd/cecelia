@@ -167,6 +167,68 @@ _spec_value(v) = v isa AbstractVector ? Any[_spec_value(x) for x in v] :
                  v isa AbstractDict   ? Dict{String,Any}(string(k) => _spec_value(x) for (k, x) in v) :
                  v
 
+"""
+    _clamp_to_spec(task, params; on_clamp = (key, from, to) -> nothing) -> Dict
+
+Pull every stored `int`/`float` value into the spec's CURRENT `[min, max]`, calling `on_clamp` for
+each one moved. Top-level keys, section children (flat or nested under the section key) and
+repeatable-group entries; anything else passes through, and `params` is never mutated.
+
+For STORED params only — a chain node's bag. A value saved under an older, wider range (`cellDiameter`
+was 1–500, now 2–60) otherwise fails `validate_params` on every run with nothing to fix it but an
+edit. A value a caller passes NOW stays strict: `run_task` does not clamp. The frontend twins are
+`clampToSpec` / `clampParamsToSpec` in `frontend/src/tasks/paramValues.ts`.
+"""
+function _clamp_to_spec(task::CciaTask, params::Dict{String,Any};
+                        on_clamp::Function = (key, from, to) -> nothing)::Dict{String,Any}
+    spec = _task_spec(task)
+    isnothing(spec) && return params
+    _clamp_to_spec_params(get(spec, "params", nothing), params, on_clamp)
+end
+
+function _clamp_to_spec_params(ps, params::Dict{String,Any}, on_clamp::Function)::Dict{String,Any}
+    ps isa AbstractVector || return params
+    out = params; copied = false
+    set!(k, v) = (copied || (out = copy(out); copied = true); out[k] = v)
+    for p in ps
+        p isa AbstractDict || continue
+        key  = string(get(p, "key", ""))
+        type = get(p, "type", "")
+        if type == "section"
+            nested = _clamp_to_spec_params(get(p, "params", nothing), out, on_clamp)
+            nested === out || (out = nested; copied = true)
+            sec = get(out, key, nothing)
+            if sec isa AbstractDict
+                d = Dict{String,Any}(string(k) => v for (k, v) in sec)
+                c = _clamp_to_spec_params(get(p, "params", nothing), d, on_clamp)
+                c === d || set!(key, c)
+            end
+        elseif type == "group"
+            grp = get(out, key, nothing)
+            grp isa AbstractDict || continue
+            entries = Dict{String,Any}(string(k) => v for (k, v) in grp)
+            moved = false
+            for (ek, ev) in entries
+                ev isa AbstractDict || continue
+                e = Dict{String,Any}(string(k) => v for (k, v) in ev)
+                c = _clamp_to_spec_params(get(p, "params", nothing), e, on_clamp)
+                c === e || (entries[ek] = c; moved = true)
+            end
+            moved && set!(key, entries)
+        elseif type in ("int", "float") && haskey(out, key)
+            v = out[key]
+            (v isa Real && !(v isa Bool) && isfinite(v)) || continue
+            mn = get(p, "min", nothing); mx = get(p, "max", nothing)
+            to = (!isnothing(mn) && v < mn) ? mn : (!isnothing(mx) && v > mx) ? mx : v
+            to == v && continue
+            type == "float" && (to = Float64(to))   # a JSON bound of `60.0` can read back as Int 60
+            on_clamp(key, v, to)
+            set!(key, to)
+        end
+    end
+    out
+end
+
 # ── Per-param image-gating (`requires.axes`) ─────────────────────────────────
 # The image-side twin of `showIf`. A spec param can carry its own `requires.axes` (same shape as the
 # task-level `TaskDef.requires`), and any key whose axes the image does not carry is deleted from the

@@ -79,6 +79,13 @@ Cecelia._run_task(::_ScaleOnlySetTask, imgs::Vector{CciaImage}, ::Dict{String,An
                   on_process::Function = _ -> nothing) =
     Dict{String,Any}("ok" => true, "image_count" => length(imgs))
 
+# Echoes its numeric params back, so a chain test can see the value a node actually ran with.
+struct _RangedParamTask <: CciaTask end
+Cecelia._run_task(::_RangedParamTask, ::CciaImage, params::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    Dict{String,Any}("diameter" => params["diameter"], "iters" => params["iters"])
+
 # A task whose _run_task always throws — used to assert the scheduler tees a crash into the task log.
 struct _CrashTask <: CciaTask end
 Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
