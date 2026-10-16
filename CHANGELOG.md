@@ -15,6 +15,8 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.2.11] — 2026-10-16
+
 ### Read this first
 
 - **Sign in once per browser.** Cecelia now only answers the person who launched it (#1574). The
@@ -59,7 +61,8 @@ _Changes on `main` that have not yet been tagged in a release._
 - **Run tasks on an HPC cluster (SLURM or PBS)** (#1632, #1637, #1638, #1639, #1640). Set up the
   cluster in Settings → HPC and your login in Preferences → HPC (#1641, #1648), install the
   environment with one click, then pick the cluster from a task's environment chip. The Task Manager
-  shows the job's stage. Not available on Windows yet.
+  shows the job's stage. Jobs are sized with sliders, and a memory hint offers more memory when the
+  selected images need it (#1688, #1690). Not available on Windows yet.
 - **Import external labels** (#1626). Bring in an OME-Zarr or TIFF label image, optionally measured
   straight away.
 - **Halo mode** (#1631). One segmentation gives two outlines: the nucleus, and a grown ring for
@@ -100,7 +103,20 @@ _Changes on `main` that have not yet been tagged in a release._
   to cancel the first; Cancel now shows *Cancelling…* until confirmed (#1625).
 - **Restart refuses while tasks would be lost** (#1677).
 - **The intravital recipe follows the paper's workflow**, with cellpose by default (#1437).
-- **New look for icons, tooltips and toasts** (#1373, #1377, #1378).
+- **New look for icons, tooltips and toasts** (#1373, #1377, #1378), and one look for every slider
+  (#1691).
+- **Rename a population from its ⋯ menu** in the population manager. Double-clicking the name no
+  longer renames it, so it no longer changes the plot's parent by accident (#1693).
+- **A z range draws exactly its planes.** Dots and tracks no longer reach past a Plane ± window or
+  the 3D depth crop, in the viewer and in movies. *Z reach* now applies only to a single 2D plane
+  (#1695).
+- **Saved settings outside a task's range are pulled into it.** When a task's limits change (Cellpose
+  cell diameter is now 2–60), remembered and chain values are clamped, with a log line, instead of
+  failing every run. A chain whose settings still can't run is refused at launch, before any step
+  starts (#1700, #1701).
+- **Small images get no preview box**; the preview covers the whole image (#1646).
+- **Notebooks and scripts using `CeceliaClient()`** find your backend and sign-in token on their own
+  (#1686).
 
 ### Fixed
 
@@ -123,7 +139,15 @@ _Changes on `main` that have not yet been tagged in a release._
 - **Viewer:** new segmentations appear without reopening (#1472); masks in the whole-slide tile view
   (#1605); dots and track tails scale with zoom (#1628); overlays survive view switches (#1602); no
   reload unless a shown store changed (#1484); out-of-memory and stutter fixes on large 3D images
-  (#1583, #1585, #1606).
+  (#1583, #1585, #1606); no false out-of-memory switch to bricks after a mask toggle or level swap
+  (#1683); the Tracks controls stay when every ribbon is off (#1674); the preview box stays inside
+  the canvas (#1646).
+- **Several people on one machine:** stopping Cecelia no longer kills another person's runner,
+  notebook server or preview worker. One that belongs to someone else is reported, with a confirmed
+  *Stop it*, instead of being used. The preview worker and notebook server now close when Cecelia
+  crashes, so they no longer hold the port and GPU memory (#1689).
+- **Preview:** turning it off after a restart frees its GPU memory (#1682); flow inspection and
+  stills export no longer fail while the preview worker restarts (#1678).
 - **Movies** honour the viewer's plane window and depth crop (#1481); title cards name what is drawn
   (#1421, #1425).
 - **Gate plots:** open-ended thresholds no longer zoom the axes out (#1452); axes are padded so you
@@ -133,7 +157,8 @@ _Changes on `main` that have not yet been tagged in a release._
   On a shared install, non-owners get a clear message instead of a failed fast-plot build (#1629).
 - **Install:** native Julia on Apple Silicon (#1374); movies on Apple Silicon (#1364); macOS installs
   no longer need system git (#1461); Windows shared install fixes (#1443, #1446); the launcher finds
-  Julia from a desktop launch (#1587); *Install* buttons show their errors (#1561).
+  Julia from a desktop launch (#1587); *Install* buttons show their errors (#1561); terminal
+  `pixi run` tasks use the Julia the installer recorded, not another one on PATH (#1696, #1698).
 - **Claude can find Claude Code off your PATH**, with Re-check in Settings (#1506).
 
 ## [0.2.10] — 2026-10-02
@@ -1321,7 +1346,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/schienstockd/cecelia/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/schienstockd/cecelia/compare/v0.2.7...v0.2.8

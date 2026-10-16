@@ -186,7 +186,7 @@ for _ in $(seq 1 300); do
 done
 
 if [ -n "$health" ]; then
-  ok "$scheme:///api/health → $health"
+  ok "$scheme://127.0.0.1:$PORT/api/health → $health"
   say "the bundle boots"
   kill_server
   exit 0
