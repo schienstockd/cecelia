@@ -416,6 +416,10 @@ is segmented, which is most images.
 | `models[].gaussianFilter` | float | 0.0 | Gaussian sigma (0=off) |
 | `models[].threshold` | int | 0 | Absolute intensity gate; pixels below set to 0 |
 | `models[].stitchThreshold` | float | 0.2 | Z-stitch threshold (0=2D per slice, no stitch — see *Cellpose 4* below) |
+| `models[].cellprobThreshold` | float, −6–6 | 0.0 | cellpose `cellprob_threshold`; lower grows masks into dimmer signal |
+| `models[].flowThreshold` | float, 0–2 | 1.0 | cellpose `flow_threshold`; masks with flow error above it are dropped, 0 = keep all |
+| `models[].invert` | bool | false | Invert the cell channel (dark cells) — done by us, see *Normalisation* below |
+| `models[].augment` | bool | false | cellpose `augment` (flipped passes); ~3× slower on cpsam |
 | `blockSize` | int (px) | 512 | XY tile size |
 | `overlap` | int (px) | 64 | XY tile overlap; provides border context and seam zone for stitching |
 | `labelOverlap` | float | 0.25 | Min IoU to join a cell cut by a tile seam; 0 = off |
@@ -456,6 +460,22 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 `stitchThreshold = 0` also takes a different call path: `eval(z_axis=…, stitch_threshold=0)` is a
 `ValueError` in v4, so a Z stack with no stitching is passed plane-by-plane instead. Same result as
 v3 — labels numbered independently per plane — see `test_cellpose_v4_callpath.py`.
+
+### Normalisation — ours, never cellpose's
+
+Every channel is windowed to [0, 1] in `_prepare_channel` (the `normalise` percentile, global when
+`normaliseToWhole`), and `eval` gets `normalize=False`. Left at cellpose's default it re-stretches each
+tile to that tile's own 1st–99th percentile: a dim background-only tile (mean 0.05) came back at the
+same 0.50 as a full one, which undoes `normaliseToWhole`. On a single-tile image the effect is small
+(foreground IoU 0.95–0.97 against the old call on a CART slice); it matters on tiled mosaics. Because
+cellpose no longer normalises, its own `invert` is unavailable — `invert` flips the cell channel here.
+
+**Which knob first.** On a dense CART intravital slice (512², 0.91 µm/px, `cpsam_v2`), the default
+`flowThreshold = 0.4` dropped about half the cells (100 → 212 at 1.0 on a bright plane, 72 → 117 on a
+dim one); 1.0, 2.0 and 0 gave identical masks, so past ~1 it is effectively off. `cellprobThreshold`
+interacts with it: at −2 with the flow check still on, masks grow and then fail it (100 → 32); with
+the flow check relaxed, −2 tiles the background. Raise `flowThreshold` first, then nudge cellprob.
+That run is why the default is 1.0 rather than cellpose's 0.4 (outlines checked by eye on that slice).
 
 ### Cellpose v3 (Mac-only opt-in)
 

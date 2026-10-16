@@ -203,6 +203,10 @@ class CellposeUtils(SegmentationUtils):
 
         if norm_max > norm_min:
             arr = np.clip((arr - norm_min) / (norm_max - norm_min), 0.0, 1.0)
+        else:
+            # A flat window has no contrast to segment. Still has to land in [0, 1]: cellpose no
+            # longer normalises after us (`normalize=False` in predict_slice).
+            arr = np.clip(arr - norm_min, 0.0, 1.0)
 
         return arr
 
@@ -237,6 +241,11 @@ class CellposeUtils(SegmentationUtils):
             prep    = self._prepare_channel(ch_data, model_params, norm_params, ch)
             nuc_im  = prep if nuc_im is None else np.maximum(nuc_im, prep)
 
+        if bool(model_params.get('invert', False)):
+            # Dark cells on a bright background. Done here because cellpose's own `invert` lives in the
+            # normalisation `normalize=False` switches off below.
+            cell_im = 1.0 - cell_im
+
         # Stack for cellpose: last axis = [cyto, nuc]. v4 zero-pads to its 3 channels itself, and
         # the old `channels=[1,2]` / `[0,0]` pairs are gone — `channel_axis` carries all of it.
         if nuc_im is not None:
@@ -246,73 +255,54 @@ class CellposeUtils(SegmentationUtils):
             im_input     = cell_im
             channel_axis = None
 
-        # µm → pixels
-        cell_diam_px = self.px_from_um(model_params.get('cellDiameter', 15))
-
         stitch_threshold = float(model_params.get('stitchThreshold', 0.0))
+
+        # Shared by every call below, both versions.
+        #   normalize=False — the channels are already windowed to [0, 1] above. Left at cellpose's
+        #   default, it re-stretches every tile to that tile's own 1st–99th percentile: a dim
+        #   background-only tile comes out as bright as a full one, which undoes `normaliseToWhole`
+        #   and makes the `normalise` percentile nearly irrelevant.
+        #   flowThreshold defaults to 1.0, not cellpose's 0.4: at 0.4 cpsam_v2 discarded about half the
+        #   cells on dense intravital data, and above ~1 the check stops discarding (docs/SEGMENTATION.md
+        #   → *Normalisation — ours, never cellpose's*). cellprob keeps cellpose's 0.0.
+        eval_kw = dict(
+            channel_axis=channel_axis,
+            diameter=self.px_from_um(model_params.get('cellDiameter', 15)),
+            normalize=False,
+            cellprob_threshold=float(model_params.get('cellprobThreshold', 0.0)),
+            flow_threshold=float(model_params.get('flowThreshold', 1.0)),
+            augment=bool(model_params.get('augment', False)),
+        )
 
         model = self._get_model(model_type)
 
         if _CELLPOSE_MAJOR == 3:
             # v3 API: 1-indexed positional `channels=[cyto, nuc]`. `[0, 0]` = grayscale (no nuc);
             # `[1, 2]` = cell axis 0 + nuclear axis 1 of the last-axis stack this file builds.
-            v3_channels = [1, 2] if nuc_im is not None else [0, 0]
+            eval_kw['channels'] = [1, 2] if nuc_im is not None else [0, 0]
             if is_3d and stitch_threshold > 0:
-                masks, _, _ = model.eval(
-                    im_input,
-                    channels=v3_channels,
-                    channel_axis=channel_axis,
-                    z_axis=0,
-                    diameter=cell_diam_px,
-                    stitch_threshold=stitch_threshold,
-                    do_3D=False,
-                )
+                masks, _, _ = model.eval(im_input, z_axis=0, stitch_threshold=stitch_threshold,
+                                         do_3D=False, **eval_kw)
             elif is_3d:
                 # v3 accepts `z_axis=0, do_3D=False, stitch_threshold=0` — independent 2D slices,
                 # per-plane numbering. This is the call v4 rejects; v3 has no equivalent restriction.
-                masks, _, _ = model.eval(
-                    im_input,
-                    channels=v3_channels,
-                    channel_axis=channel_axis,
-                    z_axis=0,
-                    diameter=cell_diam_px,
-                    do_3D=False,
-                )
+                masks, _, _ = model.eval(im_input, z_axis=0, do_3D=False, **eval_kw)
             else:
-                masks, _, _ = model.eval(
-                    im_input,
-                    channels=v3_channels,
-                    channel_axis=channel_axis,
-                    diameter=cell_diam_px,
-                )
+                masks, _, _ = model.eval(im_input, **eval_kw)
         elif is_3d and stitch_threshold > 0:
             # v4: 2D-per-Z-slice, stitched across Z by cellpose. `z_axis` is only accepted here.
-            masks, _, _ = model.eval(
-                im_input,
-                channel_axis=channel_axis,
-                z_axis=0,
-                diameter=cell_diam_px,
-                stitch_threshold=stitch_threshold,
-                do_3D=False,
-            )
+            masks, _, _ = model.eval(im_input, z_axis=0, stitch_threshold=stitch_threshold,
+                                     do_3D=False, **eval_kw)
         elif is_3d:
             # v4: independent 2D slices. As a list of planes, because the same call with `z_axis=0`
             # and no stitching is a ValueError in v4 (see the module docstring). Labels are numbered
             # per plane, which is what "0 = independent 2D slices" has always meant here.
             planes = [im_input[z] for z in range(im_input.shape[0])]
-            per_plane, _, _ = model.eval(
-                planes,
-                channel_axis=channel_axis,
-                diameter=cell_diam_px,
-            )
+            per_plane, _, _ = model.eval(planes, **eval_kw)
             masks = np.stack(per_plane)
         else:
             # v4 2D.
-            masks, _, _ = model.eval(
-                im_input,
-                channel_axis=channel_axis,
-                diameter=cell_diam_px,
-            )
+            masks, _, _ = model.eval(im_input, **eval_kw)
 
         if is_3d and stitch_threshold > 0:
             return split_z_gaps(masks)

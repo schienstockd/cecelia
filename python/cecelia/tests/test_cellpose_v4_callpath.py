@@ -117,6 +117,43 @@ class TestCellposeV4CallPath(unittest.TestCase):
         self.assertEqual(len(self.model.calls), 1)
 
 
+    def test_cellpose_does_not_renormalise(self):
+        """We window every channel to [0, 1] ourselves (global when `normaliseToWhole`). Cellpose's
+        default `normalize=True` re-stretches each tile to its own 1st–99th percentile, so a dim
+        background tile came out as bright as a full one."""
+        self.seg.predict_slice(self.plane[None], self._params())
+        self.assertIs(self._last_kwargs()['normalize'], False)
+
+    def test_unset_knobs_use_the_spec_defaults(self):
+        self.seg.predict_slice(self.plane[None], self._params())
+        kw = self._last_kwargs()
+        self.assertEqual((kw['cellprob_threshold'], kw['flow_threshold'], kw['augment']),
+                         (0.0, 1.0, False))
+
+    def test_knobs_reach_every_call_shape(self):
+        knobs = dict(cellprobThreshold=-2.0, flowThreshold=0.8, augment=True)
+        vol = np.stack([np.stack([self.plane] * 3)])
+        for tile, extra in ((self.plane[None], {}), (vol, {'stitchThreshold': 0.2}),
+                            (vol, {'stitchThreshold': 0.0})):
+            self.seg.predict_slice(tile, self._params(**knobs, **extra))
+            kw = self._last_kwargs()
+            self.assertEqual((kw['cellprob_threshold'], kw['flow_threshold'], kw['augment']),
+                             (-2.0, 0.8, True))
+            self.assertIs(kw['normalize'], False)
+
+    def test_invert_flips_the_cell_channel(self):
+        self.seg.predict_slice(self.plane[None], self._params(invert=True))
+        x = np.asarray(self.model.calls[-1][0])
+        self.assertEqual(x[3, 3], 0.0)    # the bright square is now dark
+        self.assertEqual(x[0, 0], 1.0)
+
+    def test_input_is_in_unit_range_without_cellpose_normalising(self):
+        flat = np.full((8, 8), 500, np.uint16)          # no contrast: an empty percentile window
+        self.seg.predict_slice(flat[None], self._params())
+        x = np.asarray(self.model.calls[-1][0])
+        self.assertTrue(0.0 <= x.min() and x.max() <= 1.0)
+
+
 class TestNoSilentModelFallback(unittest.TestCase):
     """Cellpose 4 loads `cpsam_v2` for any name it does not know, with only a log line. So a cellpose 3
     model that reaches the default env — the preview worker always started there before #1555 — would
