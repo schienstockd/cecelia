@@ -2,7 +2,7 @@ export interface ParamDef {
   key: string
   label: string
   type: 'int' | 'float' | 'bool' | 'text' | 'dirPath' | 'filePath' | 'select' | 'chipSelect'
-       | 'channelSelection' | 'valueNameSelection' | 'valueNameInput'
+       | 'channelSelection' | 'channelRoles' | 'valueNameSelection' | 'valueNameInput'
        | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'imagePicker'
@@ -67,8 +67,11 @@ export interface ParamDef {
   // and the whole point of the seconds mode is that the DURATIONS define the model. See
   // `utils/frameDuration.ts`; a value with no rate to read is left exactly as the spec wrote it.
   labelUnit?: 'frameDuration'
+  // channelRoles: a sibling channelSelection whose channels get no row (AF correction's target)
+  exclude?: string
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
-                        | { endsWith?: string | string[]; notEndsWith?: string | string[] }>
+                        | { endsWith?: string | string[]; notEndsWith?: string | string[];
+                            minItems?: number; equals?: string }>
   // Gate this param on the IMAGE, not the form — `showIf`'s image-side counterpart. Same shape as
   // `TaskDef.requires`: `axes` lists axis codes the image must carry (e.g. `["T"]`). A param that
   // fails renders nowhere AND is filtered out of the effective run server-side, so the handler's

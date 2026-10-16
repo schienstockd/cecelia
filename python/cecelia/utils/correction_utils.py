@@ -1770,7 +1770,12 @@ def _af_subtract(slab, subtract_val):
 #: rides along because the same pass already has the histograms, and input saturation is the one thing
 #: about this correction worth warning about.
 AfWeightStats = collections.namedtuple('AfWeightStats',
-                                       'backgrounds alphas saturated exponent nbins')
+                                       'backgrounds alphas saturated exponent nbins af_levels af_leaks',
+                                       defaults=(None, None))
+#: ``af_levels`` maps an AF-REFERENCE channel to one ``(level, sigma)`` per `AF_MASK_SCALES_UM` scale —
+#: the median and robust noise of its smoothed field at that scale (`af_mask_levels`). ``None`` / absent when no combination names one; the default keeps
+#: every caller that builds the tuple without an AF channel unchanged. ``af_leaks`` maps a reference to
+#: ``{source: alpha}`` — how much of each non-reference channel leaks INTO it (`af_reference_field`).
 
 #: Paired voxels sampled for the bleedthrough fit, across the whole derivation. `alpha` is ONE SCALAR
 #: PER CHANNEL PAIR over the entire movie, so this is a statistical question and not a per-voxel one:
@@ -1818,11 +1823,118 @@ AF_ALPHA_MAX = 1.0
 #: value, that measurement is the trigger to expose it — not a guess in advance.
 AF_WEIGHT_EXPONENT = 2
 
+#: Gaussian sigmas (µm, XY then Z) the AF-REFERENCE channel is smoothed at before it is thresholded —
+#: one field per scale, and a voxel is masked by whichever is more certain.
+#:
+#: Smoothing is what makes a mask possible at all on a photon-counted reference. On `RFtn9f/jrNNl2` the
+#: AF channel is above its own background in only **8.6%** of voxels, and **a third** of the voxels
+#: inside a visibly AF-bright structure read zero, so a per-voxel test punches holes exactly where the
+#: structure is. **1.2 µm** pools ~77 voxels in 3D, about one AF granule: it leaves **1-3%** of CART on
+#: AF-bright voxels there, where the same smoothing in XY alone left **14-19%** — which is why the run
+#: smooths in Z too and the preview reads a Z window to match.
+#:
+#: **0.6 µm** is for the specks the coarse field dilutes: single-voxel AF puncta of 6+ photons kept
+#: **17%** of CART under 1.2 µm alone and **3%** with both, for 0.4 points of CART overall and nothing on
+#: CART cells away from AF. Finer is NOT better and that was measured: at 0.4 µm the field is so close
+#: to the raw photon counts that its MAD collapses, the threshold falls into the noise, and the mask
+#: took **6%** of voxels and 3% of CART cells.
+AF_MASK_SCALES_UM = ((1.2, 1.0), (0.6, 0.5))
+
+#: A voxel is AF when its smoothed reference is this many robust sigmas above the field's median.
+#: **Not a user parameter**, for the reason `AF_WEIGHT_EXPONENT` is not: the threshold is in units of
+#: the reference's OWN noise, measured per image, so the one number carries across gains and photon
+#: budgets. Chosen by eye on `RFtn9f/jrNNl2` against 3σ and 4σ: 6σ already turns every white
+#: (CART+AF) structure magenta, masks **1.6%** of voxels and keeps **97%** of CART. 4σ masks 3.6% and
+#: keeps 94%; 3σ starts cutting into CART cells that carry only diffuse tissue AF (84% kept on the
+#: brightest CART voxels).
+AF_MASK_K = 6.0
+
+#: Width of the mask's edge, in the same robust sigmas: the target fades from kept to zero over
+#: ``[K, K + RAMP]`` rather than stepping, so a structure at the threshold does not flicker frame to
+#: frame between kept and erased on shot noise alone.
+AF_MASK_RAMP = 2.0
+
+
+def af_mask_sigmas(dim_utils, dim_order=None):
+    """`AF_MASK_SCALES_UM` as per-axis voxel sigmas in ``dim_order`` (default: the image's full order),
+    one tuple per scale. 0 on T, C and Z of a 2D image, so each applies to a slab from `_af_slab`."""
+    order = list(dim_order or dim_utils.im_dim_order)
+    out = []
+    for xy_um, z_um in AF_MASK_SCALES_UM:
+        sig = []
+        for ax in order:
+            if ax in ('X', 'Y'):
+                sig.append(xy_um / float(dim_utils.im_physical_size(ax.lower()) or 1.0))
+            elif ax == 'Z' and dim_utils.is_3D():
+                sig.append(z_um / float(dim_utils.im_physical_size('z') or 1.0))
+            else:
+                sig.append(0.0)
+        out.append(tuple(sig))
+    return tuple(out)
+
+
+def af_mask_field(slab, sigmas):
+    """The smoothed AF reference, one field per scale stacked on a new leading axis — raw counts, no
+    background subtracted, so it does not depend on `backgroundMethod`. One function for the stats
+    pass, the run and the preview."""
+    a = np.asarray(slab, dtype=np.float32)
+    return np.stack([scipy.ndimage.gaussian_filter(a, sg) for sg in sigmas])
+
+
+def af_mask_levels(values):
+    """``(level, sigma)`` of a sample of ONE scale's smoothed-reference values: median and MAD-sigma.
+
+    Robust on purpose — the AF structures ARE the tail, and a mean/std would move with how much AF the
+    tissue happens to contain. Falls back to the plain std when the MAD is zero (a reference that is
+    flat over more than half the image), and to 0 when that is zero too, which `af_mask` reads as
+    "nothing to mask"."""
+    v = np.asarray(values, dtype=np.float64).ravel()
+    if v.size == 0:
+        return 0.0, 0.0
+    level = float(np.median(v))
+    sigma = 1.4826 * float(np.median(np.abs(v - level)))
+    if sigma <= 0:
+        sigma = float(v.std())
+    return level, sigma
+
+
+def af_mask(fields, levels):
+    """Fraction of the target REMOVED at each voxel, from `af_mask_field`'s stack and one
+    ``(level, sigma)`` per scale. Per scale: 0 below ``level + K·sigma``, 1 above
+    ``level + (K + RAMP)·sigma``, linear between; the voxel takes the larger. A scale with no measurable
+    noise contributes nothing."""
+    fields = np.asarray(fields, dtype=np.float32)
+    out = np.zeros(fields.shape[1:], dtype=np.float32)
+    for field, (level, sigma) in zip(fields, levels):
+        if sigma <= 0:
+            continue
+        lo = level + AF_MASK_K * sigma
+        np.maximum(out, np.clip((field - lo) / (AF_MASK_RAMP * sigma), 0, 1), out=out)
+    return out
+
+
+def af_reference_field(fields, ref, leaks):
+    """A reference's field with the leak FROM the other channels taken out: ``F_ref - Σ α_s · F_s``.
+
+    ``fields`` maps channel → `af_mask_field` stack (raw counts, same voxels); ``leaks`` is
+    ``stats.af_leaks[ref]``. Smoothing is linear, so this equals smoothing the unmixed raw reference.
+
+    Load-bearing, measured on `RFtn9f/jrNNl2`: CART leaks into the AF channel at ~0.08-0.095 counts per
+    count, so a bright CART cell lifts the AF channel under it from 0.32 to 1.55 photons — right at the
+    6σ threshold. Without this the mask hollowed bright cells, zeroing their centres and leaving a rim
+    (CART kept 89% in that region; 99% with the leak removed). Granules are not proportional to CART,
+    so they survive the subtraction and are still masked.
+    """
+    out = np.asarray(fields[int(ref)], dtype=np.float32).copy()
+    for src, alpha in (leaks or {}).items():
+        out -= np.float32(alpha) * np.asarray(fields[int(src)], dtype=np.float32)
+    return out
+
 
 def af_weight_stats(
         data, dim_utils, channels, background_method='triangle',
         timepoints=None, spatial_stride=(1, 1), exponent=AF_WEIGHT_EXPONENT,
-        on_progress=None, exclusive=None):
+        on_progress=None, exclusive=None, af_channels=None):
     """The one thing the power weight needs that a single region cannot supply: a background level per
     participating channel. Derived, not dialled in
     (`intensity_utils.background_threshold`, Zack's triangle by default).
@@ -1861,6 +1973,14 @@ def af_weight_stats(
     ``saturated`` is the fraction of each channel's voxels sitting at the dtype maximum, i.e. clipped
     on acquisition. It is free here (the histograms are already built) and it is the honest QC signal
     for this task: a clipped voxel's true value is gone, and no correction recovers it.
+
+    ``af_channels`` are AF-REFERENCE channels (`af_correct_frame`'s mask). For each one the same pass
+    smooths every frame it reads (`af_mask_field`, on the FULL frame — the stride is applied after, so
+    the smoothing scale does not change with it) and samples the result for `af_mask_levels`. A
+    reference RECEIVES leaks and is fitted for them (`af_leaks`, the binned median of
+    `af_reference_leaks`), but never leaks: it takes no part in `alphas`, so nothing
+    is subtracted from the target on its account. The levels are those of the leak-corrected field
+    (`af_reference_field`) — the field the mask actually thresholds.
     """
     T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
     ts = range(T) if timepoints is None else list(timepoints)
@@ -1880,6 +2000,22 @@ def af_weight_stats(
     def _stride(a):
         return a[..., ::zst, ::xyst, ::xyst] if (strided and a.ndim >= 3) else a
 
+    # `channels` are the ones that take part in the brightness split somewhere (targets and
+    # competitors) — they are fitted for bleedthrough. `af_channels` are references somewhere. One
+    # channel can be both (AF for one target, a competitor of another): it is then fitted AND used
+    # as a reference, and nothing is lost, because a coefficient is only ever applied between a
+    # target and ITS competitors (`af_correct_frame`).
+    fit_channels = list(channels)
+    af_channels = [ch for ch in dict.fromkeys(int(c) for c in (af_channels or []))]
+    for ch in af_channels:
+        if ch not in channels:
+            channels.append(ch)
+    sigmas = af_mask_sigmas(dim_utils) if af_channels else None
+    mask_quota = max(1, int(AF_ALPHA_MAX_SAMPLES) // max(1, len(ts))) if af_channels else 0
+    # every channel's smoothed field is sampled when there is a reference: the sources' fields are what
+    # the leak correction subtracts, so the levels need them at the same positions
+    mask_samples = {ch: [] for ch in channels} if af_channels else {}
+
     # Per-frame quota for the PAIRED sample the bleedthrough fit needs. A histogram is a marginal and
     # cannot answer a joint question, so the pairs have to be carried out of this loop — the alternative
     # is a second full pass over the movie for one scalar per channel pair.
@@ -1893,9 +2029,15 @@ def af_weight_stats(
     for n_done, t in enumerate(ts, start=1):
         take = None
         for ch in channels:
-            a = _stride(_af_slab(data, dim_utils, ch, t))
+            full = _af_slab(data, dim_utils, ch, t)
+            a = _stride(full)
             hists[ch] += np.bincount(np.clip(a, 0, nbins - 1).astype(np.int64).ravel(),
                                      minlength=nbins)[:nbins]
+            if ch in mask_samples:
+                for i, f in enumerate(af_mask_field(full, sigmas)):
+                    f = _stride(f).ravel()
+                    step = max(1, f.size // max(1, min(mask_quota, f.size)))
+                    mask_samples[ch].append((i, f[::step].astype(np.float64)))
             if quota:
                 flat = a.ravel()
                 # the SAME positions in every channel, or the samples are not pairs at all. Evenly
@@ -1913,11 +2055,62 @@ def af_weight_stats(
                    for ch in channels}
     saturated = {ch: float(hists[ch][nbins - 1]) / max(1.0, float(hists[ch].sum()))
                  for ch in channels}
-    samples = ({ch: np.concatenate(v) for ch, v in pairs.items()} if quota and any(pairs.values())
-               else {})
-    alphas = af_bleedthrough_alphas(samples, backgrounds, exclusive) if samples else {}
+    samples = ({ch: np.concatenate(v) for ch, v in pairs.items() if v}
+               if quota and any(pairs.values()) else {})
+    fit_samples = {ch: v for ch, v in samples.items() if ch in fit_channels}
+    alphas = (af_bleedthrough_alphas(fit_samples, backgrounds, exclusive)
+              if len(fit_samples) > 1 else {})
+    af_levels = af_leaks = None
+    if af_channels:
+        per_scale = {ch: [np.concatenate([x for j, x in v if j == i] or [np.zeros(0)])
+                          for i in range(len(AF_MASK_SCALES_UM))]
+                     for ch, v in mask_samples.items()}
+        coarse = {ch: v[0] for ch, v in per_scale.items()}
+        af_leaks = {r: af_reference_leaks(coarse, r, fit_channels) for r in af_channels}
+        af_levels = {r: tuple(af_mask_levels(f) for f in af_reference_field(
+                         {ch: np.stack(v) for ch, v in per_scale.items()}, r, af_leaks[r]))
+                     for r in af_channels}
     return AfWeightStats(backgrounds=backgrounds, alphas=alphas, saturated=saturated,
-                         exponent=int(exponent), nbins=nbins)
+                         exponent=int(exponent), nbins=nbins, af_levels=af_levels,
+                         af_leaks=af_leaks)
+
+
+#: The quantile of the AF reference read in each bin of source brightness when fitting the leak into
+#: it — the MEDIAN, so the fit follows the bulk of the source's voxels and not the AF structures that
+#: sit above them (`af_reference_leaks`).
+AF_LEAK_PCT = 50.0
+
+
+def af_reference_leaks(fields, ref, sources):
+    """``{source: alpha}`` — the proportional leak of each source INTO an AF-only reference.
+
+    ``fields`` maps channel → a sample of its COARSE smoothed field (`af_mask_field`, same positions
+    in every channel). The fit is `coloc_utils.envelope_slope` at `AF_LEAK_PCT`: the median reference
+    in each bin of source brightness, against the source, slope only. Smoothed because the reference
+    is photon-starved voxel by voxel (its per-bin median is otherwise 0).
+
+    Not TLS, measured: TLS follows whatever carries the joint variance, and AF granules (bright in the
+    reference, ~0.6x in the source) carry a lot of it — it fitted 0.115 on `RFtn9f/jrNNl2` and 0.22
+    once 3% of voxels were given strong AF, where the binned median gave 0.080 and 0.086 (R² 0.98).
+    An over-fitted leak subtracts the granules from the reference and the mask then misses them. The
+    source is taken relative to its own median so the background bins carry no weight. Bounded like
+    every alpha: below `AF_ALPHA_MIN` it is noise, at or above `AF_ALPHA_MAX` it is not a leak."""
+    from cecelia.utils import coloc_utils
+    if int(ref) not in fields:
+        return {}
+    y = np.asarray(fields[int(ref)], dtype=np.float64).ravel()
+    out = {}
+    for src in sources:
+        if int(src) == int(ref) or int(src) not in fields:
+            continue
+        x = np.asarray(fields[int(src)], dtype=np.float64).ravel()
+        if x.size == 0 or x.size != y.size:
+            continue
+        x = np.maximum(x - np.median(x), 0)
+        alpha, _r2, _bins = coloc_utils.envelope_slope(x, y, floor_pct=AF_LEAK_PCT)
+        if np.isfinite(alpha) and AF_ALPHA_MIN <= alpha < AF_ALPHA_MAX:
+            out[int(src)] = float(alpha)
+    return out
 
 
 def af_bleedthrough_alphas(samples, backgrounds, exclusive=None):
@@ -2011,12 +2204,26 @@ def af_bleedthrough_alphas(samples, backgrounds, exclusive=None):
     return out
 
 
-def af_correct_frame(slabs, target, stats, out_dtype):
-    """Correct ONE frame of ONE channel — two jobs, in the one order that works.
+def af_correct_frame(slabs, target, stats, out_dtype, af_fields=None):
+    """Correct ONE frame of ONE channel — two jobs, in the one order that works, plus an optional mask.
 
         b_i    = max(raw_i - background_i, 0)          for the target and every competing channel
         b_i   <- max(b_i - Σ_j α_ji · b_j, 0)          (a) BLEEDTHROUGH: subtract the leaked amount
         out_t  = b_t * b_t^p / Σ_i b_i^p               (b) CO-PRESENCE: keep the share this one owns
+        out_t <- out_t * (1 - max_r m_r)               (c) AF REFERENCE: zero where a reference is bright
+
+    (c) is for a channel that records ONLY autofluorescence — `af_fields` maps each such reference to its
+    smoothed field (`af_mask_field`) over the same voxels as ``slabs``, and ``stats.af_levels`` holds its
+    level and noise. It is a different rule from (b) and has to be: (b) is a brightness CONTEST, so
+    wherever the target is at least as bright as the competitor the target keeps most of the voxel. On
+    `RFtn9f/jrNNl2` an AF granule reads 0.61 CART counts per AF count, so the contest kept **~70%** of
+    CART on exactly the structures that show white in a CART+AF overlay — and no scaling, smoothing or
+    exponent moves that, because they all keep it a contest. A reference is not a marker that might
+    share a voxel with the target; where it is clearly present the voxel is autofluorescence, whatever
+    the target reads. That is also why it must NOT be used for a competitor that is a real reporter: a
+    double-positive cell would lose its overlap outright. References are therefore named separately
+    from competitors (`afChannels`), take no part in (a) or (b), and are smoothed because a
+    photon-counted reference is mostly zeros voxel by voxel (`AF_MASK_SCALES_UM`).
 
     (a) removes intensity that is in the target because the FILTER SET leaks — proportional, global, a
     property of the optics (`af_bleedthrough_alphas`). (b) removes intensity that is in more than one
@@ -2130,6 +2337,18 @@ def af_correct_frame(slabs, target, stats, out_dtype):
     weight = np.divide(num, den, out=np.zeros_like(num), where=den > 0)
     out = b[target] * weight
 
+    # (c) AF REFERENCE — after everything else, so it only ever removes; see the docstring
+    if af_fields:
+        levels = stats.af_levels or {}
+        missing = [ch for ch in af_fields if int(ch) not in levels]
+        if missing:
+            raise ValueError(f'no derived AF level for reference channel(s) {missing}; '
+                             f'stats cover {sorted(levels)}')
+        removed = np.zeros(np.shape(out), dtype=np.float32)
+        for ch, field in af_fields.items():
+            np.maximum(removed, af_mask(field, levels[int(ch)]), out=removed)
+        out = out * (1.0 - removed)
+
     # ROUND to the integer output, don't truncate. Output is in input counts now, so the values are
     # often single digits and a bare `astype` biases every one of them down by ~half a count. Measured
     # on one plane of kSUFux/Or1L8a (85,526 non-zero voxels): truncating shifts the mean by -0.072
@@ -2142,7 +2361,7 @@ def af_correct_frame(slabs, target, stats, out_dtype):
 
 def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competing_channel_idx,
                               background_method='triangle', stats=None, logfile_utils=None,
-                              on_progress=None):
+                              on_progress=None, af_channel_idx=()):
     """Correct one channel, streamed one timepoint at a time into ``out`` (peak memory = one frame,
     not the whole channel).
 
@@ -2158,8 +2377,15 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
     channels = script_utils.channel_indices([channel_idx], 'the target channel', _AF_TRANSLATOR) + \
         script_utils.channel_indices(
             competing_channel_idx, f'competingChannels for channel {channel_idx}', _AF_TRANSLATOR)
+    refs = script_utils.channel_indices(
+        af_channel_idx, f'afChannels for channel {channel_idx}', _AF_TRANSLATOR)
+    # a channel is a reference OR a competitor; the translator already enforces it, this is the guard
+    # for a REPL caller — a reference left in the weight's denominator would also be fitted for a leak
+    channels = [c for c in channels if c not in refs]
     if stats is None:
-        stats = af_weight_stats(data, dim_utils, channels, background_method=background_method)
+        stats = af_weight_stats(data, dim_utils, channels, background_method=background_method,
+                                af_channels=refs)
+    sigmas = af_mask_sigmas(dim_utils) if refs else None
     if logfile_utils is not None:
         others = ', '.join(f'ch{c} {stats.backgrounds.get(int(c), 0.0):.0f}'
                            for c in competing_channel_idx)
@@ -2167,26 +2393,37 @@ def _stream_corrected_channel(data, out, dim_utils, channel_idx, out_ch, competi
                           if d == int(channel_idx))
         logfile_utils.log(
             f'>> ch{channel_idx}: background {stats.backgrounds.get(int(channel_idx), 0.0):.0f} '
-            f'({background_method}), competing against {others}, p={stats.exponent}, '
+            f'({background_method}), competing against {others or "none"}, p={stats.exponent}, '
             f'bleedthrough {leaks or "none detected"}')
+        for r in refs:
+            leak_in = ', '.join(f'ch{s} {a:.3f}' for s, a in sorted((stats.af_leaks or {}).get(r, {}).items()))
+            logfile_utils.log(f'>> ch{channel_idx}: AF reference ch{r} — leak removed from it: '
+                              f'{leak_in or "none detected"}')
+            for (xy_um, _z), (level, sd) in zip(AF_MASK_SCALES_UM, (stats.af_levels or {}).get(r, ())):
+                logfile_utils.log(
+                    f'>> ch{channel_idx}: AF reference ch{r} at {xy_um} µm — level {level:.0f}, '
+                    f'noise {sd:.0f}, zeroed above {level + AF_MASK_K * sd:.0f}')
 
     # Output histogram, accumulated as we go — the objective signal the QC exemption in af_correct.jl
     # said was missing. Free: one bincount per frame we already hold.
     H_out = np.zeros(stats.nbins, np.int64)
 
     for t in range(T):
+        need = list(dict.fromkeys(refs + [s for r in refs for s in (stats.af_leaks or {}).get(r, {})]))
+        raw_fields = {c: af_mask_field(_af_slab(data, dim_utils, c, t), sigmas) for c in need}
+        fields = {r: af_reference_field(raw_fields, r, (stats.af_leaks or {}).get(r, {})) for r in refs}
         corrected = af_correct_frame(_af_slabs(data, dim_utils, channels, t),
-                                     channel_idx, stats, out.dtype)
+                                     channel_idx, stats, out.dtype, af_fields=fields or None)
         if on_progress is not None:
             on_progress(t + 1, T)
         H_out += np.bincount(np.clip(corrected, 0, stats.nbins - 1).astype(np.int64).ravel(),
                              minlength=stats.nbins)[:stats.nbins]
         _af_write_slab(out, dim_utils, out_ch, t, corrected)
 
-    return af_output_stats(H_out, stats, channel_idx)
+    return af_output_stats(H_out, stats, channel_idx, refs)
 
 
-def af_derived_values(stats, target):
+def af_derived_values(stats, target, refs=()):
     """The values this correction derives instead of asking for, as a plain JSON-friendly dict.
 
     One helper because two callers report them and they must not drift: the run banks them in QC
@@ -2210,10 +2447,22 @@ def af_derived_values(stats, target):
                          if dst == target},
         'saturatedFrac': float(stats.saturated.get(target, 0.0)),
         'exponent': int(stats.exponent),
+        # per AF-reference channel: where its smoothed field starts removing this channel. Empty when
+        # the combination names none — stats are shared across combinations, so a reference another
+        # combination uses is not this one's
+        'afReferences': {str(ch): {
+                             'scales': [{'scaleUm': float(xy_um), 'level': float(lv), 'sigma': float(sd),
+                                         'threshold': float(lv + AF_MASK_K * sd)}
+                                        for (xy_um, _z), (lv, sd) in zip(AF_MASK_SCALES_UM, per_scale)],
+                             # leak INTO the reference, removed before thresholding
+                             'leaks': {str(s): float(a) for s, a in
+                                       sorted((stats.af_leaks or {}).get(ch, {}).items())}}
+                         for ch, per_scale in sorted((stats.af_levels or {}).items())
+                         if ch in set(int(c) for c in (refs or ()))},
     }
 
 
-def af_output_stats(hist, stats, target):
+def af_output_stats(hist, stats, target, refs=()):
     """What the correction did to this channel — the numbers a user (or QC) acts on.
 
     * ``saturatedFrac`` — fraction of the channel's INPUT voxels sitting at the dtype maximum, i.e.
@@ -2238,7 +2487,7 @@ def af_output_stats(hist, stats, target):
         'levelsAvailable': hi + 1,
         'trueMax': int(s.get('trueMax', 0)),
         'p999': int(s.get('p999', 0)),
-        **af_derived_values(stats, target),
+        **af_derived_values(stats, target, refs),
     }
 
 
@@ -2281,9 +2530,10 @@ def af_participating_channels(af_combinations):
     out = []
     for target, spec in sorted({int(i): x for i, x in af_combinations.items()}.items()):
         competing = (spec or {}).get('competingChannels', []) or []
-        if not competing:
+        refs = (spec or {}).get('afChannels', []) or []
+        if not competing and not refs:
             continue
-        for ch in [target] + [int(c) for c in competing]:
+        for ch in [target] + [int(c) for c in competing] + [int(c) for c in refs]:
             if ch not in out:
                 out.append(ch)
     return out
@@ -2378,19 +2628,34 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                               f'({background_method})' +
                               (f'; channels {co} may be co-labelled' if co else
                                '; all targets are distinct cell types'))
-        stats = af_weight_stats(input_image, dim_utils, participating,
+        # Split by role, per combination: what is a target or a competitor anywhere is fitted for
+        # bleedthrough, what is an AF channel anywhere is a reference — a channel may be both
+        # (see `af_weight_stats`)
+        refs = sorted({c for t, spec in af_combinations.items()
+                       for c in script_utils.channel_indices(
+                           (spec or {}).get('afChannels'), f'afChannels for channel {t}',
+                           _AF_TRANSLATOR)})
+        fit = [c for c in participating if any(
+                   c == int(t) or c in script_utils.channel_indices(
+                       (spec or {}).get('competingChannels'), f'competingChannels for channel {t}',
+                       _AF_TRANSLATOR)
+                   for t, spec in af_combinations.items()
+                   if (spec or {}).get('competingChannels') or (spec or {}).get('afChannels'))]
+        stats = af_weight_stats(input_image, dim_utils, fit,
                                 background_method=background_method, on_progress=_tick,
-                                exclusive=exclusive)
+                                exclusive=exclusive, af_channels=refs)
         done += int(dim_utils.dim_val('T')) if dim_utils.is_timeseries() else 1
 
     output_stats = {} if output_stats is None else output_stats
     for i in range(n_channels):
         x = af_combinations.get(i)
-        competing = x.get('competingChannels', []) if x is not None else []
-        if competing:
+        competing = (x.get('competingChannels', []) or []) if x is not None else []
+        refs = (x.get('afChannels', []) or []) if x is not None else []
+        if competing or refs:
             output_stats[str(i)] = _stream_corrected_channel(
                 input_image, out, dim_utils, channel_idx=i, out_ch=i,
                 competing_channel_idx=competing,
+                af_channel_idx=refs,
                 background_method=background_method,
                 stats=stats,
                 logfile_utils=logfile_utils,

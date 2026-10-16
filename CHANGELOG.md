@@ -15,6 +15,22 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+### Added
+
+- **AF correction: AF channels, and one role per channel.** For each channel you correct, every
+  other channel now gets one row where you pick what it does to that channel: **Competes** (takes the
+  share of signal it outshines, as before) or **AF** (a channel that only picks up
+  autofluorescence), or nothing. A channel can't do both to the same marker, but it can be AF for one
+  marker and compete with another. Wherever an AF channel is clearly bright, the marker is set to
+  zero, including where AF overlaps a real cell. Before, AF could only compete, so AF that was as
+  bright in your marker stayed in: on one CAR-T movie about 70% of the marker survived on AF
+  granules, and now almost none does, while about 97% of the marker is kept. Any of your marker that
+  leaks into the AF channel is removed first, so bright cells are not hollowed out. The threshold
+  comes from the AF channel's own noise, so there is nothing to tune. A figure next to each marker's
+  roles shows what that setup does to a sketch of cells and AF. **Different cell types** now only
+  appears when something competes with that marker. Saved chains still run; an image's previously
+  saved AF settings will not pre-fill the new rows.
+
 ## [0.2.11] — 2026-10-16
 
 ### Read this first

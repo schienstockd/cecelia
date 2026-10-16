@@ -25,6 +25,7 @@ from unittest import mock
 import numpy as np
 import ome_types
 
+import cecelia.utils.correction_utils as correction_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.zarr_utils as zarr_utils
 from cecelia.utils.dim_utils import DimUtils
@@ -254,6 +255,27 @@ class PreviewWorkerAfTest(unittest.TestCase):
     def test_a_combination_with_no_competitor_is_skipped(self):
         out = self._request({'1': {'competingChannels': [2]}, '3': {'competingChannels': []}})
         self.assertEqual(len(out['previewImages']), 1)
+
+    def test_an_af_channel_alone_is_a_preview(self):
+        out = self._request({'1': {'competingChannels': [], 'afChannels': [3]}})
+        self.assertEqual([m['sourceChannel'] for m in out['previewImages']], [1])
+        self.assertEqual(set(out['derived']['1']['afReferences']), {'3'})
+
+    def test_the_af_reference_field_is_the_runs_field_cut_to_the_region(self):
+        """The run smooths the whole frame in 3D; the preview reads a padded window. The two must give
+        the same voxels, or the preview masks a different footprint than the run writes."""
+        levels, du = self.worker.STATE.image(self.im_path)
+        bounds = {'T': (1, 2), 'Z': (1, 2), 'Y': (3, 15), 'X': (5, 17)}
+        ctx = self.worker.PreviewContext(self.im_path, self.dir, 'x', {}, levels, du,
+                                         self.worker._axis_lengths(du), bounds, False)
+        got = self.worker._af_reference_field(ctx, 3)
+        full = correction_utils.af_mask_field(
+            correction_utils._af_slab(levels[0], du, 3, 1), correction_utils.af_mask_sigmas(du))
+        # the slab already holds just t=1 and channel 3, so only Z/Y/X are cut
+        idx = (slice(None),) + tuple(slice(*bounds[ax]) if ax in ('Z', 'Y', 'X') else slice(None)
+                                     for ax in du.im_dim_order)
+        self.assertEqual(got.shape[0], len(correction_utils.AF_MASK_SCALES_UM))
+        np.testing.assert_allclose(got, full[idx].reshape(got.shape), rtol=0, atol=1e-3)
 
     def test_no_usable_combination_raises_rather_than_previewing_nothing(self):
         # NOTE `execute_command` RAISES; the `{"type": "error", "msg": ...}` reply is built one layer

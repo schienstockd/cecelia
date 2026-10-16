@@ -265,29 +265,42 @@ end
 
 @testset "AF params are just channels" begin
     # The spec grew into a bag of ~20 numbers while fitting individual datasets and was never
-    # revisited. A combination is now the two things it is actually about; everything else is derived
+    # revisited. It is now what each CHANNEL is — a marker to correct, an AF-only reference, another
+    # competing signal — plus one fact about the specimen; everything else is derived
     # (`af_weight_stats`) or was a filter that belongs to a filtering task.
     spec = Cecelia._task_spec(Cecelia.AfCorrect())
     keys_top = [string(get(p, "key", "")) for p in get(spec, "params", [])]
     @test keys_top == ["valueName", "afCombinations", "backgroundMethod"]
-
-    # `exclusive` is the ONE addition, and it is admitted on a rule the deleted twenty all failed:
-    # it is a fact about the SPECIMEN that no amount of looking at the pixels can supply, not a number
-    # to fit. Can one voxel carry both markers? The user knows; the estimator cannot. It selects
-    # between the total slope and the envelope floor (`af_bleedthrough_alphas`), which on
-    # `WIaUjL/p6t4mC` differ 5x — 0.113 against 0.024, the difference between a corrected channel and
-    # one that visibly still carries the other's overspill.
-    #
-    # Anything proposed here later has to clear the same bar. `channelPercentile` and friends did not:
-    # they were dials with no defensible value, fitted per dataset and never revisited.
-    combo = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == "afCombinations")
+    byk(k) = only(p for p in get(spec, "params", []) if string(get(p, "key", "")) == k)
+    combo = byk("afCombinations")
+    sub(k) = only(p for p in get(combo, "params", []) if string(get(p, "key", "")) == k)
     @test [string(get(p, "key", "")) for p in get(combo, "params", [])] ==
-          ["targetChannel", "competingChannels", "exclusive"]
+          ["targetChannel", "channelRoles", "exclusive"]
+    # per target, ONE role per other channel: two lists let one channel compete and be AF at once
+    roles = sub("channelRoles")
+    @test string(get(roles, "type", "")) == "channelRoles"
+    @test [string(get(o, "value", "")) for o in get(roles, "options", [])] == ["competing", "af"]
+    @test get(roles, "exclude", nothing) == "targetChannel"
 
-    # a statement, not a dial: boolean, and defaulting to the common case (distinct cell types)
-    excl = only(p for p in get(combo, "params", []) if string(get(p, "key", "")) == "exclusive")
+    # `exclusive` is admitted on a rule the deleted twenty all failed: it is a fact about the SPECIMEN
+    # that no amount of looking at the pixels can supply, not a number to fit. Can one voxel carry two
+    # markers? The user knows; the estimator cannot. It selects between the total slope and the
+    # envelope floor (`af_bleedthrough_alphas`), which on `WIaUjL/p6t4mC` differ 5x. It is only a
+    # question when something competes, so the form only asks it then.
+    #
+    # The AF role cleared the same bar on 2026-10-16: WHICH channel is an autofluorescence-only
+    # reference is a fact about the acquisition (a channel set up to catch AF, no reporter in it), not a
+    # number. Getting it wrong is costly both ways: a reference treated as a competitor kept ~70% of
+    # CART on AF granules on `RFtn9f/jrNNl2`, a reporter treated as a reference would hole every
+    # double-positive cell. Its threshold is NOT a param (`AF_MASK_K`, in the reference's own noise).
+    #
+    # Anything proposed here later has to clear the same bar. `channelPercentile` and friends did not.
+    excl = sub("exclusive")
     @test string(get(excl, "type", "")) == "bool"
     @test get(excl, "default", nothing) === true
+    @test !Cecelia._show_if_satisfied(excl, Dict{String,Any}("channelRoles" => Dict("AF" => "af")))
+    @test  Cecelia._show_if_satisfied(excl, Dict{String,Any}("channelRoles" =>
+                                            Dict("TOM" => "competing", "AF" => "af")))
 
     # `none` is NOT offered: the weight is a ratio of intensities, so an unsubtracted pedestal makes
     # background voxels split evenly and survive. Measured on kSUFux/Or1L8a: 92.1% of background voxels

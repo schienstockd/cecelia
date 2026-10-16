@@ -47,6 +47,60 @@ Smoothing correlates the channels (Pearson 0.63-0.69 → 0.73-0.79 on `p6t4mC`) 
 α (0.025 → 0.051), taking co-positive retention from 83% to 59%. The Costes walk stops converging
 entirely on smoothed pixels. AF belongs before smoothing in the chain.
 
+**2026-10-16 — a third dataset, and a third mechanism: the AF-REFERENCE mask.** `RFtn9f/jrNNl2`
+(2P, photon-counted: 1 photon = 525 counts in CART, 1134 in AF; channels SHG, CART, AF) is the case
+the dominance weight cannot reach. Here the competitor is not a second reporter but a dedicated AF
+channel. Measured:
+
+* The weight removed almost nothing — CART kept **64-73%** on the AF-brightest voxels. An AF granule
+  reads **0.61 CART counts per AF count**, stable across t5/t25/t45, so a voxel that is white in a
+  CART+AF overlay still goes to CART in a brightness contest. Normalising the channels to a common
+  scale changes nothing (above-background p99.9 16.4k vs 19.3k), and smoothing the competitor makes it
+  *worse* (78-82%): it lowers the peaks of sparse granules.
+* The reference is photon-starved: above its background in **8.6%** of voxels, and **a third** of the
+  voxels inside an AF-bright structure read zero. Any per-voxel rule punches holes there.
+* The envelope's floor is 0 photons on photon-counted data, so AF->CART came back as nothing. The
+  TLS fit for the non-target AF channel derived CART->AF **0.095** — first dismissed as spurious, then
+  confirmed real (see below).
+
+What landed is a third step, not a retune of the second: `afChannels` per combination names
+AF-ONLY reference channels. Each is smoothed in 3D at two scales (`AF_MASK_SCALES_UM`: 1.2 µm for
+granules, 0.6 µm for single-voxel specks the coarse field dilutes), and the target fades to zero over
+`[K, K+2]` robust sigmas above each field's median, whichever scale is more certain (`AF_MASK_K` = 6,
+picked by eye against 3σ/4σ — Dominik's call). References take no part in the weight and never
+leak into the target, but they DO receive leaks, and those are removed before thresholding
+(`af_reference_leaks` / `af_reference_field`). That was learned the hard way: the first cut excluded
+the reference from the fit entirely, calling the CART->AF 0.095 spurious, and Dominik's first
+preview showed bright CART cells hollowed. The AF channel under a CART cell rises 0.32 -> 1.55 photons
+with CART brightness, right at the threshold, so cell centres were zeroed and rims kept (89% kept in
+that region; 99% once the leak is subtracted; the brightest 2% of CART voxels keep 98% movie-wide). XY-only smoothing left 14-19% on AF-bright voxels against 1-3% in 3D, which is why
+the run smooths in Z and the preview reads a padded Z window (`_af_reference_field`; its fields equal
+the run's exactly). A 0.4 µm scale was tried and rejected: its MAD collapses on photon counts and it
+masked 6% of voxels, cutting CART cells.
+
+Not for a reporter competitor: a double-positive cell loses its overlap outright. That is why it is
+a separate list and not a mode of `competingChannels`.
+
+**The leak into the reference is fitted as a binned MEDIAN, not TLS** (`af_reference_leaks`,
+`AF_LEAK_PCT`): on the coarse smoothed fields, the median reference per bin of source brightness.
+TLS follows whatever carries the joint variance, and AF granules carry a lot of it: 0.115 on
+`jrNNl2`, 0.22 once 3% of voxels were given strong AF, where the binned median gave 0.080 and 0.086
+(R² 0.98). An over-fitted leak subtracts the granules from the reference and the mask misses them —
+found while building the figure, whose small scene made the TLS bias obvious. Limitation that
+remains for any estimator: AF covering a large share of the marker-bright voxels reads as leak.
+
+**The form: per channel to correct, one role per other channel** (`channelRoles` inside each
+`afCombinations` entry): Competes, AF, or unused, and "different cell types" shown only when
+something competes. Two cuts before it were wrong and are worth not repeating. Two channel lists per
+combination let one channel compete and be AF at once. Three image-wide role lists (correct / AF /
+competing) then let one channel hold all three — Dominik's screenshot — and the single role-per-channel
+map that fixed that lost the per-target grouping he needed ("correct two channels with different
+mechanisms"). Roles per target keep both properties. A channel may be AF for one target and compete
+with another: `af_weight_stats` fits bleedthrough for every channel that competes anywhere and treats
+every AF channel as a reference, which costs nothing because a coefficient is only applied between a
+target and its own competitors. A figure beside the pickers
+(`frontend/src/tasks/afVis.ts`) shows the two roles side by side on a schematic.
+
 Companion to [`AF_QUANTISATION.md`](AF_QUANTISATION.md), which covers the *input precision* half of
 the same task. This file is about the *mechanism*.
 

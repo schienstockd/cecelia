@@ -47,3 +47,17 @@ describe('driftEstimator figure', () => {
     expect(findAsk(callForDatasetsFocusId.value)?.id).toBe('sitk-rigid-3d-full')
   })
 })
+
+describe('afRoles figure', () => {
+  it("draws the user's own channels, one column each plus one per corrected marker", () => {
+    const def = PARAM_FIGURES.afRoles({ images: [],
+      values: { targetChannel: ['CART'], channelRoles: { AF2: 'af' } } } as unknown as AdvisorContext)
+    expect(def.headings).toEqual(['CART', 'AF2', 'CART corrected'])
+    expect(def.headings).toHaveLength(def.vis.columns.length)
+  })
+
+  it('falls back to a generic marker before anything is picked', () => {
+    const def = PARAM_FIGURES.afRoles({ images: [], values: {} } as unknown as AdvisorContext)
+    expect(def.headings?.[0]).toBe('Marker')
+  })
+})

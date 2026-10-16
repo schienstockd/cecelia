@@ -9,7 +9,9 @@ Parameter contract (JSON written by Julia):
   imPath           - absolute path to input .ome.zarr
   imCorrectionPath - absolute path to write corrected .ome.zarr
   afCombinations   - dict keyed by string channel index ("0", "1", …):
-      competingChannels - list of 0-based integer channel indices sharing signal with it
+      competingChannels - 0-based channel indices that take their share of it (the brightness split)
+      afChannels        - 0-based indices of AF-only references that zero it where they are bright
+      exclusive         - "different cell types": picks the bleedthrough estimator
   backgroundMethod - "triangle" | "otsu", global to every combination
   qcOutPath        - where to write per-channel output stats for QC
 

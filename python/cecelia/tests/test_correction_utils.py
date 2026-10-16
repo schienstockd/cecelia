@@ -899,6 +899,151 @@ class AfWeightMechanismTest(unittest.TestCase):
             self.assertEqual(s[k], v, f'{k} differs between the readout and the banked metric')
 
 
+class AfReferenceMaskTest(unittest.TestCase):
+    """Step (c) — an AF-ONLY reference channel (`afChannels`) zeroes the target where it is bright.
+
+    Exists because the dominance weight is a brightness contest and cannot do this job: on
+    `RFtn9f/jrNNl2` an AF granule reads 0.61 CART counts per AF count, so CART kept ~70% of itself on
+    the structures that show white in a CART+AF overlay. See `af_correct_frame`.
+    """
+
+    SIZES = dict(size_t=3, size_z=5, size_c=4, size_y=32, size_x=30)   # distinct: order resolves
+
+    class _Log:
+        def log(self, *_a, **_k):
+            pass
+
+    def _image(self, du, seed=7):
+        """Target ch0: a cell at (y 2-14, x 2-14) and the target's share of an AF granule at
+        (y 20-24, x 18-22), brighter than the reference there. The granule is small next to the cell, as
+        AF is in real tissue — an AF object as large as the cells would dominate any leak fit. Reference ch2: Poisson-ish shot noise
+        plus the granule. ch1 is an unrelated channel; ch3 is empty."""
+        rng = np.random.default_rng(seed)
+        t, z, c, y, x = (self.SIZES[k] for k in ('size_t', 'size_z', 'size_c', 'size_y', 'size_x'))
+        tczyx = np.zeros((t, c, z, y, x), dtype=np.float64)
+        tczyx[:, 0] = rng.poisson(1.0, (t, z, y, x)) * 100
+        tczyx[:, 2] = rng.poisson(0.5, (t, z, y, x)) * 200
+        tczyx[:, 1] = rng.poisson(1.0, (t, z, y, x)) * 100
+        tczyx[:, 0, :, 2:14, 2:14] += 1500
+        tczyx[:, 0, :, 20:24, 18:22] += 1200
+        tczyx[:, 2, :, 20:24, 18:22] += 1000
+        order = {'T': 0, 'C': 1, 'Z': 2, 'Y': 3, 'X': 4}
+        return np.ascontiguousarray(
+            np.transpose(tczyx, [order[a] for a in du.im_dim_order])).astype(np.uint16)
+
+    def _channel(self, du, arr, ch):
+        """One channel, as (T, Z, Y, X) whatever order `du` resolved."""
+        order = list(du.im_dim_order)
+        a = np.moveaxis(arr, [order.index(ax) for ax in ('T', 'Z', 'Y', 'X', 'C')], range(5))
+        return a[..., ch].astype(np.float64)
+
+    def _yx(self, du, arr, ys, xs):
+        return arr[..., ys, xs]
+
+    def test_a_bright_reference_zeroes_the_target_where_the_contest_would_keep_it(self):
+        du = _dim_utils(**self.SIZES)
+        im = self._image(du)
+        granule, cell = (slice(21, 23), slice(19, 21)), (slice(5, 9), slice(5, 9))
+        masked = self._channel(du, cu.af_correct_image(
+            im.copy(), {0: {'competingChannels': [], 'afChannels': [2]}}, du, self._Log()), 0)
+        contest = self._channel(du, cu.af_correct_image(
+            im.copy(), {0: {'competingChannels': [2]}}, du, self._Log()), 0)
+        raw = self._channel(du, im, 0)
+        # the failure being fixed: the target outshines the reference on the granule, so the weight
+        # keeps most of it
+        self.assertGreater(self._yx(du, contest, *granule).sum() / self._yx(du, raw, *granule).sum(),
+                           0.5)
+        self.assertEqual(float(self._yx(du, masked, *granule).max()), 0.0)
+        # and a cell the reference does not reach passes through exactly (raw minus background):
+        # no competitors means the weight is 1, and the mask is 0 there
+        stats = cu.af_weight_stats(im, du, [0], af_channels=[2])
+        np.testing.assert_array_equal(
+            self._yx(du, masked, *cell),
+            np.maximum(self._yx(du, raw, *cell) - stats.backgrounds[0], 0))
+
+    def test_a_reference_never_leaks_into_the_target(self):
+        du = _dim_utils(**self.SIZES)
+        im = self._image(du)
+        stats = cu.af_weight_stats(im, du, [0, 1], af_channels=[2])
+        self.assertFalse([p for p in stats.alphas if 2 in p])
+        self.assertIn(2, stats.af_levels)
+
+    def test_a_channel_can_be_af_for_one_target_and_compete_with_another(self):
+        """Roles are per combination. ch2 masks ch0 and competes with ch1: it must still be fitted
+        for bleedthrough against ch1 — only a target's own competitors ever use a coefficient — and
+        still be a reference with its own levels."""
+        du = _dim_utils(**self.SIZES)
+        im = self._image(du)
+        combos = {0: {'competingChannels': [], 'afChannels': [2]},
+                  1: {'competingChannels': [2], 'afChannels': []}}
+        out = cu.af_correct_image(im.copy(), combos, du, self._Log())
+        stats = cu.af_weight_stats(im, du, [0, 1, 2], af_channels=[2])
+        self.assertIn(2, stats.af_levels)
+        # ch0 is masked at the granule, as with ch2 a reference alone
+        self.assertEqual(float(self._yx(du, self._channel(du, out, 0), slice(21, 23), slice(19, 21)).max()), 0.0)
+        # and ch1 really is split against ch2: the granule ch2 owns is taken from ch1
+        raw1 = np.maximum(self._channel(du, im, 1) - stats.backgrounds[1], 0)
+        got1 = self._channel(du, out, 1)
+        g = (slice(21, 23), slice(19, 21))
+        self.assertLess(self._yx(du, got1, *g).sum(), self._yx(du, raw1, *g).sum())
+
+    def test_a_bright_target_leaking_into_the_reference_is_not_hollowed(self):
+        """The regression from `RFtn9f/jrNNl2`: CART leaks into the AF channel at ~0.095, so a bright
+        cell lifted the reference under it past the threshold and the mask zeroed the cell's centre.
+        The leak is fitted (`af_leaks`) and taken out of the field before it is thresholded."""
+        du = _dim_utils(**self.SIZES)
+        im = self._image(du)
+        order = list(du.im_dim_order)
+        c = order.index('C')
+        sl_t, sl_r = [slice(None)] * im.ndim, [slice(None)] * im.ndim
+        sl_t[c], sl_r[c] = 0, 2
+        target = im[tuple(sl_t)].astype(np.float64)
+        bright = np.zeros_like(target, dtype=bool)
+        bright[..., 4:10, 4:10] = True
+        target[bright] += 6000                      # a very bright cell, away from the granule
+        im[tuple(sl_t)] = np.clip(target, 0, 65535).astype(np.uint16)
+        ref = im[tuple(sl_r)].astype(np.float64) + 0.1 * target   # the leak, everywhere
+        im[tuple(sl_r)] = np.clip(ref, 0, 65535).astype(np.uint16)
+
+        stats = cu.af_weight_stats(im, du, [0], af_channels=[2])
+        self.assertAlmostEqual(stats.af_leaks[2].get(0, 0.0), 0.1, delta=0.03)
+        out = self._channel(du, cu.af_correct_image(
+            im.copy(), {0: {'competingChannels': [], 'afChannels': [2]}}, du, self._Log()), 0)
+        raw = np.maximum(self._channel(du, im, 0) - stats.backgrounds[0], 0)
+        cell = (slice(5, 9), slice(5, 9))
+        self.assertGreater(self._yx(du, out, *cell).sum() / self._yx(du, raw, *cell).sum(), 0.99)
+        # and the granule, which is not proportional to the target, is still removed
+        self.assertEqual(float(self._yx(du, out, slice(21, 23), slice(19, 21)).max()), 0.0)
+
+    def test_the_streamed_run_matches_the_in_ram_one_with_a_reference(self):
+        du = _dim_utils(**self.SIZES)
+        AfStreamingEquivalenceTest._run(self, du, {"0": {"competingChannels": [1], "afChannels": [2]}})
+
+    def test_a_flat_reference_masks_nothing(self):
+        self.assertEqual(cu.af_mask_levels([5.0, 5.0, 5.0]), (5.0, 0.0))
+        np.testing.assert_array_equal(cu.af_mask(np.full((2, 3, 3), 1e6), [(5.0, 0.0), (5.0, 0.0)]),
+                                      np.zeros((3, 3)))
+
+    def test_the_mask_ramps_over_its_edge(self):
+        level, sd = 100.0, 10.0
+        lo = level + cu.AF_MASK_K * sd
+        m = cu.af_mask(np.array([[lo, lo + cu.AF_MASK_RAMP * sd / 2, lo + cu.AF_MASK_RAMP * sd]]),
+                       [(level, sd)])
+        np.testing.assert_allclose(m, [0.0, 0.5, 1.0])
+
+    def test_either_scale_can_mask_a_voxel(self):
+        """A speck the coarse field dilutes below threshold is caught by the fine one — the voxel
+        takes the larger of the two."""
+        fields = np.array([[0.0, 200.0], [200.0, 0.0]])
+        np.testing.assert_allclose(cu.af_mask(fields, [(0.0, 10.0), (0.0, 10.0)]), [1.0, 1.0])
+
+    def test_the_readout_names_only_this_combinations_references(self):
+        du = _dim_utils(**self.SIZES)
+        stats = cu.af_weight_stats(self._image(du), du, [0, 1], af_channels=[2])
+        self.assertEqual(set(cu.af_derived_values(stats, 0, [2])['afReferences']), {'2'})
+        self.assertEqual(cu.af_derived_values(stats, 1)['afReferences'], {})
+
+
 class PyramidRefactorTest(unittest.TestCase):
     """create_multiscales now builds the pyramid via write_multiscale_pyramid (one timepoint at a
     time). Level 1 must equal level 0 strided by 2 in X and Y — the original downsampling semantics."""

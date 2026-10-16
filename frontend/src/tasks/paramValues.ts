@@ -217,7 +217,9 @@ export function missingParamKeys(def: TaskDef, payload: ParamValues): string[] {
 //     { "key": "maxDistance", "showIf": { "mode": "attach" } }
 //     { "key": "sigma",       "showIf": { "method": ["gaussian", "bilateral"] } }
 //
-// Keys are AND-ed; a list of values is OR-ed within one key. Comparison is on the STRING form,
+// Keys are AND-ed; a list of values is OR-ed within one key. `{ "key": { "minItems": n } }` asks for a
+// multi-select holding at least n entries; add `"equals": v` to count only entries equal to v (a list's
+// items, or a map's values). Comparison is on the STRING form,
 // because a spec is JSON and a form control's value is a string: `"1"` in a spec has to match the
 // number 1 that a slider produced, or the same condition would work in one widget and not another.
 //
@@ -250,6 +252,19 @@ export function showIfSatisfied(
     // restored from a previous run rather than typed.
     if (want && typeof want === 'object' && !Array.isArray(want)) {
       const ops = want as Record<string, unknown>
+      // `{ "correctChannels": { "minItems": 2 } }` — a setting that only means something once a
+      // multi-select holds enough entries (AF correction's "different cell types" needs two markers)
+      // `equals` counts only the entries holding that value — of a list, or of a map's values (a
+      // `channelRoles` map: "two or more channels set to Correct")
+      if (ops.minItems !== undefined) {
+        const items = Array.isArray(have) ? have
+          : typeof have === 'object' ? Object.values(have as Record<string, unknown>)
+          : (got === '' ? [] : [have])
+        const n = ops.equals === undefined ? items.length
+          : items.filter(i => String(i) === String(ops.equals)).length
+        if (n < Number(ops.minItems)) return false
+        continue
+      }
       const suffixes = (k: string) => {
         const v = ops[k]
         return v === undefined ? null : (Array.isArray(v) ? v : [v]).map(x => String(x).toLowerCase())
@@ -417,21 +432,32 @@ export function missingRequired(
   images: CciaImage[] | undefined = undefined,
 ): string[] {
   const out: string[] = []
-  const walk = (ps: ParamDef[] | undefined) => {
+  // `vals` is the scope a param is read in: the form, or — inside a repeatable group — one entry's
+  // values over the form's, as `ParamRenderer`'s `entryContext` and the server's per-entry
+  // validation read it
+  const walk = (ps: ParamDef[] | undefined, vals: ParamValues | undefined) => {
     for (const p of ps ?? []) {
       const applies = p.hidden !== true
-        && showIfSatisfied(p.showIf, values)
+        && showIfSatisfied(p.showIf, vals)
         && paramAppliesToImages(p, images)
       if (applies && p.required) {
-        const v = values?.[p.key]
+        const v = vals?.[p.key]
         const empty = v === undefined || v === null || v === '' ||
                       (Array.isArray(v) && v.length === 0)
         if (empty) out.push(p.requiredMessage || `${p.label || p.key} is required`)
       }
-      applies && walk(p.params)
+      if (!applies) continue
+      if (p.type === 'group') {
+        const entries = vals?.[p.key]
+        if (entries && typeof entries === 'object')
+          for (const e of Object.values(entries as Record<string, ParamValues>))
+            walk(p.params, { ...(vals ?? {}), ...(e ?? {}) })
+      } else {
+        walk(p.params, vals)
+      }
     }
   }
-  walk(def.params)
+  walk(def.params, values)
   // A repeatable group whose order chips are ALL unticked. Reachable only now that the order actually
   // reaches the run: before, the payload dropped it and the server silently ran every entry, so the
   // state existed in the form and never in a run. Forwarded truthfully it means "run no entries",
