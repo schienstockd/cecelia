@@ -1,6 +1,6 @@
 # Remote access — the lab GPU box
 
-**Status:** P0 done 2026-10-16 (GNOME Remote Login chosen) · P1 next · no branch
+**Status:** P0 done 2026-10-16 (GNOME Remote Login chosen) · P1 script built + run on the box · no branch
 
 ## Goal
 
@@ -151,17 +151,33 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
   XWayland, which reported `llvmpipe` on a hybrid Intel+NVIDIA laptop whose session ran on the Intel
   GPU. The X11 path still FAILs on a real `llvmpipe` reading.
 
-- **P1 — box setup script.** `scripts/remote-box/setup-box.sh`, run once with sudo, idempotent, prints
-  what it changed. Every destructive step asks first.
-  - Remote Login: TLS cert, the shared RDP credentials (prompted, never on the command line), the
-    service enabled
-  - per-user Desktop Sharing off
-  - lock the console on idle
-  - SSH per Decision 9, written as a drop-in under `/etc/ssh/sshd_config.d/`, with `sshd -t` before
-    the reload. Check that the key login works *before* switching passwords off.
-  - for `peanut`: Brave as the default browser, so `app.py`'s own `webbrowser.open` lands in a
-    WebGPU-capable browser with the sign-in link; the keyring per Q7; a Cecelia install if it has none
-    (`install.sh`, per user)
+- **P1 — box setup script. Built:** `scripts/remote-box/setup-box.sh`. It is general, for anyone
+  setting up an Ubuntu GNOME box with an NVIDIA GPU, not only this one:
+  `sudo bash scripts/remote-box/setup-box.sh [--shared-user NAME] [--ssh-admin NAME] [--dry-run]`.
+  It is idempotent, prints what it changed, and asks before creating an account or locking SSH down.
+  - **Remote Login:** a self-signed certificate under `/var/lib/gnome-remote-desktop`, the shared RDP
+    login through `grdctl --system rdp set-credentials` (it prompts, so the password never appears on
+    a command line), and the service enabled. It restarts the service only when something changed,
+    because a restart drops everyone connected.
+  - **Console lock:** a system dconf default, so the screen locks after 5 idle minutes. Users can still
+    override it.
+  - **`--shared-user`:** creates the account if missing, and makes a Chromium-based browser its
+    default, because `app.py` opens the sign-in link in the default browser. It reminds the admin to
+    run `install.sh` as that user. It does not install Cecelia itself.
+  - **`--ssh-admin`:** a drop-in under `/etc/ssh/sshd_config.d/` (`AllowUsers`, passwords off). It
+    refuses unless the admin already has an authorized key, and it runs `sshd -t` before reloading.
+  - **Never touched:** the firewall (often IT's), the NVIDIA driver, and Cecelia's config.
+
+  **First real run on this box, 2026-10-16** (`--shared-user peanut --ssh-admin cecelia`):
+  - 4 changes: certificate, dconf profile, console-lock default, SSH drop-in
+  - the existing RDP login was detected and kept
+  - `peanut` already had Brave as default and a Cecelia install, so no change there
+
+  Verified from outside: key login works, password login is no longer offered, `peanut` is refused
+  over SSH, and Remote Login is back on 3389. **Gap:** `cecelia` has `lock-enabled=false` set in its
+  own dconf, which overrides the new default, so the long-running console session still never locks.
+  Fix pending: lock the setting system-wide, or reset it per account. The Q7 keyring stays a manual
+  step.
 
   **Brief said** a `cecelia-ui` pixi task; it would have to replicate the token step.
 
