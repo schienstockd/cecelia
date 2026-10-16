@@ -60,6 +60,18 @@ class TallyTest(unittest.TestCase):
         self.assertEqual((rows[0]["legacy"], rows[0]["agent_made"], rows[0]["sessions"]), (3, 0, 4))
         self.assertEqual([p["kind"] for p in self.r.proposals_from(rows)], ["ratchet"])
 
+    def test_findings_fixed_before_commit_count_as_caught_not_toward_a_proposal(self):
+        # a and b were caught before their commits: the check worked, the rule didn't fail. c's
+        # false_positive is the agent's word, not the reviewer's, so it still counts, as in the bug sweep
+        ev = [_finding_event(s, session=f"s{i}") for i, s in enumerate("abcd")]
+        outcomes = {"a": "fixed_pre_commit", "b": "fixed_pre_commit", "c": "false_positive",
+                    "d": "shipped_with_finding"}
+        rows = self.r.tally(ev, [{"slug": s, "rule": self.RULES[0]} for s in "abcd"],
+                            dict.fromkeys("abcd", "agent_made"), self.RULES, outcomes)
+        self.assertEqual({k: rows[0][k] for k in ("findings", "sessions", "agent_made", "caught")},
+                         {"findings": 2, "sessions": 2, "agent_made": 2, "caught": 2})
+        self.assertEqual(self.r.proposals_from(rows), [])
+
     def test_none_and_invented_rules_are_dropped(self):
         ev = [_finding_event("a"), _finding_event("b")]
         rows = self._rows(ev, {"a": "none", "b": "NOT_A_RULE.md → *Invented*"}, {})
@@ -89,6 +101,24 @@ class ProposeTest(unittest.TestCase):
         self.assertIn("CLAUDE.md → *Testing*", self.seen[0])
         self.assertEqual((rows[0]["findings"], props, cost), (1, [], 0.3))
         self.assertNotIn("_sources", rows[0])
+
+    def test_the_logs_latest_outcome_decides_what_shipped(self):
+        def resolved(slug, outcome, ts, branch="feat/x"):
+            return {"event": "convention_check_finding_resolved", "ts": ts, "branch": branch,
+                    "payload": {"slug": slug, "outcome": outcome}}
+        ev = [{**_finding_event(x, session=f"s{i}"), "branch": "feat/x"} for i, x in enumerate("abc")]
+        ev += [resolved("a", "fixed_pre_commit", "2026-10-01T01:00:00Z"),
+               # the session switched branch before committing: its fix still counts
+               resolved("c", "fixed_pre_commit", "2026-10-01T01:00:00Z", branch="feat/renamed"),
+               # revised later: the newest resolution wins
+               resolved("b", "fixed_pre_commit", "2026-10-01T01:00:00Z"),
+               resolved("b", "dropped_no_action", "2026-10-01T02:00:00Z")]
+        assign = lambda p: ({"assignments": [{"slug": x, "rule": "CLAUDE.md → *Testing*"} for x in "abc"]}, 0.1)  # noqa: E731
+        with tempfile.TemporaryDirectory() as d:
+            (pathlib.Path(d) / "CLAUDE.md").write_text("## Testing\n", encoding="utf-8")
+            rows, props, _, _ = self.r.propose(iter(ev), date="2026-10-02", assign=assign, repo=pathlib.Path(d),
+                                               git=lambda *a: None, edited=lambda rl: {})
+        self.assertEqual((rows[0]["findings"], rows[0]["caught"], props), (1, 2, []))
 
     def test_no_findings_skip_the_judge(self):
         out = self.r.propose([], date="2026-10-02", assign=lambda p: self.seen.append(p), git=lambda *a: None)

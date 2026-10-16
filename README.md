@@ -230,17 +230,23 @@ cells being analysed — the metric had been optimising something other than the
 The final choice was made on the images, not on the number. Per-subsystem validation record:
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
 
-**Claude checks its own drift.** Dominik can't review every change, so the setup tries to let
-Claude catch its own mistakes. Before each commit, `pixi run recital` has two fresh reviewer agents
-read the diff: the *fan-out audit* looks for a fix that missed its sibling call sites, the
-*convention check* for new code that duplicates an existing helper or breaks a convention.
-Mechanical checks also flag new files or routes the docs don't list, and code that breaks the
-structural rules in [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md). Each finding must be
-resolved in the commit message (fixed, shipped anyway, false positive, or dropped), and a git hook
-blocks the commit otherwise. Outcomes are logged (`pixi run recital-console`). Once a week, a judge
-re-checks the fan-out notes and the duplicated helpers nobody fixed against `main`, files the
-ones that are still live as issues, and counts which `CLAUDE.md` rules keep breaking across sessions. This is recent and still
-being measured: [`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+**Claude checks its own drift.** Dominik can't review every change, so the setup lets Claude catch
+its own mistakes. Before each commit, `pixi run recital` has two fresh reviewer agents read the
+diff: the *fan-out audit* looks for a fix that missed its sibling call sites, the *convention check*
+for new code that duplicates an existing helper or breaks a convention. Mechanical checks flag
+undocumented files and routes, and the structural rules in
+[`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md). A git hook blocks the commit until each finding
+is resolved in the message, and every outcome is logged (`pixi run recital-console`). Once a week an
+unattended judge re-checks what wasn't fixed. This is recent and still being measured:
+[`docs/ai-assist/`](docs/ai-assist/GOVERNANCE_INDEX.md).
+
+<p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go to the weekly bug check unless tagged fixed in the commit (the tag is optional). Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Convention potential duplicates and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; Dominik or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; Dominik edits the rule or rejects it in judge-review." width="100%"></p>
+
+*Not fixed* includes *false positive*: that's the agent's own call, so the judge re-checks it. The
+bug check also takes errors from unattended agent runs, and runs Dominik reviewed as bad. What
+happened to the findings so far:
+
+<p align="center"><img src="frontend/public/readme-findings-flow.svg" alt="Flow of reviewer findings, 27 September to 16 October 2026, each column to its own scale. Recital: 890 findings, of which 329 were fixed in the commit (83% of the 398 that must be resolved), 69 not fixed and 492 plausible notes. Bug check: 289 bugs (plausible notes on one function merge); 106 already gone or not a bug, 26 waiting, 157 to a verify agent. Verify agent: 73 not a bug, 33 parked as not live yet, 2 not checked yet, 49 real. GitHub issues for the 49 real bugs: 11 fixed and closed, 28 open, 1 won't fix, 9 not filed yet. About half the plausible notes were fixed in their commit with no way to record it yet; they reappear as already gone." width="100%"></p>
 
 <p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Weekly chart of the agents' pre-commit reviews since logging began on 27 September 2026: five panels: changes reviewed and PRs merged per week; findings per 100 changes and the share fixed before commit, for each of the two reviewers (fan-out audit and convention check); and, per reviewer, stacked bars of the weekly judge's verdicts on the notes nobody fixed (fan-out: real bug, gone, dismissed; convention: duplicate still there, gone, dismissed). Early data, no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
 
