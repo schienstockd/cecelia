@@ -317,6 +317,9 @@ The reason is one line inside the tag (no `]`); the hook blocks a pair that need
 and logs it on the resolution row. The weekly bug sweep re-judges `false_positive` findings
 against the code with that reason in front of it, so a wrong one doesn't hide a real bug.
 
+**`plausible` fanout notes need no tag**, but they get a slug too: if you fixed one, tag it
+`[<slug>: fixed_pre_commit]` so the weekly judge doesn't re-check it. Untagged, it is re-checked.
+
 Bare `[fixed_pre_commit]` / `[<outcome>: <reason>]` forms are still accepted for legacy /
 un-slugged findings, but slug-paired form is preferred — the commit hook writes a
 `_finding_resolved` row per pair, which is what turns the effectiveness rollup from runtime

@@ -198,7 +198,7 @@ _LABEL_COLOUR: dict[str, str] = {label.strip(): colour for label, colour in _MEC
 
 def _is_finding(event: str) -> bool:
     """A finding row — outcome-tagged `_finding` or advisory `_advisory` (plausible /
-    potential duplicate). Both render in the findings pane; only `_finding` carries a slug."""
+    potential duplicate). Both render in the findings pane; only a `_finding` must be tagged."""
     return event.endswith(("_finding", "_advisory"))
 
 
@@ -809,8 +809,8 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
 
     total_runs = sum(state.tally.runs.values())
     total_errored = sum(state.tally.errored_runs.values())
-    # Advisory findings carry no slug, so nothing ever resolves them — counted apart, or the
-    # header reads as a backlog of untagged findings.
+    # Advisory findings need no tag (a `plausible` one MAY be tagged fixed) — counted apart, or
+    # the header reads as a backlog of untagged findings.
     advisory_markers = {m for ms in ADVISORY_MARKERS.values() for m in ms}
     advisory = sum(n for v in state.tally.findings.values()
                    for m, n in v.items() if m in advisory_markers)

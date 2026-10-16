@@ -68,12 +68,20 @@ MARKERS: dict[str, tuple[str, ...]] = {
     "convention": ("should reuse", "wrong home"),
 }
 
-#: Advisory markers — no outcome tag, so no slug and no `_finding` row, but still a finding the
+#: Advisory markers — no outcome tag required and no `_finding` row, but still a finding the
 #: reader should see: each becomes an `_advisory` row the console lists.
 ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("plausible",),
     "convention": ("potential duplicate",),
 }
+
+#: Advisory markers that still get a printed slug, so the author MAY tag one fixed. The weekly bug
+#: sweep re-checks every untagged `plausible` note (the same slug is its key); about half are fixed
+#: at commit, and a `[slug: fixed_pre_commit]` lets it skip those. Optional: the hook never asks.
+TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": ()}
+
+_OPTIONAL_TAG_NOTE = ("_Plausible notes need no tag. If you fixed one, tag it `[<slug>: fixed_pre_commit]` "
+                      "so the weekly judge doesn't re-check it._")
 
 #: Bullet-line grammar the reviewer prompts ask for:
 #:   `- **file:LINE** — <prose> [**marker**]`
@@ -82,7 +90,9 @@ ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
 #: every finding from 2026-09-28 on (11 of 29 across session history), so the parser is
 #: tolerant: ANY bullet line carrying the marker is a finding. The location is best-effort —
 #: first `file:LINE` wins, so `foo.jl:42` slugs the same with or without a trailing range.
-_BULLET_RE = re.compile(r"^[ \t]*[-*][ \t]+(?!\[(?:fanout|conv)-[0-9a-f]{8}\] )(.+)$", re.MULTILINE)
+#: A finding slug as `_slug` writes it — the one grammar recital and the commit hook match on.
+SLUG_PATTERN = r"(?:fanout|conv)-[0-9a-f]{8}"
+_BULLET_RE = re.compile(rf"^[ \t]*[-*][ \t]+(?!\[{SLUG_PATTERN}\] )(.+)$", re.MULTILINE)
 _LEAD_LOCATION_RE = re.compile(
     r"^\*\*`?([^*:`\s]+):(\d+)[^*]*?`?\*\*\s*[—–:-]?\s*(.*)$"
 )
@@ -185,11 +195,13 @@ def _parse_findings(output: str, mechanism: str,
 
 
 def _inject_slugs(output: str, mechanism: str) -> str:
-    """Prefix each finding bullet with its slug, so the author can copy it verbatim into a
-    `[slug: outcome]` pair. The reviewer's own text is kept as-is (ranges and all). Bullets
-    already carrying a slug are skipped by `_BULLET_RE`."""
+    """Prefix each finding bullet — and each `TAGGABLE_ADVISORY` one — with its slug, so the author
+    can copy it verbatim into a `[slug: outcome]` pair. The reviewer's own text is kept as-is (ranges
+    and all). Bullets already carrying a slug are skipped by `_BULLET_RE`."""
+    markers = (*MARKERS[mechanism], *TAGGABLE_ADVISORY[mechanism])
+
     def _sub(m: re.Match) -> str:
-        f = _parse_bullet(m.group(1), mechanism)
+        f = _parse_bullet(m.group(1), mechanism, markers)
         return m.group(0) if f is None else f"- [{f.slug}] {m.group(1)}"
 
     return _BULLET_RE.sub(_sub, output)
@@ -348,15 +360,15 @@ def _run_reviewer(
     for f in advisories:
         append_event(
             advisory_event_name,
-            {"file": f.file, "line": f.line, "desc": f.desc, "marker": f.marker},
+            {"file": f.file, "line": f.line, "desc": f.desc, "marker": f.marker,
+             **({"slug": f.slug} if f.marker in TAGGABLE_ADVISORY[mechanism] else {})},
             pr=pr,
             commit=commit,
             branch=branch,
         )
 
     # Inject slugs so the author can copy each into a `[slug: outcome]` pair in the commit
-    # message. Only the outcome-tag-requiring findings get slugs; other bullets (plausible /
-    # potential duplicate) render unchanged.
+    # message: the outcome-tag-requiring findings, and the optional-tag `plausible` notes.
     slugged = _inject_slugs(stripped, mechanism)
 
     # Defensive strip: even with the "no tail line" directive in the prompt, the subagent
@@ -379,6 +391,8 @@ def _run_reviewer(
             "the console. No tag needed; report the reviewer output shape."
         )
 
+    if any(f.marker in TAGGABLE_ADVISORY[mechanism] for f in advisories):
+        cleaned += f"\n\n{_OPTIONAL_TAG_NOTE}"
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
 
 

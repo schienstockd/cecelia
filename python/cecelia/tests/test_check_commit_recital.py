@@ -158,6 +158,14 @@ class CheckTest(unittest.TestCase):
         msg = "git commit -m 'foo [**confirmed**] [fanout-abcd1234: fixed_pre_commit]'"
         self.assertIsNone(self._check(msg))
 
+    def test_a_tagged_plausible_note_passes_but_never_stands_in_for_a_required_tag(self):
+        body = ("- [fanout-aaaa0001] **a.py:1** — sibling [**confirmed**]\n"
+                "- [fanout-bbbb0002] **b.py:2** — maybe [**plausible**]\n")
+        ok = f"git commit -m '{body}[fanout-aaaa0001: fixed_pre_commit] [fanout-bbbb0002: fixed_pre_commit]'"
+        self.assertIsNone(self._check(ok))
+        swapped = f"git commit -m '{body}[fanout-bbbb0002: fixed_pre_commit]'"
+        self.assertIsNotNone(self._check(swapped))
+
     def test_conv_slug_pair_counts(self):
         msg = "git commit -m 'foo [**should reuse**] [conv-11112222: false_positive: not canonical]'"
         self.assertIsNone(self._check(msg))
