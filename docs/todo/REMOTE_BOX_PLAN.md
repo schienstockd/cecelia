@@ -123,7 +123,8 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
      on `peanut` can open anyone's files. Acceptable for a lab-shared analysis box.
    - No auto-login. Remote and walk-up users both start at the GNOME login screen.
 7. **The console behaves like any desktop.** Remote sessions never show on it, so the brief's
-   "sleep/lock disabled" goes. Lock the screen on idle, as on any machine in a room people walk into.
+   "sleep/lock disabled" goes. Screens lock on idle by default (a dconf default, not a lock), except
+   for the admin account `cecelia`, which keeps auto-lock off by choice (Dominik, 2026-10-16).
 8. **Brave is the browser.** It is installed, and WebGPU is on by default for this GPU on Wayland. No
    Chrome install and no flags.
 9. **SSH is for Dominik only** (2026-10-16): key login only, password login off, `AllowUsers
@@ -174,10 +175,11 @@ Gotchas hit on the way, each one a line in the P3 admin notes:
   - `peanut` already had Brave as default and a Cecelia install, so no change there
 
   Verified from outside: key login works, password login is no longer offered, `peanut` is refused
-  over SSH, and Remote Login is back on 3389. **Gap:** `cecelia` has `lock-enabled=false` set in its
-  own dconf, which overrides the new default, so the long-running console session still never locks.
-  Fix pending: lock the setting system-wide, or reset it per account. The Q7 keyring stays a manual
-  step.
+  over SSH, and Remote Login is back on 3389. The console lock is a default, not enforced: `cecelia`
+  keeps `lock-enabled=false` in its own dconf on purpose, so the admin console session does not
+  auto-lock (Dominik, 2026-10-16). Every account without its own setting locks after 5 idle
+  minutes. Whether `peanut` has its own setting is unchecked: its dconf is not readable from
+  `cecelia`. The Q7 keyring stays a manual step.
 
   **Brief said** a `cecelia-ui` pixi task; it would have to replicate the token step.
 
