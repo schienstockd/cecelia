@@ -8,6 +8,7 @@ let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     include_string(Main, src[1:first(findfirst("function api_image_stores", src)) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
+const NOLOCK = blosc_lock_as_launched!()    # its load sets BLOSC_NOLOCK; launched without it = with-lock control
 arr, _ = open_level(expanduser(ARGS[1]), 0)
 nx, ny, nz, nc, nt = size(arr)              # Julia dims are (x,y,z,c,t)
 bricks = [((10i) % nt, (3i) % (nx ÷ 128), (5i) % (ny ÷ 128)) for i in 0:15]
@@ -18,4 +19,4 @@ for round in 1:5
     got = fetch.([Threads.@spawn rd(b) for b in bricks])
     global bad += count(got .!= ref)
 end
-println("NOLOCK=", get(ENV, "BLOSC_NOLOCK", "unset"), "  parallel-vs-serial mismatches over 5x16 bricks: ", bad)
+println("NOLOCK=", NOLOCK ? "1" : "unset", "  parallel-vs-serial mismatches over 5x16 bricks: ", bad)

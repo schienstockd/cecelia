@@ -53,7 +53,25 @@ function enable_blosc_nolock!()
     end
     blosc_nolock()
 end
+
+"""Unset `BLOSC_NOLOCK` everywhere `enable_blosc_nolock!` set it — c-blosc takes its global lock again."""
+function disable_blosc_nolock!()
+    delete!(ENV, "BLOSC_NOLOCK")
+    @static if Sys.iswindows()
+        ccall((:_putenv, "msvcrt"), Cint, (Cstring,), "BLOSC_NOLOCK=")
+    end
+    blosc_nolock()
+end
+
+# Whether the process was LAUNCHED with `BLOSC_NOLOCK` — read before the line below turns it on, which
+# is the only point it can still be read. Spikes that compare the two arms read it via
+# `blosc_lock_as_launched!`; reading `ENV` after this file loads always says "1".
+const BLOSC_NOLOCK_AT_LAUNCH = blosc_nolock()
 enable_blosc_nolock!()
+
+"""For a spike that measures the lock itself: put c-blosc back in the arm the process was launched with
+(lock unless `BLOSC_NOLOCK` was set) and return that arm — true = no lock. Never for the server."""
+blosc_lock_as_launched!() = BLOSC_NOLOCK_AT_LAUNCH ? enable_blosc_nolock!() : disable_blosc_nolock!()
 
 # ── Channel colour ────────────────────────────────────────────────────────────────
 # A channel's colour comes from napari, as a LUT (`colormap_lut` in the props JSON: black→colour stops

@@ -18,6 +18,8 @@ let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     include_string(Main, src[1:first(cut) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
+# Its load sets BLOSC_NOLOCK; said here on purpose: this measures the server, which runs without the lock.
+enable_blosc_nolock!()
 
 const ZP = expanduser("~/cecelia-feijoa/projects/zolIMa/0/Dml3RG/ccidSmoothed.ome.zarr")
 

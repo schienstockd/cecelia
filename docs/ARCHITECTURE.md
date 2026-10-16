@@ -351,7 +351,9 @@ Three rules keep it parallel and correct (`docs/todo/SLAB_READ_PERF_PLAN.md`):
   mutex otherwise — concurrent reads ran at 0.34–0.95x of serial. `enable_blosc_nolock!`
   (`image_render.jl`) sets it where blosc reads it (msvcrt's `_putenv` on Windows) and `blosc_nolock()`
   reads it back the same way; a dev server refuses to start without it, and `/api/diagnostics` reports
-  `bloscNolock`. Every launcher loads that file, so no launcher sets it separately.
+  `bloscNolock`. Every launcher loads that file, so no launcher sets it separately. A spike that
+  measures the lock itself reads its arm through `blosc_lock_as_launched!()` — after that file loads,
+  `ENV` always says "1".
 - **A route dispatched before `handle_stream`'s pool hop must hop itself if it does blocking work.**
   `try_serve_slab` runs on HTTP.jl's single interactive thread; its read, encode AND response write go
   to the default pool (`Threads.@spawn`). Without the hop, one decode stalled every other request

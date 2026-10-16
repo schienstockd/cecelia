@@ -18,17 +18,14 @@
 
 using Statistics, Printf, JSON3, Blosc, Zarr, HTTP, PNGFiles, ColorTypes, FixedPointNumbers
 
-# Which arm was asked for, read BEFORE image_render.jl loads — its load sets BLOSC_NOLOCK itself
-# (`enable_blosc_nolock!`). For the default arm it is unset again below; c-blosc reads the variable on
-# every call, so that restores the global lock (Linux/macOS — Windows would also need msvcrt's copy).
-const NOLOCK_ARM = haskey(ENV, "BLOSC_NOLOCK")
 const REPO = normpath(joinpath(@__DIR__, "..", "..", "..", ".."))
 let src = read(joinpath(REPO, "api", "src", "image_geometry.jl"), String)
     cut = findfirst("function api_image_stores", src)
     include_string(Main, src[1:first(cut) - 1], "image_geometry.jl")
 end
 include(joinpath(REPO, "api", "src", "image_render.jl"))
-NOLOCK_ARM || delete!(ENV, "BLOSC_NOLOCK")
+# Its load sets BLOSC_NOLOCK; put back the arm this run was launched for (default = the global lock).
+blosc_lock_as_launched!()
 
 length(ARGS) == 1 || error("usage: slab_parallel_bench.jl <store.ome.zarr>")
 const ZP = expanduser(ARGS[1])
