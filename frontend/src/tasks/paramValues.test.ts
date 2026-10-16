@@ -5,7 +5,7 @@ import {
   resolveInitialParams, valueNameOptions, imageNamesForField,
   showIfSatisfied, showIfKeys, scopeValueName, scopeValueNames, siblingKeyOfType,
   missingRequired, groupOrderKeysFor, newEntryDefaults,
-  paramAppliesToImages, resolveParamTip, findParamByKey } from './paramValues'
+  paramAppliesToImages, resolveParamTip, findParamByKey, clampParamsToSpec } from './paramValues'
 import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 
@@ -893,5 +893,37 @@ describe('newEntryDefaults', () => {
   it('an inherited key the group does not declare is not smuggled in', () => {
     const second = newEntryDefaults(MODELS_GROUP, 1, { bogus: 7 } as ParamValues)
     expect(second).not.toHaveProperty('bogus')
+  })
+})
+
+describe('stored numbers are clamped to the CURRENT spec range', () => {
+  // `segment.cellpose` cellDiameter went from int 1–500 to float 2–60. A remembered 99 was restored
+  // verbatim and every run then failed `validate_params` ("exceeds maximum 60.0") until the slider moved.
+  const def = {
+    fun_name: 'segment.cellpose',
+    params: [
+      { key: 'cellDiameter', type: 'float', min: 2, max: 60, default: 10 },
+      { key: 'label', type: 'text', default: '' },
+      { key: 'adv', type: 'section', params: [{ key: 'iters', type: 'int', min: 0, max: 10, default: 0 }] },
+      { key: 'models', type: 'group', params: [{ key: 'size', type: 'int', min: 1, max: 5, default: 1 }] },
+    ],
+  } as unknown as TaskDef
+
+  it('restored records, drafts and offers come back inside [min, max]', () => {
+    const saved = { cellDiameter: 99, label: '99', iters: -3, models: { '0': { size: 50 } } }
+    const v = resolveInitialParams(def, undefined, saved) as Record<string, any>
+    expect(v.cellDiameter).toBe(60)
+    expect(v.label).toBe('99')
+    expect(v.adv.iters).toBe(0)
+    expect(v.models['0'].size).toBe(5)
+    expect((resolveInitialParams(def, { cellDiameter: 1 }, null) as Record<string, any>).cellDiameter).toBe(2)
+    expect(buildParamValues(def, { cellDiameter: 30 }).cellDiameter).toBe(30)
+  })
+
+  it('a chain node bag is clamped in place, shape and unknown keys untouched', () => {
+    const node = { cellDiameter: 99, extra: 500, adv: { iters: 99 }, iters: 99, models: { a: { size: 0 } } }
+    expect(clampParamsToSpec(def, node)).toEqual(
+      { cellDiameter: 60, extra: 500, adv: { iters: 10 }, iters: 10, models: { a: { size: 1 } } })
+    expect(node.cellDiameter).toBe(99)   // input not mutated
   })
 })
