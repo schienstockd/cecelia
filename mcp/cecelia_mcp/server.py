@@ -357,6 +357,7 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
       | param `type`             | what it wants                  | get the candidates from |
       |--------------------------|--------------------------------|-------------------------|
       | `channelSelection`       | a channel of the image         | get_image_info → `channels` |
+      | `channelRoles`           | `{channel: role}`, one role each (roles in `options`) | get_image_info → `channels` |
       | `valueNameSelection`     | a versioned field's value_name | get_image_info (`field`, e.g. filepaths/labels) + get_analysis_lineage → `segmentations` |
       | `popSelection`           | a population path              | get_populations (`accepts` = the pop types it takes) |
       | `labelPropsColsSelection`| measure columns                | get_measure_summary → the `measures` names |

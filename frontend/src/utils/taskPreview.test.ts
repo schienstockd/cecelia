@@ -169,7 +169,7 @@ describe('paramsBlocker', () => {
   // was `hasPreviewableModel` — a cellpose question ("is there a base model?") asked of every task —
   // so AF, which has `afCombinations` and no models, was reported not-runnable despite the backend
   // declaring it previewable. Silently: no button, no message.
-  it('accepts an AF task with a division channel', () => {
+  it('accepts an AF task with a competing channel', () => {
     expect(paramsBlocker({ afCombinations: { '2': { competingChannels: [3] } } })).toBeNull()
   })
 
@@ -177,7 +177,7 @@ describe('paramsBlocker', () => {
     expect(paramsBlocker({ afCombinations: {} })).toBe('no-af-channels')
     expect(paramsBlocker({ afCombinations: { '2': { competingChannels: [] } } })).toBe('no-af-channels')
     expect(paramsBlocker({ afCombinations: { '2': {} } })).toBe('no-af-channels')
-    expect(blockerMessage('no-af-channels')).toBe('Add a division channel to preview')
+    expect(blockerMessage('no-af-channels')).toBe('Pick channels to correct and an AF channel')
   })
 
   it('still asks the cellpose question of a cellpose task', () => {
@@ -219,6 +219,14 @@ describe('hasAfCombination', () => {
   it('survives a malformed value instead of throwing', () => {
     expect(hasAfCombination({ afCombinations: 'nope' as unknown })).toBe(false)
     expect(hasAfCombination({ afCombinations: { '2': { competingChannels: 'x' as unknown } } })).toBe(false)
+    // the roles form: a marker plus something to correct it against
+    expect(hasAfCombination({ afCombinations: { 0: { targetChannel: ['CART'],
+      channelRoles: { AF: 'af' } } } })).toBe(true)
+    expect(hasAfCombination({ afCombinations: { 0: { targetChannel: ['CART'],
+      channelRoles: { SHG: '' } } } })).toBe(false)
+    // an AF channel alone is a correction: the target is masked where the reference is bright
+    expect(hasAfCombination({ afCombinations: { '1': { competingChannels: [], afChannels: [2] } } }))
+      .toBe(true)
   })
 })
 

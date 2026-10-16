@@ -560,6 +560,18 @@ describe('findParamByKey', () => {
 
 // ── required, checked before the run ───────────────────────────────────────────────────────────────
 describe('missingRequired', () => {
+  it('a required param inside a group entry is checked against that entry', () => {
+    const def = { params: [{ key: 'combos', label: 'Combos', type: 'group', repeatable: true,
+      params: [
+        { key: 'mode', label: 'Mode', type: 'select' },
+        { key: 'chan', label: 'Channel', type: 'channelSelection', required: true,
+          showIf: { mode: 'on' } }] }] } as unknown as TaskDef
+    expect(missingRequired(def, { combos: { 0: { mode: 'off' } } })).toEqual([])
+    expect(missingRequired(def, { combos: { 0: { mode: 'on', chan: [] } } }))
+      .toEqual(['Channel is required'])
+    expect(missingRequired(def, { combos: { 0: { mode: 'on', chan: ['A'] } } })).toEqual([])
+  })
+
   const DEF = {
     params: [
       { key: 'mode', type: 'select' },
@@ -712,6 +724,20 @@ describe('showIfSatisfied — suffix operators', () => {
 
   it('an absent path still satisfies nothing, operator or not', () => {
     expect(showIfSatisfied(NOT_XML, {})).toBe(false)
+  })
+
+  it('minItems with equals counts the map values holding it', () => {
+    const cond = { channelRoles: { minItems: 2, equals: 'correct' } }
+    expect(showIfSatisfied(cond, { channelRoles: { CART: 'correct', AF: 'af' } })).toBe(false)
+    expect(showIfSatisfied(cond, { channelRoles: { GFP: 'correct', TOM: 'correct' } })).toBe(true)
+  })
+
+  it('minItems counts the entries of a multi-select', () => {
+    // AF correction's "different cell types" only means something with two markers to correct
+    const cond = { correctChannels: { minItems: 2 } }
+    expect(showIfSatisfied(cond, { correctChannels: ['CART'] })).toBe(false)
+    expect(showIfSatisfied(cond, { correctChannels: ['GFP', 'TOM'] })).toBe(true)
+    expect(showIfSatisfied(cond, { correctChannels: [] })).toBe(false)
   })
 
   it('an operator nobody implements does not silently pass', () => {

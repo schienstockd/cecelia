@@ -130,8 +130,10 @@ export const driftCorrectGuide = moduleTaskGuide({
 // AF correction — `cleanupImages.afCorrect`, a bare task: no composite wraps it. Prose checked against
 // the code, not the label: per combination it subtracts the bleedthrough the target receives from its
 // competing channels, then keeps the share of signal the target owns where the tissue puts it in
-// several (`correction_utils.af_correct_frame`). `exclusive` ("Different cell types") picks the
-// bleedthrough estimator (`af_bleedthrough_alphas`). It runs after drift correction: the valid box a
+// several (`correction_utils.af_correct_frame`). Per channel to correct, each other channel gets ONE
+// role (`channelRoles`): "competing" takes its share (step (b)), "af" is an AF-only reference that
+// zeroes the target where it is bright (step (c)). `exclusive` ("Different cell types") picks the bleedthrough
+// estimator (`af_bleedthrough_alphas`) and only shows with two markers. It runs after drift correction: the valid box a
 // drift-corrected store carries is passed forward, and the zero padding is outside the background
 // estimate (`intensity_utils.background_threshold`). QC: `af.saturated_input`, `af.bleedthrough`.
 // No channel, percentile or threshold advice here — that judgement is the user's.
@@ -155,8 +157,7 @@ export const afCorrectGuide = moduleTaskGuide({
   funHint: ['One pass removes both: what the filters leak between channels, and what the tissue emits into several.'],
   params: [
     'Image to correct — the active version is preselected; on a movie, drift-correct first.',
-    'Channel combinations — one entry per channel to correct, with the channels it competes with.',
-    'Different cell types — on if no cell carries both markers; off keeps real co-labelling.',
+    'Channels to correct — per marker, give each other channel a role: Competes or AF.',
     'Background detection — how each channel\'s background level is found.',
   ],
   after: [

@@ -4,6 +4,7 @@
 // The preview is expensive (real cellpose per run) and it is showing the user something they will
 // judge parameters by, so both questions below have to be answered exactly: WHETHER to run, and WHAT
 // the user is told when we don't.
+import { channelsWithRole } from './channelRoles'
 import { taskOutput } from './taskOutput'
 import type { TaskDef } from '../tasks/types'
 import { CELLPOSE_V3_ENV_NAME } from '../tasks/paramAdvisors'
@@ -126,21 +127,27 @@ export function previewValueName(
 export function paramsBlocker(params: Record<string, unknown> | null): PreviewBlocker | null {
   if (!params) return 'no-params'
   if ('models' in params) return hasPreviewableModel(params) ? null : 'no-models'
-  if ('afCombinations' in params) return hasAfCombination(params) ? null : 'no-af-channels'
+  if ('afCombinations' in params)
+    return hasAfCombination(params) ? null : 'no-af-channels'
   return null
 }
 
 /**
- * True when at least one AF combination names a competing channel — the AF analogue of
- * `hasPreviewableModel`. A combination with nothing to compete against is not a correction (the worker
- * raises), and an empty bag is the state the form starts in.
+ * True when the AF params describe a correction — the AF analogue of `hasPreviewableModel`: one
+ * combination giving some other channel a role (`channelRoles`, what the form sends), or — the older
+ * shape — naming a competing or AF channel. Anything less is not a correction (the worker raises),
+ * and empty is the state the form starts in.
  */
 export function hasAfCombination(params: Record<string, unknown> | null): boolean {
   const combos = (params as { afCombinations?: unknown } | null)?.afCombinations
   if (!combos || typeof combos !== 'object') return false
   return Object.values(combos as Record<string, unknown>).some(c => {
-    const competing = (c as { competingChannels?: unknown } | null)?.competingChannels
-    return Array.isArray(competing) && competing.length > 0
+    const combo = c as { competingChannels?: unknown, afChannels?: unknown,
+                         channelRoles?: unknown } | null
+    return [combo?.competingChannels, combo?.afChannels]
+      .some(chs => Array.isArray(chs) && chs.length > 0)
+      || channelsWithRole(combo?.channelRoles, 'competing').length > 0
+      || channelsWithRole(combo?.channelRoles, 'af').length > 0
   })
 }
 
@@ -169,7 +176,7 @@ export function blockerMessage(b: PreviewBlocker | null): string {
     case 'no-viewer-open':  return 'Open the viewer to preview'
     case 'image-mismatch':  return 'Open this image to preview it'
     case 'no-models':       return 'Add a model to preview'
-    case 'no-af-channels':  return 'Add a division channel to preview'
+    case 'no-af-channels':  return 'Pick channels to correct and an AF channel'
     // 'off' / 'pinned' / 'no-context' / 'no-params' are states the user chose or can see; a message
     // for those is noise (docs/ui/COPY.md — keep UI copy short, say nothing rather than narrate)
     default:                return ''

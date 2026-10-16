@@ -259,7 +259,13 @@ def _cellpose_imports():
 #:     instead of loading `cpsam_v2` under it.
 #: 19: the socket needs the API token (`_authorized`). A protocol-18 worker answers any account on
 #:     the machine — run compute over your files and hand back the result — so it must be replaced.
-PROTOCOL = 19
+#: 20: AF combinations take `afChannels` — autofluorescence-only references that zero the target where
+#:     they are bright (`correction_utils.af_correct_frame` step (c)). A protocol-19 worker ignores the
+#:     key, so it would preview the old brightness contest and leave the AF in, against a run that
+#:     removes it.
+#: 21: the AF-reference mask takes the measured leak INTO the reference out before thresholding
+#:     (`correction_utils.af_reference_field`). A protocol-20 worker hollows bright target cells.
+PROTOCOL = 21
 
 #: Named in the error a channel NAME raises, so the message points at the Julia function that should
 #: have resolved it — see `script_utils.channel_indices`.
@@ -292,6 +298,7 @@ class PreviewState:
         self._norm = {}          # (im_path, channels, normalise) → cellpose norm params
         self._af = {}            # (im_path, channel, method) → per-channel AF stats
         self._af_alpha = {}      # (im_path, src, dst, method) → bleedthrough coefficient (0.0 = none)
+        self._af_mask = {}       # (im_path, ref, sources) → (per-scale levels, {source: leak alpha})
         self._smooth = {}        # (im_path, channels, spatial params, stat, frames) → (gain, gate sigma)
 
     def image(self, im_path):
@@ -343,7 +350,7 @@ class PreviewState:
         return self._norm[key]
 
     def af_stats(self, im_path, levels, dim_utils, channel_idx, competing_channels, method,
-                 exclusive=True):
+                 exclusive=True, af_channels=(), af_sources=()):
         """The correction's global values — one background level per participating channel — cached.
 
         The AF analogue of `norm_params`, and the same bargain: deriving these costs a pass over the
@@ -374,6 +381,8 @@ class PreviewState:
             [channel_idx], 'the target channel', _AF_TRANSLATOR) + competing
 
         uniq = list(dict.fromkeys(channels))
+        # only this combination's target and competitors: an AF channel of THIS combination is not in
+        # `competing`, and one that competes elsewhere is fitted there — as the run does
         wanted_pairs = [(s, d) for s in uniq for d in uniq if s != d]
         missing_ch = [ch for ch in uniq if (im_path, ch, method) not in self._af]
         # keyed by the ESTIMATOR too: `exclusive` picks between the TLS slope and the envelope floor,
@@ -425,7 +434,31 @@ class PreviewState:
                     for p in wanted_pairs
                     if self._af_alpha.get((im_path, p[0], p[1], method, _mode(p[1])), 0.0) > 0.0},
             saturated={ch: entries[i][1] for i, ch in enumerate(channels)},
-            nbins=entries[0][2], exponent=entries[0][3])
+            nbins=entries[0][2], exponent=entries[0][3],
+            **(self.af_levels(im_path, dim_utils, af_channels, af_sources, method)
+               if af_channels else {}))
+
+    def af_levels(self, im_path, dim_utils, af_channels, sources, method):
+        """The mask's global half per AF-reference channel — `af_levels` and `af_leaks` as
+        `AfWeightStats` kwargs — cached per reference AND source set.
+
+        The source set is part of the key because the leak correction subtracts every target and
+        competitor the RUN derives over (`af_correct_image` → all combinations), and the levels are
+        those of the corrected field; `_preview_af` passes exactly that set. Derived by the run's own
+        `af_weight_stats` at the preview's budgets."""
+        refs = [int(c) for c in af_channels]
+        srcs = tuple(sorted(int(c) for c in sources))
+        missing = [r for r in refs if (im_path, r, srcs, method) not in self._af_mask]
+        if missing:
+            derived = correction_utils.af_weight_stats(
+                self.image(im_path)[0][0], dim_utils, list(srcs), background_method=method,
+                spatial_stride=AF_PREVIEW_STRIDE, timepoints=_preview_timepoints(dim_utils),
+                af_channels=missing)
+            for r in missing:
+                self._af_mask[(im_path, r, srcs, method)] = (derived.af_levels[r], derived.af_leaks[r])
+        got = {r: self._af_mask[(im_path, r, srcs, method)] for r in refs}
+        return {'af_levels': {r: v[0] for r, v in got.items()},
+                'af_leaks': {r: v[1] for r, v in got.items()}}
 
     def smooth_globals(self, im_path, sel, spatial_key, spatial_fn, stat, half, restore_gain):
         """`(gain, gate_sigma)` for a smoothing preview — the run's whole-image values, cached.
@@ -1174,6 +1207,14 @@ def _preview_af(ctx):
     out_dtype = ctx.levels[0].dtype
 
     preview_images, stats_out = [], {}
+    # the channels the RUN fits reference leaks from: every target and competitor of every
+    # combination that does anything (`af_correct_image`'s `fit`), so the preview's levels are the run's
+    sources = []
+    for t, v in sorted(combos.items()):
+        comp = script_utils.channel_indices(
+            (v or {}).get('competingChannels'), f'competingChannels for channel {t}', _AF_TRANSLATOR)
+        if comp or (v or {}).get('afChannels'):
+            sources += [c for c in [int(t)] + comp if c not in sources]
     for ch in sorted(combos):
         # `channel_indices` here does two things: coerces string names → ints, and points a stale
         # backend at the Julia translator it should have gone through. A miss in the combo list means
@@ -1181,12 +1222,21 @@ def _preview_af(ctx):
         competing = script_utils.channel_indices(
             combos[ch].get('competingChannels'), f'competingChannels for channel {ch}',
             _AF_TRANSLATOR)
-        if not competing:
+        refs = script_utils.channel_indices(
+            combos[ch].get('afChannels'), f'afChannels for channel {ch}', _AF_TRANSLATOR)
+        competing = [c for c in competing if c not in refs]
+        if not competing and not refs:
             continue
         stats = STATE.af_stats(ctx.im_path, ctx.levels, ctx.dim_utils, ch, competing, method,
-                               exclusive=bool(combos[ch].get('exclusive', True)))
+                               exclusive=bool(combos[ch].get('exclusive', True)),
+                               af_channels=refs, af_sources=sources)
         slabs = {c: tile[c] for c in [ch] + competing}
-        corrected = correction_utils.af_correct_frame(slabs, ch, stats, out_dtype)
+        leaks = stats.af_leaks or {}
+        raw = {c: _af_reference_field(ctx, c)
+               for c in dict.fromkeys(refs + [s for r in refs for s in leaks.get(r, {})])}
+        fields = {r: correction_utils.af_reference_field(raw, r, leaks.get(r, {})) for r in refs}
+        corrected = correction_utils.af_correct_frame(slabs, ch, stats, out_dtype,
+                                                      af_fields=fields or None)
         # Reshape to the channel-less block shape (T/Z restored as length-1) — the store is
         # channel-less (one file per channel), so no channel axis lands in `axes`/`full_shape` either.
         block = np.reshape(corrected, block_shape)
@@ -1205,10 +1255,10 @@ def _preview_af(ctx):
         })
         # `af_derived_values` is the same helper the run's QC reports through, so the readout on
         # the preview toggle and the banked metric cannot disagree about a name or a value.
-        stats_out[str(ch)] = correction_utils.af_derived_values(stats, ch)
+        stats_out[str(ch)] = correction_utils.af_derived_values(stats, ch, refs)
 
     if not preview_images:
-        raise ValueError('no combination names a competing channel')
+        raise ValueError('no combination names a competing or AF channel')
 
     has_signal, why = _region_signal(ctx.im_path, ctx.bounds, tile)
     return {
@@ -1217,6 +1267,36 @@ def _preview_af(ctx):
         'derived': stats_out,
         'previewImages': preview_images,
     }
+
+
+def _af_reference_field(ctx, channel):
+    """An AF reference's smoothed fields over the visible region, as `[scale, Y, X]` — matching the run.
+
+    The run smooths the WHOLE frame in 3D (`correction_utils.af_mask_field`), and the Z term is not a
+    detail: XY-only smoothing left 14-19% of CART on AF-bright voxels on `RFtn9f/jrNNl2` against 1-3%
+    (`AF_MASK_SCALES_UM`). So this reads the region padded by 4 sigma on every smoothed axis (a Z window
+    around the plane, a margin in Y/X), smooths that, and cuts the visible plane back out. Padding is
+    clamped at the image edge, which is where the run's own filter sees an edge too, so the two agree
+    there as well; elsewhere the residual difference is a gaussian tail beyond 4 sigma.
+    """
+    du = ctx.dim_utils
+    order = list(du.im_dim_order)
+    sigmas = correction_utils.af_mask_sigmas(du)
+    padded, inner = {}, {}
+    for ax, (lo, hi) in ctx.bounds.items():
+        if ax not in order:
+            continue
+        sg = max(sigma[order.index(ax)] for sigma in sigmas)
+        pad = int(np.ceil(4 * sg)) if sg > 0 else 0
+        plo, phi = max(0, int(lo) - pad), min(int(ctx.axis_len.get(ax, hi)), int(hi) + pad)
+        padded[ax] = (plo, phi)
+        inner[ax] = slice(int(lo) - plo, int(lo) - plo + (int(hi) - int(lo)))
+    sl = list(slice_utils.crop_slice_tuple(ctx.levels[0].ndim, _axis_indices(du), padded))
+    if 'C' in order:
+        sl[order.index('C')] = slice(int(channel), int(channel) + 1)
+    fields = correction_utils.af_mask_field(zarr_utils.fortify(ctx.levels[0][tuple(sl)]), sigmas)
+    cut = tuple(inner.get(ax, slice(None)) for ax in order)
+    return np.stack([_as_cyx(f[cut], du)[0] for f in fields])
 
 
 def _preview_smooth(ctx):

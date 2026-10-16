@@ -28,6 +28,8 @@ import { driftSmoothFigure } from './driftSmoothVis'
 import { driftZSmoothFigure } from './driftZSmoothVis'
 import { stackAlignFigure } from './stackAlignVis'
 import { flowRegisterFigure } from './flowRegisterVis'
+import { afRolesFigure } from './afVis'
+import { channelsWithRole } from '../utils/channelRoles'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /** Everything `ParamFigure.vue` needs. The builder decides all of it, including how big the float is. */
@@ -75,7 +77,35 @@ function planeCount(ctx: AdvisorContext): number | null {
   return total || null
 }
 
+
 export const PARAM_FIGURES: Record<string, FigureBuilder> = {
+  /**
+   * AF correction's channel roles, one figure per combination: the target, each other channel in
+   * the role it was given, and the corrected target, on a schematic run through the real
+   * arithmetic (`afVis`).
+   */
+  afRoles: ctx => {
+    // drawn per combination: the entry's target, and what each other channel does to it
+    const order = ctx.images?.[0]?.channelNames
+    const roles = ctx.values?.channelRoles
+    const target = ctx.values?.targetChannel
+    const { vis, headings, note } = afRolesFigure({
+      markers: (Array.isArray(target) ? target : target ? [target] : []).map(String).slice(0, 1),
+      afs: channelsWithRole(roles, 'af', order),
+      competing: channelsWithRole(roles, 'competing', order),
+      exclusive: ctx.values?.exclusive !== false,
+    })
+    return {
+      vis,
+      note,
+      headings,
+      title: 'Channel roles',
+      tip: 'Show what the correction does with these channels',
+      storageKey: 'af-roles-figure',
+      defaultW: Math.max(360, 120 + 84 * vis.columns.length), defaultH: 300,
+    }
+  },
+
   /**
    * Smoothing's temporal statistic. The note is NOT the old "not for photon-limited data": that read
    * as measured-and-bad when what was measured is that the median smears moving cells and the gate

@@ -92,7 +92,11 @@ _is_probe_code_bug(e) = e isa MethodError || e isa UndefVarError
 # cellpose 4 refuses a model name it does not know instead of silently loading `cpsam_v2`. A protocol-17
 # worker can say neither.
 # 19: the socket needs the API token. A protocol-18 worker answers any account on the machine.
-const PREVIEW_PROTOCOL = 19
+# 20: AF combinations take `afChannels` (an AF-only reference that masks the target). A protocol-19
+# worker ignores the key and would preview the AF the run removes — the "fixed inside the worker" case.
+# 21: the AF-reference mask removes the leak into the reference first; a protocol-20 worker hollows
+# bright cells.
+const PREVIEW_PROTOCOL = 21
 const PREVIEW_WORKER = joinpath(@__DIR__, "..", "..", "preview", "preview_worker.py")
 
 # `env` is the pixi env the worker runs in — `nothing` for the default (cellpose 4), `:cellpose_v3` for
@@ -320,7 +324,7 @@ function preview_request(im_path::AbstractString, task_dir::AbstractString,
     )
     isempty(channel_names) || (req["channelNames"] = String[String(n) for n in channel_names])
     # which compute to run. The worker dispatches on it (`preview_worker._BACKENDS`) because the params
-    # alone cannot say: a `models` bag means cellpose and an `afCombinations` bag means AF correction,
+    # alone cannot say: a `models` bag means cellpose and AF channel roles mean AF correction,
     # and inferring the task from the shape of its params is exactly the guess `task_previewable`
     # exists to replace.
     isempty(fun_name) || (req["funName"] = String(fun_name))

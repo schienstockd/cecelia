@@ -334,7 +334,7 @@ end
     # Spec param types `_validate_leaf` understands. A type outside this set is a typo that
     # silently disables validation for that param, so the set is asserted, not assumed.
     known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "filePath", "section", "group",
-                       "channelSelection", "valueNameSelection", "valueNameInput", "popSelection",
+                       "channelSelection", "channelRoles", "valueNameSelection", "valueNameInput", "popSelection",
                        "labelPropsColsSelection", "motionDimsSelection", "imagePicker"])
 
     # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
@@ -505,25 +505,35 @@ end
                 # test reads as "this param has no constraints" rather than "this param was never
                 # reached". Setting the condition keeps the coverage instead of exempting the param.
                 #
-                # First accepted value per key, which is all the condition asks for. Operator forms
+                # First accepted value per key, which is all the condition asks for. `minItems` is
+                # satisfied with that many placeholder entries; the suffix operators
                 # (`{"notEndsWith": ...}`) are not expressible as a value, so those params fall back
                 # to being probed as the defaults leave them.
                 cond = spec_get(p, "showIf", nothing)
                 shown = Dict{String,Any}()
                 if cond isa AbstractDict
                     for (ck, want) in cond
+                        if want isa AbstractDict && haskey(want, "minItems")
+                            n = Int(want["minItems"])
+                            eq = get(want, "equals", nothing)
+                            shown[String(ck)] = isnothing(eq) ? ["probe$i" for i in 1:n] :
+                                Dict{String,Any}("probe$i" => eq for i in 1:n)
+                            continue
+                        end
                         want isa AbstractDict && continue
                         shown[String(ck)] = want isa AbstractVector ? first(want) : want
                     end
                 end
 
                 # perturb exactly one value, in place, inside its group entry if nested
+                # a condition inside a group entry is about that ENTRY (as `validate_params` reads it)
                 function with(bad)
                     d = deepcopy(base)
-                    merge!(d, shown)
                     if isempty(group_key)
+                        merge!(d, shown)
                         d[key] = bad
                     else
+                        merge!(d[group_key]["0"], shown)
                         d[group_key]["0"][key] = bad
                     end
                     d
@@ -553,6 +563,9 @@ end
                     checked_selects += 1
                 elseif t == "bool"
                     rejects(resolved, with("yes"), key, "non-bool")
+                elseif t == "channelRoles"
+                    rejects(resolved, with(Dict{String,Any}("ch" => "__no_such_role__")), key, "unknown role")
+                    rejects(resolved, with(["ch"]), key, "not a map")
                 elseif t == "filePath"
                     rejects(resolved, with(joinpath(@__DIR__, "no-such-file.tif")), key, "missing file")
                 end
