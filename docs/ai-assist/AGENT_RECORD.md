@@ -32,15 +32,19 @@ Five panels, one point or bar per ISO week (Monday–Sunday, UTC): three of line
   the pass reached. *Fan-out*: the notes nobody fixed — mostly
   fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
   findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
-  but can't happen in today's code), *gone* (the code changed under it) or *dismissed*.
+  but can't happen in today's code), *gone* (the code changed under it) or *not a bug* (status
+  `dismissed`).
   *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
-  existing helper's job), *gone* or *dismissed*. Until a pass has swept convention findings, that
-  panel says so. A week the pass fell inside is drawn as outlines: it isn't fully judged yet.
+  existing helper's job), *gone* or *not a bug*. Until a pass has swept convention findings, that
+  panel says so. A week the pass fell inside is drawn as outlines: it isn't fully judged yet. So is a
+  week with under 10 judged notes: two notes make a 50 / 50 that means nothing.
 - **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
   under 10 sessions. A week under 10 sessions gets no point in the rate panels at all (a handful of
   findings makes any percentage); its counts are still drawn. Weeks like that before logging got going
   aren't drawn at all, nor is the week still running when the chart is drawn: both are in
   `effectiveness.json`.
+- **Dots, not lines, under four weeks.** Until the chart has four weeks, the line panels draw each
+  week's points with their values and don't join them: two joined points read as a trend.
 
 ## What it can't tell you
 

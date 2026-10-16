@@ -207,6 +207,14 @@ def _hit_again(b: dict, c: dict) -> None:
     b["last_seen"] = c["last_seen"]
 
 
+def swept(row: dict) -> bool:
+    """Whether the sweep reads this reviewer row at all: every fan-out one, and a convention one only
+    marked `should reuse` (the other markers are `rules.py`'s input only)."""
+    if row.get("event") == _CONVENTION_EVENT:
+        return (row.get("payload") or {}).get("marker") == DUPLICATE_MARKER
+    return row.get("event") in _FANOUT_EVENTS
+
+
 def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
@@ -218,10 +226,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
                 and (r.get("payload") or {}).get("slug")}
     out: dict[str, dict] = {}
     for r in events:
-        if r.get("event") == _CONVENTION_EVENT:
-            if r.get("ts", "") < convention_since or (r.get("payload") or {}).get("marker") != DUPLICATE_MARKER:
-                continue
-        elif r.get("ts", "") < since:
+        if r.get("ts", "") < (convention_since if r.get("event") == _CONVENTION_EVENT else since):
             continue
         if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
             key = r["payload"]["key"]
@@ -230,7 +235,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
             else:
                 out[key] = _agent_run(r)
             continue
-        if r.get("event") not in (*_FANOUT_EVENTS, _CONVENTION_EVENT):
+        if not swept(r):
             continue
         key = _key(r)
         tag = resolved.get(key) or {}

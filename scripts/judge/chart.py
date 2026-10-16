@@ -74,6 +74,11 @@ MAX_WEEKS = 12
 #: A week with fewer sessions than this is drawn hollow, like a partial one, and gets no rate: a
 #: handful of findings makes any percentage.
 LOW_SESSIONS = 10
+#: A judge bar over fewer notes than this is drawn hollow: two notes make a 50 / 50 that means nothing.
+LOW_NOTES = 10
+#: Fewer weeks than this and a series is dots with their values, not a line: two points joined read
+#: as a trend.
+MIN_LINE_WEEKS = 4
 #: The reviewer prompts (the rubric) and the rules they check against: an edit is noted on its week.
 PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md")
 RULE_DOCS = ("CLAUDE.md",)
@@ -219,7 +224,7 @@ assert set(JUDGE_STATUSES) <= set(_record.BUG_STATUSES)
 JUDGE_LINES = (
     ("real bug", ("open", "parked"), "vermillion"),
     ("gone", ("gone",), "sky_blue"),
-    ("dismissed", ("dismissed",), "grey"),
+    ("not a bug", ("dismissed",), "grey"),
 )
 assert {s for _, group, _ in JUDGE_LINES for s in group} == set(JUDGE_STATUSES)
 
@@ -301,7 +306,7 @@ def describe(data: dict) -> str:
     j = data.get("judge")
     if j:
         parts.append(f"Weekly judge, pass of {j['date']}: {j['open']} open bugs, {j['parked']} parked, "
-                     f"{j['gone']} gone, {j['dismissed']} dismissed.")
+                     f"{j['gone']} gone, {j['dismissed']} not a bug.")
         for r, name, _ in REVIEWERS:
             for week, c in j["by_week"].get(r, {}).items():
                 parts.append(f"{name} notes nobody fixed, raised the week of {_week_label(week)}: "
@@ -361,8 +366,9 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
         if stacked:
             add(f'<rect x="{lx + 3:.1f}" y="{y + 14:.1f}" width="10" height="10" fill="{colour}"/>')
         else:
-            add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
-                f'stroke-width="2"/>')
+            if len(weeks) >= MIN_LINE_WEEKS:
+                add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
+                    f'stroke-width="2"/>')
             add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
         add(f'<text x="{lx + 21:.1f}" y="{y + 23:.1f}" font-size="11">{esc(name)}</text>')
         lx += 21 + 6.2 * len(name) + 14
@@ -414,8 +420,9 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
                 add(f'<rect x="{px - bw / 2:.1f}" y="{ytop:.1f}" width="{bw:.1f}" height="{ybot - ytop:.1f}" {fill}/>')
                 base += vals[i]
         return
-    for _, colour, vals, hollow in series:
-        for i in range(n - 1):
+    joined = n >= MIN_LINE_WEEKS
+    for k, (_, colour, vals, hollow) in enumerate(series):
+        for i in range(n - 1 if joined else 0):
             if vals[i] is None or vals[i + 1] is None:
                 continue
             (xa, ya), (xb, yb) = at(i, vals[i]), at(i + 1, vals[i + 1])
@@ -428,6 +435,10 @@ def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel
             px, py = at(i, v)
             fill = 'fill="none" stroke-width="1.5"' if hollow[i] else f'fill="{colour}" stroke-width="0"'
             add(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.5" stroke="{colour}" {fill}/>')
+            if not joined:   # its number beside it: above the week's highest dot, below the rest
+                top_k = max(range(len(series)), key=lambda j: (series[j][2][i] is not None, series[j][2][i] or 0, -j))
+                add(f'<text x="{px + 7:.1f}" y="{py + (-6 if k == top_k else 14):.1f}" font-size="11" '
+                    f'fill="{colour}">{v:.0f}</text>')
 
 
 def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
@@ -493,12 +504,13 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
         # rate here, for one under LOW_SESSIONS
         n = [sum(judged[w["week"]].values()) or None
              if w["week"] in judged and w["sessions"] >= LOW_SESSIONS else None for w in weeks]
+        few = [h or (c or 0) < LOW_NOTES for h, c in zip(late, n)]   # too few notes for a share to mean much
         _panel(add, x=x, y=row[1], w=third, letter="de"[k],
                title=f"Judge: {name.lower()} ({_fmt_day(j['date'])})",
                ylabel="Share of unfixed notes (%)", weeks=weeks, xlabel=True, percent=True, n_per_week=n, stacked=True,
                series=[(_judge_name(r, line), pal[swatch],
                         [100 * sum(judged[w["week"]][s] for s in group) / c if c else None
-                         for w, c in zip(weeks, n)], late)
+                         for w, c in zip(weeks, n)], few)
                        for line, group, swatch in JUDGE_LINES])
     add(_footer(data, left, H))
     add("</svg>")
@@ -511,8 +523,8 @@ def _footer(data: dict, x: int, H: int) -> str:
     gloss = ("Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a "
              "helper or sit in the wrong place · b: lower = fewer flagged, not necessarily better code")
     return (f'<text x="{x}" y="{H - 28}" font-size="11">{esc(gloss)}</text>\n'
-            f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week or under '
-            f'{LOW_SESSIONS} sessions (no rate drawn) · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
+            f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week, under '
+            f'{LOW_SESSIONS} sessions (no rate drawn) or under {LOW_NOTES} notes judged · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
 
 
 # ── 3. publish ─────────────────────────────────────────────────────────────────────────────────
