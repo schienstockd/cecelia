@@ -9,7 +9,10 @@ proposal that cites every finding:
 - **tighten**: agents keep missing the rule. Reword it, or turn it into a mechanical check.
 - **ratchet**: older code keeps the shape alive. A test that bans it.
 
-Sessions, not findings: one session's fanout can raise ten findings about one pattern.
+Sessions, not findings: one session's fanout can raise ten findings about one pattern. A finding
+tagged `fixed_pre_commit` never shipped: the reviewer caught it, which is the mechanical check working,
+so it counts toward no proposal and shows in the table as `caught`. A `false_positive` still counts,
+as in the bug sweep: an agent wrongly calling a real finding false is the one way past the reviewer.
 
 Usage:
     pixi run judge-rules [--date D]        # print the table and proposals (one judge call)
@@ -29,7 +32,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
-from cecelia.effectiveness.log import FINDING_EVENTS as _FINDING_EVENTS  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS as _FINDING_EVENTS, latest_resolutions_by_slug  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import MARKERS  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
@@ -43,6 +46,7 @@ def _load_sibling(name: str):
 
 
 _judge = _load_sibling("judge")
+_bugs = _load_sibling("bugs")
 
 MIN_SESSIONS = 3
 WINDOW_DAYS = 30
@@ -260,18 +264,30 @@ def default_assign(prompt: str) -> tuple[dict, float, dict]:
     return _judge.call_judge(prompt, ASSIGN_SCHEMA, budget_usd=2.0)
 
 
+def resolutions(events: _t.Iterable[dict]) -> dict[str, str]:
+    """slug → its latest outcome. Not scoped to the finding's branch: a session that switches branch
+    before committing logs the fix on another one, and no slug has yet been flagged on two branches."""
+    return {slug: (row.get("payload") or {}).get("outcome") or ""
+            for slug, row in latest_resolutions_by_slug(events).items()}
+
+
 def tally(findings: _t.Sequence[dict], assignments: _t.Iterable[dict], bins: _t.Mapping[str, str],
-          rule_list: _t.Sequence[str]) -> list[dict]:
-    """One row per rule with findings, most sessions first. Unknown rules and "none" are dropped."""
+          rule_list: _t.Sequence[str], outcomes: _t.Mapping[str, str] | None = None) -> list[dict]:
+    """One row per rule with findings, most sessions first. Unknown rules and "none" are dropped.
+    `outcomes` (slug → outcome): a finding fixed before its commit counts only as `caught`."""
     by_slug = {f["payload"]["slug"]: f for f in findings}
     known = set(rule_list)
+    outcomes = outcomes or {}
     rows: dict[str, dict] = {}
     for a in assignments:
         f = by_slug.get(a.get("slug"))
         if f is None or a.get("rule") not in known:
             continue
         r = rows.setdefault(a["rule"], {"rule": a["rule"], "sources": {b: [] for b in BINS},
-                                        "sessions": {b: set() for b in BINS}})
+                                        "sessions": {b: set() for b in BINS}, "caught": 0})
+        if outcomes.get(a["slug"]) in _bugs._HANDLED:   # the bug sweep's "handled", one policy
+            r["caught"] += 1
+            continue
         b = bins.get(a["slug"], "unknown")
         r["sources"][b].append(a["slug"])
         r["sessions"][b].add(f.get("session") or a["slug"])   # no session id: count the finding alone
@@ -280,7 +296,7 @@ def tally(findings: _t.Sequence[dict], assignments: _t.Iterable[dict], bins: _t.
         out.append({"rule": r["rule"], "findings": sum(len(v) for v in r["sources"].values()),
                     "sessions": len(set().union(*r["sessions"].values())),
                     "agent_made": len(r["sources"]["agent_made"]), "legacy": len(r["sources"]["legacy"]),
-                    "_sources": r["sources"], "_sessions": r["sessions"]})
+                    "caught": r["caught"], "_sources": r["sources"], "_sessions": r["sessions"]})
     return sorted(out, key=lambda r: (-r["sessions"], -r["findings"], r["rule"]))
 
 
@@ -309,6 +325,7 @@ def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None 
     lists empty and says why in `failures["rules"]`; a `judge.RateLimited` propagates. `edited`: rule
     → when its section last changed (default `section_edits` by git); older findings don't count.
     `answered`: rule → when the owner last accepted or rejected a proposal for it; the same cut."""
+    events = list(events)
     findings = recent_findings(events, today=_dt.date.fromisoformat(date))
     git = git or _git_in(repo)
     bins = bin_findings(findings, git=git)
@@ -329,7 +346,7 @@ def propose(events: _t.Iterable[dict], *, date: str, assign: _t.Callable | None 
         return [], [], stats, 0.0
     assignments = since_edit(findings, verdict.get("assignments", []),
                              latest((edited or (lambda rl: section_edits(rl, git)))(rule_list), answered or {}))
-    rows = tally(findings, assignments, bins, rule_list)
+    rows = tally(findings, assignments, bins, rule_list, resolutions(events))
     props = proposals_from(rows)
     return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows], props, stats, cost
 

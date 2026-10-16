@@ -76,9 +76,10 @@ def verify_waiting(spend: dict) -> str | None:
 
 _RULES_HOW_TO = (
     "Reviewer findings in the last {days} days, mapped to the CLAUDE.md rule each one breaks. "
-    "*Agent's code* is a mistake in the reviewed diff; *older code* was there before it. A proposal "
-    "needs {n} different sessions: `tighten` (agents keep missing the rule: reword it, or make it a "
-    "mechanical check) or `ratchet` (old code keeps the shape alive: a test that bans it).")
+    "*Agent's code* is a mistake in the reviewed diff; *older code* was there before it. Only findings "
+    "that shipped count: one fixed before its commit is *caught*. A "
+    "proposal needs {n} different sessions: `tighten` (agents keep missing the rule: reword it, or make "
+    "it a mechanical check) or `ratchet` (old code keeps the shape alive: a test that bans it).")
 
 
 class RecordError(ValueError):
@@ -366,9 +367,9 @@ def _render_rules(record: dict) -> list[str]:
         return ["No reviewer findings mapped to a rule."]
     window, need = record["run"].get("rules_window_days", "?"), record["run"].get("min_sessions", "?")
     out = [_RULES_HOW_TO.format(days=window, n=need), "",
-           "| Rule | Findings | Sessions | Agent's code | Older code |", "|---|---|---|---|---|"]
-    out += [f"| {_cell(r['rule'])} | {r['findings']} | {r['sessions']} | {r['agent_made']} | {r['legacy']} |"
-            for r in rules]
+           "| Rule | Findings | Sessions | Agent's code | Older code | Caught |", "|---|---|---|---|---|---|"]
+    out += [f"| {_cell(r['rule'])} | {r['findings']} | {r['sessions']} | {r['agent_made']} | {r['legacy']} "
+            f"| {r.get('caught', '–')} |" for r in rules]
     out.append("")
     for p in record.get("proposals", []):
         out += [f"- **{p['id']} · {p['kind']}** — {p['summary']}",

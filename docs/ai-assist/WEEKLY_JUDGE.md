@@ -151,6 +151,10 @@ test whether an agent can actually use the framework.
    - `tighten`: agents keep missing the rule. Reword it, or turn it into a mechanical check.
    - `ratchet`: older code keeps the shape alive. Add a test that bans it.
 
+   Only findings that shipped count. One tagged `fixed_pre_commit` was caught by the reviewer before
+   its commit — the mechanical check working, not the rule failing — so it shows in the table's
+   *Caught* column and toward no proposal. A `false_positive` still counts, as in the bug sweep.
+
    A finding counts only if it came after the section's last edit and after your last answer to a
    proposal for that rule in `judge-review`. So a rule you tightened, or a proposal you rejected,
    comes back only if sessions keep breaking it.
