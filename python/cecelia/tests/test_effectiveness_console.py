@@ -520,12 +520,34 @@ class DashboardTest(unittest.TestCase):
         plain = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
                                  width=120, use_colour=False).splitlines()[1]
         self.assertEqual(plain, "2 runs (1 errored) · 4 findings · 4 resolved")
-        # advisory findings have no slug and never resolve, so they don't count as findings
+        # advisory notes need no tag, so they don't count as findings
         events.append(dict(row, event="fanout_audit_advisory", payload={
             "file": "a.jl", "line": 9, "desc": "d", "marker": "plausible"}))
         plain = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
                                  width=120, use_colour=False).splitlines()[1]
         self.assertEqual(plain, "2 runs (1 errored) · 4 findings + 1 advisory · 4 resolved")
+
+    def test_a_tagged_plausible_fix_is_counted_apart_from_the_required_resolutions(self):
+        # A plausible note's tag is optional: its fix must not lift "resolved" past the
+        # required findings, or the header stops saying how many are still open.
+        row = {"pr": None, "branch": None, "commit": None, "session": "s", "source": "live",
+               "schema_version": 1, "ts": "2026-09-27T10:00:00Z"}
+        events = [dict(row, event="fanout_audit_run", payload={"duration_s": 1.0}),
+                  dict(row, event="fanout_audit_finding", payload={
+                      "slug": "fanout-00000001", "file": "a.jl", "line": 1, "desc": "d", "marker": "confirmed"}),
+                  dict(row, event="fanout_audit_advisory", payload={
+                      "slug": "fanout-0000000a", "file": "b.jl", "line": 2, "desc": "d", "marker": "plausible"}),
+                  dict(row, event="fanout_audit_advisory", payload={
+                      "slug": "fanout-0000000b", "file": "c.jl", "line": 3, "desc": "d", "marker": "plausible"}),
+                  dict(row, event="fanout_audit_finding_resolved",
+                       payload={"slug": "fanout-0000000a", "outcome": "fixed_pre_commit"})]
+        out = render_dashboard(self._state_with(events), pathlib.Path("/tmp/x"),
+                               width=120, use_colour=False).splitlines()
+        self.assertEqual(out[1], "1 run · 1 finding + 2 advisory (1 tagged fixed)")
+        fanout_row = next(ln for ln in out if "confirmed" in ln)
+        self.assertIn("1 confirmed", fanout_row)
+        self.assertIn("2 plausible → 1 tagged fixed", fanout_row)
+        self.assertNotIn("→ 1 fixed", fanout_row.split("2 plausible")[0])
 
     def test_mechanism_row_is_compact(self):
         # Markers carry the finding count, `→` short outcome words; no `N findings` total and

@@ -40,7 +40,7 @@ from .claude_sessions import live_sessions
 from .git_context import recent_prs
 from .judge_staleness import judge_record_warning, judge_store
 from .log import OUTCOME_DISPLAY_ORDER, default_log_path, is_errored_run, read_events
-from .recital import ADVISORY_MARKERS
+from .recital import ADVISORY_MARKERS, TAGGABLE_ADVISORY
 
 # ── Palette ────────────────────────────────────────────────────────────────────────────────
 # Swatches loaded from `share/console_palette.json` via `palette.py`, so this console and
@@ -397,7 +397,9 @@ class _Tally:
         Kept separately so a failed reviewer isn't rendered as a clean pass; parallels the
         split in `rollup.py::_mechanism_section`.
       - `findings`: total finding events, broken down by marker (`confirmed`/`should reuse`).
-      - `resolved`: total `_finding_resolved` events, broken down by outcome.
+      - `resolved`: total `_finding_resolved` events, broken down by outcome — required findings only.
+      - `advisory_resolved`: the resolutions of advisory notes (a `plausible` one MAY be tagged fixed),
+        kept apart so `resolved` never counts more than the required findings it resolves.
 
     So a reader glancing at the tally sees: how much work the reviewers did, how much of it
     flagged something, and what the author did about it — the three questions the `_run`
@@ -409,6 +411,8 @@ class _Tally:
         self.errored_runs: dict[str, int] = {}
         self.findings: dict[str, dict[str, int]] = {}
         self.resolved: dict[str, dict[str, int]] = {}
+        self.advisory_resolved: dict[str, dict[str, int]] = {}
+        self._advisory_slugs: set[str] = set()
 
     def _key(self, event_name: str) -> str:
         label, _ = _mechanism_of(event_name)
@@ -424,8 +428,12 @@ class _Tally:
                 self.errored_runs[key] = self.errored_runs.get(key, 0) + 1
         elif name.endswith("_finding_resolved"):
             outcome = payload.get("outcome", "unresolved")
-            self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
+            bucket = (self.advisory_resolved if payload.get("slug") in self._advisory_slugs
+                      else self.resolved).setdefault(key, {})
+            bucket[outcome] = bucket.get(outcome, 0) + 1
         elif _is_finding(name):
+            if name.endswith("_advisory") and payload.get("slug"):
+                self._advisory_slugs.add(payload["slug"])
             marker = _marker_of(payload)
             self.findings.setdefault(key, {})[marker] = self.findings.get(key, {}).get(marker, 0) + 1
         elif name == "ratchet_hit":
@@ -436,6 +444,11 @@ class _Tally:
 
     def is_empty(self) -> bool:
         return not (self.runs or self.findings or self.resolved)
+
+
+#: Advisory markers (no tag required), and those whose note the author may tag fixed.
+_ADVISORY = {m for ms in ADVISORY_MARKERS.values() for m in ms}
+_TAGGABLE = {m for ms in TAGGABLE_ADVISORY.values() for m in ms}
 
 
 def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
@@ -453,18 +466,28 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
     # `5 confirmed → 2 fixed · 2 false pos · 1 dropped`: markers name the findings (no
     # separate `N findings` total — it's the sum of the markers), `→` leads to what was done.
     fnd = tally.findings.get(mech, {})
+    required = {m: n for m, n in fnd.items() if m not in _ADVISORY}
+    advisory = {m: n for m, n in fnd.items() if m in _ADVISORY}
     if fnd:
         markers = ", ".join(
             _col(_MARKER_COLOUR.get(marker, _YELLOW), f"{n} {marker}", use_colour=use_colour)
-            for marker, n in sorted(fnd.items(), key=lambda x: -x[1]))
+            for marker, n in sorted(required.items(), key=lambda x: -x[1]))
         res = tally.resolved.get(mech, {})
         outcomes = " · ".join(
             _col(_OUTCOME_COLOUR.get(o, _GREY), f"{res[o]} {_OUTCOME_SHORT.get(o, o)}",
                  use_colour=use_colour)
             for o in (*OUTCOME_DISPLAY_ORDER, *sorted(set(res) - set(OUTCOME_DISPLAY_ORDER)))
             if res.get(o))
-        parts.append(markers + (_col(_DIM, " → ", use_colour=use_colour) + outcomes
-                                if outcomes else ""))
+        if required:
+            parts.append(markers + (_col(_DIM, " → ", use_colour=use_colour) + outcomes
+                                    if outcomes else ""))
+        # Advisory notes apart: their tag is optional, so a fix of one isn't a required outcome.
+        fixed = tally.advisory_resolved.get(mech, {}).get("fixed_pre_commit", 0)
+        for marker, n in sorted(advisory.items(), key=lambda x: -x[1]):
+            parts.append(_col(_MARKER_COLOUR.get(marker, _YELLOW), f"{n} {marker}", use_colour=use_colour)
+                         + (_col(_DIM, " → ", use_colour=use_colour)
+                            + _col(_OUTCOME_COLOUR.get("fixed_pre_commit", _GREY), f"{fixed} tagged fixed",
+                                   use_colour=use_colour) if fixed and marker in _TAGGABLE else ""))
     elif tally.resolved.get(mech):
         # Resolutions whose findings fell outside the seeded window — still worth a count.
         res = tally.resolved[mech]
@@ -811,25 +834,26 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     total_errored = sum(state.tally.errored_runs.values())
     # Advisory findings need no tag (a `plausible` one MAY be tagged fixed) — counted apart, or
     # the header reads as a backlog of untagged findings.
-    advisory_markers = {m for ms in ADVISORY_MARKERS.values() for m in ms}
     advisory = sum(n for v in state.tally.findings.values()
-                   for m, n in v.items() if m in advisory_markers)
+                   for m, n in v.items() if m in _ADVISORY)
     total_findings = sum(sum(v.values()) for v in state.tally.findings.values()) - advisory
     confirmed = sum(v.get("confirmed", 0) for v in state.tally.findings.values())
     total_resolved = sum(sum(v.values()) for v in state.tally.resolved.values())
+    advisory_fixed = sum(v.get("fixed_pre_commit", 0) for v in state.tally.advisory_resolved.values())
     # Totals only, three segments max — the per-marker / per-outcome breakdown lives in the
     # by-mechanism rows, and spelling it out here ran the line off-screen as outcomes piled
     # up. Run count is plain (the rows below colour it by mechanism); only `errored` is red.
     header_parts: list[str] = []
     if total_runs:
-        run_txt = f"{total_runs} runs"
+        run_txt = f"{total_runs} run{'' if total_runs == 1 else 's'}"
         if total_errored:
             run_txt += _col(_RED, f" ({total_errored} errored)", use_colour=use_colour)
         header_parts.append(run_txt)
     if total_findings or advisory:
         txt = f"{total_findings} finding{'' if total_findings == 1 else 's'}"
         header_parts.append(_col(_ORANGE if confirmed else _YELLOW,
-                                 txt + (f" + {advisory} advisory" if advisory else ""),
+                                 txt + (f" + {advisory} advisory" if advisory else "")
+                                 + (f" ({advisory_fixed} tagged fixed)" if advisory_fixed else ""),
                                  use_colour=use_colour))
     if total_resolved:
         header_parts.append(_col(_GOOD, f"{total_resolved} resolved", use_colour=use_colour))
