@@ -47,7 +47,8 @@ EVENT_TYPES = frozenset({
     "fanout_audit_finding",
     "fanout_audit_finding_resolved",
     #: Advisory findings (`plausible` / `potential duplicate`) — logged so the console shows
-    #: them, but no slug and no resolution row: the commit hook only gates outcome markers.
+    #: them; the commit hook never asks for a tag. A `plausible` one carries a slug the author
+    #: MAY tag fixed, which writes a `_finding_resolved` row the bug sweep skips on.
     "fanout_audit_advisory",
     "convention_check_run",
     "convention_check_finding",
@@ -290,7 +291,7 @@ def resolved_findings(rows: _t.Iterable[dict], branch: str,
     without it every round on the branch counts — the agents pane's view. Resolutions count
     from any SHA on the same branch, never another branch: slugs carry no branch, so two
     worktrees flagging the same `file:line` share a slug, and one's resolution mustn't hide
-    the other's. Advisory findings carry no slug and never resolve, so they are left out.
+    the other's. Advisory rows need no tag, so they are left out.
     """
     on_branch = [r for r in rows if r.get("branch") == branch]
     findings: dict[str, dict] = {}

@@ -83,7 +83,9 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
 from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
-from cecelia.effectiveness.recital import MARKERS, STAMP_RE, outside_code  # noqa: E402
+from cecelia.effectiveness.recital import (  # noqa: E402
+    MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code,
+)
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -112,8 +114,14 @@ _alternation_standalone = "|".join(sorted(map(re.escape, _STANDALONE_OUTCOMES)))
 #: to the resolution row: the bug sweep shows a `false_positive`'s reason to its judge, which checks
 #: it against the code. Every outcome but `fixed_pre_commit` needs one (`check`).
 _alternation_all = "|".join(sorted(map(re.escape, OUTCOME_VOCABULARY)))
+#: A recital bullet for an optional-tag advisory note (`- [fanout-…] … [**plausible**]`). Its slug's
+#: tag is optional, so it must not count toward the outcomes the required findings need.
+_TAGGABLE_ADVISORY_BULLET = re.compile(
+    rf"^\s*-\s*\[({SLUG_PATTERN})\][^\n]*\[\*\*(?:"
+    + "|".join(re.escape(m) for ms in TAGGABLE_ADVISORY.values() for m in ms) + r")\*\*\]", re.M)
+
 _SLUG_PAIR = re.compile(
-    rf"\[((?:fanout|conv)-[0-9a-f]{{8}}):\s*({_alternation_all})(?:\s*:\s*([^\]\n]*?))?\s*\]"
+    rf"\[({SLUG_PATTERN}):\s*({_alternation_all})(?:\s*:\s*([^\]\n]*?))?\s*\]"
 )
 
 #: Legacy bare outcome tags — accepted for counting so pre-P3 messages (or bespoke commits
@@ -280,7 +288,8 @@ def check(command: str) -> str | None:
             "(no `]` in the reason)."
         )
 
-    total_outcomes = len(bare_outcomes) + len(set(slugs))
+    optional = set(_TAGGABLE_ADVISORY_BULLET.findall(command))
+    total_outcomes = len(bare_outcomes) + len(set(slugs) - optional)
 
     if len(findings) > total_outcomes:
         return (

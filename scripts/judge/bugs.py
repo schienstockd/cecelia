@@ -3,7 +3,7 @@
 
 A fanout finding nobody fixed is a possible bug in shipped code: `**confirmed**` ones tagged
 `shipped_with_finding` / `dropped_no_action` / `false_positive` or never tagged, and every
-`**plausible**` (advisory, never tagged). A `false_positive` is the committing agent's claim, not a
+`**plausible**` (advisory: the tag is optional) not tagged `fixed_pre_commit`. A `false_positive` is the committing agent's claim, not a
 verdict: the judge sees it and its reason next to the code. Each pass collects those logged since the previous record, plus the previous
 record's open bugs, and asks one tool-less judge call whether each is still live at the pinned
 SHA. Python inlines the code around each `file:line` at that SHA, so the judge reads data, not

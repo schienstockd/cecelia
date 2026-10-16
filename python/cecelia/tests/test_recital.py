@@ -32,7 +32,7 @@ import unittest
 from unittest import mock
 
 from cecelia.effectiveness import EVENT_TYPES, read_events
-from cecelia.effectiveness.recital import STAMP_RE, RecitalError, recital_stamp, run_recital
+from cecelia.effectiveness.recital import STAMP_RE, RecitalError, _slug, recital_stamp, run_recital
 
 
 class RecitalTest(unittest.TestCase):
@@ -283,8 +283,8 @@ class FindingsEmissionTest(unittest.TestCase):
 
     def test_plausible_and_potential_duplicate_emit_advisory_rows_only(self):
         # Advisory markers get no `_finding` row (the pending↔resolution contract stays 1:1 with
-        # the hook's tag-count check) but do get a slug-less `_advisory` row, so the console
-        # shows them.
+        # the hook's tag-count check) but do get an `_advisory` row, so the console shows them.
+        # A plausible note's carries the slug the author MAY tag fixed and the bug sweep keys it by.
         def fake(prompt: str) -> str:
             if "SIBLING_CALL" in prompt or "FANOUT" in prompt:
                 return "- **foo.jl:1** — maybe [**plausible**]"
@@ -298,12 +298,15 @@ class FindingsEmissionTest(unittest.TestCase):
                       if e["event"].endswith("_advisory")]
         self.assertEqual(advisories, [
             ("fanout_audit_advisory",
-             {"file": "foo.jl", "line": 1, "desc": "maybe", "marker": "plausible"}),
+             {"file": "foo.jl", "line": 1, "desc": "maybe", "marker": "plausible",
+              "slug": _slug("fanout", "foo.jl", 1, "plausible", "maybe")}),
             ("convention_check_advisory",
              {"file": "bar.vue", "line": 2, "desc": "hmm", "marker": "potential duplicate"}),
         ])
-        # No slug in the body either — nothing for the author to tag.
-        self.assertNotIn("- [fanout-", body)
+        # The plausible note shows its slug and the optional-tag note; a potential duplicate, which
+        # no judge step re-checks, shows neither.
+        self.assertIn(f"- [{_slug('fanout', 'foo.jl', 1, 'plausible', 'maybe')}] ", body)
+        self.assertIn("Plausible notes need no tag", body)
         self.assertNotIn("- [conv-", body)
         reviewer_run_events = [
             e for e in self._events()

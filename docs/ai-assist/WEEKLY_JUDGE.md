@@ -35,8 +35,8 @@ test whether an agent can actually use the framework.
    guide*, and flags a guide whose `agent` notes span 2+ runs as a possible guide gap. Whether two
    notes describe the same gap is the owner's read: no judge step compares notes.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
-   never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, every
-   `plausible`), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
+   never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, and every
+   `plausible` note not tagged `fixed_pre_commit`), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
    come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
    - a finding whose branch hasn't reached the SHA is `unmerged` and waits;

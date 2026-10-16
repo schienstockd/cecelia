@@ -49,7 +49,7 @@ Adding a new event later is fine. Renaming one is painful.
 |---|---|---|
 | `fanout_audit_run` | Every time the fanout reviewer subagent is spawned | `hunks_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_modified_code" \| "no_fix_hunk"` |
 | `fanout_audit_finding` | Per finding the reviewer returns | `verdict: "confirmed" \| "plausible" \| "latent"`, `file: str`, `line: int`, `symbol: str`, `outcome: <see below>` |
-| `fanout_audit_advisory` | Per `plausible` bullet — shown on the console, no slug, never resolved (the hook gates only outcome markers) | `file: str`, `line: int`, `desc: str`, `marker: "plausible"` |
+| `fanout_audit_advisory` | Per `plausible` bullet — shown on the console. The hook never asks for a tag; the author MAY tag one `fixed_pre_commit` by its slug, which writes a `fanout_audit_finding_resolved` row and the bug sweep skips it | `file: str`, `line: int`, `desc: str`, `marker: "plausible"`, `slug: str` |
 | `convention_check_run` | Every time the convention-check reviewer subagent is spawned | `additions_reviewed: int`, `duration_s: float`, `escape_valve: null \| "docs_only" \| "no_additions" \| "tests_only" \| "no_additions_worth_checking"`, `cited_doc_refs: list[str]` |
 | `convention_check_finding` | Per finding the convention-check reviewer returns | `verdict: "should_reuse" \| "potential_duplicate" \| "wrong_home"`, `file: str`, `line: int`, `added_symbol: str`, `canonical_symbol: str \| null`, `cited_doc_refs: list[str]`, `outcome: <see below>` |
 | `convention_check_advisory` | Per `potential duplicate` bullet — same as `fanout_audit_advisory` | `file: str`, `line: int`, `desc: str`, `marker: "potential duplicate"` |

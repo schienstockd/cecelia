@@ -97,6 +97,20 @@ class _Repo(unittest.TestCase):
 
 
 class CandidatesTest(_Repo):
+    def test_a_plausible_note_tagged_fixed_is_skipped_and_any_other_tag_is_judged(self):
+        # recital logs the note's slug and the hook writes its resolution under it: the same key
+        fixed = _advisory(file="f.py", line=7, desc="fixed one")
+        fixed["payload"]["slug"] = self.b._key(fixed)
+        claimed = _advisory(file="g.py", line=8, desc="claimed false")
+        claimed["payload"]["slug"] = self.b._key(claimed)
+        events = [fixed, _resolved(fixed["payload"]["slug"], "fixed_pre_commit"),
+                  claimed, _resolved(claimed["payload"]["slug"], "false_positive", "not reachable"),
+                  _advisory(file="h.py", line=9, desc="untagged")]
+        keys = {c["key"] for c in self.b.candidates(events, since="2026-09-28")}
+        self.assertNotIn(fixed["payload"]["slug"], keys)
+        self.assertIn(claimed["payload"]["slug"], keys)
+        self.assertEqual(len(keys), 2)
+
     def test_only_unhandled_fanout_findings_since_the_window(self):
         events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "fixed_pre_commit"),
                   _finding("fanout-00000002"), _resolved("fanout-00000002", "false_positive"),
