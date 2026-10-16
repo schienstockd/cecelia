@@ -209,7 +209,7 @@ current LANDSCAPE OVERLAY — a cheap categorical map over the viewer's grid til
 pixels from a capture — it's a rough semantic prior at tile resolution, not a segmentation. Use \
 it to say "row 2 is dominated by bright-textured tiles" or to pick a tile for `mark_tile`. If \
 the landscape hasn't been computed (`{landscape: null}`), the overlay is off in the viewer — \
-say so and ask the user to toggle it if you need the map; don't invent tiles.
+every viewer capture still carries one, so read the latest capture's; don't invent tiles.
 
 Nothing gets saved by pointing; if the finding is worth keeping, propose a board or a notebook.
 

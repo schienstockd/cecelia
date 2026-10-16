@@ -1970,9 +1970,9 @@ def get_landscape(project_uid: str, image_uid: str, value_name: str,
     current shown frame's pixels in the browser. Coarse on purpose. When a segmentation exists,
     reach for `mark_cells` / `mark_tracks` instead; this tool is the "no segmentation yet" case.
 
-    The landscape only exists if the user has toggled the "Landscape" overlay on in the viewer
-    panel. Returns `{landscape: null}` if not — say so and ask the user to toggle it if you need
-    the map; do not invent tiles.
+    This LIVE landscape only exists while the user has the "Landscape" overlay on in the viewer
+    panel. Returns `{landscape: null}` if not — every capture carries one regardless, so read the
+    latest capture's (`get_capture`) or ask the user to share one; do not invent tiles.
     """
     return _client.get_landscape(project_uid, image_uid, value_name, t, z)
 
@@ -2003,7 +2003,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
     JSON envelope with the address, overlay marks, any view-state snapshot, an optional
-    `landscape` field (tile-level semantic map when the overlay was on at share time), and a
+    `landscape` field (tile-level semantic map, snapshotted at share time), and a
     `notes` field (free-text context the user typed alongside the frame).
 
     READ ALL FOUR. `notes` is the user's own words about the capture — "look at the T-cell
@@ -2013,8 +2013,13 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
     The image tells you what they're looking at, the overlay tells you WHERE they're pointing,
     the address tells you which image / t / z it is, and the landscape gives you a rough semantic
-    prior over the tiles before you squint at raw RGB. `landscape` is absent (or null) when the
-    overlay was off.
+    prior over the tiles before you squint at raw RGB. Every viewer capture carries one, whether
+    or not the user had the overlay on; it is absent (or null) on plot captures and older ones.
+
+    TILE IDS ARE POSITIONS IN THE CAPTURED PNG. `landscape.grid = {cols, rows}` cuts the frame
+    into equal tiles; the letter is the column (A = left edge), the number the row (1 = top edge),
+    so "A1" is the top-left tile and "C4" the 3rd column, 4th row. Viewport coords, not image
+    coords: after a zoom, a tile is that share of what was on screen.
 
     Landscape schema is versioned:
       - `schemaVersion: 1` — category-only. `tiles[i] = {id, row, col, category, stats}`.
