@@ -1957,25 +1957,23 @@ def mark_tile(project_uid: str, image_uid: str, cell_id: str,
 
 
 @_tool
-def get_landscape(project_uid: str, image_uid: str, value_name: str,
-                  t: int = -1, z: int = -1) -> dict:
-    """The user's current LANDSCAPE HEATMAP — a cheap categorical map over the viewer's grid tiles.
+def get_landscape(project_uid: str, image_uid: str) -> dict:
+    """The LANDSCAPE of what the user's viewer shows RIGHT NOW — tile-level map + measured data.
 
-    Returned as `{grid: {cols, rows}, tiles: [{id, row, col, category, stats}], legend: [...]}`.
-    `category` is one of `dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`.
-    Use this BEFORE reading raw pixels from a capture so you have a rough semantic prior — "row 2
-    is dominated by `bright-textured` tiles" beats "I looked at the RGB and guessed". Then
-    `mark_tile(cell_id="B3")` when you want to point back at a region the map surfaces.
+    Asks the open viewer of `image_uid` to compute it for this call; the user's Landscape overlay
+    toggle plays no part. Same shape and same tile geometry as a capture's `landscape` (see
+    `get_capture`: tile ids, `viewport.view`, `channels` / `segCount` / `pops` / `tracks`), plus the
+    `t` / `z` / `valueName` the viewer was on. To look at another frame, `seek_viewer` first.
 
-    This is NOT a segmentation — it's tile-level (typically 8×8 = 64 tiles), computed on the
-    current shown frame's pixels in the browser. Coarse on purpose. When a segmentation exists,
-    reach for `mark_cells` / `mark_tracks` instead; this tool is the "no segmentation yet" case.
+    Use it BEFORE reasoning from raw pixels — "C4: 12 cells, high on the T-cell channel" beats "I
+    looked at the RGB and guessed". Then `mark_tile(cell_id="C4")` to point back at a region.
+    `category` (`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`) is a cheap read of
+    the rendered pixels, not a segmentation.
 
-    The landscape only exists if the user has toggled the "Landscape" overlay on in the viewer
-    panel. Returns `{landscape: null}` if not — say so and ask the user to toggle it if you need
-    the map; do not invent tiles.
+    `{landscape: null, reason: "no_viewer"}` ⇒ no viewer of that image is open: say so, ask the user
+    to open it (or share a capture); do not invent tiles.
     """
-    return _client.get_landscape(project_uid, image_uid, value_name, t, z)
+    return slim_landscape_for_mcp(_client.get_landscape(project_uid, image_uid))
 
 
 @_tool
@@ -2004,7 +2002,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
     JSON envelope with the address, overlay marks, any view-state snapshot, an optional
-    `landscape` field (tile-level semantic map when the overlay was on at share time), and a
+    `landscape` field (tile-level semantic map, snapshotted at share time), and a
     `notes` field (free-text context the user typed alongside the frame).
 
     READ ALL FOUR. `notes` is the user's own words about the capture — "look at the T-cell
@@ -2014,8 +2012,24 @@ def get_capture(project_uid: str, capture_id: str) -> list:
 
     The image tells you what they're looking at, the overlay tells you WHERE they're pointing,
     the address tells you which image / t / z it is, and the landscape gives you a rough semantic
-    prior over the tiles before you squint at raw RGB. `landscape` is absent (or null) when the
-    overlay was off.
+    prior over the tiles before you squint at raw RGB. Every viewer capture carries one, whether
+    or not the user had the overlay on; it is absent (or null) on plot captures and older ones.
+
+    TILE IDS ARE POSITIONS IN THE CAPTURED PNG. `landscape.grid = {cols, rows}` cuts the frame
+    into equal tiles; the letter is the column (A = left edge), the number the row (1 = top edge),
+    so "A1" is the top-left tile and "C4" the 3rd column, 4th row. Viewport coords, not image
+    coords: after a zoom, a tile is that share of what was on screen.
+
+    The measured fields (`channels`, `segCount`, `pops`, `tracks`) cover the SAME tiles: they are
+    computed over `landscape.viewport.view = {x0, y0, x1, y1}`, the level-0 image rectangle on screen
+    — so a tile spans `(x1-x0)/cols × (y1-y0)/rows` image px. In physical units, one tile is
+    `address.extentUm.x / cols` by `address.extentUm.y / rows` (the visible extent; absent when the
+    image is uncalibrated). Parts of the view off the image have no `channels`. A rotated or
+    perspective 3D view has no flat rectangle, so its landscape is category-only (schemaVersion 1)
+    — say so rather than counting from the pixels.
+
+    TIME. `address.t` is the frame index; `address.timeS = {elapsed, interval}` (seconds) gives real
+    time when the image has a frame interval — quote that, not the index, for "how long".
 
     Landscape schema is versioned:
       - `schemaVersion: 1` — category-only. `tiles[i] = {id, row, col, category, stats}`.

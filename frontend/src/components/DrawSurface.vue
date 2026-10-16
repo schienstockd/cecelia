@@ -872,71 +872,90 @@ const firstVertexMarker = computed(() => {
     </svg>
 
     <!-- Floating toolbar (after the SVG so it paints on top of any marks; opaque background so a
-         white mark drawn behind it can't leak through). -->
-    <div class="ds-toolbar cc-row cc-row-tight">
-      <ChipSelect variant="segmented" allow-empty :options="TOOL_OPTIONS" :model-value="tool"
-                  @update:modelValue="(v: string | string[]) =>
-                    tool = (Array.isArray(v) ? v[0] : v) as Tool" />
-      <ChipSelect variant="segmented" :options="COLOR_OPTIONS" :model-value="color"
-                  aria-label="Mark colour"
-                  @update:modelValue="(v: string | string[]) =>
-                    setColor((Array.isArray(v) ? v[0] : v) as OverlayColor)" />
-      <ChipSelect variant="segmented" :options="SIZE_OPTIONS" :model-value="size"
-                  aria-label="Stroke thickness"
-                  @update:modelValue="(v: string | string[]) =>
-                    setSize((Array.isArray(v) ? v[0] : v) as OverlayStrokeWidth)" />
-      <input v-if="notesHasNewlines" class="cc-input ds-notes-input ds-notes-preview" type="text"
-             readonly :value="notesPreview"
-             @click="notesExpanded = true"
-             v-tooltip.bottom="'Multi-line note — click to open the editor'" />
-      <input v-else class="cc-input ds-notes-input" type="text" v-model="notes" maxlength="800"
-             placeholder="Notes for Claude (optional)"
-             v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'" />
-      <button ref="notesExpandBtn" class="cc-btn cc-btn-ghost cc-btn-icon"
-              :class="{ 'cc-btn-on cc-btn-on-tint': notesExpanded }"
-              @click="notesExpanded = !notesExpanded"
-              v-tooltip.bottom="'Expand notes for longer text'">
-        <i class="pi pi-window-maximize" />
-      </button>
-      <TeleportPopover v-model="notesExpanded" :anchor="notesExpandBtn" placement="bottom-end">
-        <div class="ds-notes-popover">
-          <textarea ref="notesTextarea" class="cc-input ds-notes-textarea" v-model="notes"
-                    rows="8" maxlength="800"
-                    placeholder="Notes for Claude (optional)"
-                    v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
-          <div class="ds-notes-footer cc-fs-2xs">{{ notes.length }} / 800</div>
+         white mark drawn behind it can't leak through). Two fixed rows by role — DRAW (tools,
+         colour, size, undo) over SEND (notes, destinations, Cancel/Save) — so Save stays pinned
+         bottom-right at any width instead of flowing with the wrap. The edit hint stacks under it. -->
+    <div class="ds-top">
+    <div class="ds-toolbar">
+      <div class="cc-row cc-row-tight ds-row">
+        <ChipSelect variant="segmented" allow-empty :options="TOOL_OPTIONS" :model-value="tool"
+                    @update:modelValue="(v: string | string[]) =>
+                      tool = (Array.isArray(v) ? v[0] : v) as Tool" />
+        <ChipSelect variant="segmented" :options="COLOR_OPTIONS" :model-value="color"
+                    aria-label="Mark colour"
+                    @update:modelValue="(v: string | string[]) =>
+                      setColor((Array.isArray(v) ? v[0] : v) as OverlayColor)" />
+        <ChipSelect variant="segmented" :options="SIZE_OPTIONS" :model-value="size"
+                    aria-label="Stroke thickness"
+                    @update:modelValue="(v: string | string[]) =>
+                      setSize((Array.isArray(v) ? v[0] : v) as OverlayStrokeWidth)" />
+        <div class="cc-row-group">
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="!marks.length" @click="undo"
+                  v-tooltip.bottom="'Remove the last mark'" aria-label="Undo">
+            <i class="pi pi-undo" />
+          </button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="!marks.length" @click="clearAll"
+                  v-tooltip.bottom="'Remove all marks'" aria-label="Clear all marks">
+            <i class="pi pi-trash" />
+          </button>
         </div>
-      </TeleportPopover>
-      <button v-if="draftKind === 'poly' && (polyDraft?.vertices.length ?? 0) >= 3"
-              class="cc-btn cc-btn-ghost cc-btn-sm" @click="commitPoly"
-              v-tooltip.bottom="'Close the polygon (or press Enter, or click near the first vertex)'">Finish</button>
-      <button class="cc-btn cc-btn-ghost cc-btn-sm" :disabled="!marks.length" @click="undo"
-              v-tooltip.bottom="'Remove the last mark'">Undo</button>
-      <button class="cc-btn cc-btn-ghost cc-btn-sm" :disabled="!marks.length" @click="clearAll"
-              v-tooltip.bottom="'Remove all marks'">Clear</button>
-      <span class="cc-spacer" />
-      <!-- Capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1). Two independent
-           booleans — attach and send are not mutually exclusive. Rendered only when the parent
-           has wired the v-model, so the plot-overlay path stays visually unchanged until it is
-           migrated in the same PR. Order: Attach first (reads left-to-right as "into Kiwi, or
-           over to the paired session"). -->
-      <CcToggle v-if="attachToKiwi !== null &amp;&amp; attachToKiwi !== undefined" class="ds-dest cc-fs-xs"
-                :model-value="!!attachToKiwi" label="Attach to Kiwi"
-                @update:modelValue="(v: boolean) => emit('update:attachToKiwi', v)"
-                v-tooltip.bottom="'On save, drop this capture into the Kiwi prompt as a ref chip'" />
-      <CcToggle v-if="sendToPaired !== null &amp;&amp; sendToPaired !== undefined" class="ds-dest cc-fs-xs"
-                :model-value="!!sendToPaired" label="Send to paired session"
-                @update:modelValue="(v: boolean) => emit('update:sendToPaired', v)"
-                v-tooltip.bottom="'On save, notify the paired Claude Code session over its inbox socket'" />
-      <span v-if="addressLine" class="ds-address cc-fs-2xs">{{ addressLine }}</span>
-      <button class="cc-btn cc-btn-ghost" @click="cancel" v-tooltip.bottom="'Close without saving (Esc)'">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="busy" @click="save"
-              v-tooltip.bottom="marks.length
-                ? 'Save the frame + overlay for Claude'
-                : 'Share the whole frame — no region specified'">
-        <i v-if="busy" class="pi pi-spin pi-spinner" />
-        <span v-else>{{ marks.length ? 'Save' : 'Save frame' }}</span>
-      </button>
+        <button v-if="draftKind === 'poly' && (polyDraft?.vertices.length ?? 0) >= 3"
+                class="cc-btn cc-btn-ghost cc-btn-sm" @click="commitPoly"
+                v-tooltip.bottom="'Close the polygon (or press Enter, or click near the first vertex)'">Finish</button>
+        <span class="cc-spacer" />
+        <span v-if="addressLine" class="ds-address cc-fs-2xs">{{ addressLine }}</span>
+      </div>
+      <div class="cc-row cc-row-tight ds-row ds-send">
+        <div class="cc-row-group ds-notes">
+          <input v-if="notesHasNewlines" class="cc-input ds-notes-input ds-notes-preview" type="text"
+                 readonly :value="notesPreview"
+                 @click="notesExpanded = true"
+                 v-tooltip.bottom="'Multi-line note — click to open the editor'" />
+          <input v-else class="cc-input ds-notes-input" type="text" v-model="notes" maxlength="800"
+                 placeholder="Notes for Claude (optional)"
+                 v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'" />
+          <button ref="notesExpandBtn" class="cc-btn cc-btn-ghost cc-btn-icon"
+                  :class="{ 'cc-btn-on cc-btn-on-tint': notesExpanded }"
+                  @click="notesExpanded = !notesExpanded"
+                  v-tooltip.bottom="'Expand notes for longer text'" aria-label="Expand notes">
+            <i class="pi pi-window-maximize" />
+          </button>
+        </div>
+        <TeleportPopover v-model="notesExpanded" :anchor="notesExpandBtn" placement="bottom-end">
+          <div class="ds-notes-popover">
+            <textarea ref="notesTextarea" class="cc-input ds-notes-textarea" v-model="notes"
+                      rows="8" maxlength="800"
+                      placeholder="Notes for Claude (optional)"
+                      v-tooltip.bottom="'Free-text context sent with the frame — what you are pointing at + why'"></textarea>
+            <div class="ds-notes-footer cc-fs-2xs">{{ notes.length }} / 800</div>
+          </div>
+        </TeleportPopover>
+        <div class="cc-row cc-row-loose ds-actions">
+          <!-- Capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1). Two independent
+               booleans — attach and send are not mutually exclusive. Rendered only when the
+               parent has wired the v-model. -->
+          <div class="cc-row cc-row-loose ds-dests">
+            <CcToggle v-if="attachToKiwi !== null &amp;&amp; attachToKiwi !== undefined" class="ds-dest cc-fs-xs"
+                      :model-value="!!attachToKiwi" label="Attach to Kiwi"
+                      @update:modelValue="(v: boolean) => emit('update:attachToKiwi', v)"
+                      v-tooltip.bottom="'On save, drop this capture into the Kiwi prompt as a ref chip'" />
+            <CcToggle v-if="sendToPaired !== null &amp;&amp; sendToPaired !== undefined" class="ds-dest cc-fs-xs"
+                      :model-value="!!sendToPaired" label="Send to paired session"
+                      @update:modelValue="(v: boolean) => emit('update:sendToPaired', v)"
+                      v-tooltip.bottom="'On save, notify the paired Claude Code session over its inbox socket'" />
+          </div>
+          <div class="cc-row-group">
+            <button class="cc-btn cc-btn-ghost" @click="cancel" v-tooltip.bottom="'Close without saving (Esc)'">Cancel</button>
+            <button class="cc-btn cc-btn-primary ds-save" :disabled="busy" @click="save"
+                    v-tooltip.bottom="marks.length
+                      ? 'Save the frame + overlay for Claude'
+                      : 'Share the whole frame — no region specified'">
+              <i v-if="busy" class="pi pi-spin pi-spinner" />
+              <span v-else>{{ marks.length ? 'Save' : 'Save frame' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
     <span v-if="editModeActive && !draftKind" class="ds-mode cc-fs-2xs">
       <i class="pi pi-arrows-alt" />
@@ -948,6 +967,7 @@ const firstVertexMarker = computed(() => {
         Edit — click a mark to select, drag to move, drag a corner or vertex to reshape
       </template>
     </span>
+    </div>
   </div>
 </template>
 
@@ -956,8 +976,14 @@ const firstVertexMarker = computed(() => {
    toolbar itself receives pointer events; the SVG receives them too (for drawing). The rest of
    the root is transparent to hover states. */
 .ds-root { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
-.ds-toolbar {
+.ds-top {
   position: absolute; top: 0.5rem; left: 0.5rem; right: 0.5rem;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;
+  pointer-events: none;   /* only the toolbar takes clicks; the gap and hint pass through to the SVG */
+}
+.ds-toolbar {
+  align-self: stretch;
+  display: flex; flex-direction: column; gap: 0.3rem;
   padding: 0.35rem 0.5rem;
   /* Opaque — a semi-transparent background lets a white mark drawn behind it show through. */
   background: var(--cc-surface-1);
@@ -965,8 +991,14 @@ const firstVertexMarker = computed(() => {
   border-radius: var(--cc-radius-md);
   pointer-events: auto;
 }
+.ds-row { flex-wrap: wrap; }
+/* Narrowing order: notes keep ≥14rem and the actions drop to their own line, right-aligned; narrower
+   still, the toggles wrap above Cancel/Save. Save stays bottom-right throughout. */
+.ds-notes { flex: 1 1 14rem; min-width: 0; }
+.ds-actions { flex: 0 1 auto; margin-left: auto; justify-content: flex-end; }
+.ds-dests { white-space: nowrap; }
 .ds-notes-input {
-  flex: 1; min-width: 12rem; max-width: 30rem;
+  flex: 1; min-width: 0;
   font-family: inherit;   /* textarea default is monospace on some UAs */
 }
 /* Read-only preview shown when the note has newlines — visibly non-editable + a pointer cursor so
@@ -981,9 +1013,12 @@ const firstVertexMarker = computed(() => {
 }
 .ds-notes-footer { color: var(--cc-text-dim); text-align: right; }
 .ds-dest { color: var(--cc-text-dim); }
-.ds-address { color: var(--cc-text-dim); font-family: var(--cc-mono); }
+.ds-address {
+  color: var(--cc-text-dim); font-family: var(--cc-mono);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .ds-mode {
-  position: absolute; top: 3.4rem; left: 0.75rem;
+  margin-left: 0.25rem;
   padding: 0.2rem 0.5rem;
   background: rgba(0, 0, 0, 0.55); color: var(--cc-text-dim);
   border-radius: var(--cc-radius-md);

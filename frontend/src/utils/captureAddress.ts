@@ -12,6 +12,7 @@
 // against the 2048×2048 PNG we stored and against a 512×512 thumbnail we might show later.
 
 import type { Point } from './drawGeometry'
+import { toSeconds } from './timeAxis'
 
 // ── Address ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ export interface CaptureAddress {
   t?: number | [number, number]
   z?: number
   extentUm?: { x: number; y: number; unit?: string | null }
+  /** Real time of the shown frame: `elapsed` since frame 0 and the frame `interval`, in seconds.
+   *  Absent on a still or an image with no calibrated frame interval — `t` is then only an index. */
+  timeS?: { elapsed: number; interval: number }
   domAnchor?: string
   plotSpec?: { specId: string; params?: Record<string, unknown>; dataRefs?: unknown[] }
 }
@@ -40,9 +44,21 @@ export function buildCaptureAddress(input: CaptureAddress): CaptureAddress {
   if (input.t !== undefined && input.t !== null) out.t = input.t
   if (input.z !== undefined && input.z !== null) out.z = input.z
   if (input.extentUm && input.extentUm.x > 0 && input.extentUm.y > 0) out.extentUm = input.extentUm
+  if (input.timeS && Number.isFinite(input.timeS.elapsed) && input.timeS.interval > 0) out.timeS = input.timeS
   if (input.domAnchor) out.domAnchor = input.domAnchor
   if (input.plotSpec && input.plotSpec.specId) out.plotSpec = input.plotSpec
   return out
+}
+
+/** `timeS` for a capture of frame `t`, from the image's frame interval in MINUTES (the meta's unit).
+ *  `undefined` when there is no interval to convert with. */
+export function captureTimeS(
+  t: number | null | undefined, frameIntervalMin: number | null | undefined,
+): CaptureAddress['timeS'] {
+  if (t === null || t === undefined || t < 0 || !frameIntervalMin || !(frameIntervalMin > 0)) return undefined
+  const interval = toSeconds(frameIntervalMin, 'min')
+  if (interval === null) return undefined
+  return { elapsed: Math.round(t * interval * 1000) / 1000, interval: Math.round(interval * 1000) / 1000 }
 }
 
 // ── Overlay geometry ────────────────────────────────────────────────────────────────────────────

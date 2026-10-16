@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
-  tileStatsFor, kmeans, categoriseCluster, computeLandscape, augmentLandscape,
+  tileStatsFor, kmeans, categoriseCluster, computeLandscape, augmentLandscape, landscapeViewL0,
   LANDSCAPE_CATEGORIES, LANDSCAPE_SWATCHES,
 } from './landscape'
+import { screenToImagePx } from './viewerPick'
+import { fitCamera, extentUm, type ViewerMeta } from './volumeViewer'
 
 // Handcraft an ImageData so a test can name the tile it wants and check the number is right —
 // jsdom has no `document.createElement('canvas')` with a working 2D context, so we skip the
@@ -388,5 +390,51 @@ describe('envelope size ratchet (LANDSCAPE_COMPLEMENTARY_PLAN Phase 5, Decision 
     // Floor: a merged 32×32 v2 with all fields on must be substantially bigger than a
     // bare v1 (~100 KB) — else the augment did nothing.
     expect(bytes).toBeGreaterThan(400 * KB)
+  })
+})
+
+describe('landscapeViewL0 — the image rectangle the tiles are registered to', () => {
+  const meta: ViewerMeta = {
+    nT: 1, nC: 1, nZ: 1, nX: 1000, nY: 800, bytesPerVoxel: 2, slabBytes: 1000 * 800 * 2,
+    contrastSource: 'sampled', voxelUm: [0.5, 0.5, 1],
+    calibrated: { xy: true, z: false, t: false }, spaceUnit: null, frameIntervalMin: null,
+    channels: [{ name: 'a', lo: 0, hi: 10, visible: true, lut: [[0, 0, 0], [1, 0, 0]] }],
+  }
+  const W = 640, H = 400
+  // Zoomed in 4× and panned off-centre — the case where the old whole-image binning disagreed.
+  const fit = fitCamera(extentUm(meta, 1), W / H)
+  const cam = { ...fit, dist: fit.dist / 4, panX: 60, panY: -25 }
+
+  it('a screen tile and the server tile of the same image pixel agree (zoomed + panned)', () => {
+    const v = landscapeViewL0({ mode: 'plane', cam, meta, canvasW: W, canvasH: H, perspective: false })!
+    expect(v).not.toBeNull()
+    const n = 8
+    for (const [r, c] of [[0, 0], [3, 5], [7, 7], [2, 6]]) {
+      // Centre of screen tile (r, c) → image px through the viewer's own pick math…
+      const p = screenToImagePx((c + 0.5) * W / n, (r + 0.5) * H / n, W, H, cam, meta)
+      // …→ tile through the server's rule (`_tile_of` in api/src/landscape_api.jl).
+      const col = Math.floor(((p.x + 0.5) - v.x0) / (v.x1 - v.x0) * n)
+      const row = Math.floor(((p.y + 0.5) - v.y0) / (v.y1 - v.y0) * n)
+      expect([row, col]).toEqual([r, c])
+    }
+  })
+
+  it('3D: only a straight-down orthographic view has a rectangle', () => {
+    const base = { meta, canvasW: W, canvasH: H }
+    expect(landscapeViewL0({ ...base, mode: 'volume', cam, perspective: false })).not.toBeNull()
+    expect(landscapeViewL0({ ...base, mode: 'volume', cam, perspective: true })).toBeNull()
+    expect(landscapeViewL0({ ...base, mode: 'volume', cam: { ...cam, yaw: 0.4 }, perspective: false })).toBeNull()
+    expect(landscapeViewL0({ ...base, mode: 'volume', cam: { ...cam, pitch: -0.2 }, perspective: false })).toBeNull()
+    expect(landscapeViewL0({ ...base, mode: 'volume', cam: { ...cam, yaw: Math.PI }, perspective: false })).toBeNull()
+    // The 2D view ignores the 3D orbit.
+    expect(landscapeViewL0({ ...base, mode: 'plane', cam: { ...cam, yaw: 0.4 }, perspective: true })).not.toBeNull()
+  })
+
+  it('augmentLandscape keeps the view on the viewport bag; drops a malformed one', () => {
+    const base = computeLandscape(makeImageData(16, 16, () => [0, 0, 0]), { cols: 4, rows: 4 })
+    const view = { x0: 10, y0: 20, x1: 110, y1: 80 }
+    expect(augmentLandscape(base, [], undefined, { renderMode: 'plane', view }).viewport?.view).toEqual(view)
+    expect(augmentLandscape(base, [], undefined,
+      { renderMode: 'plane', view: { ...view, x1: NaN } }).viewport?.view).toBeUndefined()
   })
 })

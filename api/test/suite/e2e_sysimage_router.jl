@@ -323,7 +323,6 @@ end
         "/api/update/check",
         "/api/version",
         "/api/push/target",   # bidir push (PR #1048) — GET reads the pairing record (never returns token)
-        "/api/viewer/landscape",   # bidir landscape read (GET); POST at same path is the publish handler
         "/api/kiwi/profiles",           # LOGIN_CREDENTIAL_ISOLATION_PLAN P3 — roster
         "/api/kiwi/terminal/command",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P6 — profile-scoped shell one-liner
         "/api/kiwi/profiles/auth",      # P8 — a profile's Claude login
@@ -402,8 +401,9 @@ end
         "/api/viewer/navigate",      # RUBBER_DUCK_FIT_PLAN P2B — main-window router.push + optional tab select
         "/api/viewer/plots/register",   # bidir PR #8 — live plot registry write
         "/api/viewer/plots/deregister", # bidir PR #8 — live plot registry drop
-        "/api/viewer/landscape",     # bidir landscape publish (POST); GET at same path is the read handler
+        "/api/viewer/landscape",     # bidir landscape publish (POST) — browser only
         "/api/viewer/landscape/compute",   # bidir landscape complementary compute — per-channel per-tile stats
+        "/api/viewer/landscape/request",   # MCP get_landscape — ask the open viewer for one now
         "/api/viewer/capture",   # bidir share-in write (POST); GET at same path is the read handler
 
         "/api/optical-flow/delete", "/api/optical-flow/inspect",
@@ -487,7 +487,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 114 && length(POST_ROUTES) == 168
+    @test length(GET_ROUTES) == 113 && length(POST_ROUTES) == 169
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

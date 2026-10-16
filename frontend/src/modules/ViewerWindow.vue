@@ -33,6 +33,7 @@ import { useRoute } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { useViewerStore } from '../stores/viewer'
 import { useLogStore } from '../stores/log'
+import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
@@ -110,12 +111,12 @@ import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
-import { computeLandscape, readCanvasImageData, augmentLandscape,
+import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
-import { buildCaptureAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
+import { buildCaptureAddress, captureTimeS, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { announceShareOutcome, shareFailMessage } from '../utils/shareOutcome'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -4754,6 +4755,7 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
         address: addr,
         addressLine: drawAddressLine.value,
         viewStateSnapshot: env.viewStateSnapshot,
+        landscape: env.landscape as LandscapeResult | null,
         notes: env.notes,
       }
     }
@@ -5128,6 +5130,8 @@ interface CaptureView {
   // a re-annotate is more strokes on the same frame, so the refined capture inherits it verbatim
   // and a later Refocus takes the full-restore branch rather than the seek-only fallback.
   viewStateSnapshot: unknown | null
+  // Landscape snapshotted at share time — same frame, so a refined capture inherits it too.
+  landscape: LandscapeResult | null
   // Free-text notes the user typed at share time (BIDIR follow-up). Shown on the frozen-frame
   // surface so the user sees what context Claude received; preserved on re-annotate so a refined
   // capture doesn't lose the "here's what I meant" line.
@@ -5138,10 +5142,20 @@ function closeCaptureView() { captureView.value = null }
 
 // Landscape overlay (BIDIR PR #6, Decision 14): a categorical heatmap over the same tiles as
 // GridOverlay. Recompute on toggle / density / frame changes; the categorical output is a small
-// prior for Claude AND a pass at "where is the interesting stuff" for the eye. Publishing to the
-// backend lets `get_landscape` MCP tool read the same view the user is looking at — one
-// computation, two consumers (Decision 13's "standalone Vue feature first" pattern).
+// prior for Claude AND a pass at "where is the interesting stuff" for the eye. The overlay is for
+// the eye; what Claude reads (Share, MCP `get_landscape`) is `snapshotLandscape()` below.
 const landscape = ref<LandscapeResult | null>(null)
+// One category pass over the current canvas at the grid density. Shared by the overlay's
+// recompute AND by Share, which snapshots a landscape whether or not the overlay is on.
+async function readViewLandscape(): Promise<LandscapeResult | null> {
+  const el = canvas.value
+  if (!el) return null
+  const data = await readCanvasImageData(el)
+  if (!data) return null
+  return computeLandscape(data, {
+    cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
+  })
+}
 // Landscape recompute goes through the canonical `debouncedLatest` scheduler — the density
 // slider and the t/z scrubs both fire in bursts, and `readCanvasImageData` synchronously runs
 // `canvas.toDataURL('image/png')` on the WebGPU backbuffer (hundreds of ms on a 4K canvas),
@@ -5154,18 +5168,14 @@ const landscape = ref<LandscapeResult | null>(null)
 const recomputeLandscapeSched = debouncedLatest<void>(
   async (_arg, isCurrent) => {
     if (!settings.viewerLandscape || !meta.value || shownT.value < 0) { landscape.value = null; return }
-    const el = canvas.value
-    if (!el) return
-    const data = await readCanvasImageData(el)
-    if (!isCurrent() || !data) { if (!data) landscape.value = null; return }
-    const result = computeLandscape(data, {
-      cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
-    })
+    if (!canvas.value) return
+    const result = await readViewLandscape()
     if (!isCurrent()) return
     landscape.value = result
+    if (!result) return
     if (projectUid) {
-      // Fire-and-forget publish so MCP get_landscape can see the same thing. A failed publish
-      // just leaves the last-published copy stale for a beat — the UI is unaffected.
+      // Fire-and-forget publish for Kiwi's landscape refs (`kiwi_refs.jl`). MCP `get_landscape`
+      // does not read this — it asks for `snapshotLandscape()`. A failed publish is harmless.
       fetch('/api/viewer/landscape', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -5208,6 +5218,108 @@ function onReannotate(payload: {
   }
 }
 
+// The landscape as the viewer shows it NOW — what Share attaches and what an MCP `get_landscape`
+// request gets back (`viewer:landscape-request`). Overlay on or off: the toggle only decides whether
+// the user SEES it. Always a fresh category pass — the overlay's copy trails a pan by its debounce,
+// and the backend half below is registered to the camera at this instant.
+async function snapshotLandscape(): Promise<LandscapeResult | null> {
+  // `view` = the image rectangle on screen; the backend tiles exactly that, so "C4" is one region
+  // in both halves. No flat rectangle (rotated / perspective 3D) ⇒ category only.
+  // Augment the frontend-computed category landscape with backend-only fields
+  // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a + 2b): per-channel mean/SNR untangled
+  // from the colour-blend, per-tile segCount from label_props centroids, and per-tile
+  // pops from the current pop manager's visible populations. Visibility rule (Decision 3):
+  // only channels currently ticked on, the currently-shown labels vn, and the pop
+  // manager's active (vn, popType) travel — the response only carries what the user is
+  // looking at, matching the RGB composite. Every field optional; failure is soft
+  // (category-only stays a valid v1).
+  let landscapeSnapshot: LandscapeResult | null = null
+  const el = canvas.value
+  if (!el) return null
+  const canvasW = Math.max(1, el.clientWidth)
+  const canvasH = Math.max(1, el.clientHeight)
+  const baseLandscape = meta.value && shownT.value >= 0 ? await readViewLandscape() : null
+  const landscapeView = meta.value ? landscapeViewL0({
+    mode: mode.value, cam: cam.value, meta: meta.value, canvasW, canvasH,
+    perspective: settings.viewerVolumeProjection === 'persp',
+  }) : null
+  if (baseLandscape && meta.value) {
+    const visibleChannels = meta.value.channels
+      .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
+      .filter(ch => ch.visible)
+      .map(({ index, name }) => ({ index, name }))
+    // '' when no durable mask is drawn (eye off, or a preview / live store covering it — those have
+    // no label_props) — backend skips segCount
+    const labelsVn = landscapeLabelsVn(maskName.value, maskHidden.value, previewVn.value, liveVn.value)
+    // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
+    // and the pops in it whose eye is on — so the tile counts are the dots on screen.
+    const popLayersSnap = popLayers.value.map(l => ({
+      valueName: l.vn, popType: l.popType,
+      paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
+    })).filter(l => l.paths.length > 0)
+    // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
+    // "one at a time" discipline `labelName` uses for the labels layer — the backend
+    // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
+    const trackVn = (() => {
+      const names = cellTableNames()
+      if (!imageUid || !names.length) return ''
+      const vis = settings.getTrackVisibility(imageUid, names)
+      return names.find(n => vis[n]) ?? ''
+    })()
+    // At least one augmentable dimension has to be on before we ask; if the frontend has
+    // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
+    const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
+                       popLayersSnap.length > 0 || !!trackVn
+    if (anyAugment && projectUid && landscapeView) {
+      // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
+      // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
+      // looking at.
+      //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
+      //            neighbouring-plane cells the same way the gating page's pick-rect scope
+      //            defaults to). Channels still read the single plane at `z`.
+      //   volume → the loaded planes (Depth range or ±n window) — channels MIP over them and
+      //            counts filter to them, so both match what the volume view actually paints.
+      //            A 2D ±n window is a MIP too, so it asks as `volume` over the same planes.
+      // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
+      // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
+      const nZ = Math.max(1, meta.value?.nZ ?? 1)
+      const maxZ = nZ - 1
+      const rm: 'plane' | 'volume' = singlePlane.value ? 'plane' : 'volume'
+      const [zLo, zHi] = rm === 'volume'
+        ? zLoaded.value
+        : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
+      try {
+        const cRes = await fetch('/api/viewer/landscape/compute', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectUid, imageUid, valueName: valueName.value,
+            t: shownT.value, z: zPlane.value,
+            renderMode: rm, zLo, zHi, view: landscapeView,
+            cols: baseLandscape.grid.cols, rows: baseLandscape.grid.rows,
+            channels: visibleChannels,
+            ...(labelsVn ? { labelsValueName: labelsVn } : {}),
+            ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
+            ...(trackVn ? { tracksValueName: trackVn } : {}),
+          }),
+        })
+        if (cRes.ok) {
+          const cJson = await cRes.json() as {
+            tiles?: AugmentTile[],
+            sourceRun?: LandscapeResult['sourceRun'],
+            viewport?: { renderMode: string; zLo?: number; zHi?: number; view?: L0Rect },
+          }
+          if (Array.isArray(cJson.tiles)) {
+            landscapeSnapshot = augmentLandscape(baseLandscape, cJson.tiles,
+                                                 cJson.sourceRun, cJson.viewport)
+          }
+        }
+      } catch { /* soft fail — fall through to category-only */ }
+    }
+    landscapeSnapshot ??= baseLandscape
+  }
+  return landscapeSnapshot
+}
+
 async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
   const el = canvas.value
   if (!el || !projectUid) { drawMode.value = false; return }
@@ -5224,6 +5336,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       t: shownT.value >= 0 ? shownT.value : undefined,
       z: zPlane.value >= 0 ? zPlane.value : undefined,
       extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : undefined,
+      timeS: captureTimeS(shownT.value, meta.value?.frameIntervalMin),
     })
     // Full viewState snapshot so a later Refocus / Blackboard-attachment click can restore the
     // exact camera + channels the user saw when they shared — same shape ImageStripView's
@@ -5239,93 +5352,9 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
       perspective: settings.viewerVolumeProjection === 'persp',
     }) : null
     // Snapshot the CURRENT landscape into the capture envelope, so `get_capture(id)` returns
-    // pixels + marks + view state + landscape in one call. Whole point of the landscape: hand
-    // Claude a semantic prior over the same tiles it's looking at. The live in-memory landscape
-    // bag is ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
-    // Only attached when the user has the overlay on — sharing without the landscape stays lean.
-    // Augment the frontend-computed category landscape with backend-only fields
-    // (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1 + 2a + 2b): per-channel mean/SNR untangled
-    // from the colour-blend, per-tile segCount from label_props centroids, and per-tile
-    // pops from the current pop manager's visible populations. Visibility rule (Decision 3):
-    // only channels currently ticked on, the currently-shown labels vn, and the pop
-    // manager's active (vn, popType) travel — the response only carries what the user is
-    // looking at, matching the RGB composite. Every field optional; failure is soft
-    // (category-only stays a valid v1).
-    let landscapeSnapshot: LandscapeResult | null = null
-    if (settings.viewerLandscape && landscape.value && meta.value) {
-      const visibleChannels = meta.value.channels
-        .map((ch, i) => ({ index: i, name: ch.name, visible: ch.visible }))
-        .filter(ch => ch.visible)
-        .map(({ index, name }) => ({ index, name }))
-      // '' when no durable mask is drawn (eye off, or a preview / live store covering it — those have
-      // no label_props) — backend skips segCount
-      const labelsVn = landscapeLabelsVn(maskName.value, maskHidden.value, previewVn.value, liveVn.value)
-      // Pops snapshot: every population layer the viewer draws — each (segmentation, pop type)
-      // and the pops in it whose eye is on — so the tile counts are the dots on screen.
-      const popLayersSnap = popLayers.value.map(l => ({
-        valueName: l.vn, popType: l.popType,
-        paths: l.payload.pops.filter(p => popDrawn(l, p.path)).map(p => p.path),
-      })).filter(l => l.paths.length > 0)
-      // Tracks snapshot: first vn the panel has ticked visible under the tracks eye. Same
-      // "one at a time" discipline `labelName` uses for the labels layer — the backend
-      // computes ONE tracks summary per tile, not per-vn. Untracked vn ⇒ backend drops.
-      const trackVn = (() => {
-        const names = cellTableNames()
-        if (!imageUid || !names.length) return ''
-        const vis = settings.getTrackVisibility(imageUid, names)
-        return names.find(n => vis[n]) ?? ''
-      })()
-      // At least one augmentable dimension has to be on before we ask; if the frontend has
-      // nothing to snapshot, an empty POST would just round-trip an empty tile bag.
-      const anyAugment = visibleChannels.length > 0 || !!labelsVn ||
-                         popLayersSnap.length > 0 || !!trackVn
-      if (anyAugment && projectUid) {
-        // Z-awareness (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 6, Decision 5 successor): match
-        // the viewer's mode + Z scope so tile counts / channel MIP mean what the user is
-        // looking at.
-        //   plane  → z ± 1 tolerance (a centroid at z=8.6 belongs to slice 9; ± 1 catches
-        //            neighbouring-plane cells the same way the gating page's pick-rect scope
-        //            defaults to). Channels still read the single plane at `z`.
-        //   volume → the loaded planes (Depth range or ±n window) — channels MIP over them and
-        //            counts filter to them, so both match what the volume view actually paints.
-        //            A 2D ±n window is a MIP too, so it asks as `volume` over the same planes.
-        // A 2D image has `meta.nZ == 1` and `mode.value === 'plane'` at all times, so
-        // zLo == zHi == 0 and the backend's z-filter is a no-op — zero behaviour change.
-        const nZ = Math.max(1, meta.value?.nZ ?? 1)
-        const maxZ = nZ - 1
-        const rm: 'plane' | 'volume' = singlePlane.value ? 'plane' : 'volume'
-        const [zLo, zHi] = rm === 'volume'
-          ? zLoaded.value
-          : [Math.max(0, zPlane.value - 1), Math.min(maxZ, zPlane.value + 1)]
-        try {
-          const cRes = await fetch('/api/viewer/landscape/compute', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectUid, imageUid, valueName: valueName.value,
-              t: shownT.value, z: zPlane.value,
-              renderMode: rm, zLo, zHi,
-              cols: landscape.value.grid.cols, rows: landscape.value.grid.rows,
-              channels: visibleChannels,
-              ...(labelsVn ? { labelsValueName: labelsVn } : {}),
-              ...(popLayersSnap.length ? { popLayers: popLayersSnap } : {}),
-              ...(trackVn ? { tracksValueName: trackVn } : {}),
-            }),
-          })
-          if (cRes.ok) {
-            const cJson = await cRes.json() as {
-              tiles?: AugmentTile[],
-              sourceRun?: LandscapeResult['sourceRun'],
-              viewport?: { renderMode: string; zLo?: number; zHi?: number },
-            }
-            if (Array.isArray(cJson.tiles)) {
-              landscapeSnapshot = augmentLandscape(landscape.value, cJson.tiles,
-                                                   cJson.sourceRun, cJson.viewport)
-            }
-          }
-        } catch { /* soft fail — fall through to category-only */ }
-      }
-      landscapeSnapshot ??= landscape.value
-    }
+    // pixels + marks + view state + landscape in one call. The live in-memory landscape bag is
+    // ephemeral (1 h TTL, gone on restart); the capture-attached copy is durable.
+    const landscapeSnapshot = await snapshotLandscape()
     // KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1: read the toggle values ONCE here so a toggle flip while
     // the POST is in flight doesn't split the request/response semantics — the flags decide both
     // what we ask the backend to do and what we do locally afterwards.
@@ -5362,7 +5391,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     captureView.value = {
       captureId, frameDataUrl: png, overlay: payload.overlay,
       address, addressLine: drawAddressLine.value,
-      viewStateSnapshot,
+      viewStateSnapshot, landscape: landscapeSnapshot,
       notes: payload.notes,
     }
     // Attach-to-Kiwi (KIWI_CAPTURE_AND_BLACKBOARD_PLAN P1): drop the freshly-created captureId
@@ -5390,7 +5419,27 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
 }
 function onDrawCancel() { drawMode.value = false }
 
+// MCP `get_landscape` (api/src/landscape_api.jl `api_viewer_landscape_request`): the server asks
+// every window; the one showing this image answers with the landscape it shows now, tagged with the
+// request id the server is waiting on. Overlay toggle irrelevant — same snapshot Share attaches.
+const ws = useWsStore()
+async function onLandscapeRequest(data: Record<string, unknown>) {
+  if (String(data.imageUid ?? '') !== imageUid || String(data.projectUid ?? '') !== projectUid) return
+  const requestId = String(data.requestId ?? '')
+  if (!requestId || !meta.value || shownT.value < 0) return
+  const snap = await snapshotLandscape()
+  if (!snap) return
+  fetch('/api/viewer/landscape', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectUid, imageUid, valueName: valueName.value,
+      t: shownT.value, z: zPlane.value, landscape: snap, requestId,
+    }),
+  }).catch(() => { /* the server's wait times out into "no_viewer" */ })
+}
+
 onMounted(() => {
+  ws.on('viewer:landscape-request', onLandscapeRequest)
   // Channel renamed elsewhere (image table, metadata panel) while we're open: refetch meta and take
   // only the names — contrast / LUT / visibility are the user's live view and stay as they are.
   stopImageMetaWatch = onViewerImageMeta(async (ev) => {
@@ -5484,6 +5533,7 @@ onUnmounted(() => {
   delete (window as unknown as { __cceceliaViewerBeginDraw?: unknown }).__cceceliaViewerBeginDraw
   stopCacheClearWatch?.(); stopCacheClearWatch = null
   stopImageMetaWatch?.(); stopImageMetaWatch = null
+  ws.off('viewer:landscape-request', onLandscapeRequest)
   stopPlay()
   pump.cancel()
   zPump.cancel()
@@ -5571,6 +5621,7 @@ onUnmounted(() => {
                           :address="captureView.address"
                           :address-line="captureView.addressLine"
                           :view-state-snapshot="captureView.viewStateSnapshot"
+                          :extra-post-fields="captureView.landscape ? { landscape: captureView.landscape } : undefined"
                           :notes="captureView.notes"
                           @close="closeCaptureView" @reannotate="onReannotate" />
       <!-- Held after a crash — centred, needs attention. Offered rather than refused: the breadcrumb
@@ -6062,11 +6113,12 @@ onUnmounted(() => {
           <span v-if="meta.nZ > 1" class="cc-btn-icon vw-icon-spacer" aria-hidden="true" />
         </div>
         <!-- Annotations sits with the viewport controls above rather than beside the layer sections
-             below: scale bar + timestamp are burnt into the render, they are not a layer whose
+             below: scale bar, timestamp, grid and landscape are overlays on the view (never baked
+             into the frame or a Share capture), they are not a layer whose
              visibility/colour/opacity you tune. Layer-list order (Channels / Segmentation / Overlays)
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
-        <CollapsibleSection label="Annotations" tip="Scale bar and timestamp burnt into the view"
+        <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
                             :open="openSection === 'ann'"
                             @update:open="v => setSection('ann', v)" fill>
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
@@ -6101,27 +6153,26 @@ onUnmounted(() => {
             </template>
           </div>
           <!-- Set-of-Mark grid: named cells (A1..H8 at 8×8) over the current viewport, so a share-in
-               / point-out session can cite a region by name. Density slider appears with the toggle
-               — same pattern as the scale-bar text-size slider above. -->
+               / point-out session can cite a region by name. The density slider shows with the
+               toggle OFF too: every capture carries a landscape at this density, so it is a capture
+               setting, not only a display one. -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
                   v-tooltip.right="'Named cells (A1..H8) over the viewport'">Grid</span>
             <CcToggle v-model="settings.viewerGrid" aria-label="Show the region grid" />
-            <template v-if="settings.viewerGrid">
-              <input
-                type="range" class="vw-grow vw-px" :min="4" :max="32" :step="1"
-                v-model.number="settings.viewerGridDensity"
-                v-tooltip.bottom="'Cells per side (4..32)'" aria-label="Grid density"
-              >
-              <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
-            </template>
+            <input
+              type="range" class="vw-grow vw-px" :min="4" :max="32" :step="1"
+              v-model.number="settings.viewerGridDensity"
+              v-tooltip.bottom="'Cells per side — also the capture landscape grid'" aria-label="Grid density"
+            >
+            <span class="cc-readout cc-fs-3xs vw-px-val">{{ settings.viewerGridDensity }}</span>
           </div>
           <!-- Landscape heatmap: cheap categorical fill per grid tile so a share-in / MCP reader
                has a rough semantic prior BEFORE looking at raw pixels. NOT a segmentation; sits at
                the same tile resolution as the grid above. BIDIR PR #6 (Decision 14 reframe). -->
           <div class="cc-row cc-row-tight">
             <span class="cc-muted cc-fs-2xs cc-lbl-col"
-                  v-tooltip.right="'Cheap semantic heatmap over the same grid — categorical, not a segmentation'">Landscape</span>
+                  v-tooltip.right="'Show the tile heatmap — captures always carry it'">Landscape</span>
             <CcToggle v-model="settings.viewerLandscape" aria-label="Show the landscape heatmap" />
             <template v-if="settings.viewerLandscape">
               <span class="cc-muted cc-fs-3xs vw-landscape-sub-lbl"
@@ -6731,7 +6782,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.vw { display: flex; height: 100vh; background: var(--cc-surface-1); }
+.vw { display: flex; height: 100vh; background: var(--cc-surface-1); overflow: auto; }
 /* The size slider shares its row with a toggle and a readout, so it needs a floor it cannot be
    squeezed below — `flex: 1` alone collapses it to nothing in a narrow panel. */
 .vw-px { min-width: 3.5rem; }
@@ -6765,7 +6816,9 @@ onUnmounted(() => {
 .vw-kbd { flex: none; min-width: 6.5rem; padding: 0.1rem 0.3rem; border: 1px solid var(--cc-border);
   border-radius: var(--cc-radius-xs); background: var(--cc-surface-2); font-family: inherit; }
 .vw-ramp { flex: 1; min-width: 2rem; height: 0.5rem; border-radius: var(--cc-radius-xs); }
-.vw-canvas-wrap { position: relative; flex: 1; min-width: 0; }
+/* Minimum viewer size (napari keeps one too): below it the window scrolls rather than squeezing the
+   canvas to a sliver under the Share toolbar. `.vw` scrolls because `#app` clips its overflow. */
+.vw-canvas-wrap { position: relative; flex: 1; min-width: 480px; min-height: 320px; }
 /* Bottom-left status chip: white-on-black so it stays legible against a bright tile composite. Same
    role as the centred `cc-empty-overlay` but out of the way of what the user is trying to look at.
    Error variant uses the canonical severity colour + icon (`lib/severity.ts` → `fail`), and re-enables
