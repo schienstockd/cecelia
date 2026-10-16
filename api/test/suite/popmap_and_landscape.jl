@@ -140,6 +140,77 @@ end
                                                        zs = Float64[1.0])
 end
 
+@testset "API: landscape tiles cut the viewer's view, not the whole image" begin
+    # 1000×1000 image, the viewer zoomed onto the 200×200 square at (400..600, 400..600), 4×4 tiles —
+    # each tile is 50×50 image px. A cell at (425, 475) is tile row 1, col 0 → "A2" (index 5); a cell
+    # at (100, 100) is off screen and must NOT be clamped into an edge tile.
+    view = (400.0, 400.0, 600.0, 600.0)
+    @test _tile_of(425, 475, 4, 4, 1000, 1000, view) == 1 * 4 + 0 + 1
+    @test _tile_of(599.9, 599.9, 4, 4, 1000, 1000, view) == 16
+    @test _tile_of(100, 100, 4, 4, 1000, 1000, view) == 0
+    @test _tile_of(600, 500, 4, 4, 1000, 1000, view) == 0          # right edge is exclusive
+    # Whole image (no view) keeps the old clamped behaviour.
+    @test _tile_of(1000, 1000, 4, 4, 1000, 1000, nothing) == 16
+    counts = _bin_centroids_to_tiles(Float64[425, 100, 590], Float64[475, 100, 410], nothing, 0,
+                                     4, 4, 1000, 1000; view = view)
+    @test counts[5] == 1 && counts[4] == 1 && sum(counts) == 2
+
+    # Zoomed out: the view hangs past the image. Tiles over empty canvas get no cells.
+    wide = (-500.0, 0.0, 1500.0, 1000.0)          # 4 cols of 500 px; image is cols 1–2
+    @test _tile_of(10, 10, 4, 1, 1000, 1000, wide) == 2
+    @test _tile_of(990, 10, 4, 1, 1000, 1000, wide) == 3
+end
+
+@testset "API: _tile_channel_stats over a view crop" begin
+    # 8×8 plane, left half 0, right half 1. Whole-plane 2×1 tiles: means 0 and 1.
+    plane = zeros(Float32, 8, 8); plane[5:8, :] .= 1
+    st = _tile_channel_stats(plane, 2, 1)
+    @test st[1][1] ≈ 0.0 && st[2][1] ≈ 1.0
+    # The view spans 16 px starting 8 px left of the plane: tile 1 is wholly off the plane (nothing),
+    # tile 2 covers the whole plane (mean 0.5).
+    st2 = _tile_channel_stats(plane, 2, 1; frame = (-8.0, 0.0, 8.0, 8.0))
+    @test st2[1] === nothing
+    @test st2[2][1] ≈ 0.5
+    # A tile thinner than a pixel reads the pixel under its centre.
+    st3 = _tile_channel_stats(plane, 32, 1; frame = (4.0, 0.0, 5.0, 8.0))
+    @test all(x -> x !== nothing && x[1] ≈ 1.0, st3)
+end
+
+@testset "API: _pick_view_level + _landscape_view" begin
+    lv = [(4096, 4096), (2048, 2048), (1024, 1024), (512, 512)]
+    # Whole image visible → the 512 level; a quarter visible → the 2048 level (its crop is 512 px).
+    @test _pick_view_level(lv, 4096, 4096, (0.0, 0.0, 4096.0, 4096.0)) == 3
+    @test _pick_view_level(lv, 4096, 4096, (0.0, 0.0, 1024.0, 1024.0)) == 1
+    # Deeper than any level can serve at 512 → the finest.
+    @test _pick_view_level(lv, 4096, 4096, (0.0, 0.0, 64.0, 64.0)) == 0
+    # Store order does not matter.
+    @test _pick_view_level(reverse(lv), 4096, 4096, (0.0, 0.0, 1024.0, 1024.0)) == 2
+    @test _landscape_view(Dict("x0" => 1, "y0" => 2, "x1" => 3, "y1" => 4)) == (1.0, 2.0, 3.0, 4.0)
+    @test _landscape_view(Dict("x0" => 3, "y0" => 2, "x1" => 1, "y1" => 4)) === nothing
+    @test _landscape_view(Dict("x0" => 1, "y0" => 2, "x1" => NaN, "y1" => 4)) === nothing
+    @test _landscape_view(nothing) === nothing
+end
+
+@testset "API: on-demand landscape request — the viewer's answer reaches the waiter" begin
+    l = Landscape("p", "img", "default", 3, 0, time(), Dict{String,Any}("grid" => Dict("cols" => 8)))
+    rid = _open_landscape_request!()
+    t = @async _await_landscape_request(rid, 5.0; poll_s = 0.01)
+    sleep(0.05)
+    @test _deliver_landscape_request!(rid, l)
+    @test !_deliver_landscape_request!(rid, l)           # first answer wins
+    got = fetch(t)
+    @test got !== nothing && got.t == 3
+    @test !haskey(_LANDSCAPE_REQUESTS, rid)              # forgotten once answered
+    # No viewer answers → nothing, and a late answer is dropped rather than parked forever.
+    rid2 = _open_landscape_request!()
+    @test _await_landscape_request(rid2, 0.05; poll_s = 0.01) === nothing
+    @test !_deliver_landscape_request!(rid2, l)
+    @test !haskey(_LANDSCAPE_REQUESTS, rid2)
+    # The reply carries the address next to the payload.
+    r = _landscape_reply(l)
+    @test r["t"] == 3 && r["imageUid"] == "img" && r["grid"]["cols"] == 8
+end
+
 @testset "API: _pop_counts_from_label_map (BIDIR landscape Phase 2b)" begin
     # LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2b — the pure per-tile pop aggregator.
     # Sparsity discipline (Decision 3): hidden pops drop; pops with no member cells in the

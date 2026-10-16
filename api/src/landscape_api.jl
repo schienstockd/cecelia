@@ -4,7 +4,8 @@
 # (`dark` / `bright-uniform` / `bright-textured` / `edge` / `mixed`), NOT a segmentation and NOT
 # SAM / Cellpose. Computed in the browser (`frontend/src/utils/landscape.ts`) so the labels
 # reflect exactly what the user is looking at (channels, contrast); this file just STORES the
-# last-published copy in-memory so an MCP `get_landscape` call has something to read.
+# last-published copy in-memory (Kiwi landscape refs) and hands an MCP `get_landscape` request the
+# viewer's answer.
 #
 # EPHEMERAL BY DESIGN. Same shape as `marks_api.jl` — one last-published landscape per
 # (project, image, valueName, t, z). No history, no persistence. If the user closes and reopens
@@ -15,6 +16,12 @@
 # NO WRITE FROM MCP. The publish route (`POST /api/viewer/landscape`) is browser-only — Claude
 # READS the landscape (`get_landscape`), never writes one. Same principle as captures: the
 # assistant reads pixels the human framed, doesn't invent them.
+#
+# ON DEMAND. `get_landscape` does not wait for the overlay to be on: it ASKS the open viewer
+# (`POST /api/viewer/landscape/request` → WS `viewer:landscape-request`), which computes the same
+# registered landscape Share attaches and publishes it tagged with the request id. Every publish —
+# the overlay's scrub-time ones included — also lands in `_LANDSCAPE_BY_KEY`, which Kiwi's
+# landscape refs read (`kiwi_refs.jl`).
 
 using Dates
 
@@ -45,6 +52,55 @@ _landscape_alive(l::Landscape, now::Float64 = _now_epoch()) = (now - l.createdAt
 
 _landscape_key(l::Landscape) = (l.projectUid, l.imageUid, l.valueName, l.t, l.z)
 
+# On-demand requests in flight: requestId → the viewer's answer (`nothing` until it lands). Only ids
+# registered here are accepted, so a late answer after the wait gave up is dropped, not leaked.
+const _LANDSCAPE_REQUESTS = Dict{String,Union{Nothing,Landscape}}()
+const _LANDSCAPE_REQ_SEQ = Threads.Atomic{Int}(0)
+# Long enough for a 4K canvas readback + the backend compute on a heavy image (both measured in
+# the 0.2–2 s range); short enough that "no viewer open" answers inside one tool call.
+const _LANDSCAPE_REQUEST_TIMEOUT_S = 8.0
+
+function _open_landscape_request!()::String
+    rid = string("lr-", time_ns(), "-", Threads.atomic_add!(_LANDSCAPE_REQ_SEQ, 1))
+    lock(_LANDSCAPE_LOCK) do; _LANDSCAPE_REQUESTS[rid] = nothing; end
+    rid
+end
+
+# The viewer's answer to `rid`. False when nobody is waiting for it (timed out, or a stray id).
+function _deliver_landscape_request!(rid::AbstractString, l::Landscape)::Bool
+    lock(_LANDSCAPE_LOCK) do
+        haskey(_LANDSCAPE_REQUESTS, rid) || return false
+        _LANDSCAPE_REQUESTS[rid] === nothing || return false     # first viewer to answer wins
+        _LANDSCAPE_REQUESTS[rid] = l
+        true
+    end
+end
+
+# Wait for `rid`'s answer, then forget the request either way.
+function _await_landscape_request(rid::AbstractString, timeout_s::Real; poll_s::Real = 0.05)
+    deadline = time() + timeout_s
+    try
+        while true
+            l = lock(_LANDSCAPE_LOCK) do; get(_LANDSCAPE_REQUESTS, rid, nothing); end
+            l === nothing || return l
+            time() >= deadline && return nothing
+            sleep(poll_s)
+        end
+    finally
+        lock(_LANDSCAPE_LOCK) do; delete!(_LANDSCAPE_REQUESTS, rid); end
+    end
+end
+
+_landscape_reply(l::Landscape) = begin
+    out = copy(l.payload)
+    out["createdAt"] = l.createdAt
+    out["t"] = l.t
+    out["z"] = l.z
+    out["imageUid"] = l.imageUid
+    out["valueName"] = l.valueName
+    out
+end
+
 # Sanitise `t` / `z` from HTTP: an unspecified z is legitimate (2D image), which we key as -1
 # rather than nothing so the tuple has a fixed shape.
 _clean_int(v, default::Int)::Int = begin
@@ -56,12 +112,13 @@ end
 """
     POST /api/viewer/landscape
 
-Body: `{ projectUid, imageUid, valueName, t, z?, landscape: {grid, tiles, legend} }`
+Body: `{ projectUid, imageUid, valueName, t, z?, landscape: {grid, tiles, legend}, requestId? }`
 Reply: `{ ok:true }`
 
 Called by the browser when the user toggles the landscape overlay on (or bumps the grid
-density). Overwrites the last-published landscape for this address. `landscape` is the
-frontend `LandscapeResult` shape passed through verbatim.
+density), and in answer to a `viewer:landscape-request` (then with its `requestId`). Overwrites
+the last-published landscape for this address. `landscape` is the frontend `LandscapeResult`
+shape passed through verbatim.
 """
 function api_viewer_landscape_publish(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -84,45 +141,39 @@ function api_viewer_landscape_publish(body_bytes::Vector{UInt8})
     lock(_LANDSCAPE_LOCK) do
         _LANDSCAPE_BY_KEY[_landscape_key(l)] = l
     end
+    rid = _wstr(body, :requestId)
+    isempty(rid) || _deliver_landscape_request!(rid, l)
     200, JSON3.write((; ok = true))
 end
 
 """
-    GET /api/viewer/landscape?projectUid=…&imageUid=…&valueName=…&t=…&z=…
+    POST /api/viewer/landscape/request
 
-Reply: `{ landscape: {grid, tiles, legend, createdAt, t, z} }` on hit, `{ landscape: null }` on
-miss. z is optional (omit for 2D images — matches how the publisher sends -1).
+Body: `{ projectUid, imageUid }`
+Reply: `{ landscape: {…} }` — what the open viewer shows NOW, computed for this call — or
+`{ landscape: null, reason: "no_viewer" }` when no viewer of that image answered in time.
 
-Read by the MCP `get_landscape` tool. LIVE ONLY — a landscape past its TTL is treated as absent
-(the frontend recomputes on demand; a stale hit would be worse than a miss).
+Read by the MCP `get_landscape` tool. Broadcasts `viewer:landscape-request`; a viewer window
+showing `imageUid` runs the same snapshot Share attaches (category + registered per-tile
+channels / counts / pops / tracks) and publishes it with the request id. The Landscape overlay
+toggle plays no part. Nothing on disk changes.
 """
-function api_viewer_landscape_get(req::HTTP.Request)
-    query = HTTP.queryparams(HTTP.URI(req.target))
-    uid = get(query, "projectUid", "")
-    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
-    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
-    image_uid = get(query, "imageUid", "")
-    value_name = get(query, "valueName", "")
+function api_viewer_landscape_request(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    project_uid = _wstr(body, :projectUid)
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
+    image_uid = _wstr(body, :imageUid)
     isempty(image_uid) && return 400, JSON3.write((; error = "imageUid required"))
-    isempty(value_name) && return 400, JSON3.write((; error = "valueName required"))
-    t = _clean_int(get(query, "t", "-1"), -1)
-    z = _clean_int(get(query, "z", "-1"), -1)
-    now = _now_epoch()
-    hit = lock(_LANDSCAPE_LOCK) do
-        l = get(_LANDSCAPE_BY_KEY, (uid, image_uid, value_name, t, z), nothing)
-        (isnothing(l) || !_landscape_alive(l, now)) ? nothing : l
-    end
-    if isnothing(hit)
-        return 200, JSON3.write((; landscape = nothing))
-    end
-    out = copy(hit.payload)
-    out["createdAt"] = hit.createdAt
-    out["t"] = hit.t
-    out["z"] = hit.z
-    out["imageUid"] = hit.imageUid
-    out["valueName"] = hit.valueName
-    200, JSON3.write((; landscape = out))
+    rid = _open_landscape_request!()
+    broadcast_ws(Dict{String,Any}("type" => "viewer:landscape-request", "projectUid" => project_uid,
+                                  "imageUid" => image_uid, "requestId" => rid))
+    l = _await_landscape_request(rid, _LANDSCAPE_REQUEST_TIMEOUT_S)
+    l === nothing && return 200, JSON3.write((; landscape = nothing, reason = "no_viewer"))
+    200, JSON3.write((; landscape = _landscape_reply(l)))
 end
+
 
 
 # ── Complementary compute (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 1) ──────────
@@ -165,14 +216,27 @@ function _pick_landscape_level(zp::AbstractString)
     best
 end
 
+# `(nx, ny)` per pyramid level in store order — NGFF puts x last, y second-last.
+function _landscape_level_xy(zp::AbstractString)
+    lvls = try store_pyramid_levels(String(zp)) catch; nothing end
+    lvls === nothing && return Tuple{Int,Int}[]
+    [(l.shape[end], l.shape[end - 1]) for l in lvls if length(l.shape) >= 2]
+end
+
 # Tile stats for a single plane (nx, ny Float32). Mean + SNR (mean / max(σ, floor)).
 # The floor guards against divide-by-tiny-σ in tiles that are literally uniform;
 # 1e-3 in normalised [0,1] terms → SNR maxes at ~1000 rather than exploding to Inf,
 # which is what the JSON serialisation needs.
 const _SNR_SIGMA_FLOOR = 1e-3
-function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::Int)
+# `frame` = the tiled rectangle `(x0, y0, x1, y1)` in this plane's 0-based pixel coords — the viewer's
+# view when the caller read a crop of it (can hang past the plane where the view shows no image).
+# `nothing` = the whole plane. A tile with no pixel of the plane under it is `nothing`; a tile thinner
+# than a pixel reads the pixel under its centre, so a deep zoom on a small image still answers.
+function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::Int;
+                             frame::Union{Nothing,NTuple{4,Float64}} = nothing)
     W, H = size(plane, 1), size(plane, 2)
-    out = Vector{Tuple{Float64,Float64}}(undef, ncols * nrows)
+    fx0, fy0, fx1, fy1 = frame === nothing ? (0.0, 0.0, Float64(W), Float64(H)) : frame
+    out = Vector{Union{Nothing,Tuple{Float64,Float64}}}(nothing, ncols * nrows)
     # Normalise the plane to [0, 1] using its own dynamic range — mean/SNR are unit-free
     # once we do this, so a caller doesn't need to send channel LUT contrasts. Uses
     # min/max rather than a percentile to keep it O(N) and predictable; the tile stats
@@ -180,12 +244,10 @@ function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::I
     lo, hi = extrema(plane)
     span = hi > lo ? (Float64(hi) - Float64(lo)) : 1.0
     for r in 0:(nrows - 1), c in 0:(ncols - 1)
-        x0 = floor(Int, (c / ncols) * W) + 1
-        x1 = floor(Int, ((c + 1) / ncols) * W)
-        y0 = floor(Int, (r / nrows) * H) + 1
-        y1 = floor(Int, ((r + 1) / nrows) * H)
-        x0 = clamp(x0, 1, W); x1 = clamp(x1, x0, W)
-        y0 = clamp(y0, 1, H); y1 = clamp(y1, y0, H)
+        xr = _tile_px_range(fx0, fx1, c, ncols, W)
+        yr = _tile_px_range(fy0, fy1, r, nrows, H)
+        (xr === nothing || yr === nothing) && continue
+        x0, x1 = xr; y0, y1 = yr
         n = 0
         sum = 0.0
         sumSq = 0.0
@@ -204,16 +266,79 @@ function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::I
     out
 end
 
+# 1-based inclusive pixel range of tile `i` of `n` along one axis, the tiled span `[f0, f1)` in
+# 0-based plane px clipped to `[0, len)`. `nothing` when the tile is off the plane.
+function _tile_px_range(f0::Float64, f1::Float64, i::Int, n::Int, len::Int)
+    a = f0 + (i / n) * (f1 - f0)
+    b = f0 + ((i + 1) / n) * (f1 - f0)
+    lo = max(floor(Int, a), 0)
+    hi = min(floor(Int, b), len)          # exclusive
+    if hi <= lo                           # thinner than a pixel: the pixel under the centre
+        m = floor(Int, (a + b) / 2)
+        (0 <= m < len) || return nothing
+        lo, hi = m, m + 1
+    end
+    (lo + 1, hi)
+end
+
+# Which tile a level-0 centroid falls in — 1-based, row-major; 0 = outside the view.
+# `view` = the image rectangle the viewer shows, `(x0, y0, x1, y1)` in level-0 px — the SAME frame the
+# browser tiles for the category layer, so tile "C4" names one region in both halves of a landscape.
+# `nothing` = the whole image, edges clamped in (an older client, or a caller with no viewport).
+function _tile_of(px::Real, py::Real, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int,
+                  view::Union{Nothing,NTuple{4,Float64}})::Int
+    if view === nothing
+        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
+        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
+        return r * ncols + c + 1
+    end
+    x0, y0, x1, y1 = view
+    u = (Float64(px) - x0) / (x1 - x0)
+    v = (Float64(py) - y0) / (y1 - y0)
+    (0.0 <= u < 1.0 && 0.0 <= v < 1.0) || return 0
+    min(floor(Int, v * nrows), nrows - 1) * ncols + min(floor(Int, u * ncols), ncols - 1) + 1
+end
+
+# `view` off the wire: `{x0, y0, x1, y1}` finite with positive width and height, else `nothing`.
+function _landscape_view(raw)::Union{Nothing,NTuple{4,Float64}}
+    raw isa AbstractDict || return nothing
+    vals = Float64[]
+    for k in (:x0, :y0, :x1, :y1)
+        v = get(raw, k, get(raw, String(k), nothing))
+        (v isa Real && isfinite(Float64(v))) || return nothing
+        push!(vals, Float64(v))
+    end
+    (vals[3] > vals[1] && vals[4] > vals[2]) || return nothing
+    (vals[1], vals[2], vals[3], vals[4])
+end
+
+# Pyramid level for a viewport read: the COARSEST level at which the visible part of the image is
+# still ≥ `_LANDSCAPE_MIN_LONG_SIDE` px on its long side, else the finest. Zoomed in, that is a finer
+# level than the whole-plane pick — a crop of the 512-px level would leave a few pixels per tile.
+# `level_xy` = `(nx, ny)` per level in store order (0-based index returned); picked by size, so the
+# order the store lists its levels in does not matter.
+function _pick_view_level(level_xy::AbstractVector, sizeX::Int, sizeY::Int,
+                          view::NTuple{4,Float64})::Int
+    x0, y0, x1, y1 = view
+    vw = min(x1, sizeX) - max(x0, 0.0)
+    vh = min(y1, sizeY) - max(y0, 0.0)
+    (vw > 0 && vh > 0 && sizeX > 0 && sizeY > 0 && !isempty(level_xy)) || return 0
+    longs = [max(vw * nx / sizeX, vh * ny / sizeY) for (nx, ny) in level_xy]
+    ok = findall(>=(_LANDSCAPE_MIN_LONG_SIDE), longs)
+    isempty(ok) ? argmax(longs) - 1 : ok[argmin(longs[ok])] - 1
+end
+
 # Count segmented objects per tile from `label_props` centroids for the current t.
 # LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2a (`segCount`) — the "how many objects
 # is Claude looking at in each tile" answer the composite alone doesn't give (a
 # tile that reads bright can be five fused cells or one wash, and the eye can't
 # reliably tell 5 vs 12 in a downsampled frame).
 #
-# Coordinate frame: centroids come out of `label_props` in LEVEL-0 pixel units,
-# and Phase 1's `_tile_channel_stats` bins the full frame — so we do the same,
-# using `image_geometry(zp).sizeX / .sizeY` as the divisor. Independent of the
-# pyramid level Phase 1 read (the fractional bin math is the same at every level).
+# Coordinate frame: centroids come out of `label_props` in LEVEL-0 pixel units and
+# are tiled by `_tile_of` over the same rectangle the channel stats tile — the
+# viewer's `view` when sent, else the whole image (`image_geometry(zp).sizeX/.sizeY`).
+# Independent of the pyramid level the channels read (the fractional bin math is the
+# same at every level).
 #
 # Non-timecourse images (no `centroid_t`): every row counts against t=0 — matches
 # how the frontend treats a still (`shownT` sits at 0). A row with a non-finite
@@ -222,7 +347,8 @@ end
 function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
                           ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
                           z_lo::Union{Int,Nothing} = nothing,
-                          z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Int},Nothing}
+                          z_hi::Union{Int,Nothing} = nothing,
+                          view::Union{Nothing,NTuple{4,Float64}} = nothing)::Union{Vector{Int},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     df = try
         label_props(img; value_name = vn) |> view_centroid_cols |> as_df
@@ -236,7 +362,7 @@ function _tile_seg_counts(img::CciaImage, vn::AbstractString, t::Int,
     ts = ("centroid_t" in nm) ? df[!, :centroid_t] : nothing
     zs = ("centroid_z" in nm) ? df[!, :centroid_z] : nothing
     _bin_centroids_to_tiles(xs, ys, ts, t, ncols, nrows, sizeX, sizeY;
-                            zs = zs, z_lo = z_lo, z_hi = z_hi)
+                            zs = zs, z_lo = z_lo, z_hi = z_hi, view = view)
 end
 
 # Per-tile per-visible-pop counts (LANDSCAPE_COMPLEMENTARY_PLAN.md Phase 2b — `pops`).
@@ -259,7 +385,8 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
                           t::Int, ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
                           z_lo::Union{Int,Nothing} = nothing,
                           z_hi::Union{Int,Nothing} = nothing,
-                          paths::Union{Nothing,AbstractVector} = nothing)::Union{Vector{Vector{NamedTuple}},Nothing}
+                          paths::Union{Nothing,AbstractVector} = nothing,
+                          view::Union{Nothing,NTuple{4,Float64}} = nothing)::Union{Vector{Vector{NamedTuple}},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     # Centroids: one label_props read, keyed by :label so we can bin per label id.
     df = try
@@ -291,9 +418,9 @@ function _tile_pop_counts(img::CciaImage, pop_vn::AbstractString, pop_type::Abst
             zr = Int(round(Float64(zv)))
             (z_lo <= zr <= z_hi) || continue
         end
-        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
-        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
-        label_to_tile[Int(round(Float64(lab)))] = r * ncols + c + 1
+        ti = _tile_of(px, py, ncols, nrows, sizeX, sizeY, view)
+        ti == 0 && continue
+        label_to_tile[Int(round(Float64(lab)))] = ti
     end
     # Resolve the pops the manager knows about — SHOW-filtered per Decision 3 (only the ones
     # the user has ticked visible on the panel). `resolve_pops` gives us (path, name, labels,
@@ -345,6 +472,8 @@ end
 # When `zs` AND both `z_lo`/`z_hi` are supplied, a centroid contributes only if
 # `z_lo ≤ round(centroid_z) ≤ z_hi` — the "which Z slab does the viewer show" filter
 # (plane mode sends z±1, volume mode sends the slab-slider range).
+# `view` (level-0 px rect) tiles the viewer's view instead of the whole image; a centroid outside it
+# drops (`_tile_of`).
 # Returns the flat row-major count vector; NaN centroids and off-frame timepoints drop.
 function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
                                  ts::Union{AbstractVector,Nothing}, t::Int,
@@ -352,7 +481,8 @@ function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
                                  sizeX::Int, sizeY::Int;
                                  zs::Union{AbstractVector,Nothing} = nothing,
                                  z_lo::Union{Int,Nothing} = nothing,
-                                 z_hi::Union{Int,Nothing} = nothing)::Vector{Int}
+                                 z_hi::Union{Int,Nothing} = nothing,
+                                 view::Union{Nothing,NTuple{4,Float64}} = nothing)::Vector{Int}
     n = length(xs)
     length(ys) == n || throw(ArgumentError("_bin_centroids_to_tiles: xs / ys length mismatch"))
     (ts === nothing || length(ts) == n) ||
@@ -374,9 +504,9 @@ function _bin_centroids_to_tiles(xs::AbstractVector, ys::AbstractVector,
             zr = Int(round(Float64(zv)))
             (z_lo <= zr <= z_hi) || continue
         end
-        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
-        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
-        counts[r * ncols + c + 1] += 1
+        ti = _tile_of(px, py, ncols, nrows, sizeX, sizeY, view)
+        ti == 0 && continue
+        counts[ti] += 1
     end
     counts
 end
@@ -398,7 +528,8 @@ end
 function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
                              ncols::Int, nrows::Int, sizeX::Int, sizeY::Int;
                              z_lo::Union{Int,Nothing} = nothing,
-                             z_hi::Union{Int,Nothing} = nothing)::Union{Vector{Union{Nothing,NamedTuple}},Nothing}
+                             z_hi::Union{Int,Nothing} = nothing,
+                             view::Union{Nothing,NTuple{4,Float64}} = nothing)::Union{Vector{Union{Nothing,NamedTuple}},Nothing}
     (sizeX > 0 && sizeY > 0) || return nothing
     # Ask for the columns we need. `select_cols` @warns for absent columns and drops them —
     # `live.cell.speed` is optional so a segmentation without it is not an error. `track_id`
@@ -450,9 +581,8 @@ function _tile_track_summary(img::CciaImage, vn::AbstractString, t::Int,
             zr = Int(round(Float64(zv)))
             (z_lo <= zr <= z_hi) || continue
         end
-        c = clamp(floor(Int, (Float64(px) / sizeX) * ncols), 0, ncols - 1)
-        r = clamp(floor(Int, (Float64(py) / sizeY) * nrows), 0, nrows - 1)
-        ti = r * ncols + c + 1
+        ti = _tile_of(px, py, ncols, nrows, sizeX, sizeY, view)
+        ti == 0 && continue
         push!(tile_track_ids[ti], Int(round(Float64(tid))))
         if has_speed
             sp = df[i, Symbol("live.cell.speed")]
@@ -511,7 +641,7 @@ end
 """
     POST /api/viewer/landscape/compute
 
-Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows,
+Body: `{ projectUid, imageUid, valueName, t, z?, cols, rows, view?: {x0, y0, x1, y1},
          channels: [{index, name}], labelsValueName?,
          popLayers?: [{valueName, popType, paths?}], popValueName?, popType?, tracksValueName? }`
 Reply: `{ tiles: [{tileId, channels: {name: {mean, snr}}, segCount?, pops?, tracks?}, ...],
@@ -601,6 +731,10 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     if z_lo !== nothing && z_hi !== nothing && z_lo > z_hi
         z_lo, z_hi = z_hi, z_lo
     end
+    # The image rectangle the viewer shows (level-0 px). Present ⇒ tiles cut THAT rectangle — the frame
+    # the browser's category layer tiles — instead of the whole image. The browser omits it when no
+    # flat rectangle matches the screen (a rotated or perspective 3D view) and skips this call.
+    view = _landscape_view(get(body, :view, nothing))
     ncols = clamp(_clean_int(get(body, :cols, nothing), 8), 2, 64)
     nrows = clamp(_clean_int(get(body, :rows, nothing), ncols), 2, 64)
     channels_raw = get(body, :channels, nothing)
@@ -633,11 +767,20 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # were actually computed appear (sparse mirrors the tile-level sparsity).
     source_run = Dict{String,Any}()
 
+    # Level-0 size — the frame `view` and the centroids are in.
+    sizeX = 0; sizeY = 0
+    try
+        geo = image_geometry(zp)
+        sizeX = Int(geo.sizeX); sizeY = Int(geo.sizeY)
+    catch
+    end
+
     # ── Per-channel mean + SNR (Phase 1) — only when the frontend sent channels.
     channels_emitted = false
     channels_level = 0
-    if !isempty(channels_raw)
-        level = _pick_landscape_level(zp)
+    if !isempty(channels_raw) && !(view !== nothing && sizeX <= 0)
+        level = view === nothing ? _pick_landscape_level(zp) :
+                _pick_view_level(_landscape_level_xy(zp), sizeX, sizeY, view)
         channels_level = level
         # Open once for many channel reads — same pattern as `_sampled_specs`; per-open cost
         # is a metadata round-trip that would dominate if we redid it per channel.
@@ -672,9 +815,22 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         else
             z
         end
+        # With a view: read only its crop at this level, and tile the view's rectangle in the crop's
+        # pixel coords. A view wholly off the image reads nothing.
+        xr = nothing; yr = nothing; frame = nothing
+        if view !== nothing
+            lw = haskey(dims, "x") ? size(arr, dims["x"]) : sizeX
+            lh = haskey(dims, "y") ? size(arr, dims["y"]) : sizeY
+            fx = lw / sizeX; fy = lh / sizeY
+            vx0, vy0, vx1, vy1 = view[1] * fx, view[2] * fy, view[3] * fx, view[4] * fy
+            xr = max(floor(Int, vx0), 0):(min(ceil(Int, vx1), lw) - 1)
+            yr = max(floor(Int, vy0), 0):(min(ceil(Int, vy1), lh) - 1)
+            (isempty(xr) || isempty(yr)) && (channels = Tuple{Int,String}[])
+            frame = (vx0 - first(xr), vy0 - first(yr), vx1 - first(xr), vy1 - first(yr))
+        end
         for (ci, cname) in channels
             vol, nx, ny, nz_read, _nc = try
-                read_slab(arr, caxes, t, ci; z = z_read)
+                read_slab(arr, caxes, t, ci; z = z_read, x = xr, y = yr)
             catch
                 continue
             end
@@ -688,9 +844,11 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
             else
                 reshape(vol, nx, ny)
             end
-            stats = _tile_channel_stats(plane, ncols, nrows)
+            stats = _tile_channel_stats(plane, ncols, nrows; frame = frame)
             for r in 0:(nrows - 1), c in 0:(ncols - 1)
-                (mean, snr) = stats[r * ncols + c + 1]
+                st = stats[r * ncols + c + 1]
+                st === nothing && continue
+                (mean, snr) = st
                 tiles[r * ncols + c + 1]["channels"][cname] = Dict("mean" => round(mean, digits = 4),
                                                                     "snr"  => round(snr,  digits = 3))
             end
@@ -703,11 +861,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # `.zarray` metadata — either is cheap on its own, but paying twice when segCount + pops
     # + tracks all run in one compute is wasteful. Channels-only computes skip this block.
     img_obj = nothing
-    sizeX = 0; sizeY = 0
-    if !isempty(labels_vn) || pops_on || !isempty(tracks_vn)
+    if (!isempty(labels_vn) || pops_on || !isempty(tracks_vn)) && sizeX > 0 && sizeY > 0
         try
-            geo = image_geometry(zp)
-            sizeX = Int(geo.sizeX); sizeY = Int(geo.sizeY)
             img_obj = init_object(project_uid, image_uid)
             img_obj isa CciaImage || (img_obj = nothing)
         catch
@@ -721,7 +876,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     if !isempty(labels_vn) && img_obj !== nothing
         seg_counts = try
             _tile_seg_counts(img_obj, labels_vn, t, ncols, nrows, sizeX, sizeY;
-                             z_lo = z_lo, z_hi = z_hi)
+                             z_lo = z_lo, z_hi = z_hi, view = view)
         catch
             nothing
         end
@@ -742,7 +897,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         for L in pop_layers
             pop_tiles = try
                 _tile_pop_counts(img_obj, L.valueName, L.popType, t, ncols, nrows, sizeX, sizeY;
-                                 z_lo = z_lo, z_hi = z_hi, paths = L.paths)
+                                 z_lo = z_lo, z_hi = z_hi, paths = L.paths, view = view)
             catch
                 nothing
             end
@@ -772,7 +927,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     if !isempty(tracks_vn) && img_obj !== nothing
         track_tiles = try
             _tile_track_summary(img_obj, tracks_vn, t, ncols, nrows, sizeX, sizeY;
-                                z_lo = z_lo, z_hi = z_hi)
+                                z_lo = z_lo, z_hi = z_hi, view = view)
         catch
             nothing
         end
@@ -834,6 +989,9 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         vp = Dict{String,Any}("renderMode" => render_mode)
         z_lo === nothing || (vp["zLo"] = z_lo)
         z_hi === nothing || (vp["zHi"] = z_hi)
+        # The level-0 image rectangle the tiles cut — a reader converts tile ↔ image px with it.
+        view === nothing || (vp["view"] = Dict("x0" => round(view[1], digits = 1), "y0" => round(view[2], digits = 1),
+                                               "x1" => round(view[3], digits = 1), "y1" => round(view[4], digits = 1)))
         vp
     else
         nothing

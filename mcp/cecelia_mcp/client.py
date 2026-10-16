@@ -126,7 +126,7 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/viewer/marks/select"),   # LINKED_BRUSHING follow-up: multi-source track/cell selection Claude → plot brush + viewer highlight (reverse of the plot-brush emit shape)
         ("POST", "/api/viewer/seek"),           # RUBBER_DUCK_FIT_PLAN P2: imperative "look at frame (t, z)" — no mark, no capture; reuses pendingViewState.focus
         ("POST", "/api/viewer/navigate"),       # RUBBER_DUCK_FIT_PLAN P2B: navigate main window to a route (+ optional board tab); MCP resolves ambiguity before calling
-        ("GET",  "/api/viewer/landscape"),      # read the last-published landscape heatmap for (image, t, z); browser publishes, MCP reads
+        ("POST", "/api/viewer/landscape/request"),  # ASK the open viewer for its landscape now (WS `viewer:landscape-request`); nothing on disk changes
         # bidir Part 5 (push pairing) — BIDIR_PUSH_PLAN PR #1. Ties this session's inbox socket
         # + auth token to the project so PR #2's Julia writer can push a capture-arrived
         # notification directly. Auto-called by middleware on any tool with a project_uid so a
@@ -629,14 +629,12 @@ class CeceliaClient:
         data = self._request("GET", "/api/viewer/plots", {"projectUid": project_uid})
         return list(data.get("items", []))
 
-    def get_landscape(self, project_uid: str, image_uid: str, value_name: str,
-                      t: int = -1, z: int = -1):
-        # Read the landscape heatmap the frontend last published for this (image, t, z). GET.
-        # `t` / `z` default to -1 which the backend treats as "unspecified" (2D image or a
-        # collapsed slice); a match against a published landscape uses the exact same key.
-        qs = {"projectUid": project_uid, "imageUid": image_uid,
-              "valueName": value_name, "t": str(t), "z": str(z)}
-        return self._request("GET", "/api/viewer/landscape", params=qs)
+    def get_landscape(self, project_uid: str, image_uid: str):
+        # Ask the viewer showing this image for its landscape NOW — the server broadcasts a
+        # `viewer:landscape-request` and waits (≤ 8 s) for the viewer's answer. The overlay toggle
+        # plays no part. `{landscape: null, reason: "no_viewer"}` when no viewer of it is open.
+        return self._request("POST", "/api/viewer/landscape/request",
+                             body={"projectUid": project_uid, "imageUid": image_uid})
 
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(

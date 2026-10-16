@@ -332,7 +332,6 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/plots" => (req, body_bytes) -> (api_viewer_plots_list(req)),
     "/api/viewer/captures" => (req, body_bytes) -> (api_viewer_captures_list(req)),
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
-    "/api/viewer/landscape" => (req, body_bytes) -> (api_viewer_landscape_get(req)),
     "/api/push/target" => (req, body_bytes) -> (api_push_target_get(req)),
     "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
     "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
@@ -509,8 +508,10 @@ const _POST_ROUTES = Dict{String, Function}(
     # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_plots`).
     "/api/viewer/plots/register"   => (req, body_bytes) -> (api_viewer_plots_register(body_bytes)),
     "/api/viewer/plots/deregister" => (req, body_bytes) -> (api_viewer_plots_deregister(body_bytes)),
-    # bidir landscape — browser publishes (POST), MCP reads (GET, above). Never Claude-authored.
+    # bidir landscape — browser publishes (POST); MCP `get_landscape` ASKS the open viewer via
+    # `/request` and gets the viewer's answer back. Never Claude-authored.
     "/api/viewer/landscape"      => (req, body_bytes) -> (api_viewer_landscape_publish(body_bytes)),
+    "/api/viewer/landscape/request" => (req, body_bytes) -> (api_viewer_landscape_request(body_bytes)),
     "/api/viewer/landscape/compute" => (req, body_bytes) -> (api_viewer_landscape_compute(body_bytes)),
     "/api/viewer/pick-cell" => (req, body_bytes) -> (api_viewer_pick_cell(body_bytes)),
     "/api/viewer/pick-rect" => (req, body_bytes) -> (api_viewer_pick_rect(body_bytes)),
