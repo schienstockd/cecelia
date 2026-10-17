@@ -63,7 +63,8 @@
   --cc-sev-fail:   #d03b3b;
   /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
      from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
-     button + its floating-panel border, the setup wizard's ok hint, and the Settings service pills.
+     button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok`,
+     the severity green.)
      One green — don't add a second token holding the same colour for a new surface. */
   --cc-viewer:     #22c55e;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
@@ -510,6 +511,19 @@ body {
   font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); white-space: nowrap;
 }
 .cc-pool-tag > .pi { font-size: var(--cc-fs-3xs); }
+
+/* Dot — the ONE small round marker beside a label: a status light (service running, CLI found, log
+   level, connection) or a category swatch. Shape here, tone by modifier — `class="cc-dot cc-dot-ok"`,
+   or `:class="dotClass(tone)"` (utils/statusDot.ts). A categorical marker composes its own background
+   (`class="cc-dot scope-dot"`); a local rule may ADD to the dot (a glow) but never redraws its size.
+   Colour is never the only cue — the label beside it says the state. docs/ui/PRIMITIVES.md. */
+.cc-dot      { display: inline-block; flex-shrink: 0; width: 7px; height: 7px;
+               border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
+.cc-dot-ok   { background: var(--cc-sev-ok); }
+.cc-dot-warn { background: var(--cc-sev-warn); }
+.cc-dot-fail { background: var(--cc-sev-fail); }
+.cc-dot-idle { background: var(--cc-text-dim); }
+.cc-dot-info { background: #3b82f6; }
 
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */

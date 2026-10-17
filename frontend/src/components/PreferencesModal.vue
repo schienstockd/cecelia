@@ -24,6 +24,7 @@ import { useMcpConnections } from '../composables/useMcpConnections'
 import { useObserverStore } from '../stores/observer'
 import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
+import { dotClass } from '../utils/statusDot'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
          fetchClaudeLogin, logoutClaude, claudeLoginLabel,
@@ -598,8 +599,8 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
           <template v-if="observerRow">
             <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia MCP</div>
             <div class="pk-mcp">
-              <span class="pk-state cc-fs-sm" :class="observerRow.tone" v-tooltip.top="observerRow.hint">
-                <span class="pk-dot" /> {{ observerRow.label }}
+              <span class="pk-state cc-fs-sm" v-tooltip.top="observerRow.hint">
+                <span class="cc-dot" :class="dotClass(observerRow.tone)" /> {{ observerRow.label }}
               </span>
               <span v-if="observerInstallShort" class="pk-install cc-muted cc-fs-xs"
                     v-tooltip.top="observerRow.installPath">{{ observerInstallShort }}</span>
@@ -704,9 +705,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pref-note { margin: 0 0 0.5rem; }
 .pk-mcp { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .pk-state { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--cc-text); }
-.pk-dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
-.pk-state.ok .pk-dot   { background: var(--cc-viewer); }
-.pk-state.warn .pk-dot { background: var(--cc-sev-warn); }
 .pk-install { font-family: var(--cc-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk-note { margin: 0.4rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--cc-sev-warn); min-width: 0; }
 .pk-note strong { color: var(--cc-sev-warn); }

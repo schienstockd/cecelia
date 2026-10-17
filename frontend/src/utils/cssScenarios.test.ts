@@ -40,6 +40,20 @@ describe('scenarioFor', () => {
       .toBe('eyebrow')
   })
 
+  it('names a hand-drawn status dot, whatever it is called', () => {
+    expect(of('.lvl-dot', 'width: 6px; height: 6px; border-radius: var(--cc-radius-pill);')).toBe('dot')
+    expect(of('.svc-pill .dot', 'width: 7px; height: 7px; border-radius: 50%; background: red')).toBe('dot')
+    expect(of('.pt-out', 'width: 4px; height: 4px; border-radius: 50%')).toBeNull()      // a plot mark
+    expect(of('.node', 'width: 34px; height: 34px; border-radius: 50%')).toBeNull()      // a node
+    expect(of('.box', 'width: 7px; height: 7px')).toBeNull()                             // not round
+    expect(of('.vw-dot', 'flex: none; width: 0.4rem; height: 0.4rem; border-radius: var(--cc-radius-pill)'))
+      .toBe('dot')                                                                       // rem-sized
+    expect(of('.cl-dot', 'width: 0.55rem; height: 0.55rem; border-radius: var(--cc-radius-pill)'))
+      .toBeNull()                                                                        // a legend swatch
+    expect(of('.spinner', 'width: 8px; height: 8px; border-radius: 50%; animation: spin 1s linear infinite'))
+      .toBeNull()                                                                        // a spinner
+  })
+
   it('names a hand-rolled wrapping control row', () => {
     expect(of('.x-bar', 'display: flex; align-items: center; flex-wrap: wrap; gap: 8px;')).toBe('row')
     // a toolbar's own chrome is not disqualifying — only the LAYOUT half moves to the utility

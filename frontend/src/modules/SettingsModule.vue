@@ -26,6 +26,7 @@ import { quitConfirmTooltip, quitConfirmLabel, quitTaskPhrase } from '../utils/q
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import { useMcpConnections } from '../composables/useMcpConnections'
+import { dotClass } from '../utils/statusDot'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
@@ -1104,8 +1105,8 @@ async function switchWt(path: string) {
 
       <div v-if="customModules.modules.length" class="cm-list">
         <div v-for="m in customModules.modules" :key="m.path" class="cm-row">
-          <span class="svc-pill" :class="m.status === 'ok' ? 'ok' : 'err'">
-            <span class="dot" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
+          <span class="svc-pill">
+            <span class="cc-dot" :class="m.status === 'ok' ? 'cc-dot-ok' : 'cc-dot-fail'" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
           </span>
           <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ shortModulePath(m.path) }}</span>
         </div>
@@ -1117,7 +1118,7 @@ async function switchWt(path: string) {
            with nothing anywhere saying why. -->
       <div v-if="customModules.clashes.length" class="cm-list">
         <div v-for="c in customModules.clashes" :key="c.path + c.funName" class="cm-row">
-          <span class="svc-pill err"><span class="dot" /> clash</span>
+          <span class="svc-pill"><span class="cc-dot cc-dot-fail" /> clash</span>
           <span class="cm-path mono"
                 v-tooltip.top="`${c.path} — ${c.winner ?? 'a built-in'} keeps this name`">
             {{ c.funName }} — {{ c.winnerTier }} wins
@@ -1271,7 +1272,7 @@ async function switchWt(path: string) {
 
       <div class="svc-row">
         <span class="svc-name">Application</span>
-        <span class="svc-pill ok"><span class="dot" /> Running</span>
+        <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
           <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
@@ -1308,7 +1309,7 @@ async function switchWt(path: string) {
 
       <div class="svc-row">
         <span class="svc-name">Notebooks</span>
-        <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(notebooksSt).tone)" /> {{ stateInfo(notebooksSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
         <span class="svc-actions">
           <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
@@ -1345,7 +1346,7 @@ async function switchWt(path: string) {
            because a warm cellpose model holds GPU memory. -->
       <div class="svc-row">
         <span class="svc-name">Task preview</span>
-        <span class="svc-pill" :class="stateInfo(previewSt).tone"><span class="dot" /> {{ stateInfo(previewSt).label }}</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(previewSt).tone)" /> {{ stateInfo(previewSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
         <span class="svc-actions">
           <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
@@ -1374,7 +1375,7 @@ async function switchWt(path: string) {
            process most installs don't run would be noise. -->
       <div class="svc-row" v-if="diag?.dev && runnerRaw">
         <span class="svc-name">Task runner</span>
-        <span class="svc-pill" :class="stateInfo(runnerSt).tone"><span class="dot" /> {{ stateInfo(runnerSt).label }}</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(runnerSt).tone)" /> {{ stateInfo(runnerSt).label }}</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
         <span class="svc-actions">
           <span v-if="runnerRaw?.stale" class="diag-stale-note"
@@ -1410,7 +1411,7 @@ async function switchWt(path: string) {
       <!-- read-only: not a service you control, shown so the full port picture is visible -->
       <div class="svc-row">
         <span class="svc-name">Frontend (GUI)</span>
-        <span class="svc-pill ok"><span class="dot" /> This window</span>
+        <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> This window</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
       </div>
 
@@ -1490,7 +1491,7 @@ async function switchWt(path: string) {
            container that also holds tooltipped buttons fires both at once -->
       <div v-for="r in otherMcpConnectionRows" :key="r.kind + r.name" class="mcp-row">
         <span class="svc-name">{{ r.name }}</span>
-        <span class="svc-pill" :class="r.tone" v-tooltip.top="r.hint"><span class="dot" /> {{ r.label }}</span>
+        <span class="svc-pill" v-tooltip.top="r.hint"><span class="cc-dot" :class="dotClass(r.tone)" /> {{ r.label }}</span>
         <span class="mcp-detail cc-muted cc-fs-xs" v-tooltip.top="r.hint">
           {{ r.detail }}
           <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
@@ -1761,10 +1762,6 @@ async function switchWt(path: string) {
 .svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
   white-space: nowrap; }
-.svc-pill .dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
-.svc-pill.ok .dot   { background: var(--cc-viewer); }
-.svc-pill.warn .dot { background: var(--cc-sev-warn); }
-.svc-pill.idle .dot { background: var(--cc-text-dim); }
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
 .svc-port { justify-self: start; font-family: var(--cc-mono); }

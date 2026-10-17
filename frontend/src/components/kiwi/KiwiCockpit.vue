@@ -36,6 +36,7 @@ import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
 import { claudeLoginLabel } from '../../utils/profileApi'
+import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
@@ -492,16 +493,13 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
                             tip="Is the assistant CLI installed, and is its MCP entry registered in your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
-            <span class="kiwi-dot" :class="{ 'kiwi-dot-ok': observer.available,
-                                             'kiwi-dot-fail': !observer.available }"
+            <span class="cc-dot" :class="observer.available ? 'cc-dot-ok' : 'cc-dot-fail'"
                   aria-hidden="true" />
             <span class="cc-fs-xs">{{ observer.available ? 'Available' : 'Not installed' }}</span>
           </div>
           <div class="kiwi-obs-row" v-if="observer.available">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">Terminal</span>
-            <span class="kiwi-dot" :class="{ 'kiwi-dot-ok':   terminalStateKind === 'ok',
-                                             'kiwi-dot-warn': terminalStateKind === 'warn',
-                                             'kiwi-dot-fail': terminalStateKind === 'fail' }"
+            <span class="cc-dot" :class="dotClass(terminalStateKind)"
                   aria-hidden="true" />
             <span class="cc-fs-xs">{{ terminalStateLabel }}</span>
             <!-- Fix action — one button, only when the entry needs it. Wording carries the case:
@@ -582,11 +580,6 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 .kiwi-obs-lbl { min-width: 4rem; }
 .kiwi-mono   { font-family: var(--cc-mono); overflow: hidden;
                text-overflow: ellipsis; white-space: nowrap; }
-.kiwi-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc-text-dim);
-            flex-shrink: 0; }
-.kiwi-dot-ok   { background: var(--cc-sev-ok); }
-.kiwi-dot-warn { background: var(--cc-sev-warn); }
-.kiwi-dot-fail { background: var(--cc-sev-fail); }
 .kiwi-clear-row { margin-top: 0.4rem; gap: 0.35rem; }
 /* Fix action sits at the right end of the Terminal row so the label + dot + state read first, then
    the action. Not warn-toned itself — the dot already carries severity. */

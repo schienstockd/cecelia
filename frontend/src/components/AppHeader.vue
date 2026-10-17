@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
+import { dotClass, WS_STATUS_TONE } from '../utils/statusDot'
 import { openWhatsNew } from '../lib/whatsNew'
 import { openGuides } from '../lib/guideOpen'
 import { openIconLegend } from '../lib/iconLegendOpen'
@@ -182,7 +183,7 @@ const statusTip: Record<string, string> = {
       :class="ws.status"
       v-tooltip.bottom="statusTip[ws.status] ?? ws.status"
     >
-      <span class="dot" />
+      <span class="cc-dot" :class="dotClass(WS_STATUS_TONE[ws.status])" />
       {{ statusLabel[ws.status] ?? ws.status }}
     </span>
   </header>
@@ -277,18 +278,15 @@ const statusTip: Record<string, string> = {
   cursor: default;
   white-space: nowrap;
 }
-.dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); }
 
 .ws-badge.connected    { background: #14532d33; color: #86efac; }
-.ws-badge.connected .dot { background: #4ade80; box-shadow: 0 0 5px #4ade80; }
+.ws-badge.connected .cc-dot { box-shadow: 0 0 5px var(--cc-sev-ok); }
 .ws-badge.connecting   { background: #78350f33; color: #fcd34d; }
-.ws-badge.connecting .dot { background: #fbbf24; }
 .ws-badge.disconnected { background: #27272a55; color: #71717a; }
-.ws-badge.disconnected .dot { background: #52525b; }
 .ws-badge.error,
 .ws-badge.signedOut    { background: #7f1d1d33; color: #fca5a5; }
-.ws-badge.error .dot,
-.ws-badge.signedOut .dot { background: var(--cc-sev-fail); box-shadow: 0 0 5px var(--cc-sev-fail); }
+.ws-badge.error .cc-dot,
+.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--cc-sev-fail); }
 
 .update-badge {
   display: flex;

@@ -30,7 +30,7 @@ const pinnedVersion = computed(() => {
     <Handle type="target" :position="Position.Left" class="node-handle" />
 
     <div class="node-scope" :title="`scope: ${data.scope}`">
-      <span class="scope-dot" />
+      <span class="cc-dot scope-dot" />
       <span class="cc-eyebrow cc-fs-3xs">{{ data.scope }}</span>
     </div>
     <div class="node-label">{{ data.label || data.fn }}</div>
@@ -74,13 +74,7 @@ const pinnedVersion = computed(() => {
   gap: 0.3rem;
   margin-bottom: 0.25rem;
 }
-.scope-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--cc-radius-pill);
-  background: var(--cc-accent);
-  flex-shrink: 0;
-}
+.scope-dot { background: var(--cc-accent); }     /* a category, not a state: its own colour on .cc-dot */
 .incremental .scope-dot { background: #60a5fa; }
 
 .node-label {
