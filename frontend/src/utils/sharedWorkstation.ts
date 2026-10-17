@@ -18,13 +18,13 @@ export const SHARED_WORKSTATION_ITEMS: readonly SharedWorkstationItem[] = [
     key: 'oneClaudeLogin',
     label: 'One Claude login at a time',
     tip: 'Picking a profile logs every other profile out of Claude',
-    hint: 'Includes peanut — and so terminal claude on this account',
+    hint: 'Never peanut — its login is terminal claude\'s',
   },
   {
     key: 'claudeLogoutOnQuit',
     label: 'Log out of Claude on quit',
     tip: 'Quitting or closing Cecelia logs every profile out of Claude',
-    hint: 'Includes peanut — and so terminal claude on this account',
+    hint: 'Never peanut — its login is terminal claude\'s',
   },
 ]
 

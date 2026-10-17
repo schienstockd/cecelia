@@ -326,13 +326,12 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
                 @click="showLogin = true" v-tooltip.bottom="'Opens a private browser window to sign in'">
           <i class="pi pi-sign-in" /> Log in
         </button>
-        <ConfirmButton v-if="appCtl.claudeLogin?.state === 'loggedIn'"
+        <!-- No Log out on peanut: its login is the OS account's terminal one (plan D21). -->
+        <ConfirmButton v-if="appCtl.claudeLogin?.state === 'loggedIn' && appCtl.activeProfileName !== 'default'"
                        @confirm="logoutAccount" v-slot="{ armed, arm, confirm, cancel }">
           <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
                   :disabled="loggingOut" @click="arm"
-                  v-tooltip.bottom="appCtl.activeProfileName === 'default'
-                    ? 'Log out — terminal sessions on this OS account too'
-                    : 'Log out of this account'">
+                  v-tooltip.bottom="'Log out of this account'">
             <i :class="['pi', loggingOut ? 'pi-spin pi-spinner' : 'pi-sign-out']" />
           </button>
           <template v-else>

@@ -48,13 +48,15 @@ export const useAppControlStore = defineStore('appControl', () => {
   /** Log the active profile out of Claude (`claude auth logout` in its config dir) and re-read the
    *  login. Returns an error message, or '' on success (rule: `claudeLogoutError`). */
   async function logOutClaude(): Promise<string> {
+    if (activeProfileName.value === 'default') return ''   // peanut's login is terminal claude's (D21)
     const wasIn = claudeLogin.value?.state === 'loggedIn'
     const r = await logoutClaude(activeProfileName.value)
     await refreshClaudeLogin(true)
     return claudeLogoutError(r, wasIn)
   }
   /** Sidebar → Log out: end this person's session without quitting Cecelia. Logs the profile out of
-   *  Claude first (always — not only under the shared-workstation policy, which acts on a SWITCH),
+   *  Claude first (always — not only under the shared-workstation policy, which acts on a SWITCH;
+   *  never peanut, whose login is terminal claude's — `logOutClaude` skips it),
    *  then reloads into the profile picker, forced even on a one-profile install. Returns an error
    *  message and stays put if the Claude logout failed, so nobody walks away still logged in. */
   async function logOutUser(): Promise<string> {

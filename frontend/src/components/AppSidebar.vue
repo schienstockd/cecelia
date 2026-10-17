@@ -36,7 +36,7 @@ async function logOutUser() {
   if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
 }
 const logOutTip = computed(() => appCtl.activeProfileName === 'default'
-  ? `Log ${appCtl.activeProfileDisplayName} out — and terminal claude on this OS account`
+  ? `Log ${appCtl.activeProfileDisplayName} out — its terminal Claude login stays`
   : `Log ${appCtl.activeProfileDisplayName} out of Cecelia and Claude`)
 // The footer has no status line, so a refused restart (tasks would die, or not supervised) is a toast.
 async function restartBackend() {

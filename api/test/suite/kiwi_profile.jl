@@ -241,30 +241,31 @@ end
             @test api_kiwi_profiles_auth(req("profile=Bad%20Name"))[1] == 400
             @test api_kiwi_profiles_logout(Vector{UInt8}("{}"))[1] == 400
             @test api_kiwi_profiles_logout(Vector{UInt8}(JSON3.write((; name = "ghost"))))[1] == 404
+            # peanut (`default`) is never logged out by Cecelia — refused before any CLI spawn
+            @test api_kiwi_profiles_logout(Vector{UInt8}(JSON3.write((; name = "default"))))[1] == 409
 
             # Policy off (the default): picking logs nobody out.
             @test isempty(_one_claude_login_targets("alice"))
             code, body = api_kiwi_profiles_select(Vector{UInt8}(JSON3.write((; name = "alice"))))
             @test code == 200 && JSON3.read(body).loggingOut == 0
 
-            # Policy on: every OTHER profile, default (`""` = ~/.claude) and retired ones included.
+            # Policy on: every OTHER named profile, retired ones included — never default (~/.claude).
             api_kiwi_profiles_retire(Vector{UInt8}(JSON3.write((; name = "bob"))))
             set_shared_workstation!("oneClaudeLogin", true)
             try
-                @test sort(_one_claude_login_targets("alice")) ==
-                      sort(["", joinpath(tmp, "user-profiles", "bob")])
+                @test _one_claude_login_targets("alice") == [joinpath(tmp, "user-profiles", "bob")]
                 @test _one_claude_login_targets("default") ==
                       [alice, joinpath(tmp, "user-profiles", "bob")]
             finally
                 set_shared_workstation!("oneClaudeLogin", false)
             end
 
-            # Log out on quit: off → nobody; on → every profile, default + retired included.
+            # Log out on quit: off → nobody; on → every named profile, retired included, never default.
             @test isempty(_quit_claude_logout_targets())
             set_shared_workstation!("claudeLogoutOnQuit", true)
             try
                 @test sort(_quit_claude_logout_targets()) ==
-                      sort(["", alice, joinpath(tmp, "user-profiles", "bob")])
+                      sort([alice, joinpath(tmp, "user-profiles", "bob")])
             finally
                 set_shared_workstation!("claudeLogoutOnQuit", false)
             end
