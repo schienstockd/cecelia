@@ -2,8 +2,8 @@
   Log a profile in to Claude — Cecelia runs `claude auth login` for it (LOGIN_CREDENTIAL_ISOLATION_PLAN
   P9). Mounting starts the login, unmounting cancels one still waiting. The CLI opens a PRIVATE browser
   window (so the shared browser's last Google/claude.ai session can't approve it); when none opens,
-  the fallback is the link + the code its page shows. Body only — hosts wrap it: CreateProfileDialog's
-  second step, and the Preferences → Profiles row's Log in.
+  the fallback is the link + the code its page shows. Body only — Kiwi's Account row hosts it in its Log in
+  dialog. Only ever mounted on an explicit click (plan D17).
 -->
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'

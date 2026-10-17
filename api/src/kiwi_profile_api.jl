@@ -152,6 +152,30 @@ _one_claude_login_targets(keep::AbstractString)::Vector{String} =
     Cecelia.shared_workstation("oneClaudeLogin") ?
         String[p["dir"] for p in _kiwi_list_profiles() if p["name"] != keep] : String[]
 
+# Shared workstation → "Log out of Claude on quit": every profile's login, `default` (`""`, i.e.
+# `~/.claude`) and retired ones included. Empty when the policy is off. Split out like the target
+# list above so a test can check it without logging anything out.
+_quit_claude_logout_targets()::Vector{String} =
+    Cecelia.shared_workstation("claudeLogoutOnQuit") ? String[p["dir"] for p in _kiwi_list_profiles()] : String[]
+
+# Called by `api_app_shutdown` BEFORE the process exits — synchronous, all profiles in parallel, so
+# the logouts finish rather than dying with us. Every orderly quit reaches it: the Quit button, closing
+# the packaged app (`app.py::_stop_gracefully`, 5 s) and the dev supervisor's stop (`api/dev.jl`, 2 s).
+# Each logout is ~1 s; capped at `_QUIT_LOGOUT_TIMEOUT_S` so the run fits app.py's window before it
+# escalates to a kill. Returns how many were attempted.
+const _QUIT_LOGOUT_TIMEOUT_S = 4
+function claude_logout_on_quit!()::Int
+    dirs = _quit_claude_logout_targets()
+    (isempty(dirs) || isnothing(Cecelia.agent_bin_path(Cecelia.observer_agent_bin()))) && return 0
+    @sync for d in dirs
+        Threads.@spawn begin
+            ok, msg = claude_auth_logout!(d; timeout_s = _QUIT_LOGOUT_TIMEOUT_S)
+            ok || @warn "Quit: could not log a profile out of Claude" dir = d message = msg
+        end
+    end
+    length(dirs)
+end
+
 # Retire a profile — write the sentinel marker so the picker grays it out and select rejects it.
 # The dir + credentials stay on disk (D11 immutable-name lifecycle). If the retired profile is
 # the currently-active one, we also snap the active back to `default` so the next spawn doesn't

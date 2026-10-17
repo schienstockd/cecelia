@@ -1,6 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchProfiles, profileNameLabel, fetchClaudeLogin, type ClaudeLogin } from '../utils/profileApi'
+import { fetchProfiles, profileNameLabel, fetchClaudeLogin, logoutClaude, claudeLogoutError,
+         type ClaudeLogin } from '../utils/profileApi'
 import { tasksLostOnRestart } from '../utils/runningTasks'
 import { quitTaskPhrase } from '../utils/quitWarning'
 
@@ -38,11 +39,32 @@ export const useAppControlStore = defineStore('appControl', () => {
   // login with an admin role changes only this line. See docs/todo/SETTINGS_SCOPE_PLAN.md.
   const canManageMachine = computed(() => activeProfileName.value === 'default')
   const profileCount = ref<number>(1)
-  // The active profile's Claude login — the account Kiwi turns bill. Shared so Kiwi's read-only row
-  // and Preferences' Log out agree without each holding its own copy. `null` = not checked yet.
+  // The active profile's Claude login — the account Kiwi turns bill. Shared so Kiwi's Account row and
+  // the sidebar's user logout agree without each holding its own copy. `null` = not checked yet.
   const claudeLogin = ref<ClaudeLogin | null>(null)
   async function refreshClaudeLogin(fresh = false) {
     claudeLogin.value = await fetchClaudeLogin(undefined, fresh)
+  }
+  /** Log the active profile out of Claude (`claude auth logout` in its config dir) and re-read the
+   *  login. Returns an error message, or '' on success (rule: `claudeLogoutError`). */
+  async function logOutClaude(): Promise<string> {
+    const wasIn = claudeLogin.value?.state === 'loggedIn'
+    const r = await logoutClaude(activeProfileName.value)
+    await refreshClaudeLogin(true)
+    return claudeLogoutError(r, wasIn)
+  }
+  /** Sidebar → Log out: end this person's session without quitting Cecelia. Logs the profile out of
+   *  Claude first (always — not only under the shared-workstation policy, which acts on a SWITCH),
+   *  then reloads into the profile picker, forced even on a one-profile install. Returns an error
+   *  message and stays put if the Claude logout failed, so nobody walks away still logged in. */
+  async function logOutUser(): Promise<string> {
+    if (!claudeLogin.value) await refreshClaudeLogin(true)
+    const err = await logOutClaude()
+    if (err) return err
+    _clearJustPickedMarker()
+    try { sessionStorage.setItem(_LOGGED_OUT_KEY, '1') } catch { /* private mode → no forced picker */ }
+    window.location.assign('/profile-picker')
+    return ''
   }
 
   const _post = (url: string, body: unknown = {}) =>
@@ -89,13 +111,20 @@ export const useAppControlStore = defineStore('appControl', () => {
           // out retirees, forcing a redundant click). profileCount stays total-including-retired
           // for the project-panel filter (retired profiles can still OWN projects).
           const selectable = roster.profiles.filter(p => !p.retired).length
-          needsProfilePick.value = selectable > 1
+          needsProfilePick.value = selectable > 1 || _loggedOut()
         }
       } catch { needsProfilePick.value = false }
     } else {
       needsProfilePick.value = false
     }
     return setupRequired.value === true
+  }
+
+  // Set by logOutUser: the next boot shows the picker even with one profile, and the picker skips its
+  // one-profile auto-pick (`loggedOutPick`). Cleared on a pick.
+  const _LOGGED_OUT_KEY = 'cc.profileLoggedOut'
+  function _loggedOut(): boolean {
+    try { return sessionStorage.getItem(_LOGGED_OUT_KEY) === '1' } catch { return false }
   }
 
   // sessionStorage marker consumed by refreshStartup. Session-scoped so a browser restart still
@@ -123,6 +152,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   function markProfileJustPicked(name: string) {
     try {
       sessionStorage.setItem(_JUST_PICKED_KEY, JSON.stringify({ name, at: Date.now() }))
+      sessionStorage.removeItem(_LOGGED_OUT_KEY)   // a deliberate switch answers the logged-out picker
     } catch { /* private mode → picker will re-fire once; acceptable */ }
   }
 
@@ -131,7 +161,10 @@ export const useAppControlStore = defineStore('appControl', () => {
 
   // The launch-time picker calls this after a successful /select — the guard then lets the app
   // through instead of bouncing back to the picker. Only affects this window; a reload re-arms.
-  function completeProfilePick() { needsProfilePick.value = false }
+  function completeProfilePick() {
+    needsProfilePick.value = false
+    try { sessionStorage.removeItem(_LOGGED_OUT_KEY) } catch { /* private mode */ }
+  }
 
   // ── Software updates (single source; consumed by Settings → Software AND the header badge) ──
   // The check/apply/staging backend + Settings UI already exist; this store centralises the STATE so
@@ -327,6 +360,7 @@ export const useAppControlStore = defineStore('appControl', () => {
            updateHasPrevious, updateRevertBusy, updatePending,
            checkUpdate, applyUpdate, revertUpdate, dismissUpdate, restartToUpdate,
            refreshDev, refreshStartup, completeSetup, completeProfilePick, markProfileJustPicked,
+           logOutClaude, logOutUser, loggedOutPick: _loggedOut,
            refreshWorktrees, quit, restartBackend, switchWorktree }
 })
 

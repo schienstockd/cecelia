@@ -77,16 +77,16 @@ function claude_auth_status(profile_dir::AbstractString; fresh::Bool = false)::C
 end
 
 """
-    claude_auth_logout!(profile_dir) -> (ok, message)
+    claude_auth_logout!(profile_dir; timeout_s = 30) -> (ok, message)
 
 Log `profile_dir`'s Claude login out (`""` = the default profile — which is also the login every
 terminal `claude` on this OS account uses). Idempotent. LIVE path.
 """
-function claude_auth_logout!(profile_dir::AbstractString)::Tuple{Bool,String}
+function claude_auth_logout!(profile_dir::AbstractString; timeout_s::Real = 30)::Tuple{Bool,String}
     isnothing(agent_bin_path(observer_agent_bin())) &&
         return (false, "No assistant CLI found.")
     ok, output = _run_claude_cli(`$(observer_agent_bin()) auth logout`;
-                                 profile_dir = String(profile_dir), timeout_s = 30)
+                                 profile_dir = String(profile_dir), timeout_s)
     _forget_claude_auth!(profile_dir)
     (ok, String(strip(output)))
 end

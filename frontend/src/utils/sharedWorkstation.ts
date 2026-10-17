@@ -20,6 +20,12 @@ export const SHARED_WORKSTATION_ITEMS: readonly SharedWorkstationItem[] = [
     tip: 'Picking a profile logs every other profile out of Claude',
     hint: 'Includes peanut — and so terminal claude on this account',
   },
+  {
+    key: 'claudeLogoutOnQuit',
+    label: 'Log out of Claude on quit',
+    tip: 'Quitting or closing Cecelia logs every profile out of Claude',
+    hint: 'Includes peanut — and so terminal claude on this account',
+  },
 ]
 
 export interface SharedWorkstationRow extends SharedWorkstationItem { value: boolean }

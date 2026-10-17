@@ -258,6 +258,16 @@ end
             finally
                 set_shared_workstation!("oneClaudeLogin", false)
             end
+
+            # Log out on quit: off → nobody; on → every profile, default + retired included.
+            @test isempty(_quit_claude_logout_targets())
+            set_shared_workstation!("claudeLogoutOnQuit", true)
+            try
+                @test sort(_quit_claude_logout_targets()) ==
+                      sort(["", alice, joinpath(tmp, "user-profiles", "bob")])
+            finally
+                set_shared_workstation!("claudeLogoutOnQuit", false)
+            end
         end
         init_cecelia!()   # restore
     end
