@@ -35,7 +35,7 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
-import { claudeLoginLabel } from '../../utils/profileApi'
+import { claudeLoginLabel, logoutClaude } from '../../utils/profileApi'
 import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
@@ -91,6 +91,16 @@ const onFocusLogin = () => { void appCtl.refreshClaudeLogin() }
 onMounted(() => { void appCtl.refreshClaudeLogin(); window.addEventListener('focus', onFocusLogin) })
 onUnmounted(() => window.removeEventListener('focus', onFocusLogin))
 const accountLabel = computed(() => claudeLoginLabel(appCtl.claudeLogin))
+// Log out of the account turns bill — the same `claude auth logout` as Preferences → Profiles.
+const loggingOut = ref(false)
+async function logoutAccount() {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  try {
+    await logoutClaude(appCtl.activeProfileName)
+    await appCtl.refreshClaudeLogin(true)
+  } finally { loggingOut.value = false }
+}
 const accountTip = computed(() => appCtl.claudeLogin?.state === 'loggedOut'
   ? 'Log in from Preferences → Profiles'
   : `Assistant turns run on this account (profile ${appCtl.activeProfileDisplayName})`)
@@ -289,8 +299,8 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       </button>
     </template>
     <div class="kiwi-body">
-      <!-- Read-only: the Claude account Kiwi bills. Managing it lives in Preferences → Profiles
-           (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
+      <!-- The Claude account Kiwi bills, + Log out. Logging in and switching live in Preferences →
+           Profiles (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
       <div v-if="accountLabel" class="kiwi-row" data-guide="kiwi.account">
         <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Account</span>
         <span class="kiwi-chip cc-fs-xs"
@@ -298,6 +308,26 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               v-tooltip.bottom="accountTip">
           {{ accountLabel }}
         </span>
+        <ConfirmButton v-if="appCtl.claudeLogin?.state === 'loggedIn'"
+                       @confirm="logoutAccount" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
+                  :disabled="loggingOut" @click="arm"
+                  v-tooltip.bottom="appCtl.activeProfileName === 'default'
+                    ? 'Log out — terminal sessions on this OS account too'
+                    : 'Log out of this account'">
+            <i :class="['pi', loggingOut ? 'pi-spin pi-spinner' : 'pi-sign-out']" />
+          </button>
+          <template v-else>
+            <button class="cc-btn cc-btn-danger cc-btn-icon cc-fs-xs" @click="confirm"
+                    v-tooltip.bottom="'Confirm log out'">
+              <i class="pi pi-check" />
+            </button>
+            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" @click="cancel"
+                    v-tooltip.bottom="'Cancel'">
+              <i class="pi pi-times" />
+            </button>
+          </template>
+        </ConfirmButton>
       </div>
 
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">

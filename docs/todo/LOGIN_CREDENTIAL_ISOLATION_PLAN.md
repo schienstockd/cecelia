@@ -271,7 +271,8 @@ Keychain): `claude auth status --json` and `claude auth logout`, both measured o
 2.1.301) to honour `CLAUDE_CONFIG_DIR`, take ~1 s, and leave the home login untouched.
 
 - **See it**: Preferences → Profiles shows each profile's Claude account; Kiwi shows the account
-  its turns bill (read-only — Decision 3 of `USER_PROFILE_PLAN.md` still holds).
+  its turns bill, with its own Log out (P9 follow-up, 2026-10-17); no switching or logging in
+  there — Decision 3 of `USER_PROFILE_PLAN.md` still holds.
 - **End it**: a Log out button per logged-in profile. For `default` that is `~/.claude`, which
   terminal `claude` on the same OS account shares — the tooltip says so.
 - **Policy**: Settings → *Shared workstation* → *One Claude login at a time* — picking a profile
