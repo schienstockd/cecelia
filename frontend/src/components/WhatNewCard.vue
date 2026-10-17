@@ -130,9 +130,9 @@ const tipsOptOut = computed({
   border-radius: var(--cc-radius-sm);
   color: #ffffff;
 }
-.wn-kind-update { background: var(--cc-accent); }
+.wn-kind-update { background: var(--cc-accent-strong); }
 .wn-kind-tip    { background: var(--cc-sev-warn); color: #1a1a1a; }
-.wn-kind-fix    { background: var(--cc-sev-ok);   color: #ffffff; }
+.wn-kind-fix    { background: var(--cc-sev-ok);   color: #1a1a1a; }   /* white is 3.35:1 on it */
 .wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }
 .wn-title { flex: 1; margin: 0; font-size: var(--cc-fs-lg); font-weight: 600; color: var(--cc-text); }
 .wn-version {

@@ -279,14 +279,19 @@ const statusTip: Record<string, string> = {
   white-space: nowrap;
 }
 
-.ws-badge.connected    { background: #14532d33; color: #86efac; }
-.ws-badge.connected .cc-dot { box-shadow: 0 0 5px var(--cc-dot-ok); }
-.ws-badge.connecting   { background: #78350f33; color: #fcd34d; }
-.ws-badge.disconnected { background: #27272a55; color: #71717a; }
+/* The badge takes its tint and text from its dot's tone (--cc-dot-*), so the pill and the light can
+   never disagree — the label says what the dot means. */
+.ws-badge              { --ws-tone: var(--cc-dot-idle);
+                         background: color-mix(in srgb, var(--ws-tone) 14%, transparent);
+                         color: color-mix(in srgb, var(--ws-tone) 55%, white); }
+.ws-badge.connected    { --ws-tone: var(--cc-dot-ok); }
+.ws-badge.connecting   { --ws-tone: var(--cc-dot-warn); }
 .ws-badge.error,
-.ws-badge.signedOut    { background: #7f1d1d33; color: #fca5a5; }
+.ws-badge.signedOut    { --ws-tone: var(--cc-dot-fail); }
+.ws-badge.disconnected { color: var(--cc-text-dim); }
+.ws-badge.connected .cc-dot,
 .ws-badge.error .cc-dot,
-.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--cc-dot-fail); }
+.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--ws-tone); }
 
 .update-badge {
   display: flex;

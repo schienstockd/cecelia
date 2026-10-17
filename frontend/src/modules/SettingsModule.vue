@@ -257,9 +257,8 @@ function shortModulePath(p: string): string {
 // Install and remove both return the SAME payload the status endpoint does, so the store is refreshed
 // from the response rather than by a follow-up fetch that could race the reload.
 // Columns for the two plugin tables. A table rather than stacked rows because each entry carries
-// several comparable facts (version, what it ships) plus a row-scoped action — and `.save-btn` is
-// `display:flex`, i.e. block-level, so in a plain row the button dropped onto its own line under the
-// name it belonged to. SelectionTable is THE canonical table (docs/ui/PRIMITIVES.md);
+// several comparable facts (version, what it ships) plus a row-scoped action, and in a plain row the
+// button dropped onto its own line under the name it belonged to. SelectionTable is THE canonical table (docs/ui/PRIMITIVES.md);
 // hand-rolling one here is the exact mistake it exists to prevent.
 const PLUGIN_COLUMNS: SelectionColumn[] = [
   { key: 'name',       label: 'Plugin' },
@@ -755,7 +754,7 @@ async function switchWt(path: string) {
                 placeholder="Project name"
               />
               <button
-                class="save-btn"
+                class="cc-btn cc-btn-primary"
                 :disabled="saving || !editName.trim() || editName === projectMeta.current?.name"
                 @click="saveName"
                 v-tooltip.right="'Apply the new project name'"
@@ -794,7 +793,7 @@ async function switchWt(path: string) {
         <div class="field-row">
           <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift
                right (and eventually wrap) as it does. A fixed control belongs on the fixed side. -->
-          <button class="save-btn" @click="showProfileEditor = true"
+          <button class="cc-btn cc-btn-primary" @click="showProfileEditor = true"
                   v-tooltip.right="'Create or change a profile'">
             <i class="pi pi-pencil" /> Edit
           </button>
@@ -822,7 +821,7 @@ async function switchWt(path: string) {
           <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly
                  v-tooltip.bottom="'Cecelia version currently running'" />
           <button
-            class="save-btn"
+            class="cc-btn cc-btn-primary"
             :disabled="appCtl.updateChecking"
             @click="() => appCtl.checkUpdate(settings.preferDevChannel ? 'dev' : 'stable')"
             v-tooltip.right="'Check GitHub for a newer release'"
@@ -855,7 +854,7 @@ async function switchWt(path: string) {
       <!-- per-user install: in-app update -->
       <div v-else-if="appCtl.updateAvailable && appCtl.canApplyUpdate" class="field">
         <button
-          class="save-btn"
+          class="cc-btn cc-btn-primary"
           :disabled="appCtl.updateBusy"
           @click="appCtl.applyUpdate"
           v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish`"
@@ -875,7 +874,7 @@ async function switchWt(path: string) {
            than a ConfirmButton: the actual overwrite happens on the NEXT restart, not on click. -->
       <div v-if="appCtl.updateHasPrevious && appCtl.canApplyUpdate" class="field">
         <button
-          class="save-btn"
+          class="cc-btn cc-btn-primary"
           :disabled="appCtl.updateRevertBusy"
           @click="appCtl.revertUpdate"
           v-tooltip.right="'Roll back to the previous version on the next restart'"
@@ -898,7 +897,7 @@ async function switchWt(path: string) {
                `v-if="storage.reclaimable.length"`, so it does not exist until a scan has run and never
                exists on a project with nothing to reclaim — an anchor the guide could point at only
                sometimes. Scan is always present, and it is the first click either way. -->
-          <button class="save-btn" data-guide="settings.storageScan"
+          <button class="cc-btn cc-btn-primary" data-guide="settings.storageScan"
                   :disabled="storageScan || !projectMeta.current" @click="scanStorage"
                   v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
             <i :class="['pi', storageScan ? 'pi-spin pi-spinner' : 'pi-search']" />
@@ -956,15 +955,15 @@ async function switchWt(path: string) {
             <li v-if="storage.reclaimable.length > 8" class="field-hint cc-muted cc-fs-xs">…{{ storage.reclaimable.length - 8 }} more</li>
           </ul>
           <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
+            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="storageBusy" @click="arm"
                     v-tooltip.top="'Delete every non-active image version'">
               <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : 'pi-trash']" /> Free up space
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm">
+              <button class="cc-btn cc-btn-danger" @click="confirm">
                 <i class="pi pi-trash" /> Free {{ formatBytes(storage.reclaimableBytes) }} across {{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }}
               </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </div>
@@ -988,20 +987,20 @@ async function switchWt(path: string) {
                 <ConfirmButton
                     @confirm="pruneConfirm(img.imageUid, vn.valueName, v.version)"
                     v-slot="{ armed, arm, confirm, cancel }">
-                  <button v-if="!armed" class="save-btn ghost"
+                  <button v-if="!armed" class="cc-btn cc-btn-ghost"
                           :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
                           @click="pruneDryRun(img.imageUid, vn.valueName, v.version); arm()"
                           v-tooltip.left="`Preview freeing ${v.version} — irreversible when confirmed`">
                     <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner' : 'pi-trash']" /> Prune
                   </button>
                   <template v-else>
-                    <button class="save-btn danger"
+                    <button class="cc-btn cc-btn-danger"
                             :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
                             @click="confirm">
                       <i class="pi pi-trash" />
                       Free {{ formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes) }}
                     </button>
-                    <button class="save-btn ghost" @click="cancel">Cancel</button>
+                    <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
                   </template>
                 </ConfirmButton>
                 <span v-if="pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)]"
@@ -1089,7 +1088,7 @@ async function switchWt(path: string) {
           <input class="field-input mono" :value="customModules.dir || '—'" readonly
                  v-tooltip.bottom="'Where drop-in task modules are loaded from'" />
           <button
-            class="save-btn"
+            class="cc-btn cc-btn-primary"
             :disabled="customModules.loading"
             @click="customModules.reload"
             v-tooltip.right="'Rescan for newly dropped modules; edits need a server restart'"
@@ -1144,16 +1143,16 @@ async function switchWt(path: string) {
                  placeholder="tag or commit"
                  v-tooltip.bottom="'Pin a tag or commit; blank takes the default branch'" />
           <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
+            <button v-if="!armed" class="cc-btn cc-btn-primary" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
                     v-tooltip.top="'Fetch and install — this code is not sandboxed'">
               <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> Install
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm"
+              <button class="cc-btn cc-btn-danger" @click="confirm"
                       v-tooltip.top="'Runs with full access to this machine'">
                 <i class="pi pi-download" /> Confirm install
               </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </div>
@@ -1236,19 +1235,19 @@ async function switchWt(path: string) {
         <div class="patch-head">
           <span class="patch-title">{{ p.title }}</span>
           <span class="patch-actions">
-            <button class="save-btn" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
+            <button class="cc-btn cc-btn-primary" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
                     v-tooltip.top="'List what would change — writes nothing'">
               <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
             </button>
             <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="save-btn danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
+              <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
                       v-tooltip.top="'Write changes to this project\'s data'"><i class="pi pi-play" /> Apply</button>
               <template v-else>
-                <button class="save-btn danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
-                <button class="save-btn ghost" @click="cancel">Cancel</button>
+                <button class="cc-btn cc-btn-danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
+                <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
               </template>
             </ConfirmButton>
-            <button v-if="patchBusy(p.id)" class="save-btn ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
+            <button v-if="patchBusy(p.id)" class="cc-btn cc-btn-ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
           </span>
         </div>
         <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
@@ -1275,19 +1274,19 @@ async function switchWt(path: string) {
         <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
-          <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
+          <button v-if="diag?.dev" class="cc-btn cc-btn-primary" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="armQuit(arm)"
+            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="appCtl.busy" @click="armQuit(arm)"
                     v-tooltip.top="'Stop notebooks and the backend, then exit Cecelia'">
               <i class="pi pi-power-off" /> Quit
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm"
+              <button class="cc-btn cc-btn-danger" @click="confirm"
                       v-tooltip.top="quitConfirm"><i class="pi pi-power-off" /> {{ quitLabel }}</button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </span>
@@ -1314,27 +1313,27 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
                          v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
+            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
                     v-tooltip.top="'Another Cecelia\'s server holds this port — stop it and start this one'">
               <i class="pi pi-power-off" /> Stop it
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
+              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
                 <i class="pi pi-check" /> Stop it
               </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
-          <button v-else-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
+          <button v-else-if="notebooksSt === 'stopped'" class="cc-btn cc-btn-primary" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
                   v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
             <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-play']" /> Start
           </button>
           <template v-else>
-            <button class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
+            <button class="cc-btn cc-btn-primary" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
               <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
             </button>
-            <button class="save-btn ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
+            <button class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
               <i class="pi pi-stop-circle" /> Stop
             </button>
           </template>
@@ -1351,18 +1350,18 @@ async function switchWt(path: string) {
         <span class="svc-actions">
           <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
                          v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'preview'" @click="arm"
+            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'" @click="arm"
                     v-tooltip.top="'Another Cecelia\'s preview worker holds this port — stop it'">
               <i class="pi pi-power-off" /> Stop it
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its previews stop'">
+              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its previews stop'">
                 <i class="pi pi-check" /> Stop it
               </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
-          <button v-else-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
+          <button v-else-if="previewSt !== 'stopped'" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'"
                   @click="previewStop()"
                   v-tooltip.top="'Stop the preview worker and free its GPU memory'">
             <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-spinner' : 'pi-stop-circle']" /> Stop
@@ -1384,7 +1383,7 @@ async function switchWt(path: string) {
           </span>
           <span v-else-if="runnerRaw?.adopted" class="cc-muted cc-fs-xs"
                 v-tooltip.bottom="'This runner was already going when the backend started — it outlived a restart'">adopted</span>
-          <button v-if="runnerSt !== 'stopped'" class="save-btn" :disabled="svcBusy === 'runner'"
+          <button v-if="runnerSt !== 'stopped'" class="cc-btn cc-btn-primary" :disabled="svcBusy === 'runner'"
                   @click="runnerRestart(!!runnerRaw?.busy && svcMsg.includes('again'))"
                   v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
             <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
@@ -1547,10 +1546,10 @@ async function switchWt(path: string) {
       </div>
 
       <div class="field-row" style="margin-top:0.6rem; gap:0.5rem">
-        <button class="save-btn" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
+        <button class="cc-btn cc-btn-primary" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
           <i :class="['pi', diagBusy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
         </button>
-        <button class="save-btn" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
+        <button class="cc-btn cc-btn-primary" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
           <i class="pi pi-box" /> Packages…
         </button>
       </div>
@@ -1603,7 +1602,7 @@ async function switchWt(path: string) {
         @keydown="replKeydown"
       />
       <div class="field-row" style="margin-top:0.5rem">
-        <button class="save-btn" :disabled="replBusy || !replCode.trim()" @click="runRepl">
+        <button class="cc-btn cc-btn-primary" :disabled="replBusy || !replCode.trim()" @click="runRepl">
           <i :class="['pi', replBusy ? 'pi-spin pi-spinner' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
         </button>
       </div>
@@ -1721,22 +1720,6 @@ async function switchWt(path: string) {
 .stor-size { font-variant-numeric: tabular-nums; color: var(--cc-text); }
 .stor-list .field-hint { display: inline; margin: 0; }
 
-.save-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: var(--cc-fs-sm);
-  padding: 0.35rem 0.7rem;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid var(--cc-accent);
-  background: var(--cc-accent);
-  color: #fff;
-  cursor: pointer;
-  transition: opacity 0.12s;
-  flex-shrink: 0;
-}
-.save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.save-btn:not(:disabled):hover { opacity: 0.85; }
 
 /* .icon-btn → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
@@ -1772,9 +1755,6 @@ async function switchWt(path: string) {
   column-gap: 0.6rem; margin-bottom: 0.3rem; min-height: 1.7rem; }
 .mcp-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
-.save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
-.save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
-.save-btn.danger { background: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* diagnostics key/value grid */
 .diag-grid {

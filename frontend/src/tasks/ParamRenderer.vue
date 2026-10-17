@@ -1320,7 +1320,7 @@ function onChannelUpdate(next: string[]) {
 
 .group-actions { flex: 0 0 auto; }
 .group-add-btn { transition: background 0.1s, border-color 0.1s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-micro */
-.group-add-btn:hover { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
+.group-add-btn:hover { background: var(--cc-accent-strong); border-color: var(--cc-accent-strong); color: #fff; }
 .group-empty { font-style: italic; padding: 0.3rem 0; }
 .group-entry {
   margin-bottom: 0.4rem;

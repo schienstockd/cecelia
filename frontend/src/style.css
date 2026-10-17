@@ -236,10 +236,13 @@ body {
 }
 .cc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* White text needs the DEEPER violet: on --cc-accent it is 2.72:1 (fails WCAG AA's 4.5:1, and even
+   the 3:1 large-text floor); on --cc-accent-strong it is 5.70:1, and the button still clears the 3:1
+   non-text contrast against the page (3.04:1). Same reason for .cc-btn-on-solid below. */
 .cc-btn-primary {
-  background: var(--cc-accent);
+  background: var(--cc-accent-strong);
   color: #fff;
-  border-color: var(--cc-accent);
+  border-color: var(--cc-accent-strong);
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
 
@@ -342,14 +345,14 @@ body {
 }
 
 .cc-btn-on.cc-btn-on-solid {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-accent-strong);
+  border-color: var(--cc-accent-strong);
   color: #fff;
 }
 .cc-btn.cc-btn-on.cc-btn-on-solid:hover:not(:disabled) {
   filter: brightness(1.12);
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-accent-strong);
+  border-color: var(--cc-accent-strong);
   color: #fff;
 }
 
