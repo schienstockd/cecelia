@@ -3,8 +3,8 @@ import { SHARED_WORKSTATION_ITEMS, sharedWorkstationRows } from './sharedWorksta
 
 describe('sharedWorkstationRows', () => {
   it('joins the catalogue with server values', () => {
-    const rows = sharedWorkstationRows({ oneClaudeLogin: true })
-    expect(rows.map(r => [r.key, r.value])).toEqual([['oneClaudeLogin', true]])
+    const rows = sharedWorkstationRows({ oneClaudeLogin: true, claudeLogoutOnQuit: false })
+    expect(rows.map(r => [r.key, r.value])).toEqual([['oneClaudeLogin', true], ['claudeLogoutOnQuit', false]])
     expect(rows[0].label).toBeTruthy()
   })
 

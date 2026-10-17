@@ -35,7 +35,9 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
-import { claudeLoginLabel } from '../../utils/profileApi'
+import { claudeLoginLabel, fetchTerminalCommand } from '../../utils/profileApi'
+import BaseModal from '../BaseModal.vue'
+import ClaudeLoginPanel from '../profile/ClaudeLoginPanel.vue'
 import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
 import { useObserverStore } from '../../stores/observer'
@@ -83,17 +85,39 @@ const { isOpen: sectionOpen, toggle: toggleSection } =
 
 // USER_PROFILE_PLAN Phase 6: the profile picker is gone from Kiwi. Identity is chosen at launch
 // (AppProfilePicker) and managed in Preferences → Profiles. Kiwi only SHOWS the Claude account its
-// turns will bill — read-only (Decision 3), so a shared-box user who didn't switch sees it before
-// sending. Re-checked when the window regains focus: a login in a terminal happens elsewhere.
+// turns will bill, so a shared-box user who didn't switch sees it before sending — and logs in or out
+// right here (LOGIN_CREDENTIAL_ISOLATION_PLAN P9; switching profiles stays in Preferences, USER_PROFILE_PLAN
+// Decision 3). Re-checked when the window regains focus: a login in a terminal happens elsewhere.
 const pm = useProjectMetaStore()
 const appCtl = useAppControlStore()
 const onFocusLogin = () => { void appCtl.refreshClaudeLogin() }
 onMounted(() => { void appCtl.refreshClaudeLogin(); window.addEventListener('focus', onFocusLogin) })
 onUnmounted(() => window.removeEventListener('focus', onFocusLogin))
 const accountLabel = computed(() => claudeLoginLabel(appCtl.claudeLogin))
+// Log in: Cecelia runs the login itself in a small dialog (private browser window + paste-code
+// fallback). Closing it re-reads the login so the row shows the account.
+const showLogin = ref(false)
+async function closeLogin() {
+  showLogin.value = false
+  await appCtl.refreshClaudeLogin(true)
+}
+// Log out: the shared store action (the sidebar's user logout runs the same one).
+const loggingOut = ref(false)
+async function logoutAccount() {
+  if (loggingOut.value) return
+  loggingOut.value = true
+  try { await appCtl.logOutClaude() } finally { loggingOut.value = false }
+}
 const accountTip = computed(() => appCtl.claudeLogin?.state === 'loggedOut'
-  ? 'Log in from Preferences → Profiles'
+  ? `Profile ${appCtl.activeProfileDisplayName} is not logged in`
   : `Assistant turns run on this account (profile ${appCtl.activeProfileDisplayName})`)
+// Terminal row: copy the one-liner that starts the assistant CLI in a terminal under THIS profile's
+// login (`kiwi_terminal_command` builds it server-side). A bare terminal run uses the default login.
+const { isCopied: termCopied, copy: copyTerm } = useCopyFlash()
+async function copyTerminalCommand() {
+  const r = await fetchTerminalCommand()
+  if (r?.command) await copyTerm(r.command)
+}
 
 // Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
 // showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
@@ -289,8 +313,8 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       </button>
     </template>
     <div class="kiwi-body">
-      <!-- Read-only: the Claude account Kiwi bills. Managing it lives in Preferences → Profiles
-           (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
+      <!-- The account Kiwi bills, + Log in / Log out. Switching profiles lives in Preferences →
+           Profiles (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
       <div v-if="accountLabel" class="kiwi-row" data-guide="kiwi.account">
         <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Account</span>
         <span class="kiwi-chip cc-fs-xs"
@@ -298,6 +322,29 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               v-tooltip.bottom="accountTip">
           {{ accountLabel }}
         </span>
+        <button v-if="appCtl.claudeLogin?.state === 'loggedOut'" class="cc-btn cc-btn-ghost cc-fs-2xs"
+                @click="showLogin = true" v-tooltip.bottom="'Opens a private browser window to sign in'">
+          <i class="pi pi-sign-in" /> Log in
+        </button>
+        <!-- No Log out on peanut: its login is the OS account's terminal one (plan D21). -->
+        <ConfirmButton v-if="appCtl.claudeLogin?.state === 'loggedIn' && appCtl.activeProfileName !== 'default'"
+                       @confirm="logoutAccount" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
+                  :disabled="loggingOut" @click="arm"
+                  v-tooltip.bottom="'Log out of this account'">
+            <i :class="['pi', loggingOut ? 'pi-spin pi-spinner' : 'pi-sign-out']" />
+          </button>
+          <template v-else>
+            <button class="cc-btn cc-btn-danger cc-btn-icon cc-fs-xs" @click="confirm"
+                    v-tooltip.bottom="'Confirm log out'">
+              <i class="pi pi-check" />
+            </button>
+            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" @click="cancel"
+                    v-tooltip.bottom="'Cancel'">
+              <i class="pi pi-times" />
+            </button>
+          </template>
+        </ConfirmButton>
       </div>
 
       <div v-if="!projectUid" class="kiwi-empty cc-muted cc-fs-sm">
@@ -511,6 +558,12 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               {{ observer.registering ? CLAUDE_TERMINAL.busy
                  : terminalCtaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
             </button>
+            <button v-else class="cc-btn cc-btn-ghost cc-fs-2xs kiwi-obs-fix" @click="copyTerminalCommand"
+                    v-tooltip.bottom="termCopied() ? 'Copied — paste it in a terminal'
+                      : `Starts the assistant in a terminal as ${appCtl.activeProfileDisplayName}`">
+              <i :class="['pi', termCopied() ? 'pi-check' : 'pi-copy']" />
+              {{ termCopied() ? 'Copied' : 'Copy command' }}
+            </button>
           </div>
           <InlineNote v-if="observer.registerError" severity="warn"
                       :short="observer.registerError"
@@ -519,6 +572,9 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       </template>
     </div>
     <AssistantOverviewDialog v-if="showAssistantOverview" @close="showAssistantOverview = false" />
+    <BaseModal v-if="showLogin" title="Log in" icon="pi-sign-in" width="440px" @close="closeLogin">
+      <ClaudeLoginPanel :name="appCtl.activeProfileName" @logged-in="closeLogin" />
+    </BaseModal>
   </FloatingPanel>
 </template>
 

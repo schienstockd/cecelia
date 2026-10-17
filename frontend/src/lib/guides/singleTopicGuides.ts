@@ -60,15 +60,8 @@ export const userProfileGuide: GuideDef = {
       placement: 'top',
       title: 'Add a profile',
       text: 'New profile = fresh credentials and an empty project list.',
-      bullets: ['Retire one from the row above; the record stays resolvable for old turn logs.'],
-    },
-    {
-      anchor: 'prefs.copyTerminal',
-      placement: 'top',
-      title: 'Log the profile in',
-      text: 'Each profile has its own Claude login: use the sign-in button on its row.',
-      bullets: ['The login opens in a private browser window.',
-                'Claude in a terminal copies a command that starts claude as you.'],
+      bullets: ['Retire one from the row above; the record stays resolvable for old turn logs.',
+                'Log it in to Claude from Kiwi\'s Account row.'],
     },
   ],
 }
@@ -438,6 +431,20 @@ export const kiwiGuide: GuideDef = {
       text: 'Everything Claude-adjacent lives in this panel — pairing, chat starter, and the buttons that share what is on screen.',
       bullets: ['On-demand only; nothing happens until you ask.'],
       clickAnchor: true,
+    },
+    {
+      anchor: 'kiwi.account',
+      placement: 'left',
+      title: 'Your Claude account',
+      text: 'The account this profile\'s turns bill — log in or out right here.',
+      bullets: ['Logging in opens a private browser window, so the last person\'s session can\'t sign you in.',
+                'Assistant → Terminal → Copy command starts claude in a terminal as you.'],
+      reveal: {
+        needed: c => !c.anchorExists('kiwi.account'),
+        anchor: 'sidebar.kiwiCta',
+        text: 'Open Kiwi first — the Account row is at its top.',
+        placement: 'right',
+      },
     },
     {
       anchor: 'kiwi.pairing',

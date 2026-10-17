@@ -339,3 +339,10 @@ export function claudeLoginPrompt(run: ClaudeLoginRun | null): string {
   if (run.state === 'loggedIn') return 'Logged in'
   return run.message || run.error || 'Login did not finish'
 }
+
+/** Did a Claude logout leave someone logged in? `''` when it worked, or when the profile wasn't
+ *  logged in to begin with (a failure then — e.g. no CLI — ended nothing that existed). Otherwise
+ *  the reason, so the user logout can refuse to walk away from a live login. */
+export function claudeLogoutError(r: { ok: boolean; error?: string }, wasLoggedIn: boolean): string {
+  return r.ok || !wasLoggedIn ? '' : (r.error ?? 'Claude log out failed')
+}

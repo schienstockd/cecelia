@@ -13,6 +13,7 @@ import {
   fetchClaudeLoginRun,
   sendClaudeLoginCode,
   claudeLoginPrompt,
+  claudeLogoutError,
   claudeLoginLabel,
 } from './profileApi'
 
@@ -253,5 +254,14 @@ describe('Logging in from Cecelia (P9)', () => {
     expect(claudeLoginPrompt({ ...w, url: 'https://x' })).toBe('Open the link in a private window and sign in')
     expect(claudeLoginPrompt({ ...w, state: 'failed', message: 'Login failed: 400' })).toBe('Login failed: 400')
     expect(claudeLoginPrompt({ ...w, state: 'failed' })).toBe('Login did not finish')
+  })
+})
+
+describe('claudeLogoutError', () => {
+  it('only a failure that leaves a live login is an error', () => {
+    expect(claudeLogoutError({ ok: true }, true)).toBe('')
+    expect(claudeLogoutError({ ok: false, error: 'No assistant CLI found.' }, false)).toBe('')
+    expect(claudeLogoutError({ ok: false, error: 'timed out' }, true)).toBe('timed out')
+    expect(claudeLogoutError({ ok: false }, true)).toBe('Claude log out failed')
   })
 })

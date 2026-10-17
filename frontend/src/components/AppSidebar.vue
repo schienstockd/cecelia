@@ -29,6 +29,15 @@ async function armQuit(arm: () => void) {
   arm()                                        // arm first: the confirm must appear immediately
   quitTasks.value = await runningTaskCount()   // then fill in what it will cost
 }
+// Log out: end this person's session without quitting — Claude logout, then the profile picker. The
+// store refuses (and says why) if the Claude logout failed, so the toast is the only failure path.
+async function logOutUser() {
+  const err = await appCtl.logOutUser()
+  if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
+}
+const logOutTip = computed(() => appCtl.activeProfileName === 'default'
+  ? `Log ${appCtl.activeProfileDisplayName} out — its terminal Claude login stays`
+  : `Log ${appCtl.activeProfileDisplayName} out of Cecelia and Claude`)
 // The footer has no status line, so a refused restart (tasks would die, or not supervised) is a toast.
 async function restartBackend() {
   const err = await appCtl.restartBackend()
@@ -195,6 +204,17 @@ function isNavDisabled(item: NavItem): boolean {
           <template v-else>
             <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" @click="confirm"
                     v-tooltip.right="quitConfirm"><i class="pi pi-check" /></button>
+            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
+          </template>
+        </ConfirmButton>
+        <ConfirmButton @confirm="logOutUser" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
+                  :disabled="appCtl.busy" @click="arm" v-tooltip.right="logOutTip">
+            <i class="pi pi-sign-out" />
+          </button>
+          <template v-else>
+            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="confirm"
+                    v-tooltip.right="'Confirm log out'"><i class="pi pi-check" /></button>
             <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
           </template>
         </ConfirmButton>

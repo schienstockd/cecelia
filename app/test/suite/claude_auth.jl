@@ -136,3 +136,8 @@ end
     @test Cecelia.claude_login_code!("/nonexistent/profile-dir", "  ")[1] == false
     @test Cecelia.claude_login_cancel!("/nonexistent/profile-dir") == false
 end
+
+@testset "claude_auth_logout! never ends the default login" begin
+    # `""` = the default profile = ~/.claude, shared with terminal claude: refused, no CLI spawned
+    @test Cecelia.claude_auth_logout!("") == (false, Cecelia.CLAUDE_DEFAULT_LOGOUT_REFUSED)
+end

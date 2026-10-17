@@ -7,11 +7,16 @@
 # here and it appears in the route + section with no other wiring.
 #
 # Items:
-#   oneClaudeLogin — picking a profile logs every OTHER profile out of Claude (`claude_auth.jl`),
-#                    so the previous person's login never stays on disk past the next pick.
+#   (Neither ever logs out `default`/peanut: `~/.claude` is terminal claude's login too — plan D21.)
+#   oneClaudeLogin     — picking a profile logs every OTHER profile out of Claude (`claude_auth.jl`),
+#                        so the previous person's login never stays on disk past the next pick.
+#   claudeLogoutOnQuit — any orderly quit (`/api/app/shutdown`: Quit button, closing the packaged app,
+#                        the dev supervisor's stop) logs every named profile out of Claude first, so
+#                        no person's login survives the app.
 
 const SHARED_WORKSTATION_ITEMS = (
     (key = "oneClaudeLogin", default = false),
+    (key = "claudeLogoutOnQuit", default = false),
 )
 
 const _SHARED_WORKSTATION_TABLE = "sharedWorkstation"

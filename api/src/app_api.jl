@@ -105,6 +105,8 @@ end
 # flushes first. In dev this ends `pixi run dev`; in the packaged app the server exit ends app.py.
 function api_app_shutdown(body_bytes::Vector{UInt8})
     @info "Shutdown requested via /api/app/shutdown"
+    n = claude_logout_on_quit!()   # Shared workstation → "Log out of Claude on quit" (no-op when off)
+    n > 0 && @info "Quit: logged $(n) profile(s) out of Claude"
     _stop_children_for_exit()
     @async begin
         sleep(0.3)      # give handle_stream time to write the response before the process dies
