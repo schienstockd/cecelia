@@ -40,9 +40,10 @@ onMounted(async () => {
     roster.value = await fetchProfiles()
     // Belt-and-suspenders auto-pick: if a user lands on the picker with exactly one selectable
     // profile (e.g. the store gate lagged, or a retired sibling padded the count in an older
-    // build), pick it for them instead of forcing a redundant click.
+    // build), pick it for them instead of forcing a redundant click. NOT after a user logout: there
+    // the picker is the point — the next person must choose (or create) who they are.
     const sel = roster.value.profiles.filter(p => !p.retired)
-    if (sel.length === 1) { void pick(sel[0]); return }
+    if (sel.length === 1 && !appCtl.loggedOutPick()) { void pick(sel[0]); return }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     log.error(`Profile picker: fetch failed — ${error.value}`, { source: 'profile-picker' })

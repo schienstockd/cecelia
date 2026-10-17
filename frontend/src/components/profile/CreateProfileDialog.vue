@@ -2,7 +2,7 @@
   New user-profile — the create-flow dialog opened from the launch picker (`+ New profile`) and
   from the Preferences modal / project-panel entry points (USER_PROFILE_PLAN Phase 6 moved this
   file out of `components/kiwi/` so it is no longer tied to the Kiwi cockpit's profile row).
-  Underlying primitive: LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (backend) + P9 (logging in).
+  Underlying primitive: LOGIN_CREDENTIAL_ISOLATION_PLAN P3 (backend).
 
   Three server calls chained in one modal so the profile is FULLY ready after Close:
     1. POST /api/kiwi/profiles/create      — mkpath under user-profiles/<name>/ (URL contract
@@ -17,7 +17,8 @@
                                              so the profile isn't lost, and the failure is
                                              surfaced inline.
 
-  Step two logs the new profile in to Claude right here (`ClaudeLoginPanel`, plan P9) — no terminal.
+  Creating never starts a Claude login (it would pop a browser window unasked) — step two only
+  confirms and points at Kiwi, whose Account row does it (plan P9, D17/D18).
   `created` is emitted when the user leaves that step (Done or close), not on create: both hosts
   close/reload on it, which used to dismiss step two before anyone could read it.
 
@@ -26,7 +27,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, useTemplateRef } from 'vue'
 import BaseModal from '../BaseModal.vue'
-import ClaudeLoginPanel from './ClaudeLoginPanel.vue'
 import { createProfile, selectProfile,
          isValidProfileName } from '../../utils/profileApi'
 // serviceApi.observerApi lives under `../` from the previous location; unchanged now.
@@ -118,7 +118,7 @@ function onClose() { created.value ? emit('created', created.value.name) : emit(
           <i class="pi pi-check-circle" /> Created <code>{{ created.name }}</code> — now the
           active profile{{ created.mcpReady ? ', MCP tools registered' : '' }}.
         </p>
-        <ClaudeLoginPanel :name="created.name" />
+        <p class="cc-fs-xs cc-muted kp-tip">Log in to Claude from Kiwi.</p>
         <p v-if="errorMsg" class="kp-err cc-fs-xs">
           <i class="pi pi-exclamation-triangle" /> {{ errorMsg }}
         </p>

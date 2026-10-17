@@ -132,7 +132,7 @@ end
 
 # Shared workstation → "One Claude login at a time": picking a profile logs every OTHER profile out
 # of Claude, so the previous person's login doesn't outlive the next pick (the launch picker selects
-# on every reload — that is the hand-over moment). Includes `default`, whose login is `~/.claude`.
+# on every reload — that is the hand-over moment). Never `default`: `~/.claude` is terminal claude's.
 # In the background: each logout is a ~1 s CLI spawn and the picker is waiting. Returns how many
 # were queued.
 function _enforce_one_claude_login(keep::AbstractString)::Int
@@ -145,12 +145,37 @@ function _enforce_one_claude_login(keep::AbstractString)::Int
     length(dirs)
 end
 
-# The profile dirs that policy logs out when `keep` is picked — every other profile, retired ones
-# too (their credentials are still on disk), `""` being the default profile. Empty when the policy
+# The profile dirs that policy logs out when `keep` is picked — every other NAMED profile, retired
+# ones too (their credentials are still on disk); never `default` (plan D21). Empty when the policy
 # is off. Split out so a test can check the list without logging anything out.
 _one_claude_login_targets(keep::AbstractString)::Vector{String} =
     Cecelia.shared_workstation("oneClaudeLogin") ?
-        String[p["dir"] for p in _kiwi_list_profiles() if p["name"] != keep] : String[]
+        String[p["dir"] for p in _kiwi_list_profiles() if p["name"] != keep && !p["isDefault"]] : String[]
+
+# Shared workstation → "Log out of Claude on quit": every named profile's login, retired ones
+# included — never `default` (`~/.claude` is terminal claude's too; plan D21). Empty when off. Split out like the target
+# list above so a test can check it without logging anything out.
+_quit_claude_logout_targets()::Vector{String} =
+    Cecelia.shared_workstation("claudeLogoutOnQuit") ?
+        String[p["dir"] for p in _kiwi_list_profiles() if !p["isDefault"]] : String[]
+
+# Called by `api_app_shutdown` BEFORE the process exits — synchronous, all profiles in parallel, so
+# the logouts finish rather than dying with us. Every orderly quit reaches it: the Quit button, closing
+# the packaged app (`app.py::_stop_gracefully`, 5 s) and the dev supervisor's stop (`api/dev.jl`, 2 s).
+# Each logout is ~1 s; capped at `_QUIT_LOGOUT_TIMEOUT_S` so the run fits app.py's window before it
+# escalates to a kill. Returns how many were attempted.
+const _QUIT_LOGOUT_TIMEOUT_S = 4
+function claude_logout_on_quit!()::Int
+    dirs = _quit_claude_logout_targets()
+    (isempty(dirs) || isnothing(Cecelia.agent_bin_path(Cecelia.observer_agent_bin()))) && return 0
+    @sync for d in dirs
+        Threads.@spawn begin
+            ok, msg = claude_auth_logout!(d; timeout_s = _QUIT_LOGOUT_TIMEOUT_S)
+            ok || @warn "Quit: could not log a profile out of Claude" dir = d message = msg
+        end
+    end
+    length(dirs)
+end
 
 # Retire a profile — write the sentinel marker so the picker grays it out and select rejects it.
 # The dir + credentials stay on disk (D11 immutable-name lifecycle). If the retired profile is
@@ -304,6 +329,7 @@ function api_kiwi_profiles_logout(body_bytes::Vector{UInt8})
     isempty(name) && return 400, JSON3.write((; ok = false, error = "Missing `name`."))
     dir = _kiwi_claude_dir(name)
     dir isa Tuple && return dir
+    isempty(dir) && return 409, JSON3.write((; ok = false, error = Cecelia.CLAUDE_DEFAULT_LOGOUT_REFUSED))
     ok, msg = claude_auth_logout!(dir)
     ok || return 500, JSON3.write((; ok = false, error = isempty(msg) ? "Logout failed." : msg))
     200, JSON3.write((; ok = true, name = name))

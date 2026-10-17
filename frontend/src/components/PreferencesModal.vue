@@ -18,7 +18,6 @@ import CcToggle from './CcToggle.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
-import ClaudeLoginPanel from './profile/ClaudeLoginPanel.vue'
 import HpcSettings from './HpcSettings.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useMcpConnections } from '../composables/useMcpConnections'
@@ -27,9 +26,8 @@ import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { dotClass } from '../utils/statusDot'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
-         fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
-         fetchClaudeLogin, logoutClaude, claudeLoginLabel,
-         type Profile, type ProfileRoster, type ClaudeLogin } from '../utils/profileApi'
+         isValidProfileName, profileDisplayName,
+         type ProfileRoster } from '../utils/profileApi'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -64,7 +62,6 @@ const roster = ref<ProfileRoster>({
 const profilesBusy = ref<string>('')      // name currently being selected/retired — drives per-row spinner
 const profilesError = ref<string | null>(null)
 const showCreateProfile = ref(false)
-const { isCopied: termCopied, copy: copyTerm } = useCopyFlash()
 
 async function refreshRoster() {
   try {
@@ -73,48 +70,7 @@ async function refreshRoster() {
     profilesError.value = e instanceof Error ? e.message : String(e)
   }
 }
-onMounted(async () => { await refreshRoster(); void refreshLogins() })
-
-// Each profile's Claude login (who it bills, or "Not logged in") + Log out. One ~1 s CLI probe per
-// profile server-side (cached briefly), so they run in parallel and fill in after the roster.
-const logins = ref<Record<string, ClaudeLogin>>({})
-const loggingOut = ref('')
-const loginsChecking = ref(false)
-async function refreshLogins(fresh = false) {
-  loginsChecking.value = true
-  try {
-    const names = roster.value.profiles.map(p => p.name)
-    const rs = await Promise.all(names.map(n => fetchClaudeLogin(n, fresh)))
-    logins.value = Object.fromEntries(names.map((n, i) => [n, rs[i]]))
-  } finally { loginsChecking.value = false }
-}
-async function logoutProfile(name: string) {
-  if (loggingOut.value) return
-  loggingOut.value = name
-  profilesError.value = null
-  try {
-    const r = await logoutClaude(name)
-    if (!r.ok) profilesError.value = r.error ?? 'Log out failed'
-    logins.value = { ...logins.value, [name]: await fetchClaudeLogin(name, true) }
-    if (name === roster.value.active) void appCtl.refreshClaudeLogin()   // Kiwi's account row
-  } finally { loggingOut.value = '' }
-}
-function loginTip(p: Profile): string {
-  const l = logins.value[p.name]
-  if (l?.state === 'loggedOut') return 'Not logged in to Claude'
-  return [l?.method, l?.org].filter(Boolean).join(' · ') || 'Claude account'
-}
-
-// Log in: Cecelia runs the login itself in a small dialog (ClaudeLoginPanel, plan P9). Closing it
-// re-reads that profile's login, so the row shows the new account.
-const loginFor = ref<Profile | null>(null)
-async function closeLogin() {
-  const p = loginFor.value
-  loginFor.value = null
-  if (!p) return
-  logins.value = { ...logins.value, [p.name]: await fetchClaudeLogin(p.name, true) }
-  if (p.name === roster.value.active) void appCtl.refreshClaudeLogin()   // Kiwi's account row
-}
+onMounted(refreshRoster)
 
 // Switching the profile mid-session works but half the app is already mounted against the
 // previous identity (per-profile settings, project filter, MCP registration). The plan is
@@ -212,20 +168,6 @@ function onProfileCreated(_name: string) {
   setTimeout(() => window.location.reload(), 250)
 }
 
-// "Claude in a terminal" (LOGIN_CREDENTIAL_ISOLATION_PLAN P6/D15): a one-liner that starts terminal
-// `claude` under the ACTIVE profile's login. Not how you log in any more (that's the row's Log in,
-// P9). Fetched fresh per click so the flag list stays in one place (`kiwi_terminal_command`).
-const termFetching = ref<string>('')      // name currently fetching — drives the row spinner
-async function copyTerminalCommand(profile?: string) {
-  const key = profile ?? '__active__'
-  if (termFetching.value) return
-  termFetching.value = key
-  try {
-    const r = await fetchTerminalCommand(profile)
-    if (r?.command) await copyTerm(r.command)
-  } finally { termFetching.value = '' }
-}
-
 // ── Kiwi pane: Cecelia's MCP registration in THIS profile's Claude config ─────────────────────────
 // Personal, not machine-wide (it is the active profile's `.claude.json`), so it lives here rather than
 // in Settings → System (docs/todo/SETTINGS_SCOPE_PLAN.md). Kiwi's Terminal row offers the same
@@ -300,11 +242,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                   <span v-if="p.isDefault" class="pp-tag cc-muted cc-fs-2xs">(~/.claude)</span>
                   <span v-if="p.retired" class="pp-tag cc-muted cc-fs-2xs">(retired)</span>
                   <span v-if="p.name === roster.active" class="pp-tag pp-tag-active cc-fs-2xs">active</span>
-                  <span v-if="claudeLoginLabel(logins[p.name])" class="pp-login cc-fs-2xs"
-                        :class="{ 'cc-muted': logins[p.name]?.state !== 'loggedIn' }"
-                        v-tooltip.bottom="loginTip(p)">
-                    Claude: {{ claudeLoginLabel(logins[p.name]) }}
-                  </span>
                 </span>
                 <span class="cc-row cc-row-tight">
                   <!-- Switch: any non-active, non-retired profile — INCLUDING `default`. Excluding
@@ -317,27 +254,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
                     Switch
                   </button>
-                  <!-- Log in: only when the CLI says logged out (not while unknown). Any profile but a
-                       retired one, so `alice` can log in without switching to alice first. -->
-                  <button v-if="logins[p.name]?.state === 'loggedOut' && !p.retired"
-                          class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                          @click="loginFor = p"
-                          v-tooltip.bottom="`Log ${profileDisplayName(p)} in to Claude`">
-                    <i class="pi pi-sign-in" />
-                  </button>
-                  <!-- Log out of Claude: only when logged in. For `default` that is `~/.claude`, the
-                       same login terminal `claude` on this OS account uses — the tooltip says so. -->
-                  <ConfirmButton v-if="logins[p.name]?.state === 'loggedIn'"
-                                 @confirm="logoutProfile(p.name)" v-slot="{ armed, press }">
-                    <button class="cc-btn cc-btn-icon cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
-                            :disabled="!!loggingOut" @click="press"
-                            v-tooltip.bottom="armed ? 'Click again to log out'
-                              : p.isDefault
-                              ? 'Log out of Claude — terminal claude on this account too'
-                              : `Log ${profileDisplayName(p)} out of Claude`">
-                      <i :class="['pi', loggingOut === p.name ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-sign-out']" />
-                    </button>
-                  </ConfirmButton>
                   <!-- Rename: not offered for `default` (magic name) or retired profiles (the
                        retired marker is a stable reference — renaming would silently invalidate
                        both semantics). See USER_PROFILE_PLAN Decision 11. -->
@@ -369,21 +285,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     @click="showCreateProfile = true"
                     v-tooltip.top="'A separate credential + MCP scope for this seat login'">
               <i class="pi pi-user-plus" /> New profile
-            </button>
-            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.copyTerminal"
-                    :disabled="!!termFetching"
-                    @click="copyTerminalCommand()"
-                    v-tooltip.top="termCopied()
-                      ? 'Copied — paste it in a terminal'
-                      : `Copies a command that starts claude as ${profileNameLabel(roster.active)}`">
-              <i :class="['pi', termFetching === '__active__' ? 'pi-spin pi-spinner'
-                                : termCopied() ? 'pi-check' : 'pi-copy']" />
-              {{ termCopied() ? 'Copied' : 'Claude in a terminal' }}
-            </button>
-            <!-- Skip the server's short status cache (a login or logout done in a terminal). -->
-            <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" :disabled="loginsChecking"
-                    @click="refreshLogins(true)" v-tooltip.top="'Re-check Claude logins'">
-              <i :class="['pi', loginsChecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
             </button>
             <!-- Retire (LOGIN_CREDENTIAL_ISOLATION_PLAN D11). Only offered when the active
                  profile is a named, non-retired one — retiring `default` is meaningless. -->
@@ -639,10 +540,6 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
       </section>
     </div>
-    <BaseModal v-if="loginFor" :title="`Log ${profileDisplayName(loginFor)} in to Claude`"
-               icon="pi-sign-in" width="440px" @close="closeLogin">
-      <div class="pp-login-dlg"><ClaudeLoginPanel :name="loginFor.name" @logged-in="closeLogin" /></div>
-    </BaseModal>
     <CreateProfileDialog v-if="showCreateProfile"
                          @close="showCreateProfile = false"
                          @created="onProfileCreated" />
@@ -718,6 +615,4 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pp-rename-input { flex: 1; min-width: 6rem; }
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }
-.pp-login { padding-inline: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pp-login-dlg { padding: 0.75rem 0.9rem; }
 </style>

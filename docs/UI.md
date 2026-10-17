@@ -1013,6 +1013,10 @@ New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
   gets the one-line budget.
 - **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
   (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
+- **Log out** — the sidebar-footer Log out beside Quit (`appControl.logOutUser()`): logs the active
+  profile out of Claude (never peanut — its login is terminal claude's), then reloads into the profile
+  picker (forced even with one profile). Ends a
+  person's session without stopping Cecelia; it refuses, with a toast, if the Claude logout failed.
 
 ## Guides — bubble walkthroughs (the compass in the header)
 

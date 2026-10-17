@@ -29,6 +29,15 @@ async function armQuit(arm: () => void) {
   arm()                                        // arm first: the confirm must appear immediately
   quitTasks.value = await runningTaskCount()   // then fill in what it will cost
 }
+// Log out: end this person's session without quitting — Claude logout, then the profile picker. The
+// store refuses (and says why) if the Claude logout failed, so the toast is the only failure path.
+async function logOutUser() {
+  const err = await appCtl.logOutUser()
+  if (err) useToast().add({ severity: 'warn', summary: err, life: 6000 })
+}
+const logOutTip = computed(() => appCtl.activeProfileName === 'default'
+  ? `Log ${appCtl.activeProfileDisplayName} out — its terminal Claude login stays`
+  : `Log ${appCtl.activeProfileDisplayName} out of Cecelia and Claude`)
 // The footer has no status line, so a refused restart (tasks would die, or not supervised) is a toast.
 async function restartBackend() {
   const err = await appCtl.restartBackend()
@@ -191,6 +200,12 @@ function isNavDisabled(item: NavItem): boolean {
                   :disabled="appCtl.busy" @click="armed ? confirm() : armQuit(arm)"
                   v-tooltip.right="armed ? quitConfirm : 'Quit Cecelia — stop notebooks and the backend'">
             <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" />
+          </button>
+        </ConfirmButton>
+        <ConfirmButton @confirm="logOutUser" v-slot="{ armed, press }">
+          <button class="footer-btn cc-btn cc-btn-icon cc-btn-lg" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                  :disabled="appCtl.busy" @click="press" v-tooltip.right="armed ? 'Click again to log out' : logOutTip">
+            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-sign-out'" />
           </button>
         </ConfirmButton>
         <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="restartBackend"

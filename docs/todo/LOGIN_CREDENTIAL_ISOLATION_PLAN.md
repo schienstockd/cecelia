@@ -270,10 +270,10 @@ on the CLI's own non-interactive verbs, never by touching credential files (macO
 Keychain): `claude auth status --json` and `claude auth logout`, both measured on Linux (CLI
 2.1.301) to honour `CLAUDE_CONFIG_DIR`, take ~1 s, and leave the home login untouched.
 
-- **See it**: Preferences → Profiles shows each profile's Claude account; Kiwi shows the account
-  its turns bill (read-only — Decision 3 of `USER_PROFILE_PLAN.md` still holds).
-- **End it**: a Log out button per logged-in profile. For `default` that is `~/.claude`, which
-  terminal `claude` on the same OS account shares — the tooltip says so.
+- **See it**: Kiwi's *Account* row shows the account the active profile's turns bill. (P8 first put
+  a per-profile label in Preferences → Profiles; P9 D18 moved it all to Kiwi.) No profile switching
+  in Kiwi — Decision 3 of `USER_PROFILE_PLAN.md` still holds.
+- **End it**: Log out on that row — not for `default`/peanut (D21).
 - **Policy**: Settings → *Shared workstation* → *One Claude login at a time* — picking a profile
   logs every other profile out, so the previous person's login doesn't outlive the next pick (the
   launch picker selects on every reload). Off by default. The section shows to the default profile
@@ -323,6 +323,31 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
 - **D15. Copy login command → "Claude in a terminal".** P6/D9's profile-scoped terminal stays for
   people who want terminal `claude` under their profile; it is no longer how you log in.
 - **D16. One login in flight per profile.** Starting another kills the previous one.
+- **D17. Creating a profile never starts a login** (user, 2026-10-17). It popped a browser window
+  unasked; the New profile dialog now only points at Kiwi.
+- **D18. The login lives in Kiwi, not Preferences** (user, 2026-10-17). Kiwi's *Account* row holds
+  the active profile's account + Log in + Log out, and Assistant → Terminal gets *Copy command*
+  (terminal `claude` as this profile). Preferences → Profiles drops the per-row Claude label, Log
+  in / Log out, *Claude in a terminal* and the re-check button — it is back to identity only.
+  Given up: seeing or logging out a profile that isn't the active one; the Shared-workstation
+  *One Claude login at a time* policy covers the hand-over case that served.
+- **D19. A user logout, beside Quit** (user, 2026-10-17). The sidebar footer's Log out ends a
+  person's session without quitting: it ALWAYS logs the active profile out of Claude (not only under
+  the policy above, which acts on a switch), then reloads into the profile picker, forced even on a
+  one-profile install. If the Claude logout fails while logged in, it stays put and says why. On
+  peanut it skips the Claude part (D21) and only returns to the picker.
+- **D20. Quit can log everyone out — opt-in** (user, 2026-10-17). Settings → Shared workstation →
+  *Log out of Claude on quit*: Quit logs every named profile out of Claude before the backend exits
+  (never peanut, D21). Off by default. Runs on every orderly quit through `/api/app/shutdown`: the Quit button,
+  closing the packaged app (`app.py`), the dev supervisor's stop. Each logout is capped at 4 s to fit
+  app.py's 5 s request; dev.jl waits only 2 s, so a slow CLI there can be cut short by its kill stage.
+  Restart, a crash or a hard kill log nobody out.
+- **D21. Cecelia never logs peanut out of Claude** (user, 2026-10-17). `default`/peanut's login is
+  `~/.claude`, which is also every terminal `claude` on the OS account (on a dev box, the developer's
+  own Claude Code). Enforced at the one funnel, `claude_auth_logout!("")` → refused, so no path can
+  reach it: the logout route answers 409, both Shared-workstation target lists skip it, Kiwi shows no
+  Log out on peanut, and the sidebar Log out on peanut only returns to the picker. Logging peanut IN
+  from Kiwi still works.
 
 **Not verified / not done:**
 - A real end-to-end login through the private window (needs a person) — Dominik on the lab box.
