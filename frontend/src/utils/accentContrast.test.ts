@@ -1,22 +1,23 @@
 import { describe, it, expect } from 'vitest'
 import { styleBlocks, cssRules } from './cssScenarios'
 
-// White text on --cc-accent (#a78bfa) is 2.72:1 — under WCAG AA's 4.5:1 for text and even the 3:1
-// large-text floor. A filled accent surface that carries white text uses --cc-accent-strong (5.70:1),
-// as .cc-btn-primary does. Checked per rule: the background and the white text in the SAME rule.
+// White text on a solid fill uses one of the two FILL tokens: --cc-accent-fill (5.12:1) or
+// --cc-danger-fill (5.86:1). On the light accent it is 2.72:1 and on --cc-danger 3.76:1 — under WCAG
+// AA's 4.5:1 — and the saturated --cc-accent-strong clashed beside the red. Checked per rule, and for
+// a modifier rule whose base class sets the white text.
 const SOURCES = import.meta.glob('/src/**/*.{vue,css}', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>
 
-const ACCENT_FILL = /background(?:-color)?:\s*var\(--cc-accent\)/
+const ACCENT_FILL = /background(?:-color)?:\s*(?:var\(--cc-(?:accent|accent-strong|danger)\)|#b91c1c\b|#ef4444\b|#f87171\b|#dc2626\b)/i
 const WHITE_TEXT  = /(?:^|[;\s{])color:\s*(?:#fff\b|#ffffff\b|white\b)/i
 
-describe('white text never sits on the light accent', () => {
+describe('white text sits only on a fill token', () => {
   it('found the sources', () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(100)
   })
 
-  it('every white-on-accent fill uses --cc-accent-strong', () => {
+  it('every white-text fill uses --cc-accent-fill or --cc-danger-fill', () => {
     const bad: string[] = []
     for (const [path, text] of Object.entries(SOURCES)) {
       const blocks = path.endsWith('.css') ? [text] : styleBlocks(text)
@@ -39,6 +40,6 @@ describe('white text never sits on the light accent', () => {
         if (sameRule || fromBase) bad.push(`${path} :: ${r.selector}`)
       }
     }
-    expect(bad, 'use background: var(--cc-accent-strong) under white text').toEqual([])
+    expect(bad, 'use background: var(--cc-accent-fill) / var(--cc-danger-fill) under white text').toEqual([])
   })
 })

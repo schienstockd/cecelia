@@ -55,11 +55,13 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-border` | `#30363d` | All borders |
 | `--cc-accent` | `#a78bfa` | Active elements, buttons, links |
 | `--cc-accent-strong` | `#7c3aed` | Deeper violet — the border of an engaged/active control |
+| `--cc-accent-fill` | `#7659cf` | Deep lavender — a SOLID surface under white text: primary buttons, picked chips, Run, `-on-solid` (white 5.12:1) |
 | `--cc-accent-soft` | `#c4b5fd` | Pale violet — text on an accent-tinted surface |
 | `--cc-accent-tint` / `-tint-2` | `#2d1b69` / `#3b2382` | The tinted "option is on" surface, and its hover step (`.cc-btn-on-tint`) |
 | `--cc-selected` | `#ff8c1a` | Amber selection/active highlight for BOXES (panels, cards, timeline keyframes) — distinct from `--cc-accent` (form controls) |
 | `--cc-warn` | `#f59e0b` | Amber that is *not* a severity — a decorative/identity hue (a chain node's colour, a keyframe badge) |
-| `--cc-danger` | `#ef4444` | The **destructive-action** tone (a delete button's hover/armed state) — an action, not a status |
+| `--cc-danger` | `#ef4444` | The **destructive-action** tone for text and outlines (a delete button's hover) — an action, not a status |
+| `--cc-danger-fill` | `#b33a3a` | Muted red — a SOLID destructive surface under white text: `.cc-btn-danger`, armed delete / quit (white 5.86:1) |
 | `--cc-viewer` | `#22c55e` | Green accent for the browser viewer controls button + its floating-panel border (stands apart from purple chrome) |
 | `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
 | `--cc-sev-warn` | `#fab219` | Severity **warn** — any *status indicator* saying "heads up" (a validation warning, a stale-data strip, an advisory axis flag) |
@@ -234,7 +236,7 @@ axes** — compose them; never re-declare a button in a component's scoped `<sty
 | Shape | `-icon` (fixed square, so a toolbar row aligns regardless of glyph width) |
 | State | `-on` (+ `-on-tint` washed / `-on-solid` filled) for an engaged toggle button |
 
-**Filled accent = `--cc-accent-strong`.** `-primary`, `-on-solid` and any hand-rolled filled control with white text sit on the deeper violet (white 5.70:1); white on `--cc-accent` is 2.72:1 and fails WCAG AA. Guarded by `utils/accentContrast.test.ts`.
+**White text sits on a fill token.** `-primary`, `-on-solid`, picked chips and any hand-rolled filled control use `--cc-accent-fill` (deep lavender — the accent's own hue darkened, white 5.12:1); `-danger` and armed destructive buttons use `--cc-danger-fill` (muted red, 5.86:1). White on `--cc-accent` (2.72:1) or `--cc-danger` (3.76:1) fails WCAG AA. Guarded by `utils/accentContrast.test.ts`.
 
 `.cc-btn-group` joins a strip of them. All support `:disabled` (opacity 0.35) and `v-tooltip`. In a **mixed** group — an icon-only member beside a labelled one — `style.css` lets the `-icon` square stretch to the group's height: the square is a fixed 1.5rem while a labelled member sizes to padding + line-height, ~1px taller, and the pixel of background missing under the square reads as a smaller, offset glyph (six groups had it). Don't re-fix it per site.
 

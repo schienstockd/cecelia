@@ -130,7 +130,7 @@ const tipsOptOut = computed({
   border-radius: var(--cc-radius-sm);
   color: #ffffff;
 }
-.wn-kind-update { background: var(--cc-accent-strong); }
+.wn-kind-update { background: var(--cc-accent-fill); }
 .wn-kind-tip    { background: var(--cc-sev-warn); color: #1a1a1a; }
 .wn-kind-fix    { background: var(--cc-sev-ok);   color: #1a1a1a; }   /* white is 3.35:1 on it */
 .wn-kind-about  { background: var(--cc-surface-2); color: var(--cc-text-dim); }

@@ -32,6 +32,12 @@
      existed as raw hex long before they existed as tokens (measured: 14 × #7c3aed, 6 × #c4b5fd,
      4 × #2d1b69 across 22 files). They are what an ENGAGED control is built from — see .cc-btn-on. */
   --cc-accent-strong: #7c3aed;   /* deeper violet — borders on an engaged/active control */
+  /* SOLID surfaces under white text. The light accent and --cc-danger fail WCAG AA with white text
+     (2.72:1 / 3.76:1), and two fully saturated fills side by side clashed. The fill is the accent's
+     OWN hue darkened (hsl 255°, like #a78bfa) so buttons and sliders/toggles read as one family:
+     white 5.12:1; the muted red 5.86:1; the two stay far apart under every simulated colour blindness. */
+  --cc-accent-fill:   #7659cf;   /* deep lavender — primary buttons, selected chips, Run */
+  --cc-danger-fill:   #b33a3a;   /* muted red — destructive buttons, armed delete / quit */
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
@@ -236,13 +242,11 @@ body {
 }
 .cc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* White text needs the DEEPER violet: on --cc-accent it is 2.72:1 (fails WCAG AA's 4.5:1, and even
-   the 3:1 large-text floor); on --cc-accent-strong it is 5.70:1, and the button still clears the 3:1
-   non-text contrast against the page (3.04:1). Same reason for .cc-btn-on-solid below. */
+/* A filled accent under white text uses --cc-accent-fill (see its token). Same for .cc-btn-on-solid. */
 .cc-btn-primary {
-  background: var(--cc-accent-strong);
+  background: var(--cc-accent-fill);
   color: #fff;
-  border-color: var(--cc-accent-strong);
+  border-color: var(--cc-accent-fill);
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
 
@@ -258,9 +262,9 @@ body {
    a table/bar, where a wall of solid red would be too heavy). Both were previously hand-copied per
    component with drifted colours — this is the one source. */
 .cc-btn-danger {
-  background: #b91c1c;
+  background: var(--cc-danger-fill);
   color: #fff;
-  border-color: #b91c1c;
+  border-color: var(--cc-danger-fill);
 }
 .cc-btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
 
@@ -345,14 +349,14 @@ body {
 }
 
 .cc-btn-on.cc-btn-on-solid {
-  background: var(--cc-accent-strong);
-  border-color: var(--cc-accent-strong);
+  background: var(--cc-accent-fill);
+  border-color: var(--cc-accent-fill);
   color: #fff;
 }
 .cc-btn.cc-btn-on.cc-btn-on-solid:hover:not(:disabled) {
   filter: brightness(1.12);
-  background: var(--cc-accent-strong);
-  border-color: var(--cc-accent-strong);
+  background: var(--cc-accent-fill);
+  border-color: var(--cc-accent-fill);
   color: #fff;
 }
 
