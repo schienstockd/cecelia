@@ -164,6 +164,24 @@ Four rules, all of them load-bearing:
 Filtering, grouping, gap detection and the copy format are pure functions in `utils/logFilter.ts`
 (unit-tested) — the SFC only renders.
 
+## Settings — who sees which section
+
+Settings mixes four scopes; each section belongs to exactly one. **Machine** sections change things
+for every user of the box and are shown only when `appControl.canManageMachine` is true (today: the
+active profile is peanut/`default` — a visibility gate, not security; a single-profile install sees
+everything): Software updates (and the header update badge, the What's-new update card, in-app
+install/restart), Storage defaults, Custom modules, Plugins, Server (HTTPS, CPU threads), Shared
+workstation, HPC (cluster site), Developer, Debug console. **Project** sections are for everyone:
+Project, Storage (scan / reclaim / versions of the open project), Data patches. **Person** settings
+live in Preferences, not here — Preferences → Kiwi carries the Cecelia MCP registration (the active
+profile's Claude config). **Status** is for everyone: System (services + Quit), Other MCP
+connections, Diagnostics.
+
+Gate a new machine section with `v-if="appCtl.canManageMachine"` on the `<section>` — never per
+item, never a second predicate. A guide step about a gated control carries
+`onlyIf: c => c.canManageMachine` (`GuideStep.onlyIf`, applied by `guideStepsFor` when the guide
+starts). Design + decisions: [`docs/todo/SETTINGS_SCOPE_PLAN.md`](todo/SETTINGS_SCOPE_PLAN.md).
+
 ## Settings → System (service control panel)
 
 `SettingsModule.vue` has a **System** section: one row per runtime component (Application / Viewer /
@@ -176,7 +194,7 @@ launched from the docked console bar, not this panel.) Status→verb/label mappi
 unit-tested `utils/serviceStatus.ts`. Backend self-restart is planned (see
 `docs/todo/SERVICE_PANEL_PLAN.md`, Phase 3).
 
-Two launch-time preferences sit under the Application row: **Serve over HTTPS + HTTP/2** (greyed out
+Two launch-time preferences sit in their own **Server** section (machine scope — shown only when `canManageMachine`): **Serve over HTTPS + HTTP/2** (greyed out
 while off — it only switches HTTPS off; `docs/INSTALL.md` → *HTTPS + HTTP/2*) and **Use
 all CPU cores** (`/api/config/threads`, default on). The second shows what is running — `Running: Auto
 (16 threads)` when the launcher picked the count — and, when the setting no longer matches the launch,
@@ -2408,7 +2426,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   shows* changed — never on unrelated tasks. Used by `useSummaryData`, `UmapView`, the cluster panels
   (heatmap / HMM) and `GatingStrategyView`. **Do not** re-import the store and hand-weave a `dataVersion`
   watch in a new plot — call `useDataRefresh`.
-- Gated by the global **`autoRefreshOnTask`** setting (Settings → Interface, on by default). Because
+- Gated by the global **`autoRefreshOnTask`** setting (Preferences → Interface, on by default). Because
   `useDataRefresh` is the single chokepoint, that one toggle governs every plot; off → plots refresh on
   the next input change, or on returning to the page (activation of a kept-alive page).
 - **Channel renames are not tasks** — a rename is a POST, so the data version never bumps. A surface that

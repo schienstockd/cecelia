@@ -32,6 +32,11 @@ export const useAppControlStore = defineStore('appControl', () => {
   // uses (single source of truth for the alias). Header chip + any UI that reads the active
   // identity should show this, not the raw API name.
   const activeProfileDisplayName = computed(() => profileNameLabel(activeProfileName.value))
+  // May this window change settings that affect every user of the machine (updates, storage
+  // defaults, plugins, server, debug console…)? The ONE predicate every machine-scoped surface gates
+  // on — today "the active profile is peanut (`default`)", a visibility gate, not security. A real
+  // login with an admin role changes only this line. See docs/todo/SETTINGS_SCOPE_PLAN.md.
+  const canManageMachine = computed(() => activeProfileName.value === 'default')
   const profileCount = ref<number>(1)
   // The active profile's Claude login — the account Kiwi turns bill. Shared so Kiwi's read-only row
   // and Preferences' Log out agree without each holding its own copy. `null` = not checked yet.
@@ -155,8 +160,9 @@ export const useAppControlStore = defineStore('appControl', () => {
   // null/[] when unknown (stable channel, stable install asking for dev, or the compare call failed).
   const updateBehindBy  = ref<number | null>(null)
   const updateMergedPrs = ref<MergedPr[]>([])
-  // in-app apply is only offered for a per-user install (not a shared system install or dev checkout)
-  const canApplyUpdate  = computed(() => updateScope.value === 'user')
+  // in-app apply is only offered for a per-user install (not a shared system install or dev checkout),
+  // and only to the profile that manages the machine — updating is peanut's job on a shared box
+  const canApplyUpdate  = computed(() => updateScope.value === 'user' && canManageMachine.value)
 
   // Channel is a query param, not persisted server-side: the toggle is a client preference, and the
   // running install itself is not branded stable/dev (the SAME server serves either). Reads the
@@ -314,7 +320,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   }
 
   return { dev, busy, message, setupRequired, needsProfilePick, activeProfileName, activeProfileDisplayName, profileCount, worktrees, canSwitch,
-           claudeLogin, refreshClaudeLogin,
+           claudeLogin, refreshClaudeLogin, canManageMachine,
            updateCurrent, updateLatest, updateLatestRef, updateAvailable, updateScope, updateChannel,
            updateChecking, updateBusy, updateMsg, updateDismissed,
            updateUrl, updateNotes, updatePublished, updateBehindBy, updateMergedPrs, canApplyUpdate,

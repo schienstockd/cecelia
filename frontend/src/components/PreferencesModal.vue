@@ -20,6 +20,10 @@ import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
 import HpcSettings from './HpcSettings.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { useMcpConnections } from '../composables/useMcpConnections'
+import { useObserverStore } from '../stores/observer'
+import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
+import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          fetchTerminalCommand, isValidProfileName, profileDisplayName, profileNameLabel,
          fetchClaudeLogin, logoutClaude, claudeLoginLabel,
@@ -210,6 +214,16 @@ async function copyTerminalCommand(profile?: string) {
     if (r?.command) await copyTerm(r.command)
   } finally { termFetching.value = '' }
 }
+
+// ── Kiwi pane: Cecelia's MCP registration in THIS profile's Claude config ─────────────────────────
+// Personal, not machine-wide (it is the active profile's `.claude.json`), so it lives here rather than
+// in Settings → System (docs/todo/SETTINGS_SCOPE_PLAN.md). Kiwi's Terminal row offers the same
+// Set up / Fix; this is the place that also shows which checkout is registered and the fallback.
+const observer = useObserverStore()
+const { observerRow, observerInstallShort } = useMcpConnections()
+const { isCopied: observerCmdCopied, copy: copyCmdFlash } = useCopyFlash()
+const observerFallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
+const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
 // No loading hint: values are always usable — hydration overrides localStorage in place if the
 // TOML has anything to say (Vue reactivity picks up the flip). The hint used to spin indefinitely
@@ -580,6 +594,36 @@ async function copyTerminalCommand(profile?: string) {
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>
+          <!-- Cecelia's MCP in this profile's Claude config — registered once per profile. -->
+          <template v-if="observerRow">
+            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia MCP</div>
+            <div class="pk-mcp">
+              <span class="pk-state cc-fs-sm" :class="observerRow.tone" v-tooltip.top="observerRow.hint">
+                <span class="pk-dot" /> {{ observerRow.label }}
+              </span>
+              <span v-if="observerInstallShort" class="pk-install cc-muted cc-fs-xs"
+                    v-tooltip.top="observerRow.installPath">{{ observerInstallShort }}</span>
+              <button v-if="observerRow.tone === 'warn'" class="cc-btn cc-btn-ghost cc-fs-xs"
+                      :disabled="observer.registering" @click="observer.registerMcp()"
+                      v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
+                <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
+                {{ observer.registering ? CLAUDE_TERMINAL.busy
+                   : terminalCta(observer.available, observer.terminalState) === 'resync'
+                     ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
+              </button>
+            </div>
+            <!-- one-click setup FAILED: the resolved command to run by hand, next to the row it fixes -->
+            <div v-if="observer.registerError" class="pk-note cc-row cc-row-tight">
+              <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
+              <template v-if="observerFallbackCommand">
+                <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
+                <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyObserverFallback"
+                        v-tooltip.left="observerCmdCopied() ? 'Copied!' : 'Copy command'">
+                  <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
+                </button>
+              </template>
+            </div>
+          </template>
         </template>
 
         <!-- ── Lab log ───────────────────────────────────────────────────── -->
@@ -658,6 +702,15 @@ async function copyTerminalCommand(profile?: string) {
 }
 /* Profiles pane */
 .pref-note { margin: 0 0 0.5rem; }
+.pk-mcp { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.pk-state { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--cc-text); }
+.pk-dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
+.pk-state.ok .pk-dot   { background: var(--cc-viewer); }
+.pk-state.warn .pk-dot { background: var(--cc-sev-warn); }
+.pk-install { font-family: var(--cc-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-note { margin: 0.4rem 0 0; padding: 0.3rem 0.5rem; border-left: 3px solid var(--cc-sev-warn); min-width: 0; }
+.pk-note strong { color: var(--cc-sev-warn); }
+.pk-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .pref-error { color: var(--cc-sev-fail); display: flex; align-items: center; gap: 0.35rem; margin: 0.35rem 0 0; }
 .pp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .pp-row {

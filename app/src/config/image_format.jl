@@ -90,7 +90,7 @@ function set_image_compressor!(name::AbstractString)::String
     nm
 end
 
-# ── Store LAYOUT defaults (Settings → Storage; the import pre-fills from these) ────────────────────
+# ── Store LAYOUT defaults (Settings → Storage defaults; the import pre-fills from these) ────────────────────
 #
 # The format and the chunk-key separator are decided PER IMAGE, at import — an existing v2 image cannot
 # become v3 (no converter, ZARR_V3_PLAN D7) and derived stores inherit from their source (D9/D11). So

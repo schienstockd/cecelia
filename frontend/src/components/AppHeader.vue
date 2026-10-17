@@ -128,7 +128,7 @@ const statusTip: Record<string, string> = {
 
     <!-- the tip sits on the badge TEXT, not the badge: the badge also holds the dismiss button, whose
          own tip it fired on top of (docs/UI.md → nested tooltips) -->
-    <span v-if="appCtl.updateAvailable && !appCtl.updateDismissed" class="update-badge"
+    <span v-if="appCtl.canManageMachine && appCtl.updateAvailable && !appCtl.updateDismissed" class="update-badge"
           @click="openUpdate">
       <span class="update-txt"
             v-tooltip.bottom="appCtl.updateScope === 'system'

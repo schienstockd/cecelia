@@ -23,7 +23,7 @@ lenUID = 6
   percentile = 99.98
 
 # Compression for the image OME-ZARRs we write (import + every correction). Selectable live in
-# Settings → Storage; this is the default the server starts with. Existing stores are not touched —
+# Settings → Storage defaults; this is the default the server starts with. Existing stores are not touched —
 # `python/cecelia/utils/rechunk_zarr.py` re-lands them on the current choice.
 # Choices (measured on one real 16-bit acquisition, whole store): zstd-shuffle 2.74x · zstd 2.27x ·
 # lz4-shuffle 1.85x (fastest reads) · zstd-max 2.90x (7x slower to write). Label stores are not

@@ -793,7 +793,7 @@ function api_tls_set(body_bytes)
     ))
 end
 
-# ── API thread pool (Settings → System → "Use all CPU cores") ─────────────────────
+# ── API thread pool (Settings → Server → "Use all CPU cores") ─────────────────────
 # GET → { desired, running, cpus, launch, managed, restartRequired, canRestart }.
 # `desired` is the persisted preference (`[server] multithreaded`); `launch` is what the launcher
 # actually applied (`CECELIA_LAUNCH_THREADS`, set by app.py: "auto" / "1" / "env"; "" under the dev

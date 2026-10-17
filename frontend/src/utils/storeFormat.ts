@@ -122,7 +122,7 @@ export function storeFormatTitle(s: StoreEncoding | null | undefined): string {
 export function storeFormatFacts(s: StoreEncoding | null | undefined): StoreFact[] {
   if (!s || (s.zarrFormat === undefined && !s.chunks && !s.label)) return []
   const facts: StoreFact[] = []
-  // Codec first: it is the one fact here a user chooses (Settings → Storage), the rest describe what
+  // Codec first: it is the one fact here a user chooses (Settings → Storage defaults), the rest describe what
   // the store turned out to be. It arrives pre-described from the API — the two spellings of blosc's
   // shuffle live in `_describe_compressor`, not in a second place.
   if (s.label) facts.push({ k: 'codec', v: s.label })

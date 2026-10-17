@@ -62,7 +62,7 @@ single terminal command at install time (like Miniforge/conda itself).
 User clicks the desktop icon
   → the desktop launcher runs `app.py` (in the env)
   → app.py spawns the Julia server (`julia --project -t auto src/server.jl`, production mode;
-    `-t 1` when Settings → System → "Use all CPU cores" is off — see `_thread_args`)
+    `-t 1` when Settings → Server → "Use all CPU cores" is off — see `_thread_args`)
   → Julia loads Cecelia.jl, starts HTTP + WebSocket on :8080, serves frontend/dist + /api + /ws
   → app.py polls http://localhost:8080/api/health until {ok:true}
   → app.py opens the default browser at http://localhost:8080
@@ -113,7 +113,7 @@ picks h2. If `openssl` is
 missing on `PATH`, the server logs `HTTP/1.1 — TLS wanted but cert unavailable` and starts
 cleanly on plain HTTP — the default never blocks launch. `api_diagnostics` reports the
 actual protocol as `protocol` (either `HTTPS/HTTP2` or `HTTP/1.1`) separately from
-`tlsDesired`, and Settings → System shows both. The reason we skipped mkcert (warning-free
+`tlsDesired`; Settings → Server shows the preference and Settings → Diagnostics the protocol. The reason we skipped mkcert (warning-free
 but bundles a third-party binary and writes the OS trust store during install) is documented
 in the top comment
 of `tls.jl`; revisit if the one-time click-through becomes a support problem.

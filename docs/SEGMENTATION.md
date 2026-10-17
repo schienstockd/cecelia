@@ -1837,7 +1837,7 @@ tasks, the legacy bridge, and any external consumer (e.g. coastal).
   with no intent behind any of them. `store_compressor` holds the one choice per store kind — and the
   two kinds need *opposite* settings (byte shuffle wins on 16-bit intensity data, and loses on
   >99%-zero label planes), so pass the right `kind` rather than assuming one is better. Selectable in
-  Settings → Storage (`[zarr].imageCompressor`), reaching Python via the `CECELIA_IMAGE_COMPRESSOR`
+  Settings → Storage defaults (`[zarr].imageCompressor`), reaching Python via the `CECELIA_IMAGE_COMPRESSOR`
   env var `run_py` sets. Enforced by `test_store_compressor_convention.py`. The measured numbers live
   on the constants; why images are NOT reduced to 8-bit is a recorded non-goal in `docs/FUTURE.md`.
 - **Never write a store at its final path — stage it.** `staged_store` is the store-level twin of
