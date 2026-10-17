@@ -2,12 +2,12 @@
   <!-- Where a pre-commit reviewer finding goes. Kept in sync with scripts/judge/bugs.py `candidates`,
        scripts/judge/rules.py `tally` and docs/ai-assist/WEEKLY_JUDGE.md. -->
   <defs>
-    <!-- a line is coloured by where it goes: vermillion into the bug check, reddish purple into the rule count -->
+    <!-- a line is coloured by where it goes: vermillion into the bug check, blue into the rule count (the consoles' CVD-safe pair: never green against red) -->
     <marker id="arrowBug" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#D55E00"/>
     </marker>
     <marker id="arrowRule" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#CC79A7"/>
+      <path d="M0,0 L10,5 L0,10 z" fill="#0072B2"/>
     </marker>
     <marker id="arrowDim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#6b6b66"/>
@@ -51,8 +51,8 @@
 
   <!-- weekly judge -->
   <g stroke="#2a2a2a" stroke-width="3">
-    <rect x="500" y="90"  rx="10" ry="10" width="160" height="76" fill="#fbe7d4"/>
-    <rect x="500" y="206" rx="10" ry="10" width="160" height="76" fill="#f7d0e0"/>
+    <rect x="500" y="90"  rx="10" ry="10" width="160" height="76" fill="#ffffff" stroke="#D55E00"/>
+    <rect x="500" y="206" rx="10" ry="10" width="160" height="76" fill="#ffffff" stroke="#0072B2"/>
   </g>
   <g fill="#2a2a2a" text-anchor="middle">
     <text x="580" y="122" font-size="18" font-weight="700">Bug check</text>
@@ -98,7 +98,7 @@
     <path d="M220,159 L380,159 C440,159 440,134 495,134" />
     <path d="M380,217 C440,217 440,152 495,152" />
   </g>
-  <g stroke="#CC79A7" stroke-width="2.5" fill="none" marker-end="url(#arrowRule)">
+  <g stroke="#0072B2" stroke-width="2.5" fill="none" marker-end="url(#arrowRule)">
     <path d="M380,159 C440,159 440,236 495,236" />
     <path d="M220,217 L380,217 C440,217 440,254 495,254" />
     <path d="M220,275 L330,275 C420,275 420,272 495,272" />
