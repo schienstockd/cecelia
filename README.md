@@ -242,7 +242,7 @@ unattended judge re-checks what wasn't fixed. This is recent and still being mea
 
 <p align="center"><img src="frontend/public/readme-findings.svg" alt="Where a reviewer finding goes. Fan-out plausible notes go to the weekly bug check unless tagged fixed in the commit (the tag is optional). Fan-out confirmed and convention should-reuse findings go to both the bug check and the rule count, and convention wrong-home findings to the rule count only, unless they were fixed in the commit: then they are caught and end there. Convention potential duplicates and the mechanical checks are only listed at commit and end there. A bug still on main becomes a GitHub issue after a verify agent has looked at it; Dominik or the auto-fix agent opens a fix PR, and the issue is closed once the judge sees the bug gone. A rule broken in 3+ sessions becomes a proposal in a rules PR; Dominik edits the rule or rejects it in judge-review." width="100%"></p>
 
-Lines into the bug check are vermillion, lines into the rule count purple. *Not fixed* includes
+Lines into the bug check are vermillion, lines into the rule count blue. *Not fixed* includes
 *false positive*: that's the agent's own call, so the judge re-checks it. The bug check also takes
 errors from unattended agent runs, and runs Dominik reviewed as bad.
 
