@@ -1762,7 +1762,9 @@ async function switchWt(path: string) {
 .field-pair .field { margin-bottom: 1.1rem; }
 .field-grow { flex: 1; min-width: 0; }
 .field-id { flex: 0 0 auto; }
-.field-id .field-input.mono { flex: 0 0 auto; width: 7ch; }
+/* content-box: the 6ch is the TEXT width — the global input padding (0.6rem a side) sits outside it,
+   so the uid can't be clipped by whatever padding the base form-control style picks. */
+.field-id .field-input.mono { flex: 0 0 auto; box-sizing: content-box; width: 6ch; }
 
 .field-label {
   display: block;

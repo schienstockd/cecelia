@@ -253,7 +253,8 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
 .hpc-cluster { display: flex; margin: 0 0 0.8rem; }
 .hpc-what { display: flex; margin: 0 0 0.8rem; }
 .hpc-grow { flex: 1; min-width: 0; }
-.hpc-port { width: 8ch; }
+/* content-box: 5ch is the text width (a 5-digit port); the global input padding sits outside it */
+.hpc-port { box-sizing: content-box; width: 5ch; }
 .mono { font-family: var(--cc-mono); }
 .hpc-test { margin-top: 1.1rem; }
 .hpc-env { gap: 0.5rem; }
