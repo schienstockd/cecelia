@@ -328,24 +328,15 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                   <!-- Log out of Claude: only when logged in. For `default` that is `~/.claude`, the
                        same login terminal `claude` on this OS account uses — the tooltip says so. -->
                   <ConfirmButton v-if="logins[p.name]?.state === 'loggedIn'"
-                                 @confirm="logoutProfile(p.name)" v-slot="{ armed, arm, confirm, cancel }">
-                    <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                            :disabled="!!loggingOut" @click="arm"
-                            v-tooltip.bottom="p.isDefault
+                                 @confirm="logoutProfile(p.name)" v-slot="{ armed, press }">
+                    <button class="cc-btn cc-btn-icon cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                            :disabled="!!loggingOut" @click="press"
+                            v-tooltip.bottom="armed ? 'Click again to log out'
+                              : p.isDefault
                               ? 'Log out of Claude — terminal claude on this account too'
                               : `Log ${profileDisplayName(p)} out of Claude`">
-                      <i :class="['pi', loggingOut === p.name ? 'pi-spin pi-spinner' : 'pi-sign-out']" />
+                      <i :class="['pi', loggingOut === p.name ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-sign-out']" />
                     </button>
-                    <template v-else>
-                      <button class="cc-btn cc-btn-danger cc-btn-icon cc-fs-xs" @click="confirm"
-                              v-tooltip.bottom="'Confirm log out'">
-                        <i class="pi pi-check" />
-                      </button>
-                      <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" @click="cancel"
-                              v-tooltip.bottom="'Cancel'">
-                        <i class="pi pi-times" />
-                      </button>
-                    </template>
                   </ConfirmButton>
                   <!-- Rename: not offered for `default` (magic name) or retired profiles (the
                        retired marker is a stable reference — renaming would silently invalidate
@@ -398,19 +389,14 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                  profile is a named, non-retired one — retiring `default` is meaningless. -->
             <ConfirmButton v-if="roster.active !== 'default' &&
                                  !roster.profiles.find(p => p.name === roster.active)?.retired"
-                           @confirm="retireActive" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-xs"
-                      :disabled="!!profilesBusy" @click="arm"
-                      v-tooltip.top="'Retire this profile — non-selectable after, data stays on disk'">
-                <i class="pi pi-user-minus" /> Retire active
+                           @confirm="retireActive" v-slot="{ armed, press }">
+              <button class="cc-btn cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                      :disabled="!!profilesBusy" @click="press"
+                      v-tooltip.top="armed ? `Click again to retire ${roster.active}`
+                                           : 'Retire this profile — non-selectable after, data stays on disk'">
+                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-user-minus'" />
+                Retire active
               </button>
-              <template v-else>
-                <button class="cc-btn cc-btn-danger cc-fs-xs" @click="confirm"
-                        v-tooltip.top="'Confirm retire'">
-                  <i class="pi pi-check" /> Retire {{ roster.active }}
-                </button>
-                <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancel">Cancel</button>
-              </template>
             </ConfirmButton>
           </div>
         </template>

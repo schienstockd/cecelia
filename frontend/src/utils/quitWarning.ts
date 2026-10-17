@@ -25,11 +25,3 @@ export function quitConfirmTooltip(count: number): string {
   return phrase ? `Confirm quit — kills ${phrase}`
                 : 'Confirm quit — stops notebooks and the backend'
 }
-
-/**
- * Label for the armed Quit *button* where there's room for text (Settings). The sidebar footer is
- * icon-only, so there it lives in the tooltip instead — same numbers, one source.
- */
-export function quitConfirmLabel(count: number): string {
-  return count > 0 ? `Quit — kills ${count} task${count === 1 ? '' : 's'}` : 'Quit everything'
-}

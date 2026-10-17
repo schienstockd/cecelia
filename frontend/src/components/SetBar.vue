@@ -5,6 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { setNameTaken } from '../utils/setDestination'
+import ConfirmButton from './ConfirmButton.vue'
 
 const props = defineProps<{ allowManage?: boolean }>()
 
@@ -14,7 +15,6 @@ const log         = useLogStore()
 
 const newSetName    = ref('')
 const showNewInput  = ref(false)
-const confirmDelete = ref(false)
 // Copy set UID — shared copy+flash helper (docs/ui/PRIMITIVES.md)
 const { isCopied: copiedSetUid, copy: copySetUid } = useCopyFlash()
 const busy          = ref(false)
@@ -111,7 +111,6 @@ async function deleteSet() {
   if (!activeSet.value) return
   const setUid  = activeSet.value.uid
   const setName = activeSet.value.name
-  confirmDelete.value = false
   const projectUid = projectMeta.current?.uid
   if (projectUid) {
     try {
@@ -192,21 +191,15 @@ async function deleteSet() {
 
       <span class="spacer" />
 
-      <template v-if="activeSet && !confirmDelete">
-        <button class="cc-btn cc-btn-danger-ghost" @click="confirmDelete = true"
-          v-tooltip.bottom="`Delete set '${activeSet.name}' and all its images — cannot be undone`">
-          <i class="pi pi-trash" /> Delete set
+      <!-- the set's NAME rides on the armed tooltip: deleting a whole set is the one place a wrong
+           target costs every image in it -->
+      <ConfirmButton v-if="activeSet" @confirm="deleteSet" v-slot="{ armed, press }">
+        <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost'" @click="press"
+          v-tooltip.bottom="armed ? `Click again — permanently delete '${activeSet.name}' and its images from disk`
+                                  : `Delete set '${activeSet.name}' and all its images — cannot be undone`">
+          <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete set
         </button>
-      </template>
-      <template v-if="confirmDelete">
-        <span class="confirm-text cc-muted cc-fs-md">Delete <strong>{{ activeSet?.name }}</strong>?</span>
-        <button class="cc-btn cc-btn-danger-ghost" @click="deleteSet"
-          v-tooltip.bottom="'Permanently delete this set and remove all its images from disk'">
-          Confirm
-        </button>
-        <button class="cc-btn cc-btn-ghost" @click="confirmDelete = false"
-          v-tooltip.bottom="'Cancel deletion'">Cancel</button>
-      </template>
+      </ConfirmButton>
     </template>
 
     <span v-else class="spacer" />

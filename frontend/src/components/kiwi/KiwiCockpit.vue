@@ -421,22 +421,12 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               </li>
             </ul>
             <div class="kiwi-cap-footer">
-              <ConfirmButton @confirm="clearAll" v-slot="{ armed, arm, confirm, cancel }">
-                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-2xs"
-                        @click="arm"
-                        v-tooltip.bottom="'Delete every capture for this project'">
-                  <i class="pi pi-trash" /> Clear all captures
+              <ConfirmButton @confirm="clearAll" v-slot="{ armed, press }">
+                <button class="cc-btn cc-fs-2xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                        @click="press"
+                        v-tooltip.bottom="armed ? 'Click again — delete every capture' : 'Delete every capture for this project'">
+                  <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Clear all captures
                 </button>
-                <template v-else>
-                  <button class="cc-btn cc-btn-danger cc-fs-2xs" @click="confirm"
-                          v-tooltip.bottom="'Confirm — delete every capture'">
-                    <i class="pi pi-check" /> Delete all
-                  </button>
-                  <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-2xs" @click="cancel"
-                          v-tooltip.bottom="'Cancel'">
-                    <i class="pi pi-times" />
-                  </button>
-                </template>
               </ConfirmButton>
             </div>
           </template>
@@ -466,22 +456,13 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               </span>
             </div>
             <div class="kiwi-obs-row kiwi-clear-row">
-              <ConfirmButton @confirm="clearPairing" v-slot="{ armed, arm, confirm, cancel }">
-                <button v-if="!armed" class="cc-btn cc-btn-danger-ghost cc-fs-xs"
-                        :disabled="clearing" @click="arm"
-                        v-tooltip.bottom="'Unpair — your session re-pairs on its next MCP tool call'">
-                  <i class="pi pi-times-circle" /> Clear pairing
+              <ConfirmButton @confirm="clearPairing" v-slot="{ armed, press }">
+                <button class="cc-btn cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-danger-ghost'"
+                        :disabled="clearing" @click="press"
+                        v-tooltip.bottom="armed ? 'Click again — clear the pairing record'
+                                                : 'Unpair — your session re-pairs on its next MCP tool call'">
+                  <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-times-circle'" /> Clear pairing
                 </button>
-                <template v-else>
-                  <button class="cc-btn cc-btn-danger cc-fs-xs"
-                          @click="confirm" v-tooltip.bottom="'Confirm — clear the pairing record'">
-                    <i class="pi pi-check" /> Confirm
-                  </button>
-                  <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                          @click="cancel" v-tooltip.bottom="'Cancel'">
-                    <i class="pi pi-times" />
-                  </button>
-                </template>
               </ConfirmButton>
             </div>
           </template>

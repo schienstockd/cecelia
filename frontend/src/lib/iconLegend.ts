@@ -48,7 +48,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-check-circle', lucide: 'circle-check', means: 'Passed, or include it again' },
       { icon: 'pi-times', lucide: 'x', means: 'Close, cancel or clear' },
       { icon: 'pi-times-circle', lucide: 'circle-x', means: 'Failed' },
-      { icon: 'pi-exclamation-triangle', lucide: 'triangle-alert', means: 'Warning — and on a delete, "click again"' },
+      { icon: 'pi-exclamation-triangle', lucide: 'triangle-alert', means: 'Warning — and on an armed confirm, "click again"' },
       { icon: 'pi-exclamation-circle', lucide: 'circle-alert', means: 'A prerequisite is missing' },
       { icon: 'pi-info-circle', lucide: 'info', means: 'Something worth knowing' },
       { icon: 'pi-question-circle', lucide: 'circle-question-mark', means: 'What is this panel?' },

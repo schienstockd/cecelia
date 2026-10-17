@@ -278,17 +278,11 @@ function onScopeChange(v: string) {
 
     <template #footer>
       <button class="cc-btn cc-btn-ghost" @click="$emit('close')">Cancel</button>
-      <ConfirmButton @confirm="submit" v-slot="{ armed, arm, confirm, cancel }">
-        <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="!canConfirm" @click="arm"
-          v-tooltip.top="'Deletion cannot be undone'">
-          <i class="pi pi-trash" /> {{ confirmLabel }}
+      <ConfirmButton @confirm="submit" v-slot="{ armed, press }">
+        <button class="cc-btn cc-btn-danger" :disabled="!canConfirm" @click="press"
+          v-tooltip.top="armed ? 'Click again — deletion cannot be undone' : 'Deletion cannot be undone'">
+          <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> {{ confirmLabel }}
         </button>
-        <template v-else>
-          <button class="cc-btn cc-btn-danger" @click="confirm">
-            <i class="pi pi-exclamation-triangle" /> Click to confirm — {{ confirmLabel }}
-          </button>
-          <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-        </template>
       </ConfirmButton>
     </template>
   </BaseModal>

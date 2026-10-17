@@ -7,6 +7,7 @@ import { useCopyFlash } from '../composables/useCopyFlash'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
+import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import { notebooksState, previewState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, previewApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
@@ -22,7 +23,7 @@ import { fetchStorageSummary, reclaimStorage, formatBytes, debrisLine, fetchComp
          type KeepPrevVersionSettings, type VersionsInventory,
          type PruneSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
-import { quitConfirmTooltip, quitConfirmLabel, quitTaskPhrase } from '../utils/quitWarning'
+import { quitConfirmTooltip, quitTaskPhrase } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
 import { useMcpConnections } from '../composables/useMcpConnections'
@@ -708,7 +709,6 @@ async function appRestart() {
 // Same builders as the sidebar footer so the two entry points can't drift.
 const quitTasks   = ref(0)
 const quitConfirm = computed(() => quitConfirmTooltip(quitTasks.value))
-const quitLabel   = computed(() => quitConfirmLabel(quitTasks.value))
 async function armQuit(arm: () => void) {
   arm()
   quitTasks.value = await runningTaskCount()
@@ -954,17 +954,12 @@ async function switchWt(path: string) {
             </li>
             <li v-if="storage.reclaimable.length > 8" class="field-hint cc-muted cc-fs-xs">…{{ storage.reclaimable.length - 8 }} more</li>
           </ul>
-          <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="storageBusy" @click="arm"
-                    v-tooltip.top="'Delete every non-active image version'">
-              <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : 'pi-trash']" /> Free up space
+          <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, press }">
+            <button class="cc-btn cc-btn-danger" :disabled="storageBusy" @click="press"
+                    v-tooltip.top="armed ? `Click again — free ${formatBytes(storage.reclaimableBytes)} across ${storage.reclaimable.length} image${storage.reclaimable.length > 1 ? 's' : ''}, irreversibly`
+                                         : 'Delete every non-active image version'">
+              <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-trash']" /> Free up space
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm">
-                <i class="pi pi-trash" /> Free {{ formatBytes(storage.reclaimableBytes) }} across {{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }}
-              </button>
-              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-            </template>
           </ConfirmButton>
         </div>
         <span v-else class="field-hint cc-muted cc-fs-xs">Nothing to reclaim — every image has only its active version.</span>
@@ -986,22 +981,15 @@ async function switchWt(path: string) {
                 <span class="stor-size">{{ formatBytes(v.bytes) }}</span>
                 <ConfirmButton
                     @confirm="pruneConfirm(img.imageUid, vn.valueName, v.version)"
-                    v-slot="{ armed, arm, confirm, cancel }">
-                  <button v-if="!armed" class="cc-btn cc-btn-ghost"
+                    v-slot="{ armed, arm, confirm }">
+                  <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
                           :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
-                          @click="pruneDryRun(img.imageUid, vn.valueName, v.version); arm()"
-                          v-tooltip.left="`Preview freeing ${v.version} — irreversible when confirmed`">
-                    <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner' : 'pi-trash']" /> Prune
+                          @click="armed ? confirm() : (pruneDryRun(img.imageUid, vn.valueName, v.version), arm())"
+                          v-tooltip.left="armed ? `Click again — free ${formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes)}, irreversibly`
+                                                : `Preview freeing ${v.version} — irreversible when confirmed`">
+                    <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner'
+                                      : armed ? 'pi-exclamation-triangle' : 'pi-trash']" /> Prune
                   </button>
-                  <template v-else>
-                    <button class="cc-btn cc-btn-danger"
-                            :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
-                            @click="confirm">
-                      <i class="pi pi-trash" />
-                      Free {{ formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes) }}
-                    </button>
-                    <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-                  </template>
                 </ConfirmButton>
                 <span v-if="pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)]"
                       class="field-hint cc-muted cc-fs-xs" style="color:var(--cc-warn)">
@@ -1142,18 +1130,14 @@ async function switchWt(path: string) {
           <input class="field-input mono" v-model="pluginRef" :disabled="pluginBusy"
                  placeholder="tag or commit"
                  v-tooltip.bottom="'Pin a tag or commit; blank takes the default branch'" />
-          <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-primary" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
-                    v-tooltip.top="'Fetch and install — this code is not sandboxed'">
-              <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> Install
+          <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, press }">
+            <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-primary'"
+                    :disabled="pluginBusy || !pluginUrl.trim()" @click="press"
+                    v-tooltip.top="armed ? 'Click again — runs with full access to this machine'
+                                         : 'Fetch and install — this code is not sandboxed'">
+              <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-download']" />
+              Install
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm"
-                      v-tooltip.top="'Runs with full access to this machine'">
-                <i class="pi pi-download" /> Confirm install
-              </button>
-              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-            </template>
           </ConfirmButton>
         </div>
         <span v-if="pluginMsg" class="field-hint cc-fs-xs">
@@ -1176,16 +1160,8 @@ async function switchWt(path: string) {
              rather than teaching the table to format (it would become a second formatter). -->
         <template #cell-categories="{ row }">{{ row.categories.join(', ') || '—' }}</template>
         <template #actions="{ row }">
-          <ConfirmButton @confirm="removePlugin(row.name)" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="pluginBusy"
-                    @click="arm" v-tooltip.top="'Remove this plugin'"><i class="pi pi-trash" /></button>
-            <template v-else>
-              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="confirm"
-                      v-tooltip.top="'Confirm remove'"><i class="pi pi-check" /></button>
-              <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="cancel"
-                      v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
-            </template>
-          </ConfirmButton>
+          <ConfirmDeleteButton :disabled="pluginBusy" title="Remove this plugin"
+                               armed-title="Click again to remove" @confirm="removePlugin(row.name)" />
         </template>
       </SelectionTable>
       <span v-else class="field-hint cc-muted cc-fs-xs">No plugins installed.</span>
@@ -1208,18 +1184,12 @@ async function switchWt(path: string) {
             </button>
             <span v-if="row.installed" class="cc-muted cc-fs-xs">installed</span>
             <ConfirmButton v-else @confirm="installPlugin(row.url, row.ref ?? '')"
-                           v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="pluginBusy"
-                      @click="arm" v-tooltip.top="'Install — this code is not sandboxed'">
-                <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" />
+                           v-slot="{ armed, press }">
+              <button class="cc-btn cc-btn-icon" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" :disabled="pluginBusy"
+                      @click="press" v-tooltip.top="armed ? 'Click again — runs with full access to this machine'
+                                                          : 'Install — this code is not sandboxed'">
+                <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : armed ? 'pi-exclamation-triangle' : 'pi-download']" />
               </button>
-              <template v-else>
-                <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="confirm"
-                        v-tooltip.top="'Confirm install — runs with full access to this machine'">
-                  <i class="pi pi-check" /></button>
-                <button class="cc-btn cc-btn-ghost cc-btn-icon" @click="cancel"
-                        v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
-              </template>
             </ConfirmButton>
           </template>
         </SelectionTable>
@@ -1239,13 +1209,10 @@ async function switchWt(path: string) {
                     v-tooltip.top="'List what would change — writes nothing'">
               <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
             </button>
-            <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
-                      v-tooltip.top="'Write changes to this project\'s data'"><i class="pi pi-play" /> Apply</button>
-              <template v-else>
-                <button class="cc-btn cc-btn-danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
-                <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-              </template>
+            <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, press }">
+              <button class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="press"
+                      v-tooltip.top="armed ? 'Click again to write the changes' : 'Write changes to this project\'s data'">
+                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-play'" /> Apply</button>
             </ConfirmButton>
             <button v-if="patchBusy(p.id)" class="cc-btn cc-btn-ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
           </span>
@@ -1278,16 +1245,11 @@ async function switchWt(path: string) {
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
           </button>
-          <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="appCtl.busy" @click="armQuit(arm)"
-                    v-tooltip.top="'Stop notebooks and the backend, then exit Cecelia'">
-              <i class="pi pi-power-off" /> Quit
+          <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm }">
+            <button class="cc-btn cc-btn-danger" :disabled="appCtl.busy" @click="armed ? confirm() : armQuit(arm)"
+                    v-tooltip.top="armed ? quitConfirm : 'Stop notebooks and the backend, then exit Cecelia'">
+              <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" /> Quit
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm"
-                      v-tooltip.top="quitConfirm"><i class="pi pi-power-off" /> {{ quitLabel }}</button>
-              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-            </template>
           </ConfirmButton>
         </span>
       </div>
@@ -1312,17 +1274,11 @@ async function switchWt(path: string) {
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
         <span class="svc-actions">
           <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
-                         v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
-                    v-tooltip.top="'Another Cecelia\'s server holds this port — stop it and start this one'">
-              <i class="pi pi-power-off" /> Stop it
+                         v-slot="{ armed, press }">
+            <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" :disabled="svcBusy === 'notebooks' || !projectUid" @click="press"
+                    v-tooltip.top="armed ? 'Click again — its open notebooks stop running' : 'Another Cecelia\'s server holds this port — stop it and start this one'">
+              <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" /> Stop it
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
-                <i class="pi pi-check" /> Stop it
-              </button>
-              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-            </template>
           </ConfirmButton>
           <button v-else-if="notebooksSt === 'stopped'" class="cc-btn cc-btn-primary" :disabled="svcBusy === 'notebooks' || !projectUid"
                   @click="notebooksAction('start')"
@@ -1349,17 +1305,11 @@ async function switchWt(path: string) {
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
         <span class="svc-actions">
           <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
-                         v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'" @click="arm"
-                    v-tooltip.top="'Another Cecelia\'s preview worker holds this port — stop it'">
-              <i class="pi pi-power-off" /> Stop it
+                         v-slot="{ armed, press }">
+            <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" :disabled="svcBusy === 'preview'" @click="press"
+                    v-tooltip.top="armed ? 'Click again — its previews stop' : 'Another Cecelia\'s preview worker holds this port — stop it'">
+              <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" /> Stop it
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its previews stop'">
-                <i class="pi pi-check" /> Stop it
-              </button>
-              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
-            </template>
           </ConfirmButton>
           <button v-else-if="previewSt !== 'stopped'" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'"
                   @click="previewStop()"

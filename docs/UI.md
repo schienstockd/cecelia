@@ -577,10 +577,16 @@ like `GateOverlay` is a different thing — that's `position:absolute` inside a 
 **Never use `window.confirm` / `alert` / `prompt`.** Native dialogs look out of place (OS-styled, not
 our theme), block the JS thread, and can't be positioned or styled. For a destructive-action confirm,
 use **`frontend/src/components/ConfirmButton.vue`** — a logic-only wrapper with a **scoped slot**: the
-first click arms it, showing **Confirm + Cancel** in place; `@confirm` fires only on the second click
-(auto-disarms on an outside click / timeout).
+first click arms it and the **same button flips in place** — danger fill + `pi-exclamation-triangle`,
+**same label** (so it never changes width under the cursor), and the armed tooltip says what the second
+click does; `@confirm` fires only on the second click. **There is
+no Cancel button and no Confirm + Cancel pair** — two buttons sprouting next to the trigger read as two
+new choices and confused users. Walking away is the cancel: it auto-disarms on an outside click or
+after a timeout.
 
-**The host renders the buttons** (via the slot props `{ armed, arm, confirm, cancel }`), NOT the
+**The host renders the button** (via the slot props `{ armed, arm, confirm, press }` — `press` arms when
+idle and confirms when armed; `arm`/`confirm` are for hosts that do work on arming, like Quit counting
+running tasks or Prune's dry run), NOT the
 component — this is deliberate: a child component's rendered DOM does **not** receive a parent's
 *scoped* CSS, so if `ConfirmButton` rendered the button, host `.footer-btn` / `.btn-danger` styling
 wouldn't reach it (this bit us once — the Quit button rendered unstyled). Rendering the buttons in the
@@ -588,13 +594,11 @@ host keeps them in the host's style scope. The wrapper is `display:contents`, so
 if direct children of the host.
 
 ```vue
-<ConfirmButton @confirm="doDelete" v-slot="{ armed, arm, confirm, cancel }">
-  <button v-if="!armed" class="cc-btn cc-btn-danger cc-btn-dense" :disabled="!selected" @click="arm"
-          v-tooltip.bottom="'Delete…'"><i class="pi pi-trash" /></button>
-  <template v-else>
-    <button class="cc-btn cc-btn-danger cc-btn-dense" @click="confirm">Confirm</button>
-    <button class="cc-btn cc-btn-ghost cc-btn-dense" @click="cancel">Cancel</button>
-  </template>
+<ConfirmButton @confirm="doClear" v-slot="{ armed, press }">
+  <button class="cc-btn cc-btn-dense" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
+          v-tooltip.bottom="armed ? 'Click again — delete every reply' : 'Delete every reply'">
+    <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Clear replies
+  </button>
 </ConfirmButton>
 ```
 
@@ -623,8 +627,8 @@ Props: `title` / `armedTitle` (tooltips), `disabled`, `needsConfirm`, `autoDismi
 a text label beside the icon (e.g. "Delete set"). Tooltip position is the directive's default + its
 out-of-bounds flip (a `tip` prop can't drive position — dynamic directive modifiers aren't possible).
 For a host with a **hover-reveal** row action, target the inner button with `:deep(.cc-del)` (see
-`ViewerPanel`). The louder **named** text confirms for whole-image / whole-set deletion (`ImageTable`,
-`SetBar`: "Delete NAME? [Confirm] [Cancel]") are a deliberate higher tier and stay as-is.
+`ViewerPanel`). Whole-set deletion (`SetBar`) names the set in its armed tooltip — it is still the
+same single flip-in-place button, not a Confirm + Cancel pair.
 
 ### Coord-fixed plots — 1:1 square
 

@@ -293,19 +293,11 @@ function pick(c: RefCandidate) {
     </div>
 
     <div v-if="feed.length" class="kiwi-feed-foot">
-      <ConfirmButton @confirm="kiwi.clearFeed()" v-slot="{ armed, arm, confirm, cancel }">
-        <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-2xs" @click="arm"
-                v-tooltip.bottom="'Delete every Kiwi reply for this project'">
-          <i class="pi pi-trash" /> Clear replies
+      <ConfirmButton @confirm="kiwi.clearFeed()" v-slot="{ armed, press }">
+        <button class="cc-btn cc-fs-2xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
+                v-tooltip.bottom="armed ? 'Click again — delete every reply' : 'Delete every Kiwi reply for this project'">
+          <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Clear replies
         </button>
-        <template v-else>
-          <button class="cc-btn cc-btn-danger cc-fs-2xs" @click="confirm" v-tooltip.bottom="'Confirm — delete every reply'">
-            <i class="pi pi-check" /> Delete all
-          </button>
-          <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-2xs" @click="cancel" v-tooltip.bottom="'Cancel'">
-            <i class="pi pi-times" />
-          </button>
-        </template>
       </ConfirmButton>
     </div>
   </div>
