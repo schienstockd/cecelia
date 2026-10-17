@@ -52,8 +52,10 @@
   --cc-danger:     #ef4444;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
-     (ok / warn / fail). Hues from the dataviz status palette, validated for CVD separation
-     (worst adjacent pair ΔE 11.3 under protanopia > the ΔE≥8 bar). Colour is NEVER the sole cue:
+     (ok / warn / fail) drawn WITH its shape-distinct icon. Hues from the dataviz status palette,
+     validated for CVD separation on ADJACENT pairs (worst ΔE 11.3 under protanopia > the ΔE≥8 bar);
+     ok-vs-fail is only ΔE 5.4 under deuteranopia, which the icon covers. A bare status dot has no
+     icon, so it does NOT use these: `.cc-dot` tones are `--cc-dot-*` (sky-blue ok). Colour is NEVER the sole cue:
      always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
      / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
      Supersedes --cc-warn/--cc-danger for severity semantics. Task-status lights (done/failed) route
@@ -63,8 +65,8 @@
   --cc-sev-fail:   #d03b3b;
   /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
      from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
-     button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok`,
-     the severity green.)
+     button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok` —
+     sky blue, not green; see .cc-dot.)
      One green — don't add a second token holding the same colour for a new surface. */
   --cc-viewer:     #22c55e;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
@@ -516,14 +518,25 @@ body {
    level, connection) or a category swatch. Shape here, tone by modifier — `class="cc-dot cc-dot-ok"`,
    or `:class="dotClass(tone)"` (utils/statusDot.ts). A categorical marker composes its own background
    (`class="cc-dot scope-dot"`); a local rule may ADD to the dot (a glow) but never redraws its size.
-   Colour is never the only cue — the label beside it says the state. docs/ui/PRIMITIVES.md. */
+   Colour is never the only cue — the label beside it says the state. docs/ui/PRIMITIVES.md.
+   Tones are the Okabe & Ito swatches the dev consoles use (`share/console_palette.json`, kept equal by
+   utils/statusDot.test.ts). Good is SKY BLUE, not green: a light flips straight between ok and fail,
+   and green against red is the pair red-green colour blindness loses (the severity green scores
+   ΔE 5.4 against the severity red under deuteranopia; this set's closest pair is 12.5). */
+:root {
+  --cc-dot-ok:   #56B4E9;   /* sky_blue */
+  --cc-dot-warn: #E69F00;   /* orange */
+  --cc-dot-fail: #D55E00;   /* vermillion */
+  --cc-dot-idle: #8C8C8C;   /* grey */
+  --cc-dot-info: #0072B2;   /* blue */
+}
 .cc-dot      { display: inline-block; flex-shrink: 0; width: 7px; height: 7px;
-               border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
-.cc-dot-ok   { background: var(--cc-sev-ok); }
-.cc-dot-warn { background: var(--cc-sev-warn); }
-.cc-dot-fail { background: var(--cc-sev-fail); }
-.cc-dot-idle { background: var(--cc-text-dim); }
-.cc-dot-info { background: #3b82f6; }
+               border-radius: var(--cc-radius-pill); background: var(--cc-dot-idle); }
+.cc-dot-ok   { background: var(--cc-dot-ok); }
+.cc-dot-warn { background: var(--cc-dot-warn); }
+.cc-dot-fail { background: var(--cc-dot-fail); }
+.cc-dot-idle { background: var(--cc-dot-idle); }
+.cc-dot-info { background: var(--cc-dot-info); }
 
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */

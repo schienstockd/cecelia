@@ -5,7 +5,8 @@
     "peer_palettes": [
       "app/src/gating/popmanager/clustering_colour.jl :: OKABE_ITO — positional Vector{String}[8], categorical population-colour assignment; 8th slot is '#000000' black (this file's 8th slot is grey for terminal chrome).",
       "frontend/src/plots/palettes.json :: okabe-ito — positional array[8], same hues, same black-at-8 as the Julia one; consumed by the frontend plot renderer.",
-      "frontend/src/utils/landscape.ts :: LANDSCAPE_SWATCHES — 5-key semantic subset (dark/bright-uniform/bright-textured/edge/mixed) for the landscape overlay legend."
+      "frontend/src/utils/landscape.ts :: LANDSCAPE_SWATCHES — 5-key semantic subset (dark/bright-uniform/bright-textured/edge/mixed) for the landscape overlay legend.",
+      "frontend/src/style.css :: --cc-dot-ok/-warn/-fail/-idle/-info (.cc-dot tones) — the app's status lights: sky_blue/orange/vermillion/grey/blue (good is sky blue, as in both consoles); pinned to this file by frontend/src/utils/statusDot.test.ts."
     ],
     "why_a_fourth_home": "Each peer is positional or shape-different (semantic-named vs categorical-indexed) or lives in a runtime this file can't reach cheaply — api/task_console.jl deliberately doesn't `using Cecelia` for boot cost, so the Julia OKABE_ITO const isn't a one-line swap. If you re-tune a hue here, update every listed peer in the same change and vice versa; the CVD guarantee assumes they don't drift."
   },

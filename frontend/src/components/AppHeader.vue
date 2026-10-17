@@ -280,13 +280,13 @@ const statusTip: Record<string, string> = {
 }
 
 .ws-badge.connected    { background: #14532d33; color: #86efac; }
-.ws-badge.connected .cc-dot { box-shadow: 0 0 5px var(--cc-sev-ok); }
+.ws-badge.connected .cc-dot { box-shadow: 0 0 5px var(--cc-dot-ok); }
 .ws-badge.connecting   { background: #78350f33; color: #fcd34d; }
 .ws-badge.disconnected { background: #27272a55; color: #71717a; }
 .ws-badge.error,
 .ws-badge.signedOut    { background: #7f1d1d33; color: #fca5a5; }
 .ws-badge.error .cc-dot,
-.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--cc-sev-fail); }
+.ws-badge.signedOut .cc-dot { box-shadow: 0 0 5px var(--cc-dot-fail); }
 
 .update-badge {
   display: flex;
