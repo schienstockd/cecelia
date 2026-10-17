@@ -90,7 +90,7 @@ export function renderMarkdown(md: string | undefined | null): string {
 export function useUpdateCard(): ComputedRef<WhatNewCard | null> {
   const app = useAppControlStore()
   return computed(() => {
-    if (!app.updateLatest) return null
+    if (!app.canManageMachine || !app.updateLatest) return null   // updates are peanut's (SETTINGS_SCOPE_PLAN)
     const behind = app.updateAvailable ? behindPhrase(app.updateBehindBy, app.updateMergedPrs.length) : ''
     const description = app.updatePending
       ? 'Downloaded — restart Cecelia to finish installing.'

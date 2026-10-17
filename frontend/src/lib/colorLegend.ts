@@ -76,8 +76,10 @@ export const COLOR_LEGEND: ColorFamily[] = [
     entries: [
       { token: '--cc-warn',   means: 'Amber — favourites, stale edits, timeline warnings; not QC severity',
         swatch: varSwatch('--cc-warn') },
-      { token: '--cc-danger', means: 'Red — a button ARMED to destroy or shut down; not the same as fail',
+      { token: '--cc-danger', means: 'Red — destructive text and outlines; not the same as fail',
         swatch: varSwatch('--cc-danger') },
+      { token: '--cc-danger-fill', means: 'Muted red — a filled destructive button (Quit, armed delete)',
+        swatch: varSwatch('--cc-danger-fill') },
     ],
   },
   {
@@ -98,6 +100,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-accent') },
       { token: '--cc-accent-strong', means: 'Engaged variant — border on a pressed control',
         swatch: varSwatch('--cc-accent-strong') },
+      { token: '--cc-accent-fill',   means: 'Filled control with white text — primary button, picked chip',
+        swatch: varSwatch('--cc-accent-fill') },
       { token: '--cc-accent-soft',   means: 'Text on an accent-tinted surface',
         swatch: varSwatch('--cc-accent-soft') },
       { token: '--cc-accent-tint',   means: 'Soft wash behind an "option is on" surface',

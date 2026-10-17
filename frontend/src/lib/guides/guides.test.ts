@@ -6,7 +6,7 @@ import { TASK_RUN_USES } from './moduleTask'
 import { anchorSelector, NAV_PREFIX } from '../../utils/guideAnchor'
 import { allNavGroups } from '../navGroups'
 import { applyProfile, availablePaths, hiddenGuideRoutes } from '../../utils/viewProfiles'
-import type { GuideCtx } from './types'
+import { guideStepsFor, type GuideCtx } from './types'
 
 // THE ratchet for the guide system (plan D4). A guide's step points at a control by anchor id; if the
 // control is renamed or the attribute dropped, the guide silently stops working — and only for the one
@@ -297,6 +297,7 @@ describe('prerequisites are pure predicates over the snapshot', () => {
     anchorValue: () => null,
     anchorExists: () => false,
     anchorReachable: () => false,
+    canManageMachine: true,
     ...over,
   })
   const img = (over: Record<string, unknown> = {}) =>
@@ -391,5 +392,22 @@ describe('the derived view-profile prereq', () => {
     for (const id of ['record-a-movie', 'build-an-animation']) {
       expect(hiddenGuideRoutes(guideById(id)!.steps, visible, curatable)).toContain('/movies')
     }
+  })
+})
+
+describe('steps a window can never show are dropped when the guide starts', () => {
+  const ctx = (canManageMachine: boolean) => ({ canManageMachine }) as GuideCtx
+  const tour = guideById('find-your-way-around')!
+
+  it('the tour keeps its Updates step for peanut and drops it for anyone else', () => {
+    const has = (c: GuideCtx) => guideStepsFor(tour.steps, c).some(s => s.anchor === 'settings.updates')
+    expect(has(ctx(true))).toBe(true)
+    expect(has(ctx(false))).toBe(false)
+    expect(guideStepsFor(tour.steps, ctx(false)).length).toBe(tour.steps.length - 1)
+  })
+
+  it('a step without onlyIf is always kept', () => {
+    const steps = [{ text: 'a' }, { text: 'b', onlyIf: () => false }]
+    expect(guideStepsFor(steps, ctx(false)).map(s => s.text)).toEqual(['a'])
   })
 })

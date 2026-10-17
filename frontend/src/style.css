@@ -32,6 +32,12 @@
      existed as raw hex long before they existed as tokens (measured: 14 × #7c3aed, 6 × #c4b5fd,
      4 × #2d1b69 across 22 files). They are what an ENGAGED control is built from — see .cc-btn-on. */
   --cc-accent-strong: #7c3aed;   /* deeper violet — borders on an engaged/active control */
+  /* SOLID surfaces under white text. The light accent and --cc-danger fail WCAG AA with white text
+     (2.72:1 / 3.76:1), and two fully saturated fills side by side clashed. The fill is the accent's
+     OWN hue darkened (hsl 255°, like #a78bfa) so buttons and sliders/toggles read as one family:
+     white 5.12:1; the muted red 5.86:1; the two stay far apart under every simulated colour blindness. */
+  --cc-accent-fill:   #7659cf;   /* deep lavender — primary buttons, selected chips, Run */
+  --cc-danger-fill:   #b33a3a;   /* muted red — destructive buttons, armed delete / quit */
   --cc-accent-soft:   #c4b5fd;   /* pale violet — text on an accent-tinted surface */
   --cc-accent-tint:   #2d1b69;   /* dark violet wash — the tinted "option is on" surface */
   --cc-accent-tint-2: #3b2382;   /* its hover step */
@@ -52,8 +58,10 @@
   --cc-danger:     #ef4444;
 
   /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
-     (ok / warn / fail). Hues from the dataviz status palette, validated for CVD separation
-     (worst adjacent pair ΔE 11.3 under protanopia > the ΔE≥8 bar). Colour is NEVER the sole cue:
+     (ok / warn / fail) drawn WITH its shape-distinct icon. Hues from the dataviz status palette,
+     validated for CVD separation on ADJACENT pairs (worst ΔE 11.3 under protanopia > the ΔE≥8 bar);
+     ok-vs-fail is only ΔE 5.4 under deuteranopia, which the icon covers. A bare status dot has no
+     icon, so it does NOT use these: `.cc-dot` tones are `--cc-dot-*` (sky-blue ok). Colour is NEVER the sole cue:
      always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
      / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
      Supersedes --cc-warn/--cc-danger for severity semantics. Task-status lights (done/failed) route
@@ -63,7 +71,8 @@
   --cc-sev-fail:   #d03b3b;
   /* THE green — marks the app's own instrumentation as opposed to your data, so it stands apart
      from the purple form/control chrome and the amber selection boxes. Users: the viewer controls
-     button + its floating-panel border, the setup wizard's ok hint, and the Settings service pills.
+     button + its floating-panel border and the setup wizard's ok hint. (Status lights are `.cc-dot-ok` —
+     sky blue, not green; see .cc-dot.)
      One green — don't add a second token holding the same colour for a new surface. */
   --cc-viewer:     #22c55e;
   /* "this is the app talking to you" (whitish) — the lab-log panel border, the guide bubble + its
@@ -233,10 +242,11 @@ body {
 }
 .cc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+/* A filled accent under white text uses --cc-accent-fill (see its token). Same for .cc-btn-on-solid. */
 .cc-btn-primary {
-  background: var(--cc-accent);
+  background: var(--cc-accent-fill);
   color: #fff;
-  border-color: var(--cc-accent);
+  border-color: var(--cc-accent-fill);
 }
 .cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
 
@@ -252,9 +262,9 @@ body {
    a table/bar, where a wall of solid red would be too heavy). Both were previously hand-copied per
    component with drifted colours — this is the one source. */
 .cc-btn-danger {
-  background: #b91c1c;
+  background: var(--cc-danger-fill);
   color: #fff;
-  border-color: #b91c1c;
+  border-color: var(--cc-danger-fill);
 }
 .cc-btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
 
@@ -339,14 +349,14 @@ body {
 }
 
 .cc-btn-on.cc-btn-on-solid {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-accent-fill);
+  border-color: var(--cc-accent-fill);
   color: #fff;
 }
 .cc-btn.cc-btn-on.cc-btn-on-solid:hover:not(:disabled) {
   filter: brightness(1.12);
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
+  background: var(--cc-accent-fill);
+  border-color: var(--cc-accent-fill);
   color: #fff;
 }
 
@@ -510,6 +520,30 @@ body {
   font-size: var(--cc-fs-2xs); color: var(--cc-text-dim); white-space: nowrap;
 }
 .cc-pool-tag > .pi { font-size: var(--cc-fs-3xs); }
+
+/* Dot — the ONE small round marker beside a label: a status light (service running, CLI found, log
+   level, connection) or a category swatch. Shape here, tone by modifier — `class="cc-dot cc-dot-ok"`,
+   or `:class="dotClass(tone)"` (utils/statusDot.ts). A categorical marker composes its own background
+   (`class="cc-dot scope-dot"`); a local rule may ADD to the dot (a glow) but never redraws its size.
+   Colour is never the only cue — the label beside it says the state. docs/ui/PRIMITIVES.md.
+   Tones are the Okabe & Ito swatches the dev consoles use (`share/console_palette.json`, kept equal by
+   utils/statusDot.test.ts). Good is SKY BLUE, not green: a light flips straight between ok and fail,
+   and green against red is the pair red-green colour blindness loses (the severity green scores
+   ΔE 5.4 against the severity red under deuteranopia; this set's closest pair is 12.5). */
+:root {
+  --cc-dot-ok:   #56B4E9;   /* sky_blue */
+  --cc-dot-warn: #E69F00;   /* orange */
+  --cc-dot-fail: #D55E00;   /* vermillion */
+  --cc-dot-idle: #8C8C8C;   /* grey */
+  --cc-dot-info: #0072B2;   /* blue */
+}
+.cc-dot      { display: inline-block; flex-shrink: 0; width: 7px; height: 7px;
+               border-radius: var(--cc-radius-pill); background: var(--cc-dot-idle); }
+.cc-dot-ok   { background: var(--cc-dot-ok); }
+.cc-dot-warn { background: var(--cc-dot-warn); }
+.cc-dot-fail { background: var(--cc-dot-fail); }
+.cc-dot-idle { background: var(--cc-dot-idle); }
+.cc-dot-info { background: var(--cc-dot-info); }
 
 /* Eyebrow / section label — small uppercase dim heading above a group of controls. Note the base is a
    tier smaller than `.cc-muted`'s: an eyebrow is chrome, not prose. */

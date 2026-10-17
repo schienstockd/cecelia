@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useLogStore, type LogLevel } from '../stores/log'
+import { dotClass, LOG_LEVEL_TONE } from '../utils/statusDot'
 import { isVisible, formatEntry, logGroup, LOG_GROUPS, type LogGroup } from '../utils/logFilter'
 import { openPopoutWindow } from '../lib/popout'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
@@ -136,7 +137,7 @@ const filterOptions = computed<ChipOption[]>(() =>
     </span>
 
     <span v-if="log.lastEntry" class="bar-last cc-muted" :class="log.lastEntry.level">
-      <span class="lvl-dot" />
+      <span class="cc-dot" :class="dotClass(LOG_LEVEL_TONE[log.lastEntry.level])" />
       {{ log.lastEntry.message }}
     </span>
 
@@ -294,14 +295,6 @@ const filterOptions = computed<ChipOption[]>(() =>
 .bar-last.warn  { color: #fcd34d; }
 .bar-last.info  { color: var(--cc-text-dim); }
 
-.lvl-dot {
-  width: 6px; height: 6px;
-  border-radius: var(--cc-radius-pill);
-  flex-shrink: 0;
-}
-.bar-last.error .lvl-dot { background: var(--cc-sev-fail); }
-.bar-last.warn  .lvl-dot { background: var(--cc-sev-warn); }
-.bar-last.info  .lvl-dot { background: #3b82f6; }
 
 /* pop-out button on the collapsed bar — pin to the right edge, don't shrink */
 .bar-window-btn { margin-left: auto; flex-shrink: 0; }

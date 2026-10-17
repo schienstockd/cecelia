@@ -1172,7 +1172,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   padding: 0.55rem;
   border-radius: var(--cc-radius-md);
   border: none;
-  background: var(--cc-accent);
+  background: var(--cc-accent-fill);
   color: #fff;
   cursor: pointer;
   transition: filter 0.12s;

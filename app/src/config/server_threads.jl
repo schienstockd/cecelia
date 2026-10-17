@@ -1,4 +1,4 @@
-# ── API thread pool preference — Settings → System → "Use all CPU cores" ──────────
+# ── API thread pool preference — Settings → Server → "Use all CPU cores" ──────────
 #
 # `[server] multithreaded` in the user's `custom.toml`. Default ON: the API runs request handlers,
 # HDF5/zarr reads and task scheduling on the thread pool (docs/API.md → Thread safety), and a

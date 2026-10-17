@@ -51,7 +51,7 @@ defineEmits<{ confirm: [] }>()
   border: 1px solid transparent; border-radius: var(--cc-radius-sm); color: var(--cc-text-dim); cursor: pointer;
   padding: 4px 6px; font-size: var(--cc-fs-sm); line-height: 1; }
 .cc-del:hover:not(:disabled) { color: var(--cc-danger); background: var(--cc-surface-2); }
-.cc-del.armed { color: #fff; background: var(--cc-danger); border-color: var(--cc-danger); }
+.cc-del.armed { color: #fff; background: var(--cc-danger-fill); border-color: var(--cc-danger-fill); }
 .cc-del:disabled { opacity: 0.35; cursor: not-allowed; }
 .cc-del-lbl { white-space: nowrap; }
 </style>

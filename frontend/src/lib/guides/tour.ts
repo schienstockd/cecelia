@@ -122,6 +122,7 @@ export const tourGuide: GuideDef = {
     },
     {
       anchor: 'settings.updates',
+      onlyIf: c => c.canManageMachine,      // the section is peanut-only (SETTINGS_SCOPE_PLAN)
       route: '/settings',
       placement: 'top-start',
       title: 'Updates',

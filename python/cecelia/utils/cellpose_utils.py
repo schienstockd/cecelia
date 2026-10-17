@@ -108,7 +108,7 @@ def _refuse_unknown_v4_model(model_type):
     if model_type in _CELLPOSE_V3_BUILTINS:
         raise ValueError(
             f'{model_type!r} is a cellpose 3 model and this process runs cellpose 4 (the default env). '
-            "It runs in the 'cellpose-v3' env — install it from Settings → System.")
+            "It runs in the 'cellpose-v3' env — install it from the task's page (Install under the model parameter).")
     raise ValueError(
         f'Cellpose model {model_type!r} is neither a cellpose 4 built-in '
         f'({", ".join(_CELLPOSE_V4_BUILTINS)}) nor a checkpoint file; cellpose 4 would silently '

@@ -31,7 +31,7 @@ from copy import copy
 import cecelia.utils.slice_utils as slice_utils
 
 
-#: Compressors an IMAGE store may be written with, by name. Selectable in Settings → Storage; the one
+#: Compressors an IMAGE store may be written with, by name. Selectable in Settings → Storage defaults; the one
 #: in force reaches this module through the `CECELIA_IMAGE_COMPRESSOR` env var (set by `run_py`), so a
 #: task runner never has to thread it through. Every value is measured on the same real 16-bit
 #: acquisition — `4kS67f/LUkCpP`, 64x4x13x512x512, 12-bit data in 16-bit words, whole store rewritten:

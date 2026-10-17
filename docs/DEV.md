@@ -750,7 +750,7 @@ curl -sI -k --http2 https://127.0.0.1:8080/api/version -o /dev/null -w 'proto=%{
 ```
 
 The `-k` skips validation of the self-signed cert (same click-through the browser does).
-Settings → System also shows the effective protocol as `h2` or `h1.1` next to the port. Full
+Settings → Diagnostics shows the effective protocol as `h2` or `h1.1`. Full
 resolution order (env → `[tls].enabled` in `custom.toml` → off) and the fallback logic —
 openssl missing on PATH falls back to HTTP/1.1 with a warning rather than refusing to start —
 live in `docs/SHIPPING.md` → *Runtime flow* and `app/src/config/tls.jl`.

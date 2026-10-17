@@ -40,6 +40,9 @@ export interface GuideCtx {
   // (pick a function and its parameters appear) from "it exists but something is hiding it" (a
   // collapsed panel, a collapsed pane half) — two different fixes, so two different bubbles.
   anchorReachable: (anchorId: string) => boolean
+  // May this window see machine-wide settings (appControl.canManageMachine)? Steps about them carry
+  // `onlyIf: c => c.canManageMachine` so other profiles' guides skip them.
+  canManageMachine: boolean
 }
 
 export type GatePredicate = (c: GuideCtx) => boolean
@@ -82,7 +85,14 @@ export interface GuideStep {
   clickAnchor?: boolean       // advance when the anchor element is clicked
   awaitTask?: AwaitTask
   reveal?: Reveal | Reveal[]      // several causes ⇒ first match wins
+  // Include the step at all? Read ONCE when the guide starts (`guideStepsFor`), so a step whose
+  // control this window can never show is dropped instead of pointing at nothing.
+  onlyIf?: GatePredicate
 }
+
+/** The guide's steps for this window: those whose `onlyIf` holds now. */
+export const guideStepsFor = (steps: GuideStep[], c: GuideCtx): GuideStep[] =>
+  steps.filter(s => !s.onlyIf || s.onlyIf(c))
 
 export interface Prereq {
   id: string

@@ -308,7 +308,7 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-compose-row { display: flex; align-items: center; justify-content: space-between; margin-top: 0.35rem; }
 
 .ll-save {
-  border: 1px solid var(--cc-accent); background: var(--cc-accent); color: #fff;
+  border: 1px solid var(--cc-accent-fill); background: var(--cc-accent-fill); color: #fff;
   border-radius: var(--cc-radius-sm); padding: 0.22rem 0.6rem; font-size: var(--cc-fs-sm); cursor: pointer;
 }
 .ll-save:disabled { opacity: 0.5; cursor: default; }

@@ -25,11 +25,8 @@ import { useWsStore } from '../stores/ws'
 import { quitConfirmTooltip, quitConfirmLabel, quitTaskPhrase } from '../utils/quitWarning'
 import { runningTaskCount } from '../utils/runningTasks'
 import { useTaskStore } from '../stores/tasks'
-import { useObserverStore } from '../stores/observer'
-import { useKiwiStore } from '../stores/kiwi'
-import { mcpRows, type McpConnection } from '../utils/mcpConnections'
-import { isAuthError, terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
-import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
+import { useMcpConnections } from '../composables/useMcpConnections'
+import { dotClass } from '../utils/statusDot'
 import CcToggle from '../components/CcToggle.vue'
 import CcProgressBar from '../components/CcProgressBar.vue'
 import SelectionTable, { type SelectionColumn } from '../components/SelectionTable.vue'
@@ -131,7 +128,7 @@ async function changeKeepPrev(value: boolean) {
 const sharedRows  = ref<SharedWorkstationRow[]>([])
 const sharedBusy  = ref('')
 const sharedError = ref('')
-const showShared  = computed(() => appCtl.activeProfileName === 'default' && sharedRows.value.length > 0)
+const showShared  = computed(() => appCtl.canManageMachine && sharedRows.value.length > 0)
 async function loadShared() {
   try { sharedRows.value = sharedWorkstationRows(await fetchSharedWorkstation()) }
   catch { /* optional section — a failure must not break the Settings page */ }
@@ -260,9 +257,8 @@ function shortModulePath(p: string): string {
 // Install and remove both return the SAME payload the status endpoint does, so the store is refreshed
 // from the response rather than by a follow-up fetch that could race the reload.
 // Columns for the two plugin tables. A table rather than stacked rows because each entry carries
-// several comparable facts (version, what it ships) plus a row-scoped action — and `.save-btn` is
-// `display:flex`, i.e. block-level, so in a plain row the button dropped onto its own line under the
-// name it belonged to. SelectionTable is THE canonical table (docs/ui/PRIMITIVES.md);
+// several comparable facts (version, what it ships) plus a row-scoped action, and in a plain row the
+// button dropped onto its own line under the name it belonged to. SelectionTable is THE canonical table (docs/ui/PRIMITIVES.md);
 // hand-rolling one here is the exact mistake it exists to prevent.
 const PLUGIN_COLUMNS: SelectionColumn[] = [
   { key: 'name',       label: 'Plugin' },
@@ -639,62 +635,13 @@ onUnmounted(() => { if (svcTimer) window.clearInterval(svcTimer) })
 // ── MCP connections ────────────────────────────────────────────────────────────
 // What Claude can reach. NOT polled: the config only changes when the user (or our own setup button)
 // edits it, so it's read on open and after a registration attempt. Row model in utils/mcpConnections.ts.
-const observer = useObserverStore()
-const mcpRaw = ref<McpConnection[]>([])
 const hiddenAccountConnectors = computed(() => settings.hiddenMcpAccounts)
-// The Claude Code CLI row leads the list. Its "not detected / not logged in" state used to be a
-// banner in the lab-log panel; with the connections panel here, that banner was a second home for
-// the same fact — and the one further from where you act on it.
-// "not logged in" is read off the engine's last failure — Kiwi's newest turn (the lab log's Ask-Claude
-// pass it used to come from is gone; both ran the same engine)
-const kiwi = useKiwiStore()
-const observerAuthFailed = computed(() => {
-  const last = kiwi.turns[kiwi.turns.length - 1]
-  return !!last && last.status === 'failed' && isAuthError(last.error || last.reply?.errors?.[0] || '')
-})
-const mcpConnectionRows = computed(() =>
-  mcpRows(mcpRaw.value, observer.terminalState, settings.hiddenMcpAccounts,
-          { available: observer.available, authFailed: observerAuthFailed.value, path: observer.cliPath }))
-// The observer is Cecelia's own row and belongs with the other backend components in "System" — it
-// used to render in "MCP connections" alongside third-party servers, and readers hunting for
-// Cecelia's lifecycle didn't find it. Now: shown ONCE, next to Application/Notebooks/etc.
-const observerServiceRow = computed(() =>
-  mcpConnectionRows.value.find(r => r.name === 'cecelia-observer'))
-const otherMcpConnectionRows = computed(() =>
-  mcpConnectionRows.value.filter(r => r.name !== 'cecelia-observer'))
-// The registered install's *checkout name* — the parent of the always-literal `mcp/` leaf, which
-// is the distinguishing bit ("cecelia-feijoa" vs "cecelia-mcp-row"). One short token so it fits the
-// .svc-port column without wrapping; the full path is in the row tooltip.
-const observerInstallShort = computed(() => {
-  const p = observerServiceRow.value?.installPath || ''
-  if (!p) return ''
-  const parts = p.split(/[\\/]/).filter(Boolean)
-  const leaf = parts[parts.length - 1] || ''
-  return leaf === 'mcp' ? (parts[parts.length - 2] || leaf) : leaf
-})
+// The Claude Code CLI row leads the list. Cecelia's own `cecelia-observer` row is this profile's
+// Kiwi setup, so it lives in Preferences → Kiwi (composables/useMcpConnections.ts).
+const { otherRows: otherMcpConnectionRows, rechecking: cliRechecking, recheck: recheckCli } = useMcpConnections()
 function hideAccountConnector(name: string) {
   if (!settings.hiddenMcpAccounts.includes(name)) settings.hiddenMcpAccounts.push(name)
 }
-async function loadMcpConnections() {
-  try { mcpRaw.value = (await (await fetch('/api/mcp/connections')).json())?.connections ?? [] }
-  catch { mcpRaw.value = [] }
-}
-onMounted(() => { loadMcpConnections(); observer.refresh() })
-// "I just installed it": re-probe the backend (it searches PATH + the installers' dirs every call, so
-// no restart is needed) and re-read the config the install may have created.
-const cliRechecking = ref(false)
-async function recheckCli() {
-  cliRechecking.value = true
-  try { await Promise.all([observer.refresh(), loadMcpConnections()]) }
-  finally { cliRechecking.value = false }
-}
-// re-read once a setup attempt settles, so the dot reflects the config rather than the click
-watch(() => observer.registering, busy => { if (!busy) loadMcpConnections() })
-
-// The failed-setup fallback command lives here now (diagnostics), not in the lab-log toolbar.
-const { isCopied: observerCmdCopied, copy: copyCmdFlash } = useCopyFlash()
-const observerFallbackCommand = computed(() => claudeChatCommand(observer.mcpConfigPath))
-const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
 // Stop only. Starting a preview means previewing SOMETHING — it needs a task's params and an open
 // image, which this panel has neither of; a Start button here would either do nothing visible or need
@@ -807,7 +754,7 @@ async function switchWt(path: string) {
                 placeholder="Project name"
               />
               <button
-                class="save-btn"
+                class="cc-btn cc-btn-primary"
                 :disabled="saving || !editName.trim() || editName === projectMeta.current?.name"
                 @click="saveName"
                 v-tooltip.right="'Apply the new project name'"
@@ -839,21 +786,6 @@ async function switchWt(path: string) {
     <section class="settings-section">
       <h2 class="section-title">Interface</h2>
 
-      <div class="field">
-        <CcToggle class="toggle-row" v-model="settings.taskListAutoFollow" label="Auto-follow running tasks in task manager"
-          v-tooltip.bottom="'When a task starts running, automatically select it in the task manager log panel'" />
-      </div>
-
-      <div class="field">
-        <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
-          v-tooltip.bottom="'Reload plots automatically when a task finishes'" />
-      </div>
-
-      <div class="field">
-        <CcToggle class="toggle-row" v-model="settings.importPyramidAdvisor" label="Suggest pyramid levels on import"
-          v-tooltip.bottom="'Peek source dims to suggest a level count under the pyramid field'" />
-      </div>
-
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
            pages stay reachable by URL — this declutters, it does not restrict. -->
       <div class="field" data-guide="settings.viewProfile">
@@ -861,7 +793,7 @@ async function switchWt(path: string) {
         <div class="field-row">
           <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift
                right (and eventually wrap) as it does. A fixed control belongs on the fixed side. -->
-          <button class="save-btn" @click="showProfileEditor = true"
+          <button class="cc-btn cc-btn-primary" @click="showProfileEditor = true"
                   v-tooltip.right="'Create or change a profile'">
             <i class="pi pi-pencil" /> Edit
           </button>
@@ -880,7 +812,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->
-    <section class="settings-section" data-guide="settings.updates">
+    <section v-if="appCtl.canManageMachine" class="settings-section" data-guide="settings.updates">
       <h2 class="section-title">Software updates</h2>
 
       <div class="field">
@@ -889,7 +821,7 @@ async function switchWt(path: string) {
           <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly
                  v-tooltip.bottom="'Cecelia version currently running'" />
           <button
-            class="save-btn"
+            class="cc-btn cc-btn-primary"
             :disabled="appCtl.updateChecking"
             @click="() => appCtl.checkUpdate(settings.preferDevChannel ? 'dev' : 'stable')"
             v-tooltip.right="'Check GitHub for a newer release'"
@@ -922,7 +854,7 @@ async function switchWt(path: string) {
       <!-- per-user install: in-app update -->
       <div v-else-if="appCtl.updateAvailable && appCtl.canApplyUpdate" class="field">
         <button
-          class="save-btn"
+          class="cc-btn cc-btn-primary"
           :disabled="appCtl.updateBusy"
           @click="appCtl.applyUpdate"
           v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish`"
@@ -942,7 +874,7 @@ async function switchWt(path: string) {
            than a ConfirmButton: the actual overwrite happens on the NEXT restart, not on click. -->
       <div v-if="appCtl.updateHasPrevious && appCtl.canApplyUpdate" class="field">
         <button
-          class="save-btn"
+          class="cc-btn cc-btn-primary"
           :disabled="appCtl.updateRevertBusy"
           @click="appCtl.revertUpdate"
           v-tooltip.right="'Roll back to the previous version on the next restart'"
@@ -958,6 +890,133 @@ async function switchWt(path: string) {
     <!-- ── Storage ──────────────────────────────────────────────────────── -->
     <section class="settings-section" data-guide="settings.storage">
       <h2 class="section-title">Storage</h2>
+
+      <div class="field">
+        <div class="field-row">
+          <!-- The tour anchors HERE rather than on the "Free up space" button: that one is behind
+               `v-if="storage.reclaimable.length"`, so it does not exist until a scan has run and never
+               exists on a project with nothing to reclaim — an anchor the guide could point at only
+               sometimes. Scan is always present, and it is the first click either way. -->
+          <button class="cc-btn cc-btn-primary" data-guide="settings.storageScan"
+                  :disabled="storageScan || !projectMeta.current" @click="scanStorage"
+                  v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
+            <i :class="['pi', storageScan ? 'pi-spin pi-spinner' : 'pi-search']" />
+            {{ storage ? 'Re-scan' : 'Scan storage' }}
+          </button>
+        </div>
+        <span v-if="!storage && !storageScan" class="field-hint cc-muted cc-fs-xs">
+          Scan for disk usage and superseded image versions that can be freed.
+        </span>
+        <span v-if="storageError" class="field-hint cc-muted-error cc-fs-xs">{{ storageError }}</span>
+      </div>
+
+      <template v-if="storage">
+        <div class="stor-line">
+          <span v-tooltip.top="'Total size of the image OME-ZARRs in this project'">Images in project</span>
+          <strong>{{ formatBytes(storage.imageBytes) }}</strong>
+          <span>Disk free</span><strong>{{ formatBytes(storage.diskAvailable) }} / {{ formatBytes(storage.diskTotal) }}</strong>
+        </div>
+
+        <!-- Derived output, reported but never freed from here: dropping analysis is a deliberate
+             per-image act in the Import page's Delete modal (IMAGE_DELETE_PLAN Decision 5). -->
+        <div v-if="storage.analysisBytes" class="stor-line">
+          <span v-tooltip.top="'Segmentations, measurements, gating, clustering and spatial output'">Analysis</span>
+          <strong>{{ formatBytes(storage.analysisBytes) }}</strong>
+          <span class="field-hint cc-muted cc-fs-xs">
+            drop it per image in Import → Delete → All analysis
+          </span>
+        </div>
+
+        <!-- Leftovers a cancelled/crashed run abandoned — bytes nothing in the UI can reach. Shown
+             here so the cleanup announces itself instead of waiting to be found in Data patches. Not
+             actionable from this box on purpose: the patch shows the list before deleting anything. -->
+        <div v-if="debrisLine(storage.debris)" class="stor-line">
+          <span v-tooltip.top="'Free these in Data patches → Remove leftover stores'">Leftover from cancelled runs</span>
+          <strong>{{ debrisLine(storage.debris) }}</strong>
+          <span v-if="storage.debris?.activeSkipped" class="field-hint cc-muted cc-fs-xs">
+            +{{ storage.debris.activeSkipped }} in use, not counted
+          </span>
+        </div>
+
+        <div v-if="storage.reclaimable.length" class="stor-reclaim">
+          <div class="stor-reclaim-head">
+            Reclaimable <strong>{{ formatBytes(storage.reclaimableBytes) }}</strong>
+            <span class="field-hint cc-muted cc-fs-xs">({{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }} with superseded versions; the active version is kept)</span>
+          </div>
+          <ul class="stor-list">
+            <li v-for="r in storage.reclaimable.slice(0, 8)" :key="r.imageUid">
+              <span class="stor-name">{{ r.name || r.imageUid }}</span>
+              <span class="stor-size">{{ formatBytes(r.bytes) }}</span>
+              <span class="field-hint cc-muted cc-fs-xs"
+                    v-tooltip.top="'Frees: ' + (r.versions?.map(v => v.valueName).join(', ') ?? '') + ' — keeps ' + r.activeVersion">
+                → keeps {{ r.activeVersion }}
+              </span>
+            </li>
+            <li v-if="storage.reclaimable.length > 8" class="field-hint cc-muted cc-fs-xs">…{{ storage.reclaimable.length - 8 }} more</li>
+          </ul>
+          <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="storageBusy" @click="arm"
+                    v-tooltip.top="'Delete every non-active image version'">
+              <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : 'pi-trash']" /> Free up space
+            </button>
+            <template v-else>
+              <button class="cc-btn cc-btn-danger" @click="confirm">
+                <i class="pi pi-trash" /> Free {{ formatBytes(storage.reclaimableBytes) }} across {{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }}
+              </button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+        </div>
+        <span v-else class="field-hint cc-muted cc-fs-xs">Nothing to reclaim — every image has only its active version.</span>
+      </template>
+
+      <!-- P5 — VN inner-version prune (docs/todo/VN_VERSIONING_PLAN.md → P5). Same Scan click
+           populates the inventory; per-row Prune uses the maintenance-patch dry-run precedent
+           (first arm = apply:false dry-run summary; second arm = apply:true). Hidden when nothing
+           is prunable — every image on _latest across every value_name. -->
+      <template v-if="versionsInventory && versionsHavePrunable">
+        <h3 class="cc-eyebrow subsection-title" style="margin-top:1.25rem">Versions</h3>
+        <ul class="reclaim-list">
+          <template v-for="img in versionsInventory.images" :key="img.imageUid">
+            <template v-for="vn in img.valueNames" :key="`${img.imageUid}:${vn.valueName}`">
+              <li v-for="v in vn.versions.filter(x => !x.isLatest && !x.legacy)"
+                  :key="`${img.imageUid}:${vn.valueName}:${v.version}`" class="stor-row">
+                <span class="stor-name">{{ img.name }}</span>
+                <span class="field-hint cc-muted cc-fs-xs">{{ vn.valueName }} · {{ v.version }}</span>
+                <span class="stor-size">{{ formatBytes(v.bytes) }}</span>
+                <ConfirmButton
+                    @confirm="pruneConfirm(img.imageUid, vn.valueName, v.version)"
+                    v-slot="{ armed, arm, confirm, cancel }">
+                  <button v-if="!armed" class="cc-btn cc-btn-ghost"
+                          :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
+                          @click="pruneDryRun(img.imageUid, vn.valueName, v.version); arm()"
+                          v-tooltip.left="`Preview freeing ${v.version} — irreversible when confirmed`">
+                    <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner' : 'pi-trash']" /> Prune
+                  </button>
+                  <template v-else>
+                    <button class="cc-btn cc-btn-danger"
+                            :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
+                            @click="confirm">
+                      <i class="pi pi-trash" />
+                      Free {{ formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes) }}
+                    </button>
+                    <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
+                  </template>
+                </ConfirmButton>
+                <span v-if="pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)]"
+                      class="field-hint cc-muted cc-fs-xs" style="color:var(--cc-warn)">
+                  {{ pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)] }}
+                </span>
+              </li>
+            </template>
+          </template>
+        </ul>
+      </template>
+    </section>
+
+    <!-- ── Storage defaults — how every NEW store on this machine is written (peanut only) ── -->
+    <section v-if="appCtl.canManageMachine" class="settings-section">
+      <h2 class="section-title">Storage defaults</h2>
 
       <!-- Advanced: what compression the image stores we write use. A TABLE, not a dropdown — the
            trade-off is the only reason there is a choice, so the measured numbers belong on screen at
@@ -1019,131 +1078,9 @@ async function switchWt(path: string) {
         <span class="field-hint cc-muted cc-fs-xs">In use: {{ formatBytes(chunkCache.stats.bytes) }}</span>
       </div>
       <span v-if="chunkCacheError" class="field-hint cc-muted-error cc-fs-xs">{{ chunkCacheError }}</span>
-
-      <div class="field">
-        <div class="field-row">
-          <!-- The tour anchors HERE rather than on the "Free up space" button: that one is behind
-               `v-if="storage.reclaimable.length"`, so it does not exist until a scan has run and never
-               exists on a project with nothing to reclaim — an anchor the guide could point at only
-               sometimes. Scan is always present, and it is the first click either way. -->
-          <button class="save-btn" data-guide="settings.storageScan"
-                  :disabled="storageScan || !projectMeta.current" @click="scanStorage"
-                  v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
-            <i :class="['pi', storageScan ? 'pi-spin pi-spinner' : 'pi-search']" />
-            {{ storage ? 'Re-scan' : 'Scan storage' }}
-          </button>
-        </div>
-        <span v-if="!storage && !storageScan" class="field-hint cc-muted cc-fs-xs">
-          Scan for disk usage and superseded image versions that can be freed.
-        </span>
-        <span v-if="storageError" class="field-hint cc-muted-error cc-fs-xs">{{ storageError }}</span>
-      </div>
-
-      <template v-if="storage">
-        <div class="stor-line">
-          <span v-tooltip.top="'Total size of the image OME-ZARRs in this project'">Images in project</span>
-          <strong>{{ formatBytes(storage.imageBytes) }}</strong>
-          <span>Disk free</span><strong>{{ formatBytes(storage.diskAvailable) }} / {{ formatBytes(storage.diskTotal) }}</strong>
-        </div>
-
-        <!-- Derived output, reported but never freed from here: dropping analysis is a deliberate
-             per-image act in the Import page's Delete modal (IMAGE_DELETE_PLAN Decision 5). -->
-        <div v-if="storage.analysisBytes" class="stor-line">
-          <span v-tooltip.top="'Segmentations, measurements, gating, clustering and spatial output'">Analysis</span>
-          <strong>{{ formatBytes(storage.analysisBytes) }}</strong>
-          <span class="field-hint cc-muted cc-fs-xs">
-            drop it per image in Import → Delete → All analysis
-          </span>
-        </div>
-
-        <!-- Leftovers a cancelled/crashed run abandoned — bytes nothing in the UI can reach. Shown
-             here so the cleanup announces itself instead of waiting to be found in Data patches. Not
-             actionable from this box on purpose: the patch shows the list before deleting anything. -->
-        <div v-if="debrisLine(storage.debris)" class="stor-line">
-          <span v-tooltip.top="'Free these in Data patches → Remove leftover stores'">Leftover from cancelled runs</span>
-          <strong>{{ debrisLine(storage.debris) }}</strong>
-          <span v-if="storage.debris?.activeSkipped" class="field-hint cc-muted cc-fs-xs">
-            +{{ storage.debris.activeSkipped }} in use, not counted
-          </span>
-        </div>
-
-        <div v-if="storage.reclaimable.length" class="stor-reclaim">
-          <div class="stor-reclaim-head">
-            Reclaimable <strong>{{ formatBytes(storage.reclaimableBytes) }}</strong>
-            <span class="field-hint cc-muted cc-fs-xs">({{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }} with superseded versions; the active version is kept)</span>
-          </div>
-          <ul class="stor-list">
-            <li v-for="r in storage.reclaimable.slice(0, 8)" :key="r.imageUid">
-              <span class="stor-name">{{ r.name || r.imageUid }}</span>
-              <span class="stor-size">{{ formatBytes(r.bytes) }}</span>
-              <span class="field-hint cc-muted cc-fs-xs"
-                    v-tooltip.top="'Frees: ' + (r.versions?.map(v => v.valueName).join(', ') ?? '') + ' — keeps ' + r.activeVersion">
-                → keeps {{ r.activeVersion }}
-              </span>
-            </li>
-            <li v-if="storage.reclaimable.length > 8" class="field-hint cc-muted cc-fs-xs">…{{ storage.reclaimable.length - 8 }} more</li>
-          </ul>
-          <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
-                    v-tooltip.top="'Delete every non-active image version'">
-              <i :class="['pi', storageBusy ? 'pi-spin pi-spinner' : 'pi-trash']" /> Free up space
-            </button>
-            <template v-else>
-              <button class="save-btn danger" @click="confirm">
-                <i class="pi pi-trash" /> Free {{ formatBytes(storage.reclaimableBytes) }} across {{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }}
-              </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
-            </template>
-          </ConfirmButton>
-        </div>
-        <span v-else class="field-hint cc-muted cc-fs-xs">Nothing to reclaim — every image has only its active version.</span>
-      </template>
-
-      <!-- P5 — VN inner-version prune (docs/todo/VN_VERSIONING_PLAN.md → P5). Same Scan click
-           populates the inventory; per-row Prune uses the maintenance-patch dry-run precedent
-           (first arm = apply:false dry-run summary; second arm = apply:true). Hidden when nothing
-           is prunable — every image on _latest across every value_name. -->
-      <template v-if="versionsInventory && versionsHavePrunable">
-        <h3 class="cc-eyebrow subsection-title" style="margin-top:1.25rem">Versions</h3>
-        <ul class="reclaim-list">
-          <template v-for="img in versionsInventory.images" :key="img.imageUid">
-            <template v-for="vn in img.valueNames" :key="`${img.imageUid}:${vn.valueName}`">
-              <li v-for="v in vn.versions.filter(x => !x.isLatest && !x.legacy)"
-                  :key="`${img.imageUid}:${vn.valueName}:${v.version}`" class="stor-row">
-                <span class="stor-name">{{ img.name }}</span>
-                <span class="field-hint cc-muted cc-fs-xs">{{ vn.valueName }} · {{ v.version }}</span>
-                <span class="stor-size">{{ formatBytes(v.bytes) }}</span>
-                <ConfirmButton
-                    @confirm="pruneConfirm(img.imageUid, vn.valueName, v.version)"
-                    v-slot="{ armed, arm, confirm, cancel }">
-                  <button v-if="!armed" class="save-btn ghost"
-                          :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
-                          @click="pruneDryRun(img.imageUid, vn.valueName, v.version); arm()"
-                          v-tooltip.left="`Preview freeing ${v.version} — irreversible when confirmed`">
-                    <i :class="['pi', pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version) ? 'pi-spin pi-spinner' : 'pi-trash']" /> Prune
-                  </button>
-                  <template v-else>
-                    <button class="save-btn danger"
-                            :disabled="pruneBusy === pruneKey(img.imageUid, vn.valueName, v.version)"
-                            @click="confirm">
-                      <i class="pi pi-trash" />
-                      Free {{ formatBytes(pruneDry[pruneKey(img.imageUid, vn.valueName, v.version)]?.freedBytes ?? v.bytes) }}
-                    </button>
-                    <button class="save-btn ghost" @click="cancel">Cancel</button>
-                  </template>
-                </ConfirmButton>
-                <span v-if="pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)]"
-                      class="field-hint cc-muted cc-fs-xs" style="color:var(--cc-warn)">
-                  {{ pruneErr[pruneKey(img.imageUid, vn.valueName, v.version)] }}
-                </span>
-              </li>
-            </template>
-          </template>
-        </ul>
-      </template>
     </section>
 
-    <section class="settings-section">
+    <section v-if="appCtl.canManageMachine" class="settings-section">
       <h2 class="section-title">Custom modules</h2>
       <div class="field">
         <label class="field-label">Modules directory</label>
@@ -1151,7 +1088,7 @@ async function switchWt(path: string) {
           <input class="field-input mono" :value="customModules.dir || '—'" readonly
                  v-tooltip.bottom="'Where drop-in task modules are loaded from'" />
           <button
-            class="save-btn"
+            class="cc-btn cc-btn-primary"
             :disabled="customModules.loading"
             @click="customModules.reload"
             v-tooltip.right="'Rescan for newly dropped modules; edits need a server restart'"
@@ -1167,8 +1104,8 @@ async function switchWt(path: string) {
 
       <div v-if="customModules.modules.length" class="cm-list">
         <div v-for="m in customModules.modules" :key="m.path" class="cm-row">
-          <span class="svc-pill" :class="m.status === 'ok' ? 'ok' : 'err'">
-            <span class="dot" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
+          <span class="svc-pill">
+            <span class="cc-dot" :class="m.status === 'ok' ? 'cc-dot-ok' : 'cc-dot-fail'" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
           </span>
           <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ shortModulePath(m.path) }}</span>
         </div>
@@ -1180,7 +1117,7 @@ async function switchWt(path: string) {
            with nothing anywhere saying why. -->
       <div v-if="customModules.clashes.length" class="cm-list">
         <div v-for="c in customModules.clashes" :key="c.path + c.funName" class="cm-row">
-          <span class="svc-pill err"><span class="dot" /> clash</span>
+          <span class="svc-pill"><span class="cc-dot cc-dot-fail" /> clash</span>
           <span class="cm-path mono"
                 v-tooltip.top="`${c.path} — ${c.winner ?? 'a built-in'} keeps this name`">
             {{ c.funName }} — {{ c.winnerTier }} wins
@@ -1190,7 +1127,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Plugins (module sets installed from a URL) ─────────────────────── -->
-    <section class="settings-section">
+    <section v-if="appCtl.canManageMachine" class="settings-section">
       <h2 class="section-title">Plugins</h2>
       <p class="field-hint cc-muted cc-fs-xs">
         Module sets installed from a URL. Plugin code runs unsandboxed, with full access to this machine.
@@ -1206,16 +1143,16 @@ async function switchWt(path: string) {
                  placeholder="tag or commit"
                  v-tooltip.bottom="'Pin a tag or commit; blank takes the default branch'" />
           <ConfirmButton @confirm="installPlugin(pluginUrl, pluginRef)" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
+            <button v-if="!armed" class="cc-btn cc-btn-primary" :disabled="pluginBusy || !pluginUrl.trim()" @click="arm"
                     v-tooltip.top="'Fetch and install — this code is not sandboxed'">
               <i :class="['pi', pluginBusy ? 'pi-spin pi-spinner' : 'pi-download']" /> Install
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm"
+              <button class="cc-btn cc-btn-danger" @click="confirm"
                       v-tooltip.top="'Runs with full access to this machine'">
                 <i class="pi pi-download" /> Confirm install
               </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </div>
@@ -1298,19 +1235,19 @@ async function switchWt(path: string) {
         <div class="patch-head">
           <span class="patch-title">{{ p.title }}</span>
           <span class="patch-actions">
-            <button class="save-btn" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
+            <button class="cc-btn cc-btn-primary" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
                     v-tooltip.top="'List what would change — writes nothing'">
               <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-spinner' : 'pi-search']" /> Dry-run
             </button>
             <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="save-btn danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
+              <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
                       v-tooltip.top="'Write changes to this project\'s data'"><i class="pi pi-play" /> Apply</button>
               <template v-else>
-                <button class="save-btn danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
-                <button class="save-btn ghost" @click="cancel">Cancel</button>
+                <button class="cc-btn cc-btn-danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
+                <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
               </template>
             </ConfirmButton>
-            <button v-if="patchBusy(p.id)" class="save-btn ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
+            <button v-if="patchBusy(p.id)" class="cc-btn cc-btn-ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
           </span>
         </div>
         <span class="field-hint cc-muted cc-fs-xs">{{ p.description }}</span>
@@ -1334,22 +1271,22 @@ async function switchWt(path: string) {
 
       <div class="svc-row">
         <span class="svc-name">Application</span>
-        <span class="svc-pill ok"><span class="dot" /> Running</span>
+        <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> Running</span>
         <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
         <span class="svc-actions">
-          <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
+          <button v-if="diag?.dev" class="cc-btn cc-btn-primary" :disabled="appCtl.busy" @click="appRestart"
                   v-tooltip.top="'Restart the backend (dev); the page reconnects'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
           </button>
           <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="armQuit(arm)"
+            <button v-if="!armed" class="cc-btn cc-btn-danger" :disabled="appCtl.busy" @click="armQuit(arm)"
                     v-tooltip.top="'Stop notebooks and the backend, then exit Cecelia'">
               <i class="pi pi-power-off" /> Quit
             </button>
             <template v-else>
-              <button class="save-btn danger" @click="confirm"
+              <button class="cc-btn cc-btn-danger" @click="confirm"
                       v-tooltip.top="quitConfirm"><i class="pi pi-power-off" /> {{ quitLabel }}</button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </span>
@@ -1368,6 +1305,122 @@ async function switchWt(path: string) {
           </option>
         </select>
       </div>
+
+      <div class="svc-row">
+        <span class="svc-name">Notebooks</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(notebooksSt).tone)" /> {{ stateInfo(notebooksSt).label }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
+        <span class="svc-actions">
+          <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
+                         v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
+                    v-tooltip.top="'Another Cecelia\'s server holds this port — stop it and start this one'">
+              <i class="pi pi-power-off" /> Stop it
+            </button>
+            <template v-else>
+              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
+                <i class="pi pi-check" /> Stop it
+              </button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+          <button v-else-if="notebooksSt === 'stopped'" class="cc-btn cc-btn-primary" :disabled="svcBusy === 'notebooks' || !projectUid"
+                  @click="notebooksAction('start')"
+                  v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
+            <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-play']" /> Start
+          </button>
+          <template v-else>
+            <button class="cc-btn cc-btn-primary" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
+              <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
+            </button>
+            <button class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
+              <i class="pi pi-stop-circle" /> Stop
+            </button>
+          </template>
+        </span>
+      </div>
+
+      <!-- Task preview worker. Stop only — starting means previewing something, which needs a task's
+           params and an open image (the task page owns that). This is the off switch, and it exists
+           because a warm cellpose model holds GPU memory. -->
+      <div class="svc-row">
+        <span class="svc-name">Task preview</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(previewSt).tone)" /> {{ stateInfo(previewSt).label }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
+        <span class="svc-actions">
+          <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
+                         v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'" @click="arm"
+                    v-tooltip.top="'Another Cecelia\'s preview worker holds this port — stop it'">
+              <i class="pi pi-power-off" /> Stop it
+            </button>
+            <template v-else>
+              <button class="cc-btn cc-btn-danger" @click="confirm" v-tooltip.top="'Its previews stop'">
+                <i class="pi pi-check" /> Stop it
+              </button>
+              <button class="cc-btn cc-btn-ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+          <button v-else-if="previewSt !== 'stopped'" class="cc-btn cc-btn-ghost" :disabled="svcBusy === 'preview'"
+                  @click="previewStop()"
+                  v-tooltip.top="'Stop the preview worker and free its GPU memory'">
+            <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-spinner' : 'pi-stop-circle']" /> Stop
+          </button>
+          <span v-else class="cc-muted cc-fs-xs">Starts from a task's preview toggle</span>
+        </span>
+      </div>
+
+      <!-- Task runner. Only shown when enabled (CECELIA_RUNNER=1) — an always-visible row for a
+           process most installs don't run would be noise. -->
+      <div class="svc-row" v-if="diag?.dev && runnerRaw">
+        <span class="svc-name">Task runner</span>
+        <span class="svc-pill"><span class="cc-dot" :class="dotClass(stateInfo(runnerSt).tone)" /> {{ stateInfo(runnerSt).label }}</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
+        <span class="svc-actions">
+          <span v-if="runnerRaw?.stale" class="diag-stale-note"
+                v-tooltip.bottom="'Still running ' + runnerRaw.commit">
+            <i class="pi pi-exclamation-triangle" /> old code
+          </span>
+          <span v-else-if="runnerRaw?.adopted" class="cc-muted cc-fs-xs"
+                v-tooltip.bottom="'This runner was already going when the backend started — it outlived a restart'">adopted</span>
+          <button v-if="runnerSt !== 'stopped'" class="cc-btn cc-btn-primary" :disabled="svcBusy === 'runner'"
+                  @click="runnerRestart(!!runnerRaw?.busy && svcMsg.includes('again'))"
+                  v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
+            <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
+          </button>
+          <span v-else-if="runnerRaw?.enabled" class="cc-muted cc-fs-xs">Starts with the backend</span>
+          <span v-else class="cc-muted cc-fs-xs">Off — tasks run in the backend</span>
+        </span>
+      </div>
+
+      <!-- dev only, like the Restart button above it and for the same reason: without Restart the
+           runner buys a prod user nothing, while its failure modes all land on them. -->
+      <div class="field" v-if="diag?.dev" style="margin: 0.2rem 0 0.6rem;">
+        <CcToggle class="toggle-row" :disabled="svcBusy === 'runner' || runnerRaw?.settable === false"
+               :model-value="!!runnerRaw?.enabled"
+               @update:model-value="runnerToggle($event)"
+               v-tooltip.bottom="'Run tasks in a separate process so a backend restart does not stop them'">
+          Run tasks in a separate process
+        </CcToggle>
+        <span v-if="runnerRaw?.settable === false" class="field-hint cc-muted cc-fs-xs">
+          CECELIA_RUNNER is set for this session, so it overrides this setting.
+        </span>
+      </div>
+
+      <!-- read-only: not a service you control, shown so the full port picture is visible -->
+      <div class="svc-row">
+        <span class="svc-name">Frontend (GUI)</span>
+        <span class="svc-pill"><span class="cc-dot cc-dot-ok" /> This window</span>
+        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
+      </div>
+
+      <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
+      <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
+    </section>
+
+    <!-- ── Server — launch-time settings for everyone on this machine (peanut only) ── -->
+    <section v-if="appCtl.canManageMachine && (tls || thr)" class="settings-section">
+      <h2 class="section-title">Server</h2>
 
       <!-- HTTPS + HTTP/2 preference. Default off: HTTP/2 loads bricks slower (WEBGPU_UPLOAD_PATH_PLAN U4).
            Greyed out while off — it can only be switched OFF here (CECELIA_TLS=1 / [tls].enabled still
@@ -1409,160 +1462,6 @@ async function switchWt(path: string) {
           <template v-if="thrMsg"> · {{ thrMsg }}</template>
         </span>
       </div>
-
-      <div class="svc-row">
-        <span class="svc-name">Notebooks</span>
-        <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
-        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
-        <span class="svc-actions">
-          <ConfirmButton v-if="notebooksSt === 'foreign'" @confirm="notebooksAction('replace')"
-                         v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'notebooks' || !projectUid" @click="arm"
-                    v-tooltip.top="'Another Cecelia\'s server holds this port — stop it and start this one'">
-              <i class="pi pi-power-off" /> Stop it
-            </button>
-            <template v-else>
-              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its open notebooks stop running'">
-                <i class="pi pi-check" /> Stop it
-              </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
-            </template>
-          </ConfirmButton>
-          <button v-else-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
-                  @click="notebooksAction('start')"
-                  v-tooltip.top="projectUid ? 'Start the Pluto notebook server' : 'Open a project first'">
-            <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-play']" /> Start
-          </button>
-          <template v-else>
-            <button class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
-              <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
-            </button>
-            <button class="save-btn ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
-              <i class="pi pi-stop-circle" /> Stop
-            </button>
-          </template>
-        </span>
-      </div>
-
-      <!-- Task preview worker. Stop only — starting means previewing something, which needs a task's
-           params and an open image (the task page owns that). This is the off switch, and it exists
-           because a warm cellpose model holds GPU memory. -->
-      <div class="svc-row">
-        <span class="svc-name">Task preview</span>
-        <span class="svc-pill" :class="stateInfo(previewSt).tone"><span class="dot" /> {{ stateInfo(previewSt).label }}</span>
-        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Task-preview worker WebSocket'">:{{ diag?.previewPort ?? '7656' }}</span>
-        <span class="svc-actions">
-          <ConfirmButton v-if="previewSt === 'foreign'" @confirm="previewStop(true)"
-                         v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="save-btn ghost" :disabled="svcBusy === 'preview'" @click="arm"
-                    v-tooltip.top="'Another Cecelia\'s preview worker holds this port — stop it'">
-              <i class="pi pi-power-off" /> Stop it
-            </button>
-            <template v-else>
-              <button class="save-btn danger" @click="confirm" v-tooltip.top="'Its previews stop'">
-                <i class="pi pi-check" /> Stop it
-              </button>
-              <button class="save-btn ghost" @click="cancel">Cancel</button>
-            </template>
-          </ConfirmButton>
-          <button v-else-if="previewSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'preview'"
-                  @click="previewStop()"
-                  v-tooltip.top="'Stop the preview worker and free its GPU memory'">
-            <i :class="['pi', svcBusy === 'preview' ? 'pi-spin pi-spinner' : 'pi-stop-circle']" /> Stop
-          </button>
-          <span v-else class="cc-muted cc-fs-xs">Starts from a task's preview toggle</span>
-        </span>
-      </div>
-
-      <!-- Task runner. Only shown when enabled (CECELIA_RUNNER=1) — an always-visible row for a
-           process most installs don't run would be noise. -->
-      <div class="svc-row" v-if="diag?.dev && runnerRaw">
-        <span class="svc-name">Task runner</span>
-        <span class="svc-pill" :class="stateInfo(runnerSt).tone"><span class="dot" /> {{ stateInfo(runnerSt).label }}</span>
-        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="'Runs tasks in its own process, so a backend restart does not stop them'">:{{ diag?.runnerPort ?? '7657' }}</span>
-        <span class="svc-actions">
-          <span v-if="runnerRaw?.stale" class="diag-stale-note"
-                v-tooltip.bottom="'Still running ' + runnerRaw.commit">
-            <i class="pi pi-exclamation-triangle" /> old code
-          </span>
-          <span v-else-if="runnerRaw?.adopted" class="cc-muted cc-fs-xs"
-                v-tooltip.bottom="'This runner was already going when the backend started — it outlived a restart'">adopted</span>
-          <button v-if="runnerSt !== 'stopped'" class="save-btn" :disabled="svcBusy === 'runner'"
-                  @click="runnerRestart(!!runnerRaw?.busy && svcMsg.includes('again'))"
-                  v-tooltip.top="'Restart the runner to load current code — refuses while it still has work'">
-            <i :class="['pi', svcBusy === 'runner' ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Restart
-          </button>
-          <span v-else-if="runnerRaw?.enabled" class="cc-muted cc-fs-xs">Starts with the backend</span>
-          <span v-else class="cc-muted cc-fs-xs">Off — tasks run in the backend</span>
-        </span>
-      </div>
-
-      <!-- dev only, like the Restart button above it and for the same reason: without Restart the
-           runner buys a prod user nothing, while its failure modes all land on them. -->
-      <div class="field" v-if="diag?.dev" style="margin: 0.2rem 0 0.6rem;">
-        <CcToggle class="toggle-row" :disabled="svcBusy === 'runner' || runnerRaw?.settable === false"
-               :model-value="!!runnerRaw?.enabled"
-               @update:model-value="runnerToggle($event)"
-               v-tooltip.bottom="'Run tasks in a separate process so a backend restart does not stop them'">
-          Run tasks in a separate process
-        </CcToggle>
-        <span v-if="runnerRaw?.settable === false" class="field-hint cc-muted cc-fs-xs">
-          CECELIA_RUNNER is set for this session, so it overrides this setting.
-        </span>
-      </div>
-
-      <!-- read-only: not a service you control, shown so the full port picture is visible -->
-      <div class="svc-row">
-        <span class="svc-name">Frontend (GUI)</span>
-        <span class="svc-pill ok"><span class="dot" /> This window</span>
-        <span class="svc-port cc-muted cc-fs-xs" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
-      </div>
-
-      <!-- Cecelia MCP: NOT a running process — this is a registration in ~/.claude.json that Claude
-           reads when it spawns the server per session. Shown here anyway so the row appears in the
-           lifecycle picture users look at first; the tooltip carries the "no daemon" caveat so the
-           pill's "connected" is not misread as "running". -->
-      <div v-if="observerServiceRow" class="svc-row svc-row-mcp">
-        <span class="svc-name" v-tooltip.top="'Registered in your Claude config — spawned by Claude per session'">Cecelia MCP</span>
-        <span class="svc-pill" :class="observerServiceRow.tone" v-tooltip.top="observerServiceRow.hint">
-          <span class="dot" /> {{ observerServiceRow.label }}
-        </span>
-        <span v-if="observerInstallShort" class="svc-port svc-port-name cc-muted cc-fs-xs"
-              v-tooltip.top="observerServiceRow.installPath">{{ observerInstallShort }}</span>
-        <span v-else class="svc-port cc-muted cc-fs-xs"></span>
-        <span class="svc-actions">
-          <button v-if="observerServiceRow.tone === 'warn'" class="save-btn"
-                  :disabled="observer.registering" @click="observer.registerMcp()"
-                  v-tooltip.top="terminalSetupTooltip(observer.terminalState)">
-            <i :class="['pi', observer.registering ? 'pi-spin pi-spinner' : 'pi-download']" />
-            {{ observer.registering ? CLAUDE_TERMINAL.busy
-               : terminalCta(observer.available, observer.terminalState) === 'resync'
-                 ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
-          </button>
-        </span>
-      </div>
-
-      <!-- one-click setup FAILED: the resolved command to run by hand. Lives next to the row it acts
-           on, so a failure in the System section doesn't send the reader hunting in another panel. -->
-      <div v-if="observer.registerError" class="svc-row-note cc-row cc-row-tight">
-        <strong class="cc-fs-xs">{{ observer.registerError }}</strong>
-        <template v-if="observerFallbackCommand">
-          <code class="cc-fs-2xs">{{ observerFallbackCommand }}</code>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" @click="copyObserverFallback"
-                  v-tooltip.left="observerCmdCopied() ? 'Copied!' : 'Copy command'">
-            <i :class="observerCmdCopied() ? 'pi pi-check' : 'pi pi-copy'" />
-          </button>
-        </template>
-      </div>
-
-      <span class="field-hint cc-muted cc-fs-xs">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
-      <span v-if="svcMsg" class="field-hint cc-muted cc-fs-xs">{{ svcMsg }}</span>
-    </section>
-
-    <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
-    <section class="settings-section">
-      <h2 class="section-title">HPC</h2>
-      <HpcSettings scope="machine" :project-uid="projectUid" />
     </section>
 
     <!-- ── Shared workstation (app/src/config/shared_workstation.jl) ─────── -->
@@ -1591,7 +1490,7 @@ async function switchWt(path: string) {
            container that also holds tooltipped buttons fires both at once -->
       <div v-for="r in otherMcpConnectionRows" :key="r.kind + r.name" class="mcp-row">
         <span class="svc-name">{{ r.name }}</span>
-        <span class="svc-pill" :class="r.tone" v-tooltip.top="r.hint"><span class="dot" /> {{ r.label }}</span>
+        <span class="svc-pill" v-tooltip.top="r.hint"><span class="cc-dot" :class="dotClass(r.tone)" /> {{ r.label }}</span>
         <span class="mcp-detail cc-muted cc-fs-xs" v-tooltip.top="r.hint">
           {{ r.detail }}
           <a v-if="r.href" :href="r.href" target="_blank" rel="noopener">Setup guide ↗</a>
@@ -1611,6 +1510,12 @@ async function switchWt(path: string) {
         Hidden: {{ hiddenAccountConnectors.join(', ') }}
         <button class="cc-btn cc-btn-bare cc-fs-xs" @click="settings.hiddenMcpAccounts = []">show again</button>
       </span>
+    </section>
+
+    <!-- ── HPC (docs/todo/HPC_PLAN.md P1) ─────────────────────────────────── -->
+    <section v-if="appCtl.canManageMachine" class="settings-section">
+      <h2 class="section-title">HPC</h2>
+      <HpcSettings scope="machine" :project-uid="projectUid" />
     </section>
 
     <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
@@ -1641,10 +1546,10 @@ async function switchWt(path: string) {
       </div>
 
       <div class="field-row" style="margin-top:0.6rem; gap:0.5rem">
-        <button class="save-btn" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
+        <button class="cc-btn cc-btn-primary" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
           <i :class="['pi', diagBusy ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
         </button>
-        <button class="save-btn" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
+        <button class="cc-btn cc-btn-primary" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
           <i class="pi pi-box" /> Packages…
         </button>
       </div>
@@ -1654,7 +1559,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Developer ───────────────────────────────────────────────────── -->
-    <section v-if="diag" class="settings-section">
+    <section v-if="diag && appCtl.canManageMachine" class="settings-section">
       <h2 class="section-title">Developer</h2>
 
       <div class="field">
@@ -1671,7 +1576,7 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Debug console — only when BOTH gates pass: flag on AND loopback bind ─── -->
-    <section v-if="diag?.replAvailable" class="settings-section">
+    <section v-if="diag?.replAvailable && appCtl.canManageMachine" class="settings-section">
       <h2 class="section-title">Debug console</h2>
       <span class="field-hint cc-muted cc-fs-xs">
         Evaluates Julia in the running server — full access, use with care.
@@ -1697,7 +1602,7 @@ async function switchWt(path: string) {
         @keydown="replKeydown"
       />
       <div class="field-row" style="margin-top:0.5rem">
-        <button class="save-btn" :disabled="replBusy || !replCode.trim()" @click="runRepl">
+        <button class="cc-btn cc-btn-primary" :disabled="replBusy || !replCode.trim()" @click="runRepl">
           <i :class="['pi', replBusy ? 'pi-spin pi-spinner' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
         </button>
       </div>
@@ -1817,22 +1722,6 @@ async function switchWt(path: string) {
 .stor-size { font-variant-numeric: tabular-nums; color: var(--cc-text); }
 .stor-list .field-hint { display: inline; margin: 0; }
 
-.save-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: var(--cc-fs-sm);
-  padding: 0.35rem 0.7rem;
-  border-radius: var(--cc-radius-sm);
-  border: 1px solid var(--cc-accent);
-  background: var(--cc-accent);
-  color: #fff;
-  cursor: pointer;
-  transition: opacity 0.12s;
-  flex-shrink: 0;
-}
-.save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.save-btn:not(:disabled):hover { opacity: 0.85; }
 
 /* .icon-btn → cc-btn cc-btn-bare cc-btn-icon cc-btn-lg */
 .icon-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
@@ -1858,32 +1747,16 @@ async function switchWt(path: string) {
 .svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--cc-fs-sm);
   color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill);
   white-space: nowrap; }
-.svc-pill .dot { width: 7px; height: 7px; border-radius: var(--cc-radius-pill); background: var(--cc-text-dim); }
-.svc-pill.ok .dot   { background: var(--cc-viewer); }
-.svc-pill.warn .dot { background: var(--cc-sev-warn); }
-.svc-pill.idle .dot { background: var(--cc-text-dim); }
 .svc-tag { font-size: var(--cc-fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 0 0.3rem; }
 .svc-port { justify-self: start; font-family: var(--cc-mono); }
-/* Cecelia MCP row: the third column carries a checkout name (variable length), not a fixed `:8080`.
-   Widen its grid slot and clip anything longer with an ellipsis so it stays on ONE line. */
-.svc-row-mcp { grid-template-columns: 8rem 7rem minmax(3.5rem, 12rem) 1fr; }
-.svc-port-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* MCP rows: ONE line each — name, pill, a short detail that ellipses rather than wrapping, and the
    row's single action. Its own grid rather than `.svc-row`'s, whose 3rd column is sized for a port
    number (`:8080`) and wrapped anything longer onto a second line. */
 .mcp-row { display: grid; grid-template-columns: 9rem 7.5rem 1fr auto; align-items: center;
   column-gap: 0.6rem; margin-bottom: 0.3rem; min-height: 1.7rem; }
 .mcp-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-/* a failed-setup note under the MCP rows — warn-toned so it can't be read as another status row */
-.svc-row-note { margin: 0 0 0.55rem; padding: 0.3rem 0.5rem; border-left: 3px solid var(--cc-sev-warn);
-  background: var(--cc-surface-2); border-radius: var(--cc-radius-sm); }
-.svc-row-note strong { color: var(--cc-sev-warn); }
-.svc-row-note code { font-family: var(--cc-mono); overflow-x: auto; white-space: nowrap; min-width: 0; }
 .svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
-.save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
-.save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
-.save-btn.danger { background: var(--cc-danger); border-color: var(--cc-danger); }
 
 /* diagnostics key/value grid */
 .diag-grid {

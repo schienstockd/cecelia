@@ -266,7 +266,7 @@ function exportBoard(kind: string) {
   border: 1px solid var(--cc-accent-strong); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 /* .tab-close → cc-btn cc-btn-bare cc-btn-icon cc-btn-micro; armed matches ConfirmDeleteButton's danger fill */
 .tab-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.tab-close.armed, .tab-close.armed:hover { color: #fff; background: var(--cc-danger); }
+.tab-close.armed, .tab-close.armed:hover { color: #fff; background: var(--cc-danger-fill); }
 /* full-height cell in the tab strip (stretches as a flex child) — not a fixed square */
 .tab-add {
   display: inline-flex; align-items: center; justify-content: center;

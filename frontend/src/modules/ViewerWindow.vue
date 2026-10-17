@@ -6085,7 +6085,7 @@ onUnmounted(() => {
                but a line that appears and disappears above the strip shoves it up and down every tick,
                which is what read as the buffer trail jiggling. In-row, nothing can reflow. -->
           <div class="vw-striprow" v-tooltip.bottom="'Cached timepoints — the dot blinks while loading'">
-            <span class="vw-dot" :class="{ 'is-waiting': busy }" />
+            <span class="cc-dot vw-dot" :class="{ 'cc-dot-warn': busy }" />
             <div class="vw-strip">
               <span v-for="(c, i) in cells" :key="i" class="vw-cell" :class="'is-' + c.state" />
             </div>
@@ -6988,13 +6988,10 @@ onUnmounted(() => {
 .vw-striprow { display: flex; align-items: center; gap: 0.3rem; }
 .vw-strip { display: flex; gap: 1px; height: 0.35rem; flex: 1; min-width: 0; }
 /* Always laid out, only ever recoloured — the space is reserved so nothing reflows when it lights up. */
-.vw-dot {
-  flex: none; width: 0.4rem; height: 0.4rem; border-radius: var(--cc-radius-pill);
-  background: var(--cc-border);
-}
-.vw-dot.is-waiting { background: var(--cc-sev-warn); animation: vw-blink 0.9s ease-in-out infinite; }
+/* the waiting light blinks — added to .cc-dot, the shape and tone stay canonical */
+.vw-dot.cc-dot-warn { animation: vw-blink 0.9s ease-in-out infinite; }
 @keyframes vw-blink { 0%, 100% { opacity: 1 } 50% { opacity: 0.15 } }
-@media (prefers-reduced-motion: reduce) { .vw-dot.is-waiting { animation: none } }
+@media (prefers-reduced-motion: reduce) { .vw-dot.cc-dot-warn { animation: none } }
 .vw-cell { flex: 1; background: var(--cc-surface-2); border-radius: var(--cc-radius-xs); }
 .vw-cell.is-resident { background: var(--cc-accent); }
 .vw-cell.is-loading { background: var(--cc-accent-tint); }

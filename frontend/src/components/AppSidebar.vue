@@ -377,7 +377,7 @@ function isNavDisabled(item: NavItem): boolean {
 .footer-btn { text-decoration: none; /* Settings is a RouterLink (<a>) — no underline */
   transition: background 0.12s, color 0.12s; }   /* + cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg */
 .footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
-.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger); border-color: var(--cc-danger); }
+.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger-fill); border-color: var(--cc-danger-fill); }
 .footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 </style>

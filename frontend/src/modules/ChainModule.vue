@@ -1898,7 +1898,7 @@ onActivated(async () => {
   color: var(--cc-accent);
   border-color: var(--cc-accent);
 }
-.live-resume-btn:hover:not(:disabled) { background: var(--cc-accent); color: #fff; }
+.live-resume-btn:hover:not(:disabled) { background: var(--cc-accent-fill); color: #fff; }
 
 .qc-expand-overlay {
   position: absolute; inset: 0; z-index: 20;
@@ -2005,9 +2005,9 @@ onActivated(async () => {
 .wb-btn:hover:not(:disabled) { background: var(--cc-surface-2); color: var(--cc-text); border-color: var(--cc-accent); }
 .wb-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .wb-btn-save { color: var(--cc-accent); border-color: var(--cc-accent); }
-.wb-btn-save:hover:not(:disabled) { background: var(--cc-accent); color: #fff; }
+.wb-btn-save:hover:not(:disabled) { background: var(--cc-accent-fill); color: #fff; }
 .wb-btn-danger { color: #f87171; border-color: #f8717155; }
-.wb-btn-danger:hover:not(:disabled) { background: #f87171; color: #fff; border-color: #f87171; }
+.wb-btn-danger:hover:not(:disabled) { background: var(--cc-danger-fill); color: #fff; border-color: var(--cc-danger-fill); }
 
 .new-chain-form {
   display: flex;

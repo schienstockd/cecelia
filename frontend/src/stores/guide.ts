@@ -29,7 +29,7 @@ import { useViewProfilesStore } from './viewProfiles'
 import { allNavGroups, navLabelFor } from '../lib/navGroups'
 import { applyProfile, availablePaths, hiddenGuideRoutes } from '../utils/viewProfiles'
 import { GUIDES, guideById } from '../lib/guides'
-import type { GuideCtx, GuideDef, GuideStep, Prereq, Reveal } from '../lib/guides/types'
+import { guideStepsFor, type GuideCtx, type GuideDef, type GuideStep, type Prereq, type Reveal } from '../lib/guides/types'
 import { readAnchorValue, resolveAnchor, isReachable, routePathFromHash } from '../utils/guideAnchor'
 import { awaitedRun, highestSeq } from '../utils/guideAwait'
 
@@ -109,6 +109,7 @@ export const useGuideStore = defineStore('guide', () => {
       anchorValue: readAnchorValue,
       anchorExists: (id: string) => resolveAnchor(id) !== null,
       anchorReachable: (id: string) => isReachable(resolveAnchor(id)),
+      canManageMachine: appCtl.canManageMachine,
     }
   })
 
@@ -185,7 +186,7 @@ export const useGuideStore = defineStore('guide', () => {
     if (!g) return
     syncPath()                                 // never start a guide against a stale route
     startSeq.value = highestSeq(tasks.tasks)   // runs from before now are not what a step waits for
-    active.value = g
+    active.value = { ...g, steps: guideStepsFor(g.steps, ctx.value) }
     index.value = 0
     resetStepState()
   }

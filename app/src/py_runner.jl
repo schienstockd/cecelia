@@ -178,8 +178,8 @@ so a run and a preview refuse with the same words.
 function python_bin_for(env::Union{Symbol,Nothing})::String
     env === nothing && return python_bin_path()
     bin = _python_bin_for_env(env)
-    isempty(bin) && error("The '$(pixi_env_name(env))' pixi environment is not installed. In " *
-                          "Settings → System, click 'Install' next to that env, or run " *
+    isempty(bin) && error("The '$(pixi_env_name(env))' pixi environment is not installed. On " *
+                          "the task's page, click 'Install' under the parameter that needs it, or run " *
                           "`pixi install -e $(pixi_env_name(env))` from the repo root.")
     bin
 end

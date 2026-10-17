@@ -1,7 +1,7 @@
 """The launcher's thread flag (``app.py`` → ``_thread_args``).
 
 The installed app starts the API through ``app.py``, so this is where its thread count is decided.
-Settings → System → "Use all CPU cores" writes ``[server] multithreaded`` to ``custom.toml`` (Julia:
+Settings → Server → "Use all CPU cores" writes ``[server] multithreaded`` to ``custom.toml`` (Julia:
 ``set_api_multithreaded!``); the launcher reads it here, default ON.
 
 The TOML below is the literal shape Julia's ``TOML.print`` writes — the Julia testset pins the

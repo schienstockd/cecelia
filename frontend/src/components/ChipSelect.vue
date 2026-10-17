@@ -178,7 +178,7 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 .chip:hover:not(.disabled) { color: var(--cc-text); border-color: var(--cc-accent); }
-.chip.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
+.chip.on { background: var(--cc-accent-fill); border-color: var(--cc-accent-fill); color: #fff; }
 .chip.disabled { opacity: 0.45; cursor: default; }
 /* The All chip is a control, not a member of the set — dashed so it reads as acting ON the chips
    rather than being one, and `part` marks a partial selection (neither on nor off). */
@@ -228,6 +228,6 @@ function activeStyle(o: ChipOption, on: boolean): Record<string, string> | undef
 }
 /* Explicit re-assertion — the `.grid .chip` selector above is more specific than the base
    `.chip.on`, so the accent background gets shadowed without this. */
-.grid .chip.on { background: var(--cc-accent); color: #fff; }
+.grid .chip.on { background: var(--cc-accent-fill); color: #fff; }
 .grid .chip:hover:not(.disabled) { border-color: transparent; }
 </style>

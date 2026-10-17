@@ -15,7 +15,7 @@
 // them apart; ~60% of the matches wanted `.cc-btn`/`ChipSelect`/the global input base rather than
 // `.cc-card`. A check that wrong either gets ignored or grows an allow-list that stops meaning
 // anything, so card chrome stays a review-time rule in docs/UI.md.
-export type Scenario = 'muted' | 'empty' | 'eyebrow' | 'row'
+export type Scenario = 'muted' | 'empty' | 'eyebrow' | 'row' | 'dot'
 
 export interface CssRule {
   selector: string
@@ -103,6 +103,13 @@ const SPREAD       = /justify-content:\s*space-/
 const COLUMN       = /flex-direction:\s*column/
 const HAS_GAP      = /(^|[^-\w])gap:/
 const CONTROL_NAME = /(btn|button|toggle|tab|chip|input|select|gear|caret|swatch|icon|pi-)\b/i
+// A dot: a 5–9px (0.3–0.49rem) square made round — the shape `.cc-dot` owns. Smaller is a plot mark,
+// larger a swatch or a node (legend swatches start at 0.55rem).
+const DOT_SIDE     = '(?:[5-9]px|0?\\.[34]\\d*rem)'
+const DOT_WIDTH    = new RegExp(`(^|[;\\s{])width:\\s*${DOT_SIDE}`)
+const DOT_HEIGHT   = new RegExp(`(^|[;\\s{])height:\\s*${DOT_SIDE}`)
+const ROUND        = /border-radius:\s*(50%|var\(--cc-radius-pill\))/
+const ANIMATED     = /(^|[;\s{])animation:/          // a spinner, not a light
 
 const isTextOnly = (rule: CssRule) =>
   !INTERACTIVE.test(rule.body) && !CONTROL_NAME.test(rule.selector)
@@ -114,6 +121,7 @@ const isTextOnly = (rule: CssRule) =>
  * - muted   dim colour + a hard-coded size = `.cc-muted` (+ a density modifier)
  * - empty   an `*-empty*` selector re-declaring the dim colour = `.cc-empty*`
  * - eyebrow uppercase + tracking + dim = `.cc-eyebrow`
+ * - dot     a 5–9px square with a round radius = `.cc-dot` (+ a `cc-dot-<tone>` modifier)
  *
  * All three key on the dim colour, because that is what actually marks a rule as *owning* the role.
  * A child rule inside an adopted empty (`.foo-empty p { margin: 0; font-size: 0.8rem }`) is styling
@@ -121,6 +129,9 @@ const isTextOnly = (rule: CssRule) =>
  */
 export function scenarioFor(rule: CssRule): Scenario | null {
   const { selector, body } = rule
+
+  // Shape, like layout: checked before the text scenarios.
+  if (has(body, DOT_WIDTH) && has(body, DOT_HEIGHT) && has(body, ROUND) && !has(body, ANIMATED)) return 'dot'
 
   // Layout, so it is checked before the text scenarios and does not care about `isTextOnly`.
   if (has(body, FLEX_ROW) && has(body, WRAPS) && has(body, HAS_GAP) &&
@@ -150,6 +161,7 @@ export const SCENARIO_HINT: Record<Scenario, string> = {
   empty:   '.cc-empty (+ -inline / -overlay / -lg)',
   eyebrow: '.cc-eyebrow (+ -2xs / -3xs)',
   row:     '.cc-row (+ -tight / -loose), composed with the rule\'s own chrome; .cc-row-group for a label+input that must not split',
+  dot:     '.cc-dot + a cc-dot-ok/-warn/-fail/-idle/-info tone (utils/statusDot.ts), or its own background for a category',
 }
 
 // ── Scoped overrides of a global utility ──────────────────────────────────────────────────────────
