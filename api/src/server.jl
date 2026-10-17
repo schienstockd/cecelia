@@ -393,9 +393,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/projects/rename" => (req, body_bytes) -> (api_projects_rename(body_bytes)),
     "/api/projects/delete" => (req, body_bytes) -> (api_projects_delete(body_bytes)),
     # Project ownership (USER_PROFILE_PLAN Phase 5): claim adds the active profile to `owners`;
-    # unclaim removes it. Empty/missing `owners` = visible to all (Decision 8).
+    # unclaim removes it; share clears every owner. Empty/missing `owners` = visible to all (Decision 8).
     "/api/projects/claim"   => (req, body_bytes) -> (api_projects_claim(body_bytes)),
     "/api/projects/unclaim" => (req, body_bytes) -> (api_projects_unclaim(body_bytes)),
+    "/api/projects/share"   => (req, body_bytes) -> (api_projects_share(body_bytes)),
     "/api/sets/create" => (req, body_bytes) -> (api_sets_create(body_bytes)),
     "/api/sets/rename" => (req, body_bytes) -> (api_sets_rename(body_bytes)),
     "/api/sets/delete" => (req, body_bytes) -> (api_sets_delete(body_bytes)),
