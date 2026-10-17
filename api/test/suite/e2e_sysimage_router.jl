@@ -379,6 +379,7 @@ end
         "/api/hpc/env/install",                     # HPC_PLAN P2
         "/api/projects/claim",         # USER_PROFILE_PLAN Phase 5 — add active profile to owners
         "/api/projects/unclaim",       # USER_PROFILE_PLAN Phase 5 — remove active profile from owners
+        "/api/projects/share",         # clear every owner — visible to every profile
         "/api/blackboard/create", "/api/blackboard/revise", "/api/blackboard/restore",
         "/api/blackboard/prune", "/api/blackboard/delete",
         "/api/blackboard/status",   # PROJECT_MEMORY_PLAN P1 — status flip (open/resolved/parked)
@@ -487,7 +488,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 113 && length(POST_ROUTES) == 169
+    @test length(GET_ROUTES) == 113 && length(POST_ROUTES) == 170
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -41,16 +41,19 @@ function api_projects_create(body_bytes::Vector{UInt8})
     # Stamp the active profile as the sole owner — a fresh project is not the "pre-identity" case
     # Decision 8 defaults ([]) to cover, so we skip the Claim round trip. Symmetric with the claim
     # endpoint; kept inline (no shared helper) because the create-time set is trivially `[profile]`
-    # with none of the coerce-legacy / idempotent-merge logic Claim carries.
+    # with none of the coerce-legacy / idempotent-merge logic Claim carries. `shared: true` asks for
+    # no owners instead — visible to every profile, the same state `/api/projects/share` writes.
+    shared = _wbool(body, :shared)
     owner = active_profile_name()
+    owners = shared ? String[] : String[owner]
     commit_state!(proj) do raw
-        raw["owners"] = String[owner]
+        raw["owners"] = owners
     end
     meta = Dict{String,Any}("uid"=>proj.uid, "name"=>proj.name, "path"=>proj.root,
                              "meta"=>proj.meta, "set_uids"=>proj.set_uids,
-                             "owners"=>String[owner],
+                             "owners"=>owners,
                              "createdAt"=>string(now()), "lastOpenedAt"=>string(now()))
-    @info "Created project" name uid=proj.uid owner
+    @info "Created project" name uid=proj.uid owner shared
     200, JSON3.write((; project=meta))
 end
 
@@ -455,6 +458,35 @@ function api_projects_unclaim(body_bytes::Vector{UInt8})
         raw = read_ccid_raw(meta_file)
         owners = String[string(x) for x in get(raw, "owners", Any[]) if !isempty(string(x))]
         raw["owners"] = filter(o -> o != profile, owners)
+        write_json_atomic(meta_file, raw)
+        return 200, JSON3.write((; ok=true, uid, owners=raw["owners"]))
+    catch e
+        return 500, JSON3.write((; error="Failed to update project owners: " * sprint(showerror, e)))
+    end
+end
+
+# POST /api/projects/share  { uid }  → { ok, owners }
+# Clear every owner, so the project is visible to every profile — the state a pre-identity project
+# and a `shared: true` create are in. Idempotent. Like unclaim, it writes an explicit `[]` rather
+# than deleting the key. Claim turns it back into an owned project.
+# Only the SOLE owner may share (403 otherwise): claim adds you to anyone's project, so "any owner"
+# would let claim → share → claim take a project over. Profiles have no password, so this stops
+# accidents, not someone who switches profile.
+function api_projects_share(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :uid)
+    isempty(uid) && return 400, JSON3.write((; error="uid required"))
+    proj_dir = joinpath(projects_dir(), uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
+    meta_file = joinpath(proj_dir, "project.json")
+    try
+        raw = read_ccid_raw(meta_file)
+        owners = String[string(x) for x in get(raw, "owners", Any[]) if !isempty(string(x))]
+        isempty(owners) && return 200, JSON3.write((; ok=true, uid, owners))
+        owners == [active_profile_name()] ||
+            return 403, JSON3.write((; error="Only the project's sole owner can share it"))
+        raw["owners"] = String[]
         write_json_atomic(meta_file, raw)
         return 200, JSON3.write((; ok=true, uid, owners=raw["owners"]))
     catch e

@@ -12,6 +12,7 @@ import CollapsibleSection from './CollapsibleSection.vue'
 import CcProgressBar from './CcProgressBar.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import CcToggle from './CcToggle.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
@@ -30,6 +31,8 @@ const tab = ref<Tab>('recent')
 // ── New project form ────────────────────────────────────────────────────────
 const newName = ref('')
 const nameError = ref('')
+// Off = owned by the active profile; on = no owners, visible to every profile.
+const newShared = ref(false)
 
 async function createProject() {
   nameError.value = ''
@@ -37,7 +40,7 @@ async function createProject() {
   // still require an explicit name. See docs/todo/ONBOARDING_PLAN.md (P3).
   const name = newName.value.trim() || (projectMeta.recent.length === 0 ? 'My first project' : '')
   if (!name) { nameError.value = 'Name is required.'; return }
-  const ok = await projectMeta.createProject(name)
+  const ok = await projectMeta.createProject(name, { shared: newShared.value })
   if (ok) emit('close')
 }
 
@@ -85,7 +88,7 @@ const profileCount = ref<number>(1)
 const scope = ref<'mine' | 'all'>('mine')
 const SCOPE_OPTIONS: ChipOption[] = [
   { value: 'mine', label: 'Mine', icon: 'pi-user',
-    tip: 'Projects owned by you, plus unowned pre-identity projects' },
+    tip: 'Projects owned by you, plus shared projects' },
   { value: 'all',  label: 'All',  icon: 'pi-users',
     tip: 'Every project on this box, regardless of owner' },
 ]
@@ -153,6 +156,7 @@ const hiddenCount = computed(() => projectMeta.recent.length - projectRows.value
 
 async function claimSelected(uid: string) { await projectMeta.claimProject(uid) }
 async function unclaimSelected(uid: string) { await projectMeta.unclaimProject(uid) }
+async function shareSelected(uid: string) { await projectMeta.shareProject(uid) }
 
 async function openSelected() {
   if (!selectedUid.value) return
@@ -365,10 +369,10 @@ function formatDate(iso: string | null): string {
             <!-- Passive owner chip (USER_PROFILE_PLAN P5). Most projects have one owner, so the
                  row shows the primary alphabetically (you, if you're on it) and collapses the rest
                  behind a "+N" chip that opens a TeleportPopover — same overflow pattern the row ⋯
-                 menu uses. Pre-identity projects have no owners recorded — surface that as a muted
+                 menu uses. A project with no owners (pre-identity, or shared on purpose) shows a muted
                  "shared" pill so the row still answers the question. -->
             <span v-if="p._owners.length === 0" class="owner-chip shared"
-                  v-tooltip.bottom="'No owner recorded — visible to every profile on this box'">
+                  v-tooltip.bottom="'No owner — visible to every profile on this box'">
               shared
             </span>
             <span v-else class="owner-chips">
@@ -405,6 +409,12 @@ function formatDate(iso: string | null): string {
                     v-tooltip.left="'Release ownership — you stop seeing this in the filtered list'">
               <i class="pi pi-user-minus" />
             </button>
+            <!-- Sole owner only — the server refuses otherwise (claim → share → claim would be a takeover). -->
+            <button v-if="profileCount > 1 && p._mine && p._owners.length === 1" class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon"
+                    @click="shareSelected(p.uid)"
+                    v-tooltip.left="'Make shared — visible to every profile'">
+              <i class="pi pi-users" />
+            </button>
             <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
             <button class="pp-row-btn cc-btn cc-btn-bare cc-btn-icon" :disabled="ioBusy"
                     @click="exportProject(p)"
@@ -437,6 +447,13 @@ function formatDate(iso: string | null): string {
             v-tooltip.bottom="'Give the project a unique, descriptive name'"
           />
           <span class="field-error" v-if="nameError">{{ nameError }}</span>
+        </div>
+
+        <div v-if="profileCount > 1" class="form-row">
+          <CcToggle v-model="newShared" label="Shared"
+                    v-tooltip.bottom="newShared
+                      ? 'Visible to every profile'
+                      : `Owned by ${profileNameLabel(activeProfile)}`" />
         </div>
 
         <div class="form-row">

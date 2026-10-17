@@ -1,10 +1,10 @@
-# ── Project ownership — USER_PROFILE_PLAN Phase 5 (create-time stamp + claim/unclaim) ────────────
+# ── Project ownership — USER_PROFILE_PLAN Phase 5 (create-time stamp + claim/unclaim/share) ────────────
 # `owners: []` on disk means "pre-identity, visible to all" — the migration case. A project *created*
 # while a profile is active is not that case: the server knows who created it and stamps them as
 # owner at create-time so the "Mine" filter shows it immediately without a Claim round-trip. Claim
 # and unclaim (routes shipped in the same Phase 5) round-trip as-is.
 
-@testset "Project ownership — create-time stamp + claim/unclaim" begin
+@testset "Project ownership — create-time stamp + claim/unclaim/share" begin
     mktempdir() do tmp
         write(joinpath(tmp, "custom.toml"), "[dirs]\nprojects = '$(tmp)'\n")
         withenv("CECELIA_DEV_DIR" => tmp) do
@@ -50,6 +50,32 @@
             code, body = _post(api_projects_claim, Dict("uid" => uid_alice))
             @test code == 200
             @test sort(String[String(x) for x in JSON3.read(body).owners]) == ["alice", "default"]
+
+            # Share is sole-owner only: co-owned (alice + default) → 403, owners untouched.
+            @test _post(api_projects_share, Dict("uid" => uid_alice))[1] == 403
+            # Not an owner at all → 403 (no claim → share → claim takeover).
+            _post(api_projects_unclaim, Dict("uid" => uid_alice))      # back to ["alice"]
+            @test _post(api_projects_share, Dict("uid" => uid_alice))[1] == 403
+            raw = JSON3.read(read(joinpath(tmp, uid_alice, "project.json"), String))
+            @test [String(x) for x in raw.owners] == ["alice"]
+
+            # Sole owner shares → every owner cleared, on disk too; idempotent.
+            _post(api_kiwi_profiles_select, Dict("name" => "alice"))
+            code, body = _post(api_projects_share, Dict("uid" => uid_alice))
+            @test code == 200
+            @test collect(JSON3.read(body).owners) == []
+            raw = JSON3.read(read(joinpath(tmp, uid_alice, "project.json"), String))
+            @test collect(raw.owners) == []
+            @test _post(api_projects_share, Dict("uid" => uid_alice))[1] == 200
+            @test _post(api_projects_share, Dict("uid" => "nope"))[1] == 404
+
+            # `shared: true` at create → no owners, not the active profile.
+            code, body = _post(api_projects_create, Dict("name" => "shared-at-create", "shared" => true))
+            @test code == 200
+            b = JSON3.read(body)
+            @test collect(b.project.owners) == []
+            raw = JSON3.read(read(joinpath(tmp, String(b.project.uid), "project.json"), String))
+            @test collect(raw.owners) == []
         end
         init_cecelia!()   # restore
     end

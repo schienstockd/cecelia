@@ -52,14 +52,14 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  async function createProject(name: string): Promise<boolean> {
+  async function createProject(name: string, opts: { shared?: boolean } = {}): Promise<boolean> {
     loading.value = true
     let newUid = ''
     try {
       const res = await fetch('/api/projects/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, shared: !!opts.shared }),
       })
       const body = await res.json().catch(() => ({})) as { project?: ProjectRecord; error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
@@ -239,6 +239,10 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   async function unclaimProject(uid: string): Promise<boolean> {
     return await _writeOwners(uid, '/api/projects/unclaim')
   }
+  // Clear every owner — visible to every profile, like a pre-identity project.
+  async function shareProject(uid: string): Promise<boolean> {
+    return await _writeOwners(uid, '/api/projects/share')
+  }
   async function _writeOwners(uid: string, url: string): Promise<boolean> {
     try {
       const res = await fetch(url, {
@@ -258,7 +262,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, peekProject, renameProject, deleteProject, closeProject, claimProject, unclaimProject }
+  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, peekProject, renameProject, deleteProject, closeProject, claimProject, unclaimProject, shareProject }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.
