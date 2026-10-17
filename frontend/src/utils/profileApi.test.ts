@@ -9,6 +9,10 @@ import {
   profileNameLabel,
   fetchClaudeLogin,
   logoutClaude,
+  startClaudeLogin,
+  fetchClaudeLoginRun,
+  sendClaudeLoginCode,
+  claudeLoginPrompt,
   claudeLoginLabel,
 } from './profileApi'
 
@@ -201,5 +205,53 @@ describe('Claude login per profile', () => {
     expect(claudeLoginLabel({ ...base, state: 'loggedOut', email: '' })).toBe('Not logged in')
     expect(claudeLoginLabel({ ...base, state: 'unknown', email: '' })).toBe('')
     expect(claudeLoginLabel(null)).toBe('')
+  })
+})
+
+describe('Logging in from Cecelia (P9)', () => {
+  const originalFetch = globalThis.fetch
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+  })
+  afterEach(() => { globalThis.fetch = originalFetch })
+  const res = (status: number, body: object) =>
+    ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response
+  const run = { state: 'waiting', url: 'https://claude.com/x', browser: 'Firefox', message: '' }
+
+  it('startClaudeLogin POSTs the name and returns the run; a refusal is a failed run', async () => {
+    fetchMock.mockResolvedValue(res(200, { ok: true, ...run }))
+    const r = await startClaudeLogin('alice')
+    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/login',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ name: 'alice' }) }))
+    expect(r.state).toBe('waiting')
+    fetchMock.mockResolvedValue(res(500, { ok: false, error: 'No assistant CLI found.' }))
+    expect(await startClaudeLogin('alice')).toMatchObject({ state: 'failed', error: 'No assistant CLI found.' })
+  })
+
+  it('fetchClaudeLoginRun: a dropped poll is `none` + error, not a failed login', async () => {
+    fetchMock.mockResolvedValue(res(200, { ok: true, ...run }))
+    expect((await fetchClaudeLoginRun('alice')).browser).toBe('Firefox')
+    expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/profiles/login?profile=alice')
+    fetchMock.mockRejectedValue(new Error('network'))
+    expect(await fetchClaudeLoginRun('alice')).toMatchObject({ state: 'none', error: 'network' })
+  })
+
+  it('sendClaudeLoginCode surfaces the server error', async () => {
+    fetchMock.mockResolvedValue(res(409, { ok: false, error: 'No login is waiting for a code.' }))
+    expect(await sendClaudeLoginCode('alice', 'c#s')).toEqual({ ok: false, error: 'No login is waiting for a code.' })
+    fetchMock.mockResolvedValue(res(200, { ok: true }))
+    expect(await sendClaudeLoginCode('alice', 'c#s')).toEqual({ ok: true })
+  })
+
+  it('claudeLoginPrompt: names the private window, else points at the link', () => {
+    const w = { state: 'waiting' as const, url: '', browser: '', message: '' }
+    expect(claudeLoginPrompt(null)).toBe('Starting…')
+    expect(claudeLoginPrompt({ ...w })).toBe('Starting…')              // URL not printed yet
+    expect(claudeLoginPrompt({ ...w, browser: 'Brave' })).toBe('Sign in in the private Brave window')
+    expect(claudeLoginPrompt({ ...w, url: 'https://x' })).toBe('Open the link in a private window and sign in')
+    expect(claudeLoginPrompt({ ...w, state: 'failed', message: 'Login failed: 400' })).toBe('Login failed: 400')
+    expect(claudeLoginPrompt({ ...w, state: 'failed' })).toBe('Login did not finish')
   })
 })

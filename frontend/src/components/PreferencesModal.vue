@@ -18,6 +18,7 @@ import CcToggle from './CcToggle.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
+import ClaudeLoginPanel from './profile/ClaudeLoginPanel.vue'
 import HpcSettings from './HpcSettings.vue'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useMcpConnections } from '../composables/useMcpConnections'
@@ -100,8 +101,19 @@ async function logoutProfile(name: string) {
 }
 function loginTip(p: Profile): string {
   const l = logins.value[p.name]
-  if (l?.state === 'loggedOut') return 'Copy a login command to log in'
+  if (l?.state === 'loggedOut') return 'Not logged in to Claude'
   return [l?.method, l?.org].filter(Boolean).join(' · ') || 'Claude account'
+}
+
+// Log in: Cecelia runs the login itself in a small dialog (ClaudeLoginPanel, plan P9). Closing it
+// re-reads that profile's login, so the row shows the new account.
+const loginFor = ref<Profile | null>(null)
+async function closeLogin() {
+  const p = loginFor.value
+  loginFor.value = null
+  if (!p) return
+  logins.value = { ...logins.value, [p.name]: await fetchClaudeLogin(p.name, true) }
+  if (p.name === roster.value.active) void appCtl.refreshClaudeLogin()   // Kiwi's account row
 }
 
 // Switching the profile mid-session works but half the app is already mounted against the
@@ -200,11 +212,9 @@ function onProfileCreated(_name: string) {
   setTimeout(() => window.location.reload(), 250)
 }
 
-// The "Copy login command" one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P6). Fetched fresh per
-// click — the string is short and having the server generate it means the flag list stays in
-// one place (`kiwi_terminal_command` in `agent_runner.jl`). The footer form fetches for the
-// ACTIVE profile; the per-row form takes an explicit profile name so a user can set up
-// credentials for `alice` without switching to alice first.
+// "Claude in a terminal" (LOGIN_CREDENTIAL_ISOLATION_PLAN P6/D15): a one-liner that starts terminal
+// `claude` under the ACTIVE profile's login. Not how you log in any more (that's the row's Log in,
+// P9). Fetched fresh per click so the flag list stays in one place (`kiwi_terminal_command`).
 const termFetching = ref<string>('')      // name currently fetching — drives the row spinner
 async function copyTerminalCommand(profile?: string) {
   const key = profile ?? '__active__'
@@ -307,19 +317,13 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     <i :class="['pi', profilesBusy === p.name ? 'pi-spin pi-spinner' : 'pi-arrow-right']" />
                     Switch
                   </button>
-                  <!-- Per-row login: copies a terminal one-liner scoped to THIS profile's
-                       CLAUDE_CONFIG_DIR — so a user can set up credentials for `alice` without
-                       first switching to alice. Not offered for `default` (uses ~/.claude,
-                       already covered by any `claude login` outside Cecelia) or retired profiles
-                       (non-selectable = login pointless). -->
-                  <button v-if="!p.isDefault && !p.retired"
+                  <!-- Log in: only when the CLI says logged out (not while unknown). Any profile but a
+                       retired one, so `alice` can log in without switching to alice first. -->
+                  <button v-if="logins[p.name]?.state === 'loggedOut' && !p.retired"
                           class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs"
-                          :disabled="!!termFetching"
-                          @click="copyTerminalCommand(p.name)"
-                          v-tooltip.bottom="termCopied()
-                            ? `Copied — paste in a terminal to log ${p.name} in`
-                            : `Copy a login command for ${p.name} — paste in a terminal, then run /login inside claude`">
-                    <i :class="['pi', termFetching === p.name ? 'pi-spin pi-spinner' : 'pi-sign-in']" />
+                          @click="loginFor = p"
+                          v-tooltip.bottom="`Log ${profileDisplayName(p)} in to Claude`">
+                    <i class="pi pi-sign-in" />
                   </button>
                   <!-- Log out of Claude: only when logged in. For `default` that is `~/.claude`, the
                        same login terminal `claude` on this OS account uses — the tooltip says so. -->
@@ -375,17 +379,17 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     v-tooltip.top="'A separate credential + MCP scope for this seat login'">
               <i class="pi pi-user-plus" /> New profile
             </button>
-            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.copyLogin"
+            <button class="cc-btn cc-btn-ghost cc-fs-xs" data-guide="prefs.copyTerminal"
                     :disabled="!!termFetching"
                     @click="copyTerminalCommand()"
                     v-tooltip.top="termCopied()
-                      ? `Copied — paste in a terminal to log ${profileNameLabel(roster.active)} in`
-                      : `Copy a login one-liner for ${profileNameLabel(roster.active)} — the active profile`">
+                      ? 'Copied — paste it in a terminal'
+                      : `Copies a command that starts claude as ${profileNameLabel(roster.active)}`">
               <i :class="['pi', termFetching === '__active__' ? 'pi-spin pi-spinner'
-                                : termCopied() ? 'pi-check' : 'pi-sign-in']" />
-              {{ termCopied() ? 'Copied' : 'Copy login command' }}
+                                : termCopied() ? 'pi-check' : 'pi-copy']" />
+              {{ termCopied() ? 'Copied' : 'Claude in a terminal' }}
             </button>
-            <!-- After logging in from a terminal: skip the server's short status cache. -->
+            <!-- Skip the server's short status cache (a login or logout done in a terminal). -->
             <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" :disabled="loginsChecking"
                     @click="refreshLogins(true)" v-tooltip.top="'Re-check Claude logins'">
               <i :class="['pi', loginsChecking ? 'pi-spin pi-spinner' : 'pi-refresh']" />
@@ -649,6 +653,10 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 
       </section>
     </div>
+    <BaseModal v-if="loginFor" :title="`Log ${profileDisplayName(loginFor)} in to Claude`"
+               icon="pi-sign-in" width="440px" @close="closeLogin">
+      <div class="pp-login-dlg"><ClaudeLoginPanel :name="loginFor.name" @logged-in="closeLogin" /></div>
+    </BaseModal>
     <CreateProfileDialog v-if="showCreateProfile"
                          @close="showCreateProfile = false"
                          @created="onProfileCreated" />
@@ -725,4 +733,5 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
 .pp-tag  { padding-inline: 0.25rem; }
 .pp-tag-active { color: var(--cc-kiwi); }
 .pp-login { padding-inline: 0.25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-login-dlg { padding: 0.75rem 0.9rem; }
 </style>

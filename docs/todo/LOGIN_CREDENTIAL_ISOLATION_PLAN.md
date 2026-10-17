@@ -1,6 +1,6 @@
 # Cecelia login + per-user Claude credential isolation — plan
 
-**Status:** in progress (2026-09-24) — P1 shipped #1201, P2 shipped #1204, P5 shipped on
+**Status:** in progress — P9 (Cecelia runs the login itself) on `feat/claude-login-in-app` (2026-10-17). Earlier: P1 shipped #1201, P2 shipped #1204, P5 shipped on
 `feat/kiwi-single-instance-lock` (#1205), P3-backend + P4 + P6-backend shipped on
 `feat/kiwi-punchlist` (#1208); P7 collapsed to a read-time default; **P3-frontend picker + P6
 "Open profile terminal" button** shipped on branch `feat/kiwi-picker-ui` (this branch) —
@@ -285,6 +285,54 @@ Keychain): `claude auth status --json` and `claude auth logout`, both measured o
   the Keychain entry. If it doesn't, profiles on a Mac share one login and logout ends all of them.
   Needs a Mac with two logins — tracked in `docs/TODO.md` → *macOS: does CLAUDE_CONFIG_DIR scope
   the Claude Keychain login?*
+
+### P9 — Cecelia runs the login itself (IN PROGRESS, branch `feat/claude-login-in-app`)
+**Why (2026-10-17, tried on the lab Ubuntu box):** P6's "Copy login command" made logging in a
+terminal job — paste the one-liner, which starts an *interactive* `claude`, then `/login` inside it.
+Two things broke the hand-over P8 was meant to give:
+1. **The terminal session outlives Log out.** P8's Log out deletes the profile's login on disk; the
+   interactive `claude` the login command started keeps running and still looks logged in.
+2. **The browser remembers the last person.** `/login` opens claude.ai in the shared OS account's
+   default browser profile, whose Google / claude.ai cookies approve the login as whoever signed in
+   last. No CLI verb touches browser cookies.
+Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every plain terminal
+`claude` on the OS account (P8 already says so in the Log out tooltip).
+
+**Measured (Linux, CLI 2.1.302, throwaway `CLAUDE_CONFIG_DIR`, no real login):**
+- `claude auth login` is a non-REPL verb (`--claudeai` default, `--console`, `--sso`,
+  `--email <e>` → `login_hint`). It exits when the login finishes: `Login failed: …` + exit 1 on a
+  bad code.
+- It opens the browser through `$BROWSER` with a **localhost-callback** URL, and ALSO prints a
+  fallback URL (`redirect_uri=platform.claude.com/oauth/code/callback`) + `Paste code here if
+  prompted >`. Both run at once — either completes the login.
+- It works with **stdin as a pipe** (no TTY): the pasted code is read from stdin.
+- `$BROWSER` is **not split on spaces** — it must be one executable, so flags need a shim.
+
+**Decisions:**
+- **D12. Logging in is a Cecelia button, not a terminal.** `POST /api/kiwi/profiles/login` spawns
+  `claude auth login` under the profile's `CLAUDE_CONFIG_DIR` (same env scrub as every spawn), keeps
+  the process, and the UI polls it. Nothing interactive is left running, so Log out ends the login.
+- **D13. The browser opens private.** `$BROWSER` points at a per-login shim Cecelia writes into a
+  temp dir; the shim execs the resolved browser with its private flag (`firefox --private-window`,
+  Chrome / Chromium / Brave `--incognito`, Edge `--inprivate`). Browser resolved in Julia (pure,
+  tested): the `xdg-settings` default first, then the known binaries in order. No shared cookies →
+  no silent "last person" login.
+- **D14. The paste-code path is always offered.** If no private window appears (unknown browser,
+  no display on the server, a browser on another machine), the dialog shows the fallback link and a
+  code box; the code goes to the process's stdin. One flow, two ways to finish.
+- **D15. Copy login command → "Claude in a terminal".** P6/D9's profile-scoped terminal stays for
+  people who want terminal `claude` under their profile; it is no longer how you log in.
+- **D16. One login in flight per profile.** Starting another kills the previous one.
+
+**Not verified / not done:**
+- A real end-to-end login through the private window (needs a person) — Dominik on the lab box.
+- **macOS + Windows:** the shim is POSIX `sh`; macOS uses `open -na <App> --args <flag>`, untested
+  (no Mac). On Windows `$BROWSER` handling is unmeasured, so no shim: the CLI opens the default
+  browser as before and the link + code box is the private route.
+- Whether `auth logout` revokes the token server-side (only matters for a terminal session someone
+  starts deliberately).
+- Pre-filling `--email` with the profile's last account — later, if the private window alone
+  proves not enough.
 
 ## Interaction with `KIWI_ASSISTANT_PLAN.md`
 

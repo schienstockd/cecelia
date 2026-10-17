@@ -69,3 +69,70 @@ end
         set_shared_workstation!("oneClaudeLogin", prior)
     end
 end
+
+# ── Logging in (P9): the parts that don't need a real login ──
+
+@testset "resolve_private_browser" begin
+    r = Cecelia.resolve_private_browser
+    have(names...) = x -> x in names ? "/usr/bin/$x" : nothing
+    # the desktop default wins when it's private-capable and installed
+    b = r("brave-browser.desktop"; which = have("firefox", "brave-browser"), mac = false)
+    @test b.label == "Brave" && b.argv == ["/usr/bin/brave-browser", "--incognito"]
+    # snap Firefox id
+    b = r("firefox_firefox.desktop"; which = have("firefox", "google-chrome"), mac = false)
+    @test b.label == "Firefox" && b.argv == ["/usr/bin/firefox", "--private-window"]
+    # default unknown (or not installed) → first installed in catalogue order
+    @test r("org.gnome.Epiphany.desktop"; which = have("chromium-browser", "microsoft-edge"), mac = false).argv ==
+          ["/usr/bin/chromium-browser", "--incognito"]
+    @test r("google-chrome.desktop"; which = have("microsoft-edge"), mac = false).argv ==
+          ["/usr/bin/microsoft-edge", "--inprivate"]
+    @test r(""; which = have(), mac = false) === nothing
+    # macOS: first installed app bundle, through `open -na`
+    b = r(""; mac = true, app_exists = ==("Google Chrome"))
+    @test b.label == "Chrome" && b.argv == ["open", "-na", "Google Chrome", "--args", "--incognito"]
+    @test r(""; mac = true, app_exists = _ -> false) === nothing
+end
+
+@testset "private_browser_shim" begin
+    s = Cecelia.private_browser_shim
+    @test s(nothing) == "#!/bin/sh\nexit 0\n"     # never falls back to a normal window
+    @test occursin("exec '/usr/bin/firefox' '--private-window' \"\$1\"",
+                   s(Cecelia.PrivateBrowser(["/usr/bin/firefox", "--private-window"], "Firefox")))
+    @test occursin("'O'\\''Brien'", s(Cecelia.PrivateBrowser(["O'Brien"], "x")))   # quoted safely
+    # run it: the browser gets the flag then the URL, verbatim
+    if !Sys.iswindows()
+        mktempdir() do d
+            rec = joinpath(d, "rec.sh"); got = joinpath(d, "got.txt")
+            write(rec, "#!/bin/sh\nprintf '%s\\n' \"\$@\" > '$got'\n"); chmod(rec, 0o700)
+            shim = joinpath(d, "open-private")
+            write(shim, s(Cecelia.PrivateBrowser([rec, "--private-window"], "Rec"))); chmod(shim, 0o700)
+            url = "https://claude.com/cai/oauth/authorize?code=true&state=a b"
+            run(`$shim $url`)
+            @test readlines(got) == ["--private-window", url]
+        end
+    end
+end
+
+@testset "parse_login_url + _last_line" begin
+    u = "https://claude.com/cai/oauth/authorize?code=true&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=s"
+    # as printed to a pipe (CLI 2.1.302)
+    out = "Opening browser to sign in…\nIf the browser didn't open, visit: $u\nPaste code here if prompted > "
+    @test Cecelia.parse_login_url(out) == u
+    # as printed to a terminal: OSC-8 hyperlink wrapping the same URL
+    @test Cecelia.parse_login_url("visit: \e]8;;$u\a$u\e]8;;\a\n") == u
+    @test Cecelia.parse_login_url("Opening browser to sign in…\n") == ""
+    # the CLI's verdict shares a line with the paste prompt
+    @test Cecelia._last_line(out * "Login failed: Request failed with status code 400\n") ==
+          "Login failed: Request failed with status code 400"
+    @test Cecelia._last_line(out) == ""        # killed while waiting: no verdict, not the URL line
+    @test Cecelia._last_line("") == ""
+end
+
+@testset "claude_login_status — nothing started" begin
+    st = Cecelia.claude_login_status("/nonexistent/profile-dir")
+    @test st.state == "none" && st.url == "" && st.message == ""
+    @test Cecelia.claude_login_code!("/nonexistent/profile-dir", "abc") ==
+          (false, "No login is waiting for a code.")
+    @test Cecelia.claude_login_code!("/nonexistent/profile-dir", "  ")[1] == false
+    @test Cecelia.claude_login_cancel!("/nonexistent/profile-dir") == false
+end
