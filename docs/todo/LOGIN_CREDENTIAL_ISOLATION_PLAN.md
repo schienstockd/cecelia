@@ -320,7 +320,7 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
 - **D14. The paste-code path is always offered.** If no private window appears (unknown browser,
   no display on the server, a browser on another machine), the dialog shows the fallback link and a
   code box; the code goes to the process's stdin. One flow, two ways to finish.
-- **D15. Copy login command → "Copy terminal command".** P6/D9's profile-scoped terminal stays for
+- **D15. Copy login command → "Claude in a terminal".** P6/D9's profile-scoped terminal stays for
   people who want terminal `claude` under their profile; it is no longer how you log in.
 - **D16. One login in flight per profile.** Starting another kills the previous one.
 

@@ -212,7 +212,7 @@ function onProfileCreated(_name: string) {
   setTimeout(() => window.location.reload(), 250)
 }
 
-// "Copy terminal command" (LOGIN_CREDENTIAL_ISOLATION_PLAN P6/D15): a one-liner that starts terminal
+// "Claude in a terminal" (LOGIN_CREDENTIAL_ISOLATION_PLAN P6/D15): a one-liner that starts terminal
 // `claude` under the ACTIVE profile's login. Not how you log in any more (that's the row's Log in,
 // P9). Fetched fresh per click so the flag list stays in one place (`kiwi_terminal_command`).
 const termFetching = ref<string>('')      // name currently fetching — drives the row spinner
@@ -384,10 +384,10 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                     @click="copyTerminalCommand()"
                     v-tooltip.top="termCopied()
                       ? 'Copied — paste it in a terminal'
-                      : `Starts terminal claude as ${profileNameLabel(roster.active)}`">
+                      : `Copies a command that starts claude as ${profileNameLabel(roster.active)}`">
               <i :class="['pi', termFetching === '__active__' ? 'pi-spin pi-spinner'
                                 : termCopied() ? 'pi-check' : 'pi-copy']" />
-              {{ termCopied() ? 'Copied' : 'Copy terminal command' }}
+              {{ termCopied() ? 'Copied' : 'Claude in a terminal' }}
             </button>
             <!-- Skip the server's short status cache (a login or logout done in a terminal). -->
             <button class="cc-btn cc-btn-ghost cc-btn-icon cc-fs-xs" :disabled="loginsChecking"

@@ -68,7 +68,7 @@ export const userProfileGuide: GuideDef = {
       title: 'Log the profile in',
       text: 'Each profile has its own Claude login: use the sign-in button on its row.',
       bullets: ['The login opens in a private browser window.',
-                'Copy terminal command starts terminal claude as the active profile.'],
+                'Claude in a terminal copies a command that starts claude as you.'],
     },
   ],
 }
