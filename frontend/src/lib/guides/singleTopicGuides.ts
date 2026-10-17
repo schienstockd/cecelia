@@ -63,11 +63,12 @@ export const userProfileGuide: GuideDef = {
       bullets: ['Retire one from the row above; the record stays resolvable for old turn logs.'],
     },
     {
-      anchor: 'prefs.copyLogin',
+      anchor: 'prefs.copyTerminal',
       placement: 'top',
       title: 'Log the profile in',
-      text: 'Copies a terminal one-liner scoped to this profile\'s CLAUDE_CONFIG_DIR — paste and run /login.',
-      bullets: ['Each profile logs Claude in separately.'],
+      text: 'Each profile has its own Claude login: use the sign-in button on its row.',
+      bullets: ['The login opens in a private browser window.',
+                'Copy terminal command starts terminal claude as the active profile.'],
     },
   ],
 }

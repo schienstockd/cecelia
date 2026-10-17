@@ -1,9 +1,9 @@
 # ── Kiwi profile API — routes for LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6 + P8 + D11 ─────────────
 #
-# No route ever spawns `claude login` itself — logging in is interactive, so the user pastes the
-# one-liner from GET /api/kiwi/terminal/command. The CLI's non-interactive `auth status` / `auth
-# logout` ARE spawned (`claude_auth.jl`), for the login label and Log out (P8). The profile picker
-# drives these; the retire button POSTs to /api/kiwi/profiles/retire.
+# Logging in runs here too (P9): `claude auth login` is spawned per profile and the dialog polls it,
+# opening a private browser window and taking a pasted code as the fallback (`claude_auth.jl`). The
+# terminal one-liner (GET /api/kiwi/terminal/command) is now only for terminal `claude` under a
+# profile, not for logging in. `auth status` / `auth logout` drive the login label and Log out (P8).
 #
 # Routes (see server.jl for wiring):
 #
@@ -14,6 +14,10 @@
 #   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 #   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
 #   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
+#   POST /api/kiwi/profiles/login             → { name }               ; start `claude auth login` (P9)
+#   GET  /api/kiwi/profiles/login?profile=N   → { state, url, browser, message } ; poll it
+#   POST /api/kiwi/profiles/login/code        → { name, code }         ; the pasted fallback code
+#   POST /api/kiwi/profiles/login/cancel      → { name }
 #
 # Server-active-profile model: `[ai].profile` in custom.toml is the single source of truth. All
 # `claude` spawns pick it up via `active_profile_name()`. Per-tab handoff (Q2 recommendation in the
@@ -303,4 +307,49 @@ function api_kiwi_profiles_logout(body_bytes::Vector{UInt8})
     ok, msg = claude_auth_logout!(dir)
     ok || return 500, JSON3.write((; ok = false, error = isempty(msg) ? "Logout failed." : msg))
     200, JSON3.write((; ok = true, name = name))
+end
+
+# ── Logging in (P9) — start, poll, paste a code, cancel. The writes need an explicit `name`, like
+# logout: an empty body must never start a login for whichever profile happens to be active. ──
+
+_kiwi_body_name(body_bytes) =
+    (b = try; JSON3.read(String(body_bytes)); catch; nothing; end;
+     b isa AbstractDict ? String(get(b, :name, "")) : "")
+
+const _MISSING_NAME = (400, JSON3.write((; ok = false, error = "Missing `name`.")))
+
+function api_kiwi_profiles_login_start(body_bytes::Vector{UInt8})
+    name = _kiwi_body_name(body_bytes)
+    isempty(name) && return _MISSING_NAME
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    ok, msg = claude_login_start!(dir)
+    ok || return 500, JSON3.write((; ok = false, error = isempty(msg) ? "Could not start the login." : msg))
+    200, JSON3.write((; ok = true, claude_login_status(dir)...))
+end
+
+function api_kiwi_profiles_login_status(req::HTTP.Request)
+    name = get(HTTP.queryparams(HTTP.URI(req.target)), "profile", "")
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    200, JSON3.write((; ok = true, claude_login_status(dir)...))
+end
+
+function api_kiwi_profiles_login_code(body_bytes::Vector{UInt8})
+    b = try; JSON3.read(String(body_bytes)); catch; nothing; end
+    name = b isa AbstractDict ? String(get(b, :name, "")) : ""
+    isempty(name) && return _MISSING_NAME
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    ok, msg = claude_login_code!(dir, String(get(b, :code, "")))
+    ok || return 409, JSON3.write((; ok = false, error = msg))
+    200, JSON3.write((; ok = true))
+end
+
+function api_kiwi_profiles_login_cancel(body_bytes::Vector{UInt8})
+    name = _kiwi_body_name(body_bytes)
+    isempty(name) && return _MISSING_NAME
+    dir = _kiwi_claude_dir(name)
+    dir isa Tuple && return dir
+    200, JSON3.write((; ok = true, cancelled = claude_login_cancel!(dir)))
 end

@@ -8,6 +8,10 @@
 //   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 //   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
 //   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
+//   POST /api/kiwi/profiles/login             → { name }               ; start `claude auth login` (P9)
+//   GET  /api/kiwi/profiles/login?profile=N   → { state, url, browser, message } ; poll it
+//   POST /api/kiwi/profiles/login/code        → { name, code }         ; the pasted fallback code
+//   POST /api/kiwi/profiles/login/cancel      → { name }
 //
 // The picker in `KiwiCockpit.vue` reads/writes the active profile through these; the "Open profile
 // terminal" button copies the one-liner. Server-side single-active-profile is the model — per-tab
@@ -266,4 +270,72 @@ export function claudeLoginLabel(l: ClaudeLogin | null | undefined): string {
   if (!l || l.state === 'unknown') return ''
   if (l.state === 'loggedOut') return 'Not logged in'
   return l.email || 'Logged in'
+}
+
+/** A login Cecelia is running for a profile (`claude auth login`, LOGIN_CREDENTIAL_ISOLATION_PLAN
+ *  P9). `url` is the paste-code fallback link (empty until the CLI prints it); `browser` names the
+ *  private window it opened (empty = none, the link is the way); `message` is the CLI's verdict. */
+export type ClaudeLoginRunState = 'none' | 'waiting' | 'loggedIn' | 'failed'
+export interface ClaudeLoginRun {
+  state: ClaudeLoginRunState
+  url: string
+  browser: string
+  message: string
+  error?: string
+}
+
+const _noRun = (error?: string): ClaudeLoginRun =>
+  ({ state: 'failed', url: '', browser: '', message: error ?? '', error })
+
+async function _loginPost(path: string, body: object, apiBase: string): Promise<{ ok: boolean; body: any }> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/login${path}`,
+      { method: 'POST', headers: _JSON, body: JSON.stringify(body) })
+    const b = await _json(res)
+    return { ok: res.ok, body: res.ok ? b : { ...b, error: b?.error ?? `HTTP ${res.status}` } }
+  } catch (e) {
+    return { ok: false, body: { error: e instanceof Error ? e.message : 'Network error' } }
+  }
+}
+
+/** Start logging `name` in to Claude. Returns the run's first status (or a failed one). */
+export async function startClaudeLogin(name: string, apiBase = ''): Promise<ClaudeLoginRun> {
+  const r = await _loginPost('', { name }, apiBase)
+  return r.ok ? { ...(r.body as ClaudeLoginRun) } : _noRun(r.body.error)
+}
+
+/** Poll a running login. A failed request is reported as `none` with the error — the caller keeps
+ *  polling rather than declaring the login failed on one dropped request. */
+export async function fetchClaudeLoginRun(name: string, apiBase = ''): Promise<ClaudeLoginRun> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/login?profile=${encodeURIComponent(name)}`)
+    const b = await _json(res)
+    if (!res.ok) return { state: 'none', url: '', browser: '', message: '', error: b?.error ?? `HTTP ${res.status}` }
+    return b as ClaudeLoginRun
+  } catch (e) {
+    return { state: 'none', url: '', browser: '', message: '', error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
+/** Hand the code from the sign-in page to the waiting login. */
+export async function sendClaudeLoginCode(name: string, code: string, apiBase = ''):
+  Promise<{ ok: boolean; error?: string }> {
+  const r = await _loginPost('/code', { name, code }, apiBase)
+  return r.ok ? { ok: true } : { ok: false, error: r.body.error }
+}
+
+/** Stop a waiting login (closing the dialog). Best-effort. */
+export async function cancelClaudeLogin(name: string, apiBase = ''): Promise<void> {
+  await _loginPost('/cancel', { name }, apiBase)
+}
+
+/** The one line the login dialog shows while it waits: where to sign in. */
+export function claudeLoginPrompt(run: ClaudeLoginRun | null): string {
+  if (!run || run.state === 'none') return 'Starting…'
+  if (run.state === 'waiting') {
+    if (run.browser) return `Sign in in the private ${run.browser} window`
+    return run.url ? 'Open the link in a private window and sign in' : 'Starting…'
+  }
+  if (run.state === 'loggedIn') return 'Logged in'
+  return run.message || run.error || 'Login did not finish'
 }

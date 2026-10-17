@@ -95,7 +95,7 @@ export function cliRow(available: boolean, authFailed = false, path = ''): McpRo
       return { ...base, tone: 'warn', label: 'not detected', detail: 'Install it, then run claude once',
                hint: 'Everything below needs the Claude Code CLI', href: CLAUDE_SETUP_GUIDE, recheck: true }
     case 'auth':
-      return { ...base, tone: 'warn', label: 'not logged in', detail: 'Run claude in a terminal',
+      return { ...base, tone: 'warn', label: 'not logged in', detail: 'Log in from Preferences → Profiles',
                hint: 'The CLI is installed but a run failed to authenticate', href: CLAUDE_SETUP_GUIDE }
     default:
       return { ...base, tone: 'ok', label: 'ready', detail: '',
