@@ -34,9 +34,9 @@ defineEmits<{ confirm: [] }>()
 
 <template>
   <ConfirmButton :needs-confirm="needsConfirm" :auto-dismiss-ms="autoDismissMs" @confirm="$emit('confirm')"
-                 v-slot="{ armed, arm, confirm }">
+                 v-slot="{ armed, press }">
     <button type="button" class="cc-del" :class="{ armed }" :disabled="disabled"
-            @click.stop="armed ? confirm() : arm()"
+            @click.stop="press"
             v-tooltip="{ value: armed ? armedTitle : title }">
       <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" />
       <span v-if="$slots.default" class="cc-del-lbl"><slot /></span>

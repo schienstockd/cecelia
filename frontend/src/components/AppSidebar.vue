@@ -191,32 +191,22 @@ function isNavDisabled(item: NavItem): boolean {
         <i class="pi pi-cog" />
       </RouterLink>
       <div class="footer-ctl">
-        <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
+        <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm }">
           <!-- Anchored for the orientation tour, which points here to say "close the tab and the
-               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. Only the
-               UNARMED button takes the anchor: arming swaps the node, and a tour step must never
-               invite this particular click. -->
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" data-guide="sidebar.quit"
-                  :disabled="appCtl.busy" @click="armQuit(arm)"
-                  v-tooltip.right="'Quit Cecelia — stop notebooks and the backend'">
-            <i class="pi pi-power-off" />
+               backend keeps running" — the fact the `cc.hint.shutdown` callout used to carry. The step
+               has no `clickAnchor`, so it never invites this particular click. -->
+          <button class="footer-btn cc-btn cc-btn-icon cc-btn-lg" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost danger'"
+                  data-guide="sidebar.quit"
+                  :disabled="appCtl.busy" @click="armed ? confirm() : armQuit(arm)"
+                  v-tooltip.right="armed ? quitConfirm : 'Quit Cecelia — stop notebooks and the backend'">
+            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" />
           </button>
-          <template v-else>
-            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg danger" @click="confirm"
-                    v-tooltip.right="quitConfirm"><i class="pi pi-check" /></button>
-            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
-          </template>
         </ConfirmButton>
-        <ConfirmButton @confirm="logOutUser" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg"
-                  :disabled="appCtl.busy" @click="arm" v-tooltip.right="logOutTip">
-            <i class="pi pi-sign-out" />
+        <ConfirmButton @confirm="logOutUser" v-slot="{ armed, press }">
+          <button class="footer-btn cc-btn cc-btn-icon cc-btn-lg" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                  :disabled="appCtl.busy" @click="press" v-tooltip.right="armed ? 'Click again to log out' : logOutTip">
+            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-sign-out'" />
           </button>
-          <template v-else>
-            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="confirm"
-                    v-tooltip.right="'Confirm log out'"><i class="pi pi-check" /></button>
-            <button class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
-          </template>
         </ConfirmButton>
         <button v-if="appCtl.dev" class="footer-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-lg" :disabled="appCtl.busy" @click="restartBackend"
                 v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">

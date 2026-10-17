@@ -73,25 +73,17 @@ function setCols(v: number) { emit('update:cols', v) }
     <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" v-tooltip.bottom="'Cascade windows'"
             @click="emit('cascade')"><i class="pi pi-clone" /></button>
     <ConfirmButton :needs-confirm="count > 0" @confirm="emit('closeAll')"
-                   v-slot="{ armed, arm, confirm, cancel }">
-      <button v-if="!armed" class="cc-btn cc-btn-bare cc-btn-icon" type="button" :disabled="!count"
-              @click="arm" v-tooltip.bottom="'Close all plots'" aria-label="Close all plots">
-        <i class="pi pi-times" />
+                   v-slot="{ armed, press }">
+      <button class="cc-btn cc-btn-icon" :class="armed ? 'cc-btn-danger' : 'cc-btn-bare'" type="button" :disabled="!count"
+              @click="press" v-tooltip.bottom="armed ? `Click again — close all ${plural()}` : 'Close all plots'"
+              :aria-label="armed ? 'Confirm close all plots' : 'Close all plots'">
+        <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-times'" />
       </button>
-      <template v-else>
-        <button class="cc-btn cc-btn-bare cc-btn-icon ca-danger" type="button" @click="confirm"
-                v-tooltip.bottom="`Confirm — close all ${plural()}`"><i class="pi pi-check" /></button>
-        <button class="cc-btn cc-btn-bare cc-btn-icon" type="button" @click="cancel"
-                v-tooltip.bottom="'Keep plots'"><i class="pi pi-undo" /></button>
-      </template>
     </ConfirmButton>
   </div>
 </template>
 
 <style scoped>
-/* the armed confirm reads as destructive — same cue as CanvasPanel's remove button */
-.ca-danger:hover { color: #f87171; border-color: #f87171; }
-
 /* Columns popover — the popover itself owns surface/border/shadow/position (TeleportPopover); we only
    lay out the header + the row of chips inside. The row uses `.cc-row.cc-row-tight`; only the
    per-column min-width is scoped here so the seven column buttons line up as a chip strip. */

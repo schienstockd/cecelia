@@ -649,13 +649,15 @@ function moveTo(target: string) {
               <i class="pi pi-search" /> Show the gate's plot
             </button>
             <!-- rectangle ⇄ polygon on the SAME population (no delete-and-redraw). Widening
-                 (poly → rect) arms first; the label names the shape you get. -->
+                 (poly → rect) arms first; the label names the shape you get. Armed items keep their
+                 label (the menu never resizes under the cursor); the armed tooltip says what happens. -->
             <ConfirmButton v-if="actionsPop.gate && !readonly && !actionsPop.transient"
                            :needs-confirm="actionsPop.gate.kind === 'polygon'"
-                           @confirm="runAction(() => convertGate(actionsPop!))" v-slot="{ armed, arm, confirm }">
-              <button class="cc-actions-item" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                           @confirm="runAction(() => convertGate(actionsPop!))" v-slot="{ armed, press }">
+              <button class="cc-actions-item" :class="{ armed }" @click.stop="press"
+                      v-tooltip.right="armed ? 'Click again — the gate widens' : ''">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : convertIcon(actionsPop)" />
-                {{ armed ? 'Click again — the gate widens' : convertTip(actionsPop) }}
+                {{ convertTip(actionsPop) }}
               </button>
             </ConfirmButton>
             <button v-if="!readonly && !actionsPop.transient" class="cc-actions-item"
@@ -674,18 +676,20 @@ function moveTo(target: string) {
             </button>
             <ConfirmButton v-if="!readonly && !actionsPop.transient && childCount(actionsPop) > 0"
                            @confirm="runAction(() => g.deletePopChildren(actionsPop!.path))"
-                           v-slot="{ armed, arm, confirm }">
-              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                           v-slot="{ armed, press }">
+              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="press"
+                      v-tooltip.right="armed ? 'Click again to delete' : ''">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
-                {{ armed ? 'Click again to delete' : `Delete ${childCount(actionsPop)} below it` }}
+                Delete {{ childCount(actionsPop) }} below it
               </button>
             </ConfirmButton>
             <ConfirmButton v-if="!readonly && !actionsPop.transient"
                            @confirm="runAction(() => g.deletePop(actionsPop!.path))"
-                           v-slot="{ armed, arm, confirm }">
-              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="armed ? confirm() : arm()">
+                           v-slot="{ armed, press }">
+              <button class="cc-actions-item danger" :class="{ armed }" @click.stop="press"
+                      v-tooltip.right="armed ? 'Click again to delete' : ''">
                 <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" />
-                {{ armed ? 'Click again to delete' : (childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population') }}
+                {{ childCount(actionsPop) ? `Delete it and ${childCount(actionsPop)} below` : 'Delete population' }}
               </button>
             </ConfirmButton>
             <!-- The cell-selection pop is transient (never persisted) — this clears it so it

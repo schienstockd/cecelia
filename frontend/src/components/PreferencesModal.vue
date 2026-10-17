@@ -290,19 +290,14 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
                  profile is a named, non-retired one — retiring `default` is meaningless. -->
             <ConfirmButton v-if="roster.active !== 'default' &&
                                  !roster.profiles.find(p => p.name === roster.active)?.retired"
-                           @confirm="retireActive" v-slot="{ armed, arm, confirm, cancel }">
-              <button v-if="!armed" class="cc-btn cc-btn-ghost cc-fs-xs"
-                      :disabled="!!profilesBusy" @click="arm"
-                      v-tooltip.top="'Retire this profile — non-selectable after, data stays on disk'">
-                <i class="pi pi-user-minus" /> Retire active
+                           @confirm="retireActive" v-slot="{ armed, press }">
+              <button class="cc-btn cc-fs-xs" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'"
+                      :disabled="!!profilesBusy" @click="press"
+                      v-tooltip.top="armed ? `Click again to retire ${roster.active}`
+                                           : 'Retire this profile — non-selectable after, data stays on disk'">
+                <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-user-minus'" />
+                Retire active
               </button>
-              <template v-else>
-                <button class="cc-btn cc-btn-danger cc-fs-xs" @click="confirm"
-                        v-tooltip.top="'Confirm retire'">
-                  <i class="pi pi-check" /> Retire {{ roster.active }}
-                </button>
-                <button class="cc-btn cc-btn-ghost cc-fs-xs" @click="cancel">Cancel</button>
-              </template>
             </ConfirmButton>
           </div>
         </template>

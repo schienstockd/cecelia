@@ -569,21 +569,13 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                       v-tooltip.bottom="'Add tags to the selected movies'">
                 <i class="pi pi-tag" /> Tag
               </button>
-              <!-- arm → confirm, the canonical destructive pattern. The buttons live HERE, not inside
+              <!-- arm → confirm, the canonical destructive pattern. The button lives HERE, not inside
                    ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
-              <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, arm, confirm, cancel }">
-                <button v-if="!armed" class="cc-btn cc-btn-ghost cc-btn-micro mov-danger" @click="arm"
-                        v-tooltip.bottom="'Delete the selected movies'">
-                  <i class="pi pi-trash" /> Delete {{ checked.length }}
+              <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, press }">
+                <button class="cc-btn cc-btn-micro" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost mov-danger'" @click="press"
+                        v-tooltip.bottom="armed ? 'Click again — permanently delete these files' : 'Delete the selected movies'">
+                  <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete {{ checked.length }}
                 </button>
-                <template v-else>
-                  <button class="cc-btn cc-btn-primary cc-btn-micro" @click="confirm"
-                          v-tooltip.bottom="'Permanently delete these files'">
-                    <i class="pi pi-check" /> Delete {{ checked.length }}
-                  </button>
-                  <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="cancel"
-                          v-tooltip.bottom="'Keep them'"><i class="pi pi-times" /></button>
-                </template>
               </ConfirmButton>
             </div>
             <!-- Star and tags compose with each other and with the column sort — one never replaces

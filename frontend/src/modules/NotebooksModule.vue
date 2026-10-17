@@ -194,19 +194,12 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         </p>
         <p v-if="errorMsg" class="nb-error">
           <i class="pi pi-exclamation-triangle" /> {{ errorMsg }}
-          <ConfirmButton v-if="foreign" @confirm="replaceForeign" v-slot="{ armed, arm, confirm, cancel }">
-            <button v-if="!armed" class="cc-btn cc-btn-ghost" @click="arm"
-                    v-tooltip.top="'Stop that server and start this project\'s'">
-              <i class="pi pi-power-off" /> Stop it
+          <ConfirmButton v-if="foreign" @confirm="replaceForeign" v-slot="{ armed, press }">
+            <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
+                    v-tooltip.top="armed ? 'Click again — its open notebooks stop running'
+                                         : 'Stop that server and start this project\'s'">
+              <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-power-off'" /> Stop it
             </button>
-            <template v-else>
-              <button class="cc-btn cc-btn-danger" @click="confirm"
-                      v-tooltip.top="'Its open notebooks stop running'">
-                <i class="pi pi-check" /> Stop it
-              </button>
-              <button class="cc-btn cc-btn-ghost cc-btn-icon" aria-label="Cancel" @click="cancel"
-                      v-tooltip.top="'Cancel'"><i class="pi pi-times" /></button>
-            </template>
           </ConfirmButton>
         </p>
 
