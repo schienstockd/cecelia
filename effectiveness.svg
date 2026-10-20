@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 590" role="img" aria-labelledby="t d" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" fill="#2a2a2a">
+<title id="t">Agent pre-commit reviews, per week</title>
+<desc id="d">Week of Sep 21–Sep 27 (partial): 9 changes reviewed across 5 sessions, 17 PRs merged; 10 findings, 2 fixed before commit, 0 shipped knowingly, 1 called a false positive, 0 dropped, 7 no outcome logged (Fan-out audit: 8 findings, 2 fixed before commit; Convention check: 2 findings, 0 fixed before commit). Week of Sep 28–Oct 4: 196 changes reviewed across 53 sessions, 149 PRs merged; 168 findings, 133 fixed before commit, 10 shipped knowingly, 5 called a false positive, 14 dropped, 6 no outcome logged (Fan-out audit: 100 findings, 75 fixed before commit; Convention check: 68 findings, 58 fixed before commit). Week of Oct 5–Oct 11: 236 changes reviewed across 59 sessions, 148 PRs merged; 159 findings, 146 fixed before commit, 2 shipped knowingly, 0 called a false positive, 1 dropped, 10 no outcome logged (Fan-out audit: 82 findings, 78 fixed before commit; Convention check: 77 findings, 68 fixed before commit). Week of Oct 12–Oct 18: 145 changes reviewed across 44 sessions, 88 PRs merged; 79 findings, 69 fixed before commit, 6 shipped knowingly, 1 called a false positive, 0 dropped, 3 no outcome logged (Fan-out audit: 38 findings, 29 fixed before commit; Convention check: 41 findings, 40 fixed before commit). Week of Oct 19–Oct 25 (partial): 1 changes reviewed across 1 sessions, 0 PRs merged; 0 findings, 0 fixed before commit, 0 shipped knowingly, 0 called a false positive, 0 dropped, 0 no outcome logged (Fan-out audit: 0 findings, 0 fixed before commit; Convention check: 0 findings, 0 fixed before commit). Weekly judge, pass of 2026-10-20: 7 open bugs, 33 parked, 29 gone, 25 not a bug. Fan-out audit notes nobody fixed, raised the week of Sep 28–Oct 4: 6 real bug, 0 gone, 2 not a bug. Fan-out audit notes nobody fixed, raised the week of Oct 5–Oct 11: 24 real bug, 21 gone, 7 not a bug. Fan-out audit notes nobody fixed, raised the week of Oct 12–Oct 18: 8 real bug, 7 gone, 11 not a bug. Convention check notes nobody fixed, raised the week of Oct 5–Oct 11: 0 still there, 1 gone, 0 not a bug. Convention check notes nobody fixed, raised the week of Oct 12–Oct 18: 0 still there, 0 gone, 1 not a bug.</desc>
+<rect width="960" height="590" fill="#fafaf7"/>
+<text x="20" y="30" font-size="17" font-weight="700">Agent pre-commit reviews, per week</text>
+<text x="20" y="50" font-size="12">Since Sep 27, 2026 · the reviewer prompts still change most weeks</text>
+<text x="20.0" y="88.0" font-size="15" font-weight="700">a</text>
+<text x="38.0" y="88.0" font-size="13" font-weight="700">Changes reviewed and PRs merged</text>
+<circle cx="46.0" cy="107.0" r="3" fill="#2a2a2a"/>
+<text x="59.0" y="111.0" font-size="11">changes reviewed</text>
+<circle cx="180.2" cy="107.0" r="3" fill="#CC79A7"/>
+<text x="193.2" y="111.0" font-size="11">PRs merged</text>
+<path d="M78.0,128.0 V258.0 H445.0" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="74.0" x2="78.0" y1="258.0" y2="258.0" stroke="#6b6b66"/>
+<text x="71.0" y="262.0" font-size="11" text-anchor="end">0</text>
+<line x1="74.0" x2="78.0" y1="214.7" y2="214.7" stroke="#6b6b66"/>
+<text x="71.0" y="218.7" font-size="11" text-anchor="end">100</text>
+<line x1="74.0" x2="78.0" y1="171.3" y2="171.3" stroke="#6b6b66"/>
+<text x="71.0" y="175.3" font-size="11" text-anchor="end">200</text>
+<line x1="74.0" x2="78.0" y1="128.0" y2="128.0" stroke="#6b6b66"/>
+<text x="71.0" y="132.0" font-size="11" text-anchor="end">300</text>
+<text x="32.0" y="193.0" font-size="11" text-anchor="middle" transform="rotate(-90 32.0 193.0)">Count per week</text>
+<line x1="98.0" x2="98.0" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="98.0" y="275.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="266.5" x2="266.5" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="266.5" y="275.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="435.0" x2="435.0" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="435.0" y="275.0" font-size="11" text-anchor="middle">Oct 12</text>
+<circle cx="98.0" cy="173.1" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<text x="105.0" y="167.1" font-size="11" fill="#2a2a2a">196</text>
+<circle cx="266.5" cy="155.7" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<text x="273.5" y="149.7" font-size="11" fill="#2a2a2a">236</text>
+<circle cx="435.0" cy="195.2" r="3.5" stroke="#2a2a2a" fill="#2a2a2a" stroke-width="0"/>
+<text x="442.0" y="189.2" font-size="11" fill="#2a2a2a">145</text>
+<circle cx="98.0" cy="193.4" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<text x="105.0" y="207.4" font-size="11" fill="#CC79A7">149</text>
+<circle cx="266.5" cy="193.9" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<text x="273.5" y="207.9" font-size="11" fill="#CC79A7">148</text>
+<circle cx="435.0" cy="219.9" r="3.5" stroke="#CC79A7" fill="#CC79A7" stroke-width="0"/>
+<text x="442.0" y="233.9" font-size="11" fill="#CC79A7">88</text>
+<text x="505.0" y="88.0" font-size="15" font-weight="700">b</text>
+<text x="523.0" y="88.0" font-size="13" font-weight="700">Finding rate</text>
+<circle cx="531.0" cy="107.0" r="3" fill="#0072B2"/>
+<text x="544.0" y="111.0" font-size="11">Fan-out audit</text>
+<circle cx="646.6" cy="107.0" r="3" fill="#E69F00"/>
+<text x="659.6" y="111.0" font-size="11">Convention check</text>
+<path d="M563.0,128.0 V258.0 H930.0" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="559.0" x2="563.0" y1="258.0" y2="258.0" stroke="#6b6b66"/>
+<text x="556.0" y="262.0" font-size="11" text-anchor="end">0</text>
+<line x1="559.0" x2="563.0" y1="214.7" y2="214.7" stroke="#6b6b66"/>
+<text x="556.0" y="218.7" font-size="11" text-anchor="end">20</text>
+<line x1="559.0" x2="563.0" y1="171.3" y2="171.3" stroke="#6b6b66"/>
+<text x="556.0" y="175.3" font-size="11" text-anchor="end">40</text>
+<line x1="559.0" x2="563.0" y1="128.0" y2="128.0" stroke="#6b6b66"/>
+<text x="556.0" y="132.0" font-size="11" text-anchor="end">60</text>
+<text x="517.0" y="193.0" font-size="11" text-anchor="middle" transform="rotate(-90 517.0 193.0)">Findings per 100 changes</text>
+<line x1="583.0" x2="583.0" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="583.0" y="275.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="751.5" x2="751.5" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="751.5" y="275.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="920.0" x2="920.0" y1="258.0" y2="262.0" stroke="#6b6b66"/>
+<text x="920.0" y="275.0" font-size="11" text-anchor="middle">Oct 12</text>
+<circle cx="583.0" cy="147.5" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="590.0" y="141.5" font-size="11" fill="#0072B2">51</text>
+<circle cx="751.5" cy="182.7" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="758.5" y="176.7" font-size="11" fill="#0072B2">35</text>
+<circle cx="920.0" cy="201.2" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="927.0" y="215.2" font-size="11" fill="#0072B2">26</text>
+<circle cx="583.0" cy="182.8" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="590.0" y="196.8" font-size="11" fill="#E69F00">35</text>
+<circle cx="751.5" cy="187.3" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="758.5" y="201.3" font-size="11" fill="#E69F00">33</text>
+<circle cx="920.0" cy="196.7" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="927.0" y="190.7" font-size="11" fill="#E69F00">28</text>
+<text x="20.0" y="318.0" font-size="15" font-weight="700">c</text>
+<text x="38.0" y="318.0" font-size="13" font-weight="700">Fixed before commit</text>
+<circle cx="46.0" cy="337.0" r="3" fill="#0072B2"/>
+<text x="59.0" y="341.0" font-size="11">Fan-out audit</text>
+<circle cx="161.6" cy="337.0" r="3" fill="#E69F00"/>
+<text x="174.6" y="341.0" font-size="11">Convention check</text>
+<path d="M78.0,358.0 V488.0 H283.3" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="74.0" x2="78.0" y1="488.0" y2="488.0" stroke="#6b6b66"/>
+<text x="71.0" y="492.0" font-size="11" text-anchor="end">0</text>
+<line x1="74.0" x2="78.0" y1="455.5" y2="455.5" stroke="#6b6b66"/>
+<text x="71.0" y="459.5" font-size="11" text-anchor="end">25</text>
+<line x1="74.0" x2="78.0" y1="423.0" y2="423.0" stroke="#6b6b66"/>
+<text x="71.0" y="427.0" font-size="11" text-anchor="end">50</text>
+<line x1="74.0" x2="78.0" y1="390.5" y2="390.5" stroke="#6b6b66"/>
+<text x="71.0" y="394.5" font-size="11" text-anchor="end">75</text>
+<line x1="74.0" x2="78.0" y1="358.0" y2="358.0" stroke="#6b6b66"/>
+<text x="71.0" y="362.0" font-size="11" text-anchor="end">100</text>
+<text x="32.0" y="423.0" font-size="11" text-anchor="middle" transform="rotate(-90 32.0 423.0)">Fixed before commit (%)</text>
+<line x1="98.0" x2="98.0" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="98.0" y="505.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="185.7" x2="185.7" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="185.7" y="505.0" font-size="11" text-anchor="middle">Oct 5</text>
+<line x1="273.3" x2="273.3" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="273.3" y="505.0" font-size="11" text-anchor="middle">Oct 12</text>
+<text x="180.7" y="523.0" font-size="11" text-anchor="middle">Week starting</text>
+<circle cx="98.0" cy="390.5" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="105.0" y="404.5" font-size="11" fill="#0072B2">75</text>
+<circle cx="185.7" cy="364.3" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="192.7" y="358.3" font-size="11" fill="#0072B2">95</text>
+<circle cx="273.3" cy="388.8" r="3.5" stroke="#0072B2" fill="#0072B2" stroke-width="0"/>
+<text x="280.3" y="402.8" font-size="11" fill="#0072B2">76</text>
+<circle cx="98.0" cy="377.1" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="105.0" y="371.1" font-size="11" fill="#E69F00">85</text>
+<circle cx="185.7" cy="373.2" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="192.7" y="387.2" font-size="11" fill="#E69F00">88</text>
+<circle cx="273.3" cy="361.2" r="3.5" stroke="#E69F00" fill="#E69F00" stroke-width="0"/>
+<text x="280.3" y="355.2" font-size="11" fill="#E69F00">98</text>
+<text x="343.3" y="318.0" font-size="15" font-weight="700">d</text>
+<text x="361.3" y="318.0" font-size="13" font-weight="700">Judge: fan-out audit (Oct 20)</text>
+<rect x="364.3" y="332.0" width="10" height="10" fill="#D55E00"/>
+<text x="382.3" y="341.0" font-size="11">real bug</text>
+<rect x="448.9" y="332.0" width="10" height="10" fill="#56B4E9"/>
+<text x="466.9" y="341.0" font-size="11">gone</text>
+<rect x="508.7" y="332.0" width="10" height="10" fill="#8C8C8C"/>
+<text x="526.7" y="341.0" font-size="11">not a bug</text>
+<path d="M401.3,358.0 V488.0 H606.7" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="397.3" x2="401.3" y1="488.0" y2="488.0" stroke="#6b6b66"/>
+<text x="394.3" y="492.0" font-size="11" text-anchor="end">0</text>
+<line x1="397.3" x2="401.3" y1="455.5" y2="455.5" stroke="#6b6b66"/>
+<text x="394.3" y="459.5" font-size="11" text-anchor="end">25</text>
+<line x1="397.3" x2="401.3" y1="423.0" y2="423.0" stroke="#6b6b66"/>
+<text x="394.3" y="427.0" font-size="11" text-anchor="end">50</text>
+<line x1="397.3" x2="401.3" y1="390.5" y2="390.5" stroke="#6b6b66"/>
+<text x="394.3" y="394.5" font-size="11" text-anchor="end">75</text>
+<line x1="397.3" x2="401.3" y1="358.0" y2="358.0" stroke="#6b6b66"/>
+<text x="394.3" y="362.0" font-size="11" text-anchor="end">100</text>
+<text x="355.3" y="423.0" font-size="11" text-anchor="middle" transform="rotate(-90 355.3 423.0)">Share of unfixed notes (%)</text>
+<line x1="421.3" x2="421.3" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="421.3" y="505.0" font-size="11" text-anchor="middle">Sep 28</text>
+<text x="421.3" y="518.0" font-size="10" text-anchor="middle">n = 8</text>
+<line x1="502.5" x2="502.5" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="502.5" y="505.0" font-size="11" text-anchor="middle">Oct 5</text>
+<text x="502.5" y="518.0" font-size="10" text-anchor="middle">n = 52</text>
+<line x1="583.7" x2="583.7" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="583.7" y="505.0" font-size="11" text-anchor="middle">Oct 12</text>
+<text x="583.7" y="518.0" font-size="10" text-anchor="middle">n = 26</text>
+<text x="504.0" y="536.0" font-size="11" text-anchor="middle">Week starting</text>
+<rect x="408.3" y="390.5" width="26.0" height="97.5" fill="none" stroke="#D55E00" stroke-width="1.5"/>
+<rect x="408.3" y="358.0" width="26.0" height="32.5" fill="none" stroke="#8C8C8C" stroke-width="1.5"/>
+<rect x="489.5" y="428.0" width="26.0" height="60.0" fill="#D55E00"/>
+<rect x="489.5" y="375.5" width="26.0" height="52.5" fill="#56B4E9"/>
+<rect x="489.5" y="358.0" width="26.0" height="17.5" fill="#8C8C8C"/>
+<rect x="570.7" y="448.0" width="26.0" height="40.0" fill="#D55E00"/>
+<rect x="570.7" y="413.0" width="26.0" height="35.0" fill="#56B4E9"/>
+<rect x="570.7" y="358.0" width="26.0" height="55.0" fill="#8C8C8C"/>
+<text x="666.7" y="318.0" font-size="15" font-weight="700">e</text>
+<text x="684.7" y="318.0" font-size="13" font-weight="700">Judge: convention check (Oct 20)</text>
+<rect x="687.7" y="332.0" width="10" height="10" fill="#D55E00"/>
+<text x="705.7" y="341.0" font-size="11">still there</text>
+<rect x="790.9" y="332.0" width="10" height="10" fill="#56B4E9"/>
+<text x="808.9" y="341.0" font-size="11">gone</text>
+<rect x="850.7" y="332.0" width="10" height="10" fill="#8C8C8C"/>
+<text x="868.7" y="341.0" font-size="11">not a bug</text>
+<path d="M724.7,358.0 V488.0 H930.0" fill="none" stroke="#6b6b66" stroke-width="1"/>
+<line x1="720.7" x2="724.7" y1="488.0" y2="488.0" stroke="#6b6b66"/>
+<text x="717.7" y="492.0" font-size="11" text-anchor="end">0</text>
+<line x1="720.7" x2="724.7" y1="455.5" y2="455.5" stroke="#6b6b66"/>
+<text x="717.7" y="459.5" font-size="11" text-anchor="end">25</text>
+<line x1="720.7" x2="724.7" y1="423.0" y2="423.0" stroke="#6b6b66"/>
+<text x="717.7" y="427.0" font-size="11" text-anchor="end">50</text>
+<line x1="720.7" x2="724.7" y1="390.5" y2="390.5" stroke="#6b6b66"/>
+<text x="717.7" y="394.5" font-size="11" text-anchor="end">75</text>
+<line x1="720.7" x2="724.7" y1="358.0" y2="358.0" stroke="#6b6b66"/>
+<text x="717.7" y="362.0" font-size="11" text-anchor="end">100</text>
+<text x="678.7" y="423.0" font-size="11" text-anchor="middle" transform="rotate(-90 678.7 423.0)">Share of unfixed notes (%)</text>
+<line x1="744.7" x2="744.7" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="744.7" y="505.0" font-size="11" text-anchor="middle">Sep 28</text>
+<line x1="825.8" x2="825.8" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="825.8" y="505.0" font-size="11" text-anchor="middle">Oct 5</text>
+<text x="825.8" y="518.0" font-size="10" text-anchor="middle">n = 1</text>
+<line x1="907.0" x2="907.0" y1="488.0" y2="492.0" stroke="#6b6b66"/>
+<text x="907.0" y="505.0" font-size="11" text-anchor="middle">Oct 12</text>
+<text x="907.0" y="518.0" font-size="10" text-anchor="middle">n = 1</text>
+<text x="827.3" y="536.0" font-size="11" text-anchor="middle">Week starting</text>
+<rect x="812.8" y="358.0" width="26.0" height="130.0" fill="none" stroke="#56B4E9" stroke-width="1.5"/>
+<rect x="894.0" y="358.0" width="26.0" height="130.0" fill="none" stroke="#8C8C8C" stroke-width="1.5"/>
+<text x="20" y="562" font-size="11">Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a helper or sit in the wrong place · b: lower = fewer flagged, not necessarily better code</text>
+<text x="20" y="578" font-size="11">Data through Oct 20 · 154 sessions · hollow = partial week, under 10 sessions (no rate drawn) or under 10 notes judged · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>
+</svg>
