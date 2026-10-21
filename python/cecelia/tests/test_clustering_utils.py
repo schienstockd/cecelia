@@ -1,11 +1,12 @@
-"""Unit tests for the pure clustering QC helper (cecelia.utils.clustering_utils.cluster_seg_stats).
+"""Unit tests for cecelia.utils.clustering_utils.
 
-Pure/headless — no scanpy, no anndata, no I/O. Pins the per-segment cluster distribution the QC
-sidecar banks: point count, distinct clusters occupied, and the largest-cluster fraction
-(dominance). See qc.jl cluster_qc_findings + COHORT_METRICS."""
+`cluster_seg_stats` (pure) pins the per-segment cluster distribution the QC sidecar banks: point
+count, distinct clusters occupied, and the largest-cluster fraction (dominance). See qc.jl
+cluster_qc_findings + COHORT_METRICS. `find_populations` gets one small end-to-end run."""
 import unittest
 
 import numpy as np
+import pandas as pd
 
 from cecelia.utils.clustering_utils import cluster_seg_stats
 
@@ -84,3 +85,32 @@ class TestSplitBackExtraObs(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestFindPopulationsReadOnlyMatrix(unittest.TestCase):
+    """A feature matrix built from a DataFrame (as clustPops' runner does) is read-only under
+    pandas copy-on-write; the in-place transform/normalise steps must not fail writing into it.
+
+    The graph steps are stubbed: they don't write X, and scanpy's neighbour graph segfaults on the
+    macOS CI runner."""
+
+    def test_matrix_from_dataframe(self):
+        from unittest import mock
+
+        import anndata as ad
+        from cecelia.utils import clustering_utils
+
+        def fake_leiden(adata, key_added, **_kw):
+            adata.obs[key_added] = pd.Categorical(["0"] * adata.n_obs)
+
+        rng = np.random.default_rng(0)
+        df = pd.DataFrame(rng.random((60, 3)), columns=["a", "b", "c"])
+        X = df[["a", "b", "c"]].to_numpy(dtype=np.float32)
+        self.assertFalse(X.flags.writeable)              # the precondition the bug needs
+        adata = ad.AnnData(X)
+        with mock.patch.object(clustering_utils.sc.pp, "neighbors"), \
+             mock.patch.object(clustering_utils.sc.tl, "leiden", side_effect=fake_leiden):
+            clustering_utils.find_populations(adata, transformation="log", create_umap=False,
+                                              backend="cpu")
+        self.assertEqual(len(adata.obs["clusters"]), 60)
+        self.assertLessEqual(float(adata.X.max()), 1.0)  # normalised in place
