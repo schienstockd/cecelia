@@ -127,6 +127,39 @@ end
   end
 end
 
+@testset "HPC dispatch: a series read takes its store's metadata along" begin
+    mktempdir() do proj
+        store = joinpath(proj, "0", "i1", "ccidImage.ome.zarr")
+        mkpath(joinpath(store, "0", "0")); mkpath(joinpath(store, "OME"))
+        write(joinpath(store, ".zgroup"), "{}"); write(joinpath(store, ".zattrs"), "{}")
+        write(joinpath(store, "OME", "METADATA.ome.xml"), "<OME/>")
+        write(joinpath(store, "METADATA.ome.xml"), "<OME/>")       # the legacy root location
+        write(joinpath(store, "0", ".zgroup"), "{}")
+        write(joinpath(store, "0.normstats"), "{}")
+        series = joinpath(store, "0")
+        @test Set(Cecelia.hpc_read_companions(series)) == Set([joinpath(store, "0.normstats"),
+            joinpath(store, "OME"), joinpath(store, "METADATA.ome.xml"), joinpath(store, ".zattrs"),
+            joinpath(store, ".zgroup")])
+        @test Cecelia.hpc_read_companions(series * "/") == Cecelia.hpc_read_companions(series)
+        @test isempty(Cecelia.hpc_read_companions(store))           # a flat store: nothing beside it
+        labels = joinpath(proj, "1", "i1", "labels", "x.zarr"); mkpath(labels)
+        @test isempty(Cecelia.hpc_read_companions(labels))          # `labels/` is not a zarr group
+
+        if _HPC_DISPATCH_E2E
+            mktempdir() do root
+                d = Cecelia.HpcDispatch("t", HpcLocalConn(), LocalShellBackend(), root, proj, mktempdir(),
+                                        "cpu", HpcResources(), "")
+                Cecelia._hpc_sync_reads!(d, Cecelia.hpc_with_companions([series]); on_log = _ -> nothing)
+                mstore = joinpath(Cecelia.hpc_mirror_dir(d), "0", "i1", "ccidImage.ome.zarr")
+                @test isfile(joinpath(mstore, "OME", "METADATA.ome.xml"))
+                @test isfile(joinpath(mstore, "METADATA.ome.xml"))
+                @test isfile(joinpath(mstore, "0.normstats")) && isfile(joinpath(mstore, ".zattrs"))
+                @test isdir(joinpath(mstore, "0", "0"))
+            end
+        end
+    end
+end
+
 @testset "HPC dispatch: refusals before anything is queued" begin
     mktempdir() do dir
         img = CciaImage(; uid = "u1", name = "u1", dir = joinpath(dir, "1", "u1"))
