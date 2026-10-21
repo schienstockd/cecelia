@@ -461,6 +461,8 @@ end
         "/api/update/apply", "/api/update/revert",
         "/api/hpc/test",   # would ssh to whatever host the config names
         "/api/hpc/env/install",   # would submit an install job to it
+        "/api/observer/register", # runs `claude mcp add-json` / removes local-scope entries (runtests
+                                  # also sandboxes CLAUDE_CONFIG_DIR — this keeps the CLI out entirely)
     ]
     # counts pinned below: 67 GET, 92 POST, 17 not live-called
 

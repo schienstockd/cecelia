@@ -19,6 +19,12 @@ import DataFrames: DataFrame, nrow   # only the symbols the tests construct/meas
 #
 # Set `CECELIA_DEV_DIR` yourself to run against a specific config instead. Julia deletes both temp dirs
 # at exit. Paths go in TOML *literal* strings (single quotes) so Windows backslashes are not escapes.
+# Never reach the developer's real Claude config. Every `claude` the code spawns for the default
+# profile (`mcp add-json`, `auth status`/`logout`, …) inherits this process's env, and with no
+# CLAUDE_CONFIG_DIR it writes `~/.claude.json` (e.g. the MCP registration). Unconditional: a
+# CLAUDE_CONFIG_DIR already in the shell is just as real.
+ENV["CLAUDE_CONFIG_DIR"] = mktempdir()
+
 if !haskey(ENV, "CECELIA_DEV_DIR")
     let cfg = mktempdir(), proj = mktempdir()
         write(joinpath(cfg, "custom.toml"), "[dirs]\nprojects = '" * proj * "'\n")

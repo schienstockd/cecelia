@@ -377,8 +377,12 @@ end
             @test !any(startswith(e, string(k, "=")) for e in applied.env)
         end
 
-        # default profile via apply → still scrubs, does not set CLAUDE_CONFIG_DIR
-        applied_default = Cecelia._apply_claude_env(base, "")
+        # default profile via apply → still scrubs, does not set CLAUDE_CONFIG_DIR. `addenv` copies the
+        # process env, and runtests.jl sandboxes CLAUDE_CONFIG_DIR for the whole suite — unset it here so
+        # the check sees only what `_apply_claude_env` adds.
+        applied_default = withenv("CLAUDE_CONFIG_DIR" => nothing) do
+            Cecelia._apply_claude_env(base, "")
+        end
         @test !any(startswith(e, "CLAUDE_CONFIG_DIR=") for e in applied_default.env)
         @test !any(startswith(e, "ANTHROPIC_AUTH_TOKEN=") for e in applied_default.env)
     end
