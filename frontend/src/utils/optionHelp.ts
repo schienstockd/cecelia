@@ -24,3 +24,15 @@ export function selectedOptionHelp(
   // or a bool, so a strict === would silently never match those.
   return options.find(o => String(o.value) === v)?.help ?? ''
 }
+
+/**
+ * The option value a `select` picked, in the spec's own type. The DOM hands back a string, so a numeric
+ * option (`logBase`: 0 / 2 / 10) would otherwise reach the backend as "10". Falls back to the string.
+ */
+export function selectedOptionValue<V>(
+  options: readonly { value: V }[] | undefined,
+  domValue: string,
+): V | string {
+  const hit = options?.find(o => String(o.value) === domValue)
+  return hit ? hit.value : domValue
+}

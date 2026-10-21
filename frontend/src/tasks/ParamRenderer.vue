@@ -15,7 +15,7 @@ import { requestEnvInstall, onSystemEnvsChanged } from '../utils/systemEnvs'
 import { useLogStore } from '../stores/log'
 import InlineNote from '../components/InlineNote.vue'
 import SuggestInput from '../components/SuggestInput.vue'
-import { selectedOptionHelp } from '../utils/optionHelp'
+import { selectedOptionHelp, selectedOptionValue } from '../utils/optionHelp'
 import { spanAnchorRate, withDurationLabels } from '../utils/frameDuration'
 import { isChosenValueName, preferredValueName, valueNameOptions, showIfSatisfied,
          paramAppliesToImages, resolveParamTip,
@@ -811,7 +811,7 @@ function onChannelUpdate(next: string[]) {
       :options="(param.options ?? []).map(o => ({ value: String(o.value), label: o.label }))"
       :model-value="String(val ?? '')"
       :aria-label="param.label"
-      @update:model-value="v => val = v as string"
+      @update:model-value="v => val = selectedOptionValue(param.options, v as string)"
     />
 
     <!-- select over a model vault: grouped by origin, scoped like the Model vault -->
@@ -824,7 +824,7 @@ function onChannelUpdate(next: string[]) {
     <select v-else-if="param.type === 'select'"
       class="select-input"
       :value="val as string"
-      @change="val = ($event.target as HTMLSelectElement).value"
+      @change="val = selectedOptionValue(param.options, ($event.target as HTMLSelectElement).value)"
       v-tooltip.bottom="shownTip"
     >
       <option v-for="opt in param.options" :key="opt.value" :value="opt.value">
