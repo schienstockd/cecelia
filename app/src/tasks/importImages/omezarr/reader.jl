@@ -237,6 +237,16 @@ function ngff_version(zarr_path::AbstractString)
 end
 
 """
+The metadata files that make `dir` a zarr GROUP, in either format: `.zgroup` (+ `.zattrs`) for v2,
+`zarr.json` for v3. Empty when `dir` is not a group. Paths only, nothing is parsed — for a caller that
+has to copy a group's own metadata alongside one of its children.
+"""
+function zarr_group_meta_files(dir::AbstractString)::Vector{String}
+    isfile(joinpath(dir, ".zgroup")) || isfile(joinpath(dir, "zarr.json")) || return String[]
+    filter(isfile, [joinpath(dir, f) for f in (".zgroup", ".zattrs", "zarr.json")])
+end
+
+"""
 Metadata of a zarr ARRAY directory (`shape`, `chunks`, dtype/codecs), for either format — `.zarray`
 (v2) or `zarr.json` (v3). `nothing` when unreadable. Both carry `shape`, so a caller that only needs
 the extent can treat them alike; anything format-specific must branch explicitly.

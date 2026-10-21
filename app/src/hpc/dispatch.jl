@@ -245,8 +245,33 @@ function _hpc_classify(d::HpcDispatch, paths::AbstractVector{<:AbstractString}, 
     out
 end
 
-# Upload the declared reads. Directories (zarr stores) go with `--delete`, so a chunk removed here is
-# removed there too: a stale chunk would otherwise read as data where this machine has fill value.
+# What else a declared read needs beside it. An image read is often a series INSIDE a store
+# (`ccidImage.ome.zarr/0`) whose OME-XML and group attributes live at the store root, one level up —
+# the reader falls back there. And `<read>.normstats` is the whole-image normalisation cache: without
+# it the cluster recomputes over every plane (the name is `norm_cache.SUFFIX`'s). Only paths that exist
+# here are returned. The root files are the ones `ome_xml_utils.load_ome_xml` falls back to.
+function hpc_read_companions(path::AbstractString)::Vector{String}
+    p = rstrip(String(path), ('/', '\\'))
+    out = String[]
+    ispath(p * ".normstats") && push!(out, p * ".normstats")
+    parent = dirname(p)
+    group = zarr_group_meta_files(parent)
+    if !isempty(group)
+        append!(out, group)
+        for f in ("OME", "METADATA.ome.xml")
+            ispath(joinpath(parent, f)) && push!(out, joinpath(parent, f))
+        end
+    end
+    out
+end
+
+# The declared reads plus their companions: what is synced, fingerprinted and checked, so a changed
+# root OME-XML is a different run too.
+hpc_with_companions(reads::AbstractVector{<:AbstractString})::Vector{String} =
+    unique(vcat(String.(reads), reduce(vcat, hpc_read_companions.(reads); init = String[])))
+
+# Upload the reads. Directories (zarr stores) go with `--delete`, so a chunk removed here is removed
+# there too: a stale chunk would otherwise read as data where this machine has fill value.
 function _hpc_sync_reads!(d::HpcDispatch, reads::AbstractVector{<:AbstractString}; on_log::Function)
     g = _hpc_classify(d, reads, "Input")
     sent = 0
@@ -374,6 +399,7 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
                      env::Union{Symbol,Nothing} = nothing,
                      on_log::Function = println, on_progress::Function = (n, t) -> nothing)::Bool
     try
+        reads = hpc_with_companions(reads)
         isnothing(env) || throw(HpcError("The '$(pixi_env_name(env))' environment is not available on the cluster"))
         isabspath(String(script_rel)) && throw(HpcError("Custom tasks cannot run on the cluster yet"))
         rel_script = startswith(String(script_rel), "tasks/") ? "app/src/" * script_rel :

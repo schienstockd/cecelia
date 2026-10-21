@@ -214,6 +214,11 @@ Porting a task means declaring its `run_py` reads and writes, and giving its spe
 plus a complete `"hpc"` block. The steps are in [`MODULES.md`](MODULES.md) → *Porting a task to
 HPC*, and a ratchet in `app/test/suite/hpc_dispatch.jl` holds them.
 
+Declare the path the runner opens; its companions go along by themselves (`hpc_read_companions`,
+applied once per dispatch, so they also count toward the reattach fingerprint). A series inside a store
+(`ccidImage.ome.zarr/0`) takes the store root's `OME/` (or legacy root `METADATA.ome.xml`) and group
+attributes, since the OME-XML reader falls back there. Any read takes its `<path>.normstats` cache.
+
 ## Testing
 
 | Where | What | How |
