@@ -255,8 +255,10 @@ function hpc_read_companions(path::AbstractString)::Vector{String}
     out = String[]
     ispath(p * ".normstats") && push!(out, p * ".normstats")
     parent = dirname(p)
-    if any(f -> isfile(joinpath(parent, f)), (".zgroup", "zarr.json"))
-        for f in ("OME", "METADATA.ome.xml", ".zattrs", ".zgroup", "zarr.json")
+    group = zarr_group_meta_files(parent)
+    if !isempty(group)
+        append!(out, group)
+        for f in ("OME", "METADATA.ome.xml")
             ispath(joinpath(parent, f)) && push!(out, joinpath(parent, f))
         end
     end
