@@ -131,6 +131,10 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
     silently falls back to CPU (logged)."""
     _log = log if callable(log) else (lambda _m: None)
 
+    # Every step below rewrites `adata.X` in place, so it must be writable. A matrix built with
+    # `DataFrame.to_numpy()` is a read-only view under pandas 3 copy-on-write, even when converting
+    # the dtype; copy only then.
+    adata.X = np.require(adata.X, requirements="W")
     apply_transform(adata, transformation=transformation, log_base=log_base)
     normalise_adata(adata, axis=axis, to_median=to_median, max_fraction=max_fraction,
                     percentile=percentile, percentile_bottom=percentile_bottom)

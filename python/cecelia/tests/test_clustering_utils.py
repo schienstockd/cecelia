@@ -1,11 +1,12 @@
-"""Unit tests for the pure clustering QC helper (cecelia.utils.clustering_utils.cluster_seg_stats).
+"""Unit tests for cecelia.utils.clustering_utils.
 
-Pure/headless — no scanpy, no anndata, no I/O. Pins the per-segment cluster distribution the QC
-sidecar banks: point count, distinct clusters occupied, and the largest-cluster fraction
-(dominance). See qc.jl cluster_qc_findings + COHORT_METRICS."""
+`cluster_seg_stats` (pure) pins the per-segment cluster distribution the QC sidecar banks: point
+count, distinct clusters occupied, and the largest-cluster fraction (dominance). See qc.jl
+cluster_qc_findings + COHORT_METRICS. `find_populations` gets one small end-to-end run."""
 import unittest
 
 import numpy as np
+import pandas as pd
 
 from cecelia.utils.clustering_utils import cluster_seg_stats
 
@@ -84,3 +85,19 @@ class TestSplitBackExtraObs(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestFindPopulationsReadOnlyMatrix(unittest.TestCase):
+    """A feature matrix built from a DataFrame (as clustPops' runner does) is read-only under
+    pandas copy-on-write; clustering must not fail writing into it."""
+
+    def test_matrix_from_dataframe(self):
+        import anndata as ad
+        from cecelia.utils.clustering_utils import find_populations
+
+        rng = np.random.default_rng(0)
+        df = pd.DataFrame(rng.random((60, 3)), columns=["a", "b", "c"])
+        X = df[["a", "b", "c"]].to_numpy(dtype=np.float32)
+        adata = ad.AnnData(X)
+        find_populations(adata, create_umap=False, backend="cpu")
+        self.assertEqual(len(adata.obs["clusters"]), 60)
