@@ -27,6 +27,11 @@ function _str_list(params, key)::Vector{String}
     filter(x -> !isempty(x) && x != "NONE", xs)
 end
 
+# An integer-valued `select` (e.g. `logBase`) may arrive as its string — params saved by a form that
+# sent the DOM value. Shared with clustTracks.
+_int_param(params, key, default)::Int =
+    (v = get(params, key, default); v isa Integer ? Int(v) : parse(Int, string(v)))
+
 # Typed shape of what `_run_task(::ClustPops, …)` reads from `params`. `popsToCluster` and
 # `clusterMeasures` are multi-select strings normalised via `_str_list` (drops blanks + NONE).
 Base.@kwdef struct ClustPopsParams
@@ -58,7 +63,7 @@ function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
         normalisePercentile        = Float64(get(d, "normalisePercentile", 99.8)),
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
-        logBase                    = Int(get(d, "logBase", 0)),
+        logBase                    = _int_param(d, "logBase", 0),
         mergeUmap                  = Bool(get(d, "mergeUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))

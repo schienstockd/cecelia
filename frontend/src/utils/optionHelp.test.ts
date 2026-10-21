@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { selectedOptionHelp } from './optionHelp'
+import { selectedOptionHelp, selectedOptionValue } from './optionHelp'
 
 const OPTS = [
   { label: 'Median', value: 'median', help: 'Photon-limited data.' },
@@ -29,5 +29,23 @@ describe('selectedOptionHelp', () => {
     // strict === would silently never match — leaving the note missing for exactly those params
     expect(selectedOptionHelp([{ label: 'Two', value: '2', help: 'two' }], 2)).toBe('two')
     expect(selectedOptionHelp([{ label: 'Yes', value: 'true', help: 'yes' }], true)).toBe('yes')
+  })
+})
+
+describe('selectedOptionValue', () => {
+  const NUM = [{ label: 'Ln', value: 0 }, { label: 'Log2', value: 2 }, { label: 'Log10', value: 10 }]
+
+  it('returns a numeric option as a number, not the DOM string', () => {
+    expect(selectedOptionValue(NUM, '10')).toBe(10)
+    expect(selectedOptionValue(NUM, '0')).toBe(0)
+  })
+
+  it('keeps string options as they are', () => {
+    expect(selectedOptionValue(OPTS, 'gated')).toBe('gated')
+  })
+
+  it('falls back to the DOM string when no option matches', () => {
+    expect(selectedOptionValue(NUM, '5')).toBe('5')
+    expect(selectedOptionValue(undefined, 'x')).toBe('x')
   })
 })

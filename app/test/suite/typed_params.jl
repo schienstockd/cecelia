@@ -508,6 +508,10 @@ end
         @test p.resolution === 1.0
         @test p.transformation == "NONE"
     end
+    # `logBase` is an integer `select`: a form that sent the DOM string ("10") must not crash the parse.
+    @test Cecelia.parse_clust_pops_params(Dict{String,Any}("logBase" => "10")).logBase === 10
+    @test Cecelia.parse_clust_pops_params(Dict{String,Any}("logBase" => 2)).logBase === 2
+    @test Cecelia.parse_clust_tracks_params(Dict{String,Any}("logBase" => "0")).logBase === 0
 
     # clustTracks — same shape as clustPops plus minTracklength. No `popType`: each picked pop's
     # type is discovered at read (pop_df_multi), so a stray `popType` key is simply ignored.

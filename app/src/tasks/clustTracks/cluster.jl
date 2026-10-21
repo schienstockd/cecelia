@@ -61,7 +61,7 @@ function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
         normalisePercentile        = Float64(get(d, "normalisePercentile", 99.8)),
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
-        logBase                    = Int(get(d, "logBase", 0)),
+        logBase                    = _int_param(d, "logBase", 0),
         mergeUmap                  = Bool(get(d, "mergeUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
