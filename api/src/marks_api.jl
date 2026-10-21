@@ -140,7 +140,7 @@ function _mark_ws_payload(m::Mark)::Dict{String,Any}
 end
 
 # Multi-source select envelope. `objectKind` tells the frontend which linkedSelection scope
-# (tracks / cells) to write and which viewer setter to loop through per source.
+# (tracks / cells) to write and which viewer setter outlines the open image's source.
 function _mark_ws_payload(m::SelectMark)::Dict{String,Any}
     common = Dict{String,Any}(
         "type"       => "viewer:mark",
@@ -250,8 +250,8 @@ Reply: `{ ok:true, markerId }`
 Multi-source point-out — the reverse of the plot-brush emit shape. Claude selects on a plot
 panel (or reasons about which tracks/cells to highlight across several images at once), and the
 frontend writes a single perSource-keyed linkedSelection bag so every subscribed plot lights up
-in one atomic update. Also mirrors per-source into the viewer's own highlight setters so the open
-image gets outlined too.
+in one atomic update. The viewer's outline is one image, so the frontend outlines the open image's
+source (`linkedSelection.ts::outlineSource`), or the first source when that image isn't in the set.
 
 `kind` is the OBJECT kind — "track" or "cell" — same semantics as `mark_tracks` / `mark_cells`.
 `pop` is optional; empty for a (uid, vn)-scoped write (matches the boxplot renderer's fallback).

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   GRID_DENSITY_MIN, GRID_DENSITY_MAX, GRID_DENSITY_DEFAULT,
-  clampDensity, columnLetters, cellLabel, gridCells,
+  clampDensity, columnLetters, cellLabel, gridCells, parseCellLabel,
 } from './gridOverlay'
 
 describe('density bounds', () => {
@@ -51,5 +51,19 @@ describe('cellLabel + gridCells', () => {
     expect(g[1]).toEqual({ row: 0, col: 1, label: 'B1' })
     expect(g[4]).toEqual({ row: 1, col: 0, label: 'A2' })    // row 2 starts after 4 cols
     expect(g[11]).toEqual({ row: 2, col: 3, label: 'D3' })
+  })
+})
+
+describe('parseCellLabel', () => {
+  it('inverts cellLabel over a whole grid, two-letter columns included', () => {
+    for (const c of gridCells(32, 32)) expect(parseCellLabel(c.label, 32)).toEqual({ row: c.row, col: c.col })
+  })
+  it('rejects a tile outside the grid on screen', () => {
+    expect(parseCellLabel('I1', 8)).toBeNull()
+    expect(parseCellLabel('A9', 8)).toBeNull()
+    expect(parseCellLabel('H8', 8)).toEqual({ row: 7, col: 7 })
+  })
+  it('rejects non-labels', () => {
+    for (const s of ['', 'a1', 'A0', '1A', 'B3x', 'ABC1']) expect(parseCellLabel(s, 32)).toBeNull()
   })
 })

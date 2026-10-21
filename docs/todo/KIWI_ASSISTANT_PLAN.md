@@ -405,8 +405,9 @@ Each independently shippable.
    (u,v), ui → a pointer bubble, Blackboard → `/blackboard?entry=`. Tested: API routes with a fake
    engine (`api/test/suite/kiwi_turn.jl`), the pure half in `utils/kiwiTurn.test.ts`.
    **Known gaps:** a population chip lands on the image's gating page, not the population (the
-   selected pop is per-panel state nothing outside can set); a tile chip does nothing (no frontend
-   tile-mark handler exists — `mark_tile` broadcasts are dropped today too); a task chip whose page is
+   selected pop is per-panel state nothing outside can set); a tile chip does nothing (`mark_tile` now draws in the viewer —
+   `TileMarkOverlay.vue` — but the chip's ref is keyed `(t, z)` with no viewport, so it can't say which
+   view its tile was cut from); a task chip whose page is
    already open keeps its current function.
    **First use (user, 2026-09-24, 4kS67f — "which is the best measure to see differences between B
    and T", two summary plots attached):** 21 claims, most a median per image per population ("way too

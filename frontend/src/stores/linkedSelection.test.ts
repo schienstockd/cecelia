@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
-import { useLinkedSelectionStore } from './linkedSelection'
+import { useLinkedSelectionStore, outlineSource } from './linkedSelection'
 
 describe('useLinkedSelectionStore', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -63,5 +63,19 @@ describe('useLinkedSelectionStore', () => {
     expect(s.bag?.scope).toBe('cells')
     expect(s.bag?.ids).toEqual([99, 100])
     expect(s.bag?.source).toBe('b')
+  })
+})
+
+describe('outlineSource', () => {
+  const src = [{ imageUid: 'a', ids: [1] }, { imageUid: 'b', ids: [2] }, { imageUid: 'c', ids: [3] }]
+  it('outlines the open image, not the last source', () => {
+    expect(outlineSource(src, 'b')?.imageUid).toBe('b')
+  })
+  it('falls back to the first source when the open image is not in the selection', () => {
+    expect(outlineSource(src, 'z')?.imageUid).toBe('a')
+    expect(outlineSource(src, undefined)?.imageUid).toBe('a')
+  })
+  it('is undefined for no sources', () => {
+    expect(outlineSource([], 'a')).toBeUndefined()
   })
 })

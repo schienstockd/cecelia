@@ -114,8 +114,7 @@ export function useKiwiPoint() {
         let out: { board: string }
         try { out = await openProposedPlot(puid, ref) } catch (e) { return e instanceof Error ? e.message : String(e) }
         await router.push('/analysis')
-        pickBoardTab(puid, out.board)
-        return ''
+        return (await pickBoardTab(puid, out.board)) ? '' : 'That board didn’t open'
       }
       case 'none':
         return tgt.why

@@ -111,6 +111,7 @@ import { PALETTES } from '../plots/plot'
 import StillOverlay from '../components/StillOverlay.vue'
 import GridOverlay from '../components/GridOverlay.vue'
 import LandscapeOverlay from '../components/LandscapeOverlay.vue'
+import TileMarkOverlay from '../components/TileMarkOverlay.vue'
 import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL0,
          type LandscapeResult, type AugmentTile } from '../utils/landscape'
 import { plotHostToImageURL, loadImg } from '../plots/export'
@@ -5603,6 +5604,9 @@ onUnmounted(() => {
                         :landscape="landscape" :show-labels="settings.viewerLandscapeLabels" />
       <GridOverlay v-if="settings.viewerGrid && meta && shownT >= 0" :cols="settings.viewerGridDensity"
                    :hide-labels="settings.viewerLandscape && settings.viewerLandscapeLabels" />
+      <!-- Claude's `mark_tile` pointers — same tiles as the grid, shown with the grid on or off -->
+      <TileMarkOverlay v-if="meta && shownT >= 0" :cols="settings.viewerGridDensity"
+                       :marks="viewerStore.tileMarks.filter(m => m.imageUid === imageUid)" />
       <!-- Share-in draw overlay (BIDIR PR #3): mounts DIRECTLY on the viewer so users draw on
            what they're looking at. Triggered from the main-window ViewerPanel's Share button
            via `__cceceliaViewerBeginDraw()` exposed above. -->

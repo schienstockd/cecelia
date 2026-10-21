@@ -8,7 +8,7 @@ import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 import { useLabCaptureStore } from './labCapture'
 import { usePushStore } from './push'
-import { useLinkedSelectionStore, linkedSourceKey } from './linkedSelection'
+import { useLinkedSelectionStore, linkedSourceKey, outlineSource } from './linkedSelection'
 import { useBlackboardStore } from './blackboard'
 import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
@@ -324,14 +324,15 @@ export const useWsStore = defineStore('ws', () => {
         // LINKED_BRUSHING follow-up — `select_on_plot` MCP tool. Reverse of the plot-brush emit
         // shape: Claude passes multiple `(imageUid, valueName, pop, ids)` scopes and we write ONE
         // linkedSelection bag with the full perSource map so every subscribed plot lights up in a
-        // single update. `objectKind` picks the scope (tracks / cells). Also fans out into the
-        // viewer's per-image highlight setters — one call per source so the open image outlines
-        // its ids using the same shader path as `mark_tracks` / `mark_cells`.
+        // single update. `objectKind` picks the scope (tracks / cells). The viewer outline is one
+        // bag, so it gets ONE source — the open image's (`outlineSource`) — using the same shader
+        // path as `mark_tracks` / `mark_cells`.
         const objectKind = String(data.objectKind ?? '')
         if (objectKind !== 'track' && objectKind !== 'cell') return
         const rawSources = Array.isArray(data.sources) ? (data.sources as Array<Record<string, unknown>>) : []
         const perSource: Record<string, number[]> = {}
         const flat: number[] = []
+        const valid: Array<{ imageUid: string; valueName: string; ids: number[] }> = []
         for (const s of rawSources) {
           const uid = String(s.imageUid ?? '')
           const vn  = String(s.valueName ?? '')
@@ -340,11 +341,16 @@ export const useWsStore = defineStore('ws', () => {
           if (!uid || !vn || !ids.length) continue
           perSource[linkedSourceKey(uid, vn, pop)] = ids
           for (const id of ids) flat.push(id)
-          if (objectKind === 'track') {
-            viewer.setTrackHighlight({ imageUid: uid, valueName: vn, trackIds: ids, label, origin: 'claude' })
-          } else {
-            viewer.setPickHighlight({ imageUid: uid, valueName: vn, labels: ids, focusId: 0, label, origin: 'claude' })
-          }
+          valid.push({ imageUid: uid, valueName: vn, ids })
+        }
+        const shown = outlineSource(valid, viewer.openImage?.imageUid)
+        // two pops on the outlined (image, vn) share its id space — outline their union, not just the first
+        const ids = shown ? [...new Set(valid.filter(v => v.imageUid === shown.imageUid && v.valueName === shown.valueName)
+                                             .flatMap(v => v.ids))] : []
+        if (shown && objectKind === 'track') {
+          viewer.setTrackHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, trackIds: ids, label, origin: 'claude' })
+        } else if (shown) {
+          viewer.setPickHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, labels: ids, focusId: 0, label, origin: 'claude' })
         }
         if (flat.length) {
           useLinkedSelectionStore().set({
@@ -353,6 +359,12 @@ export const useWsStore = defineStore('ws', () => {
             perSource,
           })
         }
+      } else if (data.kind === 'tile') {
+        // `mark_tile`: a Set-of-Mark tile id ("B3"). `TileMarkOverlay` in the viewer draws it.
+        const markerId = String(data.markerId ?? '')
+        const cellId   = String(data.cellId   ?? '')
+        const ttl      = Number(data.ttlSeconds ?? 300)
+        if (markerId && imageUid && cellId) viewer.pushTileMark({ markerId, imageUid, cellId, label, ttlSeconds: ttl })
       } else if (data.kind === 'plot') {
         // BIDIR PR #4b. Plot point-out — Claude's "look at THIS spot on that panel". Consumers
         // (per plot family) filter by `(family, plotId, cell?)` and render a marker at their
@@ -415,7 +427,7 @@ export const useWsStore = defineStore('ws', () => {
       // import in tests; the browser only pays the (already-loaded) main-chunk cost.
       void import('../main').then(({ router }) => router.push(path).then(() => {
         // board selection waits for `/analysis` to mount (`utils/boardNav.ts`)
-        if (path === '/analysis' && boardName) pickBoardTab(projectUid || openProj, boardName)
+        if (path === '/analysis' && boardName) void pickBoardTab(projectUid || openProj, boardName)
       }))
     }
 
