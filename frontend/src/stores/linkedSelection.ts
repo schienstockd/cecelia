@@ -61,6 +61,14 @@ export interface LinkedSelectionBag {
 export const linkedSourceKey = (uid: string, vn: string, pop: string = ''): string =>
   pop ? `${uid}|${vn}|${pop}` : `${uid}|${vn}`
 
+/** Which source of a multi-image selection the viewer outlines. The viewer's track/pick outline
+ *  is ONE bag (one image), so writing every source in turn left only the last one outlined — the
+ *  image actually open lost its outline whenever it wasn't last. Prefer the open image; else the
+ *  first source, so switching to it later still shows something. */
+export function outlineSource<S extends { imageUid: string }>(sources: S[], openImageUid: string | undefined): S | undefined {
+  return sources.find(s => s.imageUid === openImageUid) ?? sources[0]
+}
+
 export const useLinkedSelectionStore = defineStore('linkedSelection', () => {
   /** The current bag, or `null` when nothing is selected. Deliberately `null` (not an empty
    *  bag) for the idle state — subscribers use `isEmpty` and the dim rule only fires when

@@ -50,3 +50,15 @@ export function gridCells(nCols: number, nRows: number): GridCell[] {
   }
   return out
 }
+
+// Inverse of `cellLabel`: "B3" → { row: 2, col: 1 }. `null` for anything that isn't a label, or
+// that falls outside an `nCols × nRows` grid (a tile id from a denser grid than the one on screen).
+export function parseCellLabel(label: string, nCols: number, nRows: number = nCols): { row: number; col: number } | null {
+  const m = /^([A-Z]{1,2})([1-9][0-9]?)$/.exec(label.trim())
+  if (!m) return null
+  let col = 0
+  for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64)
+  col -= 1
+  const row = Number(m[2]) - 1
+  return col < nCols && row < nRows ? { row, col } : null
+}

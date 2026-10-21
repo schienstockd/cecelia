@@ -8,8 +8,9 @@
 # `viewer:seek` frame just fires the setter it already exposes.
 #
 # NOT ephemeral, NOT a mark. A seek is imperative (last one wins); no TTL, no ring, no server-side
-# state. Fire-and-forget: if no browser is paired for this project, the WS frame reaches nobody and
-# the MCP tool returns `{ok: false, reason: "no_browser"}` so Claude can fall back to prose.
+# state. Fire-and-forget: if no browser is open on this project, the WS frame reaches nobody and the
+# reply is still `{ok: true}` — the server can't tell. The MCP docstring tells Claude to ask in prose
+# when it can't tell whether the seek landed.
 #
 # ADDITIVE WRITE — no viewer mutation on the server side, no data touched (gates, populations,
 # h5ad all unchanged). The frontend applies the seek by moving the camera; the popup's own

@@ -244,6 +244,17 @@ export interface FreeformMark {
   expiresAt: number
 }
 
+/** `mark_tile` pointer — "look at THIS region" by Set-of-Mark tile id ("B3"). Ephemeral. Viewport
+ *  coords like the grid it names: drawn over the tile of the CURRENT view, at the grid density on
+ *  screen. Scoped to `imageUid` so a mark for another image doesn't paint on this one. */
+export interface TileMark {
+  markerId: string
+  imageUid: string
+  cellId: string
+  label: string
+  expiresAt: number
+}
+
 /** BIDIR PR #4b plot point-out — "look at THIS spot on that panel". Ephemeral.
  *  `family` names the plot family (`gate-scatter`, `umap`, `heatmap`, `image-strip`, `cell-cards`,
  *  `pairs-matrix`, `hmm-states`, `hmm-transitions`). `plotId` addresses ONE panel — the panel's
@@ -303,6 +314,8 @@ export const useViewerStore = defineStore('viewer', () => {
   // BIDIR PR #4b — ephemeral plot point-outs (see PlotMark). Session-only. Consumers filter by
   // `(family, plotId, cell?)` and render a marker at their `getFrame().fromNorm(u, v)`.
   const plotMarks     = ref<PlotMark[]>([])
+  // `mark_tile` pointers (see TileMark). Session-only, TTL-pruned like the bags above.
+  const tileMarks     = ref<TileMark[]>([])
   /** Monotonic tick bumped whenever the SERVER's `/Pick selection` pop membership changes — the
    *  correction cockpit watches this to know when to re-fetch membership. Same-window signal (a
    *  storage event does NOT fire in the writer's own window); the cross-window channel is
@@ -494,6 +507,16 @@ export const useViewerStore = defineStore('viewer', () => {
     plotMarks.value = plotMarks.value.filter(x => x.markerId !== markerId)
   }
 
+  /** A tile pointer. A second mark on the same (image, tile) supersedes — same rule as `pushPlotMark`. */
+  function pushTileMark(m: Omit<TileMark, 'expiresAt'> & { ttlSeconds: number }) {
+    const entry: TileMark = { markerId: m.markerId, imageUid: m.imageUid, cellId: m.cellId,
+                              label: m.label, expiresAt: Date.now() + m.ttlSeconds * 1000 }
+    tileMarks.value = [...tileMarks.value.filter(x => !(x.imageUid === entry.imageUid && x.cellId === entry.cellId)), entry]
+    window.setTimeout(() => {
+      tileMarks.value = tileMarks.value.filter(x => x.markerId !== entry.markerId)
+    }, m.ttlSeconds * 1000)
+  }
+
   /** Correction cockpit calls this whenever pick membership or Review focus changes. `null` (or an
    *  empty labels + zero focus) clears the pick outline. Stamped like `setTrackHighlight` so a
    *  repeat write with the same labels still wakes the popup viewer. */
@@ -536,12 +559,12 @@ export const useViewerStore = defineStore('viewer', () => {
 
   return { openImage, visibleRegion, previewBox, setPreviewBox, viewState, pendingViewState, previewLabels, previewImages, liveLabels,
            trackHighlight, labelsDimMismatch, pickHighlight, pickSelectionTick,
-           uiMarks, freeformMarks, plotMarks,
+           uiMarks, freeformMarks, plotMarks, tileMarks,
            setOpenImage, setVisibleRegion, setViewState, setPendingViewState,
            consumePendingViewState, setPreviewLabels, setPreviewImages, setLiveLabels, setTrackHighlight,
            setLabelsDimMismatch, setPickHighlight, bumpPickSelectionTick,
            pushUiMark, dismissUiMark, pushFreeformMark, dismissFreeformMark,
-           pushPlotMark, dismissPlotMark }
+           pushPlotMark, dismissPlotMark, pushTileMark }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useViewerStore, import.meta.hot))
