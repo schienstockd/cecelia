@@ -36,7 +36,8 @@ test whether an agent can actually use the framework.
    notes describe the same gap is the owner's read: no judge step compares notes.
 3. **Bug sweep** (`bugs.py`). Candidates are fanout findings logged since the last pass that were
    never fixed (`shipped_with_finding`, `dropped_no_action`, `false_positive`, untagged, and every
-   `plausible` note not tagged `fixed_pre_commit`), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
+   `plausible` note not tagged `fixed_pre_commit`; a finding's tag is the newest resolution on its own
+   branch, since two worktrees flagging one `file:line` share a slug), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
    come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
    - a finding whose branch hasn't reached the SHA is `unmerged` and waits;
