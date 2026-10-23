@@ -19,6 +19,7 @@ import ConfirmButton from './ConfirmButton.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import CreateProfileDialog from './profile/CreateProfileDialog.vue'
 import HpcSettings from './HpcSettings.vue'
+import { preferencesPane, type PreferencesPane } from '../lib/preferencesOpen'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useMcpConnections } from '../composables/useMcpConnections'
 import { useObserverStore } from '../stores/observer'
@@ -37,7 +38,7 @@ const appCtl   = useAppControlStore()
 // Profiles is FIRST — it's the identity primitive every other pane's setting hangs off, and the
 // answer to "how do I switch" needs to be one click away. The other panes follow roughly by how
 // often they get touched.
-type CategoryId = 'profiles' | 'interface' | 'viewer' | 'movies' | 'layout' | 'kiwi' | 'lablog' | 'hpc'
+type CategoryId = PreferencesPane
 const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'profiles',  label: 'Profiles',  icon: 'pi-user' },
   { id: 'interface', label: 'Interface', icon: 'pi-sliders-h' },
@@ -48,7 +49,7 @@ const CATEGORIES: { id: CategoryId; label: string; icon: string }[] = [
   { id: 'lablog',    label: 'Lab log',   icon: 'pi-book' },
   { id: 'hpc',       label: 'HPC',       icon: 'pi-server' },
 ]
-const active = ref<CategoryId>('profiles')
+const active = ref<CategoryId>(preferencesPane.value)
 
 // ── Profiles pane state ──────────────────────────────────────────────────────
 // Roster is server truth (custom.toml [ai].profile + user-profiles subdirectories). Local state is

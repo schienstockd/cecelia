@@ -4,6 +4,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useCopyFlash } from '../composables/useCopyFlash'
+import { useSavedFlash } from '../composables/useFlash'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
@@ -360,7 +361,7 @@ async function removePlugin(name: string) {
 
 const editName = ref(projectMeta.current?.name ?? '')
 const saving   = ref(false)
-const saved    = ref(false)
+const { saved, flash: flashSaved } = useSavedFlash()
 
 // Reset when project changes
 watch(() => projectMeta.current?.name, n => { editName.value = n ?? '' })
@@ -370,10 +371,7 @@ async function saveName() {
   saving.value = true
   const ok = await projectMeta.renameProject(editName.value)
   saving.value = false
-  if (ok) {
-    saved.value = true
-    setTimeout(() => { saved.value = false }, 2000)
-  }
+  if (ok) flashSaved()
 }
 
 // Project ID copy — shared helper, so it flashes like every other copy button (it previously had no
