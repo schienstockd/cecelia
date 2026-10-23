@@ -16,6 +16,7 @@
  */
 
 import type { SceneAidRender, SceneAidPoint, SceneAidRibbon } from '../../lib/sceneAid'
+import { OVERLAY_GREY } from '../../utils/viewerOverlays'
 
 /** A stable, tiny PRNG — same as `smoothVis.ts`. `Math.random` would make the scene
  *  non-reproducible and a test would pin nothing. */
@@ -36,7 +37,7 @@ export const PREVIEW_PALETTE = ['#ff6b6b', '#4ecdc4', '#ffd93d', '#a78bfa', '#5e
 
 /** Grey stand-in for `all_tracks_colour` in the overlay author (`#9ca3af`) — a whole-seg preview
  *  reads the same neutral tone the movie would. */
-export const ALL_TRACKS_GREY = '#9ca3af'
+export const ALL_TRACKS_GREY = OVERLAY_GREY
 
 /** Stand-in heat ramp (cool → hot) for "speed" tails — structure, not the real `heatRamp`. */
 const PREVIEW_HEAT = ['#1d4ed8', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444']

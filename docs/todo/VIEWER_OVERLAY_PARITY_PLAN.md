@@ -92,6 +92,11 @@ reading for this plan):
 - The viewer's per-pop point eyes (`hiddenPops`) are window-local and transient, so a movie recorded
   from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
   `trackPopHidden`).
+- The viewer's *Pop colour* mask (`utils/maskPopTable.ts`: deepest visible pop wins, parents pale,
+  cells in no pop grey) is not carried into a movie recorded from the viewer: `viewerLook` still sends
+  `maskAllCells`, so the movie draws the per-id palette. A batch's population mask (`mask_id_colours`)
+  agrees on deepest-wins but has no pale rule and leaves ungated cells undrawn. Parity = a look flag
+  plus the pale/grey rule in `mask_id_colours`.
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.

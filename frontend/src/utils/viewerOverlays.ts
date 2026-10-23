@@ -290,6 +290,10 @@ export function timepointRange(buf: PointBuffer, t: number): [number, number] | 
   return buf.ranges.get(Math.round(t)) ?? null
 }
 
+/** The overlay author's neutral (`OVERLAY_GREY`, `api/src/overlay_author.jl`): an all-cells mask, an
+ *  all-tracks tail — whatever a movie draws without a population colour. */
+export const OVERLAY_GREY = '#9ca3af'
+
 /** `#rrggbb` → three floats in 0..1. Unknown or malformed → white, never invisible: a point that is
  *  there but the wrong colour is a bug you can see, one that is not drawn looks like missing data. */
 export function hexToUnit(hex: string | null | undefined): [number, number, number] {

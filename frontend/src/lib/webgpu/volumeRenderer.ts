@@ -39,7 +39,9 @@ import { cacheCapacity, lruEvictions } from '../../utils/volumeCache'
 import { overlayPipelineDescriptor, writeInstances, POINT_VERTEX_LAYOUT, SEG_VERTEX_LAYOUT } from './overlayPasses'
 import { compileShader } from './compileShader'
 import { retireDestroyed } from './retireDestroyed'
-import { LABEL_PALETTE_N, labelPaletteBytes, type MaskStore } from '../../utils/viewerLabels'
+import type { MaskStore } from '../../utils/viewerLabels'
+import type { LabelTable } from '../../utils/maskPopTable'
+import { createLabelColourTexture } from './labelColourTexture'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = MIP_LAYOUT.bytes
@@ -171,6 +173,9 @@ export interface VolumeRenderer {
    * which is what lets the signal under the mask stay readable.
    */
   setLabelStyle(opacity: number, contourPx: number): void
+  /** Colour the mask from a per-id table (`utils/maskPopTable.ts`), or `null` for the per-id palette.
+   *  The same object again is a no-op, so it can be called every frame. */
+  setLabelTable(table: LabelTable | null): void
   /**
    * Highlight a set of label ids with a bright outline, one of them (`focusId`) distinctly so — the
    * correction cockpit's "what am I editing right now" answer, painted on the viewer rather than
@@ -524,13 +529,10 @@ export async function createVolumeRenderer(
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  // The label palette: one row, written once and never again. Ids index it modulo its width.
-  const palTex = device.createTexture({
-    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-  })
-  device.queue.writeTexture({ texture: palTex }, labelPaletteBytes(),
-                            { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1])
+  // The label colours: the per-id palette (ids index it modulo its width), or a population table
+  // (`setLabelTable`).
+  let pal = createLabelColourTexture(device, null)
+  let palTable: LabelTable | null = null
   // Bound wherever a timepoint has no mask, because a bind group must be complete.
   const noLabels = device.createTexture({
     size: [1, 1, 1], dimension: '3d', format: 'r32uint',
@@ -662,7 +664,7 @@ export async function createVolumeRenderer(
         { binding: 1, resource: texture.createView() },
         { binding: 2, resource: lutTex.createView() },
         { binding: 3, resource: (labelTexture ?? noLabels).createView() },
-        { binding: 4, resource: palTex.createView() },
+        { binding: 4, resource: pal.texture.createView() },
         { binding: MIP_PICK_BINDING, resource: { buffer: pickBuffer } },
       ],
     })
@@ -1075,7 +1077,19 @@ export async function createVolumeRenderer(
     setLabelStyle(opacity: number, contourPx: number) {
       u[U.lab.opacity] = Math.max(0, Math.min(1, opacity))
       u[U.lab.contourPx] = Math.max(0, Math.round(contourPx))
-      u[U.lab.paletteRows] = LABEL_PALETTE_N
+      u[U.lab.paletteRows] = pal.rows
+    },
+
+    setLabelTable(table: LabelTable | null) {
+      if (table === palTable || dead || destroyed) return
+      const next = createLabelColourTexture(device, table)
+      pal.texture.destroy()
+      pal = next
+      palTable = table
+      u[U.lab.paletteRows] = pal.rows
+      // every resident slot's bind group names the old texture
+      for (const slot of slots.values()) slot.bindGroup = slotBindGroup(slot.texture, slot.labelTexture)
+      if (boundT >= 0) bindGroup = slots.get(boundT)?.bindGroup ?? null
     },
 
     setPickSet(labels: readonly number[], focusId?: number, contourPx?: number) {
@@ -1202,7 +1216,7 @@ export async function createVolumeRenderer(
       pointBuf?.destroy(); pointBuf = null
       segBuf?.destroy(); segBuf = null
       if (dead) return                     // the device took its resources with it
-      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy(); pickBuffer.destroy()
+      lutTex.destroy(); pal.texture.destroy(); noLabels.destroy(); uniforms.destroy(); pickBuffer.destroy()
       // Detach the canvas swap chain BEFORE the device dies. Without the `unconfigure()` step,
       // `device.destroy()` on the still-bound context left the swap chain in a state the next
       // `ctx.configure(newDevice)` couldn't fully recover from — 2D→3D rendered an empty

@@ -138,8 +138,10 @@ def label_palette() -> np.ndarray:
 
 
 #: Width of a label colour table (``label_table``): ids wrap onto rows of this many texels. Any 2D
-#: texture holds 4096 per side, so a table addresses 16.7 M ids before the last row runs out.
-LABEL_TABLE_W = 4096
+#: texture holds 4096 per side, so a table addresses 16.7 M ids before the last row runs out. From
+#: ``shaders/constants.json``, which the browser viewer's population-coloured mask reads too
+#: (``LABEL_TABLE_W``, ``frontend/src/utils/maskPopTable.ts``).
+LABEL_TABLE_W = int(wgsl_utils.shader_constants()["LABEL_TABLE_W"])
 
 
 def label_table(ids: Sequence[int], rgb: Sequence[Sequence[float]]) -> np.ndarray:
