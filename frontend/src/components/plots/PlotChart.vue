@@ -58,6 +58,20 @@ let legendH = 0
 // stay on the previous chart's note).
 let lastOverrides: AutoOverride[] | null = null
 
+// Category tick labels the builder shortened (plot.ts `fitAxisLabels` → `_tickTitles`, shortened →
+// full) get the full label as a hover title. Plot gives the axis no title channel, so it's added here.
+function titleShortenedTicks(svg: Element, titles: Partial<Record<'x' | 'y', Record<string, string>>> | undefined) {
+  for (const [axis, map] of Object.entries(titles ?? {})) {
+    svg.querySelectorAll(`g[aria-label="${axis}-axis tick label"] text`).forEach(t => {
+      const full = map?.[t.textContent ?? '']
+      if (!full) return
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+      title.textContent = full
+      t.appendChild(title)
+    })
+  }
+}
+
 async function render(pass = 0) {
   if (!host.value) return
   if (!Plot) Plot = await import('@observablehq/plot')
@@ -65,7 +79,7 @@ async function render(pass = 0) {
   // build because the builder needs the width to decide whether the x tick labels fit their bands.
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
-  const buildOpts = { ...props.opts, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const buildOpts = { ...props.opts, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, buildOpts) as any : null
   node?.remove(); node = null
   legendNode?.remove(); legendNode = null
@@ -78,6 +92,7 @@ async function render(pass = 0) {
   // Point Plot's `--plot-background` at the theme ground so a `tip: true` rect matches the plot ink
   // rather than staying white — see `applyPlotTheme`, which every Plot.plot() site now shares.
   applyPlotTheme(node as SVGElement, !!props.opts?.darkTheme)
+  titleShortenedTicks(node, base._tickTitles)
   host.value.append(node)
   // Delegated click on brushable dots (LINKED_BRUSHING_PLAN.md Option B write side). Every
   // brushable dot carries class `cc-brush-dot` (set by the renderer) and Observable Plot binds
@@ -339,7 +354,7 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
   const h = Math.max(140, host.value.clientHeight || 260)
   // the SAME build inputs as the on-screen render (width for the x-label fit, the measured legend band),
   // so the light copy has the on-screen layout and the measured overlays land where they belong
-  const opts = { ...props.opts, darkTheme: false, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const opts = { ...props.opts, darkTheme: false, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, opts) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!base) return null
   const off = Plot.plot({ ...base, width: w, height: h }) as SVGSVGElement
