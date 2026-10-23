@@ -11,6 +11,7 @@ import { nextTick } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { useRouter } from 'vue-router'
 import { useViewerStore } from '../stores/viewer'
+import { DEFAULT_MARK_TTL_S } from '../utils/viewer/markLifetime'
 import { useProjectStore } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { usePlotRegistryStore } from '../stores/plotRegistry'
@@ -25,7 +26,7 @@ import type { KiwiRef, KiwiRefResult } from '../utils/kiwiRef'
 import { resolveAnchor } from '../utils/guideAnchor'
 import { useCaptureFocus } from './useCaptureFocus'
 
-const MARK_TTL_S = 300
+const MARK_TTL_S = DEFAULT_MARK_TTL_S
 const PLOT_POINT_TTL_S = 8      // "here it is" on a panel — a short bubble, not a standing mark
 
 export function useKiwiPoint() {
@@ -53,10 +54,11 @@ export function useKiwiPoint() {
     switch (tgt.action) {
       case 'viewer': {
         if (tgt.tracks) viewer.setTrackHighlight({ imageUid: tgt.imageUid, valueName: tgt.tracks.valueName,
-                                                   trackIds: tgt.tracks.ids, label: caption, origin: 'claude' })
+                                                   trackIds: tgt.tracks.ids, label: caption, origin: 'claude',
+                                                   ttlSeconds: MARK_TTL_S })
         if (tgt.cells) viewer.setPickHighlight({ imageUid: tgt.imageUid, valueName: tgt.cells.valueName,
                                                  labels: tgt.cells.ids, focusId: tgt.cells.ids[0] ?? 0,
-                                                 label: caption, origin: 'claude' })
+                                                 label: caption, origin: 'claude', ttlSeconds: MARK_TTL_S })
         if (tgt.t != null || tgt.z != null) {
           viewer.setPendingViewState({ imageUid: tgt.imageUid,
                                        focus: { ...(tgt.t != null ? { t: tgt.t } : {}), ...(tgt.z != null ? { z: tgt.z } : {}) } })

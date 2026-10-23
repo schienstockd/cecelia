@@ -20,6 +20,10 @@ import { toggleSelected, narrowToSingle } from '../../utils/selection'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../../utils/popRenameRemap'
 import { usePopSelectionMode } from '../../composables/usePopSelectionMode'
 import { ref, computed, watch, onMounted } from 'vue'
+import { useViewerStore, type TrackHighlight, type PickHighlight } from '../../stores/viewer'
+import { assistantMarkOn } from '../../utils/viewer/markLifetime'
+import { escapeClearsSelection } from '../../utils/typingTarget'
+import { useWindowListener } from '../../composables/useKeepAlive'
 import CanvasArrangeButtons from '../../components/canvas/CanvasArrangeButtons.vue'
 import CellSelectionTools from '../../components/CellSelectionTools.vue'
 import { provideGatingStore } from '../../stores/gating'
@@ -64,6 +68,27 @@ const props = withDefaults(defineProps<{
 const isTrack = computed(() => props.popType === 'track')
 // this page's own gating store (Gate: flow, Track: track) — see provideGatingStore
 const g = provideGatingStore(props.popType)
+
+// Claude's rings on these plots (`mark_cells` / `mark_tracks` / `select_on_plot`, drawn by
+// GateScatterCell) lapse at their TTL; this is the "not now" — a button + Escape, the same gesture
+// as BehaviourModule's selection clear. Only the assistant's mark: a user's pick is not ours to drop.
+const viewer = useViewerStore()
+const assistantMark = computed(() =>
+  assistantMarkOn<TrackHighlight | PickHighlight>(isTrack.value ? viewer.trackHighlight : viewer.pickHighlight, props.imageUid))
+const assistantMarkCount = computed(() => {
+  const m = assistantMark.value
+  return !m ? 0 : 'trackIds' in m ? m.trackIds.length : m.labels.length
+})
+function clearAssistantMark() {
+  if (!assistantMark.value) return
+  if (isTrack.value) viewer.setTrackHighlight(null)
+  else viewer.setPickHighlight(null)
+}
+useWindowListener('keydown', e => {
+  if (!escapeClearsSelection(e, !!assistantMark.value)) return
+  clearAssistantMark()
+  e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
+})
 const project = useProjectStore()
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
@@ -564,6 +589,11 @@ function onReshowReannotate(payload: { captureId: string; frameDataUrl: string; 
              gating-capable module page via `CellSelectionTools`. Track pops have no spatial
              selection, so hide the whole cluster. . -->
         <CellSelectionTools :show="!isTrack" />
+        <button v-if="assistantMark" type="button" class="cc-btn cc-btn-dense cc-btn-on cc-btn-on-tint"
+                @click="clearAssistantMark"
+                v-tooltip.bottom="`Clear Claude's highlighted ${isTrack ? 'tracks' : 'cells'} (Esc)`">
+          Clear marks · {{ assistantMarkCount }}
+        </button>
         <CanvasArrangeButtons :count="panels.length" :cols="tileCols"
                               @update:cols="tileCols = $event"
                               @tile="arrangeGrid(tileCols)" @cascade="arrangeCascade"

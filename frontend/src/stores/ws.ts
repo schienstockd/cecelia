@@ -14,6 +14,7 @@ import { useAppControlStore } from './appControl'
 import { fetchRecentOutcomes, newestFinishedAt, recoveredTaskFrames } from '../utils/taskReconcile'
 import { fetchInFlightTasks, adoptableTasks, staleInFlightStatuses, expiredCancels } from '../utils/runningTasks'
 import { useViewerStore } from './viewer'
+import { markTtlSeconds } from '../utils/viewer/markLifetime'
 import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
@@ -274,6 +275,8 @@ export const useWsStore = defineStore('ws', () => {
       // — a same-project stale-image mark (image not currently open) still lands so the highlight
       // shows the moment the user switches to that image.
       if (projectUid && openProj && projectUid !== openProj) return
+      // Every kind lapses at the frame's TTL (`utils/viewer/markLifetime.ts`).
+      const ttl        = markTtlSeconds(data.ttlSeconds)
       if (data.kind === 'track') {
         const trackIds = Array.isArray(data.trackIds)
           ? (data.trackIds as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
@@ -281,7 +284,7 @@ export const useWsStore = defineStore('ws', () => {
           // origin='claude' distinguishes this mark from a user's Show / cockpit selection so plot
           // consumers (Decision 19) can paint a distinct visual + "C" glyph. Same bag, different
           // provenance — the last writer still wins.
-          viewer.setTrackHighlight({ imageUid, valueName, trackIds, label, origin: 'claude' })
+          viewer.setTrackHighlight({ imageUid, valueName, trackIds, label, origin: 'claude', ttlSeconds: ttl })
           // Also mirror into the shared linkedSelection bag (LINKED_BRUSHING_PLAN.md Follow-up 1
           // precursor). Any future subscriber that reads linkedSelection ('tracks') scope sees
           // Claude's mark alongside user brushes — same code path, no per-writer branch.
@@ -293,7 +296,7 @@ export const useWsStore = defineStore('ws', () => {
           ? (data.labels as unknown[]).map(v => Number(v)).filter(n => Number.isFinite(n)) : []
         const focusId = Number(data.focusId ?? 0)
         if (imageUid && valueName && labels.length) {
-          viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label, origin: 'claude' })
+          viewer.setPickHighlight({ imageUid, valueName, labels, focusId, label, origin: 'claude', ttlSeconds: ttl })
           useLinkedSelectionStore().set({ scope: 'cells', ids: labels, source: 'claude:mark_cells', sourcePlotId: 'claude:mark_cells',
                                           perSource: { [linkedSourceKey(imageUid, valueName)]: labels } })
         }
@@ -301,7 +304,6 @@ export const useWsStore = defineStore('ws', () => {
         // BIDIR PR #5. Ephemeral UI-anchor pointer; PointerBubble resolves the anchor and paints.
         const markerId = String(data.markerId ?? '')
         const anchor   = String(data.anchor   ?? '')
-        const ttl      = Number(data.ttlSeconds ?? 300)
         if (markerId && anchor) viewer.pushUiMark({ markerId, anchor, label, ttlSeconds: ttl })
       } else if (data.kind === 'freeform') {
         const markerId = String(data.markerId ?? '')
@@ -313,8 +315,7 @@ export const useWsStore = defineStore('ws', () => {
               ...(o.label ? { label: String(o.label) } : {}),
             })).filter(o => o.kind)
           : []
-        const ttl = Number(data.ttlSeconds ?? 300)
-        if (markerId && target && overlay.length) {
+                if (markerId && target && overlay.length) {
           viewer.pushFreeformMark({
             markerId, target, overlay, label, ttlSeconds: ttl,
             imageUid: imageUid || undefined, valueName: valueName || undefined,
@@ -348,9 +349,9 @@ export const useWsStore = defineStore('ws', () => {
         const ids = shown ? [...new Set(valid.filter(v => v.imageUid === shown.imageUid && v.valueName === shown.valueName)
                                              .flatMap(v => v.ids))] : []
         if (shown && objectKind === 'track') {
-          viewer.setTrackHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, trackIds: ids, label, origin: 'claude' })
+          viewer.setTrackHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, trackIds: ids, label, origin: 'claude', ttlSeconds: ttl })
         } else if (shown) {
-          viewer.setPickHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, labels: ids, focusId: 0, label, origin: 'claude' })
+          viewer.setPickHighlight({ imageUid: shown.imageUid, valueName: shown.valueName, labels: ids, focusId: 0, label, origin: 'claude', ttlSeconds: ttl })
         }
         if (flat.length) {
           useLinkedSelectionStore().set({
@@ -363,7 +364,6 @@ export const useWsStore = defineStore('ws', () => {
         // `mark_tile`: a Set-of-Mark tile id ("B3"). `TileMarkOverlay` in the viewer draws it.
         const markerId = String(data.markerId ?? '')
         const cellId   = String(data.cellId   ?? '')
-        const ttl      = Number(data.ttlSeconds ?? 300)
         if (markerId && imageUid && cellId) viewer.pushTileMark({ markerId, imageUid, cellId, label, ttlSeconds: ttl })
       } else if (data.kind === 'plot') {
         // BIDIR PR #4b. Plot point-out — Claude's "look at THIS spot on that panel". Consumers
@@ -375,8 +375,7 @@ export const useWsStore = defineStore('ws', () => {
         const u = Number(data.u)
         const v = Number(data.v)
         const cell = String(data.cell ?? '')
-        const ttl = Number(data.ttlSeconds ?? 300)
-        if (markerId && family && plotId && Number.isFinite(u) && Number.isFinite(v)) {
+                if (markerId && family && plotId && Number.isFinite(u) && Number.isFinite(v)) {
           viewer.pushPlotMark({
             markerId, family, plotId, u, v,
             ...(cell ? { cell } : {}),

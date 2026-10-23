@@ -10,6 +10,7 @@ import { useSettingsStore } from './stores/settings'
 import { useLogStore } from './stores/log'
 import { useLinkedSelectionStore } from './stores/linkedSelection'
 import { useViewerStore } from './stores/viewer'
+import { clearsLinkedSelection } from './utils/viewer/markLifetime'
 import { installRoLoopTrace } from './utils/roLoopTrace'
 import { popoutRouteOfWindow } from './lib/popout'
 import { tooltip } from './directives/tooltip'
@@ -181,11 +182,13 @@ if (import.meta.env.DEV) {
 {
   const linkedSel = useLinkedSelectionStore(pinia)
   const viewer = useViewerStore(pinia)
-  watch(() => viewer.trackHighlight, v => {
-    if (v === null && linkedSel.bag?.scope === 'tracks') linkedSel.clear()
+  // An assistant mark lapsing (or cleared) takes only an assistant selection with it, never a brush
+  // the user made since — `clearsLinkedSelection`.
+  watch(() => viewer.trackHighlight, (v, old) => {
+    if (v === null && linkedSel.bag?.scope === 'tracks' && clearsLinkedSelection(old, linkedSel.bag)) linkedSel.clear()
   })
-  watch(() => viewer.pickHighlight, v => {
-    if (v === null && linkedSel.bag?.scope === 'cells') linkedSel.clear()
+  watch(() => viewer.pickHighlight, (v, old) => {
+    if (v === null && linkedSel.bag?.scope === 'cells' && clearsLinkedSelection(old, linkedSel.bag)) linkedSel.clear()
   })
   watch(() => linkedSel.bag, v => {
     if (v !== null) return

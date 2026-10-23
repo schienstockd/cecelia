@@ -14,10 +14,11 @@
 // emit and the region shape is `null` until then.
 
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 import type { VisibleRegion } from '../utils/viewer/visibleRegion'
 import type { L0Rect } from '../utils/viewerPick'
 import type { ViewerViewState } from '../utils/viewer/viewState'
+import { expiresAtFrom, msUntil, liveOrNull } from '../utils/viewer/markLifetime'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
 export interface OpenImage {
@@ -170,6 +171,9 @@ export interface TrackHighlight {
    *  are never confused. The bag itself remains "last writer wins" — a Claude mark can be overwritten
    *  by a user Show and vice-versa, matching the ephemeral shared-selection contract. */
   origin?: 'user' | 'claude'
+  /** ms epoch the highlight lapses at. Set for an assistant mark (its `ttlSeconds`), absent for a
+   *  user's own highlight — see `utils/viewer/markLifetime.ts`. */
+  expiresAt?: number
 }
 
 /**
@@ -218,6 +222,8 @@ export interface PickHighlight {
   label?: string
   /** Origin of this highlight — see `TrackHighlight.origin`. */
   origin?: 'user' | 'claude'
+  /** See `TrackHighlight.expiresAt`. */
+  expiresAt?: number
 }
 
 /** BIDIR PR #5 UI-anchor pointer — "click here". Ephemeral (5-min default TTL); rendered by
@@ -288,6 +294,22 @@ function _writeJson(key: string, value: unknown) {
   } catch { /* quota / privacy mode — drop silently, same as settings.ts */ }
 }
 
+/** What a highlight setter takes: the bag without its stamps, plus a TTL when it is an assistant mark. */
+type HighlightInput<T> = Omit<T, 'updateId' | 'expiresAt'> & { ttlSeconds?: number }
+
+/** Turn a setter's `ttlSeconds` into the stored `expiresAt`; no TTL = a user highlight that never lapses. */
+function _withExpiry<T>(next: HighlightInput<T>): Omit<T, 'updateId'> {
+  const { ttlSeconds, ...rest } = next
+  return (ttlSeconds === undefined ? rest : { ...rest, expiresAt: expiresAtFrom(ttlSeconds, Date.now()) }) as unknown as Omit<T, 'updateId'>
+}
+
+/** THE mark-expiry scheduler: every ephemeral bag (the pointer marks AND the assistant's track/pick
+ *  highlights) prunes through this one-shot. Never cleared or re-armed — the prune itself checks that
+ *  the entry it was armed for is still the one showing. */
+function _expireAt(expiresAt: number, prune: () => void) {
+  window.setTimeout(prune, msUntil(expiresAt, Date.now()))
+}
+
 export const useViewerStore = defineStore('viewer', () => {
   // Seed from localStorage so a module page opened AFTER the viewer window already has the current
   // state, not `null` until the next pan.
@@ -305,9 +327,10 @@ export const useViewerStore = defineStore('viewer', () => {
   const previewLabels    = ref<PreviewLabels | null>(_readJson<PreviewLabels>(K_PREVIEW_LABELS))
   const previewImages    = ref<PreviewImage[] | null>(_readJson<PreviewImage[]>(K_PREVIEW_IMAGES))
   const liveLabels       = ref<LiveLabels | null>(_readJson<LiveLabels>(K_LIVE_LABELS))
-  const trackHighlight   = ref<TrackHighlight | null>(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT))
+  // The two highlight bags seed only if still live: an assistant mark must not come back after its TTL.
+  const trackHighlight   = ref<TrackHighlight | null>(liveOrNull(_readJson<TrackHighlight>(K_TRACK_HIGHLIGHT), Date.now()))
   const labelsDimMismatch = ref<LabelsDimMismatch | null>(_readJson<LabelsDimMismatch>(K_LABELS_DIM_MISMATCH))
-  const pickHighlight    = ref<PickHighlight | null>(_readJson<PickHighlight>(K_PICK_HIGHLIGHT))
+  const pickHighlight    = ref<PickHighlight | null>(liveOrNull(_readJson<PickHighlight>(K_PICK_HIGHLIGHT), Date.now()))
   // BIDIR PR #5 — ephemeral pointer bags. Session-only (see UiMark / FreeformMark docs above).
   const uiMarks       = ref<UiMark[]>([])
   const freeformMarks = ref<FreeformMark[]>([])
@@ -427,9 +450,9 @@ export const useViewerStore = defineStore('viewer', () => {
    *  these ids. `null` (or an empty `trackIds`) clears the highlight. Stamped monotonically for
    *  the same reason as previewLabels — two identical Show presses would otherwise not wake the
    *  popup's storage listener. */
-  function setTrackHighlight(next: Omit<TrackHighlight, 'updateId'> | null) {
+  function setTrackHighlight(next: HighlightInput<TrackHighlight> | null) {
     const stamped: TrackHighlight | null = next && next.trackIds.length
-      ? { ...next, updateId: ++_updateIdSeq } : null
+      ? { ..._withExpiry(next), updateId: ++_updateIdSeq } : null
     trackHighlight.value = stamped
     _writeJson(K_TRACK_HIGHLIGHT, stamped)
   }
@@ -461,12 +484,12 @@ export const useViewerStore = defineStore('viewer', () => {
    *  allowed — Claude might point at "the version chip AND the play button" in one turn — but
    *  a mark for the SAME anchor supersedes rather than stacking. */
   function pushUiMark(m: Omit<UiMark, 'expiresAt'> & { ttlSeconds: number }) {
-    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const expiresAt = expiresAtFrom(m.ttlSeconds, Date.now())
     const entry: UiMark = { markerId: m.markerId, anchor: m.anchor, label: m.label, expiresAt }
     uiMarks.value = [...uiMarks.value.filter(x => x.anchor !== m.anchor), entry]
-    window.setTimeout(() => {
+    _expireAt(entry.expiresAt, () => {
       uiMarks.value = uiMarks.value.filter(x => x.markerId !== entry.markerId)
-    }, m.ttlSeconds * 1000)
+    })
   }
   function dismissUiMark(markerId: string) {
     uiMarks.value = uiMarks.value.filter(x => x.markerId !== markerId)
@@ -475,14 +498,14 @@ export const useViewerStore = defineStore('viewer', () => {
    *  UI marks, freeform marks with the same `target` DO stack — Claude may want to circle two
    *  regions on the same capture, and de-duping by target would drop one of them. */
   function pushFreeformMark(m: Omit<FreeformMark, 'expiresAt'> & { ttlSeconds: number }) {
-    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const expiresAt = expiresAtFrom(m.ttlSeconds, Date.now())
     const entry: FreeformMark = { markerId: m.markerId, target: m.target, overlay: m.overlay,
                                    imageUid: m.imageUid, valueName: m.valueName,
                                    label: m.label, expiresAt }
     freeformMarks.value = [...freeformMarks.value, entry]
-    window.setTimeout(() => {
+    _expireAt(entry.expiresAt, () => {
       freeformMarks.value = freeformMarks.value.filter(x => x.markerId !== entry.markerId)
-    }, m.ttlSeconds * 1000)
+    })
   }
   function dismissFreeformMark(markerId: string) {
     freeformMarks.value = freeformMarks.value.filter(x => x.markerId !== markerId)
@@ -492,16 +515,16 @@ export const useViewerStore = defineStore('viewer', () => {
    *  `(family, plotId, cell)` supersedes (like `pushUiMark`) — Claude retargeting the same panel
    *  is normal; stacking would leave a stale mark on top of the new one. */
   function pushPlotMark(m: Omit<PlotMark, 'expiresAt'> & { ttlSeconds: number }) {
-    const expiresAt = Date.now() + m.ttlSeconds * 1000
+    const expiresAt = expiresAtFrom(m.ttlSeconds, Date.now())
     const entry: PlotMark = { markerId: m.markerId, family: m.family, plotId: m.plotId,
                               u: m.u, v: m.v, ...(m.cell ? { cell: m.cell } : {}),
                               label: m.label, expiresAt }
     const same = (x: PlotMark) =>
       x.family === entry.family && x.plotId === entry.plotId && (x.cell ?? '') === (entry.cell ?? '')
     plotMarks.value = [...plotMarks.value.filter(x => !same(x)), entry]
-    window.setTimeout(() => {
+    _expireAt(entry.expiresAt, () => {
       plotMarks.value = plotMarks.value.filter(x => x.markerId !== entry.markerId)
-    }, m.ttlSeconds * 1000)
+    })
   }
   function dismissPlotMark(markerId: string) {
     plotMarks.value = plotMarks.value.filter(x => x.markerId !== markerId)
@@ -510,22 +533,40 @@ export const useViewerStore = defineStore('viewer', () => {
   /** A tile pointer. A second mark on the same (image, tile) supersedes — same rule as `pushPlotMark`. */
   function pushTileMark(m: Omit<TileMark, 'expiresAt'> & { ttlSeconds: number }) {
     const entry: TileMark = { markerId: m.markerId, imageUid: m.imageUid, cellId: m.cellId,
-                              label: m.label, expiresAt: Date.now() + m.ttlSeconds * 1000 }
+                              label: m.label, expiresAt: expiresAtFrom(m.ttlSeconds, Date.now()) }
     tileMarks.value = [...tileMarks.value.filter(x => !(x.imageUid === entry.imageUid && x.cellId === entry.cellId)), entry]
-    window.setTimeout(() => {
+    _expireAt(entry.expiresAt, () => {
       tileMarks.value = tileMarks.value.filter(x => x.markerId !== entry.markerId)
-    }, m.ttlSeconds * 1000)
+    })
   }
 
   /** Correction cockpit calls this whenever pick membership or Review focus changes. `null` (or an
    *  empty labels + zero focus) clears the pick outline. Stamped like `setTrackHighlight` so a
    *  repeat write with the same labels still wakes the popup viewer. */
-  function setPickHighlight(next: Omit<PickHighlight, 'updateId'> | null) {
+  function setPickHighlight(next: HighlightInput<PickHighlight> | null) {
     const empty = !next || (!next.labels.length && !next.focusId)
-    const stamped: PickHighlight | null = empty ? null : { ...next!, updateId: ++_updateIdSeq }
+    const stamped: PickHighlight | null = empty ? null : { ..._withExpiry(next!), updateId: ++_updateIdSeq }
     pickHighlight.value = stamped
     _writeJson(K_PICK_HIGHLIGHT, stamped)
   }
+
+  /** Lapse a bridged highlight at its `expiresAt` — whoever wrote it (this window's setter, another
+   *  window via `storage`, or the localStorage seed). Every window arms its own prune, so the mark
+   *  goes even if the window that received it closed first. A newer highlight (different stamp, or a
+   *  user's with no `expiresAt`) is left alone. */
+  function _armHighlightExpiry<T extends { updateId: number; expiresAt?: number }>(bag: Ref<T | null>, key: string) {
+    watch(bag, v => {
+      if (!v || v.expiresAt === undefined) return
+      const { updateId, expiresAt } = v
+      _expireAt(expiresAt, () => {
+        if (bag.value?.updateId !== updateId || bag.value?.expiresAt !== expiresAt) return
+        bag.value = null
+        _writeJson(key, null)
+      })
+    }, { immediate: true })
+  }
+  _armHighlightExpiry(trackHighlight, K_TRACK_HIGHLIGHT)
+  _armHighlightExpiry(pickHighlight, K_PICK_HIGHLIGHT)
 
   // Cross-window sync: `storage` events fire only in OTHER same-origin windows on a write, so the
   // pattern is symmetric — every window listens, every window writes on its own change.
