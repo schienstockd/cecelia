@@ -48,6 +48,7 @@ class _AutoFixture(_Fixture):
         self.calls, self.messages, self.bodies = [], [], []
         self.views, self.conflicted, self.unstaged, self.changed = [GREEN], "", "", ""
         self.porcelain, self.head = " M a.py\n", "b" * 40
+        self.branches, self.ahead = "", "0\n"   # `git branch --list` (none left over) · its commits
         slept = mock.patch.object(self.af, "_sleep", lambda s: None)
         slept.start()
         self.addCleanup(slept.stop)
@@ -81,6 +82,10 @@ class _AutoFixture(_Fixture):
                 return subprocess.CompletedProcess(argv, 0, self.changed, "")
             if argv == ["git", "status", "--porcelain"]:   # the worktree after a follow-up
                 return subprocess.CompletedProcess(argv, 0, self.porcelain, "")
+            if argv[:3] == ["git", "branch", "--list"]:
+                return subprocess.CompletedProcess(argv, 0, self.branches, "")
+            if argv[:3] == ["git", "rev-list", "--count"] and "refs/heads/" in argv[3]:
+                return subprocess.CompletedProcess(argv, 0, self.ahead, "")
             if argv == ["git", "rev-parse", "HEAD"]:
                 return subprocess.CompletedProcess(argv, 0, self.head + "\n", "")
             if argv[:3] == ["gh", "pr", "view"]:   # `self.views`: the PR's states in turn, the last one from then on
@@ -342,7 +347,7 @@ class WorkTest(_AutoFixture):
         spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
         self.assertEqual(spent, 3.0)
         firsts = [c[:3] for c in self.calls]
-        self.assertEqual(firsts[0], ["pixi", "run", "bootstrap-worktree"])
+        self.assertEqual(firsts[:2], [["git", "branch", "--list"], ["pixi", "run", "bootstrap-worktree"]])
         self.assertIn(["pixi", "run", "recital"], firsts)
         self.assertEqual(self.prompts[1][1], "sid-1")   # tagging resumes the fix session
         self.assertIn(RECITAL.strip(), self.prompts[1][0])
@@ -622,7 +627,8 @@ class WorkTest(_AutoFixture):
                 self.auto.unlink(missing_ok=True)
                 tree = self.main.parent / "cecelia-fix-fanout-b1"
                 _, out = self.work(_answer(), touch=touch)
-                self.assertEqual([c for c in self.calls if c[0] != "pixi"], [])   # not even `git add`
+                # not even `git add`: past the check for a branch left over, before the worktree
+                self.assertEqual([c for c in self.calls if c[0] != "pixi" and c[1:3] != ["branch", "--list"]], [])
                 self.assertIn("run outside its sandbox", out)
                 self.assertIn("[f] there starts fresh", out)
                 row = self.rv.read_auto(self.auto)["fanout-b1"]
@@ -690,6 +696,36 @@ class WorkTest(_AutoFixture):
         self.work(_answer("not_real"))
         self.assertIn(["remove_worktree", str(tree)], self.calls)
         self.assertEqual(len(self.prompts), 1)   # the bundle ran
+
+    def test_a_branch_left_without_its_worktree_and_no_commits_is_deleted_and_the_bundle_runs(self):
+        self.branches = "  fix-fanout-b1\n"
+        self.work(_answer("not_real"))
+        firsts = [c[:3] for c in self.calls]
+        bootstrap = firsts.index(["pixi", "run", "bootstrap-worktree"])
+        self.assertLess(firsts.index(["git", "worktree", "prune"]), bootstrap)
+        self.assertLess(self.calls.index(["git", "branch", "-D", "fix-fanout-b1"]), bootstrap)
+        self.assertEqual(len(self.prompts), 1)   # the bundle ran
+
+    def test_a_branch_left_with_commits_of_its_own_is_kept_and_goes_back_to_the_queue(self):
+        self.branches, self.ahead = "  fix-fanout-b1\n", "2\n"
+        spent, out = self.work(_answer())
+        self.assertIsNone(spent)
+        self.assertEqual(self.prompts, [])
+        self.assertNotIn(["git", "branch", "-D", "fix-fanout-b1"], self.calls)
+        self.assertFalse(any(c[:3] == ["pixi", "run", "bootstrap-worktree"] for c in self.calls))
+        row = self.rv.read_auto(self.auto)["fanout-b1"]
+        self.assertEqual(row["outcome"], "left")
+        self.assertIn("branch fix-fanout-b1", row["reason"])
+        self.assertIn("2 commits of its own", out)
+
+    def test_a_failure_shows_gits_reason_not_only_the_stack_trace_after_it(self):
+        err = ("fatal: a branch named 'fix-fanout-b1' already exists\nERROR: LoadError: failed process: "
+               + "Process(`git worktree add`, ProcessExited(128))\n" + "Stacktrace:\n [1] pipeline_error\n" * 40)
+        tail = self.af._tail(subprocess.CompletedProcess([], 1, "→ fetching origin\n", err))
+        self.assertTrue(tail.startswith("fatal: a branch named 'fix-fanout-b1' already exists"))
+        self.assertLess(len(tail), 600)
+        short = subprocess.CompletedProcess([], 1, "", "error: boom")
+        self.assertEqual(self.af._tail(short), "error: boom")   # already in the tail: not said twice
 
 
 if __name__ == "__main__":
