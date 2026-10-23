@@ -400,19 +400,22 @@ class _Tally:
       - `resolved`: total `_finding_resolved` events, broken down by outcome — required findings only.
       - `advisory_resolved`: the resolutions of advisory notes (a `plausible` one MAY be tagged fixed),
         kept apart so `resolved` never counts more than the required findings it resolves.
+        A resolution row carries no advisory marker, so it is sorted by its slug: pass
+        `advisory_slugs` (see `advisory_slugs`) from the whole log, or a note older than the
+        seeded window would have its fix counted as a required resolution.
 
     So a reader glancing at the tally sees: how much work the reviewers did, how much of it
     flagged something, and what the author did about it — the three questions the `_run`
     stream alone doesn't answer.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, advisory_slugs: _t.Iterable[str] = ()) -> None:
         self.runs: dict[str, int] = {}
         self.errored_runs: dict[str, int] = {}
         self.findings: dict[str, dict[str, int]] = {}
         self.resolved: dict[str, dict[str, int]] = {}
         self.advisory_resolved: dict[str, dict[str, int]] = {}
-        self._advisory_slugs: set[str] = set()
+        self._advisory_slugs: set[str] = set(advisory_slugs)
 
     def _key(self, event_name: str) -> str:
         label, _ = _mechanism_of(event_name)
@@ -497,6 +500,13 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
     return f"{tag}  " + _col(_DIM, " · ", use_colour=use_colour).join(parts)
 
 
+def advisory_slugs(events: _t.Iterable[dict]) -> set[str]:
+    """The slugs of every `_advisory` row in `events` — read over the full log, not the seeded
+    window, so `_Tally` can sort a resolution whose note fell before the window."""
+    return {(e.get("payload") or {}).get("slug") for e in events
+            if e.get("event", "").endswith("_advisory") and (e.get("payload") or {}).get("slug")}
+
+
 class DashboardState:
     """The state one dashboard frame renders from — tally + recent events + recent findings.
 
@@ -508,8 +518,9 @@ class DashboardState:
     `findings_expanded` (→, ← undoes) shows every description in full instead of capped.
     """
 
-    def __init__(self, *, max_events: int = _MAX_EVENTS, max_findings: int = _MAX_FINDINGS):
-        self.tally = _Tally()
+    def __init__(self, *, max_events: int = _MAX_EVENTS, max_findings: int = _MAX_FINDINGS,
+                 advisory_slugs: _t.Iterable[str] = ()):
+        self.tally = _Tally(advisory_slugs)
         self.events: collections.deque[dict] = collections.deque(maxlen=max_events)
         self.findings: collections.deque[dict] = collections.deque(maxlen=max_findings)
         self.started_at = _dt.datetime.now(_dt.timezone.utc)
@@ -1210,7 +1221,8 @@ def _run_stream_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
 
 def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
                         *, out: _t.TextIO, follow: bool, key_fd: int | None = None,
-                        agents_only: bool = False) -> int:
+                        agents_only: bool = False,
+                        advisory_slugs: _t.Iterable[str] = ()) -> int:
     """Full-screen dashboard — poll + repaint on every _REFRESH_TICK, plus SIGWINCH.
 
     The refresh tick exists to keep the title line's `HH:MM:SS` clock alive when nothing
@@ -1230,7 +1242,7 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     and ← cuts them again; each repaints at once. Following, the dashboard runs on the alternate
     screen, which is where the terminal turns the wheel into ↑/↓.
     """
-    state = DashboardState()
+    state = DashboardState(advisory_slugs=advisory_slugs)
     for event in seed_events:
         state.add(event)
     judge_warning = judge_record_warning(judge_store(log_path))   # once: weekly, not mid-session
@@ -1365,7 +1377,8 @@ def main(argv: _t.Sequence[str] | None = None,
     since = _parse_since(args.since) if args.since else None
     width = args.width if args.width > 0 else _terminal_width()
 
-    seed = _tail(list(read_events(log_path)), args.tail, since)
+    events = list(read_events(log_path))
+    seed = _tail(events, args.tail, since)
 
     if args.agents and (args.stream or not tty):
         # Piped: one plain snapshot of the pane — a session list has no event stream to follow.
@@ -1383,7 +1396,7 @@ def main(argv: _t.Sequence[str] | None = None,
     keys = stdout is None and not args.no_follow and sys.stdin.isatty()
     return _run_dashboard_mode(seed, log_path, out=out, follow=not args.no_follow,
                                key_fd=sys.stdin.fileno() if keys else None,
-                               agents_only=args.agents)
+                               agents_only=args.agents, advisory_slugs=advisory_slugs(events))
 
 
 if __name__ == "__main__":
