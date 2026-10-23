@@ -72,6 +72,9 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 3. Under it, one line says where the job goes: `GPU job → queue gpu-a100 on <host>`, with the account
    and QoS on hover. The class is the task's pool, so a GPU task sent with 0 GPUs still uses the GPU
    queue. While the setup is incomplete, the line names the first missing field and where to set it.
+   Once it is complete, the runner asks the cluster for the env (one ssh call): if this version's env is
+   not installed, a **Cluster env out of date — reinstall** line appears with **Install on cluster**,
+   the same job as in Settings → HPC. It is asked again when the install job ends.
 4. Above that, a **memory line** says whether the memory covers the most demanding selected image
    (*Memory hint* below), with a **Use N GB** button when it does not.
 5. The run waits in the `hpc` pool, then goes through these stages, shown on the Task Manager's pool
