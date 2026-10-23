@@ -3143,7 +3143,9 @@ populations in their colours (the **eye** in the manager) overlays on top of eit
 Workflow: pick X/Y columns + per-axis transform (linear/log/asinh/logicle) → click a parent
 population in the manager (sets it as the active plot's parent) → draw a gate → name it → it's
 POSTed (`pop/add`), recomputed server-side, and appears in the manager with count + %-of-parent.
-Edit a gate by dragging its handles → `pop/set-gate` on release. The manager (draggable,
+Edit a gate by dragging its handles → `pop/set-gate` on release. A handle's grab zone is 10 px, capped at a quarter of the gate's shorter on-screen side so a small
+gate's body still moves it, and the handles are drawn at that size (`gateHandleRadius` / `hitGateShape`,
+`plots/gateGeometry.ts`). The manager (draggable,
 clamped on-screen, collapsible) does recolour (`pop/update`), inline rename (`pop/rename`),
 delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
 

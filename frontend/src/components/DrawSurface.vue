@@ -27,7 +27,7 @@ import CcToggle from './CcToggle.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import {
   beginPoly, beginRect, beginStroke, addVertex, extendStroke, updateCursor, updateRect,
-  finishPoly, finishRect, finishStroke,
+  finishPoly, finishRect, finishStroke, pointInPoly, distToSeg,
   type Point,
 } from '../utils/drawGeometry'
 import {
@@ -256,29 +256,9 @@ function pointsFromMark(i: number): Point[] | null {
 function pointInRect(p: Point, r: { x: number; y: number; w: number; h: number }): boolean {
   return p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h
 }
-function pointInPoly(p: Point, pts: Point[]): boolean {   // ray-cast, standard odd-crossings
-  let inside = false
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-    const [xi, yi] = pts[i], [xj, yj] = pts[j]
-    const intersect = ((yi > p[1]) !== (yj > p[1])) &&
-      (p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi)
-    if (intersect) inside = !inside
-  }
-  return inside
-}
-function distToPolyline2(p: Point, pts: Point[]): number {
+function distToPolyline(p: Point, pts: Point[]): number {   // open polyline (a stroke)
   let best = Infinity
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, ay] = pts[i - 1], [bx, by] = pts[i]
-    const dx = bx - ax, dy = by - ay
-    const denom = dx * dx + dy * dy
-    let t = denom === 0 ? 0 : ((p[0] - ax) * dx + (p[1] - ay) * dy) / denom
-    t = Math.max(0, Math.min(1, t))
-    const cx = ax + t * dx, cy = ay + t * dy
-    const ex = p[0] - cx, ey = p[1] - cy
-    const d2 = ex * ex + ey * ey
-    if (d2 < best) best = d2
-  }
+  for (let i = 1; i < pts.length; i++) best = Math.min(best, distToSeg(p, pts[i - 1], pts[i]))
   return best
 }
 // Newest-first so a shape drawn on top of another is picked. Corner / vertex handles hit before
@@ -346,7 +326,7 @@ function hitTest(p: Point): Handle | null {
       if (m.kind === 'poly') {
         if (pointInPoly(pL, ptsL)) return { idx: i, kind: 'body' }
       } else {
-        if (distToPolyline2(pL, ptsL) <= STROKE_NEAR_PX * STROKE_NEAR_PX)
+        if (distToPolyline(pL, ptsL) <= STROKE_NEAR_PX)
           return { idx: i, kind: 'body' }
       }
     }
