@@ -187,7 +187,7 @@ def recent_cwds(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> tuple
     return tuple(out)
 
 
-def _typed_by_a_person(entry: dict) -> bool:
+def typed_by_a_person(entry: dict) -> bool:
     """A prompt Dominik typed — not a tool result, an injected meta message, a compaction summary,
     or a message from elsewhere: `origin.kind` is "human" for a typed prompt, and
     "task-notification" / "peer" / "auto-continuation" otherwise (older entries carry no `origin`)."""
@@ -205,7 +205,7 @@ def latest_recap(transcript: pathlib.Path, tail_bytes: int = RECAP_TAIL_BYTES) -
     """(timestamp, text) of the session's newest recap, or None. A recap followed by a prompt
     Dominik typed is out of date — he has been back since — so it doesn't count."""
     for entry in _tail_entries(transcript, tail_bytes):
-        if _typed_by_a_person(entry):
+        if typed_by_a_person(entry):
             return None
         if entry.get("type") == "system" and entry.get("subtype") == "away_summary":
             text = entry.get("content")
