@@ -1176,6 +1176,9 @@ Two ratchets, because spec fields drift in both directions:
   concept. A spec that declares something no consumer reads is a lie about the form.
 - **`showIf conditions name a param that exists`** — a condition on a key no param declares can never
   be satisfied, so the control is hidden forever with no error anywhere.
+- **`showIf on a select names one of its options`** — the value-side twin: `{ "method": "kmean" }`
+  names a real key but a value no option has, with the same hidden-forever result. Checked only
+  against a fixed `options` list (not `optionsFrom` or server-injected options).
 
 Both walk `spec_dirs()` in `app/test/suite.jl`, which covers built-ins, `docs/examples/custom-modules`
 and `docs/examples/plugins`. Add a field here when you add it to `ParamDef`, not afterwards.
