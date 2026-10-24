@@ -83,6 +83,14 @@ def nearest_surface(a_meshes, b_meshes):
     return out
 
 
+def nearest_surface_per_target(a_meshes, b_meshes, targets):
+    """`nearest_surface` once per target population: `targets` is `[(name, {b_label, ...}), ...]`,
+    each searched only among its own B meshes (one contact column set per target, #1734). B is
+    meshed once by the caller and split here. Returns `{name: {a_label: (min_dist_µm, b_label|None)}}`."""
+    return {name: nearest_surface(a_meshes, {bl: m for bl, m in b_meshes.items() if bl in labs})
+            for name, labs in targets}
+
+
 # how far past the touching-reach to still consider a candidate (µm), so a near-but-not-touching
 # nearest neighbour is still found for the min_distance readout, not just contacts.
 _SURFACE_SEARCH_PAD = 50.0
