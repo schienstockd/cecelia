@@ -283,7 +283,7 @@ create), and `[f]` labels it `in-progress` for one pass. A bug over the pass's c
 the first N sessions) without you, one session per bundle, one after another (`--dry-run` prints the briefs), with a live line
 per step: spinner, elapsed time, the agent's tool calls and its latest; `pixi run agents` lists
 the agent as `auto-fix^`. On the usage limit it waits for the reset and resumes the same
-session (a recital round runs again); a reset more than 6 h off (`MAX_WAIT`) stops the run instead. A bug with a landed fix
+session (a recital round runs again); a reset more than 6 h off (`MAX_WAIT`) stops the run instead, and so does a third limit in a row (`MAX_LIMIT_WAITS` = 2: an unreadable reset waits an hour, so a weekly limit would otherwise loop for days). A bug with a landed fix
 (`fix_landed` on the record, or a commit naming its key on origin/main since) gets no session. The agent never
 holds a credential: `scripts/judge/auto_fix.py` bootstraps its worktree (`fix-<key>` /
 `fix-bundle-<key>`), runs it under the verify sandbox (no network, no `~/.config/gh`) with

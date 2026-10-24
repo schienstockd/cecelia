@@ -6,6 +6,7 @@ copy (dropped detections, broken links, scrambled states).
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import importlib.util
 import io
 import json
@@ -17,6 +18,8 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
+
+from cecelia.effectiveness import claude_cli
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
 
@@ -506,6 +509,14 @@ class TestRunRecord(unittest.TestCase):
             cut = {"type": "assistant", "message": {"model": "<synthetic>", "content": [{"type": "text", "text": _LIMIT}]}}
             path.write_text(json.dumps(cut) + "\n", encoding="utf-8")
             self.assertEqual(run_app.summarise_trace(path, "SRC")["rateLimited"], _LIMIT)
+            # a refusal's `rate_limit_event` before it: its exact reset rides on the message, for `rate_limit_note`
+            lifts = dt.datetime.now(dt.timezone.utc).replace(second=0, microsecond=0) + dt.timedelta(days=3)
+            refused = {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected",
+                                                                       "resetsAt": int(lifts.timestamp())}}
+            path.write_text(json.dumps(refused) + "\n" + json.dumps(cut) + "\n", encoding="utf-8")
+            limited = run_app.summarise_trace(path, "SRC")["rateLimited"]
+            self.assertEqual(limited, f"{_LIMIT}|{int(lifts.timestamp())}")
+            self.assertEqual(claude_cli.rate_limit_note(limited)["resetAt"], lifts.isoformat(timespec="minutes"))
 
 
 class TestStageBoards(unittest.TestCase):

@@ -9,7 +9,7 @@ import argparse
 import json
 import sys
 
-from cecelia.effectiveness.claude_cli import rate_limit, synthetic_limit
+from cecelia.effectiveness.claude_cli import limit_resets_at, rate_limit, synthetic_limit, with_reset
 
 
 def _result_text(content) -> str:
@@ -21,15 +21,19 @@ def events(path: str) -> list[dict]:
     """The trace in order, one dict per item: `init` {model, sessionId, tools, mcp}, `text` {text,
     rateLimited when it is the CLI's `<synthetic>` limit turn}, `call` {id, name, input}, `result` {id,
     text, isError, images: [base64 PNG]}, `final` {subtype, cost, turns, text, rateLimited (the CLI's message when the run ended on the usage limit, else
-    None)}. Tool names lose their `mcp__<server>__` prefix."""
+    None)}. A `rateLimited` message carries the stream's exact reset as `|<epoch>` when a refusal
+    before it gave one (`claude_cli.with_reset`). Tool names lose their `mcp__<server>__` prefix."""
     with open(path, encoding="utf-8", errors="replace") as f:
         raws = f.readlines()
-    out = []
+    out, resets = [], None
     for raw in raws:
         try:
             ev = json.loads(raw)
         except json.JSONDecodeError:
             continue
+        if not isinstance(ev, dict):
+            continue
+        resets = limit_resets_at(ev) or resets
         if ev.get("type") == "system" and ev.get("subtype") == "init":
             out.append({"kind": "init", "model": ev.get("model"), "sessionId": ev.get("session_id"),
                         "tools": len(ev.get("tools") or []),
@@ -38,7 +42,7 @@ def events(path: str) -> list[dict]:
             if not isinstance(b, dict):
                 continue
             if b.get("type") == "text":
-                out.append({"kind": "text", "text": b["text"], **({"rateLimited": cut} if (cut := synthetic_limit(ev)) else {})})
+                out.append({"kind": "text", "text": b["text"], **({"rateLimited": with_reset(cut, resets)} if (cut := synthetic_limit(ev)) else {})})
             elif b.get("type") == "tool_use":
                 out.append({"kind": "call", "id": b.get("id"), "name": b.get("name", "?").split("__")[-1],
                             "input": b.get("input") or {}})
@@ -51,7 +55,7 @@ def events(path: str) -> list[dict]:
         if ev.get("type") == "result":
             out.append({"kind": "final", "subtype": ev.get("subtype"), "cost": ev.get("total_cost_usd"),
                         "turns": ev.get("num_turns"), "text": ev.get("result") or "",
-                        "rateLimited": rate_limit(ev)})
+                        "rateLimited": with_reset(cut, resets) if (cut := rate_limit(ev)) else None})
     return out
 
 

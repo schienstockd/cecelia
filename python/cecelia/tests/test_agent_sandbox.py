@@ -59,6 +59,18 @@ class StreamTest(unittest.TestCase):
             {"type": "text", "text": "You've hit your session limit, the API said."}]}}
         self.assertIsNone(agent_sandbox.parse_stream_json(json.dumps(prose) + "\n" + json.dumps(done)).rate_limited)
 
+    def test_a_refusals_exact_reset_rides_on_the_message(self):
+        msg = "You've hit your weekly limit · resets Oct 30, 9am (Australia/Sydney)"
+        allowed = {"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "resetsAt": 1791088200}}
+        rejected = {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": 1791700000,
+                                                                    "rateLimitType": "seven_day"}}
+        done = {"type": "result", "is_error": True, "api_error_status": 429, "result": msg}
+        got = agent_sandbox.parse_stream_json("\n".join(json.dumps(x) for x in (allowed, rejected, done)))
+        self.assertEqual(got.rate_limited, f"{msg}|1791700000")
+        # only `allowed` events: the message as the CLI wrote it
+        got = agent_sandbox.parse_stream_json("\n".join(json.dumps(x) for x in (allowed, done)))
+        self.assertEqual(got.rate_limited, msg)
+
 
 if __name__ == "__main__":
     unittest.main()

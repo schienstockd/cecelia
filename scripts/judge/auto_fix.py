@@ -54,7 +54,8 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
-    RateLimited, failure_text, limit_in_text, rate_limit, read_result, reset_at, resolve_claude_bin, synthetic_limit)
+    RateLimited, failure_text, limit_in_text, limit_resets_at, rate_limit, read_result, reset_at, resolve_claude_bin,
+    synthetic_limit, with_reset)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
@@ -312,6 +313,10 @@ RESUME_PROMPT = ("Your usage limit has reset. Continue the task you were working
                  "reached; do not repeat work that is already complete.")
 #: Longer than this to the reset (a weekly limit), and the run stops instead of waiting.
 MAX_WAIT = _dt.timedelta(hours=6)
+#: Limit waits in a row before a session (or a recital) stops with `RateLimited` anyway. A reset this
+#: code can't read waits `RESET_FALLBACK` (an hour), so a weekly limit in a wording it doesn't know would
+#: otherwise wait an hour, resume, hit the limit and wait again for days.
+MAX_LIMIT_WAITS = 2
 _sleep = time.sleep   # tests replace it
 
 
@@ -352,17 +357,18 @@ def default_session(prompt: str, cwd: pathlib.Path, schema: dict, *, resume: str
                     timeout: float = TIMEOUT_SEC) -> tuple[dict | None, float, str | None, str | None]:
     """One fenced `claude -p` in `cwd`, streamed so `Progress` can show it working. (structured answer,
     cost, session id, failure); the answer is None when it failed. Cut off by the usage limit, it waits
-    for the reset and resumes the same session (`RESUME_PROMPT`); raises `RateLimited` only when the
-    reset is more than `MAX_WAIT` away."""
-    spent = 0.0
+    for the reset and resumes the same session (`RESUME_PROMPT`); raises `RateLimited` when the reset
+    is more than `MAX_WAIT` away, or the limit cut it off again after `MAX_LIMIT_WAITS` waits."""
+    spent, waits = 0.0, 0
     while True:
         answer, cost, sid, failed, limited = _one_session(prompt, cwd, schema, resume=resume, main=main, label=label,
                                                           out=out, budget_usd=budget_usd, timeout=timeout)
         spent += cost
         if not limited:
             return answer, spent, sid, failed
-        if not wait_for_reset(limited, out=out):
+        if waits >= MAX_LIMIT_WAITS or not wait_for_reset(limited, out=out):
             raise RateLimited(limited)
+        waits += 1
         if sid or resume:   # else it was cut off before it began: the same prompt again
             prompt, resume = RESUME_PROMPT, sid or resume
 
@@ -377,7 +383,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
             "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)]
     if resume:
         argv += ["--resume", resume]
-    result, sid, timed_out, cut_off = {}, resume, threading.Event(), None
+    result, sid, timed_out, cut_off, resets = {}, resume, threading.Event(), None, None
     try:
         with tempfile.TemporaryFile("w+", encoding="utf-8") as err, Progress(label, out=out, cwd=cwd) as progress:
             proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=str(cwd),
@@ -397,6 +403,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
                         sid = ev.get("session_id") or sid
                         result = ev if ev.get("type") == "result" else result
                         cut_off = synthetic_limit(ev) or cut_off
+                        resets = limit_resets_at(ev) or resets
                 code = proc.wait()
             finally:
                 timer.cancel()
@@ -412,8 +419,8 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
     limited = rate_limit(result)
     if not limited and (code != 0 or not result):   # no result to say so: the CLI's own turn, or its stderr
         limited = cut_off or limit_in_text(stderr)
-    if limited:
-        return None, cost, sid, None, limited
+    if limited:   # with the stream's exact reset when a refusal carried one: no clock text to guess from
+        return None, cost, sid, None, with_reset(limited, resets)
     done = subprocess.CompletedProcess(argv, code, json.dumps(result) if result else "", stderr)
     res = read_result(done)
     answer = res.get("structured_output")
@@ -741,6 +748,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         tags: list[str] = []
         for n in range(1, RECITAL_ROUNDS + 1):
             round_ = "" if n == 1 else f" · round {n}"
+            waits = 0
             while True:
                 with Progress("recital" + round_, out=out) as step:
                     rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
@@ -752,7 +760,8 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                     break
                 # it printed, but a reviewer didn't run: nothing to commit on. The limit: wait, run it again
                 limited = rate_limit({"is_error": True, "result": recital})
-                if limited and wait_for_reset(limited, out=out):
+                if limited and waits < MAX_LIMIT_WAITS and wait_for_reset(limited, out=out):
+                    waits += 1
                     continue
                 stop(f"recital's reviewers errored{' on the usage limit' if limited else ''} (round {n})")
                 if limited:
