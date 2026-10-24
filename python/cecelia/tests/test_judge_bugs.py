@@ -37,9 +37,9 @@ def _finding(slug, file="a.py", line=2, marker="confirmed", **kw):
                 {"slug": slug, "file": file, "line": line, "desc": f"desc {slug}", "marker": marker}, **kw)
 
 
-def _resolved(slug, outcome, reason=None):
+def _resolved(slug, outcome, reason=None, **kw):
     return _row("fanout_audit_finding_resolved",
-                {"slug": slug, "outcome": outcome} | ({"reason": reason} if reason else {}))
+                {"slug": slug, "outcome": outcome} | ({"reason": reason} if reason else {}), **kw)
 
 
 def _advisory(file="a.py", line=3, desc="maybe", **kw):
@@ -124,6 +124,22 @@ class CandidatesTest(_Repo):
         self.assertEqual(keys[:3], ["fanout-00000002", "fanout-00000003", "fanout-00000004"])
         self.assertEqual(len(keys), 4)
         self.assertTrue(keys[3].startswith("fanout-"))   # the advisory, keyed like recital slugs it
+
+    def test_a_fix_on_another_branch_does_not_hide_a_shipped_finding(self):
+        # two worktrees flag one file:line, so one slug; only feat/y fixed it
+        events = [_finding("fanout-00000001", branch="feat/x"),
+                  _resolved("fanout-00000001", "shipped_with_finding", "later", branch="feat/x"),
+                  _finding("fanout-00000001", branch="feat/y", ts="2026-10-02T00:00:00Z"),
+                  _resolved("fanout-00000001", "fixed_pre_commit", branch="feat/y", ts="2026-10-02T00:00:00Z")]
+        (c,) = self.b.candidates(events, since="2026-09-28")
+        self.assertEqual((c["branch"], c["outcome"]), ("feat/x", "shipped_with_finding"))
+
+    def test_the_newest_resolution_on_the_branch_wins_not_the_last_row(self):
+        events = [_finding("fanout-00000001", branch="feat/x"),
+                  _resolved("fanout-00000001", "dropped_no_action", branch="feat/x", ts="2026-10-03T00:00:00Z"),
+                  _resolved("fanout-00000001", "fixed_pre_commit", branch="feat/x", ts="2026-10-02T00:00:00Z")]
+        (c,) = self.b.candidates(events, since="2026-09-28")
+        self.assertEqual(c["outcome"], "dropped_no_action")
 
     def test_unfixed_should_reuse_findings_are_duplicates(self):
         events = [_duplicate("conv-00000001"),
