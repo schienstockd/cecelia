@@ -38,6 +38,17 @@ end
     @test only(Cecelia._neighbours_qc_findings(100, 0, 0.0))["code"] == "spatial.no_edges"
     @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7))["code"] == "spatial.many_isolated"
     @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
+    # sparse graph: a radius-pruned Delaunay at mean degree 2.2 made region clustering meaningless
+    sparse = only(Cecelia._neighbours_qc_findings(100, 110, 0.1, 2.2))
+    @test sparse["code"] == "spatial.sparse_graph"
+    @test sparse["level"] == "warn"
+    @test occursin("2.2", sparse["long"])
+    @test haskey(Cecelia.QC_TEXT, "spatial.sparse_graph")
+    @test isempty(Cecelia._neighbours_qc_findings(100, 700, 0.0, 14.6))  # a validated graph → fine
+    @test isempty(Cecelia._neighbours_qc_findings(100, 150, 0.0, 3.0))   # at the threshold → fine
+    # the more specific findings win: no edges / mostly isolated are not also reported as sparse
+    @test only(Cecelia._neighbours_qc_findings(100, 0, 0.0, 0.0))["code"]  == "spatial.no_edges"
+    @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7, 0.8))["code"] == "spatial.many_isolated"
 end
 
 
