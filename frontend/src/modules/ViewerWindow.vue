@@ -36,6 +36,8 @@ import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
+import { reconcilePopEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
+         type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -735,7 +737,7 @@ const popLayers = ref<PopLayer[]>([])
 /** A pop's key across layers — paths collide between segmentations and pop types (`/qc` on two). */
 const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}::${path}`
 /** Whether a layer's pop is DRAWN — its eye (`hiddenPops`) is the only authority; the manager's
- *  `show` only seeds it on fetch. The points, the capture snapshot and the landscape counts all ask
+ *  `show` only seeds a pop the viewer has no stored eye for. The points, the capture snapshot and the landscape counts all ask
  *  here, so they agree on what is on screen. */
 const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.vn, l.popType, path))
 /** A layer's hidden pop paths — `popDrawn`'s complement, the shape the points and the mask table take. */
@@ -834,9 +836,14 @@ function toggleSelectMode() {
   selectModeActive.value = next
   try { localStorage.setItem('cc.viewerSelectMode', next ? 'select' : 'off') } catch { /* noop */ }
 }
-/** Populations the USER has hidden, by `popKey`. Seeded from the server's `show` flag on every fetch, so
- *  a pop hidden in the population manager stays hidden here without a second source of truth. */
-const hiddenPops = ref<Set<string>>(new Set())
+/** The population rows' eyes, per segmentation (`utils/viewer/popEyes.ts`). PERSISTED per
+ *  (imageUid × vn) via `settings.getPopEyes` and separate from the manager's `show`, which only seeds
+ *  a pop with no stored eye — so a gate edit (which refetches) no longer resets what the user chose. */
+const popEyes = ref<Map<string, PopEyes>>(new Map())
+/** Populations whose eye is off, by `popKey` — what the points, capture and landscape ask. */
+const hiddenPops = computed(() => new Set(popLayers.value.flatMap(l => l.payload.pops
+  .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show))
+  .map(x => popKey(l.vn, l.popType, x.path)))))
 /**
  * Track-layer visibility hides a pop's RIBBONS separately from its POINTS. A user showing points for
  * `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing this into `hiddenPops` would
@@ -850,8 +857,8 @@ const hiddenPops = ref<Set<string>>(new Set())
  */
 const hiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
 /** Per segmentation, the pops the MANAGER hides (`!show`) — the ribbon eye's seed, reset on every fetch
- *  exactly as `hiddenPops` is, so the viewer can show ribbons for a pop the manager hides without
- *  storing a hide in `hiddenTrackPops` when the manager shows it again. */
+ *  (unlike the point eyes, which keep a stored eye over `show` — `popEyes`), so the viewer can show
+ *  ribbons for a pop the manager hides without storing a hide in `hiddenTrackPops` when the manager shows it again. */
 const managerHiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
 const trackPopHidden = (vn: string, path: string) =>
   ribbonEyeOff(hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
@@ -1882,13 +1889,21 @@ async function loadOverlays() {
   // An overlay failure must not take the IMAGE down — the viewer's job is the pixels, and a missing
   // cell table is a normal state for an unsegmented image. Said only when nothing came back.
   if (!next.length && errors.length) overlaysErr.value = errors[0]
-  // Per-pop `pop.show` — authored in the Population Manager, persisted in the gating JSON. The
-  // viewer's row-eye is a transient override for the SAME fetch; the next refetch resyncs. Trying to
-  // preserve local eye state across refetches was worse: PopManager pings this window on every
-  // write, so the override would be clobbered within a second anyway ("the toggles for pops and
-  // tracks dont do anything").
-  hiddenPops.value = new Set(next.flatMap(l => l.payload.pops.filter(x => !x.show)
-                                                       .map(x => popKey(l.vn, l.popType, x.path))))
+  // Point eyes are user intent, persisted per segmentation: RECONCILE against the fresh payloads
+  // (rename follows the uid, delete drops, a new pop seeds from the manager's `show`) rather than
+  // rebuild from `show` — the manager pings this window on every gate write, and a rebuild reset
+  // every toggle the user had made.
+  const eyePops = (layers: PopLayer[], vn: string) => layers.filter(l => l.vn === vn)
+    .flatMap(l => l.payload.pops.map(x => ({ popType: l.popType, path: x.path, uid: x.uid, show: x.show })))
+  const eyesNext = new Map(popEyes.value)
+  for (const vn of new Set(next.map(l => l.vn))) {
+    const stored = settings.getPopEyes(imageUid, vn)
+    const kept = reconcilePopEyes(stored, eyePops(popLayers.value, vn), eyePops(next, vn),
+                                  next.filter(l => l.vn === vn).map(l => l.popType), soloPop.value)
+    eyesNext.set(vn, kept)
+    if (!samePopEyes(stored, kept)) settings.setPopEyes(imageUid, vn, kept)
+  }
+  popEyes.value = eyesNext
   // Track-layer hides are user intent, not server state — reconcile against the fresh payloads
   // instead of resetting, per segmentation. Uid-aware remap (docs/todo/POP_SYNC_PLAN.md): a RENAME
   // carries the hide to the pop's new path (its uid is preserved by `rename_pop!`), a DELETE drops it,
@@ -1917,11 +1932,44 @@ async function loadOverlays() {
   rebuildOverlays()
 }
 
-function togglePop(key: string) {
-  const next = new Set(hiddenPops.value)
-  next.has(key) ? next.delete(key) : next.add(key)
-  hiddenPops.value = next
+/** Every pop row the section lists, in list order — what the master row's all / solo act on. */
+const listedPops = computed<ListedPop[]>(() => listedPopLayers.value.flatMap(l =>
+  l.payload.pops.map(x => ({ vn: l.vn, popType: l.popType, path: x.path }))))
+const listedPopOn = (p: ListedPop) => !hiddenPops.value.has(popKey(p.vn, p.popType, p.path))
+/** True when every listed pop is on; a mixed state reads "not all on", as for channels. */
+const allPopsVisible = computed(() => listedPops.value.length > 0 && listedPops.value.every(listedPopOn))
+/** One-at-a-time for populations: switching a pop ON switches every other listed one OFF. Kept per
+ *  image, like the eyes it drives. */
+const popSoloKey = `cc.vw.popSolo.${imageUid}`
+const soloPop = ref(profileStorage.getItem(popSoloKey) === 'true')
+watch(soloPop, on => {
+  profileStorage.setItem(popSoloKey, String(on))
+  if (!on) return
+  applyPopEyes(soloPopEyes(popEyes.value, listedPops.value, listedPops.value.findIndex(listedPopOn)))
+})
+/** Store the eyes of every segmentation that changed, then redraw. */
+function applyPopEyes(next: Map<string, PopEyes>) {
+  if (imageUid) for (const [vn, e] of next) {
+    const was = popEyes.value.get(vn)
+    if (!was || !samePopEyes(was, e)) settings.setPopEyes(imageUid, vn, e)
+  }
+  popEyes.value = next
   rebuildOverlays()
+}
+function setAllPops(visible: boolean) {
+  // "All on" asks for more than one pop, so it ends one-at-a-time mode (as for channels).
+  if (visible) soloPop.value = false
+  applyPopEyes(setAllPopEyes(popEyes.value, listedPops.value, visible))
+}
+function setPopEye(l: PopLayer, pop: OverlayPop, visible: boolean) {
+  if (visible && soloPop.value) {
+    const i = listedPops.value.findIndex(p => p.vn === l.vn && p.popType === l.popType && p.path === pop.path)
+    applyPopEyes(soloPopEyes(popEyes.value, listedPops.value, i))
+    return
+  }
+  const next = new Map(popEyes.value)
+  next.set(l.vn, { ...next.get(l.vn) ?? {}, [eyeKey(l.popType, pop.path)]: visible })
+  applyPopEyes(next)
 }
 // Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
 // The row shows `drawn`, so with the cell-track ribbons off every row reads off: switching one on
@@ -6429,6 +6477,25 @@ onUnmounted(() => {
               {{ summary.cells }} cells, no populations gated
             </div>
             <template v-else>
+              <!-- Section-wide eyes, same icons as the Channels row. They act on EVERY listed pop —
+                   all segmentations × pop types the panel has on — so "one at a time" means one pop
+                   on screen, whichever segmentation it is from. -->
+              <div class="cc-row cc-row-tight">
+                <div class="cc-row-group">
+                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': allPopsVisible }]"
+                        @click="setAllPops(!allPopsVisible)" :aria-pressed="allPopsVisible"
+                        v-tooltip.right="allPopsVisible ? 'Hide every population' : 'Show every population'"
+                        aria-label="Toggle every population">
+                  <i :class="['pi', allPopsVisible ? 'pi-eye' : 'pi-eye-slash']" />
+                </button>
+                <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': soloPop }]"
+                        @click="soloPop = !soloPop" :aria-pressed="soloPop"
+                        v-tooltip.right="'One at a time — showing a population hides the others'"
+                        aria-label="Show one population at a time">
+                  <i class="pi pi-dot-circle" />
+                </button>
+                </div>
+              </div>
               <template v-for="l in listedPopLayers" :key="l.vn + '::' + l.popType">
                 <!-- one group per (segmentation, pop type); named only when there is more than one -->
                 <div v-if="popLayerSegs > 1 || popLayerTypes > 1" class="cc-muted cc-fs-3xs">
@@ -6441,7 +6508,7 @@ onUnmounted(() => {
                   <CcToggle
                     :model-value="!hiddenPops.has(popKey(l.vn, l.popType, pop.path))"
                     v-tooltip.bottom="'Draw this population over the image'"
-                    :aria-label="'Show ' + pop.name" @update:modelValue="togglePop(popKey(l.vn, l.popType, pop.path))"
+                    :aria-label="'Show ' + pop.name" @update:modelValue="v => setPopEye(l, pop, v)"
                   />
                 </div>
               </template>

@@ -35,7 +35,8 @@ reading for this plan):
    picker's) — every `CELL_POP_TYPES` chip that is on (flow, clust, region). The pop manager's
    selection stops deciding what is DRAWN; it stays what the pop manager edits.
 2. **Keys carry the segmentation.** Pop paths collide across segmentations (`/qc` on OTI and P14), so
-   the viewer's transient `hiddenPops` keys `vn::popType::path`; track sources key `vn::path` (as
+   the viewer's `hiddenPops` keys `vn::popType::path` (no longer transient: since #1730 the eyes persist per
+   image × segmentation and survive refetches — `utils/viewer/popEyes.ts`); track sources key `vn::path` (as
    today, unchanged). `hiddenTrackPops` is already persisted per `(image, vn)` — every segmentation now
    reads its own.
 3. **Cell-track ribbons from every pop payload**, not the pop manager's; the trackclust stand-down
@@ -89,7 +90,8 @@ reading for this plan):
   its own segmentation only. Which rule is canonical is a call to make, not a bug fix.
 - A mask recoloured by colour-by (`colourLabels`) uses its own table's scale, not a pooled one. Not
   reachable today: only a batch sets `colourLabels`, and a batch draws one segmentation's pops.
-- The viewer's per-pop point eyes (`hiddenPops`) are window-local and transient, so a movie recorded
+- The viewer's per-pop point eyes (`hiddenPops`) are window-local (persisted per image since #1730, but
+  `viewerLook` doesn't read `settings.getPopEyes`), so a movie recorded
   from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
   `trackPopHidden`).
 - The viewer's *Pop colour* mask (`utils/maskPopTable.ts`: deepest visible pop wins, parents pale,

@@ -39,6 +39,13 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
     @test !occursin("--partition", s3) && !occursin("--account", s3) && !occursin("--qos", s3) &&
           !occursin("--gres", s3) && !occursin("--mail", s3)
     @test occursin("--time=1:00:00", s3) && occursin("--mem=4G", s3)
+
+    # The install job is sized from one real site (1 min 16 s, MaxRSS 0.6 GB), not the old 8 GB / 2 h (#1739).
+    si = hpc_render_script(SlurmBackend(_hpc_test_site()),
+                           HpcJobSpec(; name = "install-env", dir = "/d", body = "true", class = "cpu",
+                                      Cecelia._HPC_INSTALL_JOB...))
+    @test occursin("#SBATCH --mem=4G\n", si) && occursin("#SBATCH --time=0:30:00\n", si) &&
+          occursin("#SBATCH --cpus-per-task=2\n", si)
 end
 
 @testset "HPC: SLURM status + exit-reason parsing" begin

@@ -21,8 +21,10 @@ const HPC_ENV_MARKER  = ".cecelia-env"
 const HPC_CODE_MARKER = ".complete"
 
 # Resources for the install job: the solve is single-threaded, the download and unpack of a CUDA torch
-# want memory and time more than cores. Measured on no cluster yet; generous on purpose.
-const _HPC_INSTALL_JOB = (; cpus = 2, mem_gb = 8, walltime_min = 120)
+# want memory and time more than cores. Measured on one real SLURM site: 1 min 16 s, MaxRSS 0.6 GB,
+# 8.3 GB env on disk; the cold download dominates the time. 4 GB / 30 min keeps headroom for a slow
+# site; one data point does not justify going tighter.
+const _HPC_INSTALL_JOB = (; cpus = 2, mem_gb = 4, walltime_min = 30)
 
 _hpc_repo_root()::String = dirname(_app_dir())
 

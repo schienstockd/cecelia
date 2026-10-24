@@ -393,7 +393,8 @@ The counts are files touched, new and existing, including tests and docs.
   pins), and its cache lives under the remote folder (cluster home quotas are small). So the compute
   node needs outbound HTTPS. A site without it is the Q1 (b)/(c) case, still open.
 - **Linux x86_64 only on the cluster** (the platform pixi.lock has). The job refuses anything else by name.
-- **Install job size:** 2 CPUs, 8 GB, 2 h (the CI node has 4 cores and 16 GB). Unmeasured on a real site.
+- **Install job size:** 2 CPUs, 4 GB, 30 min (#1739). Measured on one real SLURM site: 1 min 16 s,
+  MaxRSS 0.6 GB, 8.3 GB on disk; the cold download dominates. Was 8 GB / 2 h before any measurement.
 - **An install already on the cluster is attached to** (`env/<lock>/.install-job`), not repeated: the
   first piece of Q6.
 - **rsync is a conda-forge dependency on unix** (`[target.unix.dependencies]`), as Q8 recommended.

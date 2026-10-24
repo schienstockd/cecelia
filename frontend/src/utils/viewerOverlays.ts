@@ -82,7 +82,8 @@ export function isTrackDrawable(p: Pick<OverlayPop, 'labels' | 'isTrack' | 'hasT
 
 /** A pop's ribbon eye, per segmentation: off when the user hid it (`persisted`, user intent kept
  *  across fetches) or when the manager hides the pop (`managerHidden`, reseeded from `!show` on every
- *  fetch, so a viewer override lasts until the next one — as for the point eye). */
+ *  fetch, so a viewer override lasts until the next one; the point eye instead keeps a stored eye
+ *  over `show` — `utils/viewer/popEyes.ts`). */
 export function ribbonEyeOff(persisted: ReadonlySet<string> | undefined,
                              managerHidden: ReadonlySet<string> | undefined, path: string): boolean {
   return !!persisted?.has(path) || !!managerHidden?.has(path)
