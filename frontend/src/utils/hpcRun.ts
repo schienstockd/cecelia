@@ -7,7 +7,7 @@
 // form and the request.
 
 import type { TaskDef, HpcMemModel } from '../tasks/types'
-import { hpcTestBlocker, type HpcSettings } from './hpcSettings'
+import { hpcTestBlocker, hpcEnvLine, type HpcSettings, type HpcEnvStatus } from './hpcSettings'
 import { formatBytes, type FrameGeometry } from '../tasks/paramAdvisors'
 import type { Severity } from '../lib/severity'
 
@@ -131,6 +131,19 @@ export function hpcRunDestination(s: HpcSettings | null, def: TaskDef): { short:
     detail: [account ? `Account ${account}${s.project?.account ? ' (this project)' : ''}` : 'Your default account',
              c.qos ? `QoS ${c.qos}` : '', `${label} jobs are set in Preferences → HPC`].filter(Boolean).join(' · '),
   }
+}
+
+/** The cluster env as the task runner shows it once hpc is picked: nothing while unknown, ready, or
+ *  when the settings are incomplete (`hpcRunDestination` names what is missing); otherwise a short
+ *  line, with Install offered when this version's env is not on the cluster. The detail is the
+ *  Settings → HPC env line (`hpcEnvLine`). */
+export function hpcRunEnvNote(e: HpcEnvStatus | null):
+    { short: string; detail: string; severity?: Severity; canInstall: boolean } | null {
+  if (!e || !e.configured || e.installed) return null
+  const detail = hpcEnvLine(e).text
+  if (e.installing || e.job) return { short: 'Cluster env installing', detail, canInstall: false }
+  if (e.error) return { short: 'Cluster env not checked', detail, severity: 'warn', canInstall: false }
+  return { short: 'Cluster env out of date — reinstall', detail, severity: 'warn', canInstall: true }
 }
 
 /** One timepoint of an image in memory, in GB — what a segmentation run holds at a time. */

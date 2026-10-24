@@ -133,7 +133,7 @@ export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
-export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
+export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops, missing_gate_columns
 export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment

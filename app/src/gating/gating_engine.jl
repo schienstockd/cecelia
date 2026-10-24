@@ -69,18 +69,44 @@ function _boolean_mask(p, memb::Dict{String,BitVector}, n::Int, path::AbstractSt
     mask
 end
 
+# columns ONE population's own membership reads — the same branch order as `recompute!` (label set,
+# then boolean, then gate, then compound filter, then single filter; first one present wins), so a pop
+# carrying two definitions is never reported missing a column its membership doesn't read
+function _pop_columns(p)::Vector{String}
+    (p.explicit_labels !== nothing || p.boolean_op !== nothing) && return String[]
+    p.gate !== nothing && return String[p.gate.x_channel, p.gate.y_channel]
+    p.filter_conditions !== nothing && return String[c.measure for c in p.filter_conditions]
+    p.filter_measure !== nothing && return String[p.filter_measure]
+    String[]
+end
+
 # columns the gates + filters in this map need from the H5AD
-function _needed_columns(m::PopulationMap)::Vector{String}
-    cols = String[]
-    for path in m.order
-        p = m.pops[path]
-        if p.gate !== nothing
-            push!(cols, p.gate.x_channel, p.gate.y_channel)
+_needed_columns(m::PopulationMap)::Vector{String} =
+    unique(String[c for path in m.order for c in _pop_columns(m.pops[path])])
+
+"""
+    missing_gate_columns(m, available) -> Vector{(column, pops)}
+
+The columns `m`'s gates and filters read that `available` (the columns an image's table actually
+has) lacks, each with the populations it leaves EMPTY: the ones reading it directly plus all their
+descendants (`recompute!` degrades a pop with an absent column to no members — `_missing_col_mask` —
+and a child is `parent ∩ own`). Paths in map order; columns in first-use order. A boolean pop that
+combines an emptied pop is not listed — `not X` or `X or Y` keeps members, so "empty" would be wrong.
+Empty result ⇒ every column is there. Used by the gating copy to warn per target (docs/POPULATION.md).
+"""
+function missing_gate_columns(m::PopulationMap, available)::Vector{@NamedTuple{column::String, pops::Vector{String}}}
+    have = Set{String}(String(c) for c in available)
+    out = @NamedTuple{column::String, pops::Vector{String}}[]
+    for col in _needed_columns(m)
+        col in have && continue
+        hit = Set{String}()
+        for path in m.order
+            col in _pop_columns(m.pops[path]) || continue
+            push!(hit, path); union!(hit, descendants(m, path))
         end
-        p.filter_measure !== nothing && push!(cols, p.filter_measure)
-        p.filter_conditions === nothing || append!(cols, (c.measure for c in p.filter_conditions))
+        push!(out, (column = col, pops = String[p for p in m.order if p in hit]))
     end
-    unique(cols)
+    out
 end
 
 """
