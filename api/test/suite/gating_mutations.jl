@@ -7,6 +7,7 @@
 #  - `API: gating undo/redo steps through the population tree` (ring of snapshots at the
 #    single _persist_and_broadcast! chokepoint).
 #  - `API: gating channel labels follow the active channel-name version`.
+#  - `API: gating copy warns per target about absent gate/filter columns` (#1737).
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -355,6 +356,53 @@ end
         @test _axis_title(img, "B", "flow", "nuc_mean_intensity_0") == "nuc_ch0"   # was "ch1"
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# ── copy to an image that lacks a filter's column (#1737) ────────────────────────────────────────
+# Copying gates that filter on `clusters.<run>` to an image outside that run used to leave every
+# population under the filter at 0 with no word why. The copy still happens; the reply names, per
+# target, each absent column and the populations it empties.
+@testset "API: gating copy warns per target about absent gate/filter columns" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    # a second image: the fixture image under another uid (same `B` table, no `clusters.immune`)
+    tgt = joinpath(proj, "1", "TgtImg")
+    cp(joinpath(proj, "1", "KDIeEm"), tgt)
+    rm(joinpath(tgt, "gating"); recursive = true, force = true)
+    ccid = joinpath(tgt, "ccid.json")
+    write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEm\"" => "\"uid\": \"TgtImg\""))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => "B", "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        filt(col) = Dict{String,Any}("filter" => Dict{String,Any}("measure" => col, "fun" => "gt", "values" => 0))
+        post(api_gating_pop_add, merge(Dict{String,Any}("name" => "tracked"), filt("track_id")))
+        post(api_gating_pop_add, merge(Dict{String,Any}("name" => "immune", "parent" => "/tracked"),
+                                       filt("clusters.immune")))
+        post(api_gating_pop_add, merge(Dict{String,Any}("name" => "T", "parent" => "/tracked/immune"),
+                                       filt("track_id")))
+
+        st, b = post(api_gating_copy, Dict{String,Any}("toImageUids" => ["TgtImg"]))
+        r = JSON3.read(b)
+        @test st == 200
+        @test collect(String, r.copied) == ["TgtImg"]             # still copied, not blocked
+        w = r.warnings[:TgtImg]
+        @test length(w) == 1 && String(w[1].column) == "clusters.immune"
+        @test collect(String, w[1].pops) == ["/tracked/immune", "/tracked/immune/T"]
+        @test Set(pop_paths(load_pop_map(tgt, "B"; pop_type = "flow"))) ==
+              Set(["/tracked", "/tracked/immune", "/tracked/immune/T"])
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
     end
   end
 end
