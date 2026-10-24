@@ -218,12 +218,13 @@ class FenceTest(_AutoFixture):
         self.assertTrue(any(d.startswith("Edit(") and d.endswith("cecelia-feijoa/**)") for d in deny))
         self.assertIn("Write(~/.ssh/**)", deny)
 
-    def session(self, *events, code=0):
+    def session(self, *events, code=0, stderr=""):
         seen = {}
 
         class Popen:
             def __init__(self, argv, **kw):
                 seen.update(argv=argv, env=kw["env"], cwd=kw["cwd"])
+                kw["stderr"].write(stderr)
                 self.stdin = io.StringIO()
                 self.stdout = io.StringIO("".join(json.dumps(e) + "\n" for e in events) + "not json\n")
 
@@ -303,6 +304,26 @@ class FenceTest(_AutoFixture):
         (answer, _, _, failed), _, _ = self.session({"type": "system"}, code=1)
         self.assertIsNone(answer)
         self.assertIn("exit 1", failed)
+        # another error on stderr, or the agent's own prose about a rate limit: still an ordinary failure
+        prose = {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+            {"type": "text", "text": "You've hit your session limit, says the API."}]}}
+        with mock.patch.object(self.af, "wait_for_reset", side_effect=AssertionError("waited")):
+            (answer, _, _, failed), _, _ = self.session(prose, code=1, stderr="Prompt is too long\n")
+        self.assertIsNone(answer)
+        self.assertIn("exit 1", failed)
+
+    def test_a_session_the_cli_aborts_on_the_limit_without_a_result_is_limited(self):
+        limit = "You've hit your session limit · resets 12:10am (Australia/Sydney)"
+        synthetic = {"type": "assistant", "session_id": "s1", "message": {
+            "model": "<synthetic>", "content": [{"type": "text", "text": limit}]}}
+        for events, stderr in ((({"type": "system", "session_id": "s1"},), f"{limit}\n"),
+                               (({"type": "system", "session_id": "s1"}, synthetic), "")):
+            waited = []
+            with mock.patch.object(self.af, "wait_for_reset", lambda m, **kw: waited.append(m) or False):
+                with self.assertRaises(self.af.RateLimited) as e:
+                    self.session(*events, code=1, stderr=stderr)
+            self.assertEqual(waited, [limit])   # waited on, not logged as a failure
+            self.assertEqual(str(e.exception), limit)
 
     def test_the_progress_line(self):
         tty = mock.Mock(isatty=lambda: True)

@@ -633,6 +633,12 @@ class DefaultRunnerTest(unittest.TestCase):
                 mock.patch.object(r.subprocess, "run", return_value=done):
             with self.assertRaisesRegex(RecitalError, "stdout:\nYou've hit your session limit"):
                 r._default_runner("p")
+        # a warning on stderr doesn't hide the limit on stdout
+        done.stderr = "Warning: something\n"
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done):
+            with self.assertRaisesRegex(RecitalError, "stderr:\nWarning: something\nstdout:\nYou've hit your session"):
+                r._default_runner("p")
 
     def test_spawn_oserror_becomes_recital_error(self):
         from cecelia.effectiveness import recital as r

@@ -54,7 +54,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
-    RateLimited, failure_text, rate_limit, read_result, reset_at, resolve_claude_bin)
+    RateLimited, failure_text, limit_in_text, rate_limit, read_result, reset_at, resolve_claude_bin, synthetic_limit)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
@@ -377,7 +377,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
             "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)]
     if resume:
         argv += ["--resume", resume]
-    result, sid, timed_out = {}, resume, threading.Event()
+    result, sid, timed_out, cut_off = {}, resume, threading.Event(), None
     try:
         with tempfile.TemporaryFile("w+", encoding="utf-8") as err, Progress(label, out=out, cwd=cwd) as progress:
             proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=str(cwd),
@@ -396,6 +396,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
                         progress.event(ev)
                         sid = ev.get("session_id") or sid
                         result = ev if ev.get("type") == "result" else result
+                        cut_off = synthetic_limit(ev) or cut_off
                 code = proc.wait()
             finally:
                 timer.cancel()
@@ -409,6 +410,8 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
         return None, 0.0, sid, f"session failed: timed out after {timeout:.0f}s", None
     cost = float(result.get("total_cost_usd") or 0.0)
     limited = rate_limit(result)
+    if not limited and (code != 0 or not result):   # no result to say so: the CLI's own turn, or its stderr
+        limited = cut_off or limit_in_text(stderr)
     if limited:
         return None, cost, sid, None, limited
     done = subprocess.CompletedProcess(argv, code, json.dumps(result) if result else "", stderr)
