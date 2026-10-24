@@ -35,7 +35,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The target population within segmentation B"
+      "tip": "The target populations within segmentation B, one distance each"
     },
     {
       "key": "maxContactDist",
@@ -46,6 +46,13 @@
       "step": 0.5,
       "default": 5,
       "tip": "Surface-to-surface distance (µm) counting as contact"
+    },
+    {
+      "key": "combineTargets",
+      "label": "Combine targets",
+      "type": "bool",
+      "default": false,
+      "tip": "One distance to the nearest of all targets; off = one per target"
     }
   ]
 }

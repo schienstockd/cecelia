@@ -574,6 +574,19 @@ types in ONE segmentation would be ambiguous. Guarded at both ends:
 `"flow"`. Consumers: all `spatialAnalysis.*` + `clustPops`/`clustRegions` (membership) and
 `cellContacts`/`contactsMeshes`/`detectAggregates`/`aggregatesMeshes` (namespace).
 
+**Contact targets: one column set per target** (#1734, `tasks/spatialAnalysis/contact_targets.jl`). `cellContacts` /
+`contactsMeshes` write `<ns>.cell.{contact,min_distance,contact_id}#<target>` once per target group,
+from `_contact_target_groups(popsB)`: B refs grouped by population PATH with the segmentation prefix
+stripped, so `B/T` + `B/DC` → `#flow.B_T` and `#flow.B_DC`, while one population picked from two
+segmentations (`B/T` + `C/T`) stays one group and pools → `#flow.B_T+C_T`. `combineTargets` (default
+off) makes every B ref one group — the nearest of any target, the pre-#1734 behaviour. Each group's
+`<target>` is `_contact_target(pop_namespace(group), group)`; every reader (analysis runs, plots,
+measure pickers, track aggregation, viewer colour-by) matches the `contact#` / `min_distance#` prefix,
+so N column sets need no reader change. QC `nContacts`/`fracInContact` count A cells in contact with
+ANY target (= what the pooled column reported), plus `nTargets`; a target with no cells is skipped
+with `contact.no_target_cells`. A per-target re-run leaves an earlier combined set in place (it is a
+different measure) and names it in the log; drop it under Analysis runs.
+
 **`pops_value_name(pops; default)`** gives the **segmentation** a single-segmentation task operates on,
 **derived from its picked populations** — every picker value is value_name-prefixed (`"B/qc"`, and the
 all-cells root `"B/"`), so the segmentation is already implied by the selection. The spatial-analysis
