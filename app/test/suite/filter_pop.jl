@@ -130,6 +130,38 @@ end
     @test isempty(cells_in_pop(mg, "/g"))
 end
 
+@testset "missing_gate_columns — which pops a target's absent column leaves empty (#1737)" begin
+    # Copying gates to an image that wasn't in a clustering run: the `clusters.<run>` filter and every
+    # pop under it are empty there. The copy reports exactly those, per missing column.
+    m = PopulationMap(pop_type="flow", value_name="C")
+    add_pop!(m, "live"; gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0))
+    add_pop!(m, "immune"; parent="/live", filter_measure="clusters.immune", filter_fun="in", filter_values=[1])
+    add_pop!(m, "T"; parent="/live/immune", gate=RectangleGate("x", "y", 0.0, 5.0, 0.0, 5.0))
+    add_pop!(m, "B"; parent="/live/immune", filter_conditions=[(measure="y", fun="gt", values=1)])
+    add_pop!(m, "dc"; parent="/live", gate=RectangleGate("x", "cd11c", 0.0, 5.0, 0.0, 5.0))
+    add_pop!(m, "notImmune"; parent="/live", boolean_op="and", boolean_not=["/live/immune"])
+
+    @test isempty(missing_gate_columns(m, ["label", "x", "y", "clusters.immune", "cd11c"]))
+    miss = missing_gate_columns(m, ["label", "x", "y"])
+    @test [r.column for r in miss] == ["clusters.immune", "cd11c"]
+    # direct users + all their descendants, in map order; the `not immune` boolean keeps members
+    @test miss[1].pops == ["/live/immune", "/live/immune/T", "/live/immune/B"]
+    @test miss[2].pops == ["/live/dc"]
+
+    # agrees with what recompute! actually leaves empty on that table
+    fetch = _ -> DataFrame("label" => [1, 2, 3], "x" => [1.0, 2.0, 3.0], "y" => [2.0, 3.0, 4.0])
+    recompute!(m, fetch)
+    empty = Set(p for p in pop_paths(m) if isempty(cells_in_pop(m, p)))
+    @test empty == Set(p for r in miss for p in r.pops)
+
+    # a pop carrying a gate AND a filter is evaluated by its gate (recompute!'s branch order), so its
+    # filter's column is not "missing" for it
+    m2 = PopulationMap(pop_type="flow", value_name="C")
+    add_pop!(m2, "both"; gate=RectangleGate("x", "y", 0.0, 10.0, 0.0, 10.0),
+             filter_measure="clusters.gone", filter_fun="in", filter_values=[1])
+    @test isempty(missing_gate_columns(m2, ["label", "x", "y"]))
+end
+
 @testset "colour_by_palette — pop colour else default" begin
     # a value a user pop FILTERS for on the column → that pop's colour; the rest → OKABE_ITO by
     # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is

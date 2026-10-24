@@ -20,6 +20,7 @@ import { rescaleRows01 } from '../utils/heatmapScale'
 import { frameAxisLabel } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
+import { rotatedXLayout, fitTickLabels } from './axisLabelFit'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
@@ -108,6 +109,9 @@ export interface VisProps {
   // Plot.plot() time. Absent → no auto-rotation (better one un-rotated frame than rotating a chart
   // that had room).
   plotWidth?: number
+  // OUTER height PlotChart renders at, in px — caps how much of the panel rotated x labels may take
+  // (plots/axisLabelFit.ts). Absent → a fixed cap.
+  plotHeight?: number
   // MEASURED height of the rendered legend overlay, in px. The overlay is HTML, so its wrapped height
   // depends on the label texts and the panel width — things this module cannot see. PlotChart measures
   // the node and re-renders once with the real number; until then `legendTopPad` falls back to an
@@ -225,9 +229,9 @@ export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: n
   const pal = PALETTES[vis.palette]
   return pal ? Array.from({ length: n }, (_, i) => pal[i % pal.length]) : null
 }
-// x tick-label rotation: the angle (negative = tilt down-right, ggplot-style) and the bottom margin
-// needed so the rotated labels aren't clipped. The base margin is per-chart (empirically fits 45°);
-// scale it with the angle (0.5×base at 0° → 1×base at 45° → 1.5×base at 90°).
+// x tick-label rotation: the angle (negative = tilt down-right, ggplot-style). CATEGORY labels get
+// margins sized from their length (`rotatedXMargins`); `xRotMargin` is the trend line's fixed one —
+// its x ticks are short numbers — scaled with the angle (0.5×base at 0° → 1×base at 45° → 1.5× at 90°).
 const xTickRotate = (o: { rotateXAngle?: number }) => -(o.rotateXAngle ?? 45)
 
 /**
@@ -356,9 +360,41 @@ function textWidth(text: string, fontPx: number): number {
  * helper rather than two constants. `+12` covers the tick mark and its gap; the clamp keeps a very
  * long label from eating the plot.
  */
+export const Y_LABEL_MARGIN_MAX = 240
 export function yLabelMargin(labels: readonly unknown[], fontPx: number): number {
-  const longest = labels.reduce<number>((m, s) => Math.max(m, textWidth(String(s), fontPx)), 0)
-  return Math.round(Math.min(240, Math.max(40, longest + 12)))
+  return Math.round(Math.min(Y_LABEL_MARGIN_MAX, Math.max(40, longestLabelPx(labels, fontPx) + 12)))
+}
+const longestLabelPx = (labels: readonly unknown[], fontPx: number) =>
+  labels.reduce<number>((m, s) => Math.max(m, textWidth(String(s), fontPx)), 0)
+
+/**
+ * Margins for ROTATED x category labels, sized from the longest one (`rotatedXLayout`,
+ * plots/axisLabelFit.ts) — the fixed per-chart bottom margin clipped long population paths. `minBottom`
+ * is the chart's margin without labels to fit; `firstTickFrac` where its first category tick sits.
+ */
+export function rotatedXMargins(labels: readonly unknown[], o: Pick<BuildOpts, 'rotateXAngle' | 'fontSize' | 'plotWidth' | 'plotHeight' | 'labX'>,
+                                minBottom: number, firstTickFrac: number) {
+  const fs = o.fontSize || 11
+  return rotatedXLayout(longestLabelPx(labels, fs), {
+    angleDeg: o.rotateXAngle ?? 45, fontPx: fs, minBottom, minLeft: THEME.marginLeft,
+    plotWidth: o.plotWidth, plotHeight: o.plotHeight, firstTickFrac, axisTitle: !!o.labX,
+  })
+}
+
+/**
+ * Shorten an axis's category tick labels past `maxPx` (middle ellipsis) and record the full ones on
+ * `_tickTitles[axis]`, which PlotChart turns into a hover title on each shortened tick. The axis's own
+ * `tickFormat` (a band axis maps index → label) runs first. No-op when everything fits.
+ */
+function fitAxisLabels(opts: Record<string, unknown>, axis: 'x' | 'y', labels: readonly unknown[],
+                       maxPx: number, fontPx: number) {
+  const fit = fitTickLabels(labels, maxPx, s => textWidth(s, fontPx))
+  if (!fit.titles) return
+  const ax = (opts[axis] ?? {}) as Record<string, unknown>
+  const prev = ax.tickFormat
+  opts[axis] = { ...ax, tickFormat: (d: unknown) =>
+    fit.format(String(typeof prev === 'function' ? (prev as (d: unknown) => unknown)(d) : d)) }
+  opts._tickTitles = { ...(opts._tickTitles as object ?? {}), [axis]: fit.titles }
 }
 
 const THEME = {
@@ -602,10 +638,21 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
                     ...(o.labX ? { label: o.labX } : {}),
                     ...(xrot.rotate ? { tickRotate: xTickRotate(o) } : {}) }
   // room for rotated x labels (else clipped by the panel border); room for series labels on Y when flipped
-  if (xrot.rotate) opts.marginBottom = xRotMargin(76, o)
+  // sized from the longest label and capped; past the cap the labels are shortened (full on hover).
+  // A series-faceted chart has no position axis (the labels are the facet headers).
+  if (xrot.rotate) {
+    const lay = rotatedXMargins(posLabels, o, THEME.marginBottom, 0.6 / (posLabels.length + 0.2))
+    opts.marginBottom = lay.marginBottom
+    opts.marginLeft = Math.max(Number(opts.marginLeft ?? THEME.marginLeft), lay.marginLeft)
+    if (!facetSingle(o)) fitAxisLabels(opts, posAxis, posLabels, lay.maxLabelPx, o.fontSize || 11)
+  }
   // flipped: the SERIES labels move to Y, so fit the margin to them instead of reserving a fixed 104px
-  // (short labels like "T · 1" left a wide empty gap on the left) — same helper as the heatmap.
-  if (o.rotate) opts.marginLeft = yLabelMargin(posLabels, o.fontSize || 11)
+  // (short labels like "T · 1" left a wide empty gap on the left) — same helper as the heatmap. Past
+  // its cap they are shortened, not clipped.
+  if (o.rotate) {
+    opts.marginLeft = yLabelMargin(posLabels, o.fontSize || 11)
+    if (!facetSingle(o)) fitAxisLabels(opts, posAxis, posLabels, Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
+  }
   // …and PIXEL room for the stats annotation text, which is offset beyond its data coordinate (dx: 8
   // when rotated, dy: -6 otherwise). The domain padding above puts the mark inside the plot; without
   // this the glyph still overhangs the frame and gets clipped. On the measure axis's far side: right
@@ -740,7 +787,16 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
       Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
     ],
   }
-  if (xrot.rotate) opts.marginBottom = xRotMargin(72, o)
+  // the column bands are equal (Plot's default 0.1 padding), so the first tick sits ~half a band in
+  const xLabels = r.xLabels ?? []
+  if (xrot.rotate) {
+    const lay = rotatedXMargins(xLabels, { ...o, plotWidth: Math.max(0, (o.plotWidth ?? 0) - marginLeft + THEME.marginLeft) },
+                                48, xLabels.length ? 0.5 / xLabels.length : 0)
+    opts.marginBottom = lay.marginBottom
+    opts.marginLeft = Math.max(marginLeft, lay.marginLeft)
+    fitAxisLabels(opts, 'x', xLabels, lay.maxLabelPx, o.fontSize || 11)
+  }
+  fitAxisLabels(opts, 'y', r.yLabels ?? [], Y_LABEL_MARGIN_MAX - 12, o.fontSize || 11)
   ;(opts as Record<string, unknown>)._autoRotatedX = xrot.auto
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }

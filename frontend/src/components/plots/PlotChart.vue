@@ -16,6 +16,7 @@ import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../.
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
+import { pointInPoly } from '../../utils/drawGeometry'
 import type { PlotDataResponse } from '../../plots/types'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import type { FrameRect } from '../../plots/frame'
@@ -58,6 +59,20 @@ let legendH = 0
 // stay on the previous chart's note).
 let lastOverrides: AutoOverride[] | null = null
 
+// Category tick labels the builder shortened (plot.ts `fitAxisLabels` → `_tickTitles`, shortened →
+// full) get the full label as a hover title. Plot gives the axis no title channel, so it's added here.
+function titleShortenedTicks(svg: Element, titles: Partial<Record<'x' | 'y', Record<string, string>>> | undefined) {
+  for (const [axis, map] of Object.entries(titles ?? {})) {
+    svg.querySelectorAll(`g[aria-label="${axis}-axis tick label"] text`).forEach(t => {
+      const full = map?.[t.textContent ?? '']
+      if (!full) return
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+      title.textContent = full
+      t.appendChild(title)
+    })
+  }
+}
+
 async function render(pass = 0) {
   if (!host.value) return
   if (!Plot) Plot = await import('@observablehq/plot')
@@ -65,7 +80,7 @@ async function render(pass = 0) {
   // build because the builder needs the width to decide whether the x tick labels fit their bands.
   const w = Math.max(160, host.value.clientWidth || 320)
   const h = Math.max(140, host.value.clientHeight || 260)
-  const buildOpts = { ...props.opts, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const buildOpts = { ...props.opts, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, buildOpts) as any : null
   node?.remove(); node = null
   legendNode?.remove(); legendNode = null
@@ -78,6 +93,7 @@ async function render(pass = 0) {
   // Point Plot's `--plot-background` at the theme ground so a `tip: true` rect matches the plot ink
   // rather than staying white — see `applyPlotTheme`, which every Plot.plot() site now shares.
   applyPlotTheme(node as SVGElement, !!props.opts?.darkTheme)
+  titleShortenedTicks(node, base._tickTitles)
   host.value.append(node)
   // Delegated click on brushable dots (LINKED_BRUSHING_PLAN.md Option B write side). Every
   // brushable dot carries class `cc-brush-dot` (set by the renderer) and Observable Plot binds
@@ -201,19 +217,6 @@ async function render(pass = 0) {
       }
     })
 
-    // Even-odd ray-cast: standard closed-polygon test. `poly` is the lasso vertex list; the
-    // implicit closing edge (last → first) is handled by the wrap-around index `j`.
-    const pointInPoly = (poly: Pt[], x: number, y: number): boolean => {
-      let inside = false
-      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
-        const intersect = ((yi > y) !== (yj > y)) &&
-          (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi)
-        if (intersect) inside = !inside
-      }
-      return inside
-    }
-
     // `hit` takes CLIENT coords (see COORDINATE SPACE note above). Each circle's client center is
     // read from `getBoundingClientRect()` — one call per dot, once per drag. Identity comes from
     // data-* attrs stamped by the mark's `render` hook (plot.ts → `stampBrushIds`), NOT from
@@ -269,7 +272,8 @@ async function render(pass = 0) {
         brushMode = null; brushStartClient = null; brushStartSvg = null; svg.classList.remove('cc-brushing')
         // Need at least a triangle for a meaningful polygon; anything less was a stray drag.
         if (pts.length < 3) return
-        emitHits((cx, cy) => pointInPoly(pts, cx, cy))
+        const poly = pts.map(q => [q.x, q.y] as [number, number])
+        emitHits((cx, cy) => pointInPoly([cx, cy], poly))
       }
     }
     svg.addEventListener('mouseup', finishBrush)
@@ -339,7 +343,7 @@ async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | 
   const h = Math.max(140, host.value.clientHeight || 260)
   // the SAME build inputs as the on-screen render (width for the x-label fit, the measured legend band),
   // so the light copy has the on-screen layout and the measured overlays land where they belong
-  const opts = { ...props.opts, darkTheme: false, plotWidth: w, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
+  const opts = { ...props.opts, darkTheme: false, plotWidth: w, plotHeight: h, ...(legendH > 0 ? { legendHeight: legendH } : {}) }
   const base = props.data ? buildPlotOptions(Plot, props.data, opts) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!base) return null
   const off = Plot.plot({ ...base, width: w, height: h }) as SVGSVGElement

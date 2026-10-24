@@ -3144,7 +3144,9 @@ populations in their colours (the **eye** in the manager) overlays on top of eit
 Workflow: pick X/Y columns + per-axis transform (linear/log/asinh/logicle) → click a parent
 population in the manager (sets it as the active plot's parent) → draw a gate → name it → it's
 POSTed (`pop/add`), recomputed server-side, and appears in the manager with count + %-of-parent.
-Edit a gate by dragging its handles → `pop/set-gate` on release. The manager (draggable,
+Edit a gate by dragging its handles → `pop/set-gate` on release. A handle's grab zone is 10 px, capped at a quarter of the gate's shorter on-screen side so a small
+gate's body still moves it, and the handles are drawn at that size (`gateHandleRadius` / `hitGateShape`,
+`plots/gateGeometry.ts`). The manager (draggable,
 clamped on-screen, collapsible) does recolour (`pop/update`), inline rename (`pop/rename`),
 delete (`pop/delete`, cascades), and per-plot colour **highlight** (see below).
 
@@ -3263,3 +3265,10 @@ area, so a label wider than its band must collide with its neighbour; `needsXRot
 widest label with the same canvas text metric the axis margins use. It needs the panel width, which the
 option builders don't have — `PlotChart` passes `plotWidth` (the same value it hands `Plot.plot`), and
 the builder reports the outcome back on `_autoRotatedX` → `@auto-override` → the panel's note.
+
+**Rotated labels get room for their length, not a fixed margin.** `rotatedXLayout`
+(`plots/axisLabelFit.ts`) sizes the bottom margin from the longest label's drop (`w·sinθ`) and the left
+margin from the first label's overhang (`w·cosθ` less how far in its tick sits), each capped at a share
+of the panel (`plotHeight`/`plotWidth` from PlotChart). A label past the cap is shortened with
+`fitLabel(…, 'middle')`, so both the image and the population survive. The builder records the full labels on
+`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks.

@@ -1301,6 +1301,9 @@ end
 # REPLACING any existing gating there. Membership recomputes per image on read, so gates alone are
 # enough (no per-image recompute step, unlike the old R flowGatingSet copy). Plot layout is copied
 # client-side (the canvas store is in-memory + autosaves), not here.
+# → { copied: [uid], skipped: {uid: reason}, warnings: {uid: [{column, pops: [path]}]} } — `warnings`
+#   names, per COPIED target, each gate/filter column its table lacks and the populations that will
+#   therefore be empty there (`missing_gate_columns`); absent key ⇒ nothing missing.
 function api_gating_copy(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     is_gating_pop_type(pt) || return _gerr(400, "Not a gating pop type: $pt (only flow/track)")
@@ -1310,7 +1313,7 @@ function api_gating_copy(body_bytes::Vector{UInt8})
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         isempty(m.order) && return _gerr(400, "Source image has no $pt gating to copy")
-        copied = String[]; skipped = Dict{String,String}()
+        copied = String[]; skipped = Dict{String,String}(); warnings = Dict{String,Vector{@NamedTuple{column::String, pops::Vector{String}}}}()
         for t in tgt_raw
             tuid = String(t)
             tuid == src_uid && continue
@@ -1329,9 +1332,17 @@ function api_gating_copy(body_bytes::Vector{UInt8})
                 _broadcast_popmap(proj, tuid, vn, pt, m)      # refresh any client viewing the target
                 push!(copied, tuid)
             catch e
-                skipped[tuid] = sprint(showerror, e)
+                skipped[tuid] = sprint(showerror, e); continue
             end
+            # Copied, but a gate/filter column the target's table lacks (e.g. `clusters.<run>` from a
+            # clustering run it wasn't in) leaves those populations empty. Still copy; say which (#1737).
+            miss = try
+                missing_gate_columns(m, timg; value_name = vn)
+            catch e
+                @warn "gating copy: could not check columns on $tuid" exception = e; nothing
+            end
+            (miss === nothing || isempty(miss)) || (warnings[tuid] = miss)
         end
-        200, JSON3.write((; copied = copied, skipped = skipped))
+        200, JSON3.write((; copied = copied, skipped = skipped, warnings = warnings))
     end
 end

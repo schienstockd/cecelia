@@ -4,6 +4,8 @@
   target's gating sidecar); membership recomputes per image. Optionally also copy the canvas plot
   layout (client-side, via the canvas store). A precheck (imagesWithValueName → /api/images/value-name-check)
   flags images lacking the segmentation — those are shown separately and never copied to. Ports R "Propagate to Selected".
+  A copied target lacking a column a gate/filter reads (e.g. `clusters.<run>`) gets a `warnings` entry; the
+  dialog then stays open to show which populations will be empty there (#1737).
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
@@ -14,6 +16,8 @@ import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useLogStore } from '../../stores/log'
 import { imagesWithValueName } from '../../lib/valueNames'
 import CcToggle from '../../components/CcToggle.vue'
+import InlineNote from '../../components/InlineNote.vue'
+import { copyWarningLines, copyWarningAction, type CopyWarnings, type CopyWarningLine } from '../../utils/gatingCopyWarnings'
 
 const props = defineProps<{
   setUid: string
@@ -51,6 +55,10 @@ onMounted(async () => {
 const picked = ref<Set<string>>(new Set())
 const copyLayout = ref(true)
 const busy = ref(false)
+// after a copy whose targets lack a column some populations read: shown instead of closing
+const warnLines = ref<CopyWarningLine[]>([])
+const warnAction = ref('')
+const imageName = (uid: string) => siblings.value.find(i => i.uid === uid)?.name ?? uid
 
 function toggle(uid: string) { picked.value.has(uid) ? picked.value.delete(uid) : picked.value.add(uid); picked.value = new Set(picked.value) }
 const allPicked = computed(() => available.value.length > 0 && available.value.every(i => picked.value.has(i.uid)))
@@ -71,12 +79,16 @@ async function copy() {
       body: JSON.stringify({ projectUid, imageUid: props.sourceUid, valueName: props.valueName,
                              popType: props.popType, toImageUids }),
     })
-    const d = await res.json().catch(() => ({})) as { copied?: string[]; error?: string }
+    const d = await res.json().catch(() => ({})) as { copied?: string[]; warnings?: CopyWarnings; error?: string }
     if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
     const copied = d.copied ?? []
     if (copyLayout.value) for (const uid of copied) canvas.copyEntry(ckey(props.sourceUid), ckey(uid))
     log.info(`Copied ${label.value} to ${copied.length} image(s)` + (copyLayout.value ? ' (incl. plot layout)' : '') + '.', { source: 'gating' })
-    emit('close')
+    const lines = copyWarningLines(d.warnings, imageName)
+    if (!lines.length) { emit('close'); return }
+    for (const l of lines) log.warn(`Copy gating: ${l.text}.`, { source: 'gating' })
+    warnLines.value = lines
+    warnAction.value = copyWarningAction(d.warnings)
   } catch (e) {
     log.error(`Copy gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   } finally { busy.value = false }
@@ -88,10 +100,15 @@ async function copy() {
     <template #title><i class="pi pi-copy" /> Copy {{ label }} to images</template>
 
     <div class="cg-body">
-      <p class="cg-warn"><i class="pi pi-exclamation-triangle" />
+      <p v-if="!warnLines.length" class="cg-warn"><i class="pi pi-exclamation-triangle" />
         Overwrites the {{ label }} on each selected image ({{ valueName }}) — no undo.</p>
 
-      <p v-if="checking" class="cg-empty cc-muted">Checking images…</p>
+      <!-- copied, but some targets lack a column: say which populations are empty there -->
+      <div v-if="warnLines.length" class="cg-missing">
+        <InlineNote v-for="l in warnLines" :key="l.uid" severity="warn" :short="l.text" :detail="l.pops.join(', ')" />
+        <span class="cc-muted">{{ warnAction }}</span>
+      </div>
+      <p v-else-if="checking" class="cg-empty cc-muted">Checking images…</p>
       <template v-else>
         <p v-if="!siblings.length" class="cg-empty cc-muted">No other images in this set.</p>
 
@@ -117,11 +134,14 @@ async function copy() {
     </div>
 
     <template #footer>
-      <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
-      <button class="cc-btn cc-btn-primary" :disabled="busy || checking || !picked.size" @click="copy">
-        <i v-if="busy" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-copy" />
-        Copy to {{ picked.size }} image{{ picked.size === 1 ? '' : 's' }}
-      </button>
+      <button v-if="warnLines.length" class="cc-btn cc-btn-primary" @click="emit('close')">Close</button>
+      <template v-else>
+        <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
+        <button class="cc-btn cc-btn-primary" :disabled="busy || checking || !picked.size" @click="copy">
+          <i v-if="busy" class="pi pi-spin pi-spinner" /><i v-else class="pi pi-copy" />
+          Copy to {{ picked.size }} image{{ picked.size === 1 ? '' : 's' }}
+        </button>
+      </template>
     </template>
   </BaseModal>
 </template>

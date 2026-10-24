@@ -685,7 +685,10 @@ docs/TODO.md.)
 7. **Plot adjustments** ported from the old R `plotChartsServer.R` / `plotHelpers.R`, grouped into
    collapsible sub-sections in the `SeriesPicker` Options (Layout / Points / Colours / Labels),
    governed by the global/local scope (`VisProps`): legend, log scale, gridlines, rotate-X-labels
-   (with an **angle slider**, `rotateXAngle`, 0–90°; the bottom margin scales with the angle),
+   (with an **angle slider**, `rotateXAngle`, 0–90°; the bottom AND left margins are sized from the
+   longest label × the angle, capped at 40% / 30% of the panel, and labels past the cap are shortened
+   with a middle ellipsis — full label on hover — `plots/axisLabelFit.ts`; the flipped chart's y
+   labels shorten past the same 240 px cap `yLabelMargin` reserves),
    **facet** (small multiples per series), **dark theme**, Y-range override; jitter type
    (beeswarm/random/none), colour-data, point size/opacity; **palette** (**`Cecelia`** house palette, Okabe-Ito, Tol bright/
    muted/light, `distinct`, user list); title, X/Y axis labels, font size. All builder ink is

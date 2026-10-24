@@ -89,6 +89,7 @@
     },
     {
       "key": "integrateTimeMode",
+      "showIf": { "integrateTime": [true] },
       "tip": "Applies to the raw channel; labels always merge",
       "label": "Integrate mode",
       "type": "select",
@@ -107,6 +108,7 @@
     },
     {
       "key": "calcFlattened",
+      "showIf": { "calcAnisotropy": [true] },
       "label": "Anisotropy on Z-MIP",
       "type": "bool",
       "default": false,
@@ -126,14 +128,16 @@
     },
     {
       "key": "fibreChannels",
+      "showIf": { "calcAnisotropy": [true], "anisotropySource": "channel" },
       "label": "Fibre channels",
       "type": "channelSelection",
       "multiple": true,
       "default": [],
-      "tip": "Only used when Anisotropy from = channel"
+      "tip": "Channels the fibre orientation is read from"
     },
     {
       "key": "structureTensorSigmaUm",
+      "showIf": { "calcAnisotropy": [true] },
       "label": "Smoothing scale (µm)",
       "type": "float",
       "min": 0.5,
@@ -144,6 +148,7 @@
     },
     {
       "key": "anisotropyBoxUm",
+      "showIf": { "calcAnisotropy": [true] },
       "label": "Grid spacing (µm)",
       "type": "float",
       "min": 0.5,

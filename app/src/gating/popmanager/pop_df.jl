@@ -347,6 +347,16 @@ function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_ty
 end
 
 """
+    missing_gate_columns(m, img; value_name) -> Vector{(column, pops)}
+
+`missing_gate_columns(m, available)` against `img`'s own table for `m`'s pop_type — the columns read
+through `pop_membership_fetch`, the same table `recompute!` evaluates over, so "missing" here is
+exactly "would come back empty there". Reads only the columns `m` needs.
+"""
+missing_gate_columns(m::PopulationMap, img::CciaImage; value_name::AbstractString) =
+    missing_gate_columns(m, names(pop_membership_fetch(img, value_name, m.pop_type)(_needed_columns(m))))
+
+"""
     computed_pop_map(img; value_name, pop_type="flow", labels_version=nothing, map_hook=nothing)
         -> PopulationMap
 

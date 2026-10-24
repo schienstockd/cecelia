@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  MIN_DRAG_PX, isClickNotDrag, polygonAreaPx, isDegeneratePolygon,
+  MIN_DRAG_PX, isClickNotDrag, polygonAreaPx, isDegeneratePolygon, pointInPoly, distToSeg,
   beginRect, updateRect, finishRect,
   beginPoly, addVertex, updateCursor, isNearFirst, finishPoly,
   beginStroke, extendStroke, simplifyRDP, finishStroke,
@@ -105,5 +105,21 @@ describe('freehand state machine', () => {
     expect(out[0]).toEqual([0, 0])
     expect(out[out.length - 1][0]).toBe(30)
     expect(out.length).toBeLessThan(s.pts.length)
+  })
+})
+
+describe('point-vs-shape primitives', () => {
+  const sq: [number, number][] = [[0, 0], [10, 0], [10, 10], [0, 10]]
+  it('pointInPoly — inside, outside, concave notch', () => {
+    expect(pointInPoly([5, 5], sq)).toBe(true)
+    expect(pointInPoly([15, 5], sq)).toBe(false)
+    const u: [number, number][] = [[0, 0], [9, 0], [9, 9], [6, 9], [6, 3], [3, 3], [3, 9], [0, 9]]
+    expect(pointInPoly([4.5, 6], u)).toBe(false)
+    expect(pointInPoly([1, 6], u)).toBe(true)
+  })
+  it('distToSeg — perpendicular, past an end, degenerate segment', () => {
+    expect(distToSeg([5, 3], [0, 0], [10, 0])).toBe(3)
+    expect(distToSeg([13, 4], [0, 0], [10, 0])).toBe(5)
+    expect(distToSeg([3, 4], [0, 0], [0, 0])).toBe(5)
   })
 })
