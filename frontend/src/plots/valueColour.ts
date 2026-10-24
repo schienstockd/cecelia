@@ -134,13 +134,17 @@ export function colourBarSvg(box: BarBox, o: { extent: [number, number]
   return out
 }
 
-// Fit a label into `maxW` px, ellipsising the END so the start (which names the measure) survives.
-// `measure` is the caller's text metric — the canvas ctx on screen/PNG, the SVG emitter's estimate on
-// export — so this stays pure and testable.
-export function fitLabel(text: string, maxW: number, measure: (s: string) => number): string {
+// Fit a label into `maxW` px. `cut: 'end'` (default) ellipsises the END so the start (which names the
+// measure) survives. `cut: 'middle'` keeps BOTH ends — for population paths and series keys
+// ("img · seg · /live/T/CD8"), where the start says which image and the end which population, and an
+// end-only cut would turn two series into the same label. `measure` is the caller's text metric — the
+// canvas ctx on screen/PNG, the SVG emitter's estimate on export — so this stays pure and testable.
+export function fitLabel(text: string, maxW: number, measure: (s: string) => number,
+                         cut: 'end' | 'middle' = 'end'): string {
   if (!text || measure(text) <= maxW) return text
   for (let k = text.length - 1; k > 0; k--) {
-    const s = text.slice(0, k) + '…'
+    const head = cut === 'middle' ? Math.ceil(k / 2) : k
+    const s = text.slice(0, head) + '…' + (cut === 'middle' ? text.slice(text.length - (k - head)) : '')
     if (measure(s) <= maxW) return s
   }
   return ''

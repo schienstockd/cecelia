@@ -53,6 +53,11 @@ describe('fitLabel', () => {
   it('gives up rather than drawing a lone ellipsis in no space', () => {
     expect(fitLabel('CD169', 1, measure)).toBe('')
   })
+  it("'middle' keeps both ends — the image AND the population survive", () => {
+    expect(fitLabel('img1 · /live/T/CD8', 20, measure, 'middle')).toBe('img1 …/CD8')
+    expect(fitLabel('img1 · /live/T/CD8', 20, measure, 'middle'))
+      .not.toBe(fitLabel('img2 · /live/T/CD8', 20, measure, 'middle'))
+  })
 })
 
 describe('barStops', () => {

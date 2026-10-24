@@ -3265,3 +3265,10 @@ area, so a label wider than its band must collide with its neighbour; `needsXRot
 widest label with the same canvas text metric the axis margins use. It needs the panel width, which the
 option builders don't have — `PlotChart` passes `plotWidth` (the same value it hands `Plot.plot`), and
 the builder reports the outcome back on `_autoRotatedX` → `@auto-override` → the panel's note.
+
+**Rotated labels get room for their length, not a fixed margin.** `rotatedXLayout`
+(`plots/axisLabelFit.ts`) sizes the bottom margin from the longest label's drop (`w·sinθ`) and the left
+margin from the first label's overhang (`w·cosθ` less how far in its tick sits), each capped at a share
+of the panel (`plotHeight`/`plotWidth` from PlotChart). A label past the cap is shortened with
+`fitLabel(…, 'middle')`, so both the image and the population survive. The builder records the full labels on
+`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks.
