@@ -9,7 +9,7 @@ import argparse
 import json
 import sys
 
-from cecelia.effectiveness.claude_cli import rate_limit
+from cecelia.effectiveness.claude_cli import rate_limit, synthetic_limit
 
 
 def _result_text(content) -> str:
@@ -18,9 +18,9 @@ def _result_text(content) -> str:
 
 
 def events(path: str) -> list[dict]:
-    """The trace in order, one dict per item: `init` {model, sessionId, tools, mcp}, `text` {text},
-    `call` {id, name, input}, `result` {id, text, isError, images: [base64 PNG]}, `final` {subtype,
-    cost, turns, text, rateLimited (the CLI's message when the run ended on the usage limit, else
+    """The trace in order, one dict per item: `init` {model, sessionId, tools, mcp}, `text` {text,
+    rateLimited when it is the CLI's `<synthetic>` limit turn}, `call` {id, name, input}, `result` {id,
+    text, isError, images: [base64 PNG]}, `final` {subtype, cost, turns, text, rateLimited (the CLI's message when the run ended on the usage limit, else
     None)}. Tool names lose their `mcp__<server>__` prefix."""
     with open(path, encoding="utf-8", errors="replace") as f:
         raws = f.readlines()
@@ -38,7 +38,7 @@ def events(path: str) -> list[dict]:
             if not isinstance(b, dict):
                 continue
             if b.get("type") == "text":
-                out.append({"kind": "text", "text": b["text"]})
+                out.append({"kind": "text", "text": b["text"], **({"rateLimited": cut} if (cut := synthetic_limit(ev)) else {})})
             elif b.get("type") == "tool_use":
                 out.append({"kind": "call", "id": b.get("id"), "name": b.get("name", "?").split("__")[-1],
                             "input": b.get("input") or {}})
@@ -61,7 +61,7 @@ def lines(path: str, width: int) -> list[str]:
         if e["kind"] == "init":
             out.append(f"INIT model={e['model']} tools={e['tools']} mcp={e['mcp']}")
         elif e["kind"] == "text":
-            out.append("TEXT " + e["text"][: width * 3])
+            out.append(("RATE-LIMITED " if e.get("rateLimited") else "TEXT ") + e["text"][: width * 3])
         elif e["kind"] == "call":
             out.append(f"CALL {e['name']} {json.dumps(e['input'])[:width]}")
         elif e["kind"] == "result":

@@ -292,6 +292,8 @@ def run(a, runner=default_runner) -> dict:
     (trace / "stderr.txt").write_text(stderr, encoding="utf-8")
 
     sig = agent_sandbox.parse_stream_json(stdout)
+    if not sig.rate_limited and code != 0:   # died without a result: the limit may be on stderr only
+        sig.rate_limited = claude_cli.limit_in_text(stderr)
     declared = parse_result_line(sig.final_message)
     # cut short by quota: what it left is not the agent's result, so it is not scored
     scores = None if sig.rate_limited else score_outputs(state, declared)

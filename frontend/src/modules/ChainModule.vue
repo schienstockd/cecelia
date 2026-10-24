@@ -13,6 +13,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import ChainTaskNode from '../components/ChainTaskNode.vue'
 import ChainStartNode from '../components/ChainStartNode.vue'
 import ChainPicnicNode from '../components/ChainPicnicNode.vue'
+import { useCopyFlash } from '../composables/useCopyFlash'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
 import ChainQcNode from '../components/ChainQcNode.vue'
@@ -361,11 +362,10 @@ const liveEdges = computed<Edge[]>(() => {
   return out
 })
 
-function copyRunId() {
-  if (!selectedRunId.value) return
-  navigator.clipboard?.writeText(selectedRunId.value)
-    .then(() => log.info(`Copied run ID ${selectedRunId.value}`, { source: 'whiteboard' }))
-    .catch(() => { /* clipboard blocked — non-critical */ })
+const { isCopied: runIdCopied, copy: copyRun } = useCopyFlash()
+async function copyRunId() {
+  const id = selectedRunId.value
+  if (id && await copyRun(id)) log.info(`Copied run ID ${id}`, { source: 'whiteboard' })
 }
 
 // ── Live QC row ────────────────────────────────────────────────────────────────
@@ -1359,7 +1359,7 @@ onActivated(async () => {
           @click="copyRunId"
           v-tooltip.bottom="`Copy run ID (${selectedRunId}) — e.g. for load_chain_run in the REPL`"
         >
-          <i class="pi pi-copy" />
+          <i :class="['pi', runIdCopied() ? 'pi-check' : 'pi-copy']" />
         </button>
         <button
           class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"

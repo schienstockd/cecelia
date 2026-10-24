@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import uuid
 
-from cecelia.effectiveness.claude_cli import rate_limit
+from cecelia.effectiveness.claude_cli import rate_limit, synthetic_limit
 
 #: The keyring's, ssh-agent's and gpg-agent's sockets (Linux): out of Bash's reach.
 _RUNTIME = [p for p in ([f"/run/user/{os.getuid()}"] if hasattr(os, "getuid") else []) if os.path.isdir(p)]
@@ -102,7 +102,7 @@ def tool_uses(ev: dict) -> list[dict]:
 
 def parse_stream_json(stdout: str) -> StreamSignals:
     """Every `tool_use` block in order, plus the terminal `result` event's cost, turns, text and
-    whether it was a usage-limit refusal. A malformed line is counted in `parse_errors` and skipped."""
+    whether it was a usage-limit refusal (the CLI's `<synthetic>` limit turn when no result came). A malformed line is counted in `parse_errors` and skipped."""
     sig = StreamSignals()
     for line in stdout.splitlines():
         line = line.strip()
@@ -116,6 +116,7 @@ def parse_stream_json(stdout: str) -> StreamSignals:
         if not isinstance(ev, dict):
             continue
         sig.tool_calls += tool_uses(ev)
+        sig.rate_limited = sig.rate_limited or synthetic_limit(ev)   # a run cut off with no result event
         if ev.get("type") == "result":
             sig.cost_usd = float(ev.get("total_cost_usd") or 0.0)
             sig.turns = int(ev.get("num_turns") or 0)

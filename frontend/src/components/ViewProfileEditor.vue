@@ -20,6 +20,7 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { useViewProfilesStore, ALL_PROFILE_ID } from '../stores/viewProfiles'
 import { allNavGroups } from '../lib/navGroups'
 import { availablePaths, unknownPaths, type ViewProfile } from '../utils/viewProfiles'
+import { useSavedFlash } from '../composables/useFlash'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -53,7 +54,10 @@ const dirty = computed(() =>
   label.value.trim() !== (editing.value?.label ?? '') ||
   picked.value.join(' ') !== (editing.value?.items ?? []).join(' '))
 
-const canSave = computed(() => !!label.value.trim() && picked.value.length > 0 && !profiles.saving)
+// Editing an unchanged profile has nothing to save; "Saved" flashes after a write (useSavedFlash).
+const canSave = computed(() => !!label.value.trim() && picked.value.length > 0 && !profiles.saving &&
+  (!editing.value || dirty.value))
+const { saved, flash: flashSaved } = useSavedFlash()
 
 // Pages listed by the loaded profile that the app no longer has — dropped on save unless re-picked,
 // so say so rather than letting the profile quietly shrink.
@@ -92,6 +96,7 @@ async function save() {
   const res = await profiles.save(label.value.trim(), picked.value, editing.value?.id)
   if (res.error) { error.value = res.error; return }
   if (res.profile) {
+    flashSaved()
     load(res.profile)
     profiles.select(res.profile.id)   // editing a profile means you want to be on it
   }
@@ -177,7 +182,7 @@ function duplicate() {
       <button class="cc-btn" @click="emit('close')">Close</button>
       <button class="cc-btn cc-btn-primary" :disabled="!canSave" @click="save"
               v-tooltip.top="'Write this profile and switch to it'">
-        {{ profiles.saving ? 'Saving…' : editing ? (dirty ? 'Save' : 'Saved') : 'Create' }}
+        {{ profiles.saving ? 'Saving…' : saved ? 'Saved' : editing ? 'Save' : 'Create' }}
       </button>
     </template>
   </BaseModal>

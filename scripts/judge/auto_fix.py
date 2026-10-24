@@ -54,7 +54,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
-    RateLimited, failure_text, rate_limit, read_result, reset_at, resolve_claude_bin)
+    RateLimited, failure_text, limit_in_text, rate_limit, read_result, reset_at, resolve_claude_bin, synthetic_limit)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
@@ -377,7 +377,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
             "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)]
     if resume:
         argv += ["--resume", resume]
-    result, sid, timed_out = {}, resume, threading.Event()
+    result, sid, timed_out, cut_off = {}, resume, threading.Event(), None
     try:
         with tempfile.TemporaryFile("w+", encoding="utf-8") as err, Progress(label, out=out, cwd=cwd) as progress:
             proc = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, cwd=str(cwd),
@@ -396,6 +396,7 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
                         progress.event(ev)
                         sid = ev.get("session_id") or sid
                         result = ev if ev.get("type") == "result" else result
+                        cut_off = synthetic_limit(ev) or cut_off
                 code = proc.wait()
             finally:
                 timer.cancel()
@@ -409,6 +410,8 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
         return None, 0.0, sid, f"session failed: timed out after {timeout:.0f}s", None
     cost = float(result.get("total_cost_usd") or 0.0)
     limited = rate_limit(result)
+    if not limited and (code != 0 or not result):   # no result to say so: the CLI's own turn, or its stderr
+        limited = cut_off or limit_in_text(stderr)
     if limited:
         return None, cost, sid, None, limited
     done = subprocess.CompletedProcess(argv, code, json.dumps(result) if result else "", stderr)
@@ -426,7 +429,14 @@ def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, input: str | None =
 
 
 def _tail(proc: subprocess.CompletedProcess) -> str:
-    return (proc.stderr or proc.stdout or "").strip()[-400:]
+    """What a failed call printed, short: its last 400 characters, led by any `fatal:` / `error:` line
+    (git's reason) that a long trailing stack trace would otherwise push out."""
+    text = (proc.stderr or proc.stdout or "").strip()
+    tail = text[-400:]
+    said = "\n".join(filter(None, (proc.stderr, proc.stdout)))
+    errs = [ln.strip() for ln in said.splitlines() if ln.lstrip().startswith(("fatal:", "error:"))]
+    lead = "; ".join(dict.fromkeys(e for e in errs if e not in tail))[:300]
+    return f"{lead} · …{text[-200:]}" if lead else tail
 
 
 def commit_message(record: dict, bugs: _t.Sequence[dict], answer: dict, tags: _t.Sequence[str], recital: str) -> str:
@@ -621,10 +631,40 @@ def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str
     return True
 
 
+def orphan_branch(record: dict, bugs: _t.Sequence[dict], branch: str, *, main: pathlib.Path,
+                  say: _t.Callable, sh: _t.Callable, auto_log: pathlib.Path | None) -> bool:
+    """The bundle's branch is there with no worktree: an earlier run was killed and its worktree went
+    (`bootstrap-worktree` would die on `git worktree add -b`). Holding no commits of its own, it is
+    deleted and the bundle runs afresh; False. With commits, or still checked out somewhere, it is left
+    for the owner and the bundle goes back to the queue, as `adopt`'s would; True."""
+    if not (sh(["git", "branch", "--list", branch], main).stdout or "").strip():
+        return False
+    sh(["git", "worktree", "prune"], main)   # drop the registration of a worktree whose dir is gone
+    counted = sh(["git", "rev-list", "--count", f"origin/main..refs/heads/{branch}"], main)
+    ahead = int((counted.stdout or "0").strip() or 0) if counted.returncode == 0 else -1
+    if ahead == 0:
+        deleted = sh(["git", "branch", "-D", branch], main)
+        if deleted.returncode == 0:
+            return False
+        why = f"branch {branch} is left from an earlier --auto run and can't be deleted: {_tail(deleted)}"
+    elif ahead > 0:
+        why = (f"branch {branch} is left from an earlier --auto run (its worktree is gone) "
+               f"with {ahead} commit{'s' if ahead > 1 else ''} of its own; delete or rework it")
+    else:
+        why = f"branch {branch} is left from an earlier --auto run and can't be read: {_tail(counted)}"
+    for b in bugs:
+        _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": "left",
+                         "reason": f"Stopped before the worktree: {why}.", "pr_url": ""}, auto_log)
+    say(why, bad=True)
+    say(f"back in your judge-review queue: {', '.join(b['id'] + ' ' + b['key'] for b in bugs)}")
+    return True
+
+
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
              session: _t.Callable = default_session, sh: _t.Callable = default_sh,
              path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float | None:
-    """One bundle through to a PR. Returns what its sessions spent; None when it ran none (`adopt`)."""
+    """One bundle through to a PR. Returns what its sessions spent; None when it ran none (`adopt`,
+    `orphan_branch`)."""
     name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
     branch = name
     tree = main.parent / f"cecelia-{name}"
@@ -634,6 +674,8 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
         mark = _col(VERMILLION, "✗", use_colour=colour) + " " if bad else "  "
         print(f"  {mark}" + (msg if bad else _col(_DIM, msg, use_colour=colour)), file=out, flush=True)
     if tree.exists() and adopt(record, bugs, tree, branch, main=main, say=say, sh=sh, auto_log=auto_log):
+        return None
+    if not tree.exists() and orphan_branch(record, bugs, branch, main=main, say=say, sh=sh, auto_log=auto_log):
         return None
     with Progress("worktree", out=out) as step:
         made = sh(["pixi", "run", "bootstrap-worktree", name, branch, "origin/main"], main)

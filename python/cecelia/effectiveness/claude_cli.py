@@ -36,8 +36,15 @@ class RateLimited(RuntimeError):
     answer. The message is the CLI's, with its reset time (`reset_at`)."""
 
 
-#: The CLI's own wording when the seat is out of quota, for a result without `api_error_status`.
-_LIMIT_TEXT = re.compile(r"\b(?:session|usage|rate|weekly) limit\b", re.I)
+#: The CLI's own wording when the seat is out of quota, for a result without `api_error_status` (and
+#: for a session's stderr): "You've hit your session limit · resets 2pm (Australia/Sydney)" (the one
+#: seen in real 2.1.x transcripts), and forms reported for other versions but not seen here: "5-hour
+#: limit reached ∙ resets 3pm", "Claude AI usage limit reached|<epoch>", "weekly limit reached". A bare "limit reached" only with a reset after it, so the
+#: context, token, turn and budget limits ("Context limit reached · /compact …") are not quota.
+_LIMIT_TEXT = re.compile(
+    r"\b(?:session|usage|rate|weekly|daily|\d+-hour) limit\b"
+    r"|\bhit your (?!context\b|token\b|output\b)(?:[\w-]+ )?limit\b"
+    r"|\blimit reached\b(?=[^\n]{0,40}\bresets\b|\|\d)", re.I)
 
 
 def rate_limit(out: dict) -> str | None:
@@ -52,17 +59,43 @@ def rate_limit(out: dict) -> str | None:
     return None
 
 
+def limit_in_text(text: str | None) -> str | None:
+    """The line of free text (a run's stderr) that is the CLI's usage-limit message, else None: for a
+    run that died without a result to read it from."""
+    for line in (text or "").splitlines():
+        if _LIMIT_TEXT.search(line):
+            return line.strip()[-300:]
+    return None
+
+
+def synthetic_limit(ev: dict) -> str | None:
+    """The limit message when a stream-json event is the CLI's own `<synthetic>` assistant turn
+    carrying it (what a session shows when the limit cuts it off), else None. Only the CLI writes
+    those, so an agent's prose about some API's rate limit never reads as the seat's."""
+    msg = ev.get("message") if isinstance(ev, dict) and ev.get("type") == "assistant" else None
+    if not isinstance(msg, dict) or msg.get("model") != "<synthetic>":
+        return None
+    text = " ".join(c.get("text", "") for c in msg.get("content") or [] if isinstance(c, dict))
+    return text.strip() if _LIMIT_TEXT.search(text) else None
+
+
 #: "resets 1:40am (Australia/Sydney)", "resets 11pm": the CLI's reset time, with its zone when it gives one.
 _RESET_TEXT = re.compile(r"\bresets\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)\b(?:\s*\(([^)]+)\))?", re.I)
 #: When the message names no time this code can read: try again in an hour.
 RESET_FALLBACK = _dt.timedelta(hours=1)
+#: "Claude AI usage limit reached|1791292200": the reset as a Unix time.
+_RESET_EPOCH = re.compile(r"limit reached\|(\d{9,11})\b", re.I)
 
 
 def reset_at(message: str, now: _dt.datetime | None = None) -> _dt.datetime:
-    """When the usage limit in `message` lifts, as an aware datetime: the next time the clock in its
-    zone (local when none) reads that time, so a time already past today is tomorrow's. Unreadable
-    → `now` + `RESET_FALLBACK`."""
+    """When the usage limit in `message` lifts, as an aware datetime: its Unix time when it carries one
+    (`…|<epoch>`), else the next time the clock in its zone (local when none) reads that time, so a
+    time already past today is tomorrow's. Unreadable or already past → `now` + `RESET_FALLBACK`."""
     now = now or _dt.datetime.now(_dt.timezone.utc)
+    epoch = _RESET_EPOCH.search(message or "")
+    if epoch:
+        at = _dt.datetime.fromtimestamp(int(epoch[1]), _dt.timezone.utc).astimezone(now.tzinfo)
+        return at if at > now else now + RESET_FALLBACK
     m = _RESET_TEXT.search(message or "")
     if not m:
         return now + RESET_FALLBACK
@@ -104,6 +137,8 @@ def read_result(proc: subprocess.CompletedProcess) -> dict:
         out = {}
     out = out if isinstance(out, dict) else {}
     limited = rate_limit(out)
+    if not limited and proc.returncode and (not out or out.get("is_error")):
+        limited = limit_in_text(proc.stderr)   # died without a result: the limit may be on stderr only
     if limited:
         raise RateLimited(limited)
     return out

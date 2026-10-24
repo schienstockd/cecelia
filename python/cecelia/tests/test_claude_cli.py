@@ -18,6 +18,35 @@ from cecelia.effectiveness import claude_cli
 
 _LIMIT = "You've hit your session limit · resets 1:40am (Australia/Sydney)"
 
+#: The CLI's `<synthetic>` assistant turn when the limit cut a session off, verbatim from a real 2.1.291
+#: transcript (~/.claude/projects/…/121acb56….jsonl, 2026-10-06; usage and ids trimmed).
+_REAL_SYNTHETIC = {"type": "assistant", "message": {
+    "model": "<synthetic>", "role": "assistant", "stop_reason": "stop_sequence", "type": "message",
+    "content": [{"type": "text", "text": "You've hit your session limit · resets 12:10am (Australia/Sydney)"}]},
+    "error": "rate_limit", "isApiErrorMessage": True, "apiErrorStatus": 429}
+
+#: Usage-limit wordings: the real one, and forms reported for other CLI versions (not seen in a transcript here).
+_LIMIT_WORDINGS = (
+    "You've hit your session limit · resets 12:10am (Australia/Sydney)",   # real (396 in ~/.claude transcripts)
+    "You've hit your session limit · resets 1:10pm (Australia/Sydney)",    # real: CLI, HTTP 429, 2026-10-24
+    "You've hit your limit · resets 3pm (Australia/Sydney)",
+    "5-hour limit reached ∙ resets 3pm",
+    "Claude AI usage limit reached|1791292200",
+    "weekly limit reached",
+    "Limit reached · resets 9am (UTC)",
+)
+#: Errors that mention a limit but are not the seat's quota.
+_NOT_LIMITS = (
+    "Prompt is too long",
+    "Context limit reached · /compact or /clear to continue",
+    "context limit exceeded",
+    "Error: exceeded max budget of $3.00",
+    "Reached max turns (40)",
+    "output token limit reached",
+    "You've hit your context limit",
+    "API Error: 529 Overloaded",
+)
+
 
 class RateLimitTest(unittest.TestCase):
     def test_a_429_or_the_limit_wording_is_a_limit(self):
@@ -52,6 +81,33 @@ class RateLimitTest(unittest.TestCase):
         self.assertIn("judge-bugs: usage limit — lifts 2026-10-06T01:40+11:00", err.getvalue())
 
 
+class WordingTest(unittest.TestCase):
+    def test_every_limit_wording_is_a_limit(self):
+        for text in _LIMIT_WORDINGS:
+            self.assertEqual(claude_cli.rate_limit({"is_error": True, "result": text}), text, text)
+            self.assertEqual(claude_cli.limit_in_text(f"some log line\n  {text}\n"), text, text)
+
+    def test_other_limits_are_not_the_usage_limit(self):
+        for text in _NOT_LIMITS:
+            self.assertIsNone(claude_cli.rate_limit({"is_error": True, "result": text}), text)
+            self.assertIsNone(claude_cli.limit_in_text(text), text)
+        self.assertIsNone(claude_cli.limit_in_text(""))
+        self.assertIsNone(claude_cli.limit_in_text(None))
+
+    def test_the_clis_synthetic_limit_turn(self):
+        self.assertEqual(claude_cli.synthetic_limit(_REAL_SYNTHETIC),
+                         "You've hit your session limit · resets 12:10am (Australia/Sydney)")
+        # the agent's own prose about a rate limit is not the CLI's turn
+        prose = {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+            {"type": "text", "text": "The API's rate limit stopped me."}]}}
+        self.assertIsNone(claude_cli.synthetic_limit(prose))
+        other = {"type": "assistant", "message": {"model": "<synthetic>", "content": [
+            {"type": "text", "text": "Prompt is too long"}]}}
+        self.assertIsNone(claude_cli.synthetic_limit(other))
+        self.assertIsNone(claude_cli.synthetic_limit({"type": "result"}))
+        self.assertIsNone(claude_cli.synthetic_limit(None))
+
+
 class ReadResultTest(unittest.TestCase):
     def _proc(self, stdout, rc=0):
         return subprocess.CompletedProcess(["claude"], rc, stdout=stdout, stderr="")
@@ -60,6 +116,17 @@ class ReadResultTest(unittest.TestCase):
         out = {"is_error": True, "api_error_status": 429, "result": "You've hit your session limit"}
         with self.assertRaises(claude_cli.RateLimited):
             claude_cli.read_result(self._proc(json.dumps(out), rc=1))
+
+    def test_a_run_that_died_with_the_limit_on_stderr_only_raises(self):
+        proc = subprocess.CompletedProcess(["claude"], 1, stdout="", stderr="Error: 5-hour limit reached ∙ resets 3pm\n")
+        with self.assertRaises(claude_cli.RateLimited) as e:
+            claude_cli.read_result(proc)
+        self.assertEqual(str(e.exception), "Error: 5-hour limit reached ∙ resets 3pm")
+        # exit 0, or another failure on stderr: not a limit
+        ok = subprocess.CompletedProcess(["claude"], 0, stdout="{}", stderr="weekly limit reached")
+        self.assertEqual(claude_cli.read_result(ok), {})
+        other = subprocess.CompletedProcess(["claude"], 1, stdout="", stderr="Prompt is too long")
+        self.assertEqual(claude_cli.read_result(other), {})
 
     def test_other_results_are_returned_and_junk_is_empty(self):
         out = {"is_error": True, "result": "boom"}
@@ -90,6 +157,22 @@ class ResetAtTest(unittest.TestCase):
         self.assertEqual(self._at("resets 11pm (UTC)", now).hour, 23)
         self.assertEqual(self._at("resets 12pm (UTC)", now).hour, 12)
         self.assertEqual(self._at("resets 12am (UTC)", now), dt.datetime(2026, 10, 7, 0, 0, tzinfo=utc))
+
+    def test_the_dot_forms_and_a_unix_time(self):
+        syd = zoneinfo.ZoneInfo("Australia/Sydney")
+        now = dt.datetime(2026, 10, 6, 13, 0, tzinfo=syd)
+        self.assertEqual(self._at("You've hit your session limit · resets 1:10pm (Australia/Sydney)", now),
+                         dt.datetime(2026, 10, 6, 13, 10, tzinfo=syd))   # real, 2026-10-24
+        self.assertEqual(self._at("You've hit your limit · resets 3pm (Australia/Sydney)", now),
+                         dt.datetime(2026, 10, 6, 15, 0, tzinfo=syd))
+        self.assertEqual(self._at("5-hour limit reached ∙ resets 3:30pm (Australia/Sydney)", now),
+                         dt.datetime(2026, 10, 6, 15, 30, tzinfo=syd))
+        # 1791292200 is the real `resetsAt` of the 12:10am sample: 2026-10-07 00:10 in Sydney
+        at = self._at("Claude AI usage limit reached|1791292200", now)
+        self.assertEqual(at, dt.datetime(2026, 10, 7, 0, 10, tzinfo=syd))
+        # a Unix time already past: try again in an hour, not at once
+        late = dt.datetime(2026, 10, 8, 0, 0, tzinfo=syd)
+        self.assertEqual(self._at("Claude AI usage limit reached|1791292200", late), late + dt.timedelta(hours=1))
 
     def test_an_unreadable_reset_is_an_hour_from_now(self):
         now = dt.datetime(2026, 10, 6, 0, 0, tzinfo=dt.timezone.utc)

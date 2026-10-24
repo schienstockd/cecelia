@@ -91,7 +91,7 @@ def build_command(claude: str, mcp_path: pathlib.Path, budget_usd: float, model:
 
 def summarise_trace(path: pathlib.Path, source_project: str) -> dict:
     calls: dict[str, int] = {}
-    leaks, errors, model, final = 0, 0, None, {}
+    leaks, errors, model, final, cut_off = 0, 0, None, {}, None
     for e in trace_view.events(str(path)):
         if e["kind"] == "init":
             model = e["model"]
@@ -104,10 +104,12 @@ def summarise_trace(path: pathlib.Path, source_project: str) -> dict:
             errors += e["isError"]
         elif e["kind"] == "final":
             final = e
+        elif e["kind"] == "text" and e.get("rateLimited"):
+            cut_off = e["rateLimited"]   # the CLI's limit turn: counts only when no result event came
     return {"model": model, "costUsd": final.get("cost"), "turns": final.get("turns"), "toolCalls": calls,
             "toolCallsTotal": sum(calls.values()), "toolErrors": errors,
             "sourceProjectReads": leaks, "finalMessage": final.get("text", ""),
-            "rateLimited": final.get("rateLimited")}
+            "rateLimited": final.get("rateLimited") if final else cut_off}
 
 
 def _get(api_url: str, path: str, params: dict):
@@ -242,6 +244,8 @@ def run(a) -> dict:
     canary["appBookkeeping"] = [f for f, h in before["files"].items()
                                 if any(x in f for x in APP_BOOKKEEPING) and after["files"].get(f) != h]
     trace = summarise_trace(root / "trace.jsonl", a.source_project)
+    if not trace["rateLimited"] and rc:   # died without a result: the limit may be on stderr only
+        trace["rateLimited"] = claude_cli.limit_in_text((root / "stderr.log").read_text(encoding="utf-8", errors="replace"))
     rec = {"startedAt": stamp, "startedAtUtc": started_utc, "codeSha": code_sha, "wallS": wall, "exitCode": rc, "timedOut": timed_out,
            "guide": a.guide or None, "checklist": a.check or [], "knowledgeOn": bool(a.knowledge), "discovery": a.discovery, "brief": a.brief, "prompt": prompt, "budgetUsd": a.budget_usd, "copy": info,
            "trace": trace, "canary": canary,

@@ -49,6 +49,16 @@ class StreamTest(unittest.TestCase):
         sig = agent_sandbox.parse_stream_json("\n".join(json.dumps(x) for x in lines))
         self.assertEqual((sig.rate_limited, sig.turns, len(sig.tool_calls)), (msg, 7, 1))
 
+    def test_a_run_cut_off_before_its_result_event_says_so(self):
+        msg = "You've hit your session limit · resets 12:10am (Australia/Sydney)"
+        synthetic = {"type": "assistant", "message": {"model": "<synthetic>", "content": [{"type": "text", "text": msg}]}}
+        self.assertEqual(agent_sandbox.parse_stream_json(json.dumps(synthetic)).rate_limited, msg)
+        # the result event, when one came, says whether it was the limit
+        done = {"type": "result", "is_error": False, "result": "done"}
+        prose = {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [
+            {"type": "text", "text": "You've hit your session limit, the API said."}]}}
+        self.assertIsNone(agent_sandbox.parse_stream_json(json.dumps(prose) + "\n" + json.dumps(done)).rate_limited)
+
 
 if __name__ == "__main__":
     unittest.main()

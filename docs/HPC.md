@@ -36,7 +36,8 @@ handler continues: register labels, QC, run log
 | **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
-Preferences opens from the profile chip in the header. Test connection is on both.
+Preferences opens from the profile chip in the header, or from **Your HPC settings** on Settings → HPC. Test connection
+is on both; when it is disabled, the reason shows beside it. Each field saves on change and flashes **Saved**.
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.
@@ -54,7 +55,8 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 2. runs `pixi install --frozen` of `pixi.lock` into `<remote>/env/<lock hash>/`;
 3. checks that it imports.
 
-- The job is 2 CPUs, 8 GB and up to 2 h.
+- The job is 2 CPUs, 4 GB and up to 30 min. On one real site it took 1 min 16 s and 0.6 GB; the env
+  is about 8.3 GB on disk.
 - It needs a **Linux x86_64** compute node with **outbound HTTPS**.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
@@ -72,6 +74,9 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 3. Under it, one line says where the job goes: `GPU job → queue gpu-a100 on <host>`, with the account
    and QoS on hover. The class is the task's pool, so a GPU task sent with 0 GPUs still uses the GPU
    queue. While the setup is incomplete, the line names the first missing field and where to set it.
+   Once it is complete, the runner asks the cluster for the env (one ssh call): if this version's env is
+   not installed, a **Cluster env out of date — reinstall** line appears with **Install on cluster**,
+   the same job as in Settings → HPC. It is asked again when the install job ends.
 4. Above that, a **memory line** says whether the memory covers the most demanding selected image
    (*Memory hint* below), with a **Use N GB** button when it does not.
 5. The run waits in the `hpc` pool, then goes through these stages, shown on the Task Manager's pool

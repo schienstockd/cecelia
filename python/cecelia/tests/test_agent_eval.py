@@ -431,6 +431,18 @@ class TestRunRecord(unittest.TestCase):
         self.assertTrue(md.startswith("**Stopped by the usage limit:** You've hit your session limit"))
         self.assertIsNone(self._decisions()["rateLimited"])
 
+    def test_a_run_cut_off_before_its_result_event_says_so(self):
+        cut = {"type": "assistant", "message": {"model": "<synthetic>", "content": [{"type": "text", "text": _LIMIT}]}}
+        with tempfile.TemporaryDirectory() as d:
+            path = pathlib.Path(d) / "trace.jsonl"
+            path.write_text("".join(_trace(("text", "Gating now.")).splitlines(keepends=True)[:-1])
+                            + json.dumps(cut) + "\n", encoding="utf-8")
+            dec = run_record.decisions(str(path), self.IMAGES)
+            items = run_record.pair_calls(run_record.trace_view.events(str(path)))
+        self.assertEqual(dec["rateLimited"], _LIMIT)
+        # the CLI's refusal is not something the agent said
+        self.assertEqual([it["text"] for it in items if it["kind"] == "text"], ["Gating now."])
+
     def _write(self, items, final=None, ask=None):
         """`run_record.write` as a dry run with the why asked; `ask` stands in for `ask_why`."""
         with tempfile.TemporaryDirectory() as d:
@@ -490,6 +502,10 @@ class TestRunRecord(unittest.TestCase):
             self.assertEqual(run_app.summarise_trace(path, "SRC")["rateLimited"], _LIMIT)
             path.write_text(_trace(), encoding="utf-8")
             self.assertIsNone(run_app.summarise_trace(path, "SRC")["rateLimited"])
+            # cut off before a result event: the CLI's own `<synthetic>` limit turn says so
+            cut = {"type": "assistant", "message": {"model": "<synthetic>", "content": [{"type": "text", "text": _LIMIT}]}}
+            path.write_text(json.dumps(cut) + "\n", encoding="utf-8")
+            self.assertEqual(run_app.summarise_trace(path, "SRC")["rateLimited"], _LIMIT)
 
 
 class TestStageBoards(unittest.TestCase):

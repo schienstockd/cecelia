@@ -16,11 +16,12 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { fetchHpcSettings, type HpcSettings } from '../utils/hpcSettings'
+import { fetchHpcSettings, fetchHpcEnv, installHpcEnv, onHpcEnvChanged, hpcTestBlocker,
+  type HpcSettings, type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen } from '../lib/preferencesOpen'
 import { profileStorage } from '../utils/profileStorage'
 import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS,
-  hpcRunDestination, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
+  hpcRunDestination, hpcRunEnvNote, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
   type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
@@ -194,7 +195,25 @@ async function loadHpcSettings() {
   if (!onHpc.value) return
   try { hpcSettings.value = await fetchHpcSettings(projectMeta.current?.uid ?? ''); hpcSettingsError.value = '' }
   catch (e) { hpcSettingsError.value = e instanceof Error ? e.message : String(e) }
+  void loadHpcEnv()
 }
+// Whether this version's Python env is on the cluster (one ssh call): asked when hpc is picked, once
+// the settings are complete, and again when an install job ends. Out of date → warn with Install.
+const hpcEnv = ref<HpcEnvStatus | null>(null)
+async function loadHpcEnv() {
+  if (!onHpc.value || hpcSettingsError.value || hpcTestBlocker(hpcSettings.value, 'run')) { hpcEnv.value = null; return }
+  try { hpcEnv.value = await fetchHpcEnv() }
+  catch { hpcEnv.value = null }   // the run itself refuses a missing env, naming the fix
+}
+const hpcEnvNote = computed(() => onHpc.value ? hpcRunEnvNote(hpcEnv.value) : null)
+async function installClusterEnv() {
+  try {
+    await installHpcEnv()
+    if (hpcEnv.value) hpcEnv.value = { ...hpcEnv.value, installing: true, error: '' }
+  } catch (e) { log.error(e instanceof Error ? e.message : String(e), { source: 'hpc' }) }
+}
+const offHpcEnv = onHpcEnvChanged(() => void loadHpcEnv())
+onUnmounted(offHpcEnv)
 watch(onHpc, on => { if (on) void loadHpcSettings() }, { immediate: true })
 watch(isPreferencesOpen, open => { if (!open) void loadHpcSettings() })
 const hpcDestination = computed(() => {
@@ -873,6 +892,11 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       </div>
       <InlineNote v-if="onHpc && hpcDestination" class="hpc-note" :icon="hpcDestination.severity ? undefined : 'pi-server'"
                   :short="hpcDestination.short" :detail="hpcDestination.detail" :severity="hpcDestination.severity" />
+      <div v-if="hpcEnvNote" class="cc-row hpc-res-foot">
+        <InlineNote class="hpc-note hpc-grow" :short="hpcEnvNote.short" :detail="hpcEnvNote.detail" :severity="hpcEnvNote.severity" />
+        <button v-if="hpcEnvNote.canInstall" class="cc-btn cc-btn-ghost cc-btn-micro" @click="installClusterEnv"
+                v-tooltip.bottom="'Install this version\'s Python environment on the cluster, as a job'">Install on cluster</button>
+      </div>
       <p v-if="outputEffectLabel" class="fn-effect cc-muted cc-fs-xs"
          v-tooltip.right="outputEffectTip">
         <i class="pi pi-info-circle" />
