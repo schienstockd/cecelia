@@ -108,7 +108,7 @@ effect. **N/A** = napari-only concept, will be deleted at P6/P9.
 | Route | Caller | Wire | Status | Notes |
 |---|---|---|---|---|
 | `show-labels` | `ViewerPanel.toggleLabel` | settings bag `cc.napariLabelVisibility` → popup reads `labelName` | **WIRED** | Radio-like since 2026-08-25: exclusive `valueName` on, all others explicit `false` (bag defaults unknown to `true`, so omitting others left them ticked). |
-| `show-populations` | `PopulationManager` per-pop eye → `gating.updatePop({show})` → `_post` | `_post` writes `cc.viewerOverlaysTick` on every mutation; popup refetches `/api/viewer/overlays`. `pop.show` is ground truth every fetch. | **WIRED** | Fixed 2026-08-25 — was seeding-only. |
+| `show-populations` | `PopulationManager` per-pop eye → `gating.updatePop({show})` → `_post` | `_post` writes `cc.viewerOverlaysTick` on every mutation; popup refetches `/api/viewer/overlays`. `pop.show` seeds the viewer eye of a pop with no stored eye; stored eyes win (#1730). | **WIRED** | Fixed 2026-08-25 — was seeding-only. Superseded by #1730: the row eye persists per image × segmentation. |
 | `show-populations` | `gating.refreshViewerPops` (per-pop `show` change, PopulationManager sidebar) | ping | **WIRED** | Fixed 2026-08-25 — the ping was on `refreshViewer` only. |
 | `show-tracks` | `gating.refreshViewer` (popType=track) | ping | **WIRED** | Same fix path. |
 | `show-tracks` | `ViewerPanel.toggleTrack` per-segmentation eye → `settings.setTrackVisibility` | settings bag storage event reaches popup, but popup does NOT read `getTrackVisibility` | **SHADOW** | **P7 — WebGPU-native tracks** owns this. Tracks in the popup are rendered from the current overlays payload; per-vn selection has no viewer effect yet. |
@@ -393,6 +393,10 @@ Pop-manager writes → server → cross-window ping → viewer refetches. `Popul
 (`ViewerWindow.vue:534-537`, 2026-08-25) is authoritative: the gating `show` flag SEEDS the viewer's
 per-row eye but does not LOCK it. Users may want to peek at a pop hidden in the manager without
 changing the manager's decision. The row eye stays as a transient render-visibility control.
+
+**Superseded (#1730):** the row eye is no longer transient — it persists per (image × segmentation)
+in `settings.getPopEyes` and is reconciled on refetch (`utils/viewer/popEyes.ts`); `show` seeds only
+pops with no stored eye. The Populations section has all on / all off / one at a time, like Channels.
 
 Consequence: `hiddenPops` local set in ViewerWindow stays; row `togglePop` stays. What P5 fixed was
 the SYNC gap — the viewer was blind to pop-manager writes. The row eye is now the transient viz
