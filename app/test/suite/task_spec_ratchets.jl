@@ -1,8 +1,9 @@
 # ── Task-spec ratchets + copy-style testsets ──────────────────────────
-# 13 sections pinning the task-spec surface: numeric param ranges are plausible, task
+# 15 sections pinning the task-spec surface: numeric param ranges are plausible, task
 # spec tips stay short, a handler fallback never contradicts its spec default, every task
 # spec field is declared and documented, optionsFrom fills a picker from a named source,
-# showIf conditions name a param that exists, a param that says segmentation reads
+# showIf conditions name a param that exists, showIf on a select names one of its options,
+# method-specific params show only for their method, a param that says segmentation reads
 # SEGMENTATIONS, a picker gates on `labels` only when the task needs the MASK, every task
 # param carries a tip, task spec copy follows the house style, every visible task says what it
 # is for, run_stats, and every popSelection declares `accepts`. Extracted
@@ -311,6 +312,71 @@ end
         end
     end
     @test isempty(bad) || (@info "showIf names a param that does not exist" bad; false)
+end
+
+@testset "showIf on a select names one of its options" begin
+    # The value-side twin of the testset above: `{ "clusterMethod": "kmean" }` names a real key, so
+    # that check passes, but no option ever has that value and the param is hidden forever. Only
+    # fixed `options` lists are checked — `optionsFrom` / dynamically injected options are not
+    # knowable from the spec file.
+    bad = String[]
+    each_spec() do label, spec
+        opts  = Dict{String,Set{String}}()
+        conds = Tuple{String,String,Any}[]
+        each_spec_param(spec_get(spec, "params", nothing)) do q, _
+            k = string(something(spec_get(q, "key", ""), ""))
+            o = spec_get(q, "options", nothing)
+            if string(something(spec_get(q, "type", ""), "")) == "select" && o isa AbstractVector &&
+               spec_get(q, "optionsFrom", nothing) === nothing
+                opts[k] = Set(string(x isa AbstractDict ? spec_get(x, "value", "") : x) for x in o)
+            end
+            cond = spec_get(q, "showIf", nothing)
+            cond isa AbstractDict &&
+                for (ck, want) in pairs(cond); push!(conds, (k, string(ck), want)); end
+        end
+        for (owner, ck, want) in conds
+            haskey(opts, ck) || continue
+            want isa AbstractDict && continue          # operator form (minItems, notEndsWith, …)
+            for v in (want isa AbstractVector ? want : (want,))
+                string(v) ∈ opts[ck] ||
+                    push!(bad, "$label: $owner showIf → $ck = '$v', which is not an option")
+            end
+        end
+    end
+    @test isempty(bad) || (@info "showIf names a select value that does not exist" bad; false)
+end
+
+@testset "method-specific params show only for their method" begin
+    # Each param here is read by exactly one branch of the param it is gated on —
+    # clustRegions/cluster_run.py, spatial_utils.build_spatial_graph, branching_run.py,
+    # clustering_utils (normalise_adata / apply_transform / PAGA) — so showing
+    # it under another choice offers a control that is silently ignored.
+    root = joinpath(@__DIR__, "..", "..", "src", "tasks")
+    cases = [
+        ("clustRegions/cluster.json", "resolution",  "clusterMethod",   ["leiden"]),
+        ("clustRegions/cluster.json", "numClusters", "clusterMethod",   ["kmeans"]),
+        ("spatialAnalysis/cellNeighbours.json", "neighbourRadius", "neighbourMethod", ["delaunay", "radius"]),
+        ("spatialAnalysis/cellNeighbours.json", "nNeighbours",     "neighbourMethod", ["knn"]),
+        ("segment/branching.json", "fibreChannels",     "anisotropySource", ["channel"]),
+        ("segment/branching.json", "anisotropyBoxUm",   "calcAnisotropy",   ["true"]),
+        ("segment/branching.json", "integrateTimeMode", "integrateTime",    ["true"]),
+        ("clustPops/cluster.json",   "logBase",       "transformation", ["log", "reversedLog"]),
+        ("clustPops/cluster.json",   "maxFraction",   "normaliseAxis",  ["cells"]),
+        ("clustTracks/cluster.json", "normalisePercentile", "normaliseAxis", ["channels"]),
+        ("clustTracks/cluster.json", "pagaThreshold", "usePaga",        ["true"]),
+    ]
+    for (f, key, on, want) in cases
+        spec = JSON3.read(read(joinpath(root, f), String))
+        found = Any[]
+        each_spec_param(spec_get(spec, "params", nothing)) do q, _
+            string(something(spec_get(q, "key", ""), "")) == key && push!(found, q)
+        end
+        cond = spec_get(only(found), "showIf", nothing)
+        @test cond isa AbstractDict
+        cond isa AbstractDict || continue
+        got = spec_get(cond, on, "")
+        @test sort(string.(got isa AbstractVector ? collect(got) : [got])) == sort(want)
+    end
 end
 
 @testset "a param that says segmentation reads SEGMENTATIONS" begin

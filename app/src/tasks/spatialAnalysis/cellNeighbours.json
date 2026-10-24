@@ -52,6 +52,7 @@
       "max": 200,
       "step": 1,
       "default": 30,
+      "showIf": { "neighbourMethod": ["delaunay", "radius"] },
       "tip": "Neighbourhood radius in µm; also prunes Delaunay edges"
     },
     {
@@ -62,6 +63,7 @@
       "max": 100,
       "step": 1,
       "default": 6,
+      "showIf": { "neighbourMethod": "knn" },
       "tip": "Number of nearest neighbours for the kNN graph"
     },
     {
