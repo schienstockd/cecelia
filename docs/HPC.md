@@ -54,7 +54,8 @@ Preferences opens from the profile chip in the header. Test connection is on bot
 2. runs `pixi install --frozen` of `pixi.lock` into `<remote>/env/<lock hash>/`;
 3. checks that it imports.
 
-- The job is 2 CPUs, 8 GB and up to 2 h.
+- The job is 2 CPUs, 4 GB and up to 30 min. On one real site it took 1 min 16 s and 0.6 GB; the env
+  is about 8.3 GB on disk.
 - It needs a **Linux x86_64** compute node with **outbound HTTPS**.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
