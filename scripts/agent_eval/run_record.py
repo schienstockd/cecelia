@@ -89,7 +89,7 @@ def pair_calls(evs: list[dict]) -> list[dict]:
     results = {e["id"]: e for e in evs if e["kind"] == "result"}
     out = []
     for e in evs:
-        if e["kind"] == "text" and e["text"].strip():
+        if e["kind"] == "text" and e["text"].strip() and not e.get("rateLimited"):   # the CLI's limit turn, not the agent's
             out.append({"kind": "text", "text": e["text"].strip()})
         elif e["kind"] == "call":
             r = results.get(e["id"]) or {"text": "", "isError": False, "images": []}
@@ -226,7 +226,8 @@ def decisions(trace_path: str, images: list[dict]) -> dict:
                              "triedFirst": tried if first else [], "pictures": pics if first else []})
         looked, said, tried, pics = [], [], [], []
     final = next((e for e in reversed(evs) if e["kind"] == "final"), None)
-    limited = final and final.get("rateLimited")
+    # no result event: the CLI's `<synthetic>` limit turn, when it cut the run off
+    limited = final.get("rateLimited") if final else next((e["rateLimited"] for e in evs if e.get("rateLimited")), None)
     if final and final["text"].strip() and not limited:     # a limit refusal is the CLI's, not the agent's
         sections.append({"key": ("report", "final", (), ""), "step": "report", "fn": "final message",
                          "images": [], "units": [{"did": "the run's last message", "outcome": {}}],

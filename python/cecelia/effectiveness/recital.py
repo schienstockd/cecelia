@@ -261,9 +261,11 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
         raise RecitalError(f"claude could not be spawned: {e}") from e
 
     if result.returncode != 0:
-        # A usage limit or API error is reported on stdout, with stderr empty: show whichever has it.
+        # A usage limit or API error is reported on stdout, often with stderr empty: show both, so a
+        # warning on stderr can't hide the limit on stdout from `rate_limit` downstream.
         stderr, stdout = (result.stderr or "").strip(), (result.stdout or "").strip()
-        detail = f"stderr:\n{stderr}" if stderr else f"stdout:\n{stdout[-400:]}" if stdout else "no output"
+        detail = "\n".join([*([f"stderr:\n{stderr}"] if stderr else []),
+                            *([f"stdout:\n{stdout[-400:]}"] if stdout else [])]) or "no output"
         raise RecitalError(f"claude exited {result.returncode}; {detail}")
     return (result.stdout or "").strip()
 
