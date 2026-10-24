@@ -1073,6 +1073,15 @@ onUnmounted(() => {
           @click="viewerStore.setTrackHighlight(null)"
           v-tooltip.bottom="`Clear ${viewerStore.trackHighlight.trackIds.length} highlighted track${viewerStore.trackHighlight.trackIds.length === 1 ? '' : 's'}`"
         ><i class="pi pi-filter-slash" /></button>
+        <!-- Same reset for the cell-pick outline (`pickHighlight`) — Claude's `mark_cells` /
+             `select_on_plot`, the cockpit, a plot brush. Without it an assistant mark could only wait
+             out its TTL. -->
+        <button
+          v-if="viewerStore.pickHighlight"
+          class="opt-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-on cc-btn-on-tint"
+          @click="viewerStore.setPickHighlight(null)"
+          v-tooltip.bottom="`Clear ${viewerStore.pickHighlight.labels.length} highlighted cell${viewerStore.pickHighlight.labels.length === 1 ? '' : 's'}`"
+        ><i class="pi pi-eraser" /></button>
       </div>
     </div>
 

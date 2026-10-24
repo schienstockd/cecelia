@@ -21,6 +21,7 @@ import { useTaskDefs } from '../composables/useTaskDefs'
 import { useWindowListener } from '../composables/useKeepAlive'
 import { useLinkedSelectionStore } from '../stores/linkedSelection'
 import { useViewerStore } from '../stores/viewer'
+import { escapeClearsSelection } from '../utils/typingTarget'
 
 const { defs: behaviourDefs, reload: reloadDefs } = useTaskDefs('behaviour')
 
@@ -42,10 +43,7 @@ function clearSelection() {
 // hidden (kept-alive) page doesn't intercept keystrokes for another module. Ignore Escape while the user is
 // typing in an input/textarea/contenteditable so a form's own dismiss semantics still work.
 function onKeydown(e: KeyboardEvent) {
-  if (e.key !== 'Escape') return
-  if (linkedSel.isEmpty) return
-  const t = e.target as HTMLElement | null
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (!escapeClearsSelection(e, !linkedSel.isEmpty)) return
   clearSelection()
   e.preventDefault()   // used — the maximised-layout Esc (usePlotFullscreen) yields to it
 }
