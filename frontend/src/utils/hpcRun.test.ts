@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination,
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination, hpcRunEnvNote,
   hpcSteps, hpcFieldsFor, formatResource, hpcMemoryHint, frameGb } from './hpcRun'
-import type { HpcSettings } from './hpcSettings'
+import type { HpcSettings, HpcEnvStatus } from './hpcSettings'
 import type { TaskDef } from '../tasks/types'
 
 const def = (over: Partial<TaskDef> = {}): TaskDef => ({
@@ -119,5 +119,37 @@ describe('hpcRun', () => {
     expect(hpcMemoryHint(d, [big], { ...form, cpus: 12 })).toMatchObject({ severity: 'warn', suggestGb: 32 })
     expect(hpcMemoryHint(d, [], form)).toBeNull()
     expect(hpcMemoryHint(def(), [big], form)).toBeNull()     // no model in the spec
+  })
+})
+
+describe('hpcRunEnvNote — the cluster env, when hpc is picked', () => {
+  const env = (p: Partial<HpcEnvStatus> = {}): HpcEnvStatus =>
+    ({ configured: true, lock: 'abc123def456', installed: false, job: '', installing: false, error: '', ...p })
+
+  it('says nothing while unknown, when ready, or when the settings are incomplete', () => {
+    expect(hpcRunEnvNote(null)).toBeNull()
+    expect(hpcRunEnvNote(env({ installed: true }))).toBeNull()
+    expect(hpcRunEnvNote(env({ configured: false, error: 'Set the cluster host first' }))).toBeNull()
+  })
+
+  it('warns and offers Install when this version has no env on the cluster', () => {
+    const n = hpcRunEnvNote(env())!
+    expect(n.short).toBe('Cluster env out of date — reinstall')
+    expect(n.severity).toBe('warn')
+    expect(n.canInstall).toBe(true)
+    expect(n.detail).toBe('Not installed for this version')
+  })
+
+  it('an install in progress is info, not a second Install', () => {
+    for (const e of [env({ installing: true }), env({ job: '4242' })]) {
+      const n = hpcRunEnvNote(e)!
+      expect(n.severity).toBeUndefined()
+      expect(n.canInstall).toBe(false)
+    }
+  })
+
+  it('a failed check warns without offering Install', () => {
+    const n = hpcRunEnvNote(env({ error: 'Not reachable' }))!
+    expect(n).toMatchObject({ short: 'Cluster env not checked', detail: 'Not reachable', severity: 'warn', canInstall: false })
   })
 })
