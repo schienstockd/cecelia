@@ -267,6 +267,20 @@ class TestMeshUtils(unittest.TestCase):
         # only the far cube → ~5 µm gap
         self.assertAlmostEqual(nearest_surface({1: meshes[1]}, {2: meshes[2]})[1][0], 5.0, delta=1.0)
 
+    def test_nearest_surface_per_target(self):
+        # one result per target, each searched only among its own B (#1734): the far cube 2 is its
+        # target's nearest even though cube 3 (the other target) is closer to A
+        from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface_per_target
+        meshes = build_label_meshes(self._vol(), [1, 2, 3], [1.0, 1.0, 1.0], min_voxels=8)
+        out = nearest_surface_per_target({1: meshes[1]}, {2: meshes[2], 3: meshes[3]},
+                                         [("far", {2}), ("near", {3}), ("both", {2, 3}), ("none", {9})])
+        self.assertEqual(out["far"][1][1], 2)
+        self.assertAlmostEqual(out["far"][1][0], 5.0, delta=1.0)
+        self.assertEqual(out["near"][1][1], 3)
+        self.assertLess(out["near"][1][0], 1.0)
+        self.assertEqual(out["both"][1][1], 3)                  # pooled = nearest of any
+        self.assertEqual(out["none"][1], (float("inf"), None))  # a target with no meshes
+
     def test_empty_b(self):
         from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface
         meshes = build_label_meshes(self._vol(), [1], [1.0, 1.0, 1.0], min_voxels=8)

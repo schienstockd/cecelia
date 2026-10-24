@@ -10,6 +10,9 @@
 # `.contact_id#<target>` (the nearest B cell's label) — the legacy naming schema. `<target>` identifies
 # the B population set. All Julia (membership + centroids + physical sizes), no Python round-trip.
 #
+# One column set PER TARGET: several picked B populations give one distance each, not one distance to
+# the nearest of any (#1734). Grouping + naming live in `contact_targets.jl`, shared with the mesh route.
+#
 # Per timepoint on a timecourse: an A cell's nearest B is searched only among B cells in the SAME frame
 # (`centroid_t`), as the mesh route does — x/y/z alone would pair a cell with where another cell was
 # (or will be) in a different frame. An A cell whose frame has no B cell gets NaN distance, id 0.
@@ -23,13 +26,15 @@ Base.@kwdef struct CellContactsParams
     popsA::Vector{String}      = String[]
     popsB::Vector{String}      = String[]
     maxContactDist::Float64    = 10.0
+    combineTargets::Bool       = false
 end
 
 function parse_cell_contacts_params(d::AbstractDict)::CellContactsParams
     CellContactsParams(;
         popsA          = _str_list(d, "popsA"),
         popsB          = _str_list(d, "popsB"),
-        maxContactDist = Float64(get(d, "maxContactDist", 10.0)))
+        maxContactDist = Float64(get(d, "maxContactDist", 10.0)),
+        combineTargets = Bool(get(d, "combineTargets", false)))
 end
 
 # A µm point cloud (rows = points, cols = spatial dims) + labels, from a frame `pop_df` already returned
@@ -75,8 +80,21 @@ function _nearest_contacts(aCoords::AbstractMatrix, aT, bCoords::AbstractMatrix,
     (min_dist, contactid)
 end
 
-_contact_target(pop_type_b, popsB) =
-    replace(string(pop_type_b, ".", join(sort(collect(String, popsB)), "+")), "/" => "_")
+# One target group's µm point cloud: `(coords, labels, frames)` over every segmentation the group spans,
+# or `nothing` when it resolves no cells. Each segmentation's rows are scaled with ITS OWN image
+# resolution by `pop_df` before they pool here; frames only if EVERY segmentation carries them.
+function _target_cloud(img::CciaImage, refs::Vector{String})
+    bMem = pop_df_multi([img], [img.uid], refs; granularity = :cell, centroids = :physical)
+    nrow(bMem) == 0 && return nothing
+    coordsList = Matrix{Float64}[]; labels = Int[]; tList = Union{Nothing,Vector{Float64}}[]
+    for g in groupby(bMem, :value_name)
+        c, l, ft = _centroid_matrix(img, string(first(g.value_name)), DataFrame(g))
+        isempty(l) && continue
+        push!(coordsList, c); append!(labels, l); push!(tList, ft)
+    end
+    isempty(labels) && return nothing
+    (vcat(coordsList...), labels, any(isnothing, tList) ? nothing : vcat(tList...))
+end
 
 function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
@@ -93,7 +111,7 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
     # (tracked → live.cell.*, else flow.cell.*). Was hardcoded to pop_type="flow", so tracked cells
     # never resolved and always wrote flow.cell.contact.
     pop_type   = pop_namespace(img, p.popsA; value_name = value_name)
-    pop_type_b = pop_namespace(img, p.popsB)
+    pop_type_b = pop_namespace(img, p.popsB)      # the COMBINED set's; each target group takes its own
     on_progress(1, 3)
 
     # A cells (this segmentation) + their µm centroids, in ONE read (`centroids = :physical`).
@@ -105,43 +123,51 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
     aCoords, aLabels, aT = _centroid_matrix(img, value_name, aMem)
     isempty(aLabels) && (on_log("[ERROR] cellContacts: no A centroids"); return nothing)
 
-    # B cells (may span segmentations) → one pooled point cloud + their labels. Each segmentation's rows
-    # are scaled with ITS OWN image resolution by `pop_df` before we pool them here.
-    bMem = pop_df_multi([img], [img.uid], p.popsB; granularity = :cell, centroids = :physical)
-    nrow(bMem) == 0 && (on_log("[ERROR] cellContacts: no B cells for $(p.popsB)"); return nothing)
-    bCoordsList = Matrix{Float64}[]; bLabels = Int[]; bTList = Union{Nothing,Vector{Float64}}[]
-    for g in groupby(bMem, :value_name)
-        c, l, ft = _centroid_matrix(img, string(first(g.value_name)), DataFrame(g))
-        isempty(l) && continue
-        push!(bCoordsList, c); append!(bLabels, l); push!(bTList, ft)
-    end
-    isempty(bLabels) && (on_log("[ERROR] cellContacts: no B centroids"); return nothing)
-    bCoords = vcat(bCoordsList...)
-    # frames only if EVERY B segmentation carries them — a mixed pool can't be split by frame
-    bT = any(isnothing, bTList) ? nothing : vcat(bTList...)
+    # One column set per target group (`_contact_target_groups`): a group may span segmentations and
+    # pools within itself; `combineTargets` makes every B pop one group (the pooled form).
+    groups = _contact_target_groups(p.popsB; combine = p.combineTargets)
+    props_path = img_label_props_path(img, value_name)
+    _log_stale_combined(on_log, props_path, pop_type, pop_type_b, p.popsB, groups)
     on_progress(2, 3)
 
-    # nearest B for each A (KDTree over B, query A), per frame on a timecourse — distances in µm
-    (aT === nothing) == (bT === nothing) || on_log("[WARN] cellContacts: only one side has timepoints — " *
-        "searching across all frames")
-    min_dist, contactid = _nearest_contacts(aCoords, aT, bCoords, bLabels, bT)
-    contact   = Float64.(min_dist .<= p.maxContactDist)
+    out = DataFrame("label" => aLabels)
+    findings = Dict{String,Any}[]
+    targets = String[]
+    in_any = falses(length(aLabels))            # within the threshold of ANY target = the pooled answer
+    for refs in groups
+        target = _contact_target(pop_namespace(img, refs), refs)
+        cloud = _target_cloud(img, refs)
+        if cloud === nothing
+            on_log("[WARN] cellContacts: no B cells for $(refs) — skipped")
+            push!(findings, qc_finding("warn", "contact.no_target_cells";
+                                       detail = Dict{String,Any}("target" => refs)))
+            continue
+        end
+        bCoords, bLabels, bT = cloud
+        # nearest B for each A (KDTree over B, query A), per frame on a timecourse — distances in µm
+        (aT === nothing) == (bT === nothing) || on_log("[WARN] cellContacts: only one side has " *
+            "timepoints for $(target) — searching across all frames")
+        min_dist, contactid = _nearest_contacts(aCoords, aT, bCoords, bLabels, bT)
+        contact = Float64.(min_dist .<= p.maxContactDist)
+        out[!, "$(pop_type).cell.contact#$(target)"]      = contact
+        out[!, "$(pop_type).cell.min_distance#$(target)"] = min_dist
+        out[!, "$(pop_type).cell.contact_id#$(target)"]   = contactid
+        in_any .|= contact .> 0
+        push!(targets, target)
+        on_log("[INFO] cellContacts: $(Int(sum(contact)))/$(length(aLabels)) A cells in contact with " *
+               "$(target) (≤$(p.maxContactDist)µm).")
+    end
+    isempty(targets) && (on_log("[ERROR] cellContacts: no B cells for $(p.popsB)"); return nothing)
+    label_props(props_path) |> add_obs(out) |> save!
 
-    target = _contact_target(pop_type_b, p.popsB)
-    out = DataFrame("label" => aLabels,
-                    "$(pop_type).cell.contact#$(target)"      => contact,
-                    "$(pop_type).cell.min_distance#$(target)" => min_dist,
-                    "$(pop_type).cell.contact_id#$(target)"   => contactid)
-    label_props(img_label_props_path(img, value_name)) |> add_obs(out) |> save!
-
-    n_contact = Int(sum(contact)); frac = n_contact / length(contact)
-    write_qc(img, "spatialAnalysis.cellContacts", value_name,
-             (length(aLabels) == 0 ? [qc_finding("warn", "contact.no_cells", "No cells", "No A cells.")] : Dict{String,Any}[]);
+    # cohort metrics stay comparable with earlier runs: "in contact" = with ANY target, which is exactly
+    # what the single pooled column used to report; `nTargets` says how many column sets were written
+    n_contact = count(in_any); frac = n_contact / length(aLabels)
+    write_qc(img, "spatialAnalysis.cellContacts", value_name, findings;
              metrics = Dict{String,Any}("nCellsA" => length(aLabels), "nContacts" => n_contact,
-                                        "fracInContact" => frac))
-    on_log("[INFO] cellContacts: $(n_contact)/$(length(aLabels)) A cells in contact with $(target) (≤$(p.maxContactDist)µm).")
+                                        "fracInContact" => frac, "nTargets" => length(targets)))
     on_progress(3, 3)
 
-    Dict{String,Any}("valueName" => value_name, "target" => target,
+    Dict{String,Any}("valueName" => value_name, "targets" => targets,
                      "nContacts" => n_contact, "fracInContact" => frac)
 end

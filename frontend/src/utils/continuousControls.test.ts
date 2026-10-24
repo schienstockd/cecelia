@@ -178,7 +178,7 @@ const DECLARED_TIMERS: Record<string, string> = {
   'utils/debouncedLatest.ts': 'IS the canonical request scheduler',
   'utils/debouncedSave.ts':   'IS the canonical write-behind scheduler',
   'stores/ws.ts':             'connect timeout + reconnect backoff — a deadline per attempt, not a debounce',
-  'composables/useCopyFlash.ts':      'clears the "copied" flash; re-armed so a second copy restarts the flash',
+  'composables/useFlash.ts':          'clears the "copied"/"saved" flash; re-armed so a second flash restarts the window',
   'composables/useDelayedLoading.ts': 'LEADING delay before a spinner appears — the opposite shape',
   'composables/useCanvasZoom.ts':     'trailing "the drag has stopped" detector for the compositor layer, not the zoom itself',
   'composables/useTaskCompletionWatch.ts':

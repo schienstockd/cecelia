@@ -213,8 +213,9 @@ Preferences dialog: a read-only "Cluster: host:port · scheduler" line, the logi
 remote folder, email, then a CPU-jobs / GPU-jobs grid for queue, account, QoS, directives and
 preamble. Both surfaces open with one line saying what HPC is for (many or large images), and the job grid sits under one line pointing to the cluster's support team for these names. Every empty field shows a
 grey generic `e.g.` example (`cpu,long`, `proj1234`, `module load cuda/12`; directives follow the chosen
-scheduler) — never a real site's values. Both have Test connection; its disabled tooltip names the other surface when the missing
-field lives there. Settings re-reads when Preferences closes. Each field saves on
+scheduler) — never a real site's values. Both have Test connection; when it is disabled the reason shows beside it, naming the other surface when the missing
+field lives there. Settings also has a small ghost **Your HPC settings** button there that opens Preferences on the HPC
+pane (`openPreferences('hpc')`). A successful save flashes **Saved** in that row (`useSavedFlash`). Settings re-reads when Preferences closes. Each field saves on
 `@change` from its own `useFieldDraft` (`useHpcDrafts`), so a save reply never wipes another field
 being typed in; a refused value shows the backend's message and snaps back. The key
 picker is `FileBrowser` in file mode opened at `~/.ssh` (`startPath`). **Test connection** runs on the

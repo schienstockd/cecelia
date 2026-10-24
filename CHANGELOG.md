@@ -31,6 +31,14 @@ _Changes on `main` that have not yet been tagged in a release._
   appears when something competes with that marker. Saved chains still run; an image's previously
   saved AF settings will not pre-fill the new rows.
 
+### Changed
+
+- **Cell contacts give one distance per target** (#1734). Picking several target populations used to
+  give one distance, to the nearest cell of any of them. Now each target gets its own contact,
+  distance and nearest-cell columns, as in the old R version. The same population picked from
+  several segmentations still counts as one target. Tick **Combine targets** for the old single
+  distance. Columns from earlier runs are kept; delete them under Analysis runs if not wanted.
+
 ## [0.2.11] — 2026-10-16
 
 ### Read this first

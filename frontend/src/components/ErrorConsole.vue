@@ -5,6 +5,7 @@ import { dotClass, LOG_LEVEL_TONE } from '../utils/statusDot'
 import { isVisible, formatEntry, logGroup, LOG_GROUPS, type LogGroup } from '../utils/logFilter'
 import { openPopoutWindow } from '../lib/popout'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import { useCopyFlash } from '../composables/useCopyFlash'
 
 // `fill`: render just the open panel filling its container (no docked collapse bar / toggle). Used by
 // the standalone console window (ConsoleView) so the docked bar and the window are the SAME component.
@@ -16,7 +17,7 @@ type Filter = LogLevel | 'all'
 const filter = ref<Filter>('all')
 const scrollEl = ref<HTMLElement | null>(null)
 const expandedId = ref<number | null>(null)
-const copied = ref(false)
+const { isCopied: copied, copy } = useCopyFlash(1200)
 
 // Two facets now — LEVEL (as before) and GROUP (one chip per runtime component). The filter itself is
 // pure and lives in utils/logFilter.ts: an error is never hidden by a group chip, which is what makes
@@ -71,11 +72,7 @@ function toggleExpand(id: number) {
 // message. Copies the filtered view rather than everything, so narrowing to one component or one
 // search first is how you choose what goes in.
 async function copyVisible() {
-  try {
-    await navigator.clipboard.writeText(visible.value.map(formatEntry).join('\n'))
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 1200)
-  } catch {
+  if (!await copy(visible.value.map(formatEntry).join('\n'))) {
     log.warn('Could not copy to the clipboard', { source: 'frontend' })
   }
 }
@@ -192,7 +189,7 @@ const filterOptions = computed<ChipOption[]>(() =>
         v-tooltip.top="'Copy the visible messages'"
         :disabled="visible.length === 0"
       >
-        <i :class="copied ? 'pi pi-check' : 'pi pi-copy'" />
+        <i :class="copied() ? 'pi pi-check' : 'pi pi-copy'" />
       </button>
 
       <button
