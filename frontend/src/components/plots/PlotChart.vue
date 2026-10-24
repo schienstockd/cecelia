@@ -16,6 +16,7 @@ import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../.
 import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
+import { pointInPoly } from '../../utils/drawGeometry'
 import type { PlotDataResponse } from '../../plots/types'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import type { FrameRect } from '../../plots/frame'
@@ -201,19 +202,6 @@ async function render(pass = 0) {
       }
     })
 
-    // Even-odd ray-cast: standard closed-polygon test. `poly` is the lasso vertex list; the
-    // implicit closing edge (last → first) is handled by the wrap-around index `j`.
-    const pointInPoly = (poly: Pt[], x: number, y: number): boolean => {
-      let inside = false
-      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y
-        const intersect = ((yi > y) !== (yj > y)) &&
-          (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi)
-        if (intersect) inside = !inside
-      }
-      return inside
-    }
-
     // `hit` takes CLIENT coords (see COORDINATE SPACE note above). Each circle's client center is
     // read from `getBoundingClientRect()` — one call per dot, once per drag. Identity comes from
     // data-* attrs stamped by the mark's `render` hook (plot.ts → `stampBrushIds`), NOT from
@@ -269,7 +257,8 @@ async function render(pass = 0) {
         brushMode = null; brushStartClient = null; brushStartSvg = null; svg.classList.remove('cc-brushing')
         // Need at least a triangle for a meaningful polygon; anything less was a stray drag.
         if (pts.length < 3) return
-        emitHits((cx, cy) => pointInPoly(pts, cx, cy))
+        const poly = pts.map(q => [q.x, q.y] as [number, number])
+        emitHits((cx, cy) => pointInPoly([cx, cy], poly))
       }
     }
     svg.addEventListener('mouseup', finishBrush)

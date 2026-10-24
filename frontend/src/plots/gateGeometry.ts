@@ -72,3 +72,34 @@ export function clampToBox(p: [number, number], w: number, h: number): [number, 
 export function withinReach(p: [number, number], w: number, h: number, reach = EDGE_REACH_PX): boolean {
   return p[0] >= -reach && p[0] <= w + reach && p[1] >= -reach && p[1] <= h + reach
 }
+
+// ── Edit-mode grab zones (#1732) ───────────────────────────────────────────────
+// How close the cursor must be to a corner/vertex or an edge to resize instead of move. 6 px was too
+// easy to miss on a busy plot, so the reach is `GATE_HANDLE_R_PX` — but on a SMALL gate a fixed reach
+// would swallow the whole body (an edge band on each side leaves nothing to grab to move it), so it is
+// capped at a quarter of the gate's shorter on-screen side: at least half of each dimension stays the
+// move zone. `GATE_HANDLE_MIN_R_PX` keeps a tiny gate's handles reachable at all. The drawn handles
+// scale with the same radius (GateOverlay `drawHandles`), so what you see is what you can grab.
+export const GATE_HANDLE_R_PX = 10
+export const GATE_HANDLE_MIN_R_PX = 3
+export const GATE_HANDLE_BODY_FRACTION = 0.25
+
+import { distToSeg, pointInPoly, type Point as Px } from '../utils/drawGeometry'
+
+/** Grab radius (px) for a gate whose on-screen outline is `pts`. */
+export function gateHandleRadius(pts: Px[]): number {
+  if (!pts.length) return GATE_HANDLE_R_PX
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+  const side = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
+  return Math.max(GATE_HANDLE_MIN_R_PX, Math.min(GATE_HANDLE_R_PX, side * GATE_HANDLE_BODY_FRACTION))
+}
+
+export type GatePart = { part: 'vertex'; i: number } | { part: 'edge'; i: number } | { part: 'body' }
+
+/** Which part of a closed on-screen outline `pts` the pixel `p` grabs. Vertices win over edges,
+ *  edges over the body (edge `i` runs from vertex `i` to `i+1`). `r` defaults to `gateHandleRadius`. */
+export function hitGateShape(pts: Px[], p: Px, r = gateHandleRadius(pts)): GatePart | null {
+  for (let i = 0; i < pts.length; i++) if (Math.hypot(pts[i][0] - p[0], pts[i][1] - p[1]) < r) return { part: 'vertex', i }
+  for (let i = 0; i < pts.length; i++) if (distToSeg(p, pts[i], pts[(i + 1) % pts.length]) < r) return { part: 'edge', i }
+  return pointInPoly(p, pts) ? { part: 'body' } : null
+}

@@ -25,7 +25,7 @@ import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '..
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
 import { gateLabelPos } from '../../utils/gateLabel'
-import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach } from '../../plots/gateGeometry'
+import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, gateHandleRadius, hitGateShape } from '../../plots/gateGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -43,7 +43,6 @@ const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gat
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
 let ctx: CanvasRenderingContext2D | null = null
 let ro: ResizeObserver | null = null
-const HANDLE_R = 6
 
 const pe = ref<'none' | 'auto'>('none')      // overlay pointer-events (see header)
 const cursor = ref('default')
@@ -83,23 +82,6 @@ const clone = (g: GateSpec): GateSpec => JSON.parse(JSON.stringify(g))
 function rectCorners(g: GateSpec): [number, number][] {
   return [[g.x_min!, g.y_min!], [g.x_max!, g.y_min!], [g.x_max!, g.y_max!], [g.x_min!, g.y_max!]]
 }
-function dist(a: [number, number], b: [number, number]) { return Math.hypot(a[0] - b[0], a[1] - b[1]) }
-function distToSeg(p: [number, number], a: [number, number], b: [number, number]) {
-  const dx = b[0] - a[0], dy = b[1] - a[1]
-  const l2 = dx * dx + dy * dy
-  let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0
-  t = Math.max(0, Math.min(1, t))
-  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
-}
-function pointInPoly(p: [number, number], poly: [number, number][]) {
-  let inside = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i], [xj, yj] = poly[j]
-    if (((yi > p[1]) !== (yj > p[1])) && (p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi)) inside = !inside
-  }
-  return inside
-}
-
 // ── hit testing for editing ──
 type Handle =
   | { path: string; kind: 'rect-move' } | { path: string; kind: 'rect-corner'; ix: number }
@@ -107,18 +89,19 @@ type Handle =
   | { path: string; kind: 'poly-move' } | { path: string; kind: 'poly-vertex'; vi: number }
   | { path: string; kind: 'poly-edge'; ei: number }
 
+// grab-zone radius + vertex/edge/body priority: plots/gateGeometry.ts (`hitGateShape`)
 function hitGate(entry: { path: string; gate: GateSpec }, p: [number, number]): Handle | null {
   const g = entry.gate
   if (g.kind === 'rectangle') {
-    const cpx = rectCorners(g).map(c => dataToPx(c[0], c[1])) as [number, number][]
-    for (let ix = 0; ix < 4; ix++) if (dist(cpx[ix], p) < HANDLE_R) return { path: entry.path, kind: 'rect-corner', ix }
-    for (let e = 0; e < 4; e++) if (distToSeg(p, cpx[e], cpx[(e + 1) % 4]) < HANDLE_R) return { path: entry.path, kind: 'rect-edge', edge: e }
-    if (pointInPoly(p, cpx)) return { path: entry.path, kind: 'rect-move' }
+    const hit = hitGateShape(rectCorners(g).map(c => dataToPx(c[0], c[1])) as [number, number][], p)
+    if (hit?.part === 'vertex') return { path: entry.path, kind: 'rect-corner', ix: hit.i }
+    if (hit?.part === 'edge') return { path: entry.path, kind: 'rect-edge', edge: hit.i }
+    if (hit?.part === 'body') return { path: entry.path, kind: 'rect-move' }
   } else if (g.kind === 'polygon' && g.vertices) {
-    const vpx = g.vertices.map(v => dataToPx(v[0], v[1])) as [number, number][]
-    for (let vi = 0; vi < vpx.length; vi++) if (dist(vpx[vi], p) < HANDLE_R) return { path: entry.path, kind: 'poly-vertex', vi }
-    for (let ei = 0; ei < vpx.length; ei++) if (distToSeg(p, vpx[ei], vpx[(ei + 1) % vpx.length]) < HANDLE_R) return { path: entry.path, kind: 'poly-edge', ei }
-    if (pointInPoly(p, vpx)) return { path: entry.path, kind: 'poly-move' }
+    const hit = hitGateShape(g.vertices.map(v => dataToPx(v[0], v[1])) as [number, number][], p)
+    if (hit?.part === 'vertex') return { path: entry.path, kind: 'poly-vertex', vi: hit.i }
+    if (hit?.part === 'edge') return { path: entry.path, kind: 'poly-edge', ei: hit.i }
+    if (hit?.part === 'body') return { path: entry.path, kind: 'poly-move' }
   }
   return null
 }
@@ -192,14 +175,17 @@ function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string
 }
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = '#fff'; c.strokeStyle = colour; c.lineWidth = 1.5
-  const sq = (px: number, py: number) => { c.beginPath(); c.rect(px - 3, py - 3, 6, 6); c.fill(); c.stroke() }
-  const dot = (px: number, py: number) => { c.beginPath(); c.arc(px, py, 4, 0, 2 * Math.PI); c.fill(); c.stroke() }
+  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
+  // drawn at the size of the grab zone (a square of side r, a dot of radius 0.6 r), so a small gate's
+  // shrunken reach shows as smaller handles
+  const r = gateHandleRadius(pts)
+  const sq = (px: number, py: number) => { c.beginPath(); c.rect(px - r / 2, py - r / 2, r, r); c.fill(); c.stroke() }
+  const dot = (px: number, py: number) => { c.beginPath(); c.arc(px, py, r * 0.6, 0, 2 * Math.PI); c.fill(); c.stroke() }
   if (g.kind === 'rectangle') {
-    const cpx = rectCorners(g).map(p => dataToPx(p[0], p[1]))
-    cpx.forEach(p => sq(p[0], p[1]))
-    for (let e = 0; e < 4; e++) { const a = cpx[e], b = cpx[(e + 1) % 4]; sq((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) }
+    pts.forEach(p => sq(p[0], p[1]))
+    for (let e = 0; e < 4; e++) { const a = pts[e], b = pts[(e + 1) % 4]; sq((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) }
   } else if (g.kind === 'polygon' && g.vertices) {
-    g.vertices.forEach(v => { const [px, py] = dataToPx(v[0], v[1]); dot(px, py) })
+    pts.forEach(p => dot(p[0], p[1]))
   }
 }
 // the committed gate outlines + labels (substitute the draft for the one being edited). Split out so

@@ -16,6 +16,29 @@
 
 export type Point = [number, number]
 
+// ── Point-vs-shape primitives ───────────────────────────────────────────────────────────────────
+// Shared by the gate overlay's grab zones (`plots/gateGeometry.ts` → `hitGateShape`), the annotation
+// surface's mark picking (`DrawSurface.vue`) and the plot lasso (`PlotChart.vue`).
+
+/** Distance from `p` to the segment `a`–`b`. */
+export function distToSeg(p: Point, a: Point, b: Point): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1]
+  const l2 = dx * dx + dy * dy
+  let t = l2 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2 : 0
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
+}
+
+/** Is `p` inside the closed polygon `poly` (even-odd ray cast; last → first closes it)? */
+export function pointInPoly(p: Point, poly: Point[]): boolean {
+  let inside = false
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j]
+    if (((yi > p[1]) !== (yj > p[1])) && (p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi)) inside = !inside
+  }
+  return inside
+}
+
 // ── Click-vs-drag / degeneracy primitives (moved from `plots/gateGeometry.ts`) ─────────────────
 //
 // Both checks are in PIXELS, deliberately: the user's intent is a gesture. A data-space threshold
