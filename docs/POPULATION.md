@@ -375,7 +375,13 @@ gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet 
 recomputes per image on read, copying a strategy is just writing the source sidecar to each target
 (REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking
 the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks via
-`/api/images/value-name-check` and flags them). The canvas **plot layout** is separate frontend state
+`/api/images/value-name-check` and flags them). A target that HAS the segmentation but lacks a column a
+gate or filter reads — typically `clusters.<run>` from a clustering run it wasn't in — is still copied,
+but the reply's `warnings` names, per target, each absent column and the populations it leaves empty
+(the ones reading it plus their descendants; `missing_gate_columns(m, available)` in
+`gating/gating_engine.jl`, checked against the same `pop_membership_fetch` table `recompute!` reads).
+A boolean pop combining an emptied pop is not listed — `not X` keeps members. The dialog stays open to
+show them (#1737). The Population Manager does not yet say why such a pop reads 0. The canvas **plot layout** is separate frontend state
 (the canvas store, loaded project-wide + autosaved), so it's copied client-side (`canvasPanels.copyEntry`),
 not by the route.
 
