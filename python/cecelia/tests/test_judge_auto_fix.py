@@ -289,6 +289,62 @@ class FenceTest(_AutoFixture):
         self.assertEqual(second[second.index("--resume") + 1], "s1")   # the same session, carried on
         self.assertEqual(prompt2, self.af.RESUME_PROMPT)
 
+    def _limited_sessions(self, *runs):
+        """`default_session` against a fake CLI that plays `runs` (each a list of stream events) in turn;
+        a run past the last fails the test instead of hanging it. (result, argvs)."""
+        runs, seen = iter(runs), []
+
+        class Popen:
+            def __init__(self, argv, **kw):
+                seen.append(argv)
+                self.stdin = mock.Mock()
+                self.stdout = io.StringIO("".join(json.dumps(e) + "\n" for e in next(runs)))
+
+            def wait(self):
+                return 0
+
+            def kill(self):
+                pass
+        with mock.patch.object(self.af, "resolve_claude_bin", return_value="claude"), \
+                mock.patch.object(self.af.subprocess, "Popen", Popen), mock.patch("sys.stdout", io.StringIO()):
+            return self.af.default_session("fix it", self.tmp, {}, main=self.main), seen
+
+    def test_an_unreadable_reset_stops_after_max_limit_waits_instead_of_waiting_for_days(self):
+        # a weekly limit this code can't read: an hour's wait each time, so the old loop never stopped
+        limit = "You've hit your weekly limit · resets in a while"
+        run = [{"type": "system", "session_id": "s1"},
+               {"type": "result", "is_error": True, "api_error_status": 429, "result": limit, "session_id": "s1"}]
+        slept = []
+        with mock.patch.object(self.af, "_sleep", slept.append), self.assertRaises(self.af.RateLimited) as e:
+            self._limited_sessions(*[run] * (self.af.MAX_LIMIT_WAITS + 1))
+        self.assertEqual(str(e.exception), limit)
+        self.assertEqual(len(slept), self.af.MAX_LIMIT_WAITS)
+
+    def test_the_streams_exact_reset_stops_a_weekly_limit_at_once(self):
+        import datetime as dt
+        # the CLI's text names no readable time; its refusal event says the limit lifts in 3 days
+        lifts = int((dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)).timestamp())
+        run = [{"type": "system", "session_id": "s1"},
+               {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": lifts,
+                                                                "rateLimitType": "seven_day"}},
+               {"type": "result", "is_error": True, "api_error_status": 429, "result": "You've hit your weekly limit",
+                "session_id": "s1"}]
+        with mock.patch.object(self.af, "_sleep", side_effect=AssertionError("waited")), \
+                self.assertRaises(self.af.RateLimited) as e:
+            self._limited_sessions(run)
+        self.assertEqual(str(e.exception), f"You've hit your weekly limit|{lifts}")
+        # a refusal an hour off is waited out, to its epoch, and the session resumed
+        soon = int((dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=30)).timestamp())
+        run[1] = {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": soon}}
+        ok = [{"type": "result", "structured_output": {"tags": []}, "session_id": "s1"}]
+        slept = []
+        with mock.patch.object(self.af, "_sleep", slept.append):
+            got, seen = self._limited_sessions(run, ok)
+        self.assertEqual(got[0], {"tags": []})
+        self.assertEqual(len(slept), 1)
+        self.assertAlmostEqual(slept[0], 31 * 60, delta=5)   # a minute past the stream's reset, not the 1h fallback
+        self.assertIn("--resume", seen[1])
+
     def test_waiting_out_the_limit(self):
         import datetime as dt
         zone = __import__("zoneinfo").ZoneInfo("Australia/Sydney")
@@ -502,6 +558,26 @@ class WorkTest(_AutoFixture):
         self.assertEqual(len([c for c in self.calls if c[:3] == ["pixi", "run", "recital"]]), 2)
         self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
         self.assertIn("→ PR https://github.com/o/r/pull/9", out.getvalue())
+
+    def test_a_recital_the_limit_keeps_cutting_off_stops_after_max_limit_waits(self):
+        limited = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
+                   "You've hit your weekly limit\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+        inner, runs = self.sh(), []
+
+        def sh(argv, cwd, **kw):
+            done = inner(argv, cwd, **kw)
+            if len(argv) > 1 and str(argv[1]).endswith("recital.py"):
+                runs.append(argv)
+                if len(runs) > self.af.MAX_LIMIT_WAITS + 1:
+                    raise AssertionError("recital run again past MAX_LIMIT_WAITS")
+                done = subprocess.CompletedProcess(argv, 0, limited, "")
+            return done
+        with mock.patch.object(self.af, "wait_for_reset", return_value=True) as wait, \
+                self.assertRaises(self.af.RateLimited):
+            self.af.work_one(self.record, [self.record["bugs"][0]], main=self.main, out=io.StringIO(),
+                             session=self.session(_answer(), {"tags": []}), sh=sh, path=self.log, auto_log=self.auto)
+        self.assertEqual(wait.call_count, self.af.MAX_LIMIT_WAITS)
+        self.assertEqual(len(runs), self.af.MAX_LIMIT_WAITS + 1)
 
     RED = {"statusCheckRollup": [_check("py", "FAILURE", job=7), _check("julia")], "mergeable": "MERGEABLE"}
 

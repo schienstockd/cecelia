@@ -179,6 +179,62 @@ class ResetAtTest(unittest.TestCase):
         for msg in ("You've hit your session limit", "resets 1:40am (Not/AZone)", "resets 13:00pm (UTC)", ""):
             self.assertEqual(self._at(msg, now), now + dt.timedelta(hours=1), msg)
 
+    def test_a_weekly_reset_with_a_date(self):
+        syd = zoneinfo.ZoneInfo("Australia/Sydney")
+        now = dt.datetime(2026, 10, 24, 13, 0, tzinfo=syd)
+        for msg in ("You've hit your weekly limit · resets Oct 30, 9am (Australia/Sydney)",
+                    "Weekly limit reached · resets Oct 30 at 9am (Australia/Sydney)",
+                    "weekly limit · resets October 30th, 9:00am (Australia/Sydney)"):
+            self.assertEqual(self._at(msg, now), dt.datetime(2026, 10, 30, 9, 0, tzinfo=syd), msg)
+        # "Jan 2" read on Dec 30 is next year's; a date just past or impossible is unreadable
+        dec = dt.datetime(2026, 12, 30, 13, 0, tzinfo=syd)
+        self.assertEqual(self._at("resets Jan 2, 9am (Australia/Sydney)", dec), dt.datetime(2027, 1, 2, 9, 0, tzinfo=syd))
+        self.assertIsNone(claude_cli.parse_reset("resets Oct 23, 9am (Australia/Sydney)", now))
+        self.assertIsNone(claude_cli.parse_reset("resets Feb 30, 9am (Australia/Sydney)", now))
+
+    def test_parse_reset_says_when_it_cannot_read_one(self):
+        now = dt.datetime(2026, 10, 6, 0, 0, tzinfo=dt.timezone.utc)
+        for msg in ("You've hit your session limit", "weekly limit reached", "resets 1:40am (Not/AZone)", ""):
+            self.assertIsNone(claude_cli.parse_reset(msg, now), msg)
+        self.assertEqual(claude_cli.parse_reset("resets 1am (UTC)", now), now + dt.timedelta(hours=1))
+
+
+#: A `rate_limit_event` as `claude -p --output-format stream-json` 2.1.291 writes it on every turn
+#: (verbatim from ~/.cecelia-effectiveness/ladder/traces/…-r3/stream.jsonl, ids trimmed): `allowed`.
+_REAL_ALLOWED_EVENT = {"type": "rate_limit_event", "rate_limit_info": {
+    "status": "allowed", "resetsAt": 1791088200, "rateLimitType": "five_hour", "overageStatus": "rejected",
+    "overageDisabledReason": "group_zero_credit_limit", "isUsingOverage": False,
+    "unifiedWindows": {"five_hour": {"utilization": 0.25, "resetsAt": 1791088200}}}}
+#: The real transcript's synthetic limit turn carries the refusal's `quotaLimits` (121acb56….jsonl).
+_REAL_QUOTA = {"status": "rejected", "resetsAt": 1791292200, "unifiedRateLimitFallbackAvailable": False,
+               "rateLimitType": "five_hour", "overageStatus": "rejected"}
+
+
+class LimitResetsAtTest(unittest.TestCase):
+    def test_only_a_refusal_names_the_reset(self):
+        self.assertIsNone(claude_cli.limit_resets_at(_REAL_ALLOWED_EVENT))   # a window that didn't refuse
+        rejected = {**_REAL_ALLOWED_EVENT, "rate_limit_info": {
+            **_REAL_ALLOWED_EVENT["rate_limit_info"], "status": "rejected", "rateLimitType": "seven_day",
+            "resetsAt": 1791700000}}
+        self.assertEqual(claude_cli.limit_resets_at(rejected), 1791700000)
+        self.assertEqual(claude_cli.limit_resets_at({**_REAL_SYNTHETIC, "quotaLimits": _REAL_QUOTA}), 1791292200)
+        for junk in (None, {}, {"type": "rate_limit_event"}, {"quotaLimits": {"status": "rejected"}},
+                     {"quotaLimits": {"status": "rejected", "resetsAt": "soon"}}):
+            self.assertIsNone(claude_cli.limit_resets_at(junk), junk)
+
+    def test_with_reset_threads_the_epoch_through_reset_at(self):
+        syd = zoneinfo.ZoneInfo("Australia/Sydney")
+        now = dt.datetime(2026, 10, 6, 13, 0, tzinfo=syd)
+        msg = claude_cli.with_reset("You've hit your weekly limit", 1791292200)
+        self.assertEqual(msg, "You've hit your weekly limit|1791292200")
+        self.assertEqual(claude_cli.reset_at(msg, now), dt.datetime(2026, 10, 7, 0, 10, tzinfo=syd))
+        # the epoch wins over the clock text; none to add, or one already there: unchanged
+        self.assertEqual(claude_cli.reset_at(claude_cli.with_reset("resets 3pm (Australia/Sydney)", 1791292200), now),
+                         dt.datetime(2026, 10, 7, 0, 10, tzinfo=syd))
+        self.assertEqual(claude_cli.with_reset("limit", None), "limit")
+        self.assertEqual(claude_cli.with_reset("Claude AI usage limit reached|1791292200", 1),
+                         "Claude AI usage limit reached|1791292200")
+
 
 if __name__ == "__main__":
     unittest.main()
