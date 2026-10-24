@@ -53,8 +53,14 @@ end
 
 # Pure QC helper (unit-tested per docs/MODULES.md): objective graph metrics → advisory findings. The
 # unambiguous problems are an empty graph (no edges — usually a radius far below the cell spacing, or
-# wrong units) and a majority of isolated cells. Counts themselves bank as metrics, not findings.
-function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_frac::Real)
+# wrong units), a majority of isolated cells, and a graph too sparse to describe a neighbourhood:
+# a mean degree under `SPARSE_GRAPH_MEAN_DEGREE` leaves each cell's composition vector a handful
+# of 0/1 steps, and region clustering on it is noise. An unpruned 2D Delaunay graph averages ~6, so
+# falling under 3 means the radius is cutting most real contacts. Counts bank as metrics, not findings.
+const SPARSE_GRAPH_MEAN_DEGREE = 3.0
+
+function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_frac::Real,
+                                 mean_degree::Real = Inf)
     findings = Dict{String,Any}[]
     if n_cells == 0
         push!(findings, qc_finding("warn", "spatial.no_cells", "No cells",
@@ -65,6 +71,10 @@ function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_fr
     elseif isolated_frac >= 0.5
         push!(findings, qc_finding("warn", "spatial.many_isolated", "Over half of cells have no neighbours",
             "$(round(Int, isolated_frac * 100))% of cells are isolated (no graph edge). Consider a larger radius or a kNN graph."))
+    elseif mean_degree < SPARSE_GRAPH_MEAN_DEGREE
+        md = round(mean_degree; digits = 1)
+        push!(findings, qc_finding("warn", "spatial.sparse_graph"; value = md,
+                                   detail = Dict{String,Any}("meanDegree" => md)))
     end
     findings
 end
@@ -139,7 +149,7 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
         isolated_frac = Float64(get(qc, "isolatedFrac", 0.0))
         mean_degree   = Float64(get(qc, "meanDegree", 0.0))
         write_qc(img, "spatialAnalysis.cellNeighbours", p.graphSuffix,
-                 _neighbours_qc_findings(n_cells, n_edges, isolated_frac);
+                 _neighbours_qc_findings(n_cells, n_edges, isolated_frac, mean_degree);
                  metrics = Dict{String,Any}("nCells" => n_cells, "nEdges" => n_edges, "meanDegree" => mean_degree))
         on_log("[QC] neighbour graph: $(n_edges) edge(s) over $(n_cells) cell(s).")
     catch e
