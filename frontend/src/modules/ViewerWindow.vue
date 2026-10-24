@@ -103,6 +103,7 @@ import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
+import { maskPopTable } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -739,6 +740,8 @@ const popKey = (vn: string, popType: string, path: string) => `${vn}::${popType}
  *  `show` only seeds a pop the viewer has no stored eye for. The points, the capture snapshot and the landscape counts all ask
  *  here, so they agree on what is on screen. */
 const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.vn, l.popType, path))
+/** A layer's hidden pop paths — `popDrawn`'s complement, the shape the points and the mask table take. */
+const layerHidden = (l: PopLayer) => new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path))
 /** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
  *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a track-drawable pop
  *  (`isTrackDrawable`), its ribbon eye on (`trackPopHidden` — seeded from the manager's `show` like the
@@ -960,6 +963,18 @@ let appliedMaskSource: string | null = null
 // `starting.value` guard: `maskName` recomputes when `meta.value` is set during `loadVersion`, which is
 // about to run its own reallocate reading the mask at call time.
 watch(maskSourceId, () => { if (!starting.value) applyMaskSource() })
+// "Colour by population": the shown mask's colour table from the population layers on ITS segmentation
+// (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the rest grey). `null` = the
+// per-id palette: the toggle off, no mask, no pops loaded for it, or a preview / live store, whose ids
+// are not the cell table's. Every renderer takes it per frame; the same object is a no-op there.
+const maskPopLayers = computed(() => {
+  const vn = drawnMaskVn(maskName.value, maskHidden.value)
+  return vn && !maskStoreOf(vn).store ? popLayers.value.filter(l => l.vn === vn) : []
+})
+const maskTable = computed(() => settings.viewerMaskByPop && maskPopLayers.value.length
+  ? maskPopTable(maskPopLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })))
+  : null)
+watch(maskTable, () => frame.redraw())
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -1599,6 +1614,7 @@ const frame = usePlotResize(canvas, () => {
   // user hasn't picked a labels layer (a first-time segmentation has no picker entry to select).
   const showLabels = !!drawnMaskVn(maskName.value, maskHidden.value)
   r.setLabelStyle(showLabels ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  r.setLabelTable(maskTable.value)
   // Pick highlight — the correction cockpit's "what am I editing right now" answer. Scoped to the
   // matching imageUid only; vn is not enforced because the outline is drawn AGAINST the visible
   // mask (`labelName`), and a picked id that doesn't exist in the visible mask simply produces no
@@ -1694,10 +1710,8 @@ const frame = usePlotResize(canvas, () => {
  * inside it (see `buildPointBuffer`).
  */
 function rebuildOverlays() {
-  points = buildPointBufferLayers(popLayers.value.map(l => ({
-    payload: l.payload,
-    hidden: new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path)),
-  })), meta.value, PALETTES.cecelia)
+  points = buildPointBufferLayers(popLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })),
+                                 meta.value, PALETTES.cecelia)
   pointCount.value = points.count
   // Track ribbons are drawn from EVERY ticked vn's own payload (see `trackPayloads`), not from the
   // population layers — one Tracks layer per segmentation, several at once. P7 of
@@ -2951,6 +2965,7 @@ function drawTiles() {
   // The mask on screen and its style — the same settings the volume path's frame closure applies.
   tr.setLabelSource(tileMaskSource.value)
   tr.setLabelStyle(tileMaskSource.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  tr.setLabelTable(maskTable.value)
   // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
   // pointer input. Same trigger for both dimensions of size change.
   if (resized) scheduleTilePump()
@@ -6418,6 +6433,17 @@ onUnmounted(() => {
                 v-tooltip.bottom="'Outline width in voxels — 0 fills each cell'"
               >
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
+            </div>
+            <div class="cc-row cc-row-tight">
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Pop colour</span>
+              <CcToggle v-model="settings.viewerMaskByPop" aria-label="Colour mask by population"
+                        v-tooltip.bottom="'Colour each cell by its deepest shown population'" />
+            </div>
+            <div v-if="settings.viewerMaskByPop && !maskTable" class="cc-muted cc-fs-3xs">
+              {{ previewVn || liveVn ? 'Not for a preview mask' : 'No populations shown on this mask' }}
+            </div>
+            <div v-else-if="maskTable?.truncated" class="cc-muted-warn cc-fs-3xs">
+              Cells past id {{ maskTable.width * maskTable.rows - 1 }} not drawn
             </div>
             <div v-if="!singlePlane" class="cc-muted cc-fs-3xs">
               {{ mode === 'volume' ? '3D' : 'The ± window' }} shows the nearest mask surface

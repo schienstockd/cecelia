@@ -42,8 +42,9 @@ import {
   fetchBrick, brickSlabUrl, padBrickPayload,
   fetchLabelBrick, brickLabelSlabUrl,
 } from '../../utils/brickLoader'
+import type { LabelTable } from '../../utils/maskPopTable'
+import { createLabelColourTexture } from './labelColourTexture'
 import {
-  LABEL_PALETTE_N, labelPaletteBytes,
   PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer,
   type MaskStore,
 } from '../../utils/viewerLabels'
@@ -357,16 +358,10 @@ export async function createBrickVolumeRenderer(
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  // Label palette: LABEL_PALETTE_N x 1 rgba8. Written ONCE at renderer construction — the
-  // palette is a golden-angle hue ramp keyed on `id % rows`, so it never depends on the image.
-  const palTex = device.createTexture({
-    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-  })
-  device.queue.writeTexture(
-    { texture: palTex }, labelPaletteBytes(),
-    { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1],
-  )
+  // Label colours: the per-id palette (a golden-angle hue ramp keyed on `id % rows`, independent of
+  // the image), or a population table (`setLabelTable`).
+  let pal = createLabelColourTexture(device, null)
+  let palTable: LabelTable | null = null
   // Placeholder label atlas — bound whenever a timepoint has no mask, because the bind group has
   // to be complete. r32uint one-voxel texture whose only value is 0; the shader's `p.lab.x == 0`
   // check short-circuits every sample of it, so it's a no-op even if the shader accidentally reads.
@@ -569,7 +564,7 @@ export async function createBrickVolumeRenderer(
         { binding: vb.prevPt, resource: { buffer: prevPageTableBuffer } },
         { binding: vb.lut, resource: lutTex.createView() },
         ...labelTextures.map((tex, i) => ({ binding: vb.labAtlas[i]!, resource: tex.createView() })),
-        { binding: vb.pal, resource: palTex.createView() },
+        { binding: vb.pal, resource: pal.texture.createView() },
         { binding: vb.pick, resource: { buffer: pickBuffer } },
       ],
     })
@@ -827,6 +822,7 @@ export async function createBrickVolumeRenderer(
       for (let n = layouts.length; n >= 1; n--) {
         if (gen !== allocGen || destroyed) return
         device.pushErrorScope('out-of-memory')
+        const palAtBuild = pal
         const next = buildAtlas(n)
         const oom = await device.popErrorScope()
         if (gen !== allocGen || destroyed || next === null) {
@@ -838,6 +834,8 @@ export async function createBrickVolumeRenderer(
             console.warn(`Brick atlas: ${layouts.length} atlases did not fit in VRAM; using ${n}`)
           }
           atlas = next
+          // a `setLabelTable` during the OOM-scope await destroyed the texture `next` was bound with
+          if (palAtBuild !== pal) setLabelTextures(next, next.labelTextures, next.labelsEnabled)
           uniform.nch = nC
           // The mask may have changed while this allocated (`setBrickSource` runs right after
           // `setImage`), so the label atlases are reconciled against the source now.
@@ -1475,11 +1473,11 @@ export async function createBrickVolumeRenderer(
     uniformCpu[BU.OV + 3] = pointPlaneHi
     // Labels: (opacity, contourPx, paletteRows, unused). Opacity 0 disables the label path in
     // the shader without touching bindings — labels off is a uniform write, not a bind group
-    // rebuild. The palette row count is fixed at renderer construction; passed through so the
-    // shader's `id % rows` uses the same number the texture was written with.
+    // rebuild. The row count is the bound colour texture's (`pal.rows`): the palette's, or a
+    // population table's negative width.
     uniformCpu[BU.LAB + 0] = atlas?.labelsEnabled ? labelOpacity : 0
     uniformCpu[BU.LAB + 1] = labelContourPx
-    uniformCpu[BU.LAB + 2] = LABEL_PALETTE_N
+    uniformCpu[BU.LAB + 2] = pal.rows
     // The unused labels vec4 .w slot carries the point OUTLINE width in screen px — same encoding
     // as `volumeRenderer.ts`, so both renderers' shaders read one uniform (`p.lab.w`).
     uniformCpu[BU.LAB + 3] = pointBorderPx
@@ -1774,6 +1772,15 @@ export async function createBrickVolumeRenderer(
       labelOpacity = Math.max(0, Math.min(1, opacity))
       labelContourPx = Math.max(0, Math.round(contourPx))
     },
+    setLabelTable(table) {
+      if (table === palTable || destroyed) return
+      const next = createLabelColourTexture(device, table)
+      pal.texture.destroy()
+      pal = next
+      palTable = table
+      if (atlas) setLabelTextures(atlas, atlas.labelTextures, atlas.labelsEnabled)
+      needsRedraw?.()
+    },
 
     setPickSet(labels, focusId, contourPx) {
       if (destroyed) return
@@ -2037,7 +2044,7 @@ export async function createBrickVolumeRenderer(
       segBuf?.destroy()
       uniformBuf.destroy()
       lutTex.destroy()
-      palTex.destroy()
+      pal.texture.destroy()
       noLabelAtlas.destroy()
       pickBuffer.destroy()
       // Detach the canvas swap chain BEFORE the device dies (Vulkan/Chromium leaves the swap
