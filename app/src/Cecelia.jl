@@ -373,6 +373,7 @@ include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/spatialAnalysis/detectAggregates.jl")
+include("tasks/spatialAnalysis/contact_targets.jl")   # target grouping shared by both contact routes
 include("tasks/spatialAnalysis/cellContacts.jl")
 include("tasks/spatialAnalysis/contactsMeshes.jl")
 include("tasks/spatialAnalysis/aggregatesMeshes.jl")

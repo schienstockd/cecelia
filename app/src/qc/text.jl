@@ -251,6 +251,15 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         short = "Flow saturated the clamp on {value} of frames",
         long  = "Many frames' flow field hit the maxShiftPx clamp — either raise the clamp or the pyramid levels, or pick a structured reference channel."),
 
+    # cell contacts (spatialAnalysis.cellContacts / contactsMeshes): one column set per target, so a
+    # target that resolved no cells is skipped rather than failing the run. Its refs go in `detail`.
+    "contact.no_cells" => (
+        short = "No A cells",
+        long  = "Population A resolved no cells — check its gate, or pick another population."),
+    "contact.no_target_cells" => (
+        short = "A contact target has no cells",
+        long  = "No contact columns were written for it — check that population's gate, or pick another target."),
+
     # cohort comparison (qc_cohort.jl `_cohort_finding`)
     "cohort.outlier" => (
         short = "{metric} is a cohort outlier",

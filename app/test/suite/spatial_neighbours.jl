@@ -103,6 +103,25 @@ end
     @test Cecelia._contact_target("flow", ["B/qc", "T/qc"]) == "flow.B_qc+T_qc"
 end
 
+# Several targets → one column set each (#1734); grouped by population path
+# with the segmentation prefix stripped, so one population split across segmentations stays one group.
+@testset "cellContacts target groups" begin
+    g = Cecelia._contact_target_groups
+    @test g(["B/T", "B/DC"]) == [["B/T"], ["B/DC"]]                      # two targets, first-picked order
+    @test g(["B/T", "C/T", "B/DC"]) == [["B/T", "C/T"], ["B/DC"]]        # same pop, two segmentations
+    @test g(["B/T", "B/DC"]; combine = true) == [["B/T", "B/DC"]]        # opt-in pooled form
+    @test g(["B/T", "B/T"]) == [["B/T"]]                                 # duplicate pick
+    @test Cecelia.parse_cell_contacts_params(Dict{String,Any}()).combineTargets === false
+    @test Cecelia.parse_contacts_meshes_params(Dict{String,Any}()).combineTargets === false
+    @test Cecelia.parse_cell_contacts_params(Dict{String,Any}("combineTargets" => true)).combineTargets
+    for task in (CellContacts(), ContactsMeshes())
+        good = Dict{String,Any}("popsA" => ["B/a"], "popsB" => ["B/b"], "maxContactDist" => 5.0,
+                                "combineTargets" => true)
+        @test begin validate_params(task, good); true end
+        @test_throws ParamValidationError validate_params(task, merge(good, Dict{String,Any}("combineTargets" => "yes")))
+    end
+end
+
 # cellContacts on a timecourse searches per frame. A at t=0 sits on top of where B is at t=1 but
 # 5 µm from B at t=0: the pooled search (still-image path, `nothing` frames) pairs it across frames
 # at 0 µm — the bug — while the per-frame search finds the same-frame B. An A frame with no B → NaN, 0.
@@ -137,12 +156,85 @@ end
                                 Dict{String,Any}("popsA" => ["B/hi"], "popsB" => ["B/lo"], "maxContactDist" => 10.0);
                                 on_log = _ -> nothing)
         @test res !== nothing
-        idcol = "flow.cell.contact_id#$(res["target"])"
+        @test res["targets"] == ["flow.B_lo"]
+        idcol = "flow.cell.contact_id#$(only(res["targets"]))"
         out = label_props(img; value_name="B") |> select_cols([idcol, "centroid_t"]) |> as_df
         t_of = Dict(zip(full.label, full.centroid_t))
         paired = [(l, Int(c)) for (l, c) in zip(out.label, out[!, idcol]) if !ismissing(c) && isfinite(c) && c > 0]
         @test !isempty(paired)
         @test all(t_of[a] == t_of[b] for (a, b) in paired)
+        rm(td; recursive=true)
+    end
+end
+
+# End to end, several targets on a real image: per-target columns, each searching only its own target;
+# `combineTargets` = today's pooled set (= the per-target minimum); the same population in two
+# segmentations = one set. Intensity tertiles of KDIeEm's B give A ("lo") and two targets ("mid", "hi");
+# segmentation "C" is a copy of B, so `B/mid` + `C/mid` must reproduce `B/mid`'s distances.
+@testset "cellContacts one column set per target (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "cellContacts per target (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        for vn in ("B", "C"); cp(h5, joinpath(td, "labelProps", "$(vn).h5ad")); end
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["C"] = "C.h5ad"; img.label_props["_active"] = "B"
+        full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
+        v = sort(full.mean_intensity_0); t1 = v[cld(nrow(full), 3)]; t2 = v[cld(2 * nrow(full), 3)]
+        for vn in ("B", "C")
+            m = PopulationMap(pop_type="flow", value_name=vn)
+            band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
+            add_pop!(m, "lo"; gate=band(-1e12, t1)); add_pop!(m, "mid"; gate=band(t1, t2))
+            add_pop!(m, "hi"; gate=band(t2, 1e12)); add_pop!(m, "none"; gate=band(1e11, 1e12))
+            save_pop_map!(m, img)
+        end
+        labs(pop) = Set(Int.(pop_df(img, "flow", ["B/$(pop)"]; value_name="B").label))
+        run(popsB; kw...) = Cecelia._run_task(CellContacts(), img,
+            Dict{String,Any}("popsA" => ["B/lo"], "popsB" => popsB, "maxContactDist" => 10.0, kw...);
+            on_log = _ -> nothing)
+        col(kind, t) = "flow.cell.$(kind)#$(t)"
+        read_cols(ts) = label_props(img; value_name="B") |>
+            select_cols([col(k, t) for t in ts for k in ("contact", "min_distance", "contact_id")]) |> as_df
+        same(a, b) = all(x -> (isnan(x[1]) && isnan(x[2])) || x[1] == x[2], zip(a, b))
+
+        # two targets → two column sets, each pairing only with its own target's cells
+        res = run(["B/mid", "B/hi"])
+        @test res["targets"] == ["flow.B_mid", "flow.B_hi"]
+        per = read_cols(res["targets"]); aRows = per.label .∈ Ref(labs("lo")); per = per[aRows, :]
+        for (t, pop) in (("flow.B_mid", "mid"), ("flow.B_hi", "hi"))
+            ids = [Int(c) for c in per[!, col("contact_id", t)] if isfinite(c) && c > 0]
+            @test !isempty(ids) && issubset(ids, labs(pop))
+            @test per[!, col("contact", t)] == Float64.(per[!, col("min_distance", t)] .<= 10.0)
+        end
+        @test per[!, col("min_distance", "flow.B_mid")] != per[!, col("min_distance", "flow.B_hi")]
+
+        # combineTargets → today's single pooled set = the nearer of the two per-target distances
+        logs = String[]
+        res = Cecelia._run_task(CellContacts(), img, Dict{String,Any}("popsA" => ["B/lo"],
+            "popsB" => ["B/mid", "B/hi"], "maxContactDist" => 10.0, "combineTargets" => true); on_log = l -> push!(logs, l))
+        @test res["targets"] == ["flow.B_hi+B_mid"]
+        pooled = read_cols(res["targets"])[aRows, :]
+        @test same(pooled[!, col("min_distance", "flow.B_hi+B_mid")],
+                   min.(per[!, col("min_distance", "flow.B_mid")], per[!, col("min_distance", "flow.B_hi")]))
+        # a later per-target run names the pooled columns it leaves beside its own
+        logs = String[]
+        Cecelia._run_task(CellContacts(), img, Dict{String,Any}("popsA" => ["B/lo"],
+            "popsB" => ["B/mid", "B/hi"], "maxContactDist" => 10.0); on_log = l -> push!(logs, l))
+        @test any(l -> occursin("earlier combined columns", l) && occursin("B_hi+B_mid", l), logs)
+
+        # the same population from two segmentations → ONE set (pools within its group)
+        res = run(["B/mid", "C/mid"])
+        @test res["targets"] == ["flow.B_mid+C_mid"]
+        cross = read_cols(res["targets"])[aRows, :]
+        @test same(cross[!, col("min_distance", "flow.B_mid+C_mid")], per[!, col("min_distance", "flow.B_mid")])
+
+        # a target that resolves no cells is skipped with a QC warning, not a failed run
+        res = run(["B/mid", "B/none"])
+        @test res["targets"] == ["flow.B_mid"]
+        qc = Cecelia.read_qc(img, "spatialAnalysis.cellContacts", "B")
+        @test qc !== nothing && qc["metrics"]["nTargets"] == 1
+        @test any(f -> f["code"] == "contact.no_target_cells", qc["findings"])
         rm(td; recursive=true)
     end
 end
