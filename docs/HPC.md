@@ -36,7 +36,8 @@ handler continues: register labels, QC, run log
 | **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
-Preferences opens from the profile chip in the header. Test connection is on both.
+Preferences opens from the profile chip in the header, or from **Your HPC settings** on Settings → HPC. Test connection
+is on both; when it is disabled, the reason shows beside it. Each field saves on change and flashes **Saved**.
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.

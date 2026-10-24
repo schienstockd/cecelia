@@ -6,6 +6,9 @@
   change (blur / Enter), like the other Settings controls, from its own draft (useHpcDrafts); a refused
   value shows the backend's message and snaps back.
 
+  A successful save flashes "Saved" by the Test connection button (useSavedFlash); why the button is
+  disabled shows beside it, and Settings carries a small button to Preferences → HPC.
+
   "Test connection" runs against the SAVED settings. It is the only call that may trust a new host key,
   and it shows the fingerprint (Q10). The number of jobs in flight is the `hpc` pool in PoolThrottle,
   not a field here. Windows is deferred (Q8): the section says so instead of rendering controls.
@@ -15,11 +18,12 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import FileBrowser from './FileBrowser.vue'
 import InlineNote from './InlineNote.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
+import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
   keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
   type HpcEnvStatus } from '../utils/hpcSettings'
-import { isPreferencesOpen } from '../lib/preferencesOpen'
+import { isPreferencesOpen, openPreferences } from '../lib/preferencesOpen'
 
 const props = defineProps<{ projectUid: string; scope: HpcScope }>()
 const machine = computed(() => props.scope === 'machine')
@@ -33,6 +37,7 @@ const saving  = ref(false)
 const testing = ref(false)
 const result  = ref<HpcTestResult | null>(null)
 const showKeyBrowser = ref(false)
+const { saved, flash: flashSaved } = useSavedFlash()
 
 async function load() {
   try { s.value = await fetchHpcSettings(props.projectUid); error.value = '' }
@@ -49,6 +54,7 @@ async function save(patch: HpcPatch, path = '') {
     s.value = await saveHpcSettings(patch, props.projectUid)
     error.value = ''
     result.value = null          // a passing test no longer describes what is stored
+    flashSaved()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     await load()
@@ -205,9 +211,15 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
 
     <div class="cc-row hpc-test">
       <button class="cc-btn cc-btn-primary" :disabled="testing || !!blocker" @click="runTest"
-              v-tooltip.top="blocker || 'Connect over SSH and check the folder and scheduler'">
+              v-tooltip.top="'Connect over SSH and check the folder and scheduler'">
         <i :class="['pi', testing ? 'pi-spin pi-spinner' : 'pi-bolt']" /> Test connection
       </button>
+      <InlineNote v-if="blocker" class="cc-fs-sm" :short="blocker" />
+      <button v-if="machine" class="cc-btn cc-btn-ghost cc-fs-xs" @click="openPreferences('hpc')"
+              v-tooltip.top="'Your login, folder and queues, in Preferences'">
+        <i class="pi pi-user" /> Your HPC settings
+      </button>
+      <InlineNote v-if="saved" class="cc-fs-sm" severity="ok" short="Saved" />
     </div>
     <div v-if="lines.length" class="hpc-result cc-fs-sm">
       <InlineNote v-for="(l, i) in lines" :key="i" :short="l.text" :severity="l.ok ? 'ok' : 'fail'" />
@@ -256,7 +268,7 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
 /* content-box: 5ch is the text width (a 5-digit port); the global input padding sits outside it */
 .hpc-port { box-sizing: content-box; width: 5ch; }
 .mono { font-family: var(--cc-mono); }
-.hpc-test { margin-top: 1.1rem; }
+.hpc-test { margin-top: 1.1rem; gap: 0.5rem; flex-wrap: wrap; }
 .hpc-env { gap: 0.5rem; }
 .hpc-result { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; word-break: break-all; }
 </style>
