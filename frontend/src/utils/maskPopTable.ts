@@ -2,21 +2,20 @@
 // `labColour` reads when its row count is negative (`lib/webgpu/shaders/label_colour.wgsl`). Pure:
 // the texture is in `lib/webgpu/labelColourTexture.ts`.
 //
-// The policy, and how it lines up with a movie's population mask (`mask_id_colours`,
-// `api/src/overlay_author.jl`):
+// The policy — the SAME rule a movie's population mask draws (`mask_pop_colours`,
+// `api/src/overlay_author.jl`), held to it by a shared fixture (`maskPopTable.parity.json`, read by
+// both test suites). A movie recorded from the viewer with *Pop colour* on carries it on its look
+// (`maskAllCells: false`, `utils/viewer/viewerLook.ts`):
 //  - **Which pops.** The ones whose eye is on in the viewer (`hidden` — the same authority the points
 //    use, `buildPointBufferLayers`), on the segmentation the mask shows. The movie drops `show == false`.
 //  - **Overlap: the deepest pop wins.** Pops are written in gate-tree depth order (path segments),
-//    payload order within a depth, later overwriting earlier. The movie writes in `resolve_pops` order
-//    (the tree, parents before children) and the later one wins too, so a cell in /A and /A/B is /A/B's
-//    colour on both sides; they can differ only for two pops of unequal depth in DIFFERENT branches.
+//    payload order within a depth, later overwriting earlier.
 //  - **Parents pale.** A pop with a visible descendant (a path below it, same pop type) draws the cells
 //    no descendant took at `MASK_PARENT_PALE` of the way to white — subsets read as the solid colour on
-//    a washed-out parent. A pop whose children are all hidden is a leaf again and draws solid. The movie
-//    has no pale rule (yet): there a parent's left-over cells are its full colour.
-//  - **Cells in no visible pop** are `MASK_UNGATED_GREY`, the movie's all-cells colour (`OVERLAY_GREY`),
-//    so the gate's complement stays visible to check against the tissue. The movie's population mask
-//    does not draw them at all. Ids outside the cell table (no centroid, so never sent) are not drawn.
+//    a washed-out parent. A pop whose children are all hidden is a leaf again and draws solid.
+//  - **Cells in no visible pop** are `MASK_UNGATED_GREY` (`OVERLAY_GREY`), so the gate's complement
+//    stays visible to check against the tissue. Ids outside the cell table (no centroid, so never
+//    sent) and in no pop are not drawn.
 
 import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 import { OVERLAY_GREY } from './viewerOverlays'
@@ -31,8 +30,9 @@ export const LABEL_TABLE_W: number = SHADER_CONSTANTS.LABEL_TABLE_W
  *  many), so 4096 × 8192 = 33.5 M ids. A larger id is not drawn (the shader's out-of-table branch). */
 export const LABEL_TABLE_MAX_ROWS = 8192
 
-/** How far a parent's own cells move towards white. */
-export const MASK_PARENT_PALE = 0.6
+/** How far a parent's own cells move towards white — one number for the viewer and the movie
+ *  (`shaders/constants.json`, read by `mask_pop_colours` in Julia). */
+export const MASK_PARENT_PALE: number = SHADER_CONSTANTS.MASK_PARENT_PALE
 
 /** Cells in no visible population — the movie's all-cells grey. */
 export const MASK_UNGATED_GREY = OVERLAY_GREY

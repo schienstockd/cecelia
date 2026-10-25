@@ -43,6 +43,8 @@ export interface ViewerLookInput {
   tailWidth: number
   tailLength: number
   labelContour: number
+  /** the mask's *Pop colour* toggle (`settings.viewerMaskByPop`, `utils/maskPopTable.ts`) */
+  maskByPop: boolean
   trackColourMode: string
   colourBy: string
   colourOverrides: Record<string, string>
@@ -70,8 +72,10 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...seedConfigFromViewState(i.viewState, i.channelNames),
     ...(i.version ? { valueNames: [i.version] } : {}),
     labelValueNames: i.maskValueName ? [i.maskValueName] : [],
-    // the viewer's mask is every cell of its segmentation, whatever the pops
-    maskAllCells: true,
+    // the viewer's mask is every cell of its segmentation in the per-id palette — or, with *Pop
+    // colour* on and pops shown, coloured by its own segmentation's pops (`maskPopTable`; the movie
+    // draws the same rule, `mask_pop_colours`). With no pop type on, the viewer keeps the palette too.
+    maskAllCells: !(i.maskByPop && popsOn),
     labelContour: clampContour(i.labelContour),
     show3D: is3D,
     zSlice: z,
@@ -187,6 +191,7 @@ export function readViewerLook(img: LookImage, setUid: string,
     tailWidth: settings.viewerTailWidth,
     tailLength: settings.viewerTailLength,
     labelContour: settings.viewerLabelContour,
+    maskByPop: settings.viewerMaskByPop,
     trackColourMode: setUid ? settings.getTrackColorMode(setUid) : 'track',
     colourBy,
     colourOverrides: setUid && colourBy ? settings.getColourOverrides(setUid, colourBy) : {},
