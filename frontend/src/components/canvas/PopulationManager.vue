@@ -38,6 +38,8 @@ import { type VisProps } from '../../plots/plot'
 import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
 import { isTypingTarget } from '../../utils/typingTarget'
+import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
+import { SEVERITY } from '../../lib/severity'
 import { measureGroups, groupedCols } from '../../utils/measureGroups'
 import { convertGateKind, otherGateKind } from '../../plots/gateGeometry'
 import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
@@ -123,6 +125,7 @@ const commitRename = (p: FlatPop) => commit(p.path, p.name, async name => {
 })
 const isLit = (p: FlatPop) => props.highlighted.includes(p.path)
 const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
+const missingReason = (path: string) => missingColumnsReason(g.missingColumns[path], g.colLabel)
 
 // Per-pop visibility: flip the persisted `show` flag, then ping the WebGPU viewer so it re-derives
 // the overlay set from the shared bag. The viewer routes to the right overlay for the popType
@@ -587,6 +590,11 @@ function moveTo(target: string) {
           <i v-else-if="isBoolPop(p)" class="pi pi-link pm-filter-badge pm-bool-badge"
              v-tooltip.top="popBoolSummary(p)" />
 
+          <!-- why a pop reads 0 here: a column its gate/filter (or an ancestor's) reads is not in this
+               image's table, e.g. `clusters.<run>` after a gating copy (#1769). Shape + colour, tip = the reason. -->
+          <i v-if="missingReason(p.path)" class="pi pm-missing-col" :class="SEVERITY.warn.icon"
+             :style="{ color: SEVERITY.warn.color }" v-tooltip.left="missingReason(p.path)"
+             :aria-label="missingReason(p.path)" />
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
@@ -778,6 +786,7 @@ function moveTo(target: string) {
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-rename { flex: 1; background: var(--cc-bg); border: 1px solid var(--cc-accent); border-radius: var(--cc-radius-xs); padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+.pm-missing-col { font-size: var(--cc-fs-2xs); }
 .pm-stat small { opacity: 0.7; margin-left: 3px; }
 /* .pm-icon → cc-btn cc-btn-bare cc-btn-icon; only the STATE variants are its own (the plain `:hover`
    rule was byte-identical to `.cc-btn-bare:hover` and is gone) */

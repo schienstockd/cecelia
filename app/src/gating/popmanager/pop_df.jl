@@ -317,6 +317,14 @@ function _read_pop_map(img::CciaImage, value_name::AbstractString, pop_type::Pop
     _hooked(_inject_derived_pops!(m, paths, pop_type), map_hook)
 end
 
+# WHICH table a pop_type's membership is evaluated over — per-track, the skeleton sidecar, or the
+# cell table. The one dispatch `pop_membership_fetch` (reads) and `pop_membership_cols` (names only)
+# share, so the cheap check can't point at a different table than the read.
+@enum MembershipTable MEMBERSHIP_TRACK MEMBERSHIP_BRANCH MEMBERSHIP_CELL
+_membership_table(pop_type)::MembershipTable =
+    is_track_grained(pop_type) ? MEMBERSHIP_TRACK :
+    string(pop_type) == "branch" ? MEMBERSHIP_BRANCH : MEMBERSHIP_CELL
+
 """
     pop_membership_fetch(img, value_name, pop_type; labels_version=nothing,
                          cell_measures=String[], categorical=String[]) -> (cols -> DataFrame)
@@ -335,11 +343,12 @@ function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_ty
                               labels_version::Union{AbstractString,Nothing}=nothing,
                               cell_measures=String[], categorical=String[])::Function
     vn = String(value_name)
-    if is_track_grained(pop_type)
+    kind = _membership_table(pop_type)
+    if kind == MEMBERSHIP_TRACK
         return cols -> track_props(img; value_name=vn, categorical=categorical,
             cell_measures=_track_read_measures(img, vn, cell_measures, cols))
     end
-    string(pop_type) == "branch" &&
+    kind == MEMBERSHIP_BRANCH &&
         return cols -> (label_props(img_branch_props_path(img, vn); value_name=vn) |>
                         lp -> select_cols(lp, cols) |> as_df)
     cols -> (label_props(img; value_name=vn, version=labels_version) |>
@@ -347,14 +356,42 @@ function pop_membership_fetch(img::CciaImage, value_name::AbstractString, pop_ty
 end
 
 """
-    missing_gate_columns(m, img; value_name) -> Vector{(column, pops)}
+    pop_membership_cols(img, value_name, pop_type, cols; labels_version=nothing) -> Vector{String}
 
-`missing_gate_columns(m, available)` against `img`'s own table for `m`'s pop_type — the columns read
-through `pop_membership_fetch`, the same table `recompute!` evaluates over, so "missing" here is
-exactly "would come back empty there". Reads only the columns `m` needs.
+The subset of `cols` that `pop_membership_fetch(img, value_name, pop_type)` would return — from
+column NAMES only, no data read (the cell/branch table via `selectable_cols`, i.e. `as_df`'s own
+resolution; the per-track table via `track_name_sets` + `track_aggregate_base`, the rule
+`track_props` builds its aggregates by). Same table as `pop_membership_fetch` (`_membership_table`).
+One limit on the track table: an aggregate whose BASE exists is taken as present, so a `.mean` of a
+categorical base or an absent category is not caught — it under-reports, never claims a column
+missing that a read would return.
 """
-missing_gate_columns(m::PopulationMap, img::CciaImage; value_name::AbstractString) =
-    missing_gate_columns(m, names(pop_membership_fetch(img, value_name, m.pop_type)(_needed_columns(m))))
+function pop_membership_cols(img::CciaImage, value_name::AbstractString, pop_type::PopTypeArg, cols;
+                             labels_version::Union{AbstractString,Nothing}=nothing)::Vector{String}
+    vn = String(value_name); want = String[String(c) for c in cols]
+    kind = _membership_table(pop_type)
+    if kind == MEMBERSHIP_TRACK
+        is_tracked(img; value_name=vn) || return String[]
+        (; direct, cell) = something(track_name_sets(img, vn), (direct = Set{String}(), cell = Set{String}()))
+        return String[c for c in want if c in direct || c in TRACK_BOOKKEEPING_COLS ||
+                                          track_aggregate_base(c, direct; cell_cols=cell) !== nothing]
+    end
+    kind == MEMBERSHIP_BRANCH &&
+        return selectable_cols(label_props(img_branch_props_path(img, vn); value_name=vn), want)
+    selectable_cols(label_props(img; value_name=vn, version=labels_version), want)
+end
+
+"""
+    missing_gate_columns(m, img; value_name, labels_version=nothing) -> Vector{(column, pops)}
+
+`missing_gate_columns(m, available)` against `img`'s own table for `m`'s pop_type — the table
+`pop_membership_fetch` hands `recompute!`, checked by column NAME only (`pop_membership_cols`), so it
+is cheap enough for the pop-tree payload (`GET /api/gating/popmap`) as well as the gating copy.
+"""
+missing_gate_columns(m::PopulationMap, img::CciaImage; value_name::AbstractString,
+                     labels_version::Union{AbstractString,Nothing}=nothing) =
+    missing_gate_columns(m, pop_membership_cols(img, value_name, m.pop_type, _needed_columns(m);
+                                                labels_version=labels_version))
 
 """
     computed_pop_map(img; value_name, pop_type="flow", labels_version=nothing, map_hook=nothing)
