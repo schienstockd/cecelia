@@ -73,7 +73,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
-from cecelia.effectiveness.log import RESOLVED_EVENTS  # noqa: E402
+from cecelia.effectiveness.log import RESOLVED_EVENTS, latest_resolutions_by_slug  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, merged_prs_since  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
 
@@ -218,12 +218,18 @@ def swept(row: dict) -> bool:
 def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
-    oldest first. An agent-run error keeps its first row and counts the rows (`runs`)."""
+    oldest first. An agent-run error keeps its first row and counts the rows (`runs`).
+
+    A finding's tag is the newest resolution on its own branch, as in `log.resolved_findings`:
+    slugs carry no branch, so one worktree's `fixed_pre_commit` mustn't hide what another shipped.
+    A fix logged from another branch costs a judge look; the other way a shipped bug goes unjudged."""
     events = list(events)
     convention_since = since if convention_since is None else convention_since
-    resolved = {r["payload"]["slug"]: r["payload"] for r in events
-                if r.get("event") in RESOLVED_EVENTS
-                and (r.get("payload") or {}).get("slug")}
+    by_branch: dict[str | None, list[dict]] = {}
+    for r in events:
+        if r.get("event") in RESOLVED_EVENTS:
+            by_branch.setdefault(r.get("branch"), []).append(r)
+    resolved = {b: latest_resolutions_by_slug(rows) for b, rows in by_branch.items()}
     out: dict[str, dict] = {}
     for r in events:
         if r.get("ts", "") < (convention_since if r.get("event") == _CONVENTION_EVENT else since):
@@ -238,7 +244,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
         if not swept(r):
             continue
         key = _key(r)
-        tag = resolved.get(key) or {}
+        tag = ((resolved.get(r.get("branch")) or {}).get(key) or {}).get("payload") or {}
         if tag.get("outcome") in _HANDLED:
             continue
         p = r["payload"]
