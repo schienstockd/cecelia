@@ -79,6 +79,20 @@ function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_fr
     findings
 end
 
+# The same check, re-run by a graph CONSUMER (clustRegions, neighbourStats) on the graph it loaded:
+# `m` = the runner's `spatial_utils.graph_metrics` dict (nCells, nEdges = the GRAPH's edges, isolatedFrac,
+# meanDegree). Each finding's detail names the graph, since the run's QC is not the graph's own.
+function _loaded_graph_findings(m::AbstractDict, graph_suffix::AbstractString)
+    fs = _neighbours_qc_findings(Int(get(m, "nCells", 0)), Int(get(m, "nEdges", 0)),
+                                 Float64(get(m, "isolatedFrac", 0.0)), Float64(get(m, "meanDegree", 0.0)))
+    for f in fs
+        d = get(f, "detail", nothing)
+        d isa AbstractDict || (d = Dict{String,Any}())
+        d["graphSuffix"] = String(graph_suffix); f["detail"] = d
+    end
+    fs
+end
+
 # a value_name-qualified root pick (e.g. "B/", the picker's per-segmentation "all" entry) means
 # "every cell of that segmentation" — no membership filter. The accepts picker always offers this root
 # when cell gates are accepted (population_accept_groups), so it needs no includeRoot flag in the spec.

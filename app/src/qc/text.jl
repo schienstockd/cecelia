@@ -261,7 +261,8 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
         long  = "No contact columns were written for it — check that population's gate, or pick another target."),
 
     # neighbour graph (spatialAnalysis.cellNeighbours `_neighbours_qc_findings`): mean degree under
-    # SPARSE_GRAPH_MEAN_DEGREE — composition vectors too coarse for region clustering.
+    # SPARSE_GRAPH_MEAN_DEGREE — composition vectors too coarse for region clustering, too few contacts
+    # per cell for interaction stats. Re-judged on the graph's consumers (clustRegions, neighbourStats).
     "spatial.sparse_graph" => (
         short = "Very sparse neighbour graph",
         long  = "Cells average {value} neighbours — raise the radius above the cell spacing, or use a kNN graph."),
