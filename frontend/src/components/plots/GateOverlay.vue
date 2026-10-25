@@ -25,7 +25,8 @@ import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '..
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
 import { gateLabelPos } from '../../utils/gateLabel'
-import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, gateHandleRadius, hitGateShape } from '../../plots/gateGeometry'
+import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape } from '../../plots/gateGeometry'
+import { handleRadius } from '../../utils/drawGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -178,7 +179,7 @@ function drawHandles(g: GateSpec, colour: string) {
   const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1])) as [number, number][]
   // drawn at the size of the grab zone (a square of side r, a dot of radius 0.6 r), so a small gate's
   // shrunken reach shows as smaller handles
-  const r = gateHandleRadius(pts)
+  const r = handleRadius(pts)
   const sq = (px: number, py: number) => { c.beginPath(); c.rect(px - r / 2, py - r / 2, r, r); c.fill(); c.stroke() }
   const dot = (px: number, py: number) => { c.beginPath(); c.arc(px, py, r * 0.6, 0, 2 * Math.PI); c.fill(); c.stroke() }
   if (g.kind === 'rectangle') {

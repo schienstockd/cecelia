@@ -4,7 +4,8 @@ import {
   beginRect, updateRect, finishRect,
   beginPoly, addVertex, updateCursor, isNearFirst, finishPoly,
   beginStroke, extendStroke, simplifyRDP, finishStroke,
-  type Point,
+  handleRadius, hitMarkLocal, boxCorners, bboxOf, HANDLE_R_PX, HANDLE_MIN_R_PX,
+  type Point, type MarkHitOpts,
 } from './drawGeometry'
 
 describe('primitives', () => {
@@ -121,5 +122,63 @@ describe('point-vs-shape primitives', () => {
     expect(distToSeg([5, 3], [0, 0], [10, 0])).toBe(3)
     expect(distToSeg([13, 4], [0, 0], [10, 0])).toBe(5)
     expect(distToSeg([3, 4], [0, 0], [0, 0])).toBe(5)
+  })
+})
+
+// #1768 — annotation corner / vertex grab zones were a fixed 8 px, so on a mark under ~16 px the
+// handles covered the whole body and it could not be grabbed to move it.
+describe('annotation mark picking', () => {
+  const opts = (selected = false): MarkHitOpts =>
+    ({ selected, rotateOffsetPx: 22, rotateHitPx: 10, strokeNearPx: 8 })
+  const rect = (x: number, y: number, w: number, h: number) => ({ kind: 'rect' as const, rect: { x, y, w, h } })
+
+  it('a full-size rect: corner grabbed within the full reach, centre is the body', () => {
+    const r = rect(0, 0, 200, 100)
+    expect(hitMarkLocal([9, 9], r, opts())).toEqual({ part: 'rect-corner', corner: 0 })
+    expect(hitMarkLocal([209, 109], r, opts())).toEqual({ part: 'rect-corner', corner: 2 })
+    expect(hitMarkLocal([100, 50], r, opts())).toEqual({ part: 'body' })
+    expect(hitMarkLocal([100, 150], r, opts())).toBeNull()
+  })
+  it('a small rect (12 px) moves by its body; the old 8 px boxes swallowed it', () => {
+    const r = rect(0, 0, 12, 12)
+    expect(hitMarkLocal([6, 6], r, opts())).toEqual({ part: 'body' })
+    expect(hitMarkLocal([1, 1], r, opts())).toEqual({ part: 'rect-corner', corner: 0 })
+  })
+  it('corner-only reach is capped by the LONGER side: a thin rect keeps full corners and a body', () => {
+    expect(handleRadius(boxCorners({ x: 0, y: 0, w: 300, h: 4 }), true)).toBe(HANDLE_R_PX)
+    const r = rect(0, 0, 300, 4)
+    expect(hitMarkLocal([8, 2], r, opts())).toEqual({ part: 'rect-corner', corner: 0 })
+    expect(hitMarkLocal([150, 2], r, opts())).toEqual({ part: 'body' })
+  })
+  it('a tiny mark keeps a minimum reach', () => {
+    expect(handleRadius(boxCorners({ x: 0, y: 0, w: 4, h: 4 }), true)).toBe(HANDLE_MIN_R_PX)
+  })
+  it('rotate handle only when selected, and wins over everything', () => {
+    const r = rect(0, 0, 40, 40)
+    expect(hitMarkLocal([20, -22], r, opts(true))).toEqual({ part: 'rotate' })
+    expect(hitMarkLocal([20, -22], r, opts(false))).toBeNull()
+  })
+  it('a small selected poly: vertices + bbox corners capped, interior moves it', () => {
+    const tri: Point[] = [[0, 0], [14, 0], [7, 14]]
+    const s = { kind: 'poly' as const, pts: tri }
+    expect(hitMarkLocal([7, 6], s, opts(true))).toEqual({ part: 'body' })
+    expect(hitMarkLocal([1, 1], s, opts(true))).toEqual({ part: 'poly-vertex', vertex: 0 })
+    // vertex beats the bbox corner it sits on; a bare bbox corner resizes
+    expect(hitMarkLocal([0, 14], s, opts(true))).toEqual({ part: 'bbox-corner', corner: 3 })
+    // unselected: no handles at all, interior still the body
+    expect(hitMarkLocal([1, 1], s, opts(false))).toEqual({ part: 'body' })
+  })
+  it('a stroke: body is a band around the path; bbox corners only when selected', () => {
+    const line = { kind: 'stroke' as const, pts: [[0, 0], [100, 0]] as Point[] }
+    expect(hitMarkLocal([50, 7], line, opts())).toEqual({ part: 'body' })
+    expect(hitMarkLocal([50, 9], line, opts())).toBeNull()
+    expect(hitMarkLocal([2, 0], line, opts())).toEqual({ part: 'body' })
+    // a flat stroke's bbox has zero height — the longer-side cap keeps its end handles full-size
+    expect(hitMarkLocal([-8, 5], line, opts(true))).toEqual({ part: 'bbox-corner', corner: 0 })
+    expect(hitMarkLocal([50, 0], line, opts(true))).toEqual({ part: 'body' })
+  })
+  it('bboxOf', () => {
+    expect(bboxOf([])).toBeNull()
+    expect(bboxOf([[2, 5], [10, 1]])).toEqual({ x: 2, y: 1, w: 8, h: 4 })
   })
 })

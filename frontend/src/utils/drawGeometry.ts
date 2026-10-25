@@ -39,6 +39,86 @@ export function pointInPoly(p: Point, poly: Point[]): boolean {
   return inside
 }
 
+// ── Edit-mode grab zones ────────────────────────────────────────────────────────────────────────
+// How close the cursor must be to a handle to resize instead of move. On a SMALL shape a fixed reach
+// would swallow the whole body, leaving nothing to grab to move it, so the reach is capped at a
+// quarter of the shape's on-screen extent: at least half of that dimension stays the move zone.
+// Which extent depends on the handles. Edge bands or vertices all round the outline (a gate; a polygon
+// vertex) eat into BOTH dimensions, so the SHORTER side caps the reach. Corner boxes only (an
+// annotation rect or selection frame) leave the body free while either dimension clears them, so the
+// LONGER side caps it, and a thin line-like mark keeps a full-size corner. `HANDLE_MIN_R_PX` keeps a
+// tiny shape's handles reachable at all. Consumers: `plots/gateGeometry.ts` → `hitGateShape`
+// (+ `GateOverlay.vue` draws its handles at this size) and `hitMarkLocal` below.
+export const HANDLE_R_PX = 10
+export const HANDLE_MIN_R_PX = 3
+export const HANDLE_BODY_FRACTION = 0.25
+
+/** Grab radius (px) for a shape whose on-screen outline is `pts`; `cornersOnly` = its only handles
+ *  are corner boxes (see above). */
+export function handleRadius(pts: Point[], cornersOnly = false): number {
+  if (!pts.length) return HANDLE_R_PX
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+  const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys)
+  const side = cornersOnly ? Math.max(w, h) : Math.min(w, h)
+  return Math.max(HANDLE_MIN_R_PX, Math.min(HANDLE_R_PX, side * HANDLE_BODY_FRACTION))
+}
+
+// ── Annotation mark picking (`DrawSurface.vue` edit mode) ──────────────────────────────────────
+// One mark, in its LOCAL axis-aligned frame (the caller un-rotates the pointer first). Rotate handle
+// (selected only) > poly vertex (selected poly only; beats the bbox corner because stealing a
+// vertex-precision drag is worse than a stray resize) > corner box (rect always; poly / stroke bbox
+// when selected) > body. A stroke has no inside, so its body is a band `strokeNearPx` either side.
+
+export interface BBox { x: number; y: number; w: number; h: number }
+export type MarkShapePx =
+  | { kind: 'rect'; rect: BBox }
+  | { kind: 'poly' | 'stroke'; pts: Point[] }
+export type Corner = 0 | 1 | 2 | 3   // 0=NW 1=NE 2=SE 3=SW
+export type MarkPart =
+  | { part: 'body' }
+  | { part: 'rect-corner'; corner: Corner }
+  | { part: 'bbox-corner'; corner: Corner }
+  | { part: 'poly-vertex'; vertex: number }
+  | { part: 'rotate' }
+
+export const boxCorners = (b: BBox): Point[] =>
+  [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]]
+
+/** Axis-aligned bounding box of `pts`; null when empty. */
+export function bboxOf(pts: Point[]): BBox | null {
+  if (!pts.length) return null
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+  const x = Math.min(...xs), y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+}
+
+export interface MarkHitOpts { selected: boolean; rotateOffsetPx: number; rotateHitPx: number; strokeNearPx: number }
+
+export function hitMarkLocal(p: Point, shape: MarkShapePx, o: MarkHitOpts): MarkPart | null {
+  const box = shape.kind === 'rect' ? shape.rect : bboxOf(shape.pts)
+  if (o.selected && box &&
+      Math.hypot(p[0] - (box.x + box.w / 2), p[1] - (box.y - o.rotateOffsetPx)) <= o.rotateHitPx)
+    return { part: 'rotate' }
+  if (o.selected && shape.kind === 'poly') {
+    const r = handleRadius(shape.pts)
+    const v = shape.pts.findIndex(q => Math.hypot(p[0] - q[0], p[1] - q[1]) <= r)
+    if (v >= 0) return { part: 'poly-vertex', vertex: v }
+  }
+  if (box && (shape.kind === 'rect' || o.selected)) {
+    const cs = boxCorners(box), r = handleRadius(cs, true)
+    const c = cs.findIndex(q => Math.abs(p[0] - q[0]) <= r && Math.abs(p[1] - q[1]) <= r)
+    if (c >= 0) return { part: shape.kind === 'rect' ? 'rect-corner' : 'bbox-corner', corner: c as Corner }
+  }
+  if (shape.kind === 'rect') {
+    const b = shape.rect
+    return p[0] >= b.x && p[0] <= b.x + b.w && p[1] >= b.y && p[1] <= b.y + b.h ? { part: 'body' } : null
+  }
+  if (shape.kind === 'poly') return pointInPoly(p, shape.pts) ? { part: 'body' } : null
+  for (let i = 1; i < shape.pts.length; i++)
+    if (distToSeg(p, shape.pts[i - 1], shape.pts[i]) <= o.strokeNearPx) return { part: 'body' }
+  return null
+}
+
 // ── Click-vs-drag / degeneracy primitives (moved from `plots/gateGeometry.ts`) ─────────────────
 //
 // Both checks are in PIXELS, deliberately: the user's intent is a gesture. A data-space threshold
