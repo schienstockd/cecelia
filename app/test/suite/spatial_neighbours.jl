@@ -51,6 +51,39 @@ end
     @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7, 0.8))["code"] == "spatial.many_isolated"
 end
 
+@testset "clustRegions carries the neighbour graph's sparse-graph QC (#1771)" begin
+    # the region runner banks per-image `graphMetrics` of the graph it loaded; the run's QC must flag a
+    # sparse one with the graph task's own finding — per image, not pooled across the set
+    d = mktempdir(); p = joinpath(d, "region_qc.json")
+    open(p, "w") do io
+        JSON3.write(io, Dict("nClusters" => 3, "perSegment" => [
+            Dict("uID" => "sparse", "valueName" => "B", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4),
+            Dict("uID" => "sparse", "valueName" => "T", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4),
+            Dict("uID" => "dense",  "valueName" => "B", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4)],
+            "graphMetrics" => Dict(
+                "sparse" => Dict("nCells" => 100, "nEdges" => 110, "meanDegree" => 2.2, "isolatedFrac" => 0.1),
+                "dense"  => Dict("nCells" => 100, "nEdges" => 700, "meanDegree" => 14.6, "isolatedFrac" => 0.0))))
+    end
+    gf = Cecelia._region_graph_findings(p, "r30")
+    @test collect(keys(gf)) == ["sparse"]                              # the dense image is clean
+    f = only(gf["sparse"])
+    @test f["code"] == "spatial.sparse_graph"                          # the graph task's key + text
+    @test f["detail"]["meanDegree"] == 2.2 && f["detail"]["graphSuffix"] == "r30"
+    # an older run (no graphMetrics), a missing or an unreadable file → no findings, never a throw
+    @test isempty(Cecelia._region_graph_findings(Dict{String,Any}("nClusters" => 3), "r30"))
+    @test isempty(Cecelia._region_graph_findings(joinpath(d, "absent.json"), "r30"))
+    bad = joinpath(d, "bad.json"); write(bad, "{ not json")
+    @test isempty(Cecelia._region_graph_findings(bad, "r30"))
+
+    # banked into the run's own QC: every segment doc of the sparse image carries it, the dense one not
+    imgs = [CciaImage(; uid = "sparse", dir = mktempdir()), CciaImage(; uid = "dense", dir = mktempdir())]
+    Cecelia.write_cluster_qc!(imgs, "clustRegions.cluster", p; suffix = "reg", image_findings = gf)
+    codes(img, vn) = [String(x["code"]) for x in read_qc(img, "clustRegions.cluster", vn)["findings"]]
+    @test "spatial.sparse_graph" in codes(imgs[1], "B.reg")
+    @test "spatial.sparse_graph" in codes(imgs[1], "T.reg")
+    @test !("spatial.sparse_graph" in codes(imgs[2], "B.reg"))
+end
+
 
 @testset "aggregate DBSCAN ids (Clustering.jl)" begin
     # two dense blobs + one far noise point → two aggregates, noise = id 0
