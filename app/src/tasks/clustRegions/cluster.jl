@@ -69,6 +69,37 @@ function _region_other_all_zero(qc_path::AbstractString)::Bool
     end
 end
 
+# The neighbour graph's own QC, re-judged per image on the graph the run actually LOADED. Composition
+# vectors on a sparse graph are noise, so the region run carries the same finding the graph task banks
+# (`_neighbours_qc_findings`, same `SPARSE_GRAPH_MEAN_DEGREE`) where the regions are inspected. Pure:
+# the parsed region_qc.json → uID → findings. A run from before the runner banked `graphMetrics` → none.
+function _region_graph_findings(qc::AbstractDict, graph_suffix::AbstractString)
+    out = Dict{String,Vector{Dict{String,Any}}}()
+    gm = get(qc, "graphMetrics", nothing)
+    gm isa AbstractDict || return out
+    for (uid, m) in gm
+        m isa AbstractDict || continue
+        m = Dict{String,Any}(String(k) => v for (k, v) in m)    # nested JSON3 objects key by Symbol
+        fs = _neighbours_qc_findings(Int(get(m, "nCells", 0)), Int(get(m, "nEdges", 0)),
+                                     Float64(get(m, "isolatedFrac", 0.0)), Float64(get(m, "meanDegree", 0.0)))
+        for f in fs
+            d = something(get(f, "detail", nothing), Dict{String,Any}())
+            d["graphSuffix"] = String(graph_suffix); f["detail"] = d
+        end
+        isempty(fs) || (out[String(uid)] = fs)
+    end
+    out
+end
+
+function _region_graph_findings(qc_path::AbstractString, graph_suffix::AbstractString)
+    isfile(qc_path) || return Dict{String,Vector{Dict{String,Any}}}()
+    try
+        _region_graph_findings(JSON3.read(read(qc_path, String), Dict{String,Any}), graph_suffix)
+    catch
+        Dict{String,Vector{Dict{String,Any}}}()
+    end
+end
+
 function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -148,7 +179,12 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
         _write_clust_features!(seg["propsPath"], p.valueNameSuffix, feat_cols, uids;
                                family = "regions", labels = labels)
     end
-    write_cluster_qc!(imgs, "clustRegions.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix, on_log = on_log)
+    graph_findings = _region_graph_findings(qc_out_path, p.graphSuffix)
+    isempty(graph_findings) ||
+        on_log("[QC] neighbour graph \"$(p.graphSuffix)\" flagged for $(length(graph_findings)) image(s): " *
+               join(sort!(collect(keys(graph_findings))), ", "))
+    write_cluster_qc!(imgs, "clustRegions.cluster", qc_out_path; unit = "cells", suffix = p.valueNameSuffix,
+                      image_findings = graph_findings, on_log = on_log)
     on_progress(4, 4)
 
     on_log("[INFO] clustRegions done → regions.$(p.valueNameSuffix)")
