@@ -488,6 +488,25 @@ class MainTest(unittest.TestCase):
         # Cursor is restored on exit — otherwise the terminal is broken after `pixi run`.
         self.assertIn("\033[?25h", out)
 
+    def test_a_plausible_fix_stays_advisory_when_its_note_is_older_than_the_window(self):
+        # The resolution row carries no advisory marker; if the note's `_advisory` row fell
+        # before `--tail`, the fix must still not be counted as a required resolution.
+        append_event("fanout_audit_advisory",
+                     {"slug": "fanout-0000000a", "file": "b.jl", "line": 2, "desc": "d",
+                      "marker": "plausible"}, log_path=self.log_path)
+        append_event("fanout_audit_run", {"duration_s": 1.0}, log_path=self.log_path)
+        append_event("fanout_audit_finding_resolved",
+                     {"slug": "fanout-0000000a", "outcome": "fixed_pre_commit"},
+                     log_path=self.log_path)
+        buf = io.StringIO()
+        with mock.patch.object(console, "_terminal_size", return_value=(120, 40)):
+            main(["--no-follow", "--tail", "2", "--log-path", str(self.log_path)],
+                 stdout=buf, is_tty=True)
+        out = buf.getvalue()
+        self.assertIn("1 run", out)
+        self.assertNotIn("resolved", out)
+        self.assertNotIn("1 fixed", out)
+
 
 class DashboardTest(unittest.TestCase):
     """The pure renderer — build a state, ask for a frame, assert on the frame."""
