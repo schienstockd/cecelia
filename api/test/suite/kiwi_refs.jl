@@ -154,14 +154,19 @@ end
         @test !res(pref)["ok"]
         tref = Dict("kind" => "tile", "imageUid" => "KDIeEm", "valueName" => "B", "cellId" => "B3", "t" => 0)
         @test no(tref, "no landscape")
-        key = ("testpr", "KDIeEm", "B", 0, -1)
+        key = ("testpr", "KDIeEm", "B", 0, 0)      # the viewer publishes z=0 on a 2D image
         lock(_LANDSCAPE_LOCK) do
-            _LANDSCAPE_BY_KEY[key] = Landscape("testpr", "KDIeEm", "B", 0, -1, _now_epoch(),
+            _LANDSCAPE_BY_KEY[key] = Landscape("testpr", "KDIeEm", "B", 0, 0, _now_epoch(),
                 Dict{String,Any}("tiles" => [Dict("id" => "A1"), Dict("id" => "B3")]))
         end
         try
             @test res(tref)["ok"] && res(tref)["check"] == "live"
             @test no(merge(tref, Dict("cellId" => "C9")), "no tile C9")
+            # t / z are optional in the schema: an omitted one matches whatever position is published
+            @test res(Dict("kind" => "tile", "imageUid" => "KDIeEm", "valueName" => "B", "cellId" => "B3"))["ok"]
+            @test res(merge(tref, Dict("z" => 0)))["ok"]
+            @test no(merge(tref, Dict("t" => 1)), "no landscape")
+            @test no(merge(tref, Dict("z" => 1)), "no landscape")
         finally
             lock(_LANDSCAPE_LOCK) do; delete!(_LANDSCAPE_BY_KEY, key) end
         end
