@@ -80,12 +80,7 @@ function _region_graph_findings(qc::AbstractDict, graph_suffix::AbstractString)
     for (uid, m) in gm
         m isa AbstractDict || continue
         m = Dict{String,Any}(String(k) => v for (k, v) in m)    # nested JSON3 objects key by Symbol
-        fs = _neighbours_qc_findings(Int(get(m, "nCells", 0)), Int(get(m, "nEdges", 0)),
-                                     Float64(get(m, "isolatedFrac", 0.0)), Float64(get(m, "meanDegree", 0.0)))
-        for f in fs
-            d = something(get(f, "detail", nothing), Dict{String,Any}())
-            d["graphSuffix"] = String(graph_suffix); f["detail"] = d
-        end
+        fs = _loaded_graph_findings(m, graph_suffix)
         isempty(fs) || (out[String(uid)] = fs)
     end
     out
