@@ -11,7 +11,8 @@ Run, from this session:
 pixi run codrive-record
 ```
 
-With no argument it records the Claude Code session it runs under. The script writes the record
+With no argument it records the Claude Code session it runs under (on any OS). If it says it can't
+tell which session this is, ask the user for the session id and pass it. The script writes the record
 from the transcript; you never write or edit it yourself (docs/todo/CODRIVE_RECORD_PLAN.md,
 Decision 2), and you never summarise the session in its place.
 

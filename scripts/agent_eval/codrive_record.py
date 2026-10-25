@@ -273,7 +273,8 @@ def resolve(arg: str | None) -> pathlib.Path:
     if arg is None:
         arg = calling_session()
         if arg is None:
-            raise SystemExit("not run from a Claude Code session — name a transcript or session id")
+            raise SystemExit("can't tell which Claude Code session this is — pass its session id "
+                             "or its transcript path")
     p = pathlib.Path(arg).expanduser()
     if p.is_file():
         return p

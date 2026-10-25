@@ -58,7 +58,7 @@ get this ([`AGENT_RUN_REVIEW_PLAN.md`](AGENT_RUN_REVIEW_PLAN.md)); co-driven ses
 
 - **P1 — built.** `scripts/agent_eval/codrive_record.py` + `pixi run codrive-record [transcript]
   [--project UID] [--since ISO] [--until ISO] [--dry-run DIR]`. With no transcript it records the
-  session it runs under (`claude_sessions.calling_session`), so at the end of a session you tell
+  session it runs under (`claude_sessions.calling_session`: `$CLAUDE_CODE_SESSION_ID`, any OS), so at the end of a session you tell
   Claude "record this co-drive" and it runs the script (`.claude/skills/codrive-record/SKILL.md`). Verified: unit tests on a synthetic
   transcript (`python/cecelia/tests/test_codrive_record.py`) and a dry run on a real session.
 - **P2 — your actions in the app.** Persist the observer's observations per session (a sidecar in

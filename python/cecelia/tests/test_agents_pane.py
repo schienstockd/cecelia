@@ -228,6 +228,17 @@ class LiveSessionsTest(_FakeHome):
 class CallingSessionTest(_FakeHome):
     """`codrive-record` with no argument records the session that ran it: claude → bash → pixi → python."""
 
+    def setUp(self):
+        super().setUp()
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("CLAUDE_CODE_SESSION_ID", None)   # these tests run under a real session
+
+    def test_the_session_id_claude_code_sets_wins(self):
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "from-env"
+        self.assertEqual(calling_session(self.home, self.proc, pid=30), "from-env")
+
     def test_finds_the_nearest_live_session_up_the_process_chain(self):
         self.process(10, "500")
         self.session(10, "500", "a")

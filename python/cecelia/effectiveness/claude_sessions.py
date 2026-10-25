@@ -355,7 +355,11 @@ def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib
 def calling_session(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib.Path("/proc"),
                     pid: int | None = None, depth: int = 8) -> str | None:
     """The id of the Claude Code session this process runs under (a command Claude ran from its
-    window), or None: the nearest parent with a live `sessions/<pid>.json`."""
+    window), or None. `$CLAUDE_CODE_SESSION_ID`, which Claude Code sets for the commands it runs on
+    every OS; else (an older Claude Code) the nearest parent with a live `sessions/<pid>.json`,
+    which needs `/proc`."""
+    if os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return os.environ["CLAUDE_CODE_SESSION_ID"]
     sessions_dir = (home or claude_home()) / "sessions"
     for parent in _parents(pid or os.getpid(), proc, depth):
         try:
