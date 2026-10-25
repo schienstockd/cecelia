@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { copyWarningLines, copyWarningAction } from './gatingCopyWarnings'
+import { copyWarningLines, copyWarningAction, missingColumnsReason } from './gatingCopyWarnings'
 
 const names: Record<string, string> = { a: 'img2', b: 'img3' }
 const nameOf = (uid: string) => names[uid] ?? uid
@@ -34,5 +34,18 @@ describe('copyWarningAction', () => {
   it('any other column → add the measure', () => {
     expect(copyWarningAction({ a: [{ column: 'clusters.immune', pops: [] }, { column: 'cd11c', pops: [] }] }))
       .toMatch(/^Add those measures/)
+  })
+})
+
+describe('missingColumnsReason', () => {
+  it('is empty when nothing is missing', () => {
+    expect(missingColumnsReason(undefined)).toBe('')
+    expect(missingColumnsReason([])).toBe('')
+  })
+  it('names the missing columns, through the display label', () => {
+    expect(missingColumnsReason(['clusters.immune'])).toBe('Empty: no clusters.immune on this image')
+    const label = (c: string) => (c === 'mean_intensity_2' ? 'CD11c' : c)
+    expect(missingColumnsReason(['clusters.immune', 'mean_intensity_2'], label))
+      .toBe('Empty: no clusters.immune, CD11c on this image')
   })
 })

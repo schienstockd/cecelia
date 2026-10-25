@@ -1,8 +1,10 @@
-// The gating copy's per-target warnings (`POST /api/gating/copy` → `warnings`, #1737) as the copy
-// dialog shows them: one short line per target naming the absent columns and how many populations
-// end up empty, the population names for the hover, and one action line for the lot.
-// Pure, so the wording is tested rather than eyeballed.
-// INVENTORY-EXEMPT: one caller (GatingCopyDialog); the wording is specific to the copy reply.
+// The wording of ONE finding — `missing_gate_columns`: a gate/filter reads a column an image's table
+// lacks, so populations are empty there — on its two surfaces. The gating copy's per-target warnings
+// (`POST /api/gating/copy` → `warnings`, #1737) as the copy dialog shows them: one short line per
+// target naming the absent columns and how many populations end up empty, the population names for
+// the hover, and one action line for the lot. And the Population Manager's per-pop reason
+// (`missingColumns` beside every pop tree, #1769). Pure, so the wording is tested rather than eyeballed.
+// INVENTORY-EXEMPT: callers are GatingCopyDialog + PopulationManager; the wording is specific to this finding.
 
 import { clusterMeasurePrefix } from './clusterMeasure'
 
@@ -38,4 +40,11 @@ export function copyWarningAction(warnings: CopyWarnings | undefined): string {
   return clustered
     ? 'Run the clustering on those images, or delete those populations there.'
     : 'Add those measures to those images, or delete those populations there.'
+}
+
+// The Population Manager's tooltip on a pop that reads 0 because its (or an ancestor's) gate/filter
+// column is absent here — server `missingColumns[path]`, through the display label. '' ⇒ show nothing.
+export function missingColumnsReason(cols: readonly string[] | undefined,
+                                     label: (col: string) => string = c => c): string {
+  return cols?.length ? `Empty: no ${cols.map(label).join(', ')} on this image` : ''
 }

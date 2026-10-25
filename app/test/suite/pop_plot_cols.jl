@@ -159,3 +159,30 @@ end
         end
     end
 end
+
+@testset "missing_gate_columns on an image — column names only, agrees with a read (#1769)" begin
+    if !have_fixture(fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad"))
+        @test_skip "missing_gate_columns image (fixture missing)"
+    else
+        img = _ppc_image(tracks=true)
+        # cell table: a filter on a cluster run this image wasn't in empties it and its child
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "big"; gate=RectangleGate("area", "mean_intensity_0", 0.0, 1e12, -1e12, 1e12))
+        add_pop!(m, "imm"; parent="/big", filter_measure="clusters.gone", filter_fun="in", filter_values=[1])
+        add_pop!(m, "t"; parent="/big/imm", filter_measure="centroid_t", filter_fun="gt", filter_values=-1)
+        miss = missing_gate_columns(m, img; value_name="B")
+        @test [r.column for r in miss] == ["clusters.gone"]
+        @test miss[1].pops == ["/big/imm", "/big/imm/t"]
+        recompute!(m, pop_membership_fetch(img, "B", "flow"))
+        @test Set(p for p in pop_paths(m) if isempty(cells_in_pop(m, p))) == Set(miss[1].pops)
+
+        # per-track table: direct motility, numeric aggregates of real cell measures and bookkeeping
+        # are present — exactly as track_props builds them; an aggregate of an absent base is not
+        speed = first(c for c in track_table_cols(img, "B") if c == "live.track.speed")
+        ask = [speed, "area.mean", "mean_intensity_0.sd", "num_cells", "nope.mean", "clusters.gone"]
+        have = pop_membership_cols(img, "B", "track", ask)
+        @test have == [speed, "area.mean", "mean_intensity_0.sd", "num_cells"]
+        tp = track_props(img; value_name="B", cell_measures=["area", "mean_intensity_0"])
+        @test all(in(names(tp)), have)
+    end
+end

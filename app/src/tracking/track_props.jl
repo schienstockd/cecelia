@@ -173,6 +173,9 @@ function is_tracked(img::CciaImage; value_name::Union{AbstractString,Nothing}=no
     "track_id" in col_names(lp; data_type=:obs)
 end
 
+# the per-track table's bookkeeping columns — always present, never an aggregate of a cell measure
+const TRACK_BOOKKEEPING_COLS = ("track_id", "label", "num_cells")
+
 # numeric aggregate suffixes track_props appends to a base cell measure
 const _TRACK_NUM_AGG_SUFFIXES = (".mean", ".median", ".sum", ".qUp", ".qLow", ".sd")
 
@@ -211,7 +214,7 @@ clustTracks (selected bases → the columns they expanded to), so the two cannot
 function track_aggregate_base(col::AbstractString, direct;
                               cell_cols=nothing)::Union{String,Nothing}
     c = String(col)
-    (c in direct || c in ("track_id", "label", "num_cells")) && return nothing
+    (c in direct || c in TRACK_BOOKKEEPING_COLS) && return nothing
     if cell_cols !== nothing
         best = nothing
         for i in findall(==('.'), c)                   # ascending: the last hit is the longest base
@@ -263,8 +266,21 @@ for an untracked or unsegmented `value_name`.
 function track_aggregate_measures(img::CciaImage, value_name::AbstractString, cols)::Vector{String}
     want = String.(collect(cols))
     isempty(want) && return String[]
+    sets = track_name_sets(img, value_name)
+    sets === nothing && return String[]
+    track_cell_measures(want, sets.direct; cell_cols=sets.cell)
+end
+
+"""
+    track_name_sets(img, value_name) -> (; direct, cell) | nothing
+
+The two name sets a per-track column is resolved against, from column NAMES only: `direct` — what
+`{vn}__tracks.h5ad` holds itself (`track_table_cols`) — and `cell` — the cell table's var + obs
+columns, the bases `track_props` can aggregate. `nothing` when the segmentation has no cell table.
+"""
+function track_name_sets(img::CciaImage, value_name::AbstractString)
     lp = label_props(img; value_name=value_name)
-    isfile(lp.path) || return String[]
-    cell = vcat(col_names(lp; data_type=:vars), col_names(lp; data_type=:obs))
-    track_cell_measures(want, track_table_cols(img, value_name); cell_cols=cell)
+    isfile(lp.path) || return nothing
+    (direct = Set(track_table_cols(img, value_name)),
+     cell = Set(vcat(col_names(lp; data_type=:vars), col_names(lp; data_type=:obs))))
 end

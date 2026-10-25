@@ -99,7 +99,7 @@ export with_transaction, commit_state!
 
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────────
 export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, drop_obsm, write_categorical_obs, n_obs
-export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
+export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col, selectable_cols
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns, axis_of, scale_centroids!
 export obsm, obsm_keys, uns_keys, uns_array, uns_dict, uns_df
@@ -133,13 +133,13 @@ export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
-export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops, missing_gate_columns
+export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops, missing_gate_columns, pop_membership_cols
 export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, gates_in_um, gate_axis_scale
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
 export quiver_df, branch_segments, anisotropy_df
-export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, is_tracked
+export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
 # `apply_track_ops!`/`renumber_cell_ids!` are the names anything correcting tracks must go through;
 # the per-op `_remove_points!`-style methods stay internal so there is one entry point, not six.
