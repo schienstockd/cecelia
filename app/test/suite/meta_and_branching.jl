@@ -190,15 +190,17 @@ end
 @testset "Branching spec — µm keys, anisotropy sources, copy budget" begin
     # anisotropySource (docs/todo/SPATIAL_ANISOTROPY_PLAN.md Decision 5) — a select with three
     # allowed values. The runner raises on anything else, so an unknown value must not get past
-    # validation and reach Python as a subprocess failure.
+    # validation and reach Python as a subprocess failure. It is gated on calcAnisotropy (showIf),
+    # and validation skips a gated-off param, so the cases turn anisotropy on.
     for src in ("skeleton", "mask", "channel")
         @test begin
-            validate_params(Branching(), Dict{String,Any}("anisotropySource" => src))
+            validate_params(Branching(), Dict{String,Any}("calcAnisotropy" => true,
+                                                          "anisotropySource" => src))
             true
         end
     end
     @test_throws ParamValidationError validate_params(
-        Branching(), Dict{String,Any}("anisotropySource" => "intensity"))
+        Branching(), Dict{String,Any}("calcAnisotropy" => true, "anisotropySource" => "intensity"))
 
     # The anisotropy scales are in MICRONS, and the keys carry `Um` for exactly that reason: a
     # project with saved PIXEL params (sigma 2, box 45) must not have them silently reread as µm,
