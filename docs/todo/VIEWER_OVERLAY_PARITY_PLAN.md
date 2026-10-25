@@ -94,6 +94,12 @@ reading for this plan):
   `viewerLook` doesn't read `settings.getPopEyes`), so a movie recorded
   from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
   `trackPopHidden`).
+- The ribbon eyes (`getPopEyes(…, 'ribbons')`, #1766) reach the movie only as their off paths
+  (`trackPopHidden`); the renderer still gates a ribbon on the manager's `show`
+  (`overlay_author.jl`, `L.show && !(L.path in hidden)`), so a ribbon the viewer turned on for a pop
+  the manager hides is not recorded. Same fix as the point eyes: carry the on eyes, drop the `show`
+  gate for a viewer look. The off paths are also path-only, so one pop type's hide covers a same-path
+  pop of another type on that segmentation.
 - The viewer's *Pop colour* mask (`utils/maskPopTable.ts`: deepest visible pop wins, parents pale,
   cells in no pop grey) is not carried into a movie recorded from the viewer: `viewerLook` still sends
   `maskAllCells`, so the movie draws the per-id palette. A batch's population mask (`mask_id_colours`)
