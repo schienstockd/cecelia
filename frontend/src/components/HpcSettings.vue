@@ -214,11 +214,12 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
               v-tooltip.top="'Connect over SSH and check the folder and scheduler'">
         <i :class="['pi', testing ? 'pi-spin pi-spinner' : 'pi-bolt']" /> Test connection
       </button>
-      <InlineNote v-if="blocker" class="cc-fs-sm" :short="blocker" />
       <button v-if="machine" class="cc-btn cc-btn-ghost cc-fs-xs" @click="openPreferences('hpc')"
               v-tooltip.top="'Your login, folder and queues, in Preferences'">
         <i class="pi pi-user" /> Your HPC settings
       </button>
+      <!-- last and shrinkable, so a long blocker clips (full text on hover) instead of wrapping the row -->
+      <InlineNote v-if="blocker" class="cc-fs-sm hpc-clip" :short="blocker" :detail="blocker" />
       <InlineNote v-if="saved" class="cc-fs-sm" severity="ok" short="Saved" />
     </div>
     <div v-if="lines.length" class="hpc-result cc-fs-sm">
@@ -268,7 +269,10 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
 /* content-box: 5ch is the text width (a 5-digit port); the global input padding sits outside it */
 .hpc-port { box-sizing: content-box; width: 5ch; }
 .mono { font-family: var(--cc-mono); }
-.hpc-test { margin-top: 1.1rem; gap: 0.5rem; flex-wrap: wrap; }
+.hpc-test { margin-top: 1.1rem; gap: 0.5rem; flex-wrap: nowrap; }
+.hpc-test > .cc-btn { flex-shrink: 0; white-space: nowrap; }
+.hpc-clip { min-width: 0; }
+.hpc-clip > :deep(span) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hpc-env { gap: 0.5rem; }
 .hpc-result { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.5rem; word-break: break-all; }
 </style>
