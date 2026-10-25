@@ -116,6 +116,7 @@
     },
     {
       "key": "anisotropySource",
+      "showIf": { "calcAnisotropy": [true] },
       "tip": "Channel survives a bad segmentation; skeleton is smoother",
       "label": "Anisotropy from",
       "type": "select",
