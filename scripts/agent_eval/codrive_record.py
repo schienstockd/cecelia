@@ -9,9 +9,11 @@ tool call, a capture you shared, or a `#fix` become sections; the rest are count
 `#fix` anywhere in your message marks a correction of the section before it — you still give the
 verdict, as on any section.
 
-    pixi run codrive-record <transcript.jsonl | sessionId> [--project UID] [--since ISO] [--until ISO]
+    pixi run codrive-record [transcript.jsonl | sessionId] [--project UID] [--since ISO] [--until ISO]
                             [--dry-run DIR]
 
+With no transcript it records the Claude Code session it runs under — so "record this co-drive" at
+the end of a session is Claude running it (`.claude/skills/codrive-record/SKILL.md`).
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing.
 """
 from __future__ import annotations
@@ -30,7 +32,7 @@ sys.path.insert(0, str(HERE))
 
 import run_record  # noqa: E402 — the run record's API helpers, capture upload and quoting
 import trace_view  # noqa: E402
-from cecelia.effectiveness.claude_sessions import claude_home, typed_by_a_person  # noqa: E402
+from cecelia.effectiveness.claude_sessions import calling_session, claude_home, typed_by_a_person  # noqa: E402
 from cecelia.effectiveness.state import state_dir  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 from cecelia.utils.loopback import default_base_url  # noqa: E402
@@ -265,8 +267,13 @@ def render(meta: dict, secs: list[dict], caps: dict) -> str:
 
 # ── write ────────────────────────────────────────────────────────────────────────────────────────
 
-def resolve(arg: str) -> pathlib.Path:
-    """A transcript path, or a session id looked up under Claude Code's `projects/*/`."""
+def resolve(arg: str | None) -> pathlib.Path:
+    """A transcript path, or a session id looked up under Claude Code's `projects/*/`; None is the
+    session this runs under."""
+    if arg is None:
+        arg = calling_session()
+        if arg is None:
+            raise SystemExit("not run from a Claude Code session — name a transcript or session id")
     p = pathlib.Path(arg).expanduser()
     if p.is_file():
         return p
@@ -351,7 +358,8 @@ def write(path: pathlib.Path, api: str | None, dry_run: pathlib.Path | None, pro
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("transcript", help="a Claude Code transcript (.jsonl) or its session id")
+    ap.add_argument("transcript", nargs="?", default=None,
+                    help="a Claude Code transcript (.jsonl) or its session id (default: the session this runs under)")
     ap.add_argument("--project", default=None, help="the project to record into (default: the one most calls name)")
     ap.add_argument("--since", default=None, help="ISO time; leave out exchanges before it")
     ap.add_argument("--until", default=None, help="ISO time; leave out exchanges after it")
