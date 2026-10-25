@@ -43,7 +43,8 @@ import {
 } from '../../utils/volumeViewer'
 import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../utils/webgpuProbe'
 import { pickSrgbCanvasFormats } from './canvasFormat'
-import { LABEL_PALETTE_N, labelPaletteBytes } from '../../utils/viewerLabels'
+import type { LabelTable } from '../../utils/maskPopTable'
+import { createLabelColourTexture } from './labelColourTexture'
 export { WebGpuUnavailable, type AdapterReport }
 import { tileKeyStr, tileFetchRect, tileSlotShape, type TileKey } from '../../utils/tileViewer'
 
@@ -139,6 +140,9 @@ export interface TileRenderer {
   setLabelSource(sourceId: string): void
   /** Opacity 0 switches the mask off; contour 0 draws it filled. Same contract as the volume renderer. */
   setLabelStyle(opacity: number, contourPx: number): void
+  /** Colour the mask from a per-id table (`utils/maskPopTable.ts`), or `null` for the per-id palette.
+   *  The same object again is a no-op, so it can be called every frame. */
+  setLabelTable(table: LabelTable | null): void
   /** True when the tile is resident but its mask layer does not hold the current mask source. */
   needsLabel(key: TileKey): boolean
   /**
@@ -273,13 +277,9 @@ export async function createTileRenderer(
     size: [LUT_STOPS, MAX_CHANNELS], format: 'rgba8unorm',
     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
   })
-  // The label palette — the volume renderer's, written once.
-  const palTex = device.createTexture({
-    size: [LABEL_PALETTE_N, 1], format: 'rgba8unorm',
-    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-  })
-  device.queue.writeTexture({ texture: palTex }, labelPaletteBytes(),
-                            { bytesPerRow: LABEL_PALETTE_N * 4 }, [LABEL_PALETTE_N, 1])
+  // The label colours — the per-id palette, or a population table (`setLabelTable`).
+  let pal = createLabelColourTexture(device, null)
+  let palTable: LabelTable | null = null
   // Bound until the first mask upload allocates the mask atlas — a bind group must be complete.
   const noLabels = device.createTexture({
     size: [1, 1, 1], dimension: '3d', format: 'r32uint',
@@ -365,7 +365,7 @@ export async function createTileRenderer(
         { binding: 1, resource: atlas.createView() },
         { binding: 2, resource: lutTex.createView() },
         { binding: 3, resource: (labAtlas ?? noLabels).createView() },
-        { binding: 4, resource: palTex.createView() },
+        { binding: 4, resource: pal.texture.createView() },
       ],
     })
   }
@@ -640,7 +640,16 @@ export async function createTileRenderer(
     setLabelStyle(opacity, contourPx) {
       u[U.lab.opacity] = Math.max(0, Math.min(1, opacity))
       u[U.lab.contourPx] = Math.max(0, Math.round(contourPx))
-      u[U.lab.paletteRows] = LABEL_PALETTE_N
+      u[U.lab.paletteRows] = pal.rows
+    },
+    setLabelTable(table) {
+      if (table === palTable || destroyed) return
+      const next = createLabelColourTexture(device, table)
+      pal.texture.destroy()
+      pal = next
+      palTable = table
+      u[U.lab.paletteRows] = pal.rows
+      rebuildBindGroup()
     },
     needsLabel(key) {
       if (!labelSource) return false
@@ -791,7 +800,7 @@ export async function createTileRenderer(
       pointBuf?.destroy(); pointBuf = null
       segBuf?.destroy(); segBuf = null
       if (dead) return
-      lutTex.destroy(); palTex.destroy(); noLabels.destroy(); uniforms.destroy()
+      lutTex.destroy(); pal.texture.destroy(); noLabels.destroy(); uniforms.destroy()
       device.destroy()
     },
   }
