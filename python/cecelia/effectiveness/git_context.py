@@ -9,6 +9,7 @@ would catch a duplicate — this module is the pre-emptive extraction.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -247,12 +248,21 @@ def git_output(*args: str, cwd: str | None = None) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 #: Git state refs present while git itself is making a commit (a merge, cherry-pick, revert).
+#: A clean cherry-pick / revert never runs `commit-msg` (git passes `--no-verify`), so these only
+#: matter for a conflicted or `--no-commit` one — the refs are written exactly then.
 SEQUENCER_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD")
 
 
 def in_sequencer_commit(cwd: str | None = None) -> bool:
-    """Is a merge, cherry-pick or revert in progress? Its staged diff is other commits' already-
-    reviewed changes: the commit hook doesn't ask for a recital, and recital doesn't run one."""
+    """Is a merge, cherry-pick or revert in progress, or is `rebase -i` rewording a commit? Its
+    staged diff is other commits' already-reviewed changes: the commit hook doesn't ask for a
+    recital, and recital doesn't run one.
+
+    A reword runs `commit-msg` with none of `SEQUENCER_STATE` set, and `REBASE_HEAD` outlives the
+    rebase; git marks it in the hook's environment instead. A commit the agent makes itself at an
+    `edit` stop has no such mark, so it stays gated."""
+    if os.environ.get("GIT_REFLOG_ACTION", "").startswith("rebase"):
+        return True
     return any(git_output("rev-parse", "-q", "--verify", ref, cwd=cwd) for ref in SEQUENCER_STATE)
 
 
