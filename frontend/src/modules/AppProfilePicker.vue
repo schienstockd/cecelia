@@ -21,6 +21,7 @@ import { useLogStore } from '../stores/log'
 import { fetchProfiles, selectProfile, profileDisplayName,
          type Profile, type ProfileRoster } from '../utils/profileApi'
 import CreateProfileDialog from '../components/profile/CreateProfileDialog.vue'
+import { pickDrivingPhrase } from '../utils/drivingPhrase'
 
 const router = useRouter()
 const appCtl = useAppControlStore()
@@ -31,6 +32,7 @@ const loading = ref(true)
 const submitting = ref('')   // profile name currently being selected — drives the row spinner
 const error = ref<string | null>(null)
 const showCreate = ref(false)
+const heading = pickDrivingPhrase()   // once per mount — a fresh one each time the picker opens
 
 const selectable = computed(() => roster.value.profiles.filter(p => !p.retired))
 const retired = computed(() => roster.value.profiles.filter(p => p.retired))
@@ -79,7 +81,7 @@ function onProfileCreated(name: string) {
   <div class="pp-wrap">
     <div class="pp-card">
       <img class="pp-logo" src="/feijoa.svg" alt="" aria-hidden="true" width="40" height="40" />
-      <h1 class="pp-title">Who's driving?</h1>
+      <h1 class="pp-title" v-tooltip.bottom="heading.note">{{ heading.text }}</h1>
       <p class="pp-sub cc-muted">
         Pick a profile — this drives Kiwi's credentials, your preferences and which projects you see.
       </p>
