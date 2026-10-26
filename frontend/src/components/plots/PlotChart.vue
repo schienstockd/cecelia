@@ -13,7 +13,7 @@ import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue
 import { observeBoxChanges } from '../../composables/usePlotResize'
 import { buildPlotOptions, type BuildOpts, facetMode } from '../../plots/plot'
 import { svgToImageURL, svgOf, collectOverlayItems, svgWithOverlays } from '../../plots/export'
-import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay } from '../../plots/overlays'
+import { applyPlotTheme, legendOverlay, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
 import { xRotationOverride, facetOverride, sameOverrides, type AutoOverride } from '../../plots/autoOverride'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import { pointInPoly } from '../../utils/drawGeometry'
@@ -58,20 +58,6 @@ let legendH = 0
 // first render, so a REMOUNT always re-announces (the host keeps its own copy and would otherwise
 // stay on the previous chart's note).
 let lastOverrides: AutoOverride[] | null = null
-
-// Category tick labels the builder shortened (plot.ts `fitAxisLabels` → `_tickTitles`, shortened →
-// full) get the full label as a hover title. Plot gives the axis no title channel, so it's added here.
-function titleShortenedTicks(svg: Element, titles: Partial<Record<'x' | 'y', Record<string, string>>> | undefined) {
-  for (const [axis, map] of Object.entries(titles ?? {})) {
-    svg.querySelectorAll(`g[aria-label="${axis}-axis tick label"] text`).forEach(t => {
-      const full = map?.[t.textContent ?? '']
-      if (!full) return
-      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
-      title.textContent = full
-      t.appendChild(title)
-    })
-  }
-}
 
 async function render(pass = 0) {
   if (!host.value) return

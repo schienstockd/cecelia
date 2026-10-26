@@ -1,0 +1,37 @@
+{
+    "class": "CciaImage",
+    "uid": "CtMsh1",
+    "name": "test-fixture-contacts-mesh",
+    "kind": "static",
+    "status": "done",
+    "filepath": {
+        "default": "ccidImage.ome.zarr",
+        "_active": "default"
+    },
+    "labels": {
+        "seg": [
+            "seg.zarr"
+        ]
+    },
+    "label_props": {
+        "seg": "seg.h5ad",
+        "_active": "seg"
+    },
+    "imChannelNames": {
+        "default": [
+            "pop",
+            "flat"
+        ],
+        "_active": "default"
+    },
+    "attr": {},
+    "meta": {
+        "SizeC": "2",
+        "SizeZ": "4",
+        "SizeY": "16",
+        "SizeX": "32",
+        "PhysicalSizeX": "1.0",
+        "PhysicalSizeY": "1.0",
+        "PhysicalSizeZ": "2.0"
+    }
+}
