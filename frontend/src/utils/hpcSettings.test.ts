@@ -5,7 +5,7 @@ const cls = { queue: '', account: '', qos: '', directives: '', preamble: '' }
 const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
   available: true,
   schedulers: [{ name: 'slurm', label: 'SLURM', available: true }],
-  site: { scheduler: 'slurm', host: 'login.x', port: 22, remoteDir: '~/cecelia', email: '', cpu: cls, gpu: cls },
+  site: { scheduler: 'slurm', host: 'login.x', port: 22, netQueue: '', remoteDir: '~/cecelia', email: '', cpu: cls, gpu: cls },
   identity: { profile: 'default', user: 'alice', keyFile: '/home/alice/.ssh/id_ed25519' },
   project: null,
   ...over,
@@ -78,6 +78,7 @@ describe('hpcFieldPatch / hpcFieldValue', () => {
     expect(hpcFieldPatch('site.port', '2222', 'p')).toEqual({ site: { port: 2222 } })
     expect(hpcFieldPatch('site.port', ' 2222 ', 'p')).toEqual({ site: { port: 2222 } })
     expect(hpcFieldPatch('site.port', 'abc', 'p')).toEqual({ site: { port: 0 } })   // refused by the range check
+    expect(hpcFieldPatch('site.netQueue', 'copyq', 'p')).toEqual({ site: { netQueue: 'copyq' } })
     expect(hpcFieldPatch('site.gpu.qos', 'hi', 'p')).toEqual({ site: { gpu: { qos: 'hi' } } })
     expect(hpcFieldPatch('identity.keyFile', '/k', 'p')).toEqual({ identity: { keyFile: '/k' } })
     expect(hpcFieldPatch('project.account', 'g1', 'p')).toEqual({ project: { projectUid: 'p', account: 'g1' } })

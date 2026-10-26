@@ -48,7 +48,14 @@ watch(() => props.projectUid, load, { immediate: true })
 // environment row see it.
 watch(isPreferencesOpen, open => { if (!open && machine.value) void load() })
 
-async function save(patch: HpcPatch, path = '') {
+// The save in flight: leaving a field for Test connection or Install fires both at once, and they
+// must see the value just typed, not the one before it.
+let pendingSave: Promise<void> = Promise.resolve()
+function save(patch: HpcPatch, path = ''): Promise<void> {
+  pendingSave = pendingSave.then(() => doSave(patch, path))
+  return pendingSave
+}
+async function doSave(patch: HpcPatch, path: string) {
   saving.value = true
   try {
     s.value = await saveHpcSettings(patch, props.projectUid)
@@ -78,6 +85,7 @@ const lines = computed(() => result.value ? hpcTestLines(result.value, schedLabe
 async function runTest() {
   testing.value = true
   result.value = null
+  await pendingSave
   try { result.value = await testHpcConnection() }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
   finally { testing.value = false }
@@ -96,6 +104,7 @@ async function loadEnv() {
                             error: e instanceof Error ? e.message : String(e) } }
 }
 async function install() {
+  await pendingSave              // an Internet queue typed just before the click must reach the job
   try { await installHpcEnv(); env.value = env.value && { ...env.value, installing: true, error: '' } }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
@@ -152,6 +161,11 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
       <label class="cc-muted">Port</label>
       <input class="hpc-port" type="text" inputmode="numeric" v-model="d['site.port'].value" placeholder="22"
              @change="commit('site.port')" v-tooltip.bottom="'SSH port (usually 22)'" />
+
+      <label class="cc-muted">Internet queue</label>
+      <input v-model="d['site.netQueue'].value" placeholder="e.g. copyq; empty = CPU queue"
+             @change="commit('site.netQueue')"
+             v-tooltip.bottom="'Queue whose nodes can download, for Install on cluster'" />
     </div>
 
     <template v-if="s.project">

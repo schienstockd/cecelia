@@ -129,6 +129,7 @@ const _SSH_ERRORS = (
     ("UNPROTECTED PRIVATE KEY FILE",           "Key file is readable by others. Run chmod 600 on it"),
     ("Could not resolve hostname",             "Host not found"),
     ("Connection refused",                     "Connection refused. Check host and port"),
+    ("Connection reset",                       "Connection dropped. Check the port (SSH is usually 22)"),
     ("timed out",                              "No response from host"),
     ("No route to host",                       "No response from host"),
     ("Network is unreachable",                 "No response from host"),

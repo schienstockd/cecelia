@@ -60,6 +60,7 @@ hpc     = 1    # jobs dispatched to the HPC cluster at once (docs/todo/HPC_PLAN.
 scheduler = "slurm"     # "slurm" or "pbs" (PBS Pro / OpenPBS)
 host      = ""          # login node, e.g. "login.cluster.example.org"
 port      = 22
+netQueue  = ""          # a queue whose nodes reach the internet, for downloads (Gadi: "copyq"); "" = the CPU queue
 remoteDir = "~/cecelia" # Cecelia's working dir on the cluster; `~` is the remote home
 email     = ""          # job notifications (optional)
 

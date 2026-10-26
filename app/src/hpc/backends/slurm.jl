@@ -20,7 +20,8 @@ function hpc_render_script(b::SlurmBackend, spec::HpcJobSpec)::String
          "--cpus-per-task=$(spec.cpus)",
          "--mem=$(spec.mem_gb)G",
          "--time=" * _hpc_walltime(spec.walltime_min)]
-    isempty(cls.queue) || push!(d, "--partition=" * cls.queue)
+    q = hpc_queue(b.site, spec)
+    isempty(q) || push!(d, "--partition=" * q)
     acct = isempty(spec.account) ? cls.account : spec.account
     isempty(acct) || push!(d, "--account=" * acct)
     isempty(cls.qos) || push!(d, "--qos=" * cls.qos)

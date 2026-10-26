@@ -13,7 +13,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 ```
 
 - **Inventory lookups are a grep, not a read.** `docs/inventory/*.md` are flat bullet lists —
-  `grep -n -i '<thing>' docs/inventory/FRONTEND.md` gives you the whole answer.
+  `grep -n -i '<thing>' docs/inventory/FRONTEND.md` is the first lookup, not the last: grep the source too.
 - **Two directories are excluded from default search — for different reasons.** Pass
   `--exclude-dir=archive --exclude-dir=todo` (grep) or skip `docs/archive/**` and `docs/todo/**`
   (Glob) unless you are deliberately going there. Together they are 1.6 MB and supply ~40% of doc
