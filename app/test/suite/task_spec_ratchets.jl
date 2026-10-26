@@ -359,6 +359,7 @@ end
         ("spatialAnalysis/cellNeighbours.json", "nNeighbours",     "neighbourMethod", ["knn"]),
         ("segment/branching.json", "fibreChannels",     "anisotropySource", ["channel"]),
         ("segment/branching.json", "anisotropyBoxUm",   "calcAnisotropy",   ["true"]),
+        ("segment/branching.json", "anisotropySource",  "calcAnisotropy",   ["true"]),
         ("segment/branching.json", "integrateTimeMode", "integrateTime",    ["true"]),
         ("clustPops/cluster.json",   "logBase",       "transformation", ["log", "reversedLog"]),
         ("clustPops/cluster.json",   "maxFraction",   "normaliseAxis",  ["cells"]),

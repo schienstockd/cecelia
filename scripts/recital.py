@@ -17,7 +17,7 @@ Exit codes:
         note in the failed reviewer's section; log records the attempt with an `error` field.
     2 — invocation error (bad args, no staged diff to review).
 
-A merge, cherry-pick or revert in progress is skipped (exit 0, nothing logged): its staged diff is
+A merge, cherry-pick or revert in progress (or a `rebase -i` reword) is skipped (exit 0, nothing logged): its staged diff is
 other commits' already-reviewed changes, so the reviewers would flag main's code and leave
 findings nothing can close (the commit hook doesn't ask for tags on such a commit).
 """
@@ -52,7 +52,7 @@ def _get_diff(from_stdin: bool) -> str:
 def main() -> int:
     args = _parse_args()
     if not args.stdin and in_sequencer_commit():
-        print("recital: skipped — a merge, cherry-pick or revert is in progress; its changes were "
+        print("recital: skipped — a merge, cherry-pick, revert or rebase is in progress; its changes were "
               "reviewed in their own commits, and the commit hook doesn't ask for a recital here.",
               file=sys.stderr)
         return 0

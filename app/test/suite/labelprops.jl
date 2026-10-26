@@ -466,6 +466,17 @@ end
         # sort by area, descending
         d5 = label_props(h5) |> select_cols(["area"]) |> sort_by("area"; rev=true) |> as_df
         @test d5.area[1] == maximum(d5.area)
+
+        # selectable_cols: the names-only "would as_df return it?" (#1769, the pop-tree payload's
+        # missing-column check) — must agree with an actual read for every kind of name: raw var,
+        # channel display name, centroid, obs, label, and an unknown one.
+        let lpc() = label_props(h5; channel_names=["chA", "chB", "chC", "chD"])
+            ask = ["area", "chC", "mean_intensity_1", "centroid_x", "centroid_t", "track_id", "label",
+                   "clusters.nope", "nope"]
+            got = selectable_cols(lpc(), ask)
+            @test got == ["area", "chC", "mean_intensity_1", "centroid_x", "centroid_t", "track_id", "label"]
+            @test Set(got) == Set(names(lpc() |> select_cols(ask) |> as_df))
+        end
     end
 end
 

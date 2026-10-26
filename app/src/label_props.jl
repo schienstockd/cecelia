@@ -457,6 +457,48 @@ uns_array(path::AbstractString, key::AbstractString; kwargs...) =
 uns_dict(path::AbstractString, key::AbstractString) = uns_dict(label_props(path), key)
 uns_df(path::AbstractString, key::AbstractString) = uns_df(label_props(path), key)
 
+# ── Which names a selection can resolve (shared by `as_df` and `selectable_cols`) ──────────────────
+
+# The name → source index `as_df` resolves a column selection against — metadata only (var index,
+# obs column order, centroid uns), no column data. Centroids map BOTH the on-disk name and its
+# explicit `centroid_{axis}` alias to the same obsm column, so a consumer can select "centroid_x" even
+# on a legacy file that stores "centroid-0" (normalisation lives in _explicit_*_names). This is the
+# legacy bridge that lets the code deploy before the data migration (CENTROID_AXES_PLAN.md). Guard on
+# read: a file carrying `centroid-N`/bare-`t` is rejected outright (errors), so those names can NEVER
+# reach a returned DataFrame. Convert the file first (CENTROID_AXES_PLAN.md).
+function _col_index(fid, lp::LabelProps)
+    var_names = _as_strings(read(fid["var/_index"]))
+    var_idx = Dict(v => i for (i, v) in enumerate(var_names))
+    cent_map = Dict{String,Tuple{String,Int,Int}}()     # centroid name → (group, position, ndim)
+    raw_spatial  = _spatial_uns(fid)
+    raw_temporal = _temporal_uns(fid)
+    n_sp = length(raw_spatial); n_tp = length(raw_temporal)
+    for (i, c) in enumerate(raw_spatial);  cent_map[c] = ("spatial", i, n_sp);  end
+    for (i, c) in enumerate(raw_temporal); cent_map[c] = ("temporal", i, n_tp); end
+    obs_cols = haskey(HDF5.attrs(fid["obs"]), "column-order") ?
+               _as_strings(HDF5.read_attribute(fid["obs"], "column-order")) : String[]
+    (; var_names, var_idx,
+       chan_to_raw = _channel_name_to_raw(var_names, something(lp.channel_names, String[])),
+       cent_map, all_centroid_cols = vcat(raw_spatial, raw_temporal), obs_cols)
+end
+
+# would `as_df` return column `c` if selected? (raw var name, channel display name, centroid, obs, label)
+_selectable(ix, c::AbstractString) = c == "label" || haskey(ix.var_idx, c) || haskey(ix.chan_to_raw, c) ||
+                                     haskey(ix.cent_map, c) || c in ix.obs_cols
+
+"""
+    selectable_cols(lp, cols) -> Vector{String}
+
+The subset of `cols` that `select_cols(lp, cols) |> as_df` would actually return — decided from the
+file's metadata alone (no column data read), by the same resolution `as_df` uses, so "absent here"
+cannot disagree with what a read would give. For a cheap "does this table have X?" check.
+"""
+selectable_cols(lp::LabelProps, cols)::Vector{String} =
+    _with_h5(lp.path, "r") do fid
+        ix = _col_index(fid, lp)
+        String[String(c) for c in cols if _selectable(ix, String(c))]
+    end
+
 # ── Terminal: materialise the DataFrame (the only place HDF5 I/O happens) ─────────
 
 """
@@ -470,25 +512,10 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         labels_raw = _as_strings(read(fid["obs/_index"]))
         n_obs = length(labels_raw)
         labels = _maybe_int.(labels_raw)
-        var_names = _as_strings(read(fid["var/_index"]))
+        ix = _col_index(fid, lp)
+        (; var_names, var_idx, chan_to_raw, cent_map, all_centroid_cols, obs_cols) = ix
         n_var = length(var_names)
-        var_idx = Dict(v => i for (i, v) in enumerate(var_names))
-
-        # centroid name → (group, position, ndim). Map BOTH the on-disk name and its explicit
-        # `centroid_{axis}` alias to the same obsm column, so a consumer can select "centroid_x" even
-        # on a legacy file that stores "centroid-0" (normalisation lives in _explicit_*_names). This is
-        # the legacy bridge that lets the code deploy before the data migration (CENTROID_AXES_PLAN.md).
-        # Guard on read: a file carrying `centroid-N`/bare-`t` is rejected outright (errors), so those
-        # names can NEVER reach a returned DataFrame. Convert the file first (CENTROID_AXES_PLAN.md).
-        cent_map = Dict{String,Tuple{String,Int,Int}}()
-        raw_spatial  = _spatial_uns(fid)
-        raw_temporal = _temporal_uns(fid)
-        n_sp = length(raw_spatial); n_tp = length(raw_temporal)
-        for (i, c) in enumerate(raw_spatial);  cent_map[c] = ("spatial", i, n_sp);  end
-        for (i, c) in enumerate(raw_temporal); cent_map[c] = ("temporal", i, n_tp); end
-        all_centroid_cols = vcat(raw_spatial, raw_temporal)   # set returned when no explicit selection
-        obs_cols = haskey(HDF5.attrs(fid["obs"]), "column-order") ?
-                   _as_strings(HDF5.read_attribute(fid["obs"], "column-order")) : String[]
+        chans = something(lp.channel_names, String[])
 
         # ── resolve which columns to read ──
         # var columns are recorded as (raw name to read, output name). A requested channel DISPLAY name
@@ -496,8 +523,6 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         # under the requested name — the ONE central place channel-name selection happens, inherited by
         # every caller (pop_df/gating/plots/notebooks). Raw names match FIRST, so gate eval and
         # clustering (which pass raw `{measure}_intensity_{i}`) are unaffected.
-        chans       = something(lp.channel_names, String[])
-        chan_to_raw = _channel_name_to_raw(var_names, chans)
         local var_reads::Vector{Tuple{String,String}}, cent_cols::Vector{String}, ocols::Vector{String}
         if isnothing(lp.sel_cols)
             var_reads = include_x ? [(v, lp.rename_channels ? _channel_label(v, chans) : v) for v in var_names] :
@@ -516,8 +541,7 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
             end
             cent_cols   = [c for c in sel if haskey(cent_map, c)]
             ocols       = [c for c in sel if c in obs_cols]
-            matched_var = Set(c for c in sel if haskey(var_idx, c) || haskey(chan_to_raw, c))
-            unknown = setdiff(sel, union(matched_var, Set(cent_cols), Set(ocols), Set(["label"])))
+            unknown = [c for c in sel if !_selectable(ix, c)]
             isempty(unknown) || @warn "LabelProps: ignoring unknown columns $unknown"
         end
 

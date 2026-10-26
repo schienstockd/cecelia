@@ -140,6 +140,9 @@ export function createGatingStore(initialPopType: string) {
   const cellMeasures = ref<string[]>([])
   const trackAggregates = ref<string[]>([])
   const stats     = ref<Record<string, { count: number; pctParent: number }>>({})
+  // path → gate/filter columns this image's table lacks, for each pop that is EMPTY because of it
+  // (its own column or an ancestor's — `missingColumns` beside every server `tree`, #1769). Absent ⇒ none.
+  const missingColumns = ref<Record<string, string[]>>({})
   // per-population membership version — bumped when a pop's (or an ancestor's) gate changes.
   // Panels watch the version of their displayed pop to refresh points smoothly (no full reload).
   const popVersion = ref<Record<string, number>>({})
@@ -210,9 +213,10 @@ export function createGatingStore(initialPopType: string) {
 
   // single entry point for tree updates: diff vs current, bump the membership version of every
   // pop whose gate/filter changed AND its descendants (parent∩child propagation), refresh stats.
-  function setTree(next: PopTree) {
+  function setTree(next: PopTree, missing?: Record<string, string[]>) {
     const oldSig = gateSignatures(tree.value)
     tree.value = next
+    missingColumns.value = missing ?? {}
     const newSig = gateSignatures(next)
     const changed = new Set<string>()
     for (const [p, s] of newSig) if (oldSig.get(p) !== s) changed.add(p)
@@ -238,11 +242,15 @@ export function createGatingStore(initialPopType: string) {
     try {
       const res = await fetch(path, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
+        // `labelsVersion`: the reply's `missingColumns` answers in this session's pinned frame
         body: JSON.stringify({ projectUid: projectUid(), imageUid: imageUid.value,
-                               valueName: valueName.value, popType: popType.value, ...body }),
+                               valueName: valueName.value, popType: popType.value,
+                               ...(labelsVersionPin.value ? { labelsVersion: labelsVersionPin.value } : {}),
+                               ...body }),
       })
       const data = await res.json().catch(() => ({})) as
-        { tree?: PopTree; error?: string; canUndo?: boolean; canRedo?: boolean }
+        { tree?: PopTree; missingColumns?: Record<string, string[]>; error?: string
+          canUndo?: boolean; canRedo?: boolean }
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
       // set-wide: replay the SAME mutation to the other clustered images (cluster pops only). The
       // body is image-independent (filter on clusters.{suffix}), so paths stay in sync. Await these
@@ -254,7 +262,7 @@ export function createGatingStore(initialPopType: string) {
           body: JSON.stringify({ projectUid: projectUid(), imageUid: uid,
                                  valueName: valueName.value, popType: popType.value, ...body }),
         }).catch(() => undefined)))
-      if (data.tree) setTree(data.tree)
+      if (data.tree) setTree(data.tree, data.missingColumns)
       _setHistory(data)
       // Any pop mutation (add/delete/rename/setGate/updatePop) changes what the viewer draws — the
       // /viewer-window popup has its own store, so it needs the localStorage ping to refetch its
@@ -319,8 +327,9 @@ export function createGatingStore(initialPopType: string) {
       const res = await fetch(`/api/gating/popmap?${_params()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as { tree: PopTree; canUndo?: boolean; canRedo?: boolean;
+        missingColumns?: Record<string, string[]>
         authoredLabelsVersion?: string | null; currentLatestLabelsVersion?: string | null }
-      setTree(d.tree)
+      setTree(d.tree, d.missingColumns)
       _setHistory(d)
       // P3b: capture the breadcrumb pair. `undefined` (a pre-P3b backend) reads the same as `null`
       // → no drift banner, unchanged behaviour. Once populated, `driftDetected` drives the module.
@@ -406,10 +415,13 @@ export function createGatingStore(initialPopType: string) {
   // page's list. The undo flags are per document too, so they would have been overwritten with the
   // other document's answer.
   function applyBroadcast(data: { imageUid?: string; valueName?: string; popType?: string
-                                  tree?: PopTree; canUndo?: boolean; canRedo?: boolean }) {
+                                  tree?: PopTree; missingColumns?: Record<string, string[]>
+                                  canUndo?: boolean; canRedo?: boolean }) {
     if (data.imageUid === imageUid.value && data.valueName === valueName.value &&
         (data.popType === undefined || data.popType === popType.value) && data.tree) {
-      setTree(data.tree)
+      // a broadcast answers `missingColumns` at `_latest`; a session pinned to another labels
+      // version keeps its own (pinned) answer, refreshed by its own edits and fetchPopmap
+      setTree(data.tree, labelsVersionPin.value ? missingColumns.value : data.missingColumns)
       _setHistory(data)
     }
   }
@@ -505,7 +517,7 @@ export function createGatingStore(initialPopType: string) {
   return {
     imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
     spatialColumns, temporalColumns, spatialAxes, isSpatialAxis, defaultTransformFor,
-    cellMeasures, trackAggregates, stats, popVersion, flat,
+    cellMeasures, trackAggregates, stats, missingColumns, popVersion, flat,
     transientPaths,
     projectUid, viewerSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, addFilterPop, updateFilterPop, addBooleanPop, updateBooleanPop, setGate, deletePop, deletePopChildren, movePop,

@@ -8,6 +8,7 @@
 #    single _persist_and_broadcast! chokepoint).
 #  - `API: gating channel labels follow the active channel-name version`.
 #  - `API: gating copy warns per target about absent gate/filter columns` (#1737).
+#  - `API: pop tree payload names the columns a population is missing` (#1769).
 #
 # No path expressions to rewrite. Extracted so runtests.jl contains only include lines +
 # section-header comments — same shape as app/test/suite/*.jl.
@@ -400,6 +401,49 @@ end
         @test collect(String, w[1].pops) == ["/tracked/immune", "/tracked/immune/T"]
         @test Set(pop_paths(load_pop_map(tgt, "B"; pop_type = "flow"))) ==
               Set(["/tracked", "/tracked/immune", "/tracked/immune/T"])
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        empty!(_GATING_HISTORY)
+    end
+  end
+end
+
+# ── the pop tree says which pops are empty for want of a column (#1769) ──────────────────────────
+# After a copy, a pop filtering on `clusters.<run>` on an image outside that run read 0 in the
+# Population Manager with no reason. Every tree payload now carries `missingColumns` (path → the
+# absent columns), from column names only: the popmap GET, the mutation response, and the broadcast.
+@testset "API: pop tree payload names the columns a population is missing" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    proj = joinpath(dir, "testpr")
+    cp(api_fixture("testpr"), proj)
+    rm(joinpath(proj, "1", "KDIeEm", "gating"); recursive = true, force = true)
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    empty!(_GATING_HISTORY)
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                "valueName" => "B", "popType" => "flow")
+        post(h, extra) = h(Vector{UInt8}(JSON3.write(merge(base, extra))))
+        filt(col) = Dict{String,Any}("filter" => Dict{String,Any}("measure" => col, "fun" => "gt", "values" => 0))
+        _, b = post(api_gating_pop_add, merge(Dict{String,Any}("name" => "tracked"), filt("track_id")))
+        @test isempty(JSON3.read(b).missingColumns)                 # every column present ⇒ empty map
+        post(api_gating_pop_add, merge(Dict{String,Any}("name" => "immune", "parent" => "/tracked"),
+                                       filt("clusters.immune")))
+        _, b = post(api_gating_pop_add, merge(Dict{String,Any}("name" => "T", "parent" => "/tracked/immune"),
+                                              filt("track_id")))
+        mc = JSON3.read(b).missingColumns                           # the mutation response
+        @test Set(String.(keys(mc))) == Set(["/tracked/immune", "/tracked/immune/T"])
+        @test collect(String, mc[Symbol("/tracked/immune/T")]) == ["clusters.immune"]
+
+        q = join(("$k=$v" for (k, v) in base), "&")
+        st, b = api_gating_popmap(HTTP.Request("GET", "/api/gating/popmap?" * q))
+        @test st == 200
+        mc = JSON3.read(b).missingColumns                           # the pop-tree GET
+        @test Set(String.(keys(mc))) == Set(["/tracked/immune", "/tracked/immune/T"])
+        @test collect(String, mc[Symbol("/tracked/immune")]) == ["clusters.immune"]
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
         empty!(_GATING_HISTORY)

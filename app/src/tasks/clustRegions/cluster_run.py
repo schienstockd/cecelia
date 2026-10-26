@@ -55,6 +55,9 @@ def run(params):
         by_uid[seg["uID"]].append(seg)
 
     comp_blocks, obs_blocks, coverages = [], [], []
+    # per-image metrics of the graph actually loaded — banked in the run's QC so Julia can flag a graph
+    # too sparse for composition vectors (the same check + threshold as the graph task, cellNeighbours.jl)
+    graph_metrics = {}
     for uid, segs in by_uid.items():
         gp = graph_pths.get(uid)
         if gp is None:
@@ -79,6 +82,7 @@ def run(params):
         comp = comp[keep]
         obs_all = obs_all.loc[keep].reset_index(drop=True)
         m = spatial_utils.graph_metrics(a)
+        graph_metrics[uid] = m
         log.log(f">> {uid}: graph '{graph_sfx}' {m['nCells']} cells, {m['nEdges']} edges, "
                 f"mean degree {m['meanDegree']:.1f} → {int(keep.sum())} basis cells "
                 f"({coverage * 100:.1f}%)")
@@ -165,6 +169,7 @@ def run(params):
                                                col_prefix="regions", extra_obs=comp_obs)
     qc["otherAllZero"] = other_all_zero
     qc["coverage"] = float(min(coverages)) if coverages else 0.0
+    qc["graphMetrics"] = graph_metrics
 
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:

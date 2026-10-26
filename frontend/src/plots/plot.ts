@@ -20,7 +20,7 @@ import { rescaleRows01 } from '../utils/heatmapScale'
 import { frameAxisLabel } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
-import { rotatedXLayout, fitTickLabels } from './axisLabelFit'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx } from './axisLabelFit'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 // charts whose series composite into a single frame — a `Facet by` request cannot be honoured
@@ -386,7 +386,7 @@ export function rotatedXMargins(labels: readonly unknown[], o: Pick<BuildOpts, '
  * `_tickTitles[axis]`, which PlotChart turns into a hover title on each shortened tick. The axis's own
  * `tickFormat` (a band axis maps index → label) runs first. No-op when everything fits.
  */
-function fitAxisLabels(opts: Record<string, unknown>, axis: 'x' | 'y', labels: readonly unknown[],
+function fitAxisLabels(opts: Record<string, unknown>, axis: 'x' | 'y' | 'fx', labels: readonly unknown[],
                        maxPx: number, fontPx: number) {
   const fit = fitTickLabels(labels, maxPx, s => textWidth(s, fontPx))
   if (!fit.titles) return
@@ -396,6 +396,34 @@ function fitAxisLabels(opts: Record<string, unknown>, axis: 'x' | 'y', labels: r
     fit.format(String(typeof prev === 'function' ? (prev as (d: unknown) => unknown)(d) : d)) }
   opts._tickTitles = { ...(opts._tickTitles as object ?? {}), [axis]: fit.titles }
 }
+
+/**
+ * Facet (`fx`) headers through the SAME fit as the category ticks (#1770): each header is shortened to
+ * its panel's band (`facetHeaderMaxPx`), full name on hover via `_tickTitles.fx`. Runs after every
+ * margin is settled, since the band width depends on them. No-op when not faceted.
+ */
+export function fitFacetHeaders(opts: Record<string, unknown>, labels: readonly unknown[],
+                                o: Pick<BuildOpts, 'plotWidth' | 'fontSize'>) {
+  if (!opts.fx || !labels.length) return
+  const fs = o.fontSize || 11
+  const inner = (o.plotWidth ?? 0) - Number(opts.marginLeft ?? THEME.marginLeft)
+                                   - Number(opts.marginRight ?? THEME.marginRight)
+  fitAxisLabels(opts, 'fx', labels, facetHeaderMaxPx(inner, labels.length, fs), fs)
+}
+/**
+ * Titles drawn INSIDE grid-facet cells (the track plots: a facet header is per column and can't name a
+ * cell, so the title is a `Plot.text` mark at the cell's top-left, `dx` in). Same fit as a facet header:
+ * `t` shortened to one cell, the full name kept on `full` for the mark's `title` (hover) channel.
+ */
+export function fitCellTitles<T extends { t: string }>(rows: readonly T[], innerWidth: number, cols: number,
+                                                     fontPx: number, dx = 4): (T & { full: string })[] {
+  const fit = fitTickLabels(rows.map(r => r.t), facetHeaderMaxPx(innerWidth, cols, fontPx) - dx,
+                            s => textWidth(s, fontPx))
+  return rows.map(r => ({ ...r, t: fit.format(r.t), full: r.t }))
+}
+/** The distinct facet-panel keys, in first-seen order (what Plot's `fx` domain holds). */
+const facetLabels = (r: PlotDataResponse, o: BuildOpts, keyOf: (s: PlotSeries) => string) =>
+  [...new Set(r.series.map(s => facetKeyOf(o, s, keyOf(s))))]
 
 const THEME = {
   style: { background: 'white', color: '#111', fontFamily: FONT, fontSize: '11px' },
@@ -678,6 +706,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // Reserve top headroom for the overlay legend (top-right) and/or title (top-left) so they float
   // above the data instead of covering it — the plot area starts below them.
   opts.marginTop = legendTopPad(legendN, o)
+  // grouped frequency facets by CATEGORY whatever the facet mode; the others by `fkey`
+  fitFacetHeaders(opts, o.chartType === 'frequency' ? (r.categories ?? [])
+    : faceted(o) && !NON_FACETING_CHARTS.has(o.chartType) ? facetLabels(r, o, keyOf) : [], o)
   return opts
 }
 
@@ -947,6 +978,7 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   }
   if (o.rotateXLabel) opts.marginBottom = xRotMargin(64, o)
   ;(opts as Record<string, unknown>)._legend = legend
+  fitFacetHeaders(opts, [...new Set(fit.map(p => p.fkey))], o)
   return opts
 }
 

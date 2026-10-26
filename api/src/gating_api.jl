@@ -243,11 +243,35 @@ function _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt; labels_version=n
     (Float32.(apply_transform(xt, xv)), Float32.(apply_transform(yt, yv)), zv)
 end
 
+# `{path → [column]}`: for each population that is EMPTY on this image because a gate/filter column
+# its membership reads (its own or an ancestor's) is not in the image's table — typically
+# `clusters.<run>` after copying gates from an image that was in a clustering run this one wasn't
+# (#1769). Rides beside every `tree` so the Population Manager can say why such a pop reads 0.
+# Column NAMES only (`missing_gate_columns` → `pop_membership_cols`), no data read, so it is cheap
+# enough for every tree payload. Never fails the request: an unreadable table reports nothing.
+function _missing_columns_by_pop(m::PopulationMap, img::CciaImage, vn;
+                                 labels_version=nothing)::Dict{String,Vector{String}}
+    out = Dict{String,Vector{String}}()
+    (isempty(m.order) || !_has_label_props(img)) && return out
+    miss = try
+        missing_gate_columns(m, img; value_name = vn, labels_version = labels_version)
+    catch e
+        @warn "gating: could not check gate columns on $(img.uid)" exception = e
+        return out
+    end
+    for r in miss, p in r.pops
+        push!(get!(out, p, String[]), r.column)
+    end
+    out
+end
+
 # broadcast the updated tree to all clients
-function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMap)
+function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMap, img::CciaImage;
+                           missing_cols = _missing_columns_by_pop(m, img, vn))
     broadcast_ws(Dict{String,Any}(
         "type" => "gating:popmap", "projectUid" => project_uid, "imageUid" => image_uid,
         "valueName" => vn, "popType" => pop_type, "tree" => to_tree(m),
+        "missingColumns" => missing_cols,
         # ride along with the tree so the undo/redo buttons settle in the same frame the edit lands
         # in — for THIS document, so a copy's target images report their own history, not the
         # source's (see the undo/redo block below)
@@ -322,8 +346,13 @@ function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop
     _history_record!(proj, image_uid, vn, pop_type, img)
     save_pop_map!(m, img)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(proj, image_uid, vn, pop_type, m)
+    # the broadcast reaches every client, so it answers at `_latest`; the reply answers at THIS
+    # client's labels-version pin (the store sends it in the body), the same frame its counts use
+    pin = _labels_version_pin(body)
+    miss = _missing_columns_by_pop(m, img, vn)
+    _broadcast_popmap(proj, image_uid, vn, pop_type, m, img; missing_cols = miss)
     (; tree = to_tree(m),
+       missingColumns = pin === nothing ? miss : _missing_columns_by_pop(m, img, vn; labels_version = pin),
        canUndo = _can_undo(proj, image_uid, vn, pop_type),
        canRedo = _can_redo(proj, image_uid, vn, pop_type))
 end
@@ -352,12 +381,14 @@ function _history_step(body_bytes::Vector{UInt8}, dir::Symbol)
             save_pop_map!(from_tree(tree), timg)
             m = load_pop_map(timg; value_name = vn, pop_type = pt)
             _inject_pick_pop!(m, timg)
-            _broadcast_popmap(proj, uid, vn, pt, m)
+            _broadcast_popmap(proj, uid, vn, pt, m, timg)
         end
         push!(to, counter)
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         _inject_pick_pop!(m, img)
         200, JSON3.write((; tree = to_tree(m),
+                            missingColumns = _missing_columns_by_pop(m, img, vn;
+                                                                     labels_version = _labels_version_pin(body)),
                             canUndo = !isempty(h.undo), canRedo = !isempty(h.redo)))
     end
 end
@@ -632,6 +663,8 @@ function api_gating_popmap(req::HTTP.Request)
     proj, image_uid = get(q, "projectUid", ""), get(q, "imageUid", "")
     current_latest = haskey(img.label_props, vn) ? resolve_version(img, :label_props, vn) : nothing
     200, JSON3.write((; tree = to_tree(m),
+                        missingColumns = _missing_columns_by_pop(m, img, vn;
+                                                                 labels_version = _labels_version_pin(q)),
                         canUndo = _can_undo(proj, image_uid, vn, pt),
                         canRedo = _can_redo(proj, image_uid, vn, pt),
                         authoredLabelsVersion = m.authored_labels_version,
@@ -1329,7 +1362,7 @@ function api_gating_copy(body_bytes::Vector{UInt8})
                 (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
             try
                 save_pop_map!(m, timg)                        # writes target gating sidecar (replace)
-                _broadcast_popmap(proj, tuid, vn, pt, m)      # refresh any client viewing the target
+                _broadcast_popmap(proj, tuid, vn, pt, m, timg) # refresh any client viewing the target
                 push!(copied, tuid)
             catch e
                 skipped[tuid] = sprint(showerror, e); continue

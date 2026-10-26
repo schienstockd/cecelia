@@ -603,6 +603,8 @@ waiting:
   at x=0.
 - Marks carry the panel value as **`fkey`** (the series key, or the image), so one channel name
   serves both modes.
+- **Facet headers are fitted like tick labels** (#1770): each is capped at one facet band and
+  middle-shortened past it, full name on hover (`fitFacetHeaders` → `plots/axisLabelFit.ts`).
 - The `facetBy` field replaced a boolean `facet`; read it through **`facetMode`**, which migrates
   saved canvases (`facet: true` → `'series'`). A plot that silently un-facets on upgrade is a
   regression nobody reports — pinned in `plots/facetMode.test.ts`.

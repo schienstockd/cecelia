@@ -101,6 +101,12 @@ reading for this plan):
   `viewerLook` doesn't read `settings.getPopEyes`), so a movie recorded
   from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
   `trackPopHidden`).
+- The ribbon eyes (`getPopEyes(…, 'ribbons')`, #1766) reach the movie only as their off paths
+  (`trackPopHidden`); the renderer still gates a ribbon on the manager's `show`
+  (`overlay_author.jl`, `L.show && !(L.path in hidden)`), so a ribbon the viewer turned on for a pop
+  the manager hides is not recorded. Same fix as the point eyes: carry the on eyes, drop the `show`
+  gate for a viewer look. The off paths are also path-only, so one pop type's hide covers a same-path
+  pop of another type on that segmentation.
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.

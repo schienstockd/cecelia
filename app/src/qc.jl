@@ -790,8 +790,11 @@ end
 # set-scope, cluster all images at once, and write one QC doc per (image, segmentation) keyed by the
 # segmentation value_name). `unit` = "cells" (clustPops) or "tracks" (clustTracks) — drives the
 # banked count key (nCells/nTracks) and the finding wording. Best-effort; never fails the task.
+# `image_findings` (uID → findings) appends per-IMAGE findings to every segment doc of that image — how
+# clustRegions carries its input neighbour graph's QC (`_region_graph_findings`) into the run's own QC.
 function write_cluster_qc!(imgs::AbstractVector, fun_name::AbstractString, qc_out_path::AbstractString;
                            unit::AbstractString = "cells", suffix::AbstractString = "",
+                           image_findings::AbstractDict = Dict{String,Any}(),
                            on_log::Function = _ -> nothing)
     isfile(qc_out_path) || return
     img_by_uid = Dict(img.uid => img for img in imgs)
@@ -807,6 +810,7 @@ function write_cluster_qc!(imgs::AbstractVector, fun_name::AbstractString, qc_ou
             nc   = Int(get(seg, :nClusters, 0))
             frac = Float64(get(seg, :largestClusterFrac, 0.0))
             findings = cluster_qc_findings(total, n, nc, frac; unit = unit)
+            append!(findings, get(image_findings, uid, Dict{String,Any}[]))
             # Bank per (LABEL SET × RUN): a clustering run is identified by its suffix (e.g. "movement"
             # /"test"), and the same label set (vn, e.g. "T"/"B") can be clustered by many runs. Keying
             # QC under the label set alone made a later run OVERWRITE an earlier one — the cohort could

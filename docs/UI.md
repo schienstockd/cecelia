@@ -3271,4 +3271,7 @@ the builder reports the outcome back on `_autoRotatedX` → `@auto-override` →
 margin from the first label's overhang (`w·cosθ` less how far in its tick sits), each capped at a share
 of the panel (`plotHeight`/`plotWidth` from PlotChart). A label past the cap is shortened with
 `fitLabel(…, 'middle')`, so both the image and the population survive. The builder records the full labels on
-`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks.
+`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks. **Facet headers** (`fx`,
+the series/image names when faceted) go through the same path: `facetHeaderMaxPx` caps each at one facet
+band, `fitFacetHeaders` (plot.ts) shortens past it into `_tickTitles.fx`. Exports rebuild through the
+same builder, so they match the screen.

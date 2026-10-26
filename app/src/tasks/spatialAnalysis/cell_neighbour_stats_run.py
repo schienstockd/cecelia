@@ -98,7 +98,9 @@ def run(params):
         log.log(">> permutation test skipped (permutations = 0) — log-odds are descriptive only")
 
     qc = dict(m)
-    qc.update({"nEdges": n_pair_edges, "coverage": coverage,
+    # `nEdges` becomes the basis-PAIR contact count; the graph's own edge count is kept as `graphEdges`
+    # so Julia can re-judge the loaded graph with the graph task's check (`_neighbours_qc_findings`).
+    qc.update({"nEdges": n_pair_edges, "graphEdges": m["nEdges"], "coverage": coverage,
                "nSignificant": n_sig if n_perm > 0 else -1})
     _dump(qc_path, qc)
     log.log(">> neighbourStats done")

@@ -316,9 +316,18 @@ end
 function _kiwi_resolve_tile(puid, ref)
     img = _kiwi_image(puid, ref); img isa String && return _kiwi_bad("live", img)
     vn, cell = String(_kiwi_get(ref, "valueName")), String(_kiwi_get(ref, "cellId"))
-    t, z = something(_kiwi_get(ref, "t"), -1), something(_kiwi_get(ref, "z"), -1)
+    # t / z are optional on a tile ref: an omitted one matches any frame/plane (the freshest live
+    # landscape wins). The viewer always publishes concrete values (z=0 on a 2D image), never -1.
+    t, z = _kiwi_get(ref, "t"), _kiwi_get(ref, "z")
     l = lock(_LANDSCAPE_LOCK) do
-        get(_LANDSCAPE_BY_KEY, (puid, img.uid, vn, Int(t), Int(z)), nothing)
+        best = nothing
+        for c in values(_LANDSCAPE_BY_KEY)
+            (c.projectUid == puid && c.imageUid == img.uid && c.valueName == vn) || continue
+            (t === nothing || c.t == Int(t)) && (z === nothing || c.z == Int(z)) || continue
+            _landscape_alive(c) || continue
+            (best === nothing || c.createdAt > best.createdAt) && (best = c)
+        end
+        best
     end
     (l === nothing || !_landscape_alive(l)) &&
         return _kiwi_bad("live", "no landscape open for $(img.name) at that position")

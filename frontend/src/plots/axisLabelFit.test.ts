@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { rotatedXLayout, fitTickLabels, ROT_BOTTOM_MAX_PX } from './axisLabelFit'
-import { buildPlotOptions, Y_LABEL_MARGIN_MAX } from './plot'
+import { rotatedXLayout, fitTickLabels, facetHeaderMaxPx, ROT_BOTTOM_MAX_PX } from './axisLabelFit'
+import { buildPlotOptions, fitCellTitles, Y_LABEL_MARGIN_MAX } from './plot'
 import type { PlotDataResponse } from './types'
 
 // #1738 — rotated x labels got a fixed bottom margin whatever their length, and the left margin never
@@ -99,5 +99,54 @@ describe('buildPlotOptions — long rotated category labels', () => {
     expect(opts.marginLeft).toBeLessThanOrEqual(Y_LABEL_MARGIN_MAX)
     expect(y).toContain('…')
     expect(opts._tickTitles.y[y]).toBe(path(1))
+  })
+})
+
+// #1770 — facet headers (series names when faceted by series) were neither sized nor shortened, so a
+// long one ran over its neighbours'.
+describe('facetHeaderMaxPx', () => {
+  it('is one facet band (Plot: inner padding 0.1, no outer) less a gap', () => {
+    expect(facetHeaderMaxPx(390, 4, 11)).toBeCloseTo(390 / 3.9 - 6)
+  })
+  it('narrows with more facets, never below a few characters', () => {
+    expect(facetHeaderMaxPx(400, 8, 11)).toBeLessThan(facetHeaderMaxPx(400, 2, 11))
+    expect(facetHeaderMaxPx(100, 50, 11)).toBe(33)
+  })
+  it('never shortens when the width is unknown', () => {
+    expect(facetHeaderMaxPx(0, 4, 11)).toBe(Infinity)
+  })
+})
+
+describe('buildPlotOptions — facet headers', () => {
+  it('series facets: long headers are shortened to their panel, full name on hover', () => {
+    const opts = build({ facetBy: 'series', rotateXLabel: false })
+    const shown = opts.fx.tickFormat(path(1))
+    expect(shown).toContain('…')
+    expect(opts._tickTitles.fx[shown]).toBe(path(1))
+    expect(opts._tickTitles.x).toBeUndefined()
+  })
+  it('the shortened header fits one facet band of the built margins', () => {
+    const opts = build({ facetBy: 'series', rotateXLabel: false })
+    const inner = 400 - opts.marginLeft - opts.marginRight
+    const w = (s: string) => s.length * 11 * 0.55   // the builder's metric without a DOM
+    expect(w(opts.fx.tickFormat(path(1)))).toBeLessThanOrEqual(inner / 7.9 - 6)
+  })
+  it('leaves headers alone when they fit', () => {
+    const opts = build({ facetBy: 'series', rotateXLabel: false, plotWidth: 20000 })
+    expect(opts.fx.tickFormat).toBeUndefined()
+    expect(opts._tickTitles?.fx).toBeUndefined()
+  })
+  it('unfaceted: no facet header fit at all', () => {
+    expect(build({ rotateXLabel: false }).fx).toBeUndefined()
+  })
+})
+
+describe('fitCellTitles — grid-facet cell titles (track plots)', () => {
+  it('shortens a long title to one cell and keeps the full name for hover', () => {
+    const [a, b] = fitCellTitles([{ t: path(1), fx: 0 }, { t: 'short', fx: 1 }], 300, 2, 10)
+    expect(a.t).toContain('…')
+    expect(a.t.length * 10 * 0.55).toBeLessThanOrEqual(300 / 1.9 - 6 - 4)
+    expect(a.full).toBe(path(1))
+    expect(b).toEqual({ t: 'short', fx: 1, full: 'short' })
   })
 })

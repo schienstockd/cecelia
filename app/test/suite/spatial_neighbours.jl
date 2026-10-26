@@ -51,6 +51,39 @@ end
     @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7, 0.8))["code"] == "spatial.many_isolated"
 end
 
+@testset "clustRegions carries the neighbour graph's sparse-graph QC (#1771)" begin
+    # the region runner banks per-image `graphMetrics` of the graph it loaded; the run's QC must flag a
+    # sparse one with the graph task's own finding — per image, not pooled across the set
+    d = mktempdir(); p = joinpath(d, "region_qc.json")
+    open(p, "w") do io
+        JSON3.write(io, Dict("nClusters" => 3, "perSegment" => [
+            Dict("uID" => "sparse", "valueName" => "B", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4),
+            Dict("uID" => "sparse", "valueName" => "T", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4),
+            Dict("uID" => "dense",  "valueName" => "B", "n" => 50, "nClusters" => 3, "largestClusterFrac" => 0.4)],
+            "graphMetrics" => Dict(
+                "sparse" => Dict("nCells" => 100, "nEdges" => 110, "meanDegree" => 2.2, "isolatedFrac" => 0.1),
+                "dense"  => Dict("nCells" => 100, "nEdges" => 700, "meanDegree" => 14.6, "isolatedFrac" => 0.0))))
+    end
+    gf = Cecelia._region_graph_findings(p, "r30")
+    @test collect(keys(gf)) == ["sparse"]                              # the dense image is clean
+    f = only(gf["sparse"])
+    @test f["code"] == "spatial.sparse_graph"                          # the graph task's key + text
+    @test f["detail"]["meanDegree"] == 2.2 && f["detail"]["graphSuffix"] == "r30"
+    # an older run (no graphMetrics), a missing or an unreadable file → no findings, never a throw
+    @test isempty(Cecelia._region_graph_findings(Dict{String,Any}("nClusters" => 3), "r30"))
+    @test isempty(Cecelia._region_graph_findings(joinpath(d, "absent.json"), "r30"))
+    bad = joinpath(d, "bad.json"); write(bad, "{ not json")
+    @test isempty(Cecelia._region_graph_findings(bad, "r30"))
+
+    # banked into the run's own QC: every segment doc of the sparse image carries it, the dense one not
+    imgs = [CciaImage(; uid = "sparse", dir = mktempdir()), CciaImage(; uid = "dense", dir = mktempdir())]
+    Cecelia.write_cluster_qc!(imgs, "clustRegions.cluster", p; suffix = "reg", image_findings = gf)
+    codes(img, vn) = [String(x["code"]) for x in read_qc(img, "clustRegions.cluster", vn)["findings"]]
+    @test "spatial.sparse_graph" in codes(imgs[1], "B.reg")
+    @test "spatial.sparse_graph" in codes(imgs[1], "T.reg")
+    @test !("spatial.sparse_graph" in codes(imgs[2], "B.reg"))
+end
+
 
 @testset "aggregate DBSCAN ids (Clustering.jl)" begin
     # two dense blobs + one far noise point → two aggregates, noise = id 0
@@ -246,6 +279,62 @@ end
         qc = Cecelia.read_qc(img, "spatialAnalysis.cellContacts", "B")
         @test qc !== nothing && qc["metrics"]["nTargets"] == 1
         @test any(f -> f["code"] == "contact.no_target_cells", qc["findings"])
+        rm(td; recursive=true)
+    end
+end
+
+# The MESH route end to end (#1772): Julia resolves the targets, Python meshes the label store and
+# splits B per target. The CONTMESH fixture is the one with a label zarr — two rows of A / near / far
+# cubes, ~2 µm and ~14 µm surface gaps (python/cecelia/tests/make_contacts_mesh_fixture.py).
+@testset "contactsMeshes one column set per target (CONTMESH)" begin
+    src = fixture_path("CONTMESH", "1", "CtMsh1", "labels", "seg.zarr")
+    if !have_fixture(src)
+        @test_skip "contactsMeshes per target (fixture missing)"
+    else
+        td = mktempdir()
+        cp(fixture_path("CONTMESH"), joinpath(td, "CONTMESH"))
+        img = Cecelia._load_image(joinpath(td, "CONTMESH", "1", "CtMsh1"))
+        m = PopulationMap(pop_type="flow", value_name="seg")
+        band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
+        add_pop!(m, "A"; gate=band(50, 150)); add_pop!(m, "near"; gate=band(150, 250))
+        add_pop!(m, "far"; gate=band(250, 350))
+        save_pop_map!(m, img)
+        logs = String[]
+        run(popsB; combine = false) = Cecelia._run_task(ContactsMeshes(), img,
+            Dict{String,Any}("popsA" => ["seg/A"], "popsB" => popsB, "maxContactDist" => 5.0,
+                             "combineTargets" => combine); on_log = l -> push!(logs, l))
+        col(kind, t) = "flow.cell.$(kind)#$(t)"
+        read_cols(ts) = sort(label_props(img; value_name="seg") |>
+            select_cols([col(k, t) for t in ts for k in ("contact", "min_distance", "contact_id")]) |> as_df,
+            :label)[[1, 4], :]                                          # the A cells
+
+        # two targets → two column sets, each pairing only with its own target's cells
+        res = run(["seg/near", "seg/far"])
+        @test res !== nothing || error(join(logs, "\n"))
+        @test res["targets"] == ["flow.seg_near", "flow.seg_far"]
+        per = read_cols(res["targets"])
+        @test per.label == [1, 4]
+        @test per[!, col("contact_id", "flow.seg_near")] == [2.0, 5.0]
+        @test per[!, col("contact_id", "flow.seg_far")] == [3.0, 6.0]
+        dn = per[!, col("min_distance", "flow.seg_near")]; df = per[!, col("min_distance", "flow.seg_far")]
+        @test all(d -> 1.0 < d < 3.0, dn) && all(d -> 12.0 < d < 15.0, df)    # µm, x/y scale 1
+        @test per[!, col("contact", "flow.seg_near")] == [1.0, 1.0]
+        @test per[!, col("contact", "flow.seg_far")] == [0.0, 0.0]
+        qc = Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")
+        @test qc !== nothing && qc["metrics"]["nTargets"] == 2 && qc["metrics"]["nContacts"] == 2
+
+        # combineTargets → one pooled set = the nearer target's distance and id
+        res = run(["seg/near", "seg/far"]; combine = true)
+        @test res["targets"] == ["flow.seg_far+seg_near"]
+        pooled = read_cols(res["targets"])
+        @test pooled[!, col("min_distance", "flow.seg_far+seg_near")] == dn
+        @test pooled[!, col("contact_id", "flow.seg_far+seg_near")] == [2.0, 5.0]
+        @test Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")["metrics"]["nTargets"] == 1
+
+        # a later per-target run names the pooled columns it leaves beside its own
+        empty!(logs)
+        run(["seg/near", "seg/far"])
+        @test any(l -> occursin("earlier combined columns", l) && occursin("seg_far+seg_near", l), logs)
         rm(td; recursive=true)
     end
 end

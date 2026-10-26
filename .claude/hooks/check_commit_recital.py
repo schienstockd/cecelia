@@ -58,8 +58,10 @@ That is what turns the recital's pending `_finding` rows into evidence in the ro
 `python/cecelia/effectiveness/rollup.py`. Log-write failure is not a commit blocker (best-effort);
 the presence-check is the only gate.
 
-Merge / cherry-pick / revert commits are skipped entirely: their messages are git-generated,
-and gate 3 must not demand tags for a branch's pending findings because a merge landed.
+Merge / cherry-pick / revert commits and `rebase -i` rewords are skipped entirely (git_context
+`in_sequencer_commit`): their changes are other commits' already-reviewed ones, and gate 3 must not
+demand tags for a branch's pending findings because a merge landed. A clean cherry-pick or revert
+never reaches this hook — git skips `commit-msg` for it.
 
 Escape valve
 ------------
