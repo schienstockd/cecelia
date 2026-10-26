@@ -19,9 +19,9 @@ enforced by tests, so skipping them fails the build. Unification status:
 
 ## What already exists
 
-[`docs/inventory/FRONTEND.md`](../docs/inventory/FRONTEND.md) — every shared component, store and util.
-It's a flat bullet list, so `grep -n -i '<thing>' docs/inventory/FRONTEND.md` is the whole lookup; you
-never need to read the file.
+Before adding an export, grep [`docs/inventory/FRONTEND.md`](../docs/inventory/FRONTEND.md) (flat
+bullets; never read it whole), then `grep -rn src/` for what your code READS (`device.limits`,
+`onActivated`, a palette constant), not its name. The inventory is a floor, not the whole lookup.
 
 ## Conventions
 
