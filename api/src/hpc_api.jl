@@ -75,6 +75,9 @@ api_hpc_test(_body_bytes) = 200, JSON3.write(Cecelia.hpc_test_dict(hpc_test_conn
 # says what is happening and an ssh call per poll would only add load on the login node.
 
 const _HPC_ENV_JOB_ID = "hpc-env-install"
+# Why the last install from this backend failed, shown beside Install until one succeeds: the rail's
+# log scrolls away, and "Not installed" alone hides a refused submit.
+const _HPC_ENV_LAST_ERROR = Ref("")
 
 function api_hpc_env_get(_req)
     lock = Cecelia.hpc_lock_hash()
@@ -86,6 +89,8 @@ function api_hpc_env_get(_req)
         base["configured"] = true
         b = hpc_backend()
         merge!(base, Cecelia.hpc_env_status_dict(hpc_env_status(b, c, hpc_remote_root(c); lock)))
+        base["installed"] && (_HPC_ENV_LAST_ERROR[] = "")
+        !base["installed"] && isempty(base["job"]) && (base["error"] = _HPC_ENV_LAST_ERROR[])
     catch e
         e isa HpcError || rethrow()
         base["error"] = e.msg
@@ -111,6 +116,7 @@ function _run_hpc_env_install(c, b)
     fun = "hpc:install-env"
     ws_status(nothing, id, "running", ""; fun = fun, pool = "job")
     ok = false
+    _HPC_ENV_LAST_ERROR[] = ""
     try
         ws_progress(nothing, id, 0.02)
         r = hpc_install_env!(b, c, hpc_remote_root(c);
@@ -119,8 +125,11 @@ function _run_hpc_env_install(c, b)
                              cancelled = () -> job_cancelled(id))
         ws_log(nothing, id, r.ok ? "[DONE] $(r.message)" : "[ERROR] $(r.message)")
         ok = r.ok
+        ok || job_cancelled(id) || (_HPC_ENV_LAST_ERROR[] = r.message)
     catch e
-        ws_log(nothing, id, "[ERROR] " * (e isa HpcError ? e.msg : sprint(showerror, e)))
+        msg = e isa HpcError ? e.msg : sprint(showerror, e)
+        ws_log(nothing, id, "[ERROR] " * msg)
+        _HPC_ENV_LAST_ERROR[] = msg
     finally
         ok && ws_progress(nothing, id, 1.0)
         ws_status(nothing, id, ok ? "done" : (job_cancelled(id) ? "cancelled" : "failed"), "";

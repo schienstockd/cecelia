@@ -13,7 +13,7 @@
                                         class = "gpu", cpus = 8, mem_gb = 32, gpus = 1, walltime_min = 90))
     @test startswith(s, "#!/bin/bash\n")
     for d in ("-N cecelia-seg_one", "-o /scratch/c/jobs/t1/job.log", "-j oe",
-              "-l select=1:ncpus=8:mem=32gb:ngpus=1", "-l walltime=1:30:00", "-q gpuq", "-A lab01",
+              "-l ncpus=8", "-l mem=32gb", "-l ngpus=1", "-l walltime=1:30:00", "-q gpuq", "-A lab01", "-P lab01",
               "-M me@uni.edu", "-m ae")
         @test occursin("#PBS $d\n", s)
     end
@@ -22,8 +22,20 @@
     s2 = hpc_render_script(PbsBackend(HpcSite("pbs", "h", 22, "~/c", "", HpcClass("", "", "", "", ""),
                                               HpcClass("", "", "", "", ""))),
                            HpcJobSpec(; name = "x", dir = "/d", body = "true", account = "grant7"))
-    @test occursin("#PBS -l select=1:ncpus=1:mem=4gb\n", s2) && !occursin("ngpus", s2)
-    @test occursin("#PBS -A grant7\n", s2) && !occursin("#PBS -q", s2) && !occursin("#PBS -M", s2)
+    # Job-wide resources, never `select`: Gadi refuses `-l select` outright.
+    @test occursin("#PBS -l ncpus=1\n#PBS -l mem=4gb\n", s2) && !occursin("ngpus", s2) && !occursin("select", s2)
+    # The account goes out as `-P` too: Gadi charges and grants storage by project, ignoring `-A`.
+    @test occursin("#PBS -A grant7\n#PBS -P grant7\n", s2) && !occursin("#PBS -q", s2) && !occursin("#PBS -M", s2)
+
+    # A downloading job goes to the internet queue (Gadi's copyq); without one, to the class's queue.
+    cpu = HpcClass("normal", "", "", "", "")
+    net = HpcSite("pbs", "h", 22, "~/c", "", cpu, cpu, "copyq")
+    @test occursin("#PBS -q copyq\n", hpc_render_script(PbsBackend(net),
+                   HpcJobSpec(; name = "x", dir = "/d", body = "true", net = true)))
+    @test occursin("#PBS -q normal\n", hpc_render_script(PbsBackend(net),
+                   HpcJobSpec(; name = "x", dir = "/d", body = "true")))
+    @test occursin("#PBS -q normal\n", hpc_render_script(PbsBackend(HpcSite("pbs", "h", 22, "~/c", "", cpu, cpu)),
+                   HpcJobSpec(; name = "x", dir = "/d", body = "true", net = true)))
 end
 
 @testset "HPC PBS: status + exit-reason parsing" begin
@@ -83,7 +95,7 @@ end
             lines = String[]
             r = hpc_watch_job(b, c, id, dir; on_log = l -> push!(lines, l), poll_s = 0.2)
             @test r.exit == 5 && "from-pbs" in lines
-            @test occursin("#PBS -l select=1:ncpus=1:mem=4gb", read(joinpath(dir, "job.sh"), String))
+            @test occursin("#PBS -l ncpus=1\n#PBS -l mem=4gb", read(joinpath(dir, "job.sh"), String))
 
             dir_c = root * "/jobs/p2"
             id_c = hpc_submit(b, c, HpcJobSpec(; name = "p2", dir = dir_c, body = "sleep 300"))

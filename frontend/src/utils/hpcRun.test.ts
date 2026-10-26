@@ -59,7 +59,7 @@ describe('hpcRun', () => {
   const cls = (over = {}) => ({ queue: '', account: '', qos: '', directives: '', preamble: '', ...over })
   const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
     available: true, schedulers: [],
-    site: { scheduler: 'slurm', host: 'hpc.example.edu', port: 22, remoteDir: '~/cecelia', email: '',
+    site: { scheduler: 'slurm', host: 'hpc.example.edu', port: 22, netQueue: '', remoteDir: '~/cecelia', email: '',
             cpu: cls({ queue: 'cpu,long', account: 'p1' }), gpu: cls({ queue: 'gpu-a100', account: 'p2', qos: 'gpu' }) },
     identity: { profile: 'default', user: 'jsmith', keyFile: '~/.ssh/id_ed25519' },
     project: null, ...over,
