@@ -283,6 +283,62 @@ end
     end
 end
 
+# The MESH route end to end (#1772): Julia resolves the targets, Python meshes the label store and
+# splits B per target. The CONTMESH fixture is the one with a label zarr — two rows of A / near / far
+# cubes, ~2 µm and ~14 µm surface gaps (python/cecelia/tests/make_contacts_mesh_fixture.py).
+@testset "contactsMeshes one column set per target (CONTMESH)" begin
+    src = fixture_path("CONTMESH", "1", "CtMsh1", "labels", "seg.zarr")
+    if !have_fixture(src)
+        @test_skip "contactsMeshes per target (fixture missing)"
+    else
+        td = mktempdir()
+        cp(fixture_path("CONTMESH"), joinpath(td, "CONTMESH"))
+        img = Cecelia._load_image(joinpath(td, "CONTMESH", "1", "CtMsh1"))
+        m = PopulationMap(pop_type="flow", value_name="seg")
+        band(lo, hi) = RectangleGate("mean_intensity_0", "mean_intensity_1", lo, hi, -1e12, 1e12)
+        add_pop!(m, "A"; gate=band(50, 150)); add_pop!(m, "near"; gate=band(150, 250))
+        add_pop!(m, "far"; gate=band(250, 350))
+        save_pop_map!(m, img)
+        logs = String[]
+        run(popsB; combine = false) = Cecelia._run_task(ContactsMeshes(), img,
+            Dict{String,Any}("popsA" => ["seg/A"], "popsB" => popsB, "maxContactDist" => 5.0,
+                             "combineTargets" => combine); on_log = l -> push!(logs, l))
+        col(kind, t) = "flow.cell.$(kind)#$(t)"
+        read_cols(ts) = sort(label_props(img; value_name="seg") |>
+            select_cols([col(k, t) for t in ts for k in ("contact", "min_distance", "contact_id")]) |> as_df,
+            :label)[[1, 4], :]                                          # the A cells
+
+        # two targets → two column sets, each pairing only with its own target's cells
+        res = run(["seg/near", "seg/far"])
+        @test res !== nothing || error(join(logs, "\n"))
+        @test res["targets"] == ["flow.seg_near", "flow.seg_far"]
+        per = read_cols(res["targets"])
+        @test per.label == [1, 4]
+        @test per[!, col("contact_id", "flow.seg_near")] == [2.0, 5.0]
+        @test per[!, col("contact_id", "flow.seg_far")] == [3.0, 6.0]
+        dn = per[!, col("min_distance", "flow.seg_near")]; df = per[!, col("min_distance", "flow.seg_far")]
+        @test all(d -> 1.0 < d < 3.0, dn) && all(d -> 12.0 < d < 15.0, df)    # µm, x/y scale 1
+        @test per[!, col("contact", "flow.seg_near")] == [1.0, 1.0]
+        @test per[!, col("contact", "flow.seg_far")] == [0.0, 0.0]
+        qc = Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")
+        @test qc !== nothing && qc["metrics"]["nTargets"] == 2 && qc["metrics"]["nContacts"] == 2
+
+        # combineTargets → one pooled set = the nearer target's distance and id
+        res = run(["seg/near", "seg/far"]; combine = true)
+        @test res["targets"] == ["flow.seg_far+seg_near"]
+        pooled = read_cols(res["targets"])
+        @test pooled[!, col("min_distance", "flow.seg_far+seg_near")] == dn
+        @test pooled[!, col("contact_id", "flow.seg_far+seg_near")] == [2.0, 5.0]
+        @test Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")["metrics"]["nTargets"] == 1
+
+        # a later per-target run names the pooled columns it leaves beside its own
+        empty!(logs)
+        run(["seg/near", "seg/far"])
+        @test any(l -> occursin("earlier combined columns", l) && occursin("seg_far+seg_near", l), logs)
+        rm(td; recursive=true)
+    end
+end
+
 @testset "neighbourStats spec — graph knobs live on the graph, not here" begin
     # The graph parameters (method / radius / k) deliberately do NOT live here any more — they belong
     # to the graph this task consumes (`graphSuffix` → spatialAnalysis.cellNeighbours), so a
