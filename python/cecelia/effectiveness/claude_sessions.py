@@ -79,14 +79,23 @@ def claude_home() -> pathlib.Path:
 JUDGE_REVIEW_SCRIPT = ("judge", "review.py")
 
 
-def _parent_argvs(pid: int, proc: pathlib.Path, depth: int) -> _t.Iterator[list[str]]:
-    """The argv of each of the nearest `depth` parent processes, nearest first."""
+def _parents(pid: int, proc: pathlib.Path, depth: int) -> _t.Iterator[int]:
+    """The nearest `depth` parent pids, nearest first."""
     for _ in range(depth):
         try:
             stat = (proc / str(pid) / "stat").read_text(encoding="utf-8", errors="replace")
             pid = int(stat.rsplit(")", 1)[-1].split()[1])   # field 4, ppid
-            argv = (proc / str(pid) / "cmdline").read_bytes().split(b"\0")
         except (OSError, ValueError, IndexError):
+            return
+        yield pid
+
+
+def _parent_argvs(pid: int, proc: pathlib.Path, depth: int) -> _t.Iterator[list[str]]:
+    """The argv of each of the nearest `depth` parent processes, nearest first."""
+    for parent in _parents(pid, proc, depth):
+        try:
+            argv = (proc / str(parent) / "cmdline").read_bytes().split(b"\0")
+        except OSError:
             return
         yield [a.decode("utf-8", "replace") for a in argv if a]
 
@@ -187,7 +196,7 @@ def recent_cwds(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> tuple
     return tuple(out)
 
 
-def _typed_by_a_person(entry: dict) -> bool:
+def typed_by_a_person(entry: dict) -> bool:
     """A prompt Dominik typed — not a tool result, an injected meta message, a compaction summary,
     or a message from elsewhere: `origin.kind` is "human" for a typed prompt, and
     "task-notification" / "peer" / "auto-continuation" otherwise (older entries carry no `origin`)."""
@@ -205,7 +214,7 @@ def latest_recap(transcript: pathlib.Path, tail_bytes: int = RECAP_TAIL_BYTES) -
     """(timestamp, text) of the session's newest recap, or None. A recap followed by a prompt
     Dominik typed is out of date — he has been back since — so it doesn't count."""
     for entry in _tail_entries(transcript, tail_bytes):
-        if _typed_by_a_person(entry):
+        if typed_by_a_person(entry):
             return None
         if entry.get("type") == "system" and entry.get("subtype") == "away_summary":
             text = entry.get("content")
@@ -341,6 +350,25 @@ def live_sessions(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib
     children = child_pids(proc)
     found = (_session(p, home / "projects", proc, context, children) for p in sessions_dir.glob("*.json"))
     return sorted((s for s in found if s is not None), key=lambda s: s.pid)
+
+
+def calling_session(home: pathlib.Path | None = None, proc: pathlib.Path = pathlib.Path("/proc"),
+                    pid: int | None = None, depth: int = 8) -> str | None:
+    """The id of the Claude Code session this process runs under (a command Claude ran from its
+    window), or None. `$CLAUDE_CODE_SESSION_ID`, which Claude Code sets for the commands it runs on
+    every OS; else (an older Claude Code) the nearest parent with a live `sessions/<pid>.json`,
+    which needs `/proc`."""
+    if os.environ.get("CLAUDE_CODE_SESSION_ID"):
+        return os.environ["CLAUDE_CODE_SESSION_ID"]
+    sessions_dir = (home or claude_home()) / "sessions"
+    for parent in _parents(pid or os.getpid(), proc, depth):
+        try:
+            meta = json.loads((sessions_dir / f"{parent}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(meta, dict) and meta.get("sessionId") and proc_start(parent, proc) == str(meta.get("procStart")):
+            return meta["sessionId"]
+    return None
 
 
 def session_name(session_id: str, home: pathlib.Path | None = None) -> str | None:

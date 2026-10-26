@@ -30,7 +30,7 @@ from cecelia.effectiveness.agents import (
     BADGE_COLOURS, AgentRow, PrCache, badge_slots, branch_recital, ci_state, pr_by_branch, session_badge,
     sort_rows)
 from cecelia.effectiveness.claude_sessions import (
-    Session, context_used, ends_with_question, latest_recap, live_sessions, proc_start, read_context, recent_cwds,
+    Session, calling_session, context_used, ends_with_question, latest_recap, live_sessions, proc_start, read_context, recent_cwds,
     save_context, session_name)
 from cecelia.effectiveness.log import unresolved_findings
 
@@ -223,6 +223,36 @@ class LiveSessionsTest(_FakeHome):
         self.process(10, "777", comm="claude (x) y")
         self.assertEqual(proc_start(10, self.proc), "777")
         self.assertIsNone(proc_start(11, self.proc))
+
+
+class CallingSessionTest(_FakeHome):
+    """`codrive-record` with no argument records the session that ran it: claude → bash → pixi → python."""
+
+    def setUp(self):
+        super().setUp()
+        env = mock.patch.dict(os.environ)
+        env.start()
+        self.addCleanup(env.stop)
+        os.environ.pop("CLAUDE_CODE_SESSION_ID", None)   # these tests run under a real session
+
+    def test_the_session_id_claude_code_sets_wins(self):
+        os.environ["CLAUDE_CODE_SESSION_ID"] = "from-env"
+        self.assertEqual(calling_session(self.home, self.proc, pid=30), "from-env")
+
+    def test_finds_the_nearest_live_session_up_the_process_chain(self):
+        self.process(10, "500")
+        self.session(10, "500", "a")
+        self.process(20, "1", ppid=10)
+        self.process(30, "1", ppid=20)
+        self.assertEqual(calling_session(self.home, self.proc, pid=30), "a")
+
+    def test_a_stale_session_file_or_no_session_is_none(self):
+        self.process(10, "999")                 # pid reused by another process
+        self.session(10, "500", "a")
+        self.process(30, "1", ppid=10)
+        self.assertIsNone(calling_session(self.home, self.proc, pid=30))
+        self.process(40, "1")                   # a plain terminal: no session above it
+        self.assertIsNone(calling_session(self.home, self.proc, pid=40))
 
 
 class RecentCwdsTest(unittest.TestCase):
