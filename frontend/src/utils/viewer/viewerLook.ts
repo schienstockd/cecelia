@@ -16,6 +16,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { trackableValueNames, CELL_POP_TYPES } from '../overlayAutoShow'
 import { colourForRender, channelsForRender } from '../viewerColormap'
+import type { PopEyes } from './popEyes'
 
 export interface ViewerLookInput {
   viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas'>>) | null
@@ -35,6 +36,10 @@ export interface ViewerLookInput {
   showGatedTracks: boolean
   /** per segmentation, the pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
   hiddenTrackPops: Record<string, string[]>
+  /** per segmentation, the viewer's point / ribbon eyes `{ "<popType>::<path>": on }`
+   *  (`settings.getPopEyes`) — what it draws, whatever the pop manager's `show` */
+  popEyes: Record<string, PopEyes>
+  ribbonEyes: Record<string, PopEyes>
   pointSize: number
   pointBorder: number
   labelOpacity: number
@@ -58,6 +63,9 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const popsOn = popTypes.length > 0
   const popSeg = (popsOn ? i.gating.valueName : '') || tracked[0] || i.gating.valueName || i.maskValueName
   const hidden = Object.fromEntries(Object.entries(i.hiddenTrackPops).filter(([, v]) => v.length))
+  const eyes = (bag: Record<string, PopEyes>) =>
+    Object.fromEntries(Object.entries(bag).filter(([, e]) => Object.keys(e).length).map(([vn, e]) => [vn, { ...e }]))
+  const popEyes = eyes(i.popEyes), ribbonEyes = eyes(i.ribbonEyes)
   const is3D = i.viewState?.dims?.ndisplay === 3
   const c = i.viewState?.camera
   const canvas = i.viewState?.canvas
@@ -91,6 +99,11 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     popAllSegmentations: true,
     popType,
     ...(popSeg ? { popValueName: popSeg } : {}),
+    // the viewer's eyes, keyed by pop type + path: a pop it draws whose manager `show` is off is in the
+    // movie, and a ribbon hide covers its own pop type only. A pop with no eye draws its `show`
+    // (`look_eye_on`); `hiddenTrackPops` (path-only) stays for a pop with no ribbon eye.
+    ...(Object.keys(popEyes).length ? { popEyes } : {}),
+    ...(Object.keys(ribbonEyes).length ? { ribbonEyes } : {}),
     showGatedTracks: i.showGatedTracks,
     ...(Object.keys(hidden).length ? { hiddenTrackPops: hidden } : {}),
     // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
@@ -183,6 +196,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
     hiddenTrackPops: Object.fromEntries(trackableValueNames(img).map(vn =>
       [vn, [...settings.getTrackPopHidden(img.uid, vn)]])),
+    popEyes: settings.getImagePopEyes(img.uid, 'points'),
+    ribbonEyes: settings.getImagePopEyes(img.uid, 'ribbons'),
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
     pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
     labelOpacity: settings.viewerLabelOpacity,

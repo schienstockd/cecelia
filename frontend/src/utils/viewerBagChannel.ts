@@ -11,7 +11,10 @@
 // is not shimmed — pure-logic rule, no jsdom). Extracting the switch out is the pattern
 // `lib/openProjectChannel.ts` already establishes for the same reason.
 
+import { POP_EYES_KEYS } from './viewer/popEyes'
+
 export type ViewerBagKind = 'labelVis' | 'trackVis' | 'branchVis' | 'setPrefs' | 'imageVersion' | 'trackPopHidden'
+  | 'popEyes' | 'ribbonEyes'
 
 export interface ViewerBagEvent {
   kind: ViewerBagKind
@@ -43,6 +46,9 @@ export function decodeViewerBagEvent(
     case 'cc.viewerSetPrefs':         return { kind: 'setPrefs',     value }
     case 'cc.viewerImageVersion':     return { kind: 'imageVersion', value }
     case 'cc.viewerTrackPopHidden':   return { kind: 'trackPopHidden', value }
+    // the viewer's per-pop point / ribbon eyes — a movie recorded from the main window draws them
+    case POP_EYES_KEYS.points:        return { kind: 'popEyes',      value }
+    case POP_EYES_KEYS.ribbons:       return { kind: 'ribbonEyes',   value }
     default:                          return null
   }
 }

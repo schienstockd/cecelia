@@ -687,6 +687,7 @@ function _resolve_keyframe_overlay_builders(img, overlays_config; frame = nothin
         movie_mask(img; value_name = mask_vn, contour_px = _ov_int(overlays_config, "maskContourPx", 1),
                    opacity = movie_overlay_style(k -> get(overlays_config, k, nothing)).mask_opacity,
                    pop_type = pt, pop_types = scope.pop_types, pops_filter = scope.pops_filter,
+                   pop_eyes = scope.pop_eyes,
                    all_cells = scope.all_cells,
                    all_cells_colour = _ov_str(overlays_config, "allCellsColour", OVERLAY_GREY),
                    # colour-by only when asked (`maskColourBy`, the batch's `colourLabels`) — else
