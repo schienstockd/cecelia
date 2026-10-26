@@ -250,9 +250,42 @@ end
                 @test c == pal[mod(Int(id) - 1, length(pal)) + 1]
             end
 
-            # A `pops_filter` that matches nothing draws nothing.
-            @test isempty(mask_id_colours(img; value_name = "B", pop_type = "flow",
-                                          pops_filter = String["/no-such"]))
+            # A `pops_filter` that matches nothing: every cell grey (the viewer's *Pop colour* mask
+            # with every pop's eye off), not an empty mask.
+            dict_none = mask_id_colours(img; value_name = "B", pop_type = "flow",
+                                        pops_filter = String["/no-such"])
+            @test keys(dict_none) == keys(dict)
+            @test all(==(hex_to_rgb(OVERLAY_GREY)), values(dict_none))
+
+            # The viewer's *Pop colour* rule on real pops (`mask_pop_colours`): a child "half" under
+            # "all" — the deepest pop wins (half solid blue), its parent's left-over cells pale, and with
+            # the parent filtered out its cells go grey.
+            xs = Float64[Float64(v) for v in as_df(select_cols(label_props(img; value_name = "B"), [xchan]))[!, xchan]]
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "half", "parent" => "/all", "colour" => "#0000ff",
+                                 "gate" => merge(gate, Dict{String,Any}("x_max" => sort(xs)[length(xs) ÷ 2])))))))
+            pops = Dict(String(p.path) => Set{Int}(Int.(p.labels)) for p in resolve_pops(img, "flow"; value_name = "B"))
+            half = pops["/all/half"]
+            @test !isempty(half) && length(half) < length(pops["/all"])
+            blue, pale_green = hex_to_rgb("#0000ff"), hex_to_rgb("#99ff99")
+            dict_tree = mask_id_colours(img; value_name = "B", pop_type = "flow")
+            @test keys(dict_tree) == keys(dict)
+            @test all(id -> dict_tree[id] == (id in half ? blue : pale_green), keys(dict_tree))
+            dict_half = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all/half"])
+            @test all(id -> dict_half[id] == (id in half ? blue : hex_to_rgb(OVERLAY_GREY)), keys(dict_half))
+            # the child filtered out → the parent is a leaf again, solid
+            dict_parent = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all"])
+            @test all(==(green), values(dict_parent))
+            # a look's pop types (`pop_types`) are the layers, not `pop_type`
+            @test mask_id_colours(img; value_name = "B", pop_type = "clust", pop_types = ["flow"]) == dict_tree
+            # colour-by recolours the pops' cells only: the grey complement stays grey
+            lpt = as_df(label_props(img; value_name = "B"))
+            ov_half = Dict{String,String}(string(Int(round(Float64(v)))) => "#ff00ff" for v in lpt.centroid_t
+                                          if v isa Real && isfinite(Float64(v)))
+            dict_hcb = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all/half"],
+                                       colour_by = "centroid_t", colour_overrides = ov_half)
+            @test all(id -> dict_hcb[id] == (id in half ? hex_to_rgb("#ff00ff") : hex_to_rgb(OVERLAY_GREY)),
+                      keys(dict_hcb))
 
             # colour_labels — recolour every id in the mask by an obs column. Total overrides
             # → every id gets the same colour, proving the resolver hits every id in the dict
@@ -273,4 +306,25 @@ end
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end
     end
+end
+
+@testset "API: overlay_author — mask_pop_colours ↔ the viewer's maskPopTable (shared fixture)" begin
+    # One colour rule, two languages: the viewer's *Pop colour* mask (`maskPopTable.ts`) and a movie's
+    # population mask (`mask_pop_colours`). Both suites read this fixture, so neither drifts alone.
+    fx = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "frontend", "src", "utils",
+                                           "maskPopTable.parity.json")), String))
+    @test length(fx.cases) >= 5
+    for c in fx.cases
+        layers = [(; cells = Int[Int(x) for x in l.cells],
+                     pops = [(; path = String(p.path), colour = String(p.colour), labels = Int[Int(x) for x in p.labels])
+                             for p in l.pops if !(String(p.path) in String[String(h) for h in get(l, :hidden, String[])])])
+                  for l in c.layers]
+        expected = Dict{Int,RGB{N0f8}}(parse(Int, String(k)) => hex_to_rgb(String(v)) for (k, v) in pairs(c.expected))
+        got = mask_pop_colours(layers)
+        @testset "$(c.name)" begin
+            @test got == expected
+        end
+    end
+    # the movie's pale is the viewer's (`shaders/constants.json`)
+    @test MASK_PARENT_PALE == 0.6
 end

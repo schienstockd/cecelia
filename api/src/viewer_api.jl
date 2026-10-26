@@ -1273,8 +1273,9 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # pops' — those are different segmentations as often as not (mask P14, pop manager on OTI).
     mask_vn = something(mask_value_name, String(_ov(ov_raw, :maskValueName, "")))
     isempty(mask_vn) && (mask_vn = ov_vn)
-    # the pops' paths mean nothing in another segmentation's tree — that mask is every cell
-    mask_vn == ov_vn || (all_cells = true)
+    # its pops as the viewer's *Pop colour* mask picks them (`mask_pop_scope`)
+    mask_scope = mask_pop_scope(plan, ov_vn, mask_vn, ov_pt, ov_paths, all_cells)
+    all_cells = mask_scope.all_cells
     mask_diag["requested"] = show_mask
     if img_err !== nothing
         ov_diag["reason"] = "gating image lookup failed"
@@ -1355,7 +1356,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 mask_co = co_raw_v isa AbstractDict ? co_raw_v : nothing
                 mask = movie_mask(img; value_name = mask_vn, contour_px = mask_contour_px,
                                   opacity = style.mask_opacity, pop_type = ov_pt,
-                                  pops_filter = ov_paths, all_cells = all_cells,
+                                  pop_types = mask_scope.pop_types,
+                                  pops_filter = mask_scope.pops_filter, all_cells = all_cells,
                                   all_cells_colour = all_cells_col,
                                   colour_by = mask_cb, colour_overrides = mask_co)
                 if mask === nothing

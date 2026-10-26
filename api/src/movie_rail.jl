@@ -317,9 +317,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         out["maskContourPx"]   = _cfg_int(cfg, "labelContour", 1)
         # the fill opacity a filled (contour 0) mask blends at — the viewer's `viewerLabelOpacity`
         out["maskOpacity"]     = clamp(Float64(_cfg_get(cfg, "labelOpacity", Float64(MASK_FILL_OPACITY))), 0.0, 1.0)
-        # `allCells` = whole-segmentation mask (every id painted). A batch with pops on filters the
-        # mask by the same pops the points draw; the viewer's mask is always every cell, so a look
-        # read off it says so (`maskAllCells`).
+        # `allCells` = whole-segmentation mask (every id painted). A batch with pops on colours the
+        # mask by the same pops the points draw (`mask_pop_colours`); the viewer's mask is every cell
+        # unless its *Pop colour* is on, and a look read off it says which (`maskAllCells`).
         out["allCells"]        = _cfg_bool(cfg, "maskAllCells", !(show_pops || show_gated))
         # The mask takes the colour-by column only when asked (`colourLabels`, the batch chip); else
         # the per-id palette — the viewer's mask, which colour-by never recolours.
