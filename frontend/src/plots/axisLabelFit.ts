@@ -78,3 +78,19 @@ export function fitTickLabels(labels: readonly unknown[], maxPx: number, measure
   }
   return { format: fit, titles: Object.keys(titles).length ? titles : null }
 }
+
+/** Observable Plot's facet (`fx`) band: inner padding 0.1, no outer padding. */
+export const FACET_PADDING_INNER = 0.1
+/** Clear space kept between neighbouring facet headers, px. */
+export const FACET_HEADER_GAP_PX = 6
+
+/**
+ * The widest a facet header may be. Headers sit centred over their panel, one band `step` apart, so a
+ * header wider than `step` runs into its neighbour's. `innerWidth` = plot width minus the left/right
+ * margins; Infinity (never shorten) when the width isn't known.
+ */
+export function facetHeaderMaxPx(innerWidth: number, nFacets: number, fontPx: number): number {
+  if (!(innerWidth > 0) || nFacets < 1) return Infinity
+  const step = innerWidth / Math.max(1, nFacets - FACET_PADDING_INNER)
+  return Math.max(fontPx * 3, step - FACET_HEADER_GAP_PX)
+}

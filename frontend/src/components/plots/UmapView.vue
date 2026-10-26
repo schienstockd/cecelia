@@ -28,6 +28,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv,
          svgDoc, svgCircles, svgText, svgRect, downloadText, svgSizeWarning } from '../../plots/export'
 import { paletteRange, PALETTES, type VisProps } from '../../plots/plot'
+import { fitLabel } from '../../plots/valueColour'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -178,12 +179,17 @@ function mapRect(x: number, y: number, r: { px: number; py: number; pw: number; 
   const offX = (r.pw - xr * sc) / 2, offY = (r.ph - yr * sc) / 2
   return [r.px + offX + (x - xMin) * sc, r.py + offY + (yMax - y) * sc]
 }
+// A facet title wider than its cell is middle-shortened to it (#1770, same cut as the plot facet
+// headers); the full name goes on hover. Bold, so the estimate is the label chip's 0.6·font per char.
+const fitFacetTitle = (s: string, cellW: number, fsz: number) =>
+  fitLabel(s, Math.max(fsz * 3, cellW - 8), t => t.length * fsz * 0.6, 'middle')
 // facet titles as HTML overlay (CSS px), composited into the export like the centroid labels/legend
 const facetTitles = computed(() => {
   const fs = facets.value
   if (facetBy.value === 'none' || fs.length <= 1) return []
   return fs.map((f, fi) => { const c = facetCell(fi, fs.length, boxW.value, boxH.value)
-    return { label: f.label, x: c.ox + c.cw / 2, y: c.oy + 1 } })
+    const label = fitFacetTitle(f.label, c.cw, labelFont.value)
+    return { label, full: label === f.label ? undefined : f.label, x: c.ox + c.cw / 2, y: c.oy + 1 } })
 })
 
 // ── 2D dot render (no WebGL) ──────────────────────────────────────────────────────────────────────
@@ -584,7 +590,7 @@ function exportSvg(): string {
         body += svgCircles(g.map(i => mapRect(pts[2 * i], pts[2 * i + 1], cell)),
                            { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
       }
-      body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fs[fi].label, { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
+      body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fitFacetTitle(fs[fi].label, cell.cw, fsz), { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
     }
   }
   // legend column (swatch + label + count per row) as vector, right of the plot
@@ -840,7 +846,8 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
             <span v-for="c in centroids" v-show="labels && facetBy === 'none'" :key="c.label" class="uv-label"
                   :style="{ left: lx(c.x), top: ly(c.y), fontSize: labelFont + 'px', ...labelStyle }">{{ c.label }}</span>
             <!-- per-facet titles (small multiples) -->
-            <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title"
+            <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title" :class="{ 'is-short': t.full }"
+                  v-tooltip.top="t.full"
                   :style="{ left: t.x + 'px', top: t.y + 'px', fontSize: labelFont + 'px', color: legendInk }">{{ t.label }}</span>
             <!-- Claude's plot point-out marks. Position computed in plotBoxEl-local px (accounts
                  for the letterbox + facet cell). A mark whose position doesn't resolve (no facet
@@ -912,6 +919,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
 .uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
   font-size: var(--cc-fs-2xs); font-weight: 700; white-space: nowrap; }
+.uv-facet-title.is-short { pointer-events: auto; }   /* shortened: hover for the full name */
 .uv-empty { padding: 1rem; }   /* + .cc-empty .cc-empty-overlay (stretched over the plot box) */
 .uv-empty .pi { font-size: 1.4rem; opacity: 0.6; }
 .uv-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }

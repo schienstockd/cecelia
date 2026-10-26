@@ -71,3 +71,21 @@ export function plotTheme(dark: boolean): { ink: string, ground: string } {
 export function applyPlotTheme(node: SVGElement | null, dark: boolean): void {
   node?.style.setProperty('--plot-background', plotTheme(dark).ground)
 }
+
+/**
+ * Category tick labels / facet headers a builder shortened (plot.ts `fitAxisLabels` → `_tickTitles`,
+ * shortened → full) get the full label as a hover title. Plot gives an axis no title channel, so it's
+ * added to the rendered node. Shared by PlotChart and the bespoke Plot panels.
+ */
+export function titleShortenedTicks(svg: Element,
+    titles: Partial<Record<'x' | 'y' | 'fx', Record<string, string>>> | undefined): void {
+  for (const [axis, map] of Object.entries(titles ?? {})) {
+    svg.querySelectorAll(`g[aria-label="${axis}-axis tick label"] text`).forEach(t => {
+      const full = map?.[t.textContent ?? '']
+      if (!full) return
+      const title = document.createElementNS('http://www.w3.org/2000/svg', 'title')
+      title.textContent = full
+      t.appendChild(title)
+    })
+  }
+}
