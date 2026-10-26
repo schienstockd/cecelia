@@ -1,5 +1,6 @@
 /**
- * The viewer's per-population point eyes — which gated pops the pop-out draws as points.
+ * The viewer's per-population eyes — which gated pops the pop-out draws as points (the Populations
+ * rows) and as cell-track ribbons (the Tracks rows, #1766). One eye per layer, same rules for both.
  *
  * The eye is USER intent, separate from the Population Manager's `show` (#1730): `show` only SEEDS
  * the eye of a pop the viewer has never stored a state for. Stored per (image × segmentation) as
@@ -11,6 +12,12 @@
  */
 import { makePopPathRemap, type PopIdent } from '../popRenameRemap'
 import { soloVisibility } from './channelSolo'
+
+/** Which eye: a pop's points or its cell-track ribbon. Each is its own stored bag. */
+export type EyeLayer = 'points' | 'ribbons'
+/** Where `settings.getPopEyes` keeps each layer's bag. */
+export const POP_EYES_KEYS: Readonly<Record<EyeLayer, string>> =
+  { points: 'cc.viewerPopEyes', ribbons: 'cc.viewerRibbonEyes' }
 
 /** One segmentation's stored eyes: `"<popType>::<path>"` → visible. */
 export type PopEyes = Record<string, boolean>
@@ -53,6 +60,29 @@ export function reconcilePopEyes(
   return out
 }
 
+/**
+ * One segmentation's RIBBON eyes after a fetch — `reconcilePopEyes`, so a gate edit keeps the Tracks
+ * rows as the user left them (#1766). The one addition: while nothing is stored yet, a path in
+ * `legacyHidden` (a ribbon hide kept per path before the ribbons had eyes — `getTrackPopHidden`)
+ * seeds off, so an upgrade does not bring back ribbons the user had hidden.
+ */
+export function reconcileRibbonEyes(
+  stored: Readonly<PopEyes>, legacyHidden: ReadonlySet<string>,
+  prev: readonly EyePop[], next: readonly EyePop[], fetchedTypes: readonly string[],
+): PopEyes {
+  const legacy = Object.keys(stored).length ? new Set<string>() : legacyHidden
+  const seeded = next.map(p => legacy.has(p.path) ? { ...p, show: false } : p)
+  return reconcilePopEyes(stored, prev, seeded, fetchedTypes)
+}
+
+/** One pop's eye flipped from what it reads now (`popEyeOn`). Keyed by segmentation; not mutated. */
+export function flipPopEye(eyes: ReadonlyMap<string, Readonly<PopEyes>>, vn: string,
+                           popType: string, path: string, show: boolean): Map<string, PopEyes> {
+  const out = new Map([...eyes].map(([v, e]) => [v, { ...e }]))
+  out.set(vn, { ...out.get(vn) ?? {}, [eyeKey(popType, path)]: !popEyeOn(eyes, vn, popType, path, show) })
+  return out
+}
+
 /** Same contents — so a reconcile that changed nothing does not rewrite storage. */
 export function samePopEyes(a: Readonly<PopEyes>, b: Readonly<PopEyes>): boolean {
   const ka = Object.keys(a)
@@ -92,4 +122,16 @@ export function soloPopEyes(
 export function popEyeOn(eyes: ReadonlyMap<string, Readonly<PopEyes>>, vn: string,
                          popType: string, path: string, show: boolean): boolean {
   return eyes.get(vn)?.[eyeKey(popType, path)] ?? show
+}
+
+/** The paths whose eye is off, sorted — the ribbon eyes' projection onto `settings.setTrackPopHidden`,
+ *  the per-path shape the movie recorder (`viewerLook`) and the Julia renderer take. */
+export function offPaths(eyes: Readonly<PopEyes>): string[] {
+  const out = new Set<string>()
+  for (const [k, v] of Object.entries(eyes)) {
+    if (v) continue
+    const i = k.indexOf('::')
+    out.add(i < 0 ? k : k.slice(i + 2))
+  }
+  return [...out].sort()
 }

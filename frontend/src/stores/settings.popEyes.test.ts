@@ -38,4 +38,17 @@ describe('settings.getPopEyes / setPopEyes', () => {
     s.getPopEyes('imgA', 'segA')['flow::/a'] = true
     expect(s.getPopEyes('imgA', 'segA')).toEqual({ 'flow::/a': false })
   })
+
+  it('points and ribbons are separate bags', () => {
+    const s = useSettingsStore()
+    s.setPopEyes('imgA', 'segA', { 'flow::/a': false })
+    s.setPopEyes('imgA', 'segA', { 'flow::/a': true }, 'ribbons')
+    setActivePinia(createPinia())
+    const s2 = useSettingsStore()
+    expect(s2.getPopEyes('imgA', 'segA')).toEqual({ 'flow::/a': false })
+    expect(s2.getPopEyes('imgA', 'segA', 'points')).toEqual({ 'flow::/a': false })
+    expect(s2.getPopEyes('imgA', 'segA', 'ribbons')).toEqual({ 'flow::/a': true })
+    expect(JSON.parse(localStorage.getItem('cc.viewerRibbonEyes') ?? '{}'))
+      .toEqual({ imgA: { segA: { 'flow::/a': true } } })
+  })
 })

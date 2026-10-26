@@ -11,6 +11,7 @@ import { fetchProfileSettings, patchProfileSettings,
          type ProfileSettingsValue } from '../utils/profileSettingsApi'
 import { profileStorage, adoptLiveProfileBag } from '../utils/profileStorage'
 import { useAppControlStore } from './appControl'
+import { POP_EYES_KEYS, type EyeLayer } from '../utils/viewer/popEyes'
 
 // ── USER_PROFILE_PLAN Phase 4: per-profile setting manifest ────────────────────────
 // Keys in this list are hydrated from `<config_dir>/user-profiles/<name>/settings.toml` on
@@ -449,16 +450,11 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('cc.viewerTrackVisibility', JSON.stringify(_trackVisStore.value))
   }
 
-  // Per-image × vn set of pop paths whose RIBBONS the user has hidden in the viewer. Track-layer
-  // eligibility is data-driven (any pop with `hasTracks: true` renders — MULTI_POP_TRACKING_PLAN
-  // Decision 2), so a project with several historically-tracked pops enters the viewer with every
-  // pop's ribbons drawn at once. The row-eye lets the user hide one; persistence is what makes the
-  // hide stick — the pop-manager pings that fire `loadOverlays` on every gate write used to reset a
-  // transient set, so hides evaporated within a second ("i've set the toggles correctly. there must
-  // be a wiring that is off"). Stored as an array in JSON; consumed as a Set. Reconciled on load
-  // via `makePopPathRemap` in `ViewerWindow.loadOverlays` — a RENAME carries the hide to the pop's
-  // new path (server-side `Population.uid` survives rename), a DELETE drops it; that's what stops
-  // a renamed pop from becoming visible again on the next payload.
+  // Per-image × vn set of pop paths whose RIBBONS the viewer hides — a PROJECTION of the ribbon eyes
+  // (`getPopEyes(…, 'ribbons')`, `popEyes.ts::offPaths`) the pop-out writes on every eye change, in the
+  // per-path shape the movie recorder (`viewerLook`) and the Julia renderer take; it crosses windows
+  // through the bag channel. Before #1766 it was the ribbon state itself, so it also seeds the eyes
+  // once (`reconcileRibbonEyes`). Stored as an array in JSON; consumed as a Set.
   const _trackPopHiddenStore = ref<Record<string, Record<string, string[]>>>(
     JSON.parse(localStorage.getItem('cc.viewerTrackPopHidden') ?? '{}')
   )
@@ -471,20 +467,27 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('cc.viewerTrackPopHidden', JSON.stringify(_trackPopHiddenStore.value))
   }
 
-  // Per-image × vn point eyes of the viewer's population rows: `{ "<popType>::<path>": visible }`.
-  // Separate from the Population Manager's `show`, which only seeds a pop with no entry here; kept
-  // across the refetch every gate write triggers (`utils/viewer/popEyes.ts::reconcilePopEyes`).
-  // Only the pop-out reads it, so it has no cross-window decoder.
-  const _popEyesStore = ref<Record<string, Record<string, Record<string, boolean>>>>(
-    JSON.parse(localStorage.getItem('cc.viewerPopEyes') ?? '{}')
-  )
-  function getPopEyes(imageUid: string, vn: string): Record<string, boolean> {
-    return { ...(_popEyesStore.value[imageUid]?.[vn] ?? {}) }
+  // Per-image × vn eyes of the viewer's population rows: `{ "<popType>::<path>": visible }`, one bag
+  // per layer — `points` (the Populations rows, `cc.viewerPopEyes`) and `ribbons` (the Tracks rows,
+  // `cc.viewerRibbonEyes`; #1766). Separate from the Population Manager's `show`, which only seeds a
+  // pop with no entry here; kept across the refetch every gate write triggers
+  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). Only the pop-out reads them, so they have no
+  // cross-window decoder — the ribbon eyes' off paths are published to `setTrackPopHidden` for that.
+  const _popEyesStores = {
+    points: ref<Record<string, Record<string, Record<string, boolean>>>>(
+      JSON.parse(localStorage.getItem(POP_EYES_KEYS.points) ?? '{}')),
+    ribbons: ref<Record<string, Record<string, Record<string, boolean>>>>(
+      JSON.parse(localStorage.getItem(POP_EYES_KEYS.ribbons) ?? '{}')),
   }
-  function setPopEyes(imageUid: string, vn: string, eyes: Record<string, boolean>) {
-    const perImage = { ..._popEyesStore.value[imageUid] ?? {}, [vn]: { ...eyes } }
-    _popEyesStore.value = { ..._popEyesStore.value, [imageUid]: perImage }
-    localStorage.setItem('cc.viewerPopEyes', JSON.stringify(_popEyesStore.value))
+  function getPopEyes(imageUid: string, vn: string, layer: EyeLayer = 'points'): Record<string, boolean> {
+    return { ...(_popEyesStores[layer].value[imageUid]?.[vn] ?? {}) }
+  }
+  function setPopEyes(imageUid: string, vn: string, eyes: Record<string, boolean>,
+                      layer: EyeLayer = 'points') {
+    const store = _popEyesStores[layer]
+    const perImage = { ...store.value[imageUid] ?? {}, [vn]: { ...eyes } }
+    store.value = { ...store.value, [imageUid]: perImage }
+    localStorage.setItem(POP_EYES_KEYS[layer], JSON.stringify(store.value))
   }
 
   // per-image branch-overlay visibility (skeleton labels from segment.branching). Default ON —

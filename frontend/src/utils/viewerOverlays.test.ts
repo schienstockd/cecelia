@@ -4,7 +4,7 @@ import {
   buildTrackBuffer, buildMultiTrackBuffer, tailRange, tailHead, colourByValue, pooledColourScale, heatUnit, NO_VALUE_RGB,
   filterPayloadByLabels, filterPayloadByTracks, filterPayloadByTrackSource,
   WHOLE_SEG_TRACK_SOURCE, seedRendererOverlays, setOverlayWindow,
-  isTrackDrawable, ribbonEyeOff, toggleRibbonEye, soleRibbonEyes,
+  isTrackDrawable,
   POINT_STRIDE, SEG_STRIDE, type OverlayPayload,
 } from './viewerOverlays'
 import type { ViewerMeta } from './volumeViewer'
@@ -667,39 +667,5 @@ describe('ribbon eye', () => {
     expect(isTrackDrawable({ ...pop, show: false } as typeof pop)).toBe(true)
     expect(isTrackDrawable({ ...pop, hasTracks: false })).toBe(false)
     expect(isTrackDrawable({ ...pop, labels: [] })).toBe(false)
-  })
-  it('is off for a user hide or a manager hide', () => {
-    expect(ribbonEyeOff(undefined, undefined, '/a')).toBe(false)
-    expect(ribbonEyeOff(new Set(['/a']), undefined, '/a')).toBe(true)
-    expect(ribbonEyeOff(undefined, new Set(['/a']), '/a')).toBe(true)
-  })
-  it('turns a manager-hidden pop on without storing a hide', () => {
-    const r = toggleRibbonEye(new Set(), new Set(['/a']), '/a')
-    expect(ribbonEyeOff(r.persisted, r.managerHidden, '/a')).toBe(false)
-    expect([...r.persisted]).toEqual([])
-    const back = toggleRibbonEye(r.persisted, r.managerHidden, '/a')
-    expect([...back.persisted]).toEqual(['/a'])
-  })
-})
-
-describe('soleRibbonEyes', () => {
-  const listed = [{ vn: 'A', path: '/a' }, { vn: 'A', path: '/b' }, { vn: 'B', path: '/a' }]
-  it('leaves only the target on, across segmentations', () => {
-    const r = soleRibbonEyes(listed, { vn: 'A', path: '/a' }, new Map(), new Map())
-    const off = (vn: string, path: string) => ribbonEyeOff(r.persisted.get(vn), r.managerHidden.get(vn), path)
-    expect(off('A', '/a')).toBe(false)
-    expect(off('A', '/b')).toBe(true)
-    expect(off('B', '/a')).toBe(true)   // same path, other segmentation — a different pop
-  })
-  it('clears a hide on the target from both sources, keeps unlisted hides', () => {
-    const r = soleRibbonEyes(listed, { vn: 'A', path: '/a' },
-      new Map([['A', new Set(['/a', '/gone'])]]), new Map([['A', new Set(['/a'])]]))
-    expect(ribbonEyeOff(r.persisted.get('A'), r.managerHidden.get('A'), '/a')).toBe(false)
-    expect(r.persisted.get('A')!.has('/gone')).toBe(true)
-  })
-  it('does not mutate its inputs', () => {
-    const persisted = new Map([['A', new Set(['/a'])]])
-    soleRibbonEyes(listed, { vn: 'A', path: '/a' }, persisted, new Map())
-    expect([...persisted.get('A')!]).toEqual(['/a'])
   })
 })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  reconcilePopEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
+  reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
+  flipPopEye, offPaths,
   type EyePop, type PopEyes, type ListedPop,
 } from './popEyes'
 
@@ -98,5 +99,45 @@ describe('master row helpers', () => {
     expect(samePopEyes({ a: true }, { a: false })).toBe(false)
     expect(samePopEyes({ a: true }, { a: true, b: true })).toBe(false)
     expect(eyeKey('flow', '/a')).toBe('flow::/a')
+  })
+})
+
+// The Tracks rows' ribbon eyes ride the same path (#1766): a gate edit used to reseed them from `show`.
+describe('ribbon eyes', () => {
+  it('a refetch after a gate edit keeps a ribbon the user turned on for a pop the manager hides', () => {
+    const prev = [pop('/a', 'u1', false), pop('/b', 'u2', true)]
+    const stored: PopEyes = { 'flow::/a': true, 'flow::/b': false }
+    const next = [pop('/a', 'u1', false), pop('/b', 'u2', true), pop('/c', 'u3', false)]
+    expect(reconcileRibbonEyes(stored, new Set(), prev, next, ['flow']))
+      .toEqual({ 'flow::/a': true, 'flow::/b': false, 'flow::/c': false })
+  })
+
+  it('a rename carries the ribbon eye; a delete drops it', () => {
+    const prev = [pop('/a', 'u1', true), pop('/b', 'u2', true)]
+    expect(reconcileRibbonEyes({ 'flow::/a': false, 'flow::/b': false }, new Set(), prev,
+                               [pop('/renamed', 'u1', true)], ['flow']))
+      .toEqual({ 'flow::/renamed': false })
+  })
+
+  it('a hide stored before ribbons had eyes seeds that pop off — only while nothing is stored', () => {
+    const next = [pop('/a', 'u1', true), pop('/b', 'u2', true)]
+    expect(reconcileRibbonEyes({}, new Set(['/a']), [], next, ['flow']))
+      .toEqual({ 'flow::/a': false, 'flow::/b': true })
+    expect(reconcileRibbonEyes({ 'flow::/a': true }, new Set(['/a']), [], next, ['flow']))
+      .toEqual({ 'flow::/a': true, 'flow::/b': true })
+  })
+
+  it('flipPopEye flips what the row reads — the stored eye, else the manager show', () => {
+    const eyes = new Map<string, PopEyes>([['segA', { 'flow::/a': false }]])
+    expect(flipPopEye(eyes, 'segA', 'flow', '/a', true).get('segA')).toEqual({ 'flow::/a': true })
+    expect(flipPopEye(eyes, 'segA', 'flow', '/new', false).get('segA'))
+      .toEqual({ 'flow::/a': false, 'flow::/new': true })
+    expect(flipPopEye(eyes, 'segB', 'flow', '/a', true).get('segB')).toEqual({ 'flow::/a': false })
+    expect(eyes.get('segA')).toEqual({ 'flow::/a': false })   // input not mutated
+  })
+
+  it('offPaths projects the off eyes onto per-path hides for the movie', () => {
+    expect(offPaths({ 'flow::/b': false, 'flow::/a': false, 'clust::/a': false, 'flow::/c': true }))
+      .toEqual(['/a', '/b'])
   })
 })
