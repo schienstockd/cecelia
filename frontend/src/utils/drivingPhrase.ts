@@ -1,26 +1,28 @@
-// The profile picker's heading. Plain "Who's driving?" half the time; otherwise a random
-// translation or lab pun, so the joke stays a surprise rather than noise. Not localisation — the
-// rest of the picker stays English, and `note` (the tooltip) says what a translation means.
+// The profile picker's heading. Plain "Who's driving?" half the time; otherwise a random lab or
+// microscopy-as-art pun, so the joke stays a surprise rather than noise. `note` (the tooltip)
+// glosses the one that needs it.
 
 export interface DrivingPhrase {
   text: string
-  /** Tooltip — null for the English variants, which need no gloss. */
+  /** Tooltip — null when the pun needs no gloss. */
   note: string | null
 }
 
 export const PLAIN_PHRASE: DrivingPhrase = { text: "Who's driving?", note: null }
 
 export const VARIANT_PHRASES: readonly DrivingPhrase[] = [
-  { text: 'Wer fährt?', note: "German for “Who's driving?”" },
-  { text: 'Qui conduit ?', note: "French for “Who's driving?”" },
-  { text: '¿Quién maneja?', note: "Spanish for “Who's driving?”" },
-  { text: 'Chi guida?', note: "Italian for “Who's driving?”" },
-  { text: 'Wie rijdt er?', note: "Dutch for “Who's driving?”" },
-  { text: '誰が運転する？', note: "Japanese for “Who's driving?”" },
-  { text: "Who's at the wheel?", note: null },
-  { text: "Who's on the scope?", note: null },
+  // the lab
+  { text: "Who's got the mouse?", note: null },
+  { text: "Who's in focus?", note: null },
+  { text: "Who's gating today?", note: null },
+  { text: 'Who booked the scope?', note: null },
   { text: 'Whose bench is this?', note: null },
-  { text: "Who's holding the pipette?", note: null },
+  // microscopy as art — the image competitions
+  { text: "Who's behind the lens?", note: null },
+  { text: "Who's painting with photons?", note: null },
+  { text: "Who's holding the brush?", note: null },
+  { text: 'Whose gallery is this?', note: null },
+  { text: "People's Choice?", note: 'As in Art of Discovery' },
 ]
 
 /** `rand` in [0,1): the lower half picks the plain phrase, the upper half spreads over the variants. */
