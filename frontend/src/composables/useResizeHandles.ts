@@ -22,10 +22,10 @@ import type { PanelBounds, Rect } from '../utils/panelBounds'
 
 export interface ResizeHandlesOpts {
   getRect: () => Rect
-  // `edges` says which edges the user grabbed. A caller that snaps one dimension to another (e.g.
-  // `CanvasPanel :square` snapping height to width) uses this to skip writing the passive dimension
-  // — otherwise the composable would rewrite `h = start.h` every frame and fight the snap.
-  setRect: (r: Rect, edges: Edges) => void
+  // `edges` says which edges the user grabbed and `start` is the rect the gesture began from. A caller
+  // that ties one dimension to the other (`CanvasPanel :square`, via `squareRect`) needs both to pick
+  // the driving axis — it must rewrite BOTH dimensions here, never fix one up a frame later.
+  setRect: (r: Rect, edges: Edges, start: Rect) => void
   bounds: () => PanelBounds
   min?: { w: number; h: number }
   viewportSize?: () => { w: number; h: number }
@@ -49,7 +49,7 @@ export function useResizeHandles(opts: ResizeHandlesOpts) {
       minW: min.w, minH: min.h,
       viewportW: vp.w, viewportH: vp.h,
       bounds: opts.bounds(),
-    }), edges)
+    }), edges, startRect)
   }
   function endGesture() {
     window.removeEventListener('pointermove', onMove)
