@@ -63,6 +63,7 @@ include("setup_api.jl")
 include("captures_api.jl")   # bidirectional context — share-in capture envelopes (BIDIR_CONTEXT_PLAN Part 2)
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("viewer_nav_api.jl") # viewer navigation — Claude → browser (RUBBER_DUCK_FIT_PLAN P2)
+include("rois_api.jl")       # ROI list + reviews (ROI_TRIAGE_PLAN)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("blackboard_run_review.jl") # agent run records: per-section verdicts (AGENT_RUN_REVIEW_PLAN P2)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
@@ -314,6 +315,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/channels" => (req, body_bytes) -> (api_gating_channels(req)),
     "/api/gating/popmap" => (req, body_bytes) -> (api_gating_popmap(req)),
     "/api/gating/stats" => (req, body_bytes) -> (api_gating_stats(req)),
+    "/api/rois" => (req, body_bytes) -> (api_rois_list(req)),
     "/api/gating/membership" => (req, body_bytes) -> (api_gating_membership(req)),
     "/api/gating/plotmeta" => (req, body_bytes) -> (api_gating_plotmeta(req)),
     "/api/gating/plotdata" => (req, body_bytes) -> (api_gating_plotdata(req)),
@@ -512,6 +514,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/viewer/marks/plot"     => (req, body_bytes) -> (api_viewer_marks_plot(body_bytes)),
     "/api/viewer/marks/select"   => (req, body_bytes) -> (api_viewer_marks_select(body_bytes)),
     "/api/viewer/seek"           => (req, body_bytes) -> (api_viewer_seek(body_bytes)),
+    "/api/rois/review"           => (req, body_bytes) -> (api_rois_review(body_bytes)),
     "/api/viewer/navigate"       => (req, body_bytes) -> (api_viewer_navigate(body_bytes)),
     # bidir PR #8 — plot registry writes. Frontend authors via `stores/plotRegistry.ts` on panel
     # mount/unmount; not on the MCP surface (Claude only READS the registry via `list_plots`).

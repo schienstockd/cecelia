@@ -99,7 +99,7 @@ export interface ParamDef {
   // Read by `utils/taskOutput.taskOutput` for the suggestion list, chain propagation and the preview
   // layer stem. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
   namespace?: 'filepaths' | 'labels' | 'spatialGraphs' | 'tracks' | 'branches'
-            | 'clusters' | 'regions' | 'stats' | 'models' | 'obsCols'
+            | 'clusters' | 'regions' | 'stats' | 'rois' | 'models' | 'obsCols'
   // valueNameInput in the `labels` namespace: which ccid.json registry the written name lands in, when
   // it is not `labels` (segment.branching → 'branch_labels'). One declaration read by BOTH the run's
   // taken-name guard (`output_registry`, segmentation.jl) and the form's hint (`labelsTakenAdvisory`).

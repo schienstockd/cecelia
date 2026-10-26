@@ -42,6 +42,8 @@ Sets group images for processing. An image belongs to one set but lives independ
       branchLabels/         — skeleton label zarrs (segment.branching)
       gating/               — {value_name}.json population definitions (docs/POPULATION.md)
       spatialStats/ spatialGraph/  — spatial analysis output
+      rois/                 — ROI sets, {suffix}.json (spatialAnalysis.roiDiscovery; docs/todo/ROI_TRIAGE_PLAN.md)
+      roiReviews/           — reviews of those ROIs, {suffix}.json — user work, kept by an analysis reset
       tasks/                — each run's params JSON (`task_run_dir`)
       logs/                 — {fun_name}.log, CUMULATIVE across runs (scheduler `_wrap_log_with_file`)
       qc/                   — per-fun QC sidecars

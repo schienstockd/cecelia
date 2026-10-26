@@ -532,7 +532,9 @@ end
     # letters, known proper nouns, and the first word after a separator ("Spatial / Time").
     PROPER = r"^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Napari|Zarr|Pluto|Rscript)$"
     SEPARATOR = r"^[/+&–—|]+$"
-    expected_cap(w) = occursin(r"^[A-Z0-9+&/–-]+$", w) || length(w) == 1 || occursin(PROPER, w)
+    # a plural acronym (`ROIs`, `IDs`) is still an acronym — mirrors uiCopy.ts
+    expected_cap(w) = occursin(r"^[A-Z0-9+&/–-]+$", w) || occursin(r"^[A-Z]{2,}s$", w) ||
+                      length(w) == 1 || occursin(PROPER, w)
     function title_case(text)
         words = [w for w in split(text) if occursin(r"^[A-Za-z]", w) || occursin(SEPARATOR, w)]
         length(words) < 2 && return false

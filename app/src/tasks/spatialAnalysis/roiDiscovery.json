@@ -1,0 +1,126 @@
+{
+  "task": "roiDiscovery",
+  "fun_name": "spatialAnalysis.roiDiscovery",
+  "label": "Find ROIs",
+  "purpose": "Rank regions where something happens to small objects, for review in the viewer",
+  "useWhen": [
+    "Too many fragments to track, but you want the few places where they are taken up",
+    "Building a review queue for the viewer's ROI list"
+  ],
+  "notWhen": ["You need per-object tracks: use tracking"],
+  "category": "Spatial analysis",
+  "group": "Regions of interest",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "requires": { "scale": ["xy"] },
+  "params": [
+    {
+      "key": "roisSuffix",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "rois",
+      "default": "default",
+      "tip": "Output name → rois/<name>.json; reviews are kept per name"
+    },
+    {
+      "key": "candidatePops",
+      "required": true,
+      "requiredMessage": "Select the objects to score",
+      "label": "Candidates",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The objects scored and clustered into ROIs, e.g. fragments"
+    },
+    {
+      "key": "maskChannel",
+      "label": "Mask channel",
+      "type": "channelSelection",
+      "multiple": false,
+      "default": [],
+      "tip": "Optional: a channel to threshold into a mask, e.g. CD169 for macrophages"
+    },
+    {
+      "key": "partnerPops",
+      "label": "Partners",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "Optional: objects whose nearness raises a candidate's score, e.g. big fragments"
+    },
+    {
+      "key": "markerSection",
+      "label": "Nuclear / membrane",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "nucPops",
+          "label": "Nuclear",
+          "type": "popSelection",
+          "accepts": ["live", "clust", "region", "track", "trackclust"],
+          "multiple": true,
+          "acrossSegmentations": false,
+          "default": [],
+          "tip": "Optional: candidates in here and not in Membrane score as naked nuclei"
+        },
+        {
+          "key": "memPops",
+          "label": "Membrane",
+          "type": "popSelection",
+          "accepts": ["live", "clust", "region", "track", "trackclust"],
+          "multiple": true,
+          "acrossSegmentations": false,
+          "default": [],
+          "tip": "Optional: the membrane population paired with Nuclear"
+        }
+      ]
+    },
+    {
+      "key": "weightSection",
+      "label": "Cue weights",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "wContact", "label": "Mask contact", "type": "float", "min": 0, "max": 10, "step": 0.5, "default": 2, "tip": "Weight for being inside or next to the mask" },
+        { "key": "wDensity", "label": "Density", "type": "float", "min": 0, "max": 10, "step": 0.5, "default": 1, "tip": "Weight for many candidates close together" },
+        { "key": "wTurnover", "label": "Turnover", "type": "float", "min": 0, "max": 10, "step": 0.5, "default": 1, "tip": "Weight for a neighbourhood that fills or empties between frames" },
+        { "key": "wNaked", "label": "Naked nucleus", "type": "float", "min": 0, "max": 10, "step": 0.5, "default": 1, "tip": "Weight for Nuclear-but-not-Membrane candidates" },
+        { "key": "wPartner", "label": "Partner", "type": "float", "min": 0, "max": 10, "step": 0.5, "default": 0.5, "tip": "Weight for being next to a partner object" }
+      ]
+    },
+    {
+      "key": "maskSection",
+      "label": "Mask",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "maskThreshold", "label": "Threshold", "type": "float", "min": 0, "max": 65535, "step": 1, "default": 0, "tip": "Smoothed intensity above which a voxel is in the mask; 0 = Otsu" },
+        { "key": "maskSmoothUm", "label": "Smoothing (µm)", "type": "float", "min": 0, "max": 5, "step": 0.1, "default": 0.5, "tip": "Gaussian smoothing before thresholding" },
+        { "key": "maskMinVolumeUm3", "label": "Min volume (µm³)", "type": "float", "min": 0, "max": 2000, "step": 10, "default": 50, "tip": "Mask pieces smaller than this are dropped" },
+        { "key": "contactScaleUm", "label": "Contact reach (µm)", "type": "float", "min": 0.5, "max": 20, "step": 0.5, "default": 2, "tip": "How fast the contact cue fades with distance from the mask" }
+      ]
+    },
+    {
+      "key": "clusterSection",
+      "label": "Clustering",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "densityRadiusUm", "label": "Density radius (µm)", "type": "float", "min": 1, "max": 50, "step": 1, "default": 10, "tip": "Neighbourhood for the density and turnover cues" },
+        { "key": "partnerScaleUm", "label": "Partner reach (µm)", "type": "float", "min": 0.5, "max": 20, "step": 0.5, "default": 3, "tip": "How fast the partner cue fades with distance" },
+        { "key": "candidateQuantile", "label": "Score quantile", "type": "float", "min": 0, "max": 0.99, "step": 0.01, "default": 0.95, "tip": "Only objects above this score quantile are clustered" },
+        { "key": "clusterRadiusUm", "label": "Cluster radius (µm)", "type": "float", "min": 1, "max": 50, "step": 0.5, "default": 6, "tip": "How close high scorers must be to form one ROI" },
+        { "key": "timeScaleUm", "label": "µm per frame", "type": "float", "min": 0, "max": 50, "step": 0.5, "default": 2, "tip": "How far one frame counts in µm when clustering in time" },
+        { "key": "windowFrames", "label": "Window (frames)", "type": "int", "min": 0, "max": 200, "step": 1, "default": 12, "tip": "Longest time window per ROI; 0 = no limit" },
+        { "key": "minObjects", "label": "Min objects", "type": "int", "min": 2, "max": 100, "step": 1, "default": 5, "tip": "Fewest high scorers that make an ROI" },
+        { "key": "maxRois", "label": "Max ROIs", "type": "int", "min": 1, "max": 1000, "step": 1, "default": 50, "tip": "Keep the top ROIs by score" },
+        { "key": "paddingUm", "label": "Padding (µm)", "type": "float", "min": 0, "max": 50, "step": 1, "default": 5, "tip": "Margin added around each ROI box" }
+      ]
+    }
+  ]
+}

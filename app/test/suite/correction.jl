@@ -397,13 +397,18 @@ end
     # one spatial graph
     sgdir = joinpath(dir, "spatialGraph"); mkpath(sgdir)
     write(joinpath(sgdir, "run1.h5ad"), "")
+    # ROI sets: one on this segmentation (stale on :labels), one on another (not this correction's)
+    rdir = joinpath(dir, "rois"); mkpath(rdir)
+    write(joinpath(rdir, "frags.json"), JSON3.write(Dict("valueName" => vn, "rois" => [])))
+    write(joinpath(rdir, "other.json"), JSON3.write(Dict("valueName" => "nuc", "rois" => [])))
 
     img = Cecelia.CciaImage(; uid = "uid", name = "name", dir = dir)
     img.label_props = Dict{String,String}(vn => "$(vn).h5ad")
 
     label_arts = Cecelia.stale_artefacts_for(img, vn; changed = :labels)
     kinds_l = Set(a["kind"] for a in label_arts)
-    @test kinds_l == Set(["tracks_h5ad", "cluster_runs", "gating_pops", "spatial_graph"])
+    @test kinds_l == Set(["tracks_h5ad", "cluster_runs", "gating_pops", "spatial_graph", "roi_sets"])
+    @test [a["detail"]["suffix"] for a in label_arts if a["kind"] == "roi_sets"] == ["frags"]
     # gating entry on :labels is the FLOW file only (label-keyed) — the __tracks pops are on :tracks
     gating_l = only(a for a in label_arts if a["kind"] == "gating_pops")
     @test gating_l["detail"]["pop_type"] == "flow"

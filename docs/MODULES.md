@@ -740,12 +740,12 @@ not the field — the field the suggestions come from follows from it, so a spec
 ```
 
 Namespaces: `filepaths`, `labels`, `spatialGraphs`, `tracks`, `branches`, `clusters`, `regions`,
-`stats`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
+`stats`, `rois`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
 which is not uniform:
 
 | scope | namespaces | source |
 |---|---|---|
-| per image | `filepaths`, `labels`, `spatialGraphs`, `stats` | the image payload (`consumerField` names the field) |
+| per image | `filepaths`, `labels`, `spatialGraphs`, `stats`, `rois` | the image payload (`consumerField` names the field) |
 | per (image, value_name) | `clusters`, `regions` | the payload, for the ACTIVE segmentation — a clustering belongs to a segmentation, not an image |
 | **global** | `models` | injected spec `options` (`_inject_dynamic_options!`), because the model vault is not a property of any image |
 | not wired | `tracks`, `branches`, `obsCols` | renders as a plain input — no suggestions, everything else still works |

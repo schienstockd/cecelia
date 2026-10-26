@@ -27,7 +27,7 @@ export const VALUE_NAME_NAMESPACES = [
   // import — belongs to the second. Naming it `labels` meant its own name-picker only ever offered
   // masks, so the name you wanted to overwrite was never suggested back to you.
   'filepaths', 'labels', 'labelProps', 'spatialGraphs', 'tracks', 'branches',
-  'clusters', 'regions', 'stats', 'models', 'obsCols',
+  'clusters', 'regions', 'stats', 'rois', 'models', 'obsCols',
 ] as const
 
 export type ValueNameNamespace = typeof VALUE_NAME_NAMESPACES[number]
@@ -113,7 +113,7 @@ function namespaceOfDef(def: TaskDef): ValueNameNamespace {
  */
 export type ConsumerField =
   'filepaths' | 'labels' | 'labelPropsNames' | 'spatialGraphs' | 'statsSuffixes'
-  | 'clusterSuffixes' | 'regionSuffixes'
+  | 'clusterSuffixes' | 'regionSuffixes' | 'roiSuffixes'
 
 /**
  * The `valueNameSelection` `field` a CONSUMER would declare to read this namespace — the chain
@@ -131,6 +131,7 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
     case 'filepaths':     return 'filepaths'
     case 'spatialGraphs': return 'spatialGraphs'
     case 'stats':         return 'statsSuffixes'
+    case 'rois':          return 'roiSuffixes'
     case 'clusters':      return 'clusterSuffixes'
     case 'regions':       return 'regionSuffixes'
     // `models` is GLOBAL (the vault, not an image) and `tracks`/`branches`/`obsCols` name nothing a
@@ -151,7 +152,8 @@ export function consumerField(ns: ValueNameNamespace): ConsumerField | null {
 export function normaliseField(field: string | undefined | null): ConsumerField {
   if (field === 'labels') return 'labels'
   if (field === 'spatialGraphs') return 'spatialGraphs'
-  if (field === 'statsSuffixes' || field === 'clusterSuffixes' || field === 'regionSuffixes')
+  if (field === 'statsSuffixes' || field === 'clusterSuffixes' || field === 'regionSuffixes'
+      || field === 'roiSuffixes')
     return field
   return 'filepaths'
 }
