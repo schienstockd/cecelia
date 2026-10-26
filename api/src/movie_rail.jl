@@ -273,6 +273,8 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         hidden_raw isa AbstractVector ? String[String(x) for x in hidden_raw] : String[]
     pts_raw = something(get(cfg, :popTypes, nothing), get(cfg, "popTypes", nothing), Some(nothing))
     tsc_raw = something(get(cfg, :trackSourceColours, nothing), get(cfg, "trackSourceColours", nothing), Some(nothing))
+    # a viewer look's point / ribbon eyes, `{valueName => {"<popType>::<path>" => on}}` (#1784)
+    eyes_of(k) = parse_look_eyes(something(get(cfg, Symbol(k), nothing), get(cfg, k, nothing), Some(nothing)))
     out = Dict{String,Any}(
         "popType"          => _cfg_str(cfg, "popType", "flow"),
         # Explicit gate on the pop-dot build. Presence of the field is what stops
@@ -292,6 +294,10 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
         "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],
         "popAllSegmentations" => _cfg_bool(cfg, "popAllSegmentations"),
+        # the viewer's own eyes on its pops (a look; a batch has none and draws `show`) —
+        # `overlay_track_plan` → `look_eye_on`
+        "popEyes"          => eyes_of("popEyes"),
+        "ribbonEyes"       => eyes_of("ribbonEyes"),
         # the viewer's Tracks-legend colours, keyed as its ribbon sources are
         "trackSourceColours" => tsc_raw isa AbstractDict ?
             Dict{String,String}(String(k) => String(v) for (k, v) in tsc_raw if v isa AbstractString) :

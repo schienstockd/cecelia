@@ -62,6 +62,11 @@ describe('decodeViewerBagEvent — track-pop ribbon hides', () => {
     expect(decodeViewerBagEvent('cc.viewerTrackPopHidden', '{"img":{"OTI":["/a"]}}'))
       .toEqual({ kind: 'trackPopHidden', value: { img: { OTI: ['/a'] } } })
   })
+  it('the viewer\'s point and ribbon eyes reach the recording window (#1784)', () => {
+    const v = { img: { OTI: { 'flow::/a': true, 'clust::/a': false } } }
+    expect(decodeViewerBagEvent('cc.viewerPopEyes', JSON.stringify(v))).toEqual({ kind: 'popEyes', value: v })
+    expect(decodeViewerBagEvent('cc.viewerRibbonEyes', JSON.stringify(v))).toEqual({ kind: 'ribbonEyes', value: v })
+  })
 })
 
 describe('decodeScalarPrefEvent', () => {

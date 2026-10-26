@@ -255,7 +255,8 @@ end
 # The overlay pops a movie config DRAWS, as one list of {valueName, popType, path, ribbon} (the shape
 # overlay_legend_content turns into {name, colour}), mirroring the renderer (`_overlays_raw_from_config`
 # → `viewer_overlay_closure`) so the card names what the movie shows:
-#  • the shown `popType` pops (in `popsFilter`, when set) of the pops' segmentation — points, and their
+#  • the shown `popType` pops (in `popsFilter`, when set) of the pops' segmentation — "shown" by a
+#    look's point eyes (`popEyes`) where it has them — points, and their
 #    cell-track ribbons ride on the same row, since the points ARE the pop's colour;
 #  • track-cluster ribbons — every segmentation's shown trackclust pops — ribbon-only rows (`ribbon`).
 # Per-segmentation tracks are not pops — `_track_source_items` lists them.
@@ -269,6 +270,15 @@ function _config_overlay_pops(img, config)
         # A viewer look: these pop types on every segmentation. Else the ONE segmentation the movie
         # draws pops from (`_config_pop_segmentation`); none → none drawn.
         pts_raw = get(config, :popTypes, nothing)
+        # the renderer's plan: a look's point / ribbon eyes (`look_eye_on`); a batch has none — the
+        # manager's `show`. A pop whose points are off still has a row while its cell-track ribbon
+        # draws (`viewer_overlay_closure`: gated, not stood down for trackclust, track-drawable).
+        plan = overlay_track_plan(_overlays_raw_from_config(config, false))
+        pops_vn = _config_pop_segmentation(config)
+        tc = plan.trackclust ? Set(trackclust_segmentations(img)) : Set{String}()
+        ribbon_row(vn, lpt, L) = plan.gated && !(vn in tc) &&
+            (Bool(get(L, :is_track, false)) || Bool(get(L, :has_tracks, false))) &&
+            plan_ribbon_eye(plan, pops_vn, vn, lpt, L.path, Bool(L.show))
         layers = if Bool(get(config, :popAllSegmentations, false))
             [(vn, String(p)) for vn in _overlay_segmentations(img)
                              for p in (pts_raw isa AbstractVector && !isempty(pts_raw) ? pts_raw : [pt])]
@@ -277,7 +287,8 @@ function _config_overlay_pops(img, config)
             isempty(pop_vn) ? Tuple{String,String}[] : [(pop_vn, pt)]
         end
         for (vn, lpt) in layers, L in _overlay_pops(img, vn, lpt)
-            (L.show && (keep === nothing || L.path in keep)) || continue
+            ((look_eye_on(plan.pop_eyes, vn, lpt, L.path, Bool(L.show)) || ribbon_row(vn, lpt, L)) &&
+             (keep === nothing || L.path in keep)) || continue
             push!(out, Dict{String,Any}("valueName" => vn, "popType" => lpt, "path" => L.path, "ribbon" => false))
         end
     end

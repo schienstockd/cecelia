@@ -125,7 +125,8 @@ export function popEyeOn(eyes: ReadonlyMap<string, Readonly<PopEyes>>, vn: strin
 }
 
 /** The paths whose eye is off, sorted — the ribbon eyes' projection onto `settings.setTrackPopHidden`,
- *  the per-path shape the movie recorder (`viewerLook`) and the Julia renderer take. */
+ *  the per-path shape older looks and the batch take (a recorded look carries the eyes themselves,
+ *  `viewerLook` `ribbonEyes`; the renderer falls back to these paths only for a pop with no eye). */
 export function offPaths(eyes: Readonly<PopEyes>): string[] {
   const out = new Set<string>()
   for (const [k, v] of Object.entries(eyes)) {

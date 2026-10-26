@@ -8,6 +8,7 @@
 import { viewerColormapForHex, channelsForRender } from './viewerColormap'
 import { LABEL_OPACITY, OVERLAY_Z_TOL } from './viewerLabels'
 import { PALETTES } from '../plots/plot'
+import type { PopEyes } from './viewer/popEyes'
 import { COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
          type CompareLayout, type CompareContrast } from './movieCompare'
 
@@ -102,6 +103,11 @@ export interface BatchMovieCfg {
   // recorder's `popAllSegmentations`); a batch draws its one `popValueName` / `popType`.
   popTypes?: string[]
   popAllSegmentations?: boolean
+  // A viewer look: its own eyes on its pops, per segmentation `{ "<popType>::<path>": on }` — points
+  // (`popEyes`) and cell-track ribbons (`ribbonEyes`), apart from the pop manager's `show`, which
+  // draws a pop with no eye (`settings.getPopEyes`, #1784). A batch carries none.
+  popEyes?: Record<string, PopEyes>
+  ribbonEyes?: Record<string, PopEyes>
   // The viewer's Tracks-legend colours, keyed as its ribbon sources (`vn`, `vn::path`, …).
   trackSourceColours?: Record<string, string>
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default

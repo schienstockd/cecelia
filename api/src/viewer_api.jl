@@ -1357,7 +1357,8 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
                 mask = movie_mask(img; value_name = mask_vn, contour_px = mask_contour_px,
                                   opacity = style.mask_opacity, pop_type = ov_pt,
                                   pop_types = mask_scope.pop_types,
-                                  pops_filter = mask_scope.pops_filter, all_cells = all_cells,
+                                  pops_filter = mask_scope.pops_filter, pop_eyes = mask_scope.pop_eyes,
+                                  all_cells = all_cells,
                                   all_cells_colour = all_cells_col,
                                   colour_by = mask_cb, colour_overrides = mask_co)
                 if mask === nothing
