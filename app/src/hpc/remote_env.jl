@@ -21,10 +21,11 @@ const HPC_ENV_MARKER  = ".cecelia-env"
 const HPC_CODE_MARKER = ".complete"
 
 # Resources for the install job: the solve is single-threaded, the download and unpack of a CUDA torch
-# want memory and time more than cores. Measured on one real SLURM site: 1 min 16 s, MaxRSS 0.6 GB,
-# 8.3 GB env on disk; the cold download dominates the time. 4 GB / 30 min keeps headroom for a slow
-# site; one data point does not justify going tighter.
-const _HPC_INSTALL_JOB = (; cpus = 2, mem_gb = 4, walltime_min = 30)
+# want memory and time more than cores. Measured: SLURM site 1 min 16 s, MaxRSS 0.6 GB; NCI Gadi copyq
+# 2 min, "Memory Used" 4.0 GB of 4 GB requested (PBS counts page cache, so a bigger env reads as more).
+# 8 GB / 30 min keeps headroom; 8.3 GB env on disk; the cold download dominates the time. One CPU: an internet queue may allow no more
+# (Gadi's copyq). `net`: it downloads pixi and the packages, so it goes to the site's internet queue.
+const _HPC_INSTALL_JOB = (; cpus = 1, mem_gb = 8, walltime_min = 30, net = true)
 
 _hpc_repo_root()::String = dirname(_app_dir())
 

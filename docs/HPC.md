@@ -32,7 +32,7 @@ handler continues: register labels, QC, run log
 
 | Where | Fields | Stored in | Why there |
 |---|---|---|---|
-| **Settings → HPC** | scheduler, host, port; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches is not personal |
+| **Settings → HPC** | scheduler, host, port, internet queue; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches, and which of its queues can download, is not personal |
 | **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
@@ -55,9 +55,12 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 2. runs `pixi install --frozen` of `pixi.lock` into `<remote>/env/<lock hash>/`;
 3. checks that it imports.
 
-- The job is 2 CPUs, 4 GB and up to 30 min. On one real site it took 1 min 16 s and 0.6 GB; the env
+- The job is 1 CPU (an internet queue may allow no more), 8 GB and up to 30 min. On a SLURM site it took 1 min 16 s and 0.6 GB;
+  on NCI Gadi's copyq 2 min, with PBS reporting all 4 GB then requested as used; the env
   is about 8.3 GB on disk.
-- It needs a **Linux x86_64** compute node with **outbound HTTPS**.
+- It needs a **Linux x86_64** node with **outbound HTTPS**. Where compute nodes are offline, set
+  **Internet queue** (Settings → HPC) to a queue that can download, e.g. `copyq` on NCI Gadi; the
+  install job goes there. Empty = the CPU queue.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
 - The code (`python/` and the task runners) is synced on every run into a content-hashed
@@ -195,9 +198,9 @@ One resource model, mapped per backend (HPC_PLAN D8):
 | | SLURM | PBS Pro / OpenPBS |
 |---|---|---|
 | queue | `--partition` | `-q` |
-| CPUs / memory / GPUs | `--cpus-per-task` `--mem=NG` `--gres=gpu:N` | `-l select=1:ncpus=…:mem=…gb:ngpus=…` |
+| CPUs / memory / GPUs | `--cpus-per-task` `--mem=NG` `--gres=gpu:N` | `-l ncpus=…` `-l mem=…gb` `-l ngpus=…` (job-wide; Gadi refuses `select`) |
 | walltime | `--time` | `-l walltime` |
-| account / QoS | `--account` `--qos` | `-A` / — |
+| account / QoS | `--account` `--qos` | `-A` and `-P` / — |
 | status | `squeue -u me` | `qselect -u me -s <state>` |
 | why it vanished | `sacct`, `scontrol show job` | `qstat -x -f` (Exit_status, comment) |
 | cancel | `scancel` | `qdel` |
@@ -206,6 +209,10 @@ One resource model, mapped per backend (HPC_PLAN D8):
   code. A job that disappears without one is reported with the scheduler's reason, e.g. "Walltime
   reached" or "Out of memory".
 - **Torque is not supported.**
+- **The account goes out as `-P` as well as `-A`.** NCI Gadi charges, and grants `/scratch/<project>`,
+  by `-P` alone; without it a job runs under the user's default project and cannot reach another
+  project's storage. Storage beyond the project's own scratch (`gdata/…`) still needs
+  `#PBS -l storage=…` under Directives.
 - **A site that wants `--gpus=N`** instead of `--gres` can set GPUs to 0 and add the line under GPU
   Directives.
 
@@ -267,10 +274,12 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 |---|---|
 | `Host key not trusted. Run Test connection in Settings` | the host was never trusted, or `known_hosts` was cleared |
 | `Host key changed. Check with your site before trusting it` | the server's key differs from the trusted one: ask the site |
+| `Connection dropped. Check the port (SSH is usually 22)` | something listens on that port but it is not SSH; fix the port in Settings → HPC |
 | `Key rejected. A passphrase key must be loaded in ssh-agent` | wrong key, or a passphrase key that is not loaded |
 | `SLURM not found on the login node` | `sbatch` is not on PATH, even after `/etc/profile`. Tell us what the site needs |
 | `The cluster has no environment for this version of Cecelia` | run Install on cluster (once per version) |
 | `[ERROR] … needs Linux x86_64; this node is …` | the install landed on a non-x86 node: pick another partition |
+| `Submit: qsub: Error: …` beside Install on cluster | the scheduler refused the install job; the reason is PBS's or SLURM's own |
 | `rsync is not installed on the cluster` | the login node has no rsync. Rare; tell us |
 | `Cannot send <path> to the cluster: it is outside the project` | the task reads a file it has not declared; it needs porting work |
 | `Cluster job N failed: Walltime reached` / `Out of memory` | raise Minutes / GB on the run form |

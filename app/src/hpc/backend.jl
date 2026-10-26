@@ -21,7 +21,8 @@
 """
 One job, in Cecelia's terms (D8). `dir` is an absolute remote path holding `job.sh`, `job.log` and
 `.exit`; `body` is shell, run in a subshell after the class preamble, and its exit status is the job's.
-`account` overrides the class account (the per-project override, D9).
+`account` overrides the class account (the per-project override, D9). `net` marks a job that downloads:
+it goes to the site's internet queue when one is set (`hpc_queue`).
 """
 Base.@kwdef struct HpcJobSpec
     name::String
@@ -33,6 +34,7 @@ Base.@kwdef struct HpcJobSpec
     gpus::Int = 0
     walltime_min::Int = 60
     account::String = ""
+    net::Bool = false
 end
 
 abstract type HpcBackend end
@@ -42,6 +44,10 @@ const HPC_JOB_LOG    = "job.log"
 const HPC_JOB_EXIT   = ".exit"
 
 hpc_class(site::HpcSite, class::AbstractString)::HpcClass = class == "gpu" ? site.gpu : site.cpu
+
+"""The queue `spec` goes to: the site's internet queue for a `net` job when one is set, else the class's."""
+hpc_queue(site::HpcSite, spec::HpcJobSpec)::String =
+    spec.net && !isempty(site.net_queue) ? site.net_queue : hpc_class(site, spec.class).queue
 
 _hpc_walltime(min::Integer)::String = string(div(min, 60), ":", lpad(mod(min, 60), 2, '0'), ":00")
 
