@@ -127,3 +127,33 @@ describe('maskPopTable', () => {
     expect(LABEL_TABLE_MAX_ROWS).toBe(8192)   // WebGPU's guaranteed maxTextureDimension2D
   })
 })
+
+// The movie draws the same rule in Julia (`mask_pop_colours`, `api/src/overlay_author.jl`); both sides
+// are held to this one fixture, so neither can drift alone.
+import PARITY_JSON from './maskPopTable.parity.json'
+
+interface ParityCase {
+  name: string
+  layers: { cells: number[]; pops: { path: string; colour: string; labels: number[] }[]; hidden?: string[] }[]
+  expected: Record<string, string>
+}
+const PARITY = PARITY_JSON as unknown as { cases: ParityCase[] }
+
+describe('maskPopTable ↔ mask_pop_colours parity fixture', () => {
+  for (const c of PARITY.cases) {
+    it(c.name, () => {
+      const t = maskPopTable(c.layers.map(l => layer(l.cells, l.pops, l.hidden ?? [])))!
+      const expected = c.expected
+      const maxId = Math.max(...Object.keys(expected).map(Number)) + 2
+      for (let id = 0; id <= maxId; id++) {
+        const hex = expected[String(id)]
+        if (hex) {
+          expect(shaderRead(t, id)[3], `id ${id} drawn`).toBe(255)
+          expect(colourOf(t, id), `id ${id}`).toEqual(rgb255(hex))
+        } else {
+          expect(shaderRead(t, id)[3], `id ${id} not drawn`).toBe(0)
+        }
+      }
+    })
+  }
+})

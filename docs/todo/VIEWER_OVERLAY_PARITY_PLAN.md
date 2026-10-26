@@ -78,6 +78,13 @@ reading for this plan):
   pop's `layer` indexes it (`/qc` on two segmentations is two pops); the MCP `popMap` resolves it to
   the segmentation + pop type. An index, not the names spelled out per tile pop: those took the
   32×32 envelope ratchet from ~640 KB to ~800 KB, the index to ~680 KB (budget 700).
+- **P7 pop-colour mask.** The viewer's *Pop colour* mask (deepest shown pop wins, parents pale, cells
+  in no pop grey) is one rule on both sides: `maskPopTable` (viewer) and `mask_pop_colours` (movie,
+  inside `mask_id_colours`), held together by a shared fixture (`utils/maskPopTable.parity.json`, read
+  by both suites) and one `MASK_PARENT_PALE` (`shaders/constants.json`). A look with the toggle on and
+  pops shown sends `maskAllCells: false`; `mask_pop_scope` then colours the mask by the look's pop
+  types on the mask's own segmentation (the viewer's `maskPopLayers`). A batch's population mask draws
+  the same rule (so its ungated cells are grey now, not undrawn).
 
 ## Not in scope
 
@@ -94,11 +101,12 @@ reading for this plan):
   `viewerLook` doesn't read `settings.getPopEyes`), so a movie recorded
   from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
   `trackPopHidden`).
-- The viewer's *Pop colour* mask (`utils/maskPopTable.ts`: deepest visible pop wins, parents pale,
-  cells in no pop grey) is not carried into a movie recorded from the viewer: `viewerLook` still sends
-  `maskAllCells`, so the movie draws the per-id palette. A batch's population mask (`mask_id_colours`)
-  agrees on deepest-wins but has no pale rule and leaves ungated cells undrawn. Parity = a look flag
-  plus the pale/grey rule in `mask_id_colours`.
+- The ribbon eyes (`getPopEyes(…, 'ribbons')`, #1766) reach the movie only as their off paths
+  (`trackPopHidden`); the renderer still gates a ribbon on the manager's `show`
+  (`overlay_author.jl`, `L.show && !(L.path in hidden)`), so a ribbon the viewer turned on for a pop
+  the manager hides is not recorded. Same fix as the point eyes: carry the on eyes, drop the `show`
+  gate for a viewer look. The off paths are also path-only, so one pop type's hide covers a same-path
+  pop of another type on that segmentation.
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.
