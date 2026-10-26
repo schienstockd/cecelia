@@ -21,6 +21,7 @@ export interface HpcSite {
   scheduler: string
   host: string
   port: number
+  netQueue: string      // a queue whose nodes reach the internet, for downloads; '' = the CPU queue
   remoteDir: string
   email: string
   cpu: HpcClassSettings
@@ -119,7 +120,7 @@ export function keyPickerStart(keyFile: string): string {
 
 /** Every editable field, as a dotted path into `HpcSettings`. One draft per path (useHpcDrafts). */
 export const HPC_DRAFT_FIELDS = [
-  'site.scheduler', 'site.host', 'site.port', 'site.remoteDir', 'site.email',
+  'site.scheduler', 'site.host', 'site.port', 'site.netQueue', 'site.remoteDir', 'site.email',
   'identity.user', 'identity.keyFile', 'project.account',
   ...(['cpu', 'gpu'] as const).flatMap(c =>
     (['queue', 'account', 'qos', 'directives', 'preamble'] as const).map(k => `site.${c}.${k}`)),

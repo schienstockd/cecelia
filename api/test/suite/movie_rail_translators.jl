@@ -80,6 +80,19 @@
     @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => true),
                                     true)["allCells"] === true
 
+    # The mask's pops (`mask_pop_scope`). A viewer look with *Pop colour* on (`maskAllCells: false`,
+    # `popAllSegmentations`): its pop types on the mask's OWN segmentation, whatever the pop manager's
+    # — the viewer's `maskPopLayers`; no filter. A batch: its one layer, every cell on another mask.
+    look_pc = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => false,
+        "popAllSegmentations" => true, "popTypes" => ["flow", "region"], "popValueName" => "OTI"), true)
+    @test look_pc["allCells"] === false
+    sc = mask_pop_scope(overlay_track_plan(look_pc), "OTI", "P14", "flow", ["/x"], look_pc["allCells"])
+    @test sc == (; all_cells = false, pops_filter = nothing, pop_types = ["flow", "region"])
+    batch = overlay_track_plan(Dict{String,Any}("showPopulations" => true))
+    @test mask_pop_scope(batch, "OTI", "P14", "flow", ["/x"], false).all_cells === true
+    @test mask_pop_scope(batch, "OTI", "OTI", "flow", ["/x"], false) ==
+          (; all_cells = false, pop_types = nothing, pops_filter = ["/x"])
+
     # `popsFilter` on the config surfaces as `popPaths` on the overlay dict — the batch picker's
     # per-image subset, forwarded to `build_overlays3d_for` / `mask_id_colours` via
     # `_resolve_movie_overlays_mask`. Absent / empty = no filter (all pops rendered).

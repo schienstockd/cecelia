@@ -1,7 +1,7 @@
 # PBS Pro / OpenPBS — the second scheduler backend (docs/todo/HPC_PLAN.md → Decision 7/8, P5): qsub /
 # qselect / qstat -x / qdel. Pure renderers and parsers, plus one remote call per verb.
 #
-# Torque (the older PBS fork) is not this: it has no `select` statements and no `qstat -x`.
+# Torque (the older PBS fork) is not this: it has no `qstat -x`.
 
 struct PbsBackend <: HpcBackend
     site::HpcSite
@@ -14,21 +14,28 @@ _pbs_job_name(name::AbstractString)::String =
 """
     hpc_render_script(b::PbsBackend, spec) -> String
 
-The qsub script: D8's resource model as `#PBS` lines (one `select` chunk holding the cpus, memory and
-GPUs), the class's extra directives verbatim, then the common body. The log is an absolute path:
-PBS resolves a relative `-o` on the execution host's home, not the submit dir.
+The qsub script: D8's resource model as `#PBS` lines, the class's extra directives verbatim, then the
+common body. The log is an absolute path: PBS resolves a relative `-o` on the execution host's home,
+not the submit dir.
+
+Resources are job-wide (`-l ncpus`, `-l mem`, `-l ngpus`), not a `select` chunk: PBS Pro turns a
+job-wide request into a one-chunk select itself, and NCI Gadi refuses `-l select` outright. The account
+goes out as both `-A` (the PBS account string) and `-P` (the project): Gadi charges and grants storage
+by `-P` alone, and records `-A` without using it.
 """
 function hpc_render_script(b::PbsBackend, spec::HpcJobSpec)::String
     cls = hpc_class(b.site, spec.class)
-    sel = "select=1:ncpus=$(spec.cpus):mem=$(spec.mem_gb)gb" * (spec.gpus > 0 ? ":ngpus=$(spec.gpus)" : "")
     d = ["-N " * _pbs_job_name(spec.name),
          "-o " * spec.dir * "/" * HPC_JOB_LOG,
          "-j oe",
-         "-l " * sel,
-         "-l walltime=" * _hpc_walltime(spec.walltime_min)]
-    isempty(cls.queue) || push!(d, "-q " * cls.queue)
+         "-l ncpus=$(spec.cpus)",
+         "-l mem=$(spec.mem_gb)gb"]
+    spec.gpus > 0 && push!(d, "-l ngpus=$(spec.gpus)")
+    push!(d, "-l walltime=" * _hpc_walltime(spec.walltime_min))
+    q = hpc_queue(b.site, spec)
+    isempty(q) || push!(d, "-q " * q)
     acct = isempty(spec.account) ? cls.account : spec.account
-    isempty(acct) || push!(d, "-A " * acct)
+    isempty(acct) || append!(d, ["-A " * acct, "-P " * acct])
     isempty(b.site.email) || append!(d, ["-M " * b.site.email, "-m ae"])
     io = IOBuffer()
     println(io, "#!/bin/bash")

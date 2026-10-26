@@ -40,12 +40,15 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
           !occursin("--gres", s3) && !occursin("--mail", s3)
     @test occursin("--time=1:00:00", s3) && occursin("--mem=4G", s3)
 
-    # The install job is sized from one real site (1 min 16 s, MaxRSS 0.6 GB), not the old 8 GB / 2 h (#1739).
-    si = hpc_render_script(SlurmBackend(_hpc_test_site()),
-                           HpcJobSpec(; name = "install-env", dir = "/d", body = "true", class = "cpu",
-                                      Cecelia._HPC_INSTALL_JOB...))
-    @test occursin("#SBATCH --mem=4G\n", si) && occursin("#SBATCH --time=0:30:00\n", si) &&
-          occursin("#SBATCH --cpus-per-task=2\n", si)
+    # The install job is sized from one real site (1 min 16 s, MaxRSS 0.6 GB), not the old 8 GB / 2 h (#1739);
+    # one CPU, because an internet queue may allow no more (Gadi's copyq), and it goes there.
+    install = HpcJobSpec(; name = "install-env", dir = "/d", body = "true", class = "cpu", Cecelia._HPC_INSTALL_JOB...)
+    si = hpc_render_script(SlurmBackend(_hpc_test_site()), install)
+    @test occursin("#SBATCH --mem=8G\n", si) && occursin("#SBATCH --time=0:30:00\n", si) &&
+          occursin("#SBATCH --cpus-per-task=1\n", si)
+    t = _hpc_test_site()
+    s_net = HpcSite(t.scheduler, t.host, t.port, t.remote_dir, t.email, t.cpu, t.gpu, "dtn")
+    @test occursin("#SBATCH --partition=dtn\n", hpc_render_script(SlurmBackend(s_net), install))
 end
 
 @testset "HPC: SLURM status + exit-reason parsing" begin

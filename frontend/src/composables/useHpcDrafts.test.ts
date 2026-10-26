@@ -7,7 +7,7 @@ const cls = () => ({ queue: '', account: '', qos: '', directives: '', preamble: 
 const reply = (over: Partial<HpcSettings['site']> = {}): HpcSettings => ({
   available: true,
   schedulers: [{ name: 'slurm', label: 'SLURM', available: true }],
-  site: { scheduler: 'slurm', host: 'login.x', port: 22, remoteDir: '~/cecelia', email: '',
+  site: { scheduler: 'slurm', host: 'login.x', port: 22, netQueue: '', remoteDir: '~/cecelia', email: '',
           cpu: cls(), gpu: cls(), ...over },
   identity: { profile: 'default', user: 'alice', keyFile: '/k' },
   project: { projectUid: 'p', account: '' },

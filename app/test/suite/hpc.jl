@@ -126,8 +126,14 @@ end
         @test s.gpu.queue == ""
         cfg = Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))
         @test cfg["dirs"]["projects"] == "/tmp"                             # merged, not replaced
-        @test cfg["hpc"] == Dict("scheduler" => "slurm", "host" => "login.example.org", "port" => 2222)
+        @test cfg["hpc"] == Dict("scheduler" => "slurm", "host" => "login.example.org", "port" => 2222,
+                                 "netQueue" => "")
         @test hpc_site() == s                                               # hot-reloaded
+        # Which queue reaches the internet is a fact about the cluster: shared, like the host.
+        s = set_hpc_site!(Dict("netQueue" => "copyq"))
+        @test s.net_queue == "copyq" && hpc_site("bob").net_queue == "copyq"
+        @test Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))["hpc"]["netQueue"] == "copyq"
+        s = set_hpc_site!(Dict("netQueue" => ""))
 
         # Only the cluster is shared: another profile sees the host, not this one's queue or folder.
         set_hpc_site!(Dict("remoteDir" => "/scratch/alice/cecelia"))
@@ -160,6 +166,7 @@ end
         @test occursin("Unknown HPC setting", refused(Dict("hostname" => "x")))
         @test occursin("Unknown HPC setting", refused(Dict("cpu" => Dict("partition" => "x"))))
         @test occursin("GPU queue", refused(Dict("gpu" => Dict("queue" => "a b"))))
+        @test occursin("Internet queue", refused(Dict("netQueue" => "-q x")))
         @test occursin("remote folder in Preferences", refused(Dict("remoteDir" => "")))
         @test read(joinpath(tmp, "custom.toml"), String) == before          # nothing written
     end
@@ -240,6 +247,9 @@ end
                      "Host key changed")
     @test startswith(err(255, "Host key verification failed."), "Host key not trusted")
     @test err(255, "ssh: connect to host h port 22: Connection refused") == "Connection refused. Check host and port"
+    # A non-SSH port (Gadi on 20) accepts the TCP connect, then resets it.
+    @test err(255, "kex_exchange_identification: read: Connection reset by peer\nConnection reset by 203.0.19.85 port 20") ==
+          "Connection dropped. Check the port (SSH is usually 22)"
     @test err(255, "ssh: connect to host h port 22: Connection timed out") == "No response from host"
     @test err(255, "ssh: Could not resolve hostname nope: Name or service not known") == "Host not found"
     @test err(255, "debug1: x\nsomething odd happened") == "something odd happened"

@@ -391,9 +391,11 @@ The counts are files touched, new and existing, including tests and docs.
   by name ("Install it in Settings → HPC"), and Settings shows the lock hash it is ready for.
 - **pixi is fetched by the install job** from its GitHub release (`HPC_PIXI_VERSION`, the version CI
   pins), and its cache lives under the remote folder (cluster home quotas are small). So the compute
-  node needs outbound HTTPS. A site without it is the Q1 (b)/(c) case, still open.
+  node needs outbound HTTPS. A site whose compute nodes are offline but has a queue that downloads
+  (Gadi's `copyq`) sets it as the site's internet queue, where the install job goes. A site with no
+  such queue is the Q1 (b)/(c) case, still open.
 - **Linux x86_64 only on the cluster** (the platform pixi.lock has). The job refuses anything else by name.
-- **Install job size:** 2 CPUs, 4 GB, 30 min (#1739). Measured on one real SLURM site: 1 min 16 s,
+- **Install job size:** 1 CPU, 8 GB, 30 min (8 GB after Gadi reported 4.0 of 4 GB used) (#1739; 1 CPU so it fits an internet queue such as Gadi's copyq). Measured on one real SLURM site: 1 min 16 s,
   MaxRSS 0.6 GB, 8.3 GB on disk; the cold download dominates. Was 8 GB / 2 h before any measurement.
 - **An install already on the cluster is attached to** (`env/<lock>/.install-job`), not repeated: the
   first piece of Q6.

@@ -1,7 +1,9 @@
 # HPC settings — the split of docs/todo/HPC_PLAN.md → Decision 9 (revised 2026-10-13):
 #
-#   cluster   `custom.toml` `[hpc]`                       scheduler, host, port — machine-wide: which
-#                                                          cluster this machine reaches is not personal
+#   cluster   `custom.toml` `[hpc]`                       scheduler, host, port, internet queue —
+#                                                          machine-wide: which cluster this machine
+#                                                          reaches, and which of its queues can download,
+#                                                          is not personal
 #   personal  `user-profiles/<name>/settings.toml`        everything else: username + SSH key
 #             (`hpcUser`, `hpcKeyFile`, `hpc` table)       (`hpcUser`/`hpcKeyFile`), and the remote folder,
 #                                                          email and CPU/GPU queue/account/QoS/directives/
@@ -48,7 +50,10 @@ struct HpcSite
     email::String
     cpu::HpcClass
     gpu::HpcClass
+    net_queue::String    # a queue whose nodes reach the internet (Gadi's copyq); "" = the CPU queue
 end
+HpcSite(scheduler, host, port, remote_dir, email, cpu, gpu) =
+    HpcSite(scheduler, host, port, remote_dir, email, cpu, gpu, "")
 
 """A profile's cluster login. `key_file` is stored as typed (a leading `~` stays portable)."""
 struct HpcIdentity
@@ -57,9 +62,9 @@ struct HpcIdentity
 end
 
 const _HPC_CLASS_KEYS = ("queue", "account", "qos", "directives", "preamble")
-const _HPC_SITE_KEYS  = ("scheduler", "host", "port", "remoteDir", "email")
+const _HPC_SITE_KEYS  = ("scheduler", "host", "port", "netQueue", "remoteDir", "email")
 # Which of the site's keys are shared by every profile (custom.toml); the rest are the profile's own.
-const _HPC_SHARED_KEYS   = ("scheduler", "host", "port")
+const _HPC_SHARED_KEYS   = ("scheduler", "host", "port", "netQueue")
 const _HPC_PERSONAL_KEYS = ("remoteDir", "email", HPC_CLASSES...)
 const _HPC_PROFILE_KEY   = "hpc"
 const _HPC_DEFAULT_REMOTE_DIR = "~/cecelia"
@@ -85,7 +90,8 @@ function _hpc_site(d::AbstractDict)::HpcSite
     port = tryparse(Int, string(get(d, "port", 22)))
     HpcSite(lowercase(_hstr(d, "scheduler", "slurm")), _hstr(d, "host"),
             isnothing(port) ? 22 : port, _hstr(d, "remoteDir", _HPC_DEFAULT_REMOTE_DIR),
-            _hstr(d, "email"), _hpc_class(get(d, "cpu", nothing)), _hpc_class(get(d, "gpu", nothing)))
+            _hstr(d, "email"), _hpc_class(get(d, "cpu", nothing)), _hpc_class(get(d, "gpu", nothing)),
+            _hstr(d, "netQueue"))
 end
 
 """
@@ -121,7 +127,7 @@ hpc_class_dict(c::HpcClass)::Dict{String,Any} =
 """`custom.toml` / JSON shape of a site — the same keys `set_hpc_site!` accepts."""
 hpc_site_dict(s::HpcSite)::Dict{String,Any} =
     Dict{String,Any}("scheduler" => s.scheduler, "host" => s.host, "port" => s.port,
-                     "remoteDir" => s.remote_dir, "email" => s.email,
+                     "netQueue" => s.net_queue, "remoteDir" => s.remote_dir, "email" => s.email,
                      "cpu" => hpc_class_dict(s.cpu), "gpu" => hpc_class_dict(s.gpu))
 
 # ── Validation ─────────────────────────────────────────────────────────────────────────────────────
@@ -155,6 +161,7 @@ function hpc_site_errors(s::HpcSite)::Vector{String}
     end
     _hpc_token!(errs, "Host", s.host)
     1 <= s.port <= 65535 || push!(errs, "Port must be 1–65535")
+    _hpc_token!(errs, "Internet queue", s.net_queue)
     isempty(s.remote_dir) && push!(errs, "Set the remote folder in Preferences → HPC")
     any(c -> c in ('\n', '\r', '\0'), s.remote_dir) && push!(errs, "Remote folder must be one line")
     _hpc_token!(errs, "Email", s.email)
@@ -169,8 +176,8 @@ end
 """
     set_hpc_site!(patch; name = active_profile_name()) -> HpcSite
 
-Merge `patch` (any subset of `scheduler, host, port, remoteDir, email, cpu{…}, gpu{…}`) into the
-settings in effect, validate the RESULT, then write each part where it lives: scheduler/host/port to
+Merge `patch` (any subset of `scheduler, host, port, netQueue, remoteDir, email, cpu{…}, gpu{…}`) into the
+settings in effect, validate the RESULT, then write each part where it lives: scheduler/host/port/netQueue to
 `custom.toml` `[hpc]` (hot-reloaded), the rest to profile `name`. Throws `ArgumentError` naming every
 problem; nothing is written then. Unknown keys are refused rather than stored, so a typo cannot
 accumulate (the same rule as `POST /api/pools/set`).
