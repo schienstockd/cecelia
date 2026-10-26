@@ -8,8 +8,7 @@
 //
 // COORDINATE FRAME. Same as GridOverlay: tiles live in VIEWPORT coords, so `B3` is a quarter of
 // the current view (Set-of-Mark use case). The input `ImageData` is expected to be the viewport's
-// pixel readback — see `readCanvasImageData` for the WebGPU-safe roundtrip that ViewerWindow uses
-// for shares.
+// pixel readback — ViewerWindow's `readViewerFrame` (a GPU read), through `readCanvasImageData`.
 //
 // COMPUTE BUDGET (Decision 16): < 100 ms at native res. 64 tiles × 4 stats × handful-of-passes is
 // trivial on the browser's already-decoded frame — no models, no GPU. If it overruns, the tile
@@ -216,9 +215,8 @@ export function augmentLandscape(
   return out
 }
 
-/** Read `ImageData` from a WebGPU (or 2D) canvas. WebGPU's presentation buffer is consumed by the
- *  compositor between frames so `drawImage(webgpuCanvas)` reads blank — we go through
- *  `toDataURL` → `Image.decode` → offscreen 2D, the same trick `overlayCompose.ts` uses. Optional
+/** Read `ImageData` from a 2D canvas, downsampled — the viewer passes its `readViewerFrame` copy,
+ *  never the WebGPU canvas itself (its snapshot can read back blank). Optional
  *  `downsampleTo` bounds the long side so a 4K canvas doesn't blow the budget (each tile still
  *  gets thousands of pixels; the categorical labelling is unchanged). */
 export async function readCanvasImageData(
