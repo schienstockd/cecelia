@@ -1,0 +1,8 @@
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openmicroscopy.org/Schemas/OME/2016-06 http://www.openmicroscopy.org/Schemas/OME/2016-06/ome.xsd">
+  <Image ID="Image:0" Name="contacts">
+    <Pixels ID="Pixels:0" DimensionOrder="XYZCT" Type="uint16" SizeX="32" SizeY="16" SizeZ="4" SizeC="2" SizeT="1" PhysicalSizeX="1.0" PhysicalSizeXUnit="µm" PhysicalSizeY="1.0" PhysicalSizeYUnit="µm" PhysicalSizeZ="2.0" PhysicalSizeZUnit="µm">
+      <Channel ID="Channel:0:0" Name="pop" SamplesPerPixel="1"/>
+      <Channel ID="Channel:0:1" Name="flat" SamplesPerPixel="1"/>
+    </Pixels>
+  </Image>
+</OME>
