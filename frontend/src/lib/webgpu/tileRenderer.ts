@@ -45,6 +45,7 @@ import { acquireGpuDevice, WebGpuUnavailable, type AdapterReport } from '../../u
 import { pickSrgbCanvasFormats } from './canvasFormat'
 import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
+import { renderToPixels } from './frameReadback'
 export { WebGpuUnavailable, type AdapterReport }
 import { tileKeyStr, tileFetchRect, tileSlotShape, type TileKey } from '../../utils/tileViewer'
 
@@ -186,6 +187,9 @@ export interface TileRenderer {
   /** Draw the given tiles as one instanced call over the finished atlas, then the overlays. Tiles
    *  that name a slot the atlas does not currently hold are silently skipped. */
   draw(tiles: TileDraw[]): void
+  /** The same frame as `draw(tiles)`, read off the GPU at the canvas's size — see
+   *  `VolumeRenderer.readFrame`. Does not touch the canvas. */
+  readFrame(tiles: TileDraw[]): Promise<ImageData | null>
   /** Rejects with the reason if the device is lost. */
   readonly lost: Promise<GPUDeviceLostInfo>
   destroy(): void
@@ -485,6 +489,67 @@ export async function createTileRenderer(
     return Math.min(MAX_SLOTS, fromBudget, fromAdapter, fromBuffer)
   }
 
+  // One frame's uniforms + instance rows, then its pass body — shared by `draw` (the canvas) and
+  // `readFrame` (an offscreen copy), so a saved frame cannot drift from the one on screen. Returns
+  // the tile count to draw.
+  const prepareFrame = (tilesToDraw: TileDraw[]): number => {
+    const w = canvas.width, h = canvas.height
+    u[U.cam.aspect] = w > 0 ? w / Math.max(h, 1) : 1
+    u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
+    pushUniforms()
+    // Instance data — one row per tile draw. Zero tiles is a legitimate frame (mount before the
+    // first fetch lands) and clears to the pass's colour rather than reading undefined bytes.
+    // No atlas yet (allocation in flight) → no tiles, but the overlays still draw.
+    const n = bindGroup && atlas ? tilesToDraw.length : 0
+    if (n > 0) {
+      const need = n * INSTANCE_STRIDE
+      if (!instBuf || need > instCap) {
+        instBuf?.destroy()
+        instCap = need
+        instBuf = device.createBuffer({
+          size: instCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        })
+      }
+      const data = new Float32Array(n * INSTANCE_FLOATS)
+      for (let i = 0; i < n; i++) {
+        const t = tilesToDraw[i]
+        const o = i * INSTANCE_FLOATS
+        data[o]     = t.worldX
+        data[o + 1] = t.worldY
+        data[o + 2] = t.worldW
+        data[o + 3] = t.worldH
+        data[o + 4] = t.sampledX
+        data[o + 5] = t.sampledY
+        data[o + 6] = t.slot
+        data[o + 7] = labelSource && labelSrcBySlot[t.slot] === labelSource ? 1 : 0
+      }
+      device.queue.writeBuffer(instBuf, 0, data)
+    }
+    return n
+  }
+  const encodeFrame = (pass: GPURenderPassEncoder, n: number) => {
+    if (n > 0 && instBuf && bindGroup) {
+      pass.setPipeline(pipeline)
+      pass.setBindGroup(0, bindGroup)
+      pass.setVertexBuffer(0, instBuf)
+      pass.draw(6, n)
+    }
+    // Overlays blend over the finished tiles. Tails first, then points: a marker sits ON TOP of the
+    // path that leads to it.
+    if (segBuf && segCount > 0) {
+      pass.setPipeline(segPipeline)
+      pass.setBindGroup(0, overlayBindGroup)
+      pass.setVertexBuffer(0, segBuf)
+      pass.draw(6, segCount, 0, segFirst)
+    }
+    if (pointBuf && pointCount > 0) {
+      pass.setPipeline(pointsPipeline)
+      pass.setBindGroup(0, overlayBindGroup)
+      pass.setVertexBuffer(0, pointBuf)
+      pass.draw(6, pointCount, 0, pointFirst)
+    }
+  }
+
   return {
     adapter: report,
     lost: device.lost,
@@ -727,40 +792,7 @@ export async function createTileRenderer(
 
     draw(tilesToDraw) {
       if (!usable()) return
-      const w = canvas.width, h = canvas.height
-      u[U.cam.aspect] = w > 0 ? w / Math.max(h, 1) : 1
-      u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
-      pushUniforms()
-
-      // Instance data — one row per tile draw. Zero tiles is a legitimate frame (mount before the
-      // first fetch lands) and clears to the pass's colour rather than reading undefined bytes.
-      // No atlas yet (allocation in flight) → no tiles, but the overlays still draw.
-      const n = bindGroup && atlas ? tilesToDraw.length : 0
-      if (n > 0) {
-        const need = n * INSTANCE_STRIDE
-        if (!instBuf || need > instCap) {
-          instBuf?.destroy()
-          instCap = need
-          instBuf = device.createBuffer({
-            size: instCap, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-          })
-        }
-        const data = new Float32Array(n * INSTANCE_FLOATS)
-        for (let i = 0; i < n; i++) {
-          const t = tilesToDraw[i]
-          const o = i * INSTANCE_FLOATS
-          data[o]     = t.worldX
-          data[o + 1] = t.worldY
-          data[o + 2] = t.worldW
-          data[o + 3] = t.worldH
-          data[o + 4] = t.sampledX
-          data[o + 5] = t.sampledY
-          data[o + 6] = t.slot
-          data[o + 7] = labelSource && labelSrcBySlot[t.slot] === labelSource ? 1 : 0
-        }
-        device.queue.writeBuffer(instBuf, 0, data)
-      }
-
+      const n = prepareFrame(tilesToDraw)
       const enc = device.createCommandEncoder()
       const pass = enc.beginRenderPass({
         colorAttachments: [{
@@ -769,28 +801,17 @@ export async function createTileRenderer(
           clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
         }],
       })
-      if (n > 0 && instBuf && bindGroup) {
-        pass.setPipeline(pipeline)
-        pass.setBindGroup(0, bindGroup)
-        pass.setVertexBuffer(0, instBuf)
-        pass.draw(6, n)
-      }
-      // Overlays blend over the finished tiles. Tails first, then points: a marker sits ON TOP of the
-      // path that leads to it.
-      if (segBuf && segCount > 0) {
-        pass.setPipeline(segPipeline)
-        pass.setBindGroup(0, overlayBindGroup)
-        pass.setVertexBuffer(0, segBuf)
-        pass.draw(6, segCount, 0, segFirst)
-      }
-      if (pointBuf && pointCount > 0) {
-        pass.setPipeline(pointsPipeline)
-        pass.setBindGroup(0, overlayBindGroup)
-        pass.setVertexBuffer(0, pointBuf)
-        pass.draw(6, pointCount, 0, pointFirst)
-      }
+      encodeFrame(pass, n)
       pass.end()
       device.queue.submit([enc.finish()])
+    },
+
+    async readFrame(tilesToDraw) {
+      if (!usable()) return null
+      const n = prepareFrame(tilesToDraw)
+      const w = canvas.width, h = canvas.height
+      const px = await renderToPixels(device, format, w, h, pass => encodeFrame(pass, n))
+      return px && new ImageData(px, w, h)
     },
 
     destroy() {
