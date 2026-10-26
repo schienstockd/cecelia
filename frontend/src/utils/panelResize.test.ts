@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { resizeRect } from './panelResize'
+import { resizeRect, squareRect } from './panelResize'
 import { panelBounds } from './panelBounds'
 
 const VW = 1200, VH = 800, HEADER = 40
@@ -81,5 +81,59 @@ describe('resizeRect', () => {
   it('E drag falls back to minW in a viewport narrower than minW', () => {
     const tiny = { ...OPTS, viewportW: 100 }
     expect(resizeRect(START, 50, 0, { e: true }, tiny).w).toBe(OPTS.minW)
+  })
+})
+
+describe('squareRect', () => {
+  // a :square panel: body w × w under 60px of chrome, so the box is w × (w + 60)
+  const CH = 60
+  const SQ = { x: 100, y: 100, w: 400, h: 460 }
+  const O = { minW: 340, minH: 320, viewportW: 1200, viewportH: 900, bounds: { minX: 0, minY: 0, maxX: 1200, maxY: 900 } }
+  const sq = (dx: number, dy: number, edges: Parameters<typeof resizeRect>[3]) =>
+    squareRect(resizeRect(SQ, dx, dy, edges, O), SQ, edges, CH, O)
+
+  it('S drag drives the side from the body height — and the result is already square', () => {
+    // the flicker: the free rect would be 400 × 400 (body 340 × 400), which a later snap undid
+    const r = sq(0, -60, { s: true })
+    expect(r).toEqual({ x: 100, y: 100, w: 340, h: 400 })
+    expect(r.h - CH).toBe(r.w)
+  })
+
+  it('a second identical move gives the identical rect (no oscillation)', () => {
+    expect(sq(0, -60, { s: true })).toEqual(sq(0, -60, { s: true }))
+  })
+
+  it('E drag drives the side from the width', () => {
+    expect(sq(50, 0, { e: true })).toEqual({ x: 100, y: 100, w: 450, h: 510 })
+  })
+
+  it('N drag keeps the bottom edge fixed', () => {
+    const r = sq(0, 40, { n: true })
+    expect(r.w).toBe(360); expect(r.h).toBe(420); expect(r.y + r.h).toBe(SQ.y + SQ.h)
+  })
+
+  it('W drag keeps the right edge fixed', () => {
+    const r = sq(-50, 0, { w: true })
+    expect(r.w).toBe(450); expect(r.x + r.w).toBe(SQ.x + SQ.w)
+  })
+
+  it('a corner follows the axis that moved further', () => {
+    expect(sq(10, 80, { s: true, e: true }).w).toBe(480)    // height led
+    expect(sq(-50, 5, { s: true, e: true }).w).toBe(350)    // width led
+  })
+
+  it('NW corner anchors both opposite edges', () => {
+    const r = sq(-30, -10, { n: true, w: true })
+    expect(r.x + r.w).toBe(SQ.x + SQ.w); expect(r.y + r.h).toBe(SQ.y + SQ.h); expect(r.h - CH).toBe(r.w)
+  })
+
+  it('shrinking stops at the min width', () => {
+    expect(sq(0, -300, { s: true })).toEqual({ x: 100, y: 100, w: 340, h: 400 })
+  })
+
+  it('growing stops where the OTHER axis runs out of canvas', () => {
+    // E drag wants 1000 wide, but only 900 - 100 - 60 = 740 of body height fits below y=100
+    const r = sq(600, 0, { e: true })
+    expect(r.w).toBe(740); expect(r.y + r.h).toBe(900)
   })
 })

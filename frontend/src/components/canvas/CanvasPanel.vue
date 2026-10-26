@@ -14,6 +14,7 @@ import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useInjectedZoom } from '../../composables/useCanvasZoom'
 import { rafCoalesce } from '../../utils/rafCoalesce'
 import { fitSquare } from '../../utils/tileGrid'
+import { squareRect } from '../../utils/panelResize'
 import CcCycleButton, { type CycleOption } from '../CcCycleButton.vue'
 import AddToKiwiButton from '../kiwi/AddToKiwiButton.vue'
 import { usePlotRegistryStore } from '../../stores/plotRegistry'
@@ -106,32 +107,42 @@ const { pos, startDrag } = useFloatingPanel(root, {
 // the canvas offsetParent (0,0 → parent width/height) so a resize cannot push the panel outside its
 // workspace; `zoom` matches the drag path so screen-pixel deltas are canvas-pixel-correct.
 // `setRect` writes SIZE straight to the DOM style (so the existing `ResizeObserver` continues to fire
-// `persist()` + `enforceSquare`) and updates `pos` for the anchor edges (W/N). It respects the
-// `edges` mask: for a `:square` panel a horizontal-only drag must NOT rewrite `height`, otherwise
-// the composable would overwrite `enforceSquare`'s snap every pointermove and flicker.
+// `persist()`) and updates `pos` for the anchor edges (W/N). A `:square` panel rewrites the rect as a
+// square (`squareRect`) BEFORE writing it: snapping afterwards (`enforceSquare`, a frame later) fought
+// every pointermove of an N/S drag and the plot flickered between the dragged and the square height.
+const resizeLimits = () => {
+  // resize floor inside the canvas — matches the drag `clamp` in `useFloatingPanel` (top-left ≥ 0
+  // for the y axis; negative x is allowed for the drag path but a resize can't drag the top-left
+  // out of the parent, so it stays at 0 here). Ceiling for E/S is the canvas, not the browser window:
+  // the panel sits inside a zoomable canvas that can be smaller than the viewport.
+  const par = root.value?.offsetParent as HTMLElement | null
+  return {
+    bounds: { minX: 0, minY: 0, maxX: par?.clientWidth ?? 0, maxY: par?.clientHeight ?? 0 },
+    viewport: { w: par?.clientWidth ?? window.innerWidth, h: par?.clientHeight ?? window.innerHeight },
+  }
+}
+const RESIZE_MIN = { w: 340, h: 320 }   // matches `.panel { min-width / min-height }`
 const { onResizeDown } = useResizeHandles({
   getRect: () => ({ x: pos.value.x, y: pos.value.y, w: root.value?.offsetWidth ?? 0, h: root.value?.offsetHeight ?? 0 }),
-  setRect: (r, edges) => {
-    if (edges.w || edges.n) pos.value = { x: r.x, y: r.y }   // N/W anchor to the opposite side, so position moves too
+  setRect: (r, edges, start) => {
     if (!root.value) return
+    if (props.square && mainEl.value) {
+      const { bounds, viewport } = resizeLimits()
+      const chromeH = root.value.offsetHeight - mainEl.value.offsetHeight
+      r = squareRect(r, start, edges, chromeH,
+        { minW: RESIZE_MIN.w, minH: RESIZE_MIN.h, viewportW: viewport.w, viewportH: viewport.h, bounds })
+      if (r.x !== pos.value.x || r.y !== pos.value.y) pos.value = { x: r.x, y: r.y }
+      root.value.style.width = r.w + 'px'
+      root.value.style.height = r.h + 'px'
+      return
+    }
+    if (edges.w || edges.n) pos.value = { x: r.x, y: r.y }   // N/W anchor to the opposite side, so position moves too
     if (edges.e || edges.w) root.value.style.width = r.w + 'px'
     if (edges.n || edges.s) root.value.style.height = r.h + 'px'
   },
-  bounds: () => {
-    // resize floor inside the canvas — matches the drag `clamp` in `useFloatingPanel` (top-left ≥ 0
-    // for the y axis; negative x is allowed for the drag path but a resize can't drag the top-left
-    // out of the parent, so it stays at 0 here).
-    const par = root.value?.offsetParent as HTMLElement | null
-    return { minX: 0, minY: 0, maxX: par?.clientWidth ?? 0, maxY: par?.clientHeight ?? 0 }
-  },
-  viewportSize: () => {
-    // ceiling for E/S — the canvas, not the browser window. The panel sits inside a zoomable canvas
-    // that can be smaller than the viewport, and a browser-window ceiling would let the panel be
-    // dragged past the canvas edge.
-    const par = root.value?.offsetParent as HTMLElement | null
-    return { w: par?.clientWidth ?? window.innerWidth, h: par?.clientHeight ?? window.innerHeight }
-  },
-  min: { w: 340, h: 320 },   // matches `.panel { min-width / min-height }`
+  bounds: () => resizeLimits().bounds,
+  viewportSize: () => resizeLimits().viewport,
+  min: RESIZE_MIN,
   zoom: injectedZoom,
   onActivate: () => emit('activate', props.index),
 })

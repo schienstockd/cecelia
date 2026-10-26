@@ -56,6 +56,36 @@ export function resizeRect(start: Rect, dx: number, dy: number, edges: Edges, o:
   return { x, y, w, h }
 }
 
+/**
+ * Square-panel variant: turn the free rect `resizeRect` produced into one whose BODY is square
+ * (`w × w`, the box `w × (w + chromeH)`), for `CanvasPanel :square`.
+ *
+ * The drag has to produce the square itself. Writing the free rect and letting the panel snap its
+ * height afterwards means an N/S drag sets the height every pointermove and the snap restores it every
+ * frame — the plot flickers between the two for as long as the drag lasts.
+ *
+ * The grabbed axis drives the side: an E/W edge the width, an N/S edge the body height, a corner
+ * whichever moved further from `start`. Anchors stay where `resizeRect` put them (a W/N drag keeps the
+ * right/bottom edge fixed). The side is clamped so both the min size and the room left in the canvas
+ * hold on BOTH axes.
+ */
+export function squareRect(r: Rect, start: Rect, edges: Edges, chromeH: number, o: ResizeOpts): Rect {
+  const ch = Math.max(0, chromeH)
+  const horiz = !!(edges.e || edges.w)
+  const vert = !!(edges.n || edges.s)
+  const fromW = r.w
+  const fromH = r.h - ch
+  let side: number
+  if (horiz && vert) side = Math.abs(r.w - start.w) >= Math.abs(r.h - start.h) ? fromW : fromH
+  else side = vert ? fromH : fromW
+  const right = r.x + r.w, bottom = r.y + r.h
+  const roomW = edges.w ? right - o.bounds.minX : o.viewportW - r.x
+  const roomH = (edges.n ? bottom - o.bounds.minY : o.viewportH - r.y) - ch
+  side = clamp(side, Math.max(o.minW, o.minH - ch), Math.min(roomW, roomH))
+  const w = side, h = side + ch
+  return { x: edges.w ? right - w : r.x, y: edges.n ? bottom - h : r.y, w, h }
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   // A viewport smaller than the minimum size gives hi < lo. Prefer the minimum size in that case —
   // matches what the old bottom-right code did via Math.max(minW, Math.min(...)).
