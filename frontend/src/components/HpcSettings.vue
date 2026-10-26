@@ -20,10 +20,12 @@ import InlineNote from './InlineNote.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
-  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged,
+  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
   type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen, openPreferences } from '../lib/preferencesOpen'
+import { useTaskStore } from '../stores/tasks'
+import { railJobRow } from '../utils/railJobs'
 
 const props = defineProps<{ projectUid: string; scope: HpcScope }>()
 const machine = computed(() => props.scope === 'machine')
@@ -95,13 +97,22 @@ async function runTest() {
 // The cluster environment (P2): asked of the cluster once the login is filled in, again after a
 // passing test and when the install job ends.
 const env = ref<HpcEnvStatus | null>(null)
-const envLine = computed(() => hpcEnvLine(env.value))
+const tasks = useTaskStore()
+const installRow = computed(() => tasks.tasks.find(t => t.id === HPC_ENV_JOB_ID))
+const envLine = computed(() => hpcEnvLine(env.value,
+  { stage: installRow.value?.hpcStage, job: installRow.value?.hpcJob }))
 async function loadEnv() {
   if (blocker.value || !machine.value) return
   env.value = null
   try { env.value = await fetchHpcEnv() }
   catch (e) { env.value = { configured: false, lock: '', installed: false, job: '', installing: false,
                             error: e instanceof Error ? e.message : String(e) } }
+  // Opened mid-install (a reload, another tab): this tab missed the job's first frame, so give it its row.
+  const r = installRow.value
+  if (env.value?.installing && r?.status !== 'running' && r?.status !== 'queued') {
+    tasks.adoptJob(railJobRow({ taskId: HPC_ENV_JOB_ID, status: 'running', fun: 'hpc:install-env', pool: 'job' }))
+    tasks.setHpc(HPC_ENV_JOB_ID, env.value.stage ?? '', env.value.job)
+  }
 }
 async function install() {
   await pendingSave              // an Internet queue typed just before the click must reach the job

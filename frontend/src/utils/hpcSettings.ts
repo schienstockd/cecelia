@@ -154,6 +154,7 @@ export interface HpcEnvStatus {
   installed: boolean
   job: string           // an install job queued or running on the cluster, '' if none
   installing: boolean   // this backend is running the install
+  stage?: string        // while installing: 'sync' | 'queued' | 'running' (the row's `task:hpc` stage)
   error: string
 }
 
@@ -171,11 +172,23 @@ export async function installHpcEnv(): Promise<void> {
   await svcPost('/api/hpc/env/install', {})
 }
 
+/** What a running install is doing, from its Task Manager row's stage (else the GET's). */
+const INSTALL_STAGE_TEXT: Record<string, (job: string) => string> = {
+  sync:    () => 'Uploading the environment files',
+  queued:  j => `Queued on the cluster${j ? ` (job ${j})` : ''}`,
+  running: j => `Installing on the cluster${j ? ` (job ${j})` : ''}`,
+}
+
 /** The environment's state as one line (no severity = in progress, an info note), and whether
- *  Install is offered. */
-export function hpcEnvLine(e: HpcEnvStatus | null): { severity?: 'ok' | 'fail'; text: string; canInstall: boolean } {
+ *  Install is offered. `live` is the install row's current stage, which moves without a re-fetch. */
+export function hpcEnvLine(e: HpcEnvStatus | null, live?: { stage?: string; job?: string }):
+    { severity?: 'ok' | 'fail'; text: string; canInstall: boolean } {
   if (!e) return { text: 'Checking the cluster…', canInstall: false }
-  if (e.installing) return { text: 'Installing — follow it in the Task Manager', canInstall: false }
+  if (e.installing) {
+    const stage = live?.stage || e.stage || ''
+    const say = INSTALL_STAGE_TEXT[stage]
+    return { text: say ? say(live?.job || e.job || '') : 'Installing — follow it in the Task Manager', canInstall: false }
+  }
   if (e.error) return { severity: 'fail', text: e.error, canInstall: e.configured }
   if (e.installed) return { severity: 'ok', text: `Environment ready (${e.lock})`, canInstall: false }
   if (e.job) return { text: `Installing on the cluster (job ${e.job})`, canInstall: true }

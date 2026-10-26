@@ -21,7 +21,7 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
                       class = "gpu", cpus = 8, mem_gb = 32, gpus = 1, walltime_min = 90)
     s = hpc_render_script(b, spec)
     @test startswith(s, "#!/bin/bash\n")
-    for d in ("--job-name=cecelia-seg_one", "--output=job.log", "--cpus-per-task=8", "--mem=32G",
+    for d in ("--job-name=cecelia-seg_one", "--output=scheduler.log", "--cpus-per-task=8", "--mem=32G",
               "--time=1:30:00", "--partition=gpu-a100", "--account=lab01", "--qos=normal",
               "--gres=gpu:1", "--mail-user=me@uni.edu", "--mail-type=END,FAIL")
         @test occursin("#SBATCH $d\n", s)
@@ -31,6 +31,9 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
     @test findfirst("#SBATCH --constraint", s)[1] < findfirst("module load cuda/12", s)[1] <
           findfirst("python run.py", s)[1] < findfirst(".exit.tmp", s)[1]
     @test occursin("cd '/scratch/c/jobs/t1' || exit 99", s)
+    # The job writes its own log, preamble included, so it is live on every scheduler (PBS spools `-o`).
+    @test findfirst("exec > '/scratch/c/jobs/t1/job.log' 2>&1\n", s)[1] < findfirst("module load cuda/12", s)[1]
+    @test occursin("export PYTHONUNBUFFERED=1\n", s)
 
     # The project's account overrides the class's; an empty class adds no flag at all.
     s2 = hpc_render_script(b, HpcJobSpec(; name = "x", dir = "/d", body = "true", class = "gpu", account = "grant7"))
@@ -66,6 +69,24 @@ end
     @test Cecelia.slurm_exit_reason("FAILED|1:0") == "Job failed"
     @test Cecelia.slurm_exit_reason("COMPLETED|0:0") == ""
     @test Cecelia.slurm_exit_reason("") == ""
+end
+
+@testset "HPC: SLURM wait reasons (shim squeue)" begin
+    if Sys.iswindows()
+        @test_skip false
+    else
+        shims = mktempdir()
+        write(joinpath(shims, "squeue"), "#!/bin/sh\nprintf '11 PENDING Priority\\n12 RUNNING None\\n" *
+                                         "13 PENDING QOSMaxJobsPerUserLimit\\n14 PENDING None\\n'\n")
+        chmod(joinpath(shims, "squeue"), 0o755)
+        withenv("PATH" => shims * ":" * ENV["PATH"]) do
+            b = SlurmBackend(_hpc_test_site())
+            jobs = [Cecelia.HpcPollJob(i, "/nonexistent", 0) for i in ("11", "12", "13", "14")]
+            r = hpc_poll(b, HpcLocalConn(), jobs)
+            @test [x.state for x in r] == [JOB_QUEUED, JOB_RUNNING, JOB_QUEUED, JOB_QUEUED]
+            @test [x.reason for x in r] == ["Other jobs are ahead in the queue", "", "QOSMaxJobsPerUserLimit", ""]
+        end
+    end
 end
 
 @testset "HPC: poll reply parsing" begin

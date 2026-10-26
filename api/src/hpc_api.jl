@@ -67,7 +67,7 @@ api_hpc_test(_body_bytes) = 200, JSON3.write(Cecelia.hpc_test_dict(hpc_test_conn
 
 # ── The cluster environment (HPC_PLAN P2) ─────────────────────────────────────────────────────────
 #
-#   GET  /api/hpc/env           → {configured, lock, installed, job, installing, error}
+#   GET  /api/hpc/env           → {configured, lock, installed, job, installing, stage, error}
 #   POST /api/hpc/env/install   → 202 {started, jobId} — a background job on the task rail
 #                                 (`hpc-env-install`, cancellable from the Task Manager)
 #
@@ -78,12 +78,22 @@ const _HPC_ENV_JOB_ID = "hpc-env-install"
 # Why the last install from this backend failed, shown beside Install until one succeeds: the rail's
 # log scrolls away, and "Not installed" alone hides a refused submit.
 const _HPC_ENV_LAST_ERROR = Ref("")
+# The running install's cluster stage and job id, as its last `task:hpc` frame said: a page opened
+# mid-install has missed that frame, and a queued job may not change stage for hours.
+const _HPC_ENV_STAGE = Ref(("", ""))
+function _hpc_env_stage!(id, stage::Cecelia.HpcStage, job)
+    _HPC_ENV_STAGE[] = (string(stage), String(job))
+    ws_hpc(nothing, id, string(stage), job)
+end
 
 function api_hpc_env_get(_req)
     lock = Cecelia.hpc_lock_hash()
     base = Dict{String,Any}("configured" => false, "lock" => lock, "installed" => false, "job" => "",
                             "installing" => job_active(_HPC_ENV_JOB_ID), "error" => "")
-    base["installing"] && return 200, JSON3.write(merge(base, Dict("configured" => true)))
+    if base["installing"]
+        stage, job = _HPC_ENV_STAGE[]
+        return 200, JSON3.write(merge(base, Dict("configured" => true, "stage" => stage, "job" => job)))
+    end
     try
         c = hpc_conn()
         base["configured"] = true
@@ -111,17 +121,26 @@ end
 
 # The same task-rail pattern as `_run_env_install` (system_api.jl): running → log lines → done|failed,
 # `pool = "job"`. Cancel arrives through `cancel_job!`, which the watch loop polls via `job_cancelled`.
+# The row also gets the cluster stage (`task:hpc`, as a dispatched task's): "sync" while uploading,
+# then queued/running with the job id.
 function _run_hpc_env_install(c, b)
     id = _HPC_ENV_JOB_ID
     fun = "hpc:install-env"
     ws_status(nothing, id, "running", ""; fun = fun, pool = "job")
+    _hpc_env_stage!(id, Cecelia.HPC_STAGE_SYNC, "")
     ok = false
     _HPC_ENV_LAST_ERROR[] = ""
+    job = ""
     try
         ws_progress(nothing, id, 0.02)
         r = hpc_install_env!(b, c, hpc_remote_root(c);
                              on_log = l -> ws_log(nothing, id, l),
-                             on_state = s -> ws_progress(nothing, id, s == JOB_RUNNING ? 0.3 : 0.1),
+                             on_job = j -> (job = j),
+                             on_state = s -> begin
+                                 ws_progress(nothing, id, s == JOB_RUNNING ? 0.3 : 0.1)
+                                 s == JOB_GONE || _hpc_env_stage!(id, s == JOB_RUNNING ? Cecelia.HPC_STAGE_RUNNING :
+                                                                          Cecelia.HPC_STAGE_QUEUED, job)
+                             end,
                              cancelled = () -> job_cancelled(id))
         ws_log(nothing, id, r.ok ? "[DONE] $(r.message)" : "[ERROR] $(r.message)")
         ok = r.ok
@@ -132,8 +151,11 @@ function _run_hpc_env_install(c, b)
         _HPC_ENV_LAST_ERROR[] = msg
     finally
         ok && ws_progress(nothing, id, 1.0)
-        ws_status(nothing, id, ok ? "done" : (job_cancelled(id) ? "cancelled" : "failed"), "";
-                  fun = fun, pool = "job")
+        _hpc_env_stage!(id, Cecelia.HPC_STAGE_NONE, "")
+        status = ok ? "done" : (job_cancelled(id) ? "cancelled" : "failed")
+        # Off the registry BEFORE the terminal frame: that frame makes Settings re-read GET /api/hpc/env,
+        # which answers "installing" for as long as the job is registered.
         finish_job!(id)
+        ws_status(nothing, id, status, ""; fun = fun, pool = "job")
     end
 end

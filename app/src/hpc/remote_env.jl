@@ -186,15 +186,16 @@ _hpc_install_job_dir(remote_root::AbstractString, lock::AbstractString)::String 
     remote_root * "/jobs/install-env-" * lock
 
 """
-    hpc_install_env!(b, conn, remote_root; on_log, on_state, cancelled, poll_s, root) -> (; ok, message)
+    hpc_install_env!(b, conn, remote_root; on_log, on_state, on_job, cancelled, poll_s, root) -> (; ok, message)
 
 "Install on cluster": sync the env files, submit the install job (or attach to one in flight), and
-follow it to the end. Sink-agnostic, like a task: it reports through `on_log`/`on_state` and never
-throws for a failed install; `message` is one brief line.
+follow it to the end. Sink-agnostic, like a task: it reports through `on_log`, `on_job(id)` (once the
+job is known) and `on_state(state)`, and never throws for a failed install; `message` is one brief line.
 """
 function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString;
                           on_log::Function = println, on_state::Function = _ -> nothing,
-                          cancelled::Function = () -> false, poll_s::Real = 15,
+                          on_job::Function = _ -> nothing,
+                          cancelled::Function = () -> false, poll_s::Real = HPC_POLL_S[],
                           root::AbstractString = _hpc_repo_root(),
                           pixi_version::AbstractString = HPC_PIXI_VERSION)
     lock = hpc_lock_hash(; root)
@@ -218,7 +219,11 @@ function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString
         else
             on_log("Following install job $id, already in flight")
         end
-        r = hpc_watch_job(b, c, id, dir; on_log, on_state, cancelled, poll_s)
+        on_job(id)
+        state(s) = (on_state(s); on_log(s === JOB_QUEUED ? "Queued on the cluster (job $id)" :
+                                        s === JOB_RUNNING ? "Running on the cluster (job $id)" : "Job $id ended"))
+        r = hpc_watch_job(b, c, id, dir; on_log, on_state = state, on_reason = x -> on_log("Waiting: $x"),
+                          cancelled, poll_s)
         hpc_exec(c, "rm -f $(_sh_quote(E * "/" * _HPC_INSTALL_JOBFILE))\n")
         r.cancelled && return (; ok = false, message = "Cancelled")
         r.exit == 0 || return (; ok = false, message = "Install failed: $(r.reason)")
