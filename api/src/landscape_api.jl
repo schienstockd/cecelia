@@ -101,8 +101,8 @@ _landscape_reply(l::Landscape) = begin
     out
 end
 
-# Sanitise `t` / `z` from HTTP: an unspecified z is legitimate (2D image), which we key as -1
-# rather than nothing so the tuple has a fixed shape.
+# Sanitise `t` / `z` from HTTP: a missing one is keyed as -1 rather than nothing so the tuple has a
+# fixed shape. The viewer always sends both (z=0 on a 2D image).
 _clean_int(v, default::Int)::Int = begin
     v isa Number ? Int(v) : (v isa AbstractString ? (try; parse(Int, v); catch; default; end) : default)
 end
