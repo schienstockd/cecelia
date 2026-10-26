@@ -81,7 +81,7 @@ function onProfileCreated(name: string) {
   <div class="pp-wrap">
     <div class="pp-card">
       <img class="pp-logo" src="/feijoa.svg" alt="" aria-hidden="true" width="40" height="40" />
-      <h1 class="pp-title" v-tooltip.bottom="heading.note">{{ heading.text }}</h1>
+      <h1 class="pp-title">{{ heading }}</h1>
       <p class="pp-sub cc-muted">
         Pick a profile — this drives Kiwi's credentials, your preferences and which projects you see.
       </p>
