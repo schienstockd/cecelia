@@ -19,9 +19,9 @@ import { usePlotResize } from '../../composables/usePlotResize'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
-import { DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { DEFAULT_VIS, fitFacetHeaders, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
-import { applyPlotTheme, plotTheme, titleOverlay } from '../../plots/overlays'
+import { applyPlotTheme, plotTheme, titleOverlay, titleShortenedTicks } from '../../plots/overlays'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import { clientAxisRectOf } from '../../plots/plotAxisRect'
 import { rectFrame, type Frame } from '../../plots/frame'
@@ -134,7 +134,7 @@ async function render() {
   // it never overlaps the faceted grid / facet-label row. Reserve `marginRight` for it; the top margin
   // only needs room for facet labels (+ title).
   const topPad = Math.max(o.title ? 24 : 0, 20)
-  node = Plot.plot({
+  const opts: Record<string, unknown> = {
     width: w, height: h, marginLeft: 40, marginBottom: 40, marginTop: topPad, marginRight: o.legend ? 52 : 12, grid: o.grid,
     style: { background: bg, color: fg, fontSize: `${o.fontSize || 11}px` },
     x: { label: o.labX || 'to state', type: 'point' },
@@ -145,10 +145,14 @@ async function render() {
     marks: [
       Plot.dot(rows.value, { fx: 'group', x: 'to', y: 'from', r: 'freq', fill: 'freq', stroke: 'black', strokeWidth: 0.4, tip: true }),
     ],
-  }) as SVGElement
+  }
+  // long population names as facet headers: shortened to their panel, full name on hover (#1770)
+  fitFacetHeaders(opts, [...new Set(rows.value.map(r => r.group))], { plotWidth: w, fontSize: o.fontSize })
+  node = Plot.plot(opts) as SVGElement
   // Plot fills a tip rect from `--plot-background`, which its own stylesheet sets to white — see
   // `applyPlotTheme`. Without this the hover is theme-ink text on a white box.
   applyPlotTheme(node, effDark.value)
+  titleShortenedTicks(node, opts._tickTitles as Parameters<typeof titleShortenedTicks>[1])
   host.value.append(node)
   if (o.legend) { legendNode = vRampLegend(hi, fg); host.value.append(legendNode) }
   if (o.title) { titleNode = titleOverlay(o.title, fg); host.value.append(titleNode) }

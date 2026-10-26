@@ -47,7 +47,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import { usePlotResize } from '../../composables/usePlotResize'
 import { useViewerStore } from '../../stores/viewer'
 import { rowsToCsv, downloadBlob, downloadDataUrl, elementToImageURL, svgOf } from '../../plots/export'
-import { facetMode, DEFAULT_VIS, type VisProps } from '../../plots/plot'
+import { facetMode, fitCellTitles, DEFAULT_VIS, type VisProps } from '../../plots/plot'
 import type { PopTypeOption } from '../../plots/popTypes'
 import { usePopFamily } from '../../composables/usePopFamily'
 import PopFamilySelect from './PopFamilySelect.vue'
@@ -254,8 +254,9 @@ async function render() {
   }
   if (facet) {
     // a facet HEADER is per column and cannot name a cell of a grid — so the title is a mark
-    marks.push(Plot.text(groups.value.map(g => ({ ...slots.value.get(g.key)!, t: groupLabel(g) })),
-                         { fx: 'fx', fy: 'fy', text: 't', frameAnchor: 'top-left',
+    marks.push(Plot.text(fitCellTitles(groups.value.map(g => ({ ...slots.value.get(g.key)!, t: groupLabel(g) })),
+                                       box.width - ML - MR, grid.cols, 10),
+                         { fx: 'fx', fy: 'fy', text: 't', title: 'full', frameAnchor: 'top-left',
                            dx: 4, dy: 4, fill: fg, fontSize: 10 }))
   }
 

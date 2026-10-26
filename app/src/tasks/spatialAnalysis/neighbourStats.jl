@@ -60,6 +60,18 @@ function _neighbour_stats_findings(n_cells::Integer, n_edges::Integer,
     findings
 end
 
+# The loaded graph's own QC, re-judged here with the graph task's check (`_neighbours_qc_findings`, same
+# `SPARSE_GRAPH_MEAN_DEGREE`): log-odds on a sparse graph rest on a handful of contacts per cell. Pure:
+# the runner's QC dict → findings, skipping any code the stats findings already report. A QC without
+# `graphEdges` (the runner's early no-coverage exit) carries no graph metrics → none.
+function _neighbour_stats_graph_findings(qc::AbstractDict, stats_findings::AbstractVector,
+                                         graph_suffix::AbstractString)
+    haskey(qc, "graphEdges") || return Dict{String,Any}[]
+    have = Set(String(f["code"]) for f in stats_findings)
+    m = merge(Dict{String,Any}(qc), Dict{String,Any}("nEdges" => qc["graphEdges"]))   # graph's, not pairs'
+    filter(f -> !(String(f["code"]) in have), _loaded_graph_findings(m, graph_suffix))
+end
+
 function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -110,8 +122,9 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
         mean_degree = Float64(get(qc, "meanDegree", 0.0))
         coverage    = Float64(get(qc, "coverage", 1.0))
         n_sig       = Int(get(qc, "nSignificant", -1))
-        write_qc(img, "spatialAnalysis.neighbourStats", p.statsSuffix,
-                 _neighbour_stats_findings(n_cells, n_edges, coverage, n_sig);
+        findings = _neighbour_stats_findings(n_cells, n_edges, coverage, n_sig)
+        append!(findings, _neighbour_stats_graph_findings(qc, findings, p.graphSuffix))
+        write_qc(img, "spatialAnalysis.neighbourStats", p.statsSuffix, findings;
                  metrics = Dict{String,Any}("nCells" => n_cells, "nEdges" => n_edges,
                                             "meanDegree" => mean_degree, "coverage" => coverage,
                                             "nSignificant" => n_sig))

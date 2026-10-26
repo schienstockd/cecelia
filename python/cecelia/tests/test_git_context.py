@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shlex
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -145,6 +147,54 @@ class InSequencerCommitTest(unittest.TestCase):
             self.assertFalse(git_context.in_sequencer_commit(cwd=d))
             self.git("merge", "--no-commit", "--no-ff", "side")
             self.assertTrue(git_context.in_sequencer_commit(cwd=d))
+
+    def _sh(self, *words) -> str:
+        """`words` as one `sh` command line — git runs hooks and editors through `sh`, Git Bash's
+        on Windows, which takes `C:/x` paths."""
+        return " ".join(shlex.quote(pathlib.Path(w).as_posix() if os.sep in w else w) for w in words)
+
+    def _record_in_hook(self, d: str) -> pathlib.Path:
+        """Install a `commit-msg` hook that appends what `in_sequencer_commit` says, one line per
+        commit it sees — the hook's environment is where git marks a rebase's own commits."""
+        out = pathlib.Path(d) / "seen.txt"
+        hook = pathlib.Path(d) / ".git" / "hooks" / "commit-msg"
+        python_dir = str(pathlib.Path(git_context.__file__).resolve().parents[2])
+        probe = ("import sys; sys.path.insert(0, sys.argv[1]); "
+                 "from cecelia.effectiveness.git_context import in_sequencer_commit as f; print(f())")
+        hook.write_text(f"#!/bin/sh\n{self._sh(sys.executable, '-c', probe, python_dir)} >> "
+                        f"{self._sh(str(out))}\n", encoding="utf-8", newline="\n")
+        hook.chmod(0o755)
+        self.git("config", "core.hooksPath", hook.parent.as_posix())
+        return out
+
+    def _rebase_first(self, d: str, verb: str) -> None:
+        """`git rebase -i HEAD~1` with its one `pick` turned into `verb`."""
+        script = pathlib.Path(d) / "todo_editor.py"
+        script.write_text("import sys, pathlib\np = pathlib.Path(sys.argv[1])\n"
+                          f"p.write_text(p.read_text().replace('pick', {verb!r}, 1))\n", encoding="utf-8")
+        editors = {"GIT_SEQUENCE_EDITOR": self._sh(sys.executable, str(script)), "GIT_EDITOR": "true"}
+        with mock.patch.dict(os.environ, editors):
+            self.git("rebase", "-q", "-i", "HEAD~1")
+
+    def test_a_rebase_reword_is_a_sequencer_commit(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._repo(d)
+            self.git("merge", "-q", "--ff-only", "side")
+            seen = self._record_in_hook(d)
+            self._rebase_first(d, "reword")
+            self.assertEqual(seen.read_text(encoding="utf-8").split(), ["True"])
+
+    def test_an_own_commit_at_a_rebase_edit_stop_is_not(self):
+        with tempfile.TemporaryDirectory() as d:
+            self._repo(d)
+            self.git("merge", "-q", "--ff-only", "side")
+            seen = self._record_in_hook(d)
+            self._rebase_first(d, "edit")
+            (pathlib.Path(d) / "c.txt").write_text("own\n", encoding="utf-8")
+            self.git("add", "c.txt")
+            self.git("commit", "-q", "-m", "own")
+            self.git("rebase", "--continue")
+            self.assertEqual(seen.read_text(encoding="utf-8").split(), ["False"])
 
     def test_not_a_repo_is_not_a_sequencer_commit(self):
         with tempfile.TemporaryDirectory() as d:

@@ -326,3 +326,25 @@ end
     @test "spatial.none_significant" in ids(Cecelia._neighbour_stats_findings(10, 5, 1.0, 0))
     @test isempty(Cecelia._neighbour_stats_findings(10, 5, 1.0, -1))
 end
+
+@testset "neighbourStats carries the neighbour graph's sparse-graph QC (#1780)" begin
+    # the runner banks the LOADED graph's metrics (`graphEdges` = the graph's own edge count, `nEdges` =
+    # basis-pair contacts); the graph task's check re-judges them on the stats run
+    codes(fs) = [String(f["code"]) for f in fs]
+    sparse = Dict{String,Any}("nCells" => 100, "nEdges" => 40, "graphEdges" => 110,
+                              "meanDegree" => 2.2, "isolatedFrac" => 0.1)
+    f = only(Cecelia._neighbour_stats_graph_findings(sparse, Dict{String,Any}[], "r30"))
+    @test f["code"] == "spatial.sparse_graph"                            # the graph task's key + text
+    @test f["detail"]["meanDegree"] == 2.2 && f["detail"]["graphSuffix"] == "r30"
+    dense = merge(sparse, Dict{String,Any}("graphEdges" => 700, "meanDegree" => 14.6))
+    @test isempty(Cecelia._neighbour_stats_graph_findings(dense, Dict{String,Any}[], "r30"))
+    # the runner's early no-coverage exit banks no graph metrics → nothing, not a false "no edges"
+    @test isempty(Cecelia._neighbour_stats_graph_findings(
+        Dict{String,Any}("nCells" => 100, "nEdges" => 0, "meanDegree" => 0.0), Dict{String,Any}[], "r30"))
+    # a code the stats findings already report is not repeated
+    empty_graph = Dict{String,Any}("nCells" => 100, "nEdges" => 0, "graphEdges" => 0,
+                                   "meanDegree" => 0.0, "isolatedFrac" => 1.0)
+    stats = Cecelia._neighbour_stats_findings(100, 0)
+    @test codes(stats) == ["spatial.no_edges"]
+    @test isempty(Cecelia._neighbour_stats_graph_findings(empty_graph, stats, "r30"))
+end

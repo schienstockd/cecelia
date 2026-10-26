@@ -647,7 +647,10 @@ titles, gate labels) line up with the canvas dots.
   don't have. So `GateScatterCell` squares **`.panel-plot`** with **`aspect-ratio: 1`** — ONE method
   across both gating contexts (the gate module page *and* the montage tiles).
 - **`CanvasPanel :square="true"`** — the shared **resize-box** logic: snaps a *free-floating* panel's
-  height to its width on resize so the square plot fills it with no blank space. Used identically by the
+  height to its width on resize so the square plot fills it with no blank space. The resize GESTURE
+  itself produces the square (`utils/panelResize.ts` → `squareRect`: the grabbed axis drives the side,
+  a corner follows whichever axis moved further); a snap applied a frame after the drag fought every
+  pointermove of an N/S drag and made the plot flicker. `enforceSquare` only settles an odd saved size. Used identically by the
   gate plot + pairs panels (pass it directly) and the UMAP (opts in via `interactiveViews.ts` →
   `square: true`, forwarded by `InteractivePanel`). No-op when docked (the board grid owns slot size) or
   collapsed. This is the "same 1:1 resize box for gating and UMAP".
@@ -3271,4 +3274,7 @@ the builder reports the outcome back on `_autoRotatedX` → `@auto-override` →
 margin from the first label's overhang (`w·cosθ` less how far in its tick sits), each capped at a share
 of the panel (`plotHeight`/`plotWidth` from PlotChart). A label past the cap is shortened with
 `fitLabel(…, 'middle')`, so both the image and the population survive. The builder records the full labels on
-`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks.
+`_tickTitles`, and PlotChart adds them as hover titles on the shortened ticks. **Facet headers** (`fx`,
+the series/image names when faceted) go through the same path: `facetHeaderMaxPx` caps each at one facet
+band, `fitFacetHeaders` (plot.ts) shortens past it into `_tickTitles.fx`. Exports rebuild through the
+same builder, so they match the screen.

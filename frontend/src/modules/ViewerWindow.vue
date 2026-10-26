@@ -36,7 +36,8 @@ import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
 import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../utils/viewer/visibleRegion'
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
-import { reconcilePopEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
+import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
+         eyeKey, flipPopEye, offPaths,
          type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
@@ -97,10 +98,9 @@ import {
   type OverlayPayload, type OverlayPop, type PointBuffer, type SegmentBuffer, type MultiTrackResult,
 } from '../utils/viewerOverlays'
 import { heatUnit, seedRendererOverlays, setOverlayWindow, type OverlayStyle,
-         isTrackDrawable, ribbonEyeOff, toggleRibbonEye, soleRibbonEyes } from '../utils/viewerOverlays'
+         isTrackDrawable } from '../utils/viewerOverlays'
 import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../utils/overlayLayers'
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
-import { makePopPathRemap, remapPopKeys, type PopIdent } from '../utils/popRenameRemap'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
 import { maskPopTable } from '../utils/maskPopTable'
@@ -744,14 +744,14 @@ const popDrawn = (l: PopLayer, path: string) => !hiddenPops.value.has(popKey(l.v
 const layerHidden = (l: PopLayer) => new Set(l.payload.pops.filter(p => !popDrawn(l, p.path)).map(p => p.path))
 /** Whether a layer's pop draws a cell-track ribbon — its OWN eye, not the point eye: the "Show
  *  cell-track ribbons" chip on, the segmentation not stood down for trackclust, a track-drawable pop
- *  (`isTrackDrawable`), its ribbon eye on (`trackPopHidden` — seeded from the manager's `show` like the
+ *  (`isTrackDrawable`), its ribbon eye on (`ribbonEyes` — kept over the manager's `show` like the
  *  point eye, so the eye is the one authority). The ribbons ask here; the capture snapshot reads the
  *  sources they built (`trackSources`). */
 function popRibbonDrawn(l: PopLayer, p: OverlayPop): boolean {
   const su = setUid.value
   if (!su || !settings.getShowGatedTracks(su)) return false
   if (trackclustHolds(l.vn)) return false
-  return isTrackDrawable(p) && !trackPopHidden(l.vn, p.path)
+  return isTrackDrawable(p) && popEyeOn(ribbonEyes.value, l.vn, l.popType, p.path, p.show)
 }
 /** Trackclust is drawing this segmentation, which stands its cell-track ribbons down. */
 function trackclustHolds(vn: string): boolean {
@@ -845,23 +845,26 @@ const hiddenPops = computed(() => new Set(popLayers.value.flatMap(l => l.payload
   .filter(x => !popEyeOn(popEyes.value, l.vn, l.popType, x.path, x.show))
   .map(x => popKey(l.vn, l.popType, x.path)))))
 /**
- * Track-layer visibility hides a pop's RIBBONS separately from its POINTS. A user showing points for
- * `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing this into `hiddenPops` would
- * silently link the two, which the plan (MULTI_POP_TRACKING_PLAN.md Decision 5) rejects.
+ * The Tracks rows' eyes — a pop's RIBBONS, separate from its POINTS (`popEyes`). A user showing points
+ * for `/qc/CD169-/cells` and hiding its tracks is a valid state — collapsing the two would silently link
+ * them, which the plan (MULTI_POP_TRACKING_PLAN.md Decision 5) rejects.
  *
- * Keyed by segmentation, then path. PERSISTED per (imageUid × vn) via `settings.getTrackPopHidden` — the pop-manager ping fires
- * `loadOverlays` on every gate write, so a transient-per-fetch set clobbered the hide within a second.
- * On refetch we RECONCILE (keep hides for pops still in the payload, drop stale), not reset. Unlike
- * `hiddenPops` (points) this set has NO server-side counterpart — `hasTracks` is data-eligibility, not
- * user intent — so a persisted user-intent overlay is safe from server clobbering.
+ * Same shape and rules as the point eyes (`utils/viewer/popEyes.ts`, #1766): PERSISTED per
+ * (imageUid × vn) via `settings.getPopEyes(…, 'ribbons')`, the manager's `show` only seeds a pop with no
+ * stored eye, and a refetch (the manager pings on every gate write) reconciles rather than reseeds.
+ * The off paths are published to `settings.setTrackPopHidden` for the movie recorder (`viewerLook`).
  */
-const hiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
-/** Per segmentation, the pops the MANAGER hides (`!show`) — the ribbon eye's seed, reset on every fetch
- *  (unlike the point eyes, which keep a stored eye over `show` — `popEyes`), so the viewer can show
- *  ribbons for a pop the manager hides without storing a hide in `hiddenTrackPops` when the manager shows it again. */
-const managerHiddenTrackPops = ref<Map<string, Set<string>>>(new Map())
-const trackPopHidden = (vn: string, path: string) =>
-  ribbonEyeOff(hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
+const ribbonEyes = ref<Map<string, PopEyes>>(new Map())
+/** Store the ribbon eyes of every segmentation that changed, and publish their off paths. */
+function storeRibbonEyes(next: Map<string, PopEyes>) {
+  if (imageUid) for (const [vn, e] of next) {
+    if (!samePopEyes(settings.getPopEyes(imageUid, vn, 'ribbons'), e)) settings.setPopEyes(imageUid, vn, e, 'ribbons')
+    const off = offPaths(e), published = settings.getTrackPopHidden(imageUid, vn)
+    if (off.length !== published.size || off.some(x => !published.has(x)))
+      settings.setTrackPopHidden(imageUid, vn, new Set(off))
+  }
+  ribbonEyes.value = next
+}
 /**
  * Point size, SHARED with the panel when the set is known. `computed` with a setter so every read
  * and write goes to the one store the panel already uses — the same image cannot then look different
@@ -1125,7 +1128,8 @@ const summary = computed(() => overlayLayersSummary(popLayers.value))
 const trackDrawablePops = computed(() =>
   popLayers.value.flatMap(l => l.payload.pops
     .filter(isTrackDrawable)
-    .map(p => ({ vn: l.vn, path: p.path, key: popKey(l.vn, l.popType, p.path), name: p.name,
+    .map(p => ({ vn: l.vn, popType: l.popType, path: p.path, show: p.show,
+                 key: popKey(l.vn, l.popType, p.path), name: p.name,
                  colour: p.colour, count: p.labels.length,
                  drawn: popRibbonDrawn(l, p), clusterHeld: trackclustHolds(l.vn) })))
     .sort((a, b) => a.vn.localeCompare(b.vn) || a.path.localeCompare(b.path)))
@@ -1904,30 +1908,14 @@ async function loadOverlays() {
     if (!samePopEyes(stored, kept)) settings.setPopEyes(imageUid, vn, kept)
   }
   popEyes.value = eyesNext
-  // Track-layer hides are user intent, not server state — reconcile against the fresh payloads
-  // instead of resetting, per segmentation. Uid-aware remap (docs/todo/POP_SYNC_PLAN.md): a RENAME
-  // carries the hide to the pop's new path (its uid is preserved by `rename_pop!`), a DELETE drops it,
-  // first fetch falls back to path-presence for legacy payloads with no uid. See `hiddenTrackPops`
-  // docstring for why persistence is the right shape here.
-  const idents = (layers: PopLayer[], vn: string): PopIdent[] => layers.filter(l => l.vn === vn)
-    .flatMap(l => l.payload.pops.map(x => ({ key: x.path, uid: x.uid ?? '' })))
-  const hiddenNext = new Map<string, Set<string>>()
+  // Ribbon eyes: the same reconcile, their own bag (#1766) — a gate edit no longer resets them.
+  const ribbonNext = new Map(ribbonEyes.value)
   for (const vn of new Set(next.map(l => l.vn))) {
-    const persisted = settings.getTrackPopHidden(imageUid, vn)
-    const remap = makePopPathRemap(idents(popLayers.value, vn), idents(next, vn))
-    const kept = new Set(remapPopKeys([...persisted], remap))
-    hiddenNext.set(vn, kept)
-    const same = persisted.size === kept.size && [...persisted].every(k => kept.has(k))
-    if (!same) settings.setTrackPopHidden(imageUid, vn, kept)
+    ribbonNext.set(vn, reconcileRibbonEyes(settings.getPopEyes(imageUid, vn, 'ribbons'),
+      settings.getTrackPopHidden(imageUid, vn), eyePops(popLayers.value, vn), eyePops(next, vn),
+      next.filter(l => l.vn === vn).map(l => l.popType)))
   }
-  hiddenTrackPops.value = hiddenNext
-  const managerNext = new Map<string, Set<string>>()
-  for (const l of next) {
-    const mine = managerNext.get(l.vn) ?? new Set<string>()
-    for (const x of l.payload.pops) if (!x.show) mine.add(x.path)
-    managerNext.set(l.vn, mine)
-  }
-  managerHiddenTrackPops.value = managerNext
+  storeRibbonEyes(ribbonNext)
   popLayers.value = next
   rebuildOverlays()
 }
@@ -1971,26 +1959,20 @@ function setPopEye(l: PopLayer, pop: OverlayPop, visible: boolean) {
   next.set(l.vn, { ...next.get(l.vn) ?? {}, [eyeKey(l.popType, pop.path)]: visible })
   applyPopEyes(next)
 }
-// Ribbon eye for one pop — separate set from `hiddenPops` on purpose (see the field's docstring).
+// Ribbon eye for one pop — separate from its point eye on purpose (see `ribbonEyes`).
 // The row shows `drawn`, so with the cell-track ribbons off every row reads off: switching one on
 // turns the ribbons on with only that pop shown, rather than releasing every pop whose eye was on.
-function toggleTrackPop(vn: string, path: string) {
+function toggleTrackPop(pop: { vn: string; popType: string; path: string; show: boolean }) {
   const su = setUid.value
   if (su && !settings.getShowGatedTracks(su)) {
-    const next = soleRibbonEyes(trackDrawablePops.value, { vn, path },
-                                hiddenTrackPops.value, managerHiddenTrackPops.value)
-    hiddenTrackPops.value = next.persisted
-    managerHiddenTrackPops.value = next.managerHidden
-    if (imageUid) for (const [v, hidden] of next.persisted) settings.setTrackPopHidden(imageUid, v, hidden)
+    const listed = trackDrawablePops.value
+    storeRibbonEyes(soloPopEyes(ribbonEyes.value, listed, listed.findIndex(p =>
+      p.vn === pop.vn && p.popType === pop.popType && p.path === pop.path)))
     settings.setShowGatedTracks(su, true)
     rebuildOverlays()
     return
   }
-  const { persisted: mine, managerHidden } = toggleRibbonEye(
-    hiddenTrackPops.value.get(vn), managerHiddenTrackPops.value.get(vn), path)
-  hiddenTrackPops.value = new Map(hiddenTrackPops.value).set(vn, mine)
-  managerHiddenTrackPops.value = new Map(managerHiddenTrackPops.value).set(vn, managerHidden)
-  if (imageUid) settings.setTrackPopHidden(imageUid, vn, mine)
+  storeRibbonEyes(flipPopEye(ribbonEyes.value, pop.vn, pop.popType, pop.path, pop.show))
   rebuildOverlays()
 }
 
@@ -2950,30 +2932,9 @@ function scheduleTilePump() {
   tilePump.schedule(null)
 }
 
-/**
- * Draw whatever tiles are resident, at the current camera. Never blanks — a level swap keeps the old
- * level's tiles resident while the new level's tiles stream in, so the frame is progressive rather
- * than empty-then-fresh. (The current MVP flushes the atlas on level swap, so this is aspirational
- * until Phase D — but the draw call already accepts a mixed-level list.)
- */
-function drawTiles() {
-  const tr = tileRenderer.value, m = meta.value
-  if (!tr || !m) return
-  const resized = tr.resize()
-  seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
-  tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
-  // The mask on screen and its style — the same settings the volume path's frame closure applies.
-  tr.setLabelSource(tileMaskSource.value)
-  tr.setLabelStyle(tileMaskSource.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
-  tr.setLabelTable(maskTable.value)
-  // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
-  // pointer input. Same trigger for both dimensions of size change.
-  if (resized) scheduleTilePump()
-  // Anything still missing → schedule the pump. Covers the initial-mount race where the first
-  // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
-  // was fetched) — after which the atlas stayed empty until the user moved the mouse. Debounced
-  // through `tilePump`, so a redraw per pointer notch does not spam.
-  if (missingTiles().length > 0 || tilesNeedingLabels().length > 0) scheduleTilePump()
+/** The tiles to draw for the (t, z) on screen, coarsest first — what `drawTiles` paints and what
+ *  `readViewerFrame` renders offscreen, from one list so a saved frame matches the screen. */
+function tileDrawList(tr: TileRenderer, m: ViewerMeta): TileDraw[] {
   // Coarsest-first so finer tiles overpaint the coarse ones as they arrive — the whole point of
   // keeping cross-level tiles resident across a zoom threshold. The tile shader is opaque, so
   // "under" here is literal draw order: the coarse layer only shows where finer tiles have not yet
@@ -2985,11 +2946,7 @@ function drawTiles() {
   // z past a tile that had already been swapped once left two co-located instances at the same
   // level in the draw list, and the second z-swap became visually a no-op because the underlying
   // instanced draw order was undefined between them.
-  const tp = t.value
-  const zp = zPlane.value
-  // Overlays for the (t, z) on screen — the one plane the tile view shows.
-  setOverlayWindow(tr, points, segments, tp, [zp, zp], overlayStyle.value, 'plane')
-  const entries = tr.residentTiles().filter(e => e.t === tp && e.z === zp).slice()
+  const entries = tr.residentTiles().filter(e => e.t === t.value && e.z === zPlane.value).slice()
     .sort((a, b) => b.level - a.level)
   const draws: TileDraw[] = []
   const vx = m.voxelUm[0] || 1
@@ -3018,13 +2975,45 @@ function drawTiles() {
       sampledY: h,
     })
   }
+  return draws
+}
+
+/**
+ * Draw whatever tiles are resident, at the current camera. Never blanks — a level swap keeps the old
+ * level's tiles resident while the new level's tiles stream in, so the frame is progressive rather
+ * than empty-then-fresh. (The current MVP flushes the atlas on level swap, so this is aspirational
+ * until Phase D — but the draw call already accepts a mixed-level list.)
+ */
+function drawTiles() {
+  const tr = tileRenderer.value, m = meta.value
+  if (!tr || !m) return
+  const resized = tr.resize()
+  seen.value = visibleExtentUm(cam.value.dist, canvasAspect())
+  tr.setCamera(cam.value.panX, cam.value.panY, cam.value.dist)
+  // The mask on screen and its style — the same settings the volume path's frame closure applies.
+  tr.setLabelSource(tileMaskSource.value)
+  tr.setLabelStyle(tileMaskSource.value ? settings.viewerLabelOpacity : 0, settings.viewerLabelContour)
+  tr.setLabelTable(maskTable.value)
+  // A canvas resize changes what fits in the viewport — new edge tiles come into view without any
+  // pointer input. Same trigger for both dimensions of size change.
+  if (resized) scheduleTilePump()
+  // Anything still missing → schedule the pump. Covers the initial-mount race where the first
+  // `reallocate` fired the pump before the canvas had CSS layout (viewport was null, so nothing
+  // was fetched) — after which the atlas stayed empty until the user moved the mouse. Debounced
+  // through `tilePump`, so a redraw per pointer notch does not spam.
+  if (missingTiles().length > 0 || tilesNeedingLabels().length > 0) scheduleTilePump()
+  const tp = t.value
+  const zp = zPlane.value
+  // Overlays for the (t, z) on screen — the one plane the tile view shows.
+  setOverlayWindow(tr, points, segments, tp, [zp, zp], overlayStyle.value, 'plane')
+  const draws = tileDrawList(tr, m)
   tr.draw(draws)
   // The still overlay's `shownT >= 0` gate flips on when the first tile lands (`tilePump` handler).
   if (announce.value && shownT.value >= 0) {
     announce.value = false
     vlog('info',
          `Viewer drawing ${m.nX}×${m.nY} plane (tile mode)`,
-         `${entries.length} tile(s) resident of ${tileSlotCap.value} slots · ` +
+         `${draws.length} tile(s) resident of ${tileSlotCap.value} slots · ` +
          `L${slabLevel.value} · pan ${cam.value.panX.toFixed(0)},${cam.value.panY.toFixed(0)} · ` +
          `dist ${cam.value.dist.toFixed(0)} µm`)
   }
@@ -5077,9 +5066,37 @@ function publishViewerFocus() {
 let stopCacheClearWatch: (() => void) | null = null
 let stopImageMetaWatch: (() => void) | null = null
 
+// The frame on screen as a 2D canvas — the ONE reader of the viewer's pixels (Save PNG, the board
+// strip, Share, the landscape). Rendered off the GPU by the active renderer (`readFrame`,
+// `lib/webgpu/frameReadback.ts`) rather than snapshotted from the canvas: the browser's snapshot of
+// a WebGPU canvas is the browser's business and can read back black while the screen shows the
+// image. The snapshot stays as the fallback for a frame the GPU read cannot give (past the
+// device's texture limit).
+async function readViewerFrame(): Promise<HTMLCanvasElement | null> {
+  const el = canvas.value
+  if (!el) return null
+  const tr = tileRenderer.value, m = meta.value
+  const data = useTiles.value
+    ? (tr && m ? await tr.readFrame(tileDrawList(tr, m)) : null)
+    : (await renderer.value?.readFrame()) ?? null
+  const out = document.createElement('canvas')
+  const ctx2d = out.getContext('2d')
+  if (!ctx2d) return null
+  if (data) {
+    out.width = data.width; out.height = data.height
+    ctx2d.putImageData(data, 0, 0)
+    return out
+  }
+  const img = await loadImg(el.toDataURL('image/png'))
+  if (!img) return null
+  out.width = el.width; out.height = el.height
+  ctx2d.drawImage(img, 0, 0)
+  return out
+}
+
 // Analysis-board "image strip" capture — the browser equivalent of napari's screenshot.
 // A caller in the OPENER window (same-origin) reads the popup's `Window.__cceceliaViewerCapture`
-// and gets back the WebGPU canvas's current pixels, plus the physical extent so a downstream vector
+// and gets back the viewer's current pixels (`readViewerFrame`), plus the physical extent so a downstream vector
 // scale bar aligns with the image. Overlays (tracks / populations / mask outlines) are already baked
 // into the canvas by the shader, so the capture matches what the user is looking at — no server
 // re-render, no divergence, no 2D/3D branching. Set on mount, cleared on unmount so a closed viewer
@@ -5098,9 +5115,9 @@ interface ViewerCapture {
   valueName: string
   overlayLayers: Record<string, CapturedLayer>
 }
-;(window as unknown as { __cceceliaViewerCapture?: () => ViewerCapture }).__cceceliaViewerCapture = () => {
-  const el = canvas.value
-  if (!el) throw new Error('viewer canvas not ready')
+;(window as unknown as { __cceceliaViewerCapture?: () => Promise<ViewerCapture> }).__cceceliaViewerCapture = async () => {
+  const frame = await readViewerFrame()
+  if (!frame) throw new Error('viewer canvas not ready')
   const ext = overlayExtent.value
   const layers = captureOverlayLayers({
     popLayers: popLayers.value.map(l => ({ layer: l, pops: l.payload.pops })),
@@ -5111,7 +5128,7 @@ interface ViewerCapture {
     labelName: drawnMaskVn(maskName.value, maskHidden.value),
   })
   return {
-    png: el.toDataURL('image/png'),
+    png: frame.toDataURL('image/png'),
     extentUm: ext && ext.x > 0 && ext.y > 0 ? { x: ext.x, y: ext.y, unit: ext.unit ?? 'µm' } : null,
     imageUid, valueName: valueName.value, overlayLayers: layers,
   }
@@ -5127,18 +5144,17 @@ interface ViewerCapture {
 // overlay compositor (the plot/board exports already use it): it clones the host, inlines computed
 // styles onto the clone (Vue scoped styles do not survive `XMLSerializer` otherwise), rasterises
 // the overlays through an SVG foreignObject wrapper, and drawImages canvas pixels + overlay onto
-// one target. The WebGPU canvas is fed in via the `hiRes` hook rather than `drawImage(cv, …)`
-// because a WebGPU presentation backbuffer is consumed by the browser compositor between frames
-// and reads back blank — `canvas.toDataURL()` is a different readback path that does return pixels
-// (it's what `__cceceliaViewerCapture` uses too).
+// one target. The WebGPU canvas is fed in via the `hiRes` hook as `readViewerFrame`'s GPU read —
+// never the canvas itself, whose snapshot can read back blank.
 ;(window as unknown as { __cceceliaViewerScreenshot?: () => Promise<{ png: string; imageName: string }> }).__cceceliaViewerScreenshot = async () => {
   const el = canvas.value
   if (!el) throw new Error('viewer canvas not ready')
   const host = el.parentElement as HTMLElement | null
   if (!host) throw new Error('viewer host not found')
-  const webgpuImg = await loadImg(el.toDataURL('image/png'))
+  const frame = await readViewerFrame()
+  if (!frame) throw new Error('viewer frame unavailable')
   const png = await plotHostToImageURL(host, 'black', {
-    hiRes: async (cv) => cv === el ? webgpuImg : null,   // other canvases (overview minimap) fall through
+    hiRes: async (cv) => cv === el ? frame : null,   // other canvases (overview minimap) fall through
   })
   if (!png) throw new Error('screenshot composite failed')
   return { png, imageName: imageName.value ?? '' }
@@ -5149,8 +5165,8 @@ interface ViewerCapture {
 // main-window ViewerPanel's Share button) invokes `__cceceliaViewerBeginDraw()` on this popup,
 // which flips `drawMode` on. `DrawSurface.vue` mounts as a peer of the canvas + StillOverlay /
 // GridOverlay, absolute-positioned to cover the canvas, and drives its own tools. On Save it
-// hands back the overlay marks; we grab the CURRENT canvas pixels (same toDataURL trick
-// __cceceliaViewerCapture uses), build the address from live viewer state, and POST.
+// hands back the overlay marks; we grab the CURRENT frame (`readViewerFrame`), build the address
+// from live viewer state, and POST.
 const drawMode  = ref(false)
 const drawBusy  = ref(false)
 // Post-save toast: the draw layer dismisses on Save, taking the "paste to Claude" hint with it,
@@ -5212,9 +5228,9 @@ const landscape = ref<LandscapeResult | null>(null)
 // One category pass over the current canvas at the grid density. Shared by the overlay's
 // recompute AND by Share, which snapshots a landscape whether or not the overlay is on.
 async function readViewLandscape(): Promise<LandscapeResult | null> {
-  const el = canvas.value
-  if (!el) return null
-  const data = await readCanvasImageData(el)
+  const frame = await readViewerFrame()
+  if (!frame) return null
+  const data = await readCanvasImageData(frame)
   if (!data) return null
   return computeLandscape(data, {
     cols: settings.viewerGridDensity, rows: settings.viewerGridDensity,
@@ -5222,7 +5238,7 @@ async function readViewLandscape(): Promise<LandscapeResult | null> {
 }
 // Landscape recompute goes through the canonical `debouncedLatest` scheduler — the density
 // slider and the t/z scrubs both fire in bursts, and `readCanvasImageData` synchronously runs
-// `canvas.toDataURL('image/png')` on the WebGPU backbuffer (hundreds of ms on a 4K canvas),
+// `canvas.toDataURL('image/png')` on the full-size frame (hundreds of ms on a 4K canvas),
 // which BLOCKS the main thread. Firing per event froze the slider on the second drag tick —
 // the input queue backed up behind the previous compute. `wait: 200` collapses a slider drag
 // into one run after release; `maxWait: 400` gives a scrub cadence while dragging so the
@@ -5393,7 +5409,7 @@ async function onDrawSave(payload: { overlay: OverlayMark[]; notes: string }) {
     // not a bare frame + colourless vector overlay Claude can't tie back to what the user meant.
     // See utils/overlayCompose.ts for the palette + rationale (2026-09-19 fix — the shipped share
     // flow stored marks as a separate colourless overlay).
-    const png = await composeFrameWithOverlay(el, payload.overlay)
+    const png = await composeFrameWithOverlay((await readViewerFrame()) ?? el, payload.overlay)
     const ext = overlayExtent.value
     const address = buildCaptureAddress({
       projectUid, imageUid, valueName: valueName.value,
@@ -6582,8 +6598,8 @@ onUnmounted(() => {
           <template v-if="segCount > 0 || trackDrawablePops.length > 0">
             <!-- Per-pop ribbon rows: one line per gated pop with tracks (isTrack || hasTracks),
                  mirroring the Populations section above (swatch/name/count/toggle). The eye hides
-                 the ribbon layer WITHOUT touching the point layer's eye — `hiddenTrackPops` is a
-                 separate set from `hiddenPops` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
+                 the ribbon layer WITHOUT touching the point layer's eye — `ribbonEyes` is a
+                 separate bag from `popEyes` (MULTI_POP_TRACKING_PLAN.md Decision 5). -->
             <div v-for="pop in trackDrawablePops" :key="pop.key" class="cc-row cc-row-tight">
               <span class="vw-swatch" :style="{ background: pop.colour }" />
               <span class="cc-fs-2xs vw-pop-name" :title="pop.vn + ' ' + pop.path">{{ pop.name }}</span>
@@ -6591,7 +6607,7 @@ onUnmounted(() => {
               <CcToggle
                 :model-value="pop.drawn" :disabled="pop.clusterHeld"
                 v-tooltip.bottom="pop.clusterHeld ? 'Track clusters are drawing this segmentation' : 'Draw this population as a track ribbon layer'"
-                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop.vn, pop.path)"
+                :aria-label="'Show tracks for ' + pop.name" @update:modelValue="toggleTrackPop(pop)"
               />
             </div>
             <div class="cc-row cc-row-tight">

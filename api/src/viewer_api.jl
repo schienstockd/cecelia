@@ -1037,7 +1037,7 @@ function api_viewer_pick_cell(body_bytes::Vector{UInt8})
     _set_pick_selection!(img._dir, vn, labs)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m)
+    _broadcast_popmap(pu, iu, vn, pt, m, img)
     200, JSON3.write((; label, nSelected = length(labs)))
 end
 
@@ -1113,7 +1113,7 @@ function api_viewer_pick_rect(body_bytes::Vector{UInt8})
     _set_pick_selection!(img._dir, vn, labs)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m)
+    _broadcast_popmap(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nLabels = length(labels_uniq), nSelected = length(labs)))
 end
 
@@ -1170,7 +1170,7 @@ function api_viewer_pick_set(body_bytes::Vector{UInt8})
     _set_pick_selection!(img._dir, vn, labs)
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)
-    _broadcast_popmap(pu, iu, vn, pt, m)
+    _broadcast_popmap(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nSelected = length(labs)))
 end
 
@@ -1192,7 +1192,7 @@ function api_viewer_pick_clear(body_bytes::Vector{UInt8})
     _set_pick_selection!(img._dir, vn, Int[])
     m = load_pop_map(img; value_name = vn, pop_type = pt)
     _inject_pick_pop!(m, img)                               # no-op now (selection gone)
-    _broadcast_popmap(pu, iu, vn, pt, m)
+    _broadcast_popmap(pu, iu, vn, pt, m, img)
     200, JSON3.write((; nSelected = 0))
 end
 

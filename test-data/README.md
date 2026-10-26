@@ -117,6 +117,25 @@ bioformats2raw --resolutions 1 --ngff-version 0.5 --tile-width 32 --tile-height 
 Note `shuffle=shuffle`, not `shuffle=1` (0.11.x) and not `byteshuffle` (documented by 0.12 but broken
 upstream) — see `bf2raw_shuffle_values` in `app/src/config.jl`.
 
+## `projects/CONTMESH/` — a label zarr, for the mesh contact route
+
+The one fixture with a **label store**: `spatialAnalysis.contactsMeshes` meshes label masks in Python,
+so it cannot run on a labelProps table alone. Synthetic and tiny (~25 KB): a still `2c × 4z × 16 × 32`
+image, its `seg` label zarr, and the `seg.h5ad` a real measure run produced from the two.
+
+```
+projects/CONTMESH/0/CtMsh1/ccidImage.ome.zarr   image (ch0 encodes the population)
+projects/CONTMESH/1/CtMsh1/ccid.json            loadable CciaImage (value_name "seg", 1×1×2 µm)
+projects/CONTMESH/1/CtMsh1/labels/seg.zarr      6 cubes: two rows of A / near / far
+projects/CONTMESH/1/CtMsh1/labelProps/seg.h5ad  measured (measure_labels_run.py)
+```
+
+Each A cell sits ~2 µm from a `near` cell and ~14 µm from a `far` one, so per-target columns differ
+and a 5 µm threshold separates them. The test copies the project to a temp dir before running (the
+task writes into `seg.h5ad`). Regenerate with
+`pixi run python python/cecelia/tests/make_contacts_mesh_fixture.py`, which writes the stores via
+`zarr_utils` and documents the layout.
+
 ## `agent-runs/projects/` — Blackboard run records with reviewed sections
 
 A projects dir of its own (not under `projects/`, so nothing that lists test projects sees it) with

@@ -381,7 +381,14 @@ but the reply's `warnings` names, per target, each absent column and the populat
 (the ones reading it plus their descendants; `missing_gate_columns(m, available)` in
 `gating/gating_engine.jl`, checked against the same `pop_membership_fetch` table `recompute!` reads).
 A boolean pop combining an emptied pop is not listed — `not X` keeps members. The dialog stays open to
-show them (#1737). The Population Manager does not yet say why such a pop reads 0. The canvas **plot layout** is separate frontend state
+show them (#1737). Afterwards the Population Manager says why such a pop reads 0: every pop-tree
+payload carries `missingColumns` (path → absent columns, the same `missing_gate_columns` against the
+image itself), and the row shows a warning icon beside its count whose tooltip names the column
+(`missingColumnsReason` in `utils/gatingCopyWarnings.ts`, #1769). That check reads column NAMES only (`pop_membership_cols` —
+`selectable_cols`, `as_df`'s own resolution, on the cell/branch table; `track_table_cols` +
+`track_aggregate_base` on the per-track one), so it is cheap enough for a route that computes no
+membership. One limit on the track table: an aggregate whose base exists counts as present, so a
+`.mean` of a categorical base or an absent category is not flagged. The canvas **plot layout** is separate frontend state
 (the canvas store, loaded project-wide + autosaved), so it's copied client-side (`canvasPanels.copyEntry`),
 not by the route.
 

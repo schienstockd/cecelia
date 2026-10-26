@@ -185,12 +185,9 @@ export function paintOverlayOnCanvas(
 }
 
 /** Composite `marks` onto a copy of the viewer frame and return the resulting PNG data URL. Never
- *  mutates the input canvas — a separate offscreen canvas holds the composite. Async because the
- *  WebGPU presentation backbuffer is consumed by the browser compositor between frames, so
- *  `ctx.drawImage(webgpuCanvas)` reads back BLANK — we have to route the frame through
- *  `canvas.toDataURL()` (a different readback path that does return pixels — the same trick
- *  `__cceceliaViewerCapture` / `__cceceliaViewerScreenshot` use), then `Image.decode` before we can
- *  paint it back onto a 2D canvas alongside the marks. On any fallback path (zero-dim canvas, no
+ *  mutates the input canvas — a separate offscreen canvas holds the composite. The frame is the
+ *  viewer's `readViewerFrame` copy (a GPU read); it goes through `toDataURL` → `Image.decode` so the
+ *  canvas-snapshot fallback (the bare WebGPU canvas) still works. On any fallback path (zero-dim canvas, no
  *  2d context, image failed to load) we return the bare frame's `toDataURL` so a share still
  *  succeeds — the marks vanish but the frame doesn't. */
 export async function composeFrameWithOverlay(
