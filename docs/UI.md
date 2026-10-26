@@ -647,7 +647,10 @@ titles, gate labels) line up with the canvas dots.
   don't have. So `GateScatterCell` squares **`.panel-plot`** with **`aspect-ratio: 1`** — ONE method
   across both gating contexts (the gate module page *and* the montage tiles).
 - **`CanvasPanel :square="true"`** — the shared **resize-box** logic: snaps a *free-floating* panel's
-  height to its width on resize so the square plot fills it with no blank space. Used identically by the
+  height to its width on resize so the square plot fills it with no blank space. The resize GESTURE
+  itself produces the square (`utils/panelResize.ts` → `squareRect`: the grabbed axis drives the side,
+  a corner follows whichever axis moved further); a snap applied a frame after the drag fought every
+  pointermove of an N/S drag and made the plot flicker. `enforceSquare` only settles an odd saved size. Used identically by the
   gate plot + pairs panels (pass it directly) and the UMAP (opts in via `interactiveViews.ts` →
   `square: true`, forwarded by `InteractivePanel`). No-op when docked (the board grid owns slot size) or
   collapsed. This is the "same 1:1 resize box for gating and UMAP".

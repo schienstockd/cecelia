@@ -42,6 +42,8 @@ import { retireDestroyed } from './retireDestroyed'
 import type { MaskStore } from '../../utils/viewerLabels'
 import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
+import { renderToPixels } from './frameReadback'
+import { measureRgba } from '../../utils/canvasSample'
 
 /** Bytes in the uniform struct: 7 leading vec4s + one vec4 per channel slot. */
 const UNIFORM_BYTES = MIP_LAYOUT.bytes
@@ -50,8 +52,7 @@ const UNIFORM_BYTES = MIP_LAYOUT.bytes
  *  the labels into pan.x/pan.y and nothing draws. The layout test checks the names against the
  *  shader's struct. */
 const U = MIP_LAYOUT.at
-/** Probe side for `sampleFrame`. 128 because `128 * 4` is already a multiple of the 256-byte
- *  `bytesPerRow` alignment a texture-to-buffer copy requires — no padded rows to unpick. */
+/** Probe side for `sampleFrame` — small, because the probe runs on a frame that is already working. */
 export const PROBE_PX = 128
 
 export interface VolumeRenderer {
@@ -208,6 +209,12 @@ export interface VolumeRenderer {
    * `null` when there is nothing bound to render yet, or the device is gone.
    */
   sampleFrame(withOverlays?: boolean): Promise<FrameSample | null>
+  /**
+   * The current frame — overlays included — at the canvas's size, read off the GPU (`./frameReadback.ts`).
+   * What a screenshot or a share saves: a canvas snapshot (`toDataURL`) is up to the browser and can
+   * come back blank while the screen shows the image. `null` when nothing is bound or the read fails.
+   */
+  readFrame(): Promise<ImageData | null>
   /** How many overlay instances the next draw will issue — `[points, tails]`. A non-zero count is the
    *  difference between a pass that draws the volume alone and one that can be invalidated by an
    *  overlay, which is not visible from anywhere else. */
@@ -1103,51 +1110,27 @@ export async function createVolumeRenderer(
 
     async sampleFrame(withOverlays = false) {
       if (!usable() || !bindGroup) return null
-      // Its own square target rather than a copy of the canvas: a canvas texture is transient (it
-      // belongs to the compositor between frames) and copying one needs a COPY_SRC usage on the
-      // context, which would change how every real frame is presented for the sake of a diagnostic.
+      // Its own square target rather than a copy of the canvas — see `./frameReadback.ts`. The probe
+      // is square, so tell the shader that: `aspect` comes from these two, and a stretched aspect would
+      // frame the volume differently from what is on screen.
       const N = PROBE_PX
-      const tex = device.createTexture({
-        size: [N, N], format, usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-      })
-      // bytesPerRow must be a multiple of 256; PROBE_PX * 4 already is, which is why it is 128 and not
-      // an arbitrary 100.
-      const buf = device.createBuffer({ size: N * N * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ })
-      // The probe is square, so tell the shader that — `aspect` comes from these two and a stretched
-      // aspect would frame the volume differently from what is on screen.
       const [w, h] = [u[U.vp.canvasW], u[U.vp.canvasH]]
       u[U.vp.canvasW] = N; u[U.vp.canvasH] = N
       pushUniforms()
-      const enc = device.createCommandEncoder()
-      const pass = enc.beginRenderPass({
-        colorAttachments: [{
-          view: tex.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
-        }],
-      })
-      encodePass(pass, withOverlays)
-      pass.end()
-      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
-      device.queue.submit([enc.finish()])
-      // Put the real canvas size back before anything else draws.
+      const read = renderToPixels(device, format, N, N, pass => encodePass(pass, withOverlays))
+      // Put the real canvas size back before anything else draws (the pass is already submitted).
       u[U.vp.canvasW] = w; u[U.vp.canvasH] = h
       pushUniforms()
-      try {
-        await buf.mapAsync(GPUMapMode.READ)
-        const px = new Uint8Array(buf.getMappedRange().slice(0))
-        let max = 0, sum = 0, lit = 0
-        for (let i = 0; i < px.length; i += 4) {
-          const m = Math.max(px[i], px[i + 1], px[i + 2])
-          if (m > 0) lit++
-          if (m > max) max = m
-          sum += px[i] + px[i + 1] + px[i + 2]
-        }
-        return {
-          max: max / 255, mean: sum / (px.length / 4 * 3) / 255,
-          lit: lit / (px.length / 4), size: N,
-        }
-      } catch { return null }
-      finally { buf.destroy(); tex.destroy() }
+      const px = await read
+      return px && measureRgba(px, N)
+    },
+
+    async readFrame() {
+      if (!usable() || !bindGroup) return null
+      // The uniforms already describe the canvas, so the frame renders exactly as the last draw did.
+      const w = u[U.vp.canvasW], h = u[U.vp.canvasH]
+      const px = await renderToPixels(device, format, w, h, pass => encodePass(pass, true))
+      return px && new ImageData(px, w, h)
     },
 
     uniformState() {

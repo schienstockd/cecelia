@@ -44,6 +44,8 @@ import {
 } from '../../utils/brickLoader'
 import type { LabelTable } from '../../utils/maskPopTable'
 import { createLabelColourTexture } from './labelColourTexture'
+import { renderToPixels } from './frameReadback'
+import { measureRgba } from '../../utils/canvasSample'
 import {
   PICK_BUFFER_BYTES, packPickBuffer, emptyPickBuffer,
   type MaskStore,
@@ -1797,54 +1799,26 @@ export async function createBrickVolumeRenderer(
 
     async sampleFrame(withOverlays = false): Promise<FrameSample | null> {
       if (destroyed || atlas === null) return null
-      // Its own square target rather than a copy of the canvas — same rationale as the flat
-      // renderer: the canvas texture is transient and copying one needs a COPY_SRC usage on the
-      // context, which would change how every real frame is presented for the sake of a
-      // diagnostic. PROBE_PX is 128 because 128 × 4 is already a 256-byte multiple, which is
-      // what copyTextureToBuffer's bytesPerRow requires.
+      // Its own square target rather than a copy of the canvas — see `./frameReadback.ts`. Tell the
+      // shader the target is square so `aspect` matches; restored once the pass is submitted.
       const N = PROBE_PX
-      const tex = device.createTexture({
-        size: [N, N], format,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
-      })
-      const buf = device.createBuffer({
-        size: N * N * 4,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-      })
-      // Tell the shader the target is square so `aspect` (canvas.w / canvas.h) matches. Restored
-      // AFTER the pass is encoded so nothing else draws with the probe dims.
       writeUniform(N, N)
       writePageTable()
-      const enc = device.createCommandEncoder()
-      const pass = enc.beginRenderPass({
-        colorAttachments: [{
-          view: tex.createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store',
-        }],
-      })
-      encodePass(pass, withOverlays)
-      pass.end()
-      enc.copyTextureToBuffer({ texture: tex }, { buffer: buf, bytesPerRow: N * 4 }, [N, N])
-      device.queue.submit([enc.finish()])
+      const read = renderToPixels(device, format, N, N, pass => encodePass(pass, withOverlays))
       // Real canvas dims back before the next real frame — writeUniform() with no args reads
       // canvas.width/height.
       writeUniform()
-      try {
-        await buf.mapAsync(GPUMapMode.READ)
-        const px = new Uint8Array(buf.getMappedRange().slice(0))
-        let max = 0, sum = 0, lit = 0
-        for (let i = 0; i < px.length; i += 4) {
-          const m = Math.max(px[i], px[i + 1], px[i + 2])
-          if (m > 0) lit++
-          if (m > max) max = m
-          sum += px[i] + px[i + 1] + px[i + 2]
-        }
-        return {
-          max: max / 255, mean: sum / (px.length / 4 * 3) / 255,
-          lit: lit / (px.length / 4), size: N,
-        }
-      } catch { return null }
-      finally { buf.destroy(); tex.destroy() }
+      const px = await read
+      return px && measureRgba(px, N)
+    },
+
+    async readFrame() {
+      if (destroyed || atlas === null) return null
+      const w = canvas.width, h = canvas.height
+      writeUniform()
+      writePageTable()
+      const px = await renderToPixels(device, format, w, h, pass => encodePass(pass, true))
+      return px && new ImageData(px, w, h)
     },
 
     overlayCounts: (): [number, number] => [pointCount, segCount],

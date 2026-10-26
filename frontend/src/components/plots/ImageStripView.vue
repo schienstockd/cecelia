@@ -143,14 +143,14 @@ async function capture(i: number) {
       return
     }
     const vw = getOpenPopoutWindow('/viewer-window')
-    const cap = (vw as unknown as { __cceceliaViewerCapture?: () =>
-      { png: string; extentUm: { x: number; y: number; unit?: string | null } | null; imageUid: string; overlayLayers?: Record<string, CapturedLayer> } })?.__cceceliaViewerCapture
+    const cap = (vw as unknown as { __cceceliaViewerCapture?: () => Promise<
+      { png: string; extentUm: { x: number; y: number; unit?: string | null } | null; imageUid: string; overlayLayers?: Record<string, CapturedLayer> }> })?.__cceceliaViewerCapture
     if (!cap) {
       err.value = 'Open the viewer window on this image and try again.'
       return
     }
     let shot
-    try { shot = cap() }
+    try { shot = await cap() }
     catch (e) { err.value = 'Viewer capture failed: ' + (e instanceof Error ? e.message : String(e)); return }
     if (shot.imageUid !== imageUid) {
       err.value = 'Viewer is showing a different image — open this image first.'
