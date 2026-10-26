@@ -172,7 +172,7 @@ export interface SlabQuery {
    * Cache-buster for the preview slab (P7). Two runs on the same (vn, t, z, preview=1) produce a
    * byte-identical URL, so the browser's HTTP cache would serve the previous run's bytes even
    * though the scratch store on disk has been rewritten. Set to the current `previewLabels.updateId`
-   * — a monotonic per-run counter — so every re-run misses cache. No-op without `preview`.
+   * — unique across page loads (`nextUpdateStamp`) — so every re-run misses cache. No-op without `preview`.
    */
   previewId?: number
   /**

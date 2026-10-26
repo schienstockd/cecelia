@@ -19,6 +19,7 @@ import type { VisibleRegion } from '../utils/viewer/visibleRegion'
 import type { L0Rect } from '../utils/viewerPick'
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { expiresAtFrom, msUntil, liveOrNull } from '../utils/viewer/markLifetime'
+import { nextUpdateStamp } from '../utils/updateStamp'
 
 /** What image is open in the browser viewer, in the same shape the preview worker's request needs. */
 export interface OpenImage {
@@ -60,7 +61,7 @@ export interface PreviewBox extends L0Rect {
  *  taskPreview) so the viewer's popup Pinia can see it through the same cross-window bridge as
  *  `openImage` — the run completes in the module page's window and the labels render in the popup.
  *
- *  `updateId` is a monotonic stamp per run. Two runs on the same image/vn produce identical
+ *  `updateId` is a stamp per run, unique across page loads (`nextUpdateStamp`). Two runs on the same image/vn produce identical
  *  {valueName, imageUid, projectUid} — and per the DOM spec, `localStorage.setItem` with the exact
  *  same string value does NOT emit a `storage` event. Without a per-run stamp, the popup viewer
  *  never wakes up on a plane change or a param edit, and the mask on screen stays from the FIRST
@@ -393,9 +394,9 @@ export const useViewerStore = defineStore('viewer', () => {
       stamped = null
     } else if (payload && typeof payload === 'object' && ('camera' in payload || 'dims' in payload)) {
       // Bare ViewerViewState — legacy setter shape kept working.
-      stamped = { viewState: payload as ViewerViewState, updateId: ++_updateIdSeq }
+      stamped = { viewState: payload as ViewerViewState, updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) }
     } else {
-      stamped = { ...(payload as Omit<PendingViewState, 'updateId'>), updateId: ++_updateIdSeq }
+      stamped = { ...(payload as Omit<PendingViewState, 'updateId'>), updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) }
     }
     pendingViewState.value = stamped
     _writeJson(K_PENDING_VIEW, stamped)
@@ -413,9 +414,10 @@ export const useViewerStore = defineStore('viewer', () => {
    *  request onto the preview scratch store; `null` (on stop / error / mismatch) flips it back.
    *  A monotonic `updateId` is added here (never taken from the caller) so two runs that return
    *  identical identity still produce a distinct localStorage value — see PreviewLabels doc. */
+  // Unique across page loads, not just within one — it is also the slab URL's cache-buster.
   let _updateIdSeq = 0
   function setPreviewLabels(next: Omit<PreviewLabels, 'updateId'> | null) {
-    const stamped: PreviewLabels | null = next ? { ...next, updateId: ++_updateIdSeq } : null
+    const stamped: PreviewLabels | null = next ? { ...next, updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) } : null
     previewLabels.value = stamped
     _writeJson(K_PREVIEW_LABELS, stamped)
   }
@@ -425,7 +427,7 @@ export const useViewerStore = defineStore('viewer', () => {
    *  popup (same reason as `setPreviewLabels`). */
   function setLiveLabels(next: Omit<LiveLabels, 'updateId'> | null) {
     if (!next && !liveLabels.value) return
-    const stamped: LiveLabels | null = next ? { ...next, updateId: ++_updateIdSeq } : null
+    const stamped: LiveLabels | null = next ? { ...next, updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) } : null
     liveLabels.value = stamped
     _writeJson(K_LIVE_LABELS, stamped)
   }
@@ -440,7 +442,7 @@ export const useViewerStore = defineStore('viewer', () => {
       _writeJson(K_PREVIEW_IMAGES, null)
       return
     }
-    const stamp = ++_updateIdSeq
+    const stamp = (_updateIdSeq = nextUpdateStamp(_updateIdSeq))
     const stamped = next.map(m => ({ ...m, updateId: stamp }))
     previewImages.value = stamped
     _writeJson(K_PREVIEW_IMAGES, stamped)
@@ -452,7 +454,7 @@ export const useViewerStore = defineStore('viewer', () => {
    *  popup's storage listener. */
   function setTrackHighlight(next: HighlightInput<TrackHighlight> | null) {
     const stamped: TrackHighlight | null = next && next.trackIds.length
-      ? { ..._withExpiry(next), updateId: ++_updateIdSeq } : null
+      ? { ..._withExpiry(next), updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) } : null
     trackHighlight.value = stamped
     _writeJson(K_TRACK_HIGHLIGHT, stamped)
   }
@@ -545,7 +547,7 @@ export const useViewerStore = defineStore('viewer', () => {
    *  repeat write with the same labels still wakes the popup viewer. */
   function setPickHighlight(next: HighlightInput<PickHighlight> | null) {
     const empty = !next || (!next.labels.length && !next.focusId)
-    const stamped: PickHighlight | null = empty ? null : { ..._withExpiry(next!), updateId: ++_updateIdSeq }
+    const stamped: PickHighlight | null = empty ? null : { ..._withExpiry(next!), updateId: (_updateIdSeq = nextUpdateStamp(_updateIdSeq)) }
     pickHighlight.value = stamped
     _writeJson(K_PICK_HIGHLIGHT, stamped)
   }
