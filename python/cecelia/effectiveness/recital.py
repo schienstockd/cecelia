@@ -51,6 +51,16 @@ _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
 #: reviewer didn't run (`judge-review --auto` stops on it rather than commit unreviewed).
 ERROR_MARKER = "RECITAL SCRIPT ERROR"
 
+#: One reviewer's error block as `_run_reviewer` writes it: the marker line, then its message up to
+#: the next italic line (the section's `_<title>: not run …_` tail) or the end.
+_ERROR_BLOCK = re.compile(r"> \*\*" + re.escape(ERROR_MARKER) + r"\*\* — (.*?)(?=\n\n_|\Z)", re.S)
+
+
+def reviewer_errors(body: str) -> list[str]:
+    """The reviewer error messages in a recital body, and nothing else: the reviewers' findings sit
+    in the same body and may quote anything (a limit's wording included)."""
+    return _ERROR_BLOCK.findall(body)
+
 
 class RecitalError(RuntimeError):
     """Raised when a reviewer subprocess fails hard (non-zero exit, timeout, missing CLI).

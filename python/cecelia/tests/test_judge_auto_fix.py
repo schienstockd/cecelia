@@ -517,9 +517,21 @@ class WorkTest(_AutoFixture):
         self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
         shutil.rmtree(tree)
 
+    def test_a_finding_quoting_the_error_marker_is_not_a_reviewer_error(self):
+        # a clean recital whose finding names the marker (a diff touching this code): it commits as usual
+        quoting = RECITAL.replace("_Recital stamp:", "- **auto_fix.py:756** — reads `> **RECITAL SCRIPT ERROR**` "
+                                  "[**plausible**]\n\n_Recital stamp:", 1)
+        with mock.patch(f"{__name__}.RECITAL", quoting):
+            _, out = self.work(_answer(), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        self.assertNotIn("reviewers errored", out)
+        self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
+
     def test_a_recital_whose_reviewers_errored_commits_nothing(self):
+        # the other reviewer's finding quotes a limit's wording: only the error itself says whether it was one
         errored = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
-                   "{}\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+                   "{}\n\n_Fanout audit: not run — the reviewer errored_\n\n_Convention check (evidence):_\n\n"
+                   "- **claude_cli.py:44** — now matches \"You've hit your session limit · resets 1:40am\" "
+                   "[**should reuse**]\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
         tree = self.main.parent / "cecelia-fix-fanout-b1"
         for text, raises in (("boom", False), ("You've hit your session limit · resets 2:20pm", True)):
             with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)), \

@@ -16,6 +16,11 @@
 # and redraws the README's chart (systemd/weekly-chart.service). Both under the same lock, so neither
 # resets the worktree under a running pass.
 #
+# `--auto` runs `judge-review --auto` on the record the pass just wrote: every bug verify called `fix`,
+# one sandboxed session and PR each, never a merge (systemd/weekly-auto-fix.service, started by the
+# judge unit's `OnSuccess=`). Same lock, same checkout, its own log; a usage limit (75) ends it, and the
+# bugs it didn't reach wait for next week's run.
+#
 # Called by systemd/weekly-judge.service — see that dir's README. Fails loudly (exit non-zero) so
 # `systemctl --user status weekly-judge.service` shows red. Design: docs/ai-assist/WEEKLY_JUDGE.md.
 
@@ -27,6 +32,7 @@ case "${1:-}" in
     --pinned) TASK_ARGS=(--ref HEAD) ;;
     --sync) MODE=sync ;;
     --chart) MODE=chart ;;
+    --auto) MODE=auto ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +47,8 @@ AFTER_RESET_SEC=300
 SLEEP="${CECELIA_JUDGE_SLEEP:-sleep}"   # tests stand `true` in
 mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-LOG_FILE="$LOG_DIR/$([ "$MODE" = chart ] && echo chart || echo judge)-$TS.log"
+case "$MODE" in chart|auto) LOG_NAME=$MODE ;; *) LOG_NAME=judge ;; esac
+LOG_FILE="$LOG_DIR/$LOG_NAME-$TS.log"
 
 log() { echo "$(date -Is) $*" | tee -a "$LOG_FILE" >&2; }
 
@@ -87,6 +94,12 @@ main() {
             cd "$REPO_ROOT"
             nice -n 10 pixi run effectiveness-chart -- --push 2>&1 | tee -a "$LOG_FILE"
             return "${PIPESTATUS[0]}" ;;
+        auto)
+            cd "$REPO_ROOT"
+            local rc=0
+            nice -n 10 ionice -c 3 pixi run judge-review --auto 2>&1 | tee -a "$LOG_FILE" || rc=${PIPESTATUS[0]}
+            [ "$rc" -eq "$EX_TEMPFAIL" ] && log "judge-review --auto stopped on the usage limit; the rest wait for next week"
+            return "$rc" ;;
     esac
     local attempt=1 rc retry reset reset_s wait_s
     while :; do

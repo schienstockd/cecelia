@@ -328,6 +328,14 @@ reviewers are `claude -p` runs, which need the network), so this was deferred un
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.
 
+**After every pass.** A pass that succeeds starts `weekly-auto-fix.service` (`OnSuccess=` on the judge
+unit), which runs `cron_pass.sh --auto`: `judge-review --auto` with no limit, on the record just written,
+under the same cron lock and in the same worktree, logged to `~/.cecelia-effectiveness/cron/auto-*.log`.
+A usage limit (exit 75) ends it; the bugs it didn't reach wait for next week. It has its own unit so a
+failed session never turns the judge's status red. Turn it off with
+`systemctl --user mask weekly-auto-fix.service`; install:
+[`scripts/judge/systemd/README.md`](../../scripts/judge/systemd/README.md).
+
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.

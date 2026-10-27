@@ -115,12 +115,23 @@ class CronPassTest(unittest.TestCase):
         self.assertEqual(self.lines("calls"), [" run effectiveness-chart -- --push"])   # no JUDGE_RETRY_LEFT
         self.assertEqual(self.run_wrapper("1", "--chart").returncode, 1)   # a failed push shows red
 
+    def test_auto_works_the_fix_bugs_without_touching_the_checkout(self):
+        proc = self.run_wrapper("0", "--auto")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual((self.lines("calls"), self.lines("git")), ([" run judge-review --auto"], []))
+        self.assertTrue(list((self.tmp / "cron").glob("auto-*.log")))
+
+    def test_auto_on_the_usage_limit_exits_75_and_says_the_rest_wait(self):
+        proc = self.run_wrapper("75", "--auto")
+        self.assertEqual((proc.returncode, len(self.lines("calls")), self.lines("sleeps")), (75, 1, []))
+        self.assertIn("the rest wait for next week", proc.stderr)
+
     def test_chart_and_sync_skip_while_a_pass_holds_the_lock(self):
         import fcntl   # POSIX only; the class runs on Linux alone
         (self.tmp / "cron").mkdir()
         with open(self.tmp / "cron" / ".lock", "wb") as held:
             fcntl.flock(held, fcntl.LOCK_EX)   # a pass's lock: flock(1) locks the same way
-            for mode in ("--chart", "--sync"):
+            for mode in ("--chart", "--sync", "--auto"):
                 self.assertEqual(self.run_wrapper("0", mode).returncode, 0)
         self.assertEqual((self.lines("git"), self.lines("calls")), ([], []))
 

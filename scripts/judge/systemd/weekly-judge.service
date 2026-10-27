@@ -3,6 +3,8 @@ Description=Weekly judge — bug sweep + rule tally over the recital findings
 Documentation=file://%h/.cecelia-effectiveness/judge-worktree/docs/ai-assist/WEEKLY_JUDGE.md
 # Don't fire on battery: a pass spends real API money (capped at ~$14) and shouldn't drain the laptop.
 ConditionACPower=true
+# A pass that succeeds hands its record to `judge-review --auto` (weekly-auto-fix.service).
+OnSuccess=weekly-auto-fix.service
 
 [Service]
 Type=oneshot

@@ -17,7 +17,7 @@ Then install the units:
 
 ```bash
 mkdir -p ~/.config/systemd/user
-cp scripts/judge/systemd/weekly-{judge,chart}.{service,timer} ~/.config/systemd/user/
+cp scripts/judge/systemd/weekly-{judge,chart}.{service,timer} scripts/judge/systemd/weekly-auto-fix.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now weekly-judge.timer weekly-chart.timer
 loginctl enable-linger "$USER"   # fire when you're not logged in
@@ -45,6 +45,14 @@ Won't fire on battery (`ConditionACPower=true`), and won't fire on boot for a mi
 `weekly-chart.timer` redraws the README's chart Monday at 00:30, the night a week completes, so the
 chart isn't a week behind waiting for Tuesday's pass. It costs nothing, so it does fire on boot for a
 missed Monday (`Persistent=true`), and it skips while a judge pass holds the cron lock.
+
+## Fix bugs after each pass
+
+`weekly-auto-fix.service` has no timer: a pass that succeeds starts it (`OnSuccess=` on the judge
+unit), and it runs `judge-review --auto` over every bug verify called `fix`, one sandboxed session and
+one PR each, never a merge. It takes the cron lock, logs to `~/.cecelia-effectiveness/cron/auto-*.log`,
+and stops on the usage limit. Watch it with `journalctl --user -u weekly-auto-fix.service -f`; turn it
+off with `systemctl --user mask weekly-auto-fix.service` (the judge unit then just skips it).
 
 ## Issues are the default
 
@@ -75,7 +83,7 @@ log: `usage limit, lifts …: waiting …s, then attempt 2/3`. Details:
 
 ```bash
 systemctl --user disable --now weekly-judge.timer weekly-chart.timer
-rm ~/.config/systemd/user/weekly-{judge,chart}.{service,timer}
+rm ~/.config/systemd/user/weekly-{judge,chart}.{service,timer} ~/.config/systemd/user/weekly-auto-fix.service
 systemctl --user daemon-reload
 ```
 
