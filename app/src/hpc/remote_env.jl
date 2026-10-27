@@ -24,6 +24,17 @@ const HPC_PIXI_VERSION = "0.71.1"
 const HPC_ENV_MARKER  = ".cecelia-env"
 const HPC_CODE_MARKER = ".complete"
 
+"""Where the cluster keeps what every env version shares: models, weights."""
+hpc_assets_dir(remote_root::AbstractString)::String = remote_root * "/assets"
+
+# Cellpose's built-in weights (cellpose's own cache, `CELLPOSE_LOCAL_MODELS_PATH` on the cluster). A
+# built-in model is a NAME, not a file a run declares, so dispatch has nothing to upload; cellpose
+# would download it on first use, and compute nodes often have no internet (Gadi's GPU nodes refuse
+# the connection). The install job runs on the internet queue, so it fetches them there, once, and an
+# env without them is not installed. Shared by every env version, like the other assets.
+hpc_cellpose_weights_dir(remote_root::AbstractString)::String = hpc_assets_dir(remote_root) * "/cellpose"
+hpc_cellpose_builtin_weights()::Vector{String} = [m for (m, _, backend) in BUILTIN_CELLPOSE_MODELS if backend === :v4]
+
 # Resources for the install job: the solve is single-threaded, the download and unpack of a CUDA torch
 # want memory and time more than cores. Measured: SLURM site 1 min 16 s, MaxRSS 0.6 GB; NCI Gadi copyq
 # 2 min, "Memory Used" 4.0 GB of 4 GB requested (PBS counts page cache, so a bigger env reads as more).
@@ -126,6 +137,7 @@ function hpc_env_install_body(remote_root::AbstractString, lock::AbstractString;
                               pixi_version::AbstractString = HPC_PIXI_VERSION)::String
     R = _sh_quote(remote_root)
     E = _sh_quote(hpc_env_dir(remote_root, lock))
+    W = _sh_quote(hpc_cellpose_weights_dir(remote_root))
     url = "https://github.com/prefix-dev/pixi/releases/download/v$(pixi_version)/pixi-x86_64-unknown-linux-musl.tar.gz"
     """
     set -eu
@@ -146,6 +158,12 @@ function hpc_env_install_body(remote_root::AbstractString, lock::AbstractString;
     echo "pixi install (lock $(lock))"
     "\$P" install --frozen -e default --manifest-path $E/pixi.toml
     PYTHONPATH=$E/python $E/.pixi/envs/default/bin/python -c "import cecelia, numpy, zarr; print('Environment imports OK')"
+    need=""
+    for m in $(join(hpc_cellpose_builtin_weights(), " ")); do [ -f $W/"\$m" ] || need="\$need \$m"; done
+    if [ -n "\$need" ]; then
+      echo "Downloading Cellpose weights:\$need"
+      CELLPOSE_LOCAL_MODELS_PATH=$W PYTHONPATH=$E/python $E/.pixi/envs/default/bin/python -m cecelia.utils.model_weights \$need
+    fi
     printf '{"lock":"%s","pixi":"%s"}\\n' $(_sh_quote(lock)) $(_sh_quote(pixi_version)) > $(HPC_ENV_MARKER)
     """
 end
@@ -180,7 +198,7 @@ function hpc_env_status(b::HpcBackend, c::HpcConn, remote_root::AbstractString;
                         lock::AbstractString = hpc_lock_hash())::HpcEnvStatus
     E = hpc_env_dir(remote_root, lock)
     out = hpc_exec!(c, """
-        test -f $(_sh_quote(E * "/" * HPC_ENV_MARKER)) && echo CECELIA-ENV installed
+        test -f $(_sh_quote(E * "/" * HPC_ENV_MARKER)) $(join(["-a -f " * _sh_quote(hpc_cellpose_weights_dir(remote_root) * "/" * m) for m in hpc_cellpose_builtin_weights()], " ")) && echo CECELIA-ENV installed
         j=\$(cat $(_sh_quote(E * "/" * _HPC_INSTALL_JOBFILE)) 2>/dev/null) && echo "CECELIA-ENV job \$j"
         [ -n "\$(find $(_sh_quote(remote_root)) -maxdepth 1 -name $(_HPC_CLEANING_MARKER) -mmin -$(_HPC_CLEANING_STALE_MIN) 2>/dev/null)" ] && echo CECELIA-ENV cleaning
         true
@@ -243,7 +261,9 @@ function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString
         on_job(id)
         state(s) = (on_state(s); on_log(s === JOB_QUEUED ? "Queued on the cluster (job $id)" :
                                         s === JOB_RUNNING ? "Running on the cluster (job $id)" : "Job $id ended"))
-        r = hpc_watch_job(b, c, id, dir; on_log, on_state = state, on_reason = x -> on_log("Waiting: $x"),
+        # the weights download's `[PROGRESS] bytes/total` (one per ~12 MB, ~200 lines) is noise in a log;
+        # its "downloading …" and "done" lines say the same
+        r = hpc_watch_job(b, c, id, dir; on_log = l -> startswith(l, "[PROGRESS]") || on_log(l), on_state = state, on_reason = x -> on_log("Waiting: $x"),
                           cancelled, poll_s)
         hpc_exec(c, "rm -f $(_sh_quote(E * "/" * _HPC_INSTALL_JOBFILE))\n")
         r.cancelled && return (; ok = false, message = "Cancelled")

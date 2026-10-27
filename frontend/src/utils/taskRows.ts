@@ -19,13 +19,15 @@ import { formatWhen } from './formatWhen'
 import { taskElapsed } from './taskElapsed'
 import { canCancelTask, canRerunTask } from './taskRerun'
 import { taskProjectLabel } from './taskScope'
-import { hpcStageLabel } from './hpcRun'
+import { hpcStageLabel, hpcShownStatus } from './hpcRun'
 
 /** One task, flattened for a table. `entry` rides along so a row action doesn't re-look-up by id. */
 export interface TaskRow {
   id: string
   seq: number
   status: TaskStatus
+  /** what the status icon shows: `queued` for a cluster run whose job is still in the cluster's queue */
+  shownStatus: TaskStatus
   module: string
   /** the label — what the Task column displays and sorts by */
   task: string
@@ -95,6 +97,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     id:      t.id,
     seq:     t.seq,
     status:  t.status,
+    shownStatus: hpcShownStatus(t.status, t.hpcStage),
     module:  t.module,
     task:    t.label,
     pool:    t.pool ?? '',
@@ -111,7 +114,7 @@ export function taskRow(t: TaskEntry, ctx: TaskRowContext): TaskRow {
     startedAtLabel: formatWhen(t.startedAt, ctx.now),
     startedAtMs:  t.startedAt?.getTime(),
     progress:     t.progress,
-    hasProgress:  t.status === 'running' && t.progress !== undefined,
+    hasProgress:  hpcShownStatus(t.status, t.hpcStage) === 'running' && t.progress !== undefined,
     canRerun:     canRerunTask(t),
     canCancel:    canCancelTask(t),
     cancelling:   t.cancelling === true,

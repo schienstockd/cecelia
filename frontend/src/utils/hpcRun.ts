@@ -10,6 +10,7 @@ import type { TaskDef, HpcMemModel } from '../tasks/types'
 import { hpcTestBlocker, hpcEnvLine, type HpcSettings, type HpcEnvStatus } from './hpcSettings'
 import { formatBytes, type FrameGeometry } from '../tasks/paramAdvisors'
 import type { Severity } from '../lib/severity'
+import type { TaskStatus } from '../stores/tasks'
 
 export type RunTarget = 'local' | 'hpc'
 
@@ -81,6 +82,14 @@ export function hpcStageLabel(stage?: string, job?: string): { short: string; ti
   if (!stage) return null
   const s = HPC_STAGE_TEXT[stage] ?? stage
   return { short: s, tip: `On the cluster: ${s}${job ? ` (job ${job})` : ''}` }
+}
+
+/**
+ * The status a row SHOWS: a cluster run is `running` to the scheduler from the moment it takes its slot,
+ * but while its job waits in the cluster's queue nothing is computing, so it reads as queued.
+ */
+export function hpcShownStatus(status: TaskStatus, stage?: string): TaskStatus {
+  return status === 'running' && stage === 'queued' ? 'queued' : status
 }
 
 /** What the user chose for this function, remembered per function (profile storage). */

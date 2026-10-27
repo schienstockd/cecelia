@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination, hpcRunEnvNote, hpcRuleCpus,
-  hpcSteps, hpcFieldsFor, formatResource, hpcMemoryHint, frameGb } from './hpcRun'
+  hpcSteps, hpcFieldsFor, hpcShownStatus, formatResource, hpcMemoryHint, frameGb } from './hpcRun'
 import type { HpcSettings, HpcEnvStatus } from './hpcSettings'
 import type { TaskDef } from '../tasks/types'
 
@@ -45,6 +45,14 @@ describe('hpcRun', () => {
     expect(hpcStageLabel('sync')).toEqual({ short: 'uploading', tip: 'On the cluster: uploading' })
     expect(hpcStageLabel('queued', '4211')).toEqual({ short: 'queued', tip: 'On the cluster: queued (job 4211)' })
     expect(hpcStageLabel('pull', '4211')?.short).toBe('downloading')
+  })
+
+  it('shows a run whose job waits in the cluster queue as queued, not running', () => {
+    expect(hpcShownStatus('running', 'queued')).toBe('queued')
+    expect(hpcShownStatus('running', 'sync')).toBe('running')      // uploading is work being done
+    expect(hpcShownStatus('running', 'running')).toBe('running')
+    expect(hpcShownStatus('running')).toBe('running')
+    expect(hpcShownStatus('done', 'queued')).toBe('done')
   })
 
   it('reads a walltime as a person would', () => {

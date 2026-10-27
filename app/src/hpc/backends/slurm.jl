@@ -136,3 +136,33 @@ function hpc_exit_reason(::SlurmBackend, c::HpcConn, id::AbstractString)::String
                    "scontrol show job $q 2>/dev/null | tr ' ' '\\n' | grep '^JobState='\n").out
     slurm_exit_reason(out)
 end
+
+const _SLURM_SACCT_USAGE = "JobID,State,Elapsed,TotalCPU,MaxRSS,ReqMem,AllocCPUS,Timelimit"
+
+"""
+    slurm_usage(text) -> Union{HpcUsage,Nothing}
+
+A finished job's use, from `sacct -n -P -o $(_SLURM_SACCT_USAGE)`: the allocation line (no `.` in its
+JobID) gives elapsed, CPU time and what was booked; peak memory is the largest `MaxRSS` of its steps.
+A per-CPU `ReqMem` (`4Gc`, older SLURM) is per CPU booked. `nothing` without accounting. Pure.
+"""
+function slurm_usage(text::AbstractString)::Union{HpcUsage,Nothing}
+    rows = [split(l, '|') for l in split(text, '\n') if count(==('|'), l) == 7]
+    i = findfirst(r -> !occursin('.', r[1]), rows)
+    isnothing(i) && return nothing
+    a = rows[i]
+    cpus = something(tryparse(Int, a[7]), 1)
+    req = _hpc_size_gb(a[6])
+    wall, wall_req = _hpc_duration_min(a[3]), something(_hpc_duration_min(a[8]), 0.0)   # UNLIMITED → 0
+    rss = [x for x in (_hpc_size_gb(r[5]) for r in rows) if !isnothing(x)]
+    (isnothing(req) || isnothing(wall) || isempty(rss)) && return nothing
+    endswith(lowercase(a[6]), "c") && (req *= cpus)
+    cput = something(_hpc_duration_min(a[4]), 0.0)
+    HpcUsage(maximum(rss), req, wall, wall_req, cpus, wall > 0 ? cput / wall : 0.0, nothing,
+             !isempty(a[2]) && !(first(split(a[2])) in _SLURM_QUEUED || first(split(a[2])) in _SLURM_RUNNING))
+end
+
+hpc_job_usage(::SlurmBackend, c::HpcConn, id::AbstractString)::Union{HpcUsage,Nothing} =
+    slurm_usage(hpc_exec(c, _hpc_sched_prelude("sacct") *
+                            _hpc_usage_script("sacct -n -P -j $(_sh_quote(id)) -o $(_SLURM_SACCT_USAGE) 2>/dev/null",
+                                              "^[^.|]+\\|(COMPLETED|FAILED|TIMEOUT|OUT_OF_MEMORY|CANCELLED|NODE_FAIL|PREEMPTED|BOOT_FAIL|DEADLINE)")).out)

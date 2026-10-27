@@ -22,7 +22,7 @@ import { isPreferencesOpen } from '../lib/preferencesOpen'
 import { profileStorage } from '../utils/profileStorage'
 import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS, hpcRuleCpus,
   hpcRunDestination, hpcRunEnvNote, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
-  type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
+  hpcShownStatus, type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
 import { cachedPyramidRecommendation } from './pyramidPeek'
@@ -741,7 +741,7 @@ const activeTasks = computed(() =>
 // track of whether anything is still going.
 const hiddenTaskNote = computed(() => {
   if (pane.value !== 'top') return ''
-  const running = activeTasks.value.filter(t => t.status === 'running').length
+  const running = activeTasks.value.filter(t => hpcShownStatus(t.status, t.hpcStage) === 'running').length
   const queued  = activeTasks.value.length - running
   if (!activeTasks.value.length) return ''
   return queued ? `${running} running · ${queued} queued` : `${running} running`

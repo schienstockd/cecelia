@@ -182,7 +182,7 @@ end
 # ── Paths: local ↔ mirror ──────────────────────────────────────────────────────────────────────────
 
 hpc_mirror_dir(d::HpcDispatch)::String = d.remote_root * "/projects/" * basename(d.project_root)
-hpc_assets_dir(d::HpcDispatch)::String = d.remote_root * "/assets"
+hpc_assets_dir(d::HpcDispatch)::String = hpc_assets_dir(d.remote_root)
 
 _under(p::AbstractString, root::AbstractString) = p == root || startswith(p, root * "/")
 
@@ -403,8 +403,15 @@ function _hpc_job_env(d::HpcDispatch, code_dir::AbstractString)::String
             println(io, "export $k=$(_sh_quote(v))")
         end
     end
-    println(io, "export CELLPOSE_LOCAL_MODELS_PATH=$(_sh_quote(hpc_assets_dir(d) * "/cellpose"))")
+    println(io, "export CELLPOSE_LOCAL_MODELS_PATH=$(_sh_quote(hpc_cellpose_weights_dir(d.remote_root)))")
     String(take!(io))
+end
+
+# What the job used against what it booked, logged with the task once it is over — succeeded or
+# failed (an out-of-memory run is when it matters most). Never fails the run: it is advice.
+function _hpc_log_usage(d::HpcDispatch, id::AbstractString, on_log::Function)
+    u = try; hpc_job_usage(d.backend, d.conn, id); catch; nothing; end
+    isnothing(u) || foreach(on_log, hpc_usage_lines(u))
 end
 
 """
@@ -486,6 +493,7 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
                 on_log("[HPC] Cancelled job $id")
                 return false
             end
+            _hpc_log_usage(d, id, on_log)
             if w.exit != 0
                 rm(record; force = true)
                 on_log("[ERROR] Cluster job $id failed: $(w.reason)")
