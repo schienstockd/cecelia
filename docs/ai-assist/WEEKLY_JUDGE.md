@@ -159,9 +159,11 @@ test whether an agent can actually use the framework.
      The bug becomes `gone`, and counts as a real bug fixed in the charts. A repeated agent error
      becomes `dismissed` instead, which keeps it muted (step 3);
    - `dismiss`: the finding is wrong. The bug becomes `dismissed`, and counts against the reviewer
-     in the record's `run.spend.verify.precision`. A `dismiss` on a bug with `fix_landed` is taken as
-     `fixed` (`record.verify_verdict`): before `fixed` existed, verify answered `dismiss` for a fixed
-     bug, and 5 of the 2026-10-27 record's dismissals were fixed or deleted code.
+     in the record's `run.spend.verify.precision`. A `dismiss` on a bug with `fix_landed`, or whose
+     issue carries the `fix-landed` label (a record drops `fix_landed` once the fix predates the
+     previous pass), is taken as `fixed` (`record.verify_verdict`), in past records too: before
+     `fixed` existed, verify answered `dismiss` for a fixed bug. Read that way, the findings-flow
+     chart's history moves 10 bugs from *not a bug* to *fixed*.
 5. **Rules** (`rules.py`). Every fanout + convention finding from the last 30 days is mapped to the
    one CLAUDE.md `##` section it breaks, by one tool-less judge call. Git sorts each finding into
    `agent_made` (the reviewed diff wrote it) or `legacy` (the code was there before). A rule broken

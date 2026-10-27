@@ -57,8 +57,12 @@ _BUGS_HOW_TO = (
 
 def verify_verdict(verdict: str | None, b: dict) -> str | None:
     """A verify verdict as counted: `dismiss` on a bug a commit naming its key landed for is `fixed`
-    (the agent found the fix, not a wrong finding; records from before `fixed` existed said that)."""
-    return "fixed" if verdict == "dismiss" and b.get("fix_landed") else verdict
+    (the agent found the fix, not a wrong finding; records from before `fixed` existed said that).
+    The landed fix is `fix_landed`, or its issue's `fix-landed` label: a record drops `fix_landed`
+    once the fix is older than the previous pass, and the issue keeps the label."""
+    issue = b.get("issue") if isinstance(b.get("issue"), dict) else {}
+    landed = b.get("fix_landed") or "fix-landed" in (issue.get("labels") or ())
+    return "fixed" if verdict == "dismiss" and landed else verdict
 
 
 def verified_fixed(b: dict) -> bool:

@@ -117,6 +117,9 @@ class VerifyTest(unittest.TestCase):
         self.assertIn("- fixed: the finding was right, but this code no longer has the defect", self.v._BRIEF)
         carried = _bug("c", status="dismissed", verify={"verdict": "dismiss"}, fix_landed=[{"commit": "f" * 40}])
         self.assertEqual(self.v.precision([carried])["plausible"]["fixed"], 1)   # an older record's dismiss
+        labelled = _bug("d", status="dismissed", verify={"verdict": "dismiss"},   # `fix_landed` dropped, label kept
+                        issue={"number": 1, "labels": ["judge-bug", "fix-landed"]})
+        self.assertEqual(self.v.precision([labelled])["plausible"]["fixed"], 1)
 
     def test_guard_parks_a_bug_with_its_trigger(self):
         def guard(prompt):
