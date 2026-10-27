@@ -456,7 +456,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // Per-image × vn set of pop paths whose RIBBONS the viewer hides — a PROJECTION of the ribbon eyes
   // (`getPopEyes(…, 'ribbons')`, `popEyes.ts::offPaths`) the pop-out writes on every eye change, in the
-  // per-path shape the movie recorder (`viewerLook`) and the Julia renderer take; it crosses windows
+  // per-path shape the Julia renderer falls back to for a pop with no ribbon eye; it crosses windows
   // through the bag channel. Before #1766 it was the ribbon state itself, so it also seeds the eyes
   // once (`reconcileRibbonEyes`). Stored as an array in JSON; consumed as a Set.
   const _trackPopHiddenStore = ref<Record<string, Record<string, string[]>>>(
@@ -475,8 +475,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // per layer — `points` (the Populations rows, `cc.viewerPopEyes`) and `ribbons` (the Tracks rows,
   // `cc.viewerRibbonEyes`; #1766). Separate from the Population Manager's `show`, which only seeds a
   // pop with no entry here; kept across the refetch every gate write triggers
-  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). Only the pop-out reads them, so they have no
-  // cross-window decoder — the ribbon eyes' off paths are published to `setTrackPopHidden` for that.
+  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). The pop-out writes them; they cross windows through
+  // the bag channel, so a movie recorded from the main window draws the viewer's eyes (`viewerLook`).
   const _popEyesStores = {
     points: ref<Record<string, Record<string, Record<string, boolean>>>>(
       JSON.parse(localStorage.getItem(POP_EYES_KEYS.points) ?? '{}')),
@@ -485,6 +485,10 @@ export const useSettingsStore = defineStore('settings', () => {
   }
   function getPopEyes(imageUid: string, vn: string, layer: EyeLayer = 'points'): Record<string, boolean> {
     return { ...(_popEyesStores[layer].value[imageUid]?.[vn] ?? {}) }
+  }
+  /** Every segmentation's eyes of one image, `{ vn: { "<popType>::<path>": visible } }` — a copy. */
+  function getImagePopEyes(imageUid: string, layer: EyeLayer = 'points'): Record<string, Record<string, boolean>> {
+    return Object.fromEntries(Object.entries(_popEyesStores[layer].value[imageUid] ?? {}).map(([vn, e]) => [vn, { ...e }]))
   }
   function setPopEyes(imageUid: string, vn: string, eyes: Record<string, boolean>,
                       layer: EyeLayer = 'points') {
@@ -812,6 +816,8 @@ export const useSettingsStore = defineStore('settings', () => {
         case 'setPrefs':     _setPrefs.value          = ev.value as Record<string, ViewerSetPrefs>; break
         case 'imageVersion': _imageVersionStore.value = ev.value as Record<string, string>; break
         case 'trackPopHidden': _trackPopHiddenStore.value = ev.value as Record<string, Record<string, string[]>>; break
+        case 'popEyes':      _popEyesStores.points.value  = ev.value as Record<string, Record<string, Record<string, boolean>>>; break
+        case 'ribbonEyes':   _popEyesStores.ribbons.value = ev.value as Record<string, Record<string, Record<string, boolean>>>; break
       }
     })
     // Direct string keys — not JSON, so they don't go through the bag decoder. `storage` events
@@ -950,7 +956,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerLabelOpacity, viewerLabelContour, viewerMaskByPop, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerLabelOpacity, viewerLabelContour, viewerMaskByPop, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

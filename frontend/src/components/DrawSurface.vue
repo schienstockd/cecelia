@@ -27,8 +27,8 @@ import CcToggle from './CcToggle.vue'
 import TeleportPopover from './TeleportPopover.vue'
 import {
   beginPoly, beginRect, beginStroke, addVertex, extendStroke, updateCursor, updateRect,
-  finishPoly, finishRect, finishStroke, pointInPoly, distToSeg,
-  type Point,
+  finishPoly, finishRect, finishStroke, hitMarkLocal, handleRadius, boxCorners, bboxOf,
+  type Point, type MarkPart, type BBox,
 } from '../utils/drawGeometry'
 import {
   rectToOverlayGeom, pointsToOverlayGeom,
@@ -190,8 +190,10 @@ type Handle =
   | { idx: number; kind: 'bbox-corner'; corner: 0 | 1 | 2 | 3 }    // poly / stroke bbox — scales all vertices around the opposite corner
   | { idx: number; kind: 'poly-vertex'; vertex: number }           // draggable polygon vertex (finer than bbox-corner; hits first)
   | { idx: number; kind: 'rotate' }                                // rotate handle (any kind)
-const CORNER_HIT_PX  = 8   // half-size of a corner hit-box (matches the on-screen handle)
-const VERTEX_HIT_PX  = 8   // radius around a polygon vertex handle — mirrors CORNER_HIT_PX
+// Corner / vertex grab reach: `handleRadius` (utils/drawGeometry.ts) — 10 px, capped on a small mark
+// so its body still moves it. The drawn handles shrink with it (`CORNER_DRAW_PX`, `VERTEX_DRAW_PX`).
+const CORNER_DRAW_PX = 6   // drawn half-size of a corner handle on a full-size mark
+const VERTEX_DRAW_PX = 5   // drawn radius of a poly vertex handle on a full-size mark
 const STROKE_NEAR_PX = 8   // click-tolerance around a stroke path — a 1-px line is unhittable
 const ROTATE_HANDLE_OFFSET_PX = 22   // rotate handle sits this far above the AA top edge
 const ROTATE_HIT_PX  = 10  // hit radius around the rotate handle centre
@@ -222,14 +224,8 @@ function rectCentroidPx(i: number): Point | null {
 }
 /** AA bounding box of a poly / stroke in DOM px. `null` for degenerate shapes (empty vertex
  *  list) so the caller can skip rendering handles rather than crash on Infinity math. */
-function polyBboxPx(i: number): { x: number; y: number; w: number; h: number } | null {
-  const pts = pointsFromMark(i); if (!pts || pts.length === 0) return null
-  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
-  for (const [x, y] of pts) {
-    if (x < xMin) xMin = x; if (x > xMax) xMax = x
-    if (y < yMin) yMin = y; if (y > yMax) yMax = y
-  }
-  return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
+function polyBboxPx(i: number): BBox | null {
+  const pts = pointsFromMark(i); return pts ? bboxOf(pts) : null
 }
 /** Centroid of a mark in DOM px (rect centre, or poly/stroke bbox centre). Used as the rotation
  *  origin so all kinds rotate the same way (matches `markCentroid01`'s composite-side rule). */
@@ -243,7 +239,7 @@ function markRotate(m: OverlayMark): number {
   return typeof m.rotate === 'number' && isFinite(m.rotate) ? m.rotate : 0
 }
 
-function rectFromMark(i: number): { x: number; y: number; w: number; h: number } | null {
+function rectFromMark(i: number): BBox | null {
   const m = marks.value[i]; if (m.kind !== 'rect') return null
   const g = m.geom as { x: number; y: number; w: number; h: number }
   return { x: g.x * boxW.value, y: g.y * boxH.value, w: g.w * boxW.value, h: g.h * boxH.value }
@@ -253,82 +249,32 @@ function pointsFromMark(i: number): Point[] | null {
   const g = m.geom as { pts?: [number, number][] }
   return (g.pts ?? []).map(p => [p[0] * boxW.value, p[1] * boxH.value] as Point)
 }
-function pointInRect(p: Point, r: { x: number; y: number; w: number; h: number }): boolean {
-  return p[0] >= r.x && p[0] <= r.x + r.w && p[1] >= r.y && p[1] <= r.y + r.h
-}
-function distToPolyline(p: Point, pts: Point[]): number {   // open polyline (a stroke)
-  let best = Infinity
-  for (let i = 1; i < pts.length; i++) best = Math.min(best, distToSeg(p, pts[i - 1], pts[i]))
-  return best
-}
-// Newest-first so a shape drawn on top of another is picked. Corner / vertex handles hit before
-// bodies so a click on a handle resizes or reshapes rather than moves. Poly vertex handles are
-// only offered on the SELECTED poly — otherwise every poly would have to render its full vertex
-// set in edit mode and the surface would quickly turn into a dot field. Rect corners stay
-// always-on because a rect only has four handles regardless.
+// Newest-first so a shape drawn on top of another is picked. Within a mark, handles hit before the
+// body so a click on a handle resizes or reshapes rather than moves (order: `hitMarkLocal`). Poly
+// vertex handles are only offered on the SELECTED poly — otherwise every poly would have to render
+// its full vertex set in edit mode and the surface would quickly turn into a dot field. Rect corners
+// stay always-on because a rect only has four handles regardless.
 function hitTest(p: Point): Handle | null {
   for (let i = marks.value.length - 1; i >= 0; i--) {
     const m = marks.value[i]
-    const rot = markRotate(m)
     const cent = markCentroidPx(i)
-    // Every hit-test check below runs in the mark's LOCAL (un-rotated) frame — unrotate the
-    // pointer once, up front, so a rotated shape's handles + body are all checked in AA coords.
-    const pL = cent ? unrotateAround(p, cent[0], cent[1], rot) : p
-    if (m.kind === 'rect') {
-      const r = rectFromMark(i)!
-      if (i === selectedIdx.value) {
-        const rhx = r.x + r.w / 2, rhy = r.y - ROTATE_HANDLE_OFFSET_PX
-        const dx = pL[0] - rhx, dy = pL[1] - rhy
-        if (dx * dx + dy * dy <= ROTATE_HIT_PX * ROTATE_HIT_PX)
-          return { idx: i, kind: 'rotate' }
-      }
-      const corners: [number, number][] = [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]
-      for (let c = 0; c < 4; c++) {
-        if (Math.abs(pL[0] - corners[c][0]) <= CORNER_HIT_PX &&
-            Math.abs(pL[1] - corners[c][1]) <= CORNER_HIT_PX)
-          return { idx: i, kind: 'rect-corner', corner: c as 0 | 1 | 2 | 3 }
-      }
-      if (pointInRect(pL, r)) return { idx: i, kind: 'body' }
-    } else if (m.kind === 'poly' || m.kind === 'stroke') {
+    // Hit-testing runs in the mark's LOCAL (un-rotated) frame — unrotate the pointer once, up
+    // front. A rotated poly/stroke stores AA vertices, so its vertex list and bbox are already in
+    // that frame.
+    const pL = cent ? unrotateAround(p, cent[0], cent[1], markRotate(m)) : p
+    let hit: MarkPart | null = null
+    const opts = { selected: i === selectedIdx.value, rotateOffsetPx: ROTATE_HANDLE_OFFSET_PX,
+                   rotateHitPx: ROTATE_HIT_PX, strokeNearPx: STROKE_NEAR_PX }
+    if (m.kind === 'rect') hit = hitMarkLocal(pL, { kind: 'rect', rect: rectFromMark(i)! }, opts)
+    else if (m.kind === 'poly' || m.kind === 'stroke') {
       const pts = pointsFromMark(i); if (!pts) continue
-      // A rotated poly/stroke stores AA vertices in local coords, so once `pL` is un-rotated
-      // both the vertex list AND the bbox live in the same AA frame — no per-vertex rotate
-      // math needed downstream, either.
-      const ptsL = pts
-      if (i === selectedIdx.value) {
-        const bb = polyBboxPx(i)
-        if (bb) {
-          const rhx = bb.x + bb.w / 2, rhy = bb.y - ROTATE_HANDLE_OFFSET_PX
-          const dx = pL[0] - rhx, dy = pL[1] - rhy
-          if (dx * dx + dy * dy <= ROTATE_HIT_PX * ROTATE_HIT_PX)
-            return { idx: i, kind: 'rotate' }
-        }
-        // Poly-vertex takes precedence over bbox-corner: a stray click on a bbox corner is
-        // harmless (starts a resize), but stealing a vertex-precision drag would be worse. So
-        // vertex handles first.
-        if (m.kind === 'poly') {
-          for (let v = 0; v < ptsL.length; v++) {
-            const dx = pL[0] - ptsL[v][0], dy = pL[1] - ptsL[v][1]
-            if (dx * dx + dy * dy <= VERTEX_HIT_PX * VERTEX_HIT_PX)
-              return { idx: i, kind: 'poly-vertex', vertex: v }
-          }
-        }
-        if (bb) {
-          const bc: [number, number][] = [[bb.x, bb.y], [bb.x + bb.w, bb.y],
-                                          [bb.x + bb.w, bb.y + bb.h], [bb.x, bb.y + bb.h]]
-          for (let c = 0; c < 4; c++) {
-            if (Math.abs(pL[0] - bc[c][0]) <= CORNER_HIT_PX &&
-                Math.abs(pL[1] - bc[c][1]) <= CORNER_HIT_PX)
-              return { idx: i, kind: 'bbox-corner', corner: c as 0 | 1 | 2 | 3 }
-          }
-        }
-      }
-      if (m.kind === 'poly') {
-        if (pointInPoly(pL, ptsL)) return { idx: i, kind: 'body' }
-      } else {
-        if (distToPolyline(pL, ptsL) <= STROKE_NEAR_PX)
-          return { idx: i, kind: 'body' }
-      }
+      hit = hitMarkLocal(pL, { kind: m.kind, pts }, opts)
+    }
+    if (!hit) continue
+    switch (hit.part) {
+      case 'body': case 'rotate': return { idx: i, kind: hit.part }
+      case 'rect-corner': case 'bbox-corner': return { idx: i, kind: hit.part, corner: hit.corner }
+      case 'poly-vertex': return { idx: i, kind: 'poly-vertex', vertex: hit.vertex }
     }
   }
   return null
@@ -426,7 +372,7 @@ function applyEdit(cur: Point) {
       // orig mark (not the live one — a mid-drag re-computation would compound the scale on
       // every pointermove and rocket the shape off-screen). All coords are frame-relative
       // [0,1]; local delta (dxL, dyL) is in DOM px so divide by (w, h) first.
-      const bbox01 = polyBboxFromPts01(g.pts)
+      const bbox01 = bboxOf(g.pts)
       if (!bbox01) return
       const corner = editDragging.corner
       const dx01 = dxL / w, dy01 = dyL / h
@@ -474,7 +420,7 @@ function applyEdit(cur: Point) {
       // collapsing the shape onto the wall. Because `editOrigMark` retains the untouched
       // vertices, that collapse also snaps back on drag-return, giving the "resize wasn't
       // baked in" feel.
-      const bbox01 = polyBboxFromPts01(g.pts)
+      const bbox01 = bboxOf(g.pts)
       if (!bbox01) return
       const rawDx01 = dxL / w, rawDy01 = dyL / h
       // Only clamp the axis that actually fits inside the frame; a shape wider than the surface
@@ -499,17 +445,8 @@ function editOrigCentroidPx(): Point | null {
     return [(g.x + g.w / 2) * boxW.value, (g.y + g.h / 2) * boxH.value]
   }
   const g = editOrigMark.geom as { pts?: [number, number][] }
-  const b = polyBboxFromPts01(g.pts ?? [])
+  const b = bboxOf(g.pts ?? [])
   return b ? [(b.x + b.w / 2) * boxW.value, (b.y + b.h / 2) * boxH.value] : null
-}
-function polyBboxFromPts01(pts: [number, number][]): { x: number; y: number; w: number; h: number } | null {
-  if (!pts || pts.length === 0) return null
-  let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
-  for (const [x, y] of pts) {
-    if (x < xMin) xMin = x; if (x > xMax) xMax = x
-    if (y < yMin) yMin = y; if (y > yMax) yMax = y
-  }
-  return { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
 }
 function cursorForHandle(h: Handle | null): string {
   if (!h) return editModeActive.value ? 'default' : 'crosshair'
@@ -716,8 +653,11 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
     // the top of the shape, in the shape's frame).
     const cx = x + width / 2, cy = y + height / 2
     const transform = rot ? `rotate(${rot} ${cx} ${cy})` : null
+    const corners = boxCorners({ x, y, w: width, h: height })
     return { key: i, idx: i, kind: 'rect', label: m.label, stroke, strokeW, selected, transform,
-             x, y, width, height, bbox: null as { x: number; y: number; w: number; h: number } | null,
+             x, y, width, height, bbox: null as BBox | null,
+             corners, cornerHalf: Math.min(CORNER_DRAW_PX, handleRadius(corners, true)),
+             vertexR: VERTEX_DRAW_PX,
              rotateX: cx, rotateY: y - ROTATE_HANDLE_OFFSET_PX, rotateAnchorY: y,
              labelX: x, labelY: y - 6,
              // ✕ sits outside the top-right corner handle so a click resizes vs deletes without
@@ -732,15 +672,8 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
     // own {x,y,w,h}, so the four corner handles + rotate arm read as the same affordance across
     // shape kinds. Rotation wraps everything (shape + bbox + handles + ✕) — a rotated
     // freehand's selection frame appears at the shape's angle.
-    let bbox: { x: number; y: number; w: number; h: number } | null = null
-    if (pts.length > 0) {
-      let xMin = Infinity, yMin = Infinity, xMax = -Infinity, yMax = -Infinity
-      for (const [x, y] of pts) {
-        if (x < xMin) xMin = x; if (x > xMax) xMax = x
-        if (y < yMin) yMin = y; if (y > yMax) yMax = y
-      }
-      bbox = { x: xMin, y: yMin, w: xMax - xMin, h: yMax - yMin }
-    }
+    const bbox = bboxOf(pts)
+    const corners = bbox ? boxCorners(bbox) : []
     const cx = bbox ? bbox.x + bbox.w / 2 : 0
     const cy = bbox ? bbox.y + bbox.h / 2 : 0
     const transform = rot && bbox ? `rotate(${rot} ${cx} ${cy})` : null
@@ -757,12 +690,15 @@ const committedShapes = computed(() => marks.value.map((m, i) => {
     return { key: i, idx: i, kind: m.kind, label: m.label, stroke, strokeW, selected, transform,
              d: m.kind === 'poly' ? cmd + ' Z' : cmd,
              bbox,
+             corners,
+             cornerHalf: Math.min(CORNER_DRAW_PX, handleRadius(corners, true)),
+             vertexR: Math.min(VERTEX_DRAW_PX, handleRadius(pts)),
              rotateX, rotateY, rotateAnchorY,
              labelX, labelY, deleteX, deleteY,
              pts }
   }
   return { key: i, idx: i, kind: 'unknown', stroke, strokeW: 2, selected, transform: null,
-           bbox: null, pts: null } as never
+           bbox: null, pts: null, corners: [], cornerHalf: 0, vertexR: 0 } as never
 }))
 // Live draft strokes use the current colour so the WIP shape reads with the same identity as the
 // committed mark it becomes. Not tied to `resolveMarkColor` — the draft has no mark yet.
@@ -800,20 +736,18 @@ const firstVertexMarker = computed(() => {
                   :style="{ stroke: s.stroke, strokeWidth: s.strokeW }" />
             <text v-if="s.label" :x="s.labelX" :y="s.labelY" :style="{ fill: s.stroke }">{{ s.label }}</text>
             <template v-if="editModeActive && s.kind === 'rect'">
-              <rect v-for="(c, ci) in [[s.x, s.y], [s.x + s.width, s.y],
-                                        [s.x + s.width, s.y + s.height], [s.x, s.y + s.height]]"
-                    :key="'c' + ci" class="ds-corner"
-                    :x="c[0] - 6" :y="c[1] - 6" :width="12" :height="12" />
+              <rect v-for="(c, ci) in s.corners" :key="'c' + ci" class="ds-corner"
+                    :x="c[0] - s.cornerHalf" :y="c[1] - s.cornerHalf"
+                    :width="2 * s.cornerHalf" :height="2 * s.cornerHalf" />
             </template>
             <!-- Poly / stroke selection frame — dashed bbox outline + 4 corner handles.
                  Selected only, so an unselected freehand scribble doesn't show a rectangle. -->
             <template v-if="s.selected && (s.kind === 'poly' || s.kind === 'stroke') && s.bbox">
               <rect class="ds-bbox-frame" :x="s.bbox.x" :y="s.bbox.y"
                     :width="s.bbox.w" :height="s.bbox.h" />
-              <rect v-for="(c, ci) in [[s.bbox.x, s.bbox.y], [s.bbox.x + s.bbox.w, s.bbox.y],
-                                        [s.bbox.x + s.bbox.w, s.bbox.y + s.bbox.h], [s.bbox.x, s.bbox.y + s.bbox.h]]"
-                    :key="'bc' + ci" class="ds-corner"
-                    :x="c[0] - 6" :y="c[1] - 6" :width="12" :height="12" />
+              <rect v-for="(c, ci) in s.corners" :key="'bc' + ci" class="ds-corner"
+                    :x="c[0] - s.cornerHalf" :y="c[1] - s.cornerHalf"
+                    :width="2 * s.cornerHalf" :height="2 * s.cornerHalf" />
             </template>
             <!-- Rotate handle — small circle above the top-centre of the AA rect (or bbox for
                  poly / stroke), connected to the shape by a short line. Selected only. -->
@@ -828,7 +762,7 @@ const firstVertexMarker = computed(() => {
                  have too many RDP-simplified vertices to be worth handles). -->
             <template v-if="s.selected && s.kind === 'poly' && s.pts">
               <circle v-for="(pt, vi) in s.pts" :key="'v' + vi" class="ds-vertex"
-                      :cx="pt[0]" :cy="pt[1]" :r="5" />
+                      :cx="pt[0]" :cy="pt[1]" :r="s.vertexR" />
             </template>
             <g class="ds-delete" @pointerdown.stop @click.stop="removeMark(s.idx)"
                v-tooltip.top="'Delete this mark (Del)'">

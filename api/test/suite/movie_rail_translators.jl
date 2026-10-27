@@ -80,6 +80,24 @@
     @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => true),
                                     true)["allCells"] === true
 
+    # The mask's pops (`mask_pop_scope`). A viewer look with *Pop colour* on (`maskAllCells: false`,
+    # `popAllSegmentations`): its pop types on the mask's OWN segmentation, whatever the pop manager's
+    # — the viewer's `maskPopLayers`; no filter. A batch: its one layer, every cell on another mask.
+    look_pc = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => false,
+        "popAllSegmentations" => true, "popTypes" => ["flow", "region"], "popValueName" => "OTI"), true)
+    @test look_pc["allCells"] === false
+    sc = mask_pop_scope(overlay_track_plan(look_pc), "OTI", "P14", "flow", ["/x"], look_pc["allCells"])
+    @test sc == (; all_cells = false, pops_filter = nothing, pop_types = ["flow", "region"], pop_eyes = nothing)
+    batch = overlay_track_plan(Dict{String,Any}("showPopulations" => true))
+    @test mask_pop_scope(batch, "OTI", "P14", "flow", ["/x"], false).all_cells === true
+    @test mask_pop_scope(batch, "OTI", "OTI", "flow", ["/x"], false) ==
+          (; all_cells = false, pop_types = nothing, pops_filter = ["/x"], pop_eyes = nothing)
+    # a look's point eyes colour its mask as the viewer's (`layerHidden`): the MASK's segmentation's
+    look_eyes = overlay_track_plan(_overlays_raw_from_config(Dict{String,Any}("showPopulations" => true,
+        "popAllSegmentations" => true, "popTypes" => ["flow"], "popEyes" => Dict("P14" => Dict("flow::/a" => true))), true))
+    @test mask_pop_scope(look_eyes, "OTI", "P14", "flow", nothing, false).pop_eyes == Dict("flow::/a" => true)
+    @test mask_pop_scope(look_eyes, "OTI", "OTI", "flow", nothing, false).pop_eyes === nothing
+
     # `popsFilter` on the config surfaces as `popPaths` on the overlay dict — the batch picker's
     # per-image subset, forwarded to `build_overlays3d_for` / `mask_id_colours` via
     # `_resolve_movie_overlays_mask`. Absent / empty = no filter (all pops rendered).
@@ -149,6 +167,20 @@
     plan = overlay_track_plan(ov_look)
     @test plan.pop_all_segs && plan.pop_types == ["flow", "clust"]
     @test plan.hidden_track_pops == Dict("OTI" => ["/a"]) && plan.track_colours["OTI::/a"] == "#123456"
+    @test isempty(plan.pop_eyes) && isempty(plan.ribbon_eyes)   # a look without eyes draws `show`
+    # the viewer's eyes (#1784) pass through, keyed by pop type + path; non-Bool entries are dropped
+    ov_eyes = _overlays_raw_from_config(Dict{String,Any}(
+        "showPopulations" => true, "popAllSegmentations" => true,
+        "popEyes" => Dict("OTI" => Dict("flow::/a" => true, "clust::/a" => false, "x" => "on")),
+        "ribbonEyes" => Dict(:OTI => Dict(Symbol("flow::/a") => false))), false)
+    plan_e = overlay_track_plan(ov_eyes)
+    @test plan_e.pop_eyes == Dict("OTI" => Dict("flow::/a" => true, "clust::/a" => false))
+    @test plan_e.ribbon_eyes == Dict("OTI" => Dict("flow::/a" => false))
+    # an eye outranks the manager's `show`; keyed by pop type, so `clust::/a` is not `flow::/a`
+    @test look_eye_on(plan_e.pop_eyes, "OTI", "flow", "/a", false) === true
+    @test look_eye_on(plan_e.pop_eyes, "OTI", "clust", "/a", true) === false
+    @test look_eye_on(plan_e.pop_eyes, "OTI", "region", "/a", true) === true    # no eye → `show`
+    @test look_eye_on(plan_e.pop_eyes, "P14", "flow", "/a", false) === false
     # the mask takes colour-by only under `colourLabels` (the viewer's mask is the per-id palette)
     @test _overlays_raw_from_config(Dict{String,Any}("colourBy" => "c"), true)["maskColourBy"] === false
     @test _overlays_raw_from_config(Dict{String,Any}("colourBy" => "c", "colourLabels" => true), true)["maskColourBy"] === true

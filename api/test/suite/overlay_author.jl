@@ -250,9 +250,42 @@ end
                 @test c == pal[mod(Int(id) - 1, length(pal)) + 1]
             end
 
-            # A `pops_filter` that matches nothing draws nothing.
-            @test isempty(mask_id_colours(img; value_name = "B", pop_type = "flow",
-                                          pops_filter = String["/no-such"]))
+            # A `pops_filter` that matches nothing: every cell grey (the viewer's *Pop colour* mask
+            # with every pop's eye off), not an empty mask.
+            dict_none = mask_id_colours(img; value_name = "B", pop_type = "flow",
+                                        pops_filter = String["/no-such"])
+            @test keys(dict_none) == keys(dict)
+            @test all(==(hex_to_rgb(OVERLAY_GREY)), values(dict_none))
+
+            # The viewer's *Pop colour* rule on real pops (`mask_pop_colours`): a child "half" under
+            # "all" — the deepest pop wins (half solid blue), its parent's left-over cells pale, and with
+            # the parent filtered out its cells go grey.
+            xs = Float64[Float64(v) for v in as_df(select_cols(label_props(img; value_name = "B"), [xchan]))[!, xchan]]
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "half", "parent" => "/all", "colour" => "#0000ff",
+                                 "gate" => merge(gate, Dict{String,Any}("x_max" => sort(xs)[length(xs) ÷ 2])))))))
+            pops = Dict(String(p.path) => Set{Int}(Int.(p.labels)) for p in resolve_pops(img, "flow"; value_name = "B"))
+            half = pops["/all/half"]
+            @test !isempty(half) && length(half) < length(pops["/all"])
+            blue, pale_green = hex_to_rgb("#0000ff"), hex_to_rgb("#99ff99")
+            dict_tree = mask_id_colours(img; value_name = "B", pop_type = "flow")
+            @test keys(dict_tree) == keys(dict)
+            @test all(id -> dict_tree[id] == (id in half ? blue : pale_green), keys(dict_tree))
+            dict_half = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all/half"])
+            @test all(id -> dict_half[id] == (id in half ? blue : hex_to_rgb(OVERLAY_GREY)), keys(dict_half))
+            # the child filtered out → the parent is a leaf again, solid
+            dict_parent = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all"])
+            @test all(==(green), values(dict_parent))
+            # a look's pop types (`pop_types`) are the layers, not `pop_type`
+            @test mask_id_colours(img; value_name = "B", pop_type = "clust", pop_types = ["flow"]) == dict_tree
+            # colour-by recolours the pops' cells only: the grey complement stays grey
+            lpt = as_df(label_props(img; value_name = "B"))
+            ov_half = Dict{String,String}(string(Int(round(Float64(v)))) => "#ff00ff" for v in lpt.centroid_t
+                                          if v isa Real && isfinite(Float64(v)))
+            dict_hcb = mask_id_colours(img; value_name = "B", pop_type = "flow", pops_filter = ["/all/half"],
+                                       colour_by = "centroid_t", colour_overrides = ov_half)
+            @test all(id -> dict_hcb[id] == (id in half ? hex_to_rgb("#ff00ff") : hex_to_rgb(OVERLAY_GREY)),
+                      keys(dict_hcb))
 
             # colour_labels — recolour every id in the mask by an obs column. Total overrides
             # → every id gets the same colour, proving the resolver hits every id in the dict
@@ -269,6 +302,112 @@ end
             green = RGB{N0f8}(hex_to_rgb("#00ff00"))
             @test !isempty(dict_cb)
             @test all(v -> v == green, values(dict_cb))
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
+@testset "API: overlay_author — mask_pop_colours ↔ the viewer's maskPopTable (shared fixture)" begin
+    # One colour rule, two languages: the viewer's *Pop colour* mask (`maskPopTable.ts`) and a movie's
+    # population mask (`mask_pop_colours`). Both suites read this fixture, so neither drifts alone.
+    fx = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "frontend", "src", "utils",
+                                           "maskPopTable.parity.json")), String))
+    @test length(fx.cases) >= 5
+    for c in fx.cases
+        layers = [(; cells = Int[Int(x) for x in l.cells],
+                     pops = [(; path = String(p.path), colour = String(p.colour), labels = Int[Int(x) for x in p.labels])
+                             for p in l.pops if !(String(p.path) in String[String(h) for h in get(l, :hidden, String[])])])
+                  for l in c.layers]
+        expected = Dict{Int,RGB{N0f8}}(parse(Int, String(k)) => hex_to_rgb(String(v)) for (k, v) in pairs(c.expected))
+        got = mask_pop_colours(layers)
+        @testset "$(c.name)" begin
+            @test got == expected
+        end
+    end
+    # the movie's pale is the viewer's (`shaders/constants.json`)
+    @test MASK_PARENT_PALE == 0.6
+end
+
+@testset "API: overlay_author — a recorded look draws the viewer's eyes, not the manager's show (#1784)" begin
+    # The viewer draws a pop's points and its ribbon by its OWN eyes (`popEyes.ts`); the manager's `show`
+    # only seeds a pop with no eye. A "Match viewer" movie drew `show`, so a pop switched on in the viewer
+    # but hidden in the manager was missing, and a ribbon hide (path-only) covered every pop type's
+    # same-path pop. Bug this catches: `L.show` back as the gate of a recorded look.
+    h5 = api_fixture("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !api_have_fixture(h5)
+        @test_skip "labelProps fixture missing"
+    else
+        dir = mktempdir()
+        proj = joinpath(dir, "testpr")
+        cp(api_fixture("testpr"), proj)
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img, err = _gating_image("testpr", "KDIeEm")
+            @test err === nothing
+            chb = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&valueName=B&popType=flow"))[2])
+            xchan, ychan = String(chb.columns[1]), String(chb.columns[2])
+            base = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm",
+                                    "valueName" => "B", "popType" => "flow")
+            gate = Dict{String,Any}("kind" => "rectangle", "x_channel" => xchan, "y_channel" => ychan,
+                                    "x_min" => -1e9, "x_max" => 1e9, "y_min" => -1e9, "y_max" => 1e9)
+            # every cell, tracked, HIDDEN in the manager
+            api_gating_pop_add(Vector{UInt8}(JSON3.write(merge(base,
+                Dict{String,Any}("name" => "hid", "colour" => "#123456", "show" => false,
+                                 "is_track" => true, "gate" => gate)))))
+            hid = RGB{N0f8}(hex_to_rgb("#123456"))
+            df = as_df(select_cols(label_props(img; value_name = "B"), ["centroid_t"]))
+            ts = sort!(unique(Int[Int(round(Float64(t))) for t in df.centroid_t if t isa Real && isfinite(Float64(t))]))
+            t = last(ts)
+            n_t = count(x -> x isa Real && Int(round(Float64(x))) == t, df.centroid_t)
+
+            look(extra = Dict{String,Any}()) = overlay_track_plan(_overlays_raw_from_config(merge(Dict{String,Any}(
+                "showPopulations" => true, "showGatedTracks" => true, "popAllSegmentations" => true,
+                "popTypes" => ["flow"]), extra), false))
+            # (points, ribbon hops) at `t` in the pop's colour — ribbons by "pop", the source's colour
+            frame(plan) = begin
+                cl = viewer_overlay_closure(img; value_name = "B", pop_type = "flow", plan, show_pops = true,
+                                            tail_length = 1_000_000, track_color_mode = "pop")
+                cl === nothing ? (0, 0) : (p = cl(t); (p[1] === nothing ? 0 : count(==(hid), p[1].colour),
+                                                       p[2] === nothing ? 0 : count(==(hid), p[2].colour)))
+            end
+
+            # no eyes (a look recorded before #1784, or a batch): the manager's `show` — not drawn
+            @test frame(look()) == (0, 0)
+            # point eye on: its points are in the movie; its ribbon has its own eye (still `show` → off)
+            pts_on, segs_off = frame(look(Dict{String,Any}("popEyes" => Dict("B" => Dict("flow::/hid" => true)))))
+            @test pts_on == n_t && segs_off == 0
+            # ribbon eye on, point eye off: the ribbon without the points, as the viewer's Tracks row
+            pts_off, segs_on = frame(look(Dict{String,Any}(
+                "popEyes" => Dict("B" => Dict("flow::/hid" => false)),
+                "ribbonEyes" => Dict("B" => Dict("flow::/hid" => true)))))
+            @test pts_off == 0 && segs_on > 0
+            # keyed by pop type + path: a path-only hide of `/hid` (another pop type's) does not hide
+            # this flow pop's ribbon whose eye is on, and another type's eye does not turn it on
+            @test frame(look(Dict{String,Any}("hiddenTrackPops" => Dict("B" => ["/hid"]),
+                "ribbonEyes" => Dict("B" => Dict("flow::/hid" => true, "clust::/hid" => false)))))[2] == segs_on
+            @test frame(look(Dict{String,Any}("ribbonEyes" => Dict("B" => Dict("clust::/hid" => true)))))[2] == 0
+            # an eye on another segmentation is not this one's
+            @test frame(look(Dict{String,Any}("popEyes" => Dict("P14" => Dict("flow::/hid" => true)))))[1] == 0
+
+            # the title card's pop rows name what the movie draws: a point eye on, or a ribbon-only pop
+            rows(extra) = [r["path"] for r in _config_overlay_pops(img, merge(Dict{Symbol,Any}(
+                :showPopulations => true, :popAllSegmentations => true, :popTypes => ["flow"]), extra))]
+            @test !("/hid" in rows(Dict{Symbol,Any}()))
+            @test "/hid" in rows(Dict{Symbol,Any}(:popEyes => Dict("B" => Dict("flow::/hid" => true))))
+            @test "/hid" in rows(Dict{Symbol,Any}(:showGatedTracks => true,
+                                                 :ribbonEyes => Dict("B" => Dict("flow::/hid" => true))))
+            @test !("/hid" in rows(Dict{Symbol,Any}(:ribbonEyes => Dict("B" => Dict("flow::/hid" => true)))))
+
+            # the *Pop colour* mask takes the point eyes (the viewer's `layerHidden`), else `show`
+            @test !any(==(hid), values(mask_id_colours(img; value_name = "B", pop_type = "flow")))
+            mask_on = mask_id_colours(img; value_name = "B", pop_type = "flow",
+                                      pop_eyes = Dict("flow::/hid" => true))
+            @test count(==(hid), values(mask_on)) > 0
+            @test !any(==(hid), values(mask_id_colours(img; value_name = "B", pop_type = "flow",
+                                                       pop_eyes = Dict("clust::/hid" => true))))
         finally
             Cecelia.cecelia_conf()["dirs"]["projects"] = old
         end

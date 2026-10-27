@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { viewerLook, timelapseKeyframes, volumeViewState, type ViewerLookInput } from './viewerLook'
 import type { ViewerViewState } from './viewState'
+import { buildBatchMovieConfig } from '../batchMovie'
 
 const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   viewState: {
@@ -16,7 +17,9 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   trackSourceColours: {},
   showGatedTracks: false,
   hiddenTrackPops: {},
+  popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
+  maskByPop: false,
   trackColourMode: 'speed', colourBy: '', colourOverrides: {},
   ...over,
 })
@@ -115,6 +118,41 @@ describe('viewerLook', () => {
     expect(l.hiddenTrackPops).toEqual({ OTI: ['/a'] })
     expect(l.maskAllCells).toBe(true)
     expect(viewerLook(base()).hiddenTrackPops).toBeUndefined()
+  })
+
+  it('carries the viewer\'s point and ribbon eyes, keyed by pop type + path (#1784)', () => {
+    // a pop the viewer draws whose manager `show` is off has an eye `true`; the same path under two
+    // pop types of one segmentation keeps two eyes — a ribbon hide of one is not the other's
+    const l = viewerLook(base({
+      popEyes: { OTI: { 'flow::/a': true, 'clust::/a': false }, P14: {} },
+      ribbonEyes: { OTI: { 'flow::/a': false, 'clust::/a': true } },
+    }))
+    expect(l.popEyes).toEqual({ OTI: { 'flow::/a': true, 'clust::/a': false } })
+    expect(l.ribbonEyes).toEqual({ OTI: { 'flow::/a': false, 'clust::/a': true } })
+    // nothing stored → nothing sent: the renderer draws the manager's `show`
+    const none = viewerLook(base())
+    expect(none.popEyes).toBeUndefined()
+    expect(none.ribbonEyes).toBeUndefined()
+  })
+
+  it('a batch request does not carry the eyes — a batch draws `show`', () => {
+    const l = viewerLook(base({ popEyes: { OTI: { 'flow::/a': true } }, ribbonEyes: { OTI: { 'flow::/a': true } } }))
+    const req = buildBatchMovieConfig(l, ['OTI'], {}) as unknown as Record<string, unknown>
+    expect(req.popEyes).toBeUndefined()
+    expect(req.ribbonEyes).toBeUndefined()
+  })
+
+  it('Pop colour on with pops shown → the mask is the pops’, not every cell (the viewer’s maskPopTable)', () => {
+    const on = viewerLook(base({ maskByPop: true, popVisible: pt => pt === 'flow' }))
+    expect(on.maskAllCells).toBe(false)
+    // the movie colours the mask by these pop types on the mask's own segmentation (`mask_pop_scope`)
+    expect(on.popAllSegmentations).toBe(true)
+    expect(on.popTypes).toEqual(['flow'])
+    expect(on.labelValueNames).toEqual(['cpSAM'])
+    // no pop type on → the viewer keeps the per-id palette, and so does the movie
+    expect(viewerLook(base({ maskByPop: true })).maskAllCells).toBe(true)
+    // toggle off → every cell in the palette, pops or not
+    expect(viewerLook(base({ popVisible: pt => pt === 'flow' })).maskAllCells).toBe(true)
   })
 
   it('no popType published → flow', () => {

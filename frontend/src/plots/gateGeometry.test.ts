@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { orientGate, convertGateKind, otherGateKind, clampToBox, withinReach, EDGE_REACH_PX,
-         gateHandleRadius, hitGateShape, GATE_HANDLE_R_PX, GATE_HANDLE_MIN_R_PX } from './gateGeometry'
+         hitGateShape } from './gateGeometry'
+import { handleRadius, HANDLE_R_PX, HANDLE_MIN_R_PX } from '../utils/drawGeometry'
 import { pxToData } from './axisMap'
 import type { GateSpec } from '../stores/gating'
 // Click-vs-drag / polygon-degeneracy primitives moved to `utils/drawGeometry.ts` — tests too.
@@ -101,8 +102,8 @@ describe('gate grab zones', () => {
   const box = (x0: number, y0: number, x1: number, y1: number): [number, number][] =>
     [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
   it('a large gate gets the full reach', () => {
-    expect(gateHandleRadius(box(0, 0, 200, 100))).toBe(GATE_HANDLE_R_PX)
-    expect(GATE_HANDLE_R_PX).toBeGreaterThanOrEqual(10)
+    expect(handleRadius(box(0, 0, 200, 100))).toBe(HANDLE_R_PX)
+    expect(HANDLE_R_PX).toBeGreaterThanOrEqual(10)
   })
   it('grabs a corner 8 px away (missed at the old 6 px)', () => {
     expect(hitGateShape(box(0, 0, 200, 100), [6, 6])).toEqual({ part: 'vertex', i: 0 })
@@ -113,7 +114,7 @@ describe('gate grab zones', () => {
   })
   it('caps the reach on a small gate so its body still moves', () => {
     const small = box(0, 0, 24, 24)
-    const r = gateHandleRadius(small)
+    const r = handleRadius(small)
     expect(r).toBeLessThanOrEqual(24 / 4)
     // half-way between the centre and an edge is still the body, not an edge band
     expect(hitGateShape(small, [12, 12])).toEqual({ part: 'body' })
@@ -121,11 +122,11 @@ describe('gate grab zones', () => {
     expect(hitGateShape(small, [12, 1])).toEqual({ part: 'edge', i: 0 })
   })
   it('the cap uses the SHORTER side (a thin gate)', () => {
-    expect(gateHandleRadius(box(0, 0, 300, 20))).toBe(5)
+    expect(handleRadius(box(0, 0, 300, 20))).toBe(5)
     expect(hitGateShape(box(0, 0, 300, 20), [150, 10])).toEqual({ part: 'body' })
   })
   it('a tiny gate keeps a minimum reach', () => {
-    expect(gateHandleRadius(box(0, 0, 4, 4))).toBe(GATE_HANDLE_MIN_R_PX)
+    expect(handleRadius(box(0, 0, 4, 4))).toBe(HANDLE_MIN_R_PX)
   })
   it('misses outside the reach', () => {
     expect(hitGateShape(box(0, 0, 200, 100), [100, -15])).toBeNull()

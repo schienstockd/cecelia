@@ -16,6 +16,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useViewerStore } from '../../stores/viewer'
 import { trackableValueNames, CELL_POP_TYPES } from '../overlayAutoShow'
 import { colourForRender, channelsForRender } from '../viewerColormap'
+import type { PopEyes } from './popEyes'
 
 export interface ViewerLookInput {
   viewState: (ViewStateLike & Partial<Pick<ViewerViewState, 'dims' | 'camera' | 'canvas'>>) | null
@@ -35,6 +36,10 @@ export interface ViewerLookInput {
   showGatedTracks: boolean
   /** per segmentation, the pops whose ribbon eye is off (`settings.getTrackPopHidden`) */
   hiddenTrackPops: Record<string, string[]>
+  /** per segmentation, the viewer's point / ribbon eyes `{ "<popType>::<path>": on }`
+   *  (`settings.getPopEyes`) — what it draws, whatever the pop manager's `show` */
+  popEyes: Record<string, PopEyes>
+  ribbonEyes: Record<string, PopEyes>
   pointSize: number
   pointBorder: number
   labelOpacity: number
@@ -43,6 +48,8 @@ export interface ViewerLookInput {
   tailWidth: number
   tailLength: number
   labelContour: number
+  /** the mask's *Pop colour* toggle (`settings.viewerMaskByPop`, `utils/maskPopTable.ts`) */
+  maskByPop: boolean
   trackColourMode: string
   colourBy: string
   colourOverrides: Record<string, string>
@@ -56,6 +63,9 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
   const popsOn = popTypes.length > 0
   const popSeg = (popsOn ? i.gating.valueName : '') || tracked[0] || i.gating.valueName || i.maskValueName
   const hidden = Object.fromEntries(Object.entries(i.hiddenTrackPops).filter(([, v]) => v.length))
+  const eyes = (bag: Record<string, PopEyes>) =>
+    Object.fromEntries(Object.entries(bag).filter(([, e]) => Object.keys(e).length).map(([vn, e]) => [vn, { ...e }]))
+  const popEyes = eyes(i.popEyes), ribbonEyes = eyes(i.ribbonEyes)
   const is3D = i.viewState?.dims?.ndisplay === 3
   const c = i.viewState?.camera
   const canvas = i.viewState?.canvas
@@ -70,8 +80,10 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     ...seedConfigFromViewState(i.viewState, i.channelNames),
     ...(i.version ? { valueNames: [i.version] } : {}),
     labelValueNames: i.maskValueName ? [i.maskValueName] : [],
-    // the viewer's mask is every cell of its segmentation, whatever the pops
-    maskAllCells: true,
+    // the viewer's mask is every cell of its segmentation in the per-id palette — or, with *Pop
+    // colour* on and pops shown, coloured by its own segmentation's pops (`maskPopTable`; the movie
+    // draws the same rule, `mask_pop_colours`). With no pop type on, the viewer keeps the palette too.
+    maskAllCells: !(i.maskByPop && popsOn),
     labelContour: clampContour(i.labelContour),
     show3D: is3D,
     zSlice: z,
@@ -87,6 +99,11 @@ export function viewerLook(i: ViewerLookInput): BatchMovieCfg {
     popAllSegmentations: true,
     popType,
     ...(popSeg ? { popValueName: popSeg } : {}),
+    // the viewer's eyes, keyed by pop type + path: a pop it draws whose manager `show` is off is in the
+    // movie, and a ribbon hide covers its own pop type only. A pop with no eye draws its `show`
+    // (`look_eye_on`); `hiddenTrackPops` (path-only) stays for a pop with no ribbon eye.
+    ...(Object.keys(popEyes).length ? { popEyes } : {}),
+    ...(Object.keys(ribbonEyes).length ? { ribbonEyes } : {}),
     showGatedTracks: i.showGatedTracks,
     ...(Object.keys(hidden).length ? { hiddenTrackPops: hidden } : {}),
     // every segmentation's track clusters — not tied to the pops' segmentation (ViewerWindow
@@ -179,6 +196,8 @@ export function readViewerLook(img: LookImage, setUid: string,
     showGatedTracks: setUid ? settings.getShowGatedTracks(setUid) : false,
     hiddenTrackPops: Object.fromEntries(trackableValueNames(img).map(vn =>
       [vn, [...settings.getTrackPopHidden(img.uid, vn)]])),
+    popEyes: settings.getImagePopEyes(img.uid, 'points'),
+    ribbonEyes: settings.getImagePopEyes(img.uid, 'ribbons'),
     pointSize: setUid ? settings.getPointSize(setUid) : settings.viewerPointSize,
     pointBorder: setUid ? settings.getPointBorder(setUid) : settings.viewerPointBorder,
     labelOpacity: settings.viewerLabelOpacity,
@@ -187,6 +206,7 @@ export function readViewerLook(img: LookImage, setUid: string,
     tailWidth: settings.viewerTailWidth,
     tailLength: settings.viewerTailLength,
     labelContour: settings.viewerLabelContour,
+    maskByPop: settings.viewerMaskByPop,
     trackColourMode: setUid ? settings.getTrackColorMode(setUid) : 'track',
     colourBy,
     colourOverrides: setUid && colourBy ? settings.getColourOverrides(setUid, colourBy) : {},

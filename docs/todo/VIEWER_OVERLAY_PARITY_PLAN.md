@@ -78,11 +78,23 @@ reading for this plan):
   pop's `layer` indexes it (`/qc` on two segmentations is two pops); the MCP `popMap` resolves it to
   the segmentation + pop type. An index, not the names spelled out per tile pop: those took the
   32×32 envelope ratchet from ~640 KB to ~800 KB, the index to ~680 KB (budget 700).
+- **P7 pop-colour mask.** The viewer's *Pop colour* mask (deepest shown pop wins, parents pale, cells
+  in no pop grey) is one rule on both sides: `maskPopTable` (viewer) and `mask_pop_colours` (movie,
+  inside `mask_id_colours`), held together by a shared fixture (`utils/maskPopTable.parity.json`, read
+  by both suites) and one `MASK_PARENT_PALE` (`shaders/constants.json`). A look with the toggle on and
+  pops shown sends `maskAllCells: false`; `mask_pop_scope` then colours the mask by the look's pop
+  types on the mask's own segmentation (the viewer's `maskPopLayers`). A batch's population mask draws
+  the same rule (so its ungated cells are grey now, not undrawn).
+- **P8 pop eyes.** The viewer draws a pop's points and its cell-track ribbon each by its own eye
+  (`popEyes.ts`, `settings.getPopEyes(…, 'points' | 'ribbons')`); the manager's `show` only seeds a pop
+  with no eye. A look carries both bags whole — `popEyes` / `ribbonEyes`, `{vn: {"<popType>::<path>":
+  on}}` (`settings.getImagePopEyes`; both cross windows through the bag channel) — and the renderer
+  draws by them (`look_eye_on`, the viewer's `popEyeOn`): points in `_overlay_parts` (`point_on`),
+  ribbons (`track_on`, an eye outranking the path-only `hiddenTrackPops`), the *Pop colour* mask
+  (`mask_pop_scope` → `pop_eyes`, the viewer's `layerHidden`) and the title-card pop rows. A pop with no
+  eye — and every batch — draws `show`. Trackclust ribbons stay on `show`, as the viewer's.
 
 ## Not in scope
-
-- `hiddenTrackPops` keys by path within a segmentation, so the same path under two pop types of one
-  segmentation shares a ribbon eye.
 
 - Categorical colour-by: the viewer indexes the cecelia palette by level and ignores the per-set
   colour overrides; the movie (and the legend captures) use Okabe-Ito / a pop's donated colour / the
@@ -90,21 +102,6 @@ reading for this plan):
   its own segmentation only. Which rule is canonical is a call to make, not a bug fix.
 - A mask recoloured by colour-by (`colourLabels`) uses its own table's scale, not a pooled one. Not
   reachable today: only a batch sets `colourLabels`, and a batch draws one segmentation's pops.
-- The viewer's per-pop point eyes (`hiddenPops`) are window-local (persisted per image since #1730, but
-  `viewerLook` doesn't read `settings.getPopEyes`), so a movie recorded
-  from the viewer draws the pop manager's `show` instead. Carrying them needs a cross-window bag (as
-  `trackPopHidden`).
-- The ribbon eyes (`getPopEyes(…, 'ribbons')`, #1766) reach the movie only as their off paths
-  (`trackPopHidden`); the renderer still gates a ribbon on the manager's `show`
-  (`overlay_author.jl`, `L.show && !(L.path in hidden)`), so a ribbon the viewer turned on for a pop
-  the manager hides is not recorded. Same fix as the point eyes: carry the on eyes, drop the `show`
-  gate for a viewer look. The off paths are also path-only, so one pop type's hide covers a same-path
-  pop of another type on that segmentation.
-- The viewer's *Pop colour* mask (`utils/maskPopTable.ts`: deepest visible pop wins, parents pale,
-  cells in no pop grey) is not carried into a movie recorded from the viewer: `viewerLook` still sends
-  `maskAllCells`, so the movie draws the per-id palette. A batch's population mask (`mask_id_colours`)
-  agrees on deepest-wins but has no pale rule and leaves ungated cells undrawn. Parity = a look flag
-  plus the pale/grey rule in `mask_id_colours`.
 - Several masks at once (one label slot in the renderer — see the #1477 audit: ~12–15 files, cap 2–3).
 - Fetch cost: one overlays request per (segmentation × pop type), each carrying the cell table. Fine at
   3 × 3; a combined route is the follow-up if it isn't.

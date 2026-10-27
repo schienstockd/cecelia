@@ -1,0 +1,95 @@
+{
+  "about": "Shared fixture for the population-mask colour rule: the viewer's maskPopTable (frontend/src/utils/maskPopTable.ts) and the movie's mask_pop_colours (api/src/overlay_author.jl) must both produce `expected` (id -> hex; an id not listed is not drawn). `hidden` pops are the viewer's eye-off pops / the movie's show == false ones. Read by maskPopTable.test.ts and api/test/suite/overlay_author.jl.",
+  "cases": [
+    {
+      "name": "deepest wins, parents pale, cells in no pop grey, pop labels off the cell table still drawn",
+      "layers": [
+        {
+          "cells": [1, 2, 3, 5],
+          "pops": [
+            { "path": "/A/B/C", "colour": "#00ff00", "labels": [3] },
+            { "path": "/A", "colour": "#ff0000", "labels": [1, 2, 3] },
+            { "path": "/A/B", "colour": "#0000ff", "labels": [2, 3, 9] }
+          ]
+        }
+      ],
+      "expected": { "1": "#ff9999", "2": "#9999ff", "3": "#00ff00", "5": "#9ca3af", "9": "#9999ff" }
+    },
+    {
+      "name": "a depth tie goes to the later pop",
+      "layers": [
+        {
+          "cells": [1],
+          "pops": [
+            { "path": "/A", "colour": "#ff0000", "labels": [1] },
+            { "path": "/B", "colour": "#0000ff", "labels": [1] }
+          ]
+        }
+      ],
+      "expected": { "1": "#0000ff" }
+    },
+    {
+      "name": "a parent whose only child is hidden draws solid; all hidden is grey",
+      "layers": [
+        {
+          "cells": [1, 2, 4],
+          "pops": [
+            { "path": "/A", "colour": "#3a7bd5", "labels": [1, 2] },
+            { "path": "/A/B", "colour": "#e69f00", "labels": [2] },
+            { "path": "/C", "colour": "#e69f00", "labels": [4] },
+            { "path": "/C/D", "colour": "#ff0000", "labels": [] }
+          ],
+          "hidden": ["/A/B"]
+        }
+      ],
+      "expected": { "1": "#3a7bd5", "2": "#3a7bd5", "4": "#f5d999" }
+    },
+    {
+      "name": "a pale parent of an odd colour rounds as the browser's mix does",
+      "layers": [
+        {
+          "cells": [1, 2],
+          "pops": [
+            { "path": "/A", "colour": "#3a7bd5", "labels": [1, 2] },
+            { "path": "/A/B", "colour": "#e69f00", "labels": [2] }
+          ]
+        }
+      ],
+      "expected": { "1": "#b0caee", "2": "#e69f00" }
+    },
+    {
+      "name": "a sibling sharing a name prefix is not a child",
+      "layers": [
+        {
+          "cells": [1, 2],
+          "pops": [
+            { "path": "/A", "colour": "#ff0000", "labels": [1] },
+            { "path": "/AB", "colour": "#0000ff", "labels": [2] }
+          ]
+        }
+      ],
+      "expected": { "1": "#ff0000", "2": "#0000ff" }
+    },
+    {
+      "name": "pale stays within a pop type: another layer's /A/B is not a child",
+      "layers": [
+        { "cells": [1, 2], "pops": [{ "path": "/A", "colour": "#ff0000", "labels": [1] }] },
+        { "cells": [1, 2], "pops": [{ "path": "/A/B", "colour": "#0000ff", "labels": [2] }] }
+      ],
+      "expected": { "1": "#ff0000", "2": "#0000ff" }
+    },
+    {
+      "name": "a malformed colour draws white, pale or not",
+      "layers": [
+        {
+          "cells": [1, 2, 3],
+          "pops": [
+            { "path": "/A", "colour": "nope", "labels": [1, 2] },
+            { "path": "/A/B", "colour": "#0000ff", "labels": [2] }
+          ]
+        }
+      ],
+      "expected": { "1": "#ffffff", "2": "#0000ff", "3": "#9ca3af" }
+    }
+  ]
+}

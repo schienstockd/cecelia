@@ -394,6 +394,59 @@ function _cb_prepare(df, cb_col::Union{Nothing,String},
     end
 end
 
+# ── The viewer's per-pop eyes on a recorded look (#1784) ─────────────────────────
+# The viewer draws a pop's points and its cell-track ribbon each by its OWN eye — user intent, apart
+# from the Population Manager's `show`, which only seeds a pop the viewer has no stored eye for
+# (`frontend/src/utils/viewer/popEyes.ts`). A look read off the viewer carries both bags as
+# `{valueName => {"<popType>::<path>" => on}}` (`popEyes` / `ribbonEyes`); a batch carries none and
+# draws `show`.
+
+"""
+    parse_look_eyes(raw) -> Dict{String,Dict{String,Bool}}
+
+A look's eye bag (`popEyes` / `ribbonEyes`), either key spelling; anything else is no eyes.
+"""
+function parse_look_eyes(raw)::Dict{String,Dict{String,Bool}}
+    out = Dict{String,Dict{String,Bool}}()
+    raw isa AbstractDict || return out
+    for (vn, e) in raw
+        e isa AbstractDict || continue
+        out[String(vn)] = Dict{String,Bool}(String(k) => v for (k, v) in e if v isa Bool)
+    end
+    out
+end
+
+"""
+    look_eye_on(eyes, vn, pop_type, path, fallback) -> Bool
+
+Whether a pop's eye is on — its stored eye on segmentation `vn`, keyed by pop type AND path (two pop
+types can share a path on one segmentation), else `fallback` (the manager's `show`) — the viewer's
+`popEyeOn`.
+"""
+look_eye_on(eyes::AbstractDict, vn, pop_type, path, fallback::Bool) =
+    look_eye_on(get(eyes, String(vn), Dict{String,Bool}()), pop_type, path, fallback)
+# one segmentation's bag (`eyes[vn]`); `nothing` = no eyes
+look_eye_on(seg_eyes::Union{Nothing,AbstractDict}, pop_type, path, fallback::Bool) =
+    seg_eyes === nothing ? fallback : get(seg_eyes, "$(pop_type)::$(path)", fallback)
+
+# A pop drawn by the manager's `show` — every batch, and every pop a look has no eye for.
+_shown(_path, show::Bool) = show
+
+"""
+    plan_ribbon_eye(plan, vn, lvn, pop_type, path, show) -> Bool
+
+Whether pop `path` of layer `(lvn, pop_type)` has its cell-track ribbon eye on under an overlay plan
+(`overlay_track_plan`): the look's ribbon eye, else `show` minus the path-only `hidden_track_pops`
+(`""` = the pops' own segmentation `vn`). The renderer (`viewer_overlay_closure`) and the title card
+(`_config_overlay_pops`) both ask here.
+"""
+function plan_ribbon_eye(plan, vn::AbstractString, lvn::AbstractString, pop_type, path, show::Bool)
+    p = String(path)
+    hidden = p in get(plan.hidden_track_pops, String(lvn), String[]) ||
+             (lvn == vn && p in get(plan.hidden_track_pops, "", String[]))
+    look_eye_on(plan.ribbon_eyes, lvn, pop_type, p, show && !hidden)
+end
+
 # Native-voxel collection. Three branches:
 #   * `all_tracks = true`  → whole-segmentation ribbons (every cell with `track_id > 0`)
 #   * cell pop_types       → `resolve_pops` + centroid table
@@ -405,6 +458,8 @@ end
 # `_overlay_parts` is the read: points (coloured) and the raw track histories, keyed
 # `(track id, cell colour, group)` — the group is the pop path a ribbon belongs to (`""` for whole
 # segmentation tracks), so a caller can make each pop its own ribbon source, as the viewer does.
+# A pop's points are read when `point_on(path, show)`, its tracks when `track_on(path, show)` — the
+# manager's `show` by default; a viewer look passes its point / ribbon eyes (`look_eye_on`).
 function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                         pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                         include_tracks::Bool = true,
@@ -412,7 +467,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                         all_tracks_colour::AbstractString = OVERLAY_GREY,
                         colour_by::Union{Nothing,AbstractString} = nothing,
                         colour_overrides::Union{Nothing,AbstractDict} = nothing,
-                        cb_scale = nothing)
+                        cb_scale = nothing,
+                        point_on::Function = _shown, track_on::Function = _shown)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
     pt = string(pop_type)
@@ -508,7 +564,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
         cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map; scale = cb_scale)
         for p in pops
-            Bool(get(p, :show, true)) || continue
+            show = Bool(get(p, :show, true))
+            pon = point_on(String(p.path), show)
             default_col = hex_to_rgb(String(p.colour))
             # A pop is ribbon-drawable when it was TYPED as a track pop OR when its cells actually
             # hold `track_id > 0` (a hand-drawn flow gate over cells that were later tracked). Data
@@ -516,6 +573,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             # actually having a track_id column at all. See MULTI_POP_TRACKING_PLAN.md Decision 2.
             is_track_pop = (Bool(get(p, :is_track, false)) ||
                             Bool(get(p, :has_tracks, false))) && hasK
+            ton = include_tracks && is_track_pop && track_on(String(p.path), show)
+            (pon || ton) || continue
             uid = String(something(get(p, :uid, nothing), ""))
             for L in p.labels
                 i = get(row_of, Int(L), 0)
@@ -527,8 +586,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                 pz = _z_of(df, i, has_z)
                 ti = hasT ? Int(round(Float64(t))) : 0
                 colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                _push_point!(ti, (Float64(px), Float64(py), pz), colour)
-                if include_tracks && is_track_pop
+                pon && _push_point!(ti, (Float64(px), Float64(py), pz), colour)
+                if ton
                     traw = df[i, :track_id]
                     (traw isa Real && isfinite(Float64(traw))) || continue
                     kid = Int(round(Float64(traw)))
@@ -561,8 +620,10 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
             end
             for path in paths
                 p = pop_at(m, path)
-                Bool(hasproperty(p, :show) ? p.show : true) || continue
-                pop_meta[String(path)] = (colour = hex_to_rgb(String(p.colour)),)
+                show = Bool(hasproperty(p, :show) ? p.show : true)
+                pon = point_on(String(path), show); ton = include_tracks && track_on(String(path), show)
+                (pon || ton) || continue
+                pop_meta[String(path)] = (colour = hex_to_rgb(String(p.colour)), pon, ton)
                 push!(want_paths, String(path))
             end
         end
@@ -596,8 +657,8 @@ function _overlay_parts(img; value_name::AbstractString, pop_type::PopTypeArg,
                     meta === nothing && continue
                     default_col = meta.colour
                     colour = cb_resolve === nothing ? default_col : cb_resolve(default_col, i)
-                    _push_point!(ti, (Float64(px), Float64(py), pz), colour)
-                    if include_tracks && col_exists("track_id")
+                    meta.pon && _push_point!(ti, (Float64(px), Float64(py), pz), colour)
+                    if meta.ton && col_exists("track_id")
                         traw = df[i, :track_id]
                         (traw isa Real && isfinite(Float64(traw))) || continue
                         kid = Int(round(Float64(traw)))
@@ -739,7 +800,7 @@ end
 
 """
     overlay_track_plan(ov) -> (; segs, gated, hidden_track_pops, trackclust, pop_types,
-                                 pop_all_segs, track_colours)
+                                 pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
 
 The plan half of an overlays dict (`_overlays_raw_from_config`, either key spelling):
   * `segs` — per-segmentation sources `[(valueName, colour)]`; `""` valueName = the overlays' own
@@ -749,7 +810,10 @@ The plan half of an overlays dict (`_overlays_raw_from_config`, either key spell
   * `pop_types` / `pop_all_segs` — the pop layers: these cell pop types on every segmentation (a
     viewer look), else the caller's one `(valueName, popType)` (a batch);
   * `track_colours` — the viewer's Tracks-legend colours, keyed as its sources are (`vn`,
-    `vn::path`, `vn::popType::path`, `vn::trackclust::path`).
+    `vn::path`, `vn::popType::path`, `vn::trackclust::path`);
+  * `pop_eyes` / `ribbon_eyes` — a viewer look's point and ribbon eyes (`parse_look_eyes`); empty for
+    a batch. A pop with an eye draws by it, whatever its `show`; a ribbon eye outranks
+    `hidden_track_pops`, which is path-only.
 A dict without `trackSegs` (the smoke route, older callers) reads the legacy `allTracks` /
 `includeTracks` / `trackSources` keys the same way they always drew.
 """
@@ -772,7 +836,9 @@ function overlay_track_plan(ov)
     track_colours = tc_raw isa AbstractDict ?
         Dict{String,String}(String(k) => String(v) for (k, v) in tc_raw if v isa AbstractString && !isempty(v)) :
         Dict{String,String}()
-    rest = (; hidden_track_pops, trackclust, pop_types, pop_all_segs, track_colours)
+    pop_eyes = parse_look_eyes(g("popEyes", nothing))
+    ribbon_eyes = parse_look_eyes(g("ribbonEyes", nothing))
+    rest = (; hidden_track_pops, trackclust, pop_types, pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -878,15 +944,17 @@ function viewer_overlay_closure(img; value_name::AbstractString, pop_type::PopTy
     cb_scale = _cb_scale(img, unique(first.(layers)), colour_by)
     for (lvn, lpt, lf) in layers
         ribbons = plan.gated && !(lvn in tc_vns)
+        # a pop's points by its point eye, its ribbon by its ribbon eye (a look's; else `show`)
+        point_on(path, show) = look_eye_on(plan.pop_eyes, lvn, lpt, path, show)
+        ribbon_on(path, show) = plan_ribbon_eye(plan, vn, lvn, lpt, path, show)
         parts = _overlay_parts(img; value_name = lvn, pop_type = lpt, pops_filter = lf,
-                               include_tracks = ribbons, colour_by, colour_overrides, cb_scale)
+                               include_tracks = ribbons, colour_by, colour_overrides, cb_scale,
+                               point_on, track_on = ribbon_on)
         has_t |= parts.hasT
         add_points!(parts.pts_by_t)
         ribbons || continue
-        hidden = Set(vcat(get(plan.hidden_track_pops, lvn, String[]),
-                          lvn == vn ? get(plan.hidden_track_pops, "", String[]) : String[]))
         for L in _overlay_pops(img, lvn, lpt)
-            (L.show && !(L.path in hidden)) || continue
+            ribbon_on(String(L.path), Bool(L.show)) || continue
             lf === nothing || L.path in lf || continue
             hops = _hops_of(parts.track_hist; group = String(L.path))
             isempty(hops) && continue
@@ -1001,123 +1069,174 @@ end
 # Mask author — the P4 outline pass, per-t.
 # ─────────────────────────────────────────────────────────────────────────────────
 
+# A colour `t` of the way from `rgb` to white, in 0–255 bytes rounded as the browser's `mix` rounds
+# (`frontend/src/utils/colour.ts`: `c * (1 - k) + 255 * k`, `Math.round` — half up).
+function _towards_white(c::RGB{N0f8}, t::Real)::RGB{N0f8}
+    k = clamp(Float64(t), 0.0, 1.0)
+    byte(x) = clamp(round(Int, Float64(reinterpret(UInt8, x)) * (1 - k) + 255 * k, RoundNearestTiesUp), 0, 255)
+    RGB{N0f8}(reinterpret(N0f8, UInt8(byte(red(c)))), reinterpret(N0f8, UInt8(byte(green(c)))),
+              reinterpret(N0f8, UInt8(byte(blue(c)))))
+end
+
+# Depth of a pop path in the gate tree (path segments) — the browser's `depthOf`.
+_pop_depth(path::AbstractString) = count(!isempty, split(path, '/'))
+# Is `path` `sub` or below it — the browser's `isInSubtree` (`frontend/src/utils/popName.ts`).
+_pop_in_subtree(path::AbstractString, sub::AbstractString) = path == sub || startswith(path, sub * "/")
+
 """
-    mask_id_colours(img; value_name, pop_type, pops_filter = nothing,
-                    all_cells = false, all_cells_colour = OVERLAY_GREY,
+    mask_pop_colours(layers; pale = MASK_PARENT_PALE, grey = OVERLAY_GREY) -> Dict{Int,RGB{N0f8}}
+
+THE population-mask colour rule — the viewer's *Pop colour* mask (`maskPopTable`,
+`frontend/src/utils/maskPopTable.ts`) and a movie's population mask both draw it. `layers` are one per
+(segmentation, pop type), each `(; cells, pops)`: `cells` the cell table's labels, `pops` the SHOWN
+pops `(; path, colour, labels)` in payload order. Per id:
+  - the deepest pop wins (gate-tree depth; a tie goes to the later pop in layer, then payload order);
+  - a pop with a shown descendant in its own layer draws `pale` of the way to white;
+  - a cell in no shown pop is `grey`; an id that is neither a cell nor in a pop is absent (not drawn).
+Pinned to the browser by a shared fixture (`frontend/src/utils/maskPopTable.parity.json`).
+"""
+function mask_pop_colours(layers; pale::Real = MASK_PARENT_PALE, grey::AbstractString = OVERLAY_GREY)
+    out = Dict{Int,RGB{N0f8}}()
+    grey_rgb = hex_to_rgb(grey)
+    for layer in layers, L in layer.cells
+        id = Int(L)
+        id > 0 && (out[id] = grey_rgb)
+    end
+    entries = Tuple{Int,Int,RGB{N0f8},Any}[]   # (depth, order, colour, labels)
+    for layer in layers
+        paths = String[String(p.path) for p in layer.pops]
+        for p in layer.pops
+            path = String(p.path)
+            parent = any(q -> q != path && _pop_in_subtree(q, path), paths)
+            c = hex_to_rgb(String(p.colour))
+            push!(entries, (_pop_depth(path), length(entries) + 1, parent ? _towards_white(c, pale) : c, p.labels))
+        end
+    end
+    sort!(entries; by = e -> (e[1], e[2]))
+    for (_, _, c, labels) in entries, L in labels
+        id = Int(L)
+        id > 0 && (out[id] = c)
+    end
+    out
+end
+
+# One (segmentation, pop type) layer of a population mask: the shown pops (in `pops_filter`, when set)
+# with their labels, in `resolve_pops` order — a track pop type's expanded to cells via `pop_df`, as
+# `_build_overlay_state` does (its gates live on `track_props`). `cells` is filled by the caller.
+function _mask_pop_layer(img, vn::String, pt::String, pops_filter, pop_eyes = nothing)
+    want = pops_filter === nothing ? nothing : Set(String(p) for p in pops_filter)
+    keep(path) = want === nothing || String(path) in want
+    # a look's point eye, else the manager's `show`
+    on(path, show::Bool) = look_eye_on(pop_eyes, pt, path, show)
+    pops = NamedTuple{(:path, :colour, :labels),Tuple{String,String,Vector{Int}}}[]
+    if !is_track_grained(pt)
+        resolved = try
+            resolve_pops(img, pt; value_name = vn)
+        catch e
+            @warn "mask_id_colours: resolve_pops failed" value_name = vn pop_type = pt exception = e
+            NamedTuple[]
+        end
+        for p in resolved
+            (on(String(p.path), Bool(get(p, :show, true))) && keep(p.path)) || continue
+            push!(pops, (; path = String(p.path), colour = String(p.colour), labels = Int[Int(L) for L in p.labels]))
+        end
+        return pops
+    end
+    m = try
+        load_pop_map(img; value_name = vn, pop_type = pt)
+    catch e
+        @warn "mask_id_colours: load_pop_map failed for track pop_type" value_name = vn pop_type = pt exception = e
+        nothing
+    end
+    m === nothing && return pops
+    for path in pop_paths(m)
+        p = pop_at(m, path)
+        (!p.transient && keep(path) && on(String(path), Bool(hasproperty(p, :show) ? p.show : true))) || continue
+        push!(pops, (; path = String(path), colour = String(p.colour), labels = Int[]))
+    end
+    isempty(pops) && return pops
+    df = try
+        # `expand_cluster_pops=false`: ONE segmentation's overlay — the run-wide expansion would draw
+        # every co-clustered segmentation's cells on it (as `resolve_pops`, the viewer's).
+        pop_df(img, pt, String[p.path for p in pops]; value_name = vn, granularity = :cell,
+               centroids = :pixel, include_x = false, include_obs = true, expand_cluster_pops = false)
+    catch e
+        @warn "mask_id_colours: pop_df failed for track pop_type" value_name = vn pop_type = pt exception = e
+        nothing
+    end
+    (df === nothing || size(df, 1) == 0) && return pops
+    at = Dict(p.path => i for (i, p) in enumerate(pops))
+    has_pop = "pop" in names(df)
+    @inbounds for i in 1:size(df, 1)
+        lab = df[i, :label]
+        (lab isa Real && isfinite(Float64(lab))) || continue
+        j = get(at, has_pop ? String(df[i, :pop]) : first(pops).path, nothing)
+        j === nothing || push!(pops[j].labels, Int(round(Float64(lab))))
+    end
+    pops
+end
+
+"""
+    mask_id_colours(img; value_name, pop_type, pop_types = nothing, pops_filter = nothing,
+                    pop_eyes = nothing, all_cells = false, all_cells_colour = OVERLAY_GREY,
                     colour_by = nothing, colour_overrides = nothing) -> Dict{Int,RGB{N0f8}}
 
-Which labels a movie's mask draws, and in what colour: the populations' cells in their colours (or
-every cell, with `all_cells`), recoloured by `colour_by` when asked. An id absent from the map is not
-drawn. The shader takes it as its label colour table (`labelColours`, `render_animation_run.py`).
+Which labels a movie's mask draws, and in what colour. A population mask is `mask_pop_colours` over
+the shown pops of `pop_types` (default `[pop_type]`) on `value_name` — the viewer's *Pop colour* mask:
+deepest pop wins, parents pale, the rest of the cells grey — "shown" by `pop_eyes` (a look's point
+eyes on `value_name`, `"<popType>::<path>" => on`) where it has one, else the manager's `show`. `all_cells` paints every cell
+`all_cells_colour` instead. `colour_by` recolours the drawn cells by an obs column (a population mask:
+only its pops' cells — the grey complement stays grey). An id absent from the map is not drawn. The
+shader takes it as its label colour table (`labelColours`, `render_animation_run.py`).
 """
 function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
+                         pop_types::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
                          pops_filter::Union{Nothing,AbstractVector{<:AbstractString}} = nothing,
+                         pop_eyes::Union{Nothing,AbstractDict} = nothing,
                          all_cells::Bool = false,
                          all_cells_colour::AbstractString = OVERLAY_GREY,
                          colour_by::Union{Nothing,AbstractString} = nothing,
                          colour_overrides::Union{Nothing,AbstractDict} = nothing)
     pt = string(pop_type)
     vn = String(value_name)
-    is_track_pt = is_track_grained(pt)
     cb_col = (colour_by === nothing || isempty(String(colour_by))) ? nothing : String(colour_by)
     cb_overrides_rgb = _prep_overrides(colour_overrides)
+    # the cell table's labels — one `.h5ad` read of `obs/_index`; scanning the mask per frame for its
+    # ids would be nT reads over the whole label store
+    cell_ids() = try
+        _labels_ids_for(img, vn, "cells")
+    catch e
+        @warn "mask_id_colours: cell table read failed" value_name exception = e
+        Int[]
+    end
 
-    # ── id → colour from pops.
+    # ── id → colour.
     id_colours = Dict{Int,RGB{N0f8}}()
+    # the ids `colour_by` may recolour: every cell, or a population mask's pops' cells
+    gated = nothing
     if all_cells
-        # Paint every known cell in one colour. Enumerating labels from `label_props` costs one
-        # `.h5ad` read; the alternative — scanning uniques out of the mask per frame — is nT reads
-        # over the whole label store, which is what the sweep is trying to avoid in the first place.
-        #
         # `all_cells_colour == "rainbow"` cycles `CECELIA_TRACK_PALETTE` by id — asked for by the
         # compare-grid path where a uniform gray outline was invisible against the channels (dense
         # segmentation collapses to identical tiny rings on the encoded frame).
-        lp = label_props(img; value_name = vn)
-        df = as_df(lp)
         is_rainbow = lowercase(String(all_cells_colour)) == "rainbow"
         solid = is_rainbow ? nothing : hex_to_rgb(String(all_cells_colour))
         palette = CECELIA_TRACK_PALETTE
         pal_n   = length(palette)
-        @inbounds for i in 1:size(df, 1)
-            lab = df[i, :label]
-            (lab isa Real && isfinite(Float64(lab))) || continue
-            L = Int(round(Float64(lab)))
+        for L in cell_ids()
             id_colours[L] = is_rainbow ? palette[mod(L - 1, pal_n) + 1] : solid
         end
-    elseif !is_track_pt
-        pops = try
-            resolve_pops(img, pt; value_name = vn)
-        catch e
-            @warn "mask_id_colours: resolve_pops failed" value_name pop_type exception = e
-            NamedTuple[]
-        end
-        if pops_filter !== nothing
-            want = Set(String(p) for p in pops_filter)
-            pops = [p for p in pops if String(p.path) in want]
-        end
-        for p in pops
-            Bool(get(p, :show, true)) || continue
-            colour = hex_to_rgb(String(p.colour))
-            for L in p.labels
-                id_colours[Int(L)] = colour
-            end
-        end
     else
-        # Track pop_types — expand via `pop_df` for the same reason as `_build_overlay_state` (gates
-        # live on `track_props`). Only `label` + `pop` are read; centroids/track_id are irrelevant
-        # for a label→colour lookup.
-        m = try
-            load_pop_map(img; value_name = vn, pop_type = pt)
-        catch e
-            @warn "mask_id_colours: load_pop_map failed for track pop_type" value_name pop_type exception = e
-            nothing
-        end
-        pop_meta = Dict{String,RGB{N0f8}}()
-        want_paths = String[]
-        if m !== nothing
-            paths = String[path for path in pop_paths(m) if !pop_at(m, path).transient]
-            if pops_filter !== nothing
-                pf = Set(String(p) for p in pops_filter)
-                paths = [p for p in paths if p in pf]
-            end
-            for path in paths
-                p = pop_at(m, path)
-                Bool(hasproperty(p, :show) ? p.show : true) || continue
-                pop_meta[String(path)] = hex_to_rgb(String(p.colour))
-                push!(want_paths, String(path))
-            end
-        end
-        if !isempty(want_paths)
-            df = try
-                # `expand_cluster_pops=false`: ONE segmentation's overlay — the run-wide expansion would
-                # draw every co-clustered segmentation's cells on it (as `resolve_pops`, the viewer's).
-                pop_df(img, pt, want_paths; value_name = vn, granularity = :cell,
-                       centroids = :pixel, include_x = false, include_obs = true,
-                       expand_cluster_pops = false)
-            catch e
-                @warn "mask_id_colours: pop_df failed for track pop_type" value_name pop_type paths = want_paths exception = e
-                nothing
-            end
-            if df !== nothing && size(df, 1) > 0
-                cols = names(df)
-                has_pop = "pop" in cols
-                @inbounds for i in 1:size(df, 1)
-                    lab = df[i, :label]
-                    (lab isa Real && isfinite(Float64(lab))) || continue
-                    pop_path = has_pop ? String(df[i, :pop]) : first(want_paths)
-                    colour = get(pop_meta, pop_path, nothing)
-                    colour === nothing && continue
-                    id_colours[Int(round(Float64(lab)))] = colour
-                end
-            end
-        end
+        cells = cell_ids()
+        layers = [(; cells, pops = _mask_pop_layer(img, vn, String(lpt), pops_filter, pop_eyes))
+                  for lpt in (pop_types === nothing ? [pt] : pop_types)]
+        id_colours = mask_pop_colours(layers)
+        gated = Set{Int}(L for layer in layers for p in layer.pops for L in p.labels)
     end
 
-    # ── colour_labels — recolour every id in id_colours by its value in an obs column. Same
-    # `_cb_prepare` resolver the overlay authors use, so a labels layer coloured by "clusters" and
-    # a points layer coloured by "clusters" pick the SAME hex per value — one palette, one place.
-    # `nothing` if the column is absent OR colour_by wasn't asked for → falls through to the
-    # pop-derived colours built above.
+    # ── colour_labels — recolour the drawn ids by their value in an obs column. Same `_cb_prepare`
+    # resolver the overlay authors use, so a labels layer coloured by "clusters" and a points layer
+    # coloured by "clusters" pick the SAME hex per value — one palette, one place. `nothing` if the
+    # column is absent OR colour_by wasn't asked for → falls through to the colours built above.
     if cb_col !== nothing && !isempty(id_colours)
         lp = label_props(img; value_name = vn)
         select_cols(lp, [cb_col])
@@ -1128,15 +1247,10 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
             nothing
         end
         if df !== nothing
-            # Cell-pops path uses a pop_map for user-pop colour donation; all-cells / track paths
-            # get plain Okabe-Ito / heat-ramp. Match the overlay author's per-branch rule.
-            cb_pop_map = if all_cells
-                nothing
-            elseif is_track_pt
-                try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
-            else
-                try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end
-            end
+            # A population mask lends the pops' colours to a matching category (the overlay
+            # author's per-branch rule); all-cells gets plain Okabe-Ito / heat-ramp.
+            cb_pop_map = all_cells ? nothing :
+                (try load_pop_map(img; value_name = vn, pop_type = pt) catch; nothing end)
             cb_resolve = _cb_prepare(df, cb_col, cb_overrides_rgb, cb_pop_map;
                                      scale = _cb_scale(img, [vn], cb_col))
             if cb_resolve !== nothing
@@ -1145,6 +1259,7 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
                     (lab isa Real && isfinite(Float64(lab))) || continue
                     lid = Int(round(Float64(lab)))
                     haskey(id_colours, lid) || continue
+                    (gated === nothing || lid in gated) || continue
                     id_colours[lid] = cb_resolve(id_colours[lid], i)
                 end
             end
@@ -1152,6 +1267,26 @@ function mask_id_colours(img; value_name::AbstractString, pop_type::PopTypeArg,
     end
 
     id_colours
+end
+
+"""
+    mask_pop_scope(plan, vn, mask_vn, pop_type, pops_filter, all_cells)
+        -> (; all_cells, pop_types, pops_filter, pop_eyes)
+
+The pop layers a movie's population mask on `mask_vn` is coloured by — `mask_id_colours`'s
+`all_cells` / `pop_types` / `pops_filter`, picked as the viewer picks its *Pop colour* mask's. A viewer
+look (`plan.pop_all_segs`): its pop types on the mask's OWN segmentation (`maskPopLayers`). A batch: its
+one `(vn, pop_type)` layer, whose paths mean nothing in another segmentation's tree — a mask on
+another one is every cell. `pop_eyes` are the look's point eyes on `mask_vn` (the viewer's mask table
+takes the points' hidden pops, `layerHidden`); `nothing` = the manager's `show`. Both movie resolvers (`_resolve_movie_overlays_mask`,
+`_resolve_keyframe_overlay_builders`) ask here.
+"""
+function mask_pop_scope(plan, vn::AbstractString, mask_vn::AbstractString, pop_type,
+                        pops_filter, all_cells::Bool)
+    plan.pop_all_segs && return (; all_cells, pops_filter = nothing,
+                                   pop_types = isempty(plan.pop_types) ? [String(pop_type)] : plan.pop_types,
+                                   pop_eyes = get(plan.pop_eyes, String(mask_vn), nothing))
+    (; all_cells = all_cells || mask_vn != vn, pop_types = nothing, pops_filter, pop_eyes = nothing)
 end
 
 """
@@ -1166,8 +1301,8 @@ struct ViewerPalette end
     MovieMask
 
 A movie's mask, for the shader (`_mask_params!`): the label store, its outline width and opacity, and
-how labels are coloured — `ViewerPalette()` or a `Dict{Int,RGB{N0f8}}` table. A table may be empty (a
-population with no cells here), which draws no labels, not every label.
+how labels are coloured — `ViewerPalette()` or a `Dict{Int,RGB{N0f8}}` table (an id absent from it is
+not drawn). `movie_mask` never builds an empty table: no cells to colour is the palette.
 """
 struct MovieMask
     labels_path::String
@@ -1180,7 +1315,7 @@ end
     movie_mask(img; value_name, contour_px, opacity, kwargs...) -> MovieMask | nothing
 
 "All cells" with no `colour_by` draws every label in the viewer's palette; otherwise the colours are
-`mask_id_colours` — the populations' labels in their colours. `nothing` when the label store is not
+`mask_id_colours` — the population mask (`mask_pop_colours`), or every cell recoloured by `colour_by`. `nothing` when the label store is not
 on disk or the colours could not be resolved (logged). `kwargs` are `mask_id_colours`'s.
 """
 function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacity::Real,
@@ -1190,13 +1325,15 @@ function movie_mask(img; value_name::AbstractString, contour_px::Integer, opacit
     colours = if all_cells && (colour_by === nothing || isempty(String(colour_by)))
         ViewerPalette()
     else
-        try
+        table = try
             mask_id_colours(img; value_name = value_name, all_cells = all_cells,
                             colour_by = colour_by, kwargs...)
         catch e
             @warn "movie mask: colours failed" value_name exception = e
             return nothing
         end
+        # no cells to colour (no cell table) — the palette, as the viewer's `maskPopTable` → null
+        isempty(table) ? ViewerPalette() : table
     end
     MovieMask(String(lp), colours, Int(contour_px), Float64(opacity))
 end
