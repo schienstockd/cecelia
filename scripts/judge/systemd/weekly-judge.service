@@ -3,8 +3,6 @@ Description=Weekly judge — bug sweep + rule tally over the recital findings
 Documentation=file://%h/.cecelia-effectiveness/judge-worktree/docs/ai-assist/WEEKLY_JUDGE.md
 # Don't fire on battery: a pass spends real API money (capped at ~$14) and shouldn't drain the laptop.
 ConditionACPower=true
-# A pass that succeeds hands its record to `judge-review --auto` (weekly-auto-fix.service).
-OnSuccess=weekly-auto-fix.service
 
 [Service]
 Type=oneshot
@@ -22,7 +20,8 @@ ExecStart=/bin/bash -c 'exec "$${REPO}/scripts/judge/cron_pass.sh" --pinned'
 # `pixi install` in the worktree the first time, the sweep, up to $10 of verify agents (20 min each,
 # grouped), the rule mapping, then recital + the PR: up to ~3h. A pass stopped by the usage limit is
 # rerun by cron_pass.sh once it lifts (at most 3 attempts, a reset at most 8h off, +5 min), so the
-# unit must outlive one wait plus the passes around it. A hung pass still gets killed.
+# unit must outlive one wait plus the passes around it. A pass that succeeds then runs `judge-review
+# --auto` in the same budget: no new session 8h in (cron_pass.sh). A hung pass still gets killed.
 TimeoutStartSec=12h
 StandardOutput=journal
 StandardError=journal

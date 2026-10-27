@@ -16,10 +16,11 @@
 # and redraws the README's chart (systemd/weekly-chart.service). Both under the same lock, so neither
 # resets the worktree under a running pass.
 #
-# `--auto` runs `judge-review --auto` on the record the pass just wrote: every bug verify called `fix`,
-# one sandboxed session and PR each, never a merge (systemd/weekly-auto-fix.service, started by the
-# judge unit's `OnSuccess=`). Same lock, same checkout, its own log; a usage limit (75) ends it, and the
-# bugs it didn't reach wait for next week's run.
+# (e) Then the fixes. A pass that succeeds runs `judge-review --auto` on the record it just wrote: every
+# bug verify called `fix`, one sandboxed session and PR each, never a merge. Same lock, its own log
+# (`auto-*.log`). It starts no session past AUTO_UNTIL_SEC after this script started, so the last one
+# ends before the unit's 12h timeout kills it mid-way. Its exit never changes the pass's: a failed
+# session or the usage limit leaves the rest for next week. `JUDGE_AUTO_FIX=0` in the unit skips it.
 #
 # Called by systemd/weekly-judge.service — see that dir's README. Fails loudly (exit non-zero) so
 # `systemctl --user status weekly-judge.service` shows red. Design: docs/ai-assist/WEEKLY_JUDGE.md.
@@ -32,7 +33,6 @@ case "${1:-}" in
     --pinned) TASK_ARGS=(--ref HEAD) ;;
     --sync) MODE=sync ;;
     --chart) MODE=chart ;;
-    --auto) MODE=auto ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -47,8 +47,12 @@ AFTER_RESET_SEC=300
 SLEEP="${CECELIA_JUDGE_SLEEP:-sleep}"   # tests stand `true` in
 mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-case "$MODE" in chart|auto) LOG_NAME=$MODE ;; *) LOG_NAME=judge ;; esac
-LOG_FILE="$LOG_DIR/$LOG_NAME-$TS.log"
+LOG_FILE="$LOG_DIR/$([ "$MODE" = chart ] && echo chart || echo judge)-$TS.log"
+AUTO_LOG_FILE="$LOG_DIR/auto-$TS.log"
+STARTED_S=$(date +%s)
+# The unit's TimeoutStartSec is 12h: 4h left for the last session (the longest seen so far took ~2.5h,
+# most of it waiting on its PR's CI).
+AUTO_UNTIL_SEC=$((8 * 3600))
 
 log() { echo "$(date -Is) $*" | tee -a "$LOG_FILE" >&2; }
 
@@ -66,6 +70,22 @@ run_pass() {   # $1 = attempt; returns the pass's exit code
         exit "$rc"
     } 2>&1 | tee -a "$LOG_FILE"
     return "${PIPESTATUS[0]}"
+}
+
+run_auto_fix() {   # after a pass that succeeded; never fails the pass
+    if [ "${JUDGE_AUTO_FIX:-1}" = 0 ]; then
+        log "JUDGE_AUTO_FIX=0: judge-review --auto skipped"
+        return 0
+    fi
+    local rc=0
+    (cd "$REPO_ROOT" && nice -n 10 ionice -c 3 pixi run judge-review --auto --until "$((STARTED_S + AUTO_UNTIL_SEC))") \
+        2>&1 | tee -a "$AUTO_LOG_FILE" || rc=${PIPESTATUS[0]}
+    case "$rc" in
+        0) ;;
+        "$EX_TEMPFAIL") log "judge-review --auto stopped on the usage limit; the rest wait for next week" ;;
+        *) log "judge-review --auto exited $rc (see $AUTO_LOG_FILE); the pass itself succeeded" ;;
+    esac
+    return 0
 }
 
 sync_worktree() {   # this checkout to origin/main; the fetch retries because this machine's resolver drops
@@ -94,12 +114,6 @@ main() {
             cd "$REPO_ROOT"
             nice -n 10 pixi run effectiveness-chart -- --push 2>&1 | tee -a "$LOG_FILE"
             return "${PIPESTATUS[0]}" ;;
-        auto)
-            cd "$REPO_ROOT"
-            local rc=0
-            nice -n 10 ionice -c 3 pixi run judge-review --auto 2>&1 | tee -a "$LOG_FILE" || rc=${PIPESTATUS[0]}
-            [ "$rc" -eq "$EX_TEMPFAIL" ] && log "judge-review --auto stopped on the usage limit; the rest wait for next week"
-            return "$rc" ;;
     esac
     local attempt=1 rc retry reset reset_s wait_s
     while :; do
@@ -107,6 +121,7 @@ main() {
         rc=0
         run_pass "$attempt" || rc=$?
         if [ "$rc" -ne "$EX_TEMPFAIL" ] || [ ! -f "$LIMIT_FILE" ]; then
+            [ "$rc" -eq 0 ] && run_auto_fix
             return "$rc"
         fi
         read -r retry reset < <(python3 -c 'import json, sys

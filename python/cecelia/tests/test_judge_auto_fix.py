@@ -182,6 +182,20 @@ class LandedTest(_AutoFixture):
         self.assertIn("running 3", out.getvalue())
         self.assertIn("── 2 session(s) · $3.00 · 1 handed back ─", out.getvalue())
 
+    def test_past_the_deadline_it_starts_no_new_session_and_says_the_rest_wait(self):
+        record = self.build(bugs=[_bug("B4", verify=FIX, file="c.py", branch="feat/y"),
+                                  _bug("B5", verify=FIX, file="d.py", branch="feat/z")])
+        self.changed = "a.py\n"
+        out = io.StringIO()
+        ticks = iter([100.0, 200.0])   # before B4's session, then before B5's: past `until`
+        answer = _answer("not_real") | {"bugs": [{"key": "fanout-b4", "outcome": "not_real", "reason": "no"}]}
+        with mock.patch.object(self.af, "landed", return_value={}):
+            ran = self.af.run(record, out=out, path=self.log, auto_log=self.auto, main=self.main, until=150.0,
+                              clock=lambda: next(ticks), session=self.session(answer), sh=self.sh())
+        self.assertEqual(ran, 1)
+        self.assertIn("1 left: past the deadline, next pass", out.getvalue())
+        self.assertNotIn("── B5 ", out.getvalue())
+
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
         items = [{"kind": "bundle", "ref": "B1", "refs": ["B1", "B2"]}, {"kind": "work", "ref": "B3"}]
