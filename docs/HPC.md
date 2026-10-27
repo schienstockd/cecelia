@@ -33,7 +33,7 @@ handler continues: register labels, QC, run log
 | Where | Fields | Stored in | Why there |
 |---|---|---|---|
 | **Settings → HPC** | scheduler, host, port, internet queue; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches, and which of its queues can download, is not personal |
-| **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
+| **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble, GPU CPUs per GPU | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
 Preferences opens from the profile chip in the header, or from **Your HPC settings** on Settings → HPC. Test connection
@@ -41,6 +41,20 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.
+- **Accounts.** A task job bills the project's account when one is set, else the class account (CPU
+  or GPU) from Preferences. The cluster environment install always uses the CPU class account: one env
+  serves every project.
+- **Nodes** (a compact table under the job classes) is what the scheduler says each class's queue runs
+  on: one row per kind of node, with CPUs, GPUs and memory per node (`GET /api/hpc/nodes`). PBS follows a routing queue (Gadi's `gpuvolta`) to where it sends jobs
+  and matches nodes by their `queue`; a queue that owns no nodes draws on the untagged pool, marked
+  *(shared)* with its three commonest kinds and a "+N more kinds" row, because PBS picks among them by
+  internal tags Cecelia cannot read. SLURM
+  reads the partition from `sinfo`. Facts only; nothing is applied from them.
+- **CPUs per GPU** (GPU class) is a site rule, set by you: blank on most sites, where a job may ask for
+  any count. Where the site wants an exact count (Gadi's GPU queues refuse anything but 12 per GPU),
+  set it, or click **Use N**, which offers the GPU nodes' CPUs ÷ GPUs. With it set, the run form shows
+  a GPU job's CPUs as `GPUs × N` and greys the slider, and dispatch asks for exactly that
+  (`hpc_apply_site_rules`), logging `[HPC] 12 CPUs: this cluster takes 12 per GPU`.
 - **Test connection** is the only call that may trust a new host key. It writes to Cecelia's own
   `<config_dir>/hpc/known_hosts` and shows the fingerprint. Every other call is strict and runs with
   `BatchMode`.
@@ -306,6 +320,8 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 | `[ERROR] … needs Linux x86_64; this node is …` | the install landed on a non-x86 node: pick another partition |
 | `Submit: qsub: Error: …` beside Install on cluster | the scheduler refused the install job; the reason is PBS's or SLURM's own |
 | `Submit: the cluster did not answer within 180 s` | the login node's qsub/sbatch stalled; try again. A submit that timed out can still land, so the next Install first asks the scheduler and stops with `An install job is already on the cluster (id)` if one did |
+| `qsub: Error: You have requested N CPUs which is not 12 times the number of GPUs` | Gadi wants exactly 12 CPUs per GPU: set **CPUs per GPU** on the GPU class in Preferences → HPC (or **Use 12**) |
+| `No queue named X on the cluster` beside Nodes | the class's queue is not one the scheduler knows: check its spelling |
 | `rsync is not installed on the cluster` | the login node has no rsync. Rare; tell us |
 | `Cannot send <path> to the cluster: it is outside the project` | the task reads a file it has not declared; it needs porting work |
 | `Cluster job N failed: Walltime reached` / `Out of memory` | raise Minutes / GB on the run form |

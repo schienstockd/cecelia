@@ -76,6 +76,9 @@ function hpc_job_body(spec::HpcJobSpec, preamble::AbstractString = "")::String
     """
 end
 
+"""The site settings a backend submits with: its own for a scheduler, the configured site otherwise."""
+hpc_backend_site(::HpcBackend)::HpcSite = hpc_site()
+
 # How long a submit may take. A busy login node's qsub/sbatch can stall for over a minute (Gadi, 2026-10-27:
 # 60 s ran out, the same qsub a few minutes later took 0.07 s); a submit is rare, so waiting costs little.
 const HPC_SUBMIT_TIMEOUT_S = 180
@@ -192,6 +195,60 @@ end
 const _HPC_STATUS_TAG = "CECELIA-STATE"
 const _HPC_REASON_TAG = "CECELIA-REASON"
 const _HPC_ACTIVE_TAG = "CECELIA-ACTIVE"
+const _HPC_NODES_TAG = "CECELIA-NODES"
+const _HPC_NOQUEUE_TAG = "CECELIA-NOQUEUE"
+
+"""One kind of node a queue runs on, and how many of them there are."""
+struct HpcNodeShape
+    nodes::Int
+    cpus::Int
+    gpus::Int
+    mem_gb::Int
+end
+
+"""
+The nodes a queue's jobs run on, as the scheduler describes them: facts, never a rule (a site's rule,
+like Gadi's CPUs per GPU, is the user's `HpcClass.cpus_per_gpu`). `shared` = the queue has no nodes of
+its own and draws on a pool other queues share (PBS), so its jobs may land on only some of `shapes`.
+Most nodes first.
+"""
+struct HpcNodes
+    queue::String
+    shared::Bool
+    shapes::Vector{HpcNodeShape}
+end
+
+hpc_nodes_dict(n::HpcNodes)::Dict{String,Any} =
+    Dict{String,Any}("queue" => n.queue, "shared" => n.shared,
+                     "shapes" => [Dict{String,Any}("nodes" => s.nodes, "cpus" => s.cpus, "gpus" => s.gpus,
+                                                   "memGb" => s.mem_gb) for s in n.shapes])
+
+# `CECELIA-NODES <tag> <count> <cpus> <gpus> <mem MB>` lines; tag `q` = the queue's own nodes, `u` = a
+# shared pool, used only when the queue has none of its own. Equal shapes are summed.
+function _hpc_parse_nodes(queue::AbstractString, out::AbstractString)::HpcNodes
+    occursin(Regex("^$(_HPC_NOQUEUE_TAG)\\s*\$", "m"), out) &&
+        throw(HpcError(isempty(queue) ? "The cluster has no default queue; set one" : "No queue named $queue on the cluster"))
+    rows = [(tag = m[1], n = parse(Int, m[2]), c = parse(Int, m[3]), g = parse(Int, m[4]), mb = parse(Int, m[5]))
+            for m in eachmatch(Regex("^$(_HPC_NODES_TAG) ([qu]) (\\d+) (\\d+) (\\d+) (\\d+)\\s*\$", "m"), out)]
+    shared = !any(r -> r.tag == "q", rows)
+    counts = Dict{NTuple{3,Int},Int}()
+    for r in rows
+        r.tag == (shared ? "u" : "q") || continue
+        k = (r.c, r.g, round(Int, r.mb / 1024))
+        counts[k] = get(counts, k, 0) + r.n
+    end
+    shapes = sort([HpcNodeShape(n, k...) for (k, n) in counts]; by = s -> (-s.nodes, -s.cpus))
+    HpcNodes(String(queue), shared && !isempty(shapes), shapes)
+end
+
+"""
+    hpc_node_shapes(b, conn, queue) -> HpcNodes
+
+What the nodes behind `queue` (`""` = the site's default) are: CPUs, GPUs and memory per node, by
+kind. One remote call. Throws `HpcError` when the scheduler cannot be asked or does not know `queue`.
+"""
+hpc_node_shapes(b::HpcBackend, c::HpcConn, queue::AbstractString)::HpcNodes =
+    _hpc_parse_nodes(queue, hpc_exec!(c, _hpc_nodes_script(b, queue); what = "Node list"))
 
 """The name the scheduler lists a job of `spec.name = name` under (`hpc_active_jobs(...; name)`); `""` for
 a backend without job names (the local shell)."""

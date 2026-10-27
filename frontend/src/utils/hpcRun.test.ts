@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination, hpcRunEnvNote,
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, hpcStageLabel, formatWalltime, hpcRunDestination, hpcRunEnvNote, hpcRuleCpus,
   hpcSteps, hpcFieldsFor, formatResource, hpcMemoryHint, frameGb } from './hpcRun'
 import type { HpcSettings, HpcEnvStatus } from './hpcSettings'
 import type { TaskDef } from '../tasks/types'
@@ -56,13 +56,24 @@ describe('hpcRun', () => {
     expect(formatWalltime(1505)).toBe('1 d 1 h 05')
   })
 
-  const cls = (over = {}) => ({ queue: '', account: '', qos: '', directives: '', preamble: '', ...over })
+  const cls = (over = {}) => ({ queue: '', account: '', qos: '', directives: '', preamble: '', cpusPerGpu: 0, ...over })
   const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
     available: true, schedulers: [],
     site: { scheduler: 'slurm', host: 'hpc.example.edu', port: 22, netQueue: '', remoteDir: '~/cecelia', email: '',
             cpu: cls({ queue: 'cpu,long', account: 'p1' }), gpu: cls({ queue: 'gpu-a100', account: 'p2', qos: 'gpu' }) },
     identity: { profile: 'default', user: 'jsmith', keyFile: '~/.ssh/id_ed25519' },
     project: null, ...over,
+  })
+
+  it('fixes a GPU job\'s CPUs only when the site sets a rule', () => {
+    const gadi = settings({ site: { ...settings().site, gpu: cls({ queue: 'gpuvolta', cpusPerGpu: 12 }) } })
+    expect(hpcRuleCpus(gadi, def(), 1)).toBe(12)
+    expect(hpcRuleCpus(gadi, def(), 2)).toBe(24)
+    expect(hpcRuleCpus(gadi, def(), 0)).toBeNull()                          // no GPUs, no rule
+    expect(hpcRuleCpus(gadi, def({ resource_pool: 'cpu' }), 1)).toBeNull()  // a CPU-class task
+    expect(hpcRuleCpus(settings(), def(), 1)).toBeNull()                    // most sites: no rule
+    expect(hpcRuleCpus(null, def(), 1)).toBeNull()
+    expect(hpcSteps('cpus')).toContain(12)                                  // reachable without a rule too
   })
 
   it('names where a cluster run goes, by the task pool', () => {
@@ -87,8 +98,8 @@ describe('hpcRun', () => {
   })
 
   it('slider stops keep the default and the current size reachable', () => {
-    expect(hpcSteps('cpus')).toEqual([1, 2, 4, 8, 16, 32, 64])
-    expect(hpcSteps('cpus', 8, 12)).toEqual([1, 2, 4, 8, 12, 16, 32, 64])
+    expect(hpcSteps('cpus')).toEqual([1, 2, 4, 8, 12, 16, 24, 32, 48, 64])
+    expect(hpcSteps('cpus', 8, 20)).toEqual([1, 2, 4, 8, 12, 16, 20, 24, 32, 48, 64])
     expect(hpcSteps('memGb', NaN)).toEqual([4, 8, 16, 32, 64, 128, 256, 512])
     expect(formatResource('memGb', 64)).toBe('64 GB')
     expect(formatResource('walltimeMin', 480)).toBe('8 h')

@@ -71,6 +71,48 @@ end
     @test Cecelia.slurm_exit_reason("") == ""
 end
 
+@testset "HPC: node shapes (parser + shim sinfo + this machine)" begin
+    P = Cecelia._hpc_parse_nodes
+    # the queue's own nodes win over a shared pool; equal shapes are summed; most nodes first; MB → GB
+    n = P("gpuvolta", "CECELIA-NODES q 100 48 4 393216\nCECELIA-NODES q 60 48 4 393216\n" *
+                      "CECELIA-NODES q 2 64 8 1048576\nCECELIA-NODES u 3000 48 0 196608\nnoise\n")
+    @test !n.shared && n.shapes == [Cecelia.HpcNodeShape(160, 48, 4, 384), Cecelia.HpcNodeShape(2, 64, 8, 1024)]
+    n = P("normal", "CECELIA-NODES u 30 48 4 1048576\nCECELIA-NODES u 3024 48 0 196608\n")
+    @test n.shared && first(n.shapes) == Cecelia.HpcNodeShape(3024, 48, 0, 192)
+    @test isempty(P("q", "").shapes) && !P("q", "").shared
+    e = try; P("gpuvolta2", "CECELIA-NOQUEUE\n"); catch x; x; end
+    @test e isa HpcError && e.msg == "No queue named gpuvolta2 on the cluster"
+    @test Cecelia.hpc_nodes_dict(Cecelia.HpcNodes("g", false, [Cecelia.HpcNodeShape(2, 48, 4, 384)])) ==
+          Dict("queue" => "g", "shared" => false,
+               "shapes" => [Dict("nodes" => 2, "cpus" => 48, "gpus" => 4, "memGb" => 384)])
+
+    if !Sys.iswindows()
+        shims = mktempdir()
+        # `-o '%P'` lists partitions (default starred); the shape format answers per partition
+        write(joinpath(shims, "sinfo"), """
+            #!/bin/sh
+            case "\$*" in
+              "-h -o %P") printf 'cpu*\\ngpu\\n';;
+              "-h -p gpu -o %P") echo gpu;;
+              "-h -p cpu -o %P") echo cpu;;
+              "-h -p gpu -o %D %c %m %G") printf '8 64+ 515000 gpu:a100:4(S:0-1)\\n2 64 515000 gpu:a100:2,tmp:1\\n';;
+              "-h -p cpu -o %D %c %m %G") printf '100 32 192000 (null)\\n';;
+            esac
+            """)
+        chmod(joinpath(shims, "sinfo"), 0o755)
+        withenv("PATH" => shims * ":" * ENV["PATH"]) do
+            b, c = SlurmBackend(_hpc_test_site()), HpcLocalConn()
+            g = hpc_node_shapes(b, c, "gpu")
+            @test !g.shared && g.shapes == [Cecelia.HpcNodeShape(8, 64, 4, 503), Cecelia.HpcNodeShape(2, 64, 2, 503)]
+            @test hpc_node_shapes(b, c, "").shapes == [Cecelia.HpcNodeShape(100, 32, 0, 188)]   # the default
+            e = try; hpc_node_shapes(b, c, "nope"); catch x; x; end
+            @test e isa HpcError && occursin("No queue named nope", e.msg)
+        end
+        me = only(hpc_node_shapes(LocalShellBackend(), HpcLocalConn(), "").shapes)
+        @test me.nodes == 1 && me.cpus >= 1
+    end
+end
+
 @testset "HPC: SLURM wait reasons (shim squeue)" begin
     if Sys.iswindows()
         @test_skip false

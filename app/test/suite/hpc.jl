@@ -146,6 +146,13 @@ end
         @test set_hpc_site!(Dict("host" => "new.example.org"); name = "bob").host == "new.example.org"
         @test hpc_site().host == "new.example.org"                         # the cluster is shared
 
+        # A site rule the user sets: none by default, a whole number when set, "" clears it.
+        @test hpc_site().gpu.cpus_per_gpu == 0
+        @test set_hpc_site!(Dict("gpu" => Dict("cpusPerGpu" => "12"))).gpu.cpus_per_gpu == 12
+        @test Cecelia.read_profile_settings(Cecelia.active_profile_name())["hpc"]["gpu"]["cpusPerGpu"] == 12
+        @test hpc_site("bob").gpu.cpus_per_gpu == 0                         # personal, like the queue
+        @test set_hpc_site!(Dict("gpu" => Dict("cpusPerGpu" => ""))).gpu.cpus_per_gpu == 0
+
         # A personal key written to custom.toml before the split: read as the fallback, moved on save.
         cfg = Cecelia.TOML.parsefile(joinpath(tmp, "custom.toml"))
         cfg["hpc"]["email"] = "legacy@uni.edu"
@@ -166,6 +173,8 @@ end
         @test occursin("Unknown HPC setting", refused(Dict("hostname" => "x")))
         @test occursin("Unknown HPC setting", refused(Dict("cpu" => Dict("partition" => "x"))))
         @test occursin("GPU queue", refused(Dict("gpu" => Dict("queue" => "a b"))))
+        @test occursin("CPUs per GPU", refused(Dict("gpu" => Dict("cpusPerGpu" => "twelve"))))
+        @test occursin("CPUs per GPU", refused(Dict("gpu" => Dict("cpusPerGpu" => -1))))
         @test occursin("Internet queue", refused(Dict("netQueue" => "-q x")))
         @test occursin("remote folder in Preferences", refused(Dict("remoteDir" => "")))
         @test read(joinpath(tmp, "custom.toml"), String) == before          # nothing written

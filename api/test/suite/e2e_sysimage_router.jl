@@ -331,6 +331,7 @@ end
         "/api/profile/settings",        # USER_PROFILE_PLAN Phase 4 — per-profile settings hydration
         "/api/hpc/settings",            # HPC_PLAN P1 — Settings → HPC
         "/api/hpc/env",                 # HPC_PLAN P2 — refuses without a configured host (no ssh)
+        "/api/hpc/nodes",               # node shapes of a class's queue — refuses without a host (no ssh)
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -495,7 +496,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 114 && length(POST_ROUTES) == 174
+    @test length(GET_ROUTES) == 115 && length(POST_ROUTES) == 174
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

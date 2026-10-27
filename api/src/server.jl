@@ -357,6 +357,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
     "/api/hpc/settings"           => (req, body_bytes) -> (api_hpc_settings_get(req)),
     "/api/hpc/env"                => (req, body_bytes) -> (api_hpc_env_get(req)),
+    "/api/hpc/nodes"              => (req, body_bytes) -> (api_hpc_nodes(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────

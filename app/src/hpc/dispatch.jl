@@ -78,6 +78,20 @@ function hpc_resources(task::CciaTask, overrides::AbstractDict = Dict{String,Any
                  walltime_min = vals["walltime_min"])
 end
 
+"""
+    hpc_apply_site_rules(r, cls::HpcClass) -> (HpcResources, note)
+
+The run's resources after the site rules the user set on the class: with `cpus_per_gpu` set, a job
+with GPUs asks for exactly that many CPUs per GPU. `note` says what changed, `""` when nothing did.
+"""
+function hpc_apply_site_rules(r::HpcResources, cls::HpcClass)::Tuple{HpcResources,String}
+    (cls.cpus_per_gpu > 0 && r.gpus > 0) || return (r, "")
+    want = r.gpus * cls.cpus_per_gpu
+    want == r.cpus && return (r, "")
+    (HpcResources(; cpus = want, mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min),
+     "$want CPUs: this cluster takes $(cls.cpus_per_gpu) per GPU")
+end
+
 """Everything a dispatched `run_py` needs, fixed when the job starts."""
 struct HpcDispatch
     task_id::String
@@ -90,11 +104,13 @@ struct HpcDispatch
     resources::HpcResources
     account::String             # the project's override, "" = the class account
     on_stage::Function          # (::HpcStage, job_id) → the task record + the `task:hpc` frame
+    rule_note::String           # what a site rule changed in `resources` (`hpc_apply_site_rules`), or ""
 end
 
-HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account) =
+HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
+            on_stage = (stage, job) -> nothing) =
     HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
-                (stage, job) -> nothing)
+                on_stage, "")
 
 """The active dispatch, `nothing` for a local run. Set by `_with_run_target`."""
 const HPC_DISPATCH = Base.ScopedValues.ScopedValue{Union{Nothing,HpcDispatch}}(nothing)
@@ -128,8 +144,10 @@ function hpc_dispatch_for(rec::TaskRecord, task::CciaTask, img::CciaImage;
                                    hpc_remote_root(conn)
     proj = dirname(dirname(img._dir))
     account = read_hpc_project_settings(proj)["account"]
-    HpcDispatch(rec.id, conn, backend, root, proj, config_dir(), hpc_task_class(task),
-                hpc_resources(task, rec.hpc), account, on_stage)
+    class = hpc_task_class(task)
+    site = hpc_backend_site(backend)
+    res, note = hpc_apply_site_rules(hpc_resources(task, rec.hpc), hpc_class(site, class))
+    HpcDispatch(rec.id, conn, backend, root, proj, config_dir(), class, res, account, on_stage, note)
 end
 
 """
@@ -153,6 +171,7 @@ function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::Cci
     end
     on_log("[HPC] Running on the cluster: $(d.class) class, $(d.resources.cpus) CPUs, " *
            "$(d.resources.mem_gb) GB, $(d.resources.gpus) GPUs, $(d.resources.walltime_min) min")
+    isempty(d.rule_note) || on_log("[HPC] " * d.rule_note)
     try
         Base.ScopedValues.with(f, HPC_DISPATCH => d)
     finally

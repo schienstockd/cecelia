@@ -4,6 +4,7 @@
 struct SlurmBackend <: HpcBackend
     site::HpcSite
 end
+hpc_backend_site(b::SlurmBackend)::HpcSite = b.site
 
 _slurm_job_name(name::AbstractString)::String = "cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_")
 hpc_job_name(::SlurmBackend, name::AbstractString) = _slurm_job_name(name)
@@ -55,6 +56,21 @@ _hpc_status_script(::SlurmBackend, ids::AbstractVector{<:AbstractString}) =
       echo "$(_HPC_STATUS_TAG) \$i \$s"
       [ "\$s" = PENDING ] && [ "\$r" != None ] && echo "$(_HPC_REASON_TAG) \$i \$r"
     done
+    true
+    """
+
+# The nodes of a partition (`""` = the default, starred by sinfo): one `sinfo` line per kind, CPUs and
+# memory (MB) as numbers (a `+` = "at least", dropped) and the GPUs summed from the `gpu` GRES entries
+# (`gpu:4`, `gpu:a100:4(S:0-1)`).
+_hpc_nodes_script(::SlurmBackend, queue::AbstractString) = _hpc_sched_prelude("sinfo") * """
+    p=$(_sh_quote(queue))
+    [ -n "\$p" ] || p=\$(sinfo -h -o '%P' 2>/dev/null | awk '/\\*\$/ {sub(/\\*\$/, ""); print; exit}')
+    [ -n "\$p" ] || exit 0
+    sinfo -h -p "\$p" -o '%P' 2>/dev/null | grep -q . || { echo "$(_HPC_NOQUEUE_TAG)"; exit 0; }
+    sinfo -h -p "\$p" -o '%D %c %m %G' 2>/dev/null | awk '{
+      gsub(/\\+/, "", \$2); gsub(/\\+/, "", \$3); g = 0; k = split(\$4, a, ",")
+      for (i = 1; i <= k; i++) if (a[i] ~ /^gpu/) { s = a[i]; sub(/\\(.*/, "", s); j = split(s, b, ":"); g += b[j] + 0 }
+      print "$(_HPC_NODES_TAG) q", \$1, \$2, g, \$3 }'
     true
     """
 

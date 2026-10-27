@@ -3,7 +3,7 @@ import { ref, nextTick } from 'vue'
 import { useHpcDrafts } from './useHpcDrafts'
 import type { HpcSettings } from '../utils/hpcSettings'
 
-const cls = () => ({ queue: '', account: '', qos: '', directives: '', preamble: '' })
+const cls = () => ({ queue: '', account: '', qos: '', directives: '', preamble: '', cpusPerGpu: 0 })
 const reply = (over: Partial<HpcSettings['site']> = {}): HpcSettings => ({
   available: true,
   schedulers: [{ name: 'slurm', label: 'SLURM', available: true }],

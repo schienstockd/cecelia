@@ -467,7 +467,7 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        hpc_remote_root, HpcBackend, SlurmBackend, LocalShellBackend, PbsBackend, HpcJobSpec, RemoteJobState,
        JOB_QUEUED, JOB_RUNNING, JOB_GONE, hpc_backend, hpc_render_script, hpc_submit, hpc_poll,
        hpc_cancel, hpc_exit_reason, hpc_watch_job, hpc_sync_code!, hpc_lock_hash, hpc_env_status,
-       hpc_install_env!, hpc_require_env, hpc_cleanup!, hpc_active_jobs, RunTarget, TARGET_LOCAL, TARGET_HPC, run_target,
+       hpc_install_env!, hpc_require_env, hpc_cleanup!, hpc_active_jobs, hpc_node_shapes, RunTarget, TARGET_LOCAL, TARGET_HPC, run_target,
        HpcStage, HPC_STAGE_NONE, HPC_STAGE_SYNC, HPC_STAGE_QUEUED, HPC_STAGE_RUNNING, HPC_STAGE_PULL,
        task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
        hpc_pending_cancels, hpc_retry_cancels!

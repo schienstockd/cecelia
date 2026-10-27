@@ -19,12 +19,13 @@ import FileBrowser from './FileBrowser.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import InlineNote from './InlineNote.vue'
 import TeleportPopover from './TeleportPopover.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
-  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, cleanupHpcEnv,
+  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcNodes, hpcNodeRows, hpcNodesNote, hpcNodeCpusPerGpu, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, cleanupHpcEnv,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
-  type HpcEnvStatus } from '../utils/hpcSettings'
+  type HpcEnvStatus, type HpcNodes } from '../utils/hpcSettings'
 import { isPreferencesOpen, openPreferences } from '../lib/preferencesOpen'
 import { useTaskStore } from '../stores/tasks'
 import { railJobRow } from '../utils/railJobs'
@@ -152,6 +153,37 @@ onMounted(() => { offEnv = onHpcEnvChanged(() => void loadEnv()) })
 onUnmounted(() => offEnv?.())
 watch(blocker, b => { if (!b && !env.value) void loadEnv() }, { immediate: true })
 
+// What the scheduler says the nodes behind each class's queue are (Preferences, once the login is
+// filled in, and again when a queue changes). One ssh call per class; facts only, never a setting.
+const nodes = ref<Record<HpcClassName, HpcNodes | null>>({ cpu: null, gpu: null })
+async function loadNodes(cls: HpcClassName) {
+  nodes.value[cls] = null
+  try { nodes.value[cls] = await fetchHpcNodes(cls) }
+  catch (e) { nodes.value[cls] = { queue: '', shared: false, shapes: [], error: e instanceof Error ? e.message : String(e) } }
+}
+for (const cls of ['cpu', 'gpu'] as const) {
+  watch(() => [machine.value || !!blocker.value, s.value?.site[cls].queue] as const,
+        ([off]) => { if (!off) void loadNodes(cls) }, { immediate: true })
+}
+const nodeClasses = computed(() => [{ label: 'CPU', nodes: nodes.value.cpu }, { label: 'GPU', nodes: nodes.value.gpu }])
+const nodeRows = computed(() => hpcNodeRows(nodeClasses.value))
+const nodeNotes = computed(() => nodeClasses.value.map(c => hpcNodesNote(c.label, c.nodes)).filter((x): x is string => !!x))
+const nodesLoading = computed(() => !nodes.value.cpu || !nodes.value.gpu)
+const NODE_COLUMNS: SelectionColumn[] = [
+  { key: 'queue', label: 'Queue' }, { key: 'nodes', label: 'Nodes' }, { key: 'cpus', label: 'CPUs' },
+  { key: 'gpus', label: 'GPUs' }, { key: 'memory', label: 'Memory' },
+]
+// The GPU nodes' CPUs per GPU, offered for the rule when it is not already that
+const nodeShare = computed(() => {
+  const n = hpcNodeCpusPerGpu(nodes.value.gpu)
+  return n !== null && n !== s.value?.site.gpu.cpusPerGpu ? n : null
+})
+function useNodeShare() {
+  if (nodeShare.value === null) return
+  d['site.gpu.cpusPerGpu'].value = String(nodeShare.value)
+  void commit('site.gpu.cpusPerGpu')
+}
+
 const CLASSES: { name: HpcClassName; label: string }[] = [
   { name: 'cpu', label: 'CPU jobs' }, { name: 'gpu', label: 'GPU jobs' },
 ]
@@ -259,7 +291,23 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
                  v-tooltip.bottom="f.tip" />
         </template>
       </template>
+      <label class="cc-muted">CPUs per GPU</label>
+      <span />
+      <div class="cc-row hpc-rule">
+        <input class="hpc-grow" v-model="d['site.gpu.cpusPerGpu'].value" inputmode="numeric" placeholder="any"
+               @change="commit('site.gpu.cpusPerGpu')"
+               v-tooltip.bottom="'Only if the site requires an exact count, e.g. 12 on Gadi'" />
+        <button v-if="nodeShare !== null" class="cc-btn cc-btn-ghost cc-btn-micro" @click="useNodeShare"
+                v-tooltip.bottom="'The GPU nodes\' CPUs divided by their GPUs'">Use {{ nodeShare }}</button>
+      </div>
     </div>
+
+    <h3 class="cc-eyebrow hpc-sub">Nodes</h3>
+    <SelectionTable v-if="nodeRows.length" selection-mode="none" density="compact"
+                    :columns="NODE_COLUMNS" :rows="nodeRows" id-key="id"
+                    :row-tooltip="() => 'Per node, as the scheduler lists them'" />
+    <InlineNote v-for="t in nodeNotes" :key="t" class="cc-fs-xs" severity="warn" :short="t" />
+    <InlineNote v-if="nodesLoading" class="cc-fs-xs" icon="pi-spin pi-spinner" short="Asking the cluster" />
    </template>
 
     <div class="cc-row hpc-test">
@@ -333,6 +381,7 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
 .hpc-ask { display: flex; margin-top: 1.1rem; }
 .hpc-classes textarea { resize: vertical; min-width: 0; }
 .hpc-classes input { min-width: 0; }
+.hpc-rule { gap: 0.4rem; flex-wrap: nowrap; }
 .hpc-sub { margin: 1.1rem 0 0.5rem; }
 .hpc-first { margin-top: 0; }
 .hpc-cluster { display: flex; margin: 0 0 0.8rem; }

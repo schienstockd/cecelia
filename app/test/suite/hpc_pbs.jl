@@ -99,6 +99,45 @@ function _pbs_shims(dir::AbstractString)
     dir
 end
 
+@testset "HPC PBS: node shapes (shim qstat -Q/-B + pbsnodes)" begin
+    if Sys.iswindows()
+        @test_skip false
+    else
+        shims = mktempdir()
+        # gpuq routes to gpuq-exec, whose nodes carry `queue`; cpuq owns none, so it runs on the untagged
+        # ones; the server's default queue is cpuq
+        write(joinpath(shims, "qstat"), """
+            #!/bin/sh
+            case "\$*" in
+              "-Bf") printf 'Server: pbs\\n    default_queue = cpuq\\n';;
+              "-Qf gpuq") printf 'Queue: gpuq\\n    queue_type = Route\\n    route_destinations = gpuq-exec\\n';;
+              "-Qf cpuq") printf 'Queue: cpuq\\n    queue_type = Execution\\n';;
+              *) echo "qstat: Unknown queue" >&2; exit 1;;
+            esac
+            """)
+        write(joinpath(shims, "pbsnodes"), """
+            #!/bin/sh
+            for i in 1 2; do
+              printf 'gpu-%s\\n     queue = gpuq-exec\\n     resources_available.mem = 402653184kb\\n' \$i
+              printf '     resources_available.ncpus = 48\\n     resources_available.ngpus = 4\\n\\n'
+            done
+            printf 'cpu-1\\n     resources_available.mem = 192gb\\n     resources_available.ncpus = 48\\n\\n'
+            printf 'big-1\\n     resources_available.mem = 3tb\\n     resources_available.ncpus = 32\\n\\n'
+            printf 'copy-1\\n     queue = copyq-exec\\n     resources_available.ncpus = 48\\n     resources_available.mem = 196608mb\\n'
+            """)
+        for f in ("qstat", "pbsnodes"); chmod(joinpath(shims, f), 0o755); end
+        withenv("PATH" => shims * ":" * ENV["PATH"]) do
+            b, c = PbsBackend(HpcSite("pbs", "h", 22, "~/c", "", HpcClass("", "", "", "", ""), HpcClass("", "", "", "", ""))), HpcLocalConn()
+            g = hpc_node_shapes(b, c, "gpuq")
+            @test !g.shared && g.shapes == [Cecelia.HpcNodeShape(2, 48, 4, 384)]
+            d = hpc_node_shapes(b, c, "")                       # the default queue, on the shared pool
+            @test d.shared && d.shapes == [Cecelia.HpcNodeShape(1, 48, 0, 192), Cecelia.HpcNodeShape(1, 32, 0, 3072)]
+            e = try; hpc_node_shapes(b, c, "nope"); catch x; x; end
+            @test e isa HpcError && e.msg == "No queue named nope on the cluster"
+        end
+    end
+end
+
 @testset "HPC PBS: the backend's shell end to end (shim scheduler)" begin
     if Sys.iswindows() || isnothing(Sys.which("pgrep"))
         @test_skip false

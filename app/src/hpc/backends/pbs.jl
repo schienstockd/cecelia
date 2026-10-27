@@ -6,6 +6,7 @@
 struct PbsBackend <: HpcBackend
     site::HpcSite
 end
+hpc_backend_site(b::PbsBackend)::HpcSite = b.site
 
 # PBS job names: up to 236 characters at most sites (15 on old ones), starting with a letter.
 _pbs_job_name(name::AbstractString)::String =
@@ -76,6 +77,30 @@ function _hpc_status_script(::PbsBackend, ids::AbstractVector{<:AbstractString})
     rm -f "\$e"
     """
 end
+
+# The nodes behind a queue: a routing queue (Gadi's `gpuvolta`) is followed one hop to where it sends
+# jobs, and nodes are matched by their `queue` attribute. A queue that owns no nodes runs on the
+# untagged ones (PBS's rule), printed as a shared pool. Memory is converted to MB from PBS's units.
+_hpc_nodes_script(::PbsBackend, queue::AbstractString) = _hpc_sched_prelude("pbsnodes") * """
+    q=$(_sh_quote(queue))
+    [ -n "\$q" ] || q=\$(qstat -Bf 2>/dev/null | awk -F' = ' '/^ *default_queue = / {print \$2; exit}')
+    qstat -Qf "\$q" >/dev/null 2>&1 || { echo "$(_HPC_NOQUEUE_TAG)"; exit 0; }
+    d=\$(qstat -Qf "\$q" 2>/dev/null | awk -F' = ' '/^ *route_destinations = / {print \$2; exit}')
+    [ -n "\$d" ] || d=\$q
+    pbsnodes -a 2>/dev/null | awk -v want=",\$d," '
+      function mb(v) { u = tolower(v); n = u + 0
+        if (u ~ /tb\$/) return n * 1048576; if (u ~ /gb\$/) return n * 1024; if (u ~ /mb\$/) return n
+        if (u ~ /kb\$/) return int(n / 1024); return int(n / 1048576) }
+      function flush() { if (seen) print (q == "" ? "u" : index(want, "," q ",") ? "q" : "x"), c, g, m
+                         seen = 0; q = ""; c = 0; g = 0; m = 0 }
+      /^[^ \\t]/ { flush(); seen = 1; next }
+      /^[ \\t]+queue = / { q = \$3 }
+      /^[ \\t]+resources_available\\.ncpus = / { c = \$3 }
+      /^[ \\t]+resources_available\\.ngpus = / { g = \$3 }
+      /^[ \\t]+resources_available\\.mem = / { m = mb(\$3) }
+      END { flush() }' | grep -v '^x' | sort | uniq -c | awk '{print "$(_HPC_NODES_TAG)", \$2, \$1, \$3, \$4, \$5}'
+    true
+    """
 
 # The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`): `qselect` with no
 # state lists every unfinished job; their names come from one `qstat -f`.

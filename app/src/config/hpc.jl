@@ -39,7 +39,11 @@ struct HpcClass
     qos::String
     directives::String   # extra scheduler lines, verbatim
     preamble::String     # shell lines run before the task, verbatim
+    # A site rule, set by the user: a job asks for exactly this many CPUs per GPU (Gadi's GPU queues
+    # refuse any other count). 0 = no rule, the run's own CPUs, which most sites accept.
+    cpus_per_gpu::Int
 end
+HpcClass(queue, account, qos, directives, preamble) = HpcClass(queue, account, qos, directives, preamble, 0)
 
 """The machine-wide site settings, `custom.toml` `[hpc]` merged over `app/config.toml`."""
 struct HpcSite
@@ -61,7 +65,8 @@ struct HpcIdentity
     key_file::String
 end
 
-const _HPC_CLASS_KEYS = ("queue", "account", "qos", "directives", "preamble")
+const _HPC_CLASS_KEYS = ("queue", "account", "qos", "directives", "preamble", "cpusPerGpu")
+const _HPC_CPUS_PER_GPU_MAX = 256
 const _HPC_SITE_KEYS  = ("scheduler", "host", "port", "netQueue", "remoteDir", "email")
 # Which of the site's keys are shared by every profile (custom.toml); the rest are the profile's own.
 const _HPC_SHARED_KEYS   = ("scheduler", "host", "port", "netQueue")
@@ -82,8 +87,11 @@ _hstr(d::AbstractDict, k::String, default::String = "")::String = strip(string(g
 function _hpc_class(d)::HpcClass
     d isa AbstractDict || (d = Dict{String,Any}())
     # Directives and preamble are multi-line and used verbatim: strip only the outer whitespace.
+    # stored as typed; an unreadable count reads as no rule here and is refused at save
+    n = tryparse(Int, _hstr(d, "cpusPerGpu"))
     HpcClass(_hstr(d, "queue"), _hstr(d, "account"), _hstr(d, "qos"),
-             _hstr(d, "directives"), _hstr(d, "preamble"))
+             _hstr(d, "directives"), _hstr(d, "preamble"),
+             isnothing(n) || !(0 <= n <= _HPC_CPUS_PER_GPU_MAX) ? 0 : n)
 end
 
 function _hpc_site(d::AbstractDict)::HpcSite
@@ -122,7 +130,8 @@ end
 
 hpc_class_dict(c::HpcClass)::Dict{String,Any} =
     Dict{String,Any}("queue" => c.queue, "account" => c.account, "qos" => c.qos,
-                     "directives" => c.directives, "preamble" => c.preamble)
+                     "directives" => c.directives, "preamble" => c.preamble,
+                     "cpusPerGpu" => c.cpus_per_gpu)
 
 """`custom.toml` / JSON shape of a site — the same keys `set_hpc_site!` accepts."""
 hpc_site_dict(s::HpcSite)::Dict{String,Any} =
@@ -194,7 +203,15 @@ function set_hpc_site!(patch::AbstractDict; name::AbstractString = active_profil
             v isa AbstractDict || throw(ArgumentError("'$k' must be an object"))
             for (ck, cv) in v
                 String(ck) in _HPC_CLASS_KEYS || throw(ArgumentError("Unknown HPC setting '$k.$ck'"))
-                merged[k][String(ck)] = string(cv)
+                if String(ck) == "cpusPerGpu"
+                    t = strip(string(cv))
+                    n = isempty(t) ? 0 : tryparse(Int, t)
+                    (isnothing(n) || !(0 <= n <= _HPC_CPUS_PER_GPU_MAX)) &&
+                        throw(ArgumentError("CPUs per GPU must be a whole number, 0–$(_HPC_CPUS_PER_GPU_MAX)"))
+                    merged[k]["cpusPerGpu"] = n
+                else
+                    merged[k][String(ck)] = string(cv)
+                end
             end
         elseif k == "port"
             n = v isa Integer ? Int(v) : tryparse(Int, string(v))

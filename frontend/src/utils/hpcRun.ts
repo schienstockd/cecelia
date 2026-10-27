@@ -31,7 +31,7 @@ export const HPC_RESOURCE_FIELDS: { key: keyof HpcResourcesForm; spec: string; l
 /** The slider stops: sizes a cluster hands out, well inside the backend's bounds (dispatch.jl
  *  `_HPC_RESOURCE_KEYS`). Memory and CPUs double; time follows the walltimes queues are cut at. */
 export const HPC_STEPS: Record<keyof HpcResourcesForm, number[]> = {
-  cpus:        [1, 2, 4, 8, 16, 32, 64],
+  cpus:        [1, 2, 4, 8, 12, 16, 24, 32, 48, 64],   // 12/24/48: common node core counts
   memGb:       [4, 8, 16, 32, 64, 128, 256, 512],
   gpus:        [0, 1, 2, 4],
   walltimeMin: [15, 30, 60, 120, 240, 480, 720, 1440, 2880],
@@ -63,6 +63,14 @@ export function hpcEligible(def: TaskDef | null | undefined): boolean {
 export function hpcDefaults(def: TaskDef): HpcResourcesForm {
   const b = def.hpc ?? {}
   return { cpus: b.cpus ?? 1, memGb: b.mem_gb ?? 1, gpus: b.gpus ?? 0, walltimeMin: b.walltime_min ?? 1 }
+}
+
+/** The CPUs a GPU job will ask for under the site's rule (`cpusPerGpu` on the GPU class), or null when
+ *  no rule applies and the form's own count goes. The backend applies the same rule
+ *  (`hpc_apply_site_rules`, dispatch.jl); this only lets the form show it. */
+export function hpcRuleCpus(s: HpcSettings | null, def: TaskDef, gpus: number): number | null {
+  const n = s?.site.gpu.cpusPerGpu ?? 0
+  return def.resource_pool === 'gpu' && n > 0 && gpus > 0 ? gpus * n : null
 }
 
 /** A cluster run's stage as the Task Manager shows it (the `task:hpc` frame, `list_tasks` hpc_stage). */
