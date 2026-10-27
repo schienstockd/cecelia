@@ -13,35 +13,39 @@ for new code that duplicates an existing helper or skips a convention
 commit message, and a git hook blocks the commit until it is. All of it is logged to the
 effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)).
 
-Five panels, one point or bar per ISO week (Monday–Sunday, UTC): three of lines, two of stacked bars:
+Six slots in two rows. Panels a, b, e (and f) have one point or bar per ISO week (Monday–Sunday,
+UTC); c and d have one bar per weekly judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), its date on
+the x axis:
 
-- **Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
+- **a. Changes reviewed and PRs merged.** A change reviewed is one branch + parent commit a recital
   reviewed. Running recital again on the same change counts once; a reviewer that errored counts
   none. PRs merged counts merge and squash commits on `main` (`git log --first-parent`) beside it:
   a PR usually carries more than one reviewed change.
-- **Findings per 100 changes**, one line per reviewer (fan-out audit, convention check): the week's
-  findings ÷ its changes reviewed. Each finding counts once, in the week it was first raised. Lower
-  means fewer flagged, which isn't the same as better code: a less sensitive prompt lowers it too.
-- **Findings fixed before commit**, one line per reviewer: the share of the week's findings whose
-  latest logged outcome is *fixed before commit*. The rest were shipped knowingly, called a false
+- **b. Findings fixed before commit**, one line per reviewer (fan-out audit, convention check): the
+  share of the week's findings whose latest logged outcome is *fixed before commit*. Each finding
+  counts once, in the week it was first raised. The rest were shipped knowingly, called a false
   positive, dropped, or have no outcome logged (mostly from before the hook required one); that
   split is in `effectiveness.json` and the image's description, not drawn.
-- **The judge's verdicts**, from the newest judge pass ([`WEEKLY_JUDGE.md`](WEEKLY_JUDGE.md)), one
-  panel per reviewer, by the week each note was raised: one bar per week, its verdicts stacked as
-  shares of that week's judged notes (so it reaches 100 %), with the week's *n* under its date: a count would mostly say how much of the backlog
-  the pass reached. *Fan-out*: the notes nobody fixed — mostly
-  fan-out **advisories** (lower-confidence calls that don't block a commit, so they aren't counted as
-  findings above) plus the findings that shipped unfixed — as a *real bug* (open, or parked: real
-  but can't happen in today's code), *gone* (the code changed under it) or *not a bug* (status
-  `dismissed`).
-  *Convention*: the `should reuse` findings nobody fixed, as *still there* (the copy still does an
-  existing helper's job), *gone* or *not a bug*. Until a pass has swept convention findings, that
-  panel says so. A week the pass fell inside is drawn as outlines: it isn't fully judged yet. So is a
-  week with under 10 judged notes: two notes make a 50 / 50 that means nothing.
-- **Hollow points and dashed lines** mark a week that is partial (logging began inside it) or had
-  under 10 sessions. A week under 10 sessions gets no point in the rate panels at all (a handful of
-  findings makes any percentage); its counts are still drawn. Weeks like that before logging got going
-  aren't drawn at all, nor is the week still running when the chart is drawn: both are in
+- **c. Real bugs still open at each judge pass, by age.** A *real bug* is one a verify agent called
+  `fix` (live) or `decide` (the owner's call), or found already fixed (`record.verify_verdict`'s
+  `fixed`, which also reads an older record's dismiss of a landed fix), or a `stranded` bug (commits
+  pushed to a PR's branch after it merged). It is *flagged* at the first pass where that was true. Each
+  bar stacks the real bugs whose status is `open` in that pass by how long since they were flagged:
+  under 1 week, 1–2 weeks, over 2 weeks (14 days or more). Parked, won't-fix and unverified bugs
+  aren't in it. Above the bar, *N fixed*: real bugs that pass found gone (or dismissed with their fix
+  landed) for the first time.
+- **d. Judge tokens per pass**, stacked by stage (verify, sweep, rules, from `run.spend.tokens`),
+  cache reads included, the total in millions over the bar. A pass from before token counting gets a
+  `*` at the baseline.
+- **e. Pre-commit review wait**: per reviewer, the median `duration_s` of the week's clean runs (an
+  errored run, mostly a timeout, isn't a wait anyone sat through to a result).
+- **f. Reviewer tokens.** The reviewers log their tokens on every `_run` row from #1807 on. Until a
+  whole week of those rows exists this slot says when logging began; then it plots the two reviewers'
+  tokens per week as stacked bars, cache reads included (errored runs count: they spent the tokens),
+  with a `*` at the baseline for weeks before logging and the week it began drawn as outlines.
+- **Hollow points, dashed lines and a `*`** mark a week that is partial (logging began inside it, or
+  it is still running) or had under 10 sessions: its numbers are drawn, but lean on few findings.
+  Leading weeks under 10 sessions, from before logging got going, aren't drawn; they're in
   `effectiveness.json`.
 - **Dots, not lines, under four weeks.** Until the chart has four weeks, the line panels draw each
   week's points with their values and don't join them: two joined points read as a trend.
@@ -64,7 +68,7 @@ Five panels, one point or bar per ISO week (Monday–Sunday, UTC): three of line
 
 ## What is published
 
-Aggregates only: counts per week and the judge's counts per status. No finding text, file path,
+Aggregates only: counts per week and per judge pass. No finding text, file path,
 branch, session id or uid leaves the machine. Every label in the image is fixed text or a number.
 
 ## Where it lives

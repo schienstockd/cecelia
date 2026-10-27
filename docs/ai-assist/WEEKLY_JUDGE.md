@@ -347,19 +347,22 @@ lines from recital's unfixed notes to the bug check's total, which add up: wrong
 judge listed them, logged since the last pass, merged per function, and what else feeds it). What they show
 and what they can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds them in three steps:
 
-- **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), PRs merged
+- **Aggregate.** Per ISO week: changes reviewed, sessions, each reviewer's median wait and, once
+  logged, its tokens (from the `_run` rows), PRs merged
   (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
   their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
   does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
-  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and per reviewer by week
-  raised. Numbers only.
-- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Five panels drawn like a paper
-  figure (lettered, y axes with round ticks): changes reviewed and PRs merged; findings per 100
-  changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts as
-  one stacked bar per week, shares of its judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
-  row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
-  gets no rate (leading ones aren't drawn); the week still running
-  is left out of the picture. Okabe-Ito swatches from
+  `CLAUDE.md`. Per pass record (`judge_passes`): the real bugs still open by age since first
+  flagged, the real bugs found gone for the first time, and the tokens per stage. Numbers only.
+- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Six slots, 2 × 3, drawn
+  like a paper figure (lettered, y axes with round ticks): a changes reviewed and PRs merged; b share
+  fixed before commit, one line per reviewer; c real bugs open at each pass, stacked by age, with *N
+  fixed* over each bar; d judge tokens per pass, stacked by stage; e median review wait, per
+  reviewer; f the reviewers' tokens per week once a whole week is logged, until then a note. What
+  each counts: [`AGENT_RECORD.md`](AGENT_RECORD.md). Partial (including the week still running) and
+  low-session weeks are hollow points on dashed segments with a `*` (leading low-session ones aren't
+  drawn); a pass with no token data gets a `*` at d's baseline. c's ages are an ordinal orange ramp
+  (`chart.AGES`), the rest Okabe-Ito swatches from
   `share/console_palette.json` on the README figures' shared light surface and dark ink
   (`figure_style.py`), so it reads the same on GitHub's light and dark themes; the numbers are in its
   `<desc>` too. The flow chart is drawn the same way, its counts under `flow` in `effectiveness.json`. Every label is fixed text or a
