@@ -1,6 +1,9 @@
 # A guide for a user's own Claude Code session
 
-**Status:** planning (2026-10-27). Drafted, nothing built. Decisions 3 and 5 are Dominik's.
+**Status:** **P1 built** (2026-10-27, branch `feat/user-claude-guide-p1`), with the recommended answers
+taken for Decision 3 (option d: the observer's channel) and Decision 5 (no; `register_label_files!` stays
+internal). P2 is a reply to the reporter, waiting on Dominik sending it. P3 is held unless sessions without
+the observer turn out to matter.
 
 ## Goal
 
@@ -102,6 +105,13 @@ On the way, it produced unversioned state with no provenance, and patches that e
    case appears.
 
 ## Phases
+
+**Built 2026-10-27 (P1).** The last paragraph of `SERVER_INSTRUCTIONS` (`mcp/cecelia_mcp/guidance.py`):
+a new step is a custom module; never hand-edit Cecelia's code, `ccid.json` or stores; report fixes with
+the patch. That's 27 words, bringing the instructions to 292 of their 300-word budget. The long form is
+`docs/ai-assist/OBSERVER-SETUP.md` → *When your terminal session works on Cecelia itself*, linked from the
+top of `docs/CUSTOM_MODULES.md`. Pinned by `GuidanceTest.test_instructions_reach_a_session_editing_cecelia`,
+which was watched failing on the old text.
 
 - **P1 — the guide (Decision 3 d).** Write Decision 4's text as a section of
   `docs/ai-assist/OBSERVER-SETUP.md` → *Chatting in your own terminal*. Add the one- or two-line rule to

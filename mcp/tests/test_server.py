@@ -397,6 +397,13 @@ class GuidanceTest(unittest.TestCase):
         self.assertIn("START", guidance.SERVER_INSTRUCTIONS)
         self.assertIn("configure", guidance.SERVER_INSTRUCTIONS)
 
+    def test_instructions_reach_a_session_editing_cecelia(self):
+        # A session working on Cecelia's files never opens a briefing, so the always-in-context half is
+        # the only place that can point it at a custom module instead of a hand edit
+        # (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
+        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "patch"):
+            self.assertIn(phrase, guidance.SERVER_INSTRUCTIONS)
+
     def test_instructions_stay_short(self):
         # These sit in the system prompt of EVERY session with this server registered — and the
         # observer is registered user-scope, so most of those sessions are not about Cecelia at all.
