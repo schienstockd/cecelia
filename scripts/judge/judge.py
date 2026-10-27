@@ -17,8 +17,8 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 # the usage-limit reading is shared with the autonomous runs; judge callers keep reaching it as `judge.X`
 from cecelia.effectiveness.claude_cli import (  # noqa: E402,F401
-    EX_TEMPFAIL, RESET_FALLBACK, RateLimited, failure_text, limit_exit, rate_limit, read_result, reset_at,
-    resolve_claude_bin)
+    EX_TEMPFAIL, RESET_FALLBACK, USAGE_KEYS, RateLimited, failure_text, limit_exit, rate_limit, read_result,
+    reset_at, resolve_claude_bin, tokens)
 
 CALL_USD = 0.75
 TIMEOUT_SEC = 240
@@ -30,22 +30,11 @@ class JudgeError(RuntimeError):
     nothing was judged."""
 
 
-#: The token counts the CLI reports, under the names the record uses.
-_USAGE_KEYS = {"input": "input_tokens", "cache_write": "cache_creation_input_tokens",
-               "cache_read": "cache_read_input_tokens", "output": "output_tokens"}
-
-
-def tokens(out: dict) -> dict[str, int]:
-    """Token counts from one `claude -p --output-format json` result; zeros when it reported none."""
-    usage = out.get("usage") or {}
-    return {k: int(usage.get(src) or 0) for k, src in _USAGE_KEYS.items()}
-
-
 def add_tokens(meter: dict | None, counts: dict | None) -> None:
     """Add one call's counts into `meter`, in place. A caller that passes no meter keeps nothing."""
     if meter is None:
         return
-    for k in _USAGE_KEYS:
+    for k in USAGE_KEYS:
         meter[k] = meter.get(k, 0) + int((counts or {}).get(k, 0))
 
 
