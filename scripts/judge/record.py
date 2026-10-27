@@ -46,7 +46,9 @@ _BUGS_HOW_TO = (
     "The next pass checks each one again and marks the fixed ones `gone`. "
     "`pixi run judge-review` walks these one at a time and can open a briefed fix session for each, "
     "or answer `wont_fix` for a bug that isn't worth fixing. "
-    "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
+    "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. A local one "
+    "(`stranded-local-…`) is commits made on the local branch after its PR merged and never pushed: push them "
+    "in a new PR, or delete the branch if they were abandoned. Findings raised on those commits wait under it. "
     "An *agent run* bug is an error an autonomous run hit; with no `file:line`, start from the tool and the error. "
     "A *repeated agent error* is a 4xx with a reason that agents hit in several runs: the input was wrong each "
     "time, so the fix is the guidance (the tool's description, the MCP guidance, the error message), not the API. "
@@ -300,7 +302,7 @@ def bug_location(b: dict) -> str:
 
 def _bug_where(b: dict) -> str:
     if b.get("kind") == "stranded":
-        return f"stranded · PR #{b.get('pr')} `{b.get('branch')}`"
+        return f"stranded{' locally' if b.get('local') else ''} · PR #{b.get('pr')} `{b.get('branch')}`"
     return f"`{bug_location(b)}`"
 
 
@@ -333,6 +335,9 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
                     f"- Evidence: {v.get('evidence', '')}", ""]
         if b.get("kind") == "stranded":
             out += [f"**Commits:** {', '.join(f'`{c}`' for c in b.get('commits', []))}", ""]
+            out += [f"**Waiting on them** (`{w['key']}`, {_bug_where(w)}): {w.get('desc') or ''}"
+                    for w in b.get("waiting", [])]
+            out += [""] if b.get("waiting") else []
             continue
         if b.get("review"):
             out += [f"**Run review** (cause `{b.get('cause')}`, run {b.get('run') or '?'}, entry `{b.get('entry')}` in "

@@ -6,17 +6,19 @@ struct SlurmBackend <: HpcBackend
 end
 
 _slurm_job_name(name::AbstractString)::String = "cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_")
+hpc_job_name(::SlurmBackend, name::AbstractString) = _slurm_job_name(name)
 
 """
     hpc_render_script(b::SlurmBackend, spec) -> String
 
 The sbatch script: D8's resource model as `#SBATCH` lines, the class's extra directives verbatim, then
-the common body. The log path is relative: sbatch resolves it against the job dir it is submitted from.
+the common body. `--output` is the scheduler's own log (the job writes `job.log` itself); the path is
+relative, which sbatch resolves against the job dir it is submitted from.
 """
 function hpc_render_script(b::SlurmBackend, spec::HpcJobSpec)::String
     cls = hpc_class(b.site, spec.class)
     d = ["--job-name=" * _slurm_job_name(spec.name),
-         "--output=" * HPC_JOB_LOG,
+         "--output=" * HPC_SCHED_LOG,
          "--cpus-per-task=$(spec.cpus)",
          "--mem=$(spec.mem_gb)G",
          "--time=" * _hpc_walltime(spec.walltime_min)]
@@ -38,15 +40,36 @@ end
 function hpc_submit(b::SlurmBackend, c::HpcConn, spec::HpcJobSpec)::String
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec), "sbatch --parsable $(HPC_JOB_SCRIPT)";
                                           prelude = _hpc_sched_prelude("sbatch"));
-                    what = "Submit")
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = first(split(_last_line(out, ""), ';'))
     occursin(r"^\d+$", id) || throw(HpcError("Submit: unexpected reply from sbatch"))
     String(id)
 end
 
+# Every job of the user's, with a pending one's reason (`%r`: `Priority`, `Resources`, a limit's name).
 _hpc_status_script(::SlurmBackend, ids::AbstractVector{<:AbstractString}) =
-    _hpc_sched_prelude("squeue") *
-    "squeue -h -u \"\$(id -un)\" -o '$(_HPC_STATUS_TAG) %i %T' || exit 96\n"
+    _hpc_sched_prelude("squeue") * """
+    q=\$(squeue -h -u "\$(id -un)" -o '%i %T %r') || exit 96
+    printf '%s\\n' "\$q" | while read -r i s r; do
+      [ -n "\$i" ] || continue
+      echo "$(_HPC_STATUS_TAG) \$i \$s"
+      [ "\$s" = PENDING ] && [ "\$r" != None ] && echo "$(_HPC_REASON_TAG) \$i \$r"
+    done
+    true
+    """
+
+# The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`).
+_hpc_active_script(::SlurmBackend) = _hpc_sched_prelude("squeue") * """
+    q=\$(squeue -h -u "\$(id -un)" -o '%i %j') || exit 96
+    printf '%s\\n' "\$q" | awk '\$2 ~ /^cecelia-/ {print "$(_HPC_ACTIVE_TAG) " \$1 " " \$2}'
+    """
+
+# The two reasons nearly every wait has, in words; any other is shown as SLURM names it.
+const _SLURM_WAITS = Dict("Priority" => "Other jobs are ahead in the queue",
+                          "Resources" => "Waiting for free nodes")
+
+_hpc_parse_reasons(::SlurmBackend, out::AbstractString)::Dict{String,String} =
+    Dict{String,String}(k => get(_SLURM_WAITS, v, v) for (k, v) in _hpc_tagged_reasons(out))
 
 const _SLURM_QUEUED  = ("PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD", "REQUEUE_FED",
                         "RESV_DEL_HOLD", "SUSPENDED")

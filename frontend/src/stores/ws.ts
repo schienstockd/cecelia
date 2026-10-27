@@ -17,8 +17,9 @@ import { useViewerStore } from './viewer'
 import { markTtlSeconds } from '../utils/viewer/markLifetime'
 import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
+import { adoptsRailJob, railJobRow } from '../utils/railJobs'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
-import { HPC_ENV_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
+import { HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
 import { writtenImageVersion } from '../utils/taskResultVersion'
 
 // `signedOut`: the backend is up but refuses this browser — it has no sign-in cookie (the API token,
@@ -484,6 +485,12 @@ export const useWsStore = defineStore('ws', () => {
             { source: 'task', detail: tail || undefined },
           )
         }
+        // A job the backend started (cluster env install, model weights) has no row until this frame.
+        const job = { taskId, status, fun: String(data.fun ?? ''), pool: String(data.pool ?? ''),
+                      startedAt: parseRailTime(data.startedAt) }
+        if (adoptsRailJob(job, useTaskStore().tasks.find(t => t.id === taskId))) {
+          useTaskStore().adoptJob(railJobRow(job))
+        }
         // the backend's own timestamps — see utils/taskElapsed.ts for why they beat stamping locally
         useTaskStore().setStatus(taskId, status as any, {
           startedAt:  parseRailTime(data.startedAt),
@@ -497,8 +504,9 @@ export const useWsStore = defineStore('ws', () => {
         if (taskId.startsWith('system-env-install:') && (status === 'done' || status === 'failed')) {
           invalidateSystemEnvs()
         }
-        // The cluster env install (hpc_api.jl) — Settings → HPC re-reads the env state.
-        if (taskId === HPC_ENV_JOB_ID && (status === 'done' || status === 'failed' || status === 'cancelled')) {
+        // The cluster env install or clean-up (hpc_api.jl) — Settings → HPC re-reads the env state.
+        if ((taskId === HPC_ENV_JOB_ID || taskId === HPC_CLEAN_JOB_ID) &&
+            (status === 'done' || status === 'failed' || status === 'cancelled')) {
           notifyHpcEnvChanged()
         }
         if (imageUid) {

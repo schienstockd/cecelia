@@ -1,5 +1,5 @@
 # PBS Pro / OpenPBS — the second scheduler backend (docs/todo/HPC_PLAN.md → Decision 7/8, P5): qsub /
-# qselect / qstat -x / qdel. Pure renderers and parsers, plus one remote call per verb.
+# qstat -f / qstat -x / qdel. Pure renderers and parsers, plus one remote call per verb.
 #
 # Torque (the older PBS fork) is not this: it has no `qstat -x`.
 
@@ -10,13 +10,15 @@ end
 # PBS job names: up to 236 characters at most sites (15 on old ones), starting with a letter.
 _pbs_job_name(name::AbstractString)::String =
     first("cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_"), 230)
+hpc_job_name(::PbsBackend, name::AbstractString) = _pbs_job_name(name)
 
 """
     hpc_render_script(b::PbsBackend, spec) -> String
 
 The qsub script: D8's resource model as `#PBS` lines, the class's extra directives verbatim, then the
-common body. The log is an absolute path: PBS resolves a relative `-o` on the execution host's home,
-not the submit dir.
+common body. `-o` is the scheduler's own log (the job writes `job.log` itself, because PBS spools `-o`
+on the node until the job ends); it is an absolute path: PBS resolves a relative `-o` on the execution
+host's home, not the submit dir.
 
 Resources are job-wide (`-l ncpus`, `-l mem`, `-l ngpus`), not a `select` chunk: PBS Pro turns a
 job-wide request into a one-chunk select itself, and NCI Gadi refuses `-l select` outright. The account
@@ -26,7 +28,7 @@ by `-P` alone, and records `-A` without using it.
 function hpc_render_script(b::PbsBackend, spec::HpcJobSpec)::String
     cls = hpc_class(b.site, spec.class)
     d = ["-N " * _pbs_job_name(spec.name),
-         "-o " * spec.dir * "/" * HPC_JOB_LOG,
+         "-o " * spec.dir * "/" * HPC_SCHED_LOG,
          "-j oe",
          "-l ncpus=$(spec.cpus)",
          "-l mem=$(spec.mem_gb)gb"]
@@ -48,25 +50,40 @@ end
 function hpc_submit(b::PbsBackend, c::HpcConn, spec::HpcJobSpec)::String
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec), "qsub $(HPC_JOB_SCRIPT)";
                                           prelude = _hpc_sched_prelude("qsub"));
-                    what = "Submit")
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = _last_line(out, "")
     occursin(r"^\d+(\.[A-Za-z0-9_.-]+)?$", id) || throw(HpcError("Submit: unexpected reply from qsub"))
     String(id)
 end
 
-# `qselect` prints FULL job ids (the `qstat` table truncates long ones), one per line, per state.
 const _PBS_QUEUED  = ("Q", "H", "W", "T", "S")
 const _PBS_RUNNING = ("R", "E", "B")
 
+# ONE scheduler query per poll, for the jobs asked about: `qstat -f <ids>` gives each one's
+# `job_state` and, for a waiting job, the `comment` PBS keeps on it ("Not Running: Insufficient amount
+# of resource: ncpus …"; first line only). A finished or unknown id is only absent (it reads as gone);
+# PBS says so on stderr and exits non-zero, so the exit code cannot tell an unreachable server from a
+# finished job. Any OTHER stderr line can, and fails the poll: an outage must not read as "the job is
+# gone".
 function _hpc_status_script(::PbsBackend, ids::AbstractVector{<:AbstractString})
-    io = IOBuffer()
-    print(io, _hpc_sched_prelude("qselect"))
-    println(io, "u=\$(id -un)")
-    for s in vcat(collect(_PBS_QUEUED), collect(_PBS_RUNNING))
-        println(io, "qselect -u \"\$u\" -s $s | sed 's/^/$(_HPC_STATUS_TAG) /; s/\$/ $s/' || exit 96")
-    end
-    String(take!(io))
+    q = join(_sh_quote.(ids), " ")
+    _hpc_sched_prelude("qstat") * """
+    e=\$(mktemp) || exit 96
+    qstat -f $q 2>"\$e" | awk '/^Job Id:/ {id = \$3}
+      /^ +job_state = / {print "$(_HPC_STATUS_TAG) " id " " \$3}
+      /^ +comment = / {sub(/^ +comment = /, ""); sub(/^Not Running: /, ""); print "$(_HPC_REASON_TAG) " id " " \$0}'
+    if grep -v -e 'Job has finished' -e 'Unknown Job Id' "\$e" | grep -q .; then cat "\$e" >&2; rm -f "\$e"; exit 96; fi
+    rm -f "\$e"
+    """
 end
+
+# The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`): `qselect` with no
+# state lists every unfinished job; their names come from one `qstat -f`.
+_hpc_active_script(::PbsBackend) = _hpc_sched_prelude("qselect") * """
+    ids=\$(qselect -u "\$(id -un)") || exit 96
+    [ -z "\$ids" ] || qstat -f \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id " " \$3}'
+    true
+    """
 
 function _hpc_parse_status(::PbsBackend, out::AbstractString)::Dict{String,RemoteJobState}
     st = Dict{String,RemoteJobState}()

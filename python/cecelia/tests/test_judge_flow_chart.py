@@ -99,7 +99,19 @@ class FlowTest(unittest.TestCase):
         svg = self.f.render_svg(d)
         ET.fromstring(svg)
         self.assertIn("From 6 notes to 4 bugs", svg)
-        self.assertNotIn("commits pushed", svg)   # a line with nothing on it is left out
+        self.assertNotIn("commits made on", svg)   # a line with nothing on it is left out
+
+    def test_a_finding_waiting_on_stranded_commits_reached_that_bug(self):
+        events = [_finding("fanout-00000001"), _finding("fanout-00000002")]
+        record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [
+            {"key": "fanout-00000001", "status": "open"},
+            {"key": "stranded-local-feat-x", "kind": "stranded", "local": True, "status": "open",
+             "waiting": [{"key": "fanout-00000002"}]}]}
+        d = self.f.aggregate(events, [record])
+        into = d["into_check"]
+        self.assertEqual((into["not_listed"], into["merged"], into["stranded"]), (0, 1, 1))
+        ledger = self.f._ledger(into, sum(d["check"].values()))
+        self.assertEqual(sum({"": 1, "+": 1, "−": -1}[sign] * n for sign, n, _ in ledger if sign != "="), ledger[-1][1])
 
     def test_a_finding_from_before_slugs_counts_by_its_inline_outcome(self):
         old = [_row("fanout_audit_finding", {"file": "a.py", "line": 1, "outcome": "fixed_pre_commit"}),

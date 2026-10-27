@@ -380,6 +380,7 @@ end
         "/api/profile/settings/patch", # USER_PROFILE_PLAN Phase 4 — merge partial dict, null deletes
         "/api/hpc/settings/set", "/api/hpc/test",   # HPC_PLAN P1
         "/api/hpc/env/install",                     # HPC_PLAN P2
+        "/api/hpc/env/cleanup",                     # Settings → HPC Clean up / Delete all
         "/api/projects/claim",         # USER_PROFILE_PLAN Phase 5 — add active profile to owners
         "/api/projects/unclaim",       # USER_PROFILE_PLAN Phase 5 — remove active profile from owners
         "/api/projects/share",         # clear every owner — visible to every profile
@@ -461,10 +462,11 @@ end
         "/api/update/apply", "/api/update/revert",
         "/api/hpc/test",   # would ssh to whatever host the config names
         "/api/hpc/env/install",   # would submit an install job to it
+        "/api/hpc/env/cleanup",   # would delete files in its remote folder
         "/api/observer/register", # runs `claude mcp add-json` / removes local-scope entries (runtests
                                   # also sandboxes CLAUDE_CONFIG_DIR — this keeps the CLI out entirely)
     ]
-    # counts pinned below: 67 GET, 92 POST, 17 not live-called
+    # counts pinned below: 67 GET, 92 POST, 18 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
     STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab", "/api/auth"]
@@ -493,7 +495,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 114 && length(POST_ROUTES) == 173
+    @test length(GET_ROUTES) == 114 && length(POST_ROUTES) == 174
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
