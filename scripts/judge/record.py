@@ -55,6 +55,18 @@ _BUGS_HOW_TO = (
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
 
 
+def verify_verdict(verdict: str | None, b: dict) -> str | None:
+    """A verify verdict as counted: `dismiss` on a bug a commit naming its key landed for is `fixed`
+    (the agent found the fix, not a wrong finding; records from before `fixed` existed said that)."""
+    return "fixed" if verdict == "dismiss" and b.get("fix_landed") else verdict
+
+
+def verified_fixed(b: dict) -> bool:
+    """Verify found this bug real and already fixed. Its status is `gone`, except a repeated agent
+    error's (`dismissed`, to stay muted) and an older record's dismiss of a landed fix: count it fixed."""
+    return verify_verdict((b.get("verify") or {}).get("verdict"), b) == "fixed"
+
+
 def parked_why(v: dict) -> str:
     """A parked bug's `why`, from its `guard` verdict."""
     return (f"verified guard ({v.get('date') or '?'}): can't happen yet"
@@ -323,8 +335,9 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
                     f"`{b.get('project')}`" + (f", guide `{b['guide']}`" if b.get("guide") else "")
                     + f", first seen {b['first_seen']}): {b['desc']}", ""]
         elif b.get("kind") == "agent_run":
-            out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
-                    f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
+            # first and last hit, both run dates: `first_seen` is the pass that listed it, after the run
+            out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first hit "
+                    f"{(b.get('logged') or b['first_seen'])[:10]}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
             out += [f"**{'Duplicate' if b.get('kind') == 'duplicate' else 'Finding'}** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                     f"first seen {b['first_seen']}): {b['desc']}", ""]

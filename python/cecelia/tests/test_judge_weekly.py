@@ -244,8 +244,10 @@ class WeeklyTest(_WeeklyFixture):
     def test_a_landed_fix_verify_dismissed_counts_as_fixed_in_the_headline(self):
         fix = [{"commit": "abcdef0123", "subject": "fix"}]
         record = self.build("2026-10-05", bugs=[_bug("B1", status="dismissed", fix_landed=fix),
-                                                _bug("B2", status="gone"), _bug("B3", status="dismissed")])
-        self.assertIn("2 fixed since the last pass, 0 waiting", self.w._pr_body(record))
+                                                _bug("B2", status="gone"), _bug("B3", status="dismissed"),
+                                                # a repeated error verify found fixed stays dismissed (muted)
+                                                _bug("B4", status="dismissed", repeat=True, verify={"verdict": "fixed"})])
+        self.assertIn("3 fixed since the last pass, 0 waiting", self.w._pr_body(record))
 
     def test_the_headline_says_parked_bugs_and_the_backlog_against_the_last_pass(self):
         self.rec.write(self.build("2026-09-28", bugs=[_bug(f"B{i}", status="unjudged") for i in range(1, 4)]))

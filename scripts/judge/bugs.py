@@ -15,7 +15,8 @@ and PR say how it moved, and the recital console warns when it grew two passes i
 The record's `bugs` list is the work list: a session pointed at the record fixes the `open` ones
 on a normal branch, and the next pass re-checks them and marks the fixed ones `gone`. A finding
 whose change hasn't reached the SHA yet (uncommitted, or on an unmerged branch) is `unmerged`
-and waits, unjudged.
+and waits, unjudged. A change reaches it by ancestry or in the head of a PR from its branch that
+merged into the SHA (a squash or rebase merge leaves no ancestry): `gh` is asked once per branch.
 
 A convention finding marked `should reuse` that nobody fixed is swept too, as `kind: "duplicate"`:
 new code that copies a helper the codebase already has. It can't misbehave, so the judge asks a
@@ -36,8 +37,9 @@ never took (`stranded`).
 A bug verify called `guard` (the flaw is there, nothing reachable triggers it) is `parked`: carried,
 off the work list, and not judged again. Each pass checks for free whether a commit names its key
 (`fix_landed`) or one since its verify SHA touched its file (an agent-run error with no file: whether
-a run hit it again); if so, it goes back to `open` with its verdict cleared, so verify looks at it
-again: at most `PARKED_RECHECK` a pass, the rest wait parked for a slot.
+a run hit it again); if so, a file or function that no longer exists makes it `gone` for free, and
+otherwise it goes back to `open` with its verdict cleared, so verify looks at it again: at most
+`PARKED_RECHECK` a pass, the rest wait parked for a slot.
 
 A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
 gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
@@ -74,7 +76,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.log import RESOLVED_EVENTS, latest_resolutions_by_slug  # noqa: E402
-from cecelia.effectiveness.git_context import git_output, merged_prs_since  # noqa: E402
+from cecelia.effectiveness.git_context import git_output, merged_pr_heads, merged_prs_since  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
 
 
@@ -108,8 +110,8 @@ FROZEN_PATHS = ("docs/ai-assist/judge-runs/", "docs/archive/")
 #: Statuses the next pass carries; the rest are reported once.
 CARRY = ("open", "unjudged", "unmerged", "parked")
 #: An agent-run error the owner closed is carried too, unchanged: the next run that hits it would
-#: otherwise raise it as new. Not `gone` / `dismissed`: verify dismisses a fixed bug too, so one that
-#: comes back is a regression and is raised again.
+#: otherwise raise it as new. Not `gone` / `dismissed`: a fixed one (verify's `fixed`, which is `gone`)
+#: that comes back is a regression and is raised again.
 MUTED = ("wont_fix",)
 #: A dismissed repeated error is carried muted too: its message still fires on every run that makes
 #: the mistake, fixed or not, so a new hit is no regression. It re-opens once its run count reaches
@@ -256,13 +258,39 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     return sorted(out.values(), key=lambda c: c["logged"] or "")
 
 
-def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path) -> bool:
+class PrHeads:
+    """The merged PRs opened from each branch (`git_context.merged_pr_heads`), asked once per branch
+    per pass. `lookup` answers None when `gh` can't; `unavailable` names the branches that happened to."""
+
+    def __init__(self, lookup: _t.Callable[[str], list[dict] | None]):
+        self._lookup, self._seen, self.unavailable = lookup, {}, []
+
+    def __call__(self, branch: str) -> list[dict]:
+        if branch not in self._seen:
+            prs = self._lookup(branch)
+            if prs is None:
+                self.unavailable.append(branch)
+            self._seen[branch] = prs or []
+        return self._seen[branch]
+
+
+def _is_ancestor(a: str | None, b: str | None, repo: pathlib.Path) -> bool:
+    return bool(a and b) and git_output("merge-base", "--is-ancestor", a, b, cwd=str(repo)) is not None
+
+
+def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path,
+            heads: _t.Callable[[str], list[dict]] | None = None) -> bool:
     """Whether the change a finding was raised on has reached `sha`.
 
     Recital reviews the uncommitted diff on top of `commit`, so the change is the first commit
-    after `commit` on `branch`: no such commit yet means it is still being worked on, and one that
-    `sha` doesn't contain means it hasn't merged. A deleted branch counts as landed (merged and
-    cleaned up, or abandoned — either way main is what's live), and so does a row with no branch.
+    after `commit` on `branch`. It has landed when `sha` contains it, or when a PR from `branch`
+    merged into `sha` with it in the PR's head: a squash or rebase merge copies the branch's commits,
+    so ancestry alone never sees them. A commit after the head the PR merged at never landed (the
+    stranded-commit scan reports those). No such commit (none yet, or the branch was rebased past
+    `commit`) means it is still being worked on, unless the branch's whole tip merged in a PR: the
+    branch is finished, like a deleted one. A deleted branch counts as landed (merged and cleaned up,
+    or abandoned — either way main is what's live), and so does a row with no branch.
+    `heads(branch)`: its merged PRs (`PrHeads`); without it, ancestry only.
     """
     if not branch:
         return True
@@ -270,11 +298,15 @@ def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path
         tip = git_output("rev-parse", "-q", "--verify", ref, cwd=str(repo))
         if not tip:
             continue
-        if not commit:
-            return git_output("merge-base", "--is-ancestor", tip, sha, cwd=str(repo)) is not None
         after = (git_output("rev-list", "--ancestry-path", "--reverse", f"{commit}..{tip}", cwd=str(repo))
-                 or "").split()
-        return bool(after) and git_output("merge-base", "--is-ancestor", after[0], sha, cwd=str(repo)) is not None
+                 or "").split() if commit else []
+        change = after[0] if after else tip
+        if after or not commit:
+            if _is_ancestor(change, sha, repo):
+                return True
+        return any(_is_ancestor(change, pr.get("headRefOid"), repo)
+                   and _is_ancestor((pr.get("mergeCommit") or {}).get("oid"), sha, repo)
+                   for pr in (heads(branch) if heads else []))
     return True
 
 
@@ -532,6 +564,7 @@ def _queue_order(group: list[dict]) -> tuple:
 def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | None,
           judge: _t.Callable[[str], tuple[dict, float]] | None = None, no_judge: bool = False,
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
+          pr_heads: _t.Callable[[str], list[dict] | None] | None = None,
           repo: pathlib.Path = _REPO, meter: dict | None = None,
           failures: dict | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
@@ -544,8 +577,13 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
     answer for (failed, or over the budget) waits `unjudged`, except a carried `open` one, which stays
     open. A carried `parked` bug skips the judge: it stays parked unless its file changed since it
-    was verified, and then only up to `PARKED_RECHECK` a pass go back to verify. A failed judge call is said in `failures["sweep"]` and ends the sweep; a
-    `judge.RateLimited` propagates.
+    was verified; one whose file or function is gone is `gone` for free, and only up to
+    `PARKED_RECHECK` of the rest a pass go back to verify. A failed judge call is said in
+    `failures["sweep"]` and ends the sweep; a `judge.RateLimited` propagates.
+
+    `pr_heads(branch)`: the merged PRs from a branch (default `gh`, asked only for a branch whose change
+    ancestry doesn't place in `sha`), so a squash-merged branch lands. When it can't answer, those
+    branches fall back to ancestry and stay `unmerged`, said in `failures["landed"]`.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
@@ -582,6 +620,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     groups: dict[tuple, list[dict]] = {}
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
     unpark: list[tuple[dict, str]] = []   # parked bugs whose re-check fired, and why
+    heads = PrHeads(pr_heads or (lambda br: merged_pr_heads(br, cwd=str(repo))))
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
         if b.get("was") in MUTED:
             bugs.append({**_strip(b), "status": b["was"], "muted": True,
@@ -601,7 +640,11 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             continue
         if _parked(b):
             back = _touched(b, sha, repo)
-            if back:
+            gone = back and locate(b, sha, repo)["gone"]   # free, before it takes a re-check slot
+            if gone:
+                bugs.append({**_strip(b), "status": "gone",
+                             "why": f"{gone} (parked {(b.get('verify') or {}).get('date') or '?'} as guard)"})
+            elif back:
                 unpark.append((b, back))
             else:
                 bugs.append({**_strip(b), "status": "parked", "why": _record.parked_why(b.get("verify") or {})})
@@ -614,7 +657,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                    "an agent run hit this error; no file:line to excerpt, so verify traces it")
             bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date), "why": why})
             continue
-        if not _landed(b.get("branch"), b.get("commit"), sha, repo):
+        if not _landed(b.get("branch"), b.get("commit"), sha, repo, heads):
             # `?` (no location) names no place to merge on: its own key
             waits.setdefault((b.get("branch"), b.get("file"),
                               b["key"] if b.get("file") == _record.NO_FILE else b.get("line")), []).append(b)
@@ -629,6 +672,13 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
              b["key"] if b.get("kind") == "agent_run" else b.get("kind"))   # a duplicate joins duplicates
         groups.setdefault(g, []).append({**b, "code": where["code"],
                                          **({"canonical": canonical(b, sha, repo)} if b.get("kind") == "duplicate" else {})})
+    if heads.unavailable:
+        said = (f"gh couldn't list merged PRs for {len(heads.unavailable)} branch(es) "
+                f"({', '.join(heads.unavailable[:3])}{', …' if len(heads.unavailable) > 3 else ''}): "
+                "a squash-merged one among them stays `unmerged` this pass")
+        print(f"bug sweep: {said}", file=sys.stderr)
+        if failures is not None:
+            failures["landed"] = said
     bugs += _unpark(unpark, date)
     bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
              for g in waits.values()]
@@ -696,7 +746,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="sweep as of this pass date (default: today)")
     ap.add_argument("--ref", default="origin/main", help="the code to check against")
     ap.add_argument("--no-judge", action="store_true", help="no judge call: what it would see is `unjudged`")
-    ap.add_argument("--no-stranded", action="store_true", help="skip the stranded-commit scan (no gh, no fetch)")
+    ap.add_argument("--no-stranded", action="store_true",
+                    help="skip the stranded-commit scan (no merged-PR list, no fetch; landing still asks gh per branch)")
     args = ap.parse_args(argv)
     date = args.date or _dt.date.today().isoformat()
     earlier = _load_sibling("review").applied_pass_records(before=date)

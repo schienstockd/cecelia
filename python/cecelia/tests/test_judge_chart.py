@@ -218,6 +218,12 @@ class AggregateTest(_Fixture):
         self.assertEqual(w["by_reviewer"]["convention"]["false_positive"], 1)
         self.assertEqual(w["findings"]["fixed_pre_commit"] + w["findings"]["false_positive"] + w["findings"]["none"], 3)
 
+    def test_a_dismissed_bug_verify_found_fixed_counts_as_gone(self):
+        legacy = {"status": "dismissed", "verify": {"verdict": "dismiss"}, "fix_landed": [{"commit": "f" * 40}]}
+        new = {"kind": "pass", "date": "2026-10-09", "bugs": [legacy, {"status": "dismissed", "verify": {"verdict": "dismiss"}}]}
+        judge = self.c.aggregate(_week(), [new])["judge"]
+        self.assertEqual((judge["gone"], judge["dismissed"]), (1, 1))
+
     def test_judge_verdicts_land_in_the_week_the_item_was_raised(self):
         advisory = _ev("fanout_audit_advisory", "2026-09-29T01:00:00Z",
                        {"file": "a.py", "line": 3, "marker": "plausible", "desc": "x"})

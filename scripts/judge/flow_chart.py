@@ -45,9 +45,10 @@ _FIXED = "fixed_pre_commit"
 
 
 #: Bug-check / verify column per verify verdict. A bug with one went to a verify agent.
-_BY_VERDICT = {"fix": "real", "decide": "real", "guard": "parked", "dismiss": "not_a_bug"}
+#: `fixed` is a real bug already fixed: real, but not filed (its status is `gone`, so it counts as fixed).
+_BY_VERDICT = {"fix": "real", "decide": "real", "fixed": "real", "guard": "parked", "dismiss": "not_a_bug"}
 assert set(_BY_VERDICT) == set(_verify.VERDICTS), "a new verdict needs a column here"
-assert {v for v, c in _BY_VERDICT.items() if c == "real"} == set(_issues.FILED_VERDICTS)
+assert {v for v, c in _BY_VERDICT.items() if c == "real"} - {"fixed"} == set(_issues.FILED_VERDICTS)
 #: Bug-check column per status, for a bug no verify agent has seen. `open` / `parked` are waiting on one.
 _BY_STATUS = {"unmerged": "waiting", "unjudged": "waiting", "gone": "settled", "dismissed": "settled",
               "wont_fix": "settled", "open": "verify", "parked": "verify"}
@@ -66,6 +67,8 @@ def _bug_class(b: dict) -> tuple[str, str]:
 
 
 def _real_class(b: dict) -> str:
+    if _record.verified_fixed(b):   # `dismissed` when a repeated error, or an older record's dismiss
+        return "fixed"
     return _REAL_BY_STATUS.get(b.get("status")) or ("open_issue" if b.get("issue") else "not_filed")
 
 

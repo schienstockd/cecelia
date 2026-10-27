@@ -83,8 +83,9 @@ class VerifyTest(unittest.TestCase):
         bugs = [_bug("b", verify={"verdict": "fix", "date": "2026-10-03"}, fix_landed=landed, reverify=True)]
         self.assertEqual([b["key"] for b in self.v.eligible(bugs)], ["b"])
         out, _ = self.v.verify(bugs, date="2026-10-10", sha="s" * 40, agent=self.agent({"b": "dismiss"}))
-        self.assertEqual((out[0]["status"], out[0]["verify"]["date"], "reverify" in out[0]),
-                         ("dismissed", "2026-10-10", False))
+        # a dismiss after a fix landed is the fix, not a wrong finding: gone, counted `fixed`
+        self.assertEqual((out[0]["status"], out[0]["verify"]["verdict"], out[0]["verify"]["date"], "reverify" in out[0]),
+                         ("gone", "fixed", "2026-10-10", False))
         self.assertIn("(a commit naming this key landed: fix: it (b) (ffffffff))", self.prompts[0])
         # over the cap: the old verdict stands, so the bug stays on the work list as it was
         out, _ = self.v.verify(bugs, date="2026-10-10", sha="s", agent=self.agent(), cap_usd=0)
@@ -100,7 +101,22 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual((by["b"]["status"], by["b"]["verify"]["verdict"]), ("dismissed", "dismiss"))
         self.assertNotIn("verify", by["c"])
         self.assertEqual((summary["groups"], summary["verified"], summary["usd"]), (1, 2, 1.0))
-        self.assertEqual(summary["precision"], {"plausible": {"fix": 0, "decide": 1, "guard": 0, "dismiss": 1}})
+        self.assertEqual(summary["precision"], {"plausible": {"fix": 0, "decide": 1, "guard": 0, "fixed": 0, "dismiss": 1}})
+
+    def test_fixed_is_gone_and_counts_apart_from_dismiss(self):
+        bugs = [_bug("a"), _bug("b"), _bug("r", kind="agent_run", repeat=True, marker="repeated agent error",
+                                           file=None, branch=None)]
+        out, summary = self.v.verify(bugs, date="2026-10-03", sha="s" * 40,
+                                     agent=self.agent({"a": "fixed", "b": "dismiss", "r": "fixed"}))
+        by = {b["key"]: b for b in out}
+        self.assertEqual((by["a"]["status"], by["a"]["why"]), ("gone", "verified fixed: wrong labels"))
+        self.assertEqual(by["b"]["status"], "dismissed")
+        # a repeated error stays dismissed, so it is carried muted and re-opens only on growth
+        self.assertEqual((by["r"]["status"], by["r"]["verify"]["verdict"]), ("dismissed", "fixed"))
+        self.assertEqual(summary["precision"]["plausible"], {"fix": 0, "decide": 0, "guard": 0, "fixed": 1, "dismiss": 1})
+        self.assertIn("- fixed: the finding was right, but this code no longer has the defect", self.v._BRIEF)
+        carried = _bug("c", status="dismissed", verify={"verdict": "dismiss"}, fix_landed=[{"commit": "f" * 40}])
+        self.assertEqual(self.v.precision([carried])["plausible"]["fixed"], 1)   # an older record's dismiss
 
     def test_guard_parks_a_bug_with_its_trigger(self):
         def guard(prompt):
