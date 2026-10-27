@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry } from '../stores/tasks'
 import { TASK_STATUS } from '../lib/taskStatus'
+import { hpcShownStatus } from '../utils/hpcRun'
 import { openPopoutWindow } from '../lib/popout'
 import { useCopyFlash } from '../composables/useCopyFlash'
 import { useWsStore } from '../stores/ws'
@@ -363,9 +364,9 @@ const FILTERS: ChipOption[] = [
           @row-click="r => select(r.entry)">
 
           <template #cell-status="{ row: r }">
-            <i :class="['pi', TASK_STATUS[r.status].icon, 'row-icon']"
-              :style="{ color: TASK_STATUS[r.status].color }"
-              v-tooltip.right="TASK_STATUS[r.status].label" />
+            <i :class="['pi', TASK_STATUS[r.shownStatus].icon, 'row-icon']"
+              :style="{ color: TASK_STATUS[r.shownStatus].color }"
+              v-tooltip.right="r.hpcTip || TASK_STATUS[r.shownStatus].label" />
           </template>
 
           <template #cell-module="{ row: r }">
@@ -443,8 +444,8 @@ const FILTERS: ChipOption[] = [
       <div class="tm-log-panel">
         <template v-if="selected">
           <div class="log-header">
-            <i :class="['pi', TASK_STATUS[selected.status].icon, 'log-status-icon']"
-               :style="{ color: TASK_STATUS[selected.status].color }" />
+            <i :class="['pi', TASK_STATUS[hpcShownStatus(selected.status, selected.hpcStage)].icon, 'log-status-icon']"
+               :style="{ color: TASK_STATUS[hpcShownStatus(selected.status, selected.hpcStage)].color }" />
             <div class="log-title-block">
               <div class="log-title-row">
                 <span class="log-title">#{{ selected.seq }} — {{ selected.label }}</span>
@@ -481,7 +482,7 @@ const FILTERS: ChipOption[] = [
             </div>
           </div>
 
-          <CcProgressBar v-if="selected.status === 'running' && selected.progress !== undefined"
+          <CcProgressBar v-if="hpcShownStatus(selected.status, selected.hpcStage) === 'running' && selected.progress !== undefined"
             class="log-progress" :value="selected.progress"
             :aria-label="`${selected.label} progress`" />
 

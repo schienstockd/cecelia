@@ -15,6 +15,7 @@ export interface HpcClassSettings {
   qos: string
   directives: string
   preamble: string
+  cpusPerGpu: number    // a site rule the user sets: exactly this many CPUs per GPU; 0 = no rule
 }
 
 export interface HpcSite {
@@ -124,13 +125,14 @@ export const HPC_DRAFT_FIELDS = [
   'identity.user', 'identity.keyFile', 'project.account',
   ...(['cpu', 'gpu'] as const).flatMap(c =>
     (['queue', 'account', 'qos', 'directives', 'preamble'] as const).map(k => `site.${c}.${k}`)),
+  'site.gpu.cpusPerGpu',
 ] as const
 
-/** The stored value at `path`, as the text a field shows ('' when absent). */
+/** The stored value at `path`, as the text a field shows ('' when absent; a rule of 0 = none, blank). */
 export function hpcFieldValue(s: HpcSettings | null, path: string): string {
   let v: unknown = s
   for (const k of path.split('.')) v = v == null ? undefined : (v as Record<string, unknown>)[k]
-  return v == null ? '' : String(v)
+  return v == null || (path.endsWith('.cpusPerGpu') && v === 0) ? '' : String(v)
 }
 
 /** The save request for one field, from its draft text. `site.port` is sent as a number; text that is
@@ -217,4 +219,65 @@ export function onHpcEnvChanged(cb: () => void): () => void {
 
 export function notifyHpcEnvChanged(): void {
   for (const cb of [..._envListeners]) cb()
+}
+
+// ── The nodes behind a class's queue ───────────────────────────────────────────────────────────────
+//
+//   GET /api/hpc/nodes?class=cpu|gpu → HpcNodes (one ssh call)
+//
+// Facts read from the scheduler, shown beside the class. They never set anything: a site rule (Gadi's
+// CPUs per GPU) is the user's `cpusPerGpu`, which the node share can fill in one click.
+
+export interface HpcNodeShape { nodes: number; cpus: number; gpus: number; memGb: number }
+export interface HpcNodes {
+  queue: string
+  shared: boolean       // the queue owns no nodes; these are a pool other queues share (PBS)
+  shapes: HpcNodeShape[]  // most nodes first
+  error: string
+}
+
+export async function fetchHpcNodes(cls: HpcClassName): Promise<HpcNodes> {
+  const res = await fetch(`/api/hpc/nodes?class=${cls}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data as { error?: string })?.error ?? `HTTP ${res.status}`)
+  return data as HpcNodes
+}
+
+/** One row of the Nodes table: display strings, the queue named on its first row only. */
+export interface HpcNodeRow { id: string; queue: string; nodes: string; cpus: string; gpus: string; memory: string }
+
+/** The Nodes table for the classes' queues, most nodes first per queue. A shared pool lists its `max`
+ *  commonest kinds and then a "+N more kinds" row, so a mixed cluster stays a few lines long. A class
+ *  with nothing to list (an error, no nodes) has no rows; `hpcNodesNote` says why. */
+export function hpcNodeRows(classes: { label: string; nodes: HpcNodes | null }[], max = 3): HpcNodeRow[] {
+  const rows: HpcNodeRow[] = []
+  for (const { label, nodes: n } of classes) {
+    if (!n || n.error || !n.shapes.length) continue
+    const queue = `${label}: ${n.queue || 'default'}${n.shared ? ' (shared)' : ''}`
+    const shown = n.shared ? n.shapes.slice(0, max) : n.shapes
+    shown.forEach((s, i) => rows.push({
+      id: `${label}-${i}`, queue: i === 0 ? queue : '', nodes: String(s.nodes), cpus: String(s.cpus),
+      gpus: s.gpus ? String(s.gpus) : '–', memory: `${s.memGb} GB`,
+    }))
+    const rest = n.shapes.length - shown.length
+    if (rest > 0) rows.push({ id: `${label}-more`, queue: '', nodes: `+${rest} more kinds`, cpus: '', gpus: '', memory: '' })
+  }
+  return rows
+}
+
+/** Why a class has no rows in the Nodes table, or null when it has some (or is still loading). */
+export function hpcNodesNote(label: string, n: HpcNodes | null): string | null {
+  if (!n) return null
+  if (n.error) return `${label}: ${n.error}`
+  return n.shapes.length ? null : `${label}: no nodes listed for this queue`
+}
+
+/** CPUs per GPU on this queue's nodes when every GPU node agrees on a whole number, else null. A
+ *  suggestion for the rule, never applied by itself: most sites take any count. */
+export function hpcNodeCpusPerGpu(n: HpcNodes | null): number | null {
+  if (!n || n.shared || n.error) return null
+  const ratios = new Set(n.shapes.filter(s => s.gpus > 0).map(s => s.cpus / s.gpus))
+  if (ratios.size !== 1) return null
+  const [r] = [...ratios]
+  return Number.isInteger(r) ? r : null
 }

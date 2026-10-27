@@ -71,6 +71,82 @@ end
     @test Cecelia.slurm_exit_reason("") == ""
 end
 
+@testset "HPC: resources used (SLURM sacct, units, the wait for final)" begin
+    sacct = "4211|COMPLETED|00:02:26|00:40.123||64G|12|08:00:00\n" *
+            "4211.batch|COMPLETED|00:02:26|00:40.120|2814552K||12|\n" *
+            "4211.extern|COMPLETED|00:02:26|00:00:00|1024K||12|\n"
+    u = Cecelia.slurm_usage(sacct)
+    @test u.mem_gb ≈ 2814552 / 1024^2 && u.mem_req_gb == 64.0 && u.cpus == 12 && u.final
+    @test u.walltime_min ≈ 146 / 60 && u.walltime_req_min == 480.0 && u.cpu_busy ≈ 40.123 / 146
+    @test isnothing(u.gpu_util)
+    # older SLURM: per-CPU memory, no time limit; a job still completing is not final
+    v = Cecelia.slurm_usage("7|COMPLETING|01:00:00|2-00:00:00||4Gc|4|UNLIMITED\n7.batch|COMPLETING|01:00:00|||||\n7.0|RUNNING||||||\n" *
+                            "7.1|COMPLETED|00:59:00|1-00:00:00|9G|||\n")
+    @test v.mem_req_gb == 16.0 && v.mem_gb == 9.0 && v.cpu_busy == 48.0 && !v.final && v.walltime_req_min == 0
+    @test hpc_usage_lines(v)[3] == "[HPC]   Walltime  1 h (no limit)"
+    @test isnothing(Cecelia.slurm_usage("")) && isnothing(Cecelia.slurm_usage("7|PENDING|00:00:00|00:00:00||4G|1|01:00:00\n"))
+    @test Cecelia._hpc_size_gb("8gb") == 8.0 && Cecelia._hpc_size_gb("64Gn") == 64.0 && isnothing(Cecelia._hpc_size_gb("n/a"))
+    @test Cecelia._hpc_duration_min("1-02:03:04") ≈ 1563 + 4 / 60 && Cecelia._hpc_duration_min("90") == 90.0 &&
+          isnothing(Cecelia._hpc_duration_min("UNLIMITED"))
+    @test isnothing(hpc_job_usage(LocalShellBackend(), HpcLocalConn(), "1"))
+
+    # The remote loop asks until the scheduler closes the job, and gives up early on a site with none.
+    if _HPC_SH
+        n = tempname()
+        ask = "c=\$(cat $n 2>/dev/null || echo 0); echo \$((c + 1)) > $n; [ \$c -ge 2 ] && echo 'job_state = F' || echo 'job_state = E'"
+        out = hpc_exec(HpcLocalConn(), Cecelia._hpc_usage_script(ask, "job_state = F"; pause_s = 0.1)).out
+        @test strip(out) == "job_state = F" && strip(read(n, String)) == "3"
+        rm(n; force = true)
+        out = hpc_exec(HpcLocalConn(), Cecelia._hpc_usage_script("echo \$((\$(cat $n 2>/dev/null || echo 0) + 1)) > $n", "x"; pause_s = 0.1)).out
+        @test strip(out) == "" && strip(read(n, String)) == "2"        # no accounting: two asks, not twelve
+        out = hpc_exec(HpcLocalConn(), Cecelia._hpc_usage_script("echo job_state = R", "job_state = F"; tries = 3, pause_s = 0.1)).out
+        @test strip(out) == "job_state = R"                            # still open after the tries: what it had
+        rm(n; force = true)
+    end
+end
+
+@testset "HPC: node shapes (parser + shim sinfo + this machine)" begin
+    P = Cecelia._hpc_parse_nodes
+    # the queue's own nodes win over a shared pool; equal shapes are summed; most nodes first; MB → GB
+    n = P("gpuvolta", "CECELIA-NODES q 100 48 4 393216\nCECELIA-NODES q 60 48 4 393216\n" *
+                      "CECELIA-NODES q 2 64 8 1048576\nCECELIA-NODES u 3000 48 0 196608\nnoise\n")
+    @test !n.shared && n.shapes == [Cecelia.HpcNodeShape(160, 48, 4, 384), Cecelia.HpcNodeShape(2, 64, 8, 1024)]
+    n = P("normal", "CECELIA-NODES u 30 48 4 1048576\nCECELIA-NODES u 3024 48 0 196608\n")
+    @test n.shared && first(n.shapes) == Cecelia.HpcNodeShape(3024, 48, 0, 192)
+    @test isempty(P("q", "").shapes) && !P("q", "").shared
+    e = try; P("gpuvolta2", "CECELIA-NOQUEUE\n"); catch x; x; end
+    @test e isa HpcError && e.msg == "No queue named gpuvolta2 on the cluster"
+    @test Cecelia.hpc_nodes_dict(Cecelia.HpcNodes("g", false, [Cecelia.HpcNodeShape(2, 48, 4, 384)])) ==
+          Dict("queue" => "g", "shared" => false,
+               "shapes" => [Dict("nodes" => 2, "cpus" => 48, "gpus" => 4, "memGb" => 384)])
+
+    if !Sys.iswindows()
+        shims = mktempdir()
+        # `-o '%P'` lists partitions (default starred); the shape format answers per partition
+        write(joinpath(shims, "sinfo"), """
+            #!/bin/sh
+            case "\$*" in
+              "-h -o %P") printf 'cpu*\\ngpu\\n';;
+              "-h -p gpu -o %P") echo gpu;;
+              "-h -p cpu -o %P") echo cpu;;
+              "-h -p gpu -o %D %c %m %G") printf '8 64+ 515000 gpu:a100:4(S:0-1)\\n2 64 515000 gpu:a100:2,tmp:1\\n';;
+              "-h -p cpu -o %D %c %m %G") printf '100 32 192000 (null)\\n';;
+            esac
+            """)
+        chmod(joinpath(shims, "sinfo"), 0o755)
+        withenv("PATH" => shims * ":" * ENV["PATH"]) do
+            b, c = SlurmBackend(_hpc_test_site()), HpcLocalConn()
+            g = hpc_node_shapes(b, c, "gpu")
+            @test !g.shared && g.shapes == [Cecelia.HpcNodeShape(8, 64, 4, 503), Cecelia.HpcNodeShape(2, 64, 2, 503)]
+            @test hpc_node_shapes(b, c, "").shapes == [Cecelia.HpcNodeShape(100, 32, 0, 188)]   # the default
+            e = try; hpc_node_shapes(b, c, "nope"); catch x; x; end
+            @test e isa HpcError && occursin("No queue named nope", e.msg)
+        end
+        me = only(hpc_node_shapes(LocalShellBackend(), HpcLocalConn(), "").shapes)
+        @test me.nodes == 1 && me.cpus >= 1
+    end
+end
+
 @testset "HPC: SLURM wait reasons (shim squeue)" begin
     if Sys.iswindows()
         @test_skip false
@@ -217,13 +293,22 @@ end
     end
 end
 
-# A stand-in for pixi: "installs" the env by linking this machine's python, or fails on demand.
-function _hpc_fake_pixi!(root::AbstractString; fail::Bool = false)
+# A stand-in for pixi: "installs" the env as a wrapper around this machine's python, or fails on
+# demand. The wrapper answers the Cellpose weights download itself (empty files, a `fake weights` line):
+# this machine's python may be pixi's, whose editable `cecelia` would otherwise really fetch 1.2 GB per
+# model. The weights are placed up front too, unless `weights = false`.
+function _hpc_fake_pixi!(root::AbstractString; fail::Bool = false, weights::Bool = true)
+    W = Cecelia.hpc_cellpose_weights_dir(root)
+    weights && (mkpath(W); foreach(m -> touch(joinpath(W, m)), Cecelia.hpc_cellpose_builtin_weights()))
     p = joinpath(root, "bin", "pixi-" * Cecelia.HPC_PIXI_VERSION)
     mkpath(dirname(p))
     py = something(Sys.which("python3"), Sys.which("python"))
+    wrapper = "#!/bin/sh\nif [ \"\$1\" = -m ] && [ \"\$2\" = cecelia.utils.model_weights ]; then shift 2; " *
+              "echo \"fake weights \$*\"; echo '[PROGRESS] 1/2'; mkdir -p \"\$CELLPOSE_LOCAL_MODELS_PATH\"; " *
+              "for m; do : > \"\$CELLPOSE_LOCAL_MODELS_PATH/\$m\"; done; exit 0; fi\nexec '$py' \"\$@\"\n"
     write(p, fail ? "#!/bin/sh\necho 'pixi: solve failed' >&2\nexit 1\n" :
-              "#!/bin/sh\necho \"fake pixi \$*\"\nmkdir -p .pixi/envs/default/bin && ln -sf '$py' .pixi/envs/default/bin/python\n")
+              "#!/bin/sh\necho \"fake pixi \$*\"\nmkdir -p .pixi/envs/default/bin && " *
+              "cat > .pixi/envs/default/bin/python <<'EOF'\n$(wrapper)EOF\nchmod +x .pixi/envs/default/bin/python\n")
     chmod(p, 0o755)
     p
 end
@@ -260,6 +345,16 @@ end
         @test hpc_env_status(b, c, root; lock).installed
         @test hpc_require_env(b, c, root; lock) == Cecelia.hpc_env_python(root, lock)
         @test hpc_install_env!(b, c, root; root = repo, poll_s = 0.2).message == "Already installed"
+        @test !any(l -> occursin("Downloading Cellpose weights", l), lines)     # present: not fetched
+        # An env without the built-in weights is not installed: a run would download them on a node
+        # that may have no internet. A reinstall fetches only what is missing.
+        rm(joinpath(Cecelia.hpc_cellpose_weights_dir(root), "cpsam"))
+        @test !hpc_env_status(b, c, root; lock).installed
+        empty!(lines)
+        r = hpc_install_env!(b, c, root; root = repo, poll_s = 0.2, on_log = l -> push!(lines, l))
+        @test r.ok && any(l -> occursin("Downloading Cellpose weights: cpsam", l) && !occursin("cpsam_v2", l), lines)
+        @test "fake weights cpsam" in lines && hpc_env_status(b, c, root; lock).installed
+        @test !any(startswith("[PROGRESS]"), lines)            # a download's byte counts stay out of the log
         # A new pixi.lock is a different env: refused until installed.
         write(joinpath(repo, "pixi.lock"), "version: 6\n# changed\n")
         @test !hpc_env_status(b, c, root; lock = hpc_lock_hash(; root = repo)).installed
@@ -293,6 +388,7 @@ end
         mk(parts...) = (mkpath(dirname(R(parts...))); write(R(parts...), "x"))
         lock = "abc123def456"
         mk("env", lock, Cecelia.HPC_ENV_MARKER); mk("env", "0ld0ld0ld0ld", "f")
+        foreach(m -> mk("assets", "cellpose", m), Cecelia.hpc_cellpose_builtin_weights())
         mk("bin", "pixi-" * Cecelia.HPC_PIXI_VERSION); mk("bin", "pixi-0.1.0")
         mk("cache", "pixi", "pkg"); mk("code", "c0de", "f")
         mk("jobs", "recent", "job.log"); mk("jobs", "ancient", "job.log")
@@ -383,6 +479,10 @@ end
         @test rt.exit === nothing && rt.reason == "Walltime reached"
 
         if get(ENV, "CECELIA_HPC_TEST_ENV_INSTALL", "") == "1"
+            # Placeholder Cellpose weights, so CI does not pull 2.4 GB per run: the install skips present
+            # files (its download is `cecelia.utils.model_weights`, tested on the Python side).
+            W = Cecelia._sh_quote(Cecelia.hpc_cellpose_weights_dir(root))
+            hpc_exec!(c, "mkdir -p $W && cd $W && touch $(join(Cecelia.hpc_cellpose_builtin_weights(), " "))\n"; what = "weights")
             lines = String[]
             ri = hpc_install_env!(b, c, root; poll_s = 10, on_log = l -> (push!(lines, l); println(l)))
             @test ri.ok

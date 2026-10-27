@@ -4,6 +4,7 @@
 struct SlurmBackend <: HpcBackend
     site::HpcSite
 end
+hpc_backend_site(b::SlurmBackend)::HpcSite = b.site
 
 _slurm_job_name(name::AbstractString)::String = "cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_")
 hpc_job_name(::SlurmBackend, name::AbstractString) = _slurm_job_name(name)
@@ -55,6 +56,21 @@ _hpc_status_script(::SlurmBackend, ids::AbstractVector{<:AbstractString}) =
       echo "$(_HPC_STATUS_TAG) \$i \$s"
       [ "\$s" = PENDING ] && [ "\$r" != None ] && echo "$(_HPC_REASON_TAG) \$i \$r"
     done
+    true
+    """
+
+# The nodes of a partition (`""` = the default, starred by sinfo): one `sinfo` line per kind, CPUs and
+# memory (MB) as numbers (a `+` = "at least", dropped) and the GPUs summed from the `gpu` GRES entries
+# (`gpu:4`, `gpu:a100:4(S:0-1)`).
+_hpc_nodes_script(::SlurmBackend, queue::AbstractString) = _hpc_sched_prelude("sinfo") * """
+    p=$(_sh_quote(queue))
+    [ -n "\$p" ] || p=\$(sinfo -h -o '%P' 2>/dev/null | awk '/\\*\$/ {sub(/\\*\$/, ""); print; exit}')
+    [ -n "\$p" ] || exit 0
+    sinfo -h -p "\$p" -o '%P' 2>/dev/null | grep -q . || { echo "$(_HPC_NOQUEUE_TAG)"; exit 0; }
+    sinfo -h -p "\$p" -o '%D %c %m %G' 2>/dev/null | awk '{
+      gsub(/\\+/, "", \$2); gsub(/\\+/, "", \$3); g = 0; k = split(\$4, a, ",")
+      for (i = 1; i <= k; i++) if (a[i] ~ /^gpu/) { s = a[i]; sub(/\\(.*/, "", s); j = split(s, b, ":"); g += b[j] + 0 }
+      print "$(_HPC_NODES_TAG) q", \$1, \$2, g, \$3 }'
     true
     """
 
@@ -120,3 +136,33 @@ function hpc_exit_reason(::SlurmBackend, c::HpcConn, id::AbstractString)::String
                    "scontrol show job $q 2>/dev/null | tr ' ' '\\n' | grep '^JobState='\n").out
     slurm_exit_reason(out)
 end
+
+const _SLURM_SACCT_USAGE = "JobID,State,Elapsed,TotalCPU,MaxRSS,ReqMem,AllocCPUS,Timelimit"
+
+"""
+    slurm_usage(text) -> Union{HpcUsage,Nothing}
+
+A finished job's use, from `sacct -n -P -o $(_SLURM_SACCT_USAGE)`: the allocation line (no `.` in its
+JobID) gives elapsed, CPU time and what was booked; peak memory is the largest `MaxRSS` of its steps.
+A per-CPU `ReqMem` (`4Gc`, older SLURM) is per CPU booked. `nothing` without accounting. Pure.
+"""
+function slurm_usage(text::AbstractString)::Union{HpcUsage,Nothing}
+    rows = [split(l, '|') for l in split(text, '\n') if count(==('|'), l) == 7]
+    i = findfirst(r -> !occursin('.', r[1]), rows)
+    isnothing(i) && return nothing
+    a = rows[i]
+    cpus = something(tryparse(Int, a[7]), 1)
+    req = _hpc_size_gb(a[6])
+    wall, wall_req = _hpc_duration_min(a[3]), something(_hpc_duration_min(a[8]), 0.0)   # UNLIMITED → 0
+    rss = [x for x in (_hpc_size_gb(r[5]) for r in rows) if !isnothing(x)]
+    (isnothing(req) || isnothing(wall) || isempty(rss)) && return nothing
+    endswith(lowercase(a[6]), "c") && (req *= cpus)
+    cput = something(_hpc_duration_min(a[4]), 0.0)
+    HpcUsage(maximum(rss), req, wall, wall_req, cpus, wall > 0 ? cput / wall : 0.0, nothing,
+             !isempty(a[2]) && !(first(split(a[2])) in _SLURM_QUEUED || first(split(a[2])) in _SLURM_RUNNING))
+end
+
+hpc_job_usage(::SlurmBackend, c::HpcConn, id::AbstractString)::Union{HpcUsage,Nothing} =
+    slurm_usage(hpc_exec(c, _hpc_sched_prelude("sacct") *
+                            _hpc_usage_script("sacct -n -P -j $(_sh_quote(id)) -o $(_SLURM_SACCT_USAGE) 2>/dev/null",
+                                              "^[^.|]+\\|(COMPLETED|FAILED|TIMEOUT|OUT_OF_MEMORY|CANCELLED|NODE_FAIL|PREEMPTED|BOOT_FAIL|DEADLINE)")).out)

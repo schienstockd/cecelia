@@ -176,13 +176,13 @@ const TL_COLUMNS: SelectionColumn[] = [
         :columns="TL_COLUMNS" :rows="rows" id-key="id"
         actions-width="5.5rem"
         :row-tooltip="r => r.task"
-        :row-class="r => `tone-${TASK_STATUS[r.status].tone} st-${r.status}`"
+        :row-class="r => `tone-${TASK_STATUS[r.shownStatus].tone} st-${r.shownStatus}`"
         :is-expanded="r => expanded.has(r.id)">
 
         <template #cell-status="{ row: r }">
-          <i :class="['pi', TASK_STATUS[r.status].icon, 'task-icon']"
-            :style="{ color: TASK_STATUS[r.status].color }"
-            v-tooltip.left="TIP[r.status]" />
+          <i :class="['pi', TASK_STATUS[r.shownStatus].icon, 'task-icon']"
+            :style="{ color: TASK_STATUS[r.shownStatus].color }"
+            v-tooltip.left="r.hpcTip || TIP[r.shownStatus]" />
         </template>
 
         <!-- The original TWO-ROW entry: label on top, image beneath, the running bar under both. One

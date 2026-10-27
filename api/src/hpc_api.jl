@@ -65,6 +65,22 @@ end
 # Blocking for up to HPC_TEST_TIMEOUT_S; the router serves each request on its own task.
 api_hpc_test(_body_bytes) = 200, JSON3.write(Cecelia.hpc_test_dict(hpc_test_connection()))
 
+# GET /api/hpc/nodes?class=cpu|gpu → {queue, shared, shapes: [{nodes, cpus, gpus, memGb}], error}: the
+# nodes behind that class's queue, asked of the scheduler (one ssh call). Shown beside the class in
+# Preferences → HPC, and the source of "use the node share" for CPUs per GPU.
+function api_hpc_nodes(req::HTTP.Request)
+    cls = get(HTTP.queryparams(HTTP.URI(req.target)), "class", "cpu")
+    cls in Cecelia.HPC_CLASSES || return 400, JSON3.write((; error = "class must be cpu or gpu"))
+    queue = Cecelia.hpc_class(hpc_site(), cls).queue
+    try
+        c, b = hpc_conn(), hpc_backend()
+        200, JSON3.write(merge(Cecelia.hpc_nodes_dict(hpc_node_shapes(b, c, queue)), Dict("error" => "")))
+    catch e
+        e isa HpcError || rethrow()
+        200, JSON3.write((; queue, shared = false, shapes = [], error = e.msg))
+    end
+end
+
 # ── The cluster environment (HPC_PLAN P2) ─────────────────────────────────────────────────────────
 #
 #   GET  /api/hpc/env           → {configured, lock, installed, job, installing, stage, cleaning,

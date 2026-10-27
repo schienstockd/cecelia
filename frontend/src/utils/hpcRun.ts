@@ -10,6 +10,7 @@ import type { TaskDef, HpcMemModel } from '../tasks/types'
 import { hpcTestBlocker, hpcEnvLine, type HpcSettings, type HpcEnvStatus } from './hpcSettings'
 import { formatBytes, type FrameGeometry } from '../tasks/paramAdvisors'
 import type { Severity } from '../lib/severity'
+import type { TaskStatus } from '../stores/tasks'
 
 export type RunTarget = 'local' | 'hpc'
 
@@ -31,7 +32,7 @@ export const HPC_RESOURCE_FIELDS: { key: keyof HpcResourcesForm; spec: string; l
 /** The slider stops: sizes a cluster hands out, well inside the backend's bounds (dispatch.jl
  *  `_HPC_RESOURCE_KEYS`). Memory and CPUs double; time follows the walltimes queues are cut at. */
 export const HPC_STEPS: Record<keyof HpcResourcesForm, number[]> = {
-  cpus:        [1, 2, 4, 8, 16, 32, 64],
+  cpus:        [1, 2, 4, 8, 12, 16, 24, 32, 48, 64],   // 12/24/48: common node core counts
   memGb:       [4, 8, 16, 32, 64, 128, 256, 512],
   gpus:        [0, 1, 2, 4],
   walltimeMin: [15, 30, 60, 120, 240, 480, 720, 1440, 2880],
@@ -65,6 +66,14 @@ export function hpcDefaults(def: TaskDef): HpcResourcesForm {
   return { cpus: b.cpus ?? 1, memGb: b.mem_gb ?? 1, gpus: b.gpus ?? 0, walltimeMin: b.walltime_min ?? 1 }
 }
 
+/** The CPUs a GPU job will ask for under the site's rule (`cpusPerGpu` on the GPU class), or null when
+ *  no rule applies and the form's own count goes. The backend applies the same rule
+ *  (`hpc_apply_site_rules`, dispatch.jl); this only lets the form show it. */
+export function hpcRuleCpus(s: HpcSettings | null, def: TaskDef, gpus: number): number | null {
+  const n = s?.site.gpu.cpusPerGpu ?? 0
+  return def.resource_pool === 'gpu' && n > 0 && gpus > 0 ? gpus * n : null
+}
+
 /** A cluster run's stage as the Task Manager shows it (the `task:hpc` frame, `list_tasks` hpc_stage). */
 const HPC_STAGE_TEXT: Record<string, string> = {
   sync: 'uploading', queued: 'queued', running: 'running', pull: 'downloading',
@@ -73,6 +82,14 @@ export function hpcStageLabel(stage?: string, job?: string): { short: string; ti
   if (!stage) return null
   const s = HPC_STAGE_TEXT[stage] ?? stage
   return { short: s, tip: `On the cluster: ${s}${job ? ` (job ${job})` : ''}` }
+}
+
+/**
+ * The status a row SHOWS: a cluster run is `running` to the scheduler from the moment it takes its slot,
+ * but while its job waits in the cluster's queue nothing is computing, so it reads as queued.
+ */
+export function hpcShownStatus(status: TaskStatus, stage?: string): TaskStatus {
+  return status === 'running' && stage === 'queued' ? 'queued' : status
 }
 
 /** What the user chose for this function, remembered per function (profile storage). */

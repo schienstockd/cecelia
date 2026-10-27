@@ -6,6 +6,7 @@
 struct PbsBackend <: HpcBackend
     site::HpcSite
 end
+hpc_backend_site(b::PbsBackend)::HpcSite = b.site
 
 # PBS job names: up to 236 characters at most sites (15 on old ones), starting with a letter.
 _pbs_job_name(name::AbstractString)::String =
@@ -61,7 +62,7 @@ const _PBS_RUNNING = ("R", "E", "B")
 
 # ONE scheduler query per poll, for the jobs asked about: `qstat -f <ids>` gives each one's
 # `job_state` and, for a waiting job, the `comment` PBS keeps on it ("Not Running: Insufficient amount
-# of resource: ncpus …"; first line only). A finished or unknown id is only absent (it reads as gone);
+# of resource: ncpus …"; `-w` so a long one is not wrapped onto a second line). A finished or unknown id is only absent (it reads as gone);
 # PBS says so on stderr and exits non-zero, so the exit code cannot tell an unreachable server from a
 # finished job. Any OTHER stderr line can, and fails the poll: an outage must not read as "the job is
 # gone".
@@ -69,7 +70,7 @@ function _hpc_status_script(::PbsBackend, ids::AbstractVector{<:AbstractString})
     q = join(_sh_quote.(ids), " ")
     _hpc_sched_prelude("qstat") * """
     e=\$(mktemp) || exit 96
-    qstat -f $q 2>"\$e" | awk '/^Job Id:/ {id = \$3}
+    qstat -f -w $q 2>"\$e" | awk '/^Job Id:/ {id = \$3}
       /^ +job_state = / {print "$(_HPC_STATUS_TAG) " id " " \$3}
       /^ +comment = / {sub(/^ +comment = /, ""); sub(/^Not Running: /, ""); print "$(_HPC_REASON_TAG) " id " " \$0}'
     if grep -v -e 'Job has finished' -e 'Unknown Job Id' "\$e" | grep -q .; then cat "\$e" >&2; rm -f "\$e"; exit 96; fi
@@ -77,11 +78,35 @@ function _hpc_status_script(::PbsBackend, ids::AbstractVector{<:AbstractString})
     """
 end
 
+# The nodes behind a queue: a routing queue (Gadi's `gpuvolta`) is followed one hop to where it sends
+# jobs, and nodes are matched by their `queue` attribute. A queue that owns no nodes runs on the
+# untagged ones (PBS's rule), printed as a shared pool. Memory is converted to MB from PBS's units.
+_hpc_nodes_script(::PbsBackend, queue::AbstractString) = _hpc_sched_prelude("pbsnodes") * """
+    q=$(_sh_quote(queue))
+    [ -n "\$q" ] || q=\$(qstat -Bf 2>/dev/null | awk -F' = ' '/^ *default_queue = / {print \$2; exit}')
+    qstat -Qf "\$q" >/dev/null 2>&1 || { echo "$(_HPC_NOQUEUE_TAG)"; exit 0; }
+    d=\$(qstat -Qf "\$q" 2>/dev/null | awk -F' = ' '/^ *route_destinations = / {print \$2; exit}')
+    [ -n "\$d" ] || d=\$q
+    pbsnodes -a 2>/dev/null | awk -v want=",\$d," '
+      function mb(v) { u = tolower(v); n = u + 0
+        if (u ~ /tb\$/) return n * 1048576; if (u ~ /gb\$/) return n * 1024; if (u ~ /mb\$/) return n
+        if (u ~ /kb\$/) return int(n / 1024); return int(n / 1048576) }
+      function flush() { if (seen) print (q == "" ? "u" : index(want, "," q ",") ? "q" : "x"), c, g, m
+                         seen = 0; q = ""; c = 0; g = 0; m = 0 }
+      /^[^ \\t]/ { flush(); seen = 1; next }
+      /^[ \\t]+queue = / { q = \$3 }
+      /^[ \\t]+resources_available\\.ncpus = / { c = \$3 }
+      /^[ \\t]+resources_available\\.ngpus = / { g = \$3 }
+      /^[ \\t]+resources_available\\.mem = / { m = mb(\$3) }
+      END { flush() }' | grep -v '^x' | sort | uniq -c | awk '{print "$(_HPC_NODES_TAG)", \$2, \$1, \$3, \$4, \$5}'
+    true
+    """
+
 # The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`): `qselect` with no
 # state lists every unfinished job; their names come from one `qstat -f`.
 _hpc_active_script(::PbsBackend) = _hpc_sched_prelude("qselect") * """
     ids=\$(qselect -u "\$(id -un)") || exit 96
-    [ -z "\$ids" ] || qstat -f \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id " " \$3}'
+    [ -z "\$ids" ] || qstat -f -w \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id " " \$3}'
     true
     """
 
@@ -111,6 +136,21 @@ const _PBS_EXIT_CODES = Dict(
 )
 
 """
+    pbs_wait_reason(comment) -> String
+
+PBS's wait comment in words: "Insufficient amount of resource: mem (R: 64gb A: 8gb T: 60tb)" is
+R(equested), A(vailable) and T(otal) of that resource on the queue's nodes. Anything else as is.
+"""
+function pbs_wait_reason(comment::AbstractString)::String
+    m = match(r"^Insufficient amount of resource: (\S+)(?: \(R: (\S+) A: (\S+) T: (\S+)\))?", comment)
+    isnothing(m) && return String(comment)
+    isnothing(m[2]) ? "Not enough free $(m[1]) yet" : "Not enough free $(m[1]) yet: asks $(m[2]), $(m[3]) free of $(m[4])"
+end
+
+_hpc_parse_reasons(::PbsBackend, out::AbstractString)::Dict{String,String} =
+    Dict(k => pbs_wait_reason(v) for (k, v) in _hpc_tagged_reasons(out))
+
+"""
     pbs_exit_reason(text) -> String
 
 A vanished job's end in brief, from `qstat -x -f` output (`Exit_status`, else the `comment` PBS
@@ -134,6 +174,30 @@ function pbs_exit_reason(text::AbstractString)::String
 end
 
 function hpc_exit_reason(::PbsBackend, c::HpcConn, id::AbstractString)::String
-    out = hpc_exec(c, _hpc_sched_prelude("qstat") * "qstat -x -f $(_sh_quote(id)) 2>/dev/null\n").out
+    out = hpc_exec(c, _hpc_sched_prelude("qstat") * "qstat -x -f -w $(_sh_quote(id)) 2>/dev/null\n").out
     pbs_exit_reason(out)
 end
+
+"""
+    pbs_usage(text) -> Union{HpcUsage,Nothing}
+
+A finished job's use, from `qstat -x -f` output: `resources_used.*` (peak `mem`, `walltime`, `cput`,
+and `gpu_util` where the site reports it) against `Resource_List.*`. `nothing` when the accounting is
+not there (history off, or the job too old). Pure, so it is tested on Gadi's own output.
+"""
+function pbs_usage(text::AbstractString)::Union{HpcUsage,Nothing}
+    f = Dict{String,String}(String(m[1]) => String(strip(m[2])) for m in eachmatch(r"^\s*([\w.]+) = (.*)$"m, text))
+    v(k) = get(f, k, "")
+    mem, mem_req = _hpc_size_gb(v("resources_used.mem")), _hpc_size_gb(v("Resource_List.mem"))
+    wall, wall_req = _hpc_duration_min(v("resources_used.walltime")), _hpc_duration_min(v("Resource_List.walltime"))
+    any(isnothing, (mem, mem_req, wall, wall_req)) && return nothing
+    cput = something(_hpc_duration_min(v("resources_used.cput")), 0.0)
+    gpus = something(tryparse(Int, v("Resource_List.ngpus")), 0)
+    gpu = gpus > 0 ? tryparse(Float64, v("resources_used.gpu_util")) : nothing
+    HpcUsage(mem, mem_req, wall, wall_req, something(tryparse(Int, v("Resource_List.ncpus")), 1),
+             wall > 0 ? cput / wall : 0.0, gpu, v("job_state") == "F")
+end
+
+hpc_job_usage(::PbsBackend, c::HpcConn, id::AbstractString)::Union{HpcUsage,Nothing} =
+    pbs_usage(hpc_exec(c, _hpc_sched_prelude("qstat") *
+                          _hpc_usage_script("qstat -x -f -w $(_sh_quote(id)) 2>/dev/null", "job_state = F")).out)

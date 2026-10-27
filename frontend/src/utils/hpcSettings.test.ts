@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { hpcTestBlocker, hpcTestLines, keyPickerStart, hpcFieldPatch, hpcFieldValue, hpcEnvLine, HPC_DRAFT_FIELDS, type HpcSettings, type HpcTestResult } from './hpcSettings'
+import { hpcTestBlocker, hpcTestLines, keyPickerStart, hpcFieldPatch, hpcFieldValue, hpcEnvLine, hpcNodeRows, hpcNodesNote, hpcNodeCpusPerGpu, HPC_DRAFT_FIELDS, type HpcSettings, type HpcTestResult, type HpcNodes } from './hpcSettings'
 
-const cls = { queue: '', account: '', qos: '', directives: '', preamble: '' }
+const cls = { queue: '', account: '', qos: '', directives: '', preamble: '', cpusPerGpu: 0 }
 const settings = (over: Partial<HpcSettings> = {}): HpcSettings => ({
   available: true,
   schedulers: [{ name: 'slurm', label: 'SLURM', available: true }],
@@ -117,5 +117,54 @@ describe('hpcEnvLine', () => {
   it('says a clean-up is running, and offers nothing meanwhile', () => {
     expect(hpcEnvLine({ ...base, installed: true, cleaning: true }))
       .toEqual({ text: 'Deleting files on the cluster', canInstall: false })
+  })
+})
+
+describe('hpcNodeRows / hpcNodesNote / hpcNodeCpusPerGpu', () => {
+  const nodes = (over: Partial<HpcNodes> = {}): HpcNodes =>
+    ({ queue: 'gpuvolta', shared: false, error: '', shapes: [{ nodes: 160, cpus: 48, gpus: 4, memGb: 384 }], ...over })
+
+  it('lists each kind of node, naming the queue once and capping a shared pool', () => {
+    const pool = nodes({ queue: 'normal', shared: true, shapes: [
+      { nodes: 3024, cpus: 48, gpus: 0, memGb: 192 }, { nodes: 732, cpus: 104, gpus: 0, memGb: 512 },
+      { nodes: 536, cpus: 28, gpus: 0, memGb: 128 }, { nodes: 268, cpus: 28, gpus: 0, memGb: 256 },
+      { nodes: 30, cpus: 48, gpus: 4, memGb: 1024 }] })
+    const rows = hpcNodeRows([{ label: 'CPU', nodes: pool }, { label: 'GPU', nodes: nodes() }])
+    expect(rows.map(r => [r.queue, r.nodes, r.cpus, r.gpus, r.memory])).toEqual([
+      ['CPU: normal (shared)', '3024', '48', '–', '192 GB'],
+      ['', '732', '104', '–', '512 GB'],
+      ['', '536', '28', '–', '128 GB'],
+      ['', '+2 more kinds', '', '', ''],
+      ['GPU: gpuvolta', '160', '48', '4', '384 GB'],
+    ])
+    expect(new Set(rows.map(r => r.id)).size).toBe(rows.length)
+    // a queue's own nodes are all listed; an empty queue name is the site default
+    const own = nodes({ queue: '', shapes: [{ nodes: 8, cpus: 64, gpus: 4, memGb: 503 }, { nodes: 2, cpus: 64, gpus: 2, memGb: 503 },
+                                             { nodes: 1, cpus: 8, gpus: 1, memGb: 64 }, { nodes: 1, cpus: 8, gpus: 2, memGb: 64 }] })
+    expect(hpcNodeRows([{ label: 'GPU', nodes: own }]).map(r => r.queue)).toEqual(['GPU: default', '', '', ''])
+    expect(hpcNodeRows([{ label: 'GPU', nodes: null }, { label: 'CPU', nodes: nodes({ error: 'x' }) }])).toEqual([])
+  })
+
+  it('says why a class has no rows', () => {
+    expect(hpcNodesNote('GPU', nodes({ error: 'No queue named x on the cluster' }))).toBe('GPU: No queue named x on the cluster')
+    expect(hpcNodesNote('CPU', nodes({ shapes: [] }))).toBe('CPU: no nodes listed for this queue')
+    expect(hpcNodesNote('GPU', nodes())).toBeNull()
+    expect(hpcNodesNote('GPU', null)).toBeNull()
+  })
+
+  it('offers the node share only when every GPU node agrees on a whole number', () => {
+    expect(hpcNodeCpusPerGpu(nodes())).toBe(12)
+    expect(hpcNodeCpusPerGpu(nodes({ shapes: [{ nodes: 8, cpus: 64, gpus: 4, memGb: 1 }, { nodes: 2, cpus: 64, gpus: 2, memGb: 1 }] }))).toBeNull()
+    expect(hpcNodeCpusPerGpu(nodes({ shapes: [{ nodes: 1, cpus: 32, gpus: 3, memGb: 1 }] }))).toBeNull()
+    expect(hpcNodeCpusPerGpu(nodes({ shapes: [{ nodes: 1, cpus: 48, gpus: 0, memGb: 1 }] }))).toBeNull()
+    expect(hpcNodeCpusPerGpu(nodes({ shared: true }))).toBeNull()
+  })
+
+  it('shows no rule as a blank field, and saves the text as typed', () => {
+    const s = { site: { gpu: { cpusPerGpu: 0 } } } as unknown as HpcSettings
+    expect(hpcFieldValue(s, 'site.gpu.cpusPerGpu')).toBe('')
+    expect(hpcFieldValue({ site: { gpu: { cpusPerGpu: 12 } } } as unknown as HpcSettings, 'site.gpu.cpusPerGpu')).toBe('12')
+    expect(hpcFieldPatch('site.gpu.cpusPerGpu', '12', '')).toEqual({ site: { gpu: { cpusPerGpu: '12' } } })
+    expect(HPC_DRAFT_FIELDS).toContain('site.gpu.cpusPerGpu')
   })
 })
