@@ -1,10 +1,11 @@
 # HPC dispatch — run Python-backed tasks on a cluster over SSH
 
-**Status:** P1–P5 merged (#1632, #1637, #1638, #1639, #1640), plus the per-user settings split
-(#1641). Durable docs are now [`docs/HPC.md`](../HPC.md); this plan is the design record. P6 remains:
-the first real-site run (Cellpose on SLURM; the procedure is in `docs/HPC.md` → *Testing on a real
-cluster*). Its findings decide what comes next. More ports (ridges and branching are traced) wait
-for it.
+**Status:** built. P1–P5 merged (#1632, #1637, #1638, #1639, #1640), plus the per-user settings split
+(#1641). P6, the first real-site run, was a Cellpose + measure run on NCI Gadi (PBS, gpuvolta) on
+2026-10-28; what it showed was missing shipped in #1786, #1796 and #1800 (job-wide resources and `-P`,
+live logs, node shapes and a CPUs-per-GPU rule, Cellpose weights at install, resources used). Durable
+docs are [`docs/HPC.md`](../HPC.md); this plan is the design record. Not yet run on a real SLURM site
+(only the CI container). More ports (ridges and branching are traced) are open.
 
 ## Goal
 
