@@ -102,3 +102,30 @@ claude --mcp-config <config_dir>/observer-mcp.json   # ~/.cecelia/… installed,
 
 which loads the server for that one session. The dialog only ever prints the *resolved* path — copy it
 from there rather than typing the placeholder above.
+
+## When your terminal session works on Cecelia itself
+
+A `claude` session in your terminal can do more than talk about your project. It can read Cecelia's
+code, fix an error you hit, or write a step Cecelia doesn't have. That's welcome. These rules make sure
+the work survives the next update and stays checkable. The observer's instructions carry the short form
+to every session (`mcp/cecelia_mcp/guidance.py`); this is the long form.
+
+- **Need a step Cecelia doesn't have?** Write it as a [custom module](../CUSTOM_MODULES.md), or a
+  plugin if others should run it. It then runs as a task like any other, with a log, QC, its parameters
+  recorded on the image, and a place in the analysis lineage. Code run by hand next to the project gets
+  none of that.
+- **Never hand-edit Cecelia's own files or your project's data files.** That means the code in the install,
+  `ccid.json`, `.h5ad` cell tables and the image or label stores. A hand edit skips the checks the app
+  makes on every write: atomic writes, name collisions, versioning. If a task already does the job, use
+  it; importing a label image made elsewhere is **Segment → Import labels** (`segment.importLabels`).
+  If none does, that's a custom module or a report.
+- **Fixed a bug locally?** Keep working, but the next update overwrites the patch. Send it to Dominik as a
+  report with the patch attached ([`USER_REPORTS.md`](../USER_REPORTS.md) is how reports are handled).
+  The cause is verified on `main` before anything ships, and the fix then reaches everyone.
+- **Just looking at your data, or making a figure?** Read it through Cecelia's accessors (`init_object`,
+  `pop_df`, `label_props`) or ask for a notebook (Notebooks page). Nothing goes back into the project
+  except through a task.
+
+Why this exists: a session that patched code, registered label stores by hand and drew figures outside
+the app produced every one of those gaps as a request, and each became a feature. The same work done
+as a module or a report would have reached everyone sooner, without a hand-made state to undo.

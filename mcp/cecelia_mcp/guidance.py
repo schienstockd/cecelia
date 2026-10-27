@@ -31,7 +31,9 @@ from cecelia_mcp.discovery import discovery_enabled
 # Budget: a few sentences. Every line here is paid for in every unrelated session, so anything that
 # can wait for the briefing waits for the briefing. It must, however, be enough on its own to stop
 # the two failure modes that happen BEFORE any tool call: guessing a project uid, and diving into
-# analysis without orienting.
+# analysis without orienting. The last paragraph is for a session working on Cecelia's FILES rather
+# than through these tools: it never opens a briefing, so this is the only place that reaches it
+# (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
 SERVER_INSTRUCTIONS = """\
 Read-only access to a running Cecelia project (immunological image analysis): images, processing \
 state, task logs, QC, populations, measurements, clustering, chains, notebooks and the lab log. The \
@@ -54,7 +56,10 @@ Everything here is read-only except a handful of additive actions taken only whe
 can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
 not a limitation to apologise for. (The one exception is an UNATTENDED run that was also given the \
 separate cecelia-autonomous server: there, its run_chain / run_task start what you design here.) If \
-these tools cannot reach Cecelia, say so; do not try to install, register or configure anything."""
+these tools cannot reach Cecelia, say so; do not try to install, register or configure anything.
+
+Editing Cecelia itself? A new step is a custom module (docs/CUSTOM_MODULES.md). Never hand-edit its \
+code, ccid.json or stores; updates overwrite edits, so report fixes with the patch."""
 
 # ── Delivered by get_session_briefing — the working rules ─────────────────────────────────────────
 #
