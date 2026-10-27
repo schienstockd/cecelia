@@ -136,6 +136,8 @@ def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: st
     reached: set[str] = set()
     from_notes = tagged_later = 0
     for b in bugs:
+        # findings waiting on stranded commits reached that bug: merged into it, like one function's notes
+        reached |= {w["key"] for w in b.get("waiting", [])} & eligible
         if b.get("kind") in ("agent_run", "stranded"):
             continue
         mine = set(b.get("sources") or [b["key"]]) & eligible
@@ -262,9 +264,9 @@ def _ledger(into: dict, bugs: int) -> list[tuple[str, int, str]]:
              ("−", into["rules_only"], "wrong home: these feed only the rule count"),
              ("−", into["not_listed"], "already gone when the judge first read them: not listed"),
              ("−", into["since_pass"], since),
-             ("−", into["merged"], "on a function another note names: one bug between them"),
+             ("−", into["merged"], "on a function another note names, or waiting on stranded commits: one bug"),
              ("+", into["tagged_later"], "tagged fixed only after the judge had listed them"),
              ("+", into["agent_run"], "errors hit by unattended agent runs"),
-             ("+", into["stranded"], "commits pushed to a PR after it merged"),
+             ("+", into["stranded"], "commits made on a PR's branch after it merged"),
              ("=", bugs, "bugs in the bug check")]
     return [ln for ln in lines if ln[1] or ln[0] in ("", "=")]

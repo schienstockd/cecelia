@@ -698,11 +698,13 @@ class SquashLandedTest(_Repo):
         super().setUp()
         self.git("checkout", "-q", "-b", "feat/x")
         self.change = self.commit("b.py", "def f():\n    return 1\n", msg="add f")
+        # a second commit, so the squash's patch is neither commit's (else `git cherry` lands it)
+        self.head = self.commit("c.py", "g = 1\n", msg="add g")
         self.git("checkout", "-q", "main")
         self.git("merge", "-q", "--squash", "feat/x")
         self.git("commit", "-q", "-m", "add f (#5)")
         self.squash = self.sha = self.git("rev-parse", "HEAD")
-        self.pr = {"number": 5, "headRefOid": self.change, "mergeCommit": {"oid": self.squash}}
+        self.pr = {"number": 5, "headRefOid": self.head, "mergeCommit": {"oid": self.squash}}
         # reviewed on top of main's first commit, then committed as `change` on the kept local branch
         self.found = _finding("fanout-00000001", file="b.py", line=2, branch="feat/x") | {"commit": self.git("rev-parse", "HEAD~1")}
 
@@ -720,12 +722,55 @@ class SquashLandedTest(_Repo):
         self.assertEqual([b["status"] for b in bugs], ["open"])   # judged: one function, one bug
         self.assertEqual(asked, ["feat/x"])                        # once per branch a pass
 
-    def test_a_commit_after_the_head_the_pr_merged_at_has_not_landed(self):
+    def after_the_merge(self):
+        """A commit on `feat/x` after the head #5 merged at, and a finding reviewed on top of that head."""
         self.git("checkout", "-q", "feat/x")
-        self.commit("b.py", "def f():\n    return 2\n", msg="after the merge")
+        self.late = self.commit("b.py", "def f():\n    return 2\n", msg="after the merge")
         self.git("checkout", "-q", "main")
-        later = self.found | {"commit": self.change}   # reviewed on top of the merged head
-        self.assertEqual(self.lands(lambda br: [self.pr], found=later), ["unmerged"])
+        return self.found | {"commit": self.head}
+
+    def test_a_commit_after_the_merged_head_never_pushed_is_a_local_stranded_bug(self):
+        later = self.after_the_merge()
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"], b.get("local")) for b in bugs],
+                         [("stranded-local-feat-x", "open", True)])   # no forever-unmerged row
+        s = bugs[0]
+        self.assertEqual((s["commits"], s["pr"], [w["key"] for w in s["waiting"]]), ([self.late], 5, ["fanout-00000001"]))
+        self.assertIn("after #5 merged were never pushed: `", s["desc"])
+        self.assertIn("after the merge (", s["desc"])   # subject and date
+        self.assertIn("git branch -D feat/x", s["desc"])
+        spec = importlib.util.spec_from_file_location("issues", _REPO / "scripts" / "judge" / "issues.py")
+        issues = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(issues)
+        self.assertFalse(issues.filed(s))   # nothing on GitHub to link
+
+    def test_a_pushed_commit_after_the_merged_head_joins_the_stranded_pr_bug(self):
+        later = self.after_the_merge()
+        self.git("update-ref", "refs/remotes/origin/feat/x", self.late)
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b.get("local"), [w["key"] for w in b["waiting"]]) for b in bugs],
+                         [("stranded-pr5", None, ["fanout-00000001"])])
+        # carried: the finding comes back out, is still waiting, and joins the carried bug again
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs},
+                              pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"], [w["key"] for w in b.get("waiting", [])]) for b in again],
+                         [("stranded-pr5", "open", ["fanout-00000001"])])
+
+    def test_once_the_commits_land_the_finding_is_judged_and_the_stranded_bug_is_gone(self):
+        later = self.after_the_merge()
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.sha = self.commit("b.py", "def f():\n    return 2\n", msg="after the merge (#6)")   # #6, squashed
+        second = {"number": 6, "headRefOid": self.late, "mergeCommit": {"oid": self.sha}}
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs},
+                              pr_heads=lambda br: [second, self.pr])
+        self.assertEqual({b["key"]: b["status"] for b in again},
+                         {"fanout-00000001": "open", "stranded-local-feat-x": "gone"})
+
+    def test_a_commit_after_the_merged_head_whose_patch_main_has_landed(self):
+        later = self.after_the_merge()
+        self.sha = self.commit("b.py", "def f():\n    return 2\n", msg="picked over")   # same patch, new commit
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"]) for b in bugs], [("fanout-00000001", "open")])   # judged
 
     def test_a_pr_merged_after_the_pinned_sha_has_not_landed(self):
         self.sha = self.git("rev-parse", "HEAD~1")
@@ -733,7 +778,7 @@ class SquashLandedTest(_Repo):
 
     def test_a_finished_branch_lands_with_no_change_commit(self):
         # reviewed on top of the tip the PR merged at; the diff never got its own commit on the branch
-        at_tip = self.found | {"commit": self.change}
+        at_tip = self.found | {"commit": self.head}
         self.assertEqual(self.lands(lambda br: [], found=at_tip), ["unmerged"])
         self.assertEqual(self.lands(lambda br: [self.pr], found=at_tip), ["open"])
 
@@ -847,6 +892,17 @@ class AgentRunTest(_Repo):
 
 
 class RenderTest(unittest.TestCase):
+    def test_a_local_stranded_bug_lists_the_findings_waiting_on_it(self):
+        spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
+        record = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(record)
+        md = "\n".join(record._render_bugs([{"id": "B1", "key": "stranded-local-feat-x", "kind": "stranded", "local": True,
+                                             "status": "open", "pr": 5, "branch": "feat/x", "commits": ["c" * 40],
+                                             "desc": "d", "why": "w", "first_seen": "2026-10-05",
+                                             "waiting": [{"key": "fanout-1", "file": "a.py", "line": 2, "desc": "wd"}]}]))
+        self.assertIn("### B1 · open · stranded locally · PR #5 `feat/x` · `stranded-local-feat-x`", md)
+        self.assertIn("**Waiting on them** (`fanout-1`, `a.py:2`): wd", md)
+
     def test_unjudged_bugs_render_apart_and_stranded_ones_name_their_pr(self):
         spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
         record = importlib.util.module_from_spec(spec)
