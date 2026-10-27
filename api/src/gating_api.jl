@@ -9,6 +9,22 @@
 
 _gerr(status, msg) = (status, JSON3.write((; error = msg)))
 
+const _POP_404_SHOWN = 8
+
+# A population 404 names the paths that DO exist, so the caller (a person or an agent) corrects the
+# path in one step instead of guessing again. Those sharing the requested leaf name come first.
+function _pop_not_found(m::PopulationMap, pop::AbstractString)
+    paths = String[p for p in pop_paths(m) if !pop_at(m, p).transient]
+    isempty(paths) && return _gerr(404, "Population not found: $pop — this label set has no populations yet")
+    parts = split(String(pop), '/'; keepempty = false)
+    leaf  = lowercase(isempty(parts) ? "" : String(parts[end]))
+    rank(p) = (q = lowercase(p); endswith(q, "/" * leaf) ? 0 : (!isempty(leaf) && occursin(leaf, q)) ? 1 : 2)
+    ranked = sort(paths; by = rank, alg = MergeSort)    # stable: equal ranks keep the map's order
+    more   = length(ranked) - _POP_404_SHOWN
+    _gerr(404, "Population not found: $pop — existing: " * join(first(ranked, _POP_404_SHOWN), ", ") *
+               (more > 0 ? " (+$more more)" : ""))
+end
+
 # ── Pick-selection registry (linked brushing) ────────────────────────────────
 # A spatial selection made in the viewer (pick-cell / pick-rect) is mirrored onto the
 # flow plots as a transient population ("see those XY cells in channel space"). The
@@ -678,7 +694,7 @@ function api_gating_stats(req::HTTP.Request)
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
     m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
-    (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     s = pop_stats(m, pop)
     200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
 end
@@ -696,7 +712,7 @@ function api_gating_membership(req::HTTP.Request)
     pt = length(pts) == 1 ? only(pts) : issubset(pts, ("flow", "live")) ? "live" : get(q, "popType", "flow")
     m = _live_map(img, vn, pt; labels_version = _labels_version_pin(q))
     for p in pops
-        (is_root(p) || has_pop(m, p)) || return _gerr(404, "Population not found: $p")
+        (is_root(p) || has_pop(m, p)) || return _pop_not_found(m, p)
     end
     if get(q, "binary", "") == "1"
         length(pops) == 1 || return _gerr(400, "binary=1 requires exactly one pop")
@@ -1112,7 +1128,7 @@ function api_gating_summary(req::HTTP.Request)
         # (which is an answer, n = 0). The whole-segmentation read tells the first apart.
         columns_ok = !is_root(pop) && !isempty(_plot_xy(img, vn, pop_type, x, y, ROOT, xt, yt)[1])
         columns_ok || return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
-        has_pop(_live_map(img, vn, pop_type), pop) || return _gerr(404, "Population not found: $pop")
+        (pm = _live_map(img, vn, pop_type); has_pop(pm, pop)) || return _pop_not_found(pm, pop)
     end
     out = Dict{String,Any}(
         "valueName" => vn, "pop" => pop, "n" => count(isfinite, xv),
@@ -1195,7 +1211,7 @@ function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
     (haskey(body, "path") && haskey(body, "gate")) || return _gerr(400, "path and gate required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         try
             set_gate!(m, String(body["path"]), gate_from_spec(body["gate"]))
         catch e
@@ -1213,7 +1229,7 @@ function api_gating_pop_delete(body_bytes::Vector{UInt8})
     haskey(body, "path") || return _gerr(400, "path required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         _path = String(body["path"])
         _children_only = _wbool(body, "childrenOnly", false)
         # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
@@ -1235,7 +1251,7 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
     haskey(body, "path") || return _gerr(400, "path required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         p = pop_at(m, String(body["path"]))
         haskey(body, "colour") && (p.colour = String(body["colour"]))
         haskey(body, "show")   && (p.show = Bool(body["show"]))
@@ -1288,7 +1304,7 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         newpath = try
             rename_pop!(m, String(body["path"]), String(body["newName"]))
         catch e
@@ -1317,7 +1333,7 @@ function api_gating_pop_move(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Rename it first.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, _path) || return _gerr(404, "Population not found: $_path")
+        has_pop(m, _path) || return _pop_not_found(m, _path)
         newpath = try
             move_pop!(m, _path, _parent)
         catch e

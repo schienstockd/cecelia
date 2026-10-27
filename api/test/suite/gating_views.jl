@@ -100,6 +100,10 @@ end
               "valueName" => "B", "popType" => "flow", "name" => "none", "gate" => none, "colour" => "#e11d48"))
         st, b = get_(api_gating_summary, "x=mean_intensity_0&y=area&pop=/none")
         @test st == 200 && JSON3.read(b).n == 0
+        # a population 404 lists the populations that do exist, the requested leaf name first, so the
+        # caller corrects the path in one step instead of guessing again
+        msg = String(JSON3.read(get_(api_gating_summary, "x=mean_intensity_0&y=area&pop=/gone/none")[2]).error)
+        @test msg == "Population not found: /gone/none — existing: /none, /dim"
 
         @test get_(api_gating_plot_image, "y=area")[1] == 400
         @test get_(api_gating_cells_image, "pop=/nope")[1] == 404

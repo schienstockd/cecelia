@@ -296,16 +296,32 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
-@_tool
-def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
-    """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run."""
-    r = _client.get_task_log(project_uid, image_uid, fun)
-    return _strip_discovery_log(r.get("content", "")) if r.get("exists") else ""
+# Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
+# the rest of a session.
+_TASK_LOG_MAX_BYTES = 20_000
 
 
 @_tool
-def get_task_history(project_uid: str, limit: int = 100) -> list:
-    """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
+def get_task_log(project_uid: str, image_uid: str, fun: str, max_bytes: int = _TASK_LOG_MAX_BYTES) -> str:
+    """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run.
+    The log is cumulative — every run of that fun on that image appends to it — so only the last
+    `max_bytes` come back, newest at the end. When it was cut, the first line says how much was left
+    out; pass `max_bytes=0` for the whole log."""
+    r = _client.get_task_log(project_uid, image_uid, fun, max_bytes)
+    if not r.get("exists"):
+        return ""
+    text = _strip_discovery_log(r.get("content", ""))
+    if r.get("truncated"):
+        text = (f"[showing the last {r.get('bytes')} of {r.get('totalBytes')} bytes — "
+                f"pass max_bytes=0 for the whole log]\n" + text)
+    return text
+
+
+@_tool
+def get_task_history(project_uid: str, limit: int = 100) -> dict:
+    """Recent task runs across all images, newest first: `{count, total, truncated, history}`.
+    `truncated: true` means `limit` cut the list — `total` runs exist, raise `limit` to see older
+    ones. Each `history` row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
     outcome — and **`params`**, the params that run used (the tuning trail; `{}` on older runs). Pair
     `params` with get_module_params + get_cohort_qc to suggest a param adjustment on an outlier: what
@@ -327,7 +343,8 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
     to catch repeated failures** — a failed task leaves little other trace, and the live-pattern
     detector (`poll_observations`) starts empty each run, so it won't have older failures. Cross-check
     `get_task_log` / `get_recent_logs` for the actual error before surfacing."""
-    return _client.get_task_history(project_uid, limit).get("history", [])
+    r = _client.get_task_history(project_uid, limit)
+    return {k: r.get(k) for k in ("count", "total", "truncated", "history")}
 
 
 @_tool

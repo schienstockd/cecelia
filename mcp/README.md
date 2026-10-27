@@ -81,8 +81,8 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `get_image_info(project_uid, image_uid)` | `GET /api/images/meta` | channels, dims, physical sizes, labels, QC, run log, note |
 | `get_image_notes(project_uid, image_uid)` | `GET /api/images/meta` | the user's note for the image |
 | `get_qc_metrics(project_uid, image_uid)` | `GET /api/images/meta` | per-image QC flags/metrics |
-| `get_task_log(project_uid, image_uid, fun)` | `GET /api/images/tasklog` | raw log text for one task fn on one image |
-| `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | recent runs across all images, newest first; each row carries the run's `params` (tuning trail) for parameter suggestions |
+| `get_task_log(project_uid, image_uid, fun, max_bytes=20000)` | `GET /api/images/tasklog` | raw log text for one task fn on one image — the newest `max_bytes`; a first line says when it was cut (`0` = whole log) |
+| `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | `{count, total, truncated, history}` — recent runs across all images, newest first; each row carries the run's `params` (tuning trail) for parameter suggestions |
 | `get_module_params(category="")` | `GET /api/tasks/definitions` | task param specs (valid ranges/defaults/types) for parameter suggestions; pass the category (fun_name prefix). Project-independent |
 | `get_available_plots(module="")` | `GET /api/plots/definitions` | plot types the board can render (chart types, data needs, scope modes) — to suggest a visualization. Project-independent |
 | `get_cohort_qc(project_uid, set_uid, fun_name, value_name=None)` | `GET /api/qc/cohort` | per-set mean/SD + z-scored outliers over a task's banked metric; no `value_name` → `byValueName` map |

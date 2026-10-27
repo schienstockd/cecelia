@@ -310,6 +310,33 @@ class GetGuideTest(unittest.TestCase):
         self.assertIn("intravital-timelapse", str(cm.exception))
 
 
+class TruncationIsSaidTest(unittest.TestCase):
+    """A capped result says it was capped — a silently cut list or log reads as the whole of it."""
+
+    def test_task_log_cut_says_so_in_its_first_line(self):
+        reply = {"exists": True, "content": "[t] line 5\n", "bytes": 11, "totalBytes": 145, "truncated": True}
+        with unittest.mock.patch.object(server._client, "get_task_log", lambda *a: reply):
+            log = server.get_task_log("p", "i1", "segment.cellpose")
+        first, rest = log.split("\n", 1)
+        self.assertEqual("[showing the last 11 of 145 bytes — pass max_bytes=0 for the whole log]", first)
+        self.assertEqual("[t] line 5\n", rest)
+
+    def test_task_log_default_cap_reaches_the_api(self):
+        seen = []
+        def fake(*a):
+            seen.append(a)
+            return {"exists": True, "content": "x", "truncated": False}
+        with unittest.mock.patch.object(server._client, "get_task_log", fake):
+            self.assertEqual("x", server.get_task_log("p", "i1", "f"))
+        self.assertEqual(server._TASK_LOG_MAX_BYTES, seen[0][3])
+
+    def test_task_history_carries_total_and_truncated(self):
+        reply = {"projectUid": "p", "count": 1, "total": 2, "truncated": True, "history": [{"fun": "f"}]}
+        with unittest.mock.patch.object(server._client, "get_task_history", lambda *a: reply):
+            out = server.get_task_history("p", 1)
+        self.assertEqual({"count": 1, "total": 2, "truncated": True, "history": [{"fun": "f"}]}, out)
+
+
 class ToolErrorSurfacingTest(unittest.TestCase):
     """mcp 2.x hides any non-`ToolError` message behind `Error executing tool <name>`. The client's
     `ApiError` text is written for the model ("cannot reach Cecelia API … Is `pixi run dev`

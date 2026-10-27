@@ -123,6 +123,20 @@ class RunChainStoredName(unittest.TestCase):
         self.assertEqual((out["chain"], out["runId"]), ("Drift segment", "r1"))
 
 
+class TaskStatesHistoryFallback(unittest.TestCase):
+    def test_a_capped_history_is_read_whole_before_giving_up(self):
+        c = au.AutonomousClient("http://x")
+        c._launched["t1"] = ("tSJpBI", "segment.cellpose", "img1", "2026-10-27T10:00:00")
+        row = {"fun": "segment.cellpose", "imageUid": "img1", "at": "2026-10-27T10:00:05", "runStatus": "failed"}
+        def reply(method, route, params=None, *a, **k):
+            if route == "/api/tasks/history":
+                return ({"history": [row], "total": 201, "truncated": False} if params["limit"] == 201
+                        else {"history": [], "total": 201, "truncated": True})
+            return []
+        with mock.patch.object(c, "_request", side_effect=reply):
+            self.assertEqual({"t1": "failed"}, c.task_states(["t1"]))
+
+
 class RequireMeasured(unittest.TestCase):
     def test_refuses_when_api_resolves_a_different_value_name(self):
         c = au.AutonomousClient("http://x")

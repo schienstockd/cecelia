@@ -33,7 +33,7 @@ function api_gating_plot_image(req::HTTP.Request)
     pop = get(q, "pop", ROOT)
     pt = read_pop_type(img, vn, pop, "flow")     # cell gates — or `live` for a derived `_tracked` set
     m = _live_map(img, vn, pt)
-    (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
@@ -106,7 +106,7 @@ function api_gating_cells_image(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     pop = get(q, "pop", ROOT)
     m = _live_map(img, vn, read_pop_type(img, vn, pop, "flow"))   # `live` for a derived `_tracked` set
-    (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     parent = is_root(pop) ? ROOT : m.pops[pop].parent
     lp = img_labels_path(img, vn)
     isdir(lp) || return _gerr(404, "No label store on disk for $vn")
