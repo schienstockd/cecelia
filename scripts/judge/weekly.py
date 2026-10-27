@@ -201,9 +201,10 @@ def _pr_body(record: dict) -> str:
     verified = sum(b["status"] == "open" and bool(b.get("verify")) and not b.get("reverify") for b in bugs)
     decide = len(record["queue"])
     landed, confirmed = _record.landed_counts(bugs)
-    # fixed: what the judge called gone, and a landed fix verify dismissed (`landed_counts` confirms both)
+    # fixed: what is gone, and a `dismissed` bug with a landed fix or that verify found fixed (a repeated error)
     due = sum(b["status"] == "parked" and bool(b.get("recheck")) for b in bugs)
-    fixed = n["gone"] + sum(b["status"] == "dismissed" and bool(b.get("fix_landed")) for b in bugs)
+    fixed = n["gone"] + sum(b["status"] == "dismissed" and (bool(b.get("fix_landed")) or _record.verified_fixed(b))
+                            for b in bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
              f"**Bugs: {n['open']} open** ({verified} verified, {new} new)"
              + (f", {n['parked']} parked (can't happen yet" + (f"; {due} due a re-check" if due else "") + ")"

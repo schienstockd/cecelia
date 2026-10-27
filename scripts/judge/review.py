@@ -493,7 +493,7 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 _LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", SKY_BLUE), "a": ("answer", REDDISH_PURPLE),
            "f": ("fix now", BLUE), "s": ("one by one", GREY), "e": ("edit the rule", BLUE),
            "r": ("reject", VERMILLION)}
-_VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
+_VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "fixed": SKY_BLUE, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
 _SECTIONS = (("Question", BLUE), ("Bug", BLUE), ("Verified", ORANGE), ("Auto-fix", BLUE),
              ("Your answer", REDDISH_PURPLE), ("Recommendation", SKY_BLUE), ("Live once", YELLOW),

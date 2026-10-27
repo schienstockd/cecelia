@@ -252,10 +252,12 @@ def _judge_summary(records: _t.Sequence[dict], raised: dict[str, _dt.date] | Non
         return None
     last = max(passes, key=lambda r: r.get("date", ""))
     bugs = last.get("bugs") or []
-    counts = collections.Counter(b.get("status") for b in bugs)
+    # a `dismissed` bug verify found fixed (an older record's dismiss of a landed fix) is gone, not "not a bug"
+    status_of = lambda b: "gone" if b.get("status") == "dismissed" and _record.verified_fixed(b) else b.get("status")  # noqa: E731
+    counts = collections.Counter(status_of(b) for b in bugs)
     by_week: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
     for b in bugs:
-        key, status, who = str(b.get("key") or ""), b.get("status"), _judge_kind(b)
+        key, status, who = str(b.get("key") or ""), status_of(b), _judge_kind(b)
         if who is None or status not in JUDGE_STATUSES:
             continue
         monday = (raised or {}).get(key) or (_day(b.get("first_seen")) and week_of(_day(b["first_seen"])))
