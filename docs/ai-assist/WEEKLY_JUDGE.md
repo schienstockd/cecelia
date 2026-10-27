@@ -40,7 +40,17 @@ test whether an agent can actually use the framework.
    branch, since two worktrees flagging one `file:line` share a slug), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
    come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
-   - a finding whose branch hasn't reached the SHA is `unmerged` and waits;
+   - a finding whose branch hasn't reached the SHA is `unmerged` and waits. The change it was raised
+     on is the first commit after the finding's `commit` on its branch; it has reached the SHA when
+     the SHA contains it, or when a PR from that branch merged into the SHA with it in the PR's head.
+     The second is how a squash or rebase merge lands: it copies the commits, so ancestry never sees
+     them, and local branches are kept, so the deleted-branch rule never fires (on 2026-10-27, 76 of
+     138 bugs sat `unmerged` this way; 64 land with the check). `gh pr list --head <branch> --state
+     merged` is asked once per branch a pass, only for a branch ancestry doesn't place. No change
+     commit (none yet, or the branch was rebased past it) lands only when the branch's whole tip
+     merged in a PR: a finished branch, like a deleted one. A commit after the head the PR merged at
+     never landed and keeps waiting (pushed, it is also `stranded`). When `gh` can't answer, those
+     branches fall back to ancestry and the record's *Failed* row says so (`landed`);
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
      own commit, so a moved line still shows the right code;
    - a function that no longer exists is `gone`;
@@ -48,8 +58,9 @@ test whether an agent can actually use the framework.
    - a `parked` bug (verify said `guard`, step 4) skips the judge and stays parked, unless a commit
      names its key (*Landed fixes* below: the guard may have gone in elsewhere) or one since its
      verify SHA touched its file (an agent-run error with no file: unless a run hit it again after it
-     was verified). Then it goes back to `open` with its verdict cleared, and verify looks at
-     it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
+     was verified). A file or function that no longer exists then makes it `gone` for free, as for
+     an open bug, without taking a re-check slot. Otherwise it goes back to `open` with its verdict
+     cleared, and verify looks at it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
      the check is a proxy, and a busy file would otherwise send its every parked bug back each
      week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
@@ -71,7 +82,7 @@ test whether an agent can actually use the framework.
    A **run review** (`kind: "review"`, key `rev-…`) has no code to excerpt either: it is `open`
    straight away and goes to verify. A person set its cause, so verify doesn't ask whether it is
    real: it checks whether the fix is in (the guide's text in `mcp/cecelia_mcp/guides.json`, or the
-   tool or surface the note names). `dismiss` means this code already has it. One run's reviews go
+   tool or surface the note names). `fixed` means this code has it now. One run's reviews go
    to one agent. The rows are stamped a second before the pass started, so the next pass's window
    doesn't read them again.
 
@@ -107,7 +118,7 @@ test whether an agent can actually use the framework.
    `rep-…`, `run-…`, `stranded-pr…`). They go on the bug as `fix_landed`, with the PR from `(#N)` in
    the subject or the `Merge pull request #N` that brought them in. That is evidence, not a verdict:
    the judge and verify prompts get it as a hint, and the judge still decides `gone`. The record says
-   *Fix landed: … — awaiting re-check* until it does, or verify dismisses it. So a fix you landed with `pixi run
+   *Fix landed: … — awaiting re-check* until it does, or verify calls it `fixed`. So a fix you landed with `pixi run
    judge-review` shows up even on a pass whose judge failed. On 2026-10-05, 6 of the 7 carried open
    bugs had a fix commit naming their key on main; the judge never ran, so the record said "0 fixed".
    A bug with a landed fix that is still `open` after the judge (it said `live_bug`, failed, or the
@@ -144,7 +155,15 @@ test whether an agent can actually use the framework.
    - `guard`: it can't happen today, and the agent names what would make it live. The bug becomes
      `parked`: off the work list, listed under *Parked*, and back to verify when its file changes;
    - `decide`: only you can answer it, so it goes on the owner queue;
-   - `dismiss`: the bug becomes `dismissed`.
+   - `fixed`: the finding was right, but the code no longer has the defect (fixed since, or removed).
+     The bug becomes `gone`, and counts as a real bug fixed in the charts. A repeated agent error
+     becomes `dismissed` instead, which keeps it muted (step 3);
+   - `dismiss`: the finding is wrong. The bug becomes `dismissed`, and counts against the reviewer
+     in the record's `run.spend.verify.precision`. A `dismiss` on a bug with `fix_landed`, or whose
+     issue carries the `fix-landed` label (a record drops `fix_landed` once the fix predates the
+     previous pass), is taken as `fixed` (`record.verify_verdict`), in past records too: before
+     `fixed` existed, verify answered `dismiss` for a fixed bug. Read that way, the findings-flow
+     chart's history moves 10 bugs from *not a bug* to *fixed*.
 5. **Rules** (`rules.py`). Every fanout + convention finding from the last 30 days is mapped to the
    one CLAUDE.md `##` section it breaks, by one tool-less judge call. Git sorts each finding into
    `agent_made` (the reviewed diff wrote it) or `legacy` (the code was there before). A rule broken
@@ -185,7 +204,7 @@ test whether an agent can actually use the framework.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
-   - closed as completed when the judge confirms it `gone`, or verify dismisses it after a fix landed;
+   - closed as completed when it is `gone` (the judge, or verify's `fixed`);
    - closed as not planned when it's `dismissed` (the comment says by whom: the owner, verify or the
      judge), `wont_fix` or `parked`;
    - closed too when GitHub still lists it open but the record no longer has its bug live, whatever

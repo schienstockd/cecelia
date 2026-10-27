@@ -66,6 +66,12 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(d["verify"], {"not_a_bug": 1, "parked": 1, "unchecked": 0, "real": 5})
         self.assertEqual(d["real"], {"fixed": 1, "open_issue": 2, "not_filed": 1, "wont_fix": 1})
 
+    def test_a_bug_verify_found_fixed_is_a_real_bug_fixed_not_a_false_positive(self):
+        legacy = {**_bug("k2", "dismissed", "dismiss"), "fix_landed": [{"commit": "f" * 40}]}   # before `fixed`
+        d = self.f.aggregate([], [{"bugs": [_bug("k1", "gone", "fixed"), legacy, _bug("k3", "dismissed", "dismiss")]}])
+        self.assertEqual((d["verify"]["real"], d["verify"]["not_a_bug"]), (2, 1))
+        self.assertEqual(d["real"]["fixed"], 2)
+
     def test_the_lines_under_the_first_gap_add_up_to_the_bug_check(self):
         convention = lambda slug, marker: _row("convention_check_finding",
                                                {"slug": slug, "file": "c.py", "line": 1, "marker": marker})
