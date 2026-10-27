@@ -571,7 +571,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
                   legend=[("box", name, fill) for _, name, _, fill in reversed(AGES)], legend_title="open for")
         labels = _fixed_labels(passes, c.slot)
         _bars(c, [[(p["open"][k], fill) for k, _, _, fill in AGES] for p in passes],
-              above=[(t, pal["sky_blue"]) if t else None for t in labels])
+              above=[(t, pal["blue"]) if t else None for t in labels])
     else:
         _note(add, xs[2], row[0], "c", "Real bugs still open at each judge pass", "No judge pass yet.")
     # d: judge tokens per pass, by stage

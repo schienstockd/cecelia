@@ -327,8 +327,8 @@ class JudgePassTest(_Fixture):
         self.assertIn(">open for</text>", svg)
         legend = re.findall(r'font-size="11">(over 2 weeks|1–2 weeks|under 1 week)</text>', svg)
         self.assertEqual(legend, ["over 2 weeks", "1–2 weeks", "under 1 week"])   # the stack, top to bottom
-        sky = self.c.load_hex()["sky_blue"]
-        self.assertRegex(svg, rf'fill="{sky}">1 fixed</text>|fill="{sky}">1</text>')
+        blue = self.c.load_hex()["blue"]   # the darker blue: sky blue text is too faint on the light surface
+        self.assertRegex(svg, rf'fill="{blue}">1 fixed</text>|fill="{blue}">1</text>')
 
 
 class RenderTest(_Fixture):
