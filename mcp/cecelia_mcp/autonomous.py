@@ -308,12 +308,16 @@ class AutonomousClient:
         # neither in flight nor in the recent ring (a runner restart, or the ring rolled): the run log
         for tid in [t for t, s in state.items() if s == "unknown" and t in self._launched]:
             proj, fun, uid, at = self._launched[tid]
+            def ours(row):
+                return row.get("fun") == fun and (not uid or row.get("imageUid") == uid) and \
+                    str(row.get("at", "")) >= at
             hist = self._request("GET", "/api/tasks/history", {"projectUid": proj, "limit": 200})
-            for row in hist.get("history", []):
-                if row.get("fun") == fun and (not uid or row.get("imageUid") == uid) and \
-                        str(row.get("at", "")) >= at:
-                    state[tid] = row.get("runStatus") or row.get("status") or "done"
-                    break
+            row = next((r for r in hist.get("history", []) if ours(r)), None)
+            if row is None and hist.get("truncated"):   # the run may sit past the cap: read them all
+                hist = self._request("GET", "/api/tasks/history", {"projectUid": proj, "limit": hist.get("total")})
+                row = next((r for r in hist.get("history", []) if ours(r)), None)
+            if row is not None:
+                state[tid] = row.get("runStatus") or row.get("status") or "done"
         return state
 
     def wait_tasks(self, task_ids: list[str], timeout_s: float, poll_s: float = 5.0) -> dict:

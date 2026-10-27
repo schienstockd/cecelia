@@ -362,11 +362,11 @@ class CeceliaClient:
             "GET", "/api/images/meta", {"projectUid": project_uid, "imageUid": image_uid}
         )
 
-    def get_task_log(self, project_uid: str, image_uid: str, fun: str):
+    def get_task_log(self, project_uid: str, image_uid: str, fun: str, max_bytes: int | None = None):
         return self._request(
             "GET",
             "/api/images/tasklog",
-            {"projectUid": project_uid, "imageUid": image_uid, "fun": fun},
+            {"projectUid": project_uid, "imageUid": image_uid, "fun": fun, "maxBytes": max_bytes},
         )
 
     def get_task_history(self, project_uid: str, limit: int | None = None):

@@ -263,6 +263,12 @@ Write AND run the matching category in the same change as the code. All four run
 | Frontend logic — **extract it out of the `.vue` SFC into `frontend/src/utils/*.ts` first** | `pixi run test-frontend` |
 | Python analysis-env code (`python/cecelia/**`) | `pixi run test-py` |
 
+**A new test is evidence only once you have watched it fail.** For a bug fix, run it against the pre-fix
+code (`git show origin/main:<file> > <file>`, run, restore) and confirm it fails for the stated reason.
+**A fixture or fake for a parser, API or library is copied from that dependency's real output**, never
+written from what the caller expects — a fixture invented to match the parser has passed three times.
+Both rules are from [MicroClaw](https://github.com/Micro-Claw/microclaw) (`docs/todo/MICROCLAW_LESSONS_PLAN.md`).
+
 **Any change to core package functionality ships with a test in the same change** — core = the data
 model and its persistence, the versioned-variable convention, task dispatch, param validation. The
 four specific obligations (ccid.json round-trip, versioned-field on-disk shape, task dispatch, one
