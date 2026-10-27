@@ -16,14 +16,18 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import FileBrowser from './FileBrowser.vue'
+import ConfirmButton from './ConfirmButton.vue'
 import InlineNote from './InlineNote.vue'
+import TeleportPopover from './TeleportPopover.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
-  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged,
+  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, cleanupHpcEnv,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
   type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen, openPreferences } from '../lib/preferencesOpen'
+import { useTaskStore } from '../stores/tasks'
+import { railJobRow } from '../utils/railJobs'
 
 const props = defineProps<{ projectUid: string; scope: HpcScope }>()
 const machine = computed(() => props.scope === 'machine')
@@ -95,19 +99,54 @@ async function runTest() {
 // The cluster environment (P2): asked of the cluster once the login is filled in, again after a
 // passing test and when the install job ends.
 const env = ref<HpcEnvStatus | null>(null)
-const envLine = computed(() => hpcEnvLine(env.value))
+const tasks = useTaskStore()
+const installRow = computed(() => tasks.tasks.find(t => t.id === HPC_ENV_JOB_ID))
+const envLine = computed(() => hpcEnvLine(env.value,
+  { stage: installRow.value?.hpcStage, job: installRow.value?.hpcJob }))
 async function loadEnv() {
   if (blocker.value || !machine.value) return
   env.value = null
   try { env.value = await fetchHpcEnv() }
   catch (e) { env.value = { configured: false, lock: '', installed: false, job: '', installing: false,
                             error: e instanceof Error ? e.message : String(e) } }
+  // Opened mid-install or mid-clean-up (a reload, another tab): this tab missed the job's first frame,
+  // so give it its row.
+  const live = (id: string) => ['running', 'queued'].includes(tasks.tasks.find(t => t.id === id)?.status ?? '')
+  if (env.value?.installing && !live(HPC_ENV_JOB_ID)) {
+    tasks.adoptJob(railJobRow({ taskId: HPC_ENV_JOB_ID, status: 'running', fun: 'hpc:install-env', pool: 'job' }))
+    tasks.setHpc(HPC_ENV_JOB_ID, env.value.stage ?? '', env.value.job)
+  }
+  if (env.value?.cleaning && !live(HPC_CLEAN_JOB_ID)) {
+    tasks.adoptJob(railJobRow({ taskId: HPC_CLEAN_JOB_ID, status: 'running', fun: 'hpc:cleanup', pool: 'job' }))
+  }
 }
 async function install() {
   await pendingSave              // an Internet queue typed just before the click must reach the job
   try { await installHpcEnv(); env.value = env.value && { ...env.value, installing: true, error: '' } }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
+// Clean up / Delete all: the refusal (a job still on the cluster) comes back on the POST, shown here.
+// The POST asks the scheduler first (seconds over ssh), so the line says so meanwhile.
+const cleaning = ref(false)
+async function cleanup(all: boolean) {
+  menuOpen.value = false
+  await pendingSave
+  cleaning.value = true
+  error.value = ''
+  try { await cleanupHpcEnv(all); env.value = env.value && { ...env.value, cleaning: true } }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  finally { cleaning.value = false }
+}
+const canClean = computed(() => !!env.value?.configured && !env.value.installing && !env.value.cleaning &&
+                                 !env.value.clusterCleaning && !cleaning.value)
+// Something is under way (checking, installing, cleaning): the line itself spins, and the controls stay
+// put, greyed, so the row does not collapse to a lone spinner.
+const envBusy = computed(() => cleaning.value || !env.value || env.value.installing || !!env.value.cleaning ||
+                               !!env.value.clusterCleaning)
+const envText = computed(() => cleaning.value ? 'Checking for Cecelia jobs on the cluster' : envLine.value.text)
+const menuOpen = ref(false)
+const menuBtn = ref<HTMLElement | null>(null)
+function recheck() { menuOpen.value = false; void loadEnv() }
 let offEnv: (() => void) | null = null
 onMounted(() => { offEnv = onHpcEnvChanged(() => void loadEnv()) })
 onUnmounted(() => offEnv?.())
@@ -243,14 +282,33 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
     <template v-if="machine && !blocker">
       <h3 class="cc-eyebrow hpc-sub">Cluster environment</h3>
       <div class="cc-row hpc-env">
-        <InlineNote class="cc-fs-sm hpc-grow" :short="envLine.text" :severity="envLine.severity" />
-        <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="!env" @click="loadEnv"
-                v-tooltip.top="'Check again'"><i class="pi pi-refresh" /></button>
-        <button v-if="envLine.canInstall" class="cc-btn cc-btn-primary" @click="install"
+        <InlineNote class="cc-fs-sm hpc-grow" :short="envText" :severity="envBusy ? undefined : envLine.severity"
+                    :icon="envBusy ? 'pi-spin pi-spinner' : undefined" />
+        <button v-if="envLine.canInstall" class="cc-btn cc-btn-primary" :disabled="envBusy" @click="install"
                 v-tooltip.top="'Install Cecelia\'s Python environment on the cluster, as a job'">
           <i class="pi pi-download" /> Install on cluster
         </button>
+        <button ref="menuBtn" class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: menuOpen }"
+                @click="menuOpen = !menuOpen" v-tooltip.top="'More'"><i class="pi pi-ellipsis-h" /></button>
       </div>
+      <TeleportPopover v-model="menuOpen" :anchor="menuBtn" placement="bottom-end" flush>
+        <div class="cc-actions-menu">
+          <button class="cc-actions-item" :disabled="!env || cleaning" @click="recheck">
+            <i class="pi pi-refresh" /> Check again
+          </button>
+          <button class="cc-actions-item" :disabled="!canClean" @click="cleanup(false)"
+                  v-tooltip.right="'Delete other versions, the download cache and job folders over 30 days old'">
+            <i class="pi pi-eraser" /> Clean up
+          </button>
+          <ConfirmButton @confirm="cleanup(true)" v-slot="{ armed, press }">
+            <button class="cc-actions-item danger" :class="{ armed }" :disabled="!canClean" @click.stop="press"
+                    v-tooltip.right="armed ? 'Click again to delete everything, project copies included'
+                                         : 'Delete everything Cecelia put on the cluster'">
+              <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" /> Delete all
+            </button>
+          </ConfirmButton>
+        </div>
+      </TeleportPopover>
     </template>
   </div>
 

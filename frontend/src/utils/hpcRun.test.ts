@@ -140,6 +140,12 @@ describe('hpcRunEnvNote — the cluster env, when hpc is picked', () => {
     expect(n.detail).toBe('Not installed for this version')
   })
 
+  it('a clean-up in progress offers no Install (it would be refused)', () => {
+    for (const e of [env({ cleaning: true }), env({ clusterCleaning: true })]) {
+      expect(hpcRunEnvNote(e)).toEqual({ short: 'Cluster being cleaned up', detail: 'Deleting files on the cluster', canInstall: false })
+    }
+  })
+
   it('an install in progress is info, not a second Install', () => {
     for (const e of [env({ installing: true }), env({ job: '4242' })]) {
       const n = hpcRunEnvNote(e)!

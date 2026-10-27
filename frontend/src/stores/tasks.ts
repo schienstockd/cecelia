@@ -305,6 +305,15 @@ export const useTaskStore = defineStore('tasks', () => {
   }
 
   /**
+   * Show a job the BACKEND started (utils/railJobs.ts): under its own fixed id, in place of an earlier
+   * run's finished row with that id.
+   */
+  function adoptJob(row: Omit<TaskEntry, 'seq' | 'log'>) {
+    tasks.value = tasks.value.filter(t => t.id !== row.id)
+    tasks.value.unshift({ ...row, log: [], seq: ++_seqRef.value })
+  }
+
+  /**
    * Put the project's DURABLE history in the list — the rows built from each image's run log
    * (`utils/taskHistoryRows.ts`, which is where the reasoning lives).
    *
@@ -391,7 +400,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, setHpc, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, adoptJob, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, setHpc, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

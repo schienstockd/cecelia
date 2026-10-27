@@ -1,7 +1,7 @@
 # HPC P5 — the PBS Pro / OpenPBS backend (docs/todo/HPC_PLAN.md → D7/D8, P5).
 #
 # No PBS server runs in CI yet. Pinned here: the script render (D8's resource model as `#PBS` lines),
-# the status and exit-reason parsers on PBS's own output, and — through shim `qsub`/`qselect`/`qdel`
+# the status and exit-reason parsers on PBS's own output, and — through shim `qsub`/`qstat`/`qdel`
 # commands that run the job with `bash` on this machine — the backend's generated shell end to end:
 # submit, poll, log, exit code and cancel. What the shims cannot show is PBS's own handling of the
 # directives; that needs a real server (HPC_PLAN P6).
@@ -12,7 +12,7 @@
     s = hpc_render_script(b, HpcJobSpec(; name = "seg one", dir = "/scratch/c/jobs/t1", body = "python run.py",
                                         class = "gpu", cpus = 8, mem_gb = 32, gpus = 1, walltime_min = 90))
     @test startswith(s, "#!/bin/bash\n")
-    for d in ("-N cecelia-seg_one", "-o /scratch/c/jobs/t1/job.log", "-j oe",
+    for d in ("-N cecelia-seg_one", "-o /scratch/c/jobs/t1/scheduler.log", "-j oe",
               "-l ncpus=8", "-l mem=32gb", "-l ngpus=1", "-l walltime=1:30:00", "-q gpuq", "-A lab01", "-P lab01",
               "-M me@uni.edu", "-m ae")
         @test occursin("#PBS $d\n", s)
@@ -45,7 +45,9 @@ end
     @test st["12.pbs01"] == JOB_QUEUED && st["15.pbs01"] == JOB_QUEUED
     @test st["13.pbs01"] == JOB_RUNNING && st["14.pbs01"] == JOB_RUNNING
     @test !haskey(st, "16.pbs01")
-    @test occursin("qselect -u \"\$u\" -s Q", Cecelia._hpc_status_script(b, ["1"]))
+    # one scheduler query per poll, for the ids asked about
+    @test occursin("qstat -f '1' '2'", Cecelia._hpc_status_script(b, ["1", "2"])) &&
+          !occursin("qselect", Cecelia._hpc_status_script(b, ["1"]))
     @test Cecelia.pbs_exit_reason("Job Id: 12.pbs01\n    Exit_status = -29\n") == "Walltime reached"
     @test Cecelia.pbs_exit_reason("    Exit_status = -27\n") == "Out of memory"
     @test Cecelia.pbs_exit_reason("    Exit_status = 271\n") == "Killed by signal 15"
@@ -56,17 +58,17 @@ end
 end
 
 # Shims for a PBS-shaped command line on this machine: `qsub` starts the job with bash in the
-# background and prints `<pid>.shim`; `qselect -s R` lists the running ones; `qdel` kills one.
+# background and prints `<pid>.shim`; `qstat -f <ids>` reports a live one as running and a gone one the
+# way Gadi does (stderr, non-zero exit); `qdel` kills one. An id written to `<shims>/queued` reads as
+# queued with PBS's comment; a `<shims>/down` file makes the server unreachable.
 function _pbs_shims(dir::AbstractString)
     write(joinpath(dir, "qsub"), """
         #!/bin/sh
-        nohup bash "\$1" > job.log 2>&1 < /dev/null &
+        nohup bash "\$1" > scheduler.log 2>&1 < /dev/null &
         echo "\$!.shim"
         """)
     write(joinpath(dir, "qselect"), """
         #!/bin/sh
-        state=""; while [ \$# -gt 0 ]; do [ "\$1" = "-s" ] && state="\$2"; shift; done
-        [ "\$state" = "R" ] || exit 0
         for p in \$(pgrep -f 'bash job.sh' 2>/dev/null); do echo "\$p.shim"; done
         """)
     write(joinpath(dir, "qdel"), """
@@ -75,7 +77,24 @@ function _pbs_shims(dir::AbstractString)
         k() { for c in \$(pgrep -P "\$1" 2>/dev/null); do k "\$c"; done; kill -TERM "\$1" 2>/dev/null; }
         k "\$p"
         """)
-    write(joinpath(dir, "qstat"), "#!/bin/sh\nexit 0\n")
+    write(joinpath(dir, "qstat"), """
+        #!/bin/sh
+        [ "\$1" = "-f" ] || exit 0
+        shift
+        d="\$(dirname "\$0")"; touch "\$d/queued"
+        [ -f "\$d/down" ] && { echo "qstat: cannot connect to server pbs01 (errno=111)" >&2; exit 2; }
+        rc=0
+        for i in "\$@"; do
+          if grep -qx "\$i" "\$d/queued"; then
+            printf 'Job Id: %s\\n    Job_Name = cecelia-q\\n    job_state = Q\\n    comment = Not Running: Insufficient amount of resource: ncpus\\n' "\$i"
+          elif kill -0 "\${i%.shim}" 2>/dev/null; then
+            printf 'Job Id: %s\\n    Job_Name = cecelia-shim\\n    job_state = R\\n' "\$i"
+          else
+            echo "qstat: \$i Job has finished, use -x or -H to obtain historical job information" >&2; rc=153
+          fi
+        done
+        exit \$rc
+        """)
     for f in ("qsub", "qselect", "qdel", "qstat"); chmod(joinpath(dir, f), 0o755); end
     dir
 end
@@ -107,6 +126,45 @@ end
             @test rc.cancelled && JOB_RUNNING in states
             sleep(0.5)
             @test only(hpc_poll(b, c, [Cecelia.HpcPollJob(id_c, dir_c, 0)])).state == JOB_GONE
+
+            # A queued job: its wait reason reaches `on_reason`, and once it runs, the log streams from
+            # the job's own `job.log` (the shim, like PBS, sends the scheduler's output elsewhere). A failed
+            # job's scheduler output is shown at the end.
+            dir_q = root * "/jobs/p3"
+            id_q = hpc_submit(b, c, HpcJobSpec(; name = "p3", dir = dir_q, body = """
+                while [ ! -f go ]; do sleep 0.1; done
+                echo live-line
+                sleep 1
+                echo sched-footer >> scheduler.log
+                exit 4"""))
+            write(joinpath(shims, "queued"), id_q * "\n")
+            p = only(hpc_poll(b, c, [Cecelia.HpcPollJob(id_q, dir_q, 0)]))
+            @test p.state == JOB_QUEUED && p.reason == "Insufficient amount of resource: ncpus"
+            @test id_q in hpc_active_jobs(b, c)       # a queued Cecelia job blocks a clean-up
+            @test id_q in hpc_active_jobs(b, c; name = "cecelia-q")
+            @test !(id_q in hpc_active_jobs(b, c; name = "cecelia-install-env"))
+            reasons, qlines, qstates = String[], String[], RemoteJobState[]
+            release = @async begin
+                t = time()
+                while isempty(reasons) && time() - t < 20; sleep(0.1); end
+                write(joinpath(shims, "queued"), "")
+                touch(joinpath(dir_q, "go"))
+            end
+            rq = hpc_watch_job(b, c, id_q, dir_q; on_log = l -> push!(qlines, l), poll_s = 0.2,
+                               queued_poll_s = 0.2, on_reason = r -> push!(reasons, r),
+                               on_state = s -> (push!(qstates, s); push!(qlines, "state $s")))
+            wait(release)
+            @test reasons == ["Insufficient amount of resource: ncpus"]
+            @test first(qstates) == JOB_QUEUED && JOB_RUNNING in qstates
+            @test rq.exit == 4 && "live-line" in qlines && "[scheduler] sched-footer" in qlines
+            @test findfirst(==("state JOB_RUNNING"), qlines) < findfirst(==("live-line"), qlines)   # "Running" before its lines
+
+            # An unreachable server fails the poll rather than reading as "the job is gone"; a gone job
+            # beside a live one does not.
+            touch(joinpath(shims, "down"))
+            @test_throws HpcError hpc_poll(b, c, [Cecelia.HpcPollJob(id_q, dir_q, 0)])
+            rm(joinpath(shims, "down"))
+            @test only(hpc_poll(b, c, [Cecelia.HpcPollJob(id_q, dir_q, 0)])).state == JOB_GONE
         end
     end
 end

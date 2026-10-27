@@ -21,7 +21,7 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
                       class = "gpu", cpus = 8, mem_gb = 32, gpus = 1, walltime_min = 90)
     s = hpc_render_script(b, spec)
     @test startswith(s, "#!/bin/bash\n")
-    for d in ("--job-name=cecelia-seg_one", "--output=job.log", "--cpus-per-task=8", "--mem=32G",
+    for d in ("--job-name=cecelia-seg_one", "--output=scheduler.log", "--cpus-per-task=8", "--mem=32G",
               "--time=1:30:00", "--partition=gpu-a100", "--account=lab01", "--qos=normal",
               "--gres=gpu:1", "--mail-user=me@uni.edu", "--mail-type=END,FAIL")
         @test occursin("#SBATCH $d\n", s)
@@ -31,6 +31,9 @@ _hpc_test_site(; cpu = HpcClass("", "", "", "", ""), gpu = HpcClass("", "", "", 
     @test findfirst("#SBATCH --constraint", s)[1] < findfirst("module load cuda/12", s)[1] <
           findfirst("python run.py", s)[1] < findfirst(".exit.tmp", s)[1]
     @test occursin("cd '/scratch/c/jobs/t1' || exit 99", s)
+    # The job writes its own log, preamble included, so it is live on every scheduler (PBS spools `-o`).
+    @test findfirst("exec > '/scratch/c/jobs/t1/job.log' 2>&1\n", s)[1] < findfirst("module load cuda/12", s)[1]
+    @test occursin("export PYTHONUNBUFFERED=1\n", s)
 
     # The project's account overrides the class's; an empty class adds no flag at all.
     s2 = hpc_render_script(b, HpcJobSpec(; name = "x", dir = "/d", body = "true", class = "gpu", account = "grant7"))
@@ -66,6 +69,32 @@ end
     @test Cecelia.slurm_exit_reason("FAILED|1:0") == "Job failed"
     @test Cecelia.slurm_exit_reason("COMPLETED|0:0") == ""
     @test Cecelia.slurm_exit_reason("") == ""
+end
+
+@testset "HPC: SLURM wait reasons (shim squeue)" begin
+    if Sys.iswindows()
+        @test_skip false
+    else
+        shims = mktempdir()
+        # `-o '%i %j'` (the job list before a clean-up) gets names; the poll's format gets states.
+        write(joinpath(shims, "squeue"), "#!/bin/sh\ncase \"\$*\" in *%j*) printf '11 cecelia-seg\\n12 notmine\\n'; exit 0;; esac\n" *
+                                         "printf '11 PENDING Priority\\n12 RUNNING None\\n" *
+                                         "13 PENDING QOSMaxJobsPerUserLimit\\n14 PENDING None\\n'\n")
+        chmod(joinpath(shims, "squeue"), 0o755)
+        withenv("PATH" => shims * ":" * ENV["PATH"]) do
+            b = SlurmBackend(_hpc_test_site())
+            jobs = [Cecelia.HpcPollJob(i, "/nonexistent", 0) for i in ("11", "12", "13", "14")]
+            r = hpc_poll(b, HpcLocalConn(), jobs)
+            @test [x.state for x in r] == [JOB_QUEUED, JOB_RUNNING, JOB_QUEUED, JOB_QUEUED]
+            @test [x.reason for x in r] == ["Other jobs are ahead in the queue", "", "QOSMaxJobsPerUserLimit", ""]
+            @test hpc_active_jobs(b, HpcLocalConn()) == ["11"]       # only Cecelia's jobs
+            @test hpc_active_jobs(b, HpcLocalConn(); name = "cecelia-seg") == ["11"]
+            @test isempty(hpc_active_jobs(b, HpcLocalConn(); name = "cecelia-install-env"))
+            @test Cecelia.hpc_job_name(b, "install-env") == "cecelia-install-env"
+            @test Cecelia.hpc_job_name(PbsBackend(_hpc_test_site()), "install-env") == "cecelia-install-env"
+            @test Cecelia.hpc_job_name(LocalShellBackend(), "install-env") == ""
+        end
+    end
 end
 
 @testset "HPC: poll reply parsing" begin
@@ -242,6 +271,71 @@ end
         rc = hpc_install_env!(b, c, root; root = repo, poll_s = 0.2, on_log = _ -> nothing,
                               cancelled = () -> time() - t0 > 1.5)
         @test !rc.ok && rc.message == "Cancelled"
+    end
+end
+
+@testset "HPC: clean-up summary" begin
+    S = Cecelia.hpc_cleanup_summary
+    @test S("") == "Nothing to clean up" && S(""; everything = true) == "Nothing to delete"
+    @test S("CECELIA-RM env\nCECELIA-RM env\nCECELIA-RM cache\nCECELIA-RM code\nCECELIA-RM job\nCECELIA-RM job\n") ==
+          "Deleted 2 old environments, the download cache, 1 code copy and 2 job folders"
+    @test S("CECELIA-RM job\n") == "Deleted 1 job folder"
+    @test S("CECELIA-RM all\nCECELIA-RM all\n"; everything = true) == "Deleted everything Cecelia put on the cluster"
+end
+
+@testset "HPC: clean up and remove all (local remote)" begin
+    if !_HPC_SH || Sys.iswindows()
+        @test_skip false
+    else
+        c, b = HpcLocalConn(), LocalShellBackend()
+        root = hpc_remote_root(c, mktempdir())
+        R(parts...) = joinpath(root, parts...)
+        mk(parts...) = (mkpath(dirname(R(parts...))); write(R(parts...), "x"))
+        lock = "abc123def456"
+        mk("env", lock, Cecelia.HPC_ENV_MARKER); mk("env", "0ld0ld0ld0ld", "f")
+        mk("bin", "pixi-" * Cecelia.HPC_PIXI_VERSION); mk("bin", "pixi-0.1.0")
+        mk("cache", "pixi", "pkg"); mk("code", "c0de", "f")
+        mk("jobs", "recent", "job.log"); mk("jobs", "ancient", "job.log")
+        run(`touch -t 202001010000 $(R("jobs", "ancient"))`)
+        mk("projects", "p1", "ccid.json"); mk("assets", "models", "m")
+        mk(".cecelia-trash-1", "leftover")                    # an interrupted run's trash
+        write(joinpath(root, "mine.txt"), "the user's own file")
+
+        r = hpc_cleanup!(b, c, root; lock, on_log = _ -> nothing)
+        @test r.ok && r.message == "Deleted 1 old environment, the download cache, 1 old pixi, 1 code copy and 1 job folder"
+        @test isfile(R("env", lock, Cecelia.HPC_ENV_MARKER)) && !isdir(R("env", "0ld0ld0ld0ld"))
+        @test isfile(R("bin", "pixi-" * Cecelia.HPC_PIXI_VERSION)) && !ispath(R("bin", "pixi-0.1.0"))
+        @test !isdir(R("cache", "pixi")) && !isdir(R("code", "c0de"))
+        @test isdir(R("jobs", "recent")) && !isdir(R("jobs", "ancient"))
+        @test isdir(R("projects", "p1")) && isdir(R("assets", "models"))
+        @test !any(startswith(".cecelia-trash"), readdir(root))
+        @test hpc_cleanup!(b, c, root; lock, on_log = _ -> nothing).message == "Nothing to clean up"
+        @test !ispath(R(".cecelia-cleaning"))                   # the run's marker goes with it
+
+        # While a clean-up runs (its marker, seen from any process or workstation), the env reads as not
+        # there and a dispatch is refused; a marker hours old is an interrupted run and is ignored.
+        write(R(".cecelia-cleaning"), "")
+        st = hpc_env_status(b, c, root; lock)
+        @test st.cleaning && !st.installed && Cecelia.hpc_env_status_dict(st)["clusterCleaning"]
+        e = try; hpc_require_env(b, c, root; lock); catch x; x; end
+        @test e isa HpcError && occursin("being cleaned up", e.msg)
+        run(`touch -t 202001010000 $(R(".cecelia-cleaning"))`)
+        @test hpc_env_status(b, c, root; lock).installed
+        rm(R(".cecelia-cleaning"))
+
+        # Refused while a Cecelia job is on the cluster: it may be running from the env or the code.
+        dir = root * "/jobs/busy"
+        id = hpc_submit(b, c, HpcJobSpec(; name = "busy", dir = dir, body = "sleep 60"))
+        rb = hpc_cleanup!(b, c, root; lock, everything = true, on_log = _ -> nothing)
+        @test !rb.ok && occursin("A Cecelia job is still on the cluster ($id)", rb.message)
+        @test isdir(R("env", lock))
+        hpc_cancel(b, c, id)
+        t = time(); while !isempty(hpc_active_jobs(b, c)) && time() - t < 10; sleep(0.2); end
+
+        ra = hpc_cleanup!(b, c, root; lock, everything = true, on_log = _ -> nothing)
+        @test ra.ok && ra.message == "Deleted everything Cecelia put on the cluster"
+        @test readdir(root) == ["mine.txt"]                      # the user's own files stay
+        @test !hpc_env_status(b, c, root; lock).installed
     end
 end
 

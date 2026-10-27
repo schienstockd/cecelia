@@ -460,7 +460,8 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
                        st === JOB_RUNNING ? "[HPC] Running on the cluster (job $id)" : "[HPC] Job $id ended")
             end
             w = hpc_watch_job(d.backend, d.conn, id, dir; on_log = line, on_state = state,
-                              cancelled = () -> is_cancelled(d.task_id), poll_s = HPC_POLL_S[])
+                              on_reason = r -> on_log("[HPC] Waiting: $r"),
+                              cancelled = () -> is_cancelled(d.task_id))
             if w.cancelled
                 rm(record; force = true)
                 on_log("[HPC] Cancelled job $id")
@@ -488,5 +489,3 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
     end
 end
 
-"""How often a dispatched task asks the cluster for news, in seconds (the tests shorten it)."""
-const HPC_POLL_S = Ref{Float64}(15.0)

@@ -105,4 +105,17 @@ describe('hpcEnvLine', () => {
     expect(hpcEnvLine({ ...base, error: 'Remote folder: Host not found' })).toEqual(
       { severity: 'fail', text: 'Remote folder: Host not found', canInstall: true })
   })
+  it('says where a running install is, from its row first and the GET second', () => {
+    const inst = { ...base, installing: true }
+    expect(hpcEnvLine(inst).text).toBe('Installing — follow it in the Task Manager')
+    expect(hpcEnvLine({ ...inst, stage: 'sync' }).text).toBe('Uploading the environment files')
+    expect(hpcEnvLine({ ...inst, stage: 'queued', job: '7.pbs' }).text).toBe('Queued on the cluster (job 7.pbs)')
+    // the row's stage moves without a re-fetch, so it wins over what the page loaded with
+    expect(hpcEnvLine({ ...inst, stage: 'queued', job: '7.pbs' }, { stage: 'running', job: '7.pbs' }).text)
+      .toBe('Installing on the cluster (job 7.pbs)')
+  })
+  it('says a clean-up is running, and offers nothing meanwhile', () => {
+    expect(hpcEnvLine({ ...base, installed: true, cleaning: true }))
+      .toEqual({ text: 'Deleting files on the cluster', canInstall: false })
+  })
 })

@@ -141,6 +141,7 @@ export function hpcRunEnvNote(e: HpcEnvStatus | null):
     { short: string; detail: string; severity?: Severity; canInstall: boolean } | null {
   if (!e || !e.configured || e.installed) return null
   const detail = hpcEnvLine(e).text
+  if (e.cleaning || e.clusterCleaning) return { short: 'Cluster being cleaned up', detail, canInstall: false }
   if (e.installing || e.job) return { short: 'Cluster env installing', detail, canInstall: false }
   if (e.error) return { short: 'Cluster env not checked', detail, severity: 'warn', canInstall: false }
   return { short: 'Cluster env out of date — reinstall', detail, severity: 'warn', canInstall: true }

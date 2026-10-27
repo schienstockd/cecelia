@@ -63,6 +63,18 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
   install job goes there. Empty = the CPU queue.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
+- **Clean up** (the ⋯ beside Install) removes other versions' envs, old pixis, the download cache, the code
+  copies and job folders over 30 days old; this version's env, the project mirrors and model files
+  stay. **Delete all** (confirm) deletes everything Cecelia made in the remote folder, project mirrors
+  included, but never the folder itself or files of your own in it; Install on cluster then starts
+  from nothing. Both are refused while a Cecelia job is queued or running on the cluster (from any
+  workstation) or a cluster run is in progress here. Each runs as a Task Manager row. Things are moved
+  into `.cecelia-trash-<n>/` first, then deleted, so an interrupted clean-up never leaves a
+  half-deleted env that still looks installed; the next one removes the leftover.
+- The install is a Task Manager row (*Install cluster environment*) with the same stages as a run,
+  and its log. The line beside **Install on cluster** follows it: *Uploading the environment files*,
+  *Queued on the cluster (job N)*, *Installing on the cluster (job N)*. A page opened mid-install
+  gets the row and the stage from `GET /api/hpc/env`.
 - The code (`python/` and the task runners) is synced on every run into a content-hashed
   `<remote>/code/<hash>/`, so the runner always matches the Julia that wrote its params.
 
@@ -88,7 +100,7 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 | Stage | What happens |
 |---|---|
 | uploading | env check, code sync, the declared inputs rsynced into the mirror |
-| queued / running | the scheduler's own state, polled every 15 s (one ssh call for every job in flight) |
+| queued / running | the scheduler's own state: polled every 5 s while running, every 30 s while queued (one ssh call per job). The log streams while it runs; a wait reason, when the scheduler gives one, is logged as `[HPC] Waiting: …` |
 | downloading | the declared outputs copied back through `<path>.hpc-incoming` and swapped in by rename |
 
 - **Cancel** runs `scancel`/`qdel`. If the cluster is unreachable at that moment, the cancel is kept
@@ -187,9 +199,21 @@ scheduler's reason appears in the log, and the measured numbers above should be 
   cache/pixi/               jobs/<task>-<runner>-<n>/ job.sh · job.log · .exit · params.json
 ```
 
+Nothing here is removed by a run; Settings → HPC → **Clean up** / **Delete all** (*Cluster
+environment* above) is how it goes. An env is ~8.3 GB and tens of thousands of files, which counts
+against file-number quotas (Gadi's), and each Cecelia version that changes `pixi.lock` adds one.
+
 A project folder that another workstation already mirrors (a different `.cecelia-mirror`) is refused,
 naming the folder to remove. Every job's `job.sh` and `job.log` stay in `jobs/`, which is the first
 place to look when something fails.
+
+- **`job.log` is written by the job itself** (`exec > job.log` at the top of the body, Python
+  unbuffered), so the Task Manager shows lines as they are printed. PBS spools a job's `-o` file on
+  the node and copies it over only when the job ends; measured on Gadi, the old `-o job.log` appeared
+  only at state E.
+- **`scheduler.log`** is the scheduler's own output (`--output` / `-o`): mostly empty, plus PBS's
+  end-of-job footer (resource usage, SUs). A failed job's last 20 lines are added to the task log as
+  `[scheduler] …`.
 
 ## Schedulers
 
@@ -201,7 +225,8 @@ One resource model, mapped per backend (HPC_PLAN D8):
 | CPUs / memory / GPUs | `--cpus-per-task` `--mem=NG` `--gres=gpu:N` | `-l ncpus=…` `-l mem=…gb` `-l ngpus=…` (job-wide; Gadi refuses `select`) |
 | walltime | `--time` | `-l walltime` |
 | account / QoS | `--account` `--qos` | `-A` and `-P` / — |
-| status | `squeue -u me` | `qselect -u me -s <state>` |
+| status | `squeue -u me` | `qstat -f <ids>` (one query per poll; `job_state`) |
+| why it waits | `squeue` `%r` (`Priority`, `Resources` in words; others as named) | `qstat -f` `comment` (Gadi sets none on a fresh job) |
 | why it vanished | `sacct`, `scontrol show job` | `qstat -x -f` (Exit_status, comment) |
 | cancel | `scancel` | `qdel` |
 
@@ -235,7 +260,7 @@ attributes, since the OME-XML reader falls back there. Any read takes its `<path
 
 | Where | What | How |
 |---|---|---|
-| Every CI leg | settings, renderers, parsers; the whole path against a local "remote" (`HpcLocalConn` + `LocalShellBackend`): code sync, env install with a stub pixi, a real Measure-labels dispatch (same table as local, rerun sends 0 B, purged mirror resyncs, undeclared write named, foreign mirror refused), cancel, reattach after a crash, cancel retry; PBS through shim `qsub`/`qselect`/`qdel` | `pixi run test-pkg` / `test-hpc` |
+| Every CI leg | settings, renderers, parsers; the whole path against a local "remote" (`HpcLocalConn` + `LocalShellBackend`): code sync, env install with a stub pixi, a real Measure-labels dispatch (same table as local, rerun sends 0 B, purged mirror resyncs, undeclared write named, foreign mirror refused), cancel, reattach after a crash, cancel retry; PBS through shim `qsub`/`qstat`/`qdel` | `pixi run test-pkg` / `test-hpc` |
 | `verify-hpc.yml` | a single-node SLURM + sshd container: connection test, real `sbatch`/`scancel`/walltime kill, a real `pixi install` of the env, a dispatched Measure labels | path-filtered on HPC code and `pixi.lock` |
 | A real site | Cellpose, GPUs, the site's partitions and modules | below |
 
@@ -256,7 +281,7 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
    the labels and table appear as after a local run.
 5. **Then:**
    - rerun with Overwrite existing; the log should say `Inputs synced: 0 B sent`;
-   - cancel one while queued; `squeue` should drop it within about 15 s;
+   - cancel one while queued; `squeue` should drop it within about 30 s;
    - quit mid-job and rerun the same; the log should say `Re-attached` or `already finished`, and
      there should be no second job;
    - run a whole slide.
@@ -280,7 +305,9 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 | `The cluster has no environment for this version of Cecelia` | run Install on cluster (once per version) |
 | `[ERROR] … needs Linux x86_64; this node is …` | the install landed on a non-x86 node: pick another partition |
 | `Submit: qsub: Error: …` beside Install on cluster | the scheduler refused the install job; the reason is PBS's or SLURM's own |
+| `Submit: the cluster did not answer within 180 s` | the login node's qsub/sbatch stalled; try again. A submit that timed out can still land, so the next Install first asks the scheduler and stops with `An install job is already on the cluster (id)` if one did |
 | `rsync is not installed on the cluster` | the login node has no rsync. Rare; tell us |
 | `Cannot send <path> to the cluster: it is outside the project` | the task reads a file it has not declared; it needs porting work |
 | `Cluster job N failed: Walltime reached` / `Out of memory` | raise Minutes / GB on the run form |
+| `[HPC] Waiting: …` | the scheduler's reason the job has not started: a busy queue, or a limit of your account |
 | `The cluster copy of project 'X' belongs to …` | another workstation mirrors a project with the same folder name; remove the named folder on the cluster |
