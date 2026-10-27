@@ -291,9 +291,15 @@ def _bug_lines(bug: dict) -> list[str]:
     if bug.get("kind") == "duplicate":
         lines += ["", "This is a duplicate, not a defect: the fix is to call the existing helper the finding "
                   "names and delete the copy, at every call site of the copy."]
-    if bug.get("kind") == "stranded":
+    if bug.get("kind") == "stranded" and bug.get("local"):
+        lines += ["", "These commits were made on the local branch after its PR merged and never pushed: "
+                  + ", ".join(bug.get("commits", [])) + ". Push them in a new PR if they are still wanted; "
+                  "if they were abandoned, say so and I delete the branch (never one a worktree has checked out)."]
+    elif bug.get("kind") == "stranded":
         lines += ["", "These commits were pushed to the PR's branch after it merged: "
                   + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
+    lines += [f"Waiting on them: {w['key']} at {_record.bug_location(w)}: {w.get('desc') or ''}"
+              for w in bug.get("waiting", [])]
     return lines
 
 

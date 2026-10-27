@@ -8,7 +8,8 @@ a number counts only if the record maps the bug to it. Bodies, comments and labe
 so an outsider's text can't reach an agent, and an edit is overwritten at the bug's next change.
 
 What gets an issue: an `open` bug verify called `fix` or `decide`, stranded commits, and a repeated
-agent error. A filed issue then follows its bug: closed when it is `gone` or verify found it
+agent error. Not stranded commits that were never pushed (`local`): GitHub has nothing to link, and the
+record's card says what to do. A filed issue then follows its bug: closed when it is `gone` or verify found it
 `fixed` (completed), or `dismissed` / `wont_fix` / `parked` (not planned), reopened when it is
 live again, labelled `fix-landed` when a commit names its key, `in-progress` once a fix session
 started from `judge-review`, and a comment with the owner's answer to a `decide` bug. Every issue is locked once filed, so only collaborators
@@ -200,6 +201,8 @@ def _verdict(b: dict) -> str | None:
 def filed(b: dict) -> bool:
     """D7: an `open` bug that needs a person: verify said fix or decide, stranded commits, a repeated
     agent error."""
+    if b.get("local"):   # stranded commits never pushed: nothing on GitHub to point at
+        return False
     return b["status"] == "open" and (_verdict(b) in FILED_VERDICTS or b.get("kind") == "stranded"
                                       or bool(b.get("repeat")))
 

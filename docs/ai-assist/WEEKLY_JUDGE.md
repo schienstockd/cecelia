@@ -48,9 +48,12 @@ test whether an agent can actually use the framework.
      138 bugs sat `unmerged` this way; 64 land with the check). `gh pr list --head <branch> --state
      merged` is asked once per branch a pass, only for a branch ancestry doesn't place. No change
      commit (none yet, or the branch was rebased past it) lands only when the branch's whole tip
-     merged in a PR: a finished branch, like a deleted one. A commit after the head the PR merged at
-     never landed and keeps waiting (pushed, it is also `stranded`). When `gh` can't answer, those
-     branches fall back to ancestry and the record's *Failed* row says so (`landed`);
+     merged in a PR: a finished branch, like a deleted one. A change whose patch the SHA already has
+     (`git cherry`: picked over, or landed again in another PR) has landed too. A commit after the
+     head the PR merged at, with no such patch on the SHA, never landed: its findings wait under that
+     branch's `stranded` bug (`waiting`) instead of as their own `unmerged` rows, which never ended.
+     When `gh` can't answer, those branches fall back to ancestry and the record's *Failed* row says
+     so (`landed`);
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
      own commit, so a moved line still shows the right code;
    - a function that no longer exists is `gone`;
@@ -134,7 +137,14 @@ test whether an agent can actually use the framework.
    while what's spent plus its whole $1.50 budget fits, so $4 is four calls, 160 bugs, against a
    measured inflow of about 100 a week. Bugs with a landed fix go first, then carried `open` ones,
    then the rest oldest first. A failed call ends the sweep; what earlier calls judged stands.
-   Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the judge gives
+   Commits pushed to a PR's branch after it merged are reported as `stranded` (`stranded-pr<N>`):
+   by the scan of PRs merged since the last pass, and by any branch with findings waiting on it,
+   however long ago its PR merged. Commits made on the local branch after its PR merged and never
+   pushed are `stranded-local-<branch>`. The pass's checkout (`~/.cecelia-effectiveness/judge-worktree`)
+   is a worktree of the main clone, so it sees every local branch. Its card lists the commits with
+   subject and date and says to push them in a new PR or delete the branch. A stranded bug lists the
+   findings waiting on it; each is checked for landing again every pass. Once the commits land, the
+   findings are judged as usual and the bug is `gone`. A bug the judge gives
    no verdict for (a call failed, or the budget ran out before it) waits as `unjudged`, except one the
    last record had `open`: it stays `open`, with its verdict, because a missing check is no evidence
    it was fixed. A `not_a_bug` on a carried bug verify called `fix` or `decide` doesn't dismiss it:
@@ -202,7 +212,8 @@ test whether an agent can actually use the framework.
      Each new PR closes the previous one. A failure's PR closes none: the last pass's record is
      still the work list.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
-   verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
+   verify called `fix` or `decide`, stranded commits (not local ones: GitHub has nothing to link)
+   and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
    - closed as completed when it is `gone` (the judge, or verify's `fixed`);
    - closed as not planned when it's `dismissed` (the comment says by whom: the owner, verify or the
