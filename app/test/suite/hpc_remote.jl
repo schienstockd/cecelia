@@ -88,6 +88,11 @@ end
             @test [x.state for x in r] == [JOB_QUEUED, JOB_RUNNING, JOB_QUEUED, JOB_QUEUED]
             @test [x.reason for x in r] == ["Other jobs are ahead in the queue", "", "QOSMaxJobsPerUserLimit", ""]
             @test hpc_active_jobs(b, HpcLocalConn()) == ["11"]       # only Cecelia's jobs
+            @test hpc_active_jobs(b, HpcLocalConn(); name = "cecelia-seg") == ["11"]
+            @test isempty(hpc_active_jobs(b, HpcLocalConn(); name = "cecelia-install-env"))
+            @test Cecelia.hpc_job_name(b, "install-env") == "cecelia-install-env"
+            @test Cecelia.hpc_job_name(PbsBackend(_hpc_test_site()), "install-env") == "cecelia-install-env"
+            @test Cecelia.hpc_job_name(LocalShellBackend(), "install-env") == ""
         end
     end
 end

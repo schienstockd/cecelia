@@ -141,6 +141,8 @@ end
             p = only(hpc_poll(b, c, [Cecelia.HpcPollJob(id_q, dir_q, 0)]))
             @test p.state == JOB_QUEUED && p.reason == "Insufficient amount of resource: ncpus"
             @test id_q in hpc_active_jobs(b, c)       # a queued Cecelia job blocks a clean-up
+            @test id_q in hpc_active_jobs(b, c; name = "cecelia-q")
+            @test !(id_q in hpc_active_jobs(b, c; name = "cecelia-install-env"))
             reasons, qlines, qstates = String[], String[], RemoteJobState[]
             release = @async begin
                 t = time()
@@ -150,11 +152,12 @@ end
             end
             rq = hpc_watch_job(b, c, id_q, dir_q; on_log = l -> push!(qlines, l), poll_s = 0.2,
                                queued_poll_s = 0.2, on_reason = r -> push!(reasons, r),
-                               on_state = s -> push!(qstates, s))
+                               on_state = s -> (push!(qstates, s); push!(qlines, "state $s")))
             wait(release)
             @test reasons == ["Insufficient amount of resource: ncpus"]
             @test first(qstates) == JOB_QUEUED && JOB_RUNNING in qstates
             @test rq.exit == 4 && "live-line" in qlines && "[scheduler] sched-footer" in qlines
+            @test findfirst(==("state JOB_RUNNING"), qlines) < findfirst(==("live-line"), qlines)   # "Running" before its lines
 
             # An unreachable server fails the poll rather than reading as "the job is gone"; a gone job
             # beside a live one does not.

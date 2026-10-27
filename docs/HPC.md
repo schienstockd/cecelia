@@ -63,7 +63,7 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
   install job goes there. Empty = the CPU queue.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
-- **Clean up** (beside Install) removes other versions' envs, old pixis, the download cache, the code
+- **Clean up** (the ⋯ beside Install) removes other versions' envs, old pixis, the download cache, the code
   copies and job folders over 30 days old; this version's env, the project mirrors and model files
   stay. **Delete all** (confirm) deletes everything Cecelia made in the remote folder, project mirrors
   included, but never the folder itself or files of your own in it; Install on cluster then starts
@@ -305,6 +305,7 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 | `The cluster has no environment for this version of Cecelia` | run Install on cluster (once per version) |
 | `[ERROR] … needs Linux x86_64; this node is …` | the install landed on a non-x86 node: pick another partition |
 | `Submit: qsub: Error: …` beside Install on cluster | the scheduler refused the install job; the reason is PBS's or SLURM's own |
+| `Submit: the cluster did not answer within 180 s` | the login node's qsub/sbatch stalled; try again. A submit that timed out can still land, so the next Install first asks the scheduler and stops with `An install job is already on the cluster (id)` if one did |
 | `rsync is not installed on the cluster` | the login node has no rsync. Rare; tell us |
 | `Cannot send <path> to the cluster: it is outside the project` | the task reads a file it has not declared; it needs porting work |
 | `Cluster job N failed: Walltime reached` / `Out of memory` | raise Minutes / GB on the run form |

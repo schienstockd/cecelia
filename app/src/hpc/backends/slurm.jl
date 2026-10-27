@@ -6,6 +6,7 @@ struct SlurmBackend <: HpcBackend
 end
 
 _slurm_job_name(name::AbstractString)::String = "cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_")
+hpc_job_name(::SlurmBackend, name::AbstractString) = _slurm_job_name(name)
 
 """
     hpc_render_script(b::SlurmBackend, spec) -> String
@@ -39,7 +40,7 @@ end
 function hpc_submit(b::SlurmBackend, c::HpcConn, spec::HpcJobSpec)::String
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec), "sbatch --parsable $(HPC_JOB_SCRIPT)";
                                           prelude = _hpc_sched_prelude("sbatch"));
-                    what = "Submit")
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = first(split(_last_line(out, ""), ';'))
     occursin(r"^\d+$", id) || throw(HpcError("Submit: unexpected reply from sbatch"))
     String(id)
@@ -60,7 +61,7 @@ _hpc_status_script(::SlurmBackend, ids::AbstractVector{<:AbstractString}) =
 # The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`).
 _hpc_active_script(::SlurmBackend) = _hpc_sched_prelude("squeue") * """
     q=\$(squeue -h -u "\$(id -un)" -o '%i %j') || exit 96
-    printf '%s\\n' "\$q" | awk '\$2 ~ /^cecelia-/ {print "$(_HPC_ACTIVE_TAG) " \$1}'
+    printf '%s\\n' "\$q" | awk '\$2 ~ /^cecelia-/ {print "$(_HPC_ACTIVE_TAG) " \$1 " " \$2}'
     """
 
 # The two reasons nearly every wait has, in words; any other is shown as SLURM names it.

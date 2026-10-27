@@ -10,6 +10,7 @@ end
 # PBS job names: up to 236 characters at most sites (15 on old ones), starting with a letter.
 _pbs_job_name(name::AbstractString)::String =
     first("cecelia-" * replace(String(name), r"[^A-Za-z0-9_.-]" => "_"), 230)
+hpc_job_name(::PbsBackend, name::AbstractString) = _pbs_job_name(name)
 
 """
     hpc_render_script(b::PbsBackend, spec) -> String
@@ -49,7 +50,7 @@ end
 function hpc_submit(b::PbsBackend, c::HpcConn, spec::HpcJobSpec)::String
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec), "qsub $(HPC_JOB_SCRIPT)";
                                           prelude = _hpc_sched_prelude("qsub"));
-                    what = "Submit")
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = _last_line(out, "")
     occursin(r"^\d+(\.[A-Za-z0-9_.-]+)?$", id) || throw(HpcError("Submit: unexpected reply from qsub"))
     String(id)
@@ -80,7 +81,7 @@ end
 # state lists every unfinished job; their names come from one `qstat -f`.
 _hpc_active_script(::PbsBackend) = _hpc_sched_prelude("qselect") * """
     ids=\$(qselect -u "\$(id -un)") || exit 96
-    [ -z "\$ids" ] || qstat -f \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id}'
+    [ -z "\$ids" ] || qstat -f \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id " " \$3}'
     true
     """
 

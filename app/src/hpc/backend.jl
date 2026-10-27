@@ -76,6 +76,10 @@ function hpc_job_body(spec::HpcJobSpec, preamble::AbstractString = "")::String
     """
 end
 
+# How long a submit may take. A busy login node's qsub/sbatch can stall for over a minute (Gadi, 2026-10-27:
+# 60 s ran out, the same qsub a few minutes later took 0.07 s); a submit is rare, so waiting costs little.
+const HPC_SUBMIT_TIMEOUT_S = 180
+
 # The script that submits: write job.sh with a quoted heredoc (no expansion), then the backend's
 # submit line. One remote call. The delimiter carries a random tag so no script line can end it.
 function _hpc_submit_script(spec::HpcJobSpec, script::AbstractString, submit_line::AbstractString;
@@ -189,15 +193,22 @@ const _HPC_STATUS_TAG = "CECELIA-STATE"
 const _HPC_REASON_TAG = "CECELIA-REASON"
 const _HPC_ACTIVE_TAG = "CECELIA-ACTIVE"
 
+"""The name the scheduler lists a job of `spec.name = name` under (`hpc_active_jobs(...; name)`); `""` for
+a backend without job names (the local shell)."""
+hpc_job_name(::HpcBackend, ::AbstractString)::String = ""
+
 """
-    hpc_active_jobs(b, conn) -> Vector{String}
+    hpc_active_jobs(b, conn; name = nothing) -> Vector{String}
 
 The ids of the user's Cecelia jobs (named `cecelia-…`) the scheduler still has queued or running, from
-any workstation. Throws `HpcError` when the scheduler cannot be asked: "none" must be an answer.
+any workstation; `name` keeps only the jobs of that name (the local shell has no names, so none). Throws
+`HpcError` when the scheduler cannot be asked: "none" must be an answer.
 """
-hpc_active_jobs(b::HpcBackend, c::HpcConn)::Vector{String} =
-    [String(m[1]) for m in eachmatch(Regex("^$(_HPC_ACTIVE_TAG) (\\S+)", "m"),
-                                     hpc_exec!(c, _hpc_active_script(b); what = "Job list"))]
+function hpc_active_jobs(b::HpcBackend, c::HpcConn; name::Union{AbstractString,Nothing} = nothing)::Vector{String}
+    out = hpc_exec!(c, _hpc_active_script(b); what = "Job list")
+    [String(m[1]) for m in eachmatch(Regex("^$(_HPC_ACTIVE_TAG) (\\S+) ?(\\S*)", "m"), out)
+     if isnothing(name) || m[2] == name]
+end
 
 # Why each waiting job waits, from the status half of the poll: `CECELIA-REASON <id> <text>` lines. A
 # backend whose status script prints none (the local shell) has no reasons.
@@ -256,11 +267,13 @@ function hpc_watch_job(b::HpcBackend, c::HpcConn, id::AbstractString, dir::Abstr
         if !isnothing(r)
             offline && on_log("Cluster reachable again")
             offline = false
+            # the state first: a queued job is polled rarely, so the poll that sees it running often
+            # brings its first lines too, and "Running" must come before them
+            r.state != last_state && (on_state(r.state); last_state = r.state)
             for l in split(chomp(r.log), '\n'; keepempty = false)
                 on_log(String(l))
             end
             job = HpcPollJob(job.id, job.dir, r.log_offset)
-            r.state != last_state && (on_state(r.state); last_state = r.state)
             reason = r.state == JOB_QUEUED ? r.reason : ""
             reason != last_reason && (isempty(reason) || on_reason(reason); last_reason = reason)
             if !isnothing(r.exit)

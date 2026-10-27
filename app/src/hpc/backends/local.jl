@@ -11,7 +11,7 @@ hpc_render_script(::LocalShellBackend, spec::HpcJobSpec)::String = "#!/bin/bash\
 hpc_submit(b::LocalShellBackend, c::HpcConn, spec::HpcJobSpec)::String = begin
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec),
                                           "nohup bash $(HPC_JOB_SCRIPT) > $(HPC_SCHED_LOG) 2>&1 < /dev/null &\necho \$!");
-                    what = "Submit")
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = _last_line(out, "")
     occursin(r"^\d+$", id) || throw(HpcError("Submit: no pid"))
     id

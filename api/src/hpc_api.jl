@@ -131,7 +131,8 @@ end
 # The same task-rail pattern as `_run_env_install` (system_api.jl): running → log lines → done|failed,
 # `pool = "job"`. Cancel arrives through `cancel_job!`, which the watch loop polls via `job_cancelled`.
 # The row also gets the cluster stage (`task:hpc`, as a dispatched task's): "sync" while uploading,
-# then queued/running with the job id.
+# then queued/running with the job id. No `task:progress`: nothing says how far a `pixi install` is,
+# and fixed fractions read as a stuck bar; the stage and the live log say what is happening.
 function _run_hpc_env_install(c, b)
     id = _HPC_ENV_JOB_ID
     fun = "hpc:install-env"
@@ -141,15 +142,12 @@ function _run_hpc_env_install(c, b)
     _HPC_ENV_LAST_ERROR[] = ""
     job = ""
     try
-        ws_progress(nothing, id, 0.02)
         r = hpc_install_env!(b, c, hpc_remote_root(c);
                              on_log = l -> ws_log(nothing, id, l),
                              on_job = j -> (job = j),
-                             on_state = s -> begin
-                                 ws_progress(nothing, id, s == JOB_RUNNING ? 0.3 : 0.1)
-                                 s == JOB_GONE || _hpc_env_stage!(id, s == JOB_RUNNING ? Cecelia.HPC_STAGE_RUNNING :
-                                                                          Cecelia.HPC_STAGE_QUEUED, job)
-                             end,
+                             on_state = s -> s == JOB_GONE ||
+                                 _hpc_env_stage!(id, s == JOB_RUNNING ? Cecelia.HPC_STAGE_RUNNING :
+                                                                        Cecelia.HPC_STAGE_QUEUED, job),
                              cancelled = () -> job_cancelled(id))
         ws_log(nothing, id, r.ok ? "[DONE] $(r.message)" : "[ERROR] $(r.message)")
         ok = r.ok
@@ -159,7 +157,6 @@ function _run_hpc_env_install(c, b)
         ws_log(nothing, id, "[ERROR] " * msg)
         _HPC_ENV_LAST_ERROR[] = msg
     finally
-        ok && ws_progress(nothing, id, 1.0)
         _hpc_env_stage!(id, Cecelia.HPC_STAGE_NONE, "")
         status = ok ? "done" : (job_cancelled(id) ? "cancelled" : "failed")
         # Off the registry BEFORE the terminal frame: that frame makes Settings re-read GET /api/hpc/env,

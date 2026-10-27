@@ -18,6 +18,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import FileBrowser from './FileBrowser.vue'
 import ConfirmButton from './ConfirmButton.vue'
 import InlineNote from './InlineNote.vue'
+import TeleportPopover from './TeleportPopover.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
@@ -125,8 +126,10 @@ async function install() {
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
 // Clean up / Delete all: the refusal (a job still on the cluster) comes back on the POST, shown here.
+// The POST asks the scheduler first (seconds over ssh), so the line says so meanwhile.
 const cleaning = ref(false)
 async function cleanup(all: boolean) {
+  menuOpen.value = false
   await pendingSave
   cleaning.value = true
   error.value = ''
@@ -136,6 +139,14 @@ async function cleanup(all: boolean) {
 }
 const canClean = computed(() => !!env.value?.configured && !env.value.installing && !env.value.cleaning &&
                                  !env.value.clusterCleaning && !cleaning.value)
+// Something is under way (checking, installing, cleaning): the line itself spins, and the controls stay
+// put, greyed, so the row does not collapse to a lone spinner.
+const envBusy = computed(() => cleaning.value || !env.value || env.value.installing || !!env.value.cleaning ||
+                               !!env.value.clusterCleaning)
+const envText = computed(() => cleaning.value ? 'Checking for Cecelia jobs on the cluster' : envLine.value.text)
+const menuOpen = ref(false)
+const menuBtn = ref<HTMLElement | null>(null)
+function recheck() { menuOpen.value = false; void loadEnv() }
 let offEnv: (() => void) | null = null
 onMounted(() => { offEnv = onHpcEnvChanged(() => void loadEnv()) })
 onUnmounted(() => offEnv?.())
@@ -271,26 +282,33 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
     <template v-if="machine && !blocker">
       <h3 class="cc-eyebrow hpc-sub">Cluster environment</h3>
       <div class="cc-row hpc-env">
-        <InlineNote class="cc-fs-sm hpc-grow" :short="envLine.text" :severity="envLine.severity" />
-        <button class="cc-btn cc-btn-ghost cc-btn-icon" :disabled="!env" @click="loadEnv"
-                v-tooltip.top="'Check again'"><i class="pi pi-refresh" /></button>
-        <button v-if="envLine.canInstall" class="cc-btn cc-btn-primary" @click="install"
+        <InlineNote class="cc-fs-sm hpc-grow" :short="envText" :severity="envBusy ? undefined : envLine.severity"
+                    :icon="envBusy ? 'pi-spin pi-spinner' : undefined" />
+        <button v-if="envLine.canInstall" class="cc-btn cc-btn-primary" :disabled="envBusy" @click="install"
                 v-tooltip.top="'Install Cecelia\'s Python environment on the cluster, as a job'">
           <i class="pi pi-download" /> Install on cluster
         </button>
-        <button v-if="canClean" class="cc-btn cc-btn-ghost" @click="cleanup(false)"
-                v-tooltip.top="'Delete other versions, the download cache and job folders over 30 days old'">
-          <i class="pi pi-eraser" /> Clean up
-        </button>
-        <ConfirmButton v-if="canClean" @confirm="cleanup(true)" v-slot="{ armed, press }">
-          <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
-                  v-tooltip.top="armed ? 'Click again to delete everything, project copies included'
-                                       : 'Delete everything Cecelia put on the cluster'">
-            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete all
-          </button>
-        </ConfirmButton>
-        <i v-if="cleaning" class="pi pi-spin pi-spinner cc-muted" />
+        <button ref="menuBtn" class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ on: menuOpen }"
+                @click="menuOpen = !menuOpen" v-tooltip.top="'More'"><i class="pi pi-ellipsis-h" /></button>
       </div>
+      <TeleportPopover v-model="menuOpen" :anchor="menuBtn" placement="bottom-end" flush>
+        <div class="cc-actions-menu">
+          <button class="cc-actions-item" :disabled="!env || cleaning" @click="recheck">
+            <i class="pi pi-refresh" /> Check again
+          </button>
+          <button class="cc-actions-item" :disabled="!canClean" @click="cleanup(false)"
+                  v-tooltip.right="'Delete other versions, the download cache and job folders over 30 days old'">
+            <i class="pi pi-eraser" /> Clean up
+          </button>
+          <ConfirmButton @confirm="cleanup(true)" v-slot="{ armed, press }">
+            <button class="cc-actions-item danger" :class="{ armed }" :disabled="!canClean" @click.stop="press"
+                    v-tooltip.right="armed ? 'Click again to delete everything, project copies included'
+                                         : 'Delete everything Cecelia put on the cluster'">
+              <i :class="armed ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" /> Delete all
+            </button>
+          </ConfirmButton>
+        </div>
+      </TeleportPopover>
     </template>
   </div>
 

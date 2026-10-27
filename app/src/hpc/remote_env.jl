@@ -168,6 +168,7 @@ const _HPC_CLEANING_MARKER = ".cecelia-cleaning"
 const _HPC_CLEANING_STALE_MIN = 120
 
 const _HPC_INSTALL_JOBFILE = ".install-job"
+const _HPC_INSTALL_JOB_NAME = "install-env"
 
 """
     hpc_env_status(b, conn, remote_root; lock) -> HpcEnvStatus
@@ -220,10 +221,16 @@ function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString
         dir = _hpc_install_job_dir(remote_root, lock)
         id = st.job
         if isempty(id)
+            # A submit that timed out may still have reached the scheduler, untracked here: a second
+            # install beside it would race it for the same env folder.
+            jn = hpc_job_name(b, _HPC_INSTALL_JOB_NAME)
+            other = isempty(jn) ? String[] : hpc_active_jobs(b, c; name = jn)
+            isempty(other) || return (; ok = false,
+                message = "An install job is already on the cluster ($(first(other))). Wait for it or cancel it first")
             on_log("Uploading the environment files")
             hpc_exec!(c, "mkdir -p $(_sh_quote(E))\n"; what = "Upload")
             hpc_rsync(c, String(root) * "/", E * "/"; files_from = hpc_env_files(; root), what = "Upload")
-            spec = HpcJobSpec(; name = "install-env", dir = dir, class = "cpu",
+            spec = HpcJobSpec(; name = _HPC_INSTALL_JOB_NAME, dir = dir, class = "cpu",
                               body = hpc_env_install_body(remote_root, lock; pixi_version),
                               _HPC_INSTALL_JOB...)
             id = hpc_submit(b, c, spec)
