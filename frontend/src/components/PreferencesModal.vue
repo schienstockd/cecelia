@@ -205,8 +205,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
         <!-- ── Profiles ──────────────────────────────────────────────────── -->
         <template v-if="active === 'profiles'">
           <p class="pref-note cc-muted cc-fs-xs">
-            Your identity for this session — drives Kiwi credentials, per-profile preferences and
-            which projects you see. Switching reloads the app.
+            Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
           </p>
           <ul class="pp-list" data-guide="prefs.profilesPane">
             <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
