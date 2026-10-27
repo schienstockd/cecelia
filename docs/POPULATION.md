@@ -595,7 +595,11 @@ segmentations (`B/T` + `C/T`) stays one group and pools → `#flow.B_T+C_T`. `co
 off) makes every B ref one group — the nearest of any target, the pre-#1734 behaviour. Each group's
 `<target>` is `_contact_target(pop_namespace(group), group)`; every reader (analysis runs, plots,
 measure pickers, track aggregation, viewer colour-by) matches the `contact#` / `min_distance#` prefix,
-so N column sets need no reader change. QC `nContacts`/`fracInContact` count A cells in contact with
+so N column sets need no reader change. `contactsMeshes` with **Containment** on adds
+`.contained_by#<target>` (0/1: the A cell sits inside a B cell) and `.contains_n#<target>` (B cells
+inside this A cell) — on each object's label voxels with holes filled plane by plane, because an
+engulfed fragment is dark in its host's channel and leaves a hole in the host's segmentation. Both are
+quantities to the same readers (`_SPATIAL_NUMERIC_MEASURE`, `spatial_cell_properties.json`). QC `nContacts`/`fracInContact` count A cells in contact with
 ANY target (= what the pooled column reported), plus `nTargets`; a target with no cells is skipped
 with `contact.no_target_cells`. A per-target re-run leaves an earlier combined set in place (it is a
 different measure) and names it in the log; drop it under Analysis runs.

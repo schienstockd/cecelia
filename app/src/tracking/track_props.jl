@@ -21,9 +21,10 @@ const _MAX_CATEGORICAL_LEVELS = 20
 
 # Spatial-analysis obs columns that are quantities, not code sets — see the name-rule in
 # `_is_categorical_col`. `contact#`/`is.aggregate` are 0/1 flags whose MEAN is the fraction in
-# contact / aggregated; `min_distance#` is µm; `spatial.comp.*` is a neighbourhood fraction.
+# contact / aggregated; `contained_by#` likewise (fraction inside); `contains_n#` is a count of held
+# cells; `min_distance#` is µm; `spatial.comp.*` is a neighbourhood fraction.
 const _SPATIAL_NUMERIC_MEASURE =
-    r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.is\.aggregate$|^spatial\.comp\.)"
+    r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.contained_by#|\.cell\.contains_n#|\.cell\.is\.aggregate$|^spatial\.comp\.)"
 
 # Detect categorical vs numeric automatically from the decoded column — no config map (the old R
 # version used `config.yml` `parameters.labelStats`). Three cases, matching the real data:

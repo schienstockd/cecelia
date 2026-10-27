@@ -6,6 +6,11 @@
 # stripped, so one population split across segmentations (`B/T`, `C/T`) still pools into one set.
 # `combineTargets` keeps the pooled form — one set for every B pop together — as an opt-in.
 
+# The mesh route's optional containment columns, `{pt}.cell.{kind}#{target}` beside the distances
+# (contactsMeshes `checkContained`). Both routes write the same column set, so a run that does not
+# measure containment drops these rather than leave an earlier run's beside its fresh distances.
+const CONTAINMENT_COLS = ("contained_by", "contains_n")
+
 _contact_target(pop_type_b, popsB) =
     replace(string(pop_type_b, ".", join(sort(collect(String, popsB)), "+")), "/" => "_")
 

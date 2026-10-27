@@ -18,7 +18,7 @@ import { buildFocusViewState } from '../utils/viewer/focusOnCell'
 import { nextIndex, prevIndex, clampIndex, pageSummary } from '../utils/reviewPager'
 import {
   fetchRois, postRoiReview, filterRois, roiFocusTarget, claudeLabelText, disagrees,
-  ROI_STATUSES, ROI_TYPES, type RoiChange, type RoiList, type RoiRow, type RoiStatus, type RoiType,
+  ROI_STATUSES, type RoiChange, type RoiList, type RoiRow, type RoiStatus,
 } from '../utils/rois'
 
 const props = defineProps<{ projectUid: string, imageUid: string }>()
@@ -76,14 +76,14 @@ const setStatus = (r: RoiRow, s: 'accepted' | 'rejected' | 'flagged' | 'pending'
 const columns: SelectionColumn[] = [
   { key: 'rank', label: '#', sortable: true, width: 34 },
   { key: 'site', label: 'Site', sortable: true, width: 40 },
-  { key: 'cue', label: 'Cue', sortable: true, width: 60 },
+  { key: 'nObjects', label: 'Objects', sortable: true, width: 56 },
   { key: 'frames', label: 't', sortKey: 't0', sortable: true, width: 56 },
   { key: 'status', label: 'Status', sortable: true, width: 70 },
   { key: 'claude', label: 'Claude', ellipsis: true },
 ]
 const tableRows = computed(() => rows.value.map(r => ({
   id: r.id, rank: r.rank, site: r.site ?? r.rank, t0: r.t0, status: r.status,
-  cue: r.type, frames: `${r.t0}–${r.t1}`,
+  nObjects: r.nObjects, frames: `${r.t0}–${r.t1}`,
   claude: claudeLabelText(r.review) + (disagrees(r.review) ? ' ≠' : ''),
 })))
 const rowTooltip = (row: Record<string, unknown>) => {
@@ -155,9 +155,9 @@ watch(() => settings.viewerRoiSuffix, load)
         <div class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Label</span>
           <select :value="active.review?.userLabel ?? ''" class="cc-input-2xs roi-grow" v-tooltip.bottom="'Your label for this ROI'"
-                  @change="e => review(active!, { userLabel: (e.target as HTMLSelectElement).value as RoiType | '' })">
+                  @change="e => review(active!, { userLabel: (e.target as HTMLSelectElement).value })">
             <option value="">—</option>
-            <option v-for="t in ROI_TYPES" :key="t" :value="t">{{ t.replace('_', ' ') }}</option>
+            <option v-for="t in list.labels" :key="t" :value="t">{{ t }}</option>
           </select>
         </div>
         <div class="cc-row cc-row-tight">

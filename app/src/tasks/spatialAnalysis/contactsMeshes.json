@@ -53,6 +53,13 @@
       "type": "bool",
       "default": false,
       "tip": "One distance to the nearest of all targets; off = one per target"
+    },
+    {
+      "key": "checkContained",
+      "label": "Containment",
+      "type": "bool",
+      "default": false,
+      "tip": "Also record which A cells sit inside a B cell, and how many each holds"
     }
   ]
 }

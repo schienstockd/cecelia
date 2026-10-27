@@ -219,10 +219,11 @@ function _rois_delete!(img, run; on_log = _ -> nothing)
     _rm_if(qc_path(img, "spatialAnalysis.roiDiscovery", run.key); on_log)
 end
 
-# `{pt}.cell.contact#{target}` (+ min_distance / contact_id) — one run per (segmentation, pt, target).
-# Points and mesh contacts share the columns, so one run covers both tasks.
+# `{pt}.cell.contact#{target}` (+ min_distance / contact_id, and the mesh route's optional
+# contained_by / contains_n) — one run per (segmentation, pt, target). Points and mesh contacts share
+# the columns, so one run covers both tasks.
 const _CONTACT_RE = r"^([A-Za-z]+)\.cell\.contact#(.+)$"
-_contact_cols(pt, t) = ["$pt.cell.contact#$t", "$pt.cell.min_distance#$t", "$pt.cell.contact_id#$t"]
+_contact_cols(pt, t) = ["$pt.cell.$(k)#$t" for k in ("contact", "min_distance", "contact_id", CONTAINMENT_COLS...)]
 
 function _contacts_list(img)
     out = AnalysisRun[]

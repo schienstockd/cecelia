@@ -20,7 +20,7 @@
         roi = Dict{String,Any}("id" => "r0000000a", "rank" => 1, "t0" => 3, "t1" => 9,
             "box" => Dict("x0" => 0, "x1" => 9, "y0" => 0, "y1" => 9, "z0" => 0, "z1" => 2),
             "objects" => Any[Dict("label" => 11), Dict("label" => 12)])
-        write_json_atomic(img_rois_path(img, "default"), Dict{String,Any}("version" => 1, "valueName" => "B", "rois" => Any[roi]))
+        write_json_atomic(img_rois_path(img, "default"), Dict{String,Any}("version" => 2, "valueName" => "B", "labels" => ["engulfment", "unsure"], "rois" => Any[roi]))
 
         q = "projectUid=$(proj.uid)&imageUid=$(img.uid)"
         st, body = api_rois_list(HTTP.Request("GET", "/api/rois?$q"))
@@ -34,7 +34,7 @@
         base = Dict{String,Any}("projectUid" => proj.uid, "imageUid" => img.uid, "roiId" => "r0000000a")
         drain()
         # Claude proposes a label (ids + frames inside the ROI) and may not accept
-        cl = Dict("type" => "engulfment", "confidence" => 0.7, "reason" => "inside CD169",
+        cl = Dict("label" => "engulfment", "confidence" => 0.7, "reason" => "inside CD169",
                   "objectIds" => [11], "frames" => [5])
         @test via_router("/api/rois/review", merge(base, Dict("claudeLabel" => cl)); claude = true)[1] == 200
         @test via_router("/api/rois/review", merge(base, Dict("status" => "accepted")); claude = true)[1] == 409

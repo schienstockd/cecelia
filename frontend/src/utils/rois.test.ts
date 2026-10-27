@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { claudeLabelText, disagrees, filterRois, roiFocusTarget, type RoiRow } from './rois'
 
 const row = (id: string, rank: number, status: RoiRow['status']): RoiRow => ({
-  id, rank, status, score: 1, type: 'density', t0: 10, t1: 21,
+  id, rank, status, score: 1, t0: 10, t1: 21,
   box: { x0: 100, x1: 160, y0: 40, y1: 60, z0: 2, z1: 9 },
   centroid: { t: 15, z: 5.4, y: 50, x: 130 }, nObjects: 3, objectLabels: [1, 2, 3], review: null,
 })
@@ -29,14 +29,14 @@ describe('roiFocusTarget', () => {
 })
 
 describe('Claude label text + disagreement', () => {
-  const cl = { type: 'free_debris' as const, confidence: 0.75, reason: 'r' }
-  it('formats type and confidence', () => {
+  const cl = { label: 'free debris', confidence: 0.75, reason: 'r' }
+  it('formats label and confidence', () => {
     expect(claudeLabelText({ claudeLabel: cl })).toBe('free debris 0.8')
     expect(claudeLabelText(null)).toBe('')
   })
   it('flags only when both labelled and different', () => {
     expect(disagrees({ claudeLabel: cl, userLabel: 'engulfment' })).toBe(true)
-    expect(disagrees({ claudeLabel: cl, userLabel: 'free_debris' })).toBe(false)
+    expect(disagrees({ claudeLabel: cl, userLabel: 'free debris' })).toBe(false)
     expect(disagrees({ claudeLabel: cl })).toBe(false)
   })
 })

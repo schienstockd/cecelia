@@ -13,7 +13,6 @@
 
 using Dates: now
 
-const ROI_TYPES    = ("engulfment", "free_debris", "bleb_fragmentation", "dividing", "artifact", "unsure")
 const ROI_STATUSES = ("pending", "accepted", "rejected", "flagged")
 const ROI_NOTE_MAX = 2048
 const ROI_REASON_MAX = 500
@@ -85,12 +84,23 @@ _by_claude(by) = by isa AbstractDict && get(by, "via", "") == "claude"
 
 _roi_labels(roi) = Set{Int}(Int(o["label"]) for o in get(roi, "objects", Any[]) if haskey(o, "label"))
 
-# Validate Claude's structured label against the ROI it is about (plan §4: ids and frames that are
-# not in the ROI are hallucinations, refused rather than stored).
-function _validate_claude_label(cl, roi)::Union{Nothing,String}
+"""
+    roi_set_labels(set) -> Vector{String}
+
+The review labels a ROI set offers — chosen on the "Find ROIs" run that made it (`reviewLabels`), so
+review fits the question that run asked; the task default for a set that recorded none.
+"""
+function roi_set_labels(set)::Vector{String}
+    l = set isa AbstractDict ? get(set, "labels", nothing) : nothing
+    l isa AbstractVector && !isempty(l) ? String[string(x) for x in l] : roi_review_labels(ROI_LABELS_DEFAULT)
+end
+
+# Validate Claude's structured label against the ROI it is about and the set's labels (plan §4: ids
+# and frames that are not in the ROI are hallucinations, refused rather than stored).
+function _validate_claude_label(cl, roi, labels)::Union{Nothing,String}
     cl isa AbstractDict || return "claudeLabel must be an object"
-    t = String(get(cl, "type", ""))
-    t in ROI_TYPES || return "claudeLabel.type must be one of $(join(ROI_TYPES, ", "))"
+    t = String(get(cl, "label", ""))
+    t in labels || return "claudeLabel.label must be one of $(join(labels, ", "))"
     c = get(cl, "confidence", nothing)
     (c isa Real && 0 <= c <= 1) || return "claudeLabel.confidence must be a number in [0, 1]"
     reason = String(get(cl, "reason", ""))
@@ -119,14 +129,16 @@ function _set_field!(rev::AbstractDict, field::String, value, by, at)
 end
 
 """
-    apply_roi_review!(reviews, roi, change, by; at) -> (status::Int, error::Union{String,Nothing})
+    apply_roi_review!(reviews, roi, change, by; labels, at) -> (status::Int, error::Union{String,Nothing})
 
 Apply one review write to `reviews` (mutated in place) for the ROI dict `roi`. `change` may carry
-`status`, `userLabel`, `note`, `claudeLabel`, or `undo = true` (alone). `by` is the caller's
-`author_stamp()`. Returns `(200, nothing)` on success — including a no-op — else a 400/409 status and
-the reason. Nothing is written to disk here.
+`status`, `userLabel`, `note`, `claudeLabel`, or `undo = true` (alone). `labels` are the set's review
+labels (`roi_set_labels`) a label must be one of. `by` is the caller's `author_stamp()`. Returns
+`(200, nothing)` on success — including a no-op — else a 400/409 status and the reason. Nothing is
+written to disk here.
 """
 function apply_roi_review!(reviews::AbstractDict, roi::AbstractDict, change::AbstractDict, by::AbstractDict;
+                           labels::AbstractVector{<:AbstractString} = roi_review_labels(ROI_LABELS_DEFAULT),
                            at::String = string(now()))
     id = String(roi["id"])
     rev = get!(reviews, id, Dict{String,Any}("status" => "pending"))
@@ -160,7 +172,7 @@ function apply_roi_review!(reviews::AbstractDict, roi::AbstractDict, change::Abs
     end
     if haskey(change, "userLabel")
         ul = String(something(change["userLabel"], ""))
-        isempty(ul) || ul in ROI_TYPES || return (400, "userLabel must be one of $(join(ROI_TYPES, ", ")) or empty")
+        isempty(ul) || ul in labels || return (400, "userLabel must be one of $(join(labels, ", ")) or empty")
     end
     if haskey(change, "note")
         length(String(something(change["note"], ""))) > ROI_NOTE_MAX &&
@@ -168,7 +180,7 @@ function apply_roi_review!(reviews::AbstractDict, roi::AbstractDict, change::Abs
     end
     cl = get(change, "claudeLabel", nothing)
     if cl !== nothing
-        err = _validate_claude_label(cl, roi)
+        err = _validate_claude_label(cl, roi, labels)
         err === nothing || return (400, err)
     end
 
@@ -203,7 +215,7 @@ function roi_review!(img::CciaImage, suffix::AbstractString, roi_id::AbstractStr
     k === nothing && return (404, "no ROI $(roi_id) in $(suffix)")
     lock(_ROI_REVIEWS_LOCK) do
         reviews = load_roi_reviews(img, suffix)
-        st, err = apply_roi_review!(reviews, set["rois"][k], change, by)
+        st, err = apply_roi_review!(reviews, set["rois"][k], change, by; labels = roi_set_labels(set))
         st == 200 || return (st, err)
         save_roi_reviews!(img, suffix, reviews)
         (200, reviews[String(roi_id)])
@@ -236,9 +248,10 @@ function roi_list_payload(img::CciaImage, suffix::AbstractString; objects::Bool 
         objects || delete!(row, "objects")
         push!(rows, row)
     end
-    for k in ("version", "generatedAt", "params", "geometry", "valueName")
+    for k in ("version", "generatedAt", "params", "geometry", "valueName", "rankBy")
         haskey(set, k) && (out[k] = set[k])
     end
+    out["labels"] = roi_set_labels(set)
     out["rois"] = rows
     out["orphaned"] = Dict{String,Any}(k => v for (k, v) in reviews if !(k in ids))
     out

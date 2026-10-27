@@ -1,12 +1,14 @@
 > **ARCHIVED — not authoritative, do not act on this.** A frozen record of what was asked at the
 > time. It is not a description of how the code works now, and not instructions to re-run.
 >
-> **Outcome:** plan + P1 on branch `feat/roi-triage` (2026-10-26) → [`docs/todo/ROI_TRIAGE_PLAN.md`](../todo/ROI_TRIAGE_PLAN.md).
-> Built in Feijoa as a viewer side-rail section, not a separate panel; no `roi_generate` MCP tool (MCP
-> cannot start tasks); `unsure` added to the label types; nuc/mem are polygons in one TOM×GFP plane,
-> not single-channel gates; the macrophage mask is paired with a mask-free density cue because a plain
-> CD169 threshold misses dim TBMs. The brief said "plan before implementing"; the user asked for both
-> in one pass.
+> **Outcome:** plan + P1 on branch `feat/roi-triage` (2026-10-26/27) → [`docs/todo/ROI_TRIAGE_PLAN.md`](../todo/ROI_TRIAGE_PLAN.md).
+> Built **generic**, not fragment-specific: the question is the population (segmentation + gating,
+> filter populations on any measure) and "Find ROIs" ranks where its objects gather — the brief's
+> five cues are gone. No CD169 thresholding: macrophages are to be segmented, and containment
+> (`contained_by#` / `contains_n#`, the old R `checkBContainsA`) was restored on Cell contacts
+> (meshes). Review labels belong to each ROI set instead of the brief's fixed types. Built in Feijoa
+> as a viewer side-rail section; no `roi_generate` MCP tool (MCP cannot start tasks). The brief said
+> "plan before implementing"; the user asked for both in one pass.
 
 # Opus task: design and audit ROI auto-discovery + Claude triage for B-cell fragments
 

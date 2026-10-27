@@ -20,6 +20,7 @@ export interface ParamDef {
   tips?: Array<{ text: string; requires?: { axes?: string[] } }>
   placeholder?: string  // text / dirPath / filePath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
+  allObs?: boolean      // labelPropsColsSelection: offer every obs measure, not just `live.*`
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
   popScope?: 'cells' | 'tracks'  // popSelection: LEGACY two-scope shim (cells → live+clust+region, tracks → track+trackclust). Built-ins all declare `accepts`; kept so user custom modules written against it still render

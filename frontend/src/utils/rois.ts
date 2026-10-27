@@ -7,13 +7,12 @@ import type { FocusOnCellTarget } from './viewer/focusOnCell'
 export type RoiStatus = 'pending' | 'claude-labelled' | 'accepted' | 'rejected' | 'flagged'
 export const ROI_STATUSES: readonly RoiStatus[] =
   ['pending', 'claude-labelled', 'accepted', 'rejected', 'flagged'] as const
-export const ROI_TYPES = ['engulfment', 'free_debris', 'bleb_fragmentation', 'dividing', 'artifact', 'unsure'] as const
-export type RoiType = typeof ROI_TYPES[number]
 
 export interface RoiBox { x0: number, x1: number, y0: number, y1: number, z0: number, z1: number }
 
 export interface RoiClaudeLabel {
-  type: RoiType
+  /** one of the set's `labels` */
+  label: string
   confidence: number
   reason: string
   objectIds?: number[]
@@ -22,7 +21,7 @@ export interface RoiClaudeLabel {
 
 export interface RoiReview {
   status?: string
-  userLabel?: RoiType
+  userLabel?: string
   note?: string
   claudeLabel?: RoiClaudeLabel
 }
@@ -32,14 +31,14 @@ export interface RoiRow {
   rank: number
   /** rank of the best ROI at the same place (overlapping boxes, any time) — one event, several windows */
   site?: number
+  /** summed object weight: the object count, or the rank measures' percentiles summed */
   score: number
-  /** the dominant CUE (contact / density / turnover / naked / partner) — not a biological type */
-  type: string
   t0: number
   t1: number
   box: RoiBox
   centroid: { t: number, z: number, y: number, x: number }
   nObjects: number
+  nFrames?: number
   objectLabels: number[]
   status: RoiStatus
   review: RoiReview | null
@@ -49,10 +48,14 @@ export interface RoiList {
   suffix: string
   suffixes: string[]
   valueName?: string
+  /** the review labels this set offers — chosen on the "Find ROIs" run that made it */
+  labels: string[]
+  /** the measures the set was ranked by; empty = by object count */
+  rankBy?: string[]
   rois: RoiRow[]
 }
 
-const EMPTY: RoiList = { suffix: 'default', suffixes: [], rois: [] }
+const EMPTY: RoiList = { suffix: 'default', suffixes: [], labels: [], rois: [] }
 
 export async function fetchRois(projectUid: string, imageUid: string, suffix = ''): Promise<RoiList> {
   const q = new URLSearchParams({ projectUid, imageUid })
@@ -61,7 +64,8 @@ export async function fetchRois(projectUid: string, imageUid: string, suffix = '
     const res = await fetch(`/api/rois?${q}`)
     if (!res.ok) return EMPTY
     const d = await res.json() as RoiList
-    return { ...EMPTY, ...d, rois: Array.isArray(d.rois) ? d.rois : [] }
+    return { ...EMPTY, ...d, rois: Array.isArray(d.rois) ? d.rois : [],
+             labels: Array.isArray(d.labels) ? d.labels : [] }
   } catch {
     return EMPTY
   }
@@ -69,7 +73,7 @@ export async function fetchRois(projectUid: string, imageUid: string, suffix = '
 
 export type RoiChange =
   | { status: 'pending' | 'accepted' | 'rejected' | 'flagged' }
-  | { userLabel: RoiType | '' }
+  | { userLabel: string }
   | { note: string }
   | { undo: true }
 
@@ -115,10 +119,10 @@ export function roiFocusTarget(r: Pick<RoiRow, 't0' | 't1' | 'box' | 'centroid'>
 /** The short text a row shows for Claude's label: `engulfment 0.8`, or '' when there is none. */
 export function claudeLabelText(rv: RoiReview | null | undefined): string {
   const c = rv?.claudeLabel
-  return c ? `${c.type.replace('_', ' ')} ${c.confidence.toFixed(1)}` : ''
+  return c ? `${c.label} ${c.confidence.toFixed(1)}` : ''
 }
 
-/** Whether the person and Claude disagree on this ROI (both labelled, different types). */
+/** Whether the person and Claude disagree on this ROI (both labelled, different labels). */
 export function disagrees(rv: RoiReview | null | undefined): boolean {
-  return !!(rv?.userLabel && rv.claudeLabel && rv.userLabel !== rv.claudeLabel.type)
+  return !!(rv?.userLabel && rv.claudeLabel && rv.userLabel !== rv.claudeLabel.label)
 }

@@ -870,6 +870,11 @@ Current users: `behaviour.hmm_states` / `behaviour.hmm_transitions` / `behaviour
 { "key": "modelMeasurements", "label": "Properties", "type": "labelPropsColsSelection", "multiple": true, "default": ["live.cell.speed", "live.cell.angle"] }
 ```
 
+**`allObs`** — on a `labelPropsColsSelection`, `"allObs": true` offers EVERY obs measure rather than only `live.*` — the spatial readouts
+(`flow.cell.contact#…`, `…contains_n#…`, `…min_distance#…`) land under *Other measures*. For a task
+that can rank or weight by any measure (`spatialAnalysis.roiDiscovery` → *Rank by*); a model-fitting
+picker keeps the default, where an id-like obs column would be a feature nobody meant.
+
 **`motionDimsSelection`** — `auto | 2D | 3D` selector for whether track/behaviour measures are computed in-plane or in full 3D (used by `tracking.track_measures`). In `auto` it calls `GET /api/tracking/motion-dims` for the selected image + sibling `valueName` (server-side detector, cached by h5ad mtime) and shows the recommendation **+ a warning before Run** (e.g. "Auto → 2D — z is non-migratory jitter…"), with override to 2D/3D. Value sent: `"auto"`/`"2D"`/`"3D"`; the handler resolves `auto` via `detect_motion_dims`. See `docs/TRACKING.md` → *Motion dimensionality*.
 ```json
 { "key": "dims", "label": "Motion dimensions", "type": "motionDimsSelection", "default": "auto" }
