@@ -16,11 +16,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import FileBrowser from './FileBrowser.vue'
+import ConfirmButton from './ConfirmButton.vue'
 import InlineNote from './InlineNote.vue'
 import { useHpcDrafts } from '../composables/useHpcDrafts'
 import { useSavedFlash } from '../composables/useFlash'
 import { fetchHpcSettings, saveHpcSettings, testHpcConnection, hpcTestBlocker, hpcTestLines,
-  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID,
+  keyPickerStart, hpcFieldPatch, hpcFieldValue, fetchHpcEnv, installHpcEnv, hpcEnvLine, onHpcEnvChanged, HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, cleanupHpcEnv,
   type HpcScope, type HpcSettings, type HpcPatch, type HpcTestResult, type HpcClassName, type HpcClassSettings,
   type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen, openPreferences } from '../lib/preferencesOpen'
@@ -107,11 +108,15 @@ async function loadEnv() {
   try { env.value = await fetchHpcEnv() }
   catch (e) { env.value = { configured: false, lock: '', installed: false, job: '', installing: false,
                             error: e instanceof Error ? e.message : String(e) } }
-  // Opened mid-install (a reload, another tab): this tab missed the job's first frame, so give it its row.
-  const r = installRow.value
-  if (env.value?.installing && r?.status !== 'running' && r?.status !== 'queued') {
+  // Opened mid-install or mid-clean-up (a reload, another tab): this tab missed the job's first frame,
+  // so give it its row.
+  const live = (id: string) => ['running', 'queued'].includes(tasks.tasks.find(t => t.id === id)?.status ?? '')
+  if (env.value?.installing && !live(HPC_ENV_JOB_ID)) {
     tasks.adoptJob(railJobRow({ taskId: HPC_ENV_JOB_ID, status: 'running', fun: 'hpc:install-env', pool: 'job' }))
     tasks.setHpc(HPC_ENV_JOB_ID, env.value.stage ?? '', env.value.job)
+  }
+  if (env.value?.cleaning && !live(HPC_CLEAN_JOB_ID)) {
+    tasks.adoptJob(railJobRow({ taskId: HPC_CLEAN_JOB_ID, status: 'running', fun: 'hpc:cleanup', pool: 'job' }))
   }
 }
 async function install() {
@@ -119,6 +124,18 @@ async function install() {
   try { await installHpcEnv(); env.value = env.value && { ...env.value, installing: true, error: '' } }
   catch (e) { error.value = e instanceof Error ? e.message : String(e) }
 }
+// Clean up / Delete all: the refusal (a job still on the cluster) comes back on the POST, shown here.
+const cleaning = ref(false)
+async function cleanup(all: boolean) {
+  await pendingSave
+  cleaning.value = true
+  error.value = ''
+  try { await cleanupHpcEnv(all); env.value = env.value && { ...env.value, cleaning: true } }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e) }
+  finally { cleaning.value = false }
+}
+const canClean = computed(() => !!env.value?.configured && !env.value.installing && !env.value.cleaning &&
+                                 !env.value.clusterCleaning && !cleaning.value)
 let offEnv: (() => void) | null = null
 onMounted(() => { offEnv = onHpcEnvChanged(() => void loadEnv()) })
 onUnmounted(() => offEnv?.())
@@ -261,6 +278,18 @@ const CLASS_FIELDS = computed<{ key: keyof HpcClassSettings; label: string; tip:
                 v-tooltip.top="'Install Cecelia\'s Python environment on the cluster, as a job'">
           <i class="pi pi-download" /> Install on cluster
         </button>
+        <button v-if="canClean" class="cc-btn cc-btn-ghost" @click="cleanup(false)"
+                v-tooltip.top="'Delete other versions, the download cache and job folders over 30 days old'">
+          <i class="pi pi-eraser" /> Clean up
+        </button>
+        <ConfirmButton v-if="canClean" @confirm="cleanup(true)" v-slot="{ armed, press }">
+          <button class="cc-btn" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost'" @click="press"
+                  v-tooltip.top="armed ? 'Click again to delete everything, project copies included'
+                                       : 'Delete everything Cecelia put on the cluster'">
+            <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete all
+          </button>
+        </ConfirmButton>
+        <i v-if="cleaning" class="pi pi-spin pi-spinner cc-muted" />
       </div>
     </template>
   </div>

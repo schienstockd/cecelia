@@ -76,6 +76,14 @@ function _hpc_status_script(::PbsBackend, ids::AbstractVector{<:AbstractString})
     """
 end
 
+# The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`): `qselect` with no
+# state lists every unfinished job; their names come from one `qstat -f`.
+_hpc_active_script(::PbsBackend) = _hpc_sched_prelude("qselect") * """
+    ids=\$(qselect -u "\$(id -un)") || exit 96
+    [ -z "\$ids" ] || qstat -f \$ids 2>/dev/null | awk '/^Job Id:/ {id = \$3} /^ +Job_Name = cecelia-/ {print "$(_HPC_ACTIVE_TAG) " id}'
+    true
+    """
+
 function _hpc_parse_status(::PbsBackend, out::AbstractString)::Dict{String,RemoteJobState}
     st = Dict{String,RemoteJobState}()
     for l in split(out, '\n')

@@ -21,6 +21,8 @@ export interface RailJobFrame {
 /** The row's name: what the job does, in the Task Manager's words. */
 export function railJobLabel(fun: string): string {
   if (fun === 'hpc:install-env') return 'Install cluster environment'
+  if (fun === 'hpc:cleanup') return 'Clean up cluster'
+  if (fun === 'hpc:delete-all') return 'Delete Cecelia files on cluster'
   const env = /^system:install-env:(.+)$/.exec(fun)
   if (env) return `Install ${env[1]} environment`
   const w = /^system:fetch-weights:(.+)$/.exec(fun)

@@ -67,6 +67,10 @@ function _pbs_shims(dir::AbstractString)
         nohup bash "\$1" > scheduler.log 2>&1 < /dev/null &
         echo "\$!.shim"
         """)
+    write(joinpath(dir, "qselect"), """
+        #!/bin/sh
+        for p in \$(pgrep -f 'bash job.sh' 2>/dev/null); do echo "\$p.shim"; done
+        """)
     write(joinpath(dir, "qdel"), """
         #!/bin/sh
         p="\${1%.shim}"
@@ -82,16 +86,16 @@ function _pbs_shims(dir::AbstractString)
         rc=0
         for i in "\$@"; do
           if grep -qx "\$i" "\$d/queued"; then
-            printf 'Job Id: %s\\n    job_state = Q\\n    comment = Not Running: Insufficient amount of resource: ncpus\\n' "\$i"
+            printf 'Job Id: %s\\n    Job_Name = cecelia-q\\n    job_state = Q\\n    comment = Not Running: Insufficient amount of resource: ncpus\\n' "\$i"
           elif kill -0 "\${i%.shim}" 2>/dev/null; then
-            printf 'Job Id: %s\\n    Job_Name = x\\n    job_state = R\\n' "\$i"
+            printf 'Job Id: %s\\n    Job_Name = cecelia-shim\\n    job_state = R\\n' "\$i"
           else
             echo "qstat: \$i Job has finished, use -x or -H to obtain historical job information" >&2; rc=153
           fi
         done
         exit \$rc
         """)
-    for f in ("qsub", "qdel", "qstat"); chmod(joinpath(dir, f), 0o755); end
+    for f in ("qsub", "qselect", "qdel", "qstat"); chmod(joinpath(dir, f), 0o755); end
     dir
 end
 
@@ -136,6 +140,7 @@ end
             write(joinpath(shims, "queued"), id_q * "\n")
             p = only(hpc_poll(b, c, [Cecelia.HpcPollJob(id_q, dir_q, 0)]))
             @test p.state == JOB_QUEUED && p.reason == "Insufficient amount of resource: ncpus"
+            @test id_q in hpc_active_jobs(b, c)       # a queued Cecelia job blocks a clean-up
             reasons, qlines, qstates = String[], String[], RemoteJobState[]
             release = @async begin
                 t = time()

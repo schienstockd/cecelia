@@ -24,6 +24,10 @@ _hpc_parse_status(::LocalShellBackend, out::AbstractString) =
     Dict{String,RemoteJobState}(m[1] => JOB_RUNNING
                                 for m in eachmatch(Regex("^$(_HPC_STATUS_TAG) (\\S+) RUNNING", "m"), out))
 
+# Every job this machine is running for Cecelia (its jobs are `bash job.sh`, the id the pid).
+_hpc_active_script(::LocalShellBackend) =
+    "for p in \$(pgrep -f 'bash $(HPC_JOB_SCRIPT)' 2>/dev/null); do echo \"$(_HPC_ACTIVE_TAG) \$p\"; done\ntrue\n"
+
 # Children first, then the job's own bash: the task's Python must not outlive a cancel. This runs on
 # the job's machine as script text (the remote side), not as a local spawn.
 hpc_cancel(::LocalShellBackend, c::HpcConn, id::AbstractString) = (hpc_exec!(c, """

@@ -19,7 +19,7 @@ import { pickBoardTab } from '../utils/boardNav'
 import { parseRailTime } from '../utils/taskElapsed'
 import { adoptsRailJob, railJobRow } from '../utils/railJobs'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
-import { HPC_ENV_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
+import { HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
 import { writtenImageVersion } from '../utils/taskResultVersion'
 
 // `signedOut`: the backend is up but refuses this browser — it has no sign-in cookie (the API token,
@@ -504,8 +504,9 @@ export const useWsStore = defineStore('ws', () => {
         if (taskId.startsWith('system-env-install:') && (status === 'done' || status === 'failed')) {
           invalidateSystemEnvs()
         }
-        // The cluster env install (hpc_api.jl) — Settings → HPC re-reads the env state.
-        if (taskId === HPC_ENV_JOB_ID && (status === 'done' || status === 'failed' || status === 'cancelled')) {
+        // The cluster env install or clean-up (hpc_api.jl) — Settings → HPC re-reads the env state.
+        if ((taskId === HPC_ENV_JOB_ID || taskId === HPC_CLEAN_JOB_ID) &&
+            (status === 'done' || status === 'failed' || status === 'cancelled')) {
           notifyHpcEnvChanged()
         }
         if (imageUid) {

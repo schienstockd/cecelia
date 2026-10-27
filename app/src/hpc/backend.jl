@@ -7,6 +7,7 @@
 #                                    code, new log
 #   hpc_cancel(b, conn, id)
 #   hpc_exit_reason(b, conn, id)     why a job vanished without an exit code (walltime, OOM, node)
+#   hpc_active_jobs(b, conn)         the user's Cecelia jobs still queued or running (before a clean-up)
 #
 # The backend only tells queued from running (and why a job waits) and explains a vanished job.
 # Completion is backend-independent: the common body writes `<dir>/.exit` with the job's exit status, so a
@@ -186,6 +187,17 @@ end
 
 const _HPC_STATUS_TAG = "CECELIA-STATE"
 const _HPC_REASON_TAG = "CECELIA-REASON"
+const _HPC_ACTIVE_TAG = "CECELIA-ACTIVE"
+
+"""
+    hpc_active_jobs(b, conn) -> Vector{String}
+
+The ids of the user's Cecelia jobs (named `cecelia-…`) the scheduler still has queued or running, from
+any workstation. Throws `HpcError` when the scheduler cannot be asked: "none" must be an answer.
+"""
+hpc_active_jobs(b::HpcBackend, c::HpcConn)::Vector{String} =
+    [String(m[1]) for m in eachmatch(Regex("^$(_HPC_ACTIVE_TAG) (\\S+)", "m"),
+                                     hpc_exec!(c, _hpc_active_script(b); what = "Job list"))]
 
 # Why each waiting job waits, from the status half of the poll: `CECELIA-REASON <id> <text>` lines. A
 # backend whose status script prints none (the local shell) has no reasons.

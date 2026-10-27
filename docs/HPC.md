@@ -63,6 +63,14 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
   install job goes there. Empty = the CPU queue.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
+- **Clean up** (beside Install) removes other versions' envs, old pixis, the download cache, the code
+  copies and job folders over 30 days old; this version's env, the project mirrors and model files
+  stay. **Delete all** (confirm) deletes everything Cecelia made in the remote folder, project mirrors
+  included, but never the folder itself or files of your own in it; Install on cluster then starts
+  from nothing. Both are refused while a Cecelia job is queued or running on the cluster (from any
+  workstation) or a cluster run is in progress here. Each runs as a Task Manager row. Things are moved
+  into `.cecelia-trash-<n>/` first, then deleted, so an interrupted clean-up never leaves a
+  half-deleted env that still looks installed; the next one removes the leftover.
 - The install is a Task Manager row (*Install cluster environment*) with the same stages as a run,
   and its log. The line beside **Install on cluster** follows it: *Uploading the environment files*,
   *Queued on the cluster (job N)*, *Installing on the cluster (job N)*. A page opened mid-install
@@ -190,6 +198,10 @@ scheduler's reason appears in the log, and the measured numbers above should be 
   env/<lock hash>/          code/<code hash>/         assets/{models,cellpose}/
   cache/pixi/               jobs/<task>-<runner>-<n>/ job.sh · job.log · .exit · params.json
 ```
+
+Nothing here is removed by a run; Settings → HPC → **Clean up** / **Delete all** (*Cluster
+environment* above) is how it goes. An env is ~8.3 GB and tens of thousands of files, which counts
+against file-number quotas (Gadi's), and each Cecelia version that changes `pixi.lock` adds one.
 
 A project folder that another workstation already mirrors (a different `.cecelia-mirror`) is refused,
 naming the folder to remove. Every job's `job.sh` and `job.log` stay in `jobs/`, which is the first

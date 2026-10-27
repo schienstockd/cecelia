@@ -9,6 +9,8 @@ describe('railJobs', () => {
     expect(railJobLabel('hpc:install-env')).toBe('Install cluster environment')
     expect(railJobLabel('system:install-env:cellpose-v3')).toBe('Install cellpose-v3 environment')
     expect(railJobLabel('system:fetch-weights:cpsam')).toBe('Download cpsam weights')
+    expect(railJobLabel('hpc:cleanup')).toBe('Clean up cluster')
+    expect(railJobLabel('hpc:delete-all')).toBe('Delete Cecelia files on cluster')
     expect(railJobLabel('movie:batch')).toBe('movie:batch')
   })
 

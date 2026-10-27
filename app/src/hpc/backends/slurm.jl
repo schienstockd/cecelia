@@ -57,6 +57,12 @@ _hpc_status_script(::SlurmBackend, ids::AbstractVector{<:AbstractString}) =
     true
     """
 
+# The user's Cecelia jobs still queued or running, by job name (`hpc_active_jobs`).
+_hpc_active_script(::SlurmBackend) = _hpc_sched_prelude("squeue") * """
+    q=\$(squeue -h -u "\$(id -un)" -o '%i %j') || exit 96
+    printf '%s\\n' "\$q" | awk '\$2 ~ /^cecelia-/ {print "$(_HPC_ACTIVE_TAG) " \$1}'
+    """
+
 # The two reasons nearly every wait has, in words; any other is shown as SLURM names it.
 const _SLURM_WAITS = Dict("Priority" => "Other jobs are ahead in the queue",
                           "Resources" => "Waiting for free nodes")

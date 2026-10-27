@@ -114,4 +114,8 @@ describe('hpcEnvLine', () => {
     expect(hpcEnvLine({ ...inst, stage: 'queued', job: '7.pbs' }, { stage: 'running', job: '7.pbs' }).text)
       .toBe('Installing on the cluster (job 7.pbs)')
   })
+  it('says a clean-up is running, and offers nothing meanwhile', () => {
+    expect(hpcEnvLine({ ...base, installed: true, cleaning: true }))
+      .toEqual({ text: 'Deleting files on the cluster', canInstall: false })
+  })
 })
