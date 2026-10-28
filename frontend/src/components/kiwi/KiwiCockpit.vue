@@ -5,7 +5,8 @@
 //
 // Rows, in visible order:
 //   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
-//   - Copy chat starter (moved from LabLogPanel).
+//   - Chat — Start in terminal (copies the command that starts a session already pointed at this
+//     project) + Copy chat starter (for a session that is already running).
 //   - Share — viewer / canvas buttons.
 //   - Ask — the structured duck (KiwiAsk.vue, docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4).
 //     Wrapped in a CollapsibleSection so a long conversation thread can be folded away when the
@@ -111,13 +112,6 @@ async function logoutAccount() {
 const accountTip = computed(() => appCtl.claudeLogin?.state === 'loggedOut'
   ? `Profile ${appCtl.activeProfileDisplayName} is not logged in`
   : `Assistant turns run on this account (profile ${appCtl.activeProfileDisplayName})`)
-// Terminal row: copy the one-liner that starts the assistant CLI in a terminal under THIS profile's
-// login (`kiwi_terminal_command` builds it server-side). A bare terminal run uses the default login.
-const { isCopied: termCopied, copy: copyTerm } = useCopyFlash()
-async function copyTerminalCommand() {
-  const r = await fetchTerminalCommand()
-  if (r?.command) await copyTerm(r.command)
-}
 
 // Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
 // showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
@@ -201,6 +195,21 @@ const { isCopied: chatCopied, copy: copyChatPrompt } = useCopyFlash(2500)
 async function copyChatStarter() {
   if (!projectUid.value) return
   await copyChatPrompt(buildChatPrompt(projectUid.value, projectName.value))
+}
+// Start in terminal: copy the one-liner (`kiwi_terminal_command`, built server-side) that starts the
+// assistant CLI under THIS profile's login with the chat starter as its first message, so one paste
+// gives a session already looking at the project — it pairs on its first observer call. A missing or
+// stale MCP entry is registered first: without it the session has no observer tools to pair through.
+const { isCopied: startCopied, copy: copyStart } = useCopyFlash(2500)
+const starting = ref(false)
+async function startInTerminal() {
+  if (!projectUid.value || starting.value) return
+  starting.value = true
+  try {
+    if (terminalCtaMode.value !== 'chat') await observer.registerMcp()
+    const r = await fetchTerminalCommand({ prompt: buildChatPrompt(projectUid.value, projectName.value) })
+    if (r?.command) await copyStart(r.command)
+  } finally { starting.value = false }
 }
 
 // ── Recent captures ───────────────────────────────────────────────────────────
@@ -365,6 +374,15 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <div class="kiwi-row" data-guide="kiwi.chat">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Chat</span>
           <button class="cc-btn cc-btn-ghost cc-fs-xs"
+                  :disabled="!observer.available || starting"
+                  @click="startInTerminal"
+                  v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
+                    : startCopied() ? 'Copied — paste it in a terminal'
+                    : `Copy a command that starts a session on this project as ${appCtl.activeProfileDisplayName}`">
+            <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied() ? 'pi-check' : 'pi-copy']" />
+            {{ startCopied() ? 'Copied' : 'Start in terminal' }}
+          </button>
+          <button class="cc-btn cc-btn-ghost cc-fs-xs"
                   @click="copyChatStarter"
                   v-tooltip.bottom="chatCopied()
                     ? 'Copied — paste it into your assistant chat'
@@ -373,6 +391,10 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
             {{ chatCopied() ? 'Copied' : 'Copy chat starter' }}
           </button>
         </div>
+        <!-- Setup failures from either button (this row's Start, Assistant → Terminal's Set up). -->
+        <InlineNote v-if="observer.registerError" severity="warn"
+                    :short="observer.registerError"
+                    detail="See Settings → MCP connections." />
 
         <!-- Share — two targets, one row. Viewer = the pop-out's WebGPU frame (existing flow);
              Canvas = whatever module page has registered a shareable plot canvas. Both land in
@@ -529,16 +551,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               {{ observer.registering ? CLAUDE_TERMINAL.busy
                  : terminalCtaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
             </button>
-            <button v-else class="cc-btn cc-btn-ghost cc-fs-2xs kiwi-obs-fix" @click="copyTerminalCommand"
-                    v-tooltip.bottom="termCopied() ? 'Copied — paste it in a terminal'
-                      : `Starts the assistant in a terminal as ${appCtl.activeProfileDisplayName}`">
-              <i :class="['pi', termCopied() ? 'pi-check' : 'pi-copy']" />
-              {{ termCopied() ? 'Copied' : 'Copy command' }}
-            </button>
           </div>
-          <InlineNote v-if="observer.registerError" severity="warn"
-                      :short="observer.registerError"
-                      detail="See Settings → MCP connections." class="kiwi-obs-err" />
         </CollapsibleSection>
       </template>
     </div>
@@ -611,6 +624,5 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 /* Fix action sits at the right end of the Terminal row so the label + dot + state read first, then
    the action. Not warn-toned itself — the dot already carries severity. */
 .kiwi-obs-fix { margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem; }
-.kiwi-obs-err { padding-top: 0.2rem; }
 
 </style>

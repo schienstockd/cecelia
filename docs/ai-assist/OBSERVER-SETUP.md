@@ -29,16 +29,21 @@ machine-wide default can be set via `config.toml` `[ai] model`; the CLI binary v
 The above is all you need for the **in-app** feature. To have a full back-and-forth session about the
 project in your own terminal, Cecelia sets Claude Code up for you:
 
-1. Kiwi → Assistant → **Set up** (once). Same button becomes **Fix** if the registered entry drifts
-   (stale/shadowed). The action lives next to the Terminal state indicator it acts on.
-2. Run `claude` in a terminal.
-3. Ask away — `check my current project in cecelia` is enough. The server briefs the session itself
-   (`mcp/cecelia_mcp/guidance.py`; see OBSERVER.md → *The hand-off is one line*), so there is no prompt
-   to paste and nothing to remember.
+1. Kiwi → **Chat** row → **Start in terminal**. It copies one command; paste it in a terminal. The
+   command starts `claude` under your Cecelia profile's login (`kiwi_terminal_command`) with the chat
+   starter as its first message, so the session opens already looking at the project you have open,
+   and pairs on its first observer call. If the MCP entry is missing or stale, the button registers it
+   first (the same action as Assistant → **Set up** / **Fix**).
+2. Ask away. The server briefs the session itself (`mcp/cecelia_mcp/guidance.py`; see OBSERVER.md →
+   *The hand-off is one line*), so there is nothing else to paste.
 
-Chat handoff lives on Kiwi too (**Chat** row → **Copy chat starter**). It copies one line naming the
-project you have open — `I'm working in the Cecelia project <name> (<uid>). Have a look at it…` — for
-when you want *that* project rather than the one you opened most recently.
+A plain `claude` works too once the entry is registered — `check my current project in cecelia` is
+enough — but it runs under the terminal's own login, not your profile's. For a session that is already
+running, **Copy chat starter** copies just the opener: `I'm working in the Cecelia project <name>
+(<uid>). Have a look at it…`.
+
+On Windows the command is `powershell -NoProfile -EncodedCommand …`: an encoded script reads the same
+whether you paste it into PowerShell or cmd.exe.
 
 There is nothing to copy and no path to type. The button POSTs `/api/observer/register`, which runs
 `claude mcp add-json cecelia-observer <spec> -s user` with the same server spec the in-app agent uses,
