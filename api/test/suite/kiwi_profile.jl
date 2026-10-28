@@ -72,6 +72,8 @@ end
 # The Windows command is `powershell -NoProfile -EncodedCommand <base64 of UTF-16LE script>`.
 _decode_ps(cmd) = transcode(String, collect(reinterpret(UInt16,
     base64decode(last(split(cmd, "-EncodedCommand "))))))
+# What the command does, on this OS — the route builds for the host it runs on.
+_cmd_text(cmd) = Sys.iswindows() ? _decode_ps(String(cmd)) : String(cmd)
 
 @testset "Kiwi profile — terminal one-liner (Windows)" begin
     # Default profile → PowerShell branch scrubs but does NOT set CLAUDE_CONFIG_DIR.
@@ -124,8 +126,8 @@ end
             @test isdir(joinpath(tmp, "user-profiles", "alice"))
             # Platform-agnostic — POSIX `CLAUDE_CONFIG_DIR=<path>` and PowerShell
             # `$env:CLAUDE_CONFIG_DIR = '<path>'` both mention the profile name.
-            @test occursin("CLAUDE_CONFIG_DIR", String(b.terminalCommand))
-            @test occursin("alice",             String(b.terminalCommand))
+            @test occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.terminalCommand))
+            @test occursin("alice",             _cmd_text(b.terminalCommand))
 
             # Duplicate create → 409, no rewrite.
             code, _ = api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "alice"))))
@@ -180,18 +182,18 @@ end
             @test code == 200
             b = JSON3.read(body)
             @test b.profile == "default"
-            @test !occursin("CLAUDE_CONFIG_DIR", String(b.command))
+            @test !occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.command))
             code, body = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=alice"))
             b = JSON3.read(body)
             @test b.profile == "alice"
-            @test occursin("CLAUDE_CONFIG_DIR", String(b.command))
-            @test occursin("alice",             String(b.command))
+            @test occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.command))
+            @test occursin("alice",             _cmd_text(b.command))
             # `prompt` reaches the command (POSIX: plain text; Windows: inside the encoded script).
             code, body = api_kiwi_terminal_command(HTTP.Request("GET",
                 "/api/kiwi/terminal/command?prompt=" * HTTP.escapeuri("hello there")))
             @test code == 200
             c = String(JSON3.read(body).command)
-            @test occursin("hello there", Sys.iswindows() ? _decode_ps(c) : c)
+            @test occursin("hello there", _cmd_text(c))
             code, body = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=Bad"))
             @test code == 400
         end
