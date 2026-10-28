@@ -252,7 +252,7 @@ const emptyText = computed(() => kind.value === 'denoiseModels'
            Project toggles can add more columns than the panel is wide. -->
       <div v-else class="vault-table-scroll">
       <SelectionTable :columns="COLUMNS" :rows="tableRows" v-model="picked" actions-label=""
-                      column-width-key="cc.vault.colw" fit="content" actions-width="6.5rem"
+                      column-width-key="cc.vault.colw" fit="content" actions-width="8.4rem"
                       :row-tooltip="rowTip">
         <template #actions="{ row }">
           <input v-if="isEditing(row.name)" v-model="draft" class="vault-rename" :ref="focusInput"

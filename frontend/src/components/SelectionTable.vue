@@ -128,6 +128,10 @@ const props = withDefaults(defineProps<{
    * width — so in a panel narrower than the declared columns there is nothing left, and the actions
    * column collapses to zero: the Movies list asked for 3x150px plus the pick column inside a 380px
    * panel, and its star and delete buttons simply were not there.
+   *
+   * Size it to the WIDEST row's buttons AT ONCE: a sized table's cells clip (`overflow: hidden` +
+   * ellipsis), so a short column hides the trailing buttons behind a "…" rather than growing. Each
+   * `.cc-btn-icon` is 1.5rem; add the gaps (0.3rem, compact 0.15rem) and the cell's side padding.
    */
   actionsWidth?: string
   /**
@@ -597,6 +601,7 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-table.compact { font-size: var(--cc-fs-xs); }
 .sel-table.compact th { padding: 0.05rem 0.3rem; }
 .sel-table.compact td { padding: 0.1rem 0.3rem; }
+.sel-table.compact .sel-actions > * + * { margin-left: 0.15rem; }
 /* the radio/checkbox gutter shrinks with everything else — at default it is 28px of a 280px panel */
 .sel-table.compact .sel-col-pick { width: 1.25rem; }
 .sel-table.compact input[type="radio"], .sel-table.compact input[type="checkbox"] {
