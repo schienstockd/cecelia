@@ -10,7 +10,7 @@
 -->
 <script setup lang="ts">
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
@@ -22,6 +22,8 @@ import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
 import { rectFrame, type Frame, type FrameRect } from '../../plots/frame'
 import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
+import { heatmapRequestFeatures, reconcileHeatmapFeatures } from '../../utils/clusterHeatmapFeatures'
+import { debouncedLatest } from '../../utils/debouncedLatest'
 import { useViewerStore } from '../../stores/viewer'
 import { usePlotResize } from '../../composables/usePlotResize'
 import PlotPointOutMark from '../../components/plots/PlotPointOutMark.vue'
@@ -81,58 +83,71 @@ function toggleFeature(f: string) {
   props.state.features = features.value.includes(f) ? features.value.filter(x => x !== f) : [...features.value, f]
 }
 
-async function load() {
+// Only the run's own columns are requested: while a host switches run (the board's cells/tracks
+// select) the options are `[]` until the new run's metadata lands, so nothing is fetched with the old
+// run's features (utils/clusterHeatmapFeatures).
+const requestFeatures = computed(() => heatmapRequestFeatures(features.value, props.featureOptions))
+
+// Fetches go through the shared scheduler (utils/debouncedLatest), like SummaryPanel: a run switch
+// fires several watchers in a burst, and an older response must not land over a newer state.
+const loadRun = debouncedLatest<void>((_arg, isCurrent) => fetchHeatmap(isCurrent), {
+  wait: 80,
+  onState: s => { loading.value = s !== 'idle' },
+  onError: e => {
+    heatmap.value = null; err.value = e instanceof Error ? e.message : String(e)
+    log.error(`Cluster heatmap: ${err.value}`, { source: 'cluster' })
+  },
+})
+const load = () => loadRun.schedule()
+onBeforeUnmount(() => loadRun.cancel())
+
+async function fetchHeatmap(isCurrent: () => boolean) {
   err.value = ''
   if (!props.projectUid || !props.imageUids.length) { heatmap.value = null; return }
-  if (!features.value.length) { heatmap.value = null; err.value = 'Pick at least one feature for the heatmap.'; return }
-  loading.value = true
-  try {
-    // per-population when pops are shown (category = the pop_df `pop` column over those pops);
-    // otherwise per-cluster (category = the cluster column over root). `suffix` is always sent so the
-    // backend resolves value_name to the run's segmentation (see clusterHeatmapBody / _cluster_pop_vn).
-    const pops = props.shownPops ?? []
-    const body = buildClusterHeatmapBody({
-      projectUid: props.projectUid, popType: props.popType, suffix: props.suffix,
-      granularity: granularity.value, features: features.value,
-      popPaths: pops.map(p => p.path), setUid: props.setUid, imageUids: props.imageUids,
-    })
-    const popMode = pops.length > 0
-    const res = await fetch('/api/plot_data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    if (!res.ok) { heatmap.value = null; err.value = (await res.json()).error ?? res.statusText; return }
-    const r = await res.json() as PlotDataResponse & { yLabels?: string[]; xLabels?: string[]; cells?: { x: string; y: string }[] }
-    // resolve channel row names to display names (matrix aggregates by raw name; we relabel for show)
-    if (r.yLabels) r.yLabels = r.yLabels.map(label)
-    if (r.cells) for (const c of r.cells) c.y = label(c.y)
-    // per-population columns come back as pop PATHS → show the pop name instead
-    if (popMode) {
-      const nameByPath = Object.fromEntries(pops.map(p => [p.path, p.name]))
-      const xlabel = (path: string) => nameByPath[path] ?? path
-      if (r.xLabels) r.xLabels = r.xLabels.map(xlabel)
-      if (r.cells) for (const c of r.cells) c.x = xlabel(c.x)
-    }
-    heatmap.value = r
-  } catch (e) {
-    err.value = e instanceof Error ? e.message : String(e)
-    log.error(`Cluster heatmap: ${err.value}`, { source: 'cluster' })
-  } finally { loading.value = false }
+  if (!props.featureOptions.length) { heatmap.value = null; return }   // run metadata not loaded yet
+  if (!requestFeatures.value.length) { heatmap.value = null; err.value = 'Pick at least one feature for the heatmap.'; return }
+  // per-population when pops are shown (category = the pop_df `pop` column over those pops);
+  // otherwise per-cluster (category = the cluster column over root). `suffix` is always sent so the
+  // backend resolves value_name to the run's segmentation (see clusterHeatmapBody / _cluster_pop_vn).
+  const pops = props.shownPops ?? []
+  const body = buildClusterHeatmapBody({
+    projectUid: props.projectUid, popType: props.popType, suffix: props.suffix,
+    granularity: granularity.value, features: requestFeatures.value,
+    popPaths: pops.map(p => p.path), setUid: props.setUid, imageUids: props.imageUids,
+  })
+  const popMode = pops.length > 0
+  const res = await fetch('/api/plot_data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!isCurrent()) return                                  // superseded — a newer request applies
+  if (!res.ok) { heatmap.value = null; err.value = (await res.json()).error ?? res.statusText; return }
+  const r = await res.json() as PlotDataResponse & { yLabels?: string[]; xLabels?: string[]; cells?: { x: string; y: string }[] }
+  // resolve channel row names to display names (matrix aggregates by raw name; we relabel for show)
+  if (r.yLabels) r.yLabels = r.yLabels.map(label)
+  if (r.cells) for (const c of r.cells) c.y = label(c.y)
+  // per-population columns come back as pop PATHS → show the pop name instead
+  if (popMode) {
+    const nameByPath = Object.fromEntries(pops.map(p => [p.path, p.name]))
+    const xlabel = (path: string) => nameByPath[path] ?? path
+    if (r.xLabels) r.xLabels = r.xLabels.map(xlabel)
+    if (r.cells) for (const c of r.cells) c.x = xlabel(c.x)
+  }
+  if (!isCurrent()) return
+  heatmap.value = r
 }
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.popType,
-       () => props.suffix, () => features.value.join(','),
+       () => props.suffix, () => requestFeatures.value.join(','),
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds])),
        () => props.reloadToken], load)
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 onMounted(load)
-// self-seed: default to the run's full feature set once known (don't clobber a user pick / an empty
-// pick the user made). Makes the panel work out-of-the-box on any host (no host-side seeding needed).
-// ALSO drop any persisted feature the run no longer has: re-running clustering can change the columns
-// (a different basis, or the "other" composition column dropped because the graph had nothing outside
-// the basis), and a stale name would be requested as a heatmap row that isn't in the table.
+// self-seed the run's full feature set once known, and reconcile a persisted pick with the run shown:
+// drop columns a re-run no longer has, and reseed when the pick came from ANOTHER run (the board's
+// cells/tracks switch) — rules in utils/clusterHeatmapFeatures. `[]` options = not loaded yet: wait.
 watch(() => props.featureOptions, opts => {
   if (!opts.length) return
-  if (props.state.features === undefined) { props.state.features = [...opts]; return }
-  const keep = props.state.features.filter(f => opts.includes(f))
-  if (keep.length !== props.state.features.length) props.state.features = keep
+  const next = reconcileHeatmapFeatures(props.state.features, opts)
+  const cur = props.state.features
+  if (cur === undefined || next.join('\n') !== cur.join('\n')) props.state.features = next
 }, { immediate: true })
 
 // docked (Analysis board) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
