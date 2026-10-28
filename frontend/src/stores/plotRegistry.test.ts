@@ -52,7 +52,7 @@ describe('usePlotRegistry', () => {
   it('POSTs a register when a persistKey + project are present', async () => {
     const scope = effectScope()
     scope.run(() => {
-      usePlotRegistry(() => 'panel:7', () => ({ family: 'umap', title: 'UMAP', route: '/analysis' }))
+      usePlotRegistry(() => 'panel:7', () => ({ family: 'cluster-map', title: 'UMAP', route: '/analysis' }))
     })
     await nextTick()
     expect(calls.length).toBe(1)
@@ -60,7 +60,7 @@ describe('usePlotRegistry', () => {
     const body = bodyOf(calls[0].init)
     expect(body).toMatchObject({
       clientId: wsClientId, projectUid: 'PROJ1', plotId: 'panel:7',
-      family: 'umap', title: 'UMAP', route: '/analysis',
+      family: 'cluster-map', title: 'UMAP', route: '/analysis',
     })
     scope.stop()
   })
@@ -70,7 +70,7 @@ describe('usePlotRegistry', () => {
     const title = ref('UMAP')
     scope.run(() => {
       usePlotRegistry(() => 'panel:7',
-        () => ({ family: 'umap', title: title.value, route: '/analysis' }))
+        () => ({ family: 'cluster-map', title: title.value, route: '/analysis' }))
     })
     await nextTick()
     expect(calls.filter(c => c.url.endsWith('/register')).length).toBe(1)
@@ -88,7 +88,7 @@ describe('usePlotRegistry', () => {
     scope.run(() => {
       usePlotRegistry(() => 'panel:7',
         // tick.value is read to force the watcher to fire, but the returned object is identical
-        () => (tick.value >= 0 ? { family: 'umap', title: 'UMAP', route: '/analysis' } : {} as any))
+        () => (tick.value >= 0 ? { family: 'cluster-map', title: 'UMAP', route: '/analysis' } : {} as any))
     })
     await nextTick()
     tick.value = 1
@@ -100,7 +100,7 @@ describe('usePlotRegistry', () => {
   it('POSTs a deregister on scope dispose', async () => {
     const scope = effectScope()
     scope.run(() => {
-      usePlotRegistry(() => 'panel:7', () => ({ family: 'umap', title: 'UMAP', route: '/analysis' }))
+      usePlotRegistry(() => 'panel:7', () => ({ family: 'cluster-map', title: 'UMAP', route: '/analysis' }))
     })
     await nextTick()
     scope.stop()
@@ -114,7 +114,7 @@ describe('usePlotRegistry', () => {
   it('skips register when persistKey is empty', async () => {
     const scope = effectScope()
     scope.run(() => {
-      usePlotRegistry(() => '', () => ({ family: 'umap', title: 'UMAP', route: '/analysis' }))
+      usePlotRegistry(() => '', () => ({ family: 'cluster-map', title: 'UMAP', route: '/analysis' }))
     })
     await nextTick()
     expect(calls.length).toBe(0)
@@ -125,7 +125,7 @@ describe('usePlotRegistry', () => {
     useProjectMetaStore().current = null
     const scope = effectScope()
     scope.run(() => {
-      usePlotRegistry(() => 'panel:7', () => ({ family: 'umap', title: 'UMAP', route: '/analysis' }))
+      usePlotRegistry(() => 'panel:7', () => ({ family: 'cluster-map', title: 'UMAP', route: '/analysis' }))
     })
     await nextTick()
     expect(calls.length).toBe(0)
@@ -197,7 +197,7 @@ describe('usePlotRegistry', () => {
   it('the store dedupe cache tracks the last-sent entry', async () => {
     const scope = effectScope()
     scope.run(() => {
-      usePlotRegistry(() => 'panel:7', () => ({ family: 'umap', title: 'UMAP', route: '/analysis' }))
+      usePlotRegistry(() => 'panel:7', () => ({ family: 'cluster-map', title: 'UMAP', route: '/analysis' }))
     })
     await nextTick()
     const s = usePlotRegistryStore()

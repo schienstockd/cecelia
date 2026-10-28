@@ -21,7 +21,7 @@ const MUST_REFRESH = [
   'composables/useSummaryData.ts',      // plot specs, population list, reloadToken for every panel
   'composables/useClusterContext.ts',   // run list, cluster/region IDs, heatmap feature rows + labels
   // self-fetching plots
-  'components/plots/UmapView.vue',
+  'components/plots/ClusterMapView.vue',
   'components/plots/GatingStrategyView.vue',
   'modules/cluster/ClusterHeatmapPanel.vue',
   'modules/cluster/ClusterHmmStatesPanel.vue',
@@ -65,7 +65,7 @@ const EXEMPT: Record<string, string> = {
 const RAW = import.meta.glob('/src/**/*.{vue,ts}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 const sources = Object.entries(RAW).map(([path, text]) => ({ path: path.replace('/src/', ''), text }))
 
-const PLOT_DATA_FETCH = /\/api\/(plot_data|plots\/(populations|umap)|gating\/channels)/
+const PLOT_DATA_FETCH = /\/api\/(plot_data|plots\/(populations|cluster-map)|gating\/channels)/
 
 describe('task-refresh coverage', () => {
   it('the glob resolved', () => {

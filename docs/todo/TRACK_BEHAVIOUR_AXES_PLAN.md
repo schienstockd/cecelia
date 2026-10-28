@@ -1,6 +1,6 @@
 # Track behaviour axes: path position + diffusion map beside the UMAP
 
-Status: P1 built (2026-10-28), branch `diffmap-track-comparison`; P2 open. Evidence:
+Status: P1 built (2026-10-28, PR #1821); R (renames) built on `rename-cluster-map`; P2 open. Evidence:
 [`docs/archive/DIFFMAP_TRACK_COMPARISON_RESULTS.md`](../archive/DIFFMAP_TRACK_COMPARISON_RESULTS.md) (set XcPcu8, project 4kS67f).
 
 ## Goal
@@ -85,12 +85,17 @@ still works.
 - Plot family: frontend view + registry + export + linked selection + cluster module, the board spec
   (`analysis_board_spec.jl`) and board reader (old `umap` view key read, `clusterMap` written), the
   plot route, the MCP plot family + guidance, docs.
+- Done 2026-10-28. Param renames now have a generic home: a spec param's `formerKeys` (read by the form
+  and `_apply_spec_defaults`; docs/MODULES.md). View key `clusterMap` (`VIEW_ALIASES` /
+  `BOARD_VIEW_ALIASES`, saved boards migrated on read), plot family `cluster-map` (marks accept `umap`),
+  component `ClusterMapView`, route `/api/plots/cluster-map`. The picker says "Cluster map"; the panel
+  title still says "UMAP (suffix)" until P2 adds the layout switch.
 
 ### P2: diffusion axes as a cluster-view layout (medium)
 
-- `api/src/gating_api.jl` `api_plots_umap`: add a `basis=umap|diffmap` param in place of the hard-coded
+- `api/src/gating_api.jl` `api_plots_cluster_map`: add a `basis=umap|diffmap` param in place of the hard-coded
   `X_umap.{suffix}`, and return the axis labels.
-- `frontend/src/components/plots/UmapView.vue`: a layout picker; axis titles from the run labels in
+- `frontend/src/components/plots/ClusterMapView.vue`: a layout picker; axis titles from the run labels in
   place of the fixed `UMAP1`/`UMAP2`; an optional colouring by path position.
 - `app/src/analysis_board_spec.jl` `"umap"` view: persist `basis` in the view state.
 - Checkpoint: on XcPcu8, a domain expert confirms the DC1 × DC2 picture is easier to name than the

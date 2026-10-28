@@ -70,7 +70,7 @@ defineExpose({ exportImage, getFrame: (): Frame => proxyFrame })
 <template>
   <div class="mcv">
     <!-- one auto-hide control strip (docs/UI.md → "Auto-hide panel controls"), same pattern
-         FlowMetricsView / TrackDiagnosticsView / UmapView use for their in-body toolbars. Same
+         FlowMetricsView / TrackDiagnosticsView / ClusterMapView use for their in-body toolbars. Same
          `4px 6px` padding + labelled `<label><span>…</span><select></label>` shape as FlowMetrics'
          "channel" / "region" pickers. -->
     <div v-if="availableVns.length > 1" class="mcv-ctrl cc-panel-controls">

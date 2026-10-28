@@ -475,20 +475,24 @@ end
 # (see `frontend/src/plots/frame.ts` — `rectFrame` / `letterboxFrame` normalise per family so
 # a mark projects onto the actual plot area, not the surrounding gutter).
 #
-# `family` names the plot family (`gate-scatter`, `umap`, `heatmap`, `image-strip`, `cell-cards`,
+# `family` names the plot family (`gate-scatter`, `cluster-map`, `heatmap`, `image-strip`, `cell-cards`,
 # `pairs-matrix`, `hmm-states`, `hmm-transitions`). `plotId` addresses ONE panel — a stable id
 # the frontend hands out per canvas (the panel `persistKey`). `cell` (optional) addresses a
 # sub-frame for multi-cell families (`cell=B3`, `cell=facet-Speed`, `cell=/root/CD4`); absent
 # on single-cell plots.
 
 const _PLOT_FAMILY_MAX = 40
+# Retired family names → current, so a caller (an MCP session, a saved prompt) using the old name still
+# lands its mark. `umap` became `cluster-map` with the view (TRACK_BEHAVIOUR_AXES_PLAN Decision 7).
+const _PLOT_FAMILY_ALIASES = Dict{String,String}("umap" => "cluster-map")
 const _PLOT_ID_MAX     = 200
 const _CELL_KEY_MAX    = 200
 
 _clean_plot_family(v) = begin
     s = strip(String(v === nothing ? "" : v))
     isempty(s) && return ""
-    length(s) > _PLOT_FAMILY_MAX ? String(first(s, _PLOT_FAMILY_MAX)) : String(s)
+    s = length(s) > _PLOT_FAMILY_MAX ? String(first(s, _PLOT_FAMILY_MAX)) : String(s)
+    get(_PLOT_FAMILY_ALIASES, s, s)
 end
 _clean_plot_id(v) = begin
     s = strip(String(v === nothing ? "" : v))
@@ -529,7 +533,7 @@ function api_viewer_marks_plot(body_bytes::Vector{UInt8})
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     isdir(joinpath(projects_dir(), project_uid)) || return 404, JSON3.write((; error = "Project not found"))
     family = _clean_plot_family(get(body, :family, nothing))
-    isempty(family) && return 400, JSON3.write((; error = "family required — e.g. 'gate-scatter', 'umap'"))
+    isempty(family) && return 400, JSON3.write((; error = "family required — e.g. 'gate-scatter', 'cluster-map'"))
     plot_id = _clean_plot_id(get(body, :plotId, get(body, :plot_id, nothing)))
     isempty(plot_id) && return 400, JSON3.write((; error = "plotId required — the target panel's persistKey"))
     u = _clean_uv(get(body, :u, nothing))

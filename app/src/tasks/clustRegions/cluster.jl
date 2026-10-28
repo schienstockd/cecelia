@@ -34,7 +34,7 @@ Base.@kwdef struct ClustRegionsParams
     clusterMethod::String        = "leiden"
     numClusters::Int             = 5
     resolution::Float64          = 1.0
-    mergeUmap::Bool              = true
+    createUmap::Bool              = true
 end
 
 function parse_clust_regions_params(d::AbstractDict)::ClustRegionsParams
@@ -46,7 +46,7 @@ function parse_clust_regions_params(d::AbstractDict)::ClustRegionsParams
         clusterMethod   = string(get(d, "clusterMethod", "leiden")),
         numClusters     = Int(get(d, "numClusters", 5)),
         resolution      = Float64(get(d, "resolution", 1.0)),
-        mergeUmap       = Bool(get(d, "mergeUmap", true)))
+        createUmap       = Bool(get(d, "createUmap", true)))
 end
 
 # The per-cell composition obs column for one basis population. ONE namer, in Julia: the name is passed
@@ -150,7 +150,7 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
         "resolution" => p.resolution,
         # NB: no `perTimepoint` here — whether neighbourhoods are per-frame is a property of the GRAPH
         # (set on cellNeighbours), so behaviour regions come from choosing a per-timepoint graph.
-        "createUmap" => p.mergeUmap,
+        "createUmap" => p.createUmap,
         "randomState" => 0, "qcOutPath" => qc_out_path)
     on_progress(3, 4)
 

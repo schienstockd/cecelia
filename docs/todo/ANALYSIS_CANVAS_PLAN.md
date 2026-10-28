@@ -238,7 +238,7 @@ heatmap. These differ from the gating/summary plots in the CONTEXT they need:
 - **shownPops**: highlighted cluster populations resolved to `{path,name,colour,clusterIds}` (from the
   clust popmap) — UMAP colours those clusters, the heatmap breaks out columns per population.
 
-`UmapView` and `ClusterHeatmapPanel` already take all of this as **props** (fed by `ClusterPlots`), so
+`ClusterMapView` and `ClusterHeatmapPanel` already take all of this as **props** (fed by `ClusterPlots`), so
 they are reusable; what's missing for the analysis canvas is *where the context comes from*.
 
 ### Two models (decision needed)
@@ -260,9 +260,9 @@ keeps `useSummaryData`/the pop picker unchanged, and avoids the mixed-board conf
 and reuse it in both `ClusterPlots` and the new analysis wrappers (no divergent re-implementation).
 
 ### Sketch (model A)
-- New `components/plots/ClusterUmapView.vue` + `ClusterHeatmapView.vue` (registry entries `clusterUmap`,
+- New `components/plots/ClusterClusterMapView.vue` + `ClusterHeatmapView.vue` (registry entries `clusterUmap`,
   `clusterHeatmap`) — toolbar: popType (clust/trackclust) · suffix · labels/features · highlight; body =
-  the existing `UmapView` / `ClusterHeatmapPanel`.
+  the existing `ClusterMapView` / `ClusterHeatmapPanel`.
 - Add them to `ANALYSIS_VIEWS` (LayoutCanvas) under an "Interactive"/"Clustering" optgroup.
 - Export: both are canvas composites → already crisp via the montage-style hi-res path (expose each
   cell's `hiRes`, as `GateScatterCell` now does).
@@ -290,7 +290,7 @@ Implementation notes:
   from `ClusterPlots`; the cluster slots reuse it (no divergent re-implementation).
 - `SeriesPicker` already renders grouped pops + selection + emits toggle — keep it; just feed it the
   active slot's `pops()/selected()` and route `@toggle` to the active slot's handler.
-- Cluster views (`ClusterUmapView`/`ClusterHeatmapView`) wrap the existing `UmapView`/`ClusterHeatmapPanel`
+- Cluster views (`ClusterClusterMapView`/`ClusterHeatmapView`) wrap the existing `ClusterMapView`/`ClusterHeatmapPanel`
   and expose the pop interface + `hiRes` (montage-style crisp export).
 - Keep gating-strategy self-contained (it already is); it reports `noPicker`.
 
@@ -349,7 +349,7 @@ only, no add/delete/rename/recolour/cluster-reassignment). Registry gained a `cl
 Remaining ("all plots from all module pages") — **DONE**:
 - **HMM state + HMM transition plots** landed as analysis slots (docked-panel pattern, board cluster
   context, offered in the "Clustering" picker only for `trackclust` runs with the cols).
-- **Hi-res UMAP PDF export** landed: `UmapView.exportImage()` forces a light theme and uses the shared
+- **Hi-res UMAP PDF export** landed: `ClusterMapView.exportImage()` forces a light theme and uses the shared
   `rasterPlotToImageURL` helper (fixed ~2200px long side, WebGL re-render at scale) — same crisp path as
   `GateScatterCell`; no more screen-res DOM-snapshot fallback (which also leaked chrome + dark theme).
 
@@ -390,5 +390,5 @@ via the interactive registry) — documented as the explicit exception in `docs/
 `InteractivePanel` forwards `docked` to its view (fixed the lingering UMAP/heatmap/HMM reload buttons).
 Hi-res export unified: `plots/export.ts` gained `rasterExportScale` + `rasterPlotToImageURL` (one crisp
 fixed-~2200px-long-side path), shared by the gating scatter (`GateScatterCell`) and the cluster UMAP
-(`UmapView`) — fixed the low-res / dark-theme / chrome-in-PDF UMAP export. Chain-whiteboard host consumes
+(`ClusterMapView`) — fixed the low-res / dark-theme / chrome-in-PDF UMAP export. Chain-whiteboard host consumes
 the same registries + helpers when built.

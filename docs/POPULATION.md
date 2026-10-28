@@ -199,7 +199,7 @@ assignment is exclusive *within* a run. Switching the run dropdown therefore swa
 set — pops from a different run on the same segmentation are hidden, not shown.
 
 **Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
-(`api_plots_umap`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
+(`api_plots_cluster_map`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
 resolve their value_name via `co_clustered_value_names(img, suffix)` — a segmentation that actually
 took part in the run — instead of the drifting *active* value_name. This is load-bearing: evaluating a
 cluster pop against a segmentation not in its run means the `clusters.{suffix}` column is absent, which

@@ -3,7 +3,7 @@
  * cells to come out square.
  *
  * Extracted because three plots now lay facets out in a grid and each one was doing this arithmetic in
- * its own component: `UmapView` (canvas rects), and the two track plots (Observable Plot `fx`/`fy`
+ * its own component: `ClusterMapView` (canvas rects), and the two track plots (Observable Plot `fx`/`fy`
  * channels). The numbers are the same either way and the failure mode is silent — a 1×N strip of a plot
  * whose axes must share a scale looks fine and reads wrong.
  *

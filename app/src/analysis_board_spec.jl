@@ -351,7 +351,7 @@ const BOARD_VIEWS = Dict{String,NamedTuple}(
     "trackDiagnostics" => (; fields = ("pops",), cluster = false, trackOnly = false),
     "hmmStateCards"    => (; fields = ("valueName", "hmmCol"), cluster = false, trackOnly = false),
     "motifCards"       => (; fields = ("valueName",), cluster = false, trackOnly = false),
-    "umap"             => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
+    "clusterMap"       => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
     "heatmap"          => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
     "hmmStates"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
     "hmmTransitions"   => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
@@ -365,8 +365,13 @@ const BOARD_VIEWS_UNSUPPORTED = Dict{String,String}(
     "flowTraining"    => "it needs a model picked in the model vault",
     "flowProbability" => "it needs a model picked in the model vault",
 )
+# Retired view keys → the key that replaced them, for boards saved and specs written before a rename.
+# Mirrors `VIEW_ALIASES` in interactiveViews.ts; `normalise_boards` applies it to saved slots.
+# `umap` → `clusterMap`: the cluster view shows more than a UMAP (TRACK_BEHAVIOUR_AXES_PLAN Decision 7).
+const BOARD_VIEW_ALIASES = Dict{String,String}("umap" => "clusterMap")
+
 # what a view's state starts as on a GUI-added panel (`initialState` / the cluster-panel `hl` bag)
-_view_initial_state(key) = key == "umap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
+_view_initial_state(key) = key == "clusterMap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
     BOARD_VIEWS[key].cluster ? Dict{String,Any}("hl" => Any[]) : Dict{String,Any}()
 
 const _TRACK_FAMILIES = ("live", "track", "trackclust")   # interactiveViews.ts TRACK_FAMILIES
@@ -567,6 +572,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
         p isa AbstractDict || throw(BoardSpecError("plots[$i] must be an object"))
         d = Dict{String,Any}(string(k) => v for (k, v) in pairs(p))
         key = _bs_str(get(d, "plot", get(d, "specId", nothing)))
+        key = get(BOARD_VIEW_ALIASES, key, key)
         if haskey(BOARD_VIEWS, key)
             contents[i], want = _expand_view(key, d, available, ctx, i)
             if want !== nothing

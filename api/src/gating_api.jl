@@ -988,7 +988,7 @@ function api_gating_plotdata(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
-# ── GET /api/plots/umap → binary Float32 [x, y, clusterCode, popIdx] per point ─
+# ── GET /api/plots/cluster-map → binary Float32 [x, y, clusterCode, popIdx] per point ─
 # `popIdx` = index (0-based) into the requested `colourPops` list that this point belongs to (-1 = in
 # none / not requested), so the frontend can colour/facet the embedding by the individually-tracked
 # populations (docs/todo/UMAP_COLOUR_FACET_PLAN.md). `code` (cluster) is always present too.
@@ -1002,7 +1002,7 @@ end
 # 19) can find the labels its bag names without a second round-trip. `label` is `cdf.label` (the
 # same column pop-membership resolution reads): for `trackclust` = track_id, for `clust` = cell
 # label_id. Old callers get the 4-float layout untouched. Small ints stay exact in Float32.
-function api_plots_umap(req::HTTP.Request)
+function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err

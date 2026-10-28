@@ -261,7 +261,7 @@ requirement). This is **export-time only** — the on-screen render stays 2D can
 clouds); the Export→SVG action re-emits the same points as `<circle>`s via the SAME data→px maps. Shared
 string builders live in `frontend/src/plots/export.ts` (`svgDoc`/`svgCircles`/`svgPolygon`/`svgPath`/
 `svgText`/`svgLine`/`svgRect`/`svgImage`/`downloadText`, tested in `export.test.ts`) — the ONE place all
-dot plots serialise, alongside `rowsToCsv`/`svgToImageURL`. Per-plot emitters: `UmapView.exportSvg`,
+dot plots serialise, alongside `rowsToCsv`/`svgToImageURL`. Per-plot emitters: `ClusterMapView.exportSvg`,
 `PlotLayers.exportSvgContent` + `GateOverlay.exportSvgContent` composed by `GateScatterCell.exportSvg`
 (vector axis from the same `drawAxes` math), stitched into a grid by `GateMontage.exportSvg`. **One
 deliberate raster exception:** the gating *points-mode density base* (a blue-heat heatmap of 100k–1M
@@ -698,7 +698,7 @@ docs/TODO.md.)
    (`PALETTES.cecelia` in `plot.ts`) is the old R behaviour-figure `colPal` (yellow / steel-blue /
    crimson / grey) + accents; it is also offered as clickable swatches in the pop colour picker
    (`PopulationManager`; the native picker is kept for custom colours). The **cluster UMAP**
-   (`UmapView`, a 2D canvas of **circular** points) honours the picker for the colour-by-cluster
+   (`ClusterMapView`, a 2D canvas of **circular** points) honours the picker for the colour-by-cluster
    **palette** (via `paletteRange`; the built-in fallback is now the Cecelia palette), **point
    size/opacity**, **dark theme**, **legend** (`vis.legend` — no UMAP-only toggle) and label **font
    size**. Jitter/log/grid/axis-label knobs are N/A (a fixed embedding, no measured axes); colour &

@@ -2,7 +2,7 @@
   Cluster heatmap — a SUMMARY plot (server-aggregated, drawn by the generic PlotChart): cluster
   signature = clusters × the features the run used (mean / z-score), via the shared matrix
   aggregation (POST /api/plot_data, chartType=matrix/profile, category=clusters.{suffix}). Wrapped in
-  CanvasPanel like any plot. Non-interactive — contrast UmapView (a WebGL interactive view).
+  CanvasPanel like any plot. Non-interactive — contrast ClusterMapView (a WebGL interactive view).
 
   Features default to exactly the columns the clustering run used (the {props}.clustfeatures sidecar,
   surfaced as `featureOptions`), pickable in the controls. Channel measures are selected/aggregated by
@@ -261,7 +261,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 .hm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hm-export { max-width: 7rem; }
 .hm-body { position: relative; display: flex; flex: 1; min-height: 0; padding: 6px; }
-/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + the two HMM panels) */
+/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in ClusterMapView + the two HMM panels) */
 .hm-empty { padding: 1rem; }
 .hm-empty .pi { font-size: 1.4rem; opacity: 0.6; }
 .hm-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }

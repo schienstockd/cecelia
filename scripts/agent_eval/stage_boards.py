@@ -83,7 +83,7 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
             for c in _pops_tracked(vn, pop)])]
     if stage in ("trackclust", "clust"):
         run = {"suffix": p.get("valueNameSuffix") or "default", "popType": stage}
-        plots = [{"plot": "umap", **run}, {"plot": "heatmap", **run}]
+        plots = [{"plot": "clusterMap", **run}, {"plot": "heatmap", **run}]
         if stage == "trackclust":     # need cluster populations — dropped by `_needs_cluster_pops` when none
             plots += [{"plot": k, **run} for k in CLUSTER_POP_VIEWS]
         return [("Clusters", [plots])]

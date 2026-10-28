@@ -449,7 +449,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
       - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
       - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
-      - clustering plots "umap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
+      - clustering plots "clusterMap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
         "cellCards" (track clustering only) {suffix, popType?: clust|trackclust} — `suffix` is the run
         (get_cluster_summary). ONE run per board: a second suffix needs a second board. Here popType
         names the clustering family and IS a field (trackOnly views default to "trackclust").
@@ -1853,7 +1853,7 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     `family` is the plot family:
       `gate-scatter` — flow-cytometry gating scatter tile (single-cell).
       `pairs-matrix` / `gating-strategy` — a tile in a gating montage (`cell="<pane-key>"`).
-      `umap`         — UMAP / cluster embedding. Faceted: address a facet with `cell="<facet-label>"`.
+      `cluster-map`  — cluster map (UMAP embedding). Faceted: address a facet with `cell="<facet-label>"`.
       `heatmap`      — cluster heatmap (Observable Plot; the pointer lands on the axis rect).
       `hmm-states` / `hmm-transitions` — HMM behaviour plot's axis rect.
       `summary`      — summary panel (histogram, boxplot, violin, …) via PlotChart's axis rect.

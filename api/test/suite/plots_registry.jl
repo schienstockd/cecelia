@@ -22,14 +22,14 @@
         # ── register: guards ────────────────────────────────────────────────
         r(b) = _post(api_viewer_plots_register, b)
         @test r(Dict("plotId"=>"pk"))[1] == 400                                          # projectUid required
-        @test r(Dict("projectUid"=>"NOPE", "clientId"=>"c", "plotId"=>"pk", "family"=>"umap"))[1] == 404
-        @test r(Dict("projectUid"=>uid, "clientId"=>"c", "family"=>"umap"))[1] == 400   # plotId required
-        @test r(Dict("projectUid"=>uid, "plotId"=>"pk", "family"=>"umap"))[1] == 400    # clientId required
+        @test r(Dict("projectUid"=>"NOPE", "clientId"=>"c", "plotId"=>"pk", "family"=>"cluster-map"))[1] == 404
+        @test r(Dict("projectUid"=>uid, "clientId"=>"c", "family"=>"cluster-map"))[1] == 400   # plotId required
+        @test r(Dict("projectUid"=>uid, "plotId"=>"pk", "family"=>"cluster-map"))[1] == 400    # clientId required
         @test r(Dict("projectUid"=>uid, "clientId"=>"c", "plotId"=>"pk"))[1] == 400     # family required
 
         # ── register: happy path lands in the bag, list returns it ──────────
         st, body = r(Dict("projectUid"=>uid, "clientId"=>"tabA", "plotId"=>"panel:7",
-                          "family"=>"umap", "title"=>"UMAP", "route"=>"/analysis",
+                          "family"=>"cluster-map", "title"=>"UMAP", "route"=>"/analysis",
                           "cellKeys"=>["A1", "B2"],
                           "bboxScreen"=>Dict("x"=>10, "y"=>20, "w"=>400, "h"=>300)))
         @test st == 200
@@ -45,7 +45,7 @@
         row = items[1]
         @test String(row.plotId) == "panel:7"
         @test String(row.clientId) == "tabA"
-        @test String(row.family) == "umap"
+        @test String(row.family) == "cluster-map"
         @test String(row.title) == "UMAP"
         @test String(row.route) == "/analysis"
         @test collect(String, row.cellKeys) == ["A1", "B2"]
@@ -53,7 +53,7 @@
 
         # ── same plotId, different clientId → last-writer-wins ──────────────
         st3, _ = r(Dict("projectUid"=>uid, "clientId"=>"tabB", "plotId"=>"panel:7",
-                        "family"=>"umap", "title"=>"UMAP (tabB)", "route"=>"/analysis"))
+                        "family"=>"cluster-map", "title"=>"UMAP (tabB)", "route"=>"/analysis"))
         @test st3 == 200
         items2 = JSON3.read(gl("projectUid=$uid")[2]).items
         @test length(items2) == 1
@@ -84,9 +84,9 @@
         _reset_plots_registry_for_test!()
         # Two panels registered by different tabs; both live.
         r(Dict("projectUid"=>uid, "clientId"=>"tabA", "plotId"=>"pA",
-               "family"=>"umap", "title"=>"A", "route"=>"/analysis"))
+               "family"=>"cluster-map", "title"=>"A", "route"=>"/analysis"))
         r(Dict("projectUid"=>uid, "clientId"=>"tabB", "plotId"=>"pB",
-               "family"=>"umap", "title"=>"B", "route"=>"/analysis"))
+               "family"=>"cluster-map", "title"=>"B", "route"=>"/analysis"))
         r(Dict("projectUid"=>uid, "clientId"=>"tabA", "plotId"=>"pA2",
                "family"=>"gate-scatter", "title"=>"A2", "route"=>"/gating"))
         @test length(JSON3.read(gl("projectUid=$uid")[2]).items) == 3
@@ -111,7 +111,7 @@
         # ── bboxScreen malformed → dropped, entry still registers ───────────
         _reset_plots_registry_for_test!()
         st_bb, _ = r(Dict("projectUid"=>uid, "clientId"=>"tabC", "plotId"=>"pBB",
-                          "family"=>"umap", "title"=>"", "route"=>"/analysis",
+                          "family"=>"cluster-map", "title"=>"", "route"=>"/analysis",
                           "bboxScreen"=>Dict("x"=>"nope", "y"=>0, "w"=>10, "h"=>10)))
         @test st_bb == 200
         row_bb = JSON3.read(gl("projectUid=$uid")[2]).items[1]

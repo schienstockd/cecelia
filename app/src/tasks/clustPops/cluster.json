@@ -56,7 +56,8 @@
       "tip": "Leiden resolution — higher gives more, smaller clusters"
     },
     {
-      "key": "mergeUmap",
+      "key": "createUmap",
+      "formerKeys": ["mergeUmap"],
       "label": "Calculate UMAP",
       "type": "bool",
       "default": true,
