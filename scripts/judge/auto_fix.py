@@ -57,7 +57,7 @@ from cecelia.effectiveness.claude_cli import (  # noqa: E402
     RateLimited, failure_text, limit_in_text, limit_resets_at, rate_limit, read_result, reset_at, resolve_claude_bin,
     synthetic_limit, with_reset)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
-from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
+from cecelia.effectiveness.recital import reviewer_errors  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
 from cecelia.effectiveness.palette import GREY, ORANGE, SKY_BLUE, VERMILLION, YELLOW  # noqa: E402
@@ -753,13 +753,15 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                 with Progress("recital" + round_, out=out) as step:
                     rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
                     recital = rec.stdout or ""
-                    step.failed = "_Recital stamp:" not in recital or ERROR_MARKER in recital
+                    # the error blocks only: a finding may quote the marker, or a limit's wording
+                    errored = reviewer_errors(recital)
+                    step.failed = "_Recital stamp:" not in recital or bool(errored)
                 if "_Recital stamp:" not in recital:
                     return stop(f"recital failed: {_tail(rec)}")
-                if ERROR_MARKER not in recital:
+                if not errored:
                     break
                 # it printed, but a reviewer didn't run: nothing to commit on. The limit: wait, run it again
-                limited = rate_limit({"is_error": True, "result": recital})
+                limited = rate_limit({"is_error": True, "result": "\n".join(errored)})
                 if limited and waits < MAX_LIMIT_WAITS and wait_for_reset(limited, out=out):
                     waits += 1
                     continue
@@ -925,9 +927,11 @@ def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[di
 
 def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
         path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
-        main: pathlib.Path | None = None, **kw) -> int:
+        main: pathlib.Path | None = None, until: float | None = None, clock: _t.Callable[[], float] = time.time,
+        **kw) -> int:
     """Every bundle from `review.auto_items` (up to `limit` sessions), one after another. Returns the
-    sessions run."""
+    sessions run. Past `until` (epoch seconds) it starts no new session; the one running finishes, so a
+    caller with a hard stop (the weekly unit's timeout) passes one that leaves a session's length."""
     main = main or _rv.main_checkout()
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
@@ -958,8 +962,12 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     for line in outcome_rows(rows, use_colour=colour):
         print(line, file=out)
     spent, ran, handed = 0.0, 0, 0
+    late = False
     for item in items:
         if ran >= limit or dry_run and items.index(item) >= limit:
+            break
+        if until is not None and not dry_run and clock() >= until:
+            late = True
             break
         bugs = [by_id[r] for r in item.get("refs") or [item["ref"]]]
         label = (f"{bugs[0]['id']} {bugs[0]['key']}" if len(bugs) == 1
@@ -981,6 +989,7 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     if not dry_run:
         left = len(items) - ran - handed
         print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {handed} handed back" if handed else "")
-                         + (f" · {left} left: run again" if left > 0 else ""),
+                         + (f" · {left} left: run again" if left > 0 and not late else "")
+                         + (f" · {left} left: past the deadline, next pass" if late else ""),
                          width, use_colour=colour), file=out)
     return ran

@@ -259,7 +259,7 @@ does it opens no FAILED PR. The failure record is still written; the retry's pas
 it. The attempt that gives up opens the FAILED PR as before. A retry pins the same commit: the timer
 runs `--ref HEAD` in the judge worktree, and a pass stopped by the limit never commits there. The
 wrapper **keeps the cron lock through the wait**, so the nightly agent run is skipped: it would hit
-the same limit. The unit's `TimeoutStartSec=12h` covers one wait. Any other failed judge call
+the same limit. The unit's `TimeoutStartSec=12h` covers one wait, then `judge-review --auto` (*After every pass*). Any other failed judge call
 doesn't stop the pass; the record's `run.failed` names the step, and the record and PR say that
 step didn't run instead of reporting a quiet week. The recital console warns when the newest record
 is more than 9 days old or failed, and when the backlog grew two passes in a row (`judge_staleness.py`).
@@ -338,6 +338,13 @@ the agent changed what runs outside its sandbox: then `[f]` starts fresh). The a
 reviewers are `claude -p` runs, which need the network), so this was deferred until the record
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.
+
+**After every pass.** The timer's pass (`cron_pass.sh`) runs `judge-review --auto` itself once the pass
+succeeds: no limit, on the record just written, under the same cron lock, logged to
+`~/.cecelia-effectiveness/cron/auto-*.log`. It starts no session 8h after the pass began (`--until`), so
+the last one (up to ~4h, CI included) ends inside the unit's 12h timeout instead of being killed mid-way. Its exit never changes
+the pass's: a failed session, the usage limit or the deadline leaves the rest for next week.
+`Environment=JUDGE_AUTO_FIX=0` in the unit (`systemctl --user edit weekly-judge.service`) skips it.
 
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in

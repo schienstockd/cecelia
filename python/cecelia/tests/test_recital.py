@@ -32,7 +32,8 @@ import unittest
 from unittest import mock
 
 from cecelia.effectiveness import EVENT_TYPES, read_events
-from cecelia.effectiveness.recital import STAMP_RE, RecitalError, ReviewerReply, _slug, recital_stamp, run_recital
+from cecelia.effectiveness.claude_cli import rate_limit
+from cecelia.effectiveness.recital import STAMP_RE, RecitalError, ReviewerReply, _slug, recital_stamp, reviewer_errors, run_recital
 
 
 class RecitalTest(unittest.TestCase):
@@ -85,6 +86,27 @@ class RecitalTest(unittest.TestCase):
             self.assertIn("duration_s", e["payload"])
             self.assertIsInstance(e["payload"]["duration_s"], (int, float))
 
+    def test_reviewer_errors_reads_only_the_error_blocks(self):
+        # `judge-review --auto` reads a usage limit from these: a finding beside them quoting a limit's
+        # wording must not look like one, and a real limit must still be found
+        quoting = "- **claude_cli.py:44** — the regex now matches \"You've hit your session limit · resets 1:40am\" [**plausible**]"
+
+        def one_errors(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                raise RecitalError("claude exited 1; stderr:\nconnection reset\nby peer")
+            return quoting
+
+        body = run_recital("some diff", claude_runner=one_errors)
+        self.assertIn("session limit", body)
+        self.assertEqual(reviewer_errors(body), ["claude exited 1; stderr:\nconnection reset\nby peer"])
+        self.assertIsNone(rate_limit({"is_error": True, "result": "\n".join(reviewer_errors(body))}))
+
+        def limited(prompt: str) -> str:
+            raise RecitalError("claude exited 1; stdout:\nYou've hit your session limit · resets 1:40am")
+
+        body = run_recital("some diff", claude_runner=limited)
+        self.assertEqual(len(reviewer_errors(body)), 2)
+        self.assertIsNotNone(rate_limit({"is_error": True, "result": "\n".join(reviewer_errors(body))}))
     def test_run_event_carries_tokens_and_cost_from_the_reply(self):
         counts = {"input": 2, "cache_write": 100, "cache_read": 500, "output": 40}
         run_recital("some diff", claude_runner=lambda _p: ReviewerReply("no findings", counts, 0.01234))

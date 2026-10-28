@@ -64,7 +64,8 @@ systemctl --user edit weekly-judge.service   # add the two lines below
 
 **The usage limit.** A pass that hits it exits 75. `cron_pass.sh` sleeps until 5 min after the reset
 the CLI names and reruns the pass (3 attempts at most, a reset at most 8h off), holding the cron lock,
-so that night's agent run is skipped. That is why `TimeoutStartSec` is 12h. Each wait is in the cron
+so that night's agent run is skipped. That is why `TimeoutStartSec` is 12h. A pass that succeeds then runs
+`judge-review --auto` in the same budget, starting no session 8h in ([`WEEKLY_JUDGE.md`](../../../docs/ai-assist/WEEKLY_JUDGE.md) → *After every pass*). Each wait is in the cron
 log: `usage limit, lifts …: waiting …s, then attempt 2/3`. Details:
 [`WEEKLY_JUDGE.md`](../../../docs/ai-assist/WEEKLY_JUDGE.md) → *Waiting out the limit*.
 

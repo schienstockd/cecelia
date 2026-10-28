@@ -70,12 +70,12 @@ class CronPassTest(unittest.TestCase):
         subprocess.run(["bash", "-n", str(_SCRIPT)], check=True)
 
     def test_a_clean_pass_runs_once(self):
-        self.assertEqual(self.run_wrapper("0").returncode, 0)
+        self.assertEqual(self.run_wrapper("0", JUDGE_AUTO_FIX="0").returncode, 0)
         self.assertEqual(self.lines("calls"), ["2 run judge-weekly --ref HEAD"])
         self.assertEqual(self.lines("sleeps"), [])
 
     def test_a_usage_limit_waits_past_the_reset_and_reruns_with_fewer_retries_left(self):
-        proc = self.run_wrapper("75r,75r,0")
+        proc = self.run_wrapper("75r,75r,0", JUDGE_AUTO_FIX="0")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         # every attempt pins the same commit: `--ref HEAD`; the last has no retry left
         self.assertEqual(self.lines("calls"), [f"{n} run judge-weekly --ref HEAD" for n in (2, 1, 0)])
@@ -114,6 +114,31 @@ class CronPassTest(unittest.TestCase):
         self.assertEqual(self.lines("git"), ["fetch --quiet origin", *self._RESET])
         self.assertEqual(self.lines("calls"), [" run effectiveness-chart -- --push"])   # no JUDGE_RETRY_LEFT
         self.assertEqual(self.run_wrapper("1", "--chart").returncode, 1)   # a failed push shows red
+
+    def test_a_clean_pass_then_works_the_fix_bugs_before_a_deadline(self):
+        proc = self.run_wrapper("0,0")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = self.lines("calls")
+        self.assertEqual(calls[0], "2 run judge-weekly --ref HEAD")
+        self.assertTrue(calls[1].startswith(" run judge-review --auto --until "), calls)   # no JUDGE_RETRY_LEFT
+        until = int(calls[1].split()[-1])   # 8h after the wrapper started, 4h before the unit's timeout
+        self.assertTrue(abs(until - (int(__import__("time").time()) + 8 * 3600)) < 120, until)
+        self.assertTrue(list((self.tmp / "cron").glob("auto-*.log")))
+
+    def test_a_failed_or_limited_auto_fix_never_fails_the_pass(self):
+        for plan, said in (("0,1", "exited 1"), ("0,75", "the rest wait for next week")):
+            with self.subTest(plan=plan):
+                (self.tmp / "calls").unlink(missing_ok=True)
+                proc = self.run_wrapper(plan)
+                self.assertEqual((proc.returncode, len(self.lines("calls"))), (0, 2))
+                self.assertIn(said, proc.stderr)
+
+    def test_no_auto_fix_after_a_failed_pass_or_when_switched_off(self):
+        self.assertEqual(self.run_wrapper("1").returncode, 1)
+        self.assertEqual(len(self.lines("calls")), 1)
+        (self.tmp / "calls").unlink()
+        self.assertEqual(self.run_wrapper("0", JUDGE_AUTO_FIX="0").returncode, 0)
+        self.assertEqual(self.lines("calls"), ["2 run judge-weekly --ref HEAD"])
 
     def test_chart_and_sync_skip_while_a_pass_holds_the_lock(self):
         import fcntl   # POSIX only; the class runs on Linux alone

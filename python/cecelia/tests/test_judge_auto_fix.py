@@ -182,6 +182,20 @@ class LandedTest(_AutoFixture):
         self.assertIn("running 3", out.getvalue())
         self.assertIn("── 2 session(s) · $3.00 · 1 handed back ─", out.getvalue())
 
+    def test_past_the_deadline_it_starts_no_new_session_and_says_the_rest_wait(self):
+        record = self.build(bugs=[_bug("B4", verify=FIX, file="c.py", branch="feat/y"),
+                                  _bug("B5", verify=FIX, file="d.py", branch="feat/z")])
+        self.changed = "a.py\n"
+        out = io.StringIO()
+        ticks = iter([100.0, 200.0])   # before B4's session, then before B5's: past `until`
+        answer = _answer("not_real") | {"bugs": [{"key": "fanout-b4", "outcome": "not_real", "reason": "no"}]}
+        with mock.patch.object(self.af, "landed", return_value={}):
+            ran = self.af.run(record, out=out, path=self.log, auto_log=self.auto, main=self.main, until=150.0,
+                              clock=lambda: next(ticks), session=self.session(answer), sh=self.sh())
+        self.assertEqual(ran, 1)
+        self.assertIn("1 left: past the deadline, next pass", out.getvalue())
+        self.assertNotIn("── B5 ", out.getvalue())
+
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
         items = [{"kind": "bundle", "ref": "B1", "refs": ["B1", "B2"]}, {"kind": "work", "ref": "B3"}]
@@ -517,9 +531,21 @@ class WorkTest(_AutoFixture):
         self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
         shutil.rmtree(tree)
 
+    def test_a_finding_quoting_the_error_marker_is_not_a_reviewer_error(self):
+        # a clean recital whose finding names the marker (a diff touching this code): it commits as usual
+        quoting = RECITAL.replace("_Recital stamp:", "- **auto_fix.py:756** — reads `> **RECITAL SCRIPT ERROR**` "
+                                  "[**plausible**]\n\n_Recital stamp:", 1)
+        with mock.patch(f"{__name__}.RECITAL", quoting):
+            _, out = self.work(_answer(), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        self.assertNotIn("reviewers errored", out)
+        self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
+
     def test_a_recital_whose_reviewers_errored_commits_nothing(self):
+        # the other reviewer's finding quotes a limit's wording: only the error itself says whether it was one
         errored = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
-                   "{}\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+                   "{}\n\n_Fanout audit: not run — the reviewer errored_\n\n_Convention check (evidence):_\n\n"
+                   "- **claude_cli.py:44** — now matches \"You've hit your session limit · resets 1:40am\" "
+                   "[**should reuse**]\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
         tree = self.main.parent / "cecelia-fix-fanout-b1"
         for text, raises in (("boom", False), ("You've hit your session limit · resets 2:20pm", True)):
             with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)), \
