@@ -19,7 +19,7 @@ const base = (over: Partial<ViewerLookInput> = {}): ViewerLookInput => ({
   hiddenTrackPops: {},
   popEyes: {}, ribbonEyes: {},
   pointSize: 8, pointBorder: 2, labelOpacity: 0.4, pointZTol: 1, trackZTol: 3, tailWidth: 3, tailLength: 12, labelContour: 2,
-  maskByPop: false,
+  maskColour: 'id',
   trackColourMode: 'speed', colourBy: '', colourOverrides: {},
   ...over,
 })
@@ -142,17 +142,28 @@ describe('viewerLook', () => {
     expect(req.ribbonEyes).toBeUndefined()
   })
 
-  it('Pop colour on with pops shown → the mask is the pops’, not every cell (the viewer’s maskPopTable)', () => {
-    const on = viewerLook(base({ maskByPop: true, popVisible: pt => pt === 'flow' }))
+  it('Colour on pops with pops shown → the mask is the pops’, not every cell (the viewer’s maskPopTable)', () => {
+    const on = viewerLook(base({ maskColour: 'pops', popVisible: pt => pt === 'flow' }))
     expect(on.maskAllCells).toBe(false)
     // the movie colours the mask by these pop types on the mask's own segmentation (`mask_pop_scope`)
     expect(on.popAllSegmentations).toBe(true)
     expect(on.popTypes).toEqual(['flow'])
     expect(on.labelValueNames).toEqual(['cpSAM'])
     // no pop type on → the viewer keeps the per-id palette, and so does the movie
-    expect(viewerLook(base({ maskByPop: true })).maskAllCells).toBe(true)
-    // toggle off → every cell in the palette, pops or not
+    expect(viewerLook(base({ maskColour: 'pops' })).maskAllCells).toBe(true)
+    expect(on.maskPopTypes).toBeUndefined()
+    // Cell id → every cell in the palette, pops or not
     expect(viewerLook(base({ popVisible: pt => pt === 'flow' })).maskAllCells).toBe(true)
+  })
+
+  it('Colour on track clusters → the mask is the track clusters’, whatever pop types are on', () => {
+    for (const popVisible of [() => false, (pt: string) => pt === 'flow']) {
+      const l = viewerLook(base({ maskColour: 'trackclust', popVisible }))
+      expect(l.maskAllCells).toBe(false)
+      // the movie colours the mask by these instead of `popTypes` (`mask_pop_scope`)
+      expect(l.maskPopTypes).toEqual(['trackclust'])
+      expect(l.popAllSegmentations).toBe(true)
+    }
   })
 
   it('no popType published → flow', () => {

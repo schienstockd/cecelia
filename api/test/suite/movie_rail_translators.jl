@@ -80,7 +80,7 @@
     @test _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => true),
                                     true)["allCells"] === true
 
-    # The mask's pops (`mask_pop_scope`). A viewer look with *Pop colour* on (`maskAllCells: false`,
+    # The mask's pops (`mask_pop_scope`). A viewer look with *Colour* on (`maskAllCells: false`,
     # `popAllSegmentations`): its pop types on the mask's OWN segmentation, whatever the pop manager's
     # — the viewer's `maskPopLayers`; no filter. A batch: its one layer, every cell on another mask.
     look_pc = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => true, "maskAllCells" => false,
@@ -88,6 +88,15 @@
     @test look_pc["allCells"] === false
     sc = mask_pop_scope(overlay_track_plan(look_pc), "OTI", "P14", "flow", ["/x"], look_pc["allCells"])
     @test sc == (; all_cells = false, pops_filter = nothing, pop_types = ["flow", "region"], pop_eyes = nothing)
+    # a look with its mask on track clusters (`maskPopTypes`): those, not the points' pop types —
+    # and with no cell pop type on at all
+    look_tc = _overlays_raw_from_config(Dict{String,Any}("showPopulations" => false, "maskAllCells" => false,
+        "popAllSegmentations" => true, "popTypes" => String[], "maskPopTypes" => ["trackclust"]), true)
+    @test look_tc["maskPopTypes"] == ["trackclust"]
+    @test mask_pop_scope(overlay_track_plan(look_tc), "OTI", "P14", "flow", nothing, false).pop_types == ["trackclust"]
+    look_tc2 = merge(look_pc, Dict{String,Any}("maskPopTypes" => ["trackclust"]))
+    @test mask_pop_scope(overlay_track_plan(look_tc2), "OTI", "P14", "flow", nothing, false).pop_types == ["trackclust"]
+    @test overlay_track_plan(look_pc).mask_pop_types == String[]
     batch = overlay_track_plan(Dict{String,Any}("showPopulations" => true))
     @test mask_pop_scope(batch, "OTI", "P14", "flow", ["/x"], false).all_cells === true
     @test mask_pop_scope(batch, "OTI", "OTI", "flow", ["/x"], false) ==

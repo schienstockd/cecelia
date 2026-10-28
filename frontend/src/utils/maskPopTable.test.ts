@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  maskPopTable, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
+  maskPopTable, trackclustMaskLayer, isMaskColour, LABEL_TABLE_W, LABEL_TABLE_MAX_ROWS, MASK_PARENT_PALE, MASK_UNGATED_GREY,
   type LabelTable, type MaskPopLayer,
 } from './maskPopTable'
 import { mix, parseHex } from './colour'
@@ -130,6 +130,33 @@ describe('maskPopTable', () => {
 
 // The movie draws the same rule in Julia (`mask_pop_colours`, `api/src/overlay_author.jl`); both sides
 // are held to this one fixture, so neither can drift alone.
+describe('trackclustMaskLayer', () => {
+  const RED = '#ff0000', BLUE = '#0000ff'
+  it('colours each tracked cell by its track cluster, hiding the pops the manager hides', () => {
+    const l = trackclustMaskLayer({ cells: { label: [1, 2, 3] }, pops: [
+      { path: '/c1', colour: RED, labels: [1], show: true },
+      { path: '/c2', colour: BLUE, labels: [2], show: false },
+    ] })
+    expect([...l.hidden!]).toEqual(['/c2'])
+    const t = maskPopTable([l])!
+    expect(colourOf(t, 1)).toEqual(rgb255(RED))
+    expect(colourOf(t, 2)).toEqual(rgb255(MASK_UNGATED_GREY))   // its cluster is hidden
+    expect(colourOf(t, 3)).toEqual(rgb255(MASK_UNGATED_GREY))   // untracked
+  })
+  it('with no track clusters draws every cell grey, as the movie does', () => {
+    const t = maskPopTable([trackclustMaskLayer({ cells: { label: [1, 2] }, pops: [] })])!
+    expect(colourOf(t, 2)).toEqual(rgb255(MASK_UNGATED_GREY))
+  })
+})
+
+describe('isMaskColour', () => {
+  it('accepts the three sources and nothing else', () => {
+    expect(['id', 'pops', 'trackclust'].every(isMaskColour)).toBe(true)
+    expect(isMaskColour('true')).toBe(false)
+    expect(isMaskColour(null)).toBe(false)
+  })
+})
+
 import PARITY_JSON from './maskPopTable.parity.json'
 
 interface ParityCase {

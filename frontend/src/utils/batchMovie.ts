@@ -113,6 +113,9 @@ export interface BatchMovieCfg {
   // The mask paints every cell (the viewer's mask), not only the shown pops' (a batch's default
   // with pops on).
   maskAllCells?: boolean
+  // The pop types the mask is coloured by, when not the points' `popTypes` (a look with the mask on
+  // track clusters: `['trackclust']`).
+  maskPopTypes?: string[]
   colourLabels?: boolean
   tailWidth?: number
   // Track tail length in frames, and how ribbons are coloured ('track' | 'speed' | 'solid' | 'pop').

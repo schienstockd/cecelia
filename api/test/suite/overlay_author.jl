@@ -250,14 +250,14 @@ end
                 @test c == pal[mod(Int(id) - 1, length(pal)) + 1]
             end
 
-            # A `pops_filter` that matches nothing: every cell grey (the viewer's *Pop colour* mask
+            # A `pops_filter` that matches nothing: every cell grey (the viewer's *Colour* mask
             # with every pop's eye off), not an empty mask.
             dict_none = mask_id_colours(img; value_name = "B", pop_type = "flow",
                                         pops_filter = String["/no-such"])
             @test keys(dict_none) == keys(dict)
             @test all(==(hex_to_rgb(OVERLAY_GREY)), values(dict_none))
 
-            # The viewer's *Pop colour* rule on real pops (`mask_pop_colours`): a child "half" under
+            # The viewer's *Colour* rule on real pops (`mask_pop_colours`): a child "half" under
             # "all" — the deepest pop wins (half solid blue), its parent's left-over cells pale, and with
             # the parent filtered out its cells go grey.
             xs = Float64[Float64(v) for v in as_df(select_cols(label_props(img; value_name = "B"), [xchan]))[!, xchan]]
@@ -309,7 +309,7 @@ end
 end
 
 @testset "API: overlay_author — mask_pop_colours ↔ the viewer's maskPopTable (shared fixture)" begin
-    # One colour rule, two languages: the viewer's *Pop colour* mask (`maskPopTable.ts`) and a movie's
+    # One colour rule, two languages: the viewer's *Colour* mask (`maskPopTable.ts`) and a movie's
     # population mask (`mask_pop_colours`). Both suites read this fixture, so neither drifts alone.
     fx = JSON3.read(read(normpath(joinpath(@__DIR__, "..", "..", "..", "frontend", "src", "utils",
                                            "maskPopTable.parity.json")), String))
@@ -401,7 +401,7 @@ end
                                                  :ribbonEyes => Dict("B" => Dict("flow::/hid" => true))))
             @test !("/hid" in rows(Dict{Symbol,Any}(:ribbonEyes => Dict("B" => Dict("flow::/hid" => true)))))
 
-            # the *Pop colour* mask takes the point eyes (the viewer's `layerHidden`), else `show`
+            # the *Colour* mask takes the point eyes (the viewer's `layerHidden`), else `show`
             @test !any(==(hid), values(mask_id_colours(img; value_name = "B", pop_type = "flow")))
             mask_on = mask_id_colours(img; value_name = "B", pop_type = "flow",
                                       pop_eyes = Dict("flow::/hid" => true))

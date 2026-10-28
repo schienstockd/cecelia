@@ -1273,7 +1273,7 @@ function _resolve_movie_overlays_mask(img, img_err, arr, caxes, ov_raw, vnn;
     # pops' — those are different segmentations as often as not (mask P14, pop manager on OTI).
     mask_vn = something(mask_value_name, String(_ov(ov_raw, :maskValueName, "")))
     isempty(mask_vn) && (mask_vn = ov_vn)
-    # its pops as the viewer's *Pop colour* mask picks them (`mask_pop_scope`)
+    # its pops as the viewer's *Colour* mask picks them (`mask_pop_scope`)
     mask_scope = mask_pop_scope(plan, ov_vn, mask_vn, ov_pt, ov_paths, all_cells)
     all_cells = mask_scope.all_cells
     mask_diag["requested"] = show_mask

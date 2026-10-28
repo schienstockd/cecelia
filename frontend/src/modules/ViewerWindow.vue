@@ -103,7 +103,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -968,18 +968,46 @@ let appliedMaskSource: string | null = null
 // `starting.value` guard: `maskName` recomputes when `meta.value` is set during `loadVersion`, which is
 // about to run its own reallocate reading the mask at call time.
 watch(maskSourceId, () => { if (!starting.value) applyMaskSource() })
-// "Colour by population": the shown mask's colour table from the population layers on ITS segmentation
-// (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the rest grey). `null` = the
-// per-id palette: the toggle off, no mask, no pops loaded for it, or a preview / live store, whose ids
+// The shown mask's track-cluster pops, for *Colour: Track clusters* — fetched for the mask's
+// segmentation whatever the trackclust ribbon chip says (the ribbons' `trackclustPayloads` is only
+// filled while it is on). Kept with an empty `pops`, so a segmentation without track clusters draws
+// its cells grey, as a movie's mask does (`mask_pop_colours`).
+const maskTrackclust = ref<{ vn: string; payload: OverlayPayload } | null>(null)
+// The mask's *Colour* (`settings.viewerMaskColour`): the shown mask's colour table from the population
+// layers on ITS segmentation (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the
+// rest grey) — the cell pop types on, or the segmentation's track clusters (`maskTrackclust`). `null` =
+// the per-id palette: *Cell id*, no mask, no pops loaded for it, or a preview / live store, whose ids
 // are not the cell table's. Every renderer takes it per frame; the same object is a no-op there.
-const maskPopLayers = computed(() => {
+const maskPopLayers = computed<MaskPopLayer[]>(() => {
   const vn = drawnMaskVn(maskName.value, maskHidden.value)
-  return vn && !maskStoreOf(vn).store ? popLayers.value.filter(l => l.vn === vn) : []
+  if (!vn || maskStoreOf(vn).store) return []
+  if (settings.viewerMaskColour === 'pops')
+    return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
+  const tc = maskTrackclust.value
+  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn ? [trackclustMaskLayer(tc.payload)] : []
 })
-const maskTable = computed(() => settings.viewerMaskByPop && maskPopLayers.value.length
-  ? maskPopTable(maskPopLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })))
-  : null)
+const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
+/** One segmentation's track-cluster pops (`popType=trackclust`) — the ribbons' and the mask's one
+ *  fetch. `null` when it failed (no cell table); a segmentation without track clusters has `pops: []`. */
+async function fetchTrackclustPayload(vn: string): Promise<OverlayPayload | null> {
+  if (!projectUid || !imageUid) return null
+  try {
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
+                            { cache: 'no-store' })
+    return res.ok ? await res.json() as OverlayPayload : null
+  } catch { return null }
+}
+async function loadMaskTrackclust() {
+  const vn = settings.viewerMaskColour === 'trackclust' ? maskName.value : ''
+  if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
+  // null = no cell table: the palette, as for pops
+  const payload = trackclustPayloads.value.get(vn) ?? await fetchTrackclustPayload(vn)
+  // a later mask / mode change has overtaken this fetch
+  if (settings.viewerMaskColour !== 'trackclust' || maskName.value !== vn) return
+  maskTrackclust.value = payload ? { vn, payload } : null
+}
+watch([() => settings.viewerMaskColour, maskName], () => { void loadMaskTrackclust() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -1366,6 +1394,21 @@ const PROJECTIONS = [
  *  than "Auto-select/Force brick/Force flat" in a segmented control. All three chips stay
  *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
  *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
+const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] = [
+  { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
+  { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
+  { value: 'trackclust', label: 'Track clusters', tip: 'Each tracked cell by its track cluster' },
+]
+/** Why the mask's *Colour* draws the palette or all grey — '' when it draws what was asked. */
+const maskColourNote = computed(() => {
+  const mode = settings.viewerMaskColour
+  if (mode === 'id') return ''
+  if (previewVn.value || liveVn.value) return 'Not for a preview mask'
+  if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
+  const tc = maskTrackclust.value
+  return tc?.vn === maskName.value && tc.payload.pops.some(p => p.show !== false) ? ''
+    : 'No track clusters on this mask'
+})
 const BRICKS_MODES = [
   { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
@@ -2026,16 +2069,11 @@ async function loadTracks() {
     const tcVns = names   // every trackable vn, not just the ticked-eyes set
     const tcNext = new Map<string, OverlayPayload>()
     await Promise.all(tcVns.map(async vn => {
-      try {
-        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
-                                { cache: 'no-store' })
-        if (res.ok) {
-          const payload = await res.json() as OverlayPayload
-          // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
-          // but would show up as a source count if it made it into the map.
-          if ((payload?.pops ?? []).length) tcNext.set(vn, payload)
-        }
-      } catch { /* one vn's failure must not take the others down */ }
+      // one vn's failure must not take the others down (`null`)
+      const payload = await fetchTrackclustPayload(vn)
+      // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
+      // but would show up as a source count if it made it into the map.
+      if (payload && (payload.pops ?? []).length) tcNext.set(vn, payload)
     }))
     trackclustPayloads.value = tcNext
   } else if (trackclustPayloads.value.size) {
@@ -2044,6 +2082,8 @@ async function loadTracks() {
     trackclustPayloads.value = new Map()
   }
   rebuildOverlays()
+  // after the ribbons' fetch, whose payload it reuses — and on every gating ping, as they refresh
+  void loadMaskTrackclust()
 }
 
 function pushChannels() {
@@ -6451,13 +6491,14 @@ onUnmounted(() => {
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
             </div>
             <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Pop colour</span>
-              <CcToggle v-model="settings.viewerMaskByPop" aria-label="Colour mask by population"
-                        v-tooltip.bottom="'Colour each cell by its deepest shown population'" />
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
+              <ChipSelect
+                :options="MASK_COLOUR_OPTIONS" :model-value="settings.viewerMaskColour"
+                variant="segmented" aria-label="Colour mask by"
+                @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
+              />
             </div>
-            <div v-if="settings.viewerMaskByPop && !maskTable" class="cc-muted cc-fs-3xs">
-              {{ previewVn || liveVn ? 'Not for a preview mask' : 'No populations shown on this mask' }}
-            </div>
+            <div v-if="maskColourNote" class="cc-muted cc-fs-3xs">{{ maskColourNote }}</div>
             <div v-else-if="maskTable?.truncated" class="cc-muted-warn cc-fs-3xs">
               Cells past id {{ maskTable.width * maskTable.rows - 1 }} not drawn
             </div>
