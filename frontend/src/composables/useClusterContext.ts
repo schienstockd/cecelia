@@ -15,6 +15,7 @@ import { useDataRefresh } from './useDataRefresh'
 import { useImageMetaRefresh } from './useImageMetaRefresh'
 import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
 import { channelLabel } from '../utils/channelNames'
+import { clusterFeatureOptions } from '../utils/clusterHeatmapFeatures'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
 
@@ -46,20 +47,28 @@ export function useClusterContext(opts: {
   const hmmStateCols = ref<string[]>([])               // live.cell.hmm.state.<name>
   const hmmTransitionCols = ref<string[]>([])          // live.cell.hmm.transitions.<name>
   const suffixes = ref<string[]>([])
+  // the popType the feature metadata above was loaded FOR — a host that switches popType (the Analysis
+  // board's cells/tracks select) must not hand the previous run's columns to the new one meanwhile
+  const loadedPopType = ref<ClusterPopType | null>(null)
 
   // HMM behaviour columns are categorical-behaviour features → the dedicated HMM plots, NOT the heatmap.
   const HMM_RE = /live\.cell\.hmm\.(state|transitions)\b/
-  const allFeatures = computed<string[]>(() => clusterFeatures.value[suffix.value] ?? featureFallback.value)
-  const featureOptions = computed<string[]>(() => allFeatures.value.filter(f => !HMM_RE.test(f)))
+  const featureArgs = () => ({ clusterFeatures: clusterFeatures.value, fallback: featureFallback.value,
+    suffix: suffix.value, loadedPopType: loadedPopType.value, popType: popType.value })
+  const allFeatures = computed<string[]>(() => clusterFeatureOptions(featureArgs()))
+  const featureOptions = computed<string[]>(() => clusterFeatureOptions({ ...featureArgs(), exclude: HMM_RE }))
 
   async function loadFeatures() {
     if (!enabled.value) return
     if (!projectUid.value || !imageUids.value[0]) { clusterFeatures.value = {}; featureFallback.value = []; return }
-    const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: imageUids.value[0], popType: popType.value })
+    const pt = popType.value
+    const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: imageUids.value[0], popType: pt })
     try {
       const r = await fetch(`/api/gating/channels?${q}`)
+      if (pt !== popType.value) return              // superseded by a popType switch — that load applies
       if (!r.ok) { clusterFeatures.value = {}; featureFallback.value = []; return }
       const d = await r.json()
+      loadedPopType.value = pt
       clusterFeatures.value = d.clusterFeatures ?? {}
       clusterIds.value = d.clusterIds ?? {}
       clusterMembers.value = d.clusterMembers ?? {}
@@ -78,6 +87,7 @@ export function useClusterContext(opts: {
       suffixes.value = d.clusterSuffixes ?? []
       if (suffixes.value.length && !suffixes.value.includes(suffix.value)) suffix.value = suffixes.value[0]
     } catch (e) {
+      if (pt !== popType.value) return
       log.error(`Cluster features: ${e instanceof Error ? e.message : String(e)}`, { source: 'cluster' })
       clusterFeatures.value = {}; featureFallback.value = []
     }
