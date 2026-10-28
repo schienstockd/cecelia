@@ -287,6 +287,7 @@ end
 
 function api_kiwi_terminal_command(req::HTTP.Request)
     # `profile` query param names which profile the terminal one-liner is for; absent → active.
+    # `prompt` (optional) becomes the session's first message — Kiwi's Start in terminal.
     q = HTTP.queryparams(HTTP.URI(req.target))
     name = get(q, "profile", "")
     dir = _kiwi_claude_dir(name; must_exist = false)
@@ -294,7 +295,7 @@ function api_kiwi_terminal_command(req::HTTP.Request)
     200, JSON3.write((; ok = true,
                         profile = isempty(name) ? active_profile_name() : name,
                         profileDir = dir,
-                        command = kiwi_terminal_command(dir)))
+                        command = kiwi_terminal_command(dir; prompt = get(q, "prompt", ""))))
 end
 
 # A profile name → its `CLAUDE_CONFIG_DIR` (`""` for `default`), or an error response tuple. An empty

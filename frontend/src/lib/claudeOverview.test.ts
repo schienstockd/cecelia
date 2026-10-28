@@ -58,6 +58,8 @@ describe('claudeOverview content model', () => {
   it('builds the fallback command from the REAL config path, or nothing at all', () => {
     expect(claudeChatCommand('/home/u/.cecelia/observer-mcp.json'))
       .toBe('claude --mcp-config /home/u/.cecelia/observer-mcp.json')
+    expect(claudeChatCommand('C:\\Users\\First Last\\.cecelia\\observer-mcp.json'))
+      .toBe('claude --mcp-config "C:\\Users\\First Last\\.cecelia\\observer-mcp.json"')
     // No path yet → empty, so the dialog renders nothing. A placeholder here would be a command a
     // user copies verbatim into a terminal and gets an error from — the exact failure to design out.
     expect(claudeChatCommand('')).toBe('')

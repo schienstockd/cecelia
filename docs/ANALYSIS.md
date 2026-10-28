@@ -262,6 +262,11 @@ a track run those include per-track AGGREGATES of cell measures — HMM-state / 
 `get_cluster_summary` returns as each run's `profiles` entry (`app/src/ai/behaviour_clusters.jl`), so
 an agent reads the numbers the user sees.
 
+The board can switch the run under a mounted heatmap (cells ↔ tracks, or the suffix), and a cell
+run's columns don't exist in a track table. So the context offers no features until the new
+popType's metadata has loaded, the panel requests only the columns the run has, and a pick that shares
+nothing with the new run is reseeded to that run's features (`utils/clusterHeatmapFeatures.ts`).
+
 ### Behaviour cards — one family per registry entry
 Three snapshot-card families on the analysis board, sharing a spine:
 

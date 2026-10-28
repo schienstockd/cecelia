@@ -438,7 +438,7 @@ export const kiwiGuide: GuideDef = {
       title: 'Your Claude account',
       text: 'The account this profile\'s turns bill — log in or out right here.',
       bullets: ['Logging in opens a private browser window, so the last person\'s session can\'t sign you in.',
-                'Assistant → Terminal → Copy command starts claude in a terminal as you.'],
+                'Chat → Start in terminal starts claude in a terminal as you.'],
       reveal: {
         needed: c => !c.anchorExists('kiwi.account'),
         anchor: 'sidebar.kiwiCta',
@@ -462,8 +462,9 @@ export const kiwiGuide: GuideDef = {
     {
       anchor: 'kiwi.chat',
       placement: 'left',
-      title: 'Copy a chat starter',
-      text: 'Copies a one-line opener naming this project — paste it into the paired session to start a Kiwi conversation about it.',
+      title: 'Start a session',
+      text: 'Start in terminal copies a command that opens claude on this project — paste it in a terminal.',
+      bullets: ['The chat icon copies just the opener, for a session already running.'],
     },
     {
       anchor: 'kiwi.share',

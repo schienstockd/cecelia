@@ -327,7 +327,8 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
   unasked; the New profile dialog now only points at Kiwi.
 - **D18. The login lives in Kiwi, not Preferences** (user, 2026-10-17). Kiwi's *Account* row holds
   the active profile's account + Log in + Log out, and Assistant → Terminal gets *Copy command*
-  (terminal `claude` as this profile). Preferences → Profiles drops the per-row Claude label, Log
+  (terminal `claude` as this profile). *Later:* that button became Chat → **Start in terminal**,
+  which also passes the chat starter as the session's first message. Preferences → Profiles drops the per-row Claude label, Log
   in / Log out, *Claude in a terminal* and the re-check button — it is back to identity only.
   Given up: seeing or logging out a profile that isn't the active one; the Shared-workstation
   *One Claude login at a time* policy covers the hand-over case that served.
