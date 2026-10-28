@@ -39,7 +39,7 @@ project in your own terminal, Cecelia sets Claude Code up for you:
 
 A plain `claude` works too once the entry is registered — `check my current project in cecelia` is
 enough — but it runs under the terminal's own login, not your profile's. For a session that is already
-running, **Copy chat starter** copies just the opener: `I'm working in the Cecelia project <name>
+running, the chat icon beside it (**Copy chat starter**) copies just the opener: `I'm working in the Cecelia project <name>
 (<uid>). Have a look at it…`.
 
 On Windows the command is `powershell -NoProfile -EncodedCommand …`: an encoded script reads the same

@@ -6,7 +6,7 @@
 // Rows, in visible order:
 //   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
 //   - Chat — Start in terminal (copies the command that starts a session already pointed at this
-//     project) + Copy chat starter (for a session that is already running).
+//     project) + a chat-starter icon (just the opener, for a session that is already running).
 //   - Share — viewer / canvas buttons.
 //   - Ask — the structured duck (KiwiAsk.vue, docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4).
 //     Wrapped in a CollapsibleSection so a long conversation thread can be folded away when the
@@ -382,13 +382,14 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
             <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied() ? 'pi-check' : 'pi-copy']" />
             {{ startCopied() ? 'Copied' : 'Start in terminal' }}
           </button>
-          <button class="cc-btn cc-btn-ghost cc-fs-xs"
+          <!-- Secondary: just the opener, for a session that is already running (or an assistant not
+               started from a terminal). Start covers the usual path, so this one is an icon. -->
+          <button class="cc-btn cc-btn-ghost cc-btn-icon"
                   @click="copyChatStarter"
                   v-tooltip.bottom="chatCopied()
                     ? 'Copied — paste it into your assistant chat'
-                    : 'Copy a one-line opener naming this project for your assistant'">
+                    : 'Copy chat starter — for a session already running'">
             <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" />
-            {{ chatCopied() ? 'Copied' : 'Copy chat starter' }}
           </button>
         </div>
         <!-- Setup failures from either button (this row's Start, Assistant → Terminal's Set up). -->

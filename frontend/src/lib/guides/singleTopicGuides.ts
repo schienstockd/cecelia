@@ -464,7 +464,7 @@ export const kiwiGuide: GuideDef = {
       placement: 'left',
       title: 'Start a session',
       text: 'Start in terminal copies a command that opens claude on this project — paste it in a terminal.',
-      bullets: ['Copy chat starter is for a session that is already running.'],
+      bullets: ['The chat icon copies just the opener, for a session already running.'],
     },
     {
       anchor: 'kiwi.share',
