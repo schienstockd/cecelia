@@ -265,7 +265,7 @@ defineExpose({ refresh })
     <div class="nbt-scroll">
     <SelectionTable class="nbt-table" data-guide="notebooks.table" selection-mode="none" :columns="columns" :rows="notebooks"
                     id-key="file" sort-storage-key="cc.notebooks.sort" actions-label="Actions"
-                    column-width-key="cc.notebooks.colw" actions-width="11rem" fit="content"
+                    column-width-key="cc.notebooks.colw" actions-width="11.3rem" fit="content"
                     :row-tooltip="nb => nb.scope === 'project' ? nb.file : `${nb.file} — shipped example, read-only`"
                     :is-expanded="nb => expandedFile === nb.file">
       <template #cell-name="{ row: nb }">

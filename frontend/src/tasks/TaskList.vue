@@ -174,7 +174,7 @@ const TL_COLUMNS: SelectionColumn[] = [
       <SelectionTable
         class="tl-table" selection-mode="none" density="compact" headerless
         :columns="TL_COLUMNS" :rows="rows" id-key="id"
-        actions-width="5.5rem"
+        actions-width="7.2rem"
         :row-tooltip="r => r.task"
         :row-class="r => `tone-${TASK_STATUS[r.shownStatus].tone} st-${r.shownStatus}`"
         :is-expanded="r => expanded.has(r.id)">
@@ -298,6 +298,10 @@ const TL_COLUMNS: SelectionColumn[] = [
 .tl-table :deep(tr.st-cancelled) { opacity: 0.6; }
 /* the row buttons are dense here — the panel is 280px by default */
 .tl-table :deep(.sel-actions) .cc-btn { padding: 0.2rem 0.25rem; }
+/* `actions-width` is sized to the most a row shows AT ONCE — a finished row with a log: log, rerun,
+   copy, dismiss = 4 × 1.5rem + 3 × the compact 0.15rem gap + 2 × 0.3rem cell padding = 7.05rem,
+   plus slack. The table is headerless, so its cells clip (`overflow: hidden` + ellipsis): an
+   undersized column cut the buttons into each other behind a "…" rather than widening. */
 
 .task-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */

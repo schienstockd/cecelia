@@ -359,7 +359,7 @@ const FILTERS: ChipOption[] = [
           :columns="TM_COLUMNS" :rows="rows"
           id-key="id" :model-value="selectedId ?? undefined"
           sort-storage-key="cc.tasks.sort" column-width-key="cc.tasks.colw"
-          actions-width="2.9rem"
+          actions-width="3.9rem"
           :row-tooltip="r => r.projectLabel ? `${r.task} — from ${r.projectLabel}` : r.task"
           @row-click="r => select(r.entry)">
 
@@ -611,10 +611,10 @@ const FILTERS: ChipOption[] = [
    always visible on both (docs/todo/TASK_LIST_UNIFICATION_PLAN.md → Decision 8). */
 /* `actions-width` is sized to what can appear AT ONCE, not to the number of buttons declared: cancel
    shows only while running/queued and rerun/dismiss only once terminal, so the most a row ever shows
-   is two. Reserving for three left a running row's lone ✕ floating at the far edge of an empty column
-. */
+   is two: 2 × 1.5rem + the compact 0.15rem gap + 2 × 0.3rem cell padding = 3.75rem, plus slack. The
+   table is sized, so its cells clip — an undersized column hides a button behind a "…". Reserving
+   for three left a running row's lone ✕ floating at the far edge of an empty column. */
 .tm-table :deep(.sel-actions) .cc-btn { padding: 0.15rem 0.25rem; }
-.tm-table :deep(.sel-actions) > * + * { margin-left: 0.15rem; }
 
 /* ── Log panel ────────────────────────────────────────────────────────── */
 .tm-log-panel {
