@@ -40,6 +40,7 @@ import BaseModal from '../BaseModal.vue'
 import ClaudeLoginPanel from '../profile/ClaudeLoginPanel.vue'
 import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
+import { useFlash } from '../../composables/useFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
@@ -134,8 +135,7 @@ const projectName = computed(() => pm.current?.name ?? undefined)
 
 // ── Pairing chip ──────────────────────────────────────────────────────────────
 const pushTarget = ref<PairedState>({ paired: false })
-const pushSentFlash = ref(false)
-let pushFlashTimer: ReturnType<typeof setTimeout> | null = null
+const { isOn: pushSent, flash: flashPushSent } = useFlash(3000)
 const probing = ref(false)
 
 async function refreshPushTarget() {
@@ -161,9 +161,7 @@ watch(() => pushStore.tick, () => {
   if (evt.kind === 'push_target:changed') {
     void refreshPushTarget()
   } else if (evt.kind === 'push:sent') {
-    pushSentFlash.value = true
-    if (pushFlashTimer) clearTimeout(pushFlashTimer)
-    pushFlashTimer = setTimeout(() => { pushSentFlash.value = false; pushFlashTimer = null }, 3000)
+    flashPushSent()
     // A successful push means a fresh capture just landed on disk — reload the list without waiting
     // for the user to reopen the panel.
     void refreshCaptures()
@@ -172,7 +170,6 @@ watch(() => pushStore.tick, () => {
   }
 })
 
-onUnmounted(() => { if (pushFlashTimer) clearTimeout(pushFlashTimer) })
 // observer.refresh() runs app-wide in App.vue on project change; ALSO on mount here because the
 // Assistant → Terminal row + its Set up / Fix button live in this panel now (moved from the lab log,
 // which used to refresh on mount for the same reason). A user who registers/breaks `cecelia-observer`
@@ -348,13 +345,13 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <div class="kiwi-row" data-guide="kiwi.pairing">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Pairing</span>
           <span class="kiwi-chip cc-fs-xs"
-                :class="{ 'kiwi-chip-paired': pushTarget.paired, 'kiwi-chip-sent': pushSentFlash }"
-                v-tooltip.bottom="pushSentFlash
+                :class="{ 'kiwi-chip-paired': pushTarget.paired, 'kiwi-chip-sent': pushSent() }"
+                v-tooltip.bottom="pushSent()
                   ? 'Sent to your paired assistant session'
                   : pushTarget.paired
                     ? `Paired — shared frames post to your assistant session\nSocket: ${(pushTarget as Extract<PairedState, { paired: true }>).socketPath}`
                     : 'No paired assistant session — shared frames fall back to the clipboard'">
-            {{ pushSentFlash ? 'sent ✓' : pushChipLabel(pushTarget) }}
+            {{ pushSent() ? 'sent ✓' : pushChipLabel(pushTarget) }}
           </span>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   :disabled="probing || !projectUid" @click="checkPairing"
