@@ -217,8 +217,15 @@ end
 # the mid plane. One rule, so a movie of a z-max and a card / gate-cells still of the same image open
 # on the same window.
 function _render_default_specs(props, zp::AbstractString, nc::Int; max_projection::Bool)
+    first(_display_specs_with_source(props, zp, nc; max_projection))
+end
+
+# Same specs plus where they came from — `"viewer"` (the saved props) or `"sampled"`, the
+# `contrastSource` vocabulary of `/api/viewer/meta`.
+function _display_specs_with_source(props, zp::AbstractString, nc::Int; max_projection::Bool)
     specs = resolved_display_specs(props, nc)
-    specs === nothing ? resolved_display_specs(_sampled_specs(zp, nc; project = max_projection)) : specs
+    specs === nothing || return specs, "viewer"
+    resolved_display_specs(_sampled_specs(zp, nc; project = max_projection)), "sampled"
 end
 
 # ── GET /api/viewer/meta ──────────────────────────────────────────────────────────
@@ -260,9 +267,7 @@ function api_viewer_meta(req::HTTP.Request)
         bpv = sizeof(eltype(arr))
 
         props = _props_path(td, zp)
-        specs = resolved_display_specs(props, nc)
-        src   = specs === nothing ? "sampled" : "viewer"
-        specs === nothing && (specs = resolved_display_specs(_sampled_specs(zp, nc)))
+        specs, src = _display_specs_with_source(props, zp, nc; max_projection = false)
 
         # One `init_object` for everything it can answer: the display names, the calibration, the
         # frame interval, the unit the scale bar is labelled in, and the IMAGE NAME (for the window

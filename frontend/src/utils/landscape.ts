@@ -135,6 +135,8 @@ export function landscapeViewL0(opts: {
   return cameraViewL0(cam, meta, canvasW, canvasH)
 }
 
+type SourceRunValue = string | number | Record<string, [number, number]>
+
 export interface LandscapeResult {
   grid: { cols: number; rows: number }
   tiles: LandscapeTile[]
@@ -149,7 +151,8 @@ export interface LandscapeResult {
   // field came from. Absent when a v1 landscape reader encounters this; sparse per-field
   // when v2 (only fields that were actually computed have a `sourceRun` entry).
   // `pops` is a list — one per population layer counted (older captures: one object).
-  sourceRun?: Record<string, Record<string, string | number> | Record<string, string | number>[]>
+  // `channels.range` maps channel name → the fixed [lo, hi] its tile means are normalised by.
+  sourceRun?: Record<string, Record<string, SourceRunValue> | Record<string, SourceRunValue>[]>
   // Phase 6: how the compute reduced Z — see `LandscapeViewport`. Absent on v1 and on v2
   // envelopes from a compute that computed nothing.
   viewport?: LandscapeViewport
