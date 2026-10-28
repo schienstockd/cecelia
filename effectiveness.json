@@ -1,0 +1,386 @@
+{
+  "first_day": "2026-09-27",
+  "flow": {
+    "check": {
+      "settled": 131,
+      "verify": 173,
+      "waiting": 78
+    },
+    "first_day": "2026-09-27",
+    "into_check": {
+      "agent_run": 5,
+      "last_pass": "2026-10-27",
+      "merged": 39,
+      "not_listed": 191,
+      "notes": 628,
+      "rules_only": 9,
+      "since_pass": 15,
+      "stranded": 1,
+      "tagged_later": 2
+    },
+    "last_day": "2026-10-28",
+    "plausible_fixed": 48,
+    "plausible_total": 603,
+    "real": {
+      "fixed": 48,
+      "not_filed": 0,
+      "open_issue": 8,
+      "wont_fix": 2
+    },
+    "recital": {
+      "fixed": 458,
+      "not_fixed": 73,
+      "plausible": 555
+    },
+    "required": 483,
+    "required_fixed": 410,
+    "verify": {
+      "not_a_bug": 82,
+      "parked": 33,
+      "real": 58,
+      "unchecked": 0
+    }
+  },
+  "last_day": "2026-10-28",
+  "passes": [
+    {
+      "date": "2026-10-02",
+      "fixed": 0,
+      "open": {
+        "1_2w": 0,
+        "over_2w": 0,
+        "under_1w": 0
+      },
+      "tokens": null
+    },
+    {
+      "date": "2026-10-04",
+      "fixed": 0,
+      "open": {
+        "1_2w": 0,
+        "over_2w": 0,
+        "under_1w": 4
+      },
+      "tokens": {
+        "rules": 35993,
+        "sweep": 113025,
+        "verify": 2311708
+      }
+    },
+    {
+      "date": "2026-10-05",
+      "fixed": 0,
+      "open": {
+        "1_2w": 0,
+        "over_2w": 0,
+        "under_1w": 0
+      },
+      "tokens": null
+    },
+    {
+      "date": "2026-10-06",
+      "fixed": 2,
+      "open": {
+        "1_2w": 0,
+        "over_2w": 0,
+        "under_1w": 6
+      },
+      "tokens": {
+        "rules": 51585,
+        "sweep": 88626,
+        "verify": 3040999
+      }
+    },
+    {
+      "date": "2026-10-09",
+      "fixed": 1,
+      "open": {
+        "1_2w": 0,
+        "over_2w": 0,
+        "under_1w": 22
+      },
+      "tokens": {
+        "rules": 60672,
+        "sweep": 283054,
+        "verify": 5579804
+      }
+    },
+    {
+      "date": "2026-10-13",
+      "fixed": 12,
+      "open": {
+        "1_2w": 1,
+        "over_2w": 0,
+        "under_1w": 31
+      },
+      "tokens": {
+        "rules": 77940,
+        "sweep": 363164,
+        "verify": 6081813
+      }
+    },
+    {
+      "date": "2026-10-20",
+      "fixed": 30,
+      "open": {
+        "1_2w": 1,
+        "over_2w": 1,
+        "under_1w": 5
+      },
+      "tokens": {
+        "rules": 89877,
+        "sweep": 190684,
+        "verify": 2756462
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "fixed": 4,
+      "open": {
+        "1_2w": 1,
+        "over_2w": 2,
+        "under_1w": 5
+      },
+      "tokens": {
+        "rules": 100560,
+        "sweep": 75884,
+        "verify": 946100
+      }
+    }
+  ],
+  "sessions": 177,
+  "tokens_from": "2026-10-27",
+  "weeks": [
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 0,
+          "none": 2,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 1,
+          "fixed_pre_commit": 2,
+          "none": 5,
+          "shipped_with_finding": 0
+        }
+      },
+      "changes": 9,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 1,
+        "fixed_pre_commit": 2,
+        "none": 7,
+        "shipped_with_finding": 0
+      },
+      "ongoing": false,
+      "partial": true,
+      "prompt_edits": 1,
+      "prs": 17,
+      "reviewer_tokens": null,
+      "rule_edits": 4,
+      "sessions": 5,
+      "wait_s": {
+        "convention": 47.9,
+        "fanout": 37.5
+      },
+      "week": "2026-09-21"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 6,
+          "false_positive": 0,
+          "fixed_pre_commit": 58,
+          "none": 2,
+          "shipped_with_finding": 2
+        },
+        "fanout": {
+          "dropped_no_action": 8,
+          "false_positive": 5,
+          "fixed_pre_commit": 75,
+          "none": 4,
+          "shipped_with_finding": 8
+        }
+      },
+      "changes": 196,
+      "findings": {
+        "dropped_no_action": 14,
+        "false_positive": 5,
+        "fixed_pre_commit": 133,
+        "none": 6,
+        "shipped_with_finding": 10
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 4,
+      "prs": 149,
+      "reviewer_tokens": null,
+      "rule_edits": 10,
+      "sessions": 53,
+      "wait_s": {
+        "convention": 39.1,
+        "fanout": 41.8
+      },
+      "week": "2026-09-28"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 1,
+          "false_positive": 0,
+          "fixed_pre_commit": 68,
+          "none": 8,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 78,
+          "none": 2,
+          "shipped_with_finding": 2
+        }
+      },
+      "changes": 236,
+      "findings": {
+        "dropped_no_action": 1,
+        "false_positive": 0,
+        "fixed_pre_commit": 146,
+        "none": 10,
+        "shipped_with_finding": 2
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 1,
+      "prs": 148,
+      "reviewer_tokens": null,
+      "rule_edits": 8,
+      "sessions": 59,
+      "wait_s": {
+        "convention": 35.4,
+        "fanout": 36.5
+      },
+      "week": "2026-10-05"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 40,
+          "none": 0,
+          "shipped_with_finding": 1
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 1,
+          "fixed_pre_commit": 29,
+          "none": 3,
+          "shipped_with_finding": 5
+        }
+      },
+      "changes": 145,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 1,
+        "fixed_pre_commit": 69,
+        "none": 3,
+        "shipped_with_finding": 6
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 1,
+      "prs": 88,
+      "reviewer_tokens": null,
+      "rule_edits": 5,
+      "sessions": 44,
+      "wait_s": {
+        "convention": 34.6,
+        "fanout": 33.2
+      },
+      "week": "2026-10-12"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 20,
+          "none": 0,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 8,
+          "none": 2,
+          "shipped_with_finding": 2
+        }
+      },
+      "changes": 44,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 0,
+        "fixed_pre_commit": 28,
+        "none": 2,
+        "shipped_with_finding": 2
+      },
+      "ongoing": false,
+      "partial": false,
+      "prompt_edits": 0,
+      "prs": 20,
+      "reviewer_tokens": null,
+      "rule_edits": 1,
+      "sessions": 8,
+      "wait_s": {
+        "convention": 36.6,
+        "fanout": 32.4
+      },
+      "week": "2026-10-19"
+    },
+    {
+      "by_reviewer": {
+        "convention": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 27,
+          "none": 0,
+          "shipped_with_finding": 0
+        },
+        "fanout": {
+          "dropped_no_action": 0,
+          "false_positive": 0,
+          "fixed_pre_commit": 8,
+          "none": 0,
+          "shipped_with_finding": 0
+        }
+      },
+      "changes": 44,
+      "findings": {
+        "dropped_no_action": 0,
+        "false_positive": 0,
+        "fixed_pre_commit": 35,
+        "none": 0,
+        "shipped_with_finding": 0
+      },
+      "ongoing": true,
+      "partial": true,
+      "prompt_edits": 1,
+      "prs": 43,
+      "reviewer_tokens": {
+        "convention": 8472120,
+        "fanout": 11529229
+      },
+      "rule_edits": 2,
+      "sessions": 18,
+      "wait_s": {
+        "convention": 34.6,
+        "fanout": 35.4
+      },
+      "week": "2026-10-26"
+    }
+  ]
+}
