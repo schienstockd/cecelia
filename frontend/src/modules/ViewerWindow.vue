@@ -38,7 +38,7 @@ import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../ut
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
          eyeKey, flipPopEye, offPaths,
-         type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
+         eyeTurnedOn, type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -1909,7 +1909,16 @@ async function loadOverlays() {
     eyesNext.set(vn, kept)
     if (!samePopEyes(stored, kept)) settings.setPopEyes(imageUid, vn, kept)
   }
-  popEyes.value = eyesNext
+  // One-at-a-time spans every segmentation, so a pop the manager switched on (it writes the stored
+  // eye, read just above) takes over the one-pop view here, not per segmentation.
+  const turned = soloPop.value ? eyeTurnedOn(popEyes.value, eyesNext) : null
+  if (turned) {
+    const listed = listPops(next)
+    const solo = soloPopEyes(eyesNext, listed, listed.findIndex(p =>
+      p.vn === turned.vn && p.popType === turned.popType && p.path === turned.path))
+    for (const [vn, e] of solo) if (!samePopEyes(eyesNext.get(vn) ?? {}, e)) settings.setPopEyes(imageUid, vn, e)
+    popEyes.value = solo
+  } else popEyes.value = eyesNext
   // Ribbon eyes: the same reconcile, their own bag (#1766) — a gate edit no longer resets them.
   const ribbonNext = new Map(ribbonEyes.value)
   for (const vn of new Set(next.map(l => l.vn))) {
@@ -1923,8 +1932,9 @@ async function loadOverlays() {
 }
 
 /** Every pop row the section lists, in list order — what the master row's all / solo act on. */
-const listedPops = computed<ListedPop[]>(() => listedPopLayers.value.flatMap(l =>
-  l.payload.pops.map(x => ({ vn: l.vn, popType: l.popType, path: x.path }))))
+const listPops = (layers: readonly PopLayer[]): ListedPop[] => layers.flatMap(l =>
+  l.payload.pops.map(x => ({ vn: l.vn, popType: l.popType, path: x.path })))
+const listedPops = computed<ListedPop[]>(() => listPops(listedPopLayers.value))
 const listedPopOn = (p: ListedPop) => !hiddenPops.value.has(popKey(p.vn, p.popType, p.path))
 /** True when every listed pop is on; a mixed state reads "not all on", as for channels. */
 const allPopsVisible = computed(() => listedPops.value.length > 0 && listedPops.value.every(listedPopOn))

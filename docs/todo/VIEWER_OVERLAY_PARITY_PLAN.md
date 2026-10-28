@@ -87,7 +87,7 @@ reading for this plan):
   the same rule (so its ungated cells are grey now, not undrawn).
 - **P8 pop eyes.** The viewer draws a pop's points and its cell-track ribbon each by its own eye
   (`popEyes.ts`, `settings.getPopEyes(…, 'points' | 'ribbons')`); the manager's `show` only seeds a pop
-  with no eye. A look carries both bags whole — `popEyes` / `ribbonEyes`, `{vn: {"<popType>::<path>":
+  with no eye; the manager's per-pop viewer toggle writes the eye directly. A look carries both bags whole — `popEyes` / `ribbonEyes`, `{vn: {"<popType>::<path>":
   on}}` (`settings.getImagePopEyes`; both cross windows through the bag channel) — and the renderer
   draws by them (`look_eye_on`, the viewer's `popEyeOn`): points in `_overlay_parts` (`point_on`),
   ribbons (`track_on`, an eye outranking the path-only `hiddenTrackPops`), the *Pop colour* mask
