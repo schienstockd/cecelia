@@ -23,6 +23,11 @@ Invoked by `app/src/tasks/clustTracks/cluster.jl` via a params JSON. Params:
   labels                per-row track_id (== the per-track table's obs label index)
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
+  reversePath           root the path at the high end of DC1 instead of the low end
+  axesOutPath           where to write the behaviour-axes metadata (axis names, root) for Julia
+
+Besides the clusters (+ UMAP) it always writes the behaviour axes: `obsm['X_diffmap.{suffix}']` (DC1,
+DC2) and `obs['path.{suffix}']` (position along the continuum) — docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md.
 """
 
 import numpy as np
@@ -52,6 +57,7 @@ def run(params):
     log.log(f">> {len(X_in)} tracks pooled across the set on {len(feature_cols)} feature(s)")
     import anndata as ad
     X = np.array([[np.nan if v is None else v for v in row] for row in X_in], dtype=np.float32)
+    raw = X.copy()                  # find_populations normalises in place; axis names use raw values
     adata = ad.AnnData(X)
     adata.var_names = list(feature_cols)
     adata.obs_names = [str(i) for i in range(X.shape[0])]
@@ -78,8 +84,24 @@ def run(params):
         log=log.log,
     )
 
+    # ── behaviour axes on the same neighbour graph (always on; cheap next to the UMAP) ──
+    axes = clustering_utils.behaviour_axes(
+        adata, features=raw, reverse=bool(script_utils.get_param(params, "reversePath", default=False)),
+        log=log.log)
+    # too small for axes: still overwrite path + embedding so a previous run's values on this suffix
+    # don't sit next to the new clusters
+    extra_obs  = {f"path.{suffix}": np.full(adata.n_obs, np.nan)}
+    extra_obsm = {f"X_diffmap.{suffix}": np.full((adata.n_obs, 2), np.nan, dtype=np.float32)}
+    if axes is not None:
+        extra_obs  = {f"path.{suffix}": adata.obs["path"].to_numpy()}
+        extra_obsm = {f"X_diffmap.{suffix}": adata.obsm["X_diffmap_axes"]}
+        axes_out_path = params.get("axesOutPath")
+        if axes_out_path is not None:
+            write_json_atomic(axes_out_path, axes)
+
     # ── split back per segment and write into each per-track table (shared write-back) ──
-    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
+    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log,
+                                               extra_obs=extra_obs, extra_obsm=extra_obsm)
 
     # QC (advisory): per-segment cluster distribution for Julia to bank (qc.jl). Best-effort; never
     # fails the task. Same qcOutPath pattern as clustPops/cellpose runners.

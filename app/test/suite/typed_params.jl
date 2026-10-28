@@ -524,7 +524,9 @@ end
     end
     let p = Cecelia.parse_clust_tracks_params(Dict{String,Any}())
         @test p.minTracklength === 5
+        @test p.reversePath === false                  # behaviour path rooted at the low end of DC1
     end
+    @test Cecelia.parse_clust_tracks_params(Dict{String,Any}("reversePath" => true)).reversePath === true
 
     # clustRegions
     let p = Cecelia.parse_clust_regions_params(Dict{String,Any}(

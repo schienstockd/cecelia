@@ -94,6 +94,12 @@ The Leiden clustering tasks write their result back through the `LabelProps` wri
   filter) — see `docs/POPULATION.md`.
 - `obsm['X_umap.{suffix}']` is the plotting embedding (the UMAP chart reads it); written only when
   *Calculate UMAP* is on.
+- Track runs also write the **behaviour axes** on every run (no toggle; computed from the same
+  neighbour graph): `obsm['X_diffmap.{suffix}']` (DC1, DC2: diffusion components, each flipped so its
+  strongest-correlated feature is positive) and `obs['path.{suffix}']` (diffusion pseudotime, 0..1,
+  rooted at the low end of DC1, or the high end with *Reverse path*). `path.{suffix}` is an ordinary
+  numeric track measure. Axis names (top features + Spearman ρ) and the root's cluster are recorded as
+  `behaviourAxes` on the run's `.clustfeatures.json` entry. See `docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md`.
 
 ### Motif discovery output — `motif.*.{suffix}` obs
 

@@ -120,7 +120,8 @@
       "collapsed": true,
       "params": [
         { "key": "usePaga", "label": "Use PAGA", "type": "bool", "default": false, "tip": "Initialise the UMAP from a PAGA graph (preserves global cluster topology)" },
-        { "key": "pagaThreshold", "showIf": { "usePaga": [true] }, "label": "PAGA threshold", "type": "float", "min": 0, "max": 0.5, "step": 0.02, "default": 0.1, "tip": "Edge-weight threshold for the PAGA graph" }
+        { "key": "pagaThreshold", "showIf": { "usePaga": [true] }, "label": "PAGA threshold", "type": "float", "min": 0, "max": 0.5, "step": 0.02, "default": 0.1, "tip": "Edge-weight threshold for the PAGA graph" },
+        { "key": "reversePath", "label": "Reverse path", "type": "bool", "default": false, "tip": "Start the behaviour path at the other end" }
       ]
     }
   ]
