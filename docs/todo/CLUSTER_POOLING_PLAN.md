@@ -12,7 +12,7 @@ selected populations, which may span several **segmentations** (value_names) —
 `{props}.clustfeatures.json` sidecar per segment (keyed by suffix → `{features, partOf}`).
 
 But the cluster **page** (and board) is single-segmentation:
-- UMAP (`api_plots_umap`) and heatmap read ONE value_name (`_resolve_vn` → `_active`, e.g. `B`).
+- UMAP (`api_plots_cluster_map`) and heatmap read ONE value_name (`_resolve_vn` → `_active`, e.g. `B`).
 - The named cluster pops (`__trackclust.json` → Scanning/Directed/Meandering) are authored under ONE
   value_name (whichever was active when named), so the picker + pop-summary only ever show B.
 - Net: on `4kS67f`/`3w4IY5` the user sees **B only** everywhere on the cluster page, even though
@@ -53,7 +53,7 @@ every input segment). Source of truth = the clustfeatures sidecar (cheap JSON, n
   Stage-1. Own sidecar always wins; editing+saving under T materialises a real T sidecar (copy
   semantics — acceptable). TEST: borrow round-trips; membership over T's table.
 
-### Stage 3 — UMAP pooling (`api_plots_umap`)  ✅ DONE (browser-verified)
+### Stage 3 — UMAP pooling (`api_plots_cluster_map`)  ✅ DONE (browser-verified)
 - Endpoint now pools `obsm[X_umap.suffix]` + `clusters.suffix` across `co_clustered_value_names`
   (an explicit `valueName` restricts to one). Pop subset resolves membership per vn (via `_live_map`,
   which uses the borrowing `load_pop_map`). Kept the binary `[x, y, code]` shape, so the frontend

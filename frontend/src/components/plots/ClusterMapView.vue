@@ -1,7 +1,7 @@
 <!--
   UMAP interactive view (one entry in the interactive-view registry; see components/canvas/
   interactiveViews.ts). Self-contained: fetches the joint embedding for the selected image(s)
-  (GET /api/plots/umap → binary Float32 [x, y, clusterCode, popIdx] per point), renders a 2D-canvas
+  (GET /api/plots/cluster-map → binary Float32 [x, y, clusterCode, popIdx] per point), renders a 2D-canvas
   scatter with a legend, and owns its own controls. Points can be coloured by CLUSTER (default),
   by POPULATION (membership of the picked cell-type pops → popIdx, resolved server-side) or by an
   image ATTRIBUTE (client-side uid→attr join) — "where do the tracked pops / treatments fall on the
@@ -52,7 +52,7 @@ const props = defineProps<{
            colourPops?: string[]; colourAttr?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
   // BIDIR PR #4b — the panel's `persistKey`, forwarded from InteractivePanel so this view can
-  // filter Claude's point-out marks by `(family='umap', plotId=<this>)`. Absent → no marker.
+  // filter Claude's point-out marks by `(family='cluster-map', plotId=<this>)`. Absent → no marker.
   plotId?: string
 }>()
 const log = useLogStore()
@@ -436,7 +436,7 @@ async function load() {
     for (let ui = 0; ui < props.imageUids.length; ui++) {
       const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType, suffix: props.suffix, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
-      const res = await fetch(`/api/plots/umap?${q}`)
+      const res = await fetch(`/api/plots/cluster-map?${q}`)
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
       for (let i = 0; i < f.length; i++) rec.push(f[i])
@@ -656,13 +656,13 @@ defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage,
 
 // BIDIR PR #8 — plot registry adopter. Registers under the same plotId (the panel's persistKey
 // forwarded by InteractivePanel), overriding the outer InteractivePanel's raw view-key family
-// with the descriptive `'umap'` label. Suffix in the title so two UMAP runs in the same page
+// with the descriptive `'cluster-map'` family. Suffix in the title so two UMAP runs in the same page
 // disambiguate.
 const _route = useRoute()
 useVisualPanel(
   () => props.plotId ?? '',
   () => ({
-    family: 'umap',
+    family: 'cluster-map',
     title: props.suffix ? `UMAP (${props.suffix})` : 'UMAP',
     route: _route.path,
     // BIDIR PR #8 extension — axis meta for a UMAP: dimensions are canonical (UMAP1 × UMAP2), plus
@@ -676,7 +676,7 @@ useVisualPanel(
   }),
 )
 
-// BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='umap'`,
+// BIDIR PR #4b point-out consumer. Marks addressed at this panel (`family='cluster-map'`,
 // `plotId=persistKey`); a mark's `cell` field selects a facet on faceted layouts. Positions
 // computed in plotBoxEl-local px — the same letterbox math `singleFrame` / `facetInnerRect` use,
 // via `boxW`/`boxH` (kept in sync by the ResizeObserver in `redraw()`) so a resize repositions
@@ -685,7 +685,7 @@ const viewer = useViewerStore()
 const umapMarks = computed(() => {
   const pid = props.plotId
   if (!pid) return []
-  return viewer.plotMarks.filter(m => m.family === 'umap' && m.plotId === pid)
+  return viewer.plotMarks.filter(m => m.family === 'cluster-map' && m.plotId === pid)
 })
 function letterboxLocal(u: number, v: number,
                         rect: { x: number; y: number; w: number; h: number }, asp: number,

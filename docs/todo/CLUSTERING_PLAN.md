@@ -81,7 +81,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
   (`_live_map`/`_plot_xy_raw`/`_track_fetch`) treat `trackclust` as track-grained; new `_track_free_cols`
   keeps `clusters.*`/lineage from being mistaken for a cell aggregate. No dedicated endpoint (Decision 10
   holds). Tests: gating_path routing + filter membership + storage round-trip (headless).
-- **Step 4a — UMAP endpoint: DONE.** `GET /api/plots/umap?popType=clust|trackclust&suffix&pop?` →
+- **Step 4a — UMAP endpoint: DONE.** `GET /api/plots/cluster-map?popType=clust|trackclust&suffix&pop?` →
   binary `Float32 [x,y,code,…]` (obsm `X_umap.{suffix}` + `clusters.{suffix}`; clust=cell table,
   trackclust=track table; optional pop subset). `obsm`/`obsm_keys` now exported for the api layer.
   Heatmap reuses `_matrix_agg` (no new backend). **Backend is now feature-complete for clustering.**
@@ -92,7 +92,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
   go. vue-tsc clean. So the pages exist + can RUN clustering from the GUI; rendering is next.
 - **Step 4b — UMAP chart: DONE.** `ScatterGL` extended with a `category` colour mode (categories +
   palette props, no second regl wrapper). `components/cluster/ClusterUmapPanel.vue` fetches
-  `/api/plots/umap` per selected image, concatenates (shared UMAP space + cluster numbering across the
+  `/api/plots/cluster-map` per selected image, concatenates (shared UMAP space + cluster numbering across the
   set), colours by cluster with a legend (id + count); suffix + point-size persist via the canvas
   shared bag. Wired into both module pages' below-table (popType clust/trackclust). vue-tsc clean.
 - **Step 4b/5 — UMAP + heatmap on the CANVAS framework (reworked per D): DONE.** D corrected the first
@@ -165,7 +165,7 @@ a hand-drawn gate.
    - **Heatmap**: reuse `_matrix_agg` profile, `category="clusters.{suffix}"` → cluster ×
      measure signature (z-scorable). No new renderer.
    - **Boxplot**: already exists (series = cluster).
-   - **UMAP**: the one new renderer — `GET /api/plots/umap` serves `obsm['X_umap']` +
+   - **UMAP**: the one new renderer — `GET /api/plots/cluster-map` serves `obsm['X_umap']` +
      `clusters` as a binary point buffer → regl-scatterplot (same WebGL path as gating),
      colour-by cluster / population / marker / attribute (ports old `clustUMAP*` plotly).
 
@@ -260,7 +260,7 @@ are thus comparable across the set.
   image's `{vn}__tracks.h5ad`.
 - Julia: `app/src/tasks/clust/cluster_cells.{jl,json}` + `cluster_tracks.{jl,json}`,
   fun_names `clust.cluster_cells` / `clust.cluster_tracks`; register in `task_registry.jl`,
-  include in `Cecelia.jl`. Params: `resolution`, `mergeUmap`, normalise group
+  include in `Cecelia.jl`. Params: `resolution`, `createUmap` (was `mergeUmap`), normalise group
   (`normaliseAxis`/`normaliseToMedian`/`normalisePercentile`…), `transformation`/`logBase`,
   `clusterChannels`+`objectMeasures` (cells) / `trackMeasures`+HMM/transition+cell aggregates
   (tracks), `popsToCluster`, `valueNameSuffix`. **Dropped vs old:** `refPops` (Decision 7),
@@ -278,7 +278,7 @@ are thus comparable across the set.
   dedicated endpoint if a real gap surfaces.
 
 ### Step 4 — UMAP plot endpoint + chart type
-- `GET /api/plots/umap` → binary buffer of `obsm['X_umap']` + `clusters` (+ optional colour
+- `GET /api/plots/cluster-map` → binary buffer of `obsm['X_umap']` + `clusters` (+ optional colour
   column). Frontend `umap` chart type via regl-scatterplot; colour-by cluster/pop/marker/attr.
 - Heatmap + boxplot need no new backend (reuse `_matrix_agg` / existing chart types).
 

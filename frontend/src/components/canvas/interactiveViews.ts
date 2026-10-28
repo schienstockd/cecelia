@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
-import UmapView from '../plots/UmapView.vue'
+import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
@@ -18,7 +18,7 @@ import HmmStateCardsView from '../plots/HmmStateCardsView.vue'
 // server-aggregated plot-def JSONs rendered by the one generic PlotChart; interactive plots each
 // need their own renderer + data endpoint, so they live here as self-contained view components.
 //
-// To add an interactive plot: write a <XView>.vue (fetch + render + its own controls; UmapView is the
+// To add an interactive plot: write a <XView>.vue (fetch + render + its own controls; ClusterMapView is the
 // reference) and add ONE line here. The generic InteractivePanel + the canvases pick it up — no panel
 // or canvas changes. Shared infra (not cluster-specific) so the future universal canvas reuses it.
 // See docs/UI.md "Interactive plots".
@@ -28,7 +28,7 @@ export type PageFlag = 'clusterPage' | 'opticalFlowPage' | 'trackPage'
 export interface InteractiveView {
   label: string
   component: Component
-  clusterPage?: boolean       // offered on the Cluster module page's +Plot picker (UMAP only)
+  clusterPage?: boolean       // offered on the Cluster module page's +Plot picker (cluster map only)
   opticalFlowPage?: boolean   // offered on the Optical Flow module page's +Plot picker
   trackPage?: boolean         // offered in the Track canvas's "+ Track…" picker
   analysisBoard?: boolean     // offered on the Analysis board's +Plot picker
@@ -81,8 +81,8 @@ const TRACK_FAMILIES: PopTypeOption[] = [
 // to reach — a silently dead checkbox. The helpers below exist so no host can hardcode that list
 // again; `interactiveViews.test.ts` pins that `LayoutCanvas` names no view key at all.
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
-  umap: {
-    label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true,
+  clusterMap: {
+    label: 'Cluster map', component: ClusterMapView, clusterPage: true, analysisBoard: true,
     boardGroup: 'clustering', square: true, rail: 'clusterPops',
     initialState: () => ({ labels: true, hl: [] }),
   },
@@ -168,8 +168,12 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
  * `trackCorrection` → `trackScheme`: the worklist was replaced by the timeline, which authors the
  * same ops onto the same queue, so a saved worklist panel becomes the thing that replaced it rather
  * than an empty slot.
+ *
+ * `umap` → `clusterMap`: the cluster view outgrew its one embedding (diffusion axes beside the UMAP,
+ * docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md Decision 7). `BOARD_VIEW_ALIASES` in analysis_board_spec.jl
+ * is the server-side mirror.
  */
-export const VIEW_ALIASES: Record<string, string> = { trackCorrection: 'trackScheme' }
+export const VIEW_ALIASES: Record<string, string> = { trackCorrection: 'trackScheme', umap: 'clusterMap' }
 
 /** Apply `VIEW_ALIASES` to a persisted panel state in place; returns true when it changed. */
 export function migrateViewKey(state: { kind: string }): boolean {

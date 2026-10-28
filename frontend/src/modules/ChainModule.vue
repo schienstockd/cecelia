@@ -21,7 +21,7 @@ import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
-import { clampParamsToSpec } from '../tasks/paramValues'
+import { clampParamsToSpec, savedValueFor } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -1810,7 +1810,7 @@ onActivated(async () => {
               v-for="p in selectedTaskDef.params"
               :key="p.key"
               :param="p"
-              :modelValue="selectedNode.data.params[p.key]"
+              :modelValue="savedValueFor(p, selectedNode.data.params)"
               :context="paramContext"
               @update:modelValue="updateParam(p.key, $event)"
             />

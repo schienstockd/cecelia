@@ -69,6 +69,10 @@ export interface ParamDef {
   labelUnit?: 'frameDuration'
   // channelRoles: a sibling channelSelection whose channels get no row (AF correction's target)
   exclude?: string
+  // Keys this param was stored under before a rename. A saved value under a former key fills the
+  // param when its own key is absent — in the form (`buildParamValues`) and in a run
+  // (`_apply_spec_defaults`), so old funParams and chains keep their value. See docs/MODULES.md.
+  formerKeys?: string[]
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
                         | { endsWith?: string | string[]; notEndsWith?: string | string[];
                             minItems?: number; equals?: string }>

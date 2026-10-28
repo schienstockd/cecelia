@@ -263,7 +263,7 @@ export interface TileMark {
 }
 
 /** BIDIR PR #4b plot point-out — "look at THIS spot on that panel". Ephemeral.
- *  `family` names the plot family (`gate-scatter`, `umap`, `heatmap`, `image-strip`, `cell-cards`,
+ *  `family` names the plot family (`gate-scatter`, `cluster-map`, `heatmap`, `image-strip`, `cell-cards`,
  *  `pairs-matrix`, `hmm-states`, `hmm-transitions`). `plotId` addresses ONE panel — the panel's
  *  stable `persistKey`. `u`/`v` are 0..1 in that family's own frame (see `plots/frame.ts` —
  *  `rectFrame` / `letterboxFrame` normalise per family). `cell` (optional) addresses a sub-frame

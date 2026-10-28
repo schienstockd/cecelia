@@ -43,7 +43,7 @@ Base.@kwdef struct ClustTracksParams
     normalisePercentileBottom::Float64 = 0.0
     transformation::String             = "NONE"
     logBase::Int                       = 0
-    mergeUmap::Bool                    = true
+    createUmap::Bool                    = true
     usePaga::Bool                      = false
     pagaThreshold::Float64             = 0.1
     reversePath::Bool                  = false
@@ -63,7 +63,7 @@ function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
         logBase                    = _int_param(d, "logBase", 0),
-        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        createUmap                  = Bool(get(d, "createUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)),
         reversePath                = Bool(get(d, "reversePath", false)))
@@ -165,7 +165,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
         "normalisePercentileBottom" => p.normalisePercentileBottom,
         "transformation" => p.transformation,
         "logBase" => p.logBase,
-        "createUmap" => p.mergeUmap,
+        "createUmap" => p.createUmap,
         "usePaga" => p.usePaga,
         "pagaThreshold" => p.pagaThreshold,
         "reversePath" => p.reversePath,

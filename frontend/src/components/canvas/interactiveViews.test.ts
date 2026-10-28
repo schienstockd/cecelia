@@ -60,7 +60,7 @@ describe('interactive view surface flags', () => {
   })
 
   it('groups the views the board picker separates', () => {
-    expect(boardViews('clustering').map(v => v.key)).toContain('umap')
+    expect(boardViews('clustering').map(v => v.key)).toContain('clusterMap')
     expect(boardViews('image').map(v => v.key)).toContain('filmstrip')
     expect(boardViews('interactive').map(v => v.key)).toContain('flowMetrics')
   })
@@ -73,7 +73,7 @@ describe('interactive view surface flags', () => {
   })
 
   it('the cluster page offers only cluster-page views', () => {
-    expect(pageViews('clusterPage').map(v => v.key)).toEqual(['umap'])
+    expect(pageViews('clusterPage').map(v => v.key)).toEqual(['clusterMap'])
   })
 
   // The rail is the SECOND thing the board must derive from the registry rather than a key list. The
@@ -96,7 +96,7 @@ describe('interactive view surface flags', () => {
   })
 
   it('cluster plots all ask for the cluster pop manager', () => {
-    expect(railFor('umap')).toBe('clusterPops')
+    expect(railFor('clusterMap')).toBe('clusterPops')
     for (const key of Object.keys(CLUSTER_PANELS)) expect(clusterPanelRail(key)).toBe('clusterPops')
   })
 
@@ -188,6 +188,12 @@ describe('interactive view surface flags', () => {
     const live = { kind: 'trackPaths' }
     expect(migrateViewKey(live)).toBe(false)
     expect(live.kind).toBe('trackPaths')
+  })
+
+  it('migrates a saved UMAP panel to the cluster map that replaced it', () => {
+    const state = { kind: 'umap' }
+    expect(migrateViewKey(state)).toBe(true)
+    expect(state.kind).toBe('clusterMap')
   })
 
   it('every track view is offered on the Track page', () => {

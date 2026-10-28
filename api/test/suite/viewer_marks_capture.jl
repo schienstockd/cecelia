@@ -150,6 +150,10 @@
         @test stp2 == 200
         fp2 = drain()[1]
         @test String(fp2.cell) == "cell=3"
+        # A retired family name still lands, as the current one (`umap` → `cluster-map`), so the
+        # cluster map's marker filter sees it.
+        @test p(Dict("projectUid"=>uid, "family"=>"umap", "plotId"=>"pk", "u"=>0.5, "v"=>0.5))[1] == 200
+        @test String(drain()[1].family) == "cluster-map"
 
         # Multi-source select (LINKED_BRUSHING follow-up): the reverse of the plot-brush emit
         # shape. Body requires kind ∈ {track, cell} + a `sources` array of {imageUid, valueName,

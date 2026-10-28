@@ -123,7 +123,7 @@ an `agent_run` capture on that stage's section:
 | gating (each image's last gate decision) | `gatingStrategy`, full hierarchy, one slot per image |
 | `tracking.*` | `track_measures` speed + straightness, `trackPaths` on the tracked pop |
 | `behaviour.hmm` | `hmm_state_frequency`, `state_signature`, `transition_matrix`, `hmmStateCards` |
-| `clustTracks.*` / `clustPops.*` | `umap`, cluster `heatmap` (+ `hmmStates`, `hmmTransitions`, `cellCards` for track clusters) |
+| `clustTracks.*` / `clustPops.*` | `clusterMap`, cluster `heatmap` (+ `hmmStates`, `hmmTransitions`, `cellCards` for track clusters) |
 
 A board that cannot be added or rendered puts a `**Stage board:**` line saying why in its section;
 the record is written regardless (`--no-stage-boards` skips them).

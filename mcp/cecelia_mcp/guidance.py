@@ -194,7 +194,7 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   `get_spatial_stats`); do NOT rely on shared-frame pixels for statistics.
 - `mark_plot(family, plot_id, u, v, cell?, label?, ttl_s?)` — point at a spot on a PLOT panel (a \
   peak on a histogram, a cluster on a UMAP, a bright cell on a strip, a heatmap cell). `family` is \
-  the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `umap` / `heatmap` / \
+  the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `cluster-map` / `heatmap` / \
   `hmm-states` / `hmm-transitions` / `summary` / `image-strip` / `cell-cards` / `motif-cards`); \
   `plot_id` addresses one panel (its \
   `persistKey` from the capture envelope). `u` / `v` are 0..1 in that family's own frame — the \

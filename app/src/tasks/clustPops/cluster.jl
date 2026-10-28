@@ -46,7 +46,7 @@ Base.@kwdef struct ClustPopsParams
     normalisePercentileBottom::Float64 = 0.0
     transformation::String             = "NONE"
     logBase::Int                       = 0
-    mergeUmap::Bool                    = true
+    createUmap::Bool                    = true
     usePaga::Bool                      = false
     pagaThreshold::Float64             = 0.1
 end
@@ -64,7 +64,7 @@ function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
         logBase                    = _int_param(d, "logBase", 0),
-        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        createUmap                  = Bool(get(d, "createUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
 end
@@ -154,7 +154,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
         "normalisePercentileBottom" => p.normalisePercentileBottom,
         "transformation" => p.transformation,
         "logBase" => p.logBase,
-        "createUmap" => p.mergeUmap,
+        "createUmap" => p.createUmap,
         "usePaga" => p.usePaga,
         "pagaThreshold" => p.pagaThreshold,
         "randomState" => 0)

@@ -38,7 +38,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
@@ -188,9 +188,15 @@ const {
   }),
 })
 
-// Migrate boards persisted before the four per-popType population summaries collapsed into one spec: a
-// summary slot's `ref` IS the spec id, so a stale id would resolve to no spec and render an empty slot.
+// Migrate boards persisted before a rename: a summary slot's `ref` IS the spec id (the four per-popType
+// population summaries collapsed into one), an interactive slot's `ref` IS the view key (`VIEW_ALIASES`).
+// A stale ref resolves to nothing and renders an empty slot.
 for (const c of entry.value.contents) {
+  if (c?.kind === 'interactive') {
+    const v = { kind: c.ref }
+    if (migrateViewKey(v)) c.ref = v.kind
+    continue
+  }
   if (!c || c.kind !== 'summary') continue          // slots may be empty (null)
   const state = (c.state ?? {}) as Record<string, unknown>
   const s = { specId: c.ref, popType: state.popType as string | undefined }

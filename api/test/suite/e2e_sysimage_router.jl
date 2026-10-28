@@ -299,7 +299,7 @@ end
         "/api/denoise/models",
         "/api/kiwi/turns", "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
-        "/api/plots/umap", "/api/pools", "/api/tasks/threads", "/api/runner/status",
+        "/api/plots/cluster-map", "/api/pools", "/api/tasks/threads", "/api/runner/status",
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",

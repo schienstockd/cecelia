@@ -142,7 +142,7 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
 // exports soft on a small slot; instead we aim for a fixed ~`targetPx` long side (scale bounded
 // 4–14×) and let the `hiRes` resolver re-render the point cloud at that scale — regl scales the point
 // size with it, so the look stays constant but sharp. This is the ONE hi-res path shared by the gating
-// scatter (GateScatterCell) and the cluster UMAP (UmapView); don't reinvent the scale math per plot.
+// scatter (GateScatterCell) and the cluster UMAP (ClusterMapView); don't reinvent the scale math per plot.
 export function rasterExportScale(host: HTMLElement | null, targetPx = 2200): number | undefined {
   const px = host ? Math.max(host.clientWidth, host.clientHeight) : 0
   return px ? Math.min(14, Math.max(4, Math.ceil(targetPx / px))) : undefined

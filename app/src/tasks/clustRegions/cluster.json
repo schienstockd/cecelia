@@ -85,7 +85,8 @@
       "tip": "Number of regions for k-means"
     },
     {
-      "key": "mergeUmap",
+      "key": "createUmap",
+      "formerKeys": ["mergeUmap"],
       "label": "Calculate UMAP",
       "type": "bool",
       "default": true,
