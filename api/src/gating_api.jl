@@ -460,6 +460,18 @@ end
 # 0..k-1 codes present in ITS objects; scanning one image under-reports (e.g. 2 of 4). Pool across the
 # run's MEMBER images (`partOf`, from _clust_members) so the universe matches the pooled UMAP/heatmap.
 # A suffix with no recorded members (pre-partOf run) falls back to the primary image's own column.
+# per-suffix behaviour axes (track runs: axis names + path root, written by clustTracks as
+# `behaviourAxes`). Suffixes without them are absent, so the cluster map offers its diffusion layout only
+# for runs that have one.
+function _clust_axes(props_path::AbstractString, suffixes, family)
+    out = Dict{String,Any}()
+    for s in suffixes
+        a = _entry_field(Cecelia._clustfeatures_entry(props_path, s; family = family), "behaviourAxes")
+        a isa AbstractDict && (out[s] = a)
+    end
+    out
+end
+
 function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString, vn::AbstractString,
                       suffixes::Vector{String}, members::AbstractDict, track::Bool,
                       pop_type::PopTypeArg = "clust")
@@ -600,6 +612,7 @@ function api_gating_channels(req::HTTP.Request)
             clusterFeatures = _clust_features(tpath, tsfx, tfam),
             clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
+            clusterAxes     = _clust_axes(tpath, tsfx, tfam),     # diffusion axis names (track runs)
             clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, scope_vn,
                                 tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
@@ -1002,6 +1015,9 @@ end
 # 19) can find the labels its bag names without a second round-trip. `label` is `cdf.label` (the
 # same column pop-membership resolution reads): for `trackclust` = track_id, for `clust` = cell
 # label_id. Old callers get the 4-float layout untouched. Small ints stay exact in Float32.
+# The obsm key a cluster-map layout reads, or `nothing` for an unknown basis (`CLUSTER_MAP_BASES`).
+_cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basis).$(suffix)" : nothing
+
 function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
@@ -1011,7 +1027,12 @@ function api_plots_cluster_map(req::HTTP.Request)
     pop      = get(q, "pop", ROOT)
     # the code column is the pop_type's OWN family (`clusters.{suffix}` | `regions.{suffix}`) — see
     # `_cluster_suffixes`. Hardcoding "clusters." here left every region UMAP point uncoloured.
-    umap_key = "X_umap.$suffix"; clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
+    # `basis` picks the layout: the UMAP, or a track run's diffusion axes (DC1, DC2 —
+    # docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md). Both are (n_obs, 2) obsm matrices in obs order.
+    basis = get(q, "basis", "umap")
+    emb_key = _cluster_map_key(basis, suffix)
+    emb_key === nothing && return _gerr(400, "basis must be one of $(join(Cecelia.CLUSTER_MAP_BASES, ", "))")
+    clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
     track    = is_track_grained(pop_type)
     # POOL across every segmentation that took part in this clustering run (co-clustered value_names),
     # so the UMAP shows all segments' points in the ONE shared embedding — not just the active one
@@ -1051,7 +1072,7 @@ function api_plots_cluster_map(req::HTTP.Request)
     for vn in vns
         path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(path) || continue
-        xy = obsm(label_props(path), umap_key)          # (n_obs, 2), obs order
+        xy = obsm(label_props(path), emb_key)          # (n_obs, 2), obs order
         size(xy, 1) == 0 && continue
         # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
         cdf = label_props(path) |> select_cols([clust_col]) |> as_df
@@ -1087,7 +1108,8 @@ function api_plots_cluster_map(req::HTTP.Request)
             end
         end
     end
-    isempty(out) && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
+    isempty(out) && return _gerr(404, basis == "diffmap" ? "No $emb_key — a track run writes it; re-run clustering" :
+                                                         "No $emb_key — run clustering with UMAP enabled")
     200, collect(reinterpret(UInt8, out))
 end
 

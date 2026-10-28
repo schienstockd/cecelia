@@ -35,6 +35,7 @@ import TeleportPopover from '../TeleportPopover.vue'
 import SquarePlot from './SquarePlot.vue'
 import { useVisualPanel } from '../../composables/useVisualPanel'
 import { useRoute } from 'vue-router'
+import { axisTitle, type BehaviourAxes } from '../../utils/behaviourAxes'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -47,13 +48,17 @@ const props = defineProps<{
   // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr).
   // facetBy: split into small multiples — 'none' (default), 'attribute' (facetAttr) or 'population'.
   // See docs/todo/UMAP_COLOUR_FACET_PLAN.md.
-  state: { labels?: boolean
+  // basis: the layout — the UMAP (default), or a track run's two named diffusion axes. Offered only
+  // when the run recorded `axes` (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md).
+  state: { labels?: boolean; basis?: 'umap' | 'diffmap'
            colourBy?: 'cluster' | 'population' | 'attribute'
            colourPops?: string[]; colourAttr?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
   // BIDIR PR #4b — the panel's `persistKey`, forwarded from InteractivePanel so this view can
   // filter Claude's point-out marks by `(family='cluster-map', plotId=<this>)`. Absent → no marker.
   plotId?: string
+  axes?: BehaviourAxes | null   // the run's diffusion axis names (cluster context); absent on cell runs
+  nameMap?: Record<string, string>   // the run's column → label map (`labelMap`), for the axis titles
 }>()
 const log = useLogStore()
 const project = useProjectStore()
@@ -65,6 +70,18 @@ const facetAttr = computed({ get: () => props.state.facetAttr ?? '', set: v => (
 // the population dimension (popIdx) is needed whenever EITHER colour OR facet is by population
 const usePopIdx = computed(() => colourBy.value === 'population' || facetBy.value === 'population')
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
+const hasAxes = computed(() => !!props.axes?.axes?.length)
+// a saved diffmap choice on a run without axes falls back to the UMAP rather than drawing nothing
+const basis = computed<'umap' | 'diffmap'>({
+  get: () => (hasAxes.value && props.state.basis === 'diffmap' ? 'diffmap' : 'umap'),
+  set: v => (props.state.basis = v) })
+const layoutName = computed(() => (basis.value === 'diffmap' ? 'Diffusion axes' : 'UMAP'))
+const xTitle = computed(() => (basis.value === 'diffmap' ? axisTitle(props.axes?.axes[0], 'DC1', props.nameMap) : ''))
+const yTitle = computed(() => (basis.value === 'diffmap' ? axisTitle(props.axes?.axes[1], 'DC2', props.nameMap) : ''))
+const pathTip = computed(() => {
+  const c = props.axes?.root?.cluster
+  return c == null ? '' : `Path position starts in cluster ${c}`
+})
 // show/hide the population legend — follows the picker's Legend option (vis.legend), like the other
 // plots, rather than a UMAP-only toggle. Default on when no vis is supplied.
 const showLegend = computed(() => props.vis?.legend !== false)
@@ -434,7 +451,8 @@ async function load() {
     const imgOf: number[] = []
     const vnOf: string[] = []
     for (let ui = 0; ui < props.imageUids.length; ui++) {
-      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType, suffix: props.suffix, withLabels: '1' })
+      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType,
+                                      suffix: props.suffix, basis: basis.value, withLabels: '1' })
       if (cp.length) q.set('colourPops', cp.join(','))
       const res = await fetch(`/api/plots/cluster-map?${q}`)
       if (!res.ok) continue
@@ -447,7 +465,9 @@ async function load() {
     const n = Math.floor(rec.length / stride)
     if (n === 0) {
       points.value = null; categories.value = null; legend.value = []; centroids.value = []
-      err.value = `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
+      err.value = basis.value === 'diffmap'
+        ? `No diffusion axes at suffix “${props.suffix}”. Re-run the track clustering.`
+        : `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
       return
     }
     const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
@@ -482,11 +502,11 @@ async function load() {
     recolour()
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e)
-    log.error(`UMAP: ${err.value}`, { source: 'cluster' })
+    log.error(`${layoutName.value}: ${err.value}`, { source: 'cluster' })
   } finally { loading.value = false }
 }
 
-watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix],
+watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix, basis],
   () => { load(); loadPopGroups() })
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
@@ -529,12 +549,12 @@ const plotEl = useTemplateRef<HTMLElement>('plotEl')
 const hiRes = async (cv: HTMLCanvasElement, scale: number) =>
   cv === dotsEl.value ? (await exportDots(scale)) : null
 function exportAs(kind: string) {
-  const stem = `umap_${props.suffix}`.replace(/[^\w.-]+/g, '_')
+  const stem = `${basis.value}_${props.suffix}`.replace(/[^\w.-]+/g, '_')
   if (kind === 'png') plotHostToImageURL(plotEl.value, ground.value, { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
   else if (kind === 'svg') {
     const svg = exportSvg()
     if (svg) {
-      const warn = svgSizeWarning(svg, `UMAP (${total.value.toLocaleString()} ${unit.value})`)
+      const warn = svgSizeWarning(svg, `${layoutName.value} (${total.value.toLocaleString()} ${unit.value})`)
       if (warn) log.warn(warn, { source: 'cluster' })
       downloadText(`${stem}.svg`, svg, 'image/svg+xml')
     }
@@ -593,6 +613,9 @@ function exportSvg(): string {
       body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fitFacetTitle(fs[fi].label, cell.cw, fsz), { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
     }
   }
+  // named diffusion axes: x title along the bottom edge, y title up the left edge, inside the square
+  if (xTitle.value) body += svgText(S / 2, S - 4, xTitle.value, { fill: '#111', size: fsz, anchor: 'middle' })
+  if (yTitle.value) body += svgText(fsz, S / 2, yTitle.value, { fill: '#111', size: fsz, anchor: 'middle', rotate: -90 })
   // legend column (swatch + label + count per row) as vector, right of the plot
   if (LW) {
     let ly0 = 14
@@ -663,13 +686,13 @@ useVisualPanel(
   () => props.plotId ?? '',
   () => ({
     family: 'cluster-map',
-    title: props.suffix ? `UMAP (${props.suffix})` : 'UMAP',
+    title: props.suffix ? `${layoutName.value} (${props.suffix})` : layoutName.value,
     route: _route.path,
     // BIDIR PR #8 extension — axis meta for a UMAP: dimensions are canonical (UMAP1 × UMAP2), plus
     // the colouring mode + point count so a caller with several UMAP panels can pick the right one.
     content: {
-      xLabel: 'UMAP1',
-      yLabel: 'UMAP2',
+      xLabel: basis.value === 'diffmap' ? xTitle.value : 'UMAP1',
+      yLabel: basis.value === 'diffmap' ? yTitle.value : 'UMAP2',
       colourBy: colourBy.value,
       nPoints: total.value,
     },
@@ -782,6 +805,12 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
               v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
       <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-start">
         <div class="uv-opts">
+          <label v-if="hasAxes" class="uv-opt cc-muted" v-tooltip.top="pathTip || 'Where the points sit'"><span>Layout</span>
+            <select v-model="basis">
+              <option value="umap">UMAP</option>
+              <option value="diffmap">Diffusion axes</option>
+            </select>
+          </label>
           <label class="uv-opt cc-muted" v-tooltip.top="'What the point colours encode'"><span>Colour by</span>
             <select v-model="colourBy">
               <option value="cluster">cluster</option>
@@ -852,6 +881,9 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
             <!-- Claude's plot point-out marks. Position computed in plotBoxEl-local px (accounts
                  for the letterbox + facet cell). A mark whose position doesn't resolve (no facet
                  match, aspect not yet known) is skipped rather than rendered at the top-left. -->
+            <!-- named diffusion axes (diffmap layout only) -->
+            <span v-if="xTitle" class="uv-axis uv-axis-x" :style="{ fontSize: labelFont + 'px', color: legendInk }">{{ xTitle }}</span>
+            <span v-if="yTitle" class="uv-axis uv-axis-y" :style="{ fontSize: labelFont + 'px', color: legendInk }">{{ yTitle }}</span>
             <template v-for="m in umapMarks" :key="m.markerId">
               <PlotPointOutMark v-if="markStyle(m)" :mark="m" :style="markStyle(m)!" />
             </template>
@@ -864,7 +896,7 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
           </template>
           <div v-else class="uv-empty cc-empty cc-empty-overlay">
             <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
-            <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
+            <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the cluster map.') }}</p>
           </div>
         </div>
       </SquarePlot>
@@ -886,6 +918,10 @@ const claudeHits = computed<{ px: number; py: number; label: number }[]>(() => {
 /* active (ticked) label toggle: filled accent so it's clearly on/off */
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
+/* named diffusion axes, inside the square: x along the bottom edge, y up the left edge */
+.uv-axis { position: absolute; pointer-events: none; white-space: nowrap; opacity: 0.85; }
+.uv-axis-x { left: 50%; bottom: 2px; transform: translateX(-50%); }
+.uv-axis-y { left: 2px; top: 50%; writing-mode: vertical-rl; transform: translateY(-50%) rotate(180deg); }
 /* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */
 .uv-opts { width: 15rem; display: flex; flex-direction: column; gap: 8px; }   /* padding: TeleportPopover */
 .uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

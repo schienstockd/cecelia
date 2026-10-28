@@ -453,6 +453,8 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         "cellCards" (track clustering only) {suffix, popType?: clust|trackclust} — `suffix` is the run
         (get_cluster_summary). ONE run per board: a second suffix needs a second board. Here popType
         names the clustering family and IS a field (trackOnly views default to "trackclust").
+        "clusterMap" also takes `basis: umap|diffmap`: diffmap lays a TRACK run out on its two named
+        diffusion axes instead of the UMAP.
     `template` is "<cols>x<rows>" (e.g. "2x2"); omitted picks a grid that fits. The comic plates are
     GUI-only. Grid areas, styling and captions are the user's — you choose which plots, in what order.
 

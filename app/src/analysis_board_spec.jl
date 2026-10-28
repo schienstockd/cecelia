@@ -351,7 +351,7 @@ const BOARD_VIEWS = Dict{String,NamedTuple}(
     "trackDiagnostics" => (; fields = ("pops",), cluster = false, trackOnly = false),
     "hmmStateCards"    => (; fields = ("valueName", "hmmCol"), cluster = false, trackOnly = false),
     "motifCards"       => (; fields = ("valueName",), cluster = false, trackOnly = false),
-    "clusterMap"       => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
+    "clusterMap"       => (; fields = ("popType", "suffix", "basis"), cluster = true, trackOnly = false),
     "heatmap"          => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
     "hmmStates"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
     "hmmTransitions"   => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
@@ -369,6 +369,10 @@ const BOARD_VIEWS_UNSUPPORTED = Dict{String,String}(
 # Mirrors `VIEW_ALIASES` in interactiveViews.ts; `normalise_boards` applies it to saved slots.
 # `umap` → `clusterMap`: the cluster view shows more than a UMAP (TRACK_BEHAVIOUR_AXES_PLAN Decision 7).
 const BOARD_VIEW_ALIASES = Dict{String,String}("umap" => "clusterMap")
+
+# The cluster map's layouts. Each names its embedding: `obsm['X_{basis}.{suffix}']` (the UMAP, or a track
+# run's diffusion axes — TRACK_BEHAVIOUR_AXES_PLAN). Read by the board spec and `/api/plots/cluster-map`.
+const CLUSTER_MAP_BASES = ("umap", "diffmap")
 
 # what a view's state starts as on a GUI-added panel (`initialState` / the cluster-panel `hl` bag)
 _view_initial_state(key) = key == "clusterMap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
@@ -436,7 +440,15 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
                 "plots[$i]: mode must be one of paths, star, rose, got \"$mode\""))
             state["mode"] = mode
         end
-    elseif key in ("hmmStateCards", "motifCards")
+    elseif key == "clusterMap"
+        # layout: the UMAP (default) or a track run's named diffusion axes
+        b = str("basis")
+        if !isempty(b)
+            b in CLUSTER_MAP_BASES || throw(BoardSpecError(
+                "plots[$i]: basis must be one of $(join(CLUSTER_MAP_BASES, ", ")), got \"$b\""))
+            state["basis"] = b
+        end
+        elseif key in ("hmmStateCards", "motifCards")
         for k in ("valueName", "hmmCol")
             v = str(k); isempty(v) || (state[k] = v)
         end

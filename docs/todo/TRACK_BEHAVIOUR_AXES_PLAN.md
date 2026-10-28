@@ -1,6 +1,6 @@
 # Track behaviour axes: path position + diffusion map beside the UMAP
 
-Status: P1 built (2026-10-28, PR #1821); R (renames) built on `rename-cluster-map`; P2 open. Evidence:
+Status: P1 built (2026-10-28, PR #1821); R (renames, PR #1822); P2 built on `cluster-map-diffusion-axes`. Evidence:
 [`docs/archive/DIFFMAP_TRACK_COMPARISON_RESULTS.md`](../archive/DIFFMAP_TRACK_COMPARISON_RESULTS.md) (set XcPcu8, project 4kS67f).
 
 ## Goal
@@ -100,6 +100,12 @@ still works.
 - `app/src/analysis_board_spec.jl` `"umap"` view: persist `basis` in the view state.
 - Checkpoint: on XcPcu8, a domain expert confirms the DC1 × DC2 picture is easier to name than the
   UMAP (a visual check, per CLAUDE.md, documented in the PR).
+- Built 2026-10-28: `basis=umap|diffmap` on `/api/plots/cluster-map`; `/api/gating/channels` serves
+  `clusterAxes`; the cluster context hands the run's axes to the view, which offers *Layout* (only when
+  the run has axes; a saved diffmap choice on a run without them falls back to the UMAP), titles the
+  axes from the run (`utils/behaviourAxes.ts`), and titles the panel "Diffusion axes (suffix)". Board
+  specs take `basis`. Not built: colouring by path position (it is a track measure, plottable as one).
+  The visual checkpoint above is still open.
 
 ### Later (trigger: a dataset with real conditions)
 

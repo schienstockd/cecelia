@@ -97,7 +97,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, labelMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
-  runMembers, validUids, strayUids, missingUids, shownPopsFor,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
@@ -218,6 +218,8 @@ const ctxFor = (s: ClusterPanelState) => ({
   projectUid: projectUid.value, imageUids: validUids.value, setUid: setUid.value,
   popType: props.popType, suffix: suffix.value, shownPops: shownPopsFor(panelHL(s)),
   vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
+  axes: clusterAxes.value[suffix.value] ?? null,   // the run's diffusion axis names (cluster map layout)
+  nameMap: labelMap.value,
 })
 
 // the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
