@@ -200,6 +200,22 @@ end
     @test isempty(_clust_feature_labels(props, ["immune"], "clusters"))      # no labels → key omitted
     @test isempty(_clust_members(joinpath(lpdir, "gone.h5ad"), ["immune"], "regions")["immune"])
 
+    # behaviour axes: a track run records them and the channels endpoint hands them to the cluster map
+    # (`clusterAxes`); a run without them is absent, so the map offers only its UMAP layout there
+    tprops = joinpath(lpdir, "B__tracks.h5ad")
+    axes = Dict("axes" => [Dict("name" => "DC1", "top" => [Dict("feature" => "live.track.speed", "rho" => 0.92)])],
+                "root" => Dict("end" => "low", "cluster" => "0"))
+    Cecelia._write_clust_features!(tprops, "mv", ["live.track.speed"], ["u1"]; behaviour_axes = axes)
+    Cecelia._write_clust_features!(tprops, "old", ["live.track.speed"], ["u1"])
+    got = _clust_axes(tprops, ["mv", "old"], "clusters")
+    @test collect(keys(got)) == ["mv"]
+    @test String(got["mv"]["root"]["cluster"]) == "0"
+    @test String(got["mv"]["axes"][1]["top"][1]["feature"]) == "live.track.speed"
+    # the layout picks its embedding; an unknown basis is refused rather than guessed
+    @test _cluster_map_key("umap", "mv") == "X_umap.mv"
+    @test _cluster_map_key("diffmap", "mv") == "X_diffmap.mv"
+    @test _cluster_map_key("pca", "mv") === nothing
+
     # REGRESSION: an entry written BEFORE the `labels` field existed — i.e. any image not re-run since.
     # Reading it must not throw. `something(get(...), nothing)` did: with every argument `nothing`,
     # `something()` raises ArgumentError("No value arguments present"), which surfaced as repeated 500s

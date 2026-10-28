@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { measureGroups, groupedCols, isIntensityColumn, isTrackPopType } from './measureGroups'
+import { measureGroups, groupedCols, isIntensityColumn, isTrackPopType, shortTrackMeasure } from './measureGroups'
 
 // The real payloads of `/api/gating/channels` for one image of "unimelb 3P spleen" (4kS67f/LUkCpP,
 // segmentation "B") — captured from the running backend, not invented, so the group boundaries are
@@ -125,5 +125,13 @@ describe('measureGroups — data that is not the happy path', () => {
   it('a column on two keys is emitted once, earliest group wins', () => {
     const all = groupedCols(measureGroups({ columns: ['track_id'], obsColumns: ['track_id'] }))
     expect(all).toEqual(['track_id'])
+  })
+})
+
+describe('shortTrackMeasure', () => {
+  it('drops the motility family and leaves every other name alone', () => {
+    expect(shortTrackMeasure('live.track.meanTurningAngle')).toBe('meanTurningAngle')
+    expect(shortTrackMeasure('live.cell.hmm.state.movement.1')).toBe('live.cell.hmm.state.movement.1')
+    expect(shortTrackMeasure('mean_intensity_0')).toBe('mean_intensity_0')
   })
 })

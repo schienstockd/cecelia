@@ -158,7 +158,7 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
 - **Summary** (server-aggregated, Observable Plot): the plot-spec registry (`GET /api/plots/definitions`),
   rendered by one `SummaryPanel` → `PlotChart`. Identical to `SummaryCanvas` (behaviour/summary pages).
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
-  hosted by the generic `InteractivePanel`. Members: **cluster map** (`ClusterMapView`, the UMAP), **gating strategy**
+  hosted by the generic `InteractivePanel`. Members: **cluster map** (`ClusterMapView`: the UMAP, or for a track run its two named diffusion axes, picked in the panel's options as *Layout*), **gating strategy**
   (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
   **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`),
   **tracks** (`TrackPathsView` — paths / star / rose) and **track diagnostics** (`TrackDiagnosticsView`

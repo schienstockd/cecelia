@@ -12,6 +12,7 @@ import { ref, computed } from 'vue'
 import FloatingPanel from '../FloatingPanel.vue'
 import StripCell from './StripCell.vue'
 import StatBox from './StatBox.vue'
+import { shortTrackMeasure } from '../../utils/measureGroups'
 import { openViewerWindow } from '../../utils/viewerWindow'
 import { useProjectStore } from '../../stores/project'
 import { useViewerStore } from '../../stores/viewer'
@@ -134,7 +135,7 @@ function timeLabel(t: number, t_s?: number): string {
            the card footer. Taller row here so shape and whisker length read at a glance. -->
       <table class="ccd-stats">
         <tr v-for="s in card.stats" :key="s.name">
-          <td class="ccd-stat-name cc-muted cc-fs-xs">{{ s.name.replace(/^live\.track\./, '') }}</td>
+          <td class="ccd-stat-name cc-muted cc-fs-xs">{{ shortTrackMeasure(s.name) }}</td>
           <td class="ccd-plot"><StatBox :stat="s" :scale="scaleFor(s)" :w="360" :h="22" /></td>
         </tr>
       </table>

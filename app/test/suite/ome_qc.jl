@@ -1803,6 +1803,11 @@ end
         lay = ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement"),
                   Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement", "title" => "Heat")])
         @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "clusterMap"
+        # the layout is a field: diffusion axes are asked for by name, anything else is refused
+        @test ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement",
+                       "basis" => "diffmap")])["contents"][1]["state"]["basis"] == "diffmap"
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "popType" => "trackclust",
+                                             "suffix" => "movement", "basis" => "pca")])
         # the retired view key still authors, and is written as the current one (BOARD_VIEW_ALIASES)
         @test ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement")])["contents"][1]["ref"] == "clusterMap"
         @test lay["contents"][1]["state"]["labels"] == true          # the view's own initialState
