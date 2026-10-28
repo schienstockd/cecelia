@@ -21,7 +21,7 @@ import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.log import FINDING_EVENTS, latest_resolutions_by_slug  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS  # noqa: E402
 from cecelia.effectiveness.palette import load_hex  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
 
@@ -75,28 +75,34 @@ def _real_class(b: dict) -> str:
 def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
     """The counts behind the picture. `records`: the judge's pass records, oldest first."""
     events = list(events)
-    resolved = latest_resolutions_by_slug(events)
-    outcome = lambda key: ((resolved.get(key) or {}).get("payload") or {}).get("outcome")  # noqa: E731
+    resolved = _bugs.branch_resolutions(events)
     required: dict[str, dict] = {}
     slugless: list[dict] = []      # rows from before slugs, outcome inline — counted like `chart.aggregate`
     plausible: dict[str, dict] = {}
+    # by key, the first row no tag on its own branch fixed: a key with one is unfixed, as in `bugs.candidates`
+    req_open: dict[str, dict] = {}
+    pl_open: dict[str, dict] = {}
     for e in events:
         p = e.get("payload") or {}
         if e.get("event") in FINDING_EVENTS and not p.get("slug"):
             slugless.append(e)
         elif e.get("event") in FINDING_EVENTS and p["slug"] not in _REDTEAM_SLUGS:
             required.setdefault(p["slug"], e)
+            if _bugs.tag(resolved, e).get("outcome") != _FIXED:
+                req_open.setdefault(p["slug"], e)
         elif e.get("event") == _PLAUSIBLE_EVENT and p.get("marker") == "plausible":
             plausible.setdefault(_bugs._key(e), e)
+            if _bugs.tag(resolved, e).get("outcome") != _FIXED:
+                pl_open.setdefault(_bugs._key(e), e)
     # the notes behind the Recital's not-fixed and untagged-plausible segments, by the sweep's key
-    unfixed = {**{s: e for s, e in required.items() if outcome(s) != _FIXED},
+    unfixed = {**req_open,
                **{_bugs._key(e): e for e in slugless if (e.get("payload") or {}).get("outcome") != _FIXED},
-               **{k: e for k, e in plausible.items() if outcome(k) != _FIXED}}
+               **pl_open}
     days = sorted(e["ts"][:10] for e in (*required.values(), *slugless, *plausible.values()) if e.get("ts"))
-    req_fixed = (sum(outcome(s) == _FIXED for s in required)
+    req_fixed = (len(required) - len(req_open)
                  + sum((e.get("payload") or {}).get("outcome") == _FIXED for e in slugless))
     n_required = len(required) + len(slugless)
-    pl_fixed = sum(outcome(k) == _FIXED for k in plausible)
+    pl_fixed = len(plausible) - len(pl_open)
 
     latest: dict[str, dict] = {}
     for record in records:

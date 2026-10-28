@@ -127,6 +127,21 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(d["recital"], {"fixed": 1, "not_fixed": 0, "plausible": 1})
         self.assertEqual(d["required"], 0)
 
+    def test_a_fix_tagged_on_another_branch_leaves_the_finding_unfixed_as_the_sweep_does(self):
+        on = lambda row, branch: {**row, "branch": branch}   # noqa: E731
+        note = _plausible(9, slug="fanout-0000000a")
+        events = [on(_finding("fanout-00000001"), "feat-a"), on(_resolved("fanout-00000001", "fixed_pre_commit"), "feat-a"),
+                  on(_finding("fanout-00000001"), "feat-b"), on(_resolved("fanout-00000001", "shipped_with_finding"), "feat-b"),
+                  on(_finding("fanout-00000002"), "feat-a"), on(_resolved("fanout-00000002", "fixed_pre_commit"), "feat-c"),
+                  on(note, "feat-a"), on(_resolved("fanout-0000000a", "fixed_pre_commit"), "feat-c")]
+        swept = {c["key"] for c in self.f._bugs.candidates(events, since="")}
+        self.assertEqual(swept, {"fanout-00000001", "fanout-00000002", "fanout-0000000a"})
+        record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [{"key": k, "status": "open"} for k in sorted(swept)]}
+        d = self.f.aggregate(events, [record])
+        self.assertEqual(d["recital"], {"fixed": 0, "not_fixed": 2, "plausible": 1})
+        into = d["into_check"]
+        self.assertEqual((into["notes"], into["tagged_later"], into["not_listed"]), (3, 0, 0))
+
     def test_same_counts_same_bytes_and_the_svg_parses_with_no_finding_text(self):
         events = [_finding("fanout-00000001"), _plausible(3)]
         a = self.f.render_svg(self.f.aggregate(events, []))

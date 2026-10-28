@@ -218,6 +218,21 @@ def swept(row: dict) -> bool:
     return row.get("event") in _FANOUT_EVENTS
 
 
+def branch_resolutions(events: _t.Iterable[dict]) -> dict[str | None, dict[str, dict]]:
+    """branch → slug → its newest resolution row on that branch: what `tag` reads."""
+    by_branch: dict[str | None, list[dict]] = {}
+    for r in events:
+        if r.get("event") in RESOLVED_EVENTS:
+            by_branch.setdefault(r.get("branch"), []).append(r)
+    return {b: latest_resolutions_by_slug(rows) for b, rows in by_branch.items()}
+
+
+def tag(resolved: dict[str | None, dict[str, dict]], row: dict) -> dict:
+    """The payload of reviewer `row`'s tag on its own branch (`resolved`: `branch_resolutions`), or {}.
+    Slugs carry no branch, so one worktree's `fixed_pre_commit` mustn't hide what another shipped."""
+    return ((resolved.get(row.get("branch")) or {}).get(_key(row)) or {}).get("payload") or {}
+
+
 def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
@@ -228,11 +243,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     A fix logged from another branch costs a judge look; the other way a shipped bug goes unjudged."""
     events = list(events)
     convention_since = since if convention_since is None else convention_since
-    by_branch: dict[str | None, list[dict]] = {}
-    for r in events:
-        if r.get("event") in RESOLVED_EVENTS:
-            by_branch.setdefault(r.get("branch"), []).append(r)
-    resolved = {b: latest_resolutions_by_slug(rows) for b, rows in by_branch.items()}
+    resolved = branch_resolutions(events)
     out: dict[str, dict] = {}
     for r in events:
         if r.get("ts", "") < (convention_since if r.get("event") == _CONVENTION_EVENT else since):
@@ -246,16 +257,15 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
             continue
         if not swept(r):
             continue
-        key = _key(r)
-        tag = ((resolved.get(r.get("branch")) or {}).get(key) or {}).get("payload") or {}
-        if tag.get("outcome") in _HANDLED:
+        key, t = _key(r), tag(resolved, r)
+        if t.get("outcome") in _HANDLED:
             continue
         p = r["payload"]
         out[key] = {"key": key, **({"kind": "duplicate"} if r["event"] == _CONVENTION_EVENT else {}),
                     "marker": p.get("marker"), "file": p.get("file"), "line": p.get("line"),
                     "desc": p.get("desc", ""), "branch": r.get("branch"), "commit": r.get("commit"),
-                    "logged": r.get("ts"), "outcome": tag.get("outcome"),
-                    **({"reason": tag["reason"]} if tag.get("reason") else {})}
+                    "logged": r.get("ts"), "outcome": t.get("outcome"),
+                    **({"reason": t["reason"]} if t.get("reason") else {})}
     return sorted(out.values(), key=lambda c: c["logged"] or "")
 
 
