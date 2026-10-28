@@ -28,6 +28,20 @@ end
     end
 end
 
+# What a clustering run owns: a track run also owns its behaviour axes (path + diffusion embedding);
+# a cell/region run never does, and the shared cell-table UMAP stays while the other family uses it.
+@testset "clustering run owns its keys" begin
+    cols = ["clusters.mv", "path.mv", "regions.mv", "spatial.comp.B.mv", "path.other"]
+    @test Cecelia._clust_run_keys("clusters", :track, "mv", cols, false) ==
+          (["clusters.mv", "path.mv"], ["X_umap.mv", "X_diffmap.mv"])
+    @test Cecelia._clust_run_keys("clusters", :cell, "mv", cols, true) == (["clusters.mv"], String[])
+    @test Cecelia._clust_run_keys("regions", :cell, "mv", cols, false) ==
+          (["regions.mv", "spatial.comp.B.mv"], ["X_umap.mv"])
+    # a track run from before behaviour axes: no path column to drop, absent embedding is harmless
+    @test Cecelia._clust_run_keys("clusters", :track, "old", ["clusters.old"], false) ==
+          (["clusters.old"], ["X_umap.old", "X_diffmap.old"])
+end
+
 # List → delete round trip over every obs/file-backed kind on one image. Each delete must take its
 # own columns/files and nothing a sibling run owns (the shared `X_umap.{suffix}` is the trap: cell
 # clusters and regions both write it).

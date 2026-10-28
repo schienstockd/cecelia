@@ -114,3 +114,104 @@ class TestFindPopulationsReadOnlyMatrix(unittest.TestCase):
                                               backend="cpu")
         self.assertEqual(len(adata.obs["clusters"]), 60)
         self.assertLessEqual(float(adata.X.max()), 1.0)  # normalised in place
+
+
+def _continuum_adata(n=150, k=10, seed=0):
+    """A 1-D behaviour continuum (t: slow → fast) with a kNN graph built WITHOUT `sc.pp.neighbors`
+    (it segfaults on the macOS CI runner). `speed` = t exactly, so it is DC1's strongest feature."""
+    import anndata as ad
+    from scipy.sparse import csr_matrix
+    from sklearn.neighbors import kneighbors_graph
+
+    rng = np.random.default_rng(seed)
+    t = np.sort(rng.random(n))
+    X = np.column_stack([t, 1 - t + rng.normal(0, .15, n), rng.normal(0, 1, n)]).astype(np.float32)
+    adata = ad.AnnData(X)
+    adata.var_names = ["speed", "state1", "noise"]
+    adata.obs["clusters"] = pd.Categorical(np.digitize(t, [1 / 3, 2 / 3]).astype(str))
+    dist = kneighbors_graph(t[:, None], k, mode="distance")   # the graph IS the continuum
+    conn = (dist > 0).astype(float)
+    adata.obsp["distances"] = csr_matrix(dist)
+    adata.obsp["connectivities"] = csr_matrix(conn.maximum(conn.T))
+    adata.uns["neighbors"] = {"connectivities_key": "connectivities", "distances_key": "distances",
+                              "params": {"n_neighbors": k, "method": "umap"}}
+    return adata, t
+
+
+class TestBehaviourAxes(unittest.TestCase):
+    """`behaviour_axes` names its own axes (sign-aligned to the top feature) and roots the path at
+    the low end of DC1 — docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decisions 2–3."""
+
+    def test_path_follows_the_continuum_from_the_slow_end(self):
+        from scipy.stats import spearmanr
+        from cecelia.utils.clustering_utils import behaviour_axes
+
+        adata, t = _continuum_adata()
+        meta = behaviour_axes(adata)
+        self.assertEqual(meta["axes"][0]["top"][0]["feature"], "speed")
+        self.assertGreater(meta["axes"][0]["top"][0]["rho"], 0)      # sign-aligned: top feature positive
+        self.assertEqual(adata.obsm["X_diffmap_axes"].shape, (adata.n_obs, 2))
+        path = adata.obs["path"].to_numpy()
+        self.assertGreater(spearmanr(path, t)[0], 0.9)
+        self.assertEqual(meta["root"], {"end": "low", "cluster": "0"})
+        self.assertAlmostEqual(float(np.nanmin(path)), 0.0, places=6)
+
+    def test_reverse_roots_at_the_other_end(self):
+        from scipy.stats import spearmanr
+        from cecelia.utils.clustering_utils import behaviour_axes
+
+        adata, t = _continuum_adata()
+        meta = behaviour_axes(adata, reverse=True)
+        self.assertLess(spearmanr(adata.obs["path"], t)[0], -0.9)
+        self.assertEqual(meta["root"], {"end": "high", "cluster": "2"})
+
+    def test_names_use_the_raw_features_when_given(self):
+        from cecelia.utils.clustering_utils import behaviour_axes
+
+        adata, _t = _continuum_adata()
+        raw = np.asarray(adata.X).copy()
+        adata.X = np.zeros_like(adata.X)                              # stand-in for a normalised matrix
+        meta = behaviour_axes(adata, features=raw)
+        self.assertEqual(meta["axes"][0]["top"][0]["feature"], "speed")
+
+    def test_too_small_or_no_graph_is_skipped(self):
+        import anndata as ad
+        from cecelia.utils.clustering_utils import behaviour_axes
+
+        self.assertIsNone(behaviour_axes(ad.AnnData(np.zeros((8, 2), dtype=np.float32))))
+        adata, _t = _continuum_adata()
+        del adata.uns["neighbors"]
+        self.assertIsNone(behaviour_axes(adata))
+        self.assertNotIn("path", adata.obs)
+
+
+class TestSplitBackExtraObsm(unittest.TestCase):
+    """`extra_obsm` lands per segment, aligned by label (track runs: `X_diffmap.{suffix}`)."""
+
+    def test_embedding_written_per_segment(self):
+        import os, tempfile
+        import anndata as ad
+        from cecelia.utils.clustering_utils import split_back_and_write
+        from cecelia.utils.label_props_utils import LabelPropsView
+
+        tmp = tempfile.mkdtemp()
+        paths = {}
+        for vn in ("B", "T"):
+            p = os.path.join(tmp, f"{vn}__tracks.h5ad")
+            a = ad.AnnData(X=np.zeros((2, 1)), obs=pd.DataFrame(index=["1", "2"]))
+            a.var_names = ["f0"]; a.write_h5ad(p); paths[vn] = p
+        segments = [{"uID": "img1", "valueName": vn, "propsPath": paths[vn]} for vn in ("B", "T")]
+        adata = ad.AnnData(np.zeros((4, 1), dtype=np.float32))
+        adata.obs["uID"] = ["img1"] * 4
+        adata.obs["valueName"] = ["B", "B", "T", "T"]
+        adata.obs["label"] = [1, 2, 1, 2]
+        adata.obs["clusters"] = pd.Categorical(["0", "1", "0", "1"])
+        emb = np.array([[0.1, 1.1], [0.2, 1.2], [0.3, 1.3], [0.4, 1.4]], dtype=np.float32)
+
+        split_back_and_write(adata, segments, "mv", extra_obs={"path.mv": np.array([0., .5, .7, 1.])},
+                             extra_obsm={"X_diffmap.mv": emb})
+        view = LabelPropsView(paths["T"])
+        np.testing.assert_allclose(view.obsm("X_diffmap.mv"), emb[2:], rtol=1e-6)
+        df = view.as_df()
+        self.assertAlmostEqual(float(df.loc[df["label"] == 2, "path.mv"].iloc[0]), 1.0)
+        view.close()
