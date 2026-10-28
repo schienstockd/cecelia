@@ -37,6 +37,10 @@ class VerifyTest(unittest.TestCase):
     def setUp(self):
         self.v = _load()
         self.prompts: list[str] = []
+        # some tests patch `run` on the shared `subprocess`: node resolution's own spawn would land in it
+        patcher = mock.patch.object(self.v.agent_sandbox, "node_bin_dir", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def agent(self, verdicts=None, cost=1.0):
         def fn(prompt):
