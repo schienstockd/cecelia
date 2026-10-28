@@ -222,6 +222,13 @@ class OnlyNewestTest(_AutoFixture):
 
 
 class FenceTest(_AutoFixture):
+    def setUp(self):
+        super().setUp()
+        # these tests patch `Popen` on the shared `subprocess`: node resolution's own spawn would land in it
+        patcher = mock.patch.object(self.af.agent_sandbox, "node_bin_dir", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_the_agent_is_sandboxed_without_credentials_and_cant_write_the_main_checkout(self):
         s = self.af.settings(self.main)
         self.assertEqual(s["sandbox"]["network"], {"deniedDomains": ["*"]})
