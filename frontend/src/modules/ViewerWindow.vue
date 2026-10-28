@@ -65,7 +65,7 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import { adapterNameText, classifiedByText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
+import { adapterNameText, classifiedByText, collectGpuDiagnostics, groupAdapterDiags, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -194,6 +194,8 @@ const stableAdapterReport = ref<AdapterReport | null>(null)
 /** Raw adapter readout (every `powerPreference`, plus page context) for the Debug panel's GPU block and
  *  the bench JSON — the evidence for WHY `stableAdapterReport.looksDiscrete` came out the way it did. */
 const gpuDiag = ref<GpuDiagnostics | null>(null)
+/** `gpuDiag.adapters` with identical readouts merged — one row when every preference got the same GPU. */
+const adapterRows = computed(() => groupAdapterDiags(gpuDiag.value?.adapters ?? []))
 /** Which signal decided `stableAdapterReport.looksDiscrete` — the Debug panel's "Classified" row. */
 const classifiedByLabel = computed(() => {
   const a = stableAdapterReport.value
@@ -4892,9 +4894,7 @@ async function start() {
     if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
     void collectGpuDiagnostics().then(d => {
       gpuDiag.value = d
-      const names = d.adapters.map(a => `${a.powerPreference}: ${a.found
-        ? (adapterNameText(a.name) || '(blank name)')
-        : 'none'}`).join(' · ')
+      const names = groupAdapterDiags(d.adapters).map(r => `${r.prefs.join('/')}: ${r.text}`).join(' | ')
       vlog('info', 'Viewer GPU adapters — ' + names, JSON.stringify(d))
     })
     // Prime `stableAdapterReport` from the probe BEFORE any renderer is constructed. Without this,
@@ -6779,12 +6779,9 @@ onUnmounted(() => {
               <span class="cc-muted" v-tooltip.left="'Name first; subgroup size, then the 3D texture limit, when the name is blank'">Classified</span>
               <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }} ({{ classifiedByLabel }})</span>
             </template>
-            <template v-for="a in gpuDiag?.adapters ?? []" :key="a.powerPreference">
-              <span class="cc-muted">{{ a.powerPreference }}</span>
-              <span v-if="a.found">{{ adapterNameText(a.name) || '(blank name)' }}
-                · 3D {{ a.limits.maxTextureDimension3D }} · buf {{ (a.limits.maxBufferSize / 2 ** 30).toFixed(1) }} GiB<template
-                  v-if="a.info.isFallbackAdapter"> · fallback</template></span>
-              <span v-else>no adapter</span>
+            <template v-for="row in adapterRows" :key="row.prefs.join()">
+              <span class="cc-muted" v-tooltip.left="row.prefs.join(' · ')">{{ adapterRows.length === 1 ? 'Adapter' : row.prefs.join(' · ') }}</span>
+              <span>{{ row.text }}</span>
             </template>
             <template v-if="gpuDiag">
               <span class="cc-muted">Page</span>

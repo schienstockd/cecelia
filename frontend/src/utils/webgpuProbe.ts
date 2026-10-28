@@ -292,6 +292,32 @@ export async function collectGpuDiagnostics(): Promise<GpuDiagnostics> {
   return { atIso: new Date().toISOString(), page, adapters }
 }
 
+/** One Debug-panel row: the `powerPreference`s that got the same adapter readout. */
+export interface GpuAdapterRow {
+  prefs: GpuAdapterDiag['powerPreference'][]
+  text: string
+}
+
+/** One-line readout of an adapter diag — name, 3D cap, buffer cap, fallback flag. */
+export function adapterDiagText(a: GpuAdapterDiag): string {
+  if (!a.found) return 'no adapter'
+  const buf = (a.limits.maxBufferSize / 2 ** 30).toFixed(1)
+  return `${adapterNameText(a.name) || '(blank name)'} · 3D ${a.limits.maxTextureDimension3D} · buf ${buf} GiB`
+    + (a.info.isFallbackAdapter ? ' · fallback' : '')
+}
+
+/** Collapse preferences that returned an identical readout into one row — usually all three do. */
+export function groupAdapterDiags(adapters: GpuAdapterDiag[]): GpuAdapterRow[] {
+  const rows: GpuAdapterRow[] = []
+  for (const a of adapters) {
+    const text = adapterDiagText(a)
+    const row = rows.find(r => r.text === text)
+    if (row) row.prefs.push(a.powerPreference)
+    else rows.push({ prefs: [a.powerPreference], text })
+  }
+  return rows
+}
+
 /**
  * Runtime probe for `binding_array<texture_3d<u32>, 4>`. Two checks — WGSL parse AND runtime
  * bindGroup — both must pass, otherwise the shader has no way to sample atlases past `[0]`.

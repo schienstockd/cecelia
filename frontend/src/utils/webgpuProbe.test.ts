@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { verdictFrom, classifyAdapter, classifyAdapterBy, classifiedByText, isAppleAdapter, adapterNameText } from './webgpuProbe'
+import { verdictFrom, classifyAdapter, classifyAdapterBy, classifiedByText, isAppleAdapter, adapterNameText, groupAdapterDiags, type GpuAdapterDiag } from './webgpuProbe'
 
 const noName = { vendor: '', architecture: '', device: '', description: '' }
 
@@ -132,5 +132,28 @@ describe('verdictFrom', () => {
     // A driver crash inside the check should not silently downgrade a good adapter to "unavailable"
     const r = verdictFrom({ supported: true, adapterFound: true, looksDiscrete: true, hasR16Uint: null })
     expect(r.verdict).toBe('ready')
+  })
+})
+
+describe('groupAdapterDiags', () => {
+  const nv = { vendor: 'nvidia', architecture: 'lovelace', device: '0x28b8', description: 'NVIDIA RTX 2000 Ada Generation Laptop GPU' }
+  const diag = (powerPreference: GpuAdapterDiag['powerPreference'], name = nv, found = true): GpuAdapterDiag => ({
+    powerPreference, found, name, info: {}, features: [],
+    limits: found ? { maxTextureDimension3D: 2048, maxBufferSize: 4 * 2 ** 30 } : {},
+  })
+
+  it('merges preferences that got the same adapter into one row', () => {
+    const rows = groupAdapterDiags([diag('high-performance'), diag('low-power'), diag('default')])
+    expect(rows).toEqual([{
+      prefs: ['high-performance', 'low-power', 'default'],
+      text: 'nvidia lovelace 0x28b8 NVIDIA RTX 2000 Ada Generation Laptop GPU · 3D 2048 · buf 4.0 GiB',
+    }])
+  })
+
+  it('keeps a differing adapter on its own row', () => {
+    const intel = { vendor: 'intel', architecture: 'xe', device: '', description: '' }
+    const rows = groupAdapterDiags([diag('high-performance'), diag('low-power', intel), diag('default')])
+    expect(rows.map(r => r.prefs)).toEqual([['high-performance', 'default'], ['low-power']])
+    expect(groupAdapterDiags([diag('low-power', nv, false)])[0].text).toBe('no adapter')
   })
 })
