@@ -24,6 +24,8 @@
 # self-heal (only if `resumable`), and the "asked for a schema, got none" failure. Designed to
 # transfer to a second engine but NOT proven to — only Claude implements it (plan, Decision 3).
 
+using Base64: base64encode
+
 abstract type AgentBackend end
 
 agent_label(a::AgentBackend)::String = string(nameof(typeof(a)))
@@ -468,7 +470,7 @@ _apply_claude_env(cmd::Cmd, profile_dir::AbstractString)::Cmd =
 _apply_claude_env(cmd::Cmd)::Cmd = _apply_claude_env(cmd, _active_claude_profile_dir!())
 
 """
-    kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path(observer_agent_bin())) -> String
+    kiwi_terminal_command(profile_dir; claude_bin = agent_bin_path(observer_agent_bin()), prompt = "") -> String
 
 The one-liner a user pastes to launch `claude` under the active Kiwi profile
 (LOGIN_CREDENTIAL_ISOLATION_PLAN D9). Ambient credential env vars are scrubbed in the same call
@@ -487,22 +489,45 @@ available; passing the abs path means the one-liner works from GUI-launched term
 inherit the user's shell PATH. `nothing` (CLI not installed) falls back to the bare `claude`
 name — surfacing the missing-CLI error to the user rather than silently omitting the command.
 
+A non-empty `prompt` is passed as the CLI's first positional argument, which starts the
+interactive session with that message already sent — Kiwi's *Start in terminal* puts its chat
+starter there, so one paste opens a session that is already looking at the project.
+
+Windows: the script runs in a child `powershell -EncodedCommand` (base64 of UTF-16LE). A
+double-quoted `-Command "…"` breaks when pasted into PowerShell itself, the default Windows shell:
+the outer shell expands `\$env:CLAUDE_CONFIG_DIR` before the child sees it. The encoded form
+reads the same in PowerShell and cmd.exe, and no prompt text needs escaping for the outer shell.
+
 PURE → tested without spawning. Platform-switched on `Sys.iswindows()`.
 """
 function kiwi_terminal_command(profile_dir::AbstractString;
                                claude_bin::Union{AbstractString,Nothing} = agent_bin_path(observer_agent_bin()),
+                               prompt::AbstractString = "",
                                is_windows::Bool = Sys.iswindows())::String
     bin = isnothing(claude_bin) || isempty(String(claude_bin)) ? "claude" : String(claude_bin)
     if is_windows
-        unsets  = join(("Remove-Item Env:$(k) -ErrorAction SilentlyContinue"
-                        for k in _AMBIENT_CLAUDE_ENV), "; ")
-        setenv  = isempty(profile_dir) ? "" : "; \$env:CLAUDE_CONFIG_DIR = '$(profile_dir)'"
-        return string("powershell -NoProfile -Command \"", unsets, setenv,
-                      "; & '$(bin)'\"")
+        return "powershell -NoProfile -EncodedCommand " *
+               base64encode(transcode(UInt16, kiwi_terminal_script_ps(profile_dir, bin, prompt)))
     end
     unset_args = join(("-u $(k)" for k in _AMBIENT_CLAUDE_ENV), " ")
-    setenv     = isempty(profile_dir) ? "" : string(" CLAUDE_CONFIG_DIR=", profile_dir)
-    string("env ", unset_args, setenv, " ", bin)
+    setenv     = isempty(profile_dir) ? "" : string(" CLAUDE_CONFIG_DIR=", _sh_word(profile_dir))
+    arg        = isempty(prompt) ? "" : " " * _sh_quote(prompt)
+    string("env ", unset_args, setenv, " ", _sh_word(bin), arg)
+end
+
+# A path as a POSIX shell word: as-is when it has nothing the shell would split or expand (keeps the
+# usual one-liner readable), single-quoted otherwise — a space in a home or config dir.
+_sh_word(s::AbstractString)::String = occursin(r"^[A-Za-z0-9_./:@%+=,-]+$", s) ? String(s) : _sh_quote(s)
+
+# The PowerShell script `kiwi_terminal_command` encodes on Windows. Single-quoted literals; a `'`
+# inside one is written `''`.
+function kiwi_terminal_script_ps(profile_dir::AbstractString, bin::AbstractString,
+                                 prompt::AbstractString = "")::String
+    q(s) = "'" * replace(String(s), "'" => "''") * "'"
+    unsets = join(("Remove-Item Env:$(k) -ErrorAction SilentlyContinue" for k in _AMBIENT_CLAUDE_ENV), "; ")
+    setenv = isempty(profile_dir) ? "" : "; \$env:CLAUDE_CONFIG_DIR = $(q(profile_dir))"
+    arg    = isempty(prompt) ? "" : " " * q(prompt)
+    string(unsets, setenv, "; & ", q(bin), arg)
 end
 
 # Live resolver — ensures the named-profile dir exists so the CLI can write on first login.

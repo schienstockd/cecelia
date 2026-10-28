@@ -154,13 +154,21 @@ describe('kiwi profile API round-trip', () => {
   it('fetchTerminalCommand url-encodes the profile query', async () => {
     fetchMock.mockResolvedValue(jsonRes(200, { command: 'env … alice /bin/bash -i',
                                                 profile: 'alice', profileDir: '/tmp/x' }))
-    await fetchTerminalCommand('alice')
+    await fetchTerminalCommand({ profile: 'alice' })
     expect(fetchMock).toHaveBeenCalledWith('/api/kiwi/terminal/command?profile=alice')
+  })
+
+  it('fetchTerminalCommand url-encodes the prompt alongside the profile', async () => {
+    fetchMock.mockResolvedValue(jsonRes(200, { command: 'env … claude \'hi\'',
+                                                profile: 'alice', profileDir: '/tmp/x' }))
+    await fetchTerminalCommand({ profile: 'alice', prompt: "I'm in A & B" })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/kiwi/terminal/command?profile=alice&prompt=I%27m+in+A+%26+B')
   })
 
   it('fetchTerminalCommand returns null on non-2xx', async () => {
     fetchMock.mockResolvedValue(jsonRes(400, { error: 'bad name' }))
-    const r = await fetchTerminalCommand('Bad Name')
+    const r = await fetchTerminalCommand({ profile: 'Bad Name' })
     expect(r).toBeNull()
   })
 })

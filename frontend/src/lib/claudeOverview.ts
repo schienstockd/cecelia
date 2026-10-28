@@ -124,7 +124,10 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
 /** Fallback one-liner for a single session. Empty string when the path isn't known yet — callers must
  *  render nothing rather than a placeholder a user could copy verbatim and have fail. */
 export function claudeChatCommand(mcpConfigPath: string): string {
-  return mcpConfigPath ? `claude --mcp-config ${mcpConfigPath}` : ''
+  if (!mcpConfigPath) return ''
+  // Double quotes keep a path with a space in one word in bash, zsh, PowerShell and cmd alike.
+  const p = /\s/.test(mcpConfigPath) ? `"${mcpConfigPath}"` : mcpConfigPath
+  return `claude --mcp-config ${p}`
 }
 
 /** The terminal-setup button's labels, as Kiwi's Terminal row and Settings → Cecelia MCP render them.
