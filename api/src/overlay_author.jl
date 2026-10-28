@@ -800,7 +800,7 @@ end
 
 """
     overlay_track_plan(ov) -> (; segs, gated, hidden_track_pops, trackclust, pop_types,
-                                 pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
+                                 mask_pop_types, pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
 
 The plan half of an overlays dict (`_overlays_raw_from_config`, either key spelling):
   * `segs` — per-segmentation sources `[(valueName, colour)]`; `""` valueName = the overlays' own
@@ -809,6 +809,8 @@ The plan half of an overlays dict (`_overlays_raw_from_config`, either key spell
   * `hidden_track_pops` — `{valueName => paths}` whose ribbon eye is off (`""` = the pops' segmentation);
   * `pop_types` / `pop_all_segs` — the pop layers: these cell pop types on every segmentation (a
     viewer look), else the caller's one `(valueName, popType)` (a batch);
+  * `mask_pop_types` — the pop types a look's mask is coloured by when not `pop_types` (the viewer's
+    *Colour* on track clusters: `["trackclust"]`); empty = `pop_types` (`mask_pop_scope`);
   * `track_colours` — the viewer's Tracks-legend colours, keyed as its sources are (`vn`,
     `vn::path`, `vn::popType::path`, `vn::trackclust::path`);
   * `pop_eyes` / `ribbon_eyes` — a viewer look's point and ribbon eyes (`parse_look_eyes`); empty for
@@ -831,6 +833,8 @@ function overlay_track_plan(ov)
     trackclust = Bool(g("showTrackclust", false))
     pts_raw = g("popTypes", nothing)
     pop_types = pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[]
+    mpts_raw = g("maskPopTypes", nothing)
+    mask_pop_types = mpts_raw isa AbstractVector ? String[String(x) for x in mpts_raw] : String[]
     pop_all_segs = Bool(g("popAllSegmentations", false))
     tc_raw = g("trackSourceColours", nothing)
     track_colours = tc_raw isa AbstractDict ?
@@ -838,7 +842,7 @@ function overlay_track_plan(ov)
         Dict{String,String}()
     pop_eyes = parse_look_eyes(g("popEyes", nothing))
     ribbon_eyes = parse_look_eyes(g("ribbonEyes", nothing))
-    rest = (; hidden_track_pops, trackclust, pop_types, pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
+    rest = (; hidden_track_pops, trackclust, pop_types, mask_pop_types, pop_all_segs, track_colours, pop_eyes, ribbon_eyes)
     segs_raw = g("trackSegs", nothing)
     if segs_raw isa AbstractVector
         segs = Tuple{String,String}[(_wstr_any(s, "valueName", :valueName), _wstr_any(s, "colour", :colour))
@@ -1086,7 +1090,7 @@ _pop_in_subtree(path::AbstractString, sub::AbstractString) = path == sub || star
 """
     mask_pop_colours(layers; pale = MASK_PARENT_PALE, grey = OVERLAY_GREY) -> Dict{Int,RGB{N0f8}}
 
-THE population-mask colour rule — the viewer's *Pop colour* mask (`maskPopTable`,
+THE population-mask colour rule — the viewer's *Colour* mask (`maskPopTable`,
 `frontend/src/utils/maskPopTable.ts`) and a movie's population mask both draw it. `layers` are one per
 (segmentation, pop type), each `(; cells, pops)`: `cells` the cell table's labels, `pops` the SHOWN
 pops `(; path, colour, labels)` in payload order. Per id:
@@ -1182,7 +1186,7 @@ end
                     colour_by = nothing, colour_overrides = nothing) -> Dict{Int,RGB{N0f8}}
 
 Which labels a movie's mask draws, and in what colour. A population mask is `mask_pop_colours` over
-the shown pops of `pop_types` (default `[pop_type]`) on `value_name` — the viewer's *Pop colour* mask:
+the shown pops of `pop_types` (default `[pop_type]`) on `value_name` — the viewer's *Colour* mask:
 deepest pop wins, parents pale, the rest of the cells grey — "shown" by `pop_eyes` (a look's point
 eyes on `value_name`, `"<popType>::<path>" => on`) where it has one, else the manager's `show`. `all_cells` paints every cell
 `all_cells_colour` instead. `colour_by` recolours the drawn cells by an obs column (a population mask:
@@ -1274,8 +1278,9 @@ end
         -> (; all_cells, pop_types, pops_filter, pop_eyes)
 
 The pop layers a movie's population mask on `mask_vn` is coloured by — `mask_id_colours`'s
-`all_cells` / `pop_types` / `pops_filter`, picked as the viewer picks its *Pop colour* mask's. A viewer
-look (`plan.pop_all_segs`): its pop types on the mask's OWN segmentation (`maskPopLayers`). A batch: its
+`all_cells` / `pop_types` / `pops_filter`, picked as the viewer picks its *Colour* mask's. A viewer
+look (`plan.pop_all_segs`): its mask pop types (`plan.mask_pop_types` — track clusters), else its pop
+types, on the mask's OWN segmentation (`maskPopLayers`). A batch: its
 one `(vn, pop_type)` layer, whose paths mean nothing in another segmentation's tree — a mask on
 another one is every cell. `pop_eyes` are the look's point eyes on `mask_vn` (the viewer's mask table
 takes the points' hidden pops, `layerHidden`); `nothing` = the manager's `show`. Both movie resolvers (`_resolve_movie_overlays_mask`,
@@ -1283,8 +1288,9 @@ takes the points' hidden pops, `layerHidden`); `nothing` = the manager's `show`.
 """
 function mask_pop_scope(plan, vn::AbstractString, mask_vn::AbstractString, pop_type,
                         pops_filter, all_cells::Bool)
+    look_types = isempty(plan.mask_pop_types) ? plan.pop_types : plan.mask_pop_types
     plan.pop_all_segs && return (; all_cells, pops_filter = nothing,
-                                   pop_types = isempty(plan.pop_types) ? [String(pop_type)] : plan.pop_types,
+                                   pop_types = isempty(look_types) ? [String(pop_type)] : look_types,
                                    pop_eyes = get(plan.pop_eyes, String(mask_vn), nothing))
     (; all_cells = all_cells || mask_vn != vn, pop_types = nothing, pops_filter, pop_eyes = nothing)
 end

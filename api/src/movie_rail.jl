@@ -272,6 +272,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         Dict{String,Any}(String(k) => String[String(x) for x in v] for (k, v) in hidden_raw if v isa AbstractVector) :
         hidden_raw isa AbstractVector ? String[String(x) for x in hidden_raw] : String[]
     pts_raw = something(get(cfg, :popTypes, nothing), get(cfg, "popTypes", nothing), Some(nothing))
+    mpts_raw = something(get(cfg, :maskPopTypes, nothing), get(cfg, "maskPopTypes", nothing), Some(nothing))
     tsc_raw = something(get(cfg, :trackSourceColours, nothing), get(cfg, "trackSourceColours", nothing), Some(nothing))
     # a viewer look's point / ribbon eyes, `{valueName => {"<popType>::<path>" => on}}` (#1784)
     eyes_of(k) = parse_look_eyes(something(get(cfg, Symbol(k), nothing), get(cfg, k, nothing), Some(nothing)))
@@ -294,6 +295,9 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         # are not a property of the shown segmentation); without them, the one `popType` of `valueName`.
         "popTypes"         => pts_raw isa AbstractVector ? String[String(x) for x in pts_raw] : String[],
         "popAllSegmentations" => _cfg_bool(cfg, "popAllSegmentations"),
+        # the pop types a look's mask is coloured by when not `popTypes` — the viewer's *Colour* on
+        # track clusters (`mask_pop_scope`); empty = `popTypes`
+        "maskPopTypes"     => mpts_raw isa AbstractVector ? String[String(x) for x in mpts_raw] : String[],
         # the viewer's own eyes on its pops (a look; a batch has none and draws `show`) —
         # `overlay_track_plan` → `look_eye_on`
         "popEyes"          => eyes_of("popEyes"),
@@ -325,7 +329,7 @@ function _overlays_raw_from_config(cfg, has_mask::Bool)
         out["maskOpacity"]     = clamp(Float64(_cfg_get(cfg, "labelOpacity", Float64(MASK_FILL_OPACITY))), 0.0, 1.0)
         # `allCells` = whole-segmentation mask (every id painted). A batch with pops on colours the
         # mask by the same pops the points draw (`mask_pop_colours`); the viewer's mask is every cell
-        # unless its *Pop colour* is on, and a look read off it says which (`maskAllCells`).
+        # unless its *Colour* is on pops or track clusters, and a look read off it says which (`maskAllCells`).
         out["allCells"]        = _cfg_bool(cfg, "maskAllCells", !(show_pops || show_gated))
         # The mask takes the colour-by column only when asked (`colourLabels`, the batch chip); else
         # the per-id palette — the viewer's mask, which colour-by never recolours.

@@ -4,7 +4,7 @@
 //
 // The policy — the SAME rule a movie's population mask draws (`mask_pop_colours`,
 // `api/src/overlay_author.jl`), held to it by a shared fixture (`maskPopTable.parity.json`, read by
-// both test suites). A movie recorded from the viewer with *Pop colour* on carries it on its look
+// both test suites). A movie recorded from the viewer with *Colour* on pops carries it on its look
 // (`maskAllCells: false`, `utils/viewer/viewerLook.ts`):
 //  - **Which pops.** The ones whose eye is on in the viewer (`hidden` — the same authority the points
 //    use, `buildPointBufferLayers`), on the segmentation the mask shows. The movie drops `show == false`.
@@ -16,11 +16,20 @@
 //  - **Cells in no visible pop** are `MASK_UNGATED_GREY` (`OVERLAY_GREY`), so the gate's complement
 //    stays visible to check against the tissue. Ids outside the cell table (no centroid, so never
 //    sent) and in no pop are not drawn.
+//  - **Which pop family** is the mask's *Colour* choice (`MaskColour`): the cell pop types on, or the
+//    segmentation's track clusters (each tracked cell in its track's cluster pop). The movie takes the
+//    family as `maskPopTypes` (`mask_pop_scope`).
 
 import SHADER_CONSTANTS from '../lib/webgpu/shaders/constants.json'
 import { OVERLAY_GREY } from './viewerOverlays'
 import { mix, parseHex } from './colour'
 import { isInSubtree } from './popName'
+
+/** Where the shown mask's colours come from: the per-id palette, the cell pops on (flow / clust /
+ *  region), or the segmentation's track clusters. `settings.viewerMaskColour`. */
+export type MaskColour = 'id' | 'pops' | 'trackclust'
+export const MASK_COLOURS: readonly MaskColour[] = ['id', 'pops', 'trackclust']
+export const isMaskColour = (v: unknown): v is MaskColour => MASK_COLOURS.includes(v as MaskColour)
 
 /** Texels per row of a label colour table: id at `(id % W, id / W)` (`labColour`). One number for the
  *  viewer and the movie host (`wgpu_host.LABEL_TABLE_W`), from `shaders/constants.json`. */
@@ -54,6 +63,15 @@ export interface MaskPopLayer {
     pops: readonly { path: string; colour: string; labels: readonly number[] }[]
   }
   hidden?: ReadonlySet<string>
+}
+
+/** The mask's layer when it is coloured by track clusters: the segmentation's trackclust pops, a pop
+ *  shown by its manager `show` — the eye the trackclust ribbons draw by. */
+export function trackclustMaskLayer(payload: {
+  cells: { label?: readonly number[] }
+  pops: readonly { path: string; colour: string; labels: readonly number[]; show?: boolean }[]
+}): MaskPopLayer {
+  return { payload, hidden: new Set(payload.pops.filter(p => p.show === false).map(p => p.path)) }
 }
 
 const depthOf = (path: string) => path.split('/').filter(Boolean).length

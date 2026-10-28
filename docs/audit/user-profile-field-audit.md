@@ -123,7 +123,7 @@ so today every classification below is a *change* from the status quo.
 `taskListAutoFollow`, `tasksThisProjectOnly`, `tasksShowHistory`, `vaultOtherUsers`, `vaultOtherProjects`, `autoRefreshOnTask`,
 `viewerAutoUpdate`, `preferDevChannel`, `importPyramidAdvisor`, `animationSyncViewer`,
 `viewerAutoSaveLayerProps`, `viewerScaleBar`, `viewerTimestamp`, `viewerGrid`,
-`viewerLandscape`, `viewerLandscapeLabels`, `viewerMaskByPop`, `viewProfile`, `csvIncludeAttrs`.
+`viewerLandscape`, `viewerLandscapeLabels`, `viewerMaskColour`, `viewProfile`, `csvIncludeAttrs`.
 
 ### Personal overlay sizes → **per-profile** (~6)
 
