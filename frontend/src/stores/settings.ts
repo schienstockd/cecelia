@@ -471,7 +471,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // per layer — `points` (the Populations rows, `cc.viewerPopEyes`) and `ribbons` (the Tracks rows,
   // `cc.viewerRibbonEyes`; #1766). Separate from the Population Manager's `show`, which only seeds a
   // pop with no entry here; kept across the refetch every gate write triggers
-  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). The pop-out writes them; they cross windows through
+  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). The pop-out writes them, and so does the
+  // Population Manager's per-pop viewer toggle; they cross windows through
   // the bag channel, so a movie recorded from the main window draws the viewer's eyes (`viewerLook`).
   const _popEyesStores = {
     points: ref<Record<string, Record<string, Record<string, boolean>>>>(
