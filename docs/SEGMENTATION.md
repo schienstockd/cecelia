@@ -781,6 +781,29 @@ min/max. `normaliseToWhole` supplies that statistic; the projection then pins co
 to the same range. With it off, every tile gets its own scale — the patchiness the option exists to
 prevent, plus a train/inference mismatch on the structure-tensor planes.
 
+**What carries between timepoints.** At radius 8, the windows for `t` and `t+1` share 16 of 17
+frames, so three things are carried forward rather than recomputed. Each is keyed on everything that
+decides its pixels besides the timepoint, and falls back to recomputing on any mismatch:
+
+| Carried | By | Keyed on | Not carried when |
+|---|---|---|---|
+| raw window frames | base, `_window_frames` | tile, z span, channels read | more than one XY tile (only the last window is kept) |
+| projected frames | `CoastalUtils._carried_projection` | region (tile, z span, channels) + group (channels, `normalise`), checked against the clip range | the clip range moved (`normaliseToWhole` off: it is the current frame's); preview windows (no `z_span`) |
+| consecutive-frame flows | `CoastalUtils._flow_caches_for` | region + group, per z, checked against the clip range | the clip range moved |
+
+The first two are bit-identical to recomputing: before they landed they were 14% and 13% of a
+timepoint (zolIMa/UMq4v3, 3 groups). Memory stays at one window per group — the projection lives in a
+fixed buffer that is shifted down a frame at a time, never reallocated beside the previous one. Storage
+is per GROUP, not per clip range: when the range moves (every timepoint, with `normaliseToWhole` off)
+the group's buffer is re-projected in place and its flows dropped, rather than a new entry added.
+
+> The flow cache used to be keyed on the region alone. With several model groups projecting
+> **different** channels, every later group read the first group's consecutive-frame flows — so
+> `mag_1`, `cumulative_mag`, strain, divergence, vorticity and the rest were another channel's
+> motion; only the lag-pair `mag_{2,4,8}` and `edge_strength` were the group's own. Two-pass runs on
+> one channel at one clip range were unaffected. Pinned by
+> `SharedFlowBetweenTimepointsTest.test_a_group_on_other_channels_computes_its_own_flow`.
+
 **Training reads `zPlanes` planes per movie, and each is its own sequence.** Motion exists within one
 recording of one plane; flow between plane *k* and plane *k+1* of the same timepoint is not motion,
 so a (movie × plane) pair is a sequence and metrics are computed per sequence before pooling. The
