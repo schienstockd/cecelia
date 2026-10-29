@@ -1,22 +1,32 @@
 [
   {
     "key": "blockSize",
-    "label": "Tile size (px)",
-    "type": "int",
-    "min": 64,
-    "max": 4096,
-    "step": 64,
-    "default": 512,
-    "tip": "XY tile size in pixels. Larger tiles use more RAM but reduce seam effects"
+    "label": "Tile size",
+    "type": "select",
+    "default": "auto",
+    "options": [
+      { "value": "auto", "label": "Auto (largest that fits)" },
+      { "value": "512", "label": "512 px" },
+      { "value": "1024", "label": "1024 px" },
+      { "value": "2048", "label": "2048 px" },
+      { "value": "4096", "label": "4096 px" },
+      { "value": "8192", "label": "8192 px" }
+    ],
+    "tip": "Auto picks the largest tile that fits free memory; the log shows the size used"
   },
   {
     "key": "overlap",
-    "label": "Tile overlap (px)",
-    "type": "int",
-    "min": 0,
-    "max": 256,
-    "step": 8,
-    "default": 64,
-    "tip": "XY overlap between tiles"
+    "label": "Tile overlap",
+    "type": "select",
+    "default": "auto",
+    "options": [
+      { "value": "auto", "label": "Auto (1.5 cell sizes)" },
+      { "value": "0", "label": "None" },
+      { "value": "32", "label": "32 px" },
+      { "value": "64", "label": "64 px" },
+      { "value": "128", "label": "128 px" },
+      { "value": "256", "label": "256 px" }
+    ],
+    "tip": "Context each tile reads past its edge; seam stitching needs about a cell's width"
   }
 ]

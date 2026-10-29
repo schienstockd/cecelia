@@ -219,6 +219,20 @@ function parse_version_pin(d::AbstractDict)::Union{String,Nothing}
     isempty(s) ? nothing : s
 end
 
+# ── Tile size / overlap: a pixel count or "auto" ─────────────────────────────
+# The segmentation tasks' `blockSize` / `overlap` selects hold strings ("auto", "1024"); saved params
+# and chain templates from before hold ints (4096). Both reach the Python runner as one string, which
+# resolves "auto" against the frame and the free memory (`tile_budget.py`). Anything else is an error
+# here, not a silent default deep in the run.
+function tiling_param(v)::String
+    s = lowercase(strip(string(v)))
+    s == "auto" && return "auto"
+    n = tryparse(Float64, s)
+    (n === nothing || n < 0 || !isinteger(n)) &&
+        throw(ArgumentError("tile size must be a whole number of pixels or \"auto\", got $(repr(v))"))
+    string(Int(n))
+end
+
 # ── Guarded writer (D6 — mechanically-can't-overwrite invariant). Writes
 # `item_value` at `version` (defaults to `version_next(d)`), refusing if that
 # key already exists. Updates `_latest` to the version just written.

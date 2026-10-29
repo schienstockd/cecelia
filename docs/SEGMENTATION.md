@@ -310,6 +310,62 @@ so a subclass reads a channel through `tile_channel(tile, ch)` (or `TemporalWind
 `4rNbMp/f8gzA2`). The window was narrowed first: on a 4-channel movie where coastal projects one
 channel, the all-channel window read was 3.14 s of a 9.35 s timepoint (`zolIMa/fXgbTl`).
 
+### Auto tile size and overlap
+
+`blockSize` and `overlap` default to **Auto** (`tile_budget.py`). Nobody can pick a tile size from the
+image alone: it depends on the engine, cellpose's rescaling, the number of planes, and how much RAM
+and GPU memory is free **when the run starts**. A browser viewer on the same laptop can hold 6 of
+8 GB of GPU memory, so the card's total memory is the wrong number to plan with.
+
+- **Tile size.** Resolved in the Python runner (`SegmentationUtils.resolve_block_size`), so it reads
+  the machine the run is on, an HPC node included. The rule is the whole frame if it fits, otherwise
+  the largest tile that does, rounded down to 256 px, never below 256.
+  - Each engine declares what a tile pixel costs (`_tile_cost` → `TileCost`). The budget is 70% of
+    free RAM, minus the frame and label buffers the run already holds, and 80% of free VRAM, minus
+    the engine's fixed GPU cost. A limit the machine cannot report (RAM on Windows, VRAM without
+    CUDA) is skipped, not guessed.
+  - An engine with no measured cost gets the whole frame.
+  - A bigger tile is not faster per pixel (flat from 1024 px up, below), only seam-free, so the
+    safety margin costs nothing but seams.
+- **Overlap.** 1.5 × the object size (`_object_size_um`: cellpose's `cellDiameter`, coastal's
+  `seedSize`), converted with the pixel size. The seam stitch matches each tile's prediction of a
+  band `overlap` px either side of the seam (`_collect_seam_strips`), so a band narrower than a cell
+  holds only fragments. At overlap 0 the stitch matches nothing.
+- **The log says what Auto picked**, e.g. `>> tiling: auto: whole frame (2024 px fits in gpu memory);
+  overlap 44 px`. The preview's "Run would tile this" warning resolves the size the same way
+  (`_run_block_size`). The preview worker holds its own model on the GPU, so it errs towards
+  predicting tiles.
+- **Out of memory.** Auto plans with a margin, but another process can take memory mid-run. The run
+  then stops (`predict_or_stop`) with one line: `Ran out of GPU memory at 4096 px tiles. Set Tile
+  size to 2048 px (Image tiling) and run again.`
+
+Cellpose's cost (`CellposeUtils._tile_cost`), measured on `cpsam_v2` on an RTX 2000 Ada (8 GB) and
+33 GB RAM (2026-10-29), per pixel of the padded tile:
+
+| | GPU | RAM |
+|---|---|---|
+| one plane | ~2.5 GB fixed + ~580 B per px **after** cellpose rescales to diameter 30 | ~70 B / px |
+| stitched stack | the same per plane (planes go through one at a time) | ~35 B / px / plane |
+
+Calibrated against these sweeps:
+
+| `f8gzA2`, 2D, 8 µm at 0.16 µm/px (×0.36 rescale) | s | s/Mpx | RAM Δ GB | VRAM reserved GB |
+|---|---|---|---|---|
+| 1024 | 1.0 | 1.0 | 0.12 | 2.88 |
+| 2048 | 5.4 | 1.3 | 0.36 | 3.04 |
+| 4096 | 24.1 | 1.4 | 1.24 | 5.98 |
+| 6144 | 63.0 | 1.7 | 2.63 | 7.48 of 8 |
+
+The 3D figure is from the whole 2024 px `FtGoJO` frame (26 planes) after `stitch_planes`: 5.4 GB peak.
+How the RAM term changes with the diameter has not been measured yet; the GPU term follows cellpose's
+rescale by construction.
+
+**Coastal declares no cost yet, so its Auto is the whole frame.** That is what every coastal run has
+used: its intravital frames are a few hundred to ~1000 px. One measured point so far:
+`zolIMa/fXgbTl` (420 × 441, 32 planes, 4 channels, ±8-frame window) peaked at 9.2 GB RAM and
+0.8 GB GPU over 31 frames. Its memory is the temporal window and the flow caches, not the model.
+A cost model needs a second frame size.
+
 Z: each plane is segmented in 2D, then stitched across Z (`stitchThreshold`). No explicit Z tiling
 is done. Cellpose's stitched eval runs three steps:
 1. per-plane masks with the size filter off;

@@ -6,8 +6,8 @@ struct CellposeSegment <: CciaTask end
 Base.@kwdef struct CellposeSegmentParams
     valueName::String            = VERSIONED_DEFAULT_VAL
     outputValueName::String      = VERSIONED_DEFAULT_VAL
-    blockSize::Int               = 512
-    overlap::Int                 = 64
+    blockSize::String            = "auto"   # px or "auto" — resolved by the Python runner
+    overlap::String              = "auto"   # px or "auto" (1.5 cell sizes)
     labelOverlap::Float64        = 0.25
     matchThreshold::Float64      = 0.3
     removeUnmatched::Bool        = false
@@ -29,8 +29,8 @@ function parse_cellpose_segment_params(d::AbstractDict)::CellposeSegmentParams
     CellposeSegmentParams(;
         valueName           = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         outputValueName     = string(get(d, "outputValueName", VERSIONED_DEFAULT_VAL)),
-        blockSize           = Int(get(d, "blockSize", 512)),
-        overlap             = Int(get(d, "overlap", 64)),
+        blockSize           = tiling_param(get(d, "blockSize", "auto")),
+        overlap             = tiling_param(get(d, "overlap", "auto")),
         labelOverlap        = Float64(get(d, "labelOverlap", 0.25)),
         matchThreshold      = Float64(get(d, "matchThreshold", 0.3)),
         removeUnmatched     = Bool(get(d, "removeUnmatched", false)),

@@ -688,6 +688,10 @@ class CoastalUtils(SegmentationUtils):
 
     # ── Input preparation ─────────────────────────────────────────────────────
 
+    def _object_size_um(self, model_params):
+        """`seedSize` — coastal's cell-scale param (the seed window), so Auto overlap tracks it."""
+        return float(model_params.get('seedSize', 4.0))
+
     def _model_channels(self, model_params):
         """The image channel indices one model group projects — `cellChannels` and nothing else.
         The base reads only the union of these over the groups (`_context_channels`)."""
