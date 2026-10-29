@@ -364,6 +364,40 @@ class TemporalContextTest(unittest.TestCase):
         self.assertEqual(max(idxs), 2)
         self.assertEqual(min(idxs), 0)
 
+    def test_carried_windows_are_the_movie_through_the_real_run(self):
+        """One tile, so each window carries the last one's frames: every window must still be
+        exactly the store's pixels at its timepoints, and each frame read from the store once."""
+        class _Recording(_TemporalStub):
+            def predict_slice(self, tile, model_params, norm_params=None, window=None):
+                self.windows = getattr(self, 'windows', [])
+                self.windows.append((window.start, window.z_span, window.frames.copy()))
+                return super().predict_slice(tile, model_params, norm_params, window)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            du = DimUtils(ome_types.from_xml(_ome_xml(*self.SIZES)), use_channel_axis=True)
+            du.calc_image_dimensions(self.SHAPE)
+            im0 = np.random.default_rng(2).integers(0, 4000, size=tuple(du.im_dim), dtype=np.uint16)
+            seg = _Recording({'taskDir': tmp, 'outputValueName': 'stub', 'normaliseToWhole': False,
+                              'models': {'0': {'matchAs': 'base', 'cellChannels': [0]}}}, du)
+            reads = []
+            real = seg._extract_tile
+
+            def counting(im_data, t, *a, **k):
+                if im_data is im0:
+                    reads.append(t)
+                return real(im_data, t, *a, **k)
+
+            seg._extract_tile = counting
+            seg.predict_from_zarr([im0])
+
+        t_axis = du.im_dim_order.index('T')
+        for start, z_span, frames in seg.windows:
+            expect = np.take(im0, range(start, start + len(frames)), axis=t_axis)
+            self.assertEqual(expect.shape, frames.shape)
+            np.testing.assert_array_equal(frames, expect)
+            self.assertIsNotNone(z_span)
+        self.assertEqual(sorted(reads), list(range(self.SIZES[0])), 'a frame was read twice')
+
     def test_window_is_tile_extent_not_whole_frames(self):
         """The memory decision: the window must be the TILE through time, not full frames."""
         with tempfile.TemporaryDirectory() as tmp:

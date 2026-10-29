@@ -6,7 +6,9 @@ overlap) and P2 steps 2–4 are **built** on `auto-tiling`, with cellpose's cost
 Auto is the whole frame until a second frame size is measured. D4 (one window per frame
 when `normaliseToWhole` is off, never per tile) is **built** on `normalise-over`; kept as the
 existing bool, so saved params need no migration. P3 (lossless blank-tile skip)
-is **built** on `skip-blank-tiles`. Next: D3 (seam rule), P4.
+is **built** (#1831). D3 measured: patchworks' seam rule is no better, the IoU rule stays. P4 (seam
+QC finding `seg.seam_cuts`) is **built** on `seam-rule`. Everything in the plan is now built or
+parked.
 
 ## Goal
 

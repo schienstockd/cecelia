@@ -67,6 +67,32 @@ def object_stats(frame_sizes, voxel_size_um, is_3d):
     return out
 
 
+def seam_contacts(labels, block, axis):
+    """Contacts between DIFFERENT labels across tile seams, and across control lines halfway
+    through each tile, along one axis (-2 = Y, -1 = X) of a frame's labels.
+
+    A cell crossing a seam that the stitch joined has one id on both sides, so across a seam only
+    genuinely touching neighbours should differ — the same rate as anywhere else in the image,
+    which the control lines measure. Cells cut by the seam and left unjoined show up as extra
+    contacts on the seam lines only. Returns the raw counts (contacts, pixels examined) for both;
+    the verdict lives in Julia (`seg_seam_qc_findings`).
+    """
+    extent = labels.shape[axis]
+    seams = list(range(block, extent, block))
+    controls = [c for c in (s + block // 2 for s in range(0, extent, block)) if 0 < c < extent]
+
+    def count(positions):
+        n = px = 0
+        for pos in positions:
+            a = np.take(labels, pos - 1, axis=axis)
+            b = np.take(labels, pos, axis=axis)
+            n += int(np.count_nonzero((a > 0) & (b > 0) & (a != b)))
+            px += int(a.size)
+        return n, px
+
+    (sn, spx), (cn, cpx) = count(seams), count(controls)
+    return {'seamContacts': sn, 'seamPixels': spx, 'controlContacts': cn, 'controlPixels': cpx}
+
 
 class TemporalWindow(typing.NamedTuple):
     """The tile through time, plus everything a subclass needs to know about where it came from.
@@ -96,8 +122,14 @@ class TemporalWindow(typing.NamedTuple):
               their `id()`, would both be wrong: two windows can hold equal pixels, and a freed
               array's `id()` gets reused.
 
-    `start` + `tile` are what let a subclass carry work between TIMEPOINTS, and `id` deliberately
-    cannot — it changes with every window, which is what makes it safe for the per-window cache.
+    z_span:   `(z0, z1)` — the planes of the store `frames` covers, or None when the caller did not
+              say. Each timepoint is narrowed to its OWN span (a drift-padded store moves it), and
+              every frame of the window is read at that span, so `z` in one window and `z` in the
+              next are the same plane only while the span holds.
+
+    `start` + `tile` + `z_span` are what let a subclass carry work between TIMEPOINTS, and `id`
+    deliberately cannot — it changes with every window, which is what makes it safe for the
+    per-window cache.
     """
 
     frames: object
@@ -106,6 +138,7 @@ class TemporalWindow(typing.NamedTuple):
     tile: tuple
     channels: object = None
     id: int = 0
+    z_span: tuple = None
 
 
 class SegmentationUtils:
@@ -180,6 +213,8 @@ class SegmentationUtils:
         # Hands out `TemporalWindow.id`. Monotonic for the life of the instance so a value is never
         # reused, which is the property a subclass caching against it depends on.
         self._context_counter = 0
+        # The last temporal window's raw frames, for `_window_frames` to carry into the next one.
+        self._prev_window = None
         self.output_value_name = params.get('outputValueName', 'default')
         # P1d pass-through: chain-run pinned version (docs/todo/VN_VERSIONING_PLAN.md → D3);
         # stored for logs / future writer routing. Path assembly stays legacy (P4b rewrites).
@@ -384,6 +419,7 @@ class SegmentationUtils:
         models = self.params.get('models', {})
         model_keys = self.model_order(models)
         dim_utils = self.dim_utils
+        self._prev_window = None
 
         # Global norm params (from lowest-res level)
         all_norm_params = {}
@@ -517,6 +553,7 @@ class SegmentationUtils:
         self.resolve_block_size(H, W, planes, held_bytes=held)
         self.logger.log(f'>> tiling: {self.tiling_note}; overlap {self.overlap} px')
         blank_tiles = 0
+        seam_totals = {}
 
         # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
         xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],
@@ -629,21 +666,21 @@ class SegmentationUtils:
                         # temporal subclass pixels that do not correspond to its own tile.
                         read_yx_full = (slice(read_yx[0].start + y0, read_yx[0].stop + y0),
                                         slice(read_yx[1].start + x0, read_yx[1].stop + x0))
-                        frames = np.stack([
-                            self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
-                                               z_idx=ia_z if narrowed else None, z=(z0, z1),
-                                               c_idx=ia_c if ctx_channels else None,
-                                               c=ctx_channels)
-                            for t2 in range(lo, hi + 1)])
+                        tile_box = (read_yx_full[0].start, read_yx_full[0].stop,
+                                    read_yx_full[1].start, read_yx_full[1].stop)
+                        frames = self._window_frames(
+                            (tile_box, (z0, z1), ctx_channels), lo, hi,
+                            lambda t2: self._extract_tile(
+                                im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
+                                z_idx=ia_z if narrowed else None, z=(z0, z1),
+                                c_idx=ia_c if ctx_channels else None, c=ctx_channels))
                         if drop_z:
                             # the window is the tile through time, so it is 2D like the tile
                             frames = np.squeeze(frames, axis=1 + read_z)
                         self._context_counter += 1
                         window = TemporalWindow(
-                            frames=frames, index=t - lo, start=lo,
-                            tile=(read_yx_full[0].start, read_yx_full[0].stop,
-                                  read_yx_full[1].start, read_yx_full[1].stop),
-                            channels=ctx_channels, id=self._context_counter)
+                            frames=frames, index=t - lo, start=lo, tile=tile_box,
+                            channels=ctx_channels, id=self._context_counter, z_span=(z0, z1))
 
                     for model_key in model_keys:
                         model_params = models[model_key]
@@ -706,6 +743,13 @@ class SegmentationUtils:
                     ma = models[model_key].get('matchAs', 'base')
                     frame[ma] = self._stitch_tile_seams(frame[ma], strips)
                 del seam_strips
+
+                # How well the seams were joined, for `seg.seam_cuts` — only where there are seams.
+                if len(xy_tiles_by_t[t]) > 1:
+                    for ax in (fa_y, fa_x):
+                        for k, v in seam_contacts(frame[stats_type], self.block_size,
+                                                  ax - len(frame_axes)).items():
+                            seam_totals[k] = seam_totals.get(k, 0) + v
 
                 for ma in frame:
                     # no `real_border`: a run processes whole frames, so its array edge IS the image edge
@@ -779,13 +823,47 @@ class SegmentationUtils:
             (self.phys_size_x, self.phys_size_y,
              dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
             is_3d)
+        if seam_totals:
+            self.object_stats['seam'] = seam_totals
 
         if blank_tiles:
             self.logger.log(f'>> skipped {blank_tiles} blank tile(s): no signal above the '
                             f'intensity window')
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
         self.tile_channels = None
+        self._prev_window = None
         return counts
+
+    def _window_frames(self, key, lo, hi, read):
+        """Frames `lo..hi` of one tile, stacked `[W, ...]` — carrying over the previous window's.
+
+        Consecutive windows of one tile overlap by all but one frame (at radius 8, 16 of 17), and
+        re-reading the overlap from the store was 14% of a coastal timepoint. So the frames the
+        previous window already holds are copied across and only the new ones are read.
+
+        `key` is everything that decides what a frame's pixels ARE besides its timepoint — the tile,
+        the z span, the channels — and a frame is reused only when it matches; anything else reads
+        the whole window, as before. Only the LAST window is kept, so a run of several XY tiles
+        (which walks every tile of a timepoint before moving on) never matches and behaves as before.
+
+        Peak memory is unchanged: building a window used to hold its frames twice at once (the list
+        and its stack), and now it holds the previous window and the new one.
+        """
+        prev = self._prev_window
+        self._prev_window = None
+        if prev is not None and prev[0] == key and lo <= prev[2] and hi >= prev[1]:
+            _, plo, phi, parr = prev
+            a, b = max(lo, plo), min(hi, phi)
+            out = np.empty((hi - lo + 1,) + parr.shape[1:], dtype=parr.dtype)
+            out[a - lo:b - lo + 1] = parr[a - plo:b - plo + 1]
+            del prev, parr
+            for t2 in list(range(lo, a)) + list(range(b + 1, hi + 1)):
+                out[t2 - lo] = read(t2)
+        else:
+            del prev
+            out = np.stack([read(t2) for t2 in range(lo, hi + 1)])
+        self._prev_window = (key, lo, hi, out)
+        return out
 
     # ── Tile helpers ──────────────────────────────────────────────────────────
 

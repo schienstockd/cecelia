@@ -141,3 +141,64 @@ end
     # `""` = the default profile = ~/.claude, shared with terminal claude: refused, no CLI spawned
     @test Cecelia.claude_auth_logout!("") == (false, Cecelia.CLAUDE_DEFAULT_LOGOUT_REFUSED)
 end
+
+@testset "purge_claude_conversations! — allowlist, memory kept, refusals" begin
+    mktempdir() do dir
+        # layout as the CLI writes it (CLI 2.1.312, Linux), plus Cecelia's own files in the same dir
+        w(p, s = "x") = (mkpath(dirname(joinpath(dir, p))); write(joinpath(dir, p), s))
+        w("history.jsonl"); w("paste-cache/a.txt"); w("file-history/s1/f@v1"); w("session-env/s1/e")
+        w("shell-snapshots/snap.sh"); w("tasks/s1/1.json"); w("debug/s1.txt")
+        w("projects/-home-a-proj/s1.jsonl"); w("projects/-home-a-proj/s1/subagents/a.jsonl")
+        w("projects/-home-a-proj/memory/MEMORY.md")
+        w("settings.toml"); w("recent-projects.toml"); w(".claude.json"); w(".credentials.json")
+        w("plugins/p.json"); w("backups/b.json")
+
+        @test Cecelia.purge_claude_conversations!(dir) == (true, "")
+        for gone in ("history.jsonl", "paste-cache", "file-history", "session-env", "shell-snapshots",
+                     "tasks", "debug", "projects/-home-a-proj/s1.jsonl", "projects/-home-a-proj/s1")
+            @test !ispath(joinpath(dir, gone))
+        end
+        for kept in ("projects/-home-a-proj/memory/MEMORY.md", "settings.toml", "recent-projects.toml",
+                     ".claude.json", ".credentials.json", "plugins/p.json", "backups/b.json")
+            @test isfile(joinpath(dir, kept))
+        end
+        @test Cecelia.purge_claude_conversations!(dir) == (true, "")   # idempotent
+
+        # a running session (`sessions/<live pid>.json`) blocks the purge; a dead one does not
+        w("history.jsonl")
+        w("sessions/$(getpid()).json", "{}")
+        @test Cecelia.claude_profile_in_use(dir)
+        @test Cecelia.purge_claude_conversations!(dir) == (false, Cecelia.CLAUDE_PURGE_IN_USE)
+        @test isfile(joinpath(dir, "history.jsonl"))
+        rm(joinpath(dir, "sessions", "$(getpid()).json"))
+        p = run(`$(Base.julia_cmd()) --startup-file=no -e 'exit()'`; wait = false)
+        dead = getpid(p); wait(p)
+        w("sessions/$(dead).json", "{}")                   # exited pid
+        w("sessions/notapid.json", "{}")
+        @test !Cecelia.claude_profile_in_use(dir)
+        @test Cecelia.purge_claude_conversations!(dir) == (true, "")
+        @test !ispath(joinpath(dir, "history.jsonl"))
+    end
+    # `""` = peanut = ~/.claude, shared with terminal claude: never deleted (D21)
+    @test Cecelia.purge_claude_conversations!("") == (false, Cecelia.CLAUDE_DEFAULT_PURGE_REFUSED)
+    @test !Cecelia.claude_profile_in_use(mktempdir())
+end
+
+@testset "purge_claude_conversations_wanted — workstation floor OR the profile's own" begin
+    @test !purge_claude_conversations_wanted("default")
+    prior = shared_workstation("purgeClaudeConversations")
+    try
+        set_shared_workstation!("purgeClaudeConversations", false)
+        @test !purge_claude_conversations_wanted("carol")                      # no settings at all
+        patch_profile_settings!(Dict("purgeClaudeConversations" => true), "carol")
+        @test purge_claude_conversations_wanted("carol")
+        patch_profile_settings!(Dict("purgeClaudeConversations" => false), "carol")
+        @test !purge_claude_conversations_wanted("carol")
+        set_shared_workstation!("purgeClaudeConversations", true)
+        @test purge_claude_conversations_wanted("carol")                       # floor beats "off"
+        @test !purge_claude_conversations_wanted("default")                    # never peanut
+    finally
+        set_shared_workstation!("purgeClaudeConversations", prior)
+        rm(Cecelia.profile_settings_dir("carol"); recursive = true, force = true)
+    end
+end
