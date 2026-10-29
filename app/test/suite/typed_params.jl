@@ -319,15 +319,15 @@ end
             "removeUnmatched" => true, "normaliseToWhole" => false))
         @test p.valueName == "corrected"
         @test p.outputValueName == "cells"
-        @test p.blockSize === 1024
-        @test p.overlap === 128
+        @test p.blockSize == "1024"               # saved ints and select strings both → one string
+        @test p.overlap == "128"
         @test p.matchThreshold === 0.5
         @test p.removeUnmatched === true
         @test p.normaliseToWhole === false
     end
     let p = Cecelia.parse_cellpose_segment_params(Dict{String,Any}())
-        @test p.blockSize === 512
-        @test p.overlap === 64
+        @test p.blockSize == "auto"               # default: resolved by the Python runner
+        @test p.overlap == "auto"
         @test p.matchThreshold === 0.3
         @test p.normaliseToWhole === true         # default: normalise to whole image
         @test p.haloSize === 0.0 && p.haloWholeCell === false   # halo off by default
@@ -335,6 +335,17 @@ end
     let p = Cecelia.parse_cellpose_segment_params(Dict{String,Any}("haloSize" => 2, "haloWholeCell" => true))
         @test p.haloSize === 2.0 && p.haloWholeCell === true
     end
+    # Tile size / overlap: a pixel count or "auto", from either the select (string) or a saved int.
+    @test Cecelia.tiling_param("auto") == "auto"
+    @test Cecelia.tiling_param(" Auto ") == "auto"
+    @test Cecelia.tiling_param(4096) == "4096"
+    @test Cecelia.tiling_param("2048") == "2048"
+    @test Cecelia.tiling_param(0) == "0"                 # overlap 0 = none
+    @test_throws ArgumentError Cecelia.tiling_param("big")
+    @test_throws ArgumentError Cecelia.tiling_param(-64)
+    @test_throws ArgumentError Cecelia.tiling_param(512.5)
+    @test Cecelia.parse_coastal_segment_params(Dict{String,Any}("blockSize" => 1024)).blockSize == "1024"
+    @test Cecelia.parse_coastal_segment_params(Dict{String,Any}()).overlap == "auto"
 
     # CoastalSegment — same shape as cellpose plus temporalScaleMode.
     let p = Cecelia.parse_coastal_segment_params(Dict{String,Any}(

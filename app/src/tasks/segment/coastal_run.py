@@ -51,10 +51,9 @@ def run(params):
     cu = CoastalUtils(params, dim_utils)
     log.log(f'>> GPU: {cu.gpu_device if cu.use_gpu else "none (CPU)"}')
     log.log(f'>> temporal window: +/-{cu.TEMPORAL_RADIUS} frames per tile')
-    log.log(f'>> tiling: block={cu.block_size} overlap={cu.overlap} '
-            f'normalise_to_whole={cu.normalise_to_whole}')
+    log.log(f'>> normalise_to_whole={cu.normalise_to_whole}')   # tiling is logged once resolved
 
-    label_counts = cu.predict_from_zarr(im_dat)
+    label_counts = cu.predict_or_stop(im_dat)
 
     qc_out_path = params.get('qcOutPath')
     if qc_out_path:

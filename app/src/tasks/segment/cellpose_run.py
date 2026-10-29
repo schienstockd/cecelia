@@ -20,7 +20,7 @@ Parameter contract (JSON written by Julia):
       gaussianFilter  - gaussian sigma (0.0 = off)
       threshold       - absolute intensity threshold (0 = off)
       stitchThreshold - cellpose z-stitch threshold (0.0 = per-slice 2D)
-  blockSize         - XY tile size in pixels (default 512)
+  blockSize         - XY tile size in pixels, or 'auto' (default: largest that fits)
   overlap           - XY tile overlap in pixels (default 64)
   labelOverlap      - min IoU to join a cell cut by a tile seam (0 = off)
   matchThreshold    - IoU threshold for nuc/base matching (default 0.3)
@@ -66,9 +66,9 @@ def run(params):
 
     cp = CellposeUtils(params, dim_utils)
     log.log(f'>> GPU: {cp.gpu_device if cp.use_gpu else "none (CPU)"}')
-    log.log(f'>> tiling: block={cp.block_size} overlap={cp.overlap} normalise_to_whole={cp.normalise_to_whole}')
+    log.log(f'>> normalise_to_whole={cp.normalise_to_whole}')   # tiling is logged once resolved
 
-    label_counts = cp.predict_from_zarr(im_dat)
+    label_counts = cp.predict_or_stop(im_dat)
 
     # Bank the objective per-type cell count for QC (the Julia handler reads this and writes the qc/
     # sidecar — same qcOutPath pattern as drift_correct_run.py). Best-effort; never fails the task.

@@ -575,6 +575,18 @@ def _region_signal(im_path, bounds, tile):
     return True, ""
 
 
+def _run_block_size(seg, ctx):
+    """The tile size a run started NOW would use on this image — `auto` resolved like the run does
+    (`SegmentationUtils.resolve_block_size`), from the full frame and what is free at this moment.
+
+    Approximate in one direction: this worker holds its own model on the GPU, which a run would not,
+    so free memory reads lower here and the warning errs towards "would tile".
+    """
+    # every plane, even when the preview shows one (`fallback2d`): the RUN segments the stack
+    return seg.resolve_block_size(int(ctx.axis_len.get('Y', 1)), int(ctx.axis_len.get('X', 1)),
+                                  max(int(ctx.axis_len.get('Z', 1)), 1))
+
+
 def _run_tile_seams(bounds, axis_len, block_size):
     """Tile-write boundaries the RUN would place strictly inside this region, per axis.
 
@@ -894,7 +906,7 @@ def _preview_cellpose(ctx):
         'hasSignal': has_signal,
         'noSignalWhy': why,
         # tile seams the RUN would place inside this region, which the preview does not reproduce
-        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
+        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, _run_block_size(seg, ctx)),
         'blockSize': int(seg.block_size),
         'layers': [_layer_disk('labels', 'Preview', ctx.value_name, preview_path, axes, full_shape)],
     }
@@ -1082,7 +1094,7 @@ def _preview_coastal(ctx):
         'passes': passes,
         'hasSignal': has_signal,
         'noSignalWhy': why,
-        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, seg.block_size),
+        'runSeams': _run_tile_seams(ctx.bounds, ctx.axis_len, _run_block_size(seg, ctx)),
         'blockSize': int(seg.block_size),
         'layers': [_layer_disk('labels', 'Preview', ctx.value_name, preview_path, axes, full_shape)],
     }

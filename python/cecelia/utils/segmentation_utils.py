@@ -18,6 +18,7 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.intensity_utils as intensity_utils
 import cecelia.utils.norm_cache as norm_cache
+import cecelia.utils.tile_budget as tile_budget
 
 from skimage import morphology, segmentation
 from scipy import ndimage
@@ -137,8 +138,16 @@ class SegmentationUtils:
         self.phys_size_x = (dim_utils.im_physical_size('x', default=1.0) if dim_utils else 1.0)
         self.phys_size_y = (dim_utils.im_physical_size('y', default=self.phys_size_x)
                             if dim_utils else 1.0)
-        self.block_size = int(params.get('blockSize', 512))
-        self.overlap = int(params.get('overlap', 64))
+        # `auto` (the default) is resolved per run: the tile size once the frame and the machine are
+        # known (`resolve_block_size`), the overlap from the cell size (`_auto_overlap`, below, once
+        # the physical pixel size is known). A number is taken as given.
+        self.block_size_param = tile_budget.parse_tiling_param(params.get('blockSize', tile_budget.AUTO))
+        self.block_size = self.block_size_param
+        self.overlap_param = tile_budget.parse_tiling_param(params.get('overlap', tile_budget.AUTO),
+                                                            allow_zero=True)
+        self.tiling_note = ''
+        self.overlap = (self.overlap_param if self.overlap_param is not None
+                        else self._auto_overlap())
         # Min IoU to join a cell cut by a tile seam (see `_stitch_tile_seams`); 0 = off
         self.label_overlap = float(params.get('labelOverlap', 0.25))
         self.match_threshold = float(params.get('matchThreshold', 0.3))
@@ -260,6 +269,49 @@ class SegmentationUtils:
                              f'{ch} was asked for — `_model_channels` must declare it')
         return tile[position[int(ch)]]
 
+    # ── Tiling ────────────────────────────────────────────────────────────────
+
+    def _object_size_um(self, model_params):
+        """The size, in µm, of one object this model group segments — None when the engine cannot
+        say. Sets the Auto overlap (`tile_budget.auto_overlap`)."""
+        return None
+
+    def _tile_cost(self, n_z):
+        """What one tile pixel costs this engine (`tile_budget.TileCost`) for an `n_z`-plane tile —
+        None when it has not been measured, which makes Auto use the whole frame."""
+        return None
+
+    def _auto_overlap(self):
+        sizes = [self._object_size_um(mp) for mp in (self.params.get('models') or {}).values()]
+        sizes = [s for s in sizes if s]
+        size_px = self.px_from_um(max(sizes)) if sizes else None
+        return tile_budget.auto_overlap(size_px)
+
+    def resolve_block_size(self, height, width, n_z, held_bytes=0):
+        """Set `block_size` for a frame of `height` × `width` × `n_z`, and return it.
+
+        A number from the params is kept. `auto` asks `tile_budget` for the largest tile that fits
+        what is free NOW, `held_bytes` being what the run already holds (frame + label buffers). The
+        run and the preview both call this, so the preview's seam warning matches what a run started
+        now would do. `tiling_note` keeps the reason for the log.
+        """
+        if self.block_size_param is not None:
+            self.block_size = self.block_size_param
+            self.tiling_note = f'{self.block_size} px (set)'
+            return self.block_size
+        cost = self._tile_cost(n_z)
+        free_vram = None
+        if cost is not None and cost.vram_per_px > 0:
+            from cecelia.utils.gpu_utils import free_vram_gb     # torch: only an engine that uses it
+            gb = free_vram_gb()
+            free_vram = gb * 1e9 if gb is not None else None
+        import cecelia.utils.cpu_utils as cpu_utils
+        self.block_size, why = tile_budget.auto_block_size(
+            cost, height, width, self.overlap, held_bytes=held_bytes,
+            free_ram=cpu_utils.available_memory_bytes(), free_vram=free_vram)
+        self.tiling_note = f'auto: {why}'
+        return self.block_size
+
     def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
 
@@ -276,6 +328,22 @@ class SegmentationUtils:
         raise NotImplementedError
 
     # ── Main loop ─────────────────────────────────────────────────────────────
+
+    def predict_or_stop(self, im_dat):
+        """`predict_from_zarr`, but an out-of-memory error stops the run with the tile size to set.
+
+        What the runners call. On OOM the process exits, which frees the models and caches with it;
+        the log gets one line naming the size that ran out and the one to try instead
+        (`tile_budget.out_of_memory_message`), rather than a CUDA stack.
+        """
+        try:
+            return self.predict_from_zarr(im_dat)
+        except Exception as exc:
+            msg = tile_budget.out_of_memory_message(exc, self.block_size)
+            if msg is None:
+                raise
+            self.logger.log(f'[ERROR] {msg}')
+            raise SystemExit(1) from exc
 
     def predict_from_zarr(self, im_dat):
         """Segment: iterate T × XY tiles for each model, ONE TIMEPOINT AT A TIME.
@@ -411,6 +479,15 @@ class SegmentationUtils:
                 'Y': self._valid_span(box, 'Y', H),
                 'X': self._valid_span(box, 'X', W),
             }
+
+        # Auto tile size, against what is free now minus what this run holds for its whole length:
+        # the frame (only the channels read) and one label buffer per type.
+        planes = n_z if is_3d else 1
+        n_read = len(ctx_channels) if ctx_channels else (int(dim_utils.dim_val('C')) if ia_c is not None else 1)
+        held = H * W * planes * (n_read * np.dtype(im_dat[0].dtype).itemsize
+                                 + len(store_types) * np.dtype(self.LABEL_DTYPE).itemsize)
+        self.resolve_block_size(H, W, planes, held_bytes=held)
+        self.logger.log(f'>> tiling: {self.tiling_note}; overlap {self.overlap} px')
 
         # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
         xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],

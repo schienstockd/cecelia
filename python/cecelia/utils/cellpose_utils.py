@@ -287,6 +287,29 @@ class CellposeUtils(SegmentationUtils):
             model_params.get('nucChannels'), 'nucChannels', 'cellpose_models_for_python (cellpose.jl)')
         return list(cell) + list(nuc)
 
+    def _object_size_um(self, model_params):
+        return float(model_params.get('cellDiameter', 15))
+
+    # Measured on `cpsam_v2` (RTX 2000 Ada, 8 GB; docs/SEGMENTATION.md → *Auto tile size*), per XY
+    # pixel of the padded tile:
+    # - GPU: a fixed ~2.5 GB (model + allocator floor) plus ~580 bytes per pixel AFTER cellpose
+    #   rescales the plane to diameter 30 — Z planes go through one at a time, so it is per plane;
+    # - RAM: ~70 bytes per pixel for a single plane, ~35 per pixel per plane for a stitched stack.
+    _VRAM_FIXED = 2.5e9
+    _VRAM_PER_RESCALED_PX = 580.0
+    _RAM_PER_PX_2D = 70.0
+    _RAM_PER_PX_PER_PLANE = 35.0
+
+    def _tile_cost(self, n_z):
+        from cecelia.utils.tile_budget import TileCost
+        # The smallest diameter is the costliest group: cellpose upsamples it the most.
+        d_px = min(self.px_from_um(self._object_size_um(mp))
+                   for mp in (self.params.get('models') or {'0': {}}).values())
+        rescale = (30.0 / max(d_px, 1.0)) ** 2
+        ram = self._RAM_PER_PX_2D if n_z <= 1 else self._RAM_PER_PX_PER_PLANE * n_z
+        return TileCost(ram_per_px=ram, vram_per_px=self._VRAM_PER_RESCALED_PX * rescale,
+                        vram_fixed=self._VRAM_FIXED)
+
     def predict_slice(self, tile, model_params, norm_params=None):
         """
         Run cellpose on one XY tile.
