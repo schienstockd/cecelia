@@ -76,8 +76,8 @@ const {
   nodes, edges,
   addNodes, addEdges, removeNodes, removeEdges,
   findNode, updateNode, toObject,
-  onConnect, onNodeClick, onEdgeDoubleClick,
-  screenToFlowCoordinate, setCenter,
+  onConnect, onEdgeDoubleClick, getSelectedNodes,
+  screenToFlowCoordinate, setCenter, fitView, onNodesInitialized,
 } = useVueFlow({ id: 'chain-whiteboard' })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -601,7 +601,7 @@ async function loadChain(name: string) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const tmpl = await res.json() as ChainTemplate & { positions?: Record<string, {x:number; y:number}>
                                                        createdBy?: unknown; updatedBy?: unknown }
-    applyTemplate(tmpl, tmpl.positions ?? {})
+    await applyTemplate(tmpl, tmpl.positions ?? {})
     chainAuthor.value = authorSummary(parseAuthorStamp(tmpl.createdBy), parseAuthorStamp(tmpl.updatedBy))
   } catch (e) {
     log.warn(`Could not load chain "${name}": ${e}`, { source: 'whiteboard' })
@@ -617,14 +617,18 @@ function addStartNode() {
   addNodes([{ id: START_ID, type: 'start', position: DEFAULT_START_POS, data: {} }])
 }
 
-function applyTemplate(
+async function applyTemplate(
   tmpl: ChainTemplate,
   positions: Record<string, { x: number; y: number }>,
 ) {
-  // Clear canvas
+  // Clear canvas — and let Vue unmount it before adding the next chain. Every chain's start dot is
+  // `__start__` (and authored chains reuse ids like `track`/`hmm`), so a same-tick remove+add hands
+  // the new node the OLD element: Vue Flow never re-measures its handles and the edge draws from the
+  // node's top-left corner instead of the handle — "the start node is not connected".
   removeNodes(nodes.value.map(n => n.id))
   removeEdges(edges.value.map(e => e.id))
   selectedNodeId.value = null
+  await nextTick()
 
   // Computed once for the whole template, and only consulted where a saved position is missing — a
   // chain the user has dragged is never re-laid-out. That's their spatial memory of their own pipeline.
@@ -679,8 +683,24 @@ function applyTemplate(
   )
   if (start) { newNodes.push(start.node); newEdges.push(...start.edges) }
 
+  fitOnInit = true
   addNodes(newNodes)
   addEdges(newEdges)
+}
+
+// Frame each loaded chain once Vue Flow has MEASURED its nodes — fitting before that frames nothing.
+// An authored chain's dot sits one column left of the first task, off the left edge of the default
+// viewport, so without this the start edge ran off-screen. Only after a load, not on every palette drop.
+let fitOnInit = false
+onNodesInitialized(() => {
+  if (!fitOnInit) return
+  fitOnInit = false
+  fitChain(0)
+})
+
+/** Zoom/pan so the whole chain is on screen (the toolbar's Fit button, and every chain load). */
+function fitChain(duration = 300) {
+  fitView({ padding: 0.2, maxZoom: 1, duration })
 }
 
 function currentTemplate(): ChainTemplate & { positions: Record<string, {x:number; y:number}> } {
@@ -1041,8 +1061,13 @@ const selectedTaskDef = computed<TaskDef | null>(() => {
   return withChainProducedModels(def, upstreamModelStems(selectedNode.value!.id))
 })
 
-onNodeClick(({ node }: NodeMouseEvent) => {
-  selectedNodeId.value = selectedNodeId.value === node.id ? null : node.id
+// The config panel follows Vue Flow's own selection — the same state that draws the node's highlight.
+// It used to toggle on `node-click`, a second state that diverged: a click with ≥1px of mouse travel
+// is a drag to Vue Flow (selects + highlights, no click event), so the node lit up and the panel stayed
+// shut; clicking the selected node again closed the panel but kept the highlight; clicking the canvas
+// cleared the highlight but kept the panel.
+watch(() => getSelectedNodes.value.map(n => n.id), ids => {
+  selectedNodeId.value = ids.length === 1 ? ids[0] : null
 })
 
 function updateSelectedNodeData(patch: Record<string, unknown>) {
@@ -1502,6 +1527,14 @@ onActivated(async () => {
               </button>
             </div>
           </TeleportPopover>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!activeChain || !nodes.length"
+            @click="fitChain()"
+            v-tooltip.right="'Fit the chain on screen'"
+          >
+            <i class="pi pi-reset-view" />
+          </button>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
@@ -2113,7 +2146,6 @@ onActivated(async () => {
   flex-shrink: 0;
   background: var(--cc-surface-1);
   border-left: 1px solid var(--cc-border);
-  transition: width 0.18s ease;
   display: flex;
   flex-direction: column;
 }
