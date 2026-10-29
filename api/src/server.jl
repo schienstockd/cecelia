@@ -485,6 +485,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/rename"     => (req, body_bytes) -> (api_kiwi_profiles_rename(body_bytes)),
     "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
     "/api/kiwi/profiles/logout"     => (req, body_bytes) -> (api_kiwi_profiles_logout(body_bytes)),
+    "/api/kiwi/profiles/end-session" => (req, body_bytes) -> (api_kiwi_profiles_end_session(body_bytes)),
     "/api/kiwi/profiles/login"        => (req, body_bytes) -> (api_kiwi_profiles_login_start(body_bytes)),
     "/api/kiwi/profiles/login/code"   => (req, body_bytes) -> (api_kiwi_profiles_login_code(body_bytes)),
     "/api/kiwi/profiles/login/cancel" => (req, body_bytes) -> (api_kiwi_profiles_login_cancel(body_bytes)),

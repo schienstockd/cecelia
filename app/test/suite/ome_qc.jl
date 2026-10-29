@@ -1264,6 +1264,20 @@ end
         js = JSON3.read(JSON3.write(st(ramp(1, 6))))
         @test scodes(Cecelia.seg_object_qc_findings(js; diameter_um = 10)) == ["seg.fragmented"]
 
+        # seg.seam_cuts: contacts across tile seams vs control lines. Counts from a real 2048 px crop
+        # tiled at 512: stitching off (6520 vs 52, ratio ~167) fires; stitched (72 vs 52, ~1.9) is quiet.
+        sm(sc, sp, cc, cp) = Dict{String,Any}("seam" => Dict{String,Any}("seamContacts" => sc,
+            "seamPixels" => sp, "controlContacts" => cc, "controlPixels" => cp))
+        cut = Cecelia.seg_seam_qc_findings(sm(6520, 12288, 52, 16384))
+        @test scodes(cut) == ["seg.seam_cuts"] && cut[1]["level"] == "info"
+        @test occursin("Tile overlap", cut[1]["long"])
+        @test isempty(Cecelia.seg_seam_qc_findings(sm(72, 12288, 52, 16384)))
+        @test isempty(Cecelia.seg_seam_qc_findings(sm(10, 12288, 0, 16384)))     # too few to say
+        @test scodes(Cecelia.seg_seam_qc_findings(sm(40, 12288, 0, 16384))) == ["seg.seam_cuts"]
+        @test isempty(Cecelia.seg_seam_qc_findings(st(ramp(7, 13))))              # untiled: no `seam`
+        @test scodes(Cecelia.seg_seam_qc_findings(JSON3.read(JSON3.write(sm(6520, 12288, 52, 16384))))) ==
+              ["seg.seam_cuts"]
+
         # the diameter compared against: the base group's; ambiguous or own-estimate → nothing
         @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12))) == 12.0
         @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12),

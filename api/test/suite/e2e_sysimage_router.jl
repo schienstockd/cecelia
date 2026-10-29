@@ -375,6 +375,7 @@ end
         "/api/kiwi/profiles/rename",   # USER_PROFILE_PLAN D11 amendment — rename dir + update [ai].profile
         "/api/kiwi/profiles/delete",   # USER_PROFILE_PLAN D11 amendment — rm -rf profile dir
         "/api/kiwi/profiles/logout",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P8 — claude auth logout
+        "/api/kiwi/profiles/end-session",   # D22 — delete the profile's Claude conversations on Log out
         "/api/kiwi/profiles/login",    # P9 — start claude auth login (private browser window)
         "/api/kiwi/profiles/login/code", "/api/kiwi/profiles/login/cancel",   # P9
         "/api/config/shared-workstation/set",
@@ -496,7 +497,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 116 && length(POST_ROUTES) == 174
+    @test length(GET_ROUTES) == 116 && length(POST_ROUTES) == 175
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

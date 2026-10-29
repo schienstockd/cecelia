@@ -337,13 +337,15 @@ class SharedProjectionBetweenGroupsTest(unittest.TestCase):
         cu = CoastalUtils({'taskDir': '/tmp', 'models': groups},
                           _DimUtils(shape=shape))
         cu.calls = []
-        real = cu._project_window
+        real = cu._carried_projection
 
-        def counting(context, model_params, norm_params, context_channels=None):
+        # One call per projection of a WINDOW — what the per-window cache saves — counted above the
+        # per-frame carry, which projects a fresh window frame by frame.
+        def counting(window, model_params, norm_params):
             cu.calls.append(tuple(cu._model_channels(model_params)))
-            return real(context, model_params, norm_params, context_channels)
+            return real(window, model_params, norm_params)
 
-        cu._project_window = counting
+        cu._carried_projection = counting
         return cu
 
     @staticmethod
@@ -420,6 +422,123 @@ class SharedProjectionBetweenGroupsTest(unittest.TestCase):
         np.testing.assert_array_equal(shared, direct)
 
 
+class CarriedProjectionTest(unittest.TestCase):
+    """The projection carried between TIMEPOINTS — consecutive windows share all but one frame.
+
+    Performance only: every window's projection must be `assert_array_equal` to projecting the
+    whole window, through the truncated start, the steady state and the truncated end."""
+
+    R, T = 2, 9
+    NORM = {1: (10.0, 3000.0), 2: (0.0, 4000.0)}
+
+    def _cu(self):
+        from cecelia.utils.coastal_utils import CoastalUtils
+        g = {'0': {'model': 'm.pt', 'cellChannels': [1, 2]}}
+        cu = CoastalUtils({'taskDir': '/tmp', 'models': g}, _DimUtils(shape=(30, 3, 4, 8, 8)))
+        cu.TEMPORAL_RADIUS = self.R
+        cu.frames_projected = 0
+        real = cu._project_window
+
+        def counting(context, model_params, norm_params, context_channels=None):
+            cu.frames_projected += len(context)
+            return real(context, model_params, norm_params, context_channels)
+
+        cu._project_window = counting
+        return cu, g['0']
+
+    def _movie(self, seed=5):
+        return (np.random.default_rng(seed).random((self.T, 3, 4, 8, 8)) * 4000).astype(np.uint16)
+
+    def _window_at(self, movie, t, wid, tile=(0, 8, 0, 8), z_span=(0, 4)):
+        from cecelia.utils.segmentation_utils import TemporalWindow
+        lo, hi = max(0, t - self.R), min(self.T - 1, t + self.R)
+        return TemporalWindow(frames=movie[lo:hi + 1], index=t - lo, start=lo, tile=tile, id=wid,
+                              z_span=z_span)
+
+    def test_every_window_equals_projecting_it_whole(self):
+        cu, mp = self._cu()
+        movie = self._movie()
+        for t in range(self.T):
+            w = self._window_at(movie, t, wid=t + 1)
+            got = np.array(cu._cached_projection(w, mp, self.NORM))
+            np.testing.assert_array_equal(got, cu._project_window(w.frames, mp, self.NORM, None),
+                                          f't={t}')
+
+    def test_each_frame_is_projected_once(self):
+        cu, mp = self._cu()
+        movie = self._movie()
+        for t in range(self.T):
+            cu._cached_projection(self._window_at(movie, t, wid=t + 1), mp, self.NORM)
+        self.assertEqual(cu.frames_projected, self.T)
+
+    def test_a_moved_tile_or_z_span_projects_afresh(self):
+        cu, mp = self._cu()
+        movie = self._movie()
+        cu._cached_projection(self._window_at(movie, 4, wid=1), mp, self.NORM)
+        for i, kw in enumerate(({'tile': (8, 16, 0, 8)}, {'z_span': (1, 5)})):
+            cu.frames_projected = 0
+            w = self._window_at(movie, 5, wid=10 + i, **kw)
+            cu._cached_projection(w, mp, self.NORM)
+            self.assertEqual(cu.frames_projected, len(w.frames), f'{kw} reused another region')
+
+    def test_without_a_global_clip_range_every_window_is_projected_whole(self):
+        """Per-window percentiles project the same frame differently in the next window."""
+        cu, mp = self._cu()
+        movie = self._movie()
+        for t in (4, 5):
+            cu.frames_projected = 0
+            w = self._window_at(movie, t, wid=t)
+            cu._cached_projection(w, mp, None)
+            self.assertEqual(cu.frames_projected, len(w.frames))
+
+    def test_a_window_without_a_z_span_is_not_carried(self):
+        """The preview builds its own windows over a store that may change between requests."""
+        cu, mp = self._cu()
+        movie = self._movie()
+        for t in (4, 5):
+            cu.frames_projected = 0
+            w = self._window_at(movie, t, wid=t, z_span=None)
+            cu._cached_projection(w, mp, self.NORM)
+            self.assertEqual(cu.frames_projected, len(w.frames))
+
+    def test_one_buffer_per_group_however_long_the_run(self):
+        """The memory rule: the carry holds one window's projection per group, never two."""
+        cu, mp = self._cu()
+        movie = self._movie()
+        buffers = set()
+        for t in range(self.T):
+            cu._cached_projection(self._window_at(movie, t, wid=t + 1), mp, self.NORM)
+            (entry,) = cu._projection_carry.values()
+            buffers.add(id(entry[1]))
+            self.assertEqual(entry[1].shape[0], 2 * self.R + 1)
+        self.assertEqual(len(buffers), 1)
+
+    def _per_frame_norm(self, t):
+        """What `normaliseToWhole` off hands the engine: the CURRENT frame's clip range."""
+        return {1: (10.0 + t, 3000.0 - 7 * t), 2: (float(t), 4000.0)}
+
+    def test_a_per_frame_clip_range_still_equals_projecting_it_whole(self):
+        """The same frame projects differently once the bounds move — nothing may be carried."""
+        cu, mp = self._cu()
+        movie = self._movie()
+        for t in range(self.T):
+            w = self._window_at(movie, t, wid=t + 1)
+            norm = self._per_frame_norm(t)
+            got = np.array(cu._cached_projection(w, mp, norm))
+            np.testing.assert_array_equal(got, cu._project_window(w.frames, mp, norm, None),
+                                          f't={t}')
+
+    def test_a_per_frame_clip_range_holds_one_buffer_not_one_per_timepoint(self):
+        cu, mp = self._cu()
+        movie = self._movie()
+        buffers = set()
+        for t in range(self.T):
+            cu._cached_projection(self._window_at(movie, t, wid=t + 1), mp, self._per_frame_norm(t))
+            self.assertEqual(len(cu._projection_carry), 1)
+            buffers.add(id(next(iter(cu._projection_carry.values()))[1]))
+        self.assertEqual(len(buffers), 1)
+
+
 class ContextChannelsTest(unittest.TestCase):
     """Reading fewer channels renumbers the window's channel axis — the failure mode is silent.
 
@@ -492,11 +611,15 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
         cu._flow_metrics = _metrics
         return cu
 
-    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2):
+    _NORM = {0: (0.0, 1000.0), 1: (0.0, 1000.0)}
+
+    def _step(self, cu, t, tile=(0, 16, 0, 16), n_z=2, channels=(0,), norm=_NORM, z_span=None):
+        from cecelia.utils.segmentation_utils import TemporalWindow
         ctx = np.ones((9, 2, n_z, 16, 16), np.float32) * 500
-        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': [0]},
-                         norm_params={0: (0.0, 1000.0)},
-                         window=_window(ctx, 3, wid=t, start=t - 3, tile=tile))
+        cu.predict_slice(ctx[3], {'model': 'm.pt', 'cellChannels': list(channels)},
+                         norm_params=norm,
+                         window=TemporalWindow(frames=ctx, index=3, start=t - 3, tile=tile,
+                                               id=t, z_span=z_span))
 
     def _computed(self, cu):
         return [p for p in cu._pairs if p[0] == 'compute']
@@ -516,14 +639,56 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
         self._step(cu, 10, tile=(0, 16, 0, 16)); first = len(self._computed(cu))
         self._step(cu, 11, tile=(16, 32, 0, 16)); second = len(self._computed(cu)) - first
         self.assertEqual(second, first, 'a different tile must not be served from the old one')
-        self.assertEqual(cu._flow_cache_tile, (16, 32, 0, 16))
+        self.assertEqual(cu._flow_cache_tile, ((16, 32, 0, 16), None))
+
+    def test_moving_to_another_z_span_starts_over(self):
+        """The caches are per z INDEX; once a drift-padded store moves the span, index z is a
+        different plane."""
+        cu = self._utils()
+        self._step(cu, 10, z_span=(0, 2)); first = len(self._computed(cu))
+        self._step(cu, 11, z_span=(1, 3)); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first, 'a moved z span must not be served from the old one')
+
+    def test_a_group_on_other_channels_computes_its_own_flow(self):
+        """A flow is a property of the frames it was computed on. Keyed on the region alone, the
+        second group read the first group's consecutive flows and was segmented partly on another
+        channel's motion."""
+        cu = self._utils()
+        self._step(cu, 10, channels=[0]); first = len(self._computed(cu))
+        self._step(cu, 10, channels=[1]); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first, "group on channel 1 was served channel 0's flows")
+
+    def test_the_same_channel_at_another_clip_range_computes_its_own_flow(self):
+        cu = self._utils()
+        self._step(cu, 10); first = len(self._computed(cu))
+        self._step(cu, 10, norm={0: (100.0, 900.0)}); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first)
+
+    def test_a_per_frame_clip_range_computes_afresh_and_holds_one_entry(self):
+        """`normaliseToWhole` off: the clip range is the current frame's, so a pair cached at t was
+        computed on other pixels at t+1 — and the store must not gain an entry per timepoint."""
+        cu = self._utils()
+        self._step(cu, 10, norm={0: (0.0, 1000.0)}); first = len(self._computed(cu))
+        self._step(cu, 11, norm={0: (5.0, 990.0)}); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first)
+        self.assertEqual(len(cu._flow_caches), 1)
+
+    def test_without_a_global_clip_range_nothing_is_carried(self):
+        """Per-window normalisation projects the same frame differently in the next window."""
+        cu = self._utils()
+        self._step(cu, 10, norm=None); first = len(self._computed(cu))
+        self._step(cu, 11, norm=None); second = len(self._computed(cu)) - first
+        self.assertEqual(second, first)
+
+    def _caches(self, cu):
+        return [c for _, per_plane in cu._flow_caches.values() for c in per_plane.values()]
 
     def test_only_consecutive_pairs_are_kept(self):
         """A lag pair moves with the centre frame, so it is never requested twice — keeping it grows
         the cache by three dead entries per timepoint per z-plane."""
         cu = self._utils()
         self._step(cu, 10)
-        for cache in cu._flow_caches.values():
+        for cache in self._caches(cu):
             for (i, j) in cache:
                 self.assertEqual(j, i + 1, f'({i}, {j}) is not a consecutive pair')
 
@@ -532,14 +697,15 @@ class SharedFlowBetweenTimepointsTest(unittest.TestCase):
         sizes = []
         for t in range(10, 30):
             self._step(cu, t)
-            sizes.append(max(len(c) for c in cu._flow_caches.values()))
+            sizes.append(max(len(c) for c in self._caches(cu)))
         self.assertLessEqual(max(sizes[5:]), 6,
                              f'entries a later timepoint can never read are not being pruned: {sizes}')
 
     def test_each_z_plane_has_its_own(self):
         cu = self._utils(n_z=3)
         self._step(cu, 10, n_z=3)
-        self.assertEqual(sorted(cu._flow_caches), [0, 1, 2])
+        ((_, per_plane),) = cu._flow_caches.values()
+        self.assertEqual(sorted(per_plane), [0, 1, 2])
 
 
 class SharedFlowBetweenPassesTest(unittest.TestCase):

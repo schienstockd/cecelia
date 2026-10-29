@@ -108,6 +108,8 @@ function api_app_shutdown(body_bytes::Vector{UInt8})
     n = claude_logout_on_quit!()   # Shared workstation → "Log out of Claude on quit" (no-op when off)
     n > 0 && @info "Quit: logged $(n) profile(s) out of Claude"
     _stop_children_for_exit()
+    m = claude_purge_on_quit!()   # deletes conversations of profiles that want it (no-op when none)
+    m > 0 && @info "Quit: deleted Claude conversations for $(m) profile(s)"
     @async begin
         sleep(0.3)      # give handle_stream time to write the response before the process dies
         _exit_now(0)
