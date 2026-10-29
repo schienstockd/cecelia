@@ -324,7 +324,7 @@ class PreviewState:
         seg._model_cache = self._model_cache
         return seg
 
-    def norm_params(self, seg, levels, im_path, model_params):
+    def norm_params(self, seg, levels, im_path, model_params, t=0):
         """Whole-image percentile ranges, cached — **the** thing that makes a second preview fast.
 
         Measured on `EaMaVq` (201 × 20 × 544 × 548): `_compute_norm_params` takes **24 s**, because
@@ -337,7 +337,14 @@ class PreviewState:
         the first preview on an image is slow and every subsequent one is not. Changing a channel or
         the percentile correctly misses the cache."""
         if not seg.normalise_to_whole:
-            return None
+            # Each frame on its own, as the run does it: over the WHOLE frame at timepoint `t`, not
+            # the visible crop. The lowest-res level keeps that cheap; percentiles barely move with
+            # resolution. Not cached: it changes with `t`, and one small frame is fast.
+            order = [ax for ax in seg.dim_utils.im_dim_order if ax != 'T']
+            if 'C' not in order:
+                return None
+            frame = zarr_utils.read_timepoint(levels[-1], seg.dim_utils, t, drop_time=True)
+            return seg._frame_norm_params(frame, order.index('C'), model_params)
         key = (im_path,
                tuple(sorted(script_utils.channel_indices(
                    model_params.get("cellChannels"), "cellChannels", _CELLPOSE_TRANSLATOR))),
@@ -573,6 +580,11 @@ def _region_signal(im_path, bounds, tile):
     if not np.any(tile):
         return False, "blank"
     return True, ""
+
+
+def _preview_t(ctx):
+    """The timepoint the preview shows (0 for a single timepoint)."""
+    return int(ctx.bounds.get('T', (0, 1))[0])
 
 
 def _run_block_size(seg, ctx):
@@ -883,7 +895,7 @@ def _preview_cellpose(ctx):
         # Whole-image intensity statistics, applied to the crop: percentiles over the visible
         # region alone would normalise differently from the run, so the preview would show a
         # result the run cannot reproduce. Cached across previews — see `PreviewState.norm_params`.
-        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
+        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params, _preview_t(ctx))
         masks = seg.predict_slice(tile, model_params, norm_params)
         seg.check_rank(masks, 2, False, 'preview masks')
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
@@ -1075,7 +1087,7 @@ def _preview_coastal(ctx):
     merged, passes = None, []
     for key in _base_groups(seg, models):
         model_params = models[key]
-        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params)
+        norm_params = STATE.norm_params(seg, ctx.levels, ctx.im_path, model_params, _preview_t(ctx))
         masks = seg.predict_slice(tile, model_params, norm_params, window)
         seg.check_rank(masks, 2, False, 'preview masks')
         merged, passes = _merge_pass(seg, merged, masks, key, passes, count_labels)
@@ -1149,7 +1161,7 @@ def _flow_frame_and_metrics(ctx):
 
     context, centre = _temporal_window(ctx, seg.TEMPORAL_RADIUS)
 
-    window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp))
+    window = seg._project_window(context, mp, STATE.norm_params(seg, ctx.levels, ctx.im_path, mp, _preview_t(ctx)))
     # `_plane_features` rather than `_flow_metrics` + a local drop: it is the run's own composition of
     # the two, so the rename cannot be forgotten here while the run applies it.
     frame, metrics = seg._plane_features(window, centre, scales, cumulative, dropped, rename)

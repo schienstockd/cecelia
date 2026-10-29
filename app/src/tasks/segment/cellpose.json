@@ -347,7 +347,7 @@
           "label": "Global normalisation",
           "type": "bool",
           "default": true,
-          "tip": "Take intensity percentiles from the lowest-resolution level"
+          "tip": "One intensity window for the whole image; off: one per frame"
         }
       ]
     }

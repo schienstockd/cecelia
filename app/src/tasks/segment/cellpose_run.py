@@ -33,7 +33,7 @@ Parameter contract (JSON written by Julia):
   haloWholeCell     - halo keeps the whole grown object instead of the ring (default false)
   clearTouchingBorder - remove cells touching image XY border
   clearDepth        - remove cells touching first/last Z slice (3D only)
-  normaliseToWhole  - use lowest-res level for global percentile (default true)
+  normaliseToWhole  - one intensity window for the whole image (default true); false: one per frame
 """
 
 import sys

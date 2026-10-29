@@ -22,7 +22,8 @@ Python (cellpose_run.py)
   → calls predict_from_zarr(im_dat)
 
 SegmentationUtils.predict_from_zarr
-  → computes global norm params from im_dat[-1] (lowest-res level) if normaliseToWhole=true
+  → computes global norm params from im_dat[-1] (lowest-res level) if normaliseToWhole=true,
+    otherwise one window per frame from the frame in RAM (`_frame_norm_params`)
   → outer loop: T timepoints × XY tiles
   → inner loop: one model per tile → predict_slice → crop → accumulate into label arrays
   → post-processing per label type
@@ -231,7 +232,12 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 
 ### `SegmentationUtils` responsibilities
 - XY tiling with overlap (`blockSize`, `overlap`)
-- Global normalisation params from lowest-res zarr level (`normaliseToWhole`)
+- Intensity window (`normaliseToWhole`). **On** (default): one window for the whole image, from the
+  lowest-res level (or a streamed histogram on a single-level store). **Off**: one window per FRAME,
+  over the whole frame (`_frame_norm_params`, the same `(100 - p, p)` percentiles of non-zero voxels),
+  for a movie that bleaches or brightens. Never per tile: before this, Off fell through to each
+  engine windowing its own tile, which gives every tile its own brightness on a tiled image. The
+  preview does the same over the previewed timepoint's frame, at the lowest-res level.
   - **Cached per image** (`norm_cache`), because the range is a property of the image and the
     percentile, not of the run — it was recomputed from scratch every time, and two model groups over
     the same channel paid for it twice inside ONE run. Measured on `zolIMa/fXgbTl` (single level, so
@@ -529,7 +535,7 @@ is segmented, which is most images.
 | `haloWholeCell` | bool | false | Halo is the whole grown object, not the ring |
 | `clearTouchingBorder` | bool | false | Remove cells touching XY image border |
 | `clearDepth` | bool | false | Remove cells touching first/last Z slice (3D only) |
-| `normaliseToWhole` | bool | true | Use lowest-res level for global percentile (timecourse-safe) |
+| `normaliseToWhole` | bool | true | One intensity window for the whole image; false: one per frame (never per tile) |
 | `useDask` | bool | false | Load image as Dask array |
 
 The Julia handler converts channel names → 0-based indices before writing params JSON.

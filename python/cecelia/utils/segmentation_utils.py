@@ -403,6 +403,7 @@ class SegmentationUtils:
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
         ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
+        ifa_c = in_axes.index('C') if 'C' in in_axes else None
 
         # Which planes/rows/columns actually hold data, per timepoint. `None` for every store that
         # never padded, which is most of them — then the spans are the whole frame and nothing changes.
@@ -557,6 +558,11 @@ class SegmentationUtils:
                 frame_in = self._narrow_axis(frame_in, ifa_y, y0, y1)
                 frame_in = self._narrow_axis(frame_in, ifa_x, x0, x1)
 
+                # `normaliseToWhole` off: one window per frame, over the whole frame (not per tile).
+                frame_norm = ({} if self.normalise_to_whole or ifa_c is None else
+                              {k: self._frame_norm_params(frame_in, ifa_c, models[k], ctx_channels)
+                               for k in model_keys})
+
                 # One frame's labels per type (uint32 zeros), no time axis — sized to the span we
                 # actually segment, so the buffer and the tiles agree. Allocated AFTER the span is
                 # known, not before the read.
@@ -614,7 +620,8 @@ class SegmentationUtils:
                     for model_key in model_keys:
                         model_params = models[model_key]
                         match_as = model_params.get('matchAs', 'base')
-                        norm_p = all_norm_params.get(model_key)
+                        norm_p = (all_norm_params.get(model_key) if self.normalise_to_whole
+                                  else frame_norm.get(model_key))
 
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
@@ -963,11 +970,9 @@ class SegmentationUtils:
             for ch in todo:
                 idx = [slice(None)] * low_res.ndim
                 idx[c_idx] = ch
-                ch_data = low_res[tuple(idx)].ravel()
-                valid = ch_data[ch_data > 0]
-                if len(valid) > 100:
-                    fresh[ch] = (float(np.percentile(valid, 100 - normalise_perc)),
-                                 float(np.percentile(valid, normalise_perc)))
+                rng = self._percentile_range(low_res[tuple(idx)], normalise_perc)
+                if rng is not None:
+                    fresh[ch] = rng
 
         result.update(fresh)
         # Only what was actually derived. A channel too empty to have a range (the `> 100` guards)
@@ -976,6 +981,43 @@ class SegmentationUtils:
             cache.update({keys[ch]: v for ch, v in fresh.items()})
             norm_cache.write(im_path, fp, cache)
         return result
+
+    @staticmethod
+    def _percentile_range(data, normalise_perc):
+        """`(lo, hi)` at the `100 - p` / `p` percentiles of the non-zero voxels — None when fewer than
+        100 are non-zero, so an empty channel gets no window rather than a made-up one. The one
+        formula for both the whole-image and the per-frame window."""
+        valid = np.asarray(data).ravel()
+        valid = valid[valid > 0]
+        if len(valid) <= 100:
+            return None
+        return (float(np.percentile(valid, 100 - normalise_perc)),
+                float(np.percentile(valid, normalise_perc)))
+
+    def _frame_norm_params(self, frame, c_axis, model_params, frame_channels=None):
+        """Per-channel window over ONE frame — `normaliseToWhole` off: each frame on its own.
+
+        The same statistic as `_compute_norm_params`, over one timepoint instead of the whole image,
+        so a movie that bleaches or brightens is windowed frame by frame. Over the WHOLE frame, never
+        the tile: per-tile windows give every tile its own brightness, which is the patchiness the
+        whole-image window exists to remove. `frame_channels` names the image channel at each
+        position of `frame`'s channel axis when the read was narrowed (`_context_channels`).
+        """
+        perc = float(model_params.get('normalise', 99.9))
+        channels = script_utils.channel_indices(
+            list(model_params.get('cellChannels', [])) + list(model_params.get('nucChannels', [])),
+            'cellChannels/nucChannels', 'cellpose_models_for_python (cellpose.jl)')
+        position = ({int(c): i for i, c in enumerate(frame_channels)} if frame_channels
+                    else None)
+        out = {}
+        for ch in channels:
+            pos = ch if position is None else position.get(int(ch))
+            if pos is None:
+                continue
+            rng = self._percentile_range(np.take(frame, pos, axis=c_axis), perc)
+            if rng is not None:
+                out[ch] = rng
+        return out
 
     # ── Post-processing ───────────────────────────────────────────────────────
 
