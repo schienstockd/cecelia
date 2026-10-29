@@ -14,6 +14,7 @@
 #   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 #   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
 #   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
+#   POST /api/kiwi/profiles/end-session       → { name }               ; delete its conversations if wanted
 #   POST /api/kiwi/profiles/login             → { name }               ; start `claude auth login` (P9)
 #   GET  /api/kiwi/profiles/login?profile=N   → { state, url, browser, message } ; poll it
 #   POST /api/kiwi/profiles/login/code        → { name, code }         ; the pasted fallback code
