@@ -393,6 +393,35 @@ On a tile scan these are the tiles outside the tissue. `4rNbMp/f8gzA2` (16898 ×
 The other two lymphoid scans in that set have no blank tiles. Patchworks' empty-tile skip
 thresholds by Otsu instead, which is lossy: a cell dimmer than the cut is dropped.
 
+### Seam stitching rule and seam QC
+
+**The rule stays IoU ≥ `labelOverlap`, greedy and one-to-one.** Patchworks' alternative was compared
+on the same tile predictions: mutual best match where the overlap covers at least half of the smaller
+piece. It made no difference.
+
+| 512 px tiles vs the same crop segmented as one tile | splits | merges |
+|---|---|---|
+| `f8gzA2` 2048 px crop (2D), stitching off | 218 | 52 |
+| IoU ≥ 0.25 (current) | 39 | 35 |
+| overlap of the smaller ≥ 0.5, mutual best | 40 | 35 |
+| `FtGoJO` 1024 px crop, 26 planes, stitching off | 1391 | 1355 |
+| IoU ≥ 0.25 (current) | 1287 | 1284 |
+| overlap of the smaller ≥ 0.5, mutual best | 1294 | 1292 |
+
+In 2D the stitch repairs ~82% of the seam splits. In 3D most of the disagreement with the one-tile
+reference is not at the seams at all (it is there with stitching off as well), so no seam rule can
+remove it.
+
+**Seam QC (`seg.seam_cuts`, info).**
+- **What is counted.** On a tiled run, `seam_contacts` counts, after the stitch, the pixels where two
+  *different* labels touch across each seam line. It counts the same across control lines halfway
+  through each tile. A joined seam looks like any other line through the tissue; an unjoined one
+  leaves two ids touching along every cell it cuts.
+- **Where the verdict lives.** The counts ride in `objectStats.seam`; Julia decides
+  (`seg_seam_qc_findings`): at least 20 seam contacts, and a seam rate ≥ 10× the control rate.
+- **Calibration.** On the 2D crop above, stitching off gave 6520 seam vs 52 control contacts (ratio
+  ~167); stitched gave 72 vs 52 (~1.9). That is why the cut-off is 10, not patchworks' 2.
+
 Z: each plane is segmented in 2D, then stitched across Z (`stitchThreshold`). No explicit Z tiling
 is done. Cellpose's stitched eval runs three steps:
 1. per-plane masks with the size filter off;

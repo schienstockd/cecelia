@@ -67,6 +67,32 @@ def object_stats(frame_sizes, voxel_size_um, is_3d):
     return out
 
 
+def seam_contacts(labels, block, axis):
+    """Contacts between DIFFERENT labels across tile seams, and across control lines halfway
+    through each tile, along one axis (-2 = Y, -1 = X) of a frame's labels.
+
+    A cell crossing a seam that the stitch joined has one id on both sides, so across a seam only
+    genuinely touching neighbours should differ — the same rate as anywhere else in the image,
+    which the control lines measure. Cells cut by the seam and left unjoined show up as extra
+    contacts on the seam lines only. Returns the raw counts (contacts, pixels examined) for both;
+    the verdict lives in Julia (`seg_seam_qc_findings`).
+    """
+    extent = labels.shape[axis]
+    seams = list(range(block, extent, block))
+    controls = [c for c in (s + block // 2 for s in range(0, extent, block)) if 0 < c < extent]
+
+    def count(positions):
+        n = px = 0
+        for pos in positions:
+            a = np.take(labels, pos - 1, axis=axis)
+            b = np.take(labels, pos, axis=axis)
+            n += int(np.count_nonzero((a > 0) & (b > 0) & (a != b)))
+            px += int(a.size)
+        return n, px
+
+    (sn, spx), (cn, cpx) = count(seams), count(controls)
+    return {'seamContacts': sn, 'seamPixels': spx, 'controlContacts': cn, 'controlPixels': cpx}
+
 
 class TemporalWindow(typing.NamedTuple):
     """The tile through time, plus everything a subclass needs to know about where it came from.
@@ -517,6 +543,7 @@ class SegmentationUtils:
         self.resolve_block_size(H, W, planes, held_bytes=held)
         self.logger.log(f'>> tiling: {self.tiling_note}; overlap {self.overlap} px')
         blank_tiles = 0
+        seam_totals = {}
 
         # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
         xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],
@@ -707,6 +734,13 @@ class SegmentationUtils:
                     frame[ma] = self._stitch_tile_seams(frame[ma], strips)
                 del seam_strips
 
+                # How well the seams were joined, for `seg.seam_cuts` — only where there are seams.
+                if len(xy_tiles_by_t[t]) > 1:
+                    for ax in (fa_y, fa_x):
+                        for k, v in seam_contacts(frame[stats_type], self.block_size,
+                                                  ax - len(frame_axes)).items():
+                            seam_totals[k] = seam_totals.get(k, 0) + v
+
                 for ma in frame:
                     # no `real_border`: a run processes whole frames, so its array edge IS the image edge
                     frame[ma] = self.post_process(frame[ma], frame_axes, None, 1, is_3d)
@@ -779,6 +813,8 @@ class SegmentationUtils:
             (self.phys_size_x, self.phys_size_y,
              dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
             is_3d)
+        if seam_totals:
+            self.object_stats['seam'] = seam_totals
 
         if blank_tiles:
             self.logger.log(f'>> skipped {blank_tiles} blank tile(s): no signal above the '
