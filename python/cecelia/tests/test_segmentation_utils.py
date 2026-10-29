@@ -300,6 +300,47 @@ class StackedModelGroupsFillTest(unittest.TestCase):
         self.assertTrue((out == 5).all())
 
 
+class WindowFramesTest(unittest.TestCase):
+    """`_window_frames` carries the previous temporal window's frames into the next one.
+
+    Consecutive windows of a tile share all but one frame, so only the new ones are read. What must
+    not change is the window itself — and a frame read under a different tile, z span or channel
+    set is a different frame, however equal its timepoint."""
+
+    # T=7, radius 2: the windows the base builds, truncated at both ends
+    SPANS = [(0, 2), (0, 3), (0, 4), (1, 5), (2, 6), (3, 6), (4, 6)]
+
+    def setUp(self):
+        from cecelia.utils.segmentation_utils import SegmentationUtils
+        self.seg = SegmentationUtils.__new__(SegmentationUtils)
+        self.seg._prev_window = None
+        self.movie = np.random.default_rng(1).integers(0, 4000, (7, 2, 3, 5, 6), dtype=np.uint16)
+        self.reads = []
+
+    def _read(self, t2):
+        self.reads.append(t2)
+        return self.movie[t2].copy()
+
+    def test_every_window_equals_a_fresh_read(self):
+        for lo, hi in self.SPANS:
+            out = self.seg._window_frames(('tile', (0, 3), (0, 1)), lo, hi, self._read)
+            np.testing.assert_array_equal(out, self.movie[lo:hi + 1])
+
+    def test_each_frame_is_read_once(self):
+        for lo, hi in self.SPANS:
+            self.seg._window_frames(('tile', (0, 3), (0, 1)), lo, hi, self._read)
+        self.assertEqual(self.reads, list(range(7)))
+
+    def test_a_different_tile_z_span_or_channel_set_reads_afresh(self):
+        self.seg._window_frames(('tile', (0, 3), (0, 1)), 0, 4, self._read)
+        for key in (('other', (0, 3), (0, 1)), ('tile', (1, 3), (0, 1)), ('tile', (0, 3), (1,))):
+            self.seg._prev_window = None
+            self.seg._window_frames(('tile', (0, 3), (0, 1)), 0, 4, self._read)
+            self.reads.clear()
+            self.seg._window_frames(key, 1, 5, self._read)
+            self.assertEqual(self.reads, [1, 2, 3, 4, 5], f'{key} was served from another region')
+
+
 class LabelSmoothingTest(unittest.TestCase):
     """`labelSmoothing` rounds a wrinkled outline. The constraints are what make it safe to run over
     a whole label image rather than one mask at a time."""
