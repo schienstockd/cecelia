@@ -95,11 +95,27 @@ options. `:missing` — not installed (or switched off). `:stale` — anything e
 the plugin it would put every tool in the session twice.
 """
 function observer_plugin_state(have, want_options::AbstractDict, want_marketplace::AbstractString,
-                               want_version::AbstractString; legacy::Bool = false)::Symbol
+                               want_version::AbstractString; legacy::Bool = false,
+                               windows::Bool = Sys.iswindows())::Symbol
     legacy && return :stale
     (have.installed && have.enabled) || return :missing
-    (have.marketplace == want_marketplace && have.version == want_version &&
+    (same_path(have.marketplace, want_marketplace; windows) && have.version == want_version &&
      have.options == want_options) ? :current : :stale
+end
+
+"""
+    same_path(a, b; windows = Sys.iswindows()) -> Bool
+
+PURE. Do two path strings name the same place, as the CLI might have rewritten one? Claude Code stores
+the marketplace path normalised; on Windows that turns `D:\\a\\_temp/x` into `D:\\a\\_temp\\x`,
+and a plain `==` reads a correct install as stale forever. Separators unified, `.`/`..`
+and trailing separators dropped; case-insensitive on Windows. Empty never matches.
+"""
+function same_path(a::AbstractString, b::AbstractString; windows::Bool = Sys.iswindows())::Bool
+    (isempty(a) || isempty(b)) && return false
+    # `/` everywhere first, so `normpath` folds `.`/`..` the same on every OS (and in tests on Linux)
+    key(p) = (k = rstrip(normpath(replace(String(p), '\\' => '/')), '/'); windows ? lowercase(k) : k)
+    key(a) == key(b)
 end
 
 # ── CLI builders (PURE → unit-tested) ──────────────────────────────────────────────────────────────
@@ -137,7 +153,7 @@ function install_observer_plugin(a::ClaudeAgent, mcp_dir::AbstractString, option
     run1(cmd) = _run_claude_cli(cmd; timeout_s)
     dir = observer_marketplace_dir(mcp_dir)
     log = String[]
-    if have.marketplace != dir
+    if !same_path(have.marketplace, dir)
         isempty(have.marketplace) || run1(_build_marketplace_remove_cmd(a))
         ok, out = run1(_build_marketplace_add_cmd(a, dir))
         ok || return (false, strip(out))

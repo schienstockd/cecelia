@@ -719,6 +719,13 @@ const _PLUGIN_INSTALLED = """
         @test st(have; v = "1.0.1") === :stale                                               # manifest bumped
         @test st(have; legacy = true) === :stale     # add-json entry: tools without the hook, twice over
         @test st(merge(have, (; enabled = false))) === :missing
+        # the CLI stores the marketplace path normalised — a separator/case difference is the same place
+        @test Cecelia.same_path("D:\\a\\_temp/x dir\\mcp\\claude-plugin", "d:/a/_temp/x dir/mcp/claude-plugin/"; windows = true)
+        @test !Cecelia.same_path("/a/B/plugin", "/a/b/plugin"; windows = false)      # case matters off Windows
+        @test Cecelia.same_path("/a/b/../b/./plugin/", "/a/b/plugin"; windows = false)
+        @test !Cecelia.same_path("", "/a"; windows = false)
+        @test Cecelia.observer_plugin_state(merge(have, (; marketplace = "/repo/mcp/./claude-plugin/")),
+                                            want, "/repo/mcp/claude-plugin", "1.0.0") === :current
         # absent / garbage files read as "nothing there" — another tool's files never error a route
         none = Cecelia.read_observer_plugin(joinpath(tmp, "nope.json"), joinpath(tmp, "nope2.json"))
         @test !none.installed && !none.enabled && none.marketplace == "" && isempty(none.options)

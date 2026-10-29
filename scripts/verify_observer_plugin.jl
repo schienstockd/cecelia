@@ -38,8 +38,15 @@ Sys.iswindows() || run(`chmod -R a-w $(dirname(mcp_dir))`)
 dir = observer_marketplace_dir(mcp_dir)
 ver = shipped_plugin_version(mcp_dir)
 opts(port) = observer_plugin_options(mcp_dir, py, "http://127.0.0.1:$port")
-state(o) = observer_plugin_state(read_observer_plugin(), o, dir, ver;
-                                 legacy = read_registered_observer_spec() !== nothing)
+function state(o)
+    have = read_observer_plugin()
+    st = observer_plugin_state(have, o, dir, ver; legacy = read_registered_observer_spec() !== nothing)
+    # what the CLI stored vs what we expect — the line that explains a stale/missing on a new OS
+    st === :current || println("    state=$st  installed=$(have.installed) enabled=$(have.enabled)",
+        "\n    marketplace stored=$(repr(have.marketplace))\n                want=$(repr(dir))",
+        "\n    version stored=$(repr(have.version)) want=$(repr(ver))  options match=$(have.options == o)")
+    st
+end
 use(name) = (set_active_profile!(name); mkpath(active_profile_dir()); println("profile $name → ", active_profile_dir()))
 
 use("alice")
