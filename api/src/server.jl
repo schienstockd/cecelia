@@ -302,6 +302,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
     "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
+    "/api/observer/headless" => (req, body_bytes) -> (api_observer_headless(req)),
     "/api/kiwi/turns" => (req, body_bytes) -> (api_kiwi_turns(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
     "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
