@@ -292,7 +292,7 @@ end
         "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/blackboard", "/api/blackboard/entry",
-        "/api/notebooks/status", "/api/observer/briefing",
+        "/api/notebooks/status", "/api/observer/briefing", "/api/observer/headless",
         "/api/observer/labarchives",
         "/api/objects/find",
         "/api/optical-flow/models",
@@ -496,7 +496,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 115 && length(POST_ROUTES) == 174
+    @test length(GET_ROUTES) == 116 && length(POST_ROUTES) == 174
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")
