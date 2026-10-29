@@ -111,17 +111,9 @@ end
     @test !haskey(Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")["env"],
                   "CECELIA_OBSERVER_NO_PAIR")
 
-    # one-click terminal setup: add-json is not idempotent, so registering is remove-then-add at
-    # user scope, and both commands must name the SAME server as the config/--allowedTools filter
-    reg = Cecelia._build_mcp_register_cmd(a, "{\"command\":\"/env/python\"}")
-    @test reg.exec == [a.bin, "mcp", "add-json", Cecelia.OBSERVER_MCP_NAME,
-                       "{\"command\":\"/env/python\"}", "-s", "user"]
+    # `mcp remove` clears the older `add-json` registration and the per-folder shadows
     rm_cmd = Cecelia._build_mcp_remove_cmd(a)
     @test rm_cmd.exec == [a.bin, "mcp", "remove", Cecelia.OBSERVER_MCP_NAME, "-s", "user"]
-    @test Cecelia._build_mcp_register_cmd(a, "{}"; scope = "local").exec[end] == "local"
-    # the restore path uses the SAME add command, so a prior entry can be put back verbatim
-    @test Cecelia._build_mcp_register_cmd(a, "{\"command\":\"/old/python\"}").exec[5] ==
-          "{\"command\":\"/old/python\"}"
     @test Cecelia.OBSERVER_MCP_NAME == "cecelia-observer"   # the name users see in `claude mcp list`
 
     # ── Windows CLI resolution + spawn wrapping ──────────────────────────────────────────
@@ -457,6 +449,23 @@ struct _EmptyAgent <: Cecelia.AgentBackend end      # implements nothing — the
     obs = Cecelia._build_claude_cmd(c, "/tmp/m.json").exec
     @test !any(in(obs), ["--strict-mcp-config", "--tools", "--json-schema", "--system-prompt"])
     @test obs[findfirst(==("--allowedTools"), obs) + 1] == "mcp__cecelia-observer"
+    @test !("--settings" in obs)
+
+    # The caller hook: the app's turns load it with --settings; its matcher covers both tool namings
+    sv = Cecelia._build_claude_cmd(c, "/tmp/m.json"; settings_path = "/cfg/hook.json").exec
+    @test sv[findfirst(==("--settings"), sv) + 1] == "/cfg/hook.json"
+    hs = Cecelia.observer_hook_settings("/repo/mcp", "/env/python")
+    entry = only(hs["hooks"]["PreToolUse"])
+    hook = only(entry["hooks"])
+    @test hook["command"] == "/env/python"                     # exec form: no shell, no quoting
+    @test hook["args"] == ["-I", joinpath("/repo/mcp", "cecelia_mcp", "caller_hook.py")]
+    @test !haskey(hook, "shell")
+    m = Regex(entry["matcher"])
+    for t in ("mcp__cecelia-observer__create_chain", "mcp__plugin_cecelia_cecelia-observer__mark_cells",
+              "mcp__cecelia-autonomous__run_chain")
+        @test occursin(m, t)
+    end
+    @test !occursin(m, "mcp__memory__write") && !occursin(m, "Bash")
 
     # structured output parsing
     p = Cecelia._parse_claude_result(
@@ -595,6 +604,12 @@ end
     @test length(r3["sections"][1]["lines"]) == Cecelia.LA_MAX_LINES
     r4 = write_la_doc!(proj; sections = [Dict("heading" => "H$i", "lines" => ["l"]) for i in 1:40])
     @test length(r4["sections"]) == Cecelia.LA_MAX_SECTIONS
+    # the route's author_stamp() rides along as updatedBy; a REPL write has none
+    @test !haskey(r4, "updatedBy")
+    by = Dict("profile" => "alice", "via" => "claude", "model" => "claude-opus-5-5")
+    @test !haskey(read_la_doc(proj), "updatedBy")
+    write_la_doc!(proj; sections = [Dict("heading" => "H", "lines" => ["l"])], updated_by = by)
+    @test read_la_doc(proj)["updatedBy"] == by
 
     # a corrupt sidecar reads as present-but-UNREADABLE, never as "no context"
     write(la_doc_path(proj), "{not json")
@@ -671,4 +686,89 @@ end
         end
         Cecelia.init_cecelia!()   # restore the real config_dir() for the rest of the suite
     end
+end
+
+# ── The terminal plugin (app/src/ai/observer_plugin.jl) ──────────────────────────────────────────────
+# Fixtures are the files `claude plugin marketplace add` + `claude plugin install --config …` wrote into
+# an isolated CLAUDE_CONFIG_DIR (CLI 2.x, 2026-10-29), paths shortened.
+const _PLUGIN_SETTINGS = """
+{"enabledPlugins": {"cecelia@cecelia-local": true},
+ "extraKnownMarketplaces": {"cecelia-local": {"source": {"source": "directory", "path": "/repo/mcp/claude-plugin"}}},
+ "pluginConfigs": {"cecelia@cecelia-local": {"options": {"python": "/p", "mcp_dir": "/m", "pythonpath": "/m:/py",
+   "api_url": "http://127.0.0.1:8080", "token_file": "/t"}}}}"""
+const _PLUGIN_INSTALLED = """
+{"version": 2, "plugins": {"cecelia@cecelia-local": [{"scope": "user",
+  "installPath": "/cfg/plugins/cache/cecelia-local/cecelia/1.0.0", "version": "1.0.0",
+  "installedAt": "2026-10-28T23:45:11.874Z", "lastUpdated": "2026-10-28T23:45:11.874Z"}]}}"""
+
+@testset "Observer plugin — detection, state, CLI, and the manifest agrees with the code" begin
+    mktempdir() do tmp
+        sp, ip = joinpath(tmp, "settings.json"), joinpath(tmp, "installed.json")
+        write(sp, _PLUGIN_SETTINGS); write(ip, _PLUGIN_INSTALLED)
+        have = Cecelia.read_observer_plugin(sp, ip)
+        @test have.installed && have.enabled && have.version == "1.0.0"
+        @test have.marketplace == "/repo/mcp/claude-plugin"
+        want = Dict("python" => "/p", "mcp_dir" => "/m", "pythonpath" => "/m:/py",
+                    "api_url" => "http://127.0.0.1:8080", "token_file" => "/t")
+        @test have.options == want
+        st(h; o = want, m = "/repo/mcp/claude-plugin", v = "1.0.0", legacy = false) =
+            Cecelia.observer_plugin_state(h, o, m, v; legacy)
+        @test st(have) === :current
+        @test st(have; o = merge(want, Dict("api_url" => "http://127.0.0.1:8081"))) === :stale  # port moved
+        @test st(have; m = "/other/mcp/claude-plugin") === :stale                            # another install
+        @test st(have; v = "1.0.1") === :stale                                               # manifest bumped
+        @test st(have; legacy = true) === :stale     # add-json entry: tools without the hook, twice over
+        @test st(merge(have, (; enabled = false))) === :missing
+        # the CLI stores the marketplace path normalised — a separator/case difference is the same place
+        @test Cecelia.same_path("D:\\a\\_temp/x dir\\mcp\\claude-plugin", "d:/a/_temp/x dir/mcp/claude-plugin/"; windows = true)
+        @test !Cecelia.same_path("/a/B/plugin", "/a/b/plugin"; windows = false)      # case matters off Windows
+        @test Cecelia.same_path("/a/b/../b/./plugin/", "/a/b/plugin"; windows = false)
+        @test !Cecelia.same_path("", "/a"; windows = false)
+        @test Cecelia.observer_plugin_state(merge(have, (; marketplace = "/repo/mcp/./claude-plugin/")),
+                                            want, "/repo/mcp/claude-plugin", "1.0.0") === :current
+        # absent / garbage files read as "nothing there" — another tool's files never error a route
+        none = Cecelia.read_observer_plugin(joinpath(tmp, "nope.json"), joinpath(tmp, "nope2.json"))
+        @test !none.installed && !none.enabled && none.marketplace == "" && isempty(none.options)
+        @test st(none) === :missing
+        write(sp, "not json")
+        @test !Cecelia.read_observer_plugin(sp, ip).enabled
+    end
+
+    # options: the same resolution as the --mcp-config spec, so the two servers can't disagree
+    opts = Cecelia.observer_plugin_options("/repo/mcp", "/env/python", "http://127.0.0.1:8080"; token_file = "/t")
+    spec = Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080"; token_file = "/t")
+    @test opts["python"] == spec["command"]
+    @test opts["pythonpath"] == spec["env"]["PYTHONPATH"]
+    @test opts["api_url"] == spec["env"]["CECELIA_API_URL"] && opts["token_file"] == spec["env"]["CECELIA_API_TOKEN_FILE"]
+
+    # CLI builders — install passes every option, so nothing is left for an interactive prompt
+    a = Cecelia.ClaudeAgent(bin = "claude", model = "")
+    ins = Cecelia._build_plugin_install_cmd(a, Dict("b" => "2", "a" => "x y")).exec
+    @test ins == ["claude", "plugin", "install", "cecelia@cecelia-local", "--config", "a=x y", "--config", "b=2"]
+    @test Cecelia._build_plugin_uninstall_cmd(a).exec == ["claude", "plugin", "uninstall", "cecelia@cecelia-local"]
+    @test Cecelia._build_marketplace_add_cmd(a, "/repo/mcp/claude-plugin").exec ==
+          ["claude", "plugin", "marketplace", "add", "/repo/mcp/claude-plugin"]
+    @test Cecelia._build_marketplace_remove_cmd(a).exec == ["claude", "plugin", "marketplace", "remove", "cecelia-local"]
+
+    # the shipped manifest — a JSON file nothing type-checks against this code
+    mcp_dir = joinpath(dirname(dirname(@__DIR__)), "..", "mcp")
+    m = JSON3.read(read(Cecelia._observer_plugin_manifest(mcp_dir), String))
+    mkt = JSON3.read(read(joinpath(Cecelia.observer_marketplace_dir(mcp_dir), ".claude-plugin", "marketplace.json"), String))
+    @test String(m.name) == Cecelia.OBSERVER_PLUGIN_NAME && String(mkt.name) == Cecelia.OBSERVER_MARKETPLACE_NAME
+    @test Cecelia.shipped_plugin_version(mcp_dir) == String(m.version) != ""
+    @test Set(String.(keys(m.userConfig))) == Set(keys(opts))               # every option the code sets
+    srv = m.mcpServers[Symbol(Cecelia.OBSERVER_MCP_NAME)]                    # tool names hang off this
+    @test collect(String.(srv.args)) == spec["args"]
+    @test Set(String.(keys(srv.env))) == Set(keys(spec["env"]))
+    hk = only(m.hooks.PreToolUse)
+    @test String(hk.matcher) == Cecelia.OBSERVER_HOOK_MATCHER
+    h = only(hk.hooks)
+    @test haskey(h, :args) && String(h.args[1]) == "-I" && endswith(String(h.args[2]), "cecelia_mcp/caller_hook.py")
+    @test isfile(joinpath(mcp_dir, "cecelia_mcp", "caller_hook.py"))
+
+    # driven by the active profile, never an ambient CLAUDE_CONFIG_DIR — same rule as claude_config_path
+    withenv("CLAUDE_CONFIG_DIR" => "/cfgdir") do
+        @test Cecelia.claude_settings_path("") == joinpath(homedir(), ".claude", "settings.json")
+    end
+    @test Cecelia.claude_settings_path("/prof") == joinpath("/prof", "settings.json")
 end

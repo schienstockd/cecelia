@@ -148,3 +148,10 @@ export const CLAUDE_EXAMPLES: string[] = [
   'Cell-speed notebook',
   'Segment + track chain',
 ]
+
+/** Kiwi's standing data notice — whatever Claude reads goes to Anthropic. Always shown, amber; why it
+ *  is not dismissible: docs/ai-assist/OBSERVER.md → *The data notice*. */
+export const CLAUDE_DATA_NOTICE = {
+  short: 'What Claude reads is sent to Anthropic',
+  detail: "Check your institute's rules for unpublished or patient data",
+}

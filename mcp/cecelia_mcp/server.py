@@ -29,10 +29,11 @@ import functools
 import json
 import os
 
-from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia.utils import loopback
+from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.discovery import discovery_enabled
@@ -58,7 +59,7 @@ _monitor = SessionMonitor()
 # is what makes "check my project in cecelia" enough on its own — the assistant knows to resolve the
 # project and pull the briefing without the user pasting a prompt. Kept short on purpose; the long
 # form is delivered by get_session_briefing. See cecelia_mcp/guidance.py for the split and its budget.
-mcp = MCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
+mcp = CallerMCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
 
 
 # ── Discovery toggle (TASK_DISCOVERY_PLAN Decision 9) ────────────────────────────────────────────

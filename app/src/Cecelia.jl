@@ -86,7 +86,7 @@ export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
-export read_lab_log, append_lab_log!, lab_log_user_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
+export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
 export attr_value_counts, image_attr_groups
@@ -416,6 +416,7 @@ include("project_io.jl")
 # scheduler.jl (uses _kill_proc_tree). The lab log's one-off "Ask Claude" pass was removed 2026-09-24:
 # Kiwi's validated turn supersedes it; interactive sessions still write the lab log via append_lab_log.
 include("ai/agent_runner.jl")
+include("ai/observer_plugin.jl")   # the terminal plugin: observer MCP + caller hook
 include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log out
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
@@ -460,7 +461,7 @@ export ClaudeAuth, claude_auth_status, claude_auth_logout!,
        claude_login_start!, claude_login_status, claude_login_code!, claude_login_cancel!
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
-export REQUEST_VIA, author_stamp
+export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp
 export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
        set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
        set_hpc_project_account!, hpc_test_connection,
@@ -473,11 +474,13 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
        hpc_pending_cancels, hpc_retry_cancels!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
-       observer_api_url,
-       OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
+       observer_api_url, observer_hook_settings, observer_caller_hook, OBSERVER_HOOK_MATCHER,
+       OBSERVER_MCP_NAME, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
+       OBSERVER_PLUGIN_ID, observer_marketplace_dir, observer_plugin_options, shipped_plugin_version,
+       claude_settings_path, read_observer_plugin, observer_plugin_state, install_observer_plugin,
        observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model,
        turn_profile
 

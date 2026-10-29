@@ -86,6 +86,9 @@ function api_lablog_append(body_bytes::Vector{UInt8})
             "or append as [Claude]."))
     end
     author = lab_log_user_author(author, active_profile_name())
+    # a Claude entry names its model when the caller hook supplied it (REQUEST_CALLER; app requests
+    # never bind one) — the lab log's equivalent of `author_stamp()`'s `model`
+    author = lab_log_claude_author(author, REQUEST_CALLER[].model)
     block = try
         append_lab_log!(proj, author, lines)
     catch e

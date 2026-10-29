@@ -96,6 +96,23 @@
             raw = JSON3.read(read(cpath("c1b"), String))
             @test stamp(raw.createdBy) == alice_claude && stamp(raw.updatedBy) == alice_claude
 
+            # ── The calling model + session (caller hook → MCP headers) join a Claude stamp ─
+            sid = "578e0b74-c216-49f3-b993-745a618bdd7e"
+            hdrs(m, s) = ["X-Cecelia-Client" => "claude", "X-Cecelia-Model" => m, "X-Cecelia-Session" => s]
+            mk(h, name) = handle_http(HTTP.Request("POST", "/api/chains/create", h),
+                Vector{UInt8}(JSON3.write(Dict("projectUid" => proj.uid,
+                    "template" => Dict("name" => name, "nodes" => [node], "edges" => [])))))
+            @test mk(hdrs("claude-opus-5-5", sid), "m1")[1] == 200
+            @test stamp(JSON3.read(read(cpath("m1"), String)).createdBy) ==
+                  merge(alice_claude, Dict("model" => "claude-opus-5-5", "session" => sid))
+            # an off-shape header is dropped (it would land in project JSON), the valid one kept
+            @test mk(hdrs("x\" ; evil", sid), "m2")[1] == 200
+            @test stamp(JSON3.read(read(cpath("m2"), String)).createdBy) == merge(alice_claude, Dict("session" => sid))
+            # the app can't claim a model: only `via: claude` requests bind them
+            @test mk(["X-Cecelia-Model" => "claude-opus-5-5"], "m3")[1] == 200
+            @test stamp(JSON3.read(read(cpath("m3"), String)).createdBy) == alice_app
+            @test author_stamp() == alice_app   # unbound again outside the request
+
             # ── Task requests carry the asker across the wire to the runner ───────────────
             req = Cecelia.task_request(Cecelia.task_request_dict(
                 Cecelia.TaskRequest(; task_id = "t", fun_name = "f", project_uid = uid, by = "alice")))

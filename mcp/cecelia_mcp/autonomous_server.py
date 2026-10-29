@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import functools
 
-from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia_mcp.autonomous import AutonomousClient, LockViolation, locked_project, required_prefix
+from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.client import ApiError, DisallowedRoute
 from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 
@@ -26,7 +27,7 @@ INSTRUCTIONS = (
 )
 
 _client = AutonomousClient()   # this user's backend: loopback.default_base_url()
-mcp = MCPServer("cecelia-autonomous", instructions=INSTRUCTIONS)
+mcp = CallerMCPServer("cecelia-autonomous", instructions=INSTRUCTIONS)
 
 
 def _tool(fn):

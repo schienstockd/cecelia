@@ -120,8 +120,18 @@ of text they had no reason to read. Two things fixed it, both in `mcp/cecelia_mc
 | `SERVER_INSTRUCTIONS` | `MCPServer(instructions=…)` → the `initialize` response → the client's system prompt | **always in context**, in every session with the server registered | the entry point only: resolve the project via `list_projects`, then `get_session_briefing`; read-only + designs-but-never-starts; don't self-configure |
 | `BRIEFING_GUIDANCE` | `get_session_briefing`'s `guidance` field | nothing until a session opens a project | the working rules: grouping/replicates, boards, chains, cohort QC, how to open |
 
-The split is a budget, not taste. The observer is registered **user-scope** (`claude mcp add-json …
--s user`, see OBSERVER-SETUP.md), so `instructions` sits in the system prompt of *every* `claude`
+### The data notice
+
+Kiwi opens with one amber line: *What Claude reads is sent to Anthropic* (`CLAUDE_DATA_NOTICE`,
+`frontend/src/lib/claudeOverview.ts`), with *Check your institute's rules for unpublished or patient
+data* on hover. Everything Claude reads — attached captures, plots, tool results, notes — leaves the
+machine, in Kiwi and in a terminal session alike. It is **always shown and not dismissible**: a notice
+clicked away once stops doing its job, and asking an AI has become ordinary enough that people no
+longer think of it unprompted. Amber, not neutral info, because it is a caution to act on. The rules
+themselves are the institute's, so the hover names the action, not a policy.
+
+The split is a budget, not taste. The observer is installed **user-scope** (the Cecelia Claude Code
+plugin, see OBSERVER-SETUP.md), so `instructions` sits in the system prompt of *every* `claude`
 session on the machine — most of which are not about Cecelia. Anything that can wait for the
 briefing waits for the briefing; a rule that must hold *before* the first tool call cannot.
 

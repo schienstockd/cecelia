@@ -1,0 +1,68 @@
+name: Verify observer plugin setup
+
+# Runs scripts/verify_observer_plugin.jl — Kiwi's terminal Set up (`install_observer_plugin`) against the
+# REAL `claude` CLI on every OS: named profiles with their own CLAUDE_CONFIG_DIR (shared workstations),
+# a read-only install under a path with a space, the migration off an old `claude mcp add-json`
+# registration, and the caller hook run from the stored options. No Claude login is needed — plugin
+# install/uninstall never reach the API.
+#
+# The CLI comes from npm on purpose: on Windows that installs a `claude.cmd` shim, which Cecelia has to
+# spawn through `cmd /c` (`_agent_spawn_argv`) — the path where every `--config key=value` argument is
+# re-parsed by cmd.exe, and the one a unit test can't exercise.
+
+on:
+  pull_request:
+    paths:
+      - app/src/ai/observer_plugin.jl
+      - app/src/ai/agent_runner.jl
+      - mcp/claude-plugin/**
+      - mcp/cecelia_mcp/caller_hook.py
+      - scripts/verify_observer_plugin.jl
+      - .github/workflows/verify-observer-plugin.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: ${{ matrix.os }} — observer plugin setup
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      - name: Install Julia
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+
+      - name: Cache Julia depot
+        uses: julia-actions/cache@v3
+
+      - name: Ensure the General registry
+        run: julia -e 'using Pkg; isempty(Pkg.Registry.reachable_registries()) && Pkg.Registry.add("General")'
+
+      - name: Instantiate Julia (package env)
+        run: pixi run julia-instantiate
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install the Claude Code CLI (npm — a .cmd shim on Windows)
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify Set up across profiles
+        shell: bash
+        run: |
+          DEV="$RUNNER_TEMP/cecelia dev"
+          mkdir -p "$DEV"
+          CECELIA_DEV_DIR="$DEV" pixi run julia --startup-file=no --project=app scripts/verify_observer_plugin.jl

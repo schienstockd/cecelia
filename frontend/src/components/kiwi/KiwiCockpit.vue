@@ -46,7 +46,7 @@ import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
-import { CLAUDE_TERMINAL } from '../../lib/claudeOverview'
+import { CLAUDE_DATA_NOTICE, CLAUDE_TERMINAL } from '../../lib/claudeOverview'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, fetchCaptureEnvelope, type CaptureEnvelope,
@@ -285,10 +285,10 @@ async function clearPairing() {
 // ── Observer state (availability + terminal setup) — store declared with the picker above ─
 const terminalStateLabel = computed(() => {
   const s = observer.terminalState
-  if (s === 'current')   return 'Registered'
-  if (s === 'stale')     return 'Stale (re-register)'
-  if (s === 'shadowed')  return 'Shadowed (local scope wins)'
-  if (s === 'missing' || !s) return 'Not registered'
+  if (s === 'current')   return 'Plugin installed'
+  if (s === 'stale')     return 'Out of date'
+  if (s === 'shadowed')  return 'Overridden by a folder entry'
+  if (s === 'missing' || !s) return 'Not set up'
   return s
 })
 const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
@@ -319,6 +319,10 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       </button>
     </template>
     <div class="kiwi-body">
+      <!-- Standing data notice — always on, never dismissible (see CLAUDE_DATA_NOTICE). Above Account so
+           it is the first line in every state, project open or not. -->
+      <InlineNote class="kiwi-data-note cc-fs-sm" severity="warn"
+                  :short="CLAUDE_DATA_NOTICE.short" :detail="CLAUDE_DATA_NOTICE.detail" />
       <!-- The account Kiwi bills, + Log in / Log out. Switching profiles lives in Preferences →
            Profiles (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
       <div v-if="accountLabel" class="kiwi-row" data-guide="kiwi.account">
@@ -528,7 +532,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <CollapsibleSection label="Assistant" max-height="none"
                             fill
                             :open="sectionOpen('assistant')" @update:open="() => toggleSection('assistant')"
-                            tip="Is the assistant CLI installed, and is its MCP entry registered in your terminal?">
+                            tip="Is the assistant CLI installed, and is the Cecelia plugin set up for your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
             <span class="cc-dot" :class="observer.available ? 'cc-dot-ok' : 'cc-dot-fail'"

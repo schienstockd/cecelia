@@ -37,22 +37,36 @@ function _write_observer_mcp_config(; headless::Bool = false)::String
     path
 end
 
+# The `--settings` file the app's own turns load: the caller hook, so a Kiwi turn's writes record the
+# model that made them (`observer_hook_settings`). Rewritten each time, like the MCP config beside it.
+function _write_observer_hook_settings()::String
+    path = joinpath(ensure_config_dir(), "observer-hook-settings.json")
+    write_json_atomic(path, observer_hook_settings(_observer_mcp_dir(), python_bin_path()))
+    path
+end
+
 # The spec THIS install needs registered — same resolution as the --mcp-config file, so detection and
 # registration can never disagree about what "set up" means.
 _observer_want_spec() = observer_mcp_spec(_observer_mcp_dir(), python_bin_path(), _observer_api_url())
 
+# The plugin options THIS install needs — same resolution as the --mcp-config file and the spec.
+_observer_want_options() = observer_plugin_options(_observer_mcp_dir(), python_bin_path(), _observer_api_url())
+
 # `{state, ready}` for the user's own terminal. `state` ∈ missing/stale/shadowed/current; `ready` is the
-# single thing the UI branches on. A STALE registration counts as not-ready: it points at another
-# checkout's interpreter or a different port, so the tools would silently fail to connect in the user's
-# session — they need the same one-click re-sync, not a Chat button that appears to work.
+# single thing the UI branches on. The terminal gets the observer through the Cecelia Claude Code PLUGIN
+# (app/src/ai/observer_plugin.jl): STALE covers a plugin pointing at another install, an older plugin
+# version, changed options (port, interpreter), and a leftover `claude mcp add-json` registration —
+# that one still gives tools, but without the caller hook, so writes can't record the model.
 #
-# SHADOWED outranks a good user-scope entry: a leftover `local`-scope entry wins over ours in the
-# directory it names, so the registration is correct and the user's session still has no tools. That
-# looked like "the setup button does nothing". `shadowedDirs` names the folders so the UI can say which.
+# SHADOWED outranks a good install: a leftover `local`-scope entry wins in the directory it names, so
+# the user's session there talks to the wrong server. `shadowedDirs` names the folders so the UI can say
+# which.
 function _observer_terminal_state()
-    want    = _observer_want_spec()
-    st      = observer_registration_state(want)
-    shadows = shadowing_observer_dirs(want)
+    mcp_dir = _observer_mcp_dir()
+    st = observer_plugin_state(read_observer_plugin(), _observer_want_options(),
+                               observer_marketplace_dir(mcp_dir), shipped_plugin_version(mcp_dir);
+                               legacy = read_registered_observer_spec() !== nothing)
+    shadows = shadowing_observer_dirs(_observer_want_spec())
     st === :current && !isempty(shadows) && (st = :shadowed)
     Dict{String,Any}("state" => String(st), "ready" => st === :current,
                      "shadowedDirs" => shadows)
@@ -75,35 +89,23 @@ function api_observer_status(req::HTTP.Request)
     200, JSON3.write(resp)
 end
 
-# One-click terminal setup. Registers the SAME server spec the in-app agent uses at Claude Code's
-# `user` scope, so the biologist's next plain `claude` has the observer tools — nothing to copy, no
-# path to mistype. Safe to click repeatedly: it removes first, so it doubles as a re-sync after the
-# app moves or the port changes. Body is ignored (no inputs — the spec is entirely server-derived);
-# `scope` is deliberately NOT client-settable.
+# One-click terminal setup: install the Cecelia plugin (observer MCP + caller hook) through Claude
+# Code's own CLI, so the biologist's next plain `claude` has the tools and its writes record the model.
+# Safe to click repeatedly: an already-current install is left alone, anything else is re-synced (see
+# install_observer_plugin). Body is ignored — every value is server-derived; scope is NOT client-settable.
 function api_observer_register(::Vector{UInt8})
     agent = ClaudeAgent()
     if !agent_available(agent)
         return 200, JSON3.write((; ok = false, available = false,
             error = "No assistant CLI found. Install Claude Code to enable this."))
     end
-    spec = _observer_want_spec()
-    prior = read_registered_observer_spec()
-    # `local`-scope leftovers override our `-s user` entry in the folders they name, so setup is not
-    # done until they're gone — checked BEFORE the early return below, which otherwise reports
-    # "Already set up" for a terminal that has no working tools.
-    shadows = shadowing_observer_dirs(spec)
-    ok, message = if observer_registration_state(prior, spec) === :current
-        # Already correct → touch nothing. The user's main Claude config shouldn't be rewritten just
-        # because someone clicked a button twice.
-        (true, isempty(shadows) ? "Already set up" : "Registration was already correct")
-    else
-        # Otherwise pass the entry that's there now so a failed re-sync can put it back (see
-        # register_observer_mcp) — and so a first-time setup never runs a `remove` at all.
-        register_observer_mcp(agent, JSON3.write(spec);
-                              prior_json = prior === nothing ? "" : JSON3.write(prior))
-    end
-    # Clear the shadowing entries only once the user-scope one is good — removing them after a failed
-    # add would leave the user with no working registration at all. Reported per folder: this deletes
+    # `local`-scope leftovers override the plugin's server in the folders they name, so setup is not
+    # done until they're gone.
+    shadows = shadowing_observer_dirs(_observer_want_spec())
+    ok, message = install_observer_plugin(agent, _observer_mcp_dir(), _observer_want_options();
+                                          legacy = read_registered_observer_spec() !== nothing)
+    # Clear the shadowing entries only once the plugin is in — removing them after a failed install
+    # would leave the user with no working registration at all. Reported per folder: this deletes
     # something the user (or an older install) put there, so it must never be a silent side effect.
     if ok && !isempty(shadows)
         removed, failed = remove_shadowing_observer_mcps(agent, shadows)
