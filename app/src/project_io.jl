@@ -48,8 +48,10 @@ _skip_dir(name::AbstractString)::Bool = any(s -> endswith(name, s), _SKIP_DIR_SU
     default_export_dir() -> String
 
 Where bundles land when the caller doesn't pick a destination: a `cecelia_exports/` sibling of the
-projects dir (next to — not inside — the projects tree)."""
-default_export_dir()::String = joinpath(dirname(rstrip(projects_dir(), '/')), "cecelia_exports")
+projects dir (next to — not inside — the projects tree). Both separators are stripped: the setup
+screen stores the typed path verbatim, and on Windows `D:\\Cecelia\\projects\\` would otherwise give
+`dirname` the projects dir itself, landing exports inside it."""
+default_export_dir()::String = joinpath(dirname(rstrip(projects_dir(), ['/', '\\'])), "cecelia_exports")
 
 # Best-effort rewrite of the project uid where it's embedded as USER data we can't derive from location:
 # a notebook's hardcoded `load_project("<old>")`. Everything else that references the project — analysis
