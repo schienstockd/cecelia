@@ -5,7 +5,8 @@ models' channels) and Fix 3 (sparse Z-stitch) are **built** (#1825). D1 + D2 (Au
 overlap) and P2 steps 2–4 are **built** on `auto-tiling`, with cellpose's cost measured; coastal's
 Auto is the whole frame until a second frame size is measured. D4 (one window per frame
 when `normaliseToWhole` is off, never per tile) is **built** on `normalise-over`; kept as the
-existing bool, so saved params need no migration. Next: D3 (seam rule), P3–P4.
+existing bool, so saved params need no migration. P3 (lossless blank-tile skip)
+is **built** on `skip-blank-tiles`. Next: D3 (seam rule), P4.
 
 ## Goal
 

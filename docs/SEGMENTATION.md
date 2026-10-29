@@ -372,6 +372,27 @@ used: its intravital frames are a few hundred to ~1000 px. One measured point so
 0.8 GB GPU over 31 frames. Its memory is the temporal window and the flow caches, not the model.
 A cost model needs a second frame size.
 
+### Blank tiles are skipped
+
+A tile is skipped (`_tile_is_blank`) when every channel its model group reads is at or below the low
+end of that channel's intensity window: whole-image, or the frame's with `normaliseToWhole` off.
+That is lossless, not a heuristic. The engine maps the low end to 0 and clips, and thresholds and
+filters before that only lower or smooth, so such a tile would reach the model as all zeros.
+- **Engines opt in** (`_blank_is_empty`) only if they find nothing in zeros. Cellpose does unless
+  `invert` is on, since inverted zeros are ones; it returns no labels for all-zero 2D and stitched 3D
+  input (checked on `cpsam_v2`).
+- **Coastal does not opt in.** Its tile carries a temporal window that can bring in signal from
+  other frames.
+- **A channel without a window** (too empty to have one) is never skipped.
+
+On a tile scan these are the tiles outside the tissue. `4rNbMp/f8gzA2` (16898 × 20329, 1024 px tiles):
+- 70 of 340 tiles skipped;
+- 459 s → 411 s;
+- labels byte-identical to the run without the skip.
+
+The other two lymphoid scans in that set have no blank tiles. Patchworks' empty-tile skip
+thresholds by Otsu instead, which is lossy: a cell dimmer than the cut is dropped.
+
 Z: each plane is segmented in 2D, then stitched across Z (`stitchThreshold`). No explicit Z tiling
 is done. Cellpose's stitched eval runs three steps:
 1. per-plane masks with the size filter off;
