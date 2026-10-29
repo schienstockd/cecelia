@@ -32,6 +32,7 @@ const KIWI_READ_TOOLS = [
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
     "get_task_catalogue",   # what each step is for — "which step fixes this?" is a fair Kiwi question
+    "gate_plot", "gate_cells_view",   # a population's gate and its cells in the image, as pictures
 ]
 const KIWI_EXCLUDED_TOOLS = Dict(
     "list_projects" => "other projects — a turn is scoped to one",
@@ -48,9 +49,6 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "seek_viewer" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
     "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",
     "mark_tile" => "point-out", "mark_freeform" => "point-out", "select_on_plot" => "point-out",
-    # reads that return a PICTURE of a gate; never on the allow-list, now decided as such — moving
-    # them to KIWI_READ_TOOLS would let a turn look at gates
-    "gate_plot" => "a gate picture — not offered to Kiwi", "gate_cells_view" => "a gate picture — not offered to Kiwi",
 )
 _kiwi_allowed_tools() = String["mcp__" * OBSERVER_MCP_NAME * "__" * t for t in KIWI_READ_TOOLS]
 
