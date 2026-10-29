@@ -1029,3 +1029,37 @@ class DiscoveryToggleQcTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoGuiSurfaceTest(unittest.TestCase):
+    """Headless mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN P2): the tools that read or drive the GUI
+    are not registered, and the briefing says what replaces the GUI's half of the rules."""
+
+    GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_plots",
+                "mark_plot", "open_analysis_board_plot", "seek_viewer", "mark_tile", "get_landscape",
+                "get_recent_captures", "get_capture", "get_capture_landscape_tiles", "register_push_target",
+                "poll_observations", "set_observer_active", "get_observer_stats"}
+
+    def _load(self, no_gui: str):
+        import importlib
+        import os
+        with unittest.mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": no_gui}):
+            g = importlib.reload(guidance)
+            s = importlib.reload(server)
+            names = {t.name for t in asyncio.run(s.mcp.list_tools())}
+            out = (names, g.SERVER_INSTRUCTIONS, g.BRIEFING_GUIDANCE)
+        importlib.reload(guidance)
+        importlib.reload(server)
+        return out
+
+    def test_gui_tools_only_with_a_gui(self):
+        names, _, briefing = self._load("")
+        self.assertTrue(self.GUI_ONLY <= names)
+        self.assertNotIn("NO GUI", briefing)
+        names, instructions, briefing = self._load("1")
+        self.assertFalse(self.GUI_ONLY & names)
+        self.assertIn("get_session_briefing", names)          # the reading half is untouched
+        for phrase in ("NO GUI", "run_chain", "create_project", "pixi run console", "need the GUI"):
+            self.assertIn(phrase, briefing)
+        self.assertIn("no GUI", instructions)
+        self.assertLess(len(instructions.split()), 300)

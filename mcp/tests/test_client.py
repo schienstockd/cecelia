@@ -829,6 +829,16 @@ class ClientTest(unittest.TestCase):
             self.c.list_images("proj-abc")
         self.assertEqual(up.call_count, 2)
 
+    def test_auto_pair_skipped_in_headless_mode(self):
+        # No GUI (CECELIA_MCP_NO_GUI=1): a pairing is how pushes reach the GUI, so none is written.
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
+               "CLAUDE_CODE_MESSAGING_TOKEN":  "t",
+               "CECELIA_MCP_NO_GUI":           "1"}
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+        self.assertEqual(up.call_count, 1)               # the tool call only — no pair POST
+        self.assertEqual({}, self.c._paired)
+
     def test_register_push_target_errors_without_env(self):
         # Explicit re-pair when env vars are absent ⇒ ApiError with an actionable message so the
         # user knows the fix is to upgrade Claude Code (not to keep retrying).
