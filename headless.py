@@ -73,6 +73,34 @@ def _start(log_path: str):
     return proc if app._server_ready() else None
 
 
+def first_run_setup(default: str, validate, ask=input, say=print) -> str | None:
+    """The browser's first-launch wizard, in the terminal: where projects live. `validate(path)` is the
+    wizard's own check (`/api/setup/validate` → `{ok, message}`). Enter takes `default`; None = quit."""
+    say("First run: where should Cecelia keep its projects?")
+    while True:
+        path = ask(f"Folder [{default}], q to quit: ").strip() or default
+        if path.lower() == "q":
+            return None
+        got = validate(path)
+        if got.get("ok"):
+            return path
+        say(f"  {got.get('message') or 'not usable'}")
+
+
+def _ensure_setup() -> bool:
+    """First launch on a fresh install: the projects folder is unset (`setupRequired`), and the GUI
+    would send the user to its /setup page. Same routes, asked here. False = the user quit."""
+    if not _call("/api/diagnostics").get("setupRequired"):
+        return True
+    default = _call("/api/setup/defaults").get("projectsDir") or "~/cecelia-projects"
+    path = first_run_setup(default, lambda p: _call(
+        "/api/setup/validate?path=" + urllib.parse.quote(p)))
+    if path is None:
+        return False
+    print(f"Projects folder: {_call('/api/setup/init', {'projectsDir': path}).get('projectsDir')}")
+    return True
+
+
 def pick_project(projects: list[dict], ask=input, say=print) -> str | None:
     """Ask which project to open. `""` = a new project (Claude creates it), None = quit. Enter alone
     takes the most recently opened one — the list is already in that order (server-side)."""
@@ -119,6 +147,8 @@ def main(argv: list[str]) -> int:
             print("Cecelia server did not start — see the log above for why.", file=sys.stderr)
             return 1
     try:
+        if not _ensure_setup():
+            return 0
         if not project:
             picked = pick_project(_call("/api/projects").get("projects") or [])
             if picked is None:

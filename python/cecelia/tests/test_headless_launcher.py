@@ -55,6 +55,29 @@ class PickProjectTest(unittest.TestCase):
         self.assertEqual(self._pick([""], projects=[])[0], "")
 
 
+class FirstRunSetupTest(unittest.TestCase):
+    """A fresh install has no projects folder; the GUI's /setup wizard asks for one. Same check here."""
+
+    def test_enter_takes_the_default_and_a_bad_path_asks_again(self):
+        h = _load()
+        answers = iter(["relative/x", ""])
+        said = []
+        checked = []
+
+        def validate(p):
+            checked.append(p)
+            return {"ok": p.startswith("~"), "message": "Use an absolute path (or one starting with ~)."}
+
+        got = h.first_run_setup("~/cecelia-projects", validate, ask=lambda _: next(answers), say=said.append)
+        self.assertEqual(got, "~/cecelia-projects")
+        self.assertEqual(checked, ["relative/x", "~/cecelia-projects"])
+        self.assertIn("absolute path", said[-1])
+
+    def test_q_quits(self):
+        h = _load()
+        self.assertIsNone(h.first_run_setup("~/p", lambda p: {"ok": True}, ask=lambda _: "q", say=lambda _: None))
+
+
 class ClaudeEnvTest(unittest.TestCase):
     def test_unset_removed_and_set_applied(self):
         h = _load()
