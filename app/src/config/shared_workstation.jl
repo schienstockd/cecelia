@@ -13,10 +13,15 @@
 #   claudeLogoutOnQuit — any orderly quit (`/api/app/shutdown`: Quit button, closing the packaged app,
 #                        the dev supervisor's stop) logs every named profile out of Claude first, so
 #                        no person's login survives the app.
+#   purgeClaudeConversations — a named profile's Claude conversations (transcripts, prompt history,
+#                        pasted text) are deleted when its session ends: Log out, quit, and — as the
+#                        backstop for a crash — the next profile pick. A person can also turn this on
+#                        for just themselves (Preferences → Kiwi). `ai/claude_conversations.jl`.
 
 const SHARED_WORKSTATION_ITEMS = (
     (key = "oneClaudeLogin", default = false),
     (key = "claudeLogoutOnQuit", default = false),
+    (key = "purgeClaudeConversations", default = false),
 )
 
 const _SHARED_WORKSTATION_TABLE = "sharedWorkstation"
