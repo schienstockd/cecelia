@@ -251,7 +251,8 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 - GPU detection (CUDA → MPS → CPU)
 - Model loading and caching (`_get_model`)
 - Channel preparation: threshold → median/gaussian filter → percentile normalise
-- Calling `cellpose.model.eval` with correct channel stacking and 3D stitch mode
+- Calling `cellpose.model.eval` with correct channel stacking; 3D stitching via `stitch_planes` (v4)
+- Declaring its channels (`_model_channels`) and reading them through `tile_channel`
 - Physical diameter conversion: `cell_diam_um / phys_size_x` → pixels
 - Returns a single `uint32` label array per call
 
@@ -296,11 +297,50 @@ contract (`[C, Y, X]`, checked) at its two `predict_slice` call sites.
 - `write_yx` — slice without overlap (where we write to the label array)
 - `crop_yx` — `(pad_top, pad_bottom, pad_left, pad_right)` amounts to trim from the prediction
 
-After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` merges via `np.maximum`.
+After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` merges, filling only pixels an earlier model group left unlabelled.
 
-Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice + inter-slice stitch). No explicit Z tiling is done.
+**Only the channels the models use are read.** `predict_from_zarr` reads one whole frame and tiles
+it in RAM, so the frame's channel count is the run's memory, whatever the tile size. An engine
+declares its channels per model group (`_model_channels`: cellpose's cell + nucleus, coastal's
+cell). The base reads their union (`_context_channels`) into both the frame and the temporal window,
+and an engine that declares nothing still gets every channel. Narrowing renumbers the channel axis,
+so a subclass reads a channel through `tile_channel(tile, ch)` (or `TemporalWindow.channels`), never
+`tile[ch]`. On a 25-channel 16898 × 20329 tile scan segmented on one channel, the frame went from
+17 GB to 0.7 GB, and the whole cellpose run peaked at 6.0 GB (measured 2026-10-29,
+`4rNbMp/f8gzA2`). The window was narrowed first: on a 4-channel movie where coastal projects one
+channel, the all-channel window read was 3.14 s of a 9.35 s timepoint (`zolIMa/fXgbTl`).
 
-That stitch (`cellpose.utils.stitch3D`) reuses ids across an empty plane before its first match, so two cells several planes apart can come back as ONE label whose centroid sits in the gap. `split_z_gaps` (`cellpose_utils.py`) gives every z-contiguous run its own id after every stitched call; a stitched cell is contiguous by construction, so a correct stitch passes through unchanged.
+Z: each plane is segmented in 2D, then stitched across Z (`stitchThreshold`). No explicit Z tiling
+is done. Cellpose's stitched eval runs three steps:
+1. per-plane masks with the size filter off;
+2. `stitch3D`;
+3. holes filled and objects under 15 voxels removed on the stitched volume.
+
+`CellposeUtils` runs the same three steps with its own stitch (`stitch_planes`). `stitch3D` builds
+a dense overlap matrix of (labels on a plane) × (largest id so far), so its cost grows with the
+square of the tile area. `stitch_planes` uses the same matching rule over only the label pairs
+that share a pixel.
+
+| 26-plane FtGoJO tile | `stitch3D` | `stitch_planes` |
+|---|---|---|
+| 1024 px | 77.7 s, 3.6 GB | 73.9 s, 3.2 GB (labels byte-identical) |
+| 2024 px (whole frame) | 1242 s, 21.3 GB | 265 s, 5.4 GB |
+
+At 2024 px the outputs differ, and both differences are `stitch3D` defects:
+- **24 objects merged across the tile.** Each is a cell on the last plane that took the id of an
+  unrelated cell about 1500 px away, which spans every plane. The id offset is the same (65,098) in
+  every case, which points to a 16-bit id wrap inside `stitch3D` (not traced further). There is no Z
+  gap between the two, so `split_z_gaps` cannot repair it.
+- **29 fragments under 15 voxels kept.** They were one colliding id when the size filter ran, and
+  only became separate objects in `split_z_gaps` afterwards.
+
+`stitch_planes` produces neither.
+
+`stitch3D` also reuses ids across an empty plane before its first match, so two cells several planes
+apart can come back as ONE label whose centroid sits in the gap. `stitch_planes` gives every
+unmatched label a fresh id instead. `split_z_gaps` (`cellpose_utils.py`) still runs after every
+stitched call: a correct stitch passes through it unchanged. The cellpose 3 opt-in path still calls
+cellpose's own stitch.
 
 ---
 

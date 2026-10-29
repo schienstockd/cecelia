@@ -689,26 +689,11 @@ class CoastalUtils(SegmentationUtils):
     # ── Input preparation ─────────────────────────────────────────────────────
 
     def _model_channels(self, model_params):
-        """The image channel indices one model group projects."""
+        """The image channel indices one model group projects — `cellChannels` and nothing else.
+        The base reads only the union of these over the groups (`_context_channels`)."""
         return script_utils.channel_indices(
             model_params.get('cellChannels'), 'cellChannels',
             'coastal_models_for_python (coastal.jl)') or [0]
-
-    def _context_channels(self):
-        """Only the channels some group actually projects — the rest are never read.
-
-        Coastal projects `cellChannels` and nothing else, so on a 4-channel movie segmented on one
-        channel the base was reading four times the pixels it could use: the temporal window is 17
-        frames deep, which made it the second most expensive thing in the task (3.14 s of a 9.35 s
-        timepoint on zolIMa/fXgbTl, against 4.88 s for all the flow and inference).
-
-        The UNION across groups, because one window serves all of them (see `_context_channels` in
-        the base). `_project_window` then maps an image channel onto its position in that union —
-        the mapping is the whole safety of this, since dropping channels renumbers the axis and an
-        unmapped index would quietly project the wrong channel.
-        """
-        models = (self.params.get('models') or {}).values()
-        return tuple(sorted({int(c) for mp in models for c in self._model_channels(mp)}))
 
     def _project_window(self, context, model_params, norm_params, context_channels=None):
         """`[W, C, ...]` window → `[W, ...]` single-channel float32 in 0–255.

@@ -94,12 +94,18 @@ class TestCoastalMatchFloor(unittest.TestCase):
 
 
 class _CollidingModel:
-    """A cellpose model whose stitched output carries the collision; per-plane output is all 1s."""
+    """Per-plane output that `stitch3D` would collide: cell 1 on plane 0, nothing on plane 1, a
+    DIFFERENT cell 1 on plane 2. Cells are 16 px so the 15-voxel size filter keeps them. With the
+    size filter off (`min_size=-1`, the stitched path) that is what it returns; otherwise every
+    plane is all 1s, for the independent-slices case."""
 
     def eval(self, x, **kw):
-        if isinstance(x, list):
-            return [np.ones(p.shape[:2], np.uint32) for p in x], None, None
-        return _collided(), None, None
+        if kw.get('min_size') == -1:
+            out = [np.zeros(p.shape[:2], np.uint32) for p in x]
+            out[0][1:5, 1:5] = 1
+            out[2][5:9, 5:9] = 1
+            return out, None, None
+        return [np.ones(p.shape[:2], np.uint32) for p in x], None, None
 
 
 class TestPredictSliceApplies(unittest.TestCase):
@@ -117,7 +123,8 @@ class TestPredictSliceApplies(unittest.TestCase):
 
     def test_stitched_3d_is_split(self):
         out = self.seg.predict_slice(self.tile, self._params(stitchThreshold=0.2))
-        self.assertNotEqual(out[0, 1, 1], out[2, 7, 7])
+        self.assertTrue(out[0, 2, 2] and out[2, 6, 6])
+        self.assertNotEqual(out[0, 2, 2], out[2, 6, 6])
 
     def test_independent_slices_keep_per_plane_ids(self):
         """`stitchThreshold=0` numbers labels per plane BY DESIGN; that is not a collision to repair."""
