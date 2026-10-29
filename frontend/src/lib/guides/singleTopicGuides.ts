@@ -281,7 +281,7 @@ export const useTheBlackboardGuide: GuideDef = {
       anchor: 'nav:/blackboard',
       placement: 'right',
       title: 'Blackboard',
-      text: 'One markdown surface per project — every Kiwi turn about this project lands here too.',
+      text: 'One markdown surface per project — save a Kiwi reply here to keep it.',
       bullets: ['Reach it from the sidebar; the list opens straight away.'],
       clickAnchor: true,
     },
