@@ -30,7 +30,7 @@ import FloatingCanvasHost from '../../components/canvas/FloatingCanvasHost.vue'
 import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
-import { isInteractiveView, pageViews } from '../../components/canvas/interactiveViews'
+import { isInteractiveView, pageViews, migrateViewKey } from '../../components/canvas/interactiveViews'
 import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, DEFAULT_VIS, type VisProps } from '../../plots/plot'
@@ -75,13 +75,13 @@ const {
   zoom, fitWidth, fitHeight, setZoom, resetZoom,
 } = useFloatingCanvas<ClusterPanelState>(
   ckey,
-  () => ({ kind: 'umap', labels: true, hl: [] }),
+  () => ({ kind: 'clusterMap', labels: true, hl: [] }),
 )
 
 // migrate persisted panel kinds to the CLUSTER_PANELS registry keys (legacy hyphenated → camelCase),
 // so old canvases keep working now that the page renders panels generically from the registry.
 const KIND_ALIASES: Record<string, string> = { 'hmm-states': 'hmmStates', 'hmm-transitions': 'hmmTransitions' }
-for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.state.kind = a }
+for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.state.kind = a; else migrateViewKey(p.state) }
 
 // suffix is PAGE-LEVEL (you view one clustering run at a time, like picking a segmentation).
 // Highlighting the eye shows a pop on the UMAP (its colour, other clusters greyed) + breaks the
@@ -97,7 +97,7 @@ const { suffix, highlighted, scope, vis: gVis, showManager, tileCols } = useView
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, labelMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
-  runMembers, validUids, strayUids, missingUids, shownPopsFor,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor, clusterAxes,
 } = useClusterContext({
   projectUid, imageUids: computed(() => props.imageUids),
   popType: computed(() => props.popType), suffix, g,
@@ -218,6 +218,8 @@ const ctxFor = (s: ClusterPanelState) => ({
   projectUid: projectUid.value, imageUids: validUids.value, setUid: setUid.value,
   popType: props.popType, suffix: suffix.value, shownPops: shownPopsFor(panelHL(s)),
   vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
+  axes: clusterAxes.value[suffix.value] ?? null,   // the run's diffusion axis names (cluster map layout)
+  nameMap: labelMap.value,
 })
 
 // the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
@@ -227,7 +229,7 @@ const selectedPop = ref('')
 // Seed a UMAP + a heatmap for any set that has none yet — on first bind AND after a set switch (the
 // reactive per-set key rebinds to a fresh entry; the component doesn't remount). Restored canvases
 // come back non-empty, so they're left as-is; persisted per set, so no stacking on remount.
-watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('heatmap') } }, { immediate: true })
+watch(ckey, () => { if (panels.value.length === 0) { addKind('clusterMap'); addKind('heatmap') } }, { immediate: true })
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
 // Same shape as SummaryCanvas — the composable owns the Phase 1→2 machinery + POST + toast; this

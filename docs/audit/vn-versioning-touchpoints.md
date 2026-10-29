@@ -190,7 +190,7 @@ The **advisor is registered under the TYPE**, so every version picker already in
 | `frontend/src/components/plots/TrackSchemeView.vue:120-124,262-269` | plot |
 | `frontend/src/components/plots/FlowMetricsView.vue:204` | plot |
 | `frontend/src/components/plots/FlowProbabilityView.vue:203` | plot |
-| `frontend/src/components/plots/UmapView.vue:296` | plot |
+| `frontend/src/components/plots/ClusterMapView.vue:296` | plot |
 | `frontend/src/components/plots/CellCardsView.vue`, `CellCardDetailPanel.vue` | plot |
 | `frontend/src/components/plots/GateOverlay.vue`, `GateMontage.vue`, `GatePlotPanel.vue` (module) | gating |
 | `frontend/src/components/canvas/SummaryPanel.vue:223` | canvas panel |

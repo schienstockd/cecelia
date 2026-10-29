@@ -51,6 +51,10 @@ export const isIntensityColumn = (col: string): boolean => INTENSITY_COL.test(co
 const TRACK_POP_TYPES = new Set(['track', 'trackclust'])
 export const isTrackPopType = (popType?: string): boolean => TRACK_POP_TYPES.has(popType ?? '')
 
+/** A motility column without its `live.track.` family (`live.track.speed` → `speed`); other names pass
+ *  through. Display-only — for a stat row, a card footer or an axis title, where the family is implied. */
+export const shortTrackMeasure = (name: string): string => name.replace(/^live\.track\./, '')
+
 // obs families, in the order a picker shows them; first match wins. `live.*` deliberately catches the
 // spatial interaction readouts too (`live.cell.contact#<pop>`, `live.cell.min_distance#<pop>`) — that
 // is the same one-rule split the clustering picker already made, and a second "Spatial" heading

@@ -8,6 +8,7 @@
 // LayoutCanvas, passed in as `g`; loaded via g.selectImage(uid, vn, popType)). A store holds one
 // (popType, suffix) at a time — that's why the analysis board enforces ONE cluster run per board, so
 // this context drives its store once, unambiguously.
+import type { BehaviourAxes } from '../utils/behaviourAxes'
 import { ref, computed, watch, type Ref } from 'vue'
 import type { GatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
@@ -43,6 +44,7 @@ export function useClusterContext(opts: {
   const featureLabels = ref<Record<string, Record<string, string>>>({})  // per-suffix: column → label
   const clusterIds = ref<Record<string, number[]>>({})     // per-suffix tickable cluster universe
   const clusterMembers = ref<Record<string, string[]>>({}) // per-suffix uids the run clustered together
+  const clusterAxes = ref<Record<string, BehaviourAxes>>({}) // per-suffix diffusion axis names (track runs)
   const resolvedVn = ref('default')                    // segmentation value_name the channels resolved to
   const hmmStateCols = ref<string[]>([])               // live.cell.hmm.state.<name>
   const hmmTransitionCols = ref<string[]>([])          // live.cell.hmm.transitions.<name>
@@ -72,6 +74,7 @@ export function useClusterContext(opts: {
       clusterFeatures.value = d.clusterFeatures ?? {}
       clusterIds.value = d.clusterIds ?? {}
       clusterMembers.value = d.clusterMembers ?? {}
+      clusterAxes.value = d.clusterAxes ?? {}
       resolvedVn.value = d.valueName ?? 'default'
       featureFallback.value = popType.value === 'trackclust' ? (d.columns ?? []) : (d.channels ?? [])
       const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
@@ -142,7 +145,7 @@ export function useClusterContext(opts: {
 
   return {
     suffixes, clusterFeatures, featureFallback, nameMap, featureLabels, labelMap,
-    clusterIds, clusterMembers, resolvedVn,
+    clusterIds, clusterMembers, clusterAxes, resolvedVn,
     hmmStateCols, hmmTransitionCols, allFeatures, featureOptions,
     runMembers, validUids, strayUids, missingUids, loadFeatures, shownPopsFor,
   }

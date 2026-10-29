@@ -21,6 +21,7 @@
  * actually receives and the one to check against a reference in pixels.
  */
 import type { ParamDef, ParamValues } from './types'
+import { savedValueFor } from './paramValues'
 
 /**
  * How a quantity is drawn. Anything else in the spec's `vis` is ignored rather than guessed at.
@@ -188,16 +189,16 @@ export function paramVisColumns(param: ParamDef, values: Record<string, ParamVal
       // Dropped when NO column carries it, exactly as a numeric row is: a row of `none` across the
       // board is a claim about a param this group does not have.
       if (columns.every(k => {
-        const v = values[k]?.[p.key]
+        const v = savedValueFor(p, values[k] ?? {})
         return v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)
       })) continue
-      const words = columns.map(k => asText(values[k]?.[p.key]))
+      const words = columns.map(k => asText(savedValueFor(p, values[k] ?? {})))
       rows.push({ key: p.key, label: p.label ?? p.key, role,
                   cells: words.map(t => ({ value: 0, px: null, r: 0, at: 0, text: t, pxText: '' })),
                   uniform: columns.length > 1 && words.every(t => t === words[0]) })
       continue
     }
-    const raw = columns.map(k => numeric(values[k]?.[p.key]))
+    const raw = columns.map(k => numeric(savedValueFor(p, values[k] ?? {})))
     if (!raw.some(v => v !== null)) continue
     const mags = raw.map(v => (v === null ? 0 : magnitude(role, v)))
     const dim = dimension(role)

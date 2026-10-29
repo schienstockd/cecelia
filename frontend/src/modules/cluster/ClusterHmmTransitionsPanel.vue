@@ -306,7 +306,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 /* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hmm-export { max-width: 7rem; }
-/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + ClusterHeatmapPanel) */
+/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in ClusterMapView + ClusterHeatmapPanel) */
 .hmm-empty { padding: 1rem; }
 .hmm-empty .pi { font-size: 1.4rem; opacity: 0.6; }
 .hmm-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }

@@ -25,7 +25,7 @@ const DEF = {
     { key: 'clusterMethod', label: 'Clustering', type: 'select', default: 'leiden' },
     { key: 'resolution', label: 'Resolution', type: 'float', default: 1 },
     { key: 'numClusters', label: 'Number of regions', type: 'int', default: 5 },
-    { key: 'mergeUmap', label: 'Calculate UMAP', type: 'bool', default: true },
+    { key: 'createUmap', formerKeys: ['mergeUmap'], label: 'Calculate UMAP', type: 'bool', default: true },
   ],
 } as unknown as TaskDef
 
@@ -55,13 +55,22 @@ describe('the submitted payload always covers the whole spec', () => {
     // This is the bug. `undefined` values are dropped by JSON.stringify, so the run payload — and the
     // funParams record written from it — lose those keys entirely and the task falls back to defaults.
     const raw = flattenParams(DEF, STALE_DRAFT)
-    // graphSuffix/includeOther/resolution/mergeUmap were absent from the draft. flattenParams now
+    // graphSuffix/includeOther/resolution/createUmap were absent from the draft. flattenParams now
     // substitutes the spec default rather than undefined, so nothing is dropped…
     expect(missingParamKeys(DEF, raw)).toEqual([])
     expect(raw.graphSuffix).toBe('default')
     expect(raw.includeOther).toBe(true)
     // …but the user's stale draft still cannot supply a value it never had, which is why the draft must
     // be reconciled through buildParamValues on restore (next test) rather than used raw.
+  })
+
+  it('a renamed param keeps the value saved under its former key, and only the new key is sent', () => {
+    // funParams written before `mergeUmap` → `createUmap`: an OFF setting must not come back ON
+    const payload = flattenParams(DEF, buildParamValues(DEF, { mergeUmap: false }))
+    expect(payload.createUmap).toBe(false)
+    expect(payload).not.toHaveProperty('mergeUmap')
+    // the current key wins when both are present
+    expect(flattenParams(DEF, buildParamValues(DEF, { mergeUmap: false, createUmap: true })).createUmap).toBe(true)
   })
 
   it('reconciling a stale draft keeps known values, defaults the new params, drops the departed', () => {
@@ -77,7 +86,7 @@ describe('the submitted payload always covers the whole spec', () => {
     expect(payload.graphSuffix).toBe('default')
     expect(payload.includeOther).toBe(true)
     expect(payload.resolution).toBe(1)
-    expect(payload.mergeUmap).toBe(true)
+    expect(payload.createUmap).toBe(true)
     // gone from the spec → not submitted (the backend would reject an unknown param)
     for (const dead of ['neighbourRadius', 'neighbourMethod', 'perTimepoint', 'nNeighbours']) {
       expect(payload).not.toHaveProperty(dead)

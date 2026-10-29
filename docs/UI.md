@@ -2051,7 +2051,7 @@ Do **not** hand-roll per-plot "…" text or an immediate spinner. **Small/embedd
 gate montage tiles (compact `GateScatterCell`, rendered by `GateMontage`) keep an unobtrusive dot, not a
 wheel per tile — gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel`, the
 full-size `GateScatterCell` (Gate page), and both flow plots (via `useFlowPlanes`, which owns the
-decision so the two cannot disagree); `UmapView` has its own empty-state wheel. New heavy plots: reuse
+decision so the two cannot disagree); `ClusterMapView` has its own empty-state wheel. New heavy plots: reuse
 these two primitives.
 
 **A slow plot should also say its content is STALE.** The flow plots dim the planes while a render is
@@ -2158,7 +2158,7 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
 - **Default ON** (`autoHide` prop, default `true`). The `#actions` (top) and `#footer` (bottom) slots
   render as absolute overlay strips over the body; a **pin** toggle (`pi-thumbtack`, next to the drag
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
-- **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
+- **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `ClusterMapView`
   `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
   panel in `state`, `ImageStripView` `.is-bar`, `FlowMetricsView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
@@ -2439,7 +2439,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   useDataRefresh(() => props.imageUids, load)   // refetch only when a task touches one of THESE images
   ```
   It watches `project.dataVersionFor(theirImages)` and calls the reload fn only when an image *that plot
-  shows* changed — never on unrelated tasks. Used by `useSummaryData`, `UmapView`, the cluster panels
+  shows* changed — never on unrelated tasks. Used by `useSummaryData`, `ClusterMapView`, the cluster panels
   (heatmap / HMM) and `GatingStrategyView`. **Do not** re-import the store and hand-weave a `dataVersion`
   watch in a new plot — call `useDataRefresh`.
 - Gated by the global **`autoRefreshOnTask`** setting (Preferences → Interface, on by default). Because
@@ -2934,8 +2934,8 @@ Two plot families share the canvas shell; the distinction matters for where a ne
 - **Interactive** — client-side 2D-canvas point clouds with per-point interaction, each with its own
   data endpoint + rendering. Gating scatter, **UMAP**. These can't be a single generic renderer, so
   they live in a **registry** of self-contained view components:
-  **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { umap: { label, component } }`.
-  A view (e.g. **`components/plots/UmapView.vue`**) fetches + renders + owns its controls; the generic
+  **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { clusterMap: { label, component } }`.
+  A view (e.g. **`components/plots/ClusterMapView.vue`**) fetches + renders + owns its controls; the generic
   **`components/canvas/InteractivePanel.vue`** wraps any view in `CanvasPanel` and spreads the plot
   `context` (project/images/popType/suffix) + the panel's persisted `state` onto it. **Adding an
   interactive plot = one `XView.vue` + one registry line** — no panel/canvas changes. (Shared infra,

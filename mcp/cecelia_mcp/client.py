@@ -577,7 +577,7 @@ class CeceliaClient:
                   u: float, v: float,
                   cell: str = "", label: str = "", ttl_s: int | None = None):
         # PLOT point-out (BIDIR PR #4b). `family` names the plot family
-        # (`gate-scatter` / `umap` / `heatmap` / `image-strip` / `cell-cards` / …); `plot_id`
+        # (`gate-scatter` / `cluster-map` / `heatmap` / `image-strip` / `cell-cards` / …); `plot_id`
         # addresses one panel (its persistKey). `u`/`v` are 0..1 in that family's own frame
         # (`frontend/src/plots/frame.ts` — `rectFrame` / `letterboxFrame` handle the per-family
         # letterbox math so the mark lands on the plot area, not the surrounding gutter). `cell`

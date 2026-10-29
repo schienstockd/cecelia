@@ -156,6 +156,13 @@ end
     @test task_applies(smooth, img_still)
     @test task_applies(smooth, img_live)
 
+    # A renamed param (`formerKeys`): a value saved under the old key fills the new one; the current
+    # key wins; with neither, the spec default. clustTracks' `createUmap` was `mergeUmap`.
+    ct = Cecelia.ClustTracks()
+    @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false))["createUmap"] == false
+    @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}("mergeUmap" => false, "createUmap" => true))["createUmap"] == true
+    @test Cecelia._apply_spec_defaults(ct, Dict{String,Any}())["createUmap"] == true
+
     # After spec defaults + guard, a static image loses the temporal keys; the timelapse keeps them.
     base = Cecelia._apply_spec_defaults(smooth, Dict{String,Any}())
     @test base["temporalFrames"] == 3          # spec default fires

@@ -1805,9 +1805,16 @@ end
         ex(plots; pops = pops, kw...) = expand_board(proj, "stage", plots; pops = pops, clusters = clusters,
                                         image_uids = ["img1", "img2"], kw...)
 
-        lay = ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement"),
+        lay = ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement"),
                   Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement", "title" => "Heat")])
-        @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "umap"
+        @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "clusterMap"
+        # the layout is a field: diffusion axes are asked for by name, anything else is refused
+        @test ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement",
+                       "basis" => "diffmap")])["contents"][1]["state"]["basis"] == "diffmap"
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "popType" => "trackclust",
+                                             "suffix" => "movement", "basis" => "pca")])
+        # the retired view key still authors, and is written as the current one (BOARD_VIEW_ALIASES)
+        @test ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement")])["contents"][1]["ref"] == "clusterMap"
         @test lay["contents"][1]["state"]["labels"] == true          # the view's own initialState
         @test lay["contents"][2]["state"]["title"] == "Heat"
         @test lay["shared"]["clustPopType"] == "trackclust" && lay["shared"]["clustSuffix"] == "movement"
@@ -1815,9 +1822,9 @@ end
         @test ex([Dict("plot" => "hmmStates", "suffix" => "movement")])["shared"]["clustPopType"] == "trackclust"
         @test_throws BoardSpecError ex([Dict("plot" => "hmmStates", "popType" => "clust", "suffix" => "cells")])
         # a run that does not exist, no suffix, and two runs on one board are all refused
-        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "nope")])
-        @test_throws BoardSpecError ex([Dict("plot" => "umap")])
-        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "cells"),
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "suffix" => "nope")])
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap")])
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "suffix" => "cells"),
                                         Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement")])
 
         # track plots take track-family populations, as tkeys, and the board reads them per slot
@@ -1996,12 +2003,13 @@ end
                 Dict("kind" => "summary", "ref" => "track_measures", "state" => Dict("chartType" => "boxplot"))])))))
         @test board_summaries(proj)[1]["plots"][1]["measure"] == "live.track.speed"
 
-        # degradation: a slot with no state, and an unparseable file
+        # degradation: a slot with no state, and an unparseable file. The slot was saved under the
+        # retired `umap` key, so the reader also reports it under the current one (normalise_boards).
         write(bf, JSON3.write(Dict(
             "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "bare")]),
             "layouts" => Dict("tab:1" => Dict("contents" => [Dict("kind" => "interactive", "ref" => "umap")])))))
         b = board_summaries(proj)
-        @test b[1]["plots"][1]["ref"] == "umap" && !haskey(b[1]["plots"][1], "measure")
+        @test b[1]["plots"][1]["ref"] == "clusterMap" && !haskey(b[1]["plots"][1], "measure")
         @test b[1]["cols"] == 0                                     # missing grid → 0, not an error
         write(bf, "{not json")
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]

@@ -165,7 +165,7 @@ Numbered so code and other docs can cite them (`Decision 5`).
     `origin?: 'user' | 'claude'` on both bags; WS `viewer:mark` sets `'claude'`. Slice A
     consumers (natively per-item-glyph): TrackSchemeView, TrackPathsView, CardsPanelInner (→
     cellCards / motifCards), CellCardDetailPanel. Slice B (needed backend `withLabels=1` payload
-    extension to carry label_id / track_id per point): UmapView, GateScatterCell (→ GatePlotPanel,
+    extension to carry label_id / track_id per point): ClusterMapView, GateScatterCell (→ GatePlotPanel,
     GateMontage → pairs matrix, gating strategy). Magenta accent (Decision 8 palette) + "C"
     glyph; positioned via each family's own projection so the ring lands on the actual pixel.
     **Deferred residual — aggregate-render plots:** TrackDiagnosticsView (per-group curves via

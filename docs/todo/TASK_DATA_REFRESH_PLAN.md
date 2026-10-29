@@ -33,7 +33,7 @@ suffix"). Gating already solved this: `gating:popmap` → `useSummaryData.onPopm
 - Consumers watch the version of the object(s) they show and refetch — the `reloadToken` shape, now fed
   by task success too: summary panels, cluster UMAP/heatmap/HMM, gating-strategy, the pop manager
   (pop list / stats). This is the `retrieveState(invalidate=FALSE)` equivalent.
-- **Remove the per-plot reload buttons** (cluster panels + `UmapView`) — they're already `v-if="!docked"`;
+- **Remove the per-plot reload buttons** (cluster panels + `ClusterMapView`) — they're already `v-if="!docked"`;
   now delete them outright. No global/board button needed (R had none).
 
 **Open Q:** is a single global `dataVersion++` (refetch everything) acceptable for v1, or scope by uID
@@ -77,7 +77,7 @@ Today: every viewer refresh path (`onValueNameChange`, `onTaskResult`, `onTaskSt
    subscribe via the **`useDataRefresh(imageUids, onRefresh)` composable** (the one primitive of the
    framework — watches `dataVersionFor(theirImages)`), so a plot refetches ONLY when an image IT shows
    changed and no plot imports the store or hand-weaves a watch: `useSummaryData` (loadPops + reloadToken),
-   `UmapView`, `ClusterHeatmapPanel`, `ClusterHmm{States,Transitions}Panel`, `GatingStrategyView`. Per-plot
+   `ClusterMapView`, `ClusterHeatmapPanel`, `ClusterHmm{States,Transitions}Panel`, `GatingStrategyView`. Per-plot
    reload buttons removed.
    Set-scope gap **closed**: `api/src/sockets.jl` now sends the full member list (`imageUids`) on the
    set-task terminal status (not just `rep`), and `ws.ts` bumps every one — so a non-rep member's

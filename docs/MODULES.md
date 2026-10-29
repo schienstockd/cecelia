@@ -926,6 +926,16 @@ reason: otherwise a conditional param is never reached and reads as one with no 
 A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
 with no error. The suite rejects that (`showIf conditions name a param that exists`).
 
+**`formerKeys` — the keys a param was stored under before a rename.** Saved funParams and saved
+chains keep the old key forever, so renaming a `key` silently resets every saved setting to the default
+(it happened to `divisionChannels` → `competingChannels`). List the old key and both sides read it when
+the new one is absent: the form (`savedValueFor` in `paramValues.ts`) and every run
+(`_apply_spec_defaults`). Only the new key is written from then on.
+
+```json
+{ "key": "createUmap", "formerKeys": ["mergeUmap"], "label": "Calculate UMAP", "type": "bool", "default": true }
+```
+
 **`labelUnit` — relabel a chipSelect's options with a physical quantity read off the SELECTED
 IMAGES.** Frontend-only, and it changes the label while leaving the `value` untouched, so the
 submitted params and `validate_params`' option check are unaffected.

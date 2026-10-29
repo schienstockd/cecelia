@@ -80,8 +80,27 @@ function normalise_boards(raw)::BoardsDoc
     end
     lay = get(d, "layouts", nothing)
     layouts = lay isa AbstractDict ?
-        Dict{String,Any}(string(k) => v for (k, v) in pairs(lay)) : Dict{String,Any}()
+        Dict{String,Any}(string(k) => _migrate_view_refs(v) for (k, v) in pairs(lay)) : Dict{String,Any}()
     BoardsDoc(_boards_int(get(d, "version", 0)), tabs, active_id, next_id, layouts, true, true)
+end
+
+# A tab's layout with every interactive slot on a retired view key (`BOARD_VIEW_ALIASES`) moved to its
+# replacement, so everything reading boards (the GUI, the MCP board tools, Kiwi) sees one key and the
+# next save writes it. A layout with nothing to migrate is returned untouched (the frontend owns its
+# shape). One that has is edited as plain containers (a JSON3 object is read-only), then read back
+# through JSON3, so it has the same type and Symbol-key access as every unmigrated layout.
+function _migrate_view_refs(entry)
+    entry isa AbstractDict || return entry
+    contents = get(entry, "contents", get(entry, :contents, nothing))
+    contents isa AbstractVector || return entry
+    stale(c) = c isa AbstractDict && string(get(c, "kind", get(c, :kind, ""))) == "interactive" &&
+               haskey(BOARD_VIEW_ALIASES, string(get(c, "ref", get(c, :ref, ""))))
+    any(stale, contents) || return entry
+    out = _spec_value(entry)
+    for c in out["contents"]
+        stale(c) && (c["ref"] = BOARD_VIEW_ALIASES[string(c["ref"])])
+    end
+    JSON3.read(JSON3.write(out))
 end
 
 """

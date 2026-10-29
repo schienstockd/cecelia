@@ -5,7 +5,8 @@ Granularity-blind and I/O-free: a caller builds a feature-matrix AnnData (cell
 intensities + object measures, or per-track aggregates), hands it here, and gets cluster
 labels (+ an optional UMAP embedding) back. The `cluster_cells` / `cluster_tracks` run
 scripts own the I/O — they read the labelProps via `LabelPropsView`, build the matrix, call
-`find_populations`, and write `clusters.{suffix}` (+ `obsm['X_umap']`) back to the H5AD.
+`find_populations`, and write `clusters.{suffix}` (+ `obsm['X_umap']`) back to the H5AD. Track runs
+also call `behaviour_axes` on the same graph (diffusion axes + path position).
 
 Port of the old R cecelia `inst/py/scanpy_utils.py` `find_populations`
 (transform -> normalise -> `sc.pp.neighbors(use_rep='X')` -> `sc.tl.leiden(key_added='clusters')`
@@ -169,6 +170,66 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
 
 
 # ── QC: per-segment cluster distribution ─────────────────────────────────────────
+# ── behaviour axes: diffusion map + path position (track runs) ─────────────────────
+def behaviour_axes(adata, features=None, n_axes: int = 2, reverse: bool = False,
+                   n_comps: int = 10, top_n: int = 3, log=None):
+    """Named behaviour axes + a path position per point, from the neighbour graph `find_populations`
+    already built (`adata.obsp['connectivities']`) — no second kNN.
+
+    Diffusion map (Coifman & Lafon 2006, doi:10.1016/j.acha.2006.04.006; scanpy `tl.diffmap`, Haghverdi
+    et al. 2015, doi:10.1093/bioinformatics/btv325) → DC1..DC`n_axes`; diffusion pseudotime (Haghverdi
+    et al. 2016, doi:10.1038/nmeth.3971; scanpy `tl.dpt`) → one number per point along the continuum.
+
+    Axes name themselves (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decisions 2–3): each DC is flipped so
+    its strongest-correlated feature (Spearman, against `features` — the UN-normalised matrix, same
+    columns as `adata.var_names`; defaults to `adata.X`) is positive, and carries its `top_n` features.
+    The path is rooted at the low end of the sign-aligned DC1, or the high end when `reverse`.
+
+    Writes `adata.obsm['X_diffmap_axes']` (n × n_axes) and `adata.obs['path']` (0..1; NaN for points
+    the root's graph component can't reach). Returns the metadata dict
+    `{axes: [{name, top: [{feature, rho}]}], root: {end, cluster}, evals}`, or None (logged) when the
+    run is too small or has no neighbour graph."""
+    import scanpy as sc
+
+    _log = log if callable(log) else (lambda _m: None)
+    n = adata.n_obs
+    if "neighbors" not in adata.uns or n <= n_comps + 1:
+        _log(f">> behaviour axes skipped ({n} points, graph {'present' if 'neighbors' in adata.uns else 'missing'})")
+        return None
+
+    sc.tl.diffmap(adata, n_comps=n_comps)
+    dm = adata.obsm["X_diffmap"]                # column 0 is the trivial stationary component
+    feats = pd.DataFrame(np.asarray(adata.X if features is None else features, dtype=float),
+                         columns=list(adata.var_names))
+
+    axes, aligned = [], np.empty((n, n_axes), dtype=np.float32)
+    for i in range(1, n_axes + 1):
+        rho = feats.corrwith(pd.Series(dm[:, i]), method="spearman").fillna(0.0)
+        top = rho.abs().sort_values(ascending=False).index[:top_n]
+        sign = -1.0 if rho[top[0]] < 0 else 1.0
+        aligned[:, i - 1] = sign * dm[:, i]
+        axes.append({"name": f"DC{i}",
+                     "top": [{"feature": f, "rho": round(float(sign * rho[f]), 3)} for f in top]})
+
+    iroot = int(np.argmax(aligned[:, 0]) if reverse else np.argmin(aligned[:, 0]))
+    adata.uns["iroot"] = iroot
+    sc.tl.dpt(adata, n_dcs=n_comps)
+    path = adata.obs["dpt_pseudotime"].to_numpy(dtype=float)
+    unreached = ~np.isfinite(path)
+    if unreached.any():                         # a disconnected graph component has no path from the root
+        _log(f">> {int(unreached.sum())} point(s) unreachable from the path root → NaN")
+        path[unreached] = np.nan
+    adata.obs["path"] = path
+    adata.obsm["X_diffmap_axes"] = aligned
+
+    root_cluster = str(adata.obs["clusters"].iloc[iroot]) if "clusters" in adata.obs else None
+    for a in axes:
+        _log(f">> {a['name']}: " + ", ".join(f"{t['feature']} {t['rho']:+.2f}" for t in a["top"]))
+    _log(f">> path rooted at the {'high' if reverse else 'low'} end of DC1 (cluster {root_cluster})")
+    return {"axes": axes, "root": {"end": "high" if reverse else "low", "cluster": root_cluster},
+            "evals": [round(float(e), 4) for e in adata.uns["diffmap_evals"][1:n_axes + 1]]}
+
+
 def cluster_seg_stats(seg_codes):
     """Objective QC stats for one segment's cluster assignment (PURE → unit-tested).
 
@@ -187,7 +248,7 @@ def cluster_seg_stats(seg_codes):
 
 # ── shared write-back (cells + tracks) ─────────────────────────────────────────────
 def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str = "clusters",
-                         extra_obs=None):
+                         extra_obs=None, extra_obsm=None):
     """Split a pooled, clustered AnnData back per segment and write the cluster assignment
     into each segment's labelProps via `LabelPropsView` (the sanctioned writer — CLAUDE.md).
 
@@ -217,6 +278,9 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
     they become ordinary numeric measures — the region-composition heatmap then reuses the existing
     cluster-heatmap (region × measures) with no new plot family (SPATIAL_REGIONS_PLAN Decision 16).
     Names must NOT start with `clusters.`/`regions.` (that name-rule would pin them categorical).
+
+    `extra_obsm` (optional): the same for embeddings — `{key: (n, k) matrix}` written as `obsm[key]`
+    per segment. Track clustering uses it for `X_diffmap.{suffix}` beside the UMAP.
 
     Returns a QC dict `{nClusters, nTotal, perSegment:[{uID, valueName, n, nClusters,
     largestClusterFrac}]}` — the run total plus each segment's cluster distribution (via
@@ -249,6 +313,8 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
         view = LabelPropsView(seg["propsPath"]).add_obs(pd.DataFrame(obs_cols))
         if has_umap:
             view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
+        for key, mat in (extra_obsm or {}).items():
+            view = view.add_obsm(key, sub_labels, np.asarray(mat)[mask])
         view.save()
         view.close()
         stats = cluster_seg_stats(codes[mask])

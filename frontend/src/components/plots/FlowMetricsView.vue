@@ -196,7 +196,7 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 <template>
   <div class="fmv">
     <!-- one auto-hide control strip (docs/UI.md → "Auto-hide panel controls"), so the planes get the
-         whole panel — the same treatment UmapView/ImageStripView give their in-body toolbars -->
+         whole panel — the same treatment ClusterMapView/ImageStripView give their in-body toolbars -->
     <div class="fmv-ctrl cc-panel-controls">
       <div class="cc-row fmv-bar">
         <select class="select-input" :value="state.imageUid ?? ''"

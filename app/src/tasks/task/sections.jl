@@ -137,6 +137,9 @@ MCP callers — the callers least able to notice that the form promises one numb
 another. Applied here, the spec is the single source and the surviving fallbacks are dead weight
 rather than a rival answer.
 
+A param declaring `formerKeys` (it was renamed) takes the value stored under a former key first, so
+saved funParams and chains written before the rename keep their setting.
+
 Only ABSENT keys are filled: an explicit `nothing` is a caller's choice, and `""` may be meaningful
 (an empty `valueNameSelection` means "the active version"). Sub-params of a section are filled too,
 since `_flatten_sections` has already lifted them.
@@ -150,7 +153,14 @@ function _apply_spec_defaults(task::CciaTask, params::Dict{String,Any})::Dict{St
         for p in ps
             p isa AbstractDict || continue
             key = string(get(p, "key", ""))
-            if !isempty(key) && haskey(p, "default") && !haskey(out, key)
+            # a renamed param: a value stored under a former key (old funParams, saved chains) wins
+            # over the default — `formerKeys`, docs/MODULES.md → *Fields any param may carry*
+            former = isempty(key) || haskey(out, key) ? nothing :
+                     findfirst(k -> haskey(out, string(k)), collect(get(p, "formerKeys", String[])))
+            if former !== nothing
+                copied || (out = copy(out); copied = true)
+                out[key] = out[string(collect(p["formerKeys"])[former])]
+            elseif !isempty(key) && haskey(p, "default") && !haskey(out, key)
                 copied || (out = copy(out); copied = true)
                 out[key] = _spec_value(p["default"])
             end
