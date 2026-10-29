@@ -1685,7 +1685,7 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
     return multiscales_zarr, level0, pchunks
 
 
-def read_timepoint(level, dim_utils, t, drop_time=True, ignore_channel=False):
+def read_timepoint(level, dim_utils, t, drop_time=True, ignore_channel=False, channels=None):
     """Read a single timepoint of an opened zarr/dask level fully into a numpy array.
 
     The generic "read one frame, then tile/slice/process it in RAM" primitive. Reading per
@@ -1704,15 +1704,22 @@ def read_timepoint(level, dim_utils, t, drop_time=True, ignore_channel=False):
     level, which has no channel axis while `dim_utils` describes the source image (with one). Every
     caller slicing labels must set it: with a C-before-T layout the default would otherwise pick the
     wrong axis, silently reading one channel's worth of Z instead of a timepoint. (It happens to be
-    harmless for the T-first layouts cecelia imports today, which is exactly why it needs saying.)"""
+    harmless for the T-first layouts cecelia imports today, which is exactly why it needs saying.)
+
+    ``channels`` reads only those image channel indices, in that order — the channel axis is KEPT, so
+    position ``i`` holds image channel ``channels[i]``. A frame is every channel at full resolution:
+    on a 25-channel tile scan segmented on one of them, that is 17 GB read for 0.7 GB used. None
+    reads them all."""
+    sl = [slice(None)] * len(level.shape)
+    if channels is not None:
+        sl[dim_utils.dim_idx('C')] = list(channels)
     # `is_timeseries(ignore_one=True)` is False for T=1 stacks, but the T axis is still THERE — the
     # caller asked for `drop_time`, and the tile/slice code downstream indexes axes as if T were
     # gone. Route by "does the array have a T axis at all", not by "is there more than one frame".
     has_t = dim_utils is not None and 'T' in dim_utils.im_dim_order
     if not has_t:
-        return fortify(level)
+        return fortify(level[tuple(sl)] if channels is not None else level)
     t_idx = dim_utils.dim_idx('T', ignore_channel=ignore_channel)
-    sl = [slice(None)] * len(level.shape)
     sl[t_idx] = slice(t, t + 1, 1)
     frame = fortify(level[tuple(sl)])
     return np.squeeze(frame, axis=t_idx) if drop_time else frame

@@ -19,7 +19,7 @@ Three things about v4 shape this file, all verified against `cellpose==4.2.1.1`:
   "independent 2D slices". A Z stack with no stitching therefore goes through the list-of-planes
   form instead, which returns per-plane independent labels (the same thing v3 did).
 
-One thing about cellpose's Z stitching, both versions (`utils.stitch3D`, unchanged in 4.2.1.1 and on
+Two things about cellpose's Z stitching, both versions (`utils.stitch3D`, unchanged in 4.2.1.1 and on
 upstream main):
 
 * **It reuses label ids across an empty plane.** Until the first pair of adjacent planes has been
@@ -28,6 +28,9 @@ upstream main):
   then share ONE label, and its centroid lands in the empty space between them. Sparse labelling
   (few cells over a few Z planes) hits it often. A stitched cell is z-contiguous by construction,
   so `split_z_gaps` gives every z-run its own id.
+* **Its cost grows with the square of the tile area** (a dense overlap matrix per plane pair), so
+  the v4 path no longer calls it: planes are segmented separately and joined by `stitch_planes`,
+  the same rule at sparse cost. The cellpose 3 path still uses it.
 
 Cellpose 3 (opt-in `cellpose-v3` env, Mac only — MPS is much faster on the v3 CNNs than on the v4
 transformer):
@@ -91,6 +94,69 @@ def split_z_gaps(masks):
             block = sub[zs[0]:zs[-1] + 1]                 # one run, so no other piece of `lb` inside
             block[block == lb] = nxt
             nxt += 1
+    return masks
+
+
+def stitch_planes(planes, stitch_threshold):
+    """Join per-plane 2D labels into 3D objects: cellpose's `stitch3D` rule, at sparse cost.
+
+    The rule is `stitch3D`'s, plane pair by plane pair:
+    - a pair below `stitch_threshold` IoU does not count;
+    - each label on the plane below keeps only its best match(es) on the plane above;
+    - each label above takes the lowest-numbered label below among what is left;
+    - an unmatched label gets a fresh id.
+
+    Two differences, both in cost or ids, never in which pixels form an object:
+
+    * **Sparse.** `stitch3D` builds a DENSE overlap matrix of (labels on this plane) × (the largest id
+      over every plane stitched so far), so its time and memory grow with the square of the tile
+      area (measured in `docs/SEGMENTATION.md` → *Tiling*). Here only the label pairs that actually
+      share a pixel are counted, which is O(pixels) per plane pair.
+    * **No id reuse across an empty plane.** `stitch3D` lets the plane after an empty one keep its
+      raw ids until the first match (module docstring). Here an unmatched label always gets a fresh
+      id, so `split_z_gaps` has nothing to repair; it still runs, and passes this through unchanged.
+
+    planes: [Z, Y, X] per-plane labels (0 = background). Returns uint32 [Z, Y, X].
+    """
+    masks = np.array(planes, dtype=np.uint32)
+    if masks.shape[0] < 2:
+        return masks
+    next_id = int(masks[0].max()) + 1
+    for z in range(1, masks.shape[0]):
+        below, above = masks[z - 1], masks[z]
+        n_above = int(above.max())
+        if n_above == 0:
+            continue
+        lut = np.zeros(n_above + 1, dtype=np.uint32)
+        both = (below > 0) & (above > 0)
+        if both.any():
+            # Every co-occurring (above, below) pair and its pixel count, then IoU from the areas.
+            pairs, inter = np.unique(np.stack([above[both], below[both]]), axis=1,
+                                     return_counts=True)
+            a_lab, b_lab = pairs[0].astype(np.int64), pairs[1].astype(np.int64)
+            a_area = np.bincount(above.ravel(), minlength=n_above + 1)
+            b_ids, b_counts = np.unique(below[below > 0], return_counts=True)
+            b_area = b_counts[np.searchsorted(b_ids, b_lab)]
+            iou = inter / (a_area[a_lab] + b_area - inter)
+            iou[iou < stitch_threshold] = 0.0
+            # each label below keeps only its best match(es) — `iou[iou < iou.max(axis=0)] = 0`
+            b_best = np.zeros(int(b_lab.max()) + 1)
+            np.maximum.at(b_best, b_lab, iou)
+            iou[iou < b_best[b_lab]] = 0.0
+            keep = iou > 0
+            # each label above takes its highest-IoU partner, the lowest id on a tie (`argmax`)
+            order = np.lexsort((b_lab[keep], -iou[keep], a_lab[keep]))
+            a_k, b_k = a_lab[keep][order], b_lab[keep][order]
+            first = np.ones(len(a_k), dtype=bool)
+            first[1:] = a_k[1:] != a_k[:-1]
+            lut[a_k[first]] = b_k[first]
+        present = np.zeros(n_above + 1, dtype=bool)
+        present[np.unique(above)] = True
+        present[0] = False
+        fresh = np.flatnonzero(present & (lut == 0))
+        lut[fresh] = np.arange(next_id, next_id + len(fresh), dtype=np.uint32)
+        next_id += len(fresh)
+        masks[z] = lut[above]
     return masks
 
 
@@ -212,6 +278,15 @@ class CellposeUtils(SegmentationUtils):
 
     # ── Prediction ────────────────────────────────────────────────────────────
 
+    def _model_channels(self, model_params):
+        """Cell + nucleus channels — the same defaults `predict_slice` applies, so the read and the
+        model can never disagree about which channels a group needs."""
+        cell = script_utils.channel_indices(
+            model_params.get('cellChannels'), 'cellChannels', 'cellpose_models_for_python (cellpose.jl)') or [0]
+        nuc = script_utils.channel_indices(
+            model_params.get('nucChannels'), 'nucChannels', 'cellpose_models_for_python (cellpose.jl)')
+        return list(cell) + list(nuc)
+
     def predict_slice(self, tile, model_params, norm_params=None):
         """
         Run cellpose on one XY tile.
@@ -230,14 +305,14 @@ class CellposeUtils(SegmentationUtils):
         # Merge cell channels via np.maximum
         cell_im = None
         for ch in cell_channels:
-            ch_data = tile[ch]  # [Z, Y, X] or [Y, X]
+            ch_data = self.tile_channel(tile, ch)  # [Z, Y, X] or [Y, X]
             prep    = self._prepare_channel(ch_data, model_params, norm_params, ch)
             cell_im = prep if cell_im is None else np.maximum(cell_im, prep)
 
         # Merge nuc channels
         nuc_im = None
         for ch in nuc_channels:
-            ch_data = tile[ch]
+            ch_data = self.tile_channel(tile, ch)
             prep    = self._prepare_channel(ch_data, model_params, norm_params, ch)
             nuc_im  = prep if nuc_im is None else np.maximum(nuc_im, prep)
 
@@ -290,9 +365,16 @@ class CellposeUtils(SegmentationUtils):
             else:
                 masks, _, _ = model.eval(im_input, **eval_kw)
         elif is_3d and stitch_threshold > 0:
-            # v4: 2D-per-Z-slice, stitched across Z by cellpose. `z_axis` is only accepted here.
-            masks, _, _ = model.eval(im_input, z_axis=0, stitch_threshold=stitch_threshold,
-                                     do_3D=False, **eval_kw)
+            # v4: 2D per Z plane, stitched across Z. The same three steps as cellpose's own stitched
+            # eval (`_compute_masks`): per-plane masks with the size filter OFF (`min_size=-1`; a
+            # small 2D piece may belong to a large 3D cell), the stitch, then holes filled and
+            # objects under 15 voxels removed on the stitched volume. Only the stitch is ours —
+            # `stitch_planes` says why.
+            planes = [im_input[z] for z in range(im_input.shape[0])]
+            per_plane, _, _ = model.eval(planes, min_size=-1, **eval_kw)
+            masks = stitch_planes(np.stack(per_plane), stitch_threshold)
+            from cellpose.utils import fill_holes_and_remove_small_masks
+            masks = fill_holes_and_remove_small_masks(masks, min_size=15)
         elif is_3d:
             # v4: independent 2D slices. As a list of planes, because the same call with `z_axis=0`
             # and no stitching is a ValueError in v4 (see the module docstring). Labels are numbered

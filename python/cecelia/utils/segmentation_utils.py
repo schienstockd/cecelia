@@ -163,6 +163,10 @@ class SegmentationUtils:
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
+        # The image channels the tile's channel axis carries, in axis order — None while it carries
+        # all of them. Set by `predict_from_zarr` for the length of a run; a caller handing
+        # `predict_slice` its own full-channel tile (the preview) leaves it None. See `tile_channel`.
+        self.tile_channels = None
         self.task_dir = params['taskDir']
         # Hands out `TemporalWindow.id`. Monotonic for the life of the instance so a value is never
         # reused, which is the property a subclass caching against it depends on.
@@ -210,12 +214,20 @@ class SegmentationUtils:
         """
         return sorted(models.keys(), key=lambda k: (len(str(k)), str(k)))
 
-    def _context_channels(self):
-        """Which image channels the temporal window has to carry — None for all of them.
+    def _model_channels(self, model_params):
+        """The image channel indices one model group reads — None when the engine cannot say.
 
-        A subclass that reads only some channels out of the window says so here and the base never
-        reads the rest: on a 4-channel movie where coastal projects one, that is three quarters of
-        the biggest read in the task (3.14 s of a 9.35 s timepoint, measured on zolIMa/fXgbTl).
+        None (the default) keeps every channel in the read. An engine that declares its channels
+        here never has the others read at all — not into the frame, not into the temporal window.
+        """
+        return None
+
+    def _context_channels(self):
+        """Which image channels the run reads — the frame AND the temporal window. None for all.
+
+        The union of `_model_channels` over every group, or None as soon as one group cannot say.
+        The others are never read. The frame's channel count IS the run's memory, whatever the tile
+        size (measured in `docs/SEGMENTATION.md` → *Tiling*).
 
         Returns a SORTED tuple, and it is a property of the RUN, not of one model group: the window
         is built once per (tile, timepoint) and shared by every group (see `predict_slice`), so the
@@ -223,9 +235,30 @@ class SegmentationUtils:
         missing its channel. The base passes the same tuple back as `TemporalWindow.channels` so the
         subclass can map an image channel index onto its position in the window it was given —
         without that the axis silently means something different and the wrong channel is
-        segmented, which is why `_project_window` maps rather than indexes directly.
+        segmented, which is why `_project_window` and `tile_channel` map rather than index directly.
         """
-        return None
+        per_group = [self._model_channels(mp)
+                     for mp in (self.params.get('models') or {}).values()]
+        if not per_group or any(c is None for c in per_group):
+            return None
+        return tuple(sorted({int(c) for chans in per_group for c in chans}))
+
+    def tile_channel(self, tile, ch):
+        """Image channel `ch` of a tile, whether or not the run narrowed the tile's channel axis.
+
+        A subclass indexes the tile through this, never with `tile[ch]`: once the read is narrowed
+        (`_context_channels`) position `ch` holds a DIFFERENT channel, and segmenting the wrong one
+        raises nothing.
+        """
+        if self.tile_channels is None:
+            return tile[ch]
+        position = {int(c): i for i, c in enumerate(self.tile_channels)}
+        if int(ch) not in position:
+            # Not a fallback: segmenting a channel other than the one asked for is the silent
+            # wrong answer this mapping exists to prevent.
+            raise ValueError(f'the tile carries channels {list(self.tile_channels)} but channel '
+                             f'{ch} was asked for — `_model_channels` must declare it')
+        return tile[position[int(ch)]]
 
     def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
@@ -329,6 +362,8 @@ class SegmentationUtils:
             n_c = int(dim_utils.dim_val('C'))
             if not ctx_channels or len(ctx_channels) >= n_c:
                 ctx_channels = None
+        # The frame is read with the same channels as the window, so the tile carries them too.
+        self.tile_channels = ctx_channels
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -428,7 +463,8 @@ class SegmentationUtils:
                 # tile it in memory. Reading each tile from the store instead re-fetches whole chunks per
                 # tile — the over-read the old whole-level fortify() worked around. See
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
-                frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+                frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True,
+                                                     channels=ctx_channels)
                 if drop_z:
                     frame_in = np.squeeze(frame_in, axis=read_z)
 
@@ -628,6 +664,7 @@ class SegmentationUtils:
             is_3d)
 
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
+        self.tile_channels = None
         return counts
 
     # ── Tile helpers ──────────────────────────────────────────────────────────

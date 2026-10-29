@@ -78,14 +78,20 @@ class TestCellposeV4CallPath(unittest.TestCase):
         self.assertEqual(kw['channel_axis'], -1)
         self.assertEqual(np.asarray(x).shape[-1], 2)   # v4 zero-pads 2 → 3 itself
 
-    def test_3d_with_stitching_passes_z_axis(self):
+    def test_3d_with_stitching_segments_planes_and_stitches_them_itself(self):
+        """Per-plane masks with cellpose's size filter OFF — the same first step as its own stitched
+        eval — then `stitch_planes`. Cellpose's `stitch3D` is never asked for (no `stitch_threshold`):
+        its dense matrix is what made a whole 26-plane frame take 16 GB."""
         tile = np.stack([np.stack([self.plane] * 3)])   # [C=1, Z=3, Y, X]
         out = self.seg.predict_slice(tile, self._params(stitchThreshold=0.2))
-        kw = self._last_kwargs()
-        self.assertEqual(kw['z_axis'], 0)
-        self.assertEqual(kw['stitch_threshold'], 0.2)
-        self.assertFalse(kw['do_3D'])
+        x, kw = self.model.calls[-1]
+        self.assertIsInstance(x, list)
+        self.assertEqual(len(x), 3)
+        self.assertEqual(kw['min_size'], -1)
+        self.assertNotIn('stitch_threshold', kw)
+        self.assertIsNone(kw.get('z_axis'))
         self.assertEqual(out.shape, (3, 8, 8))
+        self.assertEqual(len(np.unique(out[out > 0])), 1)   # three identical planes → one object
 
     def test_3d_without_stitching_goes_plane_by_plane(self):
         """The regression: `z_axis` + `stitch_threshold=0` is a ValueError in v4.
