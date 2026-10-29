@@ -2395,6 +2395,13 @@ end
             init_cecelia!()
             projroot = joinpath(tmp, "projects"); mkpath(projroot)
             set_projects_dir!(projroot)
+            # exports land BESIDE the projects dir, also when the stored path ends in a separator —
+            # the setup screen stores what was typed (on Windows a trailing backslash put them inside)
+            for typed in (projroot, projroot * "/", projroot * (Sys.iswindows() ? "\\" : "/"))
+                set_projects_dir!(typed)
+                @test default_export_dir() == joinpath(tmp, "cecelia_exports")
+            end
+            set_projects_dir!(projroot)
 
             proj = create_project!(name = "io-test")
             uid  = proj.uid
