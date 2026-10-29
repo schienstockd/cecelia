@@ -40,6 +40,7 @@ from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
+from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -139,6 +140,11 @@ def _tool_if(enabled: bool):
     """`@_tool`, registered only when `enabled`. For a tool an experiment arm must not see at all — not
     see fail (the `--discovery off` guide-run arm; TASK_DISCOVERY_PLAN Decision 9)."""
     return _tool if enabled else (lambda fn: fn)
+
+
+# A tool that reads or drives the GUI (the viewer, a mounted plot, a capture, the push pairing): not
+# registered in headless mode, where there is no GUI for it to reach (no_gui.py).
+_gui_tool = _tool_if(not no_gui_enabled())
 
 
 def _noting_repairs(out, repaired: list[str]):
@@ -1637,8 +1643,9 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
     it**. There is no run tool: starting a chain is the user's act, in the Chains whiteboard. Say so
     when you're done ("it's in the Chains whiteboard — have a look and press Run when it looks right"),
-    and never imply it has started. (Exception: an unattended session that also has the separate
-    cecelia-autonomous server starts it with that server's run_chain.)
+    and never imply it has started. (Exception: a session that also has the separate
+    cecelia-autonomous server — an unattended run, or one with no GUI — starts it with that server's
+    run_chain; with no GUI, once the user says so.)
 
     `name` — letters, numbers, spaces, `.` `_` `-`; max 64 characters. Anything else (`+`, `(…)`, `/`)
     is REPAIRED to spaces, not refused: the reply's `name` is the name it was stored under, and
@@ -1689,7 +1696,7 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     return _client.create_chain(project_uid, name, nodes, edges, start_targets)
 
 
-@_tool
+@_gui_tool
 def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: list[int],
                 focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a set of TRACKS on the user's viewer — your "look at THESE tracks" pointer.
@@ -1714,7 +1721,7 @@ def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: li
     return _client.mark_tracks(project_uid, image_uid, value_name, track_ids, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: list[int],
                focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Outline a set of CELLS on the user's viewer — your "look at THESE cells" pointer.
@@ -1733,7 +1740,7 @@ def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: lis
     return _client.mark_cells(project_uid, image_uid, value_name, label_ids, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def select_on_plot(project_uid: str, kind: str, sources: list[dict],
                    focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a MULTI-SOURCE set of tracks or cells — the reverse of a user's plot brush.
@@ -1768,7 +1775,7 @@ def select_on_plot(project_uid: str, kind: str, sources: list[dict],
     return _client.select_on_plot(project_uid, kind, sources, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300) -> dict:
     """Point at a UI CONTROL on the user's screen — your "click here" pointer.
 
@@ -1790,7 +1797,7 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
     return _client.mark_ui(project_uid, anchor, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def mark_freeform(project_uid: str, capture_id: str, overlay: list,
                   label: str = "", ttl_s: int = 300) -> dict:
     """Draw a FREEFORM overlay on a stored CAPTURE — your "look right HERE" pointer.
@@ -1816,7 +1823,7 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
     return _client.mark_freeform(project_uid, capture_id, overlay, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def list_plots(project_uid: str) -> list[dict]:
     """Every plot panel currently MOUNTED in the user's browser for this project — call this
     BEFORE `mark_plot` when the user says "the UMAP" / "that heatmap" and you don't already have
@@ -1843,7 +1850,7 @@ def list_plots(project_uid: str) -> list[dict]:
     return _client.list_plots(project_uid)
 
 
-@_tool
+@_gui_tool
 def mark_plot(project_uid: str, family: str, plot_id: str,
               u: float, v: float,
               cell: str = "", label: str = "", ttl_s: int = 300) -> dict:
@@ -1878,7 +1885,7 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     return _client.mark_plot(project_uid, family, plot_id, u, v, cell, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
                              measure: str = "", pop: str = "") -> dict:
     """Open an Analysis board that contains a specific plot — your "pull up the UMAP" pointer
@@ -1930,7 +1937,7 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     return {"ok": True, "board": board_name}
 
 
-@_tool
+@_gui_tool
 def seek_viewer(project_uid: str, image_uid: str,
                 t: int | None = None, z: int | None = None) -> dict:
     """Move the user's VIEWER to a specific frame — your "look at t=40" imperative when you want
@@ -1958,7 +1965,7 @@ def seek_viewer(project_uid: str, image_uid: str,
     return _client.seek_viewer(project_uid, image_uid, t, z)
 
 
-@_tool
+@_gui_tool
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when
@@ -1976,7 +1983,7 @@ def mark_tile(project_uid: str, image_uid: str, cell_id: str,
     return _client.mark_tile(project_uid, image_uid, cell_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def get_landscape(project_uid: str, image_uid: str) -> dict:
     """The LANDSCAPE of what the user's viewer shows RIGHT NOW — tile-level map + measured data.
 
@@ -1996,7 +2003,7 @@ def get_landscape(project_uid: str, image_uid: str) -> dict:
     return slim_landscape_for_mcp(_client.get_landscape(project_uid, image_uid))
 
 
-@_tool
+@_gui_tool
 def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     """What the user has SHARED with you from their viewer — the "look at this" surface (BIDIR).
 
@@ -2017,7 +2024,7 @@ def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     return _client.get_recent_captures(project_uid, limit).get("items", [])
 
 
-@_tool
+@_gui_tool
 def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
@@ -2161,7 +2168,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     return blocks
 
 
-@_tool
+@_gui_tool
 def get_capture_landscape_tiles(project_uid: str, capture_id: str,
                                 tile_ids: list[str] | None = None,
                                 bbox: list[float] | None = None) -> dict:
@@ -2198,7 +2205,7 @@ def get_capture_landscape_tiles(project_uid: str, capture_id: str,
     return {"captureId": capture_id, "landscape": slim.get("landscape") or {"tiles": []}}
 
 
-@_tool
+@_gui_tool
 def register_push_target(project_uid: str, session_label: str = "") -> dict:
     """Pair THIS Claude Code session with a Cecelia project for cross-session push (BIDIR Part 5).
 
@@ -2278,7 +2285,7 @@ def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list
     return logs[-limit:] if limit and limit > 0 else logs
 
 
-@_tool
+@_gui_tool
 def poll_observations(project_uid: str) -> dict:
     """Drain the observer's pending observations since the last poll — the "sit next to me" signal.
 
@@ -2309,7 +2316,7 @@ def poll_observations(project_uid: str) -> dict:
     return {"observations": observations, "stats": _monitor.stats()}
 
 
-@_tool
+@_gui_tool
 def set_observer_active(active: bool) -> dict:
     """Turn the live observer on or off (the off switch, per OBSERVER.md §6).
 
@@ -2321,7 +2328,7 @@ def set_observer_active(active: bool) -> dict:
     return _monitor.stats()
 
 
-@_tool
+@_gui_tool
 def get_observer_stats() -> dict:
     """The observer's running per-session state without draining anything: whether it's `enabled`,
     how many observations were `surfacedCount` (vs the `surfaceCap`), whether it's `throttled`, and a
