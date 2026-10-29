@@ -271,6 +271,33 @@ class SegmentationUtils:
 
     # ── Tiling ────────────────────────────────────────────────────────────────
 
+    def _blank_is_empty(self, model_params):
+        """True when this engine, given an all-zero input, finds nothing — so a blank tile can be
+        skipped. False (the default) keeps every tile: an engine that inverts its input, or one
+        that is not purely a function of the normalised pixels, must not opt in."""
+        return False
+
+    def _tile_is_blank(self, tile, model_params, norm_params):
+        """True when every channel this group reads is at or below its window's low end.
+
+        Lossless, not a guess: the engines map `lo` to 0 and clip, and thresholds and filters
+        before that only lower or smooth values, so such a tile reaches the model as all zeros. It
+        needs a known window for every channel (`norm_params`) and an engine that finds nothing in
+        zeros (`_blank_is_empty`); otherwise the tile is segmented. On a tile scan, the tiles outside
+        the tissue are blank (measured in `docs/SEGMENTATION.md` → *Blank tiles are skipped*).
+        """
+        if not norm_params or not self._blank_is_empty(model_params):
+            return False
+        channels = self._model_channels(model_params)
+        if not channels:
+            return False
+        for ch in channels:
+            if ch not in norm_params:
+                return False
+            if float(np.max(self.tile_channel(tile, ch))) > norm_params[ch][0]:
+                return False
+        return True
+
     def _object_size_um(self, model_params):
         """The size, in µm, of one object this model group segments — None when the engine cannot
         say. Sets the Auto overlap (`tile_budget.auto_overlap`)."""
@@ -489,6 +516,7 @@ class SegmentationUtils:
                                  + len(store_types) * np.dtype(self.LABEL_DTYPE).itemsize)
         self.resolve_block_size(H, W, planes, held_bytes=held)
         self.logger.log(f'>> tiling: {self.tiling_note}; overlap {self.overlap} px')
+        blank_tiles = 0
 
         # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
         xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],
@@ -627,7 +655,12 @@ class SegmentationUtils:
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
                         self.check_rank(tile, tile_rank, is_3d, 'tile')
 
-                        if window is not None:
+                        if window is None and self._tile_is_blank(tile, model_params, norm_p):
+                            # Nothing above the window's low end: after normalisation the model
+                            # would see zeros. Skipped, not approximated — see `_tile_is_blank`.
+                            masks = np.zeros(tile.shape[1:], dtype=self.LABEL_DTYPE)
+                            blank_tiles += 1
+                        elif window is not None:
                             # Narrowed to THIS timepoint's span, like the tile — the window is the
                             # tile through time and must match it on every axis. A subclass takes
                             # its pixels from the window, so a full-depth one silently re-segments
@@ -636,7 +669,7 @@ class SegmentationUtils:
                             # one the output is written back at.
                             masks = self.predict_slice(tile, model_params, norm_p, window)
                         else:
-                            # unchanged call for every non-temporal subclass
+                            # every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)
                         self.check_rank(masks, 3 if is_3d else 2, is_3d,
                                         f'{type(self).__name__}.predict_slice masks')
@@ -747,6 +780,9 @@ class SegmentationUtils:
              dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
             is_3d)
 
+        if blank_tiles:
+            self.logger.log(f'>> skipped {blank_tiles} blank tile(s): no signal above the '
+                            f'intensity window')
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
         self.tile_channels = None
         return counts

@@ -283,6 +283,10 @@ class CellposeUtils(SegmentationUtils):
             model_params.get('nucChannels'), 'nucChannels', 'cellpose_models_for_python (cellpose.jl)')
         return list(cell) + list(nuc)
 
+    def _blank_is_empty(self, model_params):
+        # `invert` turns zeros into ones, which is not blank
+        return not bool(model_params.get('invert', False))
+
     def _object_size_um(self, model_params):
         return float(model_params.get('cellDiameter', 15))
 
