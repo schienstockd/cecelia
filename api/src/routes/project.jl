@@ -226,7 +226,7 @@ function api_boards_add(body_bytes::Vector{UInt8})
         resolved = Any[]
         layout = expand_board(proj, name, plots; template = template,
                               compare_by = _wstr(body, :compareBy), resolved_pops = resolved)
-        updated, id = append_board(doc, name, layout)
+        updated, id = append_board(doc, name, layout; created_by = author_stamp())
         version = write_boards_doc(path, updated; version = doc.version + 1)
         broadcast_ws(Dict{String,Any}("type" => "boards:changed", "projectUid" => uid, "version" => version))
         # `resolvedPops`: every population stored under a different path than asked (a `_tracked` the

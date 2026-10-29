@@ -53,9 +53,16 @@ USER_MAX, SAID_MAX = 1500, 1200
 # ── transcript → events ──────────────────────────────────────────────────────────────────────────
 
 def _split_tool(name: str) -> tuple[str, str]:
-    """`mcp__cecelia-observer__get_capture` → ("cecelia-observer", "get_capture"); built-ins → ("", name)."""
+    """`mcp__cecelia-observer__get_capture` → ("cecelia-observer", "get_capture"); built-ins → ("", name).
+    A plugin's server is `plugin_<plugin>_<server>` (`mcp__plugin_cecelia_cecelia-observer__…`, the
+    terminal plugin's naming) → the bare server name, so both namings read as one server."""
     parts = name.split("__")
-    return (parts[1], parts[-1]) if len(parts) >= 3 and parts[0] == "mcp" else ("", name)
+    if len(parts) < 3 or parts[0] != "mcp":
+        return ("", name)
+    server = parts[1]
+    if server.startswith("plugin_") and server.count("_") >= 2:
+        server = server.split("_", 2)[2]
+    return (server, parts[-1])
 
 
 def events(path: str) -> list[dict]:

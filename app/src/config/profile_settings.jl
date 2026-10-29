@@ -236,9 +236,39 @@ per request by the router; read through `author_stamp`.
 const REQUEST_VIA = Base.ScopedValues.ScopedValue("app")
 
 """
+    REQUEST_CALLER
+
+`(model, session)` of the Claude call behind the current request — the exact model ID and the Claude
+Code session, each `""` when unknown. Sent by the MCP as `X-Cecelia-Model` / `X-Cecelia-Session`, which
+it learns from the caller hook (`mcp/cecelia_mcp/caller_hook.py`); bound by the router for `via ==
+"claude"` requests only. Methods and lineage need WHICH model wrote a thing — providers update models
+silently, so `via: claude` alone does not reproduce.
+"""
+const REQUEST_CALLER = Base.ScopedValues.ScopedValue((model = "", session = ""))
+
+# Header values are untrusted: they end up in project JSON. Anything off-shape reads as unknown.
+const _CALLER_MODEL_RE   = r"^[A-Za-z0-9._:\[\]-]{1,100}$"
+const _CALLER_SESSION_RE = r"^[A-Za-z0-9-]{1,64}$"
+
+"""
+    request_caller(model_header, session_header) -> NamedTuple
+
+The `(model, session)` to bind for one request: each value kept only when it has the expected shape.
+"""
+request_caller(model::AbstractString, session::AbstractString) =
+    (model   = occursin(_CALLER_MODEL_RE, model) ? String(model) : "",
+     session = occursin(_CALLER_SESSION_RE, session) ? String(session) : "")
+
+"""
     author_stamp() -> Dict{String,Any}
 
-`{profile, via}` for the write being made now — store it as `createdBy` / `updatedBy`.
+`{profile, via}` for the write being made now — store it as `createdBy` / `updatedBy`. A Claude write
+also carries `model` and `session` when they are known; absent means unknown, never a guess.
 """
-author_stamp()::Dict{String,Any} =
-    Dict{String,Any}("profile" => active_profile_name(), "via" => REQUEST_VIA[])
+function author_stamp()::Dict{String,Any}
+    s = Dict{String,Any}("profile" => active_profile_name(), "via" => REQUEST_VIA[])
+    c = REQUEST_CALLER[]
+    isempty(c.model)   || (s["model"] = c.model)
+    isempty(c.session) || (s["session"] = c.session)
+    s
+end

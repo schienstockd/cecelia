@@ -229,7 +229,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
     # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
     via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
-    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via)
+    caller = via == "claude" ?
+        request_caller(HTTP.header(req, "X-Cecelia-Model", ""), HTTP.header(req, "X-Cecelia-Session", "")) :
+        REQUEST_CALLER[]
+    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via, REQUEST_CALLER => caller)
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────

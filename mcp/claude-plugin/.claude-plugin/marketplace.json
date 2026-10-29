@@ -1,0 +1,8 @@
+{
+  "name": "cecelia-local",
+  "description": "Cecelia's Claude Code plugin, served from this Cecelia install",
+  "owner": { "name": "Cecelia" },
+  "plugins": [
+    { "name": "cecelia", "source": "./cecelia" }
+  ]
+}

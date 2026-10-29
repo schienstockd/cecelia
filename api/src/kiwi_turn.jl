@@ -539,7 +539,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     schema = kiwi_reply_schema(; reasoning)
     opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
               json_schema = schema, allowed_tools = _kiwi_allowed_tools(), strict_mcp = true,
-              builtin_tools = "", stream = true, timeout_s)
+              builtin_tools = "", stream = true, timeout_s,
+              settings_path = _write_observer_hook_settings())
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]
     turn(p, sid) = (r = Cecelia.run_agent_turn(agent, p, mcp_config_path; session_id = sid,
                                                on_progress, on_process, opts...);

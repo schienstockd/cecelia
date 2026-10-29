@@ -51,6 +51,6 @@ export function terminalCta(available: boolean, state?: string): TerminalCta {
 /** Tooltip for that button — one line per state; the reasoning lives in docs/ai-assist/OBSERVER.md. */
 export function terminalSetupTooltip(state?: string): string {
   if (state === 'shadowed') return 'Another folder\'s entry overrides Cecelia\'s — clear it'
-  if (state === 'stale') return 'Your terminal\'s cecelia-observer points somewhere else — re-register it'
-  return 'Register cecelia-observer in Claude Code so you can chat in a terminal'
+  if (state === 'stale') return 'Your terminal\'s Cecelia plugin is out of date — update it'
+  return 'Install the Cecelia plugin in Claude Code to chat in a terminal'
 }

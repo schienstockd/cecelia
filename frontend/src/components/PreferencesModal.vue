@@ -486,9 +486,9 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>
-          <!-- Cecelia's MCP in this profile's Claude config — registered once per profile. -->
+          <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
           <template v-if="observerRow">
-            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia MCP</div>
+            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>
             <div class="pk-mcp">
               <span class="pk-state cc-fs-sm" v-tooltip.top="observerRow.hint">
                 <span class="cc-dot" :class="dotClass(observerRow.tone)" /> {{ observerRow.label }}

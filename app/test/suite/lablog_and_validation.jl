@@ -63,6 +63,14 @@ end
     @test Cecelia.lab_log_user_author("Claude", "alice") == "Claude"
     @test Cecelia.lab_log_user_author("Cecelia — Cohort check", "alice") == "Cecelia — Cohort check"
     @test Cecelia.lab_log_user_author("User · bob", "alice") == "User · bob" # already stamped
+    # a Claude entry names the model that wrote it — when known; never a guess
+    @test Cecelia.lab_log_claude_author("Claude", "claude-opus-5-5") == "Claude · claude-opus-5-5"
+    @test Cecelia.lab_log_claude_author("Claude", "") == "Claude"
+    @test Cecelia.lab_log_claude_author("User", "claude-opus-5-5") == "User"
+    @test Cecelia.lab_log_claude_author("Claude · x", "claude-opus-5-5") == "Claude · x"
+    # …and it still parses back as a Claude entry with the full tag
+    e = only(parse_lab_log(Cecelia._format_lab_block("Claude · claude-opus-5-5", ["a line"], Date(2026, 10, 29))))
+    @test e["author"] == "Claude · claude-opus-5-5" && e["lines"] == ["a line"]
     proj_entries = Cecelia.parse_lab_log("## 2026-10-01 [User · alice]\n- a note\n")
     @test proj_entries[1]["author"] == "User · alice"                      # header parser round-trips
 end

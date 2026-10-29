@@ -739,7 +739,8 @@ function api_observer_labarchives_set(body_bytes::Vector{UInt8})
                       source     = json_native(get(body, :source, Dict{String,Any}())),
                       sections   = json_native(get(body, :sections, Any[])),
                       cohort     = json_native(get(body, :cohort, Any[])),
-                      synced_by  = _wstr(body, :syncedBy, "claude"))
+                      synced_by  = _wstr(body, :syncedBy, "claude"),
+                      updated_by = author_stamp())
     catch e
         return 400, JSON3.write((; error=sprint(showerror, e)))
     end

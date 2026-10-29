@@ -66,12 +66,12 @@ export const ACCOUNT_CONNECTORS: { name: string; label: string; detail: string; 
 export function observerRowState(state?: string): { tone: Tone; label: string; detail: string; hint: string } {
   switch (state) {
     case 'current':  return { tone: 'ok', label: 'connected', detail: '', hint: 'Claude in your terminal has the Cecelia tools' }
-    case 'stale':    return { tone: 'warn', label: 'out of date', detail: 'Points at another install',
-                              hint: 'A stale entry fails silently in your terminal — re-run setup' }
+    case 'stale':    return { tone: 'warn', label: 'out of date', detail: 'Another install, version or setup',
+                              hint: 'An out-of-date plugin fails silently in your terminal — re-run setup' }
     case 'shadowed': return { tone: 'warn', label: 'shadowed', detail: 'A per-folder entry overrides it',
-                              hint: 'A local-scope entry takes precedence over the user-scope one — re-run setup' }
-    case 'missing':  return { tone: 'warn', label: 'not set up', detail: 'Not in your Claude config',
-                              hint: 'Register it to use Claude in your own terminal' }
+                              hint: 'A local-scope entry takes precedence over the plugin — re-run setup' }
+    case 'missing':  return { tone: 'warn', label: 'not set up', detail: 'Cecelia plugin not installed',
+                              hint: 'Install it to use Claude in your own terminal' }
     default:         return { tone: 'idle', label: 'unknown', detail: '', hint: '' }
   }
 }
@@ -129,12 +129,12 @@ export function mcpRows(
              scope, dismissable: false }
   })
 
-  // The observer may be absent from the config entirely — it still deserves a row saying so, rather
-  // than silently vanishing exactly when it needs attention.
+  // Installed as the Cecelia plugin, the observer is not in `.claude.json` at all (only an older
+  // `add-json` registration is) — it still gets a row, so it never vanishes exactly when it needs attention.
   if (!machine.some(r => r.name === 'cecelia-observer')) {
     const s = observerRowState(observerState || 'missing')
     machine.unshift({ name: 'cecelia-observer', kind: 'machine', tone: s.tone, label: s.label,
-                      detail: s.detail, hint: s.hint, scope: 'user', dismissable: false,
+                      detail: s.detail, hint: s.hint, scope: 'plugin', dismissable: false,
                       installPath: '' })
   }
 

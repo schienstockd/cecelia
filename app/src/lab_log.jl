@@ -100,6 +100,20 @@ function lab_log_user_author(author::AbstractString, profile::AbstractString)::S
     "$(a) · $(profile)"
 end
 
+"""
+    lab_log_claude_author(author, model) -> String
+
+Stamp a Claude-written author tag with the model that wrote it: `"Claude"` → `"Claude · claude-opus-5-5"`
+— the lab log's form of `author_stamp()`'s `model`. Same ` · ` suffix as `lab_log_user_author`, so the
+frontend's classification (on the part before it) is unchanged. Any other tag, an unknown model (`""`),
+or a tag that already carries a suffix passes through.
+"""
+function lab_log_claude_author(author::AbstractString, model::AbstractString)::String
+    a = strip(author)
+    (startswith(lowercase(a), "claude") && !isempty(model) && !occursin(" · ", a)) || return String(a)
+    "$(a) · $(model)"
+end
+
 # validate + normalise an (author, lines) pair into (tag, clean_lines); shared by append + upsert.
 function _ll_tag_and_lines(author::AbstractString, lines)::Tuple{String,Vector{String}}
     lines_vec = lines isa AbstractString ? [lines] : collect(lines)

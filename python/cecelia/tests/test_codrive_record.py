@@ -90,6 +90,13 @@ class CodriveRecordTest(unittest.TestCase):
         self.path = self.tmp / "sess1.jsonl"
         self.path.write_text("\n".join(json.dumps(x) for x in LINES) + "\n", encoding="utf-8")
 
+    def test_plugin_and_plain_tool_names_read_as_one_server(self):
+        # the terminal plugin names its tools mcp__plugin_<plugin>_<server>__<tool> (Claude Code hooks doc)
+        self.assertEqual(cr._split_tool("mcp__cecelia-observer__get_capture"), ("cecelia-observer", "get_capture"))
+        self.assertEqual(cr._split_tool("mcp__plugin_cecelia_cecelia-observer__get_capture"),
+                         ("cecelia-observer", "get_capture"))
+        self.assertEqual(cr._split_tool("Bash"), ("", "Bash"))
+
     def test_exchanges_cut_at_your_messages_and_shared_captures(self):
         exs = cr.exchanges(cr.events(str(self.path)))
         self.assertEqual([e["kind"] for e in exs], ["ask", "ask", "fix", "shared"])

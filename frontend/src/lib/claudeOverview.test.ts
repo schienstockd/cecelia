@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
-  CLAUDE_TERMINAL, claudeChatCommand,
+  CLAUDE_TERMINAL, CLAUDE_DATA_NOTICE, claudeChatCommand,
   claudeCapabilities,
 } from './claudeOverview'
+import { isMultiSentence, isTooLong } from '../utils/uiCopy'
 
 describe('claudeOverview content model', () => {
   it('has the two entry points (Ask Kiwi / Chat), each with how-to steps', () => {
@@ -89,5 +90,21 @@ describe('claudeCapabilities — hidden connectors', () => {
 
   it('an unknown connector name hides nothing', () => {
     expect(claudeCapabilities(['NotAThing'])).toEqual(claudeCapabilities([]))
+  })
+})
+
+describe('CLAUDE_DATA_NOTICE', () => {
+  // A standing line in Kiwi: it has to stay inside the copy budget to stay read (docs/ui/COPY.md)
+  it('is one short phrase with a one-line action on hover', () => {
+    expect(CLAUDE_DATA_NOTICE.short.split(/\s+/).length).toBeLessThanOrEqual(10)
+    for (const t of [CLAUDE_DATA_NOTICE.short, CLAUDE_DATA_NOTICE.detail]) {
+      expect(isMultiSentence(t)).toBe(false)
+      expect(isTooLong(t)).toBe(false)
+      expect(t.endsWith('.')).toBe(false)
+    }
+  })
+
+  it('names who receives the data', () => {
+    expect(CLAUDE_DATA_NOTICE.short).toContain('Anthropic')
   })
 })

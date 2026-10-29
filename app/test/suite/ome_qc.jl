@@ -1773,6 +1773,11 @@ end
         @test doc2.active_id == doc.active_id
         @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
         @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
+        # authorship: the route passes `author_stamp()`; the REPL leaves it off
+        @test !haskey(doc2.tabs[end], "createdBy")
+        by = Dict("profile" => "alice", "via" => "claude", "model" => "claude-opus-5-5")
+        docb, _ = append_board(doc2, "Stamped", lay; created_by = by)
+        @test docb.tabs[end]["createdBy"] == by
 
         # ── the name is STORED as it will render (board_display_name) ───────────────────────────────
         # Vue escapes text, so a stored entity displays as the entity — on a tab the authoring tool

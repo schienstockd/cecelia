@@ -300,6 +300,23 @@ function observer_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString
     Dict{String,Any}("mcpServers" => Dict{String,Any}(OBSERVER_MCP_NAME => spec))
 end
 
+# The caller hook (`mcp/cecelia_mcp/caller_hook.py`): before each Cecelia MCP call it adds the calling
+# model + Claude Code session, which the MCP forwards so `author_stamp()` can record WHICH model wrote a
+# thing. Exec form (`args` set): no shell, so a path with spaces needs no quoting on any OS. `-I`: the
+# hook is stdlib-only and must not pick up the env's PYTHONPATH. The matcher is a regex and covers both
+# tool namings — `mcp__cecelia-observer__*` (an `--mcp-config` server, Kiwi) and
+# `mcp__plugin_cecelia_cecelia-observer__*` (the plugin's server, a terminal session).
+const OBSERVER_HOOK_MATCHER = "mcp__(plugin_cecelia_)?cecelia-(observer|autonomous)__.*"
+
+observer_caller_hook(mcp_dir::AbstractString, python_bin::AbstractString)::Dict{String,Any} =
+    Dict{String,Any}("type" => "command", "command" => String(python_bin),
+                     "args" => ["-I", joinpath(String(mcp_dir), "cecelia_mcp", "caller_hook.py")])
+
+# The `--settings` object that installs only the caller hook — what the turns the APP spawns load.
+observer_hook_settings(mcp_dir::AbstractString, python_bin::AbstractString)::Dict{String,Any} =
+    Dict{String,Any}("hooks" => Dict{String,Any}("PreToolUse" => [Dict{String,Any}(
+        "matcher" => OBSERVER_HOOK_MATCHER, "hooks" => [observer_caller_hook(mcp_dir, python_bin)])]))
+
 # Build the `claude -p` command. PURE given its inputs → unit-tested without spawning anything.
 # The PROMPT is not an argument: `_run_agent_once` pipes it in on stdin. It carries the Kiwi context
 # pack (attached captures/plots + earlier turns' results), unbounded, and one argv string is capped at
@@ -312,12 +329,14 @@ end
 # passes: `replace_system_prompt` (its own prompt, not appended to Claude Code's), `json_schema` (the
 # reply schema), `allowed_tools` (a read-only allow-list, not the whole server), `strict_mcp` (ignore
 # the user's other MCP servers) and `builtin_tools = ""` (no Bash/Read/Edit — observer tools only).
+# `settings_path` adds a `--settings` file — the app's turns load the caller hook that way.
 function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
                            session_id::AbstractString = "", system_prompt::AbstractString = "",
                            replace_system_prompt::Bool = false, json_schema::AbstractString = "",
                            allowed_tools::Union{Nothing,Vector{String}} = nothing,
                            strict_mcp::Bool = false,
                            builtin_tools::Union{Nothing,AbstractString} = nothing,
+                           settings_path::AbstractString = "",
                            stream::Bool = false)::Cmd
     allowed = allowed_tools === nothing ? ["mcp__" * OBSERVER_MCP_NAME] : allowed_tools
     # `stream`: one JSON event per line, tool results included (`--verbose` is required for it)
@@ -327,6 +346,7 @@ function _build_claude_cmd(a::ClaudeAgent, mcp_config_path::AbstractString;
                   "--allowedTools", join(allowed, ",")]
     stream                  && push!(args, "--verbose")
     strict_mcp              && push!(args, "--strict-mcp-config")
+    isempty(settings_path)  || append!(args, ["--settings", String(settings_path)])
     builtin_tools === nothing || append!(args, ["--tools", String(builtin_tools)])
     isempty(json_schema)    || append!(args, ["--json-schema", String(json_schema)])
     isempty(system_prompt)  ||
@@ -340,15 +360,11 @@ end
 #
 # The in-app buttons need no setup (Cecelia passes `--mcp-config` to the spawned agent). A session the
 # USER starts in their own terminal does — and asking a biologist to paste a path-bearing command is
-# how support tickets happen. So Cecelia registers the server for them: `claude mcp add-json <name>
-# <spec> -s user`, after which plain `claude` has the observer tools in every session.
+# how support tickets happen. So Cecelia installs its Claude Code plugin for them (observer MCP +
+# caller hook; app/src/ai/observer_plugin.jl), after which plain `claude` has the observer tools.
 #
-# `add-json` is NOT idempotent — a second add prints "already exists" and fails — so registering is
-# always remove-then-add. That also makes it a RE-SYNC: the paths/port in the spec are re-resolved
-# every time, so clicking it again after a move/reinstall fixes a stale entry.
-# Both builders are PURE → unit-tested without spawning anything.
-_build_mcp_register_cmd(a::ClaudeAgent, spec_json::AbstractString; scope::AbstractString = "user")::Cmd =
-    Cmd(String[a.bin, "mcp", "add-json", OBSERVER_MCP_NAME, String(spec_json), "-s", String(scope)])
+# `mcp remove` is still needed: it clears the `claude mcp add-json` registration older installs made
+# (the plugin replaces it) and the per-folder `local` entries that shadow it. PURE → unit-tested.
 _build_mcp_remove_cmd(a::ClaudeAgent; scope::AbstractString = "user", dir::AbstractString = "")::Cmd =
     (c = Cmd(String[a.bin, "mcp", "remove", OBSERVER_MCP_NAME, "-s", String(scope)]);
      isempty(dir) ? c : Cmd(c; dir = String(dir)))
@@ -550,16 +566,23 @@ claude_config_path(profile_dir::AbstractString = active_profile_dir())::String =
     isempty(profile_dir) ? joinpath(homedir(), ".claude.json") :
         joinpath(String(profile_dir), ".claude.json")
 
-# The registered spec, or `nothing`. Tolerant: an unreadable/!JSON config just means "not set up"
-# (it's another tool's file — never error the status route over its shape).
-function read_registered_observer_spec(path::AbstractString = claude_config_path())
+# Another tool's JSON file (Claude Code's config, settings, plugin registry): an absent, unreadable or
+# non-object file reads as `nothing` — its shape must never error a status route.
+function _read_json_tolerant(path::AbstractString)
     isfile(path) || return nothing
-    cfg = try
+    j = try
         JSON3.read(read(path, String))
     catch
         return nothing
     end
-    cfg isa AbstractDict || return nothing
+    j isa AbstractDict ? j : nothing
+end
+
+# The registered spec, or `nothing`. Tolerant: an unreadable/!JSON config just means "not set up"
+# (it's another tool's file — never error the status route over its shape).
+function read_registered_observer_spec(path::AbstractString = claude_config_path())
+    cfg = _read_json_tolerant(path)
+    cfg === nothing && return nothing
     servers = get(cfg, :mcpServers, nothing)
     servers isa AbstractDict || return nothing
     get(servers, Symbol(OBSERVER_MCP_NAME), nothing)
@@ -603,13 +626,8 @@ observer_registration_state(want::AbstractDict) =
 # user-scope reader — it's another tool's file, and its shape must never error the status route.
 function read_local_observer_specs(path::AbstractString = claude_config_path())::Vector{Pair{String,Any}}
     out = Pair{String,Any}[]
-    isfile(path) || return out
-    cfg = try
-        JSON3.read(read(path, String))
-    catch
-        return out
-    end
-    cfg isa AbstractDict || return out
+    cfg = _read_json_tolerant(path)
+    cfg === nothing && return out
     projects = get(cfg, :projects, nothing)
     projects isa AbstractDict || return out
     for (dir, entry) in projects
@@ -641,13 +659,8 @@ Tolerant like the readers above: it is another tool's file, and its shape must n
 """
 function mcp_connections(path::AbstractString = claude_config_path())::Vector{Dict{String,Any}}
     out = Dict{String,Any}[]
-    isfile(path) || return out
-    cfg = try
-        JSON3.read(read(path, String))
-    catch
-        return out
-    end
-    cfg isa AbstractDict || return out
+    cfg = _read_json_tolerant(path)
+    cfg === nothing && return out
 
     _transport(spec) = spec isa AbstractDict ?
         String(something(get(spec, :type, nothing), get(spec, :transport, nothing),
@@ -732,37 +745,6 @@ function remove_shadowing_observer_mcps(a::ClaudeAgent, dirs::Vector{String}; ti
         push!(ok ? removed : failed, d)
     end
     (removed, failed)
-end
-
-# Register (or re-sync) the observer MCP in the user's Claude Code config. Returns
-# `(ok, message)` — `message` is the CLI's own output, shown verbatim in the UI on failure so a
-# problem is never silent.
-#
-# We never edit `~/.claude.json` ourselves — every write goes through Claude Code's own CLI, which owns
-# that file's format and does its own read-modify-write. It is the user's MAIN config (project history,
-# caches, auth state), so the only safe way to touch one key in it is to let its owner do it.
-#
-# `prior_json` is the entry currently registered (or ""), and it exists for one reason: `add-json`
-# refuses an existing name, so re-syncing a stale entry means remove-then-add — two commands, and a
-# failure between them would leave the user with NO registration, i.e. worse off than before they
-# clicked. So: remove only when something is actually there, and restore it if the add then fails.
-# LIVE path (spawns the CLI) — the pure builders above are the tested surface.
-function register_observer_mcp(a::ClaudeAgent, spec_json::AbstractString;
-                               prior_json::AbstractString = "",
-                               scope::AbstractString = "user", timeout_s::Int = 30)
-    agent_available(a) || return (false, "No assistant CLI found. Install Claude Code to enable this.")
-    _run_quiet(cmd) = first(_run_claude_cli(cmd; timeout_s))
-    # Nothing registered → nothing to remove, so a failed add can't lose anything.
-    isempty(prior_json) || _run_quiet(_build_mcp_remove_cmd(a; scope))
-    ok, output = _run_claude_cli(_build_mcp_register_cmd(a, spec_json; scope); timeout_s)
-    # Put the user's previous entry back if we removed it and the replacement didn't land. Best-effort
-    # and reported either way — never silently leave them with less than they started with.
-    if !ok && !isempty(prior_json)
-        restored = _run_quiet(_build_mcp_register_cmd(a, prior_json; scope))
-        output = string(output, restored ? "\n(your previous cecelia-observer entry was restored)" :
-                                          "\n(could not restore your previous cecelia-observer entry)")
-    end
-    (ok, strip(output))
 end
 
 # A stored session id goes stale when Claude Code prunes/expires it (its own log rotation, or a

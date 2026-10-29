@@ -605,7 +605,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
 end
 
 """
-    append_board(doc, name, layout) -> (BoardsDoc, Int)
+    append_board(doc, name, layout; created_by = nothing) -> (BoardsDoc, Int)
 
 Add ONE board to a document — the add-only half of Decision 1. Never touches an existing tab, so the
 id bookkeeping lives here rather than in the route. Throws `BoardSpecError` if the name is taken (the
@@ -613,8 +613,12 @@ route turns that into a 409), because two boards with one name is a GUI the user
 
 The name is stored as `board_display_name` gives it (stripped, entities decoded) — normalised HERE, the
 invariant's owner, because the REPL reaches this without the route.
+
+`created_by` is the route's `author_stamp()`, stored on the tab as `createdBy` (a REPL add leaves it
+off). It survives later saves: the server passes tabs through and the client keeps each tab object
+whole (`frontend/src/stores/analysisTabs.ts`).
 """
-function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict)
+function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict; created_by = nothing)
     nm = board_display_name(name)
     for t in doc.tabs
         t isa AbstractDict || continue
@@ -622,7 +626,9 @@ function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict
             throw(BoardSpecError("a board named \"$nm\" already exists — pick another name"))
     end
     id = max(doc.next_id, length(doc.tabs)) + 1
-    tabs = vcat(doc.tabs, Any[Dict{String,Any}("id" => id, "name" => nm)])
+    tab = Dict{String,Any}("id" => id, "name" => nm)
+    created_by === nothing || (tab["createdBy"] = created_by)
+    tabs = vcat(doc.tabs, Any[tab])
     layouts = merge(doc.layouts, Dict{String,Any}("tab:$(id)" => layout))
     # `activeId` is deliberately NOT moved to the new board: this is an additive write into a project
     # the user may have open, and stealing their active tab is a modification of their view.
