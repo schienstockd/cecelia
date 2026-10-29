@@ -113,8 +113,10 @@ and trailing separators dropped; case-insensitive on Windows. Empty never matche
 """
 function same_path(a::AbstractString, b::AbstractString; windows::Bool = Sys.iswindows())::Bool
     (isempty(a) || isempty(b)) && return false
-    # `/` everywhere first, so `normpath` folds `.`/`..` the same on every OS (and in tests on Linux)
-    key(p) = (k = rstrip(normpath(replace(String(p), '\\' => '/')), '/'); windows ? lowercase(k) : k)
+    # `/` before AND after `normpath`: it folds `.`/`..`, but on Windows it also turns `/` back into
+    # backslashes, which left a trailing one the strip below never saw
+    slash(x) = replace(String(x), '\\' => '/')
+    key(p) = (k = rstrip(slash(normpath(slash(p))), '/'); windows ? lowercase(k) : k)
     key(a) == key(b)
 end
 
