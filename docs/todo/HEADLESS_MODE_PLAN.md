@@ -1,6 +1,6 @@
 # Headless mode — Cecelia with Claude as the front end, no GUI
 
-**Status:** in progress — P1 (#1835), P2 (#1836), P3 built 2026-10-29, none run live yet; P4 open. Prompted by a request from the data science
+**Status:** built 2026-10-29 — P1 #1835, P2 #1836, P3 #1838, P4; none run live yet. User docs: `docs/INSTALL.md` → *Without the GUI*. Prompted by a request from the data science
 platform: can they run Cecelia on their own machine without the GUI, with Claude in the terminal as the
 way in?
 
@@ -93,7 +93,10 @@ the lock and the switch filled in, and starts `claude` with
 the open project as context (the same shape as `run_app.py`'s `CONTEXT`). On exit it shuts down a
 server it started itself (D7). Tests: the Julia session builder (pure), the launcher's pick logic.
 
-**P4 — install path.** The data scientist likely runs a shipped install, not a dev checkout. Decide
+**P4 — install path (decided: the install scripts, not the plugin).** Same installer; `pixi run
+headless` from the install dir, and a system install's `cecelia-launch.sh|.cmd` passes a task through
+(`cecelia-launch.sh headless`; no arguments = the app). A fresh install's first-run projects-folder
+question is asked in the terminal (`/api/setup/*`, the wizard's own routes). Superseded text: The data scientist likely runs a shipped install, not a dev checkout. Decide
 how `headless` is reached there: the install scripts' entry point, or the Cecelia Claude plugin
 (#1826).
 
@@ -105,7 +108,7 @@ depends on the shipping route.
 
 ## Open questions
 
-- **P4:** the install-script entry point or the plugin?
+- **P4:** resolved — the install scripts (see P4). The plugin stays the GUI user's terminal setup.
 - **Prerequisite:** the `claude` CLI must be installed and logged in. Resolved by D6: the server
   resolves it with `agent_bin_path`, and the launcher stops with an install hint when it is missing.
 - **Python users:** a data scientist may later want a scriptable API too (`docs/REPL.md` is Julia).
