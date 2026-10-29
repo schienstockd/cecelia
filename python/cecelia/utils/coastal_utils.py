@@ -399,6 +399,11 @@ class CoastalUtils(SegmentationUtils):
         self._projection_cache_id = None
         self._projection_lock = threading.Lock()
 
+        # Projected frames carried between TIMEPOINTS — see `_carried_projection`. One buffer per
+        # (channels, clip range), for one region (tile, z span, window channels) at a time.
+        self._projection_carry = {}
+        self._projection_carry_region = None
+
         # Optical flow shared between TIMEPOINTS — see *Sharing the flow between timepoints*.
         self._flow_caches = {}
         self._flow_cache_tile = None
@@ -790,7 +795,11 @@ class CoastalUtils(SegmentationUtils):
         feature_key = self._feature_key(window.id, model_params, scales, cumulative, dropped,
                                         rename)
         projected = self._cached_projection(window, model_params, norm_params)
-        flow_caches = self._flow_caches_for(window.tile, window.start, window.index, cumulative)
+        # The z span is part of the region: the caches are per z INDEX, which names a different plane
+        # once a drift-padded store moves the span.
+        flow_caches = self._flow_caches_for(
+            (window.tile, window.z_span), self._projection_identity(model_params, norm_params),
+            window.start, window.index, cumulative)
 
         if not is_3d:
             frame, metrics = self._cached_features(
@@ -846,36 +855,50 @@ class CoastalUtils(SegmentationUtils):
     # it would grow the cache by three entries per timepoint that nothing ever reads — which on a
     # 32-plane stack is how this turns into a gigabyte.
     #
-    # The cache is per (tile, z): a flow is a property of the PIXELS, so two tiles at the same
-    # timepoint, or two z-planes of one tile, share nothing. `context_tile` moving is a full reset
-    # rather than a second keying level, because the base walks every tile of a timepoint before
-    # moving on — entries for the previous tile are dead the moment it changes.
+    # The cache is per (region, projection, z): a flow is a property of the PIXELS it was computed
+    # from. Two tiles, two z-planes, or two groups projecting different channels (or the same
+    # channels at different clip ranges) share nothing. The region moving is a full reset rather than a further keying level, because the base walks
+    # every tile of a timepoint before moving on — entries for the previous tile are dead the moment
+    # it changes. A group whose clip range MOVES (`normaliseToWhole` off: it is the current frame's)
+    # has its cache dropped whenever it does, since the same pair now projects to other pixels; one
+    # with no clip range at all gets no cache, its frames being normalised per window.
 
     # How far back a consecutive pair stays reachable. The cumulative window at `t` reaches
     # `t - cumulative // 2`, so a pair left of that can never be asked for again as `t` only
     # advances. One frame of slack, because the base may revisit a timepoint when a run is resumed.
     _FLOW_CACHE_SLACK = 1
 
-    def _flow_caches_for(self, context_tile, context_start, context_index, cumulative):
-        """Per-z flow caches for this tile, pruned to what a later timepoint can still read.
+    def _flow_caches_for(self, region, projection, context_start, context_index, cumulative):
+        """Per-z flow caches for this region and projection, pruned to what a later timepoint can
+        still read.
 
-        None when there is nothing to key on — an older base, or a caller driving `predict_slice`
-        directly — in which case `flow_metrics_for_frame` still memoises within the call.
+        `projection` is `_projection_identity` — `(slot, bounds)`, what the frames the flow is
+        computed from ARE. None when
+        there is nothing to key on — an older base, a caller driving `predict_slice` directly, or a
+        per-window normalisation — in which case `flow_metrics_for_frame` still memoises within
+        the call.
         """
-        if context_tile is None or context_start is None or context_index is None:
+        if (region is None or projection is None or context_start is None
+                or context_index is None):
             return None
 
         with self._flow_lock:
-            if self._flow_cache_tile != context_tile:
+            if self._flow_cache_tile != region:
                 self._flow_caches = {}
-                self._flow_cache_tile = context_tile
+                self._flow_cache_tile = region
 
             # `context_index` is t's offset in the window, so this is t in movie terms.
             oldest = (context_start + context_index) - (cumulative // 2) - self._FLOW_CACHE_SLACK
-            for cache in self._flow_caches.values():
-                for key in [k for k in cache if k[0] < oldest]:
-                    del cache[key]
-            return _PerPlaneFlowCaches(self._flow_caches, self._flow_lock)
+            for _, per_plane in self._flow_caches.values():
+                for cache in per_plane.values():
+                    for key in [k for k in cache if k[0] < oldest]:
+                        del cache[key]
+            slot, bounds = projection
+            entry = self._flow_caches.get(slot)
+            if entry is None or entry[0] != bounds:
+                # the bounds moved: the cached flows were computed on other pixels
+                entry = self._flow_caches[slot] = (bounds, {})
+            return _PerPlaneFlowCaches(entry[1], self._flow_lock)
 
     # ── Sharing the flow between passes ───────────────────────────────────────
     #
@@ -914,14 +937,12 @@ class CoastalUtils(SegmentationUtils):
         single largest line in the timepoint, ahead of all the flow and all 64 plane predictions.
         Sharing it holds ONE window instead of allocating a second, so peak memory goes down, not up.
 
-        What this does NOT do is carry the projection between TIMEPOINTS, where 16 of 17 frames repeat
-        — see *Sharing the flow between timepoints* for the same argument applied to the flow. That
-        needs the per-frame planes to be the storage rather than a `[W, Z, Y, X]` array, because
-        holding both would double the peak on a 1046 x 1104 movie. Left out deliberately, not missed.
+        Carrying the projection between TIMEPOINTS, where 16 of 17 frames repeat, is the layer
+        underneath — `_carried_projection` — so both this cache and the uncached path get it.
         """
         key = self._projection_key(window, model_params, norm_params)
         if key is None:
-            return self._project_window(window.frames, model_params, norm_params, window.channels)
+            return self._carried_projection(window, model_params, norm_params)
 
         with self._projection_lock:
             if self._projection_cache_id != window.id:
@@ -935,11 +956,89 @@ class CoastalUtils(SegmentationUtils):
 
         # Outside the lock, for the reason `_cached_features` gives: this is the expensive call. Two
         # groups cannot race here — the base walks them in sequence.
-        value = self._project_window(window.frames, model_params, norm_params, window.channels)
+        value = self._carried_projection(window, model_params, norm_params)
         with self._projection_lock:
             if self._projection_cache_id == window.id:
                 self._projection_cache[key] = value
         return value
+
+    def _projection_identity(self, model_params, norm_params):
+        """`(slot, bounds)` — where a group's carried work lives, and what it was computed at.
+
+        A projected frame's pixels are decided by the frame, the channels and the clip range. The
+        SLOT (channels + `normalise` percentile) is fixed for a group for the whole run; the BOUNDS
+        are the clip range itself. They are kept apart because the bounds need not be constant:
+        with `normaliseToWhole` off the window is the current frame's, so the same frame projects
+        differently at the next timepoint. Storage is per slot and is recomputed in place when the
+        bounds move — keyed on the bounds, a run like that would add an entry per timepoint.
+
+        None when a channel has no clip range at all: `_project_window` then takes percentiles over
+        the window it is handed, and nothing derived from it can be carried between windows.
+        """
+        channels = tuple(self._model_channels(model_params))
+        if not norm_params or any(c not in norm_params for c in channels):
+            return None
+        bounds = tuple((c, tuple(float(v) for v in norm_params[c])) for c in channels)
+        return (channels, str(model_params.get('normalise'))), bounds
+
+    def _carried_projection(self, window, model_params, norm_params):
+        """`_project_window` over the window, projecting only the frames the last window lacked.
+
+        Consecutive windows of one tile share all but one frame, and the projection is per frame
+        once the clip range is global — so re-projecting all 17 at every timepoint was 13% of a
+        coastal timepoint, for 16 frames already done.
+
+        Held as ONE buffer per group at the window's full capacity, shifted down a frame at a time
+        and filled at the end, and returned as a leading-axis view. That is what keeps the memory
+        where it was: the window's projection lived for the length of `predict_slice` before, and
+        now it lives until the next one replaces it — one window per group, never two. (A buffer
+        reallocated per window would hold the old one while building the new.) Nothing downstream
+        writes into the projection, which the per-window cache above already depends on; the
+        previous window's views are stale once shifted, but nothing reads a window after its turn.
+
+        Bit-identical to projecting the whole window: with a global clip range every step of
+        `_project_window` is elementwise, so a frame's pixels do not depend on its neighbours.
+
+        Only for windows that carry a `z_span` — the run's. Without one the region cannot say whether
+        index z is still the same plane; the preview, which builds one window per fresh instance, has
+        nothing to carry into anyway.
+        """
+        identity = self._projection_identity(model_params, norm_params)
+        if (identity is None or window.start is None or window.tile is None
+                or window.z_span is None):
+            return self._project_window(window.frames, model_params, norm_params, window.channels)
+
+        region = (window.tile, window.z_span, window.channels)
+        if region != self._projection_carry_region:
+            self._projection_carry = {}
+            self._projection_carry_region = region
+
+        frames = window.frames
+        n, lo = len(frames), window.start
+        plane_shape = frames.shape[2:]       # [W, C, ...] → [...]
+        buf, keep = None, 0
+        slot, bounds = identity
+        entry = self._projection_carry.get(slot)
+        if entry is not None:
+            b_bounds, buf, b_lo, b_n = entry
+            if buf.shape[1:] != plane_shape or buf.shape[0] < n:
+                buf = None
+            elif b_bounds == bounds and b_lo <= lo < b_lo + b_n:
+                drop = lo - b_lo
+                keep = min(b_n - drop, n)
+                if drop:
+                    for k in range(keep):      # one frame at a time: no overlapping copy
+                        buf[k] = buf[k + drop]
+            # else: the bounds moved (or no overlap) — every frame is re-projected into the SAME
+            # buffer, so a per-frame clip range still holds one window, not one per timepoint
+        if buf is None:
+            capacity = max(n, 2 * self.TEMPORAL_RADIUS + 1)
+            buf = np.empty((capacity,) + plane_shape, dtype=np.float32)
+        for k in range(keep, n):
+            buf[k] = self._project_window(frames[k:k + 1], model_params, norm_params,
+                                          window.channels)[0]
+        self._projection_carry[slot] = (bounds, buf, lo, n)
+        return buf[:n]
 
     # groups sharing a window can be recognised. What is cached is the model INPUT — the projected
     # frame and its metric planes — because that is everything upstream of the first

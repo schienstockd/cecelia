@@ -14,6 +14,12 @@ Fixed-name cleanup outputs (``afCorrected``, ``driftCorrected``, ``denoised``) c
 the specs don't offer a name — which is why the lock is a whole PROJECT: the agent works in a
 disposable one (``scripts/agent_eval/app_project.py`` builds it), never in the user's.
 
+Headless mode (``CECELIA_MCP_NO_GUI=1``, ``no_gui.py``; docs/todo/HEADLESS_MODE_PLAN.md D2) is the one
+other shape: an INTERACTIVE session, the user at the keyboard approving each call. There the lock is
+the project the launcher named (may be unset — "new project") plus every project this session
+created, and the session may create projects, sets and images (``NO_GUI_ROUTES``). Without the
+switch those routes stay refused and the lock is exactly as above.
+
 Stdlib + ``websockets`` (already a dependency of the observer's listener).
 """
 from __future__ import annotations
@@ -28,6 +34,7 @@ from cecelia_mcp import gating_views as gv
 from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
+from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.wsclient import api_url_to_ws, ssl_kwargs
 
 PROJECT_ENV = "CECELIA_MCP_PROJECT"
@@ -54,6 +61,14 @@ AUTONOMOUS_ROUTES = frozenset({
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
 })
 
+# Allowed ONLY in headless mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
+# does there. Each is additive — a new project, a new set, new pending images.
+NO_GUI_ROUTES = frozenset({
+    ("POST", "/api/projects/create"),   # WRITE — a new project (joins this session's lock)
+    ("POST", "/api/sets/create"),       # WRITE — a new set in an allowed project
+    ("POST", "/api/images/register"),   # WRITE — pending images; importImages.omezarr converts them
+})
+
 _TERMINAL = {"done", "failed", "cancelled", "interrupted", "skipped"}
 _UID_ALPHABET = string.ascii_letters + string.digits
 
@@ -74,13 +89,36 @@ def required_prefix() -> str:
     return os.environ.get(PREFIX_ENV, "").strip()
 
 
-def check_project(project_uid: str) -> None:
+# Projects this session created (headless mode only) — they join the lock. In-process: the MCP server
+# lives exactly as long as the Claude session, which is the scope D2 means.
+_session_projects: set[str] = set()
+
+
+def allow_session_project(project_uid: str) -> None:
+    _session_projects.add(project_uid)
+
+
+def allowed_projects() -> list[str]:
     lock = locked_project()
-    if not lock:
+    extra = sorted(_session_projects) if no_gui_enabled() else []
+    return ([lock] if lock else []) + [p for p in extra if p != lock]
+
+
+def check_project(project_uid: str) -> None:
+    allowed = allowed_projects()
+    if not allowed:
+        if no_gui_enabled():
+            raise LockViolation("this session has no project yet — create one with create_project, "
+                                "or restart `pixi run headless <project>` to work in an existing one")
         raise LockViolation(f"{PROJECT_ENV} is not set — the autonomous server refuses every call")
-    if project_uid != lock:
-        raise LockViolation(f"project {project_uid!r} is not the locked project {lock!r}; "
-                            "this session may only run work in that one")
+    if project_uid in allowed:
+        return
+    if no_gui_enabled():
+        raise LockViolation(f"project {project_uid!r} is not one this session may work in "
+                            f"({', '.join(allowed)}); restart `pixi run headless <project>` to work "
+                            "in another")
+    raise LockViolation(f"project {project_uid!r} is not the locked project {allowed[0]!r}; "
+                        "this session may only run work in that one")
 
 
 # ── the output-name guard ──────────────────────────────────────────────────────────────────────────
@@ -185,7 +223,8 @@ class AutonomousClient:
 
     def _request(self, method: str, path: str, params: dict | None = None, body: dict | None = None,
                  raw: bool = False):
-        if (method, path) not in AUTONOMOUS_ROUTES:
+        if (method, path) not in AUTONOMOUS_ROUTES and not (
+                no_gui_enabled() and (method, path) in NO_GUI_ROUTES):
             raise DisallowedRoute(f"{method} {path} is not an allowed autonomous route")
         uid = (body or {}).get("projectUid") or (params or {}).get("projectUid")
         if uid is not None:
@@ -206,6 +245,34 @@ class AutonomousClient:
         if bad:
             raise LockViolation(f"{fun_name}: " + "; ".join(bad))
         return spec
+
+    # ── getting data in (headless mode only — NO_GUI_ROUTES) ──
+    def create_project(self, name: str) -> dict:
+        got = self._request("POST", "/api/projects/create", body={"name": name})
+        proj = got.get("project") or {}
+        uid = str(proj.get("uid") or "")
+        if not uid:
+            raise ApiError(500, f"project create returned no uid: {got}")
+        allow_session_project(uid)
+        return {"projectUid": uid, "name": proj.get("name"), "path": proj.get("path")}
+
+    def create_set(self, project_uid: str, name: str) -> dict:
+        got = self._request("POST", "/api/sets/create", body={"projectUid": project_uid, "name": name})
+        return {"setUid": got.get("uid"), "name": got.get("name")}
+
+    def register_images(self, project_uid: str, set_uid: str, paths: list[str]) -> dict:
+        # The route silently skips a path it cannot find (a GUI tolerance: the file picker only offers
+        # real files). Here a typo would just vanish, so check first and name what was skipped.
+        missing = [p for p in paths if not os.path.isabs(p) or not os.path.isfile(p)]
+        wanted = [p for p in paths if p not in missing]
+        if not wanted:
+            raise ApiError(400, "none of the paths is an existing file given as an absolute path: "
+                                + ", ".join(missing))
+        got = self._request("POST", "/api/images/register",
+                            body={"projectUid": project_uid, "setUid": set_uid, "filepaths": wanted})
+        images = [{"imageUid": i.get("uid"), "name": i.get("name"), "path": i.get("filepath")}
+                  for i in got.get("images") or []]
+        return {"images": images, "skipped": missing}
 
     # ── WebSocket launch ──
     def _ws_send(self, message: dict, until, wait_s: float = 4.0) -> list[dict]:

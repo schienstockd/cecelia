@@ -105,6 +105,100 @@ class Lock(unittest.TestCase):
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"}
         self.assertTrue(writes)
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
+        # headless mode's creation routes are a separate set, and additive (no delete/rename/move)
+        self.assertFalse(au.NO_GUI_ROUTES & au.AUTONOMOUS_ROUTES)
+        self.assertTrue(all(p.endswith(("/create", "/register")) for _, p in au.NO_GUI_ROUTES))
+
+
+class NoGuiLock(unittest.TestCase):
+    """Headless mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN D2): the lock is the named project plus
+    the projects this session created, and creation routes open — only there."""
+
+    def setUp(self):
+        au._session_projects.clear()
+        self.addCleanup(au._session_projects.clear)
+
+    def test_created_project_joins_the_lock_only_in_headless_mode(self):
+        au.allow_session_project("new001")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": "1"}):
+            au.check_project("named1")
+            au.check_project("new001")
+            with self.assertRaisesRegex(au.LockViolation, "pixi run headless"):
+                au.check_project("other1")
+        # the eval sandbox: a session project never widens the lock
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": ""}):
+            with self.assertRaises(au.LockViolation):
+                au.check_project("new001")
+
+    def test_new_project_session_starts_empty_and_says_how_to_start(self):
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "", "CECELIA_MCP_NO_GUI": "1"}):
+            with self.assertRaisesRegex(au.LockViolation, "create_project"):
+                au.check_project("abc123")
+            self.assertEqual(au.allowed_projects(), [])
+
+    def test_creation_routes_open_only_in_headless_mode(self):
+        c = au.AutonomousClient("http://127.0.0.1:1")
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": ""}):
+            with self.assertRaises(DisallowedRoute):
+                c._request("POST", "/api/projects/create", body={"name": "x"})
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": "1", au.PROJECT_ENV: "named1"}), \
+                mock.patch.object(au, "http_json", return_value={"uid": "s1"}) as http:
+            c._request("POST", "/api/sets/create", body={"projectUid": "named1", "name": "a"})
+            self.assertEqual(http.call_count, 1)
+            with self.assertRaises(au.LockViolation):        # still inside the lock
+                c._request("POST", "/api/sets/create", body={"projectUid": "other1", "name": "a"})
+
+    def test_create_project_adds_it_to_the_lock(self):
+        c = au.AutonomousClient("http://x")
+        reply = {"project": {"uid": "new001", "name": "Expt", "path": "/p/new001"}}
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "", "CECELIA_MCP_NO_GUI": "1"}), \
+                mock.patch.object(au, "http_json", return_value=reply):
+            self.assertEqual(c.create_project("Expt")["projectUid"], "new001")
+            au.check_project("new001")
+
+    def test_register_names_the_paths_it_skipped(self):
+        import tempfile
+        c = au.AutonomousClient("http://x")
+        with tempfile.NamedTemporaryFile(suffix=".tif") as f, \
+                mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": "1"}), \
+                mock.patch.object(au, "http_json", return_value={"images": [
+                    {"uid": "i1", "name": "a", "filepath": f.name}]}) as http:
+            got = c.register_images("named1", "s1", [f.name, "/no/such.tif", "rel.tif"])
+            self.assertEqual(got["skipped"], ["/no/such.tif", "rel.tif"])
+            self.assertEqual(got["images"][0]["imageUid"], "i1")
+            self.assertEqual(http.call_args[0][4]["filepaths"], [f.name])
+            with self.assertRaisesRegex(au.ApiError, "absolute path"):
+                c.register_images("named1", "s1", ["rel.tif"])
+
+    def test_switch_rejects_a_typo(self):
+        from cecelia_mcp.no_gui import no_gui_enabled
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": "yes"}):
+            with self.assertRaises(ValueError):
+                no_gui_enabled()
+
+
+class NoGuiTools(unittest.TestCase):
+    """The creation tools exist only in headless mode: the eval sandbox's agent never sees them."""
+
+    def _tool_names(self, no_gui: str) -> set[str]:
+        import importlib
+        from cecelia_mcp import autonomous_server
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": no_gui}):
+            mod = importlib.reload(autonomous_server)
+            names = {t.name for t in asyncio.run(mod.mcp.list_tools())}
+            text = mod.INSTRUCTIONS
+        importlib.reload(autonomous_server)
+        return names, text
+
+    def test_registered_and_named_only_with_the_switch(self):
+        creation = {"create_project", "create_set", "register_images"}
+        names, text = self._tool_names("")
+        self.assertFalse(creation & names)
+        self.assertNotIn("register_images", text)
+        names, text = self._tool_names("1")
+        self.assertTrue(creation <= names)
+        for t in creation | {"importImages.omezarr"}:
+            self.assertIn(t, text)
 
 
 class RunChainStoredName(unittest.TestCase):
