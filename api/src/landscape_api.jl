@@ -223,7 +223,11 @@ function _landscape_level_xy(zp::AbstractString)
     [(l.shape[end], l.shape[end - 1]) for l in lvls if length(l.shape) >= 2]
 end
 
-# Tile stats for a single plane (nx, ny Float32). Mean + SNR (mean / max(σ, floor)).
+# Tile stats for a single plane (nx, ny Float32). Mean + SNR (mean / max(σ, floor)), on intensities
+# normalised by `range = (lo, hi)` — the channel's FIXED display range for the image (saved viewer
+# contrast, else sampled; `_display_specs_with_source`), clamped to [0, 1]. Fixed, not the plane's own
+# extrema, so a tile's mean does not move when a bright object enters elsewhere in the view, and is
+# comparable across frames and captures that share the range (`sourceRun.channels.range`).
 # The floor guards against divide-by-tiny-σ in tiles that are literally uniform;
 # 1e-3 in normalised [0,1] terms → SNR maxes at ~1000 rather than exploding to Inf,
 # which is what the JSON serialisation needs.
@@ -233,16 +237,13 @@ const _SNR_SIGMA_FLOOR = 1e-3
 # `nothing` = the whole plane. A tile with no pixel of the plane under it is `nothing`; a tile thinner
 # than a pixel reads the pixel under its centre, so a deep zoom on a small image still answers.
 function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::Int;
+                             range::Tuple{<:Real,<:Real},
                              frame::Union{Nothing,NTuple{4,Float64}} = nothing)
     W, H = size(plane, 1), size(plane, 2)
     fx0, fy0, fx1, fy1 = frame === nothing ? (0.0, 0.0, Float64(W), Float64(H)) : frame
     out = Vector{Union{Nothing,Tuple{Float64,Float64}}}(nothing, ncols * nrows)
-    # Normalise the plane to [0, 1] using its own dynamic range — mean/SNR are unit-free
-    # once we do this, so a caller doesn't need to send channel LUT contrasts. Uses
-    # min/max rather than a percentile to keep it O(N) and predictable; the tile stats
-    # inherit whatever headroom the raw plane had.
-    lo, hi = extrema(plane)
-    span = hi > lo ? (Float64(hi) - Float64(lo)) : 1.0
+    lo, hi = Float64(range[1]), Float64(range[2])
+    span = hi > lo ? hi - lo : 1.0
     for r in 0:(nrows - 1), c in 0:(ncols - 1)
         xr = _tile_px_range(fx0, fx1, c, ncols, W)
         yr = _tile_px_range(fy0, fy1, r, nrows, H)
@@ -252,7 +253,7 @@ function _tile_channel_stats(plane::AbstractMatrix{<:Real}, ncols::Int, nrows::I
         sum = 0.0
         sumSq = 0.0
         @inbounds for y in y0:y1, x in x0:x1
-            v = (Float64(plane[x, y]) - Float64(lo)) / span
+            v = clamp((Float64(plane[x, y]) - lo) / span, 0.0, 1.0)
             sum += v
             sumSq += v * v
             n += 1
@@ -688,7 +689,10 @@ computed; the value names what the field came from:
   `segCount = {valueName, labelsVersion}`
   `pops     = [{valueName, popType, gatingMtime}]` one per pop layer (gating file mtime)
   `tracks   = {valueName, labelsVersion}`
-  `channels = {valueName, imageVersion, level}`    (pyramid level actually read)
+  `channels = {valueName, imageVersion, level, range: {name: [lo, hi]}, rangeSource}`
+             (level = pyramid level read; range = the fixed window each channel's mean/snr is
+              normalised by, rangeSource "viewer" | "sampled" — two captures compare only where
+              the ranges match)
 Sparse — a field absent from the response has no `sourceRun` key. Enables
 "which run produced this number" reads on the capture envelope; also lets Kiwi /
 MCP compare two envelopes and say "the newer one saw a re-tracked h5ad".
@@ -700,7 +704,8 @@ image lands in the 500 ms – 2 s budget the plan allocates for the augmented la
 segCount / pops each add one `.h5ad` read of centroid columns + `O(nCells + nPops)`
 binning; `resolve_pops` is cached per (vn, popType) on the CciaImage so a re-run for
 the same visibility snapshot pays only the first-call cost. `sourceRun` is metadata
-lookups only (`resolve_version`, `mtime`) — sub-millisecond.
+lookups only (`resolve_version`, `mtime`) — sub-millisecond. The channel ranges are one props read,
+or for an image no viewer has opened a small sample of every channel (`_sampled_specs`).
 """
 function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -750,7 +755,7 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         return 200, JSON3.write((; tiles = []))
 
     vnn = isempty(value_name) ? nothing : String(value_name)
-    zp, _td, err = resolve_image_version(project_uid, image_uid, vnn; version = nothing)
+    zp, td, err = resolve_image_version(project_uid, image_uid, vnn; version = nothing)
     err === nothing || return 404, JSON3.write((; error = err))
 
     t = t_raw < 0 ? 0 : t_raw
@@ -778,6 +783,8 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
     # ── Per-channel mean + SNR (Phase 1) — only when the frontend sent channels.
     channels_emitted = false
     channels_level = 0
+    channels_range = Dict{String,Vector{Float64}}()
+    channels_range_source = ""
     if !isempty(channels_raw) && !(view !== nothing && sizeX <= 0)
         level = view === nothing ? _pick_landscape_level(zp) :
                 _pick_view_level(_landscape_level_xy(zp), sizeX, sizeY, view)
@@ -803,6 +810,18 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
             i = Int(idx)
             (0 <= i < nc_total) || continue
             push!(channels, (i, String(name)))
+        end
+        # The fixed per-channel range the tile means are normalised by — resolved ONCE per request,
+        # the window a stack render of this view would take (from the MIP when the view is a MIP).
+        # Intensity, not geometry, so it holds at any pyramid level.
+        if !isempty(channels)
+            specs, range_src = try
+                _display_specs_with_source(_props_path(td, zp), zp, nc_total;
+                                           max_projection = render_mode == "volume")
+            catch e
+                return 500, JSON3.write((; error = "landscape compute: could not resolve channel ranges — $(sprint(showerror, e))"))
+            end
+            channels_range_source = range_src
         end
         # Channels read shape depends on renderMode:
         #   plane  → single plane at `z` (matches what the viewer draws)
@@ -844,7 +863,9 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
             else
                 reshape(vol, nx, ny)
             end
-            stats = _tile_channel_stats(plane, ncols, nrows; frame = frame)
+            rng = (Float64(specs[ci + 1].lo), Float64(specs[ci + 1].hi))
+            stats = _tile_channel_stats(plane, ncols, nrows; range = rng, frame = frame)
+            channels_range[cname] = [round(rng[1], sigdigits = 6), round(rng[2], sigdigits = 6)]
             for r in 0:(nrows - 1), c in 0:(ncols - 1)
                 st = stats[r * ncols + c + 1]
                 st === nothing && continue
@@ -968,7 +989,9 @@ function api_viewer_landscape_compute(body_bytes::Vector{UInt8})
         end
         source_run["channels"] = Dict("valueName" => isempty(value_name) ? "default" : String(value_name),
                                        "imageVersion" => img_version,
-                                       "level" => channels_level)
+                                       "level" => channels_level,
+                                       "range" => channels_range,
+                                       "rangeSource" => channels_range_source)
     end
 
     # Drop the empty `channels` bag when this compute didn't populate any (Decision 3

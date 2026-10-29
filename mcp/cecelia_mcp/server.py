@@ -2057,6 +2057,8 @@ def get_capture(project_uid: str, capture_id: str) -> list:
           • `tiles[i].channels = {<channelName>: {mean, snr}}` — per-channel mean + SNR from
             the raw multi-channel plane, untangling the colour-blend. A yellow tile might read
             "high mean on Tcells, low mean on SHG" even when its category is `bright-textured`.
+            `mean` is in [0, 1] of the channel's fixed display range (`sourceRun.channels.range`),
+            so it does not shift when something bright enters elsewhere in the view.
           • `tiles[i].segCount` — how many segmented objects have a centroid inside this tile
             at the shown t. The "5 vs 12 cells" answer a downsampled composite can't give.
           • `tiles[i].pops = [{path, name, count, layer}]` — which populations occupy this tile at
@@ -2084,9 +2086,13 @@ def get_capture(project_uid: str, capture_id: str) -> list:
       • `sourceRun.pops     = [{valueName, popType, gatingMtime}]` — one per pop layer counted, with
         its gating file's on-disk mtime (older captures: a single object)
       • `sourceRun.tracks   = {valueName, labelsVersion}`
-      • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
+      • `sourceRun.channels = {valueName, imageVersion, level, range, rangeSource}` — pyramid
+        level read; `range = {<channelName>: [lo, hi]}` the window each mean is normalised by,
+        `rangeSource` `viewer` (saved contrast) or `sampled` (older captures: no range, and means
+        normalised per frame — not comparable)
     Use these to answer "which run produced this number", or to compare two capture envelopes
-    and see whether the underlying gating map / re-tracked h5ad moved between shares.
+    and see whether the underlying gating map / re-tracked h5ad moved between shares. Channel
+    means compare across captures only where `range` matches.
 
     A v2 landscape also carries `viewport` describing how the compute reduced Z, so a tile's
     counts and channel stats read consistently with the viewer that produced them:
