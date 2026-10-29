@@ -46,8 +46,8 @@ DEFAULT_TEMPORAL_SCALES = [1, 2, 4, 8]
 DEFAULT_CUMULATIVE_WINDOW = 5
 
 # Coastal's normalisation percentiles (`normalize_and_project`). The task's `normalise` param
-# reaches the same place through the base's `_compute_norm_params`; this is the fallback when a
-# tile has no global statistic (`normaliseToWhole` off).
+# reaches the same place through the base's window — whole-image, or per frame with
+# `normaliseToWhole` off; this is the fallback for a channel too empty to have one.
 PERCENTILE_LO = 0.01
 PERCENTILE_HI = 99.99
 
@@ -704,7 +704,8 @@ class CoastalUtils(SegmentationUtils):
 
         The same two steps as coastal's `normalize_and_project` (per-channel percentile clip, then
         maximum across channels, then scale), with one deliberate difference: the clip range comes
-        from the base's GLOBAL `norm_params` rather than from this window. Per-window percentiles
+        from the base's `norm_params` (whole-image, or the frame's with `normaliseToWhole` off)
+        rather than from this window. Per-window percentiles
         would make a tile's normalisation depend on which tile it is.
 
         `context_channels` says which image channels the window carries, in axis order. When the

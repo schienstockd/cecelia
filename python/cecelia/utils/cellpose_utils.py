@@ -259,13 +259,9 @@ class CellposeUtils(SegmentationUtils):
         if norm_params and ch_idx in norm_params:
             norm_min, norm_max = norm_params[ch_idx]
         else:
-            normalise_perc = float(model_params.get('normalise', 99.9))
-            valid = arr[arr > 0]
-            if len(valid) > 100:
-                norm_min = float(np.percentile(valid, 100 - normalise_perc))
-                norm_max = float(np.percentile(valid, normalise_perc))
-            else:
-                norm_min, norm_max = 0.0, float(arr.max()) or 1.0
+            # only a channel the base found too empty for a window (or a caller passing none)
+            rng = self._percentile_range(arr, float(model_params.get('normalise', 99.9)))
+            norm_min, norm_max = rng if rng is not None else (0.0, float(arr.max()) or 1.0)
 
         if norm_max > norm_min:
             arr = np.clip((arr - norm_min) / (norm_max - norm_min), 0.0, 1.0)
