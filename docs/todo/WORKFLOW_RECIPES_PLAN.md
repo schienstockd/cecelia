@@ -292,7 +292,7 @@ Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
 | **Multiplex tissue** (IBEX, CODEX) | Fig 3a–b, missions *IBEX*, *CODEX* | `import-images` → `fix-metadata` → `segment-an-image` (membrane + nuclear) → `cluster-cells` → `spatial-analysis` → `cluster-regions` → structures (opt.): segment the stroma, then branching (**gap**) and nearest-branch contact (**gap**) → `build-plots` → `run-a-chain` |
 | **Intravital timelapse** | Fig 4, missions *LN HSV* | As written above, plus aggregates/contacts (opt., Fig 4d) and `run-a-chain` |
 | **Live + structures** | Fig 5a, mission *skin lymphatics* | Intravital, plus segment the structure separately → distance/contact to it (**gap**) as a `cluster-tracks` input |
-| **In vitro migration** | Fig 5b, mission *cancer flow tracks* | `import-images` → `fix-metadata` → denoise (**gap**: only `train-denoise-model` exists) → `segment-an-image` → `gate-populations` → `track-cells` → `behaviour-states` → `cluster-tracks` → `run-a-chain` |
+| **In vitro migration** | Fig 5b, mission *cancer flow tracks* | `import-images` → `fix-metadata` → `segment-an-image` → `gate-populations` → `track-cells` → `behaviour-states` → `cluster-tracks` → `run-a-chain` |
 
 **Left out, on purpose:**
 - **Xenium** was a one-off test that Dominik never liked.
@@ -301,11 +301,21 @@ Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
 - **Track flow fields** (`binariseTracks` → branching) are deferred in `SPATIAL_ANISOTROPY_PLAN.md`
   D11. The anisotropy that is built is the structure orientation field, not one from tracks.
 
-**Before any of these ship, each needs:**
-- its *why* lines taken from the mission and the paper, not written fresh;
-- the gaps either built as guides or marked optional.
-- For *Live + structures*: check whether `cluster-tracks` accepts distance-to-structure as a feature
-  (not checked yet).
+**Settled 2026-10-30 (Dominik):**
+- **The three remaining gaps (aggregates, branching, contact/distance to a structure) are specialised
+  functions.** They become optional recipe steps with no guide, naming the page and task. A guide
+  follows only if people get stuck there.
+- **Denoise is not an in vitro step.** Today it's an option for photon-limited intravital data, so it
+  moves into the intravital recipe as optional, beside the flow-model fork. In vitro migration drops it.
+- **The *why* lines:** Claude drafts them from the paper's Results and the R tutorial; Dominik
+  corrects them.
+- **Live + structures is wired in code, but has not been run end to end.** Both contact tasks write
+  per-cell `{pop}.cell.min_distance#<target>` and `contact#<target>` columns
+  (`cell_contacts_mesh_run.py:102-103`), and the target can sit in another segmentation
+  (`contact_targets.jl`). Cluster tracks aggregates any cell measure per track to
+  `.mean/.median/.sd/.qUp/.qLow` (`clustTracks/cluster.jl:89-97`). Those are the paper's Fig 5a
+  heatmap columns (sd, qUp, qLow distance). The R version did this. Before shipping, run it once on a
+  movie with a structure.
 
 **Claude is not in these steps.** This is the Claude-free first pass. D11 covers what Claude changes.
 
@@ -467,10 +477,10 @@ predicates.
 
 ## Open questions
 
-1. **The picker heading.** "What are you trying to do?" is the recognition question, and it is longer
+1. ~~**The picker heading.**~~ **Settled (Dominik, 2026-10-30): `Recipes`.** "What are you trying to do?" is the recognition question, and it is longer
    than every other heading in the dialog. Alternative: a plain `Recipes` eyebrow matching
    `Start`/`Data`/`Populations`, with the question as the section's one-line intro.
-2. **A `recipe_request.yml` template, or a prefilled `feature_request.yml`?** D9 recommends the new
+2. ~~**A `recipe_request.yml` template, or a prefilled `feature_request.yml`?**~~ **Built:** `.github/ISSUE_TEMPLATE/recipe_request.yml` exists, and `recipeRequestUrl` opens it. D9 recommends the new
    template — it can ask for example images, which is the thing that actually unblocks a recipe, and
    the existing one requires a proposed solution the requester does not have. One more file in
    `.github/ISSUE_TEMPLATE/` is the whole cost.
