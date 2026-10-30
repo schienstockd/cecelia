@@ -41,7 +41,7 @@ _hedge(r, from, to) = any(e -> e["from"] == from && e["to"] == to, r["template"]
     @test length(_hnode(chain_from_history(proj, [uids["u"]]; retrain = true), "opticalFlow.train")) == 1
     # tracking per population is a fork (keep both); its versions are told apart by the populations
     tf = [f for f in r["finalOutputs"] if f["fn"] == "tracking.bayesian_track_measures"]
-    @test all(f -> f["multi"], tf) && sort([f["variant"] for f in tf]) == ["/qc/cells", "/qc/frags"]
+    @test all(f -> f["multi"], tf) && sort([f["detail"] for f in tf]) == ["/qc/cells", "/qc/frags"]
     # the start dot sits on the roots, so the canvas draws it straight away, saved or not
     @test r["template"]["startTargets"] == [seg["id"]]
     # the template only fails validation on the model, which this test install's vault lacks

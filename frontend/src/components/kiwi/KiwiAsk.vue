@@ -31,7 +31,7 @@ import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
 import { searchRefs, stepLabel, turnMeta, attachmentRows, claimRows,
          type AttachmentRow, type ClaimRow, type KiwiClaim, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
 import { buildTurnSave, buildClaimSave } from '../../utils/kiwiTurnSave'
-import { createBlackboardEntry } from '../../utils/blackboardApi'
+import { saveBlackboardEntryOnce } from '../../utils/blackboardApi'
 
 const kiwi = useKiwiStore()
 const settings = useSettingsStore()
@@ -56,8 +56,9 @@ function saveCallbacks() {
 }
 // The Blackboard list refreshes itself from the `blackboard:changed` broadcast the backend fires on
 // create, so the click only has to route: `?entry=` opens it (BlackboardModule).
-function announceSaved(entryId: string) {
-  toast.add({ severity: 'success', life: 5000, summary: 'Saved to Blackboard',
+function announceSaved(entryId: string, existing: boolean) {
+  toast.add({ severity: existing ? 'info' : 'success', life: 5000,
+              summary: existing ? 'Already on the Blackboard' : 'Saved to Blackboard',
               detail: 'Click to open the entry.',
               onClick: () => { void router.push({ path: '/blackboard', query: { entry: entryId } }) } })
 }
@@ -68,9 +69,9 @@ async function saveTurn(t: KiwiTurn) {
   saveBusy.value = { ...saveBusy.value, [t.turnId]: true }
   try {
     const payload = buildTurnSave(t, saveCallbacks())
-    const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
-                                            { kiwiRefs: payload.kiwiRefs })
-    if (id) announceSaved(id)
+    const { entryId: id, existing } = await saveBlackboardEntryOnce(puid, payload.title, payload.content,
+      payload.attachments, { kiwiRefs: payload.kiwiRefs, sourceKey: `kiwi-turn:${t.turnId}` })
+    if (id) announceSaved(id, existing)
     else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
                      detail: 'Blackboard rejected the entry.' })
   } finally { saveBusy.value = { ...saveBusy.value, [t.turnId]: false } }
@@ -83,9 +84,9 @@ async function saveClaim(t: KiwiTurn, c: KiwiClaim, i: number) {
   saveBusy.value = { ...saveBusy.value, [key]: true }
   try {
     const payload = buildClaimSave(t, c, saveCallbacks())
-    const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
-                                            { kiwiRefs: payload.kiwiRefs })
-    if (id) announceSaved(id)
+    const { entryId: id, existing } = await saveBlackboardEntryOnce(puid, payload.title, payload.content,
+      payload.attachments, { kiwiRefs: payload.kiwiRefs, sourceKey: `kiwi-claim:${t.turnId}:${i}` })
+    if (id) announceSaved(id, existing)
     else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
                      detail: 'Blackboard rejected the claim.' })
   } finally { saveBusy.value = { ...saveBusy.value, [key]: false } }

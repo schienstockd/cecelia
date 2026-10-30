@@ -175,8 +175,8 @@ their models. Returns, all plain JSON:
 
 - `template`    — `{name, nodes: [{id, fn, scope, params}], edges: [{from, to}], startTargets}` —
                   the start dot on the chain's roots
-- `finalOutputs`— `[{id, fn, output, variant, multi, at, imageUids, kept}]`: what the user may tick.
-                  `variant` tells one version of a step from another (its output name, else the
+- `finalOutputs`— `[{id, fn, output, detail, multi, at, imageUids, kept}]`: what the user may tick.
+                  `detail` tells one version of a step from another (its output name, else the
                   populations it read); `multi` = keeping several versions is a real fork (it writes
                   a label set, or runs per population), else the versions are alternatives — keep one
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
@@ -293,7 +293,7 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     Dict{String,Any}(
         "template"     => tpl,
         "finalOutputs" => [Dict{String,Any}("id" => s.id, "fn" => s.fn, "output" => s.output,
-                                            "variant" => _history_variant(s, leaves_of(s.fn)),
+                                            "detail" => _history_detail(s, leaves_of(s.fn)),
                                             "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
                                             "imageUids" => s.image_uids, "kept" => s.id in kept_finals)
                            for s in finals],
@@ -334,7 +334,7 @@ end
 
 # What tells this version of a step from its siblings: the name it writes, else what it read (the
 # populations — tracking `/qc/frags` vs `/qc/cells`), else "" (one version only).
-function _history_variant(s::HistoryStep, lv)::String
+function _history_detail(s::HistoryStep, lv)::String
     isempty(s.output) || return s.output
     vals = String[]
     for (k, v) in sort!(collect(s.params); by = first)
@@ -350,4 +350,4 @@ end
 _history_forks(s::HistoryStep, lv)::Bool =
     s.output_ns == "labels" ||
     (isempty(s.output) && any(l -> l.type == "popSelection" && !l.writes, values(lv)) &&
-     !isempty(_history_variant(s, lv)))
+     !isempty(_history_detail(s, lv)))

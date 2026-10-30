@@ -281,10 +281,21 @@ export async function createBlackboardEntry(
   opts?: { kiwiRefs?: Record<string, unknown> },
   apiBase = '',
 ): Promise<string> {
+  return (await saveBlackboardEntryOnce(projectUid, title, content, attachments, { ...opts, sourceKey: '' }, apiBase)).entryId
+}
+
+/** Create, once per `sourceKey` (what the entry is saved FROM — a Kiwi turn or claim): saving the
+ *  same source again returns the entry it already made, with `existing: true`. `entryId` '' = failed. */
+export async function saveBlackboardEntryOnce(
+  projectUid: string, title: string, content: string, attachments: string[],
+  opts: { kiwiRefs?: Record<string, unknown>; sourceKey: string },
+  apiBase = '',
+): Promise<{ entryId: string; existing: boolean }> {
   const body: Record<string, unknown> = { projectUid, title, content, attachments }
-  if (opts?.kiwiRefs && Object.keys(opts.kiwiRefs).length > 0) body.kiwiRefs = opts.kiwiRefs
+  if (opts.kiwiRefs && Object.keys(opts.kiwiRefs).length > 0) body.kiwiRefs = opts.kiwiRefs
+  if (opts.sourceKey) body.sourceKey = opts.sourceKey
   const r = await postJson(`${apiBase}/api/blackboard/create`, body)
-  return r && typeof r.entryId === 'string' ? r.entryId : ''
+  return { entryId: r && typeof r.entryId === 'string' ? r.entryId : '', existing: r?.existing === true }
 }
 
 /** POST /api/blackboard/revise — server snapshots CURRENT first. Returns the new snapshot version, or 0.

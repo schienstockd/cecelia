@@ -866,11 +866,31 @@ function api_blackboard_outcome(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, outcome = new_outcome))
 end
 
+const _BB_SOURCE_KEY_MAX = 200
+# The live entry already saved from `source_key`. Entries saved before sourceKey existed match on
+# an identical Kiwi save (same title and text, carrying kiwiRefs).
+function _bb_entry_from_source(uid::AbstractString, source_key::AbstractString,
+                               title::AbstractString, content::AbstractString)
+    legacy = nothing
+    for id in sort!(collect(keys(_read_bb_registry(uid))))
+        meta = _read_bb_meta(uid, id)
+        meta === nothing && continue
+        get(meta, "sourceKey", "") == source_key && return id
+        if legacy === nothing && !haskey(meta, "sourceKey") && haskey(meta, "kiwiRefs") &&
+           get(meta, "title", "") == title
+            md = joinpath(_bb_entry_dir(uid, id), "entry.md")
+            isfile(md) && read(md, String) == content && (legacy = id)
+        end
+    end
+    legacy
+end
+
 """
     POST /api/blackboard/create
 
-Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun? }`
-Reply: `{ ok:true, entryId }`
+Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun?, sourceKey? }`
+Reply: `{ ok:true, entryId }` — plus `existing:true` when an entry saved from `sourceKey` already exists
+(nothing is written then).
 
 Creates `<proj>/blackboard/<entryId>/{entry.md, meta.json}` — no snapshot on create (current = 0
 mirrors notebooks; first revision produces v1). Additive-only from the MCP surface; this is one of
@@ -927,6 +947,13 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     # Optional agentRun marker (AGENT_RUN_REVIEW_PLAN): set once by a run's harness.
     agent_run = _agent_run_from_body(get(body, :agentRun, nothing))
     agent_run isa Tuple && return agent_run
+    # Optional sourceKey — what the entry was saved FROM (a Kiwi turn or claim). Saving the same
+    # source again opens the entry it already made instead of a second copy.
+    source_key = first(_wstr(body, :sourceKey), _BB_SOURCE_KEY_MAX)
+    if !isempty(source_key)
+        prior = _bb_entry_from_source(uid, source_key, title, content)
+        prior === nothing || return 200, JSON3.write((; ok = true, entryId = prior, existing = true))
+    end
 
     dir = _bb_entry_dir(uid, id); mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
@@ -937,6 +964,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
         attachments = attachments, status = status, fingerprint = fingerprint,
         kiwiRefs = kiwi_refs, createdBy = author_stamp())
     agent_run === nothing || _set_bb_meta_field!(uid, id, "agentRun", agent_run)
+    isempty(source_key) || _set_bb_meta_field!(uid, id, "sourceKey", source_key)
 
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)

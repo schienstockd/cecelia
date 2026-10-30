@@ -6,7 +6,7 @@ import type { ChainTemplate } from '../tasks/types'
 
 export interface HistoryFinal {
   id: string; fn: string; output: string; imageUids: string[]; kept: boolean
-  variant: string   // what tells this version from its siblings ('' = the only one)
+  detail: string    // what tells this version from its siblings ('' = the only one)
   multi: boolean    // several versions can run side by side (segmentation, per-population tracking)
   at: string        // its latest run, ISO
 }

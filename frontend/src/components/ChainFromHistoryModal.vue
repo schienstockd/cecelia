@@ -69,7 +69,7 @@ watch(exemplars, () => { keep.value = undefined; suggestion.value = null })
 // ── steps ──
 const steps = computed(() => groupSteps(suggestion.value?.finalOutputs ?? [], labelOf))
 const kept  = computed(() => new Set(keep.value ?? []))
-const versionLabel = (v: HistoryFinal) => v.variant || `run of ${formatWhen(v.at ? new Date(v.at) : undefined)}`
+const versionLabel = (v: HistoryFinal) => v.detail || `run of ${formatWhen(v.at ? new Date(v.at) : undefined)}`
 
 function setKept(ids: string[], on: boolean) {
   const next = new Set(keep.value ?? [])
@@ -142,7 +142,7 @@ function open() {
                    v-tooltip.top="'Repeat this step'">
               <input type="checkbox" :checked="kept.has(g.versions[0].id)"
                      @change="setKept([g.versions[0].id], ($event.target as HTMLInputElement).checked)" />
-              {{ g.versions[0].variant || 'Keep' }}
+              {{ g.versions[0].detail || 'Keep' }}
             </label>
             <!-- a fork (segmentation, tracking per population): keep any of them -->
             <div v-else-if="g.multi" class="cc-row cc-row-loose"

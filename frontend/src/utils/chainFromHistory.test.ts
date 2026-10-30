@@ -41,8 +41,8 @@ describe('applyChoices', () => {
   })
 })
 
-const fin = (id: string, fn: string, at: string, multi = false, variant = ''): HistoryFinal =>
-  ({ id, fn, at, multi, variant, output: '', imageUids: [], kept: true })
+const fin = (id: string, fn: string, at: string, multi = false, detail = ''): HistoryFinal =>
+  ({ id, fn, at, multi, detail, output: '', imageUids: [], kept: true })
 
 describe('groupSteps + defaultKeep', () => {
   const finals = [fin('r1', 'regions', '2026-07-30T12:36'), fin('r2', 'regions', '2026-07-30T12:48'),

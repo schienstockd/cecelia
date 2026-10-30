@@ -29,7 +29,7 @@
 # not counted; the page lists it under the entry, where a person can clear it. The revise reply
 # names the person-marked sections it removed (`removedMarked`) so a Claude caller can say so.
 
-const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge")
+const _BB_PASSTHROUGH_KEYS = ("agentRun", "sectionOutcomes", "knowledge", "sourceKey")
 const _BB_SECTION_VERDICTS = ("good", "bad", "unsure")
 const _BB_SECTION_CAUSES = ("guide", "platform", "agent")
 const _BB_SECTION_ID_RE = r"^[dms][0-9]{2,3}$"
