@@ -52,9 +52,9 @@ export const tourGuide: GuideDef = {
       anchor: 'header.guides',
       placement: 'bottom',
       title: 'The guides',
-      text: 'This compass lists every guide, including this one — it is how you get back here.',
+      text: 'This compass opens the map: pick a recipe for your data, or jump to any page or guide.',
       bullets: [
-        'Each one walks you through a real step on your own data.',
+        'It is how you get back here; each guide walks a real step on your own data.',
         'A guide only points and watches; it never clicks for you.',
       ],
     },

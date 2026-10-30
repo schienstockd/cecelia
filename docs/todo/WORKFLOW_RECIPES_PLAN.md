@@ -319,7 +319,7 @@ Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
 
 **Claude is not in these steps.** This is the Claude-free first pass. D11 covers what Claude changes.
 
-### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(proposed 2026-10-30)*
+### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(Dominik, 2026-10-30; built with the map)*
 
 The steps stay the same with or without Claude. Claude changes *how you check* a step, not which steps
 exist. A separate Claude recipe would repeat every step and drift away from the original. So each
@@ -379,6 +379,27 @@ Points the overlay has to respect:
 - **The `assist` lines must come from shipped tools.** The Kiwi help had promised "prior captures on
   this cell", but nothing looks captures up by object. That line was corrected on 2026-10-30 along
   with this decision.
+
+### The map — built 2026-10-30 (`feat/inapp-map`)
+
+The front of the Guides dialog, merged with the guide list (Dominik: one view; D11 of GUIDE_SYSTEM_PLAN
+not reopened, so no new first-run entry — the tour's compass step names it).
+
+- **Recipes on top** (ChipSelect, none picked by default). A picked recipe lights its pages and lists
+  its steps, each Start (a guide) or Open (a specialised page step, `RecipePageStep`).
+- **The groups** — a card per sidebar group, a button per page (click goes there; hover says what for,
+  its pair, hidden-by-layout). A card's heading opens that group in the **accordion** below; one group
+  open at a time, starting on the group for the page you're on, else Start. Not persisted.
+- **Pairs** drawn once under the cards (`mapPairs`). **Claude toggle** (`settings.guidesShowClaude`,
+  off by default): the loop and a ✦ on each recipe step with an `assist`.
+- **One source.** `lib/guides/mapData.ts` holds only what for / day one / pair / guide per route;
+  everything else is `navGroups.ts`. `utils/guideMap.test.ts` fails on a sidebar page with no entry,
+  an entry for no page, or a missing guide or pair. `user-docs/README.md` is generated from the same
+  data (`utils/userDocs.ts`), its prose from `user-docs/parts/`; a stale README fails
+  `utils/userDocs.test.ts`.
+- **Not built:** Mermaid generated from the data (the README's diagram stays hand-written in
+  `parts/top.md`); the brief's quiet clusters for Panels / Scale up / Settings (the README covers them;
+  the map stays on the sidebar).
 
 ## Constraints the build has to satisfy
 
