@@ -62,11 +62,11 @@ export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
   {
     name: 'Chat to Claude',
     icon: 'pi-comments',
-    what: 'A back-and-forth in Claude Code — captures + notes accrue as you go.',
+    what: 'A back-and-forth in Claude Code — notes accrue as you go.',
     steps: [
       'Run claude in a terminal',
       'Ask it to check your project',
-      'Trail lands as captures, chains, blackboard',
+      'Notes land in the lab log + blackboard',
     ],
   },
 ]
@@ -95,7 +95,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   {
     key: 'creates', title: 'Creates', icon: 'pi-file', tone: 'good',
     items: [
-      'Captures — chained one-line notes on your marks',
+      'Lab-log lines — dated, append-only',
       'Blackboard entries — good/bad + required why',
       'Analysis boards, chains, Pluto notebooks — you review, then run',
       'CSV exports for Prism / R',
