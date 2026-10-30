@@ -2,6 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { buildChatPrompt } from './chatHandoff'
 
 describe('buildChatPrompt', () => {
+  it('names the Blackboard entry a Kiwi turn was saved to, and only with one', () => {
+    const p = buildChatPrompt('NRUBxU', 'my-experiment', { entryId: 'bb-123', title: 'Why <are>\n"tracks" short?' })
+    expect(p).toContain('bb-123')
+    expect(p).toContain('"Why are tracks short?"')
+    expect(p).not.toContain('<')
+    expect(buildChatPrompt('NRUBxU')).not.toMatch(/Blackboard/)
+  })
+
   it('names the project (name + uid) and the MCP server', () => {
     const p = buildChatPrompt('NRUBxU', 'my-experiment')
     expect(p).toContain('my-experiment (NRUBxU)')

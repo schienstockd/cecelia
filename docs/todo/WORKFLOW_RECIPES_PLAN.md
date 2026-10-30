@@ -350,10 +350,13 @@ the same here, in `user-docs/README.md` → *Working with Claude* and in Kiwi's 
    a frame and draw on it.
 2. **Ask Kiwi**, the rubber duck. It points and counts and doesn't judge. You click a ref to check
    a claim.
-3. **Settled? Save to Blackboard** with good/bad and a why. Kiwi turns expire after 50
+3. **Settled? Save to Blackboard** (the reply's **Save**), then tag it good/bad with a why on the Blackboard. Kiwi turns expire after 50
    (`KIWI_TURNS_KEEP`), and bad tags feed the repeat-failure warning.
 4. **A terminal session** when one question isn't enough, or when Claude should *make* something
    (chain from history, board, notebook, lab-log line) or mark cells and tracks.
+   **Continue in terminal** on a Kiwi reply saves it as an entry and starts the session naming
+   that entry, since the Blackboard is the only Kiwi state a terminal session can read (built
+   2026-10-30; `composables/useStartInTerminal.ts`).
 
 Step markers then just name which part of the loop applies at that step.
 

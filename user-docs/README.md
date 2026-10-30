@@ -119,17 +119,21 @@ to state carefully. All of it fits into one loop:
 2. **Ask Kiwi.** Kiwi is a rubber duck. It notices, counts and points, but doesn't judge: it won't
    tell you why something happened or what to exclude. Every claim in its reply has a reference.
    Click it and the app shows you what the claim rests on. Ask a follow-up to keep going.
-3. **Decide, then keep it.** Once you've settled something (or ruled it out), **Save to Blackboard**
-   and tag it good or bad, with a why. Kiwi replies expire after 50 turns; the Blackboard keeps
-   them. Bad-tagged entries are how Claude warns you when the same failure comes back.
-4. **Go to a terminal session when one question isn't enough.**
+3. **Decide, then keep it.** Once you've settled something (or ruled it out), press **Save** on the
+   reply. It becomes a Blackboard entry; tag it good or bad there, with a why. Kiwi replies expire
+   after 50 turns, but the Blackboard keeps them. Bad-tagged entries are how Claude warns you when
+   the same failure comes back.
+4. **Go to a terminal session when one question isn't enough.** Press **Continue in terminal** on
+   the reply. It saves the reply to the Blackboard and copies a command that starts Claude in a
+   terminal, picking up from that entry. The Blackboard is the bridge: a terminal session can't see
+   Kiwi replies you didn't save.
 
 | You want to… | Use |
 |---|---|
 | Ask about something you're looking at | **@** it, then ask Kiwi |
 | Show Claude a spot *in* an image or plot | **Share** and draw on it (a capture) |
 | Keep a conclusion, or a dead end | **Save to Blackboard**, tag good/bad |
-| Work through a problem over many steps | Claude in a terminal |
+| Work through a problem over many steps | **Continue in terminal** on a Kiwi reply, or Kiwi → **Start in terminal** |
 | Have Claude make something: a chain from what you ran, a board, a notebook, a lab-log line | Claude in a terminal (you review it, then you run it) |
 | Have Claude mark cells or tracks on the viewer, or jump to a frame | Claude in a terminal |
 | Pull in your LabArchives notes | Claude in a terminal |

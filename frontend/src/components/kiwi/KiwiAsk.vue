@@ -31,7 +31,9 @@ import { parseRailTime, taskElapsed } from '../../utils/taskElapsed'
 import { searchRefs, stepLabel, turnMeta, attachmentRows, claimRows,
          type AttachmentRow, type ClaimRow, type KiwiClaim, type KiwiTurn, type RefCandidate } from '../../utils/kiwiTurn'
 import { buildTurnSave, buildClaimSave } from '../../utils/kiwiTurnSave'
-import { createBlackboardEntry } from '../../utils/blackboardApi'
+import { createBlackboardEntry, type BlackboardEntrySummary } from '../../utils/blackboardApi'
+import { buildChatPrompt } from '../../lib/chatHandoff'
+import { useStartInTerminal } from '../../composables/useStartInTerminal'
 
 const kiwi = useKiwiStore()
 const settings = useSettingsStore()
@@ -61,18 +63,43 @@ function announceSaved(entryId: string) {
               detail: 'Click to open the entry.',
               onClick: () => { void router.push({ path: '/blackboard', query: { entry: entryId } }) } })
 }
+// The entry each turn was saved to this session, so Save then Continue in terminal (or either twice)
+// reuses one entry instead of creating a duplicate.
+type SavedEntry = Pick<BlackboardEntrySummary, 'entryId' | 'title'>
+const savedEntry = ref<Record<string, SavedEntry>>({})
+async function saveTurnEntry(t: KiwiTurn): Promise<SavedEntry | null> {
+  const known = savedEntry.value[t.turnId]
+  if (known) return known
+  const puid = pm.current?.uid ?? ''
+  if (!puid) return null
+  const payload = buildTurnSave(t, saveCallbacks())
+  const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
+                                          { kiwiRefs: payload.kiwiRefs })
+  if (!id) {
+    toast.add({ severity: 'error', life: 5000, summary: 'Save failed', detail: 'Blackboard rejected the entry.' })
+    return null
+  }
+  savedEntry.value = { ...savedEntry.value, [t.turnId]: { entryId: id, title: payload.title } }
+  return savedEntry.value[t.turnId]
+}
 async function saveTurn(t: KiwiTurn) {
   if (saveBusy.value[t.turnId]) return
-  const puid = pm.current?.uid ?? ''
-  if (!puid) return
   saveBusy.value = { ...saveBusy.value, [t.turnId]: true }
   try {
-    const payload = buildTurnSave(t, saveCallbacks())
-    const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
-                                            { kiwiRefs: payload.kiwiRefs })
-    if (id) announceSaved(id)
-    else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
-                     detail: 'Blackboard rejected the entry.' })
+    const e = await saveTurnEntry(t)
+    if (e) announceSaved(e.entryId)
+  } finally { saveBusy.value = { ...saveBusy.value, [t.turnId]: false } }
+}
+// Continue in terminal: the Blackboard is the only Kiwi state a terminal session can read, so save
+// the turn there and start the session with that entry named (`buildChatPrompt`'s `entry`).
+const { start: startTerminal, starting, isCopied: startCopied } = useStartInTerminal()
+async function continueInTerminal(t: KiwiTurn) {
+  const puid = pm.current?.uid ?? ''
+  if (!puid || starting.value || saveBusy.value[t.turnId]) return
+  saveBusy.value = { ...saveBusy.value, [t.turnId]: true }
+  try {
+    const e = await saveTurnEntry(t)
+    if (e) await startTerminal(buildChatPrompt(puid, pm.current?.name ?? undefined, e), t.turnId)
   } finally { saveBusy.value = { ...saveBusy.value, [t.turnId]: false } }
 }
 async function saveClaim(t: KiwiTurn, c: KiwiClaim, i: number) {
@@ -283,6 +310,15 @@ function pick(c: RefCandidate) {
                 @click="saveTurn(t)"
                 v-tooltip.bottom="'Save this whole turn to the Blackboard'">
           <i class="pi pi-bookmark" /> Save
+        </button>
+        <button v-if="t.reply" class="cc-btn cc-btn-ghost cc-fs-2xs"
+                :disabled="!observer.available || !!starting || saveBusy[t.turnId]"
+                @click="continueInTerminal(t)"
+                v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
+                  : startCopied(t.turnId) ? 'Copied — paste it in a terminal'
+                  : 'Save to Blackboard, then copy a command that starts a terminal session on it'">
+          <i :class="['pi', starting === t.turnId ? 'pi-spin pi-spinner' : startCopied(t.turnId) ? 'pi-check' : 'pi-comments']" />
+          {{ startCopied(t.turnId) ? 'Copied' : 'Continue in terminal' }}
         </button>
         <button v-if="canFollow(t)" class="cc-btn cc-btn-ghost cc-fs-2xs" :disabled="kiwi.busy"
                 @click="kiwi.followUp = t.turnId"

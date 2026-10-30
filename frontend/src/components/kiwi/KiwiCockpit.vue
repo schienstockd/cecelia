@@ -36,11 +36,12 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
-import { claudeLoginLabel, fetchTerminalCommand } from '../../utils/profileApi'
+import { claudeLoginLabel } from '../../utils/profileApi'
 import BaseModal from '../BaseModal.vue'
 import ClaudeLoginPanel from '../profile/ClaudeLoginPanel.vue'
 import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
+import { useStartInTerminal } from '../../composables/useStartInTerminal'
 import { useFlash } from '../../composables/useFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
@@ -193,20 +194,12 @@ async function copyChatStarter() {
   if (!projectUid.value) return
   await copyChatPrompt(buildChatPrompt(projectUid.value, projectName.value))
 }
-// Start in terminal: copy the one-liner (`kiwi_terminal_command`, built server-side) that starts the
-// assistant CLI under THIS profile's login with the chat starter as its first message, so one paste
-// gives a session already looking at the project — it pairs on its first observer call. A missing or
-// stale MCP entry is registered first: without it the session has no observer tools to pair through.
-const { isCopied: startCopied, copy: copyStart } = useCopyFlash(2500)
-const starting = ref(false)
+// Start in terminal: one implementation with a Kiwi turn's "Continue in terminal" —
+// `composables/useStartInTerminal.ts` (registers a missing/stale MCP entry first).
+const { start: startTerminal, starting, isCopied: startCopied } = useStartInTerminal()
 async function startInTerminal() {
-  if (!projectUid.value || starting.value) return
-  starting.value = true
-  try {
-    if (terminalCtaMode.value !== 'chat') await observer.registerMcp()
-    const r = await fetchTerminalCommand({ prompt: buildChatPrompt(projectUid.value, projectName.value) })
-    if (r?.command) await copyStart(r.command)
-  } finally { starting.value = false }
+  if (!projectUid.value) return
+  await startTerminal(buildChatPrompt(projectUid.value, projectName.value))
 }
 
 // ── Recent captures ───────────────────────────────────────────────────────────
@@ -375,13 +368,13 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <div class="kiwi-row" data-guide="kiwi.chat">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Chat</span>
           <button class="cc-btn cc-btn-ghost cc-fs-xs"
-                  :disabled="!observer.available || starting"
+                  :disabled="!observer.available || !!starting"
                   @click="startInTerminal"
                   v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
-                    : startCopied() ? 'Copied — paste it in a terminal'
+                    : startCopied('chat') ? 'Copied — paste it in a terminal'
                     : `Copy a command that starts a session on this project as ${appCtl.activeProfileDisplayName}`">
-            <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied() ? 'pi-check' : 'pi-copy']" />
-            {{ startCopied() ? 'Copied' : 'Start in terminal' }}
+            <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied('chat') ? 'pi-check' : 'pi-copy']" />
+            {{ startCopied('chat') ? 'Copied' : 'Start in terminal' }}
           </button>
           <!-- Secondary: just the opener, for a session that is already running (or an assistant not
                started from a terminal). Start covers the usual path, so this one is an icon. -->

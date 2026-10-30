@@ -56,7 +56,7 @@ export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
     steps: [
       '@ what puzzles you — or Share a frame and draw on it',
       'Ask; click a claim’s ref to check it',
-      'Settled? Save to Blackboard, tag good or bad',
+      'Settled? Save it; tag good or bad on the Blackboard',
     ],
   },
   {
@@ -64,7 +64,7 @@ export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
     icon: 'pi-comments',
     what: 'When one question isn’t enough, or Claude should make something.',
     steps: [
-      'Assistant → Set up (once), then Start in terminal',
+      'Set up once; then Continue in terminal on a reply',
       'Work it through; it can mark cells and tracks',
       'Review the chain, board or notebook it adds, then run it',
     ],
