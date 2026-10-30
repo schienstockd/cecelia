@@ -39,7 +39,7 @@ import FrameAnnotator from '../FrameAnnotator.vue'
 import CaptureViewSurface from '../CaptureViewSurface.vue'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useCaptureReshowStore } from '../../stores/captureReshow'
-import type { OverlayMark, CaptureAddress } from '../../utils/captureAddress'
+import { resolveStoredAddress, type OverlayMark } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { restorePanelsFromCapture, type CapturedPanel } from '../../utils/restorePanels'
 import { reresolvePops } from '../../plots/reresolvePops'
@@ -299,10 +299,7 @@ watch(() => reshowStore.pending, () => {
   if (env) reshown.value = env
 }, { immediate: true })
 // Address bag CaptureViewSurface expects.
-const reshownAddress = computed<CaptureAddress>(() => {
-  const a = reshown.value?.address as CaptureAddress | null | undefined
-  return a ?? { projectUid: projectUid.value }
-})
+const reshownAddress = computed(() => resolveStoredAddress(reshown.value?.address, projectUid.value))
 const reshownAddressLine = computed(() => {
   const panelsN = (reshown.value?.panels?.length) ?? 0
   const mod = props.module ?? 'universal'

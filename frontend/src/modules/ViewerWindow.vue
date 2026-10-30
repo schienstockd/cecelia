@@ -120,7 +120,7 @@ import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
-import { buildCaptureAddress, captureTimeS, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
+import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { announceShareOutcome, shareFailMessage } from '../utils/shareOutcome'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -4849,10 +4849,7 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
   if (overlay?.captureId && projectUid) {
     const env = await fetchCaptureEnvelope(projectUid, overlay.captureId)
     if (env && env.frame) {
-      // kiwiCaptures has a subtly looser CaptureAddress shape than captureAddress.ts (projectUid /
-      // plotSpec.specId are optional there); a plot-shaped field wouldn't appear on a viewer_frame
-      // capture anyway, and we fill projectUid from the popup's own uid — cast bridges the drift.
-      const addr = { ...(env.address ?? {}), projectUid } as CaptureAddress
+      const addr = resolveStoredAddress(env.address, projectUid)
       captureView.value = {
         captureId: env.captureId,
         frameDataUrl: env.frame,
