@@ -101,24 +101,48 @@ class HookTest(unittest.TestCase):
         stamp = json.loads((self.git_dir / self.attr.STAMP_FILE).read_text(encoding="utf-8"))
         self.assertEqual(stamp["model"], "claude-haiku-5-5")
 
+    def _trailers(self, env, now):
+        return self.attr.trailers(self.attr.fresh_stamp(self.git_dir, env, now), env)
+
     def test_fresh_stamp_gives_all_three_trailers(self):
         self.attr.record(self._event(), str(self.repo))
-        self.assertEqual(self.attr.trailers(self.msg, self.git_dir, self.env, time.time()),
+        self.assertEqual(self._trailers(self.env, time.time()),
                          ["Claude-Model: claude-opus-5-5", "Claude-Code: 2.1.312", f"Claude-Session: {SID}"])
 
     def test_stale_or_foreign_stamp_leaves_the_model_out(self):
         self.attr.record(self._event(), str(self.repo))
         late = time.time() + self.attr.MAX_AGE_S + 1
-        self.assertEqual(self.attr.trailers(self.msg, self.git_dir, self.env, late),
-                         ["Claude-Code: 2.1.312", f"Claude-Session: {SID}"])
+        self.assertEqual(self._trailers(self.env, late), ["Claude-Code: 2.1.312", f"Claude-Session: {SID}"])
         other = {**self.env, "CLAUDE_CODE_SESSION_ID": "other"}
-        self.assertNotIn("Claude-Model: claude-opus-5-5",
-                         self.attr.trailers(self.msg, self.git_dir, other, time.time()))
+        self.assertNotIn("Claude-Model: claude-opus-5-5", self._trailers(other, time.time()))
+
+    def test_only_an_agent_commit_with_a_claude_coauthor_counts(self):
+        self.assertTrue(self.attr.is_agent_commit(self.msg, self.env))
+        self.assertFalse(self.attr.is_agent_commit(self.msg, {}))            # a human's commit
+        self.assertFalse(self.attr.is_agent_commit("fix: x\n", self.env))    # no Claude co-author
+
+    def test_subagent_coauthor_line_is_corrected_to_its_own_model(self):
+        # a haiku subagent copies its parent's "Claude Opus 5.5" from its instructions
+        haiku = {"model": "claude-haiku-5-5"}
+        self.assertEqual(self.attr.fix_coauthor(self.msg, haiku),
+                         "fix: x\n\nCo-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>\n")
+        self.assertEqual(self.attr.fix_coauthor(self.msg, {}), self.msg)      # no model: as typed
+        human = "fix: x\n\nCo-Authored-By: Ann Lee <ann@lab.org>\n" + self.msg.split("\n\n", 1)[1]
+        self.assertIn("Ann Lee <ann@lab.org>", self.attr.fix_coauthor(human, haiku))
+        both = self.msg + "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n"
+        self.assertEqual(self.attr.fix_coauthor(both, haiku), both)          # two Claudes: can't tell
 
     def test_human_commit_untouched(self):
         self.attr.record(self._event(), str(self.repo))
-        self.assertEqual(self.attr.trailers(self.msg, self.git_dir, {}, time.time()), [])
-        self.assertEqual(self.attr.trailers("fix: x\n", self.git_dir, self.env, time.time()), [])
+        path = self.repo / "COMMIT_EDITMSG"
+        path.write_text(self.msg, encoding="utf-8")
+        orig = self.attr._git_dir
+        self.attr._git_dir = lambda cwd: self.git_dir
+        try:
+            self.attr.stamp_commit_msg(str(path), {})
+        finally:
+            self.attr._git_dir = orig
+        self.assertEqual(path.read_text(encoding="utf-8"), self.msg)
 
     def test_commit_msg_file_gets_trailers_in_the_trailer_block(self):
         self.attr.record(self._event(), str(self.repo))
@@ -152,6 +176,23 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(self.attr.pr_body_problem("gh pr edit 5 --add-label x", str(self.repo), stamp))
         self.assertIsNone(self.attr.pr_body_problem(seg.replace("body.md", "nope.md"), str(self.repo), stamp))
         self.assertIsNone(self.attr.pr_body_problem("gh pr edit 5 --body 'x'", str(self.repo), {}))
+
+    def test_gh_api_pr_body_is_checked_but_comments_are_not(self):
+        stamp = {"model": "claude-opus-5-5", "version": "2.1.312"}
+        ok = footer(stamp)
+        (self.repo / "b.md").write_text("x", encoding="utf-8")
+        (self.repo / "b.json").write_text(json.dumps({"body": f"x\n\n{ok}\n"}), encoding="utf-8")
+        where = str(self.repo)
+        problem = lambda seg: self.attr.pr_body_problem(seg, where, stamp)  # noqa: E731
+        self.assertIsNotNone(problem("gh api repos/o/r/pulls/5 -X PATCH -f body='no footer'"))
+        self.assertIsNotNone(problem("gh api -X PATCH repos/o/r/pulls/5 --raw-field body=x"))
+        self.assertIsNotNone(problem("gh api repos/{owner}/{repo}/pulls/5 -X PATCH -F body=@b.md"))
+        self.assertIsNone(problem(f"gh api repos/o/r/pulls/5 -X PATCH -f body='x {ok}'"))
+        self.assertIsNone(problem("gh api repos/o/r/pulls/5 -X PATCH --input b.json"))
+        self.assertIsNone(problem("gh api repos/o/r/pulls/5 -X PATCH -F body=@-"))          # stdin
+        self.assertIsNone(problem("gh api repos/o/r/issues/5/comments -f body='a reply'"))  # not a PR body
+        self.assertIsNone(problem("gh api repos/o/r/pulls/5/comments -f body='review'"))
+        self.assertIsNone(problem("gh api repos/o/r/pulls/5 -X PATCH -f title=t"))
 
 
 class GuardWiringTest(unittest.TestCase):

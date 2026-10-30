@@ -18,12 +18,14 @@ Where the facts come from (measured 2026-10-30, Claude Code 2.1.312):
 Two halves, both run from `check_commit_recital.py` (which owns the PreToolUse + `commit-msg`
 wiring, so no second hook registration is needed):
 - **PreToolUse**, on a `git commit` into a cecelia checkout: `record` writes the caller's stamp
-  to `<git-dir>/cecelia-claude-author.json` (per worktree). On `gh pr create|edit` with a body:
-  `pr_body_problem` blocks until the body ends with `footer(stamp)`, naming the exact line.
+  to `<git-dir>/cecelia-claude-author.json` (per worktree). On `gh pr create|edit` with a body, or
+  `gh api` on a PR's own endpoint: `pr_body_problem` blocks until the body ends with
+  `footer(stamp)`, naming the exact line.
 - **`commit-msg`**: `stamp_commit_msg` adds `Claude-Model` / `Claude-Code` / `Claude-Session`
   trailers to an agent commit (`CLAUDECODE=1` + a `Co-Authored-By: Claude` trailer). The model
   comes only from a fresh stamp of the same session; without one it's left out, never guessed
   (a subagent's env can't tell its model from the parent's).
+  The same stamp corrects a lone Claude `Co-Authored-By` naming another model (`fix_coauthor`).
 
 Fail open everywhere: an attribution bug must never block a commit.
 """
@@ -41,7 +43,7 @@ import time
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CALLER_HOOK = _REPO_ROOT / "mcp" / "cecelia_mcp" / "caller_hook.py"
 sys.path.insert(0, str(_REPO_ROOT / "python"))
-from cecelia.effectiveness.attribution import footer, trailer_lines  # noqa: E402
+from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
@@ -49,6 +51,9 @@ STAMP_FILE = "cecelia-claude-author.json"
 #: A stamp older than this belongs to some earlier commit command, not this one.
 MAX_AGE_S = 600
 _COAUTHOR_CLAUDE = re.compile(r"^Co-Authored-By:\s*Claude\b", re.I | re.M)
+#: A whole Claude co-author line (Anthropic's address), the one `fix_coauthor` may rewrite.
+_COAUTHOR_CLAUDE_LINE = re.compile(r"^Co-Authored-By:\s*Claude\b[^\n]*<noreply@anthropic\.com>[ \t]*$",
+                                   re.I | re.M)
 _AI_AGENT = re.compile(r"claude-code_(\d+(?:-\d+)+)")
 
 _hook = None
@@ -93,30 +98,57 @@ def record(event: dict, cwd: str | None) -> None:
         pass
 
 
-def trailers(message: str, git_dir: pathlib.Path | None, env: dict, now: float) -> list[str]:
-    """`Key: value` trailers (`attribution.trailer_lines`) for an agent commit's `message`;
-    [] for anyone else's."""
-    if env.get("CLAUDECODE") != "1" or not _COAUTHOR_CLAUDE.search(message):
-        return []
-    session = env.get("CLAUDE_CODE_SESSION_ID", "")
-    stamp: dict = {}
+def fresh_stamp(git_dir: pathlib.Path | None, env: dict, now: float) -> dict:
+    """The PreToolUse stamp for THIS session's commit, `{}` when there is none, it is another
+    session's, or it is older than `MAX_AGE_S`."""
     try:
         stamp = json.loads((git_dir / STAMP_FILE).read_text(encoding="utf-8")) if git_dir else {}
     except (OSError, ValueError):
-        pass
-    fresh = (isinstance(stamp, dict) and stamp.get("session") == session
-             and 0 <= now - float(stamp.get("at") or 0) <= MAX_AGE_S)
-    return trailer_lines({"model": stamp.get("model", "") if fresh else "",
-                          "version": (stamp.get("version", "") if fresh else "") or env_version(env),
-                          "session": session})
+        return {}
+    session = env.get("CLAUDE_CODE_SESSION_ID", "")
+    if (isinstance(stamp, dict) and session and stamp.get("session") == session
+            and 0 <= now - float(stamp.get("at") or 0) <= MAX_AGE_S):
+        return stamp
+    return {}
+
+
+def is_agent_commit(message: str, env: dict) -> bool:
+    """Claude Code ran the commit (`CLAUDECODE=1`) and the message declares a Claude co-author."""
+    return env.get("CLAUDECODE") == "1" and bool(_COAUTHOR_CLAUDE.search(message))
+
+
+def trailers(stamp: dict, env: dict) -> list[str]:
+    """`Key: value` trailers (`attribution.trailer_lines`) for an agent commit, from `fresh_stamp`
+    (the model) and the env (session; version when the stamp has none)."""
+    return trailer_lines({"model": stamp.get("model", ""),
+                          "version": stamp.get("version", "") or env_version(env),
+                          "session": env.get("CLAUDE_CODE_SESSION_ID", "")})
+
+
+def fix_coauthor(message: str, stamp: dict) -> str:
+    """`message` with its Claude co-author line naming the stamp's model. The line is typed from the
+    agent's instructions, so a subagent on another model copies its parent's name, and the commit
+    would contradict its own `Claude-Model`. Only a message with exactly ONE such line is touched:
+    two (a parent and a subagent both credited) can't be told apart."""
+    if not stamp.get("model") or len(_COAUTHOR_CLAUDE_LINE.findall(message)) != 1:
+        return message
+    return _COAUTHOR_CLAUDE_LINE.sub(coauthor_line(stamp), message, count=1)
 
 
 def stamp_commit_msg(message_path: str, env: dict | None = None) -> None:
-    """`commit-msg` half: add the trailers to the message file in place (git's own trailer logic)."""
+    """`commit-msg` half: correct the Claude co-author line (`fix_coauthor`), then add the trailers
+    to the message file in place (git's own trailer logic)."""
     env = os.environ if env is None else env
     try:
-        message = pathlib.Path(message_path).read_text(encoding="utf-8", errors="replace")
-        lines = trailers(message, _git_dir(None), env, time.time())
+        path = pathlib.Path(message_path)
+        message = path.read_text(encoding="utf-8", errors="replace")
+        if not is_agent_commit(message, env):
+            return
+        stamp = fresh_stamp(_git_dir(None), env, time.time())
+        fixed = fix_coauthor(message, stamp)
+        if fixed != message:
+            path.write_text(fixed, encoding="utf-8")
+        lines = trailers(stamp, env)
         if not lines:
             return
         # `--no-divider`: a recital body carries `---` lines, which git otherwise reads as the start
@@ -129,32 +161,69 @@ def stamp_commit_msg(message_path: str, env: dict | None = None) -> None:
         pass
 
 
-#: `gh pr create|edit …` up to the next shell separator.
-GH_PR_SEGMENT = re.compile(r"\bgh\s+pr\s+(?:create|edit)\b[^;&|\n]*")
+#: `gh pr create|edit …` or `gh api …`, up to the next shell separator.
+GH_PR_SEGMENT = re.compile(r"\bgh\s+(?:pr\s+(?:create|edit)|api)\b[^;&|\n]*")
+#: A PR's own endpoint (`repos/o/r/pulls`, `…/pulls/12`): not its comments or reviews, whose
+#: attribution line is the public-reply one (docs/DEV.md → *Agent-authored public replies*).
+_PULLS_ENDPOINT = re.compile(r"(?:^|/)pulls(?:/\d+)?/?$")
+#: `gh api` flags whose next word is their value, not the endpoint.
+_API_VALUE_FLAGS = frozenset({"-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field",
+                              "--input", "-q", "--jq", "-t", "--template", "--hostname", "--cache",
+                              "-p", "--preview"})
+
+
+def _read(where: str, path: str) -> str | None:
+    try:
+        return pathlib.Path(where, os.path.expanduser(path)).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _api_body(words: list[str], where: str) -> str | None:
+    """The PR body a `gh api <pulls endpoint>` call sets: `-f/--raw-field body=…`,
+    `-F/--field body=…` (`@file` read; `@-` is stdin, unread) or `--input <file.json>`."""
+    args = words[2:]
+    endpoint = next((w for i, w in enumerate(args)
+                     if not w.startswith("-") and not (i and args[i - 1] in _API_VALUE_FLAGS)), "")
+    if not _PULLS_ENDPOINT.search(endpoint.split("?", 1)[0]):
+        return None
+    for i, w in enumerate(words):
+        nxt = words[i + 1] if i + 1 < len(words) else ""
+        if w in ("-f", "--raw-field", "-F", "--field") and nxt.startswith("body="):
+            value = nxt[len("body="):]
+            if w in ("-F", "--field") and value.startswith("@"):
+                return None if value == "@-" else _read(where, value[1:])
+            return value
+        if w == "--input" and nxt and nxt != "-":
+            try:
+                body = json.loads(_read(where, nxt) or "null")
+            except ValueError:
+                return None
+            return body.get("body") if isinstance(body, dict) and isinstance(body.get("body"), str) else None
+    return None
 
 
 def _body(segment: str, where: str) -> str | None:
-    """The PR body a `gh pr create|edit` segment sets, or None when it sets none / can't be read
-    (stdin `-`, an unparseable command, a missing file)."""
+    """The PR body a `gh pr create|edit` or `gh api` segment sets, or None when it sets none / can't
+    be read (stdin `-`, an unparseable command, a missing file)."""
     try:
         words = shlex.split(segment)
     except ValueError:
         return None
+    if words[1:2] == ["api"]:
+        return _api_body(words, where)
     for i, w in enumerate(words):
         flag, _, inline = w.partition("=")
         value = inline if inline else (words[i + 1] if i + 1 < len(words) else None)
         if flag in ("--body-file", "-F") and value and value != "-":
-            try:
-                return pathlib.Path(where, os.path.expanduser(value)).read_text(encoding="utf-8")
-            except OSError:
-                return None
+            return _read(where, value)
         if flag in ("--body", "-b") and value is not None:
             return value
     return None
 
 
 def pr_body_problem(segment: str, where: str, stamp: dict) -> str | None:
-    """None when this `gh pr` segment's body names the calling model, else what to add."""
+    """None when this `gh pr` / `gh api` segment's PR body names the calling model, else what to add."""
     if not stamp.get("model"):
         return None  # unknown model: nothing to require
     body = _body(segment, where)

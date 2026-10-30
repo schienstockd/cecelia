@@ -73,7 +73,10 @@ Claude-Session: <session id>
 The model and version come from the **committing agent's own transcript**. A subagent's commit
 names the subagent's model, because its env is identical to the parent's and only the PreToolUse
 event says who is calling. The Bash guard records that just before the `git commit` runs. If no
-fresh record from this session exists, `Claude-Model` is left out rather than guessed. Code:
+fresh record from this session exists, `Claude-Model` is left out rather than guessed. With one, the
+hook also corrects a Claude `Co-Authored-By` line that names another model (a subagent copies its
+parent's). It touches only a message with exactly one Claude co-author line; human co-authors are
+never touched. Code:
 `.claude/hooks/claude_attribution.py`, formatting in `python/cecelia/effectiveness/attribution.py`.
 
 Ship the test in the same commit as the code (see `CLAUDE.md` → **Testing**), and update the
@@ -119,8 +122,10 @@ Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merge
   ```
 
   The Bash guard blocks `gh pr create|edit` into a cecelia checkout whose `--body-file` / `--body`
-  lacks the exact line for the calling agent, and prints that line, so copy it from there. A body
-  piped on stdin (`--body-file -`) isn't checked.
+  lacks the exact line for the calling agent, and prints that line, so copy it from there. The same
+  goes for `gh api …/pulls[/N]` setting `body` (`-f`, `-F body=@file`, `--input`). Comment and review
+  endpoints aren't PR bodies: they carry the public-reply line below. A body piped on stdin
+  (`--body-file -`, `body=@-`) isn't checked.
 
 ```bash
 git push -u origin feat/<short-slug>
