@@ -128,6 +128,18 @@ def _anchors(rel):
     return {a for a in out if a}
 
 
+#: Fragments pasted into a generated doc: their links resolve from the doc they land in, not from
+#: where the fragment sits (`user-docs/parts/*.md` -> `user-docs/README.md`, `frontend/src/utils/userDocs.ts`).
+_FRAGMENT_DIRS = {'user-docs/parts/': 'user-docs'}
+
+
+def _link_base(rel):
+    for frag, base in _FRAGMENT_DIRS.items():
+        if rel.startswith(frag):
+            return base
+    return os.path.dirname(rel)
+
+
 class DocPointerConventionTest(unittest.TestCase):
     def test_markdown_links_resolve(self):
         bad = []
@@ -139,7 +151,7 @@ class DocPointerConventionTest(unittest.TestCase):
                     path = target.split('#')[0]
                     if not path:
                         continue
-                    resolved = os.path.normpath(os.path.join(os.path.dirname(rel), path))
+                    resolved = os.path.normpath(os.path.join(_link_base(rel), path))
                     if not os.path.exists(os.path.join(_REPO, resolved)):
                         bad.append(f'{rel}:{line_no} -> {target}')
         self.assertEqual([], bad, 'dangling markdown links:\n  ' + '\n  '.join(bad))

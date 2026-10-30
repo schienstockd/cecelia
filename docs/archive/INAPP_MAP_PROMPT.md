@@ -2,6 +2,14 @@
 > investigated at the time. It is not a description of how the code works now, and not instructions
 > to re-run. Current design lives in `docs/<AREA>.md` and `docs/todo/*_PLAN.md`.
 
+> **Outcome (2026-10-30, `feat/inapp-map`).** Built as the front of the Guides dialog; the map and the
+> guide accordion are one view (Dominik). Two premises changed: **no new first-run entry** (the
+> welcome dialog / empty-project surfaces were rejected again under GUIDE_SYSTEM_PLAN D11 — only the
+> tour's compass step now names the map), and the data file holds **only what the sidebar can't say**
+> (`lib/guides/mapData.ts`), deriving labels, icons and groups from `navGroups.ts`, so it is not a
+> third copy. The fixed day-one hero became recipe chips, because "where do I start" depends on the
+> data (WORKFLOW_RECIPES_PLAN D10). Design: `docs/todo/WORKFLOW_RECIPES_PLAN.md` → *The map*.
+
 # INAPP_MAP_PROMPT
 
 Build an in-app **Help → Map**: a compact, clean, clear visual map of Cecelia. It is a map, not a manual. One screen, scannable in seconds, every node clickable. Replaces reading `user-docs/README.md` (PR #1841) as the way users find their way around.

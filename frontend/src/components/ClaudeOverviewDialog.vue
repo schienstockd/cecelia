@@ -8,9 +8,10 @@
 -->
 <script setup lang="ts">
 import BaseModal from './BaseModal.vue'
+import ClaudeLoop from './ClaudeLoop.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { computed } from 'vue'
-import { CLAUDE_LOOP, claudeAccess, CLAUDE_PROVISIONAL } from '../lib/claudeOverview'
+import { claudeAccess, CLAUDE_PROVISIONAL } from '../lib/claudeOverview'
 import { useSettingsStore } from '../stores/settings'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -32,14 +33,7 @@ const ACCESS_COLUMNS: SelectionColumn[] = [
 
 <template>
   <BaseModal title="What Kiwi does here" icon="pi-sparkles" width="620px" @close="$emit('close')">
-    <!-- the loop: four numbered steps -->
-    <ol class="co-loop">
-      <li v-for="(s, i) in CLAUDE_LOOP" :key="i" class="co-step cc-card cc-card-2">
-        <span class="co-num">{{ i + 1 }}</span>
-        <div class="co-step-title">{{ s.title }}</div>
-        <div class="co-step-text cc-muted cc-fs-sm">{{ s.text }}</div>
-      </li>
-    </ol>
+    <ClaudeLoop class="co-loop" />
 
     <!-- Kiwi vs terminal: icons carry the meaning, not colour alone -->
     <SelectionTable selection-mode="none" density="compact" :columns="ACCESS_COLUMNS"
@@ -56,16 +50,7 @@ const ACCESS_COLUMNS: SelectionColumn[] = [
 </template>
 
 <style scoped>
-.co-loop { list-style: none; margin: 0 0 18px; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-/* a raised card ON the dialog's surface-1 body — the surface-2 variant of .cc-card */
-.co-step { padding: 12px; display: flex; flex-direction: column; gap: 4px; }
-.co-num {
-  width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-  font-size: var(--cc-fs-xs); font-weight: 600; color: var(--cc-text); background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-}
-.co-step-title { font-weight: 600; color: var(--cc-text); }
-.co-step-text { line-height: 1.4; }
+.co-loop { margin-bottom: 18px; }
 
 .co-yes { color: var(--cc-accent); }
 .co-no { color: var(--cc-text-dim); }
