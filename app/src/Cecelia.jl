@@ -259,7 +259,7 @@ export validate_chain_template, ChainTemplateError, chain_template_from_raw, cha
 export load_chain_run
 export run_chain
 export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
-export chain_from_history
+export chain_from_history, chain_preflight
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────

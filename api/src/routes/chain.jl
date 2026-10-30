@@ -115,6 +115,24 @@ function api_chains_suggest(req::HTTP.Request)
     200, JSON3.write(r)
 end
 
+# POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
+# message}] } — what the run will hit on each image, before it starts (`chain_preflight`,
+# tasks/chain/preflight.jl). The chain's start dot is honoured, so only the steps that will run are read.
+function api_chains_preflight(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid   = _wstr(body, :projectUid)
+    chain = _wstr(body, :chain)
+    uids  = String[String(u) for u in get(body, :imageUids, [])]
+    (isempty(uid) || isempty(chain) || isempty(uids)) &&
+        return 400, JSON3.write((; error="projectUid, chain and imageUids required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    tpl  = try Cecelia._prune_to_start(load_chain_template(proj, chain)) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; problems = chain_preflight(proj, tpl, uids)))
+end
+
 function api_chains_save(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body

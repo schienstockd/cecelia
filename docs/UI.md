@@ -2689,6 +2689,11 @@ exemplars disagree on, toggle *Reuse trained models*. Gate steps, reused models 
 listed as `InlineNote`s. **Open in whiteboard** creates the chain (`saveEmptyChain`), lays the template out
 and saves it if it validates; if not, it stays on the canvas unsaved and the log says why.
 
+**Pre-flight on Run**: Run first posts `/api/chains/preflight` (`utils/chainPreflight.ts` groups the
+answer per image, failures first). Nothing found → the run starts as before; anything found → a
+*Before this run* dialog lists it (`InlineNote` per problem) with **Cancel** / **Run anyway**. A failed
+pre-flight request never blocks a run.
+
 ### Node types
 
 | VueFlow type | Julia scope | Visual cue |

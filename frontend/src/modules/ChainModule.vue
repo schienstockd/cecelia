@@ -42,6 +42,9 @@ import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, sta
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
+import { groupByImage, type PreflightProblem } from '../utils/chainPreflight'
+import BaseModal from '../components/BaseModal.vue'
+import InlineNote from '../components/InlineNote.vue'
 import { isLiveStatus } from '../lib/taskStatus'
 import { moduleRouteFor } from '../utils/moduleRoute'
 import { NAV_GROUPS, navItemFor } from '../lib/navGroups'
@@ -1294,12 +1297,36 @@ const runChainTip = computed(() =>
   `Run chain "${activeChain.value}" on ${runSelectedUids.value.length} image(s).`
 )
 
+// Pre-flight (docs/todo/CHAIN_FROM_HISTORY_PLAN.md → Pre-flight checks): Run first asks what the run
+// will hit on each image; anything found is shown with Run anyway / Cancel, nothing → it just runs.
+const preflight = ref<PreflightProblem[] | null>(null)
+const preflightGroups = computed(() => groupByImage(preflight.value ?? [], imageName))
+
 async function runChain() {
   const uid = projectMeta.current?.uid
   if (!uid || !activeChain.value || !runSelectedUids.value.length || chainRunning.value) return
   chainRunning.value = true
   // Save current params (defaults merged by applyTemplate) before backend loads the file.
   await saveChain()
+  try {
+    const res = await fetch('/api/chains/preflight', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, chain: activeChain.value, imageUids: runSelectedUids.value }),
+    })
+    const problems = res.ok ? ((await res.json()).problems ?? []) as PreflightProblem[] : []
+    if (problems.length) { preflight.value = problems; chainRunning.value = false; return }
+  } catch { /* pre-flight is advice — never a reason not to run */ }
+  startRun(uid)
+}
+
+function runAnyway() {
+  const uid = projectMeta.current?.uid
+  preflight.value = null
+  if (uid) startRun(uid)
+}
+
+function startRun(uid: string) {
+  chainRunning.value = true
   ws.send({
     type:       'chain:run',
     projectUid: uid,
@@ -1418,6 +1445,21 @@ onActivated(async () => {
         @update:model-value="v => activeTab = v as 'edit' | 'live'"
       />
     </div>
+
+    <BaseModal v-if="preflight" title="Before this run" icon="pi-exclamation-triangle" width="560px"
+               @close="preflight = null">
+      <div v-for="g in preflightGroups" :key="g.uid" class="preflight-image">
+        <div class="cc-eyebrow">{{ g.name }}</div>
+        <InlineNote v-for="(p, i) in g.problems" :key="i" :severity="p.level"
+                    :short="`${allTaskDefs.find(d => d.fun_name === p.fn)?.label ?? p.fn}: ${p.message}`" />
+      </div>
+      <template #footer>
+        <button class="cc-btn cc-btn-ghost" v-tooltip.top="'Change the chain or the images first'"
+                @click="preflight = null">Cancel</button>
+        <button class="cc-btn cc-btn-primary" v-tooltip.top="'Run on all the selected images regardless'"
+                @click="runAnyway"><i class="pi pi-play" /> Run anyway</button>
+      </template>
+    </BaseModal>
 
     <ChainFromHistoryModal v-if="historyOpen && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
                            @close="historyOpen = false" @open="openFromHistory" />
@@ -1967,6 +2009,7 @@ onActivated(async () => {
 </template>
 
 <style scoped>
+.preflight-image { margin-bottom: 0.5rem; }
 .chain-module {
   display: flex;
   flex-direction: column;

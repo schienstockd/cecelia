@@ -618,6 +618,16 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 
 ---
 
+### Pre-flight
+
+`chain_preflight(proj, template, image_uids)` (`app/src/tasks/chain/preflight.jl`, route
+`POST /api/chains/preflight`) reads a template against each target image before a run: a
+`channelSelection` name the image lacks and a `valueNameSelection` input neither on the image nor made by
+an ancestor node are **fail**; a step `task_applies` rejects (it will be `:skipped`) and an output that
+already exists (with `keep_previous_version()` off) are **warn**. Advisory — the whiteboard offers
+*Run anyway*; fault isolation still keeps a bad image from stopping the rest. It reuses the history
+builder's spec reading (`_history_leaves`), so "what does this param read" has one answer.
+
 ### Manual steps
 
 A task whose spec carries a `"manual"` block (`{"prompt", "open"}`, read by `task_manual`) is a

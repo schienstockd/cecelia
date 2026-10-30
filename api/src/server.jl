@@ -435,6 +435,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/labels/rename" => (req, body_bytes) -> (api_images_rename_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/create" => (req, body_bytes) -> (api_chains_create(body_bytes)),
+    "/api/chains/preflight" => (req, body_bytes) -> (api_chains_preflight(body_bytes)),
     # create-only: adds ONE board, never edits one. NOT /api/projects/boards, which overwrites the
     # whole document (see api_boards_add).
     "/api/boards/add" => (req, body_bytes) -> (api_boards_add(body_bytes)),
