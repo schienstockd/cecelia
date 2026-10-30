@@ -1,59 +1,51 @@
 import { describe, it, expect } from 'vitest'
 import {
-  CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
+  CLAUDE_LOOP, CLAUDE_ACCESS, CLAUDE_PROVISIONAL, claudeAccess,
   CLAUDE_TERMINAL, CLAUDE_DATA_NOTICE, claudeChatCommand,
-  claudeCapabilities,
 } from './claudeOverview'
 import { isMultiSentence, isTooLong } from '../utils/uiCopy'
 
 describe('claudeOverview content model', () => {
-  it('has the two entry points (Ask Kiwi / Chat), each with how-to steps', () => {
-    const names = CLAUDE_ENTRY_POINTS.map(e => e.name)
-    expect(names).toEqual(['Ask Kiwi', 'Chat to Claude'])
-    for (const e of CLAUDE_ENTRY_POINTS) {
-      expect(e.steps.length).toBeGreaterThanOrEqual(2)   // it's a how-to, not just a blurb
-      expect(e.icon).toMatch(/^pi-/)
+  // The loop is the one explanation of how Claude fits the work — the dialog, the guide and
+  // user-docs/README.md all say it, so each step has to name the control it is about.
+  it('is the four-step loop, each step naming its control', () => {
+    expect(CLAUDE_LOOP.map(s => s.title)).toEqual(['Point at it', 'Ask Kiwi', 'Keep it', 'Go further'])
+    expect(CLAUDE_LOOP[0].text).toMatch(/@ Add to Kiwi/)
+    expect(CLAUDE_LOOP[0].text).toMatch(/Share/)
+    expect(CLAUDE_LOOP[1].text).toMatch(/ref/)
+    expect(CLAUDE_LOOP[2].text).toMatch(/Save/)
+    expect(CLAUDE_LOOP[2].text).toMatch(/Blackboard/)        // the record is the product
+    expect(CLAUDE_LOOP[3].text).toMatch(/Continue in terminal/)
+    for (const s of CLAUDE_LOOP) {
+      expect(isMultiSentence(s.text)).toBe(false)
+      expect(isTooLong(s.text)).toBe(false)
     }
   })
 
-  it('covers sees / suggests / creates / cant, with the limits set apart', () => {
-    const byKey = Object.fromEntries(CLAUDE_CAPABILITIES.map(g => [g.key, g]))
-    expect(Object.keys(byKey).sort()).toEqual(['cant', 'creates', 'sees', 'suggests'])
-    expect(byKey.cant.tone).toBe('muted')                // the "can't" group reads as recessive
-    expect(byKey.creates.items.join(' ')).toMatch(/notebook/i)   // notebooks are the headline "create"
-    expect(byKey.creates.items.join(' ')).toMatch(/chain/i)      // …and chains, since it can author one
-    expect(byKey.creates.items.join(' ')).toMatch(/board/i)      // …and boards (add_analysis_board)
-    // Documentation-helper framing (docs/archive/kiwi-purpose-and-framing.md): the RECORD is the
-    // product, so Sees must name the capture surface, Creates must include the durable-note
-    // pathway (blackboard entries), and Can't must say replies are provisional. If any of these
-    // drifts back out, the dialog undersells what Kiwi actually is.
-    expect(byKey.sees.items.join(' ')).toMatch(/mark|capture/i)
-    expect(byKey.creates.items.join(' ')).toMatch(/blackboard/i)
-    expect(byKey.cant.items.join(' ')).toMatch(/provisional|not.*verified/i)
-    // RUBBER_DUCK_FIT_PLAN Decision 1 — the shipped guardrail digest is a proactive warning,
-    // not a passive reflection. Users should be told the tool will speak up on recurring
-    // bad-tagged failures. Drift out of Suggests and the modal misrepresents what Kiwi does.
-    expect(byKey.suggests.items.join(' ')).toMatch(/recurred|repeat|recurring/i)
-    for (const g of CLAUDE_CAPABILITIES) expect(g.items.length).toBeGreaterThan(0)
+  // The dialog is where someone goes to find out what Claude will do to their project. The limits
+  // that make authoring safe — it designs but never launches, and never changes or deletes what the
+  // user built — must be a row that neither way in can do.
+  it('states that neither way in runs anything or changes the user’s work', () => {
+    const none = CLAUDE_ACCESS.filter(r => !r.kiwi && !r.terminal).map(r => r.text).join(' ')
+    expect(none).toMatch(/Runs a task or chain/)
+    expect(none).toMatch(/changes or deletes/)
   })
 
-  // The dialog is where someone goes to find out what Claude will do to their project, so the "Can't"
-  // list has to state the two limits that make chain authoring safe — it designs but never launches,
-  // and it can't overwrite what the user built. A stale reassurance here is worse than none.
-  it('states that it cannot run what it builds, or overwrite the user’s work', () => {
-    const cant = CLAUDE_CAPABILITIES.find(g => g.key === 'cant')!.items.join(' ')
-    expect(cant).toMatch(/run anything|cannot run|can't run/i)
-    expect(cant).toMatch(/chain/i)
-    expect(cant).toMatch(/overwrite|rename|delete/i)
-    // boards are ADD-ONLY, and this dialog is where someone checks before letting Claude near their
-    // Analysis page — the limit has to be stated wherever the capability is
-    expect(cant).toMatch(/board/i)
+  it('separates what only a terminal session can do', () => {
+    const termOnly = CLAUDE_ACCESS.filter(r => !r.kiwi && r.terminal).map(r => r.text).join(' ')
+    expect(termOnly).toMatch(/chain/)
+    expect(termOnly).toMatch(/board/)
+    expect(termOnly).toMatch(/notebook/)
+    expect(termOnly).toMatch(/Marks cells/)
+    // Kiwi only reads: no row lets Kiwi do something a terminal can't
+    expect(CLAUDE_ACCESS.some(r => r.kiwi && !r.terminal)).toBe(false)
   })
 
-  it('offers example prompts spanning QC → notebook → chain', () => {
-    expect(CLAUDE_EXAMPLES.length).toBeGreaterThanOrEqual(3)
-    expect(CLAUDE_EXAMPLES.join(' ')).toMatch(/notebook/i)
-    expect(CLAUDE_EXAMPLES.join(' ')).toMatch(/chain/i)
+  // RUBBER_DUCK_FIT_PLAN Decision 1 — the shipped guardrail digest is a proactive warning. Users
+  // should be told it will speak up on recurring bad-tagged failures.
+  it('says it warns on recurring bad-tagged failures, and that replies are provisional', () => {
+    expect(CLAUDE_ACCESS.map(r => r.text).join(' ')).toMatch(/bad-tagged failure keeps coming back/)
+    expect(CLAUDE_PROVISIONAL).toMatch(/provisional/i)
   })
 
   it('builds the fallback command from the REAL config path, or nothing at all', () => {
@@ -71,25 +63,17 @@ describe('claudeOverview content model', () => {
   })
 })
 
-describe('claudeCapabilities — hidden connectors', () => {
-  it('drops lines that need a connector the user hid', () => {
-    const shown = claudeCapabilities([])
-    const hidden = claudeCapabilities(['LabArchives'])
+describe('claudeAccess — hidden connectors', () => {
+  it('drops rows that need a connector the user hid, and nothing else', () => {
+    const shown = claudeAccess([])
+    const hidden = claudeAccess(['LabArchives'])
     expect(JSON.stringify(shown)).toMatch(/LabArchives/)
     expect(JSON.stringify(hidden)).not.toMatch(/LabArchives/)
-    // …and nothing else is lost with it
-    expect(hidden.length).toBe(shown.length)
-    expect(JSON.stringify(hidden)).toMatch(/Analysis lineage/)
-    expect(JSON.stringify(hidden)).toMatch(/Pluto notebooks/)
-  })
-
-  it('returns plain strings, so the dialog renders them unchanged', () => {
-    for (const g of claudeCapabilities([]))
-      for (const i of g.items) expect(typeof i).toBe('string')
+    expect(hidden.length).toBe(shown.length - 1)
   })
 
   it('an unknown connector name hides nothing', () => {
-    expect(claudeCapabilities(['NotAThing'])).toEqual(claudeCapabilities([]))
+    expect(claudeAccess(['NotAThing'])).toEqual(claudeAccess([]))
   })
 })
 

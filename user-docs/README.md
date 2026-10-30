@@ -110,41 +110,42 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 ## Working with Claude (optional)
 
 Everything above works without Claude. Claude doesn't add steps to your analysis. It helps you
-**check** a step: a segmentation that looks off, a gate, a cluster you can't name, a result you want
-to state carefully. All of it fits into one loop:
+**check** one: a segmentation that looks off, a gate, a cluster you can't name, a result you want to
+state carefully. One loop, the same one Kiwi's **?** and the guide *Assist with Kiwi* show:
 
-1. **Point at the evidence.** Press **@ Add to Kiwi** on what puzzles you: an image row, a
-   population, a plot, the viewer, a task or a Blackboard entry. If it is something *in* the
-   picture, **Share** from the viewer or a plot and draw on it; that's a *capture*.
-2. **Ask Kiwi.** Kiwi is a rubber duck. It notices, counts and points, but doesn't judge: it won't
-   tell you why something happened or what to exclude. Every claim in its reply has a reference.
-   Click it and the app shows you what the claim rests on. Ask a follow-up to keep going.
-3. **Decide, then keep it.** Once you've settled something (or ruled it out), press **Save** on the
-   reply. It becomes a Blackboard entry; tag it good or bad there, with a why. Kiwi replies expire
-   after 50 turns, but the Blackboard keeps them. Bad-tagged entries are how Claude warns you when
-   the same failure comes back.
-4. **Go to a terminal session when one question isn't enough.** Press **Continue in terminal** on
-   the reply. It saves the reply to the Blackboard and copies a command that starts Claude in a
-   terminal, picking up from that entry. The Blackboard is the bridge: a terminal session can't see
-   Kiwi replies you didn't save.
+1. **Point at it.** Press **@ Add to Kiwi** on what puzzles you: an image row, a population, a plot,
+   the viewer or a Blackboard entry. If it is a spot *in* the picture, **Share** a frame and draw on
+   it; that's a *capture*.
+2. **Ask Kiwi.** Kiwi is a rubber duck: it points and counts, it doesn't judge. Every claim in its
+   reply has a reference; click it to see what the claim rests on.
+3. **Keep it.** **Save** the reply, then tag it good or bad on the Blackboard, with a why. Replies
+   expire after 50 turns; the Blackboard keeps them, and bad tags are how Claude warns you when the
+   same failure comes back.
+4. **Go further.** **Continue in terminal** on a reply when one question isn't enough. It saves the
+   reply and copies a command that starts Claude in a terminal, picking up from that entry. The
+   Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't save.
 
-| You want to… | Use |
-|---|---|
-| Ask about something you're looking at | **@** it, then ask Kiwi |
-| Show Claude a spot *in* an image or plot | **Share** and draw on it (a capture) |
-| Keep a conclusion, or a dead end | **Save to Blackboard**, tag good/bad |
-| Work through a problem over many steps | **Continue in terminal** on a Kiwi reply, or Kiwi → **Start in terminal** |
-| Have Claude make something: a chain from what you ran, a board, a notebook, a lab-log line | Claude in a terminal (you review it, then you run it) |
-| Have Claude mark cells or tracks on the viewer, or jump to a frame | Claude in a terminal |
-| Pull in your LabArchives notes | Claude in a terminal |
+| | Kiwi | Terminal | `pixi run chat` (no GUI, experimental) |
+|---|:-:|:-:|:-:|
+| Reads your project, captures, Blackboard and lab log | ✓ | ✓ | ✓ except captures (no viewer to share from) |
+| Warns when a bad-tagged failure keeps coming back | ✓ | ✓ | ✓ |
+| Marks cells and tracks on the viewer | – | ✓ | – (no viewer) |
+| Adds a chain, board, notebook or lab-log line for you to review | – | ✓ | ✓ |
+| Writes a custom module for a step Cecelia lacks (you reload and run it) | – | ✓ | ✓ |
+| Reads your LabArchives notebook, once linked | – | ✓ | – |
+| Brings in data: new project, set, images | – | – | ✓ |
+| Runs a task or chain; adds, changes or deletes a gate | – | – | ✓ you approve each call |
+| Deletes images or projects, or edits cell data | – | – | – |
 
-Kiwi only reads: it never changes anything, and points back through its references. A terminal
-session can also add things (the rows above) but never runs a task or edits your data. What Claude
-reads is sent to Anthropic, so check your institute's rules for unpublished or patient data.
+**`pixi run chat`** is Cecelia without the GUI: Claude in your terminal is the front end, and it can
+run steps, so it asks before each one. It is new and experimental. See
+[`docs/INSTALL.md`](../docs/INSTALL.md) → *Without the GUI*.
 
-**Setup:** install Claude Code and log in from Kiwi. That's all you need for Kiwi. For a terminal
-session, also click Kiwi → Assistant → **Set up** once (it installs the Cecelia plugin), then
-**Start in terminal**. Guide: Assist with Kiwi.
+Replies are provisional: they aren't checked against the biology. What Claude reads is sent to
+Anthropic, so check your institute's rules for unpublished or patient data.
+
+**Setup:** install Claude Code and log in from Kiwi; that's all Kiwi needs. For a terminal session,
+also click Kiwi → Assistant → **Set up** once (it installs the Cecelia plugin).
 
 ## Where to write things down
 

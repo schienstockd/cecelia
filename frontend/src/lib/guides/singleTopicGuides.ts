@@ -23,8 +23,9 @@
 //                         share) plus the lab-log sibling that most users find first. Replaced the
 //                         earlier `lab-log-and-claude` two-step pointer in 2026-09 — see D13.
 
-import type { GuideDef } from './types'
+import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
+import { CLAUDE_LOOP } from '../claudeOverview'
 
 // ── User profile: the header chip is the mid-session entry point ─────────────────────────────────
 // The launch picker (AppProfilePicker.vue) is a bare-route boot interstitial — the router bounces
@@ -408,84 +409,85 @@ export const correctAMaskGuide: GuideDef = {
 // Pairing / chat / share rows are `v-if`'d on `projectUid` (KiwiCockpit.vue:276-279 — no project =
 // no pairing target), so the prereq is `projectOpen`. Kiwi itself is `v-if`'d in App.vue on
 // `settings.kiwiOpen`, so anchor-not-found reveals point at `sidebar.kiwiCta`.
+// How Claude fits the work: the four-step loop (lib/claudeOverview.ts → CLAUDE_LOOP), one step per
+// loop step, each on the control it is about. The titles and text ARE the loop's — Kiwi's `?` dialog
+// and user-docs/README.md say the same thing — so they can't drift into three explanations.
+const [loopPoint, loopAsk, loopKeep, loopFurther] = CLAUDE_LOOP
+const openKiwiFirst = (anchor: string): Reveal => ({
+  needed: c => !c.anchorExists(anchor),
+  anchor: 'sidebar.kiwiCta',
+  text: 'Open Kiwi first.',
+  placement: 'right',
+})
 export const kiwiGuide: GuideDef = {
   id: 'assist-with-kiwi',
   title: 'Assist with Kiwi',
   group: 'Analysis',
   icon: 'pi-comments',
-  summary: 'The assistant cockpit — pairing status, chat handoff, and sharing what is on screen.',
+  summary: 'How Claude fits your work: point at it, ask, keep what holds up, go further in a terminal.',
   prereqs: [PREREQ.projectOpen],
 
   steps: [
     {
-      anchor: 'sidebar.labLogCta',
-      placement: 'right',
-      title: 'The lab log',
-      text: 'A per-project, append-only record — Cecelia adds a digest when a run finishes, you and Kiwi append notes.',
-      bullets: ['Floating panel, reachable from any page.'],
-    },
-    {
       anchor: 'sidebar.kiwiCta',
       placement: 'right',
-      title: 'Kiwi is the assist cockpit',
-      text: 'Everything Claude-adjacent lives in this panel — pairing, chat starter, and the buttons that share what is on screen.',
-      bullets: ['On-demand only; nothing happens until you ask.'],
+      title: 'Kiwi',
+      text: 'Ask Claude about your project. Nothing happens until you ask.',
+      bullets: ['Log in once from the account row at the top of the panel.'],
       clickAnchor: true,
     },
     {
-      anchor: 'kiwi.account',
+      anchor: 'kiwi.attach',
       placement: 'left',
-      title: 'Your Claude account',
-      text: 'The account this profile\'s turns bill — log in or out right here.',
-      bullets: ['Logging in opens a private browser window, so the last person\'s session can\'t sign you in.',
-                'Chat → Start in terminal starts claude in a terminal as you.'],
+      title: loopPoint.title,
+      text: loopPoint.text,
+      bullets: ['The @ buttons sit on image rows, populations, plots, the viewer and Blackboard entries.',
+                'Here, + attaches a set, image or task by name.'],
+      reveal: openKiwiFirst('kiwi.attach'),
+    },
+    {
+      anchor: 'kiwi.ask',
+      placement: 'left',
+      title: loopAsk.title,
+      text: loopAsk.text,
+      bullets: ['Follow up on a reply to keep the same conversation.'],
+      reveal: openKiwiFirst('kiwi.ask'),
+    },
+    {
+      anchor: 'kiwi.turnActions',
+      placement: 'left',
+      title: loopKeep.title,
+      text: loopKeep.text,
+      bullets: ['Replies expire after 50; the Blackboard keeps them.',
+                'Bad tags are how Claude warns you when a failure comes back.'],
       reveal: {
-        needed: c => !c.anchorExists('kiwi.account'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the Account row is at its top.',
-        placement: 'right',
+        needed: c => !c.anchorExists('kiwi.turnActions'),
+        anchor: 'kiwi.ask',
+        text: 'Ask something first — Save sits under the reply.',
+        placement: 'left',
       },
     },
     {
-      anchor: 'kiwi.pairing',
+      anchor: 'kiwi.turnActions',
       placement: 'left',
-      title: 'Pairing status',
-      text: 'The chip shows whether a claude-code session on this machine is paired — the refresh button probes the socket.',
-      bullets: ['Unpaired Kiwi still holds state; shared frames just fall back to the clipboard.'],
+      title: loopFurther.title,
+      text: loopFurther.text,
+      bullets: ['It saves the reply and copies a command; the terminal session picks up from that entry.',
+                'Only a terminal session can mark cells, or add a chain, board, notebook or lab-log line.'],
       reveal: {
-        needed: c => !c.anchorExists('kiwi.pairing'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the pairing row lives inside the panel.',
-        placement: 'right',
+        needed: c => !c.anchorExists('kiwi.turnActions'),
+        anchor: 'kiwi.chat',
+        text: 'No reply yet — Start in terminal opens a fresh session.',
+        placement: 'left',
       },
-    },
-    {
-      anchor: 'kiwi.chat',
-      placement: 'left',
-      title: 'Start a session',
-      text: 'Start in terminal copies a command that opens claude on this project — paste it in a terminal.',
-      bullets: ['The chat icon copies just the opener, for a session already running.'],
-    },
-    {
-      anchor: 'kiwi.share',
-      placement: 'left',
-      title: 'Ship what you are looking at',
-      text: 'Two targets: the viewer frame or a canvas plot — both land in the same capture envelope.',
-      bullets: ['Falls back to the clipboard if nothing is paired.'],
     },
     {
       anchor: 'kiwi.assistantHelp',
       placement: 'bottom-start',
-      title: 'What Kiwi can see and do',
-      text: 'This ? explains Ask vs Chat, captures, chains, blackboard, limits — read once.',
-      bullets: ['Also reports whether the assist is actually set up.'],
+      title: 'What Kiwi does here',
+      text: 'The ? recaps this loop and what Kiwi and a terminal session can each do.',
       clickAnchor: true,
-      reveal: {
-        needed: c => !c.anchorExists('kiwi.assistantHelp'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the ? sits in its header.',
-        placement: 'right',
-      },
+      reveal: openKiwiFirst('kiwi.assistantHelp'),
     },
   ],
 }

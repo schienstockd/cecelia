@@ -225,7 +225,7 @@ function pick(c: RefCandidate) {
               v-tooltip.bottom="'Ctrl+Enter to ask'" />
 
     <div class="cc-row cc-row-tight">
-      <button ref="searchAnchor" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="openSearch"
+      <button ref="searchAnchor" class="cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" data-guide="kiwi.attach" @click="openSearch"
               v-tooltip.bottom="'Attach a set, image or task by name'">
         <i class="pi pi-plus" />
       </button>
@@ -301,7 +301,8 @@ function pick(c: RefCandidate) {
           </template>
         </SelectionTable>
       </template>
-      <div class="cc-row cc-row-tight">
+      <!-- every turn's row carries the anchor; the guide lands on the first (newest) -->
+      <div class="cc-row cc-row-tight" data-guide="kiwi.turnActions">
         <span class="cc-muted cc-fs-3xs kiwi-grow">{{ turnMeta(t) }}</span>
         <button v-if="t.reply" class="cc-btn cc-btn-ghost cc-fs-2xs" :disabled="saveBusy[t.turnId]"
                 @click="saveTurn(t)"

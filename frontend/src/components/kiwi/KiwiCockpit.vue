@@ -307,7 +307,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon kiwi-help"
               data-guide="kiwi.assistantHelp"
               @click="showAssistantOverview = true"
-              v-tooltip.bottom="'What Kiwi does here — Ask vs Chat, captures, chains, blackboard, limits'">
+              v-tooltip.bottom="'What Kiwi does here — the loop, and Kiwi vs a terminal session'">
         <i class="pi pi-question-circle" />
       </button>
     </template>
