@@ -11,8 +11,10 @@ notebook first — a restorable version — then overwrites its cells; it's how 
 version, never a "-v2" copy), ``POST /api/chains/create`` (create-only + server-validated —
 writes a chain TEMPLATE the user then runs themselves), and ``POST /api/observer/labarchives/set``
 (REPLACES the ELN context sidecar — a cache of an external system of record, so a rewrite loses
-nothing). All seven are recoverable / non-destructive to
-project & analysis data: no allow-listed route can touch cell data, images, gates, or QC, revise
+nothing), and ``POST /api/gating/pop/add-gate`` (create-only — adds ONE gated population under an
+existing parent, 409 on a taken name; the general ``/api/gating/pop/*`` routes that edit, move or
+delete a population stay off the list). All eight are recoverable / non-destructive to
+project & analysis data: no allow-listed route can touch cell data, images, an existing gate, or QC, revise
 can't lose a notebook's content (the pre-revision state is always snapshotted), a template is
 inert until a human presses Run, and an added board is one tab beside the user's own. Any attempt to call a route not on the list raises
 ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails loudly in
@@ -48,12 +50,19 @@ from cecelia_mcp.no_gui import no_gui_enabled
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {
-        ("POST", "/api/boards/add"),      # WRITE 6/7 — create-only: adds ONE Analysis board, never
+        ("POST", "/api/boards/add"),      # WRITE 6/8 — create-only: adds ONE Analysis board, never
                                           # edits/deletes/reorders one. Server-validated against the
                                           # project (unknown plot id, chart the spec doesn't offer, a
                                           # population that doesn't exist → 422 before anything is
                                           # written), 409 on a duplicate name. NOT
                                           # /api/projects/boards, the browser's whole-document autosave
+        ("POST", "/api/gating/pop/add-gate"),  # WRITE 8/8 — create-only: adds ONE gated population
+                                          # (flow) under an existing parent, stamped as Claude's. 409 on
+                                          # a taken path / a name another pop type holds, 404 on a
+                                          # missing parent, 422 on a bad column/transform/geometry —
+                                          # before anything is written. NOT /api/gating/pop/add (also
+                                          # filters, booleans, any pop type) nor set-gate/delete/rename/
+                                          # move, which change the user's populations
         ("GET", "/api/projects"),
         ("GET", "/api/images"),
         ("GET", "/api/images/meta"),
@@ -96,10 +105,10 @@ ALLOWED_ROUTES = frozenset(
         # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
         # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
         # a fabricated "the user shared this" from ever landing in the project's captures dir.
-        ("POST", "/api/lablog/append"),  # write 1/7 — append-only, server-guarded
-        ("POST", "/api/notebooks/write"),  # write 2/7 — create-only (409 on existing); serialises cells to a Pluto notebook
-        ("POST", "/api/notebooks/describe"),  # write 3/7 — edits ONLY a notebook's description string (registry sidecar); not its content
-        ("POST", "/api/notebooks/revise"),  # write 4/7 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/lablog/append"),  # write 1/8 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/8 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/notebooks/describe"),  # write 3/8 — edits ONLY a notebook's description string (registry sidecar); not its content
+        ("POST", "/api/notebooks/revise"),  # write 4/8 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
@@ -109,8 +118,8 @@ ALLOWED_ROUTES = frozenset(
         # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
         # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
         # a version FOR the user, and never deletes their notes).
-        ("POST", "/api/chains/create"),  # write 5/7 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
-        ("POST", "/api/observer/labarchives/set"),  # write 7/7 — REPLACES the LabArchives context
+        ("POST", "/api/chains/create"),  # write 5/8 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
+        ("POST", "/api/observer/labarchives/set"),  # write 7/8 — REPLACES the LabArchives context
                                           # sidecar (a cache of an external system of record, so a
                                           # rewrite loses nothing; LabArchives is itself versioned).
                                           # Touches no project or analysis data, and never the lab
@@ -799,6 +808,18 @@ class CeceliaClient:
             template["startTargets"] = start_targets
         return self._request("POST", "/api/chains/create",
                              body={"projectUid": project_uid, "template": template})
+
+    def add_gate(self, project_uid: str, image_uid: str, value_name: str, name: str, gate: dict,
+                 parent: str = "root", colour: str = "#22c55e"):
+        # Create-only: ONE new gated population under an existing parent — never edits, moves or
+        # deletes one (409 on a taken name, 404 on a missing parent, 422 on a column / transform /
+        # geometry that cannot be a gate). `gate` is the stored gate shape (`gate_spec`, the same as
+        # the autonomous server's add_gate); the server validates every field of it.
+        body: dict = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
+                      "parent": parent or "root", "name": name, "gate": gate}
+        if colour:
+            body["colour"] = colour
+        return self._request("POST", "/api/gating/pop/add-gate", body=body)
 
     def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = "",
                            compare_by: str = ""):

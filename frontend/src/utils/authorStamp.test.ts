@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseAuthorStamp, authorLabel, authorSummary, profileLabel } from './authorStamp'
+import { parseAuthorStamp, authorLabel, authorSummary, profileLabel, claudeProposal } from './authorStamp'
 
 describe('authorStamp', () => {
   it('parses the server stamp and drops junk', () => {
@@ -27,5 +27,12 @@ describe('authorStamp', () => {
     expect(authorSummary(dflt, dflt)).toBe('')
     expect(authorSummary(alice)).toBe('by alice')
     expect([profileLabel('alice'), profileLabel('default'), profileLabel(undefined)]).toEqual(['alice', '', ''])
+  })
+
+  it('marks only what Claude proposed — a gate stamped via claude, never one a person drew', () => {
+    expect(claudeProposal({ profile: 'default', via: 'claude', model: 'claude-opus-5-5' })).toBe('Proposed by Claude')
+    expect(claudeProposal({ profile: 'alice', via: 'claude' })).toBe('Proposed by Claude for alice')
+    expect(claudeProposal({ profile: 'alice', via: 'app' })).toBe('')
+    expect(claudeProposal(undefined)).toBe('')
   })
 })

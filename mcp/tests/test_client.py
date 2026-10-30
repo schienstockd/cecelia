@@ -84,6 +84,7 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/blackboard/status"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
+            ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),
             ("POST", "/api/notebooks/revise"),
@@ -716,6 +717,40 @@ class ClientTest(unittest.TestCase):
             json.loads(req.data.decode()),
             {"projectUid": "p", "author": "Claude", "lines": ["hello", "world"]},
         )
+
+    def test_add_gate_posts_one_gate_in_the_stored_shape(self):
+        # The observer's only gating write, with the autonomous add_gate's arguments: the `gate` dict
+        # goes out untouched (the sidecar's own `gate_spec` shape), so the server stores exactly what a
+        # GUI-drawn gate stores.
+        gate = {"kind": "rectangle", "x_channel": "mean_intensity_0", "y_channel": "area",
+                "x_transform": {"kind": "asinh", "cof": 150}, "y_transform": {"kind": "linear"},
+                "x_min": 0.1, "x_max": 0.5, "y_min": 0, "y_max": 900}
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_gate("P", "I", "B", "dim", gate, parent="/qc")
+        req = u.call_args[0][0]
+        self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-gate"))
+        self.assertEqual(json.loads(req.data), {
+            "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "dim",
+            "gate": gate, "colour": "#22c55e"})
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_gate("P", "I", "B", "blob", {"kind": "polygon", "vertices": [[0, 0], [1, 0], [0, 1]]},
+                            colour="#ff0000")
+        body = json.loads(u.call_args[0][0].data)
+        self.assertEqual((body["parent"], body["gate"]["kind"], body["colour"]), ("root", "polygon", "#ff0000"))
+
+    def test_add_gate_conflict_and_missing_parent_surface_as_api_errors(self):
+        for status, msg in ((409, "A population \"/qc/dim\" already exists"),
+                            (404, "Population not found: /nope — existing: /qc")):
+            def make_err(*a, status=status, msg=msg, **kw):
+                raise urllib.error.HTTPError("http://x", status, "e", {},
+                                             io.BytesIO(json.dumps({"error": msg}).encode()))
+            with mock.patch.dict("os.environ", {}, clear=True), \
+                 mock.patch("cecelia_mcp.client.urllib.request.urlopen", side_effect=make_err):
+                with self.assertRaises(ApiError) as ctx:
+                    self.c.add_gate("P", "I", "B", "dim", {"kind": "rectangle", "x_channel": "a",
+                                    "y_channel": "b", "x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}, "/qc")
+            self.assertEqual(ctx.exception.status, status)
+            self.assertIn(msg, ctx.exception.message)
 
     def test_http_error_becomes_apierror_with_detail(self):
         # clear=True on os.environ isolates the test from the bidir Part 5 auto-pair middleware

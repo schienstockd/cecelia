@@ -41,6 +41,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "list_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
+            "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
@@ -353,6 +354,29 @@ class ToolErrorSurfacingTest(unittest.TestCase):
                 asyncio.run(server.mcp.call_tool("list_projects", {}))
         self.assertNotIsInstance(cm.exception, UnexpectedToolError)
         self.assertIn("cannot reach Cecelia API", str(cm.exception))
+
+    def test_add_gate_refusals_reach_the_model(self):
+        # A 409 (name taken) / 404 (no such parent) is something to act on — pick another name, fix
+        # the path — so its message must reach the model, not "Error executing tool add_gate".
+        from cecelia_mcp.client import ApiError
+        from mcp.server.mcpserver.exceptions import ToolError
+        args = {"project_uid": "P", "image_uid": "I", "value_name": "B", "parent": "/qc", "name": "dim",
+                "gate": {"kind": "rectangle", "x_channel": "a", "y_channel": "b",
+                         "x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}}
+        for status, msg in ((409, "already exists"), (404, "Population not found")):
+            def refuse(*a, status=status, msg=msg, **kw):
+                raise ApiError(status, msg)
+            with unittest.mock.patch.object(server._client, "add_gate", refuse):
+                with self.assertRaises(ToolError) as cm:
+                    asyncio.run(server.mcp.call_tool("add_gate", args))
+            self.assertIn(f"HTTP {status}: {msg}", str(cm.exception))
+
+    def test_observer_add_gate_takes_the_autonomous_arguments(self):
+        # One shape for "add a gate" on both servers, so a gate (and a run record) reads the same
+        import inspect
+        from cecelia_mcp import autonomous_server
+        sig = lambda f: [(p.name, p.default) for p in inspect.signature(f).parameters.values()]   # noqa: E731
+        self.assertEqual(sig(server.add_gate), sig(autonomous_server.add_gate))
 
     def test_wrapping_keeps_the_argument_schema(self):
         tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}

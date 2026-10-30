@@ -16,6 +16,8 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                   # if it collides with another pop's UID in this map. Never reflect this back to the
                   # caller as anything other than the freshly-picked one.
                   uid::AbstractString="",
+                  # `author_stamp()` of the request that drew it — see `Population.created_by`
+                  created_by::Union{AbstractDict,Nothing}=nothing,
                   reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
@@ -49,7 +51,9 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               filter_measure === nothing ? nothing : String(filter_measure),
                               filter_fun === nothing ? nothing : _coerce_filter_fun(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
-                              explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient)
+                              explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient,
+                              created_by === nothing ? nothing :
+                                  Dict{String,Any}(String(k) => v for (k, v) in created_by))
     m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)

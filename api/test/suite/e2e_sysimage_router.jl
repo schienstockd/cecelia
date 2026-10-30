@@ -343,7 +343,7 @@ end
         "/api/hmm_state_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 3 — HMM-state snapshot cards
         "/api/chains/create", "/api/chains/delete",
         "/api/chains/rename", "/api/chains/save",
-        "/api/gating/copy", "/api/gating/pop/add",
+        "/api/gating/copy", "/api/gating/pop/add", "/api/gating/pop/add-gate",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
         "/api/gating/redo", "/api/gating/undo",
@@ -497,7 +497,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 116 && length(POST_ROUTES) == 175
+    @test length(GET_ROUTES) == 116 && length(POST_ROUTES) == 176
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

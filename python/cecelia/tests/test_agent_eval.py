@@ -412,6 +412,17 @@ class TestRunRecord(unittest.TestCase):
         self.assertEqual([len(s["units"]) for s in gates], [2, 1])
         self.assertIn("add `/a` on T: rectangle a (linear) 0–1 × b (linear) 0–2", gates[0]["units"][0]["did"])
 
+    def test_the_observers_add_gate_shape_reads_like_the_autonomous_one(self):
+        # the observer's add_gate takes the autonomous one's arguments — one `gate` dict + `parent`
+        dec = self._decisions(("call", "o", "add_gate", {"image_uid": "cp1", "value_name": "T", "parent": "/qc",
+                                                         "name": "p", "gate": {
+                                                             "kind": "polygon", "x_channel": "a", "y_channel": "b",
+                                                             "x_transform": {"kind": "asinh", "cof": 150},
+                                                             "vertices": [[0, 0], [1, 0], [0, 1]]}}),
+                              ("result", "o", "{}", False))
+        unit = [s for s in dec["sections"] if s["step"] == "gate"][0]["units"][0]
+        self.assertEqual(unit["did"], "add `/qc/p` on T: polygon on a (asinh) × b (linear), 3 vertices")
+
     def test_render_heads_each_section_and_lists_errors_apart(self):
         dec = self._decisions(("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
                               ("result", "x", "Error executing tool set_gate", True))

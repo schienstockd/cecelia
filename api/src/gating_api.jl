@@ -1220,12 +1220,133 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
                      is_track = _wbool(body, "is_track", false),
                      boolean_op   = bl === nothing ? nothing : get(bl, "op", nothing),
                      boolean_pops = bl === nothing ? nothing : get(bl, "pops", nothing),
-                     boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing))
+                     boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing),
+                     # a pop Claude drew (the autonomous server's add_gate) carries who; a GUI one
+                     # stays unstamped so the sidecar a person writes keeps its shape
+                     created_by = REQUEST_VIA[] == "claude" ? author_stamp() : nothing)
         catch e
             return _gerr(400, sprint(showerror, e))
         end
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
+end
+
+# ── POST /api/gating/pop/add-gate — ONE proposed gate, additive only (observer `add_gate`) ──────
+# { projectUid, imageUid, valueName, parent?, name, gate:{kind, x_channel, y_channel, x_transform?,
+#   y_transform?, x_min…y_max | vertices}, colour? }
+# → { ok, path, valueName, parent, count, parentCount, outside, pctParent, gate, colour, createdBy }
+#
+# The observer's write into gating, kept apart from /api/gating/pop/add exactly as /api/boards/add is
+# kept apart from the boards autosave: that route also takes filters, booleans, track pops and any pop
+# type, and answers every refusal with a 400. This one can only ADD one `flow` gate under a parent that
+# exists, and refuses with the status the caller acts on — 404 (no such parent / segmentation), 409 (the
+# path is taken, here or by another pop type: `pop_name_conflict`), 422 (a column, transform or geometry
+# that cannot be a gate) — all BEFORE anything is written. It never edits, moves or deletes a pop.
+# Stored through `add_pop!` + `_persist_and_broadcast!`, so the sidecar entry is a GUI gate's (plus
+# `createdBy` = `author_stamp()`), the open manager refreshes, and the user's Undo removes it.
+function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
+    body = try
+        JSON3.read(String(body_bytes), Dict{String,Any})
+    catch
+        return _gerr(400, "Invalid JSON body")
+    end
+    img, err = _gating_image(_wstr(body, "projectUid"), _wstr(body, "imageUid"))
+    err === nothing || return err
+    # no fallback to the active segmentation (`_resolve_vn`): a write lands where it was asked, or nowhere
+    vn = _wstr(body, "valueName")
+    isempty(vn) && return _gerr(400, "valueName required")
+    vns = versioned_keys(img.label_props)
+    vn in vns || return _gerr(404, "No segmentation \"$vn\" on this image" *
+                                   (isempty(vns) ? " — it has not been segmented" : " — it has: " * join(vns, ", ")))
+    name = strip(_wstr(body, "name"))
+    isempty(name) && return _gerr(422, "name required")
+    occursin('/', name) && return _gerr(422, "A population name cannot contain \"/\" — give the name only, and the parent separately")
+    is_reserved_pop_name(name) && return _gerr(422,
+        "Names beginning with \"$DERIVED_POP_PREFIX\" are reserved for derived populations — choose another name")
+    parent = let p = strip(_wstr(body, "parent", ROOT)); is_root(p) ? ROOT : String(p) end
+    colour = _wstr(body, "colour", "#22c55e")
+    occursin(r"^#[0-9a-fA-F]{6}$", colour) || return _gerr(422, "colour must be a hex colour like \"#22c55e\"")
+    gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
+    gerr === nothing || return _gerr(422, gerr)
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
+        path = pop_path(parent, name)
+        has_pop(m, path) && return 409, JSON3.write((; error = "A population \"$path\" already exists — " *
+            "choose another name; an existing population is never replaced", code = "pop_exists"))
+        conflict = pop_name_conflict(img, vn, path; pop_type = "flow")
+        conflict === nothing || return 409, JSON3.write((; error = "A $conflict population named \"$name\" " *
+            "already exists in this segmentation — names must be unique across population types. Choose another name.",
+            code = "pop_name_conflict"))
+        stamp = author_stamp()
+        add_pop!(m, String(name); parent = parent, gate = gate, colour = colour, show = true, created_by = stamp)
+        saved = _persist_and_broadcast!(m, img, body, vn, "flow")
+        saved isa Tuple && return saved
+        s = pop_stats(_live_map(img, vn, "flow"), path)
+        200, JSON3.write((; ok = true, path, valueName = vn, parent = is_root(parent) ? "root" : parent,
+                            count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
+                            pctParent = round(s.pct_parent; digits = 2),
+                            gate = gate_spec(gate), colour, createdBy = stamp))
+    end
+end
+
+# The `gate` of an add-gate request → (Gate, nothing), or (nothing, why it cannot be one). Coordinates
+# are TRANSFORMED (the space `/api/gating/plot-image` reports gates and extents in), so only their shape
+# is checked here, not their range. A transform is accepted in either key spelling the API speaks —
+# the plot routes' `cof` and the stored spec's `cofactor` — so a gate_plot reply can be passed back as is.
+function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,Nothing}}
+    spec isa AbstractDict || return (nothing, "gate required: {kind: rectangle|polygon, x_channel, y_channel, …}")
+    g(k) = get(spec, k, nothing)
+    kind = lowercase(string(something(g("kind"), "")))
+    kind in ("rectangle", "polygon") || return (nothing, "gate.kind must be \"rectangle\" or \"polygon\"")
+    xc = g("x_channel"); yc = g("y_channel")
+    (xc isa AbstractString && yc isa AbstractString && !isempty(xc) && !isempty(yc)) ||
+        return (nothing, "gate.x_channel and gate.y_channel required")
+    lp = label_props(img; value_name = vn)
+    cols = Set(vcat(col_names(lp; data_type = :vars), col_names(lp; data_type = :obs)))
+    (xc in cols && yc in cols) || return (nothing, _missing_column_hint(img, vn, (xc, yc)))
+    xt_spec, terr = _proposed_transform(g("x_transform"), "x"); terr === nothing || return (nothing, terr)
+    yt_spec, terr = _proposed_transform(g("y_transform"), "y"); terr === nothing || return (nothing, terr)
+    finite_num(v) = v isa Real && !(v isa Bool) && isfinite(v)
+    full = Dict{String,Any}("kind" => kind, "x_channel" => xc, "y_channel" => yc,
+                            "x_transform" => xt_spec, "y_transform" => yt_spec)
+    if kind == "rectangle"
+        ks = ("x_min", "x_max", "y_min", "y_max")
+        all(k -> finite_num(g(k)), ks) || return (nothing, "a rectangle needs finite x_min, x_max, y_min, y_max")
+        (g("x_min") < g("x_max") && g("y_min") < g("y_max")) ||
+            return (nothing, "a rectangle needs x_min < x_max and y_min < y_max")
+        for k in ks; full[k] = float(g(k)); end
+    else
+        vs = g("vertices")
+        (vs isa AbstractVector && length(vs) >= 3) || return (nothing, "a polygon needs at least 3 vertices [[x, y], …]")
+        all(v -> v isa AbstractVector && length(v) == 2 && all(finite_num, v), vs) ||
+            return (nothing, "every polygon vertex must be [x, y] with finite numbers")
+        full["vertices"] = [[float(v[1]), float(v[2])] for v in vs]
+    end
+    try
+        (gate_from_spec(full), nothing)
+    catch e
+        (nothing, "not a valid gate: " * sprint(showerror, e))
+    end
+end
+
+# One axis transform of a proposed gate → its stored spec, or why not. Absent ⇒ linear.
+function _proposed_transform(t, axis::AbstractString)::Tuple{Union{Dict{String,Any},Nothing},Union{String,Nothing}}
+    t === nothing && return (Dict{String,Any}("kind" => "linear"), nothing)
+    t isa AbstractDict || return (nothing, "gate.$(axis)_transform must be an object like {\"kind\": \"linear\"}")
+    d = Dict{String,Any}(String(k) => v for (k, v) in t)
+    kind = lowercase(string(get(d, "kind", "linear")))
+    params = Dict("linear" => String[], "log" => ["floor"], "asinh" => ["cofactor"], "logicle" => ["T", "W", "M", "A"])
+    haskey(params, kind) || return (nothing, "gate.$(axis)_transform.kind must be linear, asinh, log or logicle")
+    kind == "asinh" && haskey(d, "cof") && !haskey(d, "cofactor") && (d["cofactor"] = pop!(d, "cof"))
+    out = Dict{String,Any}("kind" => kind)
+    for k in params[kind]
+        haskey(d, k) || continue
+        v = d[k]
+        (v isa Real && !(v isa Bool) && isfinite(v)) || return (nothing, "gate.$(axis)_transform.$k must be a finite number")
+        out[k] = float(v)
+    end
+    (out, nothing)
 end
 
 function api_gating_pop_set_gate(body_bytes::Vector{UInt8})

@@ -25,7 +25,8 @@ export const MAP: Record<string, MapEntry> = {
   '/model-training': { what: 'Train your own denoise or flow models', guide: 'train-flow-model' },
   '/segment':        { what: 'Find cells, with segmentation QC', guide: 'segment-an-image' },
   // Populations — define who the cells are
-  '/gate':           { what: 'Draw gates on cell measures, like flow cytometry', pairedWith: '/phenotype', guide: 'gate-populations' },
+  '/gate':           { what: 'Draw gates on cell measures, like flow cytometry', pairedWith: '/phenotype', guide: 'gate-populations',
+                      claude: 'A terminal session proposes a gate; keep or delete it' },
   '/track':          { what: 'Link cells over time; gate tracks', pairedWith: '/behaviour', guide: 'track-cells' },
   '/clust-cells':    { what: 'Group cells by phenotype across a set', pairedWith: '/phenotype', guide: 'cluster-cells' },
   '/clust-tracks':   { what: 'Group tracks by behaviour', pairedWith: '/behaviour', guide: 'cluster-tracks' },
@@ -56,6 +57,7 @@ export const MAP: Record<string, MapEntry> = {
 // these pages and the `claude` lines above must agree — so the ✦ can't drift from what Claude can do.
 export const CLAUDE_MAKES: Record<string, string | null> = {
   add_analysis_board: '/analysis',
+  add_gate: '/gate',
   create_blackboard_entry: '/blackboard',
   create_notebook: '/notebooks',
   create_chain: '/chain',

@@ -2,7 +2,8 @@
 
 `gate_plot` and `gate_cells_view` are the same read on both servers: the request (`*_query`), the
 reply split into PNG + metadata (`split_png`), and the docstring the tool is registered with. Each
-server only supplies its own client (and its own guard) — so the two cannot drift apart.
+server only supplies its own client (and its own guard) — so the two cannot drift apart. `add_gate`'s
+`gate` dict is one contract on both servers too, described once in `GATE_SHAPE_DOC`.
 """
 from __future__ import annotations
 
@@ -29,6 +30,21 @@ drawn per z-plane, so a cell spanning several planes shows as stacked rings. `ch
 indices to show (default those visible in the viewer; get_image_info lists names in index order).
 `image_version`: which image version is under the outlines (default the active one). Alongside the
 image: t, the frame count, and how many cells at t are inside / outside."""
+
+GATE_SHAPE_DOC = """`gate` is in TRANSFORMED coordinates — the space gate_plot reports `extent` and gates in, not its
+raw tick labels:
+{"kind": "rectangle", "x_channel", "y_channel", "x_transform", "y_transform",
+ "x_min", "x_max", "y_min", "y_max"}  or
+{"kind": "polygon", "x_channel", "y_channel", "x_transform", "y_transform",
+ "vertices": [[x1, y1], [x2, y2], [x3, y3], …]}  (≥ 3 vertices, closed implicitly).
+`x_channel`/`y_channel` are gateable columns (e.g. `mean_intensity_2`, `volume_mesh`); each
+transform is gate_plot's `transform` for that axis: {"kind": "linear"} (default) |
+{"kind": "asinh", "cof": 150} | {"kind": "log", "floor": 1} |
+{"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}. A gate listed by gate_plot has the
+same geometry fields — add the channels and transforms you plotted with. A one-channel threshold
+is a rectangle spanning the whole other axis; write its open side at the data's own edge
+(gate_histogram's `min`/`max`, or gate_plot's `extent`, a little beyond), not at an arbitrary large
+number. A population whose cloud is not axis-aligned is a polygon."""
 
 PLOT_ROUTE = "/api/gating/plot-image"
 CELLS_ROUTE = "/api/gating/cells-image"
