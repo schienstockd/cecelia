@@ -20,6 +20,9 @@ const props = defineProps<{
     restart?: 'start' | 'rerun'   // 'start' = chosen resume node; 'rerun' = downstream (will re-run)
     prompt?: string       // a parked manual step: what the user is asked to do (task spec `manual.prompt`)
     onContinue?: () => void   // …and how to send it on (ChainModule → `chain:continue`)
+    onOpen?: () => void       // …and where to do the work (the spec's `manual.open` page)
+    openLabel?: string        // that page's menu label + icon, so the button says where it goes
+    openIcon?: string
   }
 }>()
 
@@ -64,12 +67,18 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
     <div class="live-fn">{{ data.label ?? data.fn.split('.').pop() }}</div>
     <!-- a manual step parked for the user: the ask, and the way on. `.stop` so the click doesn't also
          pick this node as the resume start. -->
-    <button v-if="data.status === 'waiting' && data.onContinue"
-            class="cc-btn cc-btn-primary cc-btn-dense live-continue nodrag"
-            v-tooltip.bottom="data.prompt || 'Continue this step'"
-            @click.stop="data.onContinue()">
-      <i class="pi pi-step-forward" /> Continue
-    </button>
+    <div v-if="data.status === 'waiting' && data.onContinue" class="live-manual cc-btn-group nodrag">
+      <button v-if="data.onOpen" class="cc-btn cc-btn-ghost cc-btn-dense"
+              v-tooltip.bottom="data.openLabel ? `Open this image in ${data.openLabel}` : 'Open this image'"
+              @click.stop="data.onOpen()">
+        <i :class="['pi', data.openIcon || 'pi-chart-scatter']" /> Open
+      </button>
+      <button class="cc-btn cc-btn-primary cc-btn-dense"
+              v-tooltip.bottom="data.prompt || 'Continue this step'"
+              @click.stop="data.onContinue()">
+        <i class="pi pi-step-forward" /> Continue
+      </button>
+    </div>
     <!-- output value_name on its own line so a long label doesn't clip it -->
     <div v-if="data.variant" class="live-variant-row">
       <span class="live-variant">{{ data.variant }}</span>
@@ -156,11 +165,11 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   max-width: 160px;
 }
 
-.live-continue {
+.live-manual {
   margin-top: 4px;
-  width: 100%;
-  justify-content: center;
+  display: flex;
 }
+.live-manual > .cc-btn { flex: 1; justify-content: center; }
 
 .live-variant-row {
   margin-top: 3px;

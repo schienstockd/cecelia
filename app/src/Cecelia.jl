@@ -130,6 +130,7 @@ export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export copy_gating!, with_popmap_lock
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
@@ -360,6 +361,7 @@ include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
+include("tasks/gate/manual_gate.jl")
 include("tasks/segment/import_labels.jl")
 include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/segment/carry_over.jl")  # obs carry-over across measureLabels in the correction composite

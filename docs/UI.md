@@ -2671,7 +2671,9 @@ accent) are highlighted; a ✕ clears the pick. Resume is disabled while the run
 live, rather than the graph collapsing to only the re-run nodes.
 
 **Manual steps** (`docs/SCHEDULER.md` → *Manual steps*): a node parked for the user shows `waiting`
-(amber, `pi-pause`) with a **Continue** button on the node, tooltip = the spec's `manual.prompt`. On an
+(amber, `pi-pause`) with a **Continue** button on the node, tooltip = the spec's `manual.prompt`, and
+an **Open** button when the spec's `manual.open` names a page (label + icon from that page's nav item,
+`navItemFor`): it selects the image in that page's per-module selection and navigates there. On an
 image-scope step it continues that image; on a set-scope step, the whole set. The toolbar adds
 **Continue N** while anything waits (`continueAll`). Both send `chain:continue` (`utils/chainManual.ts`);
 a refused continue (the step's check failed) is logged as a warning naming the image and the reason, and

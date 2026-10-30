@@ -6,6 +6,7 @@ export interface ParamDef {
        | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'imagePicker'
+       | 'imageSelection'   // one image of the open project, by uid ('' = none) — e.g. an exemplar
        | 'group' | 'section'
   // imagePicker: which spatial selection to author. v1 = 'box3d' (crop's box + z/t ranges).
   // box2d / point2d / line2d / polygon2d slot into the same modal when a task needs them.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, markRaw, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 defineOptions({ name: 'ChainModule' })
 import {
   VueFlow, useVueFlow,
@@ -41,6 +42,8 @@ import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type 
 import { withChainProducedModels } from '../utils/chainModelOptions'
 import { waitingByNode, continueFrame } from '../utils/chainManual'
 import { isLiveStatus } from '../lib/taskStatus'
+import { moduleRouteFor } from '../utils/moduleRoute'
+import { NAV_GROUPS, navItemFor } from '../lib/navGroups'
 import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
@@ -341,6 +344,12 @@ const liveNodes = computed<Node[]>(() => {
         ...(t.status === 'waiting' ? {
           prompt:     manualOf(t.funName)?.prompt,
           onContinue: () => continueStep(t.chainNodeId, isSetNode(t.chainNodeId) ? undefined : t.imageUid),
+          // …and where to do the work: the spec's `manual.open` page, with this image selected
+          ...(manualRoute(t.funName) ? {
+            onOpen:    () => openManualTarget(t.funName, t.imageUid),
+            openLabel: navItemFor(NAV_GROUPS, manualRoute(t.funName)!)?.label,
+            openIcon:  navItemFor(NAV_GROUPS, manualRoute(t.funName)!)?.icon,
+          } : {}),
         } : {}),
         restart: t.chainNodeId === restartNodeId.value ? 'start'
                : rerunNodeIds.value.has(t.chainNodeId) ? 'rerun' : undefined,
@@ -530,6 +539,23 @@ function continueStep(nodeId: string, imageUid?: string) {
   const rid = selectedRunId.value
   if (!uid || !rid) return
   ws.send(continueFrame(uid, rid, nodeId, imageUid))
+}
+// The page a manual step's `open` names, or null when it names none this app can route to.
+const router = useRouter()
+function manualRoute(fn: string): string | null {
+  const mod = manualOf(fn)?.open
+  if (!mod) return null
+  const path = moduleRouteFor(mod) ?? `/${mod}`
+  return router.resolve(path).matched.length ? path : null
+}
+// Go there with this image selected (the page's ModuleLayout reads its per-module selection on mount).
+function openManualTarget(fn: string, imageUid: string) {
+  const path = manualRoute(fn)
+  const mod  = manualOf(fn)?.open
+  if (!path || !mod) return
+  const setUid = project.setUidOfImage(imageUid)
+  if (setUid) project.focusImages(mod, setUid, [imageUid])
+  void router.push(path)
 }
 function continueAll() {
   for (const nodeId of waitingSteps.value.keys()) continueStep(nodeId)

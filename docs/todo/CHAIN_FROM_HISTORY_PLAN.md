@@ -1,6 +1,6 @@
 # Chain from history — and the manual step it needs
 
-**Status:** planning (2026-10-30) · branch `docs/chain-from-history-archive`. Nothing built.
+**Status:** in progress (2026-10-30) · branch `docs/chain-from-history-archive`. Part A built (A-P1–A-P3).
 Brief: [`docs/archive/CHAIN_FROM_HISTORY_PROMPT.md`](../archive/CHAIN_FROM_HISTORY_PROMPT.md).
 
 ## Goal
@@ -78,8 +78,9 @@ Read through the observer on 2026-10-30, checked against the code.
 
 ### First consumer: `gating.manual_gate`
 
-- Params: label set (`valueName`), pop type (`flow` / `track`), optional `copyFrom` (exemplar image),
-  `requiredPops` (paths that must exist before Continue).
+- Params: label set (`valueName`), pop type (`flow` / `track`), optional `copyFrom` (exemplar image —
+  a new generic `imageSelection` param type), `requiredPops` (comma-separated paths that must exist
+  before Continue). Built as `gate.manual_gate`, `hidden` (a chain step, not a Gating-page task).
 - **Prepare:** copy gating from `copyFrom` onto the image unless it already has some. This reuses the
   existing copy rules (`api_gating_copy`: position gates need a pixel size, column warnings #1737).
   **The copy logic moves into the package** as `copy_gating!`, with the route calling it, because a

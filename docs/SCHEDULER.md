@@ -641,6 +641,11 @@ user continues it. Code: `app/src/tasks/chain/manual.jl`. Design and first consu
   both, so a click means the same thing either way.
 - **Cancel** releases a parked step as `:cancelled`; a later resume retries it, prepare included,
   which is why prepare must never destroy user work.
+- **First consumer: `gate.manual_gate`** (`app/src/tasks/gate/`). Prepare copies an exemplar's gates
+  (`copyFrom`) onto an image that has none (`copy_gating!(…; replace = false)`); the check holds the
+  image until every `requiredPops` path exists on its label set; `open: "gate"` puts an **Open** button
+  on the waiting node that lands on the Gating page with that image selected. `hidden` in the spec, so
+  it is a chain step only — not in the Gating page's function list.
 - **Banking.** Prepare's task is banked as done when the node parks; the later `done`/`cancelled`
   frame carries `waited` and is not banked again (`chain_frames.jl`).
 

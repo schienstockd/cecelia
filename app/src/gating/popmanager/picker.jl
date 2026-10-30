@@ -196,17 +196,20 @@ function ensure_filter_pop!(img::CciaImage, pop_type::PopTypeArg, value_name::Ab
                             parents, name::AbstractString;
                             filter_measure::AbstractString, filter_fun::AbstractString,
                             filter_values, colour::AbstractString = "#7c93b8")::Vector{String}
-    m = load_pop_map(img; value_name = value_name, pop_type = pop_type)
-    created = String[]
-    for parent in parents
-        par = is_root(parent) ? ROOT : String(parent)
-        (par == ROOT || has_pop(m, par)) || continue         # skip parents not in this map
-        path = pop_path(par, name)
-        has_pop(m, path) && del_pop!(m, path)                # idempotent redefine
-        add_pop!(m, name; parent = par, filter_measure = filter_measure, filter_fun = filter_fun,
-                 filter_values = filter_values, colour = colour, reserved_ok = true)
-        push!(created, path)
+    # the gating lock (copy.jl): a task writing here must not lose an edit the user makes meanwhile
+    with_popmap_lock() do
+        m = load_pop_map(img; value_name = value_name, pop_type = pop_type)
+        created = String[]
+        for parent in parents
+            par = is_root(parent) ? ROOT : String(parent)
+            (par == ROOT || has_pop(m, par)) || continue         # skip parents not in this map
+            path = pop_path(par, name)
+            has_pop(m, path) && del_pop!(m, path)                # idempotent redefine
+            add_pop!(m, name; parent = par, filter_measure = filter_measure, filter_fun = filter_fun,
+                     filter_values = filter_values, colour = colour, reserved_ok = true)
+            push!(created, path)
+        end
+        isempty(created) || save_pop_map!(m, img)
+        created
     end
-    isempty(created) || save_pop_map!(m, img)
-    created
 end

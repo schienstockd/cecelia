@@ -149,8 +149,9 @@ function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
     # `write_json_atomic` (app/src/utils.jl) so a concurrent reader never observes a half-written
     # (truncated) JSON, and an interrupted write keeps the previous gates. This file was where that
     # tmp-then-rename pattern was first written by hand; it is now the shared mechanism every state
-    # write uses. The load→mutate→save critical section is separately serialised by `_POPMAP_LOCK`
-    # in the gating API handlers (against lost updates); this guards the file itself.
+    # write uses. The load→mutate→save critical section is separately serialised by `with_popmap_lock`
+    # (popmanager/copy.jl; held by the gating API handlers and by tasks that write gating) against lost
+    # updates; this guards the file itself.
     write_json_atomic(path, to_tree(m; include_transient = false))
     m._uid_backfilled = false   # the just-saved sidecar now carries every uid
     m

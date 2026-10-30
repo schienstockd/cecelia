@@ -6,7 +6,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
 import type { ParamDef, ParamValues } from './types'
-import type { CciaImage } from '../stores/project'
+import { useProjectStore, type CciaImage } from '../stores/project'
 import { SEVERITY } from '../lib/severity'
 import { paramAdvisor, type ParamAdvisor, type ParamAdvisory, type AdvisorContext,
          type AdvisorParam } from './paramAdvisors'
@@ -87,6 +87,11 @@ const notApplicable = computed(() =>
 // array picks by image axes (first match wins). Callers still bind `v-tooltip.*` on the resolved
 // value — no per-widget branching, and no Vue file "sniffing" image axes for a string swap.
 const shownTip = computed(() => resolveParamTip(props.param, props.context?.images))
+
+// imageSelection — any image of the open project, "Set / image" so two sets' "img-1" stay apart
+const projectStore = useProjectStore()
+const projectImageOptions = computed(() => props.param.type !== 'imageSelection' ? [] :
+  projectStore.sets.flatMap(s => s.images.map(i => ({ uid: i.uid, label: `${s.name} / ${i.name}` }))))
 // a select listing a model vault gets origin headings + the vault's View toggles (VaultModelSelect)
 const vaultKind = computed(() => vaultKindForSource(props.param.optionsFrom))
 
@@ -830,6 +835,17 @@ function onChannelUpdate(next: string[]) {
       <option v-for="opt in param.options" :key="opt.value" :value="opt.value">
         {{ opt.label }}
       </option>
+    </select>
+
+    <!-- imageSelection: one image of the project, or none -->
+    <select v-else-if="param.type === 'imageSelection'"
+      class="select-input"
+      :value="(val as string) ?? ''"
+      @change="val = ($event.target as HTMLSelectElement).value"
+      v-tooltip.bottom="shownTip"
+    >
+      <option value="">None</option>
+      <option v-for="o in projectImageOptions" :key="o.uid" :value="o.uid">{{ o.label }}</option>
     </select>
 
     <!-- valueNameSelection: dropdown of available filepath keys from selected images -->
