@@ -1,6 +1,6 @@
 // The map at the front of the Guides dialog, as data — pure, so it's tested here and `GuideMap.vue`
 // only renders it. Joins three sources and restates none: the sidebar (`navGroups.ts`: pages, labels,
-// icons, groups), the map (`guides/mapData.ts`: what for, day one, pairs, guide) and the recipes
+// icons, groups), the map (`guides/mapData.ts`: what for, pairs, guide) and the recipes
 // (which pages a picked recipe lights). WORKFLOW_RECIPES_PLAN → *The map*.
 import { NAV_GROUPS, navLabelFor } from '../lib/navGroups'
 import { availablePaths, guideRoutes } from './viewProfiles'
@@ -14,12 +14,13 @@ export interface MapChip {
   label: string
   icon: string
   what: string
-  dayOne: boolean
   guideId: string | null
   guideTitle: string | null
   pairedLabel: string | null   // the page this one is paired with, by its sidebar name
-  lit: boolean                 // on the picked recipe's path, or day one when none is picked
+  lit: boolean                 // on the picked recipe's path
+  dim: boolean                 // a recipe is picked and this page isn't on it
   hidden: boolean              // the active sidebar layout hides it — dimmed, still reachable
+  claude: string | null        // what Claude makes here (mapData.ts → claude)
 }
 
 export interface MapGroup {
@@ -70,34 +71,25 @@ export function buildMap(recipe: WrittenRecipe | null, visible: string[]): MapGr
         label: i.label,
         icon: i.icon,
         what: e?.what ?? i.tip,
-        dayOne: !!e?.dayOne,
         guideId: guide?.id ?? null,
         guideTitle: guide?.title ?? null,
         pairedLabel: e?.pairedWith ? navLabelFor(NAV_GROUPS, e.pairedWith) : null,
-        lit: lit ? lit.has(i.to) : !!e?.dayOne,
+        lit: !!lit?.has(i.to),
+        dim: !!lit && !lit.has(i.to),
         hidden: !visible.includes(i.to),
+        claude: e?.claude ?? null,
       }
     }),
   }))
 }
 
-/** The pairs, drawn once: [defines, summarises] by sidebar name, in sidebar order. */
-export function mapPairs(): [string, string][] {
-  const out: [string, string][] = []
-  for (const g of NAV_GROUPS) {
-    for (const i of g.items) {
-      const to = MAP[i.to]?.pairedWith
-      if (to && SIDEBAR.has(to)) out.push([i.label, navLabelFor(NAV_GROUPS, to)])
-    }
-  }
-  return out
-}
-
-/** One hover line for a chip: what it's for, its pair, its guide. */
-export function chipTip(c: MapChip): string {
+/** One hover line for a chip: what it's for, its pair, its guide — and, with the Claude toggle on,
+ *  what Claude makes there. */
+export function chipTip(c: MapChip, showClaude = false): string {
   const parts = [c.what]
   if (c.pairedLabel) parts.push(`summarised on ${c.pairedLabel}`)
   if (c.hidden) parts.push('hidden by your sidebar layout')
+  if (showClaude && c.claude) parts.push(`Claude: ${c.claude}`)
   return parts.join(' · ')
 }
 
@@ -107,7 +99,8 @@ export function defaultOpenGroup(currentPath: string): string {
   return g?.group ?? 'Start'
 }
 
-/** The line under the map saying what bold means — dimmed pages read as disabled otherwise. */
+/** The line under the map: what bold means, or that a recipe is how pages light up. No recipe = no
+ *  default path — where you start depends on your data and your question. */
 export function mapCaption(recipe: WrittenRecipe | null): string {
-  return recipe ? `Bold: the pages ${recipe.title} uses` : 'Bold: where to start — pick a recipe to light its pages'
+  return recipe ? `Bold: the pages ${recipe.title} uses` : 'Pick a recipe to light its pages'
 }

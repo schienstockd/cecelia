@@ -385,14 +385,17 @@ Points the overlay has to respect:
 The front of the Guides dialog, merged with the guide list (Dominik: one view; D11 of GUIDE_SYSTEM_PLAN
 not reopened, so no new first-run entry — the tour's compass step names it).
 
-- **Recipes on top** (ChipSelect, none picked by default). A picked recipe lights its pages and lists
+- **Recipes on top** (ChipSelect, none picked by default). None picked = nothing lit: there is no
+  default path, it depends on the data and the question. A picked recipe lights its pages and lists
   its steps, each Start (a guide) or Open (a specialised page step, `RecipePageStep`).
 - **The groups** — a card per sidebar group, a button per page (click goes there; hover says what for,
   its pair, hidden-by-layout). A card's heading opens that group in the **accordion** below; one group
   open at a time, starting on the group for the page you're on, else Start. Not persisted.
-- **Pairs** drawn once under the cards (`mapPairs`). **Claude toggle** (`settings.guidesShowClaude`,
-  off by default): the loop and a ✦ on each recipe step with an `assist`.
-- **One source.** `lib/guides/mapData.ts` holds only what for / day one / pair / guide per route;
+- **Claude toggle** (`settings.guidesShowClaude`, off by default): a ✦ on the pages where Claude makes
+  something you keep (board, Blackboard entry, notebook, chain — not reading, which is every page),
+  the loop (`ClaudeLoop.vue`), and a ✦ on each recipe step with an `assist`. A separate line of
+  pairs under the cards was dropped: unlabelled it read as noise, and each chip's hover names its pair.
+- **One source.** `lib/guides/mapData.ts` holds only what for / pair / guide / what Claude makes per route;
   everything else is `navGroups.ts`. `utils/guideMap.test.ts` fails on a sidebar page with no entry,
   an entry for no page, or a missing guide or pair. `user-docs/README.md` is generated from the same
   data (`utils/userDocs.ts`), its prose from `user-docs/parts/`; a stale README fails

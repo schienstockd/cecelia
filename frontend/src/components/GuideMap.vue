@@ -3,11 +3,11 @@
   manual — names, icons, one hover line each; no paragraphs (docs/todo/WORKFLOW_RECIPES_PLAN.md → *The map*).
 
     Recipes      pick your kind of data; its pages light up and its steps list below. None picked =
-                 the day-one pages lit.
+                 nothing lit: there is no default path, it depends on the data and the question.
     The groups   one card per sidebar group, a button per page: click goes there. A card's heading
                  opens that group's guides in the accordion below (the map IS the accordion's index).
-    Pairs        drawn once: the page that defines a population ↔ the page that summarises it.
-    Claude       one toggle: the loop (ClaudeLoop.vue — the same cards as Kiwi's ?)
+    Claude       one toggle: ✦ on the pages where Claude makes something (mapData.ts → claude), the loop
+                 (ClaudeLoop.vue — the same cards as Kiwi's ?)
                  and what Claude adds at each recipe step. Off by default — Cecelia works without it.
 
   All joins live in `utils/guideMap.ts` (tested); this file only renders them.
@@ -25,7 +25,7 @@ import type { GuideDef } from '../lib/guides/types'
 import ClaudeLoop from './ClaudeLoop.vue'
 import { recipeRequestUrl } from '../lib/links'
 import { closeGuides } from '../lib/guideOpen'
-import { buildMap, mapPairs, chipTip, mapCaption } from '../utils/guideMap'
+import { buildMap, chipTip, mapCaption } from '../utils/guideMap'
 import { availablePaths, applyProfile } from '../utils/viewProfiles'
 import { NAV_GROUPS } from '../lib/navGroups'
 
@@ -43,7 +43,6 @@ const recipe = computed(() => written.find(r => r.id === recipeId.value) ?? null
 
 const groups = computed(() =>
   buildMap(recipe.value, availablePaths(applyProfile(NAV_GROUPS, layouts.activeItems))))
-const pairs = mapPairs()
 
 function go(route: string) {
   void router.push(route)
@@ -105,18 +104,15 @@ const assistTip = (s: RecipeStep) =>
           {{ g.heading }}
         </button>
         <button v-for="c in g.chips" :key="c.route"
-                :class="['gm-page cc-btn cc-btn-bare cc-fs-xs', { lit: c.lit, hidden: c.hidden }]"
-                v-tooltip.right="chipTip(c)" @click="go(c.route)">
+                :class="['gm-page cc-btn cc-btn-bare cc-fs-xs', { lit: c.lit, dim: c.dim, hidden: c.hidden }]"
+                v-tooltip.right="chipTip(c, settings.guidesShowClaude)" @click="go(c.route)">
           <i :class="['pi', c.icon]" /> {{ c.label }}
+          <i v-if="settings.guidesShowClaude && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
         </button>
       </div>
     </div>
 
     <p class="gm-caption cc-muted cc-fs-2xs">{{ mapCaption(recipe) }}</p>
-
-    <p class="gm-pairs cc-row cc-row-loose cc-muted cc-fs-2xs">
-      <span v-for="([a, b], i) in pairs" :key="i" class="gm-pair">{{ a }} <i class="pi pi-arrow-right" /> {{ b }}</span>
-    </p>
 
     <!-- Claude: the loop, in the same words as Kiwi's ? and its guide -->
     <ClaudeLoop v-if="settings.guidesShowClaude" />
@@ -148,14 +144,13 @@ const assistTip = (s: RecipeStep) =>
 .gm-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .gm-card { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gm-card-head { font-weight: 600; justify-content: flex-start; padding: 2px 4px; }
-.gm-page { justify-content: flex-start; gap: 6px; padding: 2px 4px; opacity: 0.55; text-align: left; }
+.gm-page { justify-content: flex-start; gap: 6px; padding: 2px 4px; text-align: left; }
 /* lit = on the path. Not colour alone: lit pages are full-strength AND bold */
-.gm-page.lit { opacity: 1; font-weight: 600; }
+.gm-page.lit { font-weight: 600; }
+.gm-page.dim { opacity: 0.55; }
 .gm-page.hidden { text-decoration: line-through; }
 
 .gm-caption { margin: 0; }
-.gm-pairs { margin: 0; flex-wrap: wrap; }
-.gm-pair .pi { font-size: 0.7em; }
 
 .gm-ask { margin: 0; }
 </style>

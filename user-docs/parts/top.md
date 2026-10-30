@@ -1,12 +1,12 @@
 # Start here: what's in Cecelia
 
-This page names every part of Cecelia once: what it is for, what it needs, and whether you need
-it on day one. The same map is the front page of **Guides** in the app (compass icon, top right),
-where each page is one click away and each guide shows you the buttons.
+This page names every part of Cecelia once: what it is for and what it needs. The same map is the
+front page of **Guides** in the app (compass icon, top right), where each page is one click away and
+each guide shows you the buttons.
 
 ```mermaid
 flowchart LR
-  subgraph core["Day one"]
+  subgraph core["The analysis"]
     D[Data<br/>import · metadata · segment] --> P[Populations<br/>gate · track · cluster]
     P --> E[Explore<br/>phenotype · behaviour · spatial]
   end
@@ -17,14 +17,14 @@ flowchart LR
   K -. reads .-> A
 ```
 
-## Day one
+## Where to start
 
 1. **Find your way around:** the tour runs by itself the first time you close the welcome dialog.
 2. **Open Guides and pick your recipe.** Where you start depends on your data: whether it moves, how
    many markers it has, and what you want to know. The recipe lights its pages on the map and lists
    its steps, each with why it is there. The recipes are listed [below](#recipes).
-3. **No recipe fits?** The pages every image goes through are **Manage images** → **Metadata** →
-   **Segment**, then **Gate** → **Phenotype** (add **Track** → **Behaviour** for a timelapse).
+3. **No recipe fits?** Click **Ask for a recipe** under the recipes: tell us what you image and what
+   you want to know.
 
 Everything below "Scaling up" can wait.
 

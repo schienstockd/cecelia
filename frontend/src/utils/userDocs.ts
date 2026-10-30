@@ -19,12 +19,12 @@ export function sidebarSection(): string {
   ]
   for (const g of NAV_GROUPS) {
     out.push('', `### ${g.heading}: ${(GROUP_BLURB[g.heading] ?? '').toLowerCase()}`, '',
-      '| Page | What it\'s for | Day one | Summarised on | Guide |', '|---|---|:-:|---|---|')
+      '| Page | What it\'s for | Summarised on | Guide | Claude |', '|---|---|---|---|---|')
     for (const i of g.items) {
       const e = MAP[i.to]
       const guide = e?.guide ? guideById(e.guide)?.title ?? '' : ''
       const pair = e?.pairedWith ? navLabelFor(NAV_GROUPS, e.pairedWith) : ''
-      out.push(`| ${cell(i.label)} | ${cell(e?.what ?? i.tip)} | ${e?.dayOne ? '✓' : ''} | ${cell(pair)} | ${cell(guide)} |`)
+      out.push(`| ${cell(i.label)} | ${cell(e?.what ?? i.tip)} | ${cell(pair)} | ${cell(guide)} | ${cell(e?.claude ?? '')} |`)
     }
   }
   return out.join('\n')

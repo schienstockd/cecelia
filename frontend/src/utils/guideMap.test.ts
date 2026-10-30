@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { NAV_GROUPS } from '../lib/navGroups'
 import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
-import { buildMap, recipeRoutes, mapPairs, chipTip, defaultOpenGroup, stepRoute, mapCaption } from './guideMap'
+import { buildMap, recipeRoutes, chipTip, defaultOpenGroup, stepRoute, mapCaption } from './guideMap'
 import { availablePaths, applyProfile } from './viewProfiles'
 
 const ROUTES = NAV_GROUPS.flatMap(g => g.items.map(i => i.to))
@@ -29,6 +29,7 @@ describe('the map covers the sidebar, exactly', () => {
   })
   it('keeps the what-for to one short line', () => {
     for (const [route, e] of Object.entries(MAP)) {
+      if (e.claude) expect(e.claude.length, `${route} claude`).toBeLessThanOrEqual(70)
       expect(e.what.length, route).toBeLessThanOrEqual(70)
       expect(e.what.endsWith('.'), route).toBe(false)
     }
@@ -53,10 +54,11 @@ describe('recipes light real pages', () => {
 })
 
 describe('buildMap', () => {
-  it('lights the day-one pages when no recipe is picked', () => {
-    const lit = buildMap(null, visibleWith(null)).flatMap(g => g.chips).filter(c => c.lit).map(c => c.route)
-    expect(lit).toEqual(Object.entries(MAP).filter(([, e]) => e.dayOne).map(([r]) => r))
-    expect(lit).toContain('/segment')
+  // No default path: where you start depends on the data and the question, so with no recipe
+  // nothing is lit and nothing is dimmed.
+  it('lights and dims nothing when no recipe is picked', () => {
+    const chips = buildMap(null, visibleWith(null)).flatMap(g => g.chips)
+    expect(chips.some(c => c.lit || c.dim)).toBe(false)
   })
   it('lights exactly a recipe’s pages when one is picked', () => {
     const r = written.find(x => x.id === 'multiplex-tissue')!
@@ -64,6 +66,8 @@ describe('buildMap', () => {
     expect(lit).toEqual(new Set(recipeRoutes(r)))
     expect(lit.has('/clust-cells')).toBe(true)
     expect(lit.has('/gate')).toBe(false)
+    const gate = buildMap(r, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!
+    expect(gate.dim).toBe(true)
   })
   // An empty layout is "All", as everywhere else (applyProfile) — not "everything hidden".
   it('treats an empty layout as all pages', () => {
@@ -76,9 +80,15 @@ describe('buildMap', () => {
     expect(gate.hidden).toBe(true)
     expect(chipTip(gate)).toMatch(/hidden by your sidebar layout/)
   })
-  it('says what bold means, with and without a recipe', () => {
-    expect(mapCaption(null)).toMatch(/where to start/)
+  it('says what bold means, or to pick a recipe', () => {
+    expect(mapCaption(null)).toMatch(/Pick a recipe/)
     expect(mapCaption(written[0])).toContain(written[0].title)
+  })
+  it('says what Claude makes on a page only with the Claude toggle on', () => {
+    const chain = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/chain')!
+    expect(chain.claude).toBeTruthy()
+    expect(chipTip(chain)).not.toMatch(/Claude:/)
+    expect(chipTip(chain, true)).toMatch(/Claude: /)
   })
   it('names the pair and the guide on a chip', () => {
     const gate = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!
@@ -88,14 +98,7 @@ describe('buildMap', () => {
   })
 })
 
-describe('mapPairs and defaultOpenGroup', () => {
-  it('draws each pair once, defining page first', () => {
-    const pairs = mapPairs()
-    expect(pairs).toContainEqual(['Gate', 'Phenotype'])
-    expect(pairs).toContainEqual(['Track', 'Behaviour'])
-    expect(pairs).toContainEqual(['Cluster regions', 'Spatial'])
-    expect(new Set(pairs.map(p => p.join())).size).toBe(pairs.length)
-  })
+describe('defaultOpenGroup', () => {
   it('opens the guides for the page you are on, else Start', () => {
     expect(defaultOpenGroup('/segment')).toBe('Data')
     expect(defaultOpenGroup('/gate')).toBe('Populations')
