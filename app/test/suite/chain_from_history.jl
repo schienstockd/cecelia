@@ -39,6 +39,11 @@ _hedge(r, from, to) = any(e -> e["from"] == from && e["to"] == to, r["template"]
     @test r["reusedModels"] == [Dict{String,Any}("fn" => "opticalFlow.train", "model" => "flow.small")]
     @test isempty(_hnode(r, "opticalFlow.train"))
     @test length(_hnode(chain_from_history(proj, [uids["u"]]; retrain = true), "opticalFlow.train")) == 1
+    # tracking per population is a fork (keep both); its versions are told apart by the populations
+    tf = [f for f in r["finalOutputs"] if f["fn"] == "tracking.bayesian_track_measures"]
+    @test all(f -> f["multi"], tf) && sort([f["variant"] for f in tf]) == ["/qc/cells", "/qc/frags"]
+    # the start dot sits on the roots, so the canvas draws it straight away, saved or not
+    @test r["template"]["startTargets"] == [seg["id"]]
     # the template only fails validation on the model, which this test install's vault lacks
     @test !r["valid"] && occursin("flow.small.pt", r["error"])
     rm(proj.root; recursive = true)
@@ -61,7 +66,7 @@ end
     @test sa["output"] == "stackAligned"
     r2 = chain_from_history(proj, [uids["x"]]; keep = [seg["id"]])
     @test isempty(_hnode(r2, "cleanupImages.stackAlign")) && length(_hnode(r2, "cleanupImages.driftCorrect")) == 1
-    # the cancelled import is not a step
+    # an import is never replayed
     @test isempty(_hnode(r, "importImages.omezarr"))
     rm(proj.root; recursive = true)
 end
@@ -83,6 +88,8 @@ end
     @test r["gateSteps"] == ["gate.B", "gate.T"]
     @test all(g -> only(n for n in r["template"]["nodes"] if n["id"] == g)["params"]["requiredPops"] == "/qc",
               r["gateSteps"])
+    # two region clusterings are alternatives, not a fork: keep one
+    @test all(f -> !f["multi"], [f for f in r["finalOutputs"] if f["fn"] == "clustRegions.cluster"])
     # clustTracks ran before params were recorded — reported, not replayed with {}
     @test isempty(_hnode(r, "clustTracks.cluster"))
     @test any(n -> n["fn"] == "clustTracks.cluster" && occursin("params", n["why"]), r["notReplayed"])

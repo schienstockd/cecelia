@@ -231,6 +231,8 @@ Edges are added left-to-right between consecutive nodes.
 function make_chain(proj::CciaProject, name::String, nodes::Vector{ChainNode})::ChainTemplate
     edges = [ChainEdge(nodes[i].id, nodes[i+1].id) for i in 1:length(nodes)-1]
     t     = ChainTemplate(name, nodes, edges)
+    # the start dot on the roots, as the create/save routes repair it — the whiteboard draws it from this
+    t     = ChainTemplate(name, nodes, edges, chain_root_ids(t))
     save_chain_template!(proj, t)
     t
 end

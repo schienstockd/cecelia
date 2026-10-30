@@ -1,7 +1,9 @@
 # Chain from history — and the manual step it needs
 
-**Status:** built except the optional B-P4 (2026-10-30) · branch `docs/chain-from-history-archive`. Part A built (A-P1–A-P3);
-B-P1 + B-P2 + B-P3 built (B-P4, optional Claude on top, not started). Decisions refined in the build, from the two real histories:
+**Status:** built (2026-10-30) · branch `docs/chain-from-history-archive`. Part A built (A-P1–A-P3);
+B-P1–B-P4 built. B-P4 is the observer tool `suggest_chain`: Claude starts from the same mechanical
+suggestion as the dialog and follows its steps, listing any change it makes, so a chain Claude builds
+and one the user builds are comparable. Decisions refined in the build, from the two real histories:
 - B4/B5: identity and wiring read the spec, not names alone. A param links to an output only when it
   reads that output's namespace (`namespace` / `field` / a model `optionsFrom`): region clusters and
   spatial graphs were both called `immune` in 4kS67f. A composite takes its steps' params, the first

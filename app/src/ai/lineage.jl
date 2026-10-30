@@ -9,8 +9,8 @@
 # `get_analysis_lineage` tool. Richer per-stage numbers (populations, measures, HMM/clusters) are the
 # later slices B–E.
 
-# fun_name ("category.task") → a coarse pipeline stage. Gating is interactive (not a task fun), so it
-# has no run-log step — it surfaces via `gatedPops`, not here.
+# fun_name ("category.task") → a coarse pipeline stage. Gating itself is interactive and surfaces via
+# `gatedPops`; the one gating TASK is the manual gate chain step (`gate.*`), whose runs land in "gate".
 function _stage_of(fun::AbstractString)::String
     cat = String(first(split(fun, "."; limit = 2)))
     cat == "importImages"  && return "import"
@@ -18,6 +18,7 @@ function _stage_of(fun::AbstractString)::String
     cat == "editImages"    && return "edit"
     cat == "segment"       && return "segment"
     cat == "tracking"      && return "track"
+    cat == "gate"          && return "gate"
     cat == "behaviour"     && return "behaviour"
     (cat == "clustPops" || cat == "clustTracks") && return "cluster"
     "other"

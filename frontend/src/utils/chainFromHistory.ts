@@ -4,7 +4,12 @@
 
 import type { ChainTemplate } from '../tasks/types'
 
-export interface HistoryFinal { id: string; fn: string; output: string; imageUids: string[]; kept: boolean }
+export interface HistoryFinal {
+  id: string; fn: string; output: string; imageUids: string[]; kept: boolean
+  variant: string   // what tells this version from its siblings ('' = the only one)
+  multi: boolean    // several versions can run side by side (segmentation, per-population tracking)
+  at: string        // its latest run, ISO
+}
 export interface HistoryConflict { nodeId: string; param: string; values: Record<string, unknown> }
 export interface HistorySuggestion {
   template: ChainTemplate
@@ -54,4 +59,45 @@ export function applyChoices(tpl: ChainTemplate, choices: Record<string, Record<
       return { ...n, params }
     }),
   }
+}
+
+/** One step of the dialog: a task, and the versions of it the exemplars ran, newest first. */
+export interface StepGroup { fn: string; label: string; multi: boolean; versions: HistoryFinal[] }
+
+export function groupSteps(finals: readonly HistoryFinal[], labelOf: (fn: string) => string = f => f): StepGroup[] {
+  const by = new Map<string, HistoryFinal[]>()
+  for (const f of finals) (by.get(f.fn) ?? by.set(f.fn, []).get(f.fn)!).push(f)
+  return [...by.entries()].map(([fn, vs]) => ({
+    fn, label: labelOf(fn), multi: vs.every(v => v.multi),
+    versions: [...vs].sort((a, b) => b.at.localeCompare(a.at)),
+  }))
+}
+
+/**
+ * What to keep when the user has not chosen yet: every version of a step that forks (both
+ * segmentations, tracking per population), and only the NEWEST of a step whose versions are
+ * alternatives — the latest is the one the user ended on.
+ */
+export function defaultKeep(groups: readonly StepGroup[]): string[] {
+  return groups.flatMap(g => g.multi ? g.versions.map(v => v.id) : g.versions.slice(0, 1).map(v => v.id))
+}
+
+/** Left-out runs folded per reason: which tasks, on how many images. */
+export function groupLeftOut(rows: readonly { fn: string; imageUid: string; why: string }[],
+                             labelOf: (fn: string) => string = f => f) {
+  const by = new Map<string, { tasks: Set<string>; images: Set<string> }>()
+  for (const r of rows) {
+    const e = by.get(r.why) ?? by.set(r.why, { tasks: new Set(), images: new Set() }).get(r.why)!
+    e.tasks.add(labelOf(r.fn)); e.images.add(r.imageUid)
+  }
+  return [...by.entries()].map(([why, e]) => ({ why, tasks: [...e.tasks].sort(), images: e.images.size }))
+}
+
+/** `base`, or `base 2`, `base 3`… — the first name no existing chain has. */
+export function uniqueChainName(base: string, existing: readonly string[]): string {
+  const taken = new Set(existing)
+  if (!taken.has(base)) return base
+  let i = 2
+  while (taken.has(`${base} ${i}`)) i++
+  return `${base} ${i}`
 }

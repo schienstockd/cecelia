@@ -2683,11 +2683,17 @@ Edit canvas a manual step carries a `pi-pause` mark, and its Scope select has no
 The tab badge shows the count of steps waiting for you, else of currently-running nodes.
 
 **Chain from history** (`pi-history` beside *Create*; `ChainFromHistoryModal.vue`, logic in
-`utils/chainFromHistory.ts`): select exemplar images (active set) → **Suggest** (`GET /api/chains/suggest`)
-→ untick final outputs you abandoned (re-suggests with `keep`), select a value for each param the
-exemplars disagree on, toggle *Reuse trained models*. Gate steps, reused models and left-out runs are
-listed as `InlineNote`s. **Open in whiteboard** creates the chain (`saveEmptyChain`), lays the template out
-and saves it if it validates; if not, it stays on the canvas unsaved and the log says why.
+`utils/chainFromHistory.ts`): select a set (starts on the Run panel's) and exemplar images in it →
+**Suggest** (`GET /api/chains/suggest`). The suggestion is shown as **Steps**, one row per task
+(`groupSteps`): a step with one version is a toggle; a step whose versions are alternatives (two region
+clusterings) is a select — newest preselected, or *Leave out*; a step whose versions are a real fork
+(`multi`: each writes a label set, or runs per population — segmentations, tracking frags/cells) is a
+checkbox per version, all kept by default (`defaultKeep`). Every change re-suggests with `keep`. Then a
+value per param the exemplars disagree on, *Reuse trained models*, one line each for gate steps and
+reused models, and the runs not repeated folded per reason under a collapsed **Left out (N)**
+(`groupLeftOut`). **Open in whiteboard** creates the chain and saves it if it validates; the name
+defaults to one no chain has (`uniqueChainName`), and a name that exists blocks Open with a note — it
+never overwrites a chain.
 
 **Pre-flight on Run**: Run first posts `/api/chains/preflight` (`utils/chainPreflight.ts` groups the
 answer per image, failures first). Nothing found → the run starts as before; anything found → a

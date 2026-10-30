@@ -1462,6 +1462,7 @@ onActivated(async () => {
     </BaseModal>
 
     <ChainFromHistoryModal v-if="historyOpen && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
+                           :set-uid="runSetUid" :chain-names="chainNames"
                            @close="historyOpen = false" @open="openFromHistory" />
 
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
@@ -1705,6 +1706,10 @@ onActivated(async () => {
           v-tooltip.right="nameMode === 'rename' ? 'Rename the chain' : 'Create the chain'"
           @click="submitName" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
+        </button>
+        <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+          v-tooltip.right="'Cancel'" @click="closeNameInput">
+          <i class="pi pi-times" />
         </button>
       </div>
 

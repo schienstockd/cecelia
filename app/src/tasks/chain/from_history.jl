@@ -173,8 +173,12 @@ Suggest a chain template from what ran on `exemplars`. `keep` names the final-ou
 build towards (default: every final output); `retrain = true` keeps training steps instead of reusing
 their models. Returns, all plain JSON:
 
-- `template`    — `{name, nodes: [{id, fn, scope, params}], edges: [{from, to}], startTargets: []}`
-- `finalOutputs`— `[{id, fn, output, imageUids, kept}]`: what the user may tick
+- `template`    — `{name, nodes: [{id, fn, scope, params}], edges: [{from, to}], startTargets}` —
+                  the start dot on the chain's roots
+- `finalOutputs`— `[{id, fn, output, variant, multi, at, imageUids, kept}]`: what the user may tick.
+                  `variant` tells one version of a step from another (its output name, else the
+                  populations it read); `multi` = keeping several versions is a real fork (it writes
+                  a label set, or runs per population), else the versions are alternatives — keep one
 - `conflicts`   — `[{nodeId, param, values: {uid => value}}]`: exemplars disagree; the template holds
                   the latest value until the user picks
 - `notReplayed` — `[{fn, imageUid, why}]`; `reusedModels` — `[{fn, model}]`; `gateSteps` — node ids
@@ -194,7 +198,8 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     latest = Dict{Tuple{String,String},Dict{String,Any}}()
     for r in sort(rows; by = r -> r.at)
         lv = leaves_of(r.fn)
-        lv === nothing && (skip!(r, "unknown task"); continue)
+        lv === nothing && (skip!(r, "this task no longer exists"); continue)
+        startswith(r.fn, "importImages.") && (skip!(r, "imports an image — never replayed"); continue)
         r.legacy && (skip!(r, "ran before params were recorded"); continue)
         any(l -> l.type == "imagePicker", values(lv)) &&
             (skip!(r, "per-image geometry (e.g. a crop box)"); continue)
@@ -276,6 +281,9 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     # canonical serialiser, so the suggestion is exactly what the whiteboard would save
     template = ChainTemplate(String(name), [chain_node(s.fn; id = s.id, params = s.params) for s in kept],
                              [ChainEdge(f, t) for (f, t) in sort!(collect(edges))], String[])
+    # the start dot on the roots, as the create/save routes repair it: the canvas draws the dot from this
+    # list, and a suggestion may be shown before (or without) a save
+    template = ChainTemplate(template.name, template.nodes, template.edges, chain_root_ids(template))
     tpl = JSON3.read(_template_json(template), Dict{String,Any})
     valid, err = try
         validate_chain_template(template); (true, "")
@@ -285,6 +293,8 @@ function chain_from_history(proj::CciaProject, exemplars::Vector{String};
     Dict{String,Any}(
         "template"     => tpl,
         "finalOutputs" => [Dict{String,Any}("id" => s.id, "fn" => s.fn, "output" => s.output,
+                                            "variant" => _history_variant(s, leaves_of(s.fn)),
+                                            "multi" => _history_forks(s, leaves_of(s.fn)), "at" => s.at,
                                             "imageUids" => s.image_uids, "kept" => s.id in kept_finals)
                            for s in finals],
         "conflicts"    => [c for c in conflicts if c["nodeId"] in keep_ids],
@@ -321,3 +331,23 @@ function _history_pop_refs(s::HistoryStep, lv)::Vector{Tuple{String,String}}
     end
     unique!(refs)
 end
+
+# What tells this version of a step from its siblings: the name it writes, else what it read (the
+# populations — tracking `/qc/frags` vs `/qc/cells`), else "" (one version only).
+function _history_variant(s::HistoryStep, lv)::String
+    isempty(s.output) || return s.output
+    vals = String[]
+    for (k, v) in sort!(collect(s.params); by = first)
+        l = get(lv, k, nothing)
+        (l !== nothing && l.type == "popSelection") && append!(vals, [x for (_, x) in _keyed_strings(Dict(k => v))])
+    end
+    join(vals, ", ")
+end
+
+# Can several versions of this step sensibly run side by side? Yes when each writes its own label set
+# (two segmentations), or runs per population (tracking frags and cells). Otherwise the versions are
+# alternatives — two region clusterings, two stats runs — and the user keeps one.
+_history_forks(s::HistoryStep, lv)::Bool =
+    s.output_ns == "labels" ||
+    (isempty(s.output) && any(l -> l.type == "popSelection" && !l.writes, values(lv)) &&
+     !isempty(_history_variant(s, lv)))
