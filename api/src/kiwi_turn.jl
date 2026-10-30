@@ -32,7 +32,7 @@ const KIWI_READ_TOOLS = [
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
     "get_task_catalogue",   # what each step is for — "which step fixes this?" is a fair Kiwi question
-    "gate_plot", "gate_cells_view",   # read-only renders of a gate and its cells — the Gate step's pictures
+    "gate_plot", "gate_cells_view",   # a population's gate and its cells in the image, as pictures
 ]
 const KIWI_EXCLUDED_TOOLS = Dict(
     "list_projects" => "other projects — a turn is scoped to one",

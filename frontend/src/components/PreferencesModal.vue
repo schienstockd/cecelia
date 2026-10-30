@@ -26,6 +26,7 @@ import { useObserverStore } from '../stores/observer'
 import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { dotClass } from '../utils/statusDot'
+import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          isValidProfileName, profileDisplayName,
          type ProfileRoster } from '../utils/profileApi'
@@ -73,6 +74,14 @@ async function refreshRoster() {
 }
 onMounted(refreshRoster)
 
+// Kiwi → "Delete conversations on log out": the workstation policy is the floor — when it's on, the
+// personal switch shows on and locked. A failed read leaves the switch editable.
+const purgeForcedByWorkstation = ref(false)
+onMounted(async () => {
+  try { purgeForcedByWorkstation.value = (await fetchSharedWorkstation()).purgeClaudeConversations === true }
+  catch { /* older backend — the personal switch still works */ }
+})
+
 // Switching the profile mid-session works but half the app is already mounted against the
 // previous identity (per-profile settings, project filter, MCP registration). The plan is
 // explicit: change-of-profile requires reload. Server-side write goes out first so a reload
@@ -82,6 +91,7 @@ async function pickProfile(name: string) {
   profilesBusy.value = name
   profilesError.value = null
   try {
+    await settings.flushProfileSettings()   // pending changes belong to THIS profile, and the pick reads them
     const r = await selectProfile(name)
     if (!r.ok) { profilesError.value = r.error ?? 'Select failed'; return }
     const nowActive = r.active ?? name
@@ -486,6 +496,14 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>
+          <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
+          <CcToggle v-if="appCtl.activeProfileName !== 'default'" style="margin-top:0.8rem"
+                    :model-value="settings.purgeClaudeConversations || purgeForcedByWorkstation"
+                    :disabled="purgeForcedByWorkstation"
+                    label="Delete my conversations on log out"
+                    v-tooltip.bottom="purgeForcedByWorkstation ? 'Required on this workstation'
+                                      : 'Transcripts and prompt history; your Claude memory stays'"
+                    @update:model-value="settings.purgeClaudeConversations = $event" />
           <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
           <template v-if="observerRow">
             <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>

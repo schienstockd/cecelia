@@ -86,12 +86,13 @@ class _WeeklyFixture(_Fixture):
                 raise self.fail_steps["sweep"]
             if self.fail_steps.get("sweep"):
                 failures["sweep"] = self.fail_steps["sweep"]
-            meter.update(input=10, cache_write=0, cache_read=2000, output=300)
+            meter.update(input=10, cache_write=0, cache_read=2000, output=300, models=["claude-sonnet-5-5"])
             return [_bug("B1"), _bug("B2", verify={"verdict": "decide", "date": date})], 0.4
 
         def verify(bugs, *, date, sha, agent=None):
             return bugs, {"groups": 1, "verified": 1, "failed": 0, "waiting": 0, "usd": 2.0,
-                          "tokens": {"input": 5, "cache_write": 1000, "cache_read": 50000, "output": 4000}}
+                          "tokens": {"input": 5, "cache_write": 1000, "cache_read": 50000, "output": 4000,
+                                     "models": ["claude-opus-5-5"]}}
 
         def propose(events, *, date, assign=None, meter=None, failures=None, answered=None):
             self.answered = answered
@@ -126,7 +127,8 @@ class WeeklyTest(_WeeklyFixture):
 
     def test_tokens_are_kept_per_step_and_summed(self):
         tok = self.run_pass()["run"]["spend"]["tokens"]
-        self.assertEqual(tok["total"], {"input": 16, "cache_write": 1000, "cache_read": 52000, "output": 4500})
+        self.assertEqual(tok["total"], {"input": 16, "cache_write": 1000, "cache_read": 52000, "output": 4500,
+                                        "models": ["claude-opus-5-5", "claude-sonnet-5-5"]})
         self.assertEqual(tok["rules"], {"input": 1, "output": 200})
         md = self.rec.render_markdown(self.run_pass())
         self.assertIn("| Tokens | 4.5k out · 16 in (+ cache read 52.0k, cache write 1.0k) — sweep 2.3k · "
@@ -420,11 +422,14 @@ class PublishTest(_WeeklyFixture):
         commit = next(i for c, i in self.cmds if c[1] == "commit")
         self.assertTrue(commit.startswith("judge: run record 2026-10-05 (2 open bugs)"))
         self.assertIn("docs-only diff", commit)
-        self.assertIn("Co-Authored-By:", commit)
+        for line in ("Co-Authored-By: Claude Opus 5.5 <", "Co-Authored-By: Claude Sonnet 5.5 <",
+                     "Claude-Model: claude-opus-5-5", "Claude-Model: claude-sonnet-5-5"):
+            self.assertIn(line, commit)   # the models the pass ran on, never a pinned name
         body = next(i for c, i in self.cmds if c[1:3] == ["pr", "create"])
         self.assertIn("**Bugs: 2 open** (1 verified, 2 new)", body)
         self.assertIn("1 for you to decide", body)
         self.assertIn("P1 · tighten", body)
+        self.assertIn("(https://claude.com/claude-code) · claude-opus-5-5, claude-sonnet-5-5", body)
         closed = [c for c, _ in self.cmds if c[1:3] == ["pr", "close"]]
         self.assertEqual([c[3] for c in closed], ["5"])             # never the unrelated PR
         self.assertTrue((wt / "docs" / "ai-assist" / "judge-runs" / "2026-10-05.md").is_file())

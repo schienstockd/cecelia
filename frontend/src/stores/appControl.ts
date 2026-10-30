@@ -1,6 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchProfiles, profileNameLabel, fetchClaudeLogin, logoutClaude, claudeLogoutError,
+import { fetchProfiles, profileNameLabel, fetchClaudeLogin, logoutClaude, claudeLogoutError, endClaudeSession,
          type ClaudeLogin } from '../utils/profileApi'
 import { tasksLostOnRestart } from '../utils/runningTasks'
 import { quitTaskPhrase } from '../utils/quitWarning'
@@ -60,6 +60,13 @@ export const useAppControlStore = defineStore('appControl', () => {
    *  then reloads into the profile picker, forced even on a one-profile install. Returns an error
    *  message and stays put if the Claude logout failed, so nobody walks away still logged in. */
   async function logOutUser(): Promise<string> {
+    await _flushProfileSettings()
+    // conversations first: if Claude is still running under the profile this refuses, and nothing
+    // else has happened yet (no-op unless the profile or the workstation asks for it; never peanut)
+    if (activeProfileName.value !== 'default') {
+      const r = await endClaudeSession(activeProfileName.value)
+      if (!r.ok) return r.error ?? 'Could not delete Claude conversations'
+    }
     if (!claudeLogin.value) await refreshClaudeLogin(true)
     const err = await logOutClaude()
     if (err) return err
@@ -278,10 +285,17 @@ export const useAppControlStore = defineStore('appControl', () => {
     } catch { /* leave as-is */ }
   }
 
+  // Quit and Log out act on profile settings server-side (`purgeClaudeConversations`), so a change still
+  // inside the autosave debounce goes out first. Lazy import: settings.ts already imports this store.
+  const _flushProfileSettings = async () => {
+    try { await (await import('./settings')).useSettingsStore().flushProfileSettings() } catch { /* best effort */ }
+  }
+
   // global Quit: stop everything + exit the backend. The connection drops as the server exits (expected);
   // stays busy because the app is gone.
   async function quit() {
     busy.value = true; message.value = 'Shutting down…'
+    await _flushProfileSettings()
     try { await _post('/api/app/shutdown') } catch { /* connection dropped on exit */ }
     message.value = 'Cecelia is shutting down — you can close this window.'
   }

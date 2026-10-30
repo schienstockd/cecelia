@@ -311,6 +311,44 @@ end
             finally
                 set_shared_workstation!("claudeLogoutOnQuit", false)
             end
+
+            # Delete conversations: off → nobody; bob's own preference → bob only; the workstation
+            # floor → every named profile. Never default; on a pick, never the profile picked.
+            bob = joinpath(tmp, "user-profiles", "bob")
+            @test isempty(_purge_on_quit_targets()) && isempty(_purge_on_pick_targets("alice"))
+            patch_profile_settings!(Dict("purgeClaudeConversations" => true), "bob")
+            @test _purge_on_quit_targets() == [bob]
+            @test _purge_on_pick_targets("alice") == [bob]
+            @test isempty(_purge_on_pick_targets("bob"))
+            set_shared_workstation!("purgeClaudeConversations", true)
+            try
+                @test sort(_purge_on_quit_targets()) == sort([alice, bob])
+                @test _purge_on_pick_targets("default") == [alice, bob]
+            finally
+                set_shared_workstation!("purgeClaudeConversations", false)
+            end
+
+            # end-session: validates like logout; a profile that doesn't want it is a no-op; one that
+            # does is purged (memory kept)
+            es(b) = api_kiwi_profiles_end_session(Vector{UInt8}(JSON3.write(b)))
+            @test api_kiwi_profiles_end_session(Vector{UInt8}("{}"))[1] == 400
+            @test es((; name = "ghost"))[1] == 404
+            @test es((; name = "Bad Name"))[1] == 400
+            @test JSON3.read(es((; name = "default"))[2]).purged == false
+            write(joinpath(alice, "history.jsonl"), "x")
+            @test JSON3.read(es((; name = "alice"))[2]).purged == false
+            @test isfile(joinpath(alice, "history.jsonl"))
+            write(joinpath(bob, "history.jsonl"), "x")
+            mkpath(joinpath(bob, "projects", "p", "memory")); write(joinpath(bob, "projects", "p", "s.jsonl"), "x")
+            code, body = es((; name = "bob"))
+            @test code == 200 && JSON3.read(body).purged == true
+            @test !isfile(joinpath(bob, "history.jsonl")) && !isfile(joinpath(bob, "projects", "p", "s.jsonl"))
+            @test isdir(joinpath(bob, "projects", "p", "memory")) && isfile(joinpath(bob, "settings.toml"))
+            # a running `claude` under the profile → 409, nothing deleted
+            write(joinpath(bob, "history.jsonl"), "x")
+            mkpath(joinpath(bob, "sessions")); write(joinpath(bob, "sessions", "$(getpid()).json"), "{}")
+            @test es((; name = "bob"))[1] == 409
+            @test isfile(joinpath(bob, "history.jsonl"))
         end
         init_cecelia!()   # restore
     end

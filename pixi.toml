@@ -310,6 +310,10 @@ notebooks-instantiate = { cmd = "julia --project -e 'using Pkg; Pkg.resolve(); P
 # One-click launch (the desktop-shortcut entrypoint): start the prod server, wait for /api/health,
 # open the default browser at :8080. The Julia server serves the built frontend, so run `build` first.
 app = "python app.py"
+# No GUI: Claude in this terminal is the front end (docs/todo/HEADLESS_MODE_PLAN.md). Uses the running
+# server or starts one without a browser; `pixi run headless <projectUid>`, or no argument for a picker.
+# Not to be confused with `console` above (the live task view — run it in a second terminal alongside).
+headless = "python headless.py"
 
 # Fetch custom cellpose checkpoints (schienstockd/ceceliaModels → <repo>/models/cellposeModels/).
 # `--ref` and `--dest` override the branch + target dir. See docs/SEGMENTATION.md → Custom

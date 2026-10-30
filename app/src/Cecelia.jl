@@ -420,6 +420,7 @@ include("ai/observer_plugin.jl")   # the terminal plugin: observer MCP + caller 
 include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log out
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
+include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
 # HPC settings (site / profile identity / project override) + the ssh transport. After
 # profile_settings.jl (identity lives in the profile bag) and jobs.jl (`_kill_proc_tree`).
 # docs/todo/HPC_PLAN.md.
@@ -459,6 +460,7 @@ export spatial_summary, contact_matrix
 export active_profile_name, active_profile_dir, set_active_profile!, kiwi_terminal_command
 export ClaudeAuth, claude_auth_status, claude_auth_logout!,
        claude_login_start!, claude_login_status, claude_login_code!, claude_login_cancel!
+export purge_claude_conversations!, purge_claude_conversations_wanted, claude_profile_in_use
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
 export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp
@@ -474,6 +476,7 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
        hpc_pending_cancels, hpc_retry_cancels!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
+       headless_mcp_config, headless_claude_argv, headless_claude_env, AUTONOMOUS_MCP_NAME,
        observer_api_url, observer_hook_settings, observer_caller_hook, OBSERVER_HOOK_MATCHER,
        OBSERVER_MCP_NAME, observer_registration_state,
        claude_config_path, read_registered_observer_spec,

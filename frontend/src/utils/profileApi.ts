@@ -267,6 +267,19 @@ export async function logoutClaude(name: string, apiBase = ''): Promise<{ ok: bo
   }
 }
 
+/** End a profile's session (sidebar Log out): deletes its Claude conversations when the profile or
+ *  the workstation wants that, else a no-op. Fails (409) while `claude` still runs under it. */
+export async function endClaudeSession(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/end-session`,
+      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
+    const body = await _json(res)
+    return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
 /** One-line label for a login: the account email, "Not logged in", or `''` when unknown (render
  *  nothing rather than a guess). */
 export function claudeLoginLabel(l: ClaudeLogin | null | undefined): string {

@@ -25,6 +25,7 @@ disciplines that no single tool can state on its own.
 from __future__ import annotations
 
 from cecelia_mcp.discovery import discovery_enabled
+from cecelia_mcp.no_gui import no_gui_enabled
 
 # ── Always in context — the entry point only ──────────────────────────────────────────────────────
 #
@@ -54,8 +55,9 @@ is relevant.
 
 Everything here is read-only except a handful of additive actions taken only when the user asks. You \
 can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
-not a limitation to apologise for. (The one exception is an UNATTENDED run that was also given the \
-separate cecelia-autonomous server: there, its run_chain / run_task start what you design here.) If \
+not a limitation to apologise for. (The exception is a session also given the separate \
+cecelia-autonomous server — an unattended run, or one with no GUI: there, its run_chain / run_task \
+start what you design here.) If \
 these tools cannot reach Cecelia, say so; do not try to install, register or configure anything.
 
 Editing Cecelia itself? A new step is a custom module (docs/CUSTOM_MODULES.md). Never hand-edit its \
@@ -141,7 +143,7 @@ keys/ranges, and get_image_info for the CHANNEL names (a drift reference channel
 cell/nuc channels, cannot be picked without them). Then say which values came from the data, which \
 you left at defaults, and what genuinely could not be resolved yet — a population a later node \
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
-that part is the user's. In an unattended run that also has the cecelia-autonomous server, the chain \
+that part is the user's. In a session that also has the cecelia-autonomous server (unattended, or no GUI), the chain \
 IS how you run the pipeline: author it here, start it with run_chain, and the Chains page keeps it as \
 the record of what ran. A segmentation (or other label set) onto a name the image already has is \
 refused, and the refusal names a free one ("use 'default_2'") — take that name. Never set \
@@ -385,3 +387,18 @@ lab notebook and store it (set_labarchives_context). Expect real searching for t
 notebook may be a colleague's, the project name may match hundreds of unrelated pages, and the \
 user may not know which page it is. Then follow their lead."""
 BRIEFING_GUIDANCE = BRIEFING_GUIDANCE.replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
+
+# Headless mode (no_gui.py, docs/todo/HEADLESS_MODE_PLAN.md): the user has no GUI, only this session.
+# The tools that point at or read the GUI are not registered then (server.py `_gui_tool`); this says
+# what replaces the GUI's half of the rules above.
+NO_GUI_GUIDANCE = """
+
+This session has NO GUI: the user works only through you, in a terminal. Where the rules above say \
+the user presses Run, here you start it (cecelia-autonomous run_chain / run_task) once they say so; \
+new data comes in through its create_project / create_set / register_images. Show results as text, \
+tables and pictures (gate_plot, gate_cells_view) — never "have a look in the viewer". Segmentation \
+correction, the image viewer and movies need the GUI: if the user wants one, say so and name the page; \
+no workarounds. Before long work, tell them once that `pixi run console` in a second terminal shows \
+the tasks live."""
+if no_gui_enabled():
+    BRIEFING_GUIDANCE += NO_GUI_GUIDANCE

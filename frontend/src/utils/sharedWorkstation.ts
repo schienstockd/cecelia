@@ -26,6 +26,12 @@ export const SHARED_WORKSTATION_ITEMS: readonly SharedWorkstationItem[] = [
     tip: 'Quitting or closing Cecelia logs every profile out of Claude',
     hint: 'Never peanut — its login is terminal claude\'s',
   },
+  {
+    key: 'purgeClaudeConversations',
+    label: 'Delete Claude conversations on log out',
+    tip: 'Log out, quit or the next pick deletes each profile\'s transcripts and prompt history',
+    hint: 'Keeps login and memory · skips a profile with Claude still running',
+  },
 ]
 
 export interface SharedWorkstationRow extends SharedWorkstationItem { value: boolean }

@@ -1,6 +1,7 @@
 """cecelia-autonomous: the MCP server an UNATTENDED agent gets beside the read-only observer — start
-work, wait for it, draw gates. Never wired into a user's interactive session; the agent-eval runner
-(`scripts/agent_eval/run_app.py`) starts it with ``CECELIA_MCP_PROJECT`` set to a disposable project.
+work, wait for it, draw gates. Never wired into a GUI user's session. Two callers: the agent-eval runner
+(`scripts/agent_eval/run_app.py`) starts it with ``CECELIA_MCP_PROJECT`` set to a disposable project,
+and the headless launcher (`headless.py`, ``CECELIA_MCP_NO_GUI=1``) for a user with no GUI at all.
 The guard and its allow-list live in ``cecelia_mcp.autonomous``.
 
 Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp:python python -m cecelia_mcp.autonomous_server

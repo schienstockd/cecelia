@@ -187,6 +187,25 @@ Config is per-user at `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.t
 dev checkout, `cecelia-feijoa/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
 and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOARDING_PLAN.md`.
 
+## Without the GUI — Claude in the terminal
+
+Same install, different start command. Cecelia runs with no browser and Claude Code, in your terminal,
+is the front end: you ask it to bring images in, run segmentation / tracking / behaviour, gate, and
+report back. Needs the `claude` CLI installed and logged in.
+
+```bash
+cd <install dir> && pixi run headless              # pick a project (0 = new one)
+cd <install dir> && pixi run headless <projectUid> # straight into one
+<install dir>/cecelia-launch.sh headless           # system-wide install (.cmd on Windows)
+pixi run console                                   # optional, second terminal: live task progress
+```
+
+On a fresh install it first asks where to keep projects (the GUI's first-launch wizard, in the
+terminal). It uses the Cecelia already running for you if there is one, otherwise starts one (log:
+`~/.cecelia/headless-server.log`) and stops it when you leave Claude. Segmentation correction, the
+image viewer and movies still need the GUI; a project made headless opens in the GUI as usual. Design:
+`docs/todo/HEADLESS_MODE_PLAN.md`.
+
 ## HTTPS + HTTP/2
 
 Cecelia serves plain HTTP/1.1 on loopback by default. HTTPS + HTTP/2 is an opt-in: measured in

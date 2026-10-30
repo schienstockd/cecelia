@@ -300,6 +300,50 @@ function observer_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString
     Dict{String,Any}("mcpServers" => Dict{String,Any}(OBSERVER_MCP_NAME => spec))
 end
 
+# ── Headless mode (docs/todo/HEADLESS_MODE_PLAN.md D6) ────────────────────────────────────────────
+# No GUI: the user drives Cecelia from an interactive terminal `claude`. Both MCP servers come from the
+# observer's own spec (same interpreter, PYTHONPATH, API URL and token file), with the switch the
+# servers read (`CECELIA_MCP_NO_GUI`, mcp/cecelia_mcp/no_gui.py) and the autonomous server's lock.
+# `project_uid = ""` is a "new project" session: the lock starts empty and fills on create_project.
+const AUTONOMOUS_MCP_NAME = "cecelia-autonomous"
+
+function headless_mcp_config(mcp_dir::AbstractString, python_bin::AbstractString,
+                             api_url::AbstractString; project_uid::AbstractString = "")::Dict{String,Any}
+    # no GUI to push to, so no pairing: the app's own turns' config already says that
+    observer = observer_mcp_config(mcp_dir, python_bin, api_url; headless = true)["mcpServers"][OBSERVER_MCP_NAME]
+    observer["env"]["CECELIA_MCP_NO_GUI"] = "1"
+    autonomous = observer_mcp_spec(mcp_dir, python_bin, api_url)
+    autonomous["args"] = ["-m", "cecelia_mcp.autonomous_server"]
+    autonomous["env"]["CECELIA_MCP_NO_GUI"] = "1"
+    autonomous["env"]["CECELIA_MCP_PROJECT"] = String(project_uid)
+    Dict{String,Any}("mcpServers" => Dict{String,Any}(OBSERVER_MCP_NAME => observer,
+                                                      AUTONOMOUS_MCP_NAME => autonomous))
+end
+
+# The interactive `claude` command line for a headless session. `--strict-mcp-config`: the session gets
+# THESE two servers only — without it a user-scope Cecelia plugin would add a second observer, with
+# every GUI tool still on. Interactive (no `-p`), so the normal permission prompts apply (D4). The
+# system prompt says which project is open, the way the app's own context line does for a turn. PURE.
+function headless_claude_argv(claude_bin::AbstractString, mcp_config_path::AbstractString,
+                              settings_path::AbstractString;
+                              project_uid::AbstractString = "",
+                              project_name::AbstractString = "")::Vector{String}
+    context = isempty(project_uid) ?
+        "[Cecelia — no GUI; no project open yet. Ask what data the user wants to bring in.]" :
+        "[Cecelia — no GUI; open project: $(project_name) ($(project_uid))]"
+    String[String(claude_bin), "--mcp-config", String(mcp_config_path), "--strict-mcp-config",
+           "--settings", String(settings_path), "--append-system-prompt", context]
+end
+
+# The env a headless `claude` runs under: the active profile's login (`CLAUDE_CONFIG_DIR`) set, the
+# ambient credential vars that would override it unset — the same pairs every app spawn applies
+# (`_claude_env_pairs`). Split for a launcher in another language. PURE given `profile_dir`.
+function headless_claude_env(profile_dir::AbstractString)::@NamedTuple{set::Dict{String,String}, unset::Vector{String}}
+    pairs = _claude_env_pairs(profile_dir)
+    (; set   = Dict{String,String}(k => String(v) for (k, v) in pairs if v !== nothing),
+       unset = String[k for (k, v) in pairs if v === nothing])
+end
+
 # The caller hook (`mcp/cecelia_mcp/caller_hook.py`): before each Cecelia MCP call it adds the calling
 # model + Claude Code session, which the MCP forwards so `author_stamp()` can record WHICH model wrote a
 # thing. Exec form (`args` set): no shell, so a path with spaces needs no quoting on any OS. `-I`: the
