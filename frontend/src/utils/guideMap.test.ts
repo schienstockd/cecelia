@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { NAV_GROUPS } from '../lib/navGroups'
-import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
+import { MAP, GROUP_BLURB, CLAUDE_MAKES } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
 import { buildMap, recipeRoutes, chipTip, defaultOpenGroup, stepRoute, mapCaption } from './guideMap'
 import { availablePaths, applyProfile } from './viewProfiles'
@@ -33,6 +33,25 @@ describe('the map covers the sidebar, exactly', () => {
       expect(e.what.length, route).toBeLessThanOrEqual(70)
       expect(e.what.endsWith('.'), route).toBe(false)
     }
+  })
+})
+
+// The observer's source, read as text — the same `?raw` glob idiom as userDocs.test.ts.
+const SERVER = Object.values(import.meta.glob('../../../mcp/cecelia_mcp/server.py',
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0] ?? ''
+
+describe('the ✦ follows what Claude can make', () => {
+  const makers = [...SERVER.matchAll(/^(?:async )?def ((?:create|add|append)_\w+)/gm)].map(m => m[1]).sort()
+  it('reads the observer’s create tools', () => {
+    expect(makers).toContain('create_chain')
+  })
+  it('classifies every create tool, and only those', () => {
+    expect(Object.keys(CLAUDE_MAKES).sort()).toEqual(makers)
+  })
+  it('badges exactly the pages a create tool lands on', () => {
+    const landed = new Set(Object.values(CLAUDE_MAKES).filter((r): r is string => !!r))
+    const badged = new Set(Object.entries(MAP).filter(([, e]) => e.claude).map(([r]) => r))
+    expect(badged).toEqual(landed)
   })
 })
 

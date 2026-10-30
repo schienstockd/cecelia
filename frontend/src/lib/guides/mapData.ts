@@ -13,7 +13,7 @@ export interface MapEntry {
   guide?: string        // the guide that teaches it, if one exists
   claude?: string       // what Claude MAKES on this page — the map's ✦ with the Claude toggle on. Only
                         // pages where it creates something you keep; Kiwi reads every page, so a
-                        // badge for reading would mark them all. Mirrors the observer's create tools.
+                        // badge for reading would mark them all. Which pages: CLAUDE_MAKES below.
 }
 
 export const MAP: Record<string, MapEntry> = {
@@ -48,6 +48,18 @@ export const MAP: Record<string, MapEntry> = {
   '/tasks':          { what: 'Everything running or finished; history of past runs' },
   '/chain':          { what: 'Wire the steps you settled on into a chain; run it over a set', guide: 'run-a-chain',
                       claude: 'A terminal session designs the chain; you run it' },
+}
+
+// Every observer tool that creates something (`create_*` / `add_*` / `append_*` in
+// mcp/cecelia_mcp/server.py) → the sidebar page it lands on, or null for one that lands off the sidebar.
+// `utils/guideMap.test.ts` reads server.py: a new create tool fails it until it's classified here, and
+// these pages and the `claude` lines above must agree — so the ✦ can't drift from what Claude can do.
+export const CLAUDE_MAKES: Record<string, string | null> = {
+  add_analysis_board: '/analysis',
+  create_blackboard_entry: '/blackboard',
+  create_notebook: '/notebooks',
+  create_chain: '/chain',
+  append_lab_log: null,   // the lab log is a panel, not a sidebar page
 }
 
 // One line under each sidebar group's heading — the README's, and the map's group hover.
