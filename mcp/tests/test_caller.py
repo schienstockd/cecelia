@@ -23,8 +23,8 @@ USER = {"type": "user", "isSidechain": False, "sessionId": SID,
         "message": {"role": "user", "content": []}}
 
 
-def _assistant(model):
-    return {"type": "assistant", "isSidechain": False, "sessionId": SID, "requestedModel": model,
+def _assistant(model, version="2.1.312"):
+    return {"type": "assistant", "isSidechain": False, "sessionId": SID, "requestedModel": model, "version": version,
             "message": {"role": "assistant", "model": model, "type": "message", "content": []}}
 
 
@@ -84,6 +84,10 @@ class HookTest(unittest.TestCase):
         _write(self.main, [_assistant("claude-opus-5-5"), USER])
         with mock.patch.object(caller_hook, "_TAIL_BYTES", 40):
             self.assertEqual(caller_hook.transcript_model(self.main), "claude-opus-5-5")
+
+    def test_stamp_carries_the_claude_code_version(self):
+        _write(self.main, [_assistant("claude-opus-5-5", "2.1.300"), USER, _assistant("claude-haiku-5-5")])
+        self.assertEqual(caller_hook.transcript_stamp(self.main), ("claude-haiku-5-5", "2.1.312"))
 
     def test_fails_open_on_garbage(self):
         with mock.patch("sys.stdin", io.StringIO("not json")), \

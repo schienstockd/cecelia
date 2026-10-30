@@ -24,7 +24,10 @@ def _load_judge():
 
 _RESULT = {"structured_output": {"items": []}, "total_cost_usd": 0.49,
            "usage": {"input_tokens": 16, "cache_creation_input_tokens": 40564,
-                     "cache_read_input_tokens": 321990, "output_tokens": 5072}}
+                     "cache_read_input_tokens": 321990, "output_tokens": 5072},
+           # `modelUsage` shape from a real CLI 2.1.312 result (trimmed)
+           "modelUsage": {"claude-sonnet-5-5": {"inputTokens": 16, "outputTokens": 5072,
+                                                "canonicalModel": "claude-sonnet-5-5", "costBasis": "list"}}}
 
 
 class TokensTest(unittest.TestCase):
@@ -37,7 +40,8 @@ class TokensTest(unittest.TestCase):
                 mock.patch.object(self.j, "resolve_claude_bin", return_value="/bin/claude"):
             answer, cost, used = self.j.call_judge("p", {})
         self.assertEqual((answer, cost), ({"items": []}, 0.49))
-        self.assertEqual(used, {"input": 16, "cache_write": 40564, "cache_read": 321990, "output": 5072})
+        self.assertEqual(used, {"input": 16, "cache_write": 40564, "cache_read": 321990, "output": 5072,
+                                "models": ["claude-sonnet-5-5"]})
 
     def _call(self, returncode, out):
         done = subprocess.CompletedProcess([], returncode, json.dumps(out), "")
@@ -67,6 +71,19 @@ class TokensTest(unittest.TestCase):
         self.j.add_tokens(meter, {"input": 3, "cache_read": 4})
         self.assertEqual(meter, {"input": 4, "cache_write": 0, "cache_read": 4, "output": 2})
         self.j.add_tokens(None, {"input": 1})
+
+    def test_usage_names_the_models_a_call_ran_on_and_add_unions_them(self):
+        # `modelUsage` shape copied from a real `claude -p --output-format json` result (CLI 2.1.312)
+        out = {"usage": {"input_tokens": 2, "output_tokens": 4},
+               "modelUsage": {"claude-haiku-5-5": {"inputTokens": 2, "outputTokens": 4, "costUSD": 0.00057,
+                                                   "canonicalModel": "claude-haiku-5-5"}}}
+        self.assertEqual(self.j.usage(out)["models"], ["claude-haiku-5-5"])
+        meter: dict = {}
+        self.j.add_tokens(meter, self.j.usage(out))
+        self.j.add_tokens(meter, {"input": 1, "models": ["claude-opus-5-5", "claude-haiku-5-5"]})
+        self.assertEqual(meter["models"], ["claude-haiku-5-5", "claude-opus-5-5"])
+        self.assertEqual(meter["input"], 3)
+        self.assertEqual(self.j.usage({})["models"], [])
 
     def test_an_injected_two_tuple_has_no_tokens(self):
         self.assertEqual(self.j.unpack(({"a": 1}, 0.2)), ({"a": 1}, 0.2, {}))

@@ -186,6 +186,13 @@ def tokens(out: dict) -> dict[str, int]:
     return {k: int(usage.get(src) or 0) for k, src in USAGE_KEYS.items()}
 
 
+def models(out: dict) -> list[str]:
+    """The model ids one `claude -p --output-format json` result ran on (its `modelUsage` keys, e.g.
+    `claude-haiku-5-5`), sorted; [] when it reported none."""
+    usage = out.get("modelUsage")
+    return sorted(str(m) for m in usage) if isinstance(usage, dict) else []
+
+
 def read_result(proc: subprocess.CompletedProcess) -> dict:
     """The `--output-format json` result of a finished `claude -p`, `{}` when stdout isn't one.
     Raises `RateLimited` on a usage-limit refusal; any other failure is the caller's to name

@@ -196,6 +196,32 @@ def recent_cwds(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> tuple
     return tuple(out)
 
 
+def transcript_stamp(transcript: pathlib.Path, tail_bytes: int = TAIL_BYTES) -> dict[str, str]:
+    """`{model, version}` of the transcript's newest assistant entry (unknown fields left out).
+    The live-hook twin is `mcp/cecelia_mcp/caller_hook.py`, which must stay stdlib-standalone."""
+    for entry in _tail_entries(transcript, tail_bytes):
+        msg = entry.get("message")
+        if entry.get("type") == "assistant" and isinstance(msg, dict) and msg.get("model"):
+            out = {"model": str(msg["model"]), "version": str(entry.get("version") or "")}
+            return {k: v for k, v in out.items() if v}
+    return {}
+
+
+def session_stamp(session_id: str, home: pathlib.Path | None = None) -> dict[str, str]:
+    """`{model, version, session}` of a finished session found by id under `<home>/projects/*/`
+    (a headless `claude -p` run's, for its commit); `{}` when the transcript isn't there."""
+    if not session_id or not all(c.isalnum() or c == "-" for c in session_id):
+        return {}
+    for transcript in (home or claude_home()).glob(f"projects/*/{session_id}.jsonl"):
+        try:
+            stamp = transcript_stamp(transcript)
+        except OSError:
+            continue
+        if stamp:
+            return {**stamp, "session": session_id}
+    return {}
+
+
 def typed_by_a_person(entry: dict) -> bool:
     """A prompt Dominik typed — not a tool result, an injected meta message, a compaction summary,
     or a message from elsewhere: `origin.kind` is "human" for a typed prompt, and
