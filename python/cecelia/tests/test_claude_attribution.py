@@ -20,7 +20,8 @@ import tempfile
 import time
 import unittest
 
-from cecelia.effectiveness.attribution import coauthor_line, display_name, footer, trailer_lines
+from cecelia.effectiveness.attribution import (
+    coauthor_line, display_name, footer, reply_line, reply_phrase, trailer_lines)
 from cecelia.effectiveness.claude_sessions import session_stamp
 
 _REPO = pathlib.Path(__file__).resolve().parents[3]
@@ -195,6 +196,62 @@ class HookTest(unittest.TestCase):
         self.assertIsNone(problem("gh api repos/o/r/pulls/5 -X PATCH -f title=t"))
 
 
+class ReplyTest(unittest.TestCase):
+    """Public text under the owner's account (replies, issues) carries the attribution naming the
+    model. A PR's own body has the footer instead."""
+
+    def setUp(self):
+        self.attr = _load("_attr_reply_under_test", _REPO / ".claude" / "hooks" / "claude_attribution.py")
+        self.stamp = {"model": "claude-haiku-5-5", "version": "2.1.312"}
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.where = self._tmp.name
+
+    def problem(self, seg):
+        return self.attr.reply_problem(seg, self.where, self.stamp)
+
+    def body_file(self, name, text):
+        # the line has an apostrophe (`@schienstockd's`), so real replies pass it in a file
+        pathlib.Path(self.where, name).write_text(text, encoding="utf-8")
+        return name
+
+    def test_line_names_the_model_and_optionally_the_fix(self):
+        self.assertIn("written by Claude Code (Claude Haiku 5.5), working", reply_line(self.stamp))
+        self.assertIn("— as was the fix in #12.", reply_line(self.stamp, "#12"))
+        self.assertIn("https://github.com/", reply_line(self.stamp))   # a relative link breaks in a comment
+
+    def test_unattributed_or_wrong_model_reply_is_blocked_with_the_line(self):
+        reason = self.problem("gh issue comment 5 --repo other/x --body 'Fixed, thanks!'")
+        self.assertIn(reply_line(self.stamp), reason)
+        opus = self.body_file("o.md", reply_line({"model": "claude-opus-5-5"}))   # copied from the parent
+        self.assertIsNotNone(self.problem(f"gh pr comment 7 --body-file {opus}"))
+        pathlib.Path(self.where, "r.md").write_text("ok", encoding="utf-8")
+        self.assertIsNotNone(self.problem("gh pr review 7 --comment --body-file r.md"))
+        self.assertIsNotNone(self.problem("gh api repos/o/r/issues/5/comments -f body='hi'"))
+        self.assertIsNotNone(self.problem("gh api -X POST repos/o/r/pulls/5/reviews -f body=hi"))
+
+    def test_attributed_or_bodiless_replies_pass(self):
+        good = self.body_file("g.md", "Fixed.\n\n---\n\n" + reply_line(self.stamp, "#9"))
+        self.assertIsNone(self.problem(f"gh issue comment 5 --body-file {good}"))
+        self.assertIsNone(self.problem(f"gh api repos/o/r/issues/comments/3 -X PATCH -F body=@{good}"))
+        self.assertIsNone(self.problem(f'gh issue comment 5 --body "x {reply_phrase(self.stamp)}"'))
+        self.assertIsNone(self.problem("gh pr review 7 --approve"))                    # no body
+        self.assertIsNone(self.problem("gh issue comment 5 --body-file -"))           # stdin
+        self.assertIsNone(self.problem("gh api repos/o/r/pulls/5 -X PATCH -f body=x"))  # a PR body: footer's job
+
+    def test_user_report_issue_footer_counts_wrapped_as_in_the_template(self):
+        footer_md = ("Body.\n\n---\n📨 *From a user report against v0.1.4. The symptom is the user's; cause"
+                     " and fix were traced on `main` @ abc by Claude Code\n(Claude Haiku 5.5) on "
+                     "@schienstockd's behalf. Decisions here are his.*\n")
+        issue = self.body_file("i.md", footer_md)
+        self.assertIsNone(self.problem(f"gh issue create --repo o/r --title t --body-file {issue}"))
+        bare = self.body_file("b.md", "Body.")
+        reason = self.problem(f"gh issue create --title t --body-file {bare}")
+        self.assertIn("docs/USER_REPORTS.md", reason)
+        self.assertIsNotNone(self.problem("gh api repos/o/r/issues -f title=t -f body=x"))
+        self.assertIsNone(self.attr.reply_problem("gh issue comment 5 --body x", self.where, {}))
+
+
 class GuardWiringTest(unittest.TestCase):
     """`check_commit_recital.main` (the registered PreToolUse hook) runs the PR check on a cecelia checkout."""
 
@@ -209,6 +266,9 @@ class GuardWiringTest(unittest.TestCase):
             ok = f"gh pr create --title t --body '{footer({'model': 'claude-opus-5-5', 'version': '2.1.312'})}'"
             self.assertIsNone(hook.pr_footer_guard(ok, str(_REPO), event))
             self.assertIsNone(hook.pr_footer_guard("gh pr create --body x", tmp, event))  # not cecelia
+            # a reply is checked whatever the checkout: it goes out under the owner's name anywhere
+            self.assertIn(reply_phrase({"model": "claude-opus-5-5"}),
+                          hook.reply_guard("gh issue comment 1 --repo o/r --body hi", tmp, event))
 
 
 if __name__ == "__main__":
