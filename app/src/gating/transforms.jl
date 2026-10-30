@@ -89,7 +89,7 @@ function _logicle_solve(b::Float64, w::Float64)::Float64
 end
 
 function LogicleTransform(; T::Real=262144.0, W::Real=0.5, M::Real=4.5, A::Real=0.0)
-    T = float(T); W = float(W); M = float(M); A = float(A)
+    T = Float64(T); W = Float64(W); M = Float64(M); A = Float64(A)   # Float64-only `_logicle_solve`
     w  = W / (M + A)
     x2 = A / (M + A)
     x1 = x2 + w
@@ -126,8 +126,10 @@ function _series_biexp(t::LogicleTransform, scale::Float64)::Float64
 end
 
 # inverse: scale (display, [0,1]) → data (raw)
+# Entry points promote to Float64: `float(::Float32)` stays Float32, and the h5ad measures (and the
+# API's Float32 display coords) are Float32 — the internal helpers are Float64-only by design.
 function invert_transform(t::LogicleTransform, scale::Real)::Float64
-    s = float(scale)
+    s = Float64(scale)
     negative = s < t.x1
     negative && (s = 2 * t.x1 - s)
     rv = s < t.xTaylor ? _series_biexp(t, s) :
@@ -137,7 +139,7 @@ end
 
 # transform: data (raw) → scale (display, [0,1]). Halley's method (Moore & Parks scale()).
 function apply_transform(t::LogicleTransform, value::Real)::Float64
-    value = float(value)
+    value = Float64(value)
     value == 0.0 && return t.x1                 # true zero maps to x1
     negative = value < 0.0                       # reflect negatives, solve positive branch
     negative && (value = -value)
