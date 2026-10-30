@@ -72,7 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'Pipeline',
     items: [
       { to: '/tasks',    label: 'Tasks',      icon: 'pi-list-check', tip: 'View and manage all running and completed analysis tasks.' },
-      { to: '/chain',    label: 'Whiteboard', icon: 'pi-cog',        tip: 'Visual chain editor — drag tasks, connect nodes, build pipelines.', requiresProject: true },
+      { to: '/chain',    label: 'Chains', icon: 'pi-cog',        tip: 'Wire tasks into a chain and run it over a set.', requiresProject: true },
     ],
   },
 ]

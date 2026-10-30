@@ -542,7 +542,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
              assistant is paired. Bunched together in the first draft; split out per feedback. -->
         <template v-else-if="active === 'lablog'">
           <CcToggle v-model="settings.labLogAutoContext"
-                    label="Auto-capture app activity digests"
+                    label="Summarise app activity automatically"
                     v-tooltip.bottom="'Cecelia appends a rolling daily digest of task activity'" />
           <CcToggle v-model="settings.labLogShowNames"
                     label="Show image names in the lab log (else UIDs)"

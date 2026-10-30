@@ -15,6 +15,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 > workflow works, per-subsystem validation, and sources:
 > [How this software was built](#how-this-software-was-built).
 
+- **New to Cecelia:** [`user-docs/`](user-docs/README.md) — what each part is for and what you need on day one
 - **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **FAQ (why it's built this way):** [`FAQ.md`](FAQ.md)
 
 ---

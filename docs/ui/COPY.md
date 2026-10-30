@@ -63,6 +63,19 @@ both stay — the distinction is the point, so it's written down rather than lef
 `Create`/`Add`, `Delete`/`Remove` and `Run`/`Start` are **not** synonyms — picking the wrong one is a
 copy bug, not a style preference.
 
+**Noun vocabulary.** Settled 2026-10-30 (Dominik), when the user map showed one word doing two jobs.
+Code, routes and older docs keep the old names; only what a user or Claude reads changed.
+
+| Use | For | Not |
+|---|---|---|
+| **Chains** | the page where tasks are wired into a chain and run over a set (`/chain`) | ~~Whiteboard~~ |
+| **Linked captures** | captures that follow on from one another (`previousCaptureId`) | ~~chained captures~~ |
+| **Summarise activity** | the lab log's button that adds Cecelia's activity digest | ~~Capture activity~~ |
+| **About this project** | the Blackboard's pinned entry | ~~Project profile~~ |
+| **Sidebar layout** | which sidebar pages are shown (hides; doesn't restrict) | ~~View profile~~ |
+| **Profile** | who is using the app: their settings, logins, HPC account | — |
+| **Capture** | a frame or plot shared with Claude via Share | — |
+
 **Two of these are now enforced, not just asked for.** `utils/uiCopy.test.ts` fails the build on a
 `v-tooltip` literal, a `ModuleLayout` `hint`, or a task-JSON `tip` that runs past **90 characters** or
 into a **second sentence** — across every SFC and every task spec. It holds an **exact allow-list**,

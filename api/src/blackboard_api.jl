@@ -77,6 +77,10 @@ const _BB_ID_RE = r"^bb-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}$"
 # without first calling list_blackboard_entries. In DESC name sort `profile` > `bb-…` (p > b), so it
 # naturally lands at the top of the list without a separate pin.
 const _BB_PROFILE_ID = "profile"
+# Its display title. Was "Project profile" until 2026-10-30 (docs/ui/COPY.md → *Noun vocabulary*:
+# "profile" means the person using the app); `_ensure_profile_entry!` retitles an older entry.
+const _BB_PROFILE_TITLE = "About this project"
+const _BB_PROFILE_TITLE_OLD = "Project profile"
 function _new_bb_entry_id()::String
     ts = Dates.format(Dates.now(), dateformat"yyyymmddTHHMMSS")
     tail = bytes2hex(rand(UInt8, 3))
@@ -270,6 +274,33 @@ function _write_bb_registry!(uid::AbstractString, reg::AbstractDict)
     write_json_atomic(_bb_registry_path(uid), reg)
 end
 
+# ── Source index — one entry per Kiwi turn or claim ──────────────────────────
+# `sourceKey` → entryId, beside the registry. Saving the same Kiwi turn (or claim) again — Save twice,
+# Save then Continue in terminal, or either after a reload — returns the entry it already made instead
+# of a duplicate. Its own file rather than a meta.json field because every revise rewrites meta whole.
+# A key whose entry is gone (deleted) no longer resolves, so saving again makes a fresh one.
+const _BB_SOURCE_KEY_RE = r"^kiwi:[A-Za-z0-9_-]{1,64}(:claim:[0-9]{1,3})?$"
+_bb_sources_path(uid::AbstractString) = joinpath(_settings_dir_for_project(uid), "blackboard_sources.json")
+function _read_bb_sources(uid::AbstractString)::Dict{String,String}
+    p = _bb_sources_path(uid)
+    isfile(p) || return Dict{String,String}()
+    try
+        Dict{String,String}(String(k) => String(v) for (k, v) in JSON3.read(read(p, String), Dict{String,Any}))
+    catch
+        Dict{String,String}()
+    end
+end
+function _bb_entry_for_source(uid::AbstractString, key::AbstractString)::Union{String,Nothing}
+    id = get(_read_bb_sources(uid), key, nothing)
+    (id !== nothing && haskey(_read_bb_registry(uid), id)) ? id : nothing
+end
+function _record_bb_source!(uid::AbstractString, key::AbstractString, id::AbstractString)
+    src = _read_bb_sources(uid)
+    src[String(key)] = String(id)
+    mkpath(_settings_dir_for_project(uid))
+    write_json_atomic(_bb_sources_path(uid), src)
+end
+
 # Snapshot versions on disk for one entry (`.snapshots/entry@v<N>.md`). Same shape as notebooks'
 # `_snapshot_versions` — the byte-slice between the "entry@v" prefix and ".md" is safe because the
 # filenames are ASCII and we generate them ourselves.
@@ -449,7 +480,7 @@ end
 # lines are the "placeholder" marker the briefing's newProject check strips before deciding whether
 # a section has been filled in — see `_profile_missing_required` in `mcp/cecelia_mcp/server.py`.
 # Keep the placeholder markers on their own line and in the `_(…)_` form so that check stays cheap.
-const _BB_PROFILE_PLACEHOLDER_BODY = """# Project profile
+const _BB_PROFILE_PLACEHOLDER_BODY = """# About this project
 
 ## Subject
 _(a short description of what this data is — whose project, what tissue, what preparation)_
@@ -467,6 +498,21 @@ _(experimental groups + how they're identified in image names or attributes)_
 _(what each channel labels — e.g. c1 = CD169, c2 = MerTK)_
 """
 
+# Retitle a profile entry made under the old name, wherever the profile can be read first — list
+# (via `_ensure_profile_entry!`), a direct read, a search. The body is the user's and stays as written.
+function _retitle_legacy_profile!(uid::AbstractString)
+    meta = _read_bb_meta(uid, _BB_PROFILE_ID)
+    (meta === nothing || get(meta, "title", "") != _BB_PROFILE_TITLE_OLD) && return nothing
+    _set_bb_meta_field!(uid, _BB_PROFILE_ID, "title", _BB_PROFILE_TITLE)
+    reg = _read_bb_registry(uid)
+    r = get(reg, _BB_PROFILE_ID, nothing)
+    if r !== nothing
+        r["title"] = _BB_PROFILE_TITLE
+        _write_bb_registry!(uid, reg)
+    end
+    nothing
+end
+
 """
     _ensure_profile_entry!(uid)
 
@@ -482,18 +528,18 @@ reserved id, and this is it. PROJECT_MEMORY_PLAN Decision 2.
 """
 function _ensure_profile_entry!(uid::AbstractString)
     dir = _bb_entry_dir(uid, _BB_PROFILE_ID)
-    isfile(joinpath(dir, "meta.json")) && return
+    isfile(joinpath(dir, "meta.json")) && return _retitle_legacy_profile!(uid)
     mkpath(dir)
     write_atomic(joinpath(dir, "entry.md")) do io
         write(io, _BB_PROFILE_PLACEHOLDER_BODY)
     end
     ts = string(Dates.now())
     _write_bb_meta!(uid, _BB_PROFILE_ID;
-        title = "Project profile", createdAt = ts, updatedAt = ts,
+        title = _BB_PROFILE_TITLE, createdAt = ts, updatedAt = ts,
         current = 0, attachments = Any[], status = "open")
     reg = _read_bb_registry(uid)
     reg[_BB_PROFILE_ID] = Dict{String,Any}(
-        "title" => "Project profile", "current" => 0, "updatedAt" => ts, "status" => "open")
+        "title" => _BB_PROFILE_TITLE, "current" => 0, "updatedAt" => ts, "status" => "open")
     _write_bb_registry!(uid, reg)
     nothing
 end
@@ -564,6 +610,7 @@ function api_blackboard_entry_get(req::HTTP.Request)
     isempty(id)  && return 400, JSON3.write((; error = "entryId required"))
     _valid_bb_entry_id(id) || return 400, JSON3.write((; error = "Invalid entryId"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    id == _BB_PROFILE_ID && _retitle_legacy_profile!(uid)
     meta = _read_bb_meta(uid, id)
     meta === nothing && return 404, JSON3.write((; error = "Entry not found"))
 
@@ -640,6 +687,7 @@ function api_blackboard_search(body_bytes::Vector{UInt8})
     isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
     isempty(q)   && return 400, JSON3.write((; error = "query required"))
     isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    _retitle_legacy_profile!(uid)
 
     status_filter = String(get(body, :status, ""))
     isempty(status_filter) || _valid_bb_status(status_filter) ||
@@ -869,8 +917,9 @@ end
 """
     POST /api/blackboard/create
 
-Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun? }`
-Reply: `{ ok:true, entryId }`
+Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun?, sourceKey? }`
+Reply: `{ ok:true, entryId }`, or `{ ok:true, entryId, existing:true }` when `sourceKey` (`kiwi:<turnId>[:claim:<n>]`)
+already made an entry that still exists — nothing is written then.
 
 Creates `<proj>/blackboard/<entryId>/{entry.md, meta.json}` — no snapshot on create (current = 0
 mirrors notebooks; first revision produces v1). Additive-only from the MCP surface; this is one of
@@ -888,6 +937,15 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     _valid_bb_content(content) ||
         return 400, JSON3.write((; error = "content exceeds $_BB_CONTENT_MAX_BYTES bytes"))
     attachments = _clean_attachments(uid, get(body, :attachments, nothing))
+
+    # Optional sourceKey: an entry already made from this Kiwi turn/claim is returned, not duplicated.
+    source_key = _wstr(body, :sourceKey)
+    if !isempty(source_key)
+        occursin(_BB_SOURCE_KEY_RE, source_key) ||
+            return 400, JSON3.write((; error = "sourceKey must look like kiwi:<turnId>[:claim:<n>]"))
+        known = _bb_entry_for_source(uid, source_key)
+        known === nothing || return 200, JSON3.write((; ok = true, entryId = known, existing = true))
+    end
 
     id  = _new_bb_entry_id()
     ts  = string(Dates.now())
@@ -941,6 +999,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
     _write_bb_registry!(uid, reg)
+    isempty(source_key) || _record_bb_source!(uid, source_key, id)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
     200, JSON3.write((; ok = true, entryId = id))

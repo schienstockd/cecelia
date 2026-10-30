@@ -44,7 +44,7 @@ from cecelia_mcp.caller import caller_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
 from cecelia_mcp.no_gui import no_gui_enabled
 
-# (method, path) → the ONLY routes the observer may ever call. Read-only except the three writes below.
+# (method, path) → the ONLY routes the observer may ever call. Read-only except the commented writes below.
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {

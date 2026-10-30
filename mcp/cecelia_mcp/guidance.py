@@ -132,7 +132,7 @@ per-image n is small — pooling every track treats one image's 400 tracks as 40
 which values you read from the data and which you defaulted.
 
 ON CHAINS. You can DESIGN one but you cannot run it. create_chain writes a template that sits inert \
-in the Chains whiteboard until the user presses Run, and there is no tool that starts it — so hand \
+on the Chains page until the user presses Run, and there is no tool that starts it — so hand \
 it over as something to review, never as something you have started. Set only the params you mean to \
 change; the rest take their task defaults when the user opens it. It cannot overwrite an existing \
 chain: to offer an alternative, create a new one named for what it does and say it sits beside the \
@@ -144,7 +144,7 @@ cell/nuc channels, cannot be picked without them). Then say which values came fr
 you left at defaults, and what genuinely could not be resolved yet — a population a later node \
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
 that part is the user's. In a session that also has the cecelia-autonomous server (unattended, or no GUI), the chain \
-IS how you run the pipeline: author it here, start it with run_chain, and the whiteboard keeps it as \
+IS how you run the pipeline: author it here, start it with run_chain, and the Chains page keeps it as \
 the record of what ran. A segmentation (or other label set) onto a name the image already has is \
 refused, and the refusal names a free one ("use 'default_2'") — take that name. Never set \
 `overwrite` on a name you did not create unless the user asked for it: it replaces their data.

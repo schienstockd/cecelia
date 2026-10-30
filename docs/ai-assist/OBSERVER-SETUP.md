@@ -9,15 +9,14 @@ was removed 2026-09-24; asking in the app is Kiwi.)
 
 1. **Install Claude Code** so `claude` is on your PATH.
    See <https://docs.anthropic.com/en/docs/claude-code/setup>.
-2. **Log in**: run `claude` once in a terminal and complete the sign-in.
+2. **Log in from Kiwi**: the account row → **Log in**. Cecelia runs `claude auth login` for your
+   Cecelia profile itself (a private browser window, with a paste-code link as fallback), so each
+   profile bills its own account. A login made in a terminal is the terminal's, not your profile's.
 
 ## Two states you might hit
 
-The app checks only that `claude` is **on PATH**, not that it's authenticated, so:
-
 - **"Claude Code not detected"** — the CLI isn't installed / not on PATH → step 1 above.
-- **"Claude Code isn't logged in"** — installed but a Kiwi turn failed to authenticate → step 2
-  (`claude` once to log in). Settings → MCP connections shows it after such a failure.
+- **"Not logged in"** on Kiwi's account row (or `Profile <name> is not logged in`) → step 2.
 
 ## Choosing the model
 

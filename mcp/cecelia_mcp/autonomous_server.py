@@ -25,7 +25,7 @@ INSTRUCTIONS = (
     "beside cecelia-observer: the observer READS (lineage, measures, task logs, behaviour) and "
     "DESIGNS (create_chain); this server STARTS work (run_task, run_chain), WAITS for it "
     "(wait_for_tasks, wait_for_chain) and GATES (gate_histogram → add_gate → gate_stats). "
-    "Run pipelines as whiteboard chains (create_chain → run_chain) so the whiteboard holds what "
+    "Run pipelines as chains (create_chain → run_chain) so the Chains page holds what "
     "ran; run_task is for a single task outside a chain. Everything you do is recorded."
 )
 # No-GUI mode (no_gui.py): the user is at the keyboard and there is no GUI, so this server is also
@@ -117,10 +117,10 @@ def wait_for_tasks(task_ids: list[str], timeout_s: int = 900) -> dict:
 
 @_tool
 def run_chain(project_uid: str, chain_name: str, image_uids: list[str]) -> dict:
-    """Run a whiteboard chain (authored with the observer's create_chain) over `image_uids` — the
-    same `chain:run` the whiteboard's Run button sends. Every node's params are checked against the
+    """Run a chain (authored with the observer's create_chain) over `image_uids` — the
+    same `chain:run` the Chains page's Run button sends. Every node's params are checked against the
     lock first. Returns `{runId}`; then wait_for_chain. To change a chain, create a new one under a
-    new name (create_chain never overwrites) and run that — both stay on the whiteboard as the record."""
+    new name (create_chain never overwrites) and run that — both stay on the Chains page as the record."""
     return _client.run_chain(project_uid, chain_name, image_uids)
 
 

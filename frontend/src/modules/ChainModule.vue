@@ -365,7 +365,7 @@ const liveEdges = computed<Edge[]>(() => {
 const { isCopied: runIdCopied, copy: copyRun } = useCopyFlash()
 async function copyRunId() {
   const id = selectedRunId.value
-  if (id && await copyRun(id)) log.info(`Copied run ID ${id}`, { source: 'whiteboard' })
+  if (id && await copyRun(id)) log.info(`Copied run ID ${id}`, { source: 'chains' })
 }
 
 // ── Live QC row ────────────────────────────────────────────────────────────────
@@ -568,7 +568,7 @@ async function loadChainList() {
       await switchChain(chainNames.value[0])
     }
   } catch (e) {
-    log.warn(`Could not load chain list: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load chain list: ${e}`, { source: 'chains' })
   }
 }
 
@@ -604,7 +604,7 @@ async function loadChain(name: string) {
     await applyTemplate(tmpl, tmpl.positions ?? {})
     chainAuthor.value = authorSummary(parseAuthorStamp(tmpl.createdBy), parseAuthorStamp(tmpl.updatedBy))
   } catch (e) {
-    log.warn(`Could not load chain "${name}": ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load chain "${name}": ${e}`, { source: 'chains' })
   }
 }
 
@@ -738,10 +738,10 @@ async function saveChain() {
       body: JSON.stringify({ projectUid: uid, template: tmpl }),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    log.info(`Chain "${activeChain.value}" saved.`, { source: 'whiteboard' })
+    log.info(`Chain "${activeChain.value}" saved.`, { source: 'chains' })
     void refreshChainAuthor(activeChain.value)
   } catch (e) {
-    log.error(`Save failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Save failed: ${e}`, { source: 'chains' })
   } finally {
     saving.value = false
   }
@@ -767,9 +767,9 @@ async function removeChain() {
     } else {
       activeChain.value = ''
     }
-    log.info(`Chain "${name}" deleted.`, { source: 'whiteboard' })
+    log.info(`Chain "${name}" deleted.`, { source: 'chains' })
   } catch (e) {
-    log.error(`Delete failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Delete failed: ${e}`, { source: 'chains' })
   }
 }
 
@@ -798,9 +798,9 @@ async function renameChain() {
     // Reload from disk so the canvas reflects the stored template (whose `name` field moved too)
     // rather than the pre-rename copy still in memory.
     await loadChain(stored)
-    log.info(`Chain renamed to "${stored}".`, { source: 'whiteboard' })
+    log.info(`Chain renamed to "${stored}".`, { source: 'chains' })
   } catch (e) {
-    log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'whiteboard' })
+    log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'chains' })
   }
 }
 
@@ -835,9 +835,9 @@ async function createChain() {
     // off-screen at the origin. Offset right so there's room for tasks.
     await nextTick()
     setCenter(230, 60, { zoom: 1, duration: 350 })
-    log.info(`Chain "${stored}" created.`, { source: 'whiteboard' })
+    log.info(`Chain "${stored}" created.`, { source: 'chains' })
   } catch (e) {
-    log.error(`Create failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Create failed: ${e}`, { source: 'chains' })
   }
 }
 
@@ -856,7 +856,7 @@ async function loadPools() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     pools.value = await res.json() as PoolInfo[]
   } catch (e) {
-    log.warn(`Could not load resource pools: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load resource pools: ${e}`, { source: 'chains' })
   }
 }
 
@@ -875,7 +875,7 @@ async function loadAllTaskDefs() {
     }
     allTaskDefs.value = flat
   } catch (e) {
-    log.warn(`Could not load task definitions: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load task definitions: ${e}`, { source: 'chains' })
   }
 }
 
@@ -1295,7 +1295,7 @@ function applyAutoLayout(variant: LayoutVariant) {
     const p = pos[n.id]
     if (p) updateNode(n.id, { position: p })
   }
-  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'whiteboard' })
+  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'chains' })
 }
 
 // The ↻ button. It used to reload only the ACTIVE chain's content, which is not what its label says and

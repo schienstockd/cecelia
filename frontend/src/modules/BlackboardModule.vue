@@ -639,7 +639,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
             <template #cell-title="{ row: e }">
               <span class="bb-list-title" :class="{ 'bb-list-title-profile': e.entryId === PROFILE_ENTRY_ID }">
                 <i v-if="e.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-list-pin"
-                   v-tooltip.top="'Project profile — always at the top; describes what this project is'" />
+                   v-tooltip.top="'About this project — always at the top'" />
                 <i v-if="e.knowledge" class="pi pi-book bb-list-pin"
                    v-tooltip.top="'Lab knowledge — carried into agent runs on this project'" />
                 <i v-if="e.agentRun" class="pi pi-sparkles bb-list-pin"
@@ -726,7 +726,7 @@ onUnmounted(() => { mermaidRenderSeq++ })
           <template v-else-if="selected">
             <div class="bb-pane-head cc-row cc-row-loose">
               <i v-if="selected.entryId === PROFILE_ENTRY_ID" class="pi pi-thumbtack bb-pane-pin"
-                 v-tooltip.top="'Project profile'" />
+                 v-tooltip.top="'About this project'" />
               <span class="bb-pane-title">{{ selected.title }}</span>
               <span class="bb-pane-sub cc-fs-2xs cc-muted">
                 updated {{ formatAgo(selected.updatedAt) }}

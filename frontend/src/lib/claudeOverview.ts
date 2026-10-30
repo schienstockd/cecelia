@@ -1,117 +1,63 @@
 // Content model for the "What Kiwi does here" overview (ClaudeOverviewDialog). Kept as data (not
-// inline template) so it's testable and edited in one place. The dialog renders these as two
-// entry-point cards + a four-cell capability grid + a few example prompts — a clean, brief how-to,
-// not a wall of text. Mirrors the observer's real capabilities (docs/ai-assist/OBSERVER.md); keep
-// it honest — if a tool lands or a limit changes, update here.
+// inline template) so it's testable and edited in one place. The dialog renders the loop (how Claude
+// fits the work) and one Kiwi-vs-terminal table (what each way in can do) — nothing else: what Claude
+// can read in detail is the tools' business, not the user's. Keep it honest — if a tool lands or a
+// limit changes, update here.
 //
 // FRAMING: Kiwi is a **documentation helper**, not a discussion helper. Its job is a faithful
 // record of what was observed and what was tried — dead ends included — not to be right about the
 // interpretation. Replies from Claude are provisional; the record is the product. See
 // `docs/archive/kiwi-purpose-and-framing.md` for the full framing — its ARCHIVED banner also
 // covers the deliberate 2026-09 drift toward *curating and warning* (bad-tagged repeat-failure
-// digest at ≥3 hits, `bad`>`good`>untagged ranking); the "Suggests" line about recurring
-// failures below is how that surfaces to the user.
+// digest at ≥3 hits, `bad`>`good`>untagged ranking); the "Warns when a bad-tagged failure keeps
+// coming back" row below is how that surfaces to the user.
 
-export interface EntryPoint {
-  name: string
-  icon: string      // icon class, e.g. 'pi-sparkles'
-  what: string      // one line
-  steps: string[]   // 2-3 short how-to steps
-}
-
-/** A capability line. `needs` marks one that depends on an ACCOUNT-managed MCP connector: if the user
- *  hid that connector in Settings → MCP connections, listing it here would advertise something they
- *  have switched off. (The observer's own guidance handles this differently, because it cannot see a
- *  browser setting: it makes the LabArchives direction conditional on the session actually HAVING the
- *  connector — see mcp/cecelia_mcp/guidance.py.) */
-export type CapabilityItem = string | { text: string; needs: string }
-
-export interface CapabilityGroup {
-  key: 'sees' | 'suggests' | 'creates' | 'cant'
+// ── The loop: how Claude fits the work ───────────────────────────────────────────────────────────
+// THE wording of the four steps. Kiwi's `?` dialog renders it, the "Assist with Kiwi" guide uses it for
+// its step titles and text, and user-docs/README.md → *Working with Claude* says the same thing — so a
+// user meets one loop, not three. Change it here and the guide follows (guides.json regenerates).
+export interface LoopStep {
   title: string
-  icon: string
-  tone: 'neutral' | 'good' | 'muted'   // 'muted' for the "Can't" group
-  items: CapabilityItem[]
+  text: string      // one line
 }
+export const CLAUDE_LOOP: LoopStep[] = [
+  { title: 'Point at it', text: '@ Add to Kiwi on what puzzles you — or Share a frame and draw on it' },
+  { title: 'Ask Kiwi', text: 'It points and counts, it doesn’t judge — click a claim’s ref to check it' },
+  { title: 'Keep it', text: 'Save the reply, then tag it good or bad on the Blackboard' },
+  { title: 'Go further', text: 'Continue in terminal when one question isn’t enough' },
+]
 
-/** The groups with connector-dependent lines resolved to plain strings — hidden connectors dropped,
- *  and a group left empty by that is dropped whole rather than rendering an empty box. */
-export function claudeCapabilities(hiddenConnectors: string[] = []): {
-  key: string; title: string; icon: string; tone: string; items: string[] }[] {
+// ── Kiwi vs a terminal session ───────────────────────────────────────────────────────────────────
+// What each way in can do. `needs` marks a row that depends on an ACCOUNT-managed MCP connector: if
+// the user hid that connector in Settings → MCP connections, the row would advertise something they
+// switched off. (The observer's own guidance handles this differently, because it cannot see a browser
+// setting: it makes the LabArchives direction conditional on the session actually HAVING the
+// connector — see mcp/cecelia_mcp/guidance.py.) Mirrors the real tool lists: Kiwi's is
+// `KIWI_READ_TOOLS` (api/src/kiwi_turn.jl), a terminal's is the observer's (docs/ai-assist/OBSERVER.md).
+export interface AccessRow {
+  text: string
+  kiwi: boolean
+  terminal: boolean
+  needs?: string
+}
+export const CLAUDE_ACCESS: AccessRow[] = [
+  { text: 'Reads your project, captures, Blackboard and lab log', kiwi: true, terminal: true },
+  { text: 'Warns when a bad-tagged failure keeps coming back', kiwi: true, terminal: true },
+  { text: 'Marks cells and tracks on the viewer', kiwi: false, terminal: true },
+  { text: 'Adds a chain, board, notebook or lab-log line for you to review', kiwi: false, terminal: true },
+  { text: 'Writes a custom module for a step Cecelia lacks — you reload and run it', kiwi: false, terminal: true },
+  { text: 'Reads your LabArchives notebook, once linked', kiwi: false, terminal: true, needs: 'LabArchives' },
+  { text: 'Runs a task or chain, or changes or deletes your data and work', kiwi: false, terminal: false },
+]
+
+/** The rows with connector-dependent ones dropped when the user hid that connector. */
+export function claudeAccess(hiddenConnectors: string[] = []): AccessRow[] {
   const hidden = new Set(hiddenConnectors)
-  return CLAUDE_CAPABILITIES
-    .map(g => ({ ...g, items: g.items
-      .filter(i => typeof i === 'string' || !hidden.has(i.needs))
-      .map(i => (typeof i === 'string' ? i : i.text)) }))
-    .filter(g => g.items.length > 0)
+  return CLAUDE_ACCESS.filter(r => !r.needs || !hidden.has(r.needs))
 }
 
-// The two ways in. Asking in the app is Kiwi's prompt box (the lab log's one-off "Ask Claude" note was
-// removed 2026-09-24 — an unchecked write to the append-only record, where Kiwi's claims are checked).
-export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
-  {
-    name: 'Ask Kiwi',
-    icon: 'pi-send',
-    what: 'A question in the Kiwi panel — a few claims, each pointing at what it rests on.',
-    steps: [
-      'Add what you are looking at (the @ button)',
-      'Ask in the Kiwi panel',
-      'Click a claim’s ref to see it — or “plot this” to make the plot',
-    ],
-  },
-  {
-    name: 'Chat to Claude',
-    icon: 'pi-comments',
-    what: 'A back-and-forth in Claude Code — captures + notes accrue as you go.',
-    steps: [
-      'Run claude in a terminal',
-      'Ask it to check your project',
-      'Trail lands as captures, chains, blackboard',
-    ],
-  },
-]
-
-export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
-  {
-    key: 'sees', title: 'Sees', icon: 'pi-eye', tone: 'neutral',
-    items: [
-      'Your marks — frame, plot, landscape tile',
-      'Chained captures (dead ends included)',
-      'Blackboard entries + good/bad tags',
-      'Analysis lineage, populations, gates, measures, HMM, QC',
-      'Task history + lab log',
-      { text: 'Your LabArchives experiment summary, once linked', needs: 'LabArchives' },
-    ],
-  },
-  {
-    key: 'suggests', title: 'Suggests', icon: 'pi-lightbulb', tone: 'neutral',
-    items: [
-      'Prior captures on this cell, track or plot',
-      'Images that may need a parameter tweak — and which knob',
-      'A plot or board for a pattern it spotted',
-      'A heads-up when the same bad-tagged failure has recurred',
-    ],
-  },
-  {
-    key: 'creates', title: 'Creates', icon: 'pi-file', tone: 'good',
-    items: [
-      'Captures — chained one-line notes on your marks',
-      'Blackboard entries — good/bad + required why',
-      'Analysis boards, chains, Pluto notebooks — you review, then run',
-      'CSV exports for Prism / R',
-      { text: 'An experiment summary pulled from your LabArchives notebook', needs: 'LabArchives' },
-    ],
-  },
-  {
-    key: 'cant', title: "Can't", icon: 'pi-ban', tone: 'muted',
-    items: [
-      'Change your data (h5ad, gates, config)',
-      'Run anything — not a task, not a chain it built',
-      'Overwrite, rename or delete your chains, notebooks, boards or blackboard entries',
-      'Verify the biology — replies are provisional, not domain-checked',
-    ],
-  },
-]
+/** Said once under the table: every reply is a claim to check, not a verdict. */
+export const CLAUDE_PROVISIONAL = 'Replies are provisional — not checked against the biology'
 
 // ── Terminal hand-off ────────────────────────────────────────────────────────────────────────────
 // Kiwi needs NO setup (Cecelia passes `--mcp-config` to the agent it spawns). A session the
@@ -138,16 +84,6 @@ export const CLAUDE_TERMINAL = {
   resync: 'Fix',
   busy: 'Setting up…',
 } as const
-
-// Copyable one-liners — documentation prompts first (the shape Kiwi's built for), then a couple of
-// generative ones (board / notebook / chain). Short and uniform so they read as a clean row of chips.
-export const CLAUDE_EXAMPLES: string[] = [
-  'Circle this — note what looks off',
-  'Trace prior captures on this cell',
-  'Add a behaviour board',
-  'Cell-speed notebook',
-  'Segment + track chain',
-]
 
 /** Kiwi's standing data notice — whatever Claude reads goes to Anthropic. Always shown, amber; why it
  *  is not dismissible: docs/ai-assist/OBSERVER.md → *The data notice*. */

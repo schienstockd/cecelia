@@ -57,7 +57,6 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-minus', lucide: 'minus', means: 'Nothing to report, or zoom out' },
       { icon: 'pi-bell', lucide: 'bell', means: 'Cecelia logged something that needs a look' },
       { icon: 'pi-sparkles', lucide: 'sparkles', means: 'Claude wrote this' },
-      { icon: 'pi-lightbulb', lucide: 'lightbulb', means: 'A suggestion' },
       { icon: 'pi-graduation-cap', lucide: 'graduation-cap', means: 'A schematic — what this control does' },
       { icon: 'pi-bolt', lucide: 'zap', means: 'Preview it live, before running' },
       { icon: 'pi-lock', lucide: 'lock', means: 'Pinned, or needs a project open first' },

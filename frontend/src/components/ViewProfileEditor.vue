@@ -105,7 +105,7 @@ async function save() {
 async function remove(p: ViewProfile) {
   error.value = ''
   const res = await profiles.remove(p.id)
-  if (!res.ok) { error.value = res.error ?? 'Could not delete the profile.'; return }
+  if (!res.ok) { error.value = res.error ?? 'Could not delete the layout.'; return }
   if (editing.value?.id === p.id) load(null)
 }
 
@@ -117,12 +117,12 @@ function duplicate() {
 </script>
 
 <template>
-  <BaseModal title="View profiles" icon="pi-eye" width="620px" @close="emit('close')">
+  <BaseModal title="Sidebar layouts" icon="pi-eye" width="620px" @close="emit('close')">
     <div class="vp-body" data-guide="viewProfile.editor">
 
       <!-- existing profiles + the implicit All -->
       <div class="vp-row">
-        <span class="vp-lbl cc-eyebrow cc-fs-2xs">profiles</span>
+        <span class="vp-lbl cc-eyebrow cc-fs-2xs">layouts</span>
         <div class="vp-list cc-row">
           <button class="cc-btn" :class="{ 'cc-btn-on': editing === null && !label }"
                   @click="load(null); profiles.select(ALL_PROFILE_ID)"
@@ -138,12 +138,12 @@ function duplicate() {
       <div class="vp-row">
         <span class="vp-lbl cc-eyebrow cc-fs-2xs">name</span>
         <input class="vp-input cc-input-xs" v-model="label" placeholder="Gating + behaviour"
-               v-tooltip.top="'Shown in the profile picker'" />
+               v-tooltip.top="'Shown in the layout picker'" />
         <!-- icons, like every other row action in the app; ConfirmDeleteButton is THE delete
              affordance (arms on the first click, fires on the second) — docs/UI.md → confirm-delete -->
         <button v-if="editing" type="button" class="cc-btn cc-btn-bare cc-btn-icon" @click="duplicate"
                 aria-label="Duplicate this profile"
-                v-tooltip.top="'Copy these pages into a new profile'">
+                v-tooltip.top="'Copy these pages into a new layout'">
           <i class="pi pi-copy" />
         </button>
         <ConfirmDeleteButton v-if="editing" title="Delete this profile"
@@ -181,7 +181,7 @@ function duplicate() {
       </span>
       <button class="cc-btn" @click="emit('close')">Close</button>
       <button class="cc-btn cc-btn-primary" :disabled="!canSave" @click="save"
-              v-tooltip.top="'Write this profile and switch to it'">
+              v-tooltip.top="'Save this layout and switch to it'">
         {{ profiles.saving ? 'Saving…' : saved ? 'Saved' : editing ? 'Save' : 'Create' }}
       </button>
     </template>
