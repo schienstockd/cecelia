@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry } from '../stores/tasks'
-import { TASK_STATUS } from '../lib/taskStatus'
+import { TASK_STATUS, isLiveStatus } from '../lib/taskStatus'
 import { hpcShownStatus } from '../utils/hpcRun'
 import { openPopoutWindow } from '../lib/popout'
 import { useCopyFlash } from '../composables/useCopyFlash'
@@ -109,7 +109,7 @@ const filtered = computed(() => {
     if (!taskMatchesQuery(t, query.value)) return false
     if (poolFilter.value && t.pool !== poolFilter.value) return false
     if (statusFilter.value === 'all')    return true
-    if (statusFilter.value === 'active') return t.status === 'running' || t.status === 'queued'
+    if (statusFilter.value === 'active') return isLiveStatus(t.status)
     return t.status === statusFilter.value
   })
 })

@@ -7,6 +7,7 @@
 // relaunches the node standalone with the JSON spec's defaults instead of what the chain ran it with.
 // A predicate that decides whether clicking silently does the WRONG thing is not one to keep two of.
 
+import { isLiveStatus } from '../lib/taskStatus'
 import type { TaskEntry } from '../stores/tasks'
 
 const TERMINAL = new Set(['done', 'failed', 'cancelled'])
@@ -40,7 +41,8 @@ export function canRerunTask(
 /**
  * Cancel is offered only on a row that is a handle on a live task:
  *
- * - **queued or running** — nothing else can be cancelled.
+ * - **queued, running or waiting** — nothing else can be cancelled. `waiting` is a manual chain step
+ *   parked for the user; cancelling it stops the chain run, like any chain row.
  * - **not a history row** — a run-log entry still at `running` is a record, not a handle. It is usually
  *   a run whose process died with the backend (reaped as `interrupted` at the next project open), and a
  *   Cancel there reached nothing while looking like it worked. A run that IS live has its own live row,
@@ -48,5 +50,5 @@ export function canRerunTask(
  * - **no cancel already pending** (`cancelling`) — the row shows "Cancelling…" until the backend answers.
  */
 export function canCancelTask(t: Pick<TaskEntry, 'status' | 'history' | 'cancelling'>): boolean {
-  return (t.status === 'running' || t.status === 'queued') && !t.history && !t.cancelling
+  return isLiveStatus(t.status) && !t.history && !t.cancelling
 }

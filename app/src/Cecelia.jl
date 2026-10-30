@@ -130,6 +130,7 @@ export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export copy_gating!, with_popmap_lock
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
@@ -241,7 +242,7 @@ export RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
 export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_logs, runner_pools, runner_set_pool_limit
 export runner_set_task_workers
-export runner_submit_chain, runner_cancel_chain, runner_chain_runs
+export runner_submit_chain, runner_cancel_chain, runner_continue_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
@@ -251,12 +252,14 @@ export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState, ChainNodeS
 export ChainScope, CHAIN_IMAGE, CHAIN_SET, CHAIN_INCREMENTAL
 export ChainBarrierPolicy, BARRIER_ALL, BARRIER_REQUIRE_ALL, BARRIER_SUCCESSFUL_ONLY
 export parse_chain_scope, parse_chain_barrier_policy
-export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
+export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED, NODE_WAITING
 export parse_chain_node_status
 export load_chain_template, save_chain_template!, load_template_from_cache
 export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run
 export run_chain
+export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
+export chain_from_history, chain_preflight
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
@@ -359,6 +362,7 @@ include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
+include("tasks/gate/manual_gate.jl")
 include("tasks/segment/import_labels.jl")
 include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/segment/carry_over.jl")  # obs carry-over across measureLabels in the correction composite

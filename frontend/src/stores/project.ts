@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useCanvasPanelsStore } from './canvasPanels'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
@@ -117,6 +117,20 @@ export const useProjectStore = defineStore('project', () => {
     imageSelection.value[_selKey(scope, setUid)] ?? []
   function setImageSelection(scope: string, setUid: string, uids: string[]) {
     imageSelection.value = { ...imageSelection.value, [_selKey(scope, setUid)]: uids }
+  }
+
+  /**
+   * Land a page on these images: make `setUid` the active set and select `uids` in module `scope`.
+   * Returns what to put back for an undo. The selection is written on the NEXT tick because this is
+   * normally called around a navigation, and the arriving page's `ImageTable` seeds its checkboxes
+   * from this same slot `onMounted` — a first-visit mount landing after us would commit the old
+   * selection straight back over ours. One tick puts the write after the seed either way.
+   */
+  function focusImages(scope: string, setUid: string, uids: string[]) {
+    const prev = { setUid: activeSetUid.value, selection: getImageSelection(scope, setUid) }
+    if (activeSetUid.value !== setUid) activeSetUid.value = setUid
+    if (uids.length) void nextTick(() => setImageSelection(scope, setUid, uids))
+    return prev
   }
 
   // Remembered per-page image-table sort (column + direction), keyed like the selection so it
@@ -387,7 +401,7 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { focusImages, sets, loadedProjectUid, belongsToOpenProject, activeSetUid, viewerImageUid, openImageUid, viewerReloadTick, requestViewerReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, imageByUid, getImageSelection, setImageSelection, getImageSort, setImageSort, loadFromApi, clear, addSetFromApi, renameSet, deleteSet, addImages, addImagesFromApi, deleteImage, ensureSet, moveImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

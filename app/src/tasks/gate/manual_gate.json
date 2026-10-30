@@ -1,0 +1,54 @@
+{
+  "task": "manual_gate",
+  "fun_name": "gate.manual_gate",
+  "label": "Gate (manual step)",
+  "purpose": "Pause a chain run so you can gate each image",
+  "useWhen": [
+    "A chain step after this one reads a gated population",
+    "Gates drawn on one image need checking on the others"
+  ],
+  "category": "Gate",
+  "group": "Gate",
+  "env": ["local"],
+  "resource_pool": "io",
+  "hidden": true,
+  "manual": {
+    "prompt": "Check the gates on this image, then continue",
+    "open": "gate"
+  },
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Cells",
+      "type": "valueNameSelection",
+      "field": "labelPropsNames",
+      "default": "default",
+      "tip": "Which measured cells the gates are on"
+    },
+    {
+      "key": "popType",
+      "label": "Gates",
+      "type": "select",
+      "default": "flow",
+      "options": [
+        { "value": "flow",  "label": "Cell gates" },
+        { "value": "track", "label": "Track gates" }
+      ],
+      "tip": "Cell gates or track gates"
+    },
+    {
+      "key": "copyFrom",
+      "label": "Copy gates from",
+      "type": "imageSelection",
+      "default": "",
+      "tip": "Start each image from this image's gates; images already gated keep theirs"
+    },
+    {
+      "key": "requiredPops",
+      "label": "Must exist",
+      "type": "text",
+      "default": "",
+      "tip": "Populations needed to continue, comma-separated, e.g. /qc, /qc/cells"
+    }
+  ]
+}

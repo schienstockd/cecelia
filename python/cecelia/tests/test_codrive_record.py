@@ -154,6 +154,34 @@ class CodriveRecordTest(unittest.TestCase):
         self.assertEqual((local["entryId"], local["sections"][1]["corrects"]), ("bb-1", "s01"))
         self.assertEqual(out["entryId"], "bb-1")
 
+    def test_recording_the_session_again_revises_its_entry(self):
+        records = self.tmp / "records"
+        posts = []
+        def post(api, path, body):
+            posts.append((path, body))
+            return {"entryId": "bb-1"} if path.endswith("/create") else {"ok": True}
+        with mock.patch.object(cr.run_record, "_post", side_effect=post), \
+             mock.patch.object(cr.run_record, "_get", return_value={"entry": {}}), \
+             mock.patch.object(cr.run_record, "upload_capture", return_value="cap-up"):
+            cr.write(self.path, "http://x", None, records=records)
+            out = cr.write(self.path, "http://x", None, records=records)
+            # another window of the same session is its own entry
+            cr.write(self.path, "http://x", None, since="2026-10-20T01:01:45Z", records=records)
+        self.assertEqual([p for p, _ in posts], ["/api/blackboard/create", "/api/blackboard/revise",
+                                                 "/api/blackboard/create"])
+        self.assertEqual((posts[1][1]["entryId"], out["entryId"], out["revised"]), ("bb-1", "bb-1", True))
+
+    def test_an_entry_deleted_since_is_made_again(self):
+        records = self.tmp / "records"; records.mkdir()
+        (records / "sess1.json").write_text(json.dumps({"entryId": "bb-gone"}), encoding="utf-8")
+        gone = cr.run_record.urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+        with mock.patch.object(cr.run_record, "_post", return_value={"entryId": "bb-2"}) as post, \
+             mock.patch.object(cr.run_record, "_get", side_effect=gone), \
+             mock.patch.object(cr.run_record, "upload_capture", return_value="cap-up"):
+            out = cr.write(self.path, "http://x", None, records=records)
+        self.assertEqual(post.call_args.args[1], "/api/blackboard/create")
+        self.assertEqual((out["entryId"], out["revised"]), ("bb-2", False))
+
     def test_a_session_that_never_touched_cecelia_records_nothing(self):
         p = self.tmp / "plain.jsonl"
         p.write_text(json.dumps(_user("hello", "2026-10-20T01:00:00Z")) + "\n", encoding="utf-8")

@@ -217,6 +217,20 @@ class RunChainStoredName(unittest.TestCase):
         self.assertEqual((out["chain"], out["runId"]), ("Drift segment", "r1"))
 
 
+class WaitChainManualStep(unittest.TestCase):
+    def test_a_run_parked_for_a_person_is_settled_not_finished(self):
+        # nothing queued or running, but a manual step waits: wait_chain must stop (no point polling)
+        # and must not report the run as finished
+        c = au.AutonomousClient("http://x")
+        replies = {"/api/chains/run": {"chainName": "c", "nodes": [],
+                                       "imageStates": {"img1": {"seg": "done", "gate": "waiting"}}},
+                   "/api/tasks": []}
+        with mock.patch.object(c, "_request", side_effect=lambda m, r, *a, **k: replies[r]):
+            out = c.wait_chain("copy01", "r1", timeout_s=60, poll_s=0)
+        self.assertTrue(out["waiting"])
+        self.assertFalse(out["finished"])
+
+
 class TaskStatesHistoryFallback(unittest.TestCase):
     def test_a_capped_history_is_read_whole_before_giving_up(self):
         c = au.AutonomousClient("http://x")

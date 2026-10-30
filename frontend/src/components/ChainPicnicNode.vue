@@ -10,6 +10,7 @@ defineProps<{
     barrier_policy: string
     resource_pool: string
     label: string
+    manual?: boolean      // a manual step: the run waits here for the user (docs/SCHEDULER.md)
   }
   selected: boolean
 }>()
@@ -25,7 +26,11 @@ defineProps<{
       <span class="picnic-diamond">◆</span>
       <span class="picnic-badge">set</span>
     </div>
-    <div class="node-label">{{ data.label || data.fn }}</div>
+    <div class="node-label">
+      <i v-if="data.manual" class="pi pi-pause node-manual"
+         v-tooltip.top="'Manual step — the run waits here for you'" />
+      {{ data.label || data.fn }}
+    </div>
     <div class="node-fn">{{ data.fn }}</div>
     <div class="policy-row">
       <span class="policy-label">barrier:</span>
@@ -40,6 +45,7 @@ defineProps<{
 </template>
 
 <style scoped>
+.node-manual { color: var(--cc-sev-warn); margin-right: 0.2rem; }
 .chain-picnic-node {
   background: #1c1505;
   border: 2px solid var(--cc-warn);

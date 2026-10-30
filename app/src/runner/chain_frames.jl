@@ -1,6 +1,6 @@
 # ── Chain events → wire frames, in one place ──────────────────────────────────
 #
-# The four `chain:node:*` transitions a client sees — plus a node's `task:progress` telemetry — built
+# The five `chain:node:*` transitions a client sees — plus a node's `task:progress` telemetry — built
 # once and emitted through a callback so the SAME
 # builder serves both processes: the API server broadcasting to browsers (the in-process path), and the
 # detached runner emitting to the API server (which relays them on). See
@@ -85,26 +85,38 @@ function subscribe_chain_frames!(emit::Function)::Vector{Pair{String,Function}}
         f["startedAt"] = isempty(tid) ? "" : iso_utc(note_task_started!(tid))
         emit(f)
     end
-    done = function(p)
+    # A manual step's PREPARE task finished when the node parked, so it is banked as done there. The
+    # later continue (or cancel) carries `waited = true` and must not bank again: the row would be
+    # restamped as finishing at the moment the user clicked, with its start already forgotten.
+    bank(p, status) = get(p, :waited, false) === true ? nothing :
+        record_task_outcome!(ev_task_id(p), status; image_uid = p.image_uid, fun = p.fn,
+                             pool = String(get(p, :pool, "")))
+    waiting = function(p)
         started, finished = ev_times(record_task_outcome!(ev_task_id(p), "done";
                                                           image_uid = p.image_uid, fun = p.fn,
                                                           pool = String(get(p, :pool, ""))))
+        f = base(p); f["type"] = "chain:node:waiting"; f["params"] = p.params
+        f["startedAt"] = started; f["finishedAt"] = finished
+        emit(f)
+    end
+    done = function(p)
+        started, finished = ev_times(bank(p, "done"))
         f = base(p); f["type"] = "chain:node:done"; f["params"] = p.params; f["result"] = p.result
+        f["waited"] = get(p, :waited, false) === true   # the API relay must not bank it either
         f["startedAt"] = started; f["finishedAt"] = finished
         emit(f)
     end
     failed = function(p)
         # `status` here may be "skipped" — a node that never ran, and not a terminal TASK status, so
         # `record_task_outcome!` ignores it and the frame simply goes out without timing.
-        started, finished = ev_times(record_task_outcome!(ev_task_id(p), p.status;
-                                                          image_uid = p.image_uid, fun = p.fn,
-                                                          pool = String(get(p, :pool, ""))))
+        started, finished = ev_times(bank(p, p.status))
         f = base(p); f["type"] = "chain:node:failed"; f["status"] = p.status
+        f["waited"] = get(p, :waited, false) === true
         f["startedAt"] = started; f["finishedAt"] = finished
         emit(f)
     end
 
-    pairs = ["node:queued" => queued, "node:running" => running,
+    pairs = ["node:queued" => queued, "node:running" => running, "node:waiting" => waiting,
              "node:done" => done, "node:failed" => failed,
              "node:progress" => progress]
     for (ev, h) in pairs

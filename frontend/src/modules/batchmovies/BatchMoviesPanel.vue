@@ -14,7 +14,7 @@
   UI (a client task record + `movie:batch` WS message; the backend emits task:progress/log/status/result).
 -->
 <script setup lang="ts">
-import { computed, ref, watch, nextTick } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useSettingsStore } from '../../stores/settings'
@@ -489,7 +489,6 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     const set = restoreTargetSet(r.imageUids.map(u => project.setUidOfImage(u)), setUid.value)
     if (!set) return null
     const prevSetUid = project.activeSetUid
-    if (prevSetUid !== set) project.activeSetUid = set
 
     // A batch reproduces its whole selection, not the one row that was clicked. Only the ones in this
     // set: a uid from a deleted image (or another set) would sit in the selection unselectable and
@@ -501,7 +500,6 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
 
     const prevCfg = { ...settings.getBatchMovieConfig(set) }
     const prevOut = outputSnapshot(set)
-    const prevSel = project.getImageSelection('batchMovies', set)
 
     settings.replaceBatchMovieConfig(set, r.cfg)
     // `titleCard` deliberately NOT patched into the per-set `movie` bag: this page reads its card from
@@ -514,7 +512,7 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     // callback — reading the old (empty) selection and committing it straight back over ours. On a
     // second click the page is already mounted, which is exactly why it worked the second time.
     // One tick puts us unambiguously after the seed either way.
-    if (wanted.length) nextTick(() => project.setImageSelection('batchMovies', set, wanted))
+    const prevSel = project.focusImages('batchMovies', set, wanted).selection
 
     const dropped = [...r.dropped]
     if (gone.length) dropped.push(`${gone.length} image(s) that no longer exist`)

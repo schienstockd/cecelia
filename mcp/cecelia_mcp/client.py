@@ -75,6 +75,9 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
         ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
         ("GET", "/api/analysis/spatial"),  # region runs + pairwise cell-type contact log-odds (association/avoidance)
+        ("GET", "/api/chains/suggest"),   # read-only: a chain template built from what already ran on
+                                          # some images (chain_from_history). Writes nothing — saving it
+                                          # is create_chain (create-only) or the user's whiteboard
         ("GET", "/api/analysis/chains"),  # whiteboard chains: wired templates (DAG) + recent runs
         ("GET", "/api/analysis/boards"),  # existing Analysis boards + what each slot plots (summary, not layout)
         ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
@@ -451,6 +454,15 @@ class CeceliaClient:
 
     def get_chains(self, project_uid: str):
         return self._analysis_summary("/api/analysis/chains", project_uid)
+
+    def suggest_chain(self, project_uid: str, image_uids: list[str], keep: list[str] | None = None,
+                      retrain: bool = False):
+        q = {"projectUid": project_uid, "imageUids": ",".join(image_uids)}
+        if keep is not None:
+            q["keep"] = ",".join(keep)
+        if retrain:
+            q["retrain"] = "1"
+        return self._request("GET", "/api/chains/suggest", q)
 
     def get_repl_api(self):
         # Project-independent: the notebook/REPL data-access surface (accessors + docstrings + cookbook).

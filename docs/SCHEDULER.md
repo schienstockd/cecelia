@@ -618,6 +618,47 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 
 ---
 
+### Pre-flight
+
+`chain_preflight(proj, template, image_uids)` (`app/src/tasks/chain/preflight.jl`, route
+`POST /api/chains/preflight`) reads a template against each target image before a run: a
+`channelSelection` name the image lacks and a `valueNameSelection` input neither on the image nor made by
+an ancestor node are **fail**; a step `task_applies` rejects (it will be `:skipped`) and an output that
+already exists (with `keep_previous_version()` off) are **warn**. Advisory — the whiteboard offers
+*Run anyway*; fault isolation still keeps a bad image from stopping the rest. It reuses the history
+builder's spec reading (`_history_leaves`), so "what does this param read" has one answer.
+
+### Manual steps
+
+A task whose spec carries a `"manual"` block (`{"prompt", "open"}`, read by `task_manual`) is a
+**manual step**: its `_run_task` is the *prepare* action, then the node parks at `:waiting` until the
+user continues it. Code: `app/src/tasks/chain/manual.jl`. Design and first consumer (gating):
+`docs/todo/CHAIN_FROM_HISTORY_PLAN.md` Part A.
+
+- **Scope decides the grain.** Image scope parks each image on its own and continues it on its own;
+  downstream nodes of a continued image run while others still wait. Set scope parks once after the
+  barrier and continues all members together (a failed check on any member holds them all).
+- **The check.** On continue, the parked thread runs `manual_check(task, img, params)` per image —
+  `nothing` passes, a string refuses and is returned as the reason; the node stays parked. Default
+  method: always passes. A task with a precondition adds a method for its own type.
+- **Continue** mirrors cancel: a process-wide registry (`_CHAIN_WAITERS`) keyed by run id, so
+  `continue_chain_node!(run_id, node_id; image_uids)` works from the REPL, the WS
+  (`chain:continue`) and the runner (`POST /continue-chain`) with no handle on the run.
+- **Durable.** `:waiting` is persisted. A process that dies leaves it on disk; resume parks the node
+  again **without re-running prepare** (it could redo over the user's work), and
+  `_reset_stale_nodes!` keeps a waiting node unless its params changed. A run that is not live is
+  continued on disk (`continue_parked_on_disk!`, same check) and then resumed — the WS handler does
+  both, so a click means the same thing either way.
+- **Cancel** releases a parked step as `:cancelled`; a later resume retries it, prepare included,
+  which is why prepare must never destroy user work.
+- **First consumer: `gate.manual_gate`** (`app/src/tasks/gate/`). Prepare copies an exemplar's gates
+  (`copyFrom`) onto an image that has none (`copy_gating!(…; replace = false)`); the check holds the
+  image until every `requiredPops` path exists on its label set; `open: "gate"` puts an **Open** button
+  on the waiting node that lands on the Gating page with that image selected. `hidden` in the spec, so
+  it is a chain step only — not in the Gating page's function list.
+- **Banking.** Prepare's task is banked as done when the node parks; the later `done`/`cancelled`
+  frame carries `waited` and is not banked again (`chain_frames.jl`).
+
 ## Value-name propagation between linked nodes
 
 A processing task consumes an input image version (a `valueName`) and produces a new one — e.g.
@@ -862,10 +903,11 @@ run_chain(proj, uids; chain="my-chain")
 
 **Triggering a run from the UI**: `ws.ts` sends `{ type: "chain:run", projectUid, chain, imageUids }`. The handler in `sockets.jl` (`handle_chain_run`) calls `load_project(project_uid)` then `run_chain` in a `Threads.@spawn` so the WS thread is never blocked. On success it broadcasts `chain:run:done`; on error `chain:run:failed` (also surfaced in the log console).
 
-**API WebSocket bridge**: `api/src/server.jl` subscribes to **all four** events at startup and
+**API WebSocket bridge**: `api/src/server.jl` subscribes to **all five** events at startup and
 broadcasts each to every connected client, `chain:`-prefixed with camelCase keys:
 - `chain:node:queued`  — `{type, runId, chainName, projectUid, imageUid, nodeId, fn, params, taskId}`
 - `chain:node:running` — same shape
+- `chain:node:waiting` — same shape; a manual step parked (see *Manual steps*)
 - `chain:node:done`    — `{…, params, result}`
 - `chain:node:failed`  — `{…, status}` (which of failed/skipped/cancelled)
 
@@ -877,6 +919,8 @@ broadcasts each to every connected client, `chain:`-prefixed with camelCase keys
 
 ```
 :pending → :queued → :running → :done
+                              → :waiting → :done       (manual step, continued — see *Manual steps*)
+                                         → :cancelled
                               → :failed
                               → :cancelled (cancel_chain_run! killed the subprocess mid-run)
          → :queued → :cancelled (cancel flag seen before the job got a slot)
@@ -913,7 +957,8 @@ These are easy to break accidentally:
 
 3. **Incremental nodes are excluded from fault isolation** — `incremental_ids` set in
    `_execute_image_chain!`. If you add a new scope type, decide whether it gates image progression
-   or not, and update this exclusion accordingly.
+   or not, and update this exclusion accordingly. A manual step is a node *kind*, not a scope: it
+   gates like any image/set node, and the validator refuses one with incremental scope.
 
 4. **Set-scope skip check is after `_barrier_wait_all!`** — see the picnic node section above.
    Moving it before causes a deadlock that is non-obvious to debug.
@@ -1116,6 +1161,7 @@ run = load_chain_run(proj, run_id)
 |------|------|
 | `app/src/tasks/scheduler.jl` | Resource pools + dispatchers, `TaskRecord`/`_TASKS`, `run_task`, cancel registry |
 | `app/src/tasks/chain.jl` | Chain data model, executor, barriers, resume logic, `chain_node`/`make_chain` REPL helpers |
+| `app/src/tasks/chain/manual.jl` | Manual steps: park, continue registry, on-disk continue |
 | `app/src/events.jl` | Package-level pub/sub event bus |
 | `app/src/tasks/testTasks/image_task.jl` | Mock image-scope task (supports `waitMs` for timing tests) |
 | `app/src/tasks/testTasks/set_task.jl` | Mock set-scope task |

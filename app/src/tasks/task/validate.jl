@@ -100,6 +100,11 @@ function _validate_leaf(key, value, spec::Dict{String,Any};
         why === nothing ||
             throw(ParamValidationError(isempty(v) ? "'$key' cannot be empty — it names this task's output" :
                                                     "'$key' $why: \"$v\""))
+
+    elseif type_str == "imageSelection"
+        # an image uid of the project, or "" for none — resolved by the handler, so only the shape here
+        value isa AbstractString ||
+            throw(ParamValidationError("'$key' must be an image uid, got: $value"))
     end
     # text, channelSelection, valueNameSelection, group, section — no scalar constraint to enforce
 end

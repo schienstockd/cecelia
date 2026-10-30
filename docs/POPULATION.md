@@ -370,7 +370,9 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
 `track` gates tracks), as opposed to the filter pop types (`clust`/`trackclust`) and derived `live`.
 One abstraction (`is_gating_pop_type`) so gating features treat both uniformly, no flow special-casing.
 
-**Copy gating → other images** (`POST /api/gating/copy`, ports R "Propagate to Selected"): because
+**Copy gating → other images** (`POST /api/gating/copy` → the package's `copy_gating!`,
+`app/src/gating/popmanager/copy.jl`, ports R "Propagate to Selected"; `replace = false` is the manual gate
+chain step's prefill, which never overwrites an image's own gates): because
 gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet like R) and membership
 recomputes per image on read, copying a strategy is just writing the source sidecar to each target
 (REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking

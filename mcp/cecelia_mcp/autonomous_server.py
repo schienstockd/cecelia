@@ -128,7 +128,8 @@ def run_chain(project_uid: str, chain_name: str, image_uids: list[str]) -> dict:
 def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict:
     """Block until chain run `run_id` stops (no node queued or running) or `timeout_s` passes (max
     3600). Returns per-image node statuses — `failed` / `skipped` nodes are where to look; the
-    observer's get_task_log has the error."""
+    observer's get_task_log has the error. `waiting: true` = parked at a manual step for a person:
+    not finished, and nothing here can continue it."""
     return _client.wait_chain(project_uid, run_id, min(max(timeout_s, 10), 3600))
 
 

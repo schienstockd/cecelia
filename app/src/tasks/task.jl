@@ -52,6 +52,28 @@ which fits across the set. Used by the API to route a `task:run` to the single- 
 task_scope(task::CciaTask)::String =
     (s = _task_spec(task); isnothing(s) ? "image" : string(get(s, "scope", "image")))
 
+"""
+    task_manual(task) -> Union{Dict{String,Any},Nothing}
+
+The spec's `"manual"` block (`prompt`, `open`), or `nothing` for an ordinary task. A manual task's
+`_run_task` is only the PREPARE step; in a chain the run then parks at `NODE_WAITING` until the user
+continues it (`chain/manual.jl`). Outside a chain it is an ordinary task that runs prepare.
+"""
+function task_manual(task::CciaTask)::Union{Dict{String,Any},Nothing}
+    s = _task_spec(task)
+    m = isnothing(s) ? nothing : get(s, "manual", nothing)
+    m isa AbstractDict ? Dict{String,Any}(string(k) => v for (k, v) in m) : nothing
+end
+
+"""
+    manual_check(task, img, params) -> Union{String,Nothing}
+
+Run when the user continues a parked manual step on `img`: `nothing` lets it through, a string refuses
+it and is shown as the reason (the step stays parked). Default: always passes. A manual task with a
+precondition (e.g. "these populations exist") adds a method for its own type.
+"""
+manual_check(::CciaTask, ::CciaImage, ::Dict{String,Any})::Union{String,Nothing} = nothing
+
 # ── fun_name dispatch ─────────────────────────────────────────────────────────
 # _FUN_NAME_MAP is populated in task_registry.jl (included after all task types).
 
