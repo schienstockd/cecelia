@@ -25,7 +25,7 @@ import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ChipSelect from '../components/ChipSelect.vue'
 import { usePanelResize } from '../composables/usePanelResize'
 import {
-  listBlackboardEntries, getBlackboardEntry, createBlackboardEntry, saveBlackboardEntryOnce,
+  listBlackboardEntries, getBlackboardEntry, createBlackboardEntry,
   reviseBlackboardEntry, restoreBlackboardEntry, deleteBlackboardEntry,
   setBlackboardStatus, setBlackboardOutcome, setSectionOutcome, setBlackboardKnowledge,
   type BlackboardEntrySummary, type BlackboardEntry,
@@ -286,11 +286,9 @@ async function onPromote(sectionId: string, note: string) {
   const from = { entryId: selected.value.entryId, sectionId }
   try {
     const title = 'Lesson: ' + (note.length > 80 ? note.slice(0, 79) + '…' : note)
-    // one lesson per section: promoting it again opens the lesson it already made
-    const { entryId: id, existing } = await saveBlackboardEntryOnce(projectUid.value, title, note + '\n', [],
-      { sourceKey: `lesson:${from.entryId}:${sectionId}` })
+    const id = await createBlackboardEntry(projectUid.value, title, note + '\n')
     if (!id) return
-    if (!existing) await setBlackboardKnowledge(projectUid.value, id, true, from)
+    await setBlackboardKnowledge(projectUid.value, id, true, from)
     await loadList()
     selectedId.value = id
     await loadEntry(id)

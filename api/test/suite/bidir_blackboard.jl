@@ -885,39 +885,3 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
-
-@testset "API: blackboard create once per sourceKey (a Kiwi turn saved twice)" begin
-    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
-    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
-    tmp  = mktempdir(); dirs["projects"] = tmp
-    try
-        uid = "TESTSK"; mkpath(joinpath(tmp, uid))
-        create(b) = JSON3.read(_post(api_blackboard_create, merge(Dict("projectUid"=>uid), b))[2])
-        refs = Dict("k" => Dict("ref"=>Dict("kind"=>"image","imageUid"=>"I1"), "label"=>"I1",
-                                "savedAt"=>"2026-09-25T12:00:00.000Z"))
-        turn = Dict("title"=>"why", "content"=>"# Kiwi turn — t0", "kiwiRefs"=>refs)
-        n_entries() = length(_read_bb_registry(uid))
-
-        # An entry saved before sourceKey existed — matched on the identical Kiwi save.
-        legacy = String(create(turn).entryId)
-        again  = create(merge(turn, Dict("sourceKey"=>"kiwi-turn:T1")))
-        @test String(again.entryId) == legacy && again.existing == true
-
-        # Keyed: the second save of the same source returns the first entry, even after a revise.
-        first_k = create(Dict("title"=>"claim", "content"=>"c", "kiwiRefs"=>refs, "sourceKey"=>"kiwi-claim:T1:0"))
-        @test !haskey(first_k, :existing)
-        _post(api_blackboard_revise, Dict("projectUid"=>uid, "entryId"=>String(first_k.entryId), "content"=>"edited"))
-        n = n_entries()
-        @test String(create(Dict("title"=>"claim", "content"=>"c", "kiwiRefs"=>refs,
-                                 "sourceKey"=>"kiwi-claim:T1:0")).entryId) == String(first_k.entryId)
-        @test n_entries() == n
-
-        # A different source, or no sourceKey at all, still creates.
-        @test String(create(Dict("title"=>"claim", "content"=>"c", "kiwiRefs"=>refs,
-                                 "sourceKey"=>"kiwi-claim:T1:1")).entryId) != String(first_k.entryId)
-        @test String(create(turn).entryId) != legacy
-    finally
-        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
-        rm(tmp; recursive = true, force = true)
-    end
-end
