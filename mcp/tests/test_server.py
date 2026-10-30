@@ -1032,7 +1032,7 @@ if __name__ == "__main__":
 
 
 class NoGuiSurfaceTest(unittest.TestCase):
-    """Headless mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN P2): the tools that read or drive the GUI
+    """No-GUI mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN P2): the tools that read or drive the GUI
     are not registered, and the briefing says what replaces the GUI's half of the rules."""
 
     GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_plots",

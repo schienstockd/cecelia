@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Cecelia with no GUI — Claude in the terminal is the front end (docs/todo/HEADLESS_MODE_PLAN.md).
 
-    pixi run headless [<projectUid>]
+    pixi run chat [<projectUid>]
 
 Uses the Cecelia server already running for this user, or starts one with no browser and its output
 going to a log file (the terminal belongs to Claude). With no project given, it lists the projects to
 pick from, newest-opened first, with "new project" at the top. Then the server builds the session —
-the MCP config, the caller hook, the `claude` path and the profile env (`GET /api/observer/headless`)
+the MCP config, the caller hook, the `claude` path and the profile env (`GET /api/observer/chat`)
 — and this starts it. When Claude exits, a server this launcher started is shut down; one it found
 running is left alone.
 
@@ -142,7 +142,7 @@ def main(argv: list[str]) -> int:
     if _attach():
         print(f"Using the Cecelia server already running at {app.URL}.")
     else:
-        proc = _start(os.path.join(app._config_dir(), "headless-server.log"))
+        proc = _start(os.path.join(app._config_dir(), "chat-server.log"))
         if proc is None:
             print("Cecelia server did not start — see the log above for why.", file=sys.stderr)
             return 1
@@ -155,7 +155,7 @@ def main(argv: list[str]) -> int:
                 return 0
             project = picked
         q = f"?projectUid={urllib.parse.quote(project)}" if project else ""
-        session = _call(f"/api/observer/headless{q}")
+        session = _call(f"/api/observer/chat{q}")
         if not session.get("available"):
             print(session.get("error") or "Claude Code is not available.", file=sys.stderr)
             return 1

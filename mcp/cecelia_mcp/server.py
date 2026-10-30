@@ -143,7 +143,7 @@ def _tool_if(enabled: bool):
 
 
 # A tool that reads or drives the GUI (the viewer, a mounted plot, a capture, the push pairing): not
-# registered in headless mode, where there is no GUI for it to reach (no_gui.py).
+# registered in no-GUI mode, where there is no GUI for it to reach (no_gui.py).
 _gui_tool = _tool_if(not no_gui_enabled())
 
 
