@@ -292,7 +292,7 @@ end
         "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/blackboard", "/api/blackboard/entry",
-        "/api/notebooks/status", "/api/observer/briefing", "/api/observer/headless",
+        "/api/notebooks/status", "/api/observer/briefing", "/api/observer/chat",
         "/api/observer/labarchives",
         "/api/objects/find",
         "/api/optical-flow/models",

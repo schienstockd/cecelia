@@ -829,7 +829,7 @@ class ClientTest(unittest.TestCase):
             self.c.list_images("proj-abc")
         self.assertEqual(up.call_count, 2)
 
-    def test_auto_pair_skipped_in_headless_mode(self):
+    def test_auto_pair_skipped_in_no_gui_mode(self):
         # No GUI (CECELIA_MCP_NO_GUI=1): a pairing is how pushes reach the GUI, so none is written.
         env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
                "CLAUDE_CODE_MESSAGING_TOKEN":  "t",

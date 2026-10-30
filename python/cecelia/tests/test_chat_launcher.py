@@ -1,4 +1,4 @@
-"""The headless launcher (``headless.py``, docs/todo/HEADLESS_MODE_PLAN.md P3): the project picker,
+"""The chat launcher (``chat.py``, docs/todo/HEADLESS_MODE_PLAN.md P3): the project picker,
 the env `claude` runs under, and that Ctrl-C reaches Claude rather than the launcher.
 
 The session itself (argv, MCP config, profile env) is built server-side and pinned by the Julia
@@ -14,9 +14,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 
 def _load():
-    sys.path.insert(0, str(ROOT))          # headless.py imports app.py, its sibling
+    sys.path.insert(0, str(ROOT))          # chat.py imports app.py, its sibling
     try:
-        spec = importlib.util.spec_from_file_location("cecelia_headless_launcher", ROOT / "headless.py")
+        spec = importlib.util.spec_from_file_location("cecelia_chat_launcher", ROOT / "chat.py")
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod

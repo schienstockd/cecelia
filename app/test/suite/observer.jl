@@ -111,9 +111,9 @@ end
     @test !haskey(Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://127.0.0.1:8080")["env"],
                   "CECELIA_OBSERVER_NO_PAIR")
 
-    # headless mode (HEADLESS_MODE_PLAN D6): both servers from the observer's spec, the no-GUI switch
+    # chat mode (HEADLESS_MODE_PLAN D6): both servers from the observer's spec, the no-GUI switch
     # on both, the project lock on the autonomous one only
-    nog = Cecelia.headless_mcp_config("/repo/mcp", "/env/python", "http://127.0.0.1:8080"; project_uid = "abc123")
+    nog = Cecelia.chat_mcp_config("/repo/mcp", "/env/python", "http://127.0.0.1:8080"; project_uid = "abc123")
     obs, aut = nog["mcpServers"]["cecelia-observer"], nog["mcpServers"]["cecelia-autonomous"]
     @test obs["args"] == ["-m", "cecelia_mcp.server"]
     @test aut["args"] == ["-m", "cecelia_mcp.autonomous_server"]
@@ -125,21 +125,21 @@ end
         @test aut["env"][k] == srv["env"][k]
     end
     # a "new project" session: the lock is present but empty (the server fills it on create_project)
-    @test Cecelia.headless_mcp_config("/repo/mcp", "/env/python", "http://x")["mcpServers"]["cecelia-autonomous"]["env"]["CECELIA_MCP_PROJECT"] == ""
+    @test Cecelia.chat_mcp_config("/repo/mcp", "/env/python", "http://x")["mcpServers"]["cecelia-autonomous"]["env"]["CECELIA_MCP_PROJECT"] == ""
     # …and building it never touches the spec the user's own terminal registers
     @test !haskey(Cecelia.observer_mcp_spec("/repo/mcp", "/env/python", "http://x")["env"], "CECELIA_MCP_NO_GUI")
     # interactive (no -p), strict (a user-scope plugin must not add a second observer with GUI tools)
-    argv = Cecelia.headless_claude_argv("claude", "/c/mcp.json", "/c/hook.json"; project_uid = "abc123", project_name = "Expt 1")
+    argv = Cecelia.chat_claude_argv("claude", "/c/mcp.json", "/c/hook.json"; project_uid = "abc123", project_name = "Expt 1")
     @test argv[1:6] == ["claude", "--mcp-config", "/c/mcp.json", "--strict-mcp-config", "--settings", "/c/hook.json"]
     @test !("-p" in argv)
     @test argv[end-1] == "--append-system-prompt" && occursin("Expt 1 (abc123)", argv[end])
-    @test occursin("no project open", Cecelia.headless_claude_argv("claude", "m", "s")[end])
+    @test occursin("no project open", Cecelia.chat_claude_argv("claude", "m", "s")[end])
     # the env: the profile's login set, the ambient overrides unset — same pairs as every app spawn
-    henv = Cecelia.headless_claude_env("/profiles/ana")
+    henv = Cecelia.chat_claude_env("/profiles/ana")
     @test henv.set == Dict("CLAUDE_CONFIG_DIR" => "/profiles/ana")
     @test Set(henv.unset) == Set(Cecelia._AMBIENT_CLAUDE_ENV)
-    @test isempty(Cecelia.headless_claude_env("").set)                    # default profile: CLI's own dir
-    @test JSON3.read(JSON3.write(henv))[:unset] isa AbstractVector        # the JSON shape headless.py reads
+    @test isempty(Cecelia.chat_claude_env("").set)                    # default profile: CLI's own dir
+    @test JSON3.read(JSON3.write(henv))[:unset] isa AbstractVector        # the JSON shape chat.py reads
 
     # `mcp remove` clears the older `add-json` registration and the per-folder shadows
     rm_cmd = Cecelia._build_mcp_remove_cmd(a)
