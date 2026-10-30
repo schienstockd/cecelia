@@ -43,7 +43,8 @@ import time
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _CALLER_HOOK = _REPO_ROOT / "mcp" / "cecelia_mcp" / "caller_hook.py"
 sys.path.insert(0, str(_REPO_ROOT / "python"))
-from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
+from cecelia.effectiveness.attribution import (  # noqa: E402
+    coauthor_line, footer, reply_line, reply_phrase, trailer_lines)
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
@@ -179,13 +180,13 @@ def _read(where: str, path: str) -> str | None:
         return None
 
 
-def _api_body(words: list[str], where: str) -> str | None:
-    """The PR body a `gh api <pulls endpoint>` call sets: `-f/--raw-field body=…`,
+def _api_body(words: list[str], where: str, endpoint_re: re.Pattern = _PULLS_ENDPOINT) -> str | None:
+    """The `body` a `gh api` call sets on an endpoint `endpoint_re` matches: `-f/--raw-field body=…`,
     `-F/--field body=…` (`@file` read; `@-` is stdin, unread) or `--input <file.json>`."""
     args = words[2:]
     endpoint = next((w for i, w in enumerate(args)
                      if not w.startswith("-") and not (i and args[i - 1] in _API_VALUE_FLAGS)), "")
-    if not _PULLS_ENDPOINT.search(endpoint.split("?", 1)[0]):
+    if not endpoint_re.search(endpoint.split("?", 1)[0]):
         return None
     for i, w in enumerate(words):
         nxt = words[i + 1] if i + 1 < len(words) else ""
@@ -203,15 +204,16 @@ def _api_body(words: list[str], where: str) -> str | None:
     return None
 
 
-def _body(segment: str, where: str) -> str | None:
-    """The PR body a `gh pr create|edit` or `gh api` segment sets, or None when it sets none / can't
-    be read (stdin `-`, an unparseable command, a missing file)."""
+def _body(segment: str, where: str, endpoint_re: re.Pattern = _PULLS_ENDPOINT) -> str | None:
+    """The body a `gh <issue|pr> <verb>` segment sets with `--body` / `--body-file`, or a `gh api`
+    segment on an `endpoint_re` endpoint; None when it sets none / can't be read (stdin `-`, an
+    unparseable command, a missing file)."""
     try:
         words = shlex.split(segment)
     except ValueError:
         return None
     if words[1:2] == ["api"]:
-        return _api_body(words, where)
+        return _api_body(words, where, endpoint_re)
     for i, w in enumerate(words):
         flag, _, inline = w.partition("=")
         value = inline if inline else (words[i + 1] if i + 1 < len(words) else None)
@@ -231,3 +233,31 @@ def pr_body_problem(segment: str, where: str, stamp: dict) -> str | None:
         return None
     return ("this PR body doesn't name the model that wrote it. End it with this line (it "
             f"replaces the bare Claude Code footer):\n\n{footer(stamp)}\n")
+
+
+#: Public text under the owner's account other than a PR body: `gh issue|pr comment`,
+#: `gh pr review`, `gh issue create|edit`, or `gh api`.
+GH_REPLY_SEGMENT = re.compile(
+    r"\bgh\s+(?:(?:issue|pr)\s+comment|pr\s+review|issue\s+(?:create|edit)|api)\b[^;&|\n]*")
+#: Comment and review endpoints (`issues/5/comments`, `pulls/5/reviews`, `issues/comments/9`,
+#: `pulls/5/comments/9/replies`) and an issue's own (`issues`, `issues/5`): not a PR's body.
+_REPLY_ENDPOINT = re.compile(r"(?:^|/)(?:(?:comments|reviews|replies)(?:/\d+)?|issues(?:/\d+)?)/?$")
+_ISSUE_SEGMENT = re.compile(r"\bgh\s+issue\s+(?:create|edit)\b|(?:^|/)issues(?:/\d+)?/?(?:\s|$)")
+
+
+def reply_problem(segment: str, where: str, stamp: dict) -> str | None:
+    """None when this reply / issue segment's body carries the attribution naming the calling model,
+    else what to add. Any repo: the rule covers every public surface under the owner's account."""
+    if not stamp.get("model"):
+        return None  # unknown model: nothing to require
+    body = _body(segment, where, _REPLY_ENDPOINT)
+    if body is None or reply_phrase(stamp) in " ".join(body.split()):
+        return None
+    lead = ("this goes out under the owner's GitHub account but doesn't say Claude wrote it, with "
+            f"which model: `{reply_phrase(stamp)}`.")
+    if _ISSUE_SEGMENT.search(segment):
+        return (f"{lead} An issue from a user report ends with the footer in docs/USER_REPORTS.md, "
+                "with that model filled in.")
+    return (f"{lead} End it with (add `— as was the fix in #<pr>` when there is one):"
+            f"\n\n---\n\n{reply_line(stamp)}\n")
+

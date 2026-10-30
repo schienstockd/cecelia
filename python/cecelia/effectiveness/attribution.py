@@ -46,6 +46,25 @@ def run_lines(models: list[str]) -> list[str]:
     return [*(coauthor_line({"model": m}) for m in models), *(f"Claude-Model: {m}" for m in models)]
 
 
+REPLY_PHRASE = "Claude Code ({name})"
+_CLAUDE_MD = "https://github.com/schienstockd/cecelia/blob/main/CLAUDE.md"
+
+
+def reply_phrase(stamp: dict) -> str:
+    """The part of any public attribution (a reply, a user-report issue's footer) that names the
+    model: what the hook requires, matched with whitespace collapsed."""
+    return REPLY_PHRASE.format(name=display_name(stamp["model"]))
+
+
+def reply_line(stamp: dict, pr: str = "") -> str:
+    """The attribution that ends a public reply posted under the owner's account (docs/DEV.md →
+    *Agent-authored public replies*); `pr` (`#123`) when the reply is about a fix."""
+    fix = f" — as was the fix in {pr}" if pr else ""
+    return (f"*This reply was written by {reply_phrase(stamp)}, working in this repo on @schienstockd's "
+            f"behalf{fix}. Cecelia is openly AI-assisted; see [`CLAUDE.md`]({_CLAUDE_MD}). Anything "
+            "here that needs a human decision is his.*")
+
+
 def footer(stamp: dict) -> str:
     """A PR body's last line: `FOOTER · <model id> · Claude Code <version>` (known parts only).
     A run on several models passes them joined: `{"model": ", ".join(models)}`."""

@@ -579,6 +579,20 @@ def pr_footer_guard(command: str, cwd: str | None, event: dict) -> str | None:
     return None
 
 
+def reply_guard(command: str, cwd: str | None, event: dict) -> str | None:
+    """None to allow, else why this comment / review lacks the public-reply attribution naming the
+    model. Not scoped to cecelia checkouts: a reply on any repo goes out under the owner's name."""
+    stamp = None
+    for m in attribution.GH_REPLY_SEGMENT.finditer(command):
+        seg = m.group(0)
+        where = _commit_target(command, m.start(), seg, cwd) or cwd or os.getcwd()
+        stamp = stamp if stamp is not None else attribution.caller_stamp(event)
+        reason = attribution.reply_problem(seg, where, stamp)
+        if reason is not None:
+            return reason
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) == 2 and argv[0] == "--commit-msg":
@@ -588,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
     if data.get("tool_name") != "Bash":
         return _EXIT_ALLOW
     command, cwd = data.get("tool_input", {}).get("command", ""), data.get("cwd")
-    reason = guard(command, cwd) or pr_footer_guard(command, cwd, data)
+    reason = guard(command, cwd) or pr_footer_guard(command, cwd, data) or reply_guard(command, cwd, data)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return _EXIT_BLOCK
