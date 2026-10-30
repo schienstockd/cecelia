@@ -6,7 +6,7 @@ No destructive mutation is possible; the enforced allow-list lives in
 ``cecelia_mcp.client.ALLOWED_ROUTES``.
 
 Note the split that shapes this server: Claude can DESIGN work but never START it. ``create_chain``
-authors a pipeline the user then runs from the whiteboard; there is no run/submit tool, because
+authors a pipeline the user then runs from the Chains page; there is no run/submit tool, because
 launching is a WebSocket message and this server speaks only HTTP.
 
 The server also carries its own briefing — ``cecelia_mcp.guidance``. ``SERVER_INSTRUCTIONS`` goes out
@@ -361,7 +361,7 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
 
     **A `group` or `section` param NESTS its real knobs under its own `params`** — cellpose's diameter and
     channel assignment live inside its `models` group, not at the top level. When you set one, send it
-    nested the same way (`{"models": {"cellDiameter": 30}}`); that is how the whiteboard stores it and how
+    nested the same way (`{"models": {"cellDiameter": 30}}`); that is how the Chains page stores it and how
     the task reads it. Read the LABEL as well as the key: a unit usually lives there (`cellDiameter` is
     labelled "Cell diameter (µm)", so its default of 10 is 10 µm, not 10 px).
 
@@ -551,7 +551,7 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
         - `segmentations`: the label-set value_names; `tracked`: those with a per-track table.
         - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
         - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
-      - `chains`: wired whiteboard templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
+      - `chains`: wired chain templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
       - `boards`: analysis-board tab NAMES (best-effort). For what each board actually plots, use
         get_analysis_boards — this is the cheap name-only view.
       - `rollup`: `{pipeline, divergences}` — the common stage sequence across images, and which images
@@ -731,7 +731,7 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
 
 @_tool
 def get_chains(project_uid: str) -> dict:
-    """The project's whiteboard CHAINS — the wired analysis pipelines and their runs. Use this to see the
+    """The project's CHAINS (the Chains page) — the wired analysis pipelines and their runs. Use this to see the
     INTENDED pipeline (which task feeds which) and which chains were actually executed — the run log is a
     recent capped window, so a pipeline that ran earlier may have no dated steps, but its chain is here.
 
@@ -1634,9 +1634,9 @@ def revise_notebook(project_uid: str, file: str, cells: list[str], description: 
 @_tool
 def create_chain(project_uid: str, name: str, nodes: list, edges: list,
                  start_targets: list | None = None) -> dict:
-    """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
-    it**. There is no run tool: starting a chain is the user's act, in the Chains whiteboard. Say so
-    when you're done ("it's in the Chains whiteboard — have a look and press Run when it looks right"),
+    """DESIGN a chain — the wired pipeline for a project. You author it; **you cannot run
+    it**. There is no run tool: starting a chain is the user's act, on the Chains page. Say so
+    when you're done ("it's on the Chains page — have a look and press Run when it looks right"),
     and never imply it has started. (Exception: an unattended session that also has the separate
     cecelia-autonomous server starts it with that server's run_chain.)
 
@@ -1656,7 +1656,7 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
         behaviour.hmm or clustTracks.cluster becomes a picnic node on its own.
       - `resource_pool` — omit unless you mean it (cpu / gpu / io / hpc); the task spec knows.
     `edges` = `[{from, to}]` — node id → node id, i.e. "to runs after from". Leave `start_targets`
-    unset: the server fills it with the chain's roots, which is what makes the whiteboard's start dot
+    unset: the server fills it with the chain's roots, which is what makes the Chains page's start dot
     appear. Pass it only to start a run PART-WAY in (then only that node and its descendants run).
 
     BEFORE you call this, resolve what is resolvable — a chain built without these is a guess, and the

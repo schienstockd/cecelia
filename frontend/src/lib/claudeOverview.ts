@@ -76,7 +76,7 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
     key: 'sees', title: 'Sees', icon: 'pi-eye', tone: 'neutral',
     items: [
       'Your marks — frame, plot, landscape tile',
-      'Chained captures (dead ends included)',
+      'Linked captures (dead ends included)',
       'Blackboard entries + good/bad tags',
       'Analysis lineage, populations, gates, measures, HMM, QC',
       'Task history + lab log',

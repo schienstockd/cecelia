@@ -11,7 +11,7 @@ flowchart LR
     P --> E[Explore<br/>phenotype · behaviour · spatial]
   end
   E --> A[Analysis<br/>board · notebooks · movies]
-  D -. same steps, every image .-> W[Whiteboard<br/>chains]
+  D -. same steps, every image .-> W[Chains]
   W -. optional .-> H[HPC]
   K[Kiwi + Claude<br/>optional] -. reads .-> core
   K -. reads .-> A
@@ -91,7 +91,7 @@ Guides: Build plots · Record a movie · Build an animation · Create a notebook
 | Page | What it's for |
 |---|---|
 | Tasks | Everything running or finished; **History** shows past runs; pop-out window |
-| Whiteboard | Draw your pipeline as a chain of tasks and run it on a whole set |
+| Chains | Draw your pipeline as a chain of tasks and run it on a whole set |
 
 Guide: Run a pipeline over a whole set.
 
@@ -159,8 +159,8 @@ session, also click Kiwi → Assistant → **Set up** once (it installs the Cece
 
 | Feature | What it's for | Needs |
 |---|---|---|
-| Whiteboard (chains) | Run the steps you settled on over every image in a set | Steps that worked on one image first |
-| HPC | Send the heavy part of a task to a SLURM/PBS cluster | Cluster account + SSH key; your admin sets it up in **Settings → HPC**, you add your login in **Preferences → HPC**. Not yet run on a real cluster |
+| Chains | Run the steps you settled on over every image in a set | Steps that worked on one image first |
+| HPC (optional) | Run segmentation, the heavy step, on a SLURM/PBS cluster. More tasks may follow | Cluster account + SSH key; your admin sets it up in **Settings → HPC**, you add your login in **Preferences → HPC**. Built for one lab's cluster so far |
 | Task limits | How many tasks run at once, per CPU/GPU/disk | The sliders on the Tasks page |
 
 ## Extending Cecelia
@@ -179,5 +179,5 @@ Both run with full access to your machine. Install only code you trust.
 | **Settings** (sidebar footer) | The machine: storage, updates, HPC, connected tools. Shared by everyone on this computer |
 | **Preferences** (your profile chip) | You: your own settings, your HPC login, your Claude login |
 | **User profile** | Who is using the app, when several people share a computer |
-| **View profile** | Hide sidebar pages you don't use. Tidies the menu; doesn't restrict anything |
+| **Sidebar layout** | Hide sidebar pages you don't use. Tidies the menu; doesn't restrict anything |
 | **Export / import** | Move a whole project as one folder (`.ccbundle`), from the project panel |

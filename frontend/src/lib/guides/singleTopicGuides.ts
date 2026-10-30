@@ -71,7 +71,7 @@ export const userProfileGuide: GuideDef = {
 // every hidden page is still reachable by URL. Settings → View profile is the only entry point.
 export const viewProfileGuide: GuideDef = {
   id: 'use-a-view-profile',
-  title: 'Use a view profile',
+  title: 'Use a sidebar layout',
   group: 'Start',
   icon: 'pi-eye',
   summary: 'Curate the sidebar down to the pages you actually work on — declutter, not access control.',
@@ -82,7 +82,7 @@ export const viewProfileGuide: GuideDef = {
       anchor: 'nav:/settings',
       placement: 'right',
       title: 'Settings',
-      text: 'View profiles live in Settings — they curate the sidebar down to the pages this user actually works on.',
+      text: 'Sidebar layouts live in Settings — they curate the sidebar down to the pages this user actually works on.',
       bullets: ['This is decluttering, not access control — every page still opens by URL.'],
       clickAnchor: true,
     },
@@ -91,20 +91,20 @@ export const viewProfileGuide: GuideDef = {
       route: '/settings',
       placement: 'left',
       title: 'Pick or edit one',
-      text: 'The chip row picks which profile is active; Edit opens the builder.',
-      bullets: ['"All pages" is the default — you never lose access to a page by picking a profile.'],
+      text: 'The chip row picks which layout is active; Edit opens the builder.',
+      bullets: ['"All pages" is the default — you never lose access to a page by picking a layout.'],
     },
     {
       anchor: 'viewProfile.editor',
       placement: 'bottom',
-      title: 'Tick pages into a profile',
-      text: 'One row per sidebar group — tick the pages this profile should surface.',
+      title: 'Tick pages into a layout',
+      text: 'One row per sidebar group — tick the pages this layout should surface.',
       bullets: ['Great for handing a colleague a "just the segmentation bits" cecelia.'],
       reveal: {
         // The editor only exists once the user clicks Edit in the previous step.
         needed: c => !c.anchorExists('viewProfile.editor'),
         anchor: 'settings.viewProfile',
-        text: 'Click Edit above to open the view-profile builder.',
+        text: 'Click Edit above to open the layout builder.',
         placement: 'left',
       },
     },
@@ -208,7 +208,7 @@ export const runChainGuide: GuideDef = {
     {
       anchor: 'nav:/chain',
       placement: 'right',
-      title: 'Whiteboard',
+      title: 'Chains',
       text: 'A chain is your pipeline drawn as a graph — correct, segment, track, cluster, in order.',
       bullets: ['Build it once and every new image goes through the same steps.'],
       clickAnchor: true,
@@ -299,7 +299,7 @@ export const useTheBlackboardGuide: GuideDef = {
       placement: 'right',
       title: 'The entry list',
       text: 'Sort by any column; the two chip rows above filter by status and outcome.',
-      bullets: ['The project profile row stays pinned to the top.'],
+      bullets: ['The About this project row stays pinned to the top.'],
     },
     {
       anchor: 'blackboard.edit',
