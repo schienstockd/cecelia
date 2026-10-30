@@ -163,7 +163,7 @@ class GuardWiringTest(unittest.TestCase):
             transcript = pathlib.Path(tmp, f"{SID}.jsonl")
             _write(transcript, [_assistant("claude-opus-5-5")])
             event = {"session_id": SID, "transcript_path": str(transcript)}
-            cmd = f"cd {_REPO} && gh pr create --title t --body 'no footer'"
+            cmd = "gh pr create --title t --body 'no footer'"   # runs in the session cwd: this checkout
             self.assertIn("claude-opus-5-5", hook.pr_footer_guard(cmd, str(_REPO), event))
             ok = f"gh pr create --title t --body '{footer({'model': 'claude-opus-5-5', 'version': '2.1.312'})}'"
             self.assertIsNone(hook.pr_footer_guard(ok, str(_REPO), event))
