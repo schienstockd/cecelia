@@ -1,11 +1,9 @@
 // Pure helpers for the Kiwi cockpit's Recent-captures row. Split from the SFC so its formatting is
 // unit-tested (frontend rule: pure logic in utils/*.ts). Fetcher wraps GET /api/viewer/captures.
 //
-// The address envelope shape is documented in docs/todo/BIDIR_CONTEXT_PLAN.md → *Captured payload
-// shape*. This module ONLY names the fields Kiwi's one-line row renders; a future v2 detail view
-// would use more.
+// The address is `StoredCaptureAddress` (utils/captureAddress.ts) — the one shape, read back from disk.
 
-import type { OverlayMark } from './captureAddress'
+import type { OverlayMark, StoredCaptureAddress } from './captureAddress'
 
 /** Capture surface tags — matches api/src/captures_api.jl `envelope.surface`. */
 export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab' | 'agent_run'
@@ -13,23 +11,12 @@ export type CaptureSurface = 'ui' | 'plot' | 'viewer_frame' | 'viewer_slab' | 'a
 /** A capture id — `cap-<yyyymmddThhmmss>-<6 hex>`, the format `api/src/captures_api.jl` mints. */
 export const CAPTURE_ID_RE = /cap-[0-9]{8}T[0-9]{6}-[0-9a-f]{6}/g
 
-/** One-line address the row shows below the timestamp. */
-export interface CaptureAddress {
-  projectUid?: string
-  imageUid?: string
-  valueName?: string
-  t?: number | [number, number]
-  z?: number
-  domAnchor?: string
-  plotSpec?: { specId?: string; params?: Record<string, unknown> }
-}
-
 /** One row in the list. */
 export interface CaptureRow {
   captureId: string
   createdAt: string        // ISO-ish; the id encodes the same time — see _new_capture_id in Julia
   surface: CaptureSurface
-  address: CaptureAddress | null
+  address: StoredCaptureAddress | null
   // Kiwi PR B: server sets this when a capture was created by re-annotating an earlier one. Kiwi
   // shows a small "↳" glyph on such rows so a user reading the list can tell a refinement from a
   // fresh share. Never used for ordering — the id-encoded timestamp is still the sort key.
@@ -68,7 +55,7 @@ function parseCapture(raw: unknown): CaptureRow | null {
   const surface = (r.surface as CaptureSurface) ?? 'viewer_frame'
   const createdAt = typeof r.createdAt === 'string' ? r.createdAt : ''
   const address = r.address && typeof r.address === 'object'
-    ? (r.address as CaptureAddress) : null
+    ? (r.address as StoredCaptureAddress) : null
   const out: CaptureRow = { captureId, createdAt, surface, address }
   if (typeof r.previousCaptureId === 'string') out.previousCaptureId = r.previousCaptureId
   if (typeof r.panelCount === 'number' && r.panelCount > 0) out.panelCount = r.panelCount
@@ -150,7 +137,7 @@ export async function clearAllCaptures(
 export interface CaptureEnvelope {
   captureId: string
   surface: CaptureSurface
-  address: CaptureAddress | null
+  address: StoredCaptureAddress | null
   overlay: OverlayMark[]           // marks (may be [])
   viewStateSnapshot: unknown | null // opaque `ViewerViewState`; null for legacy captures
   landscape: unknown | null         // BIDIR PR #6: opaque `LandscapeResult` snapshotted at share
@@ -183,7 +170,7 @@ export async function fetchCaptureEnvelope(
     if (!env) return null
     const surface = (env.surface as CaptureSurface) ?? 'viewer_frame'
     const address = env.address && typeof env.address === 'object'
-      ? (env.address as CaptureAddress) : null
+      ? (env.address as StoredCaptureAddress) : null
     const overlay = Array.isArray(env.overlay) ? (env.overlay as OverlayMark[]) : []
     // viewStateSnapshot is opaque here — the caller hands it straight to `setPendingViewState`
     // which knows how to detect an empty (== null / undefined) snapshot vs a real one.
