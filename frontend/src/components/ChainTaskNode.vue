@@ -11,6 +11,7 @@ const props = defineProps<{
     barrier_policy: string
     resource_pool: string
     label: string
+    manual?: boolean      // a manual step: the run waits here for the user (docs/SCHEDULER.md)
   }
   selected: boolean
 }>()
@@ -33,7 +34,11 @@ const pinnedVersion = computed(() => {
       <span class="cc-dot scope-dot" />
       <span class="cc-eyebrow cc-fs-3xs">{{ data.scope }}</span>
     </div>
-    <div class="node-label">{{ data.label || data.fn }}</div>
+    <div class="node-label">
+      <i v-if="data.manual" class="pi pi-pause node-manual"
+         v-tooltip.top="'Manual step — the run waits here for you'" />
+      {{ data.label || data.fn }}
+    </div>
     <div class="node-fn cc-muted cc-fs-2xs">{{ data.fn }}</div>
     <div v-if="data.resource_pool" class="node-pool cc-pool-tag">
       <i class="pi pi-server" />{{ data.resource_pool }}
@@ -49,6 +54,7 @@ const pinnedVersion = computed(() => {
 </template>
 
 <style scoped>
+.node-manual { color: var(--cc-sev-warn); margin-right: 0.2rem; }
 .chain-task-node {
   background: var(--cc-surface-1);
   border: 1.5px solid var(--cc-accent);

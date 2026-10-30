@@ -197,6 +197,7 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 # The extracted file loads inside this file's aggregating testset scope, so any helpers defined
 # earlier in suite.jl are still in scope for the chain fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "chain.jl"))
+include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 
 
 

@@ -2666,11 +2666,19 @@ them from the run). By default it re-runs only failed / unfinished / params-chan
 that node **and everything downstream** even if `:done` — so it's obvious *where* a resume begins.
 The picked node (solid accent + "resume from" badge) and its descendants (`rerunNodeIds`, dashed
 accent) are highlighted; a ✕ clears the pick. Resume is disabled while the run is busy (`resumeBusy`
-— any node running/queued). A resumed run **merges** live status over the persisted snapshot
+— any node running/queued/waiting). A resumed run **merges** live status over the persisted snapshot
 (`selectedRunTasks`), so skipped `:done` nodes stay on the graph while the re-run section updates
 live, rather than the graph collapsing to only the re-run nodes.
 
-The tab badge shows the count of currently-running nodes.
+**Manual steps** (`docs/SCHEDULER.md` → *Manual steps*): a node parked for the user shows `waiting`
+(amber, `pi-pause`) with a **Continue** button on the node, tooltip = the spec's `manual.prompt`. On an
+image-scope step it continues that image; on a set-scope step, the whole set. The toolbar adds
+**Continue N** while anything waits (`continueAll`). Both send `chain:continue` (`utils/chainManual.ts`);
+a refused continue (the step's check failed) is logged as a warning naming the image and the reason, and
+the node stays waiting. A waiting row in the Task Manager can be cancelled like any chain row. On the
+Edit canvas a manual step carries a `pi-pause` mark, and its Scope select has no *incremental*.
+
+The tab badge shows the count of steps waiting for you, else of currently-running nodes.
 
 ### Node types
 
@@ -2679,7 +2687,7 @@ The tab badge shows the count of currently-running nodes.
 | `"task"` | `"image"` or `"incremental"` | Purple accent border, solid (image) or dashed (incremental) |
 | `"picnic"` | `"set"` | Amber/orange border, ◆ badge, barrier policy shown |
 | `"start"` | (not a task) | UML initial node — a filled dot; drag + link to the first task(s). Moveable, source-only |
-| `"live"` | (live view only) | Status-colored header bar; grey=queued, blue=running, green=done, red=failed, grey=cancelled |
+| `"live"` | (live view only) | Status-colored header bar; grey=queued, blue=running, amber=waiting (+ Continue), green=done, red=failed, grey=cancelled |
 
 Custom node components: `ChainTaskNode.vue`, `ChainStartNode.vue`, `ChainPicnicNode.vue`, `ChainLiveNode.vue`.
 

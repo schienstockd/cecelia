@@ -39,6 +39,8 @@ import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
+import { waitingByNode, continueFrame } from '../utils/chainManual'
+import { isLiveStatus } from '../lib/taskStatus'
 import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
@@ -55,9 +57,11 @@ const log         = useLogStore()
 const activeTab = ref<'edit' | 'live'>('edit')
 const tabOptions = computed<ChipOption[]>(() => {
   const running = chainTasks.value.filter(t => t.status === 'running').length
+  // a step waiting for the user is the thing to go and look at, so it takes the badge
+  const waiting = chainTasks.value.filter(t => t.status === 'waiting').length
   return [
     { value: 'edit', label: 'Edit', icon: 'pi pi-pencil' },
-    { value: 'live', label: 'Live', icon: 'pi pi-bolt', badge: running || undefined },
+    { value: 'live', label: 'Live', icon: 'pi pi-bolt', badge: (waiting || running) || undefined },
   ]
 })
 
@@ -219,7 +223,7 @@ watch(runOptions, (opts, old) => {
 // come from the run's chain template; fetched by name (falls back to a task-derived layout if the
 // template is gone). Copy run ID lets you reference a run in logs / REPL (load_chain_run).
 
-interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unknown> }
+interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unknown>; scope?: string }
 interface LiveTemplate { nodes: LiveTemplateNode[]; edges: { from: string; to: string }[] }
 const liveTemplate = ref<LiveTemplate | null>(null)
 
@@ -333,6 +337,11 @@ const liveNodes = computed<Node[]>(() => {
         imageUid: t.imageUid, status: t.status,
         startedAt: t.startedAt, finishedAt: t.finishedAt,
         nodeId: t.chainNodeId,                       // template node id — for "resume from here"
+        // a parked manual step: its prompt, and a Continue for this image (or the whole set)
+        ...(t.status === 'waiting' ? {
+          prompt:     manualOf(t.funName)?.prompt,
+          onContinue: () => continueStep(t.chainNodeId, isSetNode(t.chainNodeId) ? undefined : t.imageUid),
+        } : {}),
         restart: t.chainNodeId === restartNodeId.value ? 'start'
                : rerunNodeIds.value.has(t.chainNodeId) ? 'rerun' : undefined,
       },
@@ -504,9 +513,27 @@ const restartLabel = computed(() => {
   const n = liveTemplate.value?.nodes.find(nn => nn.id === restartNodeId.value)
   return n ? (allTaskDefs.value.find(d => d.fun_name === n.fn)?.label ?? n.fn.split('.').pop() ?? n.fn) : ''
 })
-// A run is busy (can't resume) while any of its nodes are running/queued.
+// A run is busy (can't resume) while any of its nodes are running/queued — or parked: that run is still
+// live, and a Continue (which resumes a run that is no longer live by itself) is the way on.
 const resumeBusy = computed(() =>
-  selectedRunTasks.value.some(t => t.status === 'running' || t.status === 'queued'))
+  selectedRunTasks.value.some(t => isLiveStatus(t.status)))
+
+// ── Manual steps (docs/SCHEDULER.md → Manual steps) ──────────────────────────
+const manualOf = (fn: string) => allTaskDefs.value.find(d => d.fun_name === fn)?.manual
+// a set-scope step parks once for all images, so its Continue never names one
+const isSetNode = (nodeId: string) =>
+  liveTemplate.value?.nodes.find(nn => nn.id === nodeId)?.scope === 'set'
+const waitingSteps = computed(() => waitingByNode(selectedRunTasks.value))
+const waitingCount = computed(() => [...waitingSteps.value.values()].reduce((n, u) => n + u.length, 0))
+function continueStep(nodeId: string, imageUid?: string) {
+  const uid = projectMeta.current?.uid
+  const rid = selectedRunId.value
+  if (!uid || !rid) return
+  ws.send(continueFrame(uid, rid, nodeId, imageUid))
+}
+function continueAll() {
+  for (const nodeId of waitingSteps.value.keys()) continueStep(nodeId)
+}
 // clear the start-node pick when switching runs (it refers to the selected run's template)
 watch(selectedRunId, () => { restartNodeId.value = null })
 
@@ -536,8 +563,7 @@ const nameMode = ref<'create' | 'rename'>('create')
 // current template by name for its column layout. Persisted runs carry their own frozen template,
 // so they are unaffected (and keep their original chainName — what they ran as).
 const chainHasLiveRun = computed(() =>
-  chainTasks.value.some(t => t.chainName === activeChain.value &&
-                             (t.status === 'running' || t.status === 'queued')))
+  chainTasks.value.some(t => t.chainName === activeChain.value && isLiveStatus(t.status)))
 
 function openNameInput(mode: 'create' | 'rename') {
   if (mode === 'rename' && (!activeChain.value || chainHasLiveRun.value)) return
@@ -652,6 +678,7 @@ async function applyTemplate(
       data: {
         fn:              n.fn,
         scope:           n.scope,
+        manual:          !!def?.manual,   // a step the run waits at (docs/SCHEDULER.md → Manual steps)
         // Clamped: a stored value outside a since-tightened min/max would fail validation on every run.
         params:          def ? clampParamsToSpec(def, { ...defaults, ...n.params }) : { ...defaults, ...n.params },
         barrier_policy:  n.barrier_policy,
@@ -943,6 +970,7 @@ function onCanvasDrop(event: DragEvent) {
     data: {
       fn:             def.fun_name,
       scope,
+      manual:         !!def.manual,
       params:         initialParams,
       barrier_policy: 'all',
       resource_pool:  def.resource_pool ?? '',   // '' = inherit from the task spec, not 'default'
@@ -1371,6 +1399,14 @@ onActivated(async () => {
           <i class="pi pi-play" />
         </button>
         <button
+          v-if="waitingCount"
+          class="wb-btn cc-btn cc-btn-primary cc-btn-dense"
+          @click="continueAll"
+          v-tooltip.bottom="'Continue every step waiting for you'"
+        >
+          <i class="pi pi-step-forward" /> Continue {{ waitingCount }}
+        </button>
+        <button
           v-if="restartNodeId"
           class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense live-copy-btn"
           @click="restartNodeId = null"
@@ -1760,7 +1796,8 @@ onActivated(async () => {
           >
             <option value="image">image</option>
             <option value="set">set (picnic)</option>
-            <option value="incremental">incremental</option>
+            <!-- a manual step must hold the run, which an event-driven node can't (validate.jl refuses it) -->
+            <option v-if="!selectedNode.data.manual" value="incremental">incremental</option>
           </select>
 
           <template v-if="selectedNode.data.scope === 'set'">

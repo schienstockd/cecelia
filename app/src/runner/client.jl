@@ -238,6 +238,10 @@ runner_submit_chain(h::RunnerHandle, req::ChainRequest) =
     _runner_post(h, "/submit-chain", chain_request_dict(req))
 runner_cancel_chain(h::RunnerHandle, run_id::AbstractString) =
     _runner_post(h, "/cancel-chain", Dict{String,Any}("runId" => string(run_id)))
+runner_continue_chain(h::RunnerHandle, run_id::AbstractString, node_id::AbstractString;
+                      image_uids::Union{Nothing,AbstractVector} = nothing) =
+    _runner_post(h, "/continue-chain", Dict{String,Any}("runId" => string(run_id),
+                 "nodeId" => string(node_id), "imageUids" => image_uids); timeout = 90)
 runner_chain_runs(h::RunnerHandle) = get(_runner_get(h, "/chains"), "runs", Any[])
 runner_pools(h::RunnerHandle)  = _runner_get_array(h, "/api/pools")
 runner_recent(h::RunnerHandle; since::AbstractString = "") =

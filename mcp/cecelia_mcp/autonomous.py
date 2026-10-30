@@ -401,7 +401,10 @@ class AutonomousClient:
         live = [r for r in self._request("GET", "/api/tasks") or [] if r.get("chain_run_id") == run_id]
         statuses = [s for nodes in (run.get("imageStates") or {}).values() for s in nodes.values()]
         active = bool(live) or any(s in ("queued", "running") for s in statuses)
-        return {"runId": run_id, "chain": run.get("chainName"), "active": active,
+        # A manual step parked for a person (docs/SCHEDULER.md → Manual steps): nothing runs, but the run
+        # is not over — it holds until someone continues it, which this server cannot do.
+        waiting = any(s == "waiting" for s in statuses)
+        return {"runId": run_id, "chain": run.get("chainName"), "active": active, "waiting": waiting,
                 "imageStates": run.get("imageStates"),
                 "nodes": [{"id": n.get("id"), "fn": n.get("fn")} for n in run.get("nodes") or []]}
 
@@ -413,7 +416,9 @@ class AutonomousClient:
             idle = 0 if st["active"] else idle + 1
             # two idle polls in a row: a node between "done" and the next one's "queued" is not the end
             if idle >= 2 or time.time() - t0 > timeout_s:
-                st.update({"finished": not st["active"], "waitedS": round(time.time() - t0)})
+                # parked at a manual step is settled, not finished: say so instead of timing out on it
+                st.update({"finished": not st["active"] and not st["waiting"],
+                           "waitedS": round(time.time() - t0)})
                 return st
             time.sleep(poll_s)
 

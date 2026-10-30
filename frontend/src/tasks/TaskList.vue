@@ -83,6 +83,7 @@ async function toggleLog(t: TaskEntry) {
 const TIP: Record<TaskStatus, string> = {
   queued:    'Waiting to run.',
   running:   'Task is running.',
+  waiting:   'Chain step waiting for you — continue it in the chain Live view.',
   done:      'Completed successfully.',
   failed:    'Task failed. Expand to see log.',
   cancelled: 'Cancelled.',
@@ -155,7 +156,7 @@ const TL_COLUMNS: SelectionColumn[] = [
       <div class="tasks-heading-actions">
         <button v-if="activeTasks.length" class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
           @click="cancelAll"
-          v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module`">
+          v-tooltip.left="`Cancel all ${activeTasks.length} running, queued or waiting task(s) in this module`">
           <i class="pi pi-times-circle" />
         </button>
         <button class="clear-btn cc-btn cc-btn-bare cc-btn-icon" @click="clearFinished"

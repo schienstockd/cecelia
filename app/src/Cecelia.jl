@@ -241,7 +241,7 @@ export RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
 export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_logs, runner_pools, runner_set_pool_limit
 export runner_set_task_workers
-export runner_submit_chain, runner_cancel_chain, runner_chain_runs
+export runner_submit_chain, runner_cancel_chain, runner_continue_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
@@ -251,12 +251,13 @@ export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState, ChainNodeS
 export ChainScope, CHAIN_IMAGE, CHAIN_SET, CHAIN_INCREMENTAL
 export ChainBarrierPolicy, BARRIER_ALL, BARRIER_REQUIRE_ALL, BARRIER_SUCCESSFUL_ONLY
 export parse_chain_scope, parse_chain_barrier_policy
-export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
+export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED, NODE_WAITING
 export parse_chain_node_status
 export load_chain_template, save_chain_template!, load_template_from_cache
 export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run
 export run_chain
+export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────

@@ -192,6 +192,18 @@ function _runner_cancel_chain(body_bytes::Vector{UInt8})
     _json(200, (; ok = true))
 end
 
+# Continue a manual step parked HERE (chain/manual.jl). The reply says which images went on and which
+# checks refused; both empty means nothing of that run is parked in this process.
+function _runner_continue_chain(body_bytes::Vector{UInt8})
+    body    = _body_dict(body_bytes)
+    run_id  = String(get(body, "runId", ""))
+    node_id = String(get(body, "nodeId", ""))
+    (isempty(run_id) || isempty(node_id)) && return _json(400, (; error = "runId and nodeId required"))
+    uids = get(body, "imageUids", nothing)
+    _json(200, continue_chain_node!(run_id, node_id;
+                                    image_uids = uids isa AbstractVector ? String.(uids) : nothing))
+end
+
 # ── Process identity ──────────────────────────────────────────────────────────
 # What `/ping` answers, so the API server can tell "the runner I started" from "a runner that outlived
 # something", and — the point of D5 — WHICH CODE it is running. A runner that does not restart when you
@@ -406,6 +418,7 @@ function _runner_handler(req::HTTP.Request, body_bytes::Vector{UInt8})
             route == "/cancel"       && return _runner_cancel(body_bytes)
             route == "/submit-chain" && return _runner_submit_chain(body_bytes)
             route == "/cancel-chain" && return _runner_cancel_chain(body_bytes)
+            route == "/continue-chain" && return _runner_continue_chain(body_bytes)
             route == "/pools/set" && return _runner_pools_set(body_bytes)
             route == "/threads/set" && return _runner_threads_set(body_bytes)
         end

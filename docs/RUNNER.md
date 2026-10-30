@@ -116,7 +116,7 @@ go into the existing `ws_*` sinks unchanged. `ws.ts`, the task store and the tas
 
 **It speaks the task-rail API.** `/api/tasks`, `/api/tasks/recent`, `/api/pools`, `/api/health` — the
 API server's own paths and bare-array shapes — which is what makes `CECELIA_PORT=7657 pixi run console`
-work with no console changes. Control is `POST /submit`, `/cancel`, `/submit-chain`, `/cancel-chain`,
+work with no console changes. Control is `POST /submit`, `/cancel`, `/submit-chain`, `/cancel-chain`, `/continue-chain`,
 `/pools/set`; `/ping` reports identity; the WS carries the event stream.
 
 **Adoption is the normal path**, unlike the preview worker. The runner is meant to outlive a restart, so

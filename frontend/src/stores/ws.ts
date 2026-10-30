@@ -21,6 +21,7 @@ import { adoptsRailJob, railJobRow } from '../utils/railJobs'
 import { invalidateSystemEnvs } from '../utils/systemEnvs'
 import { HPC_ENV_JOB_ID, HPC_CLEAN_JOB_ID, notifyHpcEnvChanged } from '../utils/hpcSettings'
 import { writtenImageVersion } from '../utils/taskResultVersion'
+import { refusalLines } from '../utils/chainManual'
 
 // `signedOut`: the backend is up but refuses this browser — it has no sign-in cookie (the API token,
 // app/src/api_token.jl). Only reachable in dev, where Vite serves the page without the backend's gate.
@@ -564,7 +565,15 @@ export const useWsStore = defineStore('ws', () => {
       )
     }
 
-    if (type === 'chain:node:queued' || type === 'chain:node:running' ||
+    // The answer to a Live-view Continue (utils/chainManual.ts). Refused images stay parked; say why.
+    if (type === 'chain:continue:result') {
+      const project = useProjectStore()
+      const nameOf = (uid: string) => project.imageByUid(uid)?.name ?? uid
+      for (const line of refusalLines(data as { refused?: Record<string, string>; error?: string }, nameOf))
+        useLogStore().warn(`Not continued — ${line}`, { source: 'chain' })
+    }
+
+    if (type === 'chain:node:queued' || type === 'chain:node:running' || type === 'chain:node:waiting' ||
         type === 'chain:node:done'   || type === 'chain:node:failed') {
       const fn         = String(data.fn         ?? '')
       const imageUid   = String(data.imageUid   ?? '')
@@ -578,11 +587,13 @@ export const useWsStore = defineStore('ws', () => {
       const imageName = project.sets.flatMap(s => s.images)
         .find(i => i.uid === imageUid)?.name ?? imageUid
 
-      let status: 'queued' | 'running' | 'done' | 'cancelled' | 'failed'
+      let status: 'queued' | 'running' | 'waiting' | 'done' | 'cancelled' | 'failed'
       if (type === 'chain:node:queued') {
         status = 'queued'
       } else if (type === 'chain:node:running') {
         status = 'running'
+      } else if (type === 'chain:node:waiting') {
+        status = 'waiting'
       } else if (type === 'chain:node:done') {
         status = 'done'
       } else {

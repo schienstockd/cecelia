@@ -18,6 +18,8 @@ const props = defineProps<{
     finishedAt?: number   // epoch ms
     nodeId?: string       // chain template node id (for "resume from here")
     restart?: 'start' | 'rerun'   // 'start' = chosen resume node; 'rerun' = downstream (will re-run)
+    prompt?: string       // a parked manual step: what the user is asked to do (task spec `manual.prompt`)
+    onContinue?: () => void   // …and how to send it on (ChainModule → `chain:continue`)
   }
 }>()
 
@@ -34,6 +36,7 @@ const elapsed = computed(() => taskElapsed(
 const STATUS_COLORS: Record<TaskStatus, string> = {
   queued:    '#3f3f46',
   running:   '#1e40af',
+  waiting:   '#713f12',
   done:      '#14532d',
   failed:    '#7f1d1d',
   cancelled: '#3f3f46',
@@ -59,6 +62,14 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
       <span v-if="elapsed" class="live-elapsed">{{ elapsed }}</span>
     </div>
     <div class="live-fn">{{ data.label ?? data.fn.split('.').pop() }}</div>
+    <!-- a manual step parked for the user: the ask, and the way on. `.stop` so the click doesn't also
+         pick this node as the resume start. -->
+    <button v-if="data.status === 'waiting' && data.onContinue"
+            class="cc-btn cc-btn-primary cc-btn-dense live-continue nodrag"
+            v-tooltip.bottom="data.prompt || 'Continue this step'"
+            @click.stop="data.onContinue()">
+      <i class="pi pi-step-forward" /> Continue
+    </button>
     <!-- output value_name on its own line so a long label doesn't clip it -->
     <div v-if="data.variant" class="live-variant-row">
       <span class="live-variant">{{ data.variant }}</span>
@@ -143,6 +154,12 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 160px;
+}
+
+.live-continue {
+  margin-top: 4px;
+  width: 100%;
+  justify-content: center;
 }
 
 .live-variant-row {

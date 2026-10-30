@@ -55,6 +55,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import { isLiveStatus } from '../lib/taskStatus'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -733,7 +734,7 @@ const runLabel = computed(() => {
 // ── Cancel all running/queued tasks for this module ────────────────────────
 const activeTasks = computed(() =>
   taskStore.forModule(props.module, projectMeta.current?.uid)
-    .filter(t => t.status === 'running' || t.status === 'queued')
+    .filter(t => isLiveStatus(t.status))
 )
 
 // What the collapsed task list would have shown. Rendered in the toggle bar ONLY while that half is
