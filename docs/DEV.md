@@ -61,6 +61,21 @@ running session, don't copy it from here. This line named one version for a long
 naming it after that model was superseded, which made the trailer a record of when the rule was
 written rather than of who wrote the commit.
 
+The `commit-msg` hook then adds the exact record, the same one `author_stamp()` keeps for Claude's
+project writes. You don't type it:
+
+```
+Claude-Model: claude-opus-5-5
+Claude-Code: 2.1.312
+Claude-Session: <session id>
+```
+
+The model and version come from the **committing agent's own transcript**. A subagent's commit
+names the subagent's model, because its env is identical to the parent's and only the PreToolUse
+event says who is calling. The Bash guard records that just before the `git commit` runs. If no
+fresh record from this session exists, `Claude-Model` is left out rather than guessed. Code:
+`.claude/hooks/claude_attribution.py`, formatting in `python/cecelia/effectiveness/attribution.py`.
+
 Ship the test in the same commit as the code (see `CLAUDE.md` → **Testing**), and update the
 relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current* table).
 
@@ -96,11 +111,16 @@ Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merge
   and the PR body serve different readers (reviewers skim the PR on GitHub), so a body is always
   worth giving — short for small branches, but never omitted. Pass it as a file
   (`gh pr create --body-file <path>`) rather than inline, so markdown and newlines survive the shell.
-- End PR bodies (when an agent drafts one) with:
+- End PR bodies (when an agent drafts one) with the footer **naming the model id and Claude Code
+  version writing it**:
 
   ```
-  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+  🤖 Generated with [Claude Code](https://claude.com/claude-code) · <model id> · Claude Code <version>
   ```
+
+  The Bash guard blocks `gh pr create|edit` into a cecelia checkout whose `--body-file` / `--body`
+  lacks the exact line for the calling agent, and prints that line, so copy it from there. A body
+  piped on stdin (`--body-file -`) isn't checked.
 
 ```bash
 git push -u origin feat/<short-slug>

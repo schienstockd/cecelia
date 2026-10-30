@@ -24,6 +24,7 @@ MIRROR_REL = pathlib.PurePosixPath("docs/ai-assist/judge-runs")   # in any check
 _MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
+from cecelia.effectiveness.claude_cli import USAGE_KEYS  # noqa: E402
 from cecelia.effectiveness.judge_staleness import backlog, judge_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
@@ -228,7 +229,8 @@ def tokens_line(spend: dict) -> str:
     def one(t: dict) -> str:
         return (f"{_count(t.get('output', 0))} out · {_count(t.get('input', 0))} in "
                 f"(+ cache read {_count(t.get('cache_read', 0))}, cache write {_count(t.get('cache_write', 0))})")
-    steps = " · ".join(f"{k} {_count(sum(v.values()))}" for k, v in tok.items() if k != "total")
+    steps = " · ".join(f"{k} {_count(sum(v.get(u, 0) for u in USAGE_KEYS))}" for k, v in tok.items()
+                       if k != "total")
     return f"{one(tok.get('total') or {})} — {steps}"
 
 

@@ -16,7 +16,9 @@ Rules, each one measured:
 - Fail open. Any error prints nothing and exits 0, so the call goes through unstamped.
 
 Standalone on purpose (stdlib only, no package imports): the plugin and Kiwi's `--settings` run it as
-a script with the install's Python. `caller.py` imports the field names from here.
+a script with the install's Python. `caller.py` imports the field names from here, and the repo's
+commit/PR attribution hook (`.claude/hooks/claude_attribution.py`) loads it by path for
+`transcript_stamp` + `caller_transcript`.
 """
 from __future__ import annotations
 
@@ -30,34 +32,41 @@ SESSION_FIELD = "cecelia_caller_session"
 _TAIL_BYTES = 512 * 1024
 
 
-def _model_in(lines) -> str:
-    """The `message.model` of the LAST assistant message among `lines` (newest last), or ""."""
+def _stamp_in(lines) -> tuple[str, str]:
+    """`(message.model, version)` of the LAST assistant message among `lines` (newest last), or
+    `("", "")`. `version` is the Claude Code version that wrote the entry ("" when absent)."""
     for line in reversed(lines):
         if '"assistant"' not in line:
             continue
         try:
-            msg = json.loads(line).get("message")
+            entry = json.loads(line)
+            msg = entry.get("message")
         except (ValueError, AttributeError):
             continue  # a partial first line from the tail read, or not an object
         if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("model"):
-            return str(msg["model"])
-    return ""
+            return str(msg["model"]), str(entry.get("version") or "")
+    return "", ""
 
 
-def transcript_model(path: str) -> str:
-    """The model of the newest assistant message in a Claude Code transcript (JSONL), or ""."""
+def transcript_stamp(path: str) -> tuple[str, str]:
+    """`(model, Claude Code version)` of the newest assistant message in a transcript (JSONL)."""
     if not path or not os.path.isfile(path):
-        return ""
+        return "", ""
     with open(path, "rb") as f:
         f.seek(0, os.SEEK_END)
         size = f.tell()
         f.seek(max(0, size - _TAIL_BYTES))
         tail = f.read().decode("utf-8", "replace").splitlines()
-        model = _model_in(tail)
-        if model or size <= _TAIL_BYTES:
-            return model
+        stamp = _stamp_in(tail)
+        if stamp[0] or size <= _TAIL_BYTES:
+            return stamp
         f.seek(0)  # one assistant message bigger than the tail window: read it all
-        return _model_in(f.read().decode("utf-8", "replace").splitlines())
+        return _stamp_in(f.read().decode("utf-8", "replace").splitlines())
+
+
+def transcript_model(path: str) -> str:
+    """The model of the newest assistant message in a Claude Code transcript (JSONL), or ""."""
+    return transcript_stamp(path)[0]
 
 
 def caller_transcript(event: dict) -> str:

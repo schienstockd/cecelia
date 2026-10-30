@@ -207,7 +207,7 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
         raise VerifyError(f"verify agent failed (exit {proc.returncode}, ${cost:.2f}): "
                           f"{_judge.failure_text(proc, out)}", cost=cost if "total_cost_usd" in out else None)
-    return answer, cost, _judge.tokens(out)
+    return answer, cost, _judge.usage(out)
 
 
 def verify(bugs: _t.Sequence[dict], *, date: str, sha: str,

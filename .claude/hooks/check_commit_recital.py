@@ -14,6 +14,11 @@ Two entry points, one file
   cecelia checkout when `core.hooksPath` isn't set, or when it passes `--no-verify` / `-n` / a
   `core.hooksPath` override. Commits into other repos pass (`guard`).
 
+Both entry points also carry Claude attribution (`claude_attribution.py`), because they are already
+wired in every checkout and session: the guard records the calling model before a `git commit`
+and blocks a `gh pr create|edit` body that doesn't name it; `commit-msg` adds the
+`Claude-Model` / `Claude-Code` / `Claude-Session` trailers.
+
 Why the checks moved (2026-09-30): the PreToolUse version matched the Bash COMMAND TEXT. It fired
 on test heredocs that merely contained `git commit` + a slug pair (writing fake resolution rows),
 never saw a `git commit -F file` message, and read the branch/SHA from the session's cwd rather
@@ -88,6 +93,12 @@ from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
 from cecelia.effectiveness.recital import (  # noqa: E402
     MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code,
 )
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "_cecelia_claude_attribution", pathlib.Path(__file__).resolve().with_name("claude_attribution.py"))
+attribution = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(attribution)
 from cecelia.effectiveness.git_context import (  # noqa: E402
     current_branch as _current_branch,
     current_head_sha as _current_head_sha,
@@ -432,6 +443,7 @@ def commit_msg_main(message_path: str) -> int:
     # Best-effort: log failures don't block the commit.
     pr, head_sha, branch = _current_pr(), _current_head_sha(), _current_branch()
     write_resolutions(message, pr=pr, commit=head_sha, branch=branch)
+    attribution.stamp_commit_msg(message_path)  # Claude-Model / -Code / -Session trailers
     return _EXIT_ALLOW
 
 
@@ -540,6 +552,32 @@ def guard(command: str, cwd: str | None) -> str | None:
     return None
 
 
+def _cecelia_targets(pattern: re.Pattern, command: str, cwd: str | None):
+    """`(segment, dir)` for each `pattern` segment that runs in a cecelia checkout."""
+    for m in pattern.finditer(command):
+        target = _commit_target(command, m.start(), m.group(0), cwd)
+        if target is not None and _is_cecelia_checkout(target):
+            yield m.group(0), target
+
+
+def stamp_commits(command: str, cwd: str | None, event: dict) -> None:
+    """Record the calling model for the `commit-msg` hook of each cecelia checkout committed to
+    (`claude_attribution`: the git hook's env can't tell a subagent's model from its parent's)."""
+    for _, target in _cecelia_targets(_GIT_COMMIT_SEGMENT, command, cwd):
+        attribution.record(event, target)
+
+
+def pr_footer_guard(command: str, cwd: str | None, event: dict) -> str | None:
+    """None to allow, else why this `gh pr create|edit` body doesn't name the model writing it."""
+    stamp = None
+    for seg, target in _cecelia_targets(attribution.GH_PR_SEGMENT, command, cwd):
+        stamp = stamp if stamp is not None else attribution.caller_stamp(event)
+        reason = attribution.pr_body_problem(seg, target, stamp)
+        if reason is not None:
+            return reason
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) == 2 and argv[0] == "--commit-msg":
@@ -548,10 +586,12 @@ def main(argv: list[str] | None = None) -> int:
     data = _load_tool_call()
     if data.get("tool_name") != "Bash":
         return _EXIT_ALLOW
-    reason = guard(data.get("tool_input", {}).get("command", ""), data.get("cwd"))
+    command, cwd = data.get("tool_input", {}).get("command", ""), data.get("cwd")
+    reason = guard(command, cwd) or pr_footer_guard(command, cwd, data)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return _EXIT_BLOCK
+    stamp_commits(command, cwd, data)
     return _EXIT_ALLOW
 
 
