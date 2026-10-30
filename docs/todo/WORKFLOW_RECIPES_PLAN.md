@@ -341,6 +341,22 @@ Where it helps. All of these use shipped tools; the audit was read-only and chec
 It adds nothing to import, metadata, registration or denoise. One exception: LabArchives context can
 fill in the subject and goal before metadata, but only from the terminal.
 
+**The overlay needs a loop to hang on** *(Dominik, 2026-10-30: "otherwise the integration part is a bit lost")*.
+Markers on single steps don't tell a user what the Blackboard is for, when to attach evidence, or
+when a terminal session is worth it. The map's Claude cluster is therefore this four-step loop, worded
+the same here, in `user-docs/README.md` → *Working with Claude* and in Kiwi's help
+(`claudeOverview.ts` entry points):
+1. **@ the evidence** (Add to Kiwi on an image, population, plot, viewer, task or entry), or **Share**
+   a frame and draw on it.
+2. **Ask Kiwi**, the rubber duck. It points and counts and doesn't judge. You click a ref to check
+   a claim.
+3. **Settled? Save to Blackboard** with good/bad and a why. Kiwi turns expire after 50
+   (`KIWI_TURNS_KEEP`), and bad tags feed the repeat-failure warning.
+4. **A terminal session** when one question isn't enough, or when Claude should *make* something
+   (chain from history, board, notebook, lab-log line) or mark cells and tracks.
+
+Step markers then just name which part of the loop applies at that step.
+
 Points the overlay has to respect:
 - **Kiwi and the terminal can do different things.** Kiwi only reads. Marking, pointing, the lab log,
   writing chains/boards/notebooks, and LabArchives are terminal only. Each marker names which one.

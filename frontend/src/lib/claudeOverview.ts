@@ -52,21 +52,21 @@ export const CLAUDE_ENTRY_POINTS: EntryPoint[] = [
   {
     name: 'Ask Kiwi',
     icon: 'pi-send',
-    what: 'A question in the Kiwi panel — a few claims, each pointing at what it rests on.',
+    what: 'A rubber duck: it points and counts, it doesn’t judge.',
     steps: [
-      'Add what you are looking at (the @ button)',
-      'Ask in the Kiwi panel',
-      'Click a claim’s ref to see it — or “plot this” to make the plot',
+      '@ what puzzles you — or Share a frame and draw on it',
+      'Ask; click a claim’s ref to check it',
+      'Settled? Save to Blackboard, tag good or bad',
     ],
   },
   {
     name: 'Chat to Claude',
     icon: 'pi-comments',
-    what: 'A back-and-forth in Claude Code — notes accrue as you go.',
+    what: 'When one question isn’t enough, or Claude should make something.',
     steps: [
-      'Run claude in a terminal',
-      'Ask it to check your project',
-      'Notes land in the lab log + blackboard',
+      'Assistant → Set up (once), then Start in terminal',
+      'Work it through; it can mark cells and tracks',
+      'Review the chain, board or notebook it adds, then run it',
     ],
   },
 ]
