@@ -98,6 +98,23 @@ function api_chains_run(req::HTTP.Request)
                         imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states))
 end
 
+# GET /api/chains/suggest?projectUid&imageUids=a,b[&keep=id1,id2][&retrain=1][&name=]
+# A chain template from what ran on the exemplar images — `chain_from_history` (tasks/chain/from_history.jl;
+# docs/todo/CHAIN_FROM_HISTORY_PLAN.md Part B). Read-only: the whiteboard shows it for review and saves it
+# through `/api/chains/save` like any chain. `keep` = the final-output step ids to build towards.
+function api_chains_suggest(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    uid  = get(q, "projectUid", "")
+    csv(k) = String[strip(x) for x in split(get(q, k, ""), ',') if !isempty(strip(x))]
+    uids = csv("imageUids")
+    (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    keep = haskey(q, "keep") ? csv("keep") : nothing
+    r = chain_from_history(proj, uids; keep, retrain = get(q, "retrain", "") in ("1", "true"),
+                           name = get(q, "name", "From history"))
+    200, JSON3.write(r)
+end
+
 function api_chains_save(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
     body isa Tuple && return body

@@ -70,6 +70,14 @@ symmetry:
 Regenerate with `pixi run python python/cecelia/tests/make_aniso_fixture.py` (which also documents
 the layout) after any change to the anisotropy `uns` block; keep it tiny.
 
+## `run-logs/` — real run logs, for the chain-from-history builder
+
+Each file is one image's `runlog.json` rows, copied from a dev project's task history (not written by
+hand): `zolIMa_UMq4v3` (train → segment → track twice), `zolIMa_x4E5HU` (ten drift runs, failed and
+retried denoise), `4kS67f_LUkCpP` / `4kS67f_k3Tx90` (one set-scope spatial run logged on both images,
+plus a row from before params were recorded). `app/test/suite/chain_from_history.jl` copies them into
+throwaway images; the expectations there are what the plan said those histories should produce.
+
 ## `projects/ZARRFMT/` — the same image as zarr v2 and zarr v3
 
 Two OME-ZARR **image stores** holding the *same* real pixels, written by `bioformats2raw 0.12.1` in

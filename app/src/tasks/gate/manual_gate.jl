@@ -5,6 +5,21 @@ struct ManualGate <: CciaTask end
 # none, so the user adjusts rather than starts over; the CHECK holds the run until the populations the
 # rest of the chain reads exist. Design: docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part A.
 
+Base.@kwdef struct ManualGateParams
+    valueName::String            = VERSIONED_DEFAULT_VAL
+    popType::String              = "flow"
+    copyFrom::String             = ""
+    requiredPops::Vector{String} = String[]
+end
+
+function parse_manual_gate_params(d::AbstractDict)::ManualGateParams
+    ManualGateParams(;
+        valueName    = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
+        popType      = string(get(d, "popType", "flow")),
+        copyFrom     = string(something(get(d, "copyFrom", ""), "")),
+        requiredPops = _required_pops(get(d, "requiredPops", "")))
+end
+
 """Population paths from the `requiredPops` text (or a list): trimmed, leading `/` ensured."""
 function _required_pops(raw)::Vector{String}
     items = raw isa AbstractVector ? string.(raw) : split(string(something(raw, "")), ',')
@@ -21,9 +36,8 @@ function _run_task(::ManualGate, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    vn   = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    pt   = string(get(params, "popType", "flow"))
-    from = string(something(get(params, "copyFrom", ""), ""))
+    p = parse_manual_gate_params(params)
+    vn, pt, from = p.valueName, p.popType, p.copyFrom
     is_gating_pop_type(pt) || error("not a gating pop type: $pt (flow or track)")
     # QC-EXEMPT: this step produces nothing to score — the user's gates are the result, and the
     # chain's check (`manual_check` below) is what holds a run that lacks them.
@@ -46,11 +60,9 @@ function _run_task(::ManualGate, img::CciaImage, params::Dict{String,Any};
 end
 
 function manual_check(::ManualGate, img::CciaImage, params::Dict{String,Any})::Union{String,Nothing}
-    required = _required_pops(get(params, "requiredPops", ""))
-    isempty(required) && return nothing
-    vn = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
-    pt = string(get(params, "popType", "flow"))
-    m  = load_pop_map(img; value_name = vn, pop_type = pt, backfill_save = false)
-    absent = filter(p -> !has_pop(m, p), required)
-    isempty(absent) ? nothing : "no $(join(absent, ", ")) on '$vn'"
+    p = parse_manual_gate_params(params)
+    isempty(p.requiredPops) && return nothing
+    m = load_pop_map(img; value_name = p.valueName, pop_type = p.popType, backfill_save = false)
+    absent = filter(path -> !has_pop(m, path), p.requiredPops)
+    isempty(absent) ? nothing : "no $(join(absent, ", ")) on '$(p.valueName)'"
 end

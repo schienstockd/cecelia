@@ -19,11 +19,11 @@
   "params": [
     {
       "key": "valueName",
-      "label": "Labels",
+      "label": "Cells",
       "type": "valueNameSelection",
-      "field": "labels",
+      "field": "labelPropsNames",
       "default": "default",
-      "tip": "Which label set the gates are on"
+      "tip": "Which measured cells the gates are on"
     },
     {
       "key": "popType",

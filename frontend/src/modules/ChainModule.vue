@@ -25,6 +25,7 @@ import ParamRenderer from '../tasks/ParamRenderer.vue'
 import { clampParamsToSpec, savedValueFor } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
+import ChainFromHistoryModal from '../components/ChainFromHistoryModal.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -857,27 +858,29 @@ async function renameChain() {
   }
 }
 
+// Save an empty template under `name` so it appears in the list, and make it the active chain. Returns
+// the STORED name — the server repairs one its filename guard refuses ("a + b" → "a b").
+async function saveEmptyChain(uid: string, name: string): Promise<string> {
+  const res = await fetch('/api/chains/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectUid: uid, template: { name, nodes: [], edges: [] } }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
+  if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
+  chainNames.value.sort()
+  activeChain.value = stored
+  return stored
+}
+
 async function createChain() {
   const name = newChainName.value.trim()
   if (!name) return
   const uid = projectMeta.current?.uid
   if (!uid) return
-  // Save an empty template immediately so it appears in the list.
   try {
-    const res = await fetch('/api/chains/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: uid,
-        template: { name, nodes: [], edges: [] },
-      }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    // The stored name — the server repairs one its filename guard refuses ("a + b" → "a b").
-    const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
-    if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
-    chainNames.value.sort()
-    activeChain.value = stored
+    const stored = await saveEmptyChain(uid, name)
     removeNodes(nodes.value.map(n => n.id))
     removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
@@ -891,6 +894,24 @@ async function createChain() {
     log.info(`Chain "${stored}" created.`, { source: 'whiteboard' })
   } catch (e) {
     log.error(`Create failed: ${e}`, { source: 'whiteboard' })
+  }
+}
+
+// ── Chain from history (docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part B) ─────────
+const historyOpen = ref(false)
+// The suggestion becomes a new chain on the canvas. Saved straight away when it validates; otherwise it
+// stays unsaved on the canvas with the reason in the log, for the user to fix and Save.
+async function openFromHistory(p: { name: string; template: ChainTemplate; valid: boolean; error: string }) {
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  try {
+    const stored = await saveEmptyChain(uid, p.name)
+    historyOpen.value = false
+    await applyTemplate({ ...p.template, name: stored }, {})
+    if (p.valid) await saveChain()
+    else log.warn(`Chain "${stored}" needs a fix before it can be saved: ${p.error}`, { source: 'whiteboard' })
+  } catch (e) {
+    log.error(`Could not create the chain: ${e}`, { source: 'whiteboard' })
   }
 }
 
@@ -1398,6 +1419,9 @@ onActivated(async () => {
       />
     </div>
 
+    <ChainFromHistoryModal v-if="historyOpen && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
+                           @close="historyOpen = false" @open="openFromHistory" />
+
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'live'" class="chain-live">
       <div class="live-toolbar">
@@ -1543,6 +1567,14 @@ onActivated(async () => {
             v-tooltip.right="'Create a new chain template'"
           >
             <i class="pi pi-plus" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!projectMeta.current?.uid"
+            @click="historyOpen = true"
+            v-tooltip.right="'Create a chain from what ran on some images'"
+          >
+            <i class="pi pi-history" />
           </button>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"

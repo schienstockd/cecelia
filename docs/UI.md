@@ -2682,6 +2682,13 @@ Edit canvas a manual step carries a `pi-pause` mark, and its Scope select has no
 
 The tab badge shows the count of steps waiting for you, else of currently-running nodes.
 
+**Chain from history** (`pi-history` beside *Create*; `ChainFromHistoryModal.vue`, logic in
+`utils/chainFromHistory.ts`): select exemplar images (active set) → **Suggest** (`GET /api/chains/suggest`)
+→ untick final outputs you abandoned (re-suggests with `keep`), select a value for each param the
+exemplars disagree on, toggle *Reuse trained models*. Gate steps, reused models and left-out runs are
+listed as `InlineNote`s. **Open in whiteboard** creates the chain (`saveEmptyChain`), lays the template out
+and saves it if it validates; if not, it stays on the canvas unsaved and the log says why.
+
 ### Node types
 
 | VueFlow type | Julia scope | Visual cue |

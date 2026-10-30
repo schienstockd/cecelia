@@ -1,6 +1,15 @@
 # Chain from history — and the manual step it needs
 
-**Status:** in progress (2026-10-30) · branch `docs/chain-from-history-archive`. Part A built (A-P1–A-P3).
+**Status:** in progress (2026-10-30) · branch `docs/chain-from-history-archive`. Part A built (A-P1–A-P3);
+B-P1 + B-P2 built. Decisions refined in the build, from the two real histories:
+- B4/B5: identity and wiring read the spec, not names alone. A param links to an output only when it
+  reads that output's namespace (`namespace` / `field` / a model `optionsFrom`): region clusters and
+  spatial graphs were both called `immune` in 4kS67f. A composite takes its steps' params, the first
+  declaration of a key winning unless a later step writes it (measureLabels re-reads `outputValueName`).
+- B8 needs no spec flag: a task with an `imagePicker` param (per-image geometry) is never replayed. A run
+  logged before params were recorded is reported, not replayed with `{}`.
+- B6: only population pickers that take gated cells (`accepts` has `live`, or none) imply a gate; a path
+  segment naming a run (`clusters.immune`) is a produced population, not a gate.
 Brief: [`docs/archive/CHAIN_FROM_HISTORY_PROMPT.md`](../archive/CHAIN_FROM_HISTORY_PROMPT.md).
 
 ## Goal

@@ -199,6 +199,7 @@ include(joinpath(@__DIR__, "suite", "scheduler_tests.jl"))
 include(joinpath(@__DIR__, "suite", "chain.jl"))
 include(joinpath(@__DIR__, "suite", "chain_manual.jl"))
 include(joinpath(@__DIR__, "suite", "gate_manual.jl"))
+include(joinpath(@__DIR__, "suite", "chain_from_history.jl"))
 
 
 

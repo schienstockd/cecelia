@@ -42,7 +42,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`FAQ.md`](FAQ.md) | Highlight reel of the *counterintuitive* why (AI-written, no Rust, browser-not-Electron). Punch lines only — detail stays in `docs/` |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants. **41 KB — slice it** |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layer boundaries, WS protocol, data-model contracts, log rail, repo layout, ports, OME-ZARR dual-format, hidden invariants. **55 KB — slice it** |
 | [`docs/SCHEDULER.md`](docs/SCHEDULER.md) | Chain executor: per-image threading, resource pools, barriers, resume, event bus. **56 KB — slice it** |
 | [`docs/HPC.md`](docs/HPC.md) | Running a task's Python on a SLURM/PBS cluster over SSH: settings scopes, cluster env install, dispatch at `run_py`, mirror, stages/cancel/reattach, schedulers, testing on a real site, troubleshooting |
 | [`docs/RUNNER.md`](docs/RUNNER.md) | The detached task runner (dev only): process, lifecycle, routes, staleness, chain claims |
