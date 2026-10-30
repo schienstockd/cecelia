@@ -14,7 +14,8 @@ verdict, as on any section.
 
 With no transcript it records the Claude Code session it runs under — so "record this co-drive" at
 the end of a session is Claude running it (`.claude/skills/codrive-record/SKILL.md`).
-`--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing.
+`--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. Recording the same session
+(over the same window) again revises its entry — the session has grown since — rather than adding one.
 """
 from __future__ import annotations
 
@@ -356,12 +357,17 @@ def write(path: pathlib.Path, api: str | None, dry_run: pathlib.Path | None, pro
             f.write(f"# {title}\n\n{content}")
         write_json_atomic(dry_run / "record.json", local, indent=2)
         return {**out, "dryRun": str(dry_run)}
-    r = run_record._post(api, "/api/blackboard/create", {"projectUid": meta["projectUid"], "title": title,
-                                                         "content": content, "attachments": attach})
     records = records or state_dir() / "codrive"      # beside the effectiveness log (Decision 9)
+    record = records / f"{meta['sessionId']}.json"
+    # recorded before over the same window: update that entry (the session has grown since)
+    window = {"since": since, "until": until}
+    before = json.loads(record.read_text(encoding="utf-8")) if record.exists() else {}
+    prior = before.get("entryId") if before.get("window", {"since": None, "until": None}) == window else None
+    saved = run_record.save_entry(api, meta["projectUid"], prior,
+                                  {"title": title, "content": content, "attachments": attach})
     records.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(records / f"{meta['sessionId']}.json", {**local, "entryId": r.get("entryId")}, indent=2)
-    return {**out, "entryId": r.get("entryId")}
+    write_json_atomic(record, {**local, "window": window, "entryId": saved["entryId"]}, indent=2)
+    return {**out, **saved}
 
 
 def main(argv=None) -> int:
