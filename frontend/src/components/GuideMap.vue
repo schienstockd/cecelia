@@ -7,7 +7,7 @@
     The groups   one card per sidebar group, a button per page: click goes there. A card's heading
                  opens that group's guides in the accordion below (the map IS the accordion's index).
     Pairs        drawn once: the page that defines a population ↔ the page that summarises it.
-    Claude       one toggle: the loop (lib/claudeOverview.ts → CLAUDE_LOOP, the same words as Kiwi's ?)
+    Claude       one toggle: the loop (ClaudeLoop.vue — the same cards as Kiwi's ?)
                  and what Claude adds at each recipe step. Off by default — Cecelia works without it.
 
   All joins live in `utils/guideMap.ts` (tested); this file only renders them.
@@ -22,7 +22,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { RECIPES, isWanted, guideById, isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides'
 import type { GuideDef } from '../lib/guides/types'
-import { CLAUDE_LOOP } from '../lib/claudeOverview'
+import ClaudeLoop from './ClaudeLoop.vue'
 import { recipeRequestUrl } from '../lib/links'
 import { closeGuides } from '../lib/guideOpen'
 import { buildMap, mapPairs, chipTip } from '../utils/guideMap'
@@ -117,12 +117,7 @@ const assistTip = (s: RecipeStep) =>
     </p>
 
     <!-- Claude: the loop, in the same words as Kiwi's ? and its guide -->
-    <ol v-if="settings.guidesShowClaude" class="gm-loop">
-      <li v-for="(s, i) in CLAUDE_LOOP" :key="i" class="gm-loop-step">
-        <span class="cc-fs-xs"><span class="gm-n cc-readout cc-fs-2xs">{{ i + 1 }}</span> {{ s.title }}</span>
-        <span class="cc-muted cc-fs-2xs">{{ s.text }}</span>
-      </li>
-    </ol>
+    <ClaudeLoop v-if="settings.guidesShowClaude" />
 
     <p class="gm-ask cc-muted cc-fs-2xs">
       Not your kind of data?
@@ -158,9 +153,6 @@ const assistTip = (s: RecipeStep) =>
 
 .gm-pairs { margin: 0; flex-wrap: wrap; }
 .gm-pair .pi { font-size: 0.7em; }
-
-.gm-loop { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.gm-loop-step { display: flex; flex-direction: column; gap: 2px; }
 
 .gm-ask { margin: 0; }
 </style>
