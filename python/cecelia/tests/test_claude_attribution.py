@@ -123,7 +123,8 @@ class HookTest(unittest.TestCase):
     def test_commit_msg_file_gets_trailers_in_the_trailer_block(self):
         self.attr.record(self._event(), str(self.repo))
         path = self.repo / "COMMIT_EDITMSG"
-        path.write_text(self.msg, encoding="utf-8")
+        msg = "fix: x\n\n_Convention check (evidence):_\n\n---\n\n**Evidence**\n\n" + self.msg.split("\n\n", 1)[1]
+        path.write_text(msg, encoding="utf-8")  # a recital body's `---` is not a patch divider
         orig = self.attr._git_dir
         self.attr._git_dir = lambda cwd: self.git_dir
         try:
@@ -132,7 +133,8 @@ class HookTest(unittest.TestCase):
         finally:
             self.attr._git_dir = orig
         self.assertEqual(path.read_text(encoding="utf-8"),
-                         "fix: x\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
+                         "fix: x\n\n_Convention check (evidence):_\n\n---\n\n**Evidence**\n\n"
+                         "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n"
                          f"Claude-Model: claude-opus-5-5\nClaude-Code: 2.1.312\nClaude-Session: {SID}\n")
 
     def test_pr_body_without_footer_blocks_with_the_line(self):

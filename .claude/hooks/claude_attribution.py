@@ -119,7 +119,9 @@ def stamp_commit_msg(message_path: str, env: dict | None = None) -> None:
         lines = trailers(message, _git_dir(None), env, time.time())
         if not lines:
             return
-        argv = ["interpret-trailers", "--in-place", "--if-exists", "replace"]
+        # `--no-divider`: a recital body carries `---` lines, which git otherwise reads as the start
+        # of a patch and puts the trailers above
+        argv = ["interpret-trailers", "--in-place", "--no-divider", "--if-exists", "replace"]
         for line in lines:
             argv += ["--trailer", line]
         git_output(*argv, message_path)
