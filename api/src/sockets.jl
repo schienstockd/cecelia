@@ -166,6 +166,7 @@ end
     WS_MOVIE_RECORD
     WS_CHAIN_RUN
     WS_CHAIN_CANCEL
+    WS_CHAIN_CONTINUE
     WS_MAINT_RUN
     WS_MAINT_CANCEL
     WS_PROJ_EXPORT
@@ -183,6 +184,7 @@ const _WS_MSG_TYPE_STR = Dict{WsMsgType,String}(
     WS_MOVIE_RECORD => "movie:record",
     WS_CHAIN_RUN    => "chain:run",
     WS_CHAIN_CANCEL => "chain:cancel",
+    WS_CHAIN_CONTINUE => "chain:continue",
     WS_MAINT_RUN    => "maintenance:run",
     WS_MAINT_CANCEL => "maintenance:cancel",
     WS_PROJ_EXPORT  => "project:export",
@@ -230,6 +232,8 @@ function handle_message(ws, raw::AbstractString)
         # for an id it does not know, so asking both is free — asking one is a Cancel that silently
         # does nothing depending on where the run happens to be.
         isempty(run_id) || (cancel_chain_run!(run_id); _cancel_chain_on_runner(run_id))
+    elseif kind === WS_CHAIN_CONTINUE
+        handle_chain_continue(ws, data)
     elseif kind === WS_MAINT_RUN
         handle_maintenance_run(ws, data)
     elseif kind === WS_MAINT_CANCEL
@@ -701,6 +705,36 @@ function handle_chain_run(ws, data)
         on_finished = (ok, err) -> broadcast_ws(Dict{String,Any}(
             "type"  => ok ? "chain:run:done" : "chain:run:failed",
             "chain" => chain_name, "error" => err)))
+end
+
+# Continue a parked manual step (chain/manual.jl). The run may be parked in this process, on the runner,
+# or nowhere live (its process restarted while it waited) — tried in that order. In the last case the
+# step is continued in run.json and the run resumed, so the user's click means the same thing either way.
+# Replies `chain:continue:result` with the images that went on and the checks that refused.
+function handle_chain_continue(ws, data)
+    project_uid = _wstr(data, :projectUid)
+    run_id      = _wstr(data, :runId)
+    node_id     = _wstr(data, :nodeId)
+    raw_uids    = get(data, :imageUids, nothing)
+    image_uids  = raw_uids isa AbstractVector ? String[String(u) for u in raw_uids] : nothing
+    reply(r) = HTTP.WebSockets.send(ws, JSON3.write(merge(Dict{String,Any}(
+        "type" => "chain:continue:result", "runId" => run_id, "nodeId" => node_id), r)))
+    if isempty(project_uid) || isempty(run_id) || isempty(node_id)
+        return reply(Dict{String,Any}("error" => "projectUid, runId and nodeId are required"))
+    end
+    answered(r) = !isnothing(r) && (!isempty(get(r, "continued", [])) || !isempty(get(r, "refused", Dict())))
+    r = continue_chain_node!(run_id, node_id; image_uids)
+    answered(r) && return reply(r)
+    r = _continue_chain_on_runner(run_id, node_id, image_uids)
+    answered(r) && return reply(r)
+    r = try
+        continue_parked_on_disk!(load_project(project_uid), run_id, node_id; image_uids)
+    catch e
+        return reply(Dict{String,Any}("error" => sprint(showerror, e)))
+    end
+    reply(r)
+    isempty(r["continued"]) ||
+        handle_chain_run(ws, Dict{Symbol,Any}(:projectUid => project_uid, :runId => run_id))
 end
 
 # Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).

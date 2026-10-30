@@ -8,7 +8,7 @@
   with no side panel and is redundant now there is one.
 -->
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
@@ -314,12 +314,8 @@ const { notice: restoreNotice, undo: undoRestore, dismiss: dismissRestore } = us
     // callback and commit the old selection straight back over ours (the batch page hit exactly this).
     // No fallback: one image, and if its set is gone there is nowhere to land — say so instead.
     const targetSet = restoreTargetSet([project.setUidOfImage(uid)], '')
-    const prevSel = targetSet ? project.getImageSelection('animation', targetSet) : []
     const prevSetUid = project.activeSetUid
-    if (targetSet) {
-      if (project.activeSetUid !== targetSet) project.activeSetUid = targetSet
-      nextTick(() => project.setImageSelection('animation', targetSet, [uid]))
-    }
+    const prevSel = targetSet ? project.focusImages('animation', targetSet, [uid]).selection : []
 
     const dropped = [...r.dropped]
     if (!r.imageUid) dropped.push('which image it was recorded on — attached to the current one')

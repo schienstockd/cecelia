@@ -343,7 +343,7 @@ end
     # silently disables validation for that param, so the set is asserted, not assumed.
     known_types = Set(["int", "float", "bool", "select", "chipSelect", "text", "dirPath", "filePath", "section", "group",
                        "channelSelection", "channelRoles", "valueNameSelection", "valueNameInput", "popSelection",
-                       "labelPropsColsSelection", "motionDimsSelection", "imagePicker"])
+                       "labelPropsColsSelection", "motionDimsSelection", "imagePicker", "imageSelection"])
 
     # `field` values a `valueNameSelection` may name — the frontend's CciaImage fields, kept in step
     # with `VALUE_NAME_FIELDS` (frontend/src/tasks/paramValues.ts). Absent is legal and means image

@@ -1,6 +1,6 @@
 // The ONE task-status → visual descriptor (icon + colour + label). Replaces the byte-similar status
 // maps that were copied into TasksModule / TaskList / ChainLiveNode with drifted raw hexes
-// (#86efac / #fca5a5 / #93c5fd repeated). Task status has FIVE states, so it's a superset of the
+// (#86efac / #fca5a5 / #93c5fd repeated). Task status has SIX states, so it's a superset of the
 // three-state QC severity (lib/severity.ts): `done`/`failed` reuse the CVD-safe severity palette
 // (--cc-sev-ok / --cc-sev-fail), `running` is "active" (--cc-active), queued/cancelled are neutral.
 // `tone` lets a component tint its own chrome (border/background) consistently with the icon.
@@ -18,13 +18,25 @@ export interface TaskStatusStyle {
 export const TASK_STATUS: Record<TaskStatus, TaskStatusStyle> = {
   queued:    { icon: 'pi-clock',        color: 'var(--cc-text-dim)', tone: 'neutral', label: 'Queued' },
   running:   { icon: 'pi-spin pi-spinner',  color: 'var(--cc-active)',   tone: 'active',  label: 'Running' },
+  // a manual chain step parked for the user (docs/SCHEDULER.md → Manual steps): live, and the one
+  // state that needs the user, so it gets the warn colour and outranks running in a rollup
+  waiting:   { icon: 'pi-pause', color: 'var(--cc-sev-warn)', tone: 'active',  label: 'Waiting for you' },
   done:      { icon: 'pi-check-circle', color: 'var(--cc-sev-ok)',   tone: 'ok',      label: 'Done' },
   failed:    { icon: 'pi-times-circle', color: 'var(--cc-sev-fail)', tone: 'fail',    label: 'Failed' },
   cancelled: { icon: 'pi-ban',          color: 'var(--cc-text-dim)', tone: 'neutral', label: 'Cancelled' },
 }
 
 /** Live states outrank terminal ones, and running outranks queued. Higher wins. */
-const LIVE_RANK: Partial<Record<TaskStatus, number>> = { running: 2, queued: 1 }
+const LIVE_RANK: Partial<Record<TaskStatus, number>> = { waiting: 3, running: 2, queued: 1 }
+
+/**
+ * Not finished: queued, running, or a chain step waiting for the user. The ONE answer to "is this row
+ * still live" (cancellable, blocks a resume or rename, the Task Manager's *active* filter). Note that
+ * `useTaskStore().running()` is narrower on purpose — work actually holding a pool slot.
+ */
+export function isLiveStatus(s: TaskStatus): boolean {
+  return LIVE_RANK[s] !== undefined
+}
 /** Tie-break WITHIN the terminal tier, when two runs finished at the same instant. Higher wins. */
 const TERMINAL_RANK: Partial<Record<TaskStatus, number>> = { failed: 2, cancelled: 1, done: 0 }
 
@@ -37,7 +49,7 @@ export interface RollupTask {
 
 /**
  * Reduce the N tasks an image has in one module to the ONE status its badge shows. The twin of
- * `worstSeverity` (lib/severity.ts) for the five-state lifecycle. Empty ⇒ `null`.
+ * `worstSeverity` (lib/severity.ts) for the six-state lifecycle. Empty ⇒ `null`.
  *
  * Two tiers, because "worst" is the wrong question here:
  *

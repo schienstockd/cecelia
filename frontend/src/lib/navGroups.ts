@@ -112,11 +112,16 @@ export function navGroupFor(groups: NavGroup[], path: string): string | null {
   return null
 }
 
-/** A page's menu label, for messages that must name a page rather than show a raw path. */
-export function navLabelFor(groups: NavGroup[], path: string): string {
+/** The menu item for exactly `path` (its label + icon), or null — for a button that sends you there. */
+export function navItemFor(groups: NavGroup[], path: string): NavItem | null {
   for (const g of groups) {
     const hit = g.items.find(i => i.to === path)
-    if (hit) return hit.label
+    if (hit) return hit
   }
-  return path
+  return null
+}
+
+/** A page's menu label, for messages that must name a page rather than show a raw path. */
+export function navLabelFor(groups: NavGroup[], path: string): string {
+  return navItemFor(groups, path)?.label ?? path
 }

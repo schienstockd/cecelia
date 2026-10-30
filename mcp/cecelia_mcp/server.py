@@ -780,6 +780,37 @@ def get_chains(project_uid: str) -> dict:
     return _client.get_chains(project_uid)
 
 
+@_tool
+def suggest_chain(project_uid: str, image_uids: list[str], keep: list[str] | None = None,
+                  retrain: bool = False) -> dict:
+    """A chain template built MECHANICALLY from what already ran on `image_uids` (the exemplars) — the
+    same answer as the whiteboard's "From history…" dialog. Use it when the user wants the rest of
+    their images processed "the same way": start from this, not from your own reading of the history.
+
+    It takes the latest successful run of each step, wires steps by the names they read and write,
+    reuses trained models, and inserts a `gate.manual_gate` step wherever a gated population is read
+    (gating can't be automated — the run waits there for the user).
+
+    Returns:
+      - `template` — `{name, nodes: [{id, fn, scope, params, …}], edges, startTargets}`
+      - `finalOutputs` — `[{id, fn, output, kept}]`: the end results. An exemplar's abandoned experiment
+        looks the same as a kept result, so ASK which to keep; pass their ids as `keep` to rebuild.
+      - `conflicts` — `[{nodeId, param, values: {imageUid: value}}]`: the exemplars used different
+        values. The template holds the latest; never pick for the user — show the values and ask.
+      - `notReplayed` (left out, with why), `reusedModels`, `gateSteps`, `valid` + `error`.
+
+    Follow the SAME steps as the dialog, so a chain you build and one the user builds there are
+    comparable: exemplars → this tool → ask which `finalOutputs` to keep (rebuild with `keep`) → ask
+    each conflict → create_chain with the template's nodes/edges as returned. Your part on top, all
+    optional: explain the chain in plain language; flag a param that looks tuned to one image (a
+    threshold, a diameter) or a conflict where one exemplar is the odd one out; propose a name.
+
+    If you change ANYTHING relative to the suggestion — a node added or dropped, a param, an edge —
+    list every change and why when you hand it over. An unlisted difference makes the two paths
+    incomparable. Read-only; nothing here runs anything."""
+    return _client.suggest_chain(project_uid, image_uids, keep, retrain)
+
+
 _BRIEFING_OPEN_ENTRIES_MAX = 8    # Decision 5 — briefing carries up to this many open blackboard entries
 _BRIEFING_RECENT_CAPTURES = 5     # Decision 5 — briefing carries up to this many recent captures
 
@@ -1696,6 +1727,8 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
 
     BEFORE you call this, resolve what is resolvable — a chain built without these is a guess, and the
     guesses land on the user:
+      0. "Do the rest the same way"? suggest_chain first — it builds the template from what ran on their
+         exemplar images; your job is then the review, not the reconstruction.
       1. get_chains — the pipelines they already wired. Match their conventions and their task choices.
       2. get_analysis_lineage — what actually ran on these images, in order, and the `value_name`s it
          wrote. This is how you get the pipeline they really use (e.g. denoise BEFORE drift correction)

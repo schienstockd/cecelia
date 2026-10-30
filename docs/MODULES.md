@@ -822,6 +822,11 @@ of an image; a follow-up geometry (`box2d`, `point2d`, `line2d`, `polygon2d`) is
 extending the modal's drawing branch. Handler reads the value as a nested dict — coerce JSON3 keys
 with `pairs(box)` before unpacking.
 
+**`imageSelection`** — one image of the open project, by uid; `""` = none. A plain select listing
+`Set / image` for every image the frontend has loaded (`ParamRenderer.vue`). The validator treats it as a
+string, and the handler resolves it with `init_object(img_project_uid(img), uid)`. Use it when a task
+names ANOTHER image than the one it runs on — today `gate.manual_gate`'s `copyFrom` exemplar.
+
 ### Which picker — decide this before writing the param
 
 Every picker below already documents *how it works*. This table is the question that comes first:

@@ -157,6 +157,7 @@ end
             WS_MOVIE_RECORD => "movie:record",
             WS_CHAIN_RUN    => "chain:run",
             WS_CHAIN_CANCEL => "chain:cancel",
+            WS_CHAIN_CONTINUE => "chain:continue",
             WS_MAINT_RUN    => "maintenance:run",
             WS_MAINT_CANCEL => "maintenance:cancel",
             WS_PROJ_EXPORT  => "project:export",

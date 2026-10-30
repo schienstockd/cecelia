@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { NAV_GROUPS, allNavGroups, customNavGroup, navLabelFor, navGroupFor } from './navGroups'
+import { NAV_GROUPS, allNavGroups, customNavGroup, navLabelFor, navGroupFor, navItemFor } from './navGroups'
 
 // The nav catalogue and the router's route table are two lists that must agree, and nothing but this
 // enforced it: a page whose path is mistyped here renders a dead sidebar row, and a page added to the
@@ -115,5 +115,14 @@ describe('navGroupFor', () => {
     expect(navGroupFor(NAV_GROUPS, '/gate')).toBe('Populations')
     expect(navGroupFor([{ heading: 'Custom', items: [{ to: '/custom/x', label: 'X', icon: 'pi-box', tip: '' }] }], '/custom/x/y')).toBe('Custom')
     expect(navGroupFor(NAV_GROUPS, '/nope')).toBeNull()
+  })
+})
+
+describe('navItemFor', () => {
+  it('finds the menu item for a page, with its icon', () => {
+    expect(navItemFor(NAV_GROUPS, '/gate')?.icon).toBe('pi-chart-scatter')
+  })
+  it('is null for a path no menu item leads to', () => {
+    expect(navItemFor(NAV_GROUPS, '/nowhere')).toBeNull()
   })
 })

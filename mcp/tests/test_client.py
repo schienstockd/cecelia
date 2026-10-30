@@ -146,6 +146,21 @@ class ClientTest(unittest.TestCase):
             with self.assertRaises(DisallowedRoute):
                 self.c._request(method, path, body={"projectUid": "p"})
 
+    def test_suggest_chain_is_a_read_of_the_history_builder(self):
+        # the same answer as the whiteboard's From-history dialog: a GET that writes nothing
+        with _patch_urlopen({"template": {}, "finalOutputs": []}) as u:
+            self.c.suggest_chain("p", ["a", "b"])
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/chains/suggest?", req.full_url)
+        self.assertIn("imageUids=a%2Cb", req.full_url)
+        self.assertNotIn("keep=", req.full_url)        # absent = every final output
+        with _patch_urlopen({}) as u:
+            self.c.suggest_chain("p", ["a"], keep=["n1", "n2"], retrain=True)
+        url = u.call_args[0][0].full_url
+        self.assertIn("keep=n1%2Cn2", url)
+        self.assertIn("retrain=1", url)
+
     def test_create_chain_posts_a_template(self):
         nodes = [{"id": "seg", "fn": "segment.cellpose", "params": {"cellDiameter": 30}},
                  {"id": "trk", "fn": "tracking.bayesian_tracking"}]

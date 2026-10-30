@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { TASK_STATUS, rollupTaskStatus, type RollupTask } from './taskStatus'
+import { TASK_STATUS, rollupTaskStatus, isLiveStatus, type RollupTask } from './taskStatus'
 import type { TaskStatus } from '../stores/tasks'
 
 const ALL: TaskStatus[] = ['queued', 'running', 'done', 'failed', 'cancelled']
@@ -61,5 +61,12 @@ describe('rollupTaskStatus', () => {
 
   it('a run with no finish time never outranks one that has one', () => {
     expect(rollupTaskStatus([t('done', '2026-08-15T10:00:00Z'), t('failed')])).toBe('done')
+  })
+})
+
+describe('isLiveStatus', () => {
+  it('is the queued, running and waiting set — exactly the live tier of the rollup', () => {
+    const live = (Object.keys(TASK_STATUS) as TaskStatus[]).filter(isLiveStatus).sort()
+    expect(live).toEqual(['queued', 'running', 'waiting'])
   })
 })

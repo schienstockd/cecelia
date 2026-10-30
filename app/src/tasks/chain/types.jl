@@ -99,13 +99,16 @@ ChainTemplate(name, nodes, edges) = ChainTemplate(name, nodes, edges, String[])
 
 # Chain-node lifecycle. Terminal states are NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
 # (enforced by convention in `_update_node_state!` — a re-fire of a terminal state is not a bug).
+# NODE_WAITING is a manual step parked for the user (`chain/manual.jl`): not terminal, and unlike
+# :running it survives a crash — resume re-parks it rather than redoing the step.
 # On-disk (run.json) and on-wire (chain events) form is the lowercase name via
 # `Base.string(::ChainNodeStatus)`; `parse_chain_node_status` reads it back from disk.
-@enum ChainNodeStatus NODE_PENDING NODE_QUEUED NODE_RUNNING NODE_DONE NODE_FAILED NODE_CANCELLED NODE_SKIPPED
+@enum ChainNodeStatus NODE_PENDING NODE_QUEUED NODE_RUNNING NODE_DONE NODE_FAILED NODE_CANCELLED NODE_SKIPPED NODE_WAITING
 const _NODE_STATUS_STR = Dict(
     NODE_PENDING   => "pending",
     NODE_QUEUED    => "queued",
     NODE_RUNNING   => "running",
+    NODE_WAITING   => "waiting",
     NODE_DONE      => "done",
     NODE_FAILED    => "failed",
     NODE_CANCELLED => "cancelled",

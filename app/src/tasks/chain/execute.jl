@@ -4,7 +4,8 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
                               node_params::Dict{String,Any} = Dict{String,Any}(),
                               task_id     = nothing,
                               result      = nothing,
-                              params_hash = nothing)
+                              params_hash = nothing,
+                              waited::Bool = false)
     captured_result = Ref{Any}(nothing)
     # The scheduler task id this node ran as, captured under the lock alongside the result. It goes out
     # on every event so a consumer can correlate a node with its `TaskRecord` / `GET /api/tasks` row —
@@ -51,6 +52,19 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             pool        = pool,
             by          = chain_run_as(run),   # who this execution runs as — the frame says, the tab doesn't guess
         ))
+    elseif status == NODE_WAITING
+        _fire_chain_event!("node:waiting", (
+            run_id      = run.id,
+            chain_name  = run.chain_name,
+            project_uid = run.project_uid,
+            image_uid   = image_uid,
+            node_id     = node_id,
+            fn          = fn,
+            params      = node_params,
+            task_id     = captured_task_id[],
+            pool        = pool,
+            by          = chain_run_as(run),
+        ))
     elseif status == NODE_DONE
         _fire_chain_event!("node:done", (
             run_id      = run.id,
@@ -64,6 +78,9 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             task_id     = captured_task_id[],
             pool        = pool,
             by          = chain_run_as(run),   # who this execution runs as — the frame says, the tab doesn't guess
+            # a manual step continued by the user: its prepare task was banked when it parked, so the
+            # frame builder must not bank it again (that would restamp it as finishing now)
+            waited      = waited,
         ))
     elseif status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
         _fire_chain_event!("node:failed", (
@@ -77,6 +94,7 @@ function _update_node_state!(run::ChainRun, image_uid::String, node_id::String;
             task_id     = captured_task_id[],
             pool        = pool,
             by          = chain_run_as(run),   # who this execution runs as — the frame says, the tab doesn't guess
+            waited      = waited,              # cancelled while parked — prepare's outcome is already banked
         ))
     end
 end
@@ -305,6 +323,16 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
 
         run_params = _node_run_params(task_struct, node, overrides,
                                       line -> Base.invokelatest(on_log, "[$image_uid/$(node.id)] $line"))
+        manual = !isnothing(task_manual(task_struct))
+
+        # A manual step that was already parked when its process went away: park it again. Never re-run
+        # prepare, which could redo what the user has done since (chain/manual.jl).
+        if manual && run.image_states[image_uid][node.id].status == NODE_WAITING
+            _await_manual_image!(run, node, image_uid, task_struct, run_params, effective_params,
+                                 is_cancelled)
+            continue
+        end
+
         tid = gen_uid()
         # Mark :queued, not :running. Concurrency is enforced by the global scheduler
         # pool (run_task → _pool, sized from config [pools]); a node whose resource_pool
@@ -352,6 +380,12 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
         # override is why routing through `execute_task` is behaviour-preserving here.
         final_status = is_cancelled() ? NODE_CANCELLED : status
         result = result[]
+        if manual && final_status == NODE_DONE
+            lock(run._lock) do; run.image_states[image_uid][node.id].result = result; end
+            _await_manual_image!(run, node, image_uid, task_struct, run_params, effective_params,
+                                 is_cancelled)
+            continue
+        end
         _update_node_state!(run, image_uid, node.id;
                             fn          = node.fn,
                             node_params = effective_params,
@@ -388,6 +422,18 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     if all(run.image_states[uid][node.id].status == NODE_DONE &&
            run.image_states[uid][node.id].params_hash == ph
            for uid in run.image_uids)
+        _barrier_signal_done!(run, node.id)
+        return
+    end
+
+    # A manual step parked when its process went away: park the same members again, without re-running
+    # prepare (chain/manual.jl).
+    parked = [uid for uid in run.image_uids if run.image_states[uid][node.id].status == NODE_WAITING]
+    if !isempty(parked)
+        task = _task_from_fun_name(node.fn)
+        _await_manual_set!(run, node, parked, task,
+                           _node_run_params(task, node, overrides, _ -> nothing), effective_params,
+                           is_cancelled)
         _barrier_signal_done!(run, node.id)
         return
     end
@@ -531,6 +577,16 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     # task's accounting alone. This path previously had no cancel branch at all — a cancelled set node
     # was recorded as a failure.
     final_status = is_cancelled() ? NODE_CANCELLED : status
+    if final_status == NODE_DONE && !isnothing(task_manual(task_struct))
+        lock(run._lock) do
+            for uid in participating_uids; run.image_states[uid][node.id].result = result; end
+        end
+        _await_manual_set!(run, node, participating_uids, task_struct,
+                           _node_run_params(task_struct, node, overrides, _ -> nothing), effective_params,
+                           is_cancelled)
+        _barrier_signal_done!(run, node.id)
+        return
+    end
     for uid in participating_uids
         _update_node_state!(run, uid, node.id;
                             fn          = node.fn,
@@ -817,7 +873,8 @@ function _reset_stale_nodes!(run::ChainRun, overrides::Dict{String,Any},
                 any_changed = true
             end
             retry        = st.status ∈ (NODE_FAILED, NODE_SKIPPED, NODE_CANCELLED)
-            params_stale = st.status == NODE_DONE && st.params_hash != ph
+            # a parked manual step counts as finished prepare: kept (re-parked) unless its params moved
+            params_stale = st.status ∈ (NODE_DONE, NODE_WAITING) && st.params_hash != ph
             pred_stale   = any((p, uid) ∈ stale_set for p in preds[node.id])
             if retry || params_stale || pred_stale
                 push!(stale_set, (node.id, uid))

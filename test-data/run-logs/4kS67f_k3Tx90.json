@@ -1,0 +1,289 @@
+[
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T14:20:09",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T14:20:43",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T17:15:39",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T17:46:39",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T18:10:28",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T18:10:45",
+  "taskId": ""
+ },
+ {
+  "fun": "clustTracks.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {},
+  "at": "2026-07-18T18:18:06",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "nNeighbours": 6,
+   "numClusters": 3,
+   "valueNameSuffix": "immune",
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "resolution": 0.25,
+   "perTimepoint": false,
+   "neighbourRadius": 30,
+   "neighbourMethod": "delaunay",
+   "mergeUmap": true
+  },
+  "at": "2026-07-30T09:54:37",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.cellNeighbours",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "nNeighbours": 6,
+   "pops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "perTimepoint": false,
+   "neighbourRadius": 50,
+   "neighbourMethod": "delaunay",
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:22:51",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": true,
+   "numClusters": 3,
+   "valueNameSuffix": "immune",
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "resolution": 0.25,
+   "mergeUmap": true,
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:23:47",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.cellNeighbours",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "nNeighbours": 6,
+   "pops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "perTimepoint": false,
+   "neighbourRadius": 50,
+   "neighbourMethod": "radius",
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:36:05",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": false,
+   "numClusters": 3,
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:36:49",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": false,
+   "numClusters": 3,
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:39:14",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": false,
+   "numClusters": 4,
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:39:42",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": false,
+   "numClusters": 4,
+   "valueNameSuffix": "default",
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "resolution": 1,
+   "mergeUmap": true,
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:47:46",
+  "taskId": ""
+ },
+ {
+  "fun": "clustRegions.cluster",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "includeOther": false,
+   "numClusters": 3,
+   "valueNameSuffix": "default",
+   "clusterMethod": "kmeans",
+   "basisPops": [
+    "B/qc/_tracked",
+    "T/qc/_tracked"
+   ],
+   "resolution": 1,
+   "mergeUmap": true,
+   "graphSuffix": "immune"
+  },
+  "at": "2026-07-30T12:48:47",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.cellContacts",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "popsA": [
+    "B/qc/_tracked"
+   ],
+   "popsB": [
+    "T/qc/_tracked"
+   ],
+   "maxContactDist": 30
+  },
+  "at": "2026-07-30T12:57:46",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.neighbourStats",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "graphSuffix": "immune",
+   "statsSuffix": "default",
+   "basisPops": [
+    "B/qc",
+    "T/qc"
+   ],
+   "nPermutations": 1000
+  },
+  "at": "2026-07-30T13:54:30",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.aggregatesMeshes",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "pops": [
+    "T/qc"
+   ],
+   "maxClusterDist": 30,
+   "minCells": 4
+  },
+  "at": "2026-07-30T14:07:22",
+  "taskId": ""
+ },
+ {
+  "fun": "spatialAnalysis.neighbourStats",
+  "valueName": "",
+  "status": "done",
+  "params": {
+   "graphSuffix": "immune",
+   "statsSuffix": "again",
+   "basisPops": [
+    "B/qc",
+    "T/qc"
+   ],
+   "nPermutations": 1000
+  },
+  "at": "2026-07-30T14:15:51",
+  "taskId": ""
+ }
+]

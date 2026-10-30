@@ -360,6 +360,7 @@ const NOT_RUN_TASKS = Dict{String,String}(
     "editImages.zProject" => "image version",
     "importImages.omezarr" => "image import", "importImages.migrateLegacy" => "image import",
     "importImages.remove" => "deletes, produces nothing",
+    "gate.manual_gate" => "copies gates — user work, never a run's to delete",
     "exportImages.ome_tiff" => "writes outside the project",
     # new label sets → the dialog's Label sets scope
     "segment.cellpose" => "label set", "segment.cellposeMeasure" => "label set",

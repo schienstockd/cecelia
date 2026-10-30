@@ -300,8 +300,9 @@ end
 # load the same tree and the second save would clobber the first (lost update). One process-wide
 # ReentrantLock held across the whole load→save is enough — gating edits are user-paced and cheap,
 # so contention across images/value_names is negligible. (save_pop_map! also writes atomically.)
-const _POPMAP_LOCK = ReentrantLock()
-_with_popmap_lock(f) = lock(f, _POPMAP_LOCK)
+# The lock lives in the package (`with_popmap_lock`, gating/popmanager/copy.jl) so a task that writes
+# gating — the manual gate chain step — serialises with these handlers.
+_with_popmap_lock(f) = with_popmap_lock(f)
 
 # ── Undo / redo for HAND-DRAWN gating ─────────────────────────────────────────
 #
@@ -336,7 +337,7 @@ _gating_snapshot(img::CciaImage, vn, pop_type)::Dict{String,Any} =
 
 # Record the PRE-edit state. Called from `_persist_and_broadcast!` — the one choke point every
 # mutating handler already goes through, so a new mutation cannot forget to be undoable. Runs under
-# `_POPMAP_LOCK` (the handler holds it across load→save), so what is on disk here is exactly what
+# the gating lock (`with_popmap_lock`; the handler holds it across load→save), so what is on disk here is exactly what
 # this edit is about to replace. A new edit invalidates the redo branch, as everywhere else.
 function _history_record!(proj, image_uid, vn, pop_type, img::CciaImage)
     is_gating_pop_type(pop_type) || return
@@ -1502,39 +1503,19 @@ function api_gating_copy(body_bytes::Vector{UInt8})
     tgt_raw = get(body, "toImageUids", nothing)
     (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
     proj, src_uid, err = _require_ids(body); err === nothing || return err
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
-        isempty(m.order) && return _gerr(400, "Source image has no $pt gating to copy")
-        copied = String[]; skipped = Dict{String,String}(); warnings = Dict{String,Vector{@NamedTuple{column::String, pops::Vector{String}}}}()
-        for t in tgt_raw
-            tuid = String(t)
-            tuid == src_uid && continue
-            timg, terr = _gating_image(proj, tuid)
-            timg === nothing && (skipped[tuid] = "not found"; continue)
-            img_has_value_name(timg, vn) ||
-                (skipped[tuid] = "no segmentation '$vn'"; continue)   # gates would reference absent channels
-            # A µm POSITION gate needs the target's own pixel size to be evaluated. Without one the
-            # coordinates would silently be read as pixels — wrong by the pixel size, which is the
-            # exact silent-drift this unit change removes. Refuse rather than warn-and-proceed
-            # (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). Intensity-only strategies copy fine.
-            (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
-                (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
-            try
-                save_pop_map!(m, timg)                        # writes target gating sidecar (replace)
-                _broadcast_popmap(proj, tuid, vn, pt, m, timg) # refresh any client viewing the target
-                push!(copied, tuid)
-            catch e
-                skipped[tuid] = sprint(showerror, e); continue
-            end
-            # Copied, but a gate/filter column the target's table lacks (e.g. `clusters.<run>` from a
-            # clustering run it wasn't in) leaves those populations empty. Still copy; say which (#1737).
-            miss = try
-                missing_gate_columns(m, timg; value_name = vn)
-            catch e
-                @warn "gating copy: could not check columns on $tuid" exception = e; nothing
-            end
-            (miss === nothing || isempty(miss)) || (warnings[tuid] = miss)
-        end
-        200, JSON3.write((; copied = copied, skipped = skipped, warnings = warnings))
+    targets = CciaImage[]; absent = Dict{String,String}()
+    for t in tgt_raw
+        tuid = String(t)
+        tuid == src_uid && continue
+        timg, _ = _gating_image(proj, tuid)
+        timg === nothing ? (absent[tuid] = "not found") : push!(targets, timg)
     end
+    r = try
+        copy_gating!(img, targets; value_name = vn, pop_type = pt,
+                     on_copied = (timg, m) -> _broadcast_popmap(proj, timg.uid, vn, pt, m, timg))
+    catch e
+        e isa ArgumentError || rethrow()
+        return _gerr(400, "Source image has no $pt gating to copy")
+    end
+    200, JSON3.write((; copied = r.copied, skipped = merge(absent, r.skipped), warnings = r.warnings))
 end

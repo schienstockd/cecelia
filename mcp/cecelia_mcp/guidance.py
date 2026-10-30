@@ -144,7 +144,10 @@ it over as something to review, never as something you have started. Set only th
 change; the rest take their task defaults when the user opens it. It cannot overwrite an existing \
 chain: to offer an alternative, create a new one named for what it does and say it sits beside the \
 original so both graphs can be compared. Resolve what you can before authoring rather than leaving \
-params empty — get_chains for how this user already wires things, get_analysis_lineage for the order \
+params empty — when they want more images processed like ones they already did, suggest_chain builds \
+the template from that history: follow the dialog's steps (ask which final outputs to keep, never settle \
+its conflicts for them) and list every change you make to it, so your chain and theirs stay comparable; \
+get_chains for how this user already wires things, get_analysis_lineage for the order \
 the pipeline actually runs in and the value_names it wrote, get_module_params for the real \
 keys/ranges, and get_image_info for the CHANNEL names (a drift reference channel, or cellpose \
 cell/nuc channels, cannot be picked without them). Then say which values came from the data, which \

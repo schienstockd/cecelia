@@ -47,6 +47,7 @@ _STAGES = (
     ("train",     ("opticalFlow",)),
     ("segment",   ("segment",)),
     ("track",     ("tracking",)),
+    ("gate",      ("gate",)),
     ("behaviour", ("behaviour",)),
     ("cluster",   ("clustPops", "clustTracks")),
     ("spatial",   ("spatialAnalysis", "clustRegions")),
