@@ -118,8 +118,9 @@ const assistTip = (s: RecipeStep) =>
 
     <!-- Claude: the loop, in the same words as Kiwi's ? and its guide -->
     <ol v-if="settings.guidesShowClaude" class="gm-loop">
-      <li v-for="(s, i) in CLAUDE_LOOP" :key="i" class="gm-loop-step cc-fs-xs" v-tooltip.top="s.text">
-        <span class="gm-n cc-readout cc-fs-2xs">{{ i + 1 }}</span> {{ s.title }}
+      <li v-for="(s, i) in CLAUDE_LOOP" :key="i" class="gm-loop-step">
+        <span class="cc-fs-xs"><span class="gm-n cc-readout cc-fs-2xs">{{ i + 1 }}</span> {{ s.title }}</span>
+        <span class="cc-muted cc-fs-2xs">{{ s.text }}</span>
       </li>
     </ol>
 
@@ -159,7 +160,7 @@ const assistTip = (s: RecipeStep) =>
 .gm-pair .pi { font-size: 0.7em; }
 
 .gm-loop { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.gm-loop-step { display: flex; align-items: center; gap: 6px; }
+.gm-loop-step { display: flex; flex-direction: column; gap: 2px; }
 
 .gm-ask { margin: 0; }
 </style>
