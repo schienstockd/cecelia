@@ -82,8 +82,5 @@ checkable (`/api/kiwi/refs/resolve`) or reviewable. The two pieces it lacks are 
 
 - Is 200 runs per image enough history for stamps to stay resolvable? Check one long-running
   project's `runlog.json` lengths before P1.
-- `app/CLAUDE.md` says "the `labels` / `label_props` / `branch_labels` writers use the same
-  helper", but `segmentation.jl` writes `labels` via `unversioned_set_field!`. Confirm which is
-  meant and correct the doc in P1.
 - Should a stale flag also show in the UI (Blackboard page, capture reshow), or stay MCP-only at
   first? MCP-only is cheaper; it's Dominik's call once P2 exists.
