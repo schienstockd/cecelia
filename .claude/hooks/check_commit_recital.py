@@ -568,7 +568,8 @@ def stamp_commits(command: str, cwd: str | None, event: dict) -> None:
 
 
 def pr_footer_guard(command: str, cwd: str | None, event: dict) -> str | None:
-    """None to allow, else why this `gh pr create|edit` body doesn't name the model writing it."""
+    """None to allow, else why this `gh pr create|edit` / `gh api …/pulls` body doesn't name the
+    model writing it."""
     stamp = None
     for seg, target in _cecelia_targets(attribution.GH_PR_SEGMENT, command, cwd):
         stamp = stamp if stamp is not None else attribution.caller_stamp(event)
