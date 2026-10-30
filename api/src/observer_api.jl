@@ -45,13 +45,13 @@ function _write_observer_hook_settings()::String
     path
 end
 
-# GET /api/observer/headless?projectUid=  → the session `pixi run headless` starts (HEADLESS_MODE_PLAN
+# GET /api/observer/chat?projectUid=  → the session `pixi run chat` starts (HEADLESS_MODE_PLAN
 # D6): the server writes the MCP config (both servers, no-GUI switch, the project lock) and the hook
 # settings beside the observer's own, then returns the spawnable `claude` argv and its env. The launcher
-# (headless.py) only runs it — every path here is resolved the way the app's own spawns resolve it.
+# (chat.py) only runs it — every path here is resolved the way the app's own spawns resolve it.
 # No projectUid = a "new project" session. The config file is per project, so two terminals on two
 # projects never overwrite each other's lock.
-function api_observer_headless(req::HTTP.Request)
+function api_observer_chat(req::HTTP.Request)
     uid = get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", "")
     name = ""
     if !isempty(uid)
@@ -62,12 +62,12 @@ function api_observer_headless(req::HTTP.Request)
     bin = agent_bin_path(observer_agent_bin())
     isnothing(bin) && return 200, JSON3.write((; available = false,
         error = "Claude Code is not installed — see https://claude.com/claude-code, then run this again."))
-    cfg  = headless_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url(); project_uid = uid)
-    path = joinpath(ensure_config_dir(), "headless-mcp-$(isempty(uid) ? "new" : uid).json")
+    cfg  = chat_mcp_config(_observer_mcp_dir(), python_bin_path(), _observer_api_url(); project_uid = uid)
+    path = joinpath(ensure_config_dir(), "chat-mcp-$(isempty(uid) ? "new" : uid).json")
     write_json_atomic(path, cfg)
-    logical = headless_claude_argv("claude", path, _write_observer_hook_settings();
+    logical = chat_claude_argv("claude", path, _write_observer_hook_settings();
                                    project_uid = uid, project_name = name)
-    env = headless_claude_env(Cecelia._active_claude_profile_dir!())
+    env = chat_claude_env(Cecelia._active_claude_profile_dir!())
     spawn_path = Cecelia._agent_spawn_path(bin, get(ENV, "PATH", ""), Sys.iswindows())
     isnothing(spawn_path) || (env.set["PATH"] = spawn_path)       # a CLI found off PATH
     200, JSON3.write((; available = true, argv = Cecelia._agent_spawn_argv(logical, bin, Sys.iswindows()),

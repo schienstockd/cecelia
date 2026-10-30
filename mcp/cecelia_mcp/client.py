@@ -272,7 +272,7 @@ NO_PAIR_ENV = "CECELIA_OBSERVER_NO_PAIR"
 
 
 def _pairing_disabled() -> bool:
-    # headless mode too: a pairing is how pushes reach the GUI, and there is none (no_gui.py)
+    # no-GUI mode too: a pairing is how pushes reach the GUI, and there is none (no_gui.py)
     return os.environ.get(NO_PAIR_ENV, "") not in ("", "0") or no_gui_enabled()
 
 

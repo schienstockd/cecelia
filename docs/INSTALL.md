@@ -194,16 +194,16 @@ is the front end: you ask it to bring images in, run segmentation / tracking / b
 report back. Needs the `claude` CLI installed and logged in.
 
 ```bash
-cd <install dir> && pixi run headless              # pick a project (0 = new one)
-cd <install dir> && pixi run headless <projectUid> # straight into one
-<install dir>/cecelia-launch.sh headless           # system-wide install (.cmd on Windows)
+cd <install dir> && pixi run chat                  # pick a project (0 = new one)
+cd <install dir> && pixi run chat <projectUid>     # straight into one
+<install dir>/cecelia-launch.sh chat               # system-wide install (.cmd on Windows)
 pixi run console                                   # optional, second terminal: live task progress
 ```
 
 On a fresh install it first asks where to keep projects (the GUI's first-launch wizard, in the
 terminal). It uses the Cecelia already running for you if there is one, otherwise starts one (log:
-`~/.cecelia/headless-server.log`) and stops it when you leave Claude. Segmentation correction, the
-image viewer and movies still need the GUI; a project made headless opens in the GUI as usual. Design:
+`~/.cecelia/chat-server.log`) and stops it when you leave Claude. Segmentation correction, the
+image viewer and movies still need the GUI; a project made this way opens in the GUI as usual. Design:
 `docs/todo/HEADLESS_MODE_PLAN.md`.
 
 ## HTTPS + HTTP/2
