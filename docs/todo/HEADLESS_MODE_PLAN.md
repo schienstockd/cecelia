@@ -40,11 +40,17 @@ The GUI is only a client. Everything below already runs without it:
 
 ## Locked decisions
 
-- **D1 — command name: `pixi run headless`.** `pixi run console` is taken by the task console
-  (`pixi.toml`, cited in `docs/RUNNER.md`, `DEV.md`, `API.md`) and stays as it is. The headless
-  launcher's startup message points at it for live task progress.
+- **D1 — command name: `pixi run chat`** *(renamed from `pixi run headless`, Dominik, 2026-10-30)*.
+  "Headless" means no UI and nobody at the keyboard, which is what a future non-interactive chain
+  run is; this mode is an interactive conversation. So the name is kept free for that run, and this
+  one matches the app's own word for a terminal session with Claude (Kiwi's *Chat* row, *Chat to
+  Claude*). Not `agent`: `pixi run agents` is the effectiveness console. The launcher is `chat.py`,
+  its route `/api/observer/chat`, the code's word for the mode "no-GUI" (`no_gui.py`). This plan
+  keeps its file name. `pixi run console` is taken by the task console (`pixi.toml`, cited in
+  `docs/RUNNER.md`, `DEV.md`, `API.md`) and stays as it is. The chat launcher's startup message
+  points at it for live task progress.
 - **D2 — the lock: the named project plus any project created in the session.**
-  `pixi run headless <project>` locks to that project. A project made with `create_project` during
+  `pixi run chat <project>` locks to that project. A project made with `create_project` during
   the session joins the allowed set. Anything else is refused. No output prefix. **With no argument
   the launcher shows a numbered list of projects** (most recently opened first, the same order as
   the observer's `list_projects`) with a "new project" entry at the top. Picking new starts with an
@@ -86,7 +92,7 @@ Tests: allow-list, lock across create, prefix off.
 Add a headless block to `guidance.py`: what can't be done (D5), and that `pixi run console` shows task
 progress.
 
-**P3 — launcher.** `pixi run headless [<project>]` starts the server with no browser (reusing
+**P3 — launcher.** `pixi run chat [<project>]` starts the server with no browser (reusing
 `app.py`'s path rather than a second launcher), waits on `/api/health`, shows the project list when
 no project was named (D2, read from `/api/projects`), asks the server for the session (D6) with
 the lock and the switch filled in, and starts `claude` with

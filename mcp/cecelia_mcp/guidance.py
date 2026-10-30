@@ -388,7 +388,7 @@ notebook may be a colleague's, the project name may match hundreds of unrelated 
 user may not know which page it is. Then follow their lead."""
 BRIEFING_GUIDANCE = BRIEFING_GUIDANCE.replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
 
-# Headless mode (no_gui.py, docs/todo/HEADLESS_MODE_PLAN.md): the user has no GUI, only this session.
+# No-GUI mode (no_gui.py, docs/todo/HEADLESS_MODE_PLAN.md): the user has no GUI, only this session.
 # The tools that point at or read the GUI are not registered then (server.py `_gui_tool`); this says
 # what replaces the GUI's half of the rules above.
 NO_GUI_GUIDANCE = """
