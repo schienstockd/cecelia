@@ -59,28 +59,25 @@ function saveCallbacks() {
 // The Blackboard list refreshes itself from the `blackboard:changed` broadcast the backend fires on
 // create, so the click only has to route: `?entry=` opens it (BlackboardModule).
 function announceSaved(entryId: string) {
-  toast.add({ severity: 'success', life: 5000, summary: 'Saved to Blackboard',
+  toast.add({ severity: 'success', life: 5000, summary: 'On the Blackboard',
               detail: 'Click to open the entry.',
               onClick: () => { void router.push({ path: '/blackboard', query: { entry: entryId } }) } })
 }
-// The entry each turn was saved to this session, so Save then Continue in terminal (or either twice)
-// reuses one entry instead of creating a duplicate.
+// Saving is idempotent per turn (and per claim) on the SERVER — `sourceKey` makes Blackboard create
+// return the entry this turn already made, so Save twice, Save then Continue in terminal, or either
+// after a reload never duplicates it.
 type SavedEntry = Pick<BlackboardEntrySummary, 'entryId' | 'title'>
-const savedEntry = ref<Record<string, SavedEntry>>({})
 async function saveTurnEntry(t: KiwiTurn): Promise<SavedEntry | null> {
-  const known = savedEntry.value[t.turnId]
-  if (known) return known
   const puid = pm.current?.uid ?? ''
   if (!puid) return null
   const payload = buildTurnSave(t, saveCallbacks())
   const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
-                                          { kiwiRefs: payload.kiwiRefs })
+                                          { kiwiRefs: payload.kiwiRefs, sourceKey: `kiwi:${t.turnId}` })
   if (!id) {
     toast.add({ severity: 'error', life: 5000, summary: 'Save failed', detail: 'Blackboard rejected the entry.' })
     return null
   }
-  savedEntry.value = { ...savedEntry.value, [t.turnId]: { entryId: id, title: payload.title } }
-  return savedEntry.value[t.turnId]
+  return { entryId: id, title: payload.title }
 }
 async function saveTurn(t: KiwiTurn) {
   if (saveBusy.value[t.turnId]) return
@@ -111,7 +108,7 @@ async function saveClaim(t: KiwiTurn, c: KiwiClaim, i: number) {
   try {
     const payload = buildClaimSave(t, c, saveCallbacks())
     const id = await createBlackboardEntry(puid, payload.title, payload.content, payload.attachments,
-                                            { kiwiRefs: payload.kiwiRefs })
+                                            { kiwiRefs: payload.kiwiRefs, sourceKey: `kiwi:${t.turnId}:claim:${i}` })
     if (id) announceSaved(id)
     else toast.add({ severity: 'error', life: 5000, summary: 'Save failed',
                      detail: 'Blackboard rejected the claim.' })

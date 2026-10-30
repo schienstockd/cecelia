@@ -885,3 +885,47 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: blackboard create is idempotent per Kiwi sourceKey" begin
+    # Save twice, Save then Continue in terminal, or either after a reload: the same Kiwi turn (or
+    # claim) returns the entry it already made. A deleted entry's key no longer resolves.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTSK"; mkpath(joinpath(tmp, uid))
+        w(path, b) = _post(path, b)
+        mk(key) = w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c", "sourceKey"=>key))
+        n_entries() = length(_read_bb_registry(uid))
+
+        st1, b1 = mk("kiwi:kt-abc123"); @test st1 == 200
+        id1 = String(JSON3.read(b1).entryId)
+        st2, b2 = mk("kiwi:kt-abc123"); r2 = JSON3.read(b2)
+        @test st2 == 200 && String(r2.entryId) == id1 && get(r2, :existing, false) == true
+        @test n_entries() == 1
+
+        # a claim of the same turn is its own entry, and is itself idempotent
+        _, bc = mk("kiwi:kt-abc123:claim:2"); idc = String(JSON3.read(bc).entryId)
+        @test idc != id1
+        @test String(JSON3.read(mk("kiwi:kt-abc123:claim:2")[2]).entryId) == idc
+        @test n_entries() == 2
+
+        # no key → always a new entry (the GUI's own "New entry")
+        w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c"))
+        w(api_blackboard_create, Dict("projectUid"=>uid, "title"=>"t", "content"=>"c"))
+        @test n_entries() == 4
+
+        # malformed key rejected, nothing written
+        @test mk("../etc")[1] == 400
+        @test mk("kiwi:kt abc")[1] == 400
+        @test n_entries() == 4
+
+        # deleted → saving again makes a fresh entry
+        @test w(api_blackboard_delete, Dict("projectUid"=>uid, "entryId"=>id1))[1] == 200
+        _, b3 = mk("kiwi:kt-abc123"); r3 = JSON3.read(b3)
+        @test String(r3.entryId) != id1 && !get(r3, :existing, false)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

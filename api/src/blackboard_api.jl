@@ -270,6 +270,33 @@ function _write_bb_registry!(uid::AbstractString, reg::AbstractDict)
     write_json_atomic(_bb_registry_path(uid), reg)
 end
 
+# ── Source index — one entry per Kiwi turn or claim ──────────────────────────
+# `sourceKey` → entryId, beside the registry. Saving the same Kiwi turn (or claim) again — Save twice,
+# Save then Continue in terminal, or either after a reload — returns the entry it already made instead
+# of a duplicate. Its own file rather than a meta.json field because every revise rewrites meta whole.
+# A key whose entry is gone (deleted) no longer resolves, so saving again makes a fresh one.
+const _BB_SOURCE_KEY_RE = r"^kiwi:[A-Za-z0-9_-]{1,64}(:claim:[0-9]{1,3})?$"
+_bb_sources_path(uid::AbstractString) = joinpath(_settings_dir_for_project(uid), "blackboard_sources.json")
+function _read_bb_sources(uid::AbstractString)::Dict{String,String}
+    p = _bb_sources_path(uid)
+    isfile(p) || return Dict{String,String}()
+    try
+        Dict{String,String}(String(k) => String(v) for (k, v) in JSON3.read(read(p, String), Dict{String,Any}))
+    catch
+        Dict{String,String}()
+    end
+end
+function _bb_entry_for_source(uid::AbstractString, key::AbstractString)::Union{String,Nothing}
+    id = get(_read_bb_sources(uid), key, nothing)
+    (id !== nothing && haskey(_read_bb_registry(uid), id)) ? id : nothing
+end
+function _record_bb_source!(uid::AbstractString, key::AbstractString, id::AbstractString)
+    src = _read_bb_sources(uid)
+    src[String(key)] = String(id)
+    mkpath(_settings_dir_for_project(uid))
+    write_json_atomic(_bb_sources_path(uid), src)
+end
+
 # Snapshot versions on disk for one entry (`.snapshots/entry@v<N>.md`). Same shape as notebooks'
 # `_snapshot_versions` — the byte-slice between the "entry@v" prefix and ".md" is safe because the
 # filenames are ASCII and we generate them ourselves.
@@ -869,8 +896,9 @@ end
 """
     POST /api/blackboard/create
 
-Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun? }`
-Reply: `{ ok:true, entryId }`
+Body: `{ projectUid, title, content, attachments?: [captureId, ...], status?, fingerprint?, kiwiRefs?, agentRun?, sourceKey? }`
+Reply: `{ ok:true, entryId }`, or `{ ok:true, entryId, existing:true }` when `sourceKey` (`kiwi:<turnId>[:claim:<n>]`)
+already made an entry that still exists — nothing is written then.
 
 Creates `<proj>/blackboard/<entryId>/{entry.md, meta.json}` — no snapshot on create (current = 0
 mirrors notebooks; first revision produces v1). Additive-only from the MCP surface; this is one of
@@ -888,6 +916,15 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     _valid_bb_content(content) ||
         return 400, JSON3.write((; error = "content exceeds $_BB_CONTENT_MAX_BYTES bytes"))
     attachments = _clean_attachments(uid, get(body, :attachments, nothing))
+
+    # Optional sourceKey: an entry already made from this Kiwi turn/claim is returned, not duplicated.
+    source_key = _wstr(body, :sourceKey)
+    if !isempty(source_key)
+        occursin(_BB_SOURCE_KEY_RE, source_key) ||
+            return 400, JSON3.write((; error = "sourceKey must look like kiwi:<turnId>[:claim:<n>]"))
+        known = _bb_entry_for_source(uid, source_key)
+        known === nothing || return 200, JSON3.write((; ok = true, entryId = known, existing = true))
+    end
 
     id  = _new_bb_entry_id()
     ts  = string(Dates.now())
@@ -941,6 +978,7 @@ function api_blackboard_create(body_bytes::Vector{UInt8})
     reg = _read_bb_registry(uid)
     reg[id] = Dict{String,Any}("title" => title, "current" => 0, "updatedAt" => ts, "status" => status)
     _write_bb_registry!(uid, reg)
+    isempty(source_key) || _record_bb_source!(uid, source_key, id)
 
     broadcast_ws(Dict{String,Any}("type" => "blackboard:changed", "projectUid" => uid))
     200, JSON3.write((; ok = true, entryId = id))
