@@ -1,7 +1,7 @@
 """cecelia-autonomous: the MCP server an UNATTENDED agent gets beside the read-only observer — start
 work, wait for it, draw gates. Never wired into a GUI user's session. Two callers: the agent-eval runner
 (`scripts/agent_eval/run_app.py`) starts it with ``CECELIA_MCP_PROJECT`` set to a disposable project,
-and the headless launcher (`headless.py`, ``CECELIA_MCP_NO_GUI=1``) for a user with no GUI at all.
+and the chat launcher (`chat.py`, ``CECELIA_MCP_NO_GUI=1``) for a user with no GUI at all.
 The guard and its allow-list live in ``cecelia_mcp.autonomous``.
 
 Run:   CECELIA_MCP_PROJECT=<uid> [CECELIA_MCP_PREFIX=agent] PYTHONPATH=mcp:python python -m cecelia_mcp.autonomous_server
@@ -25,10 +25,10 @@ INSTRUCTIONS = (
     "beside cecelia-observer: the observer READS (lineage, measures, task logs, behaviour) and "
     "DESIGNS (create_chain); this server STARTS work (run_task, run_chain), WAITS for it "
     "(wait_for_tasks, wait_for_chain) and GATES (gate_histogram → add_gate → gate_stats). "
-    "Run pipelines as whiteboard chains (create_chain → run_chain) so the whiteboard holds what "
+    "Run pipelines as chains (create_chain → run_chain) so the Chains page holds what "
     "ran; run_task is for a single task outside a chain. Everything you do is recorded."
 )
-# Headless mode (no_gui.py): the user is at the keyboard and there is no GUI, so this server is also
+# No-GUI mode (no_gui.py): the user is at the keyboard and there is no GUI, so this server is also
 # how data gets in. Only then are the three creation tools registered at all.
 NO_GUI_INSTRUCTIONS = (
     " There is NO GUI in this session: the user works only through you. New data comes in with "
@@ -63,7 +63,7 @@ def get_lock() -> dict:
 
 
 def _no_gui_tool(fn):
-    """A tool that exists only in headless mode — the eval sandbox never sees it."""
+    """A tool that exists only in no-GUI mode — the eval sandbox never sees it."""
     return _tool(fn) if no_gui_enabled() else fn
 
 
@@ -117,10 +117,10 @@ def wait_for_tasks(task_ids: list[str], timeout_s: int = 900) -> dict:
 
 @_tool
 def run_chain(project_uid: str, chain_name: str, image_uids: list[str]) -> dict:
-    """Run a whiteboard chain (authored with the observer's create_chain) over `image_uids` — the
-    same `chain:run` the whiteboard's Run button sends. Every node's params are checked against the
+    """Run a chain (authored with the observer's create_chain) over `image_uids` — the
+    same `chain:run` the Chains page's Run button sends. Every node's params are checked against the
     lock first. Returns `{runId}`; then wait_for_chain. To change a chain, create a new one under a
-    new name (create_chain never overwrites) and run that — both stay on the whiteboard as the record."""
+    new name (create_chain never overwrites) and run that — both stay on the Chains page as the record."""
     return _client.run_chain(project_uid, chain_name, image_uids)
 
 

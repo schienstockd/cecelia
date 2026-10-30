@@ -480,7 +480,7 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
        hpc_pending_cancels, hpc_retry_cancels!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
-       headless_mcp_config, headless_claude_argv, headless_claude_env, AUTONOMOUS_MCP_NAME,
+       chat_mcp_config, chat_claude_argv, chat_claude_env, AUTONOMOUS_MCP_NAME,
        observer_api_url, observer_hook_settings, observer_caller_hook, OBSERVER_HOOK_MATCHER,
        OBSERVER_MCP_NAME, observer_registration_state,
        claude_config_path, read_registered_observer_spec,

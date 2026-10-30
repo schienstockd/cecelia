@@ -51,7 +51,7 @@ import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
 import CaptureViewSurface from '../CaptureViewSurface.vue'
 import { useCaptureReshowStore } from '../../stores/captureReshow'
-import type { CaptureAddress } from '../../utils/captureAddress'
+import { resolveStoredAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
@@ -617,10 +617,7 @@ watch(() => shareSel.active.value, on => {
   if (on) { reshown.value = null; bumpSlotHits() }
 })
 // Reshow surface bindings (zoom-to-source deferred; frame + marks still show).
-const reshownAddress = computed<CaptureAddress>(() => {
-  const a = reshown.value?.address as CaptureAddress | null | undefined
-  return a ?? { projectUid: projectUid.value }
-})
+const reshownAddress = computed(() => resolveStoredAddress(reshown.value?.address, projectUid.value))
 const reshownAddressLine = computed(() => {
   const panelsN = (reshown.value?.panels?.length) ?? 0
   return panelsN > 0 ? `analysis · ${panelsN} panels` : `analysis · board`

@@ -1,14 +1,15 @@
-"""Headless mode — Cecelia with no GUI, Claude in the terminal as the front end
+"""No-GUI mode — `pixi run chat`: Cecelia with no GUI, Claude in the terminal as the front end
 (docs/todo/HEADLESS_MODE_PLAN.md).
 
-`no_gui_enabled()` is THE reader of `CECELIA_MCP_NO_GUI` (`1` on, unset or `0` off). The headless
-launcher sets it on both MCP servers. Every surface the mode changes asks this one function — the
+`no_gui_enabled()` is THE reader of `CECELIA_MCP_NO_GUI` (`1` on, unset or `0` off). The chat
+launcher (`chat.py`) sets it on both MCP servers. Every surface the mode changes asks this one function — the
 autonomous server's project lock and its project/set/image creation tools here, the observer's
 GUI-only tools — so the two servers can never disagree about which mode they are in.
 
-Not called "headless" in the code: there, headless already means the app's own `claude -p` turns
-(`observer_mcp_config(; headless)` in app/src/ai/agent_runner.jl). This mode is an interactive
-session with the user at the keyboard.
+Not called "headless": in the code that already means the app's own `claude -p` turns
+(`observer_mcp_config(; headless)` in app/src/ai/agent_runner.jl), and the command name is kept for
+a run with no UI and no Claude at all. This mode is an interactive session with the user at the
+keyboard.
 """
 from __future__ import annotations
 

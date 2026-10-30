@@ -6,7 +6,8 @@
 # added by PR #5 / PR #6.
 #
 # Storage. Per-project `<proj>/captures/<captureId>/{meta.json, frame.png}`, one dir per capture.
-# ADDITIVE-only: no delete, no mutate. Matches the notebook-registry / movies-registry pattern —
+# No mutate; the only delete is the user's (Kiwi's per-row × and "Clear all captures"). Matches the
+# notebook-registry / movies-registry pattern —
 # a directory listing IS the truth (Decision 6 in the movies plan), and a corrupt `meta.json`
 # is skipped rather than taking the list down.
 #

@@ -442,7 +442,9 @@ class FenceTest(_AutoFixture):
 
 class WorkTest(_AutoFixture):
     def test_a_fix_is_committed_with_its_tags_pushed_and_opened_as_a_pr(self):
-        spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        stamp = {"model": "claude-sonnet-5-5", "version": "2.1.312", "session": "sid-1"}
+        with mock.patch.object(self.af, "session_stamp", lambda sid: stamp if sid == "sid-1" else {}):
+            spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
         self.assertEqual(spent, 3.0)
         firsts = [c[:3] for c in self.calls]
         self.assertEqual(firsts[:2], [["git", "branch", "--list"], ["pixi", "run", "bootstrap-worktree"]])
@@ -451,13 +453,15 @@ class WorkTest(_AutoFixture):
         self.assertIn(RECITAL.strip(), self.prompts[1][0])
         msg = self.messages[0]
         for part in ("fix(a): b", "fanout-b1", "Refs #7", "[fanout-x1: fixed_pre_commit]", "_Recital stamp:",
-                     "Co-Authored-By:"):
-            self.assertIn(part, msg)
+                     "Co-Authored-By: Claude Sonnet 5.5 <", "Claude-Model: claude-sonnet-5-5",
+                     "Claude-Session: sid-1"):
+            self.assertIn(part, msg)   # the fix session's own model, never a pinned name
         self.assertNotIn("Fixes #7", msg)
         create = next(c for c in self.calls if c[:3] == ["gh", "pr", "create"])
         self.assertNotIn("--draft", create)   # a normal PR; the body says to look first
         body = next(m for m in self.bodies)
         self.assertIn("Changes what is drawn on screen", body)
+        self.assertIn("· claude-sonnet-5-5 · Claude Code 2.1.312", body)
         self.assertFalse(any(c[:3] == ["gh", "pr", "merge"] for c in self.calls))
         # git never runs the worktree's hooks or fsmonitor; the recital reads the diff we staged
         self.assertEqual(self.git_c, {"core.fsmonitor", "core.hooksPath"})

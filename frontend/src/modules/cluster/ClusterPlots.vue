@@ -38,7 +38,7 @@ import CanvasSelectionOverlay from '../../components/canvas/CanvasSelectionOverl
 import FrameAnnotator from '../../components/FrameAnnotator.vue'
 import CaptureViewSurface from '../../components/CaptureViewSurface.vue'
 import { useCaptureReshowStore } from '../../stores/captureReshow'
-import type { CaptureAddress } from '../../utils/captureAddress'
+import { resolveStoredAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
 
@@ -287,10 +287,7 @@ watch(() => shareSel.active.value, on => { if (on) reshown.value = null })
 // (SummaryCanvas has `reresolvePops` for its per-pop rebinding; the cluster page's `hl` array
 // carries paths that don't need the uid two-pass). For now the reshow surface shows the frozen
 // composite + marks; zoom-to-source is disabled.
-const reshownAddress = computed<CaptureAddress>(() => {
-  const a = reshown.value?.address as CaptureAddress | null | undefined
-  return a ?? { projectUid: projectUid.value }
-})
+const reshownAddress = computed(() => resolveStoredAddress(reshown.value?.address, projectUid.value))
 const reshownAddressLine = computed(() => {
   const panelsN = (reshown.value?.panels?.length) ?? 0
   return panelsN > 0 ? `cluster · ${props.popType} · ${panelsN} panels`

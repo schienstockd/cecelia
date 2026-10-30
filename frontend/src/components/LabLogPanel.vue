@@ -69,7 +69,7 @@ async function load() {
   }
 }
 
-// Manual "Capture activity" button + auto-on-open. Routes through the labCapture store (which owns
+// Manual "Summarise activity" button + auto-on-open. Routes through the labCapture store (which owns
 // the POST, the sidebar badge, and the app-lifetime auto-capture); the entries reload via the
 // captureTick watch below. `silent` (auto-on-open) suppresses the "nothing new" note.
 async function capture(silent = false) {
@@ -202,10 +202,10 @@ async function dismissEntry(entry: LabLogEntry) {
       <div class="ll-tb-group">
         <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
                 v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
-          <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
+          <i class="pi pi-history" /> {{ capturing ? 'Summarising…' : 'Summarise activity' }}
         </button>
         <CcToggle class="ll-auto" v-model="settings.labLogAutoContext" label="Auto"
-          v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'" />
+          v-tooltip.top="'Summarise activity automatically — when this project opens and after tasks finish'" />
         <!-- image refs are stored as stable UIDs; opt in to showing current names -->
         <CcToggle v-if="projectUid && hasImageNames" class="ll-auto" v-model="settings.labLogShowNames" label="Show names"
           v-tooltip.top="'Show current image names instead of stable IDs'" />

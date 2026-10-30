@@ -92,7 +92,7 @@ export function cliRow(available: boolean, authFailed = false, path = ''): McpRo
   const base = { name: 'Claude Code', kind: 'cli' as const, scope: 'this machine', dismissable: false }
   switch (observerSetupReason(available, authFailed)) {
     case 'missing':
-      return { ...base, tone: 'warn', label: 'not detected', detail: 'Install it, then run claude once',
+      return { ...base, tone: 'warn', label: 'not detected', detail: 'Install it, then log in from Kiwi',
                hint: 'Everything below needs the Claude Code CLI', href: CLAUDE_SETUP_GUIDE, recheck: true }
     case 'auth':
       return { ...base, tone: 'warn', label: 'not logged in', detail: 'Log in from Kiwi',

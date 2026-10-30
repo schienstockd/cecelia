@@ -105,25 +105,25 @@ class Lock(unittest.TestCase):
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"}
         self.assertTrue(writes)
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
-        # headless mode's creation routes are a separate set, and additive (no delete/rename/move)
+        # no-GUI mode's creation routes are a separate set, and additive (no delete/rename/move)
         self.assertFalse(au.NO_GUI_ROUTES & au.AUTONOMOUS_ROUTES)
         self.assertTrue(all(p.endswith(("/create", "/register")) for _, p in au.NO_GUI_ROUTES))
 
 
 class NoGuiLock(unittest.TestCase):
-    """Headless mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN D2): the lock is the named project plus
+    """No-GUI mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN D2): the lock is the named project plus
     the projects this session created, and creation routes open — only there."""
 
     def setUp(self):
         au._session_projects.clear()
         self.addCleanup(au._session_projects.clear)
 
-    def test_created_project_joins_the_lock_only_in_headless_mode(self):
+    def test_created_project_joins_the_lock_only_in_no_gui_mode(self):
         au.allow_session_project("new001")
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": "1"}):
             au.check_project("named1")
             au.check_project("new001")
-            with self.assertRaisesRegex(au.LockViolation, "pixi run headless"):
+            with self.assertRaisesRegex(au.LockViolation, "pixi run chat"):
                 au.check_project("other1")
         # the eval sandbox: a session project never widens the lock
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": ""}):
@@ -136,7 +136,7 @@ class NoGuiLock(unittest.TestCase):
                 au.check_project("abc123")
             self.assertEqual(au.allowed_projects(), [])
 
-    def test_creation_routes_open_only_in_headless_mode(self):
+    def test_creation_routes_open_only_in_no_gui_mode(self):
         c = au.AutonomousClient("http://127.0.0.1:1")
         with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": ""}):
             with self.assertRaises(DisallowedRoute):
@@ -178,7 +178,7 @@ class NoGuiLock(unittest.TestCase):
 
 
 class NoGuiTools(unittest.TestCase):
-    """The creation tools exist only in headless mode: the eval sandbox's agent never sees them."""
+    """The creation tools exist only in no-GUI mode: the eval sandbox's agent never sees them."""
 
     def _tool_names(self, no_gui: str) -> set[str]:
         import importlib

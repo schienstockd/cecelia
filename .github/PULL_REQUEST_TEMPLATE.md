@@ -14,6 +14,7 @@ conventions in CLAUDE.md and docs/DEV.md — it's a reminder, not paperwork.
 - [ ] Docs updated (the per-area doc in `docs/`, and `CLAUDE.md` if a convention changed).
 - [ ] **Discovery-first**: checked the matching `docs/inventory/*.md` + grepped before adding anything cross-cutting; reused the canonical helper rather than rolling a new one. Added a line to the area file if a new shared component was added.
 - [ ] No analysis logic leaked into the API or frontend (it lives in `Cecelia.jl`); no new language added.
+- [ ] AI-written? The body ends with the footer naming the model id + Claude Code version (agent PRs: the Bash guard prints the line).
 
 ## Notes / caveats
 

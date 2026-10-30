@@ -39,6 +39,7 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     # every observer tool is decided: allowed or excluded with a reason — a new tool fails here
     server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
     tools = Set(m.captures[1] for m in eachmatch(r"@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(", server))   # `_tool` / `_tool_if` / `_gui_tool` = server.py's registrars, then any stacked decorators (`@with_doc`)
+    @test length(tools) == count(r"^@_(?:gui_)?tool"m, server)   # every registration seen — the pattern once missed two @with_doc tools
     @test length(tools) > 40
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))

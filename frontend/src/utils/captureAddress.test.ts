@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildCaptureAddress, captureTimeS, normalisePoint, rectToOverlayGeom, pointsToOverlayGeom,
+  resolveStoredAddress,
 } from './captureAddress'
 
 describe('buildCaptureAddress', () => {
@@ -76,5 +77,13 @@ describe('pointsToOverlayGeom', () => {
   it('preserves order — a polyline is a sequence, not a set', () => {
     const out = pointsToOverlayGeom([[0, 0], [100, 0], [100, 100]], 200, 200)
     expect(out.pts).toEqual([[0, 0], [0.5, 0], [0.5, 0.5]])
+  })
+})
+
+describe('resolveStoredAddress', () => {
+  it('fills projectUid only where the stored address has none', () => {
+    expect(resolveStoredAddress(null, 'p')).toEqual({ projectUid: 'p' })
+    expect(resolveStoredAddress({ imageUid: 'i', t: 3 }, 'p')).toEqual({ projectUid: 'p', imageUid: 'i', t: 3 })
+    expect(resolveStoredAddress({ projectUid: 'q', z: 1 }, 'p')).toEqual({ projectUid: 'q', z: 1 })
   })
 })

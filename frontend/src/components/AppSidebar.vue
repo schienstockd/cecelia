@@ -127,7 +127,7 @@ function isNavDisabled(item: NavItem): boolean {
              never a second line inside it — that row centres the folder icon and the ⋯ button against
              the name, so growing it pushed the name up and both controls down. -->
         <span v-if="viewProfiles.active" class="profile-badge"
-              v-tooltip.right="'View profile — change in Settings → Interface'">
+              v-tooltip.right="'Sidebar layout — change in Settings → Interface'">
           <i class="pi pi-eye" />{{ viewProfiles.active.label }}
         </span>
       </template>

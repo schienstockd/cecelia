@@ -140,11 +140,15 @@ history.
 
 ## The no-mutation guarantee
 
-Every request goes through `ALLOWED_ROUTES` in `client.py`. The non-GET routes on it are
-`POST /api/lablog/append` (append-only), `POST /api/notebooks/{write,describe,revise}` (create-only /
-description-text-only / snapshot-then-overwrite) and `POST /api/chains/create` (create-only +
-validated). All are **additive / non-destructive**: no allow-listed route can edit or delete project
-data (no h5ad, gates, ccid.json, or an existing notebook's content or chain). A call to any other
+Every request goes through `ALLOWED_ROUTES` in `client.py`. Its writes, each commented there:
+`POST /api/lablog/append` (append-only); `POST /api/notebooks/{write,describe,revise}` and
+`POST /api/blackboard/{create,revise}` (create-only, or snapshot-then-overwrite so the old version is
+restorable); `POST /api/blackboard/{status,outcome,section-outcome}` (metadata only; a section verdict
+never replaces a person's); `POST /api/chains/create` and `POST /api/boards/add` (create-only +
+validated); and `POST /api/observer/labarchives/set` (replaces the LabArchives context sidecar).
+The `POST /api/viewer/*` and `/api/push/target` routes write nothing to disk: they draw marks, move
+the viewer, or register where to push. No allow-listed route can edit or delete project data (no
+h5ad, gates, ccid.json, or an existing chain or board). A call to any other
 route raises `DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite
 fails loudly rather than a project being silently mutated. `test_client.py` asserts the exact write
 set, and changing that list is the deliberate gate on widening what Claude can do.
@@ -176,14 +180,16 @@ Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHE
 ### Wire into Claude Code
 
 **You don't have to do this by hand.** Kiwi → Assistant has a **Set up** / **Fix** button on the
-Terminal row: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
-with the spec below already resolved (python bin, `PYTHONPATH`, API port), so plain `claude` gets the
-tools in every session. It removes-then-adds, so it's also the re-sync after a move/reinstall. The
-config file it uses for the *in-app* agent is `<config_dir>/observer-mcp.json`
-(`api/src/observer_api.jl` → `_write_observer_mcp_config`), which also works as
-`claude --mcp-config <path>` for a single session. See
-[`../docs/ai-assist/OBSERVER-SETUP.md`](../docs/ai-assist/OBSERVER-SETUP.md). The manual route below is
-for when you'd rather edit the config yourself.
+Terminal row: it POSTs `/api/observer/register`, which installs the **Cecelia Claude Code plugin**
+(`claude-plugin/`: this server plus the caller hook that stamps model + session on Claude's writes)
+with every machine-specific value resolved, so plain `claude` gets the tools in every session. **Fix**
+is the re-sync after a move, reinstall or port change, and also replaces an old
+`claude mcp add-json` registration. The config file it uses for the *in-app* agent is
+`<config_dir>/observer-mcp.json` (`api/src/observer_api.jl` → `_write_observer_mcp_config`), which
+also works as `claude --mcp-config <path>` for a single session. See
+[`../docs/ai-assist/OBSERVER-SETUP.md`](../docs/ai-assist/OBSERVER-SETUP.md). The manual route below
+gives the tools **without** the caller hook, so Claude's writes are stamped without a model; use it
+only when you'd rather edit the config yourself.
 
 Add to your Claude Code MCP config (adjust the absolute path to this checkout):
 

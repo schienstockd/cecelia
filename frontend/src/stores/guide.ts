@@ -321,7 +321,7 @@ export const useGuideStore = defineStore('guide', () => {
     const hidden = hiddenPagesOf(g)
     if (!hidden.length) return null
     const names = hidden.map(p => navLabelFor(profileNavGroups.value, p)).join(', ')
-    return { id: 'profileVisible', label: `pages your view profile hides (${names})`,
+    return { id: 'profileVisible', label: `pages your sidebar layout hides (${names})`,
              ok: () => false, met: false }
   }
 

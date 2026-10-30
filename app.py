@@ -381,11 +381,11 @@ def _crashed(rc: int) -> bool:
 
 
 def _spawn_server(julia: str, **popen_kwargs) -> tuple:
-    """Start the Julia server the one way both launchers do (`main` here, `headless.py`): the supervised
+    """Start the Julia server the one way both launchers do (`main` here, `chat.py`): the supervised
     env, the thread args read per launch, and the LIFELINE — the server's stdin is a pipe only the
     launcher holds, which the OS closes when the launcher dies by any route (the window closed, a
     kill), and the server stops on that EOF (`_watch_supervisor!`, app/src/lifeline.jl), on every OS.
-    `popen_kwargs` adds what a caller needs on top (headless: output to a log, its own process group).
+    `popen_kwargs` adds what a caller needs on top (chat: output to a log, its own process group).
     Returns `(proc, launched_at)` for `_launched_port`."""
     # Read per launch, so Settings → "Use all CPU cores" lands on the in-app Restart.
     targs, applied = _thread_args()

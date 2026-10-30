@@ -14,8 +14,8 @@ Fixed-name cleanup outputs (``afCorrected``, ``driftCorrected``, ``denoised``) c
 the specs don't offer a name — which is why the lock is a whole PROJECT: the agent works in a
 disposable one (``scripts/agent_eval/app_project.py`` builds it), never in the user's.
 
-Headless mode (``CECELIA_MCP_NO_GUI=1``, ``no_gui.py``; docs/todo/HEADLESS_MODE_PLAN.md D2) is the one
-other shape: an INTERACTIVE session, the user at the keyboard approving each call. There the lock is
+No-GUI mode (``pixi run chat``, ``CECELIA_MCP_NO_GUI=1``, ``no_gui.py``; docs/todo/HEADLESS_MODE_PLAN.md
+D2) is the one other shape: an INTERACTIVE session, the user at the keyboard approving each call. There the lock is
 the project the launcher named (may be unset — "new project") plus every project this session
 created, and the session may create projects, sets and images (``NO_GUI_ROUTES``). Without the
 switch those routes stay refused and the lock is exactly as above.
@@ -61,7 +61,7 @@ AUTONOMOUS_ROUTES = frozenset({
     ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
 })
 
-# Allowed ONLY in headless mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
+# Allowed ONLY in no-GUI mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
 # does there. Each is additive — a new project, a new set, new pending images.
 NO_GUI_ROUTES = frozenset({
     ("POST", "/api/projects/create"),   # WRITE — a new project (joins this session's lock)
@@ -89,7 +89,7 @@ def required_prefix() -> str:
     return os.environ.get(PREFIX_ENV, "").strip()
 
 
-# Projects this session created (headless mode only) — they join the lock. In-process: the MCP server
+# Projects this session created (no-GUI mode only) — they join the lock. In-process: the MCP server
 # lives exactly as long as the Claude session, which is the scope D2 means.
 _session_projects: set[str] = set()
 
@@ -109,13 +109,13 @@ def check_project(project_uid: str) -> None:
     if not allowed:
         if no_gui_enabled():
             raise LockViolation("this session has no project yet — create one with create_project, "
-                                "or restart `pixi run headless <project>` to work in an existing one")
+                                "or restart `pixi run chat <project>` to work in an existing one")
         raise LockViolation(f"{PROJECT_ENV} is not set — the autonomous server refuses every call")
     if project_uid in allowed:
         return
     if no_gui_enabled():
         raise LockViolation(f"project {project_uid!r} is not one this session may work in "
-                            f"({', '.join(allowed)}); restart `pixi run headless <project>` to work "
+                            f"({', '.join(allowed)}); restart `pixi run chat <project>` to work "
                             "in another")
     raise LockViolation(f"project {project_uid!r} is not the locked project {allowed[0]!r}; "
                         "this session may only run work in that one")
@@ -246,7 +246,7 @@ class AutonomousClient:
             raise LockViolation(f"{fun_name}: " + "; ".join(bad))
         return spec
 
-    # ── getting data in (headless mode only — NO_GUI_ROUTES) ──
+    # ── getting data in (no-GUI mode only — NO_GUI_ROUTES) ──
     def create_project(self, name: str) -> dict:
         got = self._request("POST", "/api/projects/create", body={"name": name})
         proj = got.get("project") or {}

@@ -211,6 +211,9 @@ test whether an agent can actually use the framework.
      `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital, and open the PR.
      Each new PR closes the previous one. A failure's PR closes none: the last pass's record is
      still the work list.
+     The commit and PR name the models the pass's judge calls ran on: each call's `modelUsage` keys,
+     kept in the meters as `run.spend.tokens.<step>.models` (`judge.usage`). A record without them,
+     such as a failure, names a bare `Claude`.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits (not local ones: GitHub has nothing to link)
    and a repeated agent error get a GitHub issue,
