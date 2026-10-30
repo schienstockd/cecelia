@@ -25,7 +25,7 @@ import type { GuideDef } from '../lib/guides/types'
 import ClaudeLoop from './ClaudeLoop.vue'
 import { recipeRequestUrl } from '../lib/links'
 import { closeGuides } from '../lib/guideOpen'
-import { buildMap, mapPairs, chipTip } from '../utils/guideMap'
+import { buildMap, mapPairs, chipTip, mapCaption } from '../utils/guideMap'
 import { availablePaths, applyProfile } from '../utils/viewProfiles'
 import { NAV_GROUPS } from '../lib/navGroups'
 
@@ -112,6 +112,8 @@ const assistTip = (s: RecipeStep) =>
       </div>
     </div>
 
+    <p class="gm-caption cc-muted cc-fs-2xs">{{ mapCaption(recipe) }}</p>
+
     <p class="gm-pairs cc-row cc-row-loose cc-muted cc-fs-2xs">
       <span v-for="([a, b], i) in pairs" :key="i" class="gm-pair">{{ a }} <i class="pi pi-arrow-right" /> {{ b }}</span>
     </p>
@@ -151,6 +153,7 @@ const assistTip = (s: RecipeStep) =>
 .gm-page.lit { opacity: 1; font-weight: 600; }
 .gm-page.hidden { text-decoration: line-through; }
 
+.gm-caption { margin: 0; }
 .gm-pairs { margin: 0; flex-wrap: wrap; }
 .gm-pair .pi { font-size: 0.7em; }
 

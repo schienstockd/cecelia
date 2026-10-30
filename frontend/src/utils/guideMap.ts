@@ -106,3 +106,8 @@ export function defaultOpenGroup(currentPath: string): string {
   const g = GUIDES.find(d => guideRoute(d) === currentPath)
   return g?.group ?? 'Start'
 }
+
+/** The line under the map saying what bold means — dimmed pages read as disabled otherwise. */
+export function mapCaption(recipe: WrittenRecipe | null): string {
+  return recipe ? `Bold: the pages ${recipe.title} uses` : 'Bold: where to start — pick a recipe to light its pages'
+}

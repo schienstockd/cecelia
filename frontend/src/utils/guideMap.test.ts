@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { NAV_GROUPS } from '../lib/navGroups'
 import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
-import { buildMap, recipeRoutes, mapPairs, chipTip, defaultOpenGroup, stepRoute } from './guideMap'
+import { buildMap, recipeRoutes, mapPairs, chipTip, defaultOpenGroup, stepRoute, mapCaption } from './guideMap'
 import { availablePaths, applyProfile } from './viewProfiles'
 
 const ROUTES = NAV_GROUPS.flatMap(g => g.items.map(i => i.to))
@@ -75,6 +75,10 @@ describe('buildMap', () => {
     const gate = chips.find(c => c.route === '/gate')!
     expect(gate.hidden).toBe(true)
     expect(chipTip(gate)).toMatch(/hidden by your sidebar layout/)
+  })
+  it('says what bold means, with and without a recipe', () => {
+    expect(mapCaption(null)).toMatch(/where to start/)
+    expect(mapCaption(written[0])).toContain(written[0].title)
   })
   it('names the pair and the guide on a chip', () => {
     const gate = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!
