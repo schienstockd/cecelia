@@ -1,6 +1,6 @@
 # Bidirectional context sharing — plan
 
-**Status:** planning (design complete 2026-09-18, no implementation yet). Design outputs from the
+**Status:** built. Part 4 (the Blackboard) has shipped; see *BIDIR Part 4 status* below. The design was completed 2026-09-18. Design outputs from the
 audit/design run described in [`docs/archive/bidirectional-context-sharing-audit-prompt_v2.md`](../archive/bidirectional-context-sharing-audit-prompt_v2.md)
 and the prior-art audit in [`docs/archive/landscape-anchor-prior-art-audit.md`](../archive/landscape-anchor-prior-art-audit.md).
 Written to be picked up cold by another session.

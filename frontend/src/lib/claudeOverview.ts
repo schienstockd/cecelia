@@ -86,14 +86,14 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
   {
     key: 'suggests', title: 'Suggests', icon: 'pi-lightbulb', tone: 'neutral',
     items: [
-      'Prior captures on this cell, track or plot',
+      'Earlier captures of the same image or plot',
       'Images that may need a parameter tweak — and which knob',
       'A plot or board for a pattern it spotted',
       'A heads-up when the same bad-tagged failure has recurred',
     ],
   },
   {
-    key: 'creates', title: 'Creates', icon: 'pi-file', tone: 'good',
+    key: 'creates', title: 'Creates (terminal)', icon: 'pi-file', tone: 'good',
     items: [
       'Lab-log lines — dated, append-only',
       'Blackboard entries — good/bad + required why',
@@ -143,7 +143,7 @@ export const CLAUDE_TERMINAL = {
 // generative ones (board / notebook / chain). Short and uniform so they read as a clean row of chips.
 export const CLAUDE_EXAMPLES: string[] = [
   'Circle this — note what looks off',
-  'Trace prior captures on this cell',
+  'Compare with my last capture',
   'Add a behaviour board',
   'Cell-speed notebook',
   'Segment + track chain',

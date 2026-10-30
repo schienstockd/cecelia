@@ -1,6 +1,6 @@
 # Headless mode — Cecelia with Claude as the front end, no GUI
 
-**Status:** parked — scoped 2026-10-29, not started. Prompted by a request from the data science
+**Status:** parked. Scoped 2026-10-29; P1 is built (d855631f, `mcp/cecelia_mcp/no_gui.py`) and the rest is not started. Prompted by a request from the data science
 platform: can they run Cecelia on their own machine without the GUI, with Claude in the terminal as the
 way in?
 

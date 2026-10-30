@@ -263,6 +263,94 @@ carry the "send us images" ask on its own.
 **Nothing here posts anything.** The row opens a browser at a prefilled issue — the same mechanism as
 the What's New *Report a problem* link. No form in the app, no upload path, no new endpoint.
 
+### D10 — Four more recipes, from the paper and the R-version missions  *(Dominik, 2026-10-30)*
+
+D9's rule stands: no recipe without measured data behind it. The data now exists. These are the lab's
+own published workflows: the paper's Results (Figs 2–5, PMC11850795) and the eight R-version missions
+(`cecelia.readthedocs.io/en/latest/missions.html`; the raw steps are in `_sources/msn_*.rst.txt`).
+
+**This answers open question 3: there are two axes.** The *data* picks the recipe, and the *question*
+is a set of steps inside it.
+- Data: does it move (static or live), and how many markers (few → gate, many → cluster).
+- Question: interactions, regions, behaviour, structures.
+
+All recipes share one spine: import → metadata → cleanup if needed → segment (one Cellpose model per
+population, grouped into one segmentation via the `models` list).
+
+The three wanted rows:
+- `large-multiplex` becomes *Multiplex tissue* below.
+- `cell-interactions` is a question, not an image type, so it shows up as steps inside the recipes.
+- `many-small-confocal` is not a recipe. Its shape is the **last step of every recipe**: settle the
+  parameters on a few images, then build a chain from that task history and run it over the set
+  (the chain-from-history work).
+
+Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
+
+| Recipe | Source | Steps |
+|---|---|---|
+| **Few-marker tissue** (static confocal) | Fig 2, mission *spleen LCMV confocal* | `import-images` → `fix-metadata` → `af-correct` (opt.) → `segment-an-image` (a model per population, grouped) → `gate-populations` (drop debris on volume × surface:volume; gate sparse populations first, the most abundant last) → `spatial-analysis` (neighbours) → aggregates (**gap**) → `build-plots` → `run-a-chain` |
+| **Multiplex tissue** (IBEX, CODEX) | Fig 3a–b, missions *IBEX*, *CODEX* | `import-images` → `fix-metadata` → `segment-an-image` (membrane + nuclear) → `cluster-cells` → `spatial-analysis` → `cluster-regions` → structures (opt.): segment the stroma, then branching (**gap**) and nearest-branch contact (**gap**) → `build-plots` → `run-a-chain` |
+| **Intravital timelapse** | Fig 4, missions *LN HSV* | As written above, plus aggregates/contacts (opt., Fig 4d) and `run-a-chain` |
+| **Live + structures** | Fig 5a, mission *skin lymphatics* | Intravital, plus segment the structure separately → distance/contact to it (**gap**) as a `cluster-tracks` input |
+| **In vitro migration** | Fig 5b, mission *cancer flow tracks* | `import-images` → `fix-metadata` → denoise (**gap**: only `train-denoise-model` exists) → `segment-an-image` → `gate-populations` → `track-cells` → `behaviour-states` → `cluster-tracks` → `run-a-chain` |
+
+**Left out, on purpose:**
+- **Xenium** was a one-off test that Dominik never liked.
+- **Registering staining cycles (IBEX):** `editImages/register.json` exists, but nothing has validated
+  it and there is no test dataset for it yet.
+- **Track flow fields** (`binariseTracks` → branching) are deferred in `SPATIAL_ANISOTROPY_PLAN.md`
+  D11. The anisotropy that is built is the structure orientation field, not one from tracks.
+
+**Before any of these ship, each needs:**
+- its *why* lines taken from the mission and the paper, not written fresh;
+- the gaps either built as guides or marked optional.
+- For *Live + structures*: check whether `cluster-tracks` accepts distance-to-structure as a feature
+  (not checked yet).
+
+**Claude is not in these steps.** This is the Claude-free first pass. D11 covers what Claude changes.
+
+### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(proposed 2026-10-30)*
+
+The steps stay the same with or without Claude. Claude changes *how you check* a step, not which steps
+exist. A separate Claude recipe would repeat every step and drift away from the original. So each
+recipe step gets an optional `assist` field with three parts:
+- the shipped tool it uses;
+- where it works (**Kiwi** or **terminal**);
+- one line on what to do.
+
+It shows as a marker only when a Claude toggle is on. A step Claude doesn't help with gets no marker,
+not a line saying "no help here". The field lives on `RecipeStep` (`recipes.ts`) and is rendered by `recipeText` (`guideText.ts`).
+`guides.json` is that renderer's output, so a paired session gets the same markers through `get_guide`
+and knows the step and what it may do there.
+
+Where it helps. All of these use shipped tools; the audit was read-only and checked against
+`server.py`, `kiwi_turn.jl` and `guidance.py`.
+
+| Step (recipes) | What Claude adds | Where |
+|---|---|---|
+| Segment QC (all) | Share a frame with a bad mask. Claude reads the landscape, marks the suspect cells, and names the knob from `get_module_params` plus the run log | terminal (marks); Kiwi (reading only) |
+| Cleanup, Segment: cohort outliers (all) | `get_cohort_qc` → which image, which knob, which way | both |
+| Gate (few-marker, live) | Describes a gate from `gate_plot` / `gate_cells_view`; it **cannot draw one** | both |
+| Track QC (live) | `mark_tracks` + `seek_viewer` to the bad frame | terminal |
+| Cluster cells / regions (multiplex) | Describes cluster *n* from z-scored profiles and marks it on the UMAP. Claude describes; the user names it | both; marking needs the terminal |
+| Spatial, behaviour readouts (all) | `get_contact_stats`, `get_behaviour_summary` → cited sentences | both |
+| Plots (all) | `add_analysis_board` with the replicate check; it adds boards and never edits one | terminal |
+| **Chain step (all)** | `get_analysis_lineage` → `create_chain`: the chain from history, which the user reviews and runs. **The largest change**, because the GUI has no chain-from-history yet (that's the chain-from-history work) | terminal |
+| Settled result (all) | Blackboard entry with a good/bad outcome. Bad tags feed the repeat-failure warning, so tagging is what makes the loop learn | both (Kiwi: Save to Blackboard) |
+
+It adds nothing to import, metadata, registration or denoise. One exception: LabArchives context can
+fill in the subject and goal before metadata, but only from the terminal.
+
+Points the overlay has to respect:
+- **Kiwi and the terminal can do different things.** Kiwi only reads. Marking, pointing, the lab log,
+  writing chains/boards/notebooks, and LabArchives are terminal only. Each marker names which one.
+- **The data notice shows only in Kiwi.** A terminal session never sees it.
+- **Marks and seeks report success even when no browser is paired** to show them. The co-driving
+  fixes from #1748 are still unverified live.
+- **The `assist` lines must come from shipped tools.** The Kiwi help had promised "prior captures on
+  this cell", but nothing looks captures up by object. That line was corrected on 2026-10-30 along
+  with this decision.
+
 ## Constraints the build has to satisfy
 
 Not advice — these all fail CI:
@@ -367,7 +455,7 @@ predicates.
    template — it can ask for example images, which is the thing that actually unblocks a recipe, and
    the existing one requires a proposed solution the requester does not have. One more file in
    `.github/ISSUE_TEMPLATE/` is the whole cost.
-3. **Is "intravital" one recipe or two axes crossed?** Dominik's list mixes *what the data is*
+3. ~~**Is "intravital" one recipe or two axes crossed?**~~ **Answered by D10:** the data picks the recipe, and the question is the steps inside it. Dominik's list mixes *what the data is*
    (intravital, large multiplex, many small confocal) with *what you want* (behaviour, tracks,
    interactions). Moot while only one is written — and the requests are what will answer it, since a
    request names the data and the wanted output separately.

@@ -1,6 +1,6 @@
 # Kiwi capture destination + Blackboard persistence
 
-**Status:** planning (2026-09-25) · branch `docs/kiwi-capture-dest-followup` · unbuilt
+**Status:** built: the capture-destination toggles (`composables/useCaptureDestination.ts`) and Save to Blackboard (`utils/kiwiTurnSave.ts`) shipped. Planned 2026-09-25 on `docs/kiwi-capture-dest-followup`.
 
 **Supersedes:** the prompt at `docs/archive/kiwi-capture-destination-followup.md` and re-frames its capture-destination premise (see Decision 1). The audit that grounds this plan is `docs/archive/kiwi-capture-destination-audit.md` (@bda43465).
 

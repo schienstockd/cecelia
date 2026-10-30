@@ -1,6 +1,6 @@
 # QC Consolidation + Observer Redesign — build plan
 
-**Status:** parked — scoped, not started.
+**Status:** parked. B2 (Cecelia auto-summaries) is DONE; the rest is not started.
 
 Parked plan (see `docs/todo/README.md`). Supersedes the three exploratory prompts in
 `docs/ai-assist/` (`qc-consolidation-prompt.md`, `observer-redesign-prompt.md`,
