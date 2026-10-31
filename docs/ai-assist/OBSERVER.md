@@ -81,7 +81,9 @@ create_notebook           → create a Pluto notebook from cells (Phase 2). Crea
 revise_notebook           → new version of an EXISTING notebook: snapshots it (restorable) then overwrites its cells. Real versioning, not a "-v2" copy.
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 create_chain              → author a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-validated. INERT until the user presses Run — there is no tool to launch it.
-add_gate                  → ADD one proposed gate (new population under an existing one), stamped as Claude's. Add-only (409 on a taken name, 404 on a missing parent): cannot edit, move or delete a population. Same arguments as the autonomous add_gate — one stored-shape `gate` dict in gate_plot's transformed space.
+add_gate                  → ADD one proposed gate (new population under an existing one), stamped as Claude's (409 on a taken name, 404 on a missing parent). `dry_run` = the counts, nothing written. One stored-shape `gate` dict in gate_plot's transformed space.
+set_gate / delete_gate    → move / remove a gate CLAUDE drew — the server refuses (403) anything at or under the path the user drew. `dry_run` too.
+                            The gating toolset (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats + these three) is ONE definition, `mcp/cecelia_mcp/gating_views.py`, registered by the autonomous server too.
 add_analysis_board        → ADD one board to /analysis. Add-only (409 on a duplicate name): cannot modify, rename, reorder or delete a board, so it sits beside the user's own. Server-validated against the project (422 rather than a board that renders blank).
 ```
 
@@ -337,10 +339,14 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   populations, in what order); the server expands it to the stored layout and refuses a spec the
   project cannot plot, because a bad selection renders an EMPTY panel with no error. Add-only.
   See `docs/todo/MCP_BOARD_AUTHORING_PLAN.md` and `docs/ANALYSIS.md`.
-- **`add_gate`** — ADD one proposed gate under an existing population (`POST
+- **Gating** — `add_gate` ADDS one proposed gate under an existing population (`POST
   /api/gating/pop/add-gate`): stored like a GUI gate plus `createdBy`, shown with ✦ in the population
-  manager, undoable, one click to delete. Add-only — never set-gate/move/rename/delete. See
-  `docs/POPULATION.md` → *Storage*.
+  manager, undoable, one click to delete. `set_gate` / `delete_gate` change only what Claude drew
+  (`set-own-gate` / `delete-own`, 403 on anything the user drew or gated under a proposal); never
+  rename/move. To judge a cut on the cells, not the plot: `gate_examples` (crops just inside and
+  just outside a gate, written or proposed) and `gate_cells_view` (`pops` in their colours, a
+  `region`, a few `z` planes). The same toolset, one definition (`gating_views.py`), on both MCP
+  servers. See `docs/POPULATION.md` → *Storage*.
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in Kiwi): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
@@ -350,11 +356,12 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   /api/notebooks/revise` (snapshots first), `POST /api/chains/create` (create-only + validated) and
   `POST /api/boards/add` (create-only + validated — ADDS one Analysis board; cannot modify, rename,
   reorder or delete one, and is deliberately NOT the browser's whole-document board autosave, which
-  would let a single request replace every board in the project) and `POST /api/gating/pop/add-gate`
-  (create-only + validated — ADDS one gated population under an existing parent; the general
-  `/api/gating/pop/*` routes that edit, move or delete a population are not on the list).
-  None touch cell data, images, an existing gate, QC, or notebook content; the invariant test asserts
-  the exact set. No task-run, gate-edit, h5ad, or config write.
+  would let a single request replace every board in the project) and the gating writes (`POST
+  /api/gating/pop/add-gate`, create-only + validated; `set-own-gate` / `delete-own`, which the server
+  refuses for any population the user drew or gated under; the general `/api/gating/pop/*` routes are
+  not on the list). None touch cell data, images, the user's gates, QC, or notebook content; the
+  invariant test asserts the exact set. No task-run, h5ad, or config write, and no edit of a gate
+  the user drew.
 - **Claude designs; the user runs — enforced by the transport.** `create_chain` writes a chain
   template; launching one is the WS message `chain:run`, which has no HTTP route, and the MCP client
   speaks only HTTP. So there is nothing to remember and nothing to bypass. This is why `submit_task`

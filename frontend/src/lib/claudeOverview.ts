@@ -62,7 +62,7 @@ export const TERMINAL_MODE: Mode = {
   only: [
     'Marks cells and tracks on your viewer',  // mark_cells, mark_tracks
     'Builds chains, boards and notebooks',    // create_chain (never run), add_analysis_board, create_notebook
-    'Proposes gates — marked, undoable',      // add_gate
+    'Proposes gates — edits only its own',    // add_gate; set_gate / delete_gate refuse a gate it didn't make
     'Writes lab-log and Blackboard entries',  // append_lab_log, create_blackboard_entry
   ],
   ask: [

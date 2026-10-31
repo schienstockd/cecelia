@@ -45,10 +45,11 @@ Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't s
 | Warns when a bad-tagged failure keeps coming back | ✓ | ✓ | ✓ |
 | Marks cells and tracks on the viewer | – | ✓ | – (no viewer) |
 | Adds a chain, board, notebook or lab-log line for you to review | – | ✓ | ✓ |
+| Proposes a gate (marked ✦, undoable); moves or removes only its own | – | ✓ | ✓ |
 | Writes a custom module for a step Cecelia lacks (you reload and run it) | – | ✓ | ✓ |
 | Reads your LabArchives notebook, once linked | – | ✓ | – |
 | Brings in data: new project, set, images | – | – | ✓ |
-| Runs a task or chain; adds, changes or deletes a gate | – | – | ✓ you approve each call |
+| Runs a task or chain | – | – | ✓ you approve each call |
 | Deletes images or projects, or edits cell data | – | – | – |
 
 **`pixi run chat`** is Cecelia without the GUI: Claude in your terminal is the front end, and it can
