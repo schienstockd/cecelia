@@ -1301,7 +1301,9 @@ def get_guide(guide_id: str = "") -> dict:
 
     Without `guide_id`: the catalogue `[{id, kind, title, summary}]`. `kind` "recipe" is a whole
     pipeline for one kind of data (e.g. "intravital-timelapse"), with each step's reason and every
-    guide it uses inlined; "guide" is one page or task. With `guide_id`: `{id, kind, title, text}`,
+    guide it uses inlined; "guide" is one page or task; "dataset-call" is a capability not built yet,
+    waiting only for a real dataset — its text says what data would do and gives the issue link;
+    "request" (`request-a-feature`) is the feature-request form for everything else. With `guide_id`: `{id, kind, title, text}`,
     the text as Markdown. Task guides name the function they run (`Runs: segment.coastalMeasure`)
     and the parameters worth setting. The steps are written for the GUI ("pick it from the
     dropdown"); the function name and parameters are what a REPL / run_task caller needs.

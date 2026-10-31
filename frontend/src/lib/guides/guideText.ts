@@ -6,15 +6,22 @@
 // What is added is the function a task guide runs (its `awaitTask.fun`), because "pick it from the
 // dropdown" names a label, and a REPL caller needs the fun_name.
 //
+// The Call for Datasets asks ride along (`dataset-call`): what Cecelia could build once a real dataset
+// lands, each with its prefilled issue link, so Claude can match the user's data to an ask; and one
+// `request` entry, the feature-request form, for everything else (the URL stays in links.ts).
+//
 // The rendered catalogue is committed as mcp/cecelia_mcp/guides.json and checked by guideText.test.ts
 // (a file snapshot): edit a guide, re-run `npx vitest run -u src/lib/guides/guideText.test.ts`.
 
 import { GUIDES, guideById, RECIPES, isWanted, isGuideStep } from './index'
 import type { GuideDef, WrittenRecipe } from './index'
+import { CALL_FOR_DATASETS, datasetAskUrl } from '../callForDatasets'
+import { FEATURE_REQUEST_URL } from '../links'
+import type { CapabilityAsk } from '../callForDatasets'
 
 export interface GuideTextEntry {
   id: string
-  kind: 'guide' | 'recipe'
+  kind: 'guide' | 'recipe' | 'dataset-call' | 'request'
   title: string
   summary: string
   text: string
@@ -60,6 +67,12 @@ export function recipeText(r: WrittenRecipe): string {
   return lines.join('\n')
 }
 
+export function datasetCallText(a: CapabilityAsk): string {
+  return [`# Call for datasets: ${a.title}`, '', a.oneLiner, '', a.blurb, '',
+          `The data that would let us build it: ${a.sceneryHint}`, '',
+          `Ask for it (prefilled GitHub issue): ${datasetAskUrl(a)}`].join('\n')
+}
+
 export function guideCatalogue(): GuideTextEntry[] {
   const recipes: GuideTextEntry[] = RECIPES.filter(r => !isWanted(r)).map(r => {
     const w = r as WrittenRecipe
@@ -68,5 +81,17 @@ export function guideCatalogue(): GuideTextEntry[] {
   const guides: GuideTextEntry[] = GUIDES.map(g => ({
     id: g.id, kind: 'guide', title: g.title, summary: g.summary, text: guideText(g),
   }))
-  return [...recipes, ...guides]
+  const calls: GuideTextEntry[] = CALL_FOR_DATASETS.map(a => ({
+    id: a.id, kind: 'dataset-call', title: a.title, summary: a.oneLiner, text: datasetCallText(a),
+  }))
+  const request: GuideTextEntry = {
+    id: 'request-a-feature', kind: 'request', title: 'Ask for something Cecelia does not do',
+    summary: 'The feature-request form, for a need no guide, task or dataset call covers',
+    text: ['# Ask for something Cecelia does not do', '',
+           'Check the guides, the task catalogue and the dataset calls first. If none covers it, the user ' +
+           'can open a feature request — say what they image and what they want out of it, and leave ' +
+           'project names, ids and paths out: the repository is public.', '',
+           `Feature request (GitHub): ${FEATURE_REQUEST_URL}`].join('\n'),
+  }
+  return [...recipes, ...guides, ...calls, request]
 }
