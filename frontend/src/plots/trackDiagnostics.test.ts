@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   availableModes, resolveMode, curvePoints, msdFitLine, modeHint, referenceLine,
   axisLabels, diagnosticsSummary, cohortSummary, cohortFindings, pairCapNote,
-  diagnosticsCsvRows, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
+  diagnosticsCsvRows, diagCurveRows, diagCloudRows, diagFitRows, furthFitRows, lengthRows, orderRows, DIAG_LABEL,
   type DiagnosticsResponse, type DiagGroup, type DiagMode,
 } from './trackDiagnostics'
 
@@ -295,3 +295,46 @@ describe('diagnosticsCsvRows', () => {
 // resolveTrackValueName is now a re-export of `utils/valueName.ts:resolveValueName`; the tests for
 // its priority live in `utils/valueName.test.ts` and cover the same shape (both when eligibility
 // filters and when it collapses to the FlowMetrics-style all-eligible case).
+
+describe('Fürth, track length and alignment', () => {
+  const extra = group({
+    furth: { M: 0.5, P: 3, sigma: 0.4, ok: true, nDims: 2 },
+    durationBias: { speed: [3, 2, 1], duration: [1, 2, 3], rho: -1, n: 3, biased: false },
+    order: { t: [0, 1], phi: [0.2, 0.9], n: [12, 10] },
+    summary: { msdSlope: 1.1, motionKind: 'random walk', persistenceLag: 2, nDuplicatePairs: 0,
+               furthM: 0.5, furthP: 3, furthSigma: 0.4, durationRho: -1, orderMean: 0.5 },
+  })
+
+  it('offers the two new modes only when their data came back', () => {
+    expect(availableModes(resp(extra))).toEqual(['msd', 'acor', 'plane', 'pairs', 'length', 'order'])
+    expect(availableModes(full)).not.toContain('length')
+  })
+
+  it('evaluates the SERVER Fürth parameters at the MSD lags — no re-fit', () => {
+    const rows = furthFitRows(resp(extra))
+    expect(rows.map(r => r.lag)).toEqual([1, 2, 3])
+    const τ = 2, want = 2 * 2 * 0.5 * (τ - 3 * (1 - Math.exp(-τ / 3))) + 2 * 2 * 0.4 ** 2
+    expect(rows[1].value).toBeCloseTo(want, 10)
+    expect(furthFitRows(resp(group({ furth: { M: null, P: null, sigma: null, ok: false, nDims: 2 } })))).toEqual([])
+  })
+
+  it('names the Fürth reading in the header only when the fit succeeded', () => {
+    expect(diagnosticsSummary(extra)).toContain('Fürth P 3.0 f, noise 0.40 µm')
+    expect(diagnosticsSummary(g1)).not.toContain('Fürth')
+  })
+
+  it('rows and CSV carry the per-track and per-frame points', () => {
+    expect(lengthRows(resp(extra))).toHaveLength(3)
+    expect(orderRows(resp(extra))[1]).toMatchObject({ t: 1, phi: 0.9, n: 10 })
+    expect(diagnosticsCsvRows('length', resp(extra))[0]).toEqual({ duration: 1, speed: 3 })
+    expect(diagnosticsCsvRows('order', resp(extra))[0]).toEqual({ frame: 0, phi: 0.2, n: 12 })
+  })
+
+  it('every new mode has a label, a hint and axis labels', () => {
+    for (const m of ['length', 'order'] as DiagMode[]) {
+      expect(DIAG_LABEL[m]).toBeTruthy()
+      expect(modeHint(m)).toBeTruthy()
+      expect(axisLabels(m)).toHaveLength(2)
+    }
+  })
+})

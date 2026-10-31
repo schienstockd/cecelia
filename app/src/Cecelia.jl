@@ -160,7 +160,8 @@ export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUAN
 export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
 export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
-export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
+export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag,
+       msd_furth_fit, track_duration_bias, track_order_index
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
 export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
