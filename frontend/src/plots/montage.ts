@@ -32,11 +32,15 @@ export interface Tick { pos: number; label: string }
 // so it travels beside the tile defs rather than inside them.
 export interface ColourBy { col: string; t: TransformSpec }
 
-// axis-transform → query params (mirrors GatePlotPanel.axisQ; logicle carries its shape). `z` is the
-// colour ramp, which takes a transform exactly like an axis.
+// axis-transform → query params (the single plot, GatePlotPanel, uses it too). A parameter the spec leaves out is left
+// out of the query, and plotmeta derives it from the channel's own data (logicle top = its max, asinh
+// cofactor from its spread — `_auto_params`) and reports it back as xSpec/ySpec/zSpec. `z` is the colour
+// ramp, which takes a transform exactly like an axis.
 export function axisQ(p: 'x' | 'y' | 'z', ts: TransformSpec): string {
   let q = `&${p}t=${ts.kind}`
-  if (ts.kind === 'logicle') q += `&${p}T=${ts.T ?? 262144}&${p}W=${ts.W ?? 0.5}&${p}M=${ts.M ?? 4.5}&${p}A=${ts.A ?? 0}`
+  if (ts.kind === 'logicle' && ts.T !== undefined) q += `&${p}T=${ts.T}&${p}W=${ts.W ?? 0.5}&${p}M=${ts.M ?? 4.5}&${p}A=${ts.A ?? 0}`
+  if (ts.kind === 'asinh' && ts.cofactor !== undefined) q += `&${p}cof=${ts.cofactor}`
+  if (ts.kind === 'log' && ts.floor !== undefined) q += `&${p}floor=${ts.floor}`
   return q
 }
 export function idQ(id: MontageId): string {
@@ -56,9 +60,11 @@ export function plotQ(id: MontageId, pop: string, xc: string, yc: string, xt: Tr
 
 // ── Auto-linearise + server-projected gates (montage side) ──────────────────────────────────────────
 // plotmeta (with autoLinear=1) may substitute linear for a transform that would collapse a bounded
-// measure, reporting the transform it actually USED. effSpec turns that report back into a spec for the
-// plotdata fetch (keeping logicle's params when uncoerced) so points + extent + gates all agree.
-export function effSpec(used: string | undefined, requested: TransformSpec): TransformSpec {
+// measure, reporting the transform it actually USED — with every parameter, incl. the ones it derived
+// from the data (`reported`, plotmeta's xSpec…). effSpec turns that report into the spec for the plotdata
+// fetch so points + extent + gates all agree.
+export function effSpec(used: string | undefined, requested: TransformSpec, reported?: TransformSpec): TransformSpec {
+  if (reported && (!used || reported.kind === used)) return reported
   return !used || used === requested.kind ? requested : { kind: used as TransformSpec['kind'] }
 }
 // A gate outline the server projected into the current display transform (display coords), canonical

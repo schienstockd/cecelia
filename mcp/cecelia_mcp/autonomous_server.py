@@ -145,7 +145,8 @@ def gate_histogram(project_uid: str, image_uid: str, value_name: str, x: str, y:
     `volume_mesh` only come from the mesh-measuring tasks) — the observer's get_measure_summary lists
     them; get_image_info lists channel names in index order.
     `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
-    {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}."""
+    {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
+    asinh sent without its parameters takes the channel's own (logicle top = its max), as gate_plot draws it."""
     return _client.gate_histogram(project_uid, image_uid, value_name, x, y or x, transform, pop,
                                   max(5, min(bins, 80)))
 

@@ -11,10 +11,10 @@ import type { PanelDef, PanelChild, TileRole } from './montage'
 // population's child gates whose channel-pair matches that tile — in EITHER order (orientGate) — are
 // attached as outlines, so the gates that define the populations show (read-only). Pure + unit-tested.
 
-// one transform applied to every axis (default logicle for flow, linear for track). Logicle carries its
-// FlowJo shape (matches GatePlotPanel.tspec) so the axis reads identically to the single plot.
-export const pairTransform = (k: TransformSpec['kind']): TransformSpec =>
-  k === 'logicle' ? { kind: k, T: 262144, W: 0.5, M: 4.5, A: 0 } : { kind: k }
+// one transform applied to every axis (default logicle for flow, linear for track). Its parameters are
+// left to the server, which derives them from each channel's data as for the single plot (plots/montage.ts
+// `axisQ`), so the axis reads identically there and here.
+export const pairTransform = (k: TransformSpec['kind']): TransformSpec => ({ kind: k })
 
 // Reconcile a persisted channel selection with the current segmentation's columns: drop any channel
 // that no longer exists (a value_name switch changes the columns — else buildPairDefs would ask

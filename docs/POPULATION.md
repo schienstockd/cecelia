@@ -67,6 +67,19 @@ Transforms (`linear`, `log`, `asinh`, **`logicle`** — Parks 2006) are implemen
 **once, in Julia**. The API serves *already-transformed* `Float32` coordinates + axis
 tick positions to the browser, so the frontend stays transform-free.
 
+### Data-derived transform parameters
+
+The fixed defaults are a flow cytometer's — logicle `T = 262144`, asinh cofactor 150 — and on imaging
+intensities in the tens they squeeze every cell into a sliver (logicle) or leave the axis effectively
+linear (asinh). So a plot axis whose transform arrives at `plotmeta` **without** its parameters takes them
+from the channel's own whole-segmentation data (`_auto_params`, `gating_api.jl`): logicle `T` = the
+channel maximum (W/M/A unchanged), asinh cofactor = 1 % of its 99th percentile. A parameter the caller
+sends wins (the single plot's cofactor box; an opened gate's own cofactor). `plotmeta` reports the full
+spec as `xSpec`/`ySpec`/`zSpec`; the clients send exactly that to `plotdata` and stamp it on a gate drawn
+or moved there, so dots, outlines and stored gates share one transform. A gate keeps the parameters it
+was stored with until it is moved on a plot, which re-stores it in that plot's transform (outline and
+membership move together) — membership never depends on the display alone.
+
 ### Auto-linearisation (range-based)
 
 A non-linear transform exists to spread a wide dynamic range; on a **bounded / small-range**
