@@ -104,6 +104,8 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // `Record<string, unknown>` state (the correction view reads its own keys) — as in ClusterPlots.
 interface PlotState { [key: string]: unknown; kind: string; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean; dotSize: number
   x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: RenderMode; channels: string[]
+  // an asinh cofactor the user set, or the one the opened gate was drawn with (unset = auto)
+  xcof?: number; ycof?: number; zcof?: number
   // colour-by (single plot): the third measure painted as the dot colour, and its ramp scale.
   // Unset like xt/yt so the panel's per-measure transform default fires (see the comment on ckey).
   z?: string; zt?: GateKind }
@@ -413,6 +415,9 @@ function showDefiningPlot(pop: FlatPop) {
   p.state.y = pop.gate.y_channel
   p.state.xt = pop.gate.x_transform.kind
   p.state.yt = pop.gate.y_transform.kind
+  // an asinh gate opens at its own cofactor, so its outline and the dots sit where they were drawn
+  p.state.xcof = pop.gate.x_transform.kind === 'asinh' ? pop.gate.x_transform.cofactor : undefined
+  p.state.ycof = pop.gate.y_transform.kind === 'asinh' ? pop.gate.y_transform.cofactor : undefined
 }
 
 // Remember the segmentation this page was last on, per (popType, image). The canvas key includes

@@ -166,6 +166,9 @@ export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persist
        msd_furth_fit, track_duration_bias, track_order_index
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
+export approach_columns, step_approach, approach_index, approach_measures,
+       contact_col_regex, approach_cell_col, approach_track_col, is_stale_track_measure,
+       drop_stale_approach!
 export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
 export track_group_frame
 export track_group_images, track_group_value_name, track_group_pop
@@ -309,6 +312,7 @@ include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
+include("tracking/track_approach.jl")     # approach toward a contacts target (pure; used by trackMeasures)
 include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
 include("behaviour/hmm.jl")
 include("model/set.jl")

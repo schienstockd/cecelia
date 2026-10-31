@@ -94,6 +94,7 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
     ok = run_py("tasks/spatialAnalysis/cell_contacts_mesh_run.py", task_params, task_run_dir(img._dir);
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] contactsMeshes: Python runner failed"); return nothing)
+    drop_stale_approach!(img, vnA, pop_type, target_names; on_log = on_log)
 
     try
         qc = JSON3.read(read(qc_out_path, String), Dict{String,Any})

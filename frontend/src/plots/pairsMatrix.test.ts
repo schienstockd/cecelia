@@ -49,7 +49,7 @@ describe('buildPairDefs (ggpairs matrix)', () => {
   })
 
   it('logicle transform carries its FlowJo shape; linear does not', () => {
-    expect(pairTransform('logicle')).toMatchObject({ kind: 'logicle', T: 262144, W: 0.5, M: 4.5, A: 0 })
+    expect(pairTransform('logicle')).toEqual({ kind: 'logicle' })   // the server derives T from the data
     expect(pairTransform('linear')).toEqual({ kind: 'linear' })
     expect(buildPairDefs(['A'], 'root', 'logicle', [])[0].xt.kind).toBe('logicle')
   })

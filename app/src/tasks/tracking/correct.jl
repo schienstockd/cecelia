@@ -193,7 +193,7 @@ function _run_task(task::TrackCorrect, img::CciaImage, params::Dict{String,Any};
     # `tracking.track_measures` recomputes them, but this task must not depend on the chain running
     # — a standalone correction that leaves `live.cell.speed` from the old tracks is exactly the
     # silent-staleness old R shipped.
-    stale = [c for c in have if startswith(c, "live.cell.") || startswith(c, "live.track.")]
+    stale = filter(is_stale_track_measure, have)
     isempty(stale) || on_log("[INFO] Dropping $(length(stale)) stale track-measure column(s)")
 
     label_props(props_path) |> v -> drop_obs(v, stale) |> v -> add_obs(v, out) |> save!
