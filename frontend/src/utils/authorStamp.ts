@@ -37,3 +37,11 @@ export function authorSummary(created?: AuthorStamp, updated?: AuthorStamp): str
   if (c) return `by ${c}`
   return u ? `edited by ${u}` : ''
 }
+
+/** The tooltip for something Claude added for the user to keep or delete — "Proposed by Claude" /
+ *  "Proposed by Claude for alice" — or '' when a person made it (or nobody is recorded). A gate
+ *  carries `createdBy` only when it came through Claude (POST /api/gating/pop/add-gate). */
+export function claudeProposal(raw: unknown): string {
+  const s = parseAuthorStamp(raw)
+  return s?.via === 'claude' ? `Proposed by ${authorLabel(s)}` : ''
+}

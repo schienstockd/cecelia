@@ -51,6 +51,7 @@ export interface PopNode {
   is_track?: boolean
   transient?: boolean              // ephemeral (viewer cell selection) — not persisted
   membership_sig?: string          // explicit-label pops (viewer selection): hash of label set
+  createdBy?: unknown              // `author_stamp()` — present on a gate Claude proposed (utils/authorStamp)
   children: PopNode[]
 }
 export interface PopTree { value_name: string; pop_type: string; populations: PopNode[] }
@@ -62,6 +63,7 @@ export interface FlatPop {
   depth: number; gate?: GateSpec; transient?: boolean
   filter?: FilterSpec  // cluster / region / user-defined filter pops
   boolean?: BooleanSpec  // a combination of OTHER populations (Decision 16)
+  createdBy?: unknown    // who drew it, when Claude did (`claudeProposal`)
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -70,7 +72,8 @@ function flatten(tree: PopTree): FlatPop[] {
     for (const n of nodes) {
       const path = popPath(parent, n.name)
       out.push({ path, name: n.name, uid: n.uid ?? '', parent, colour: n.colour, show: n.show,
-                 depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean })
+                 depth, gate: n.gate, transient: n.transient, filter: n.filter, boolean: n.boolean,
+                 createdBy: n.createdBy })
       walk(n.children ?? [], path, depth + 1)
     }
   }

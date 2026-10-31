@@ -30,6 +30,7 @@ import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
 import { popNameError, popPath, isInSubtree } from '../../utils/popName'
+import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
@@ -601,6 +602,10 @@ function moveTo(target: string) {
                   @click.stop="beginEditBool(p)"><i class="pi pi-link" /></button>
           <i v-else-if="isBoolPop(p)" class="pi pi-link pm-filter-badge pm-bool-badge"
              v-tooltip.top="popBoolSummary(p)" />
+
+          <!-- a gate Claude proposed (observer add_gate) — the same ✦ that marks Claude's work elsewhere -->
+          <i v-if="claudeProposal(p.createdBy)" class="pi pi-sparkles pm-filter-badge"
+             v-tooltip.top="claudeProposal(p.createdBy)" :aria-label="claudeProposal(p.createdBy)" />
 
           <!-- why a pop reads 0 here: a column its gate/filter (or an ancestor's) reads is not in this
                image's table, e.g. `clusters.<run>` after a gating copy (#1769). Shape + colour, tip = the reason. -->

@@ -75,7 +75,7 @@ page that defines a population names the page that summarises it.
 
 | Page | What it's for | Summarised on | Guide | Claude |
 |---|---|---|---|---|
-| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations |  |
+| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | A terminal session proposes a gate; keep or delete it |
 | Track | Link cells over time; gate tracks | Behaviour | Track cells |  |
 | Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes |  |
 | Cluster tracks | Group tracks by behaviour | Behaviour | Cluster tracks into behaviours |  |

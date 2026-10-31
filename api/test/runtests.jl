@@ -145,6 +145,8 @@ include(joinpath(@__DIR__, "suite", "canvas_stores_and_plots.jl"))
 # Two testsets: the pure gate-plot raster (clipping, numbered gates, white-gate ink) and the
 # plot-image / cells-image routes on the testpr fixture.
 include(joinpath(@__DIR__, "suite", "gating_views.jl"))
+# ── The observer's add_gate — POST /api/gating/pop/add-gate (one proposed gate, additive only) ───
+include(joinpath(@__DIR__, "suite", "gating_add_gate.jl"))
 # ── Project-ops testsets (lab log, chain, rename, delete, object find) ──
 # Six testsets covering the mutation/discovery API a project owner reaches for: lab log,
 # chain create (create-only + validated) + rename, set rename, project delete, delete-label-set
