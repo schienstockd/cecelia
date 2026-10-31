@@ -76,14 +76,15 @@ function read_run_log(ccid_dir::AbstractString)::Vector{Any}
 end
 
 # One run-log entry as plain values: `params` with the entry's `valueName` put back in (the log keeps
-# it beside the params), `legacy` = logged before the run log recorded params. Missing fields read "".
+# it beside the params), `legacy` = logged before the run log recorded params, `status` per
+# `run_entry_status` (a legacy entry reads "done"). Other missing fields read "".
 function run_log_row(e)
     raw = _rl_get(e, "params", nothing)
     p = raw isa AbstractDict ? Dict{String,Any}(string(k) => v for (k, v) in raw) : Dict{String,Any}()
     legacy = isempty(p)
     vn = _rl_str(e, "valueName")
     isempty(vn) || (p["valueName"] = vn)
-    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = _rl_str(e, "status"), legacy)
+    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = run_entry_status(e), legacy)
 end
 
 """
@@ -99,7 +100,7 @@ function run_pop_reads(img::CciaImage)::Dict{Tuple{String,String},Vector{String}
     leaves = Dict{String,Any}()
     for e in read_run_log(img)
         r = run_log_row(e)
-        r.status in ("done", "", RUN_LOG_RUNNING) || continue
+        r.status in ("done", RUN_LOG_RUNNING) || continue
         lv = get!(() -> _history_leaves(r.fn), leaves, r.fn)
         lv === nothing && continue
         for ref in gated_pop_refs(r.params, lv)

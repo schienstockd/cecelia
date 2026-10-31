@@ -130,8 +130,6 @@ end
 
 # ── collection ──
 
-const _HISTORY_DONE = ("done", "")
-
 function _history_rows(proj::CciaProject, exemplars::Vector{String})
     rows = NamedTuple{(:fn, :params, :at, :uid, :legacy),
                       Tuple{String,Dict{String,Any},String,String,Bool}}[]
@@ -141,7 +139,7 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
         img isa CciaImage || continue
         for e in read_run_log(img)
             r = run_log_row(e)
-            r.status in _HISTORY_DONE || continue
+            r.status == "done" || continue
             push!(rows, (; r.fn, r.params, r.at, uid, r.legacy))
         end
     end
