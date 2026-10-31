@@ -1,7 +1,7 @@
 <!--
   "Kiwi and Claude Code" — the two modes side by side, either first: when to use each, what you can
   do with it, how to start, what it won't do (ClaudeWaysIn.vue). Then "What each can use": one section
-  per group, one open at a time (useSingleOpenSection), a Kiwi / Claude Code tick per line
+  per group, one open at a time (`accordion` keyword), a Kiwi / Claude Code tick per line
   (lib/claudeTools.ts, pinned by its test to the real tool allow-lists, so a new tool can't go
   missing). Opened from the Kiwi header's `?`; static reference, no live data. Every reply is a claim
   to check, not a verdict: the provisional line. Built on the shared BaseModal shell.
@@ -13,7 +13,6 @@ import CollapsibleSection from './CollapsibleSection.vue'
 import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
 import { CLAUDE_PROVISIONAL } from '../lib/claudeOverview'
 import { capabilityGroups } from '../lib/claudeTools'
-import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 
 defineEmits<{ (e: 'close'): void }>()
 
@@ -23,8 +22,8 @@ const COLUMNS: SelectionColumn[] = [
   { key: 'kiwi', label: 'Kiwi', width: 64 },
   { key: 'terminal', label: 'Claude Code', width: 96 },
 ]
-// An accordion like every other in the app: one group open at a time, remembered, none to start with.
-const { isOpen, toggle } = useSingleOpenSection('cc.claudeOverview.openGroup')
+// The groups below are an accordion like every other in the app (`accordion="cc.claudeOverview.openGroup"`):
+// one open at a time, remembered, none to start with.
 
 // Terminal set-up is NOT repeated here. It lives on Kiwi's Terminal row — one button, in the place
 // people act from — and duplicating it in this dialog cost a whole band of chrome to say what the
@@ -38,7 +37,7 @@ const { isOpen, toggle } = useSingleOpenSection('cc.claudeOverview.openGroup')
     <div class="co-uses">
       <div class="cc-eyebrow cc-fs-2xs co-uses-title">What each can use</div>
       <CollapsibleSection v-for="g in GROUPS" :key="g.key" :label="g.title"
-                          :open="isOpen(g.key)" @update:open="() => toggle(g.key)"
+                          accordion="cc.claudeOverview.openGroup" :section="g.key"
                           :tip="`What Kiwi and Claude Code can use: ${g.title.toLowerCase()}`">
         <!-- icons carry the meaning, not colour alone -->
         <SelectionTable selection-mode="none" density="compact" :columns="COLUMNS" :rows="g.rows" id-key="label">
