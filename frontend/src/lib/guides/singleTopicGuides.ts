@@ -433,7 +433,7 @@ export const kiwiGuide: GuideDef = {
       anchor: 'sidebar.kiwiCta',
       placement: 'right',
       title: 'Kiwi',
-      text: 'A rubber duck for your project: it points at the evidence, you decide.',
+      text: 'Answers you can check: every claim links to its data, and it can’t change anything.',
       bullets: ['Log in once from the account row at the top of the panel.'],
       clickAnchor: true,
     },

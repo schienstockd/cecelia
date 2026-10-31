@@ -25,46 +25,55 @@ export const KIWI_LOOP: LoopStep[] = [
 
 // ── What each mode is for, and what you can do with it ──────────────────────────────────────────
 // The two cards (ClaudeWaysIn.vue), each led by a small schematic so a glance says "I need Kiwi" or
-// "I need Claude Code". Every line must fit on ONE line in the narrowest place the cards render
-// (Kiwi's `?` dialog) — claudeOverview.test.ts caps them. The full per-tool list is claudeTools.ts. Kiwi's `can` are QUESTIONS you'd ask it; Claude Code's are THINGS it
-// makes. Each must be backed by the mode's real tool list: Kiwi's is `KIWI_READ_TOOLS`
-// (api/src/kiwi_turn.jl), a terminal session's is the observer's (docs/ai-assist/OBSERVER.md). If a
-// tool lands or a limit changes, update here.
+// "I need Claude Code", in that mode's own colour (--cc-kiwi / --cc-claude). Each card leads with
+// what ONLY that mode does (`only`) — the reason to pick it — then example asks. Every line must fit
+// on ONE line in the narrowest place the cards render (Kiwi's `?` dialog); claudeOverview.test.ts
+// caps them. Each claim must be backed by the mode's real tool list: Kiwi's is `KIWI_READ_TOOLS`
+// (api/src/kiwi_turn.jl), a terminal session's is the observer's (docs/ai-assist/OBSERVER.md). The
+// full per-tool list is claudeTools.ts. If a tool lands or a limit changes, update here.
 export interface Mode {
   title: string
-  use: string        // when to use it — one line
-  canLabel: string   // what the `can` list is: questions to ask, or things it makes
-  can: string[]
+  use: string        // when to use it — one line beside the schematic
+  only: string[]     // what ONLY this mode does — the reason to pick it; leads the card
+  ask: string[]      // example asks, quoted — what using it sounds like
   start: string      // how to begin
-  never: string      // the limit
+  note?: string      // the one limit worth saying on the card
 }
 export const KIWI_MODE: Mode = {
   title: 'Kiwi',
-  use: 'In the app — it points, you decide',
-  canLabel: 'Ask it',
-  can: [
+  use: 'Answers you can check, in the app',
+  only: [
+    'Checks every claim against its data',   // kiwi_validate_reply: refs resolve + were seen; may abstain
+    'Can’t change anything — enforced',      // --tools "" + only KIWI_READ_TOOLS
+    'No terminal — just log in',
+    'Attach anything on screen with @',      // Add to Kiwi: images, populations, plots, viewer, tasks
+  ],
+  ask: [
     'Why does this mask look off?',          // get_landscape, get_module_params, get_task_log
     'What sets this cluster apart?',         // get_cluster_summary, get_measure_summary
-    'Which images stand out in QC?',         // get_cohort_qc, get_qc_metrics
     'Have I seen this before?',              // get_recent_captures, search_blackboard
   ],
-  start: '@ Add to Kiwi or Share a frame, then ask',
-  never: 'Never judges, runs or changes your work',
+  start: 'Open Kiwi in the sidebar, or Share a frame',
+  note: 'It points at the evidence; you decide',
 }
 export const TERMINAL_MODE: Mode = {
   title: 'Claude Code',
   use: 'In a terminal — it builds for you',
-  canLabel: 'It makes',
-  can: [
-    'Marks on cells and tracks',              // mark_cells, mark_tracks
-    'Chains from what you ran',               // create_chain (never run)
-    'Boards and notebooks',                   // add_analysis_board, create_notebook
-    'Lab-log and Blackboard entries',         // append_lab_log, create_blackboard_entry
+  only: [
+    'Marks cells and tracks on your viewer',  // mark_cells, mark_tracks
+    'Builds chains, boards and notebooks',    // create_chain (never run), add_analysis_board, create_notebook
+    'Proposes gates — marked, undoable',      // add_gate
+    'Writes lab-log and Blackboard entries',  // append_lab_log, create_blackboard_entry
+  ],
+  ask: [
+    'Mark the cells that look off',
+    'Build a chain from what I ran',
+    'Make a board of speed by condition',
   ],
   start: 'Start in terminal on Kiwi’s Chat row',
   // Not "it can't run or delete": Claude Code's own shell sits outside Cecelia's tools, so the honest
   // limit is who presses Run on what it builds (docs/ai-assist/OBSERVER.md).
-  never: 'You run what it builds',
+  note: 'You run what it builds',
 }
 /** How the two meet. Said once, under both. */
 export const CLAUDE_BRIDGE = 'Either can come first — Continue in terminal hands a Kiwi reply over via the Blackboard'

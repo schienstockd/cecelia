@@ -116,7 +116,7 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 | Viewer | Your image in 2D/3D with cells, tracks and populations. Opens in its own window; its controls panel stays in the main one |
 | Correction cockpit | Fix masks and tracks by hand: merge, split, remove. *In progress* |
 | Lab log | A dated diary per project, written by you, Claude and Cecelia's activity summary |
-| Kiwi | Ask Claude about your project; connect your own Claude session |
+| Kiwi | Ask about your project and get answers you can check; connect your own Claude session |
 | Console | Docked at the bottom: the app's messages. Look here when something fails |
 
 ## Working with Claude (optional)
@@ -126,7 +126,10 @@ Everything above works without Claude. Claude doesn't add steps to your analysis
 state carefully. There are two ways in, and either can come first; Kiwi's **?** and the guide
 *Assist with Kiwi* show the same:
 
-**Kiwi** is a rubber duck in the app: it points at the evidence, you decide.
+**Kiwi** gives answers you can check. Every claim in its reply links to the data it rests on, and
+Cecelia checks those links before you see the reply; if it can't support a claim, it says so. It
+can't change anything in your project, and it needs no terminal: log in once and ask. It points at
+the evidence; you decide.
 
 1. **Point at it.** Press **@ Add to Kiwi** on what puzzles you: an image row, a population, a plot,
    the viewer or a Blackboard entry. If it is a spot *in* the picture, **Share** a frame and draw on
@@ -145,6 +148,8 @@ Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't s
 
 | | Kiwi | Terminal | `pixi run chat` (no GUI, experimental) |
 |---|:-:|:-:|:-:|
+| Checks every claim against its data before you see it | ✓ | – | – |
+| Can't change anything, enforced | ✓ | – | – |
 | Reads your project, captures, Blackboard and lab log | ✓ | ✓ | ✓ except captures (no viewer to share from) |
 | Warns when a bad-tagged failure keeps coming back | ✓ | ✓ | ✓ |
 | Marks cells and tracks on the viewer | – | ✓ | – (no viewer) |

@@ -116,6 +116,8 @@ export const COLOR_LEGEND: ColorFamily[] = [
         swatch: varSwatch('--cc-kiwi-soft') },
       { token: '--cc-kiwi-tint',     means: 'Soft wash behind an "option is on" kiwi surface',
         swatch: varSwatch('--cc-kiwi-tint') },
+      { token: '--cc-claude',        means: 'Claude Code — a terminal session, set apart from Kiwi',
+        swatch: varSwatch('--cc-claude') },
     ],
   },
   {
