@@ -26,6 +26,7 @@ import { useObserverStore } from '../stores/observer'
 import { terminalCta, terminalSetupTooltip } from '../utils/observerSetup'
 import { CLAUDE_TERMINAL, claudeChatCommand } from '../lib/claudeOverview'
 import { dotClass } from '../utils/statusDot'
+import { fetchSharedWorkstation } from '../utils/sharedWorkstation'
 import { fetchProfiles, selectProfile, retireProfile, renameProfile, deleteProfile,
          isValidProfileName, profileDisplayName,
          type ProfileRoster } from '../utils/profileApi'
@@ -73,6 +74,14 @@ async function refreshRoster() {
 }
 onMounted(refreshRoster)
 
+// Kiwi → "Delete conversations on log out": the workstation policy is the floor — when it's on, the
+// personal switch shows on and locked. A failed read leaves the switch editable.
+const purgeForcedByWorkstation = ref(false)
+onMounted(async () => {
+  try { purgeForcedByWorkstation.value = (await fetchSharedWorkstation()).purgeClaudeConversations === true }
+  catch { /* older backend — the personal switch still works */ }
+})
+
 // Switching the profile mid-session works but half the app is already mounted against the
 // previous identity (per-profile settings, project filter, MCP registration). The plan is
 // explicit: change-of-profile requires reload. Server-side write goes out first so a reload
@@ -82,6 +91,7 @@ async function pickProfile(name: string) {
   profilesBusy.value = name
   profilesError.value = null
   try {
+    await settings.flushProfileSettings()   // pending changes belong to THIS profile, and the pick reads them
     const r = await selectProfile(name)
     if (!r.ok) { profilesError.value = r.error ?? 'Select failed'; return }
     const nowActive = r.active ?? name
@@ -205,8 +215,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
         <!-- ── Profiles ──────────────────────────────────────────────────── -->
         <template v-if="active === 'profiles'">
           <p class="pref-note cc-muted cc-fs-xs">
-            Your identity for this session — drives Kiwi credentials, per-profile preferences and
-            which projects you see. Switching reloads the app.
+            Profiles set Kiwi's login, preferences and projects. Switching reloads the app.
           </p>
           <ul class="pp-list" data-guide="prefs.profilesPane">
             <li v-for="p in roster.profiles" :key="p.name" class="pp-row"
@@ -487,9 +496,17 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
             <option value="sonnet">Sonnet</option>
             <option value="opus">Opus</option>
           </select>
-          <!-- Cecelia's MCP in this profile's Claude config — registered once per profile. -->
+          <!-- never peanut: its conversations are terminal claude's (claude_conversations.jl) -->
+          <CcToggle v-if="appCtl.activeProfileName !== 'default'" style="margin-top:0.8rem"
+                    :model-value="settings.purgeClaudeConversations || purgeForcedByWorkstation"
+                    :disabled="purgeForcedByWorkstation"
+                    label="Delete my conversations on log out"
+                    v-tooltip.bottom="purgeForcedByWorkstation ? 'Required on this workstation'
+                                      : 'Transcripts and prompt history; your Claude memory stays'"
+                    @update:model-value="settings.purgeClaudeConversations = $event" />
+          <!-- The Cecelia plugin (observer MCP + caller hook) in this profile's Claude config — set up once per profile. -->
           <template v-if="observerRow">
-            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia MCP</div>
+            <div class="pref-group cc-eyebrow cc-fs-2xs" style="margin-top:0.8rem">Cecelia plugin</div>
             <div class="pk-mcp">
               <span class="pk-state cc-fs-sm" v-tooltip.top="observerRow.hint">
                 <span class="cc-dot" :class="dotClass(observerRow.tone)" /> {{ observerRow.label }}
@@ -525,7 +542,7 @@ const copyObserverFallback = () => copyCmdFlash(observerFallbackCommand.value)
              assistant is paired. Bunched together in the first draft; split out per feedback. -->
         <template v-else-if="active === 'lablog'">
           <CcToggle v-model="settings.labLogAutoContext"
-                    label="Auto-capture app activity digests"
+                    label="Summarise app activity automatically"
                     v-tooltip.bottom="'Cecelia appends a rolling daily digest of task activity'" />
           <CcToggle v-model="settings.labLogShowNames"
                     label="Show image names in the lab log (else UIDs)"

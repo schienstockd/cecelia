@@ -11,8 +11,12 @@ notebook first — a restorable version — then overwrites its cells; it's how 
 version, never a "-v2" copy), ``POST /api/chains/create`` (create-only + server-validated —
 writes a chain TEMPLATE the user then runs themselves), and ``POST /api/observer/labarchives/set``
 (REPLACES the ELN context sidecar — a cache of an external system of record, so a rewrite loses
-nothing). All seven are recoverable / non-destructive to
-project & analysis data: no allow-listed route can touch cell data, images, gates, or QC, revise
+nothing), and the gating toolset's Claude-scoped writes (``gating_views.GATING_WRITE_ROUTES``:
+``/api/gating/pop/add-gate`` creates ONE stamped gate, 409 on a taken name; ``set-own-gate`` /
+``delete-own`` change only populations Claude drew — the server refuses, 403, anything at or under the
+path the user drew; the general ``/api/gating/pop/*`` routes stay off the list). All are recoverable /
+non-destructive to project & analysis data: no allow-listed route can touch cell data, images, the
+user's gates, or QC, revise
 can't lose a notebook's content (the pre-revision state is always snapshotted), a template is
 inert until a human presses Run, and an added board is one tab beside the user's own. Any attempt to call a route not on the list raises
 ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails loudly in
@@ -40,13 +44,15 @@ import urllib.request
 from cecelia_mcp import gating_views as gv
 from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
+from cecelia_mcp.caller import caller_headers
 from cecelia_mcp.discovery import discovery_enabled, discovery_fields, task_catalogue
+from cecelia_mcp.no_gui import no_gui_enabled
 
-# (method, path) → the ONLY routes the observer may ever call. Read-only except the three writes below.
+# (method, path) → the ONLY routes the observer may ever call. Read-only except the commented writes below.
 # Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {
-        ("POST", "/api/boards/add"),      # WRITE 6/7 — create-only: adds ONE Analysis board, never
+        ("POST", "/api/boards/add"),      # WRITE 6/8 — create-only: adds ONE Analysis board, never
                                           # edits/deletes/reorders one. Server-validated against the
                                           # project (unknown plot id, chart the spec doesn't offer, a
                                           # population that doesn't exist → 422 before anything is
@@ -73,6 +79,9 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
         ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
         ("GET", "/api/analysis/spatial"),  # region runs + pairwise cell-type contact log-odds (association/avoidance)
+        ("GET", "/api/chains/suggest"),   # read-only: a chain template built from what already ran on
+                                          # some images (chain_from_history). Writes nothing — saving it
+                                          # is create_chain (create-only) or the user's whiteboard
         ("GET", "/api/analysis/chains"),  # whiteboard chains: wired templates (DAG) + recent runs
         ("GET", "/api/analysis/boards"),  # existing Analysis boards + what each slot plots (summary, not layout)
         ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
@@ -84,8 +93,6 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
-        ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates) — gating_views.py
-        ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         ("GET", "/api/viewer/plots"),      # bidir PR #8 — live plot registry; discover mounted panels so mark_plot's plot_id isn't guessed
         ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
@@ -94,10 +101,10 @@ ALLOWED_ROUTES = frozenset(
         # NB: /api/viewer/capture (POST) is NOT allow-listed. Captures are AUTHORED by the frontend
         # Share button; Claude only READS them. Keeping the write off the observer's surface prevents
         # a fabricated "the user shared this" from ever landing in the project's captures dir.
-        ("POST", "/api/lablog/append"),  # write 1/7 — append-only, server-guarded
-        ("POST", "/api/notebooks/write"),  # write 2/7 — create-only (409 on existing); serialises cells to a Pluto notebook
-        ("POST", "/api/notebooks/describe"),  # write 3/7 — edits ONLY a notebook's description string (registry sidecar); not its content
-        ("POST", "/api/notebooks/revise"),  # write 4/7 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
+        ("POST", "/api/lablog/append"),  # write 1/8 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/8 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/notebooks/describe"),  # write 3/8 — edits ONLY a notebook's description string (registry sidecar); not its content
+        ("POST", "/api/notebooks/revise"),  # write 4/8 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/create"),  # bidir Part 4 — new Markdown entry (title + content_md + optional attach_capture_ids)
         ("POST", "/api/blackboard/revise"),  # bidir Part 4 — SNAPSHOTS current content, then overwrites (real versioning, no "-v2" copies)
         ("POST", "/api/blackboard/status"),  # PROJECT_MEMORY_PLAN D3 — flip entry status open|resolved|parked (no snapshot; metadata-only)
@@ -107,8 +114,8 @@ ALLOWED_ROUTES = frozenset(
         # NB: /api/blackboard/{restore,prune,delete} are NOT allow-listed — those are user-driven
         # via Kiwi / the /blackboard page, matching the notebooks discipline (Claude never restores
         # a version FOR the user, and never deletes their notes).
-        ("POST", "/api/chains/create"),  # write 5/7 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
-        ("POST", "/api/observer/labarchives/set"),  # write 7/7 — REPLACES the LabArchives context
+        ("POST", "/api/chains/create"),  # write 5/8 — create-only (409 on existing) + server-validated; authors a chain template the USER then runs. NOT /api/chains/save, which overwrites
+        ("POST", "/api/observer/labarchives/set"),  # write 7/8 — REPLACES the LabArchives context
                                           # sidecar (a cache of an external system of record, so a
                                           # rewrite loses nothing; LabArchives is itself versioned).
                                           # Touches no project or analysis data, and never the lab
@@ -133,7 +140,12 @@ ALLOWED_ROUTES = frozenset(
         # fresh session pairs on first use without the user typing anything.
         ("POST", "/api/push/target"),
     }
-)
+) | gv.GATING_ROUTES   # the gating toolset (gating_views.py), shared with the autonomous server. Its
+                       # three writes are Claude-scoped: add-gate creates ONE stamped gate (409 on a
+                       # taken name, 404/422 before anything is written); set-own-gate / delete-own
+                       # change only populations Claude drew — every one at and below the path must
+                       # carry a Claude `createdBy`, else 403. NOT /api/gating/pop/add, set-gate,
+                       # delete, rename or move, which act on the user's populations
 
 
 # Per-param fields worth keeping for a suggestion: the key to name it, its type, the valid range, the
@@ -220,8 +232,10 @@ def http_json(base_url: str, method: str, path: str, params: dict | None = None,
         if q:
             query = "?" + urllib.parse.urlencode(q)
     data = None
-    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp)
-    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **auth_headers()}
+    # marks Claude-made writes so the server stamps them `via: claude` (author_stamp), plus the model +
+    # session making this call when the caller hook supplied them (caller.py)
+    headers = {"Accept": "application/json", "X-Cecelia-Client": "claude", **caller_headers(),
+               **auth_headers()}
     if body is not None:
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -268,7 +282,8 @@ NO_PAIR_ENV = "CECELIA_OBSERVER_NO_PAIR"
 
 
 def _pairing_disabled() -> bool:
-    return os.environ.get(NO_PAIR_ENV, "") not in ("", "0")
+    # no-GUI mode too: a pairing is how pushes reach the GUI, and there is none (no_gui.py)
+    return os.environ.get(NO_PAIR_ENV, "") not in ("", "0") or no_gui_enabled()
 
 
 class ApiError(RuntimeError):
@@ -280,7 +295,7 @@ class ApiError(RuntimeError):
         self.message = message
 
 
-class CeceliaClient:
+class CeceliaClient(gv.GatingClient):
     def __init__(self, base_url: str | None = None, timeout: float = 30.0):
         self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
@@ -362,11 +377,11 @@ class CeceliaClient:
             "GET", "/api/images/meta", {"projectUid": project_uid, "imageUid": image_uid}
         )
 
-    def get_task_log(self, project_uid: str, image_uid: str, fun: str):
+    def get_task_log(self, project_uid: str, image_uid: str, fun: str, max_bytes: int | None = None):
         return self._request(
             "GET",
             "/api/images/tasklog",
-            {"projectUid": project_uid, "imageUid": image_uid, "fun": fun},
+            {"projectUid": project_uid, "imageUid": image_uid, "fun": fun, "maxBytes": max_bytes},
         )
 
     def get_task_history(self, project_uid: str, limit: int | None = None):
@@ -447,6 +462,15 @@ class CeceliaClient:
     def get_chains(self, project_uid: str):
         return self._analysis_summary("/api/analysis/chains", project_uid)
 
+    def suggest_chain(self, project_uid: str, image_uids: list[str], keep: list[str] | None = None,
+                      retrain: bool = False):
+        q = {"projectUid": project_uid, "imageUids": ",".join(image_uids)}
+        if keep is not None:
+            q["keep"] = ",".join(keep)
+        if retrain:
+            q["retrain"] = "1"
+        return self._request("GET", "/api/chains/suggest", q)
+
     def get_repl_api(self):
         # Project-independent: the notebook/REPL data-access surface (accessors + docstrings + cookbook).
         return self._request("GET", "/api/repl/api")
@@ -481,16 +505,6 @@ class CeceliaClient:
         # content block).
         return self._request("GET", "/api/viewer/capture",
                              {"projectUid": project_uid, "captureId": capture_id})
-
-    def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-                  transform: dict | None, pop: str) -> tuple[bytes, dict]:
-        return gv.split_png(self._request("GET", gv.PLOT_ROUTE, gv.plot_query(
-            project_uid, image_uid, value_name, x, y, transform, pop)))
-
-    def gate_cells_view(self, project_uid: str, image_uid: str, value_name: str, pop: str, t: int,
-                        channels: list[int] | None, image_version: str) -> tuple[bytes, dict]:
-        return gv.split_png(self._request("GET", gv.CELLS_ROUTE, gv.cells_query(
-            project_uid, image_uid, value_name, pop, t, channels, image_version)))
 
     def get_object_ids(self, project_uid: str, image_uid: str, value_name: str,
                        kind: str = "cells", limit: int = 200, sample: bool = False):
@@ -574,7 +588,7 @@ class CeceliaClient:
                   u: float, v: float,
                   cell: str = "", label: str = "", ttl_s: int | None = None):
         # PLOT point-out (BIDIR PR #4b). `family` names the plot family
-        # (`gate-scatter` / `umap` / `heatmap` / `image-strip` / `cell-cards` / …); `plot_id`
+        # (`gate-scatter` / `cluster-map` / `heatmap` / `image-strip` / `cell-cards` / …); `plot_id`
         # addresses one panel (its persistKey). `u`/`v` are 0..1 in that family's own frame
         # (`frontend/src/plots/frame.ts` — `rectFrame` / `letterboxFrame` handle the per-family
         # letterbox math so the mark lands on the plot area, not the surrounding gutter). `cell`

@@ -46,6 +46,7 @@ import typing as _t
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
+from cecelia.effectiveness.attribution import footer, run_lines  # noqa: E402
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 from cecelia.effectiveness.judge_staleness import backlog_warning  # noqa: E402
@@ -177,8 +178,15 @@ def prepare_worktree(path: pathlib.Path, sha: str, repo: pathlib.Path = _REPO) -
     _run([pixi, "install"], cwd=path, stage="worktree")
 
 
-_ATTRIBUTION = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-_PR_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+def _models(record: dict) -> list[str]:
+    """The model ids the pass's judge calls ran on (`judge.usage` → the total meter); [] for a failure
+    record or one from before models were kept. Named in the commit and PR, never a pinned name."""
+    total = (((record.get("run") or {}).get("spend") or {}).get("tokens") or {}).get("total") or {}
+    return list(total.get("models") or [])
+
+
+def _footer(record: dict) -> str:
+    return footer({"model": ", ".join(_models(record))})
 
 
 def _title(record: dict) -> str:
@@ -193,7 +201,7 @@ def _pr_body(record: dict) -> str:
     if record.get("kind") == "failure":
         return (f"The weekly judge pass for {date} **failed** at `{record['run']['stage']}`: "
                 f"`{record['run']['error']}`.\n\nRecord: `{rel}`. The previous run's PR stays open."
-                f"\n\n{_PR_FOOTER}\n")
+                f"\n\n{_footer(record)}\n")
     bugs = record["bugs"]
     n = {k: sum(b["status"] == k for b in bugs) for k in ("open", "gone", "parked")}
     new = sum(_record.newly_open(b, date) for b in bugs)
@@ -201,9 +209,10 @@ def _pr_body(record: dict) -> str:
     verified = sum(b["status"] == "open" and bool(b.get("verify")) and not b.get("reverify") for b in bugs)
     decide = len(record["queue"])
     landed, confirmed = _record.landed_counts(bugs)
-    # fixed: what the judge called gone, and a landed fix verify dismissed (`landed_counts` confirms both)
+    # fixed: what is gone, and a `dismissed` bug with a landed fix or that verify found fixed (a repeated error)
     due = sum(b["status"] == "parked" and bool(b.get("recheck")) for b in bugs)
-    fixed = n["gone"] + sum(b["status"] == "dismissed" and bool(b.get("fix_landed")) for b in bugs)
+    fixed = n["gone"] + sum(b["status"] == "dismissed" and (bool(b.get("fix_landed")) or _record.verified_fixed(b))
+                            for b in bugs)
     lines = [f"Weekly judge, {date}. Record: [`{rel}`]({rel}). Point a session at it to work the bugs.", "",
              f"**Bugs: {n['open']} open** ({verified} verified, {new} new)"
              + (f", {n['parked']} parked (can't happen yet" + (f"; {due} due a re-check" if due else "") + ")"
@@ -228,7 +237,7 @@ def _pr_body(record: dict) -> str:
               if failed.get("rules") else "**Rules:** nothing broken in enough sessions."]
     lines += [f"- {p['id']} · {p['kind']}: {p['summary']}" for p in props]
     lines += ["", f"- Tokens: {_record.tokens_line(record['run']['spend'])}",
-              f"- Spend (list price): {_record.spend_line(record['run']['spend'])}", "", _PR_FOOTER]
+              f"- Spend (list price): {_record.spend_line(record['run']['spend'])}", "", _footer(record)]
     return "\n".join(lines) + "\n"
 
 
@@ -250,7 +259,7 @@ def _rules_body(record: dict) -> str:
     lines += ["", "Answer them in `pixi run judge-review`, after the bugs: *edit the rule* starts a session on "
               "it, *reject* drops it. This PR only carries `docs/ai-assist/EFFECTIVENESS.md` (`pixi run "
               "audit-rollup`) to main; merge it whenever. The full record, with each proposal's sources, is "
-              f"`~/.cecelia-effectiveness/judge-runs/{record['date']}.md`.", "", _PR_FOOTER]
+              f"`~/.cecelia-effectiveness/judge-runs/{record['date']}.md`.", "", _footer(record)]
     return "\n".join(lines) + "\n"
 
 
@@ -274,7 +283,7 @@ def publish(record: dict, *, worktree: pathlib.Path, run: _t.Callable[..., subpr
     run(["git", "add", "docs/ai-assist"])
     recital = run([pixi, "run", "recital"]).stdout   # docs-only: no reviewer spawns, but the tails
     run(["git", "commit", "--quiet", *(["--allow-empty"] if rules_only else []), "-F", "-"],
-        input=f"{title}\n\n{recital.strip()}\n\n{_ATTRIBUTION}\n")
+        input=f"{title}\n\n{recital.strip()}\n\n" + "\n".join(run_lines(_models(record))) + "\n")
     run(["git", "push", "--quiet", "--force", "-u", "origin", branch])
     existing = json.loads(run([gh, "pr", "list", "--state", "open", "--json", "number,headRefName,title,url"]).stdout)
     mine = next((p["url"] for p in existing if p["headRefName"] == branch), None)

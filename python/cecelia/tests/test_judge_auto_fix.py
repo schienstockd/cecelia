@@ -182,6 +182,20 @@ class LandedTest(_AutoFixture):
         self.assertIn("running 3", out.getvalue())
         self.assertIn("── 2 session(s) · $3.00 · 1 handed back ─", out.getvalue())
 
+    def test_past_the_deadline_it_starts_no_new_session_and_says_the_rest_wait(self):
+        record = self.build(bugs=[_bug("B4", verify=FIX, file="c.py", branch="feat/y"),
+                                  _bug("B5", verify=FIX, file="d.py", branch="feat/z")])
+        self.changed = "a.py\n"
+        out = io.StringIO()
+        ticks = iter([100.0, 200.0])   # before B4's session, then before B5's: past `until`
+        answer = _answer("not_real") | {"bugs": [{"key": "fanout-b4", "outcome": "not_real", "reason": "no"}]}
+        with mock.patch.object(self.af, "landed", return_value={}):
+            ran = self.af.run(record, out=out, path=self.log, auto_log=self.auto, main=self.main, until=150.0,
+                              clock=lambda: next(ticks), session=self.session(answer), sh=self.sh())
+        self.assertEqual(ran, 1)
+        self.assertIn("1 left: past the deadline, next pass", out.getvalue())
+        self.assertNotIn("── B5 ", out.getvalue())
+
     def test_a_landed_bug_leaves_its_bundle(self):
         by_id = {"B1": {"key": "a"}, "B2": {"key": "b"}, "B3": {"key": "c"}}
         items = [{"kind": "bundle", "ref": "B1", "refs": ["B1", "B2"]}, {"kind": "work", "ref": "B3"}]
@@ -208,6 +222,13 @@ class OnlyNewestTest(_AutoFixture):
 
 
 class FenceTest(_AutoFixture):
+    def setUp(self):
+        super().setUp()
+        # these tests patch `Popen` on the shared `subprocess`: node resolution's own spawn would land in it
+        patcher = mock.patch.object(self.af.agent_sandbox, "node_bin_dir", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_the_agent_is_sandboxed_without_credentials_and_cant_write_the_main_checkout(self):
         s = self.af.settings(self.main)
         self.assertEqual(s["sandbox"]["network"], {"deniedDomains": ["*"]})
@@ -421,7 +442,9 @@ class FenceTest(_AutoFixture):
 
 class WorkTest(_AutoFixture):
     def test_a_fix_is_committed_with_its_tags_pushed_and_opened_as_a_pr(self):
-        spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        stamp = {"model": "claude-sonnet-5-5", "version": "2.1.312", "session": "sid-1"}
+        with mock.patch.object(self.af, "session_stamp", lambda sid: stamp if sid == "sid-1" else {}):
+            spent, out = self.work(_answer(visual=True), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
         self.assertEqual(spent, 3.0)
         firsts = [c[:3] for c in self.calls]
         self.assertEqual(firsts[:2], [["git", "branch", "--list"], ["pixi", "run", "bootstrap-worktree"]])
@@ -430,13 +453,15 @@ class WorkTest(_AutoFixture):
         self.assertIn(RECITAL.strip(), self.prompts[1][0])
         msg = self.messages[0]
         for part in ("fix(a): b", "fanout-b1", "Refs #7", "[fanout-x1: fixed_pre_commit]", "_Recital stamp:",
-                     "Co-Authored-By:"):
-            self.assertIn(part, msg)
+                     "Co-Authored-By: Claude Sonnet 5.5 <", "Claude-Model: claude-sonnet-5-5",
+                     "Claude-Session: sid-1"):
+            self.assertIn(part, msg)   # the fix session's own model, never a pinned name
         self.assertNotIn("Fixes #7", msg)
         create = next(c for c in self.calls if c[:3] == ["gh", "pr", "create"])
         self.assertNotIn("--draft", create)   # a normal PR; the body says to look first
         body = next(m for m in self.bodies)
         self.assertIn("Changes what is drawn on screen", body)
+        self.assertIn("· claude-sonnet-5-5 · Claude Code 2.1.312", body)
         self.assertFalse(any(c[:3] == ["gh", "pr", "merge"] for c in self.calls))
         # git never runs the worktree's hooks or fsmonitor; the recital reads the diff we staged
         self.assertEqual(self.git_c, {"core.fsmonitor", "core.hooksPath"})
@@ -517,9 +542,21 @@ class WorkTest(_AutoFixture):
         self.assertFalse(any(c[:2] == ["git", "commit"] for c in self.calls))
         shutil.rmtree(tree)
 
+    def test_a_finding_quoting_the_error_marker_is_not_a_reviewer_error(self):
+        # a clean recital whose finding names the marker (a diff touching this code): it commits as usual
+        quoting = RECITAL.replace("_Recital stamp:", "- **auto_fix.py:756** — reads `> **RECITAL SCRIPT ERROR**` "
+                                  "[**plausible**]\n\n_Recital stamp:", 1)
+        with mock.patch(f"{__name__}.RECITAL", quoting):
+            _, out = self.work(_answer(), {"tags": ["[fanout-x1: fixed_pre_commit]"]})
+        self.assertNotIn("reviewers errored", out)
+        self.assertTrue(any(c[:2] == ["git", "commit"] for c in self.calls))
+
     def test_a_recital_whose_reviewers_errored_commits_nothing(self):
+        # the other reviewer's finding quotes a limit's wording: only the error itself says whether it was one
         errored = ("_Fanout audit (evidence):_\n\n> **RECITAL SCRIPT ERROR** — claude exited 1; stdout:\n"
-                   "{}\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
+                   "{}\n\n_Fanout audit: not run — the reviewer errored_\n\n_Convention check (evidence):_\n\n"
+                   "- **claude_cli.py:44** — now matches \"You've hit your session limit · resets 1:40am\" "
+                   "[**should reuse**]\n\n_Recital stamp: fix-fanout-b1@aaaaaaaaaaaa_\n")
         tree = self.main.parent / "cecelia-fix-fanout-b1"
         for text, raises in (("boom", False), ("You've hit your session limit · resets 2:20pm", True)):
             with self.subTest(raises=raises), mock.patch(f"{__name__}.RECITAL", errored.format(text)), \

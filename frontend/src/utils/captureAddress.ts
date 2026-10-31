@@ -34,6 +34,18 @@ export interface CaptureAddress {
   plotSpec?: { specId: string; params?: Record<string, unknown>; dataRefs?: unknown[] }
 }
 
+/** An address as read back from `meta.json` — the same shape, but nothing is guaranteed, not even
+ *  `projectUid`. Turn it back into a `CaptureAddress` with `resolveStoredAddress`. */
+export type StoredCaptureAddress = Partial<CaptureAddress>
+
+/** A stored address with the caller's project filled in where the envelope has none (or no address
+ *  at all) — the bag `CaptureViewSurface` takes when a capture is reshown. */
+export function resolveStoredAddress(
+  stored: StoredCaptureAddress | null | undefined, projectUid: string,
+): CaptureAddress {
+  return { ...(stored ?? {}), projectUid: stored?.projectUid || projectUid }
+}
+
 // Drop nullish/empty fields so the on-disk envelope stays tight — `undefined` and `''` mean "not
 // available", NOT "explicitly cleared". Keeps a viewer capture from carrying an empty `domAnchor`
 // key that only makes sense for a UI capture.

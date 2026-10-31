@@ -28,6 +28,8 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
                                          "not" => p.boolean_not))
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)
+    # authorship (a Claude-proposed gate) — only when set, so a GUI-drawn tree keeps its exact shape
+    p.created_by === nothing || (d["createdBy"] = p.created_by)
     # explicit-label pops (the napari selection) have no gate/filter, so the client can't tell
     # from gate/filter alone that membership changed (e.g. the user resizes the selection shape).
     # Emit a membership signature so the client bumps its per-pop version and refreshes the plots.
@@ -83,6 +85,7 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
                     filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", get(flt, :default_all, false))),
                     filter_conditions = flt === nothing ? nothing : get(flt, "conditions", get(flt, :conditions, nothing)),
                     is_track = Bool(g("is_track", false)), validate_refs = false,
+                    created_by = let c = g("createdBy"); c isa AbstractDict ? c : nothing end,
                     boolean_op   = bl === nothing ? nothing : get(bl, "op", get(bl, :op, nothing)),
                     boolean_pops = bl === nothing ? nothing : get(bl, "pops", get(bl, :pops, nothing)),
                     boolean_not  = bl === nothing ? nothing : get(bl, "not", get(bl, :not, nothing)))
@@ -149,8 +152,9 @@ function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
     # `write_json_atomic` (app/src/utils.jl) so a concurrent reader never observes a half-written
     # (truncated) JSON, and an interrupted write keeps the previous gates. This file was where that
     # tmp-then-rename pattern was first written by hand; it is now the shared mechanism every state
-    # write uses. The load→mutate→save critical section is separately serialised by `_POPMAP_LOCK`
-    # in the gating API handlers (against lost updates); this guards the file itself.
+    # write uses. The load→mutate→save critical section is separately serialised by `with_popmap_lock`
+    # (popmanager/copy.jl; held by the gating API handlers and by tasks that write gating) against lost
+    # updates; this guards the file itself.
     write_json_atomic(path, to_tree(m; include_transient = false))
     m._uid_backfilled = false   # the just-saved sidecar now carries every uid
     m

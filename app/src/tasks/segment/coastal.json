@@ -433,7 +433,7 @@
           "label": "Global normalisation",
           "type": "bool",
           "default": true,
-          "tip": "Keep on — per-tile scaling breaks the trained photometric range"
+          "tip": "Keep on — the model was trained on whole-movie scaling"
         }
       ]
     }

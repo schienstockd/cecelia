@@ -20,6 +20,8 @@ board plots for it, added to the copy and rendered headless by the app's own fro
 
 `--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. `--ask-why` resumes the
 finished session once for the why (~$6 a run: the first turn re-reads the session; off for a back-fill).
+Writing a run's record again (`--ask-why` afterwards) revises the entry the first write made — its
+id is kept in the run's `record.json` — rather than adding a second; verdicts already given stay.
 
 A run the account's usage limit stopped (the trace's `result` event is a 429 / limit refusal) is said
 in the title, at the top of the entry and in the `agentRun` marker (`rateLimited`): its decisions are
@@ -56,6 +58,12 @@ GATE_TOOLS = {"add_gate", "set_gate", "delete_gate"}
 REPORT_TOOLS = {"add_analysis_board", "append_lab_log", "create_blackboard_entry", "revise_blackboard_entry",
                 "create_notebook", "revise_notebook"}
 ACTIONS = {"run_chain", "run_task"} | GATE_TOOLS | REPORT_TOOLS
+
+
+def is_action(name: str, inp: dict) -> bool:
+    """A call that changed the project. A gate tool's `dry_run` only previews — it writes nothing, so
+    it is a look, not an action."""
+    return name in ACTIONS and not (name in GATE_TOOLS and (inp or {}).get("dry_run"))
 # calls that only wait on an action already recorded — not something the agent looked at
 _WAITS = {"wait_for_chain", "wait_for_tasks", "get_lock"}
 SURFACE = "agent_run"
@@ -204,7 +212,7 @@ def decisions(trace_path: str, images: list[dict]) -> dict:
         if name == "create_chain":
             chains[it["input"].get("name")] = it["input"].get("nodes") or []
             continue
-        if name not in ACTIONS:
+        if not is_action(name, it["input"]):
             if name not in _WAITS:
                 looked.append(_read_text(it, src_of))
                 pics += [{"png": p, "caption": _read_text(it, src_of), "call": it} for p in it["images"]]
@@ -409,6 +417,26 @@ def pictures(api: str | None, run: dict, dec: dict) -> dict:
     return out
 
 
+def save_entry(api: str, uid: str, prior: str | None, body: dict) -> dict:
+    """Write a record's Blackboard entry: revise `prior` (the entry an earlier write of this same record
+    made) while it still exists, else create one. A re-run — `--ask-why` afterwards, a co-drive
+    recorded again later in the session — so updates the entry rather than adding a second. Revise
+    snapshots the old text and keeps per-section verdicts (section ids are fixed per decision /
+    exchange); the title and the `agentRun` marker stay as created. `{entryId, revised}`."""
+    if prior:
+        try:
+            _get(api, "/api/blackboard/entry", {"projectUid": uid, "entryId": prior})
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+        else:
+            _post(api, "/api/blackboard/revise", {"projectUid": uid, "entryId": prior,
+                                                  "content": body["content"], "attachments": body["attachments"]})
+            return {"entryId": prior, "revised": True}
+    r = _post(api, "/api/blackboard/create", {"projectUid": uid, **body})
+    return {"entryId": r.get("entryId"), "revised": False}
+
+
 def upload_capture(api: str, source_uid: str, png_b64: str, caption: str, address: dict) -> str:
     """One `agent_run` capture in the source project. Read back: an app that predates the surface
     files it as a viewer frame the user shared — removed again and refused."""
@@ -556,9 +584,10 @@ def write(root: pathlib.Path, api: str | None, projects_dir: pathlib.Path | None
                  "knowledgeOn": knowledge_on(run, rec), "guide": rec.get("guide"), "codeSha": rec.get("codeSha"),
                  **({"rateLimited": claude_cli.rate_limit_note(dec["rateLimited"], _run_end(rec))}
                     if dec.get("rateLimited") else {})}
-    r = _post(api, "/api/blackboard/create", {"projectUid": source_uid, "title": title, "content": content,
-                                              "attachments": attach, "agentRun": agent_run})
-    return {**out, "entryId": r.get("entryId"), "projectUid": source_uid}
+    prior = (rec.get("blackboard") or {}).get("entryId")
+    saved = save_entry(api, source_uid, prior, {"title": title, "content": content, "attachments": attach,
+                                                "agentRun": agent_run})
+    return {**out, **saved, "projectUid": source_uid}
 
 
 def main(argv=None) -> int:
@@ -575,6 +604,10 @@ def main(argv=None) -> int:
                 pathlib.Path(a.projects_dir).expanduser() if a.projects_dir else None,
                 pathlib.Path(a.dry_run).expanduser() if a.dry_run else None, a.ask_why, a.claude,
                 not a.no_stage_boards)
+    if "entryId" in out:     # where the next re-run finds the entry to revise (run_app.py keeps it there too)
+        rec_path = pathlib.Path(a.root).expanduser().resolve() / "record.json"
+        rec = json.loads(rec_path.read_text(encoding="utf-8")) if rec_path.exists() else {}
+        write_json_atomic(rec_path, {**rec, "blackboard": out}, indent=2)
     print(json.dumps(out))
     return 0
 

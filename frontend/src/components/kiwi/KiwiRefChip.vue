@@ -64,6 +64,7 @@ function sidecarTip(s: KiwiRefSidecar): string {
     case 'plot':       return `Was: ${snap.label}\n${snap.plotSummary}`
     case 'tile':       return `Was: tile ${snap.cellId} in ${snap.imageName}`
     case 'ui':         return `Was: ${snap.anchor}`
+    case 'task':       return `Was: ${s.ref.kind === 'task' ? s.ref.funName : s.label} ran on ${snap.imageName}`
   }
 }
 

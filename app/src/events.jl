@@ -3,8 +3,8 @@
 # REPL users can subscribe directly for live feedback; the API WebSocket layer
 # is just another subscriber — no special-casing.
 #
-# Events are NamedTuples. Currently fired:
-#   "node:done"   (run_id, image_uid, node_id, result)
+# Events are NamedTuples. Fired by `_update_node_state!` (tasks/chain/execute.jl): "node:queued",
+# "node:running", "node:waiting", "node:done", "node:failed", plus "node:progress".
 #
 # Thread safety: the handler list is protected by _CHAIN_EVENTS_LOCK.
 # Handlers are copied before dispatch so subscribe/unsubscribe during dispatch

@@ -62,7 +62,7 @@ useVisualPanel(
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <!-- `plot-id` forwards the panel's persistKey to the interactive view so the view can filter
          Claude's point-out marks (`stores/viewer.ts::plotMarks`) by (family, plotId). Views that
-         don't opt in ignore it; the ones that do (UmapView, cluster panels) declare it a prop. -->
+         don't opt in ignore it; the ones that do (ClusterMapView, cluster panels) declare it a prop. -->
     <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state"
                :plot-id="persistKey" />
     <div v-else class="ip-missing cc-muted cc-fs-md">Unknown interactive plot “{{ view }}”.</div>

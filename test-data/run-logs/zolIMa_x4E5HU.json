@@ -1,0 +1,544 @@
+[
+ {
+  "fun": "cleanupImages.stackAlign",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "minConfidence": 0.35,
+   "alignChannel": [
+    "mem-TOM"
+   ],
+   "referenceMode": "middle",
+   "maxShiftPx": 8
+  },
+  "at": "2026-09-06T11:09:35",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "stackAligned",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "mem-TOM"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T11:16:52",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "stackAligned",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T11:34:24",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "stackAligned",
+  "status": "cancelled",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T11:37:46",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T11:37:55",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 0,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T11:43:26",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 0,
+   "driftNormalisation": "none",
+   "driftEstimator": "chain"
+  },
+  "at": "2026-09-06T12:05:50",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "failed",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T12:29:08",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T12:31:40",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "driftCorrected",
+  "status": "cancelled",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T12:31:58",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 6,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T12:32:36",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 0,
+   "driftNormalisation": "none",
+   "driftEstimator": "chain"
+  },
+  "at": "2026-09-06T12:38:14",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.driftCorrect",
+  "valueName": "default",
+  "status": "done",
+  "params": {
+   "driftMaxLag": 3,
+   "driftMaxAngle": 5,
+   "driftPerPlane": true,
+   "driftChannel": [
+    "CD169-Kat"
+   ],
+   "driftSmoothSigma": 0,
+   "driftZSmoothness": 0.3,
+   "driftNormalisation": "none",
+   "driftEstimator": "multiLag"
+  },
+  "at": "2026-09-06T12:55:08",
+  "taskId": ""
+ },
+ {
+  "fun": "opticalFlow.trainSupportDenoise",
+  "valueName": "driftCorrected",
+  "status": "cancelled",
+  "params": {
+   "overwrite": true,
+   "midZOnly": true,
+   "unetSize": "large",
+   "inputFrames": 27,
+   "patchXY": 128,
+   "blindConvChannels": 64,
+   "epochs": 60,
+   "trainChannels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ],
+   "learningRate": 0.0005,
+   "batchSize": 2,
+   "modelName": "supp.small"
+  },
+  "at": "2026-09-06T12:59:06",
+  "taskId": ""
+ },
+ {
+  "fun": "opticalFlow.trainSupportDenoise",
+  "valueName": "driftCorrected",
+  "status": "done",
+  "params": {
+   "overwrite": true,
+   "midZOnly": true,
+   "unetSize": "large",
+   "inputFrames": 27,
+   "patchXY": 128,
+   "blindConvChannels": 64,
+   "epochs": 30,
+   "trainChannels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ],
+   "learningRate": 0.0005,
+   "batchSize": 2,
+   "modelName": "supp.small"
+  },
+  "at": "2026-09-06T13:00:22",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "done",
+  "params": {
+   "batchSize": 2,
+   "model": "supp.small.pt",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-06T13:05:10",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "failed",
+  "params": {
+   "batchSize": 2,
+   "model": "supp.MERTK",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-07T10:57:07",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "done",
+  "params": {
+   "batchSize": 2,
+   "model": "supp.MERTK",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-07T13:18:13",
+  "taskId": ""
+ },
+ {
+  "fun": "opticalFlow.trainSupportDenoise",
+  "valueName": "denoised",
+  "status": "cancelled",
+  "params": {
+   "overwrite": true,
+   "midZOnly": true,
+   "unetSize": "large",
+   "inputFrames": 27,
+   "patchXY": 128,
+   "blindConvChannels": 64,
+   "epochs": 30,
+   "trainChannels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ],
+   "learningRate": 0.0005,
+   "trainMode": "auto",
+   "batchSize": 2,
+   "modelName": "supp.small"
+  },
+  "at": "2026-09-07T15:59:13",
+  "taskId": ""
+ },
+ {
+  "fun": "opticalFlow.trainSupportDenoise",
+  "valueName": "driftCorrected",
+  "status": "done",
+  "params": {
+   "overwrite": true,
+   "midZOnly": true,
+   "unetSize": "large",
+   "inputFrames": 27,
+   "patchXY": 128,
+   "blindConvChannels": 64,
+   "epochs": 30,
+   "trainChannels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ],
+   "learningRate": 0.0005,
+   "trainMode": "perChannel",
+   "batchSize": 2,
+   "modelName": "supp.small"
+  },
+  "at": "2026-09-08T09:33:56",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "failed",
+  "params": {
+   "batchSize": 2,
+   "model": "supp",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-08T09:48:08",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "failed",
+  "params": {
+   "batchSize": 2,
+   "model": "supp",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-08T09:57:16",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "failed",
+  "params": {
+   "batchSize": 2,
+   "model": "supp",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-08T09:58:23",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "failed",
+  "params": {
+   "batchSize": 2,
+   "model": "supp",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-08T09:58:23",
+  "taskId": ""
+ },
+ {
+  "fun": "cleanupImages.denoise",
+  "valueName": "driftCorrected",
+  "status": "done",
+  "params": {
+   "batchSize": 2,
+   "model": "supp.small",
+   "channels": [
+    "nuc-GFP",
+    "mem-TOM",
+    "CD169-Kat"
+   ]
+  },
+  "at": "2026-09-08T10:04:55",
+  "taskId": ""
+ },
+ {
+  "fun": "segment.coastalMeasure",
+  "valueName": "denoised",
+  "status": "done",
+  "params": {
+   "labelErosion": 0,
+   "models": {
+    "1": {
+     "seedBlurSigma": 0,
+     "model": "flow.small.pt",
+     "matchAs": "base",
+     "normalise": 99.99,
+     "cellChannels": [
+      "mem-TOM",
+      "nuc-GFP"
+     ],
+     "stitchThreshold": 0.3,
+     "maxIter": 200,
+     "embeddingBlurSigma": 0,
+     "affinityThreshold": 0.1,
+     "probWeight": 0.3,
+     "mergeAffinityThreshold": 0.9,
+     "probBlurSigma": 0,
+     "seedSize": 2,
+     "mergeMaxDistance": 0,
+     "minComponentSize": 2,
+     "probThreshold": 0.05
+    },
+    "0": {
+     "seedBlurSigma": 0,
+     "model": "flow.small.pt",
+     "matchAs": "base",
+     "normalise": 99.99,
+     "cellChannels": [
+      "mem-TOM"
+     ],
+     "stitchThreshold": 0.3,
+     "maxIter": 200,
+     "embeddingBlurSigma": 0,
+     "affinityThreshold": 0.1,
+     "probWeight": 0.3,
+     "mergeAffinityThreshold": 0.9,
+     "probBlurSigma": 0,
+     "seedSize": 10,
+     "mergeMaxDistance": 0,
+     "minComponentSize": 10,
+     "probThreshold": 0.05
+    }
+   },
+   "intensityValueName": "denoised",
+   "overlapZ": 0,
+   "matchThreshold": 0.3,
+   "minCellSize": 1,
+   "cellSizeMax": 0,
+   "removeUnmatched": false,
+   "normaliseToWhole": true,
+   "labelOverlap": 0,
+   "gaussianFilter": 0,
+   "extendedMeasures": true,
+   "overlap": 0,
+   "labelExpansion": 0,
+   "outputValueName": "flowTom",
+   "intensityMeasure": "mean",
+   "clearDepth": false,
+   "clearTouchingBorder": false,
+   "blockSizeZ": 0,
+   "temporalScaleMode": "frames",
+   "blockSize": 4096,
+   "labelSmoothing": 1
+  },
+  "at": "2026-09-08T13:41:31",
+  "taskId": ""
+ },
+ {
+  "fun": "importImages.omezarr",
+  "valueName": "",
+  "status": "cancelled",
+  "params": {
+   "maxWorkers": "auto",
+   "ngffVersion": "0.4",
+   "chunkSize": "auto",
+   "jvmHeapGiB": "auto",
+   "stageLocal": false,
+   "pyramidLevels": 2,
+   "shardSize": "auto",
+   "shardDepth": "1"
+  },
+  "at": "2026-09-09T14:42:16",
+  "taskId": ""
+ }
+]

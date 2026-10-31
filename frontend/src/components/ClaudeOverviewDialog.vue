@@ -1,22 +1,30 @@
 <!--
-  "What Kiwi does here" — a brief, visual how-to for the two Claude entry points (Ask / Chat) and
-  what the assistant can see / suggest / create / can't do. Opened on demand from the Kiwi header's
-  `?` button; static reference, no live data. Content lives in lib/claudeOverview.ts (testable, one
-  place to edit) — including the documentation-helper framing (Kiwi is a record, not a verdict; see
-  docs/archive/kiwi-purpose-and-framing.md). Built on the shared BaseModal shell (docs/UI.md → "Modals & dialogs").
+  "Kiwi and Claude Code" — the two modes side by side, either first: when to use each, what you can
+  do with it, how to start, what it won't do (ClaudeWaysIn.vue). Then "What each can use": one section
+  per group, one open at a time (`accordion` keyword), a Kiwi / Claude Code tick per line
+  (lib/claudeTools.ts, pinned by its test to the real tool allow-lists, so a new tool can't go
+  missing). Opened from the Kiwi header's `?`; static reference, no live data. Every reply is a claim
+  to check, not a verdict: the provisional line. Built on the shared BaseModal shell.
 -->
 <script setup lang="ts">
 import BaseModal from './BaseModal.vue'
-import { computed } from 'vue'
-import { CLAUDE_ENTRY_POINTS, claudeCapabilities, CLAUDE_EXAMPLES } from '../lib/claudeOverview'
-import { useSettingsStore } from '../stores/settings'
+import ClaudeWaysIn from './ClaudeWaysIn.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
+import SelectionTable, { type SelectionColumn } from './SelectionTable.vue'
+import { CLAUDE_PROVISIONAL } from '../lib/claudeOverview'
+import { capabilityGroups } from '../lib/claudeTools'
 
 defineEmits<{ (e: 'close'): void }>()
 
-// A connector the user hid in Settings is dropped from the capability list too — the dialog must not
-// advertise what the prompt no longer offers (lib/claudeOverview.ts → claudeCapabilities).
-const settings = useSettingsStore()
-const capabilities = computed(() => claudeCapabilities(settings.hiddenMcpAccounts))
+const GROUPS = capabilityGroups().map(g => ({ ...g, rows: g.items.map(c => ({ ...c })) }))
+const COLUMNS: SelectionColumn[] = [
+  { key: 'label', label: '' },
+  { key: 'kiwi', label: 'Kiwi', width: 64, fixed: true },
+  { key: 'terminal', label: 'Claude Code', width: 96, fixed: true },
+]
+// The groups below are an accordion like every other in the app (`accordion="cc.claudeOverview.openGroup"`):
+// one open at a time, remembered, none to start with. What only each mode does is on the cards above;
+// this is the per-tool detail.
 
 // Terminal set-up is NOT repeated here. It lives on Kiwi's Terminal row — one button, in the place
 // people act from — and duplicating it in this dialog cost a whole band of chrome to say what the
@@ -24,70 +32,36 @@ const capabilities = computed(() => claudeCapabilities(settings.hiddenMcpAccount
 </script>
 
 <template>
-  <BaseModal title="What Kiwi does here" icon="pi-sparkles" width="620px" @close="$emit('close')">
-    <!-- two entry points, side by side: the how-to -->
-    <div class="co-entries">
-      <div v-for="e in CLAUDE_ENTRY_POINTS" :key="e.name" class="co-entry cc-card cc-card-2">
-        <div class="co-entry-head"><i :class="['pi', e.icon]" /> {{ e.name }}</div>
-        <p class="co-entry-what cc-muted cc-fs-md">{{ e.what }}</p>
-        <ol class="co-steps">
-          <li v-for="(s, i) in e.steps" :key="i">{{ s }}</li>
-        </ol>
-      </div>
-    </div>
+  <BaseModal title="Kiwi and Claude Code" icon="pi-question-circle" width="720px" @close="$emit('close')">
+    <ClaudeWaysIn />
 
-    <!-- capability rows: sees / suggests / creates / can't -->
-    <div class="co-rows">
-      <div v-for="g in capabilities" :key="g.key" class="co-cell" :class="'tone-' + g.tone">
-        <div class="co-cell-head"><i :class="['pi', g.icon]" /> {{ g.title }}</div>
-        <ul>
-          <li v-for="(it, i) in g.items" :key="i">{{ it }}</li>
-        </ul>
-      </div>
+    <div class="co-uses">
+      <div class="cc-eyebrow cc-fs-2xs co-uses-title">What each can use</div>
+      <CollapsibleSection v-for="g in GROUPS" :key="g.key" :label="g.title"
+                          accordion="cc.claudeOverview.openGroup" :section="g.key"
+                          :tip="`What Kiwi and Claude Code can use: ${g.title.toLowerCase()}`">
+        <!-- icons carry the meaning, not colour alone -->
+        <!-- one shared width key: every group's table is sized alike, so the tick columns line up -->
+        <SelectionTable selection-mode="none" density="compact" :columns="COLUMNS" :rows="g.rows" id-key="label"
+                        column-width-key="claudeOverview.uses">
+          <template #cell-kiwi="{ row }">
+            <i :class="['pi', row.kiwi ? 'pi-check co-kiwi' : 'pi-minus co-no']" :aria-label="row.kiwi ? 'yes' : 'no'" />
+          </template>
+          <template #cell-terminal="{ row }">
+            <i :class="['pi', row.terminal ? 'pi-check co-claude' : 'pi-minus co-no']" :aria-label="row.terminal ? 'yes' : 'no'" />
+          </template>
+        </SelectionTable>
+      </CollapsibleSection>
     </div>
-
-    <!-- example prompts to try -->
-    <div class="co-examples">
-      <span class="co-examples-label cc-muted">Try asking</span>
-      <div class="co-chips cc-row cc-row-tight">
-        <span v-for="(ex, i) in CLAUDE_EXAMPLES" :key="i" class="co-chip">{{ ex }}</span>
-      </div>
-    </div>
+    <p class="co-note cc-muted">{{ CLAUDE_PROVISIONAL }}</p>
   </BaseModal>
 </template>
 
 <style scoped>
-.co-entries { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
-/* a raised card ON the dialog's surface-1 body — the surface-2 variant of .cc-card */
-.co-entry { padding: 14px 16px; }
-.co-entry-head { font-weight: 600; color: var(--cc-text); display: flex; align-items: center; gap: 6px; }
-.co-entry-head .pi { color: var(--cc-accent); }
-.co-entry-what { margin: 8px 0 10px; line-height: 1.4; }
-.co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: var(--cc-fs-md); line-height: 1.55; }
-
-/* One ROW per capability: the heading titles the box, the items flow beneath it in two columns. The
-   2×2 grid ran ragged once the lists grew to different lengths, and giving the heading its own
-   column just traded that for a band of empty space — so it sits on top and the full width goes to
-   the list. */
-.co-rows { display: grid; grid-template-columns: 1fr; gap: 10px; }
-.co-cell { border: 1px solid var(--cc-border); border-radius: var(--cc-radius-lg); padding: 12px 14px; }
-.co-cell-head { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.co-cell ul {
-  margin: 0; padding-left: 18px; font-size: var(--cc-fs-md); line-height: 1.55; color: var(--cc-text);
-  columns: 2; column-gap: 26px;
-}
-.co-cell li { break-inside: avoid; }
-.co-cell.tone-good .co-cell-head { color: #56d364; }
-.co-cell.tone-good .co-cell-head .pi { color: #56d364; }
-.co-cell.tone-neutral .co-cell-head .pi { color: var(--cc-accent); }
-.co-cell.tone-muted { opacity: 0.85; }
-.co-cell.tone-muted .co-cell-head { color: var(--cc-text-dim); }
-
-.co-examples { margin-top: 18px; }
-.co-examples-label { display: block; margin-bottom: 6px; }
-
-.co-chip {
-  font-size: var(--cc-fs-sm); color: var(--cc-text); background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill); padding: 3px 10px;
-}
+.co-uses { margin-top: 14px; }
+.co-uses-title { margin-bottom: 4px; }
+.co-kiwi { color: var(--cc-kiwi); }
+.co-claude { color: var(--cc-claude); }
+.co-no { color: var(--cc-text-dim); }
+.co-note { margin: 10px 0 0; }
 </style>

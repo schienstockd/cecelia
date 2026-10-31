@@ -92,6 +92,24 @@ Cecelia._run_task(::_RangedParamTask, ::CciaImage, params::Dict{String,Any};
                   on_process::Function = _ -> nothing) =
     Dict{String,Any}("diameter" => params["diameter"], "iters" => params["iters"])
 
+# Manual chain steps (chain/manual.jl). Prepare counts its calls per image; the check refuses any image
+# whose uid is in `_MANUAL_BLOCKED`. Registered with a spec carrying a `"manual"` block in the testset.
+const _MANUAL_PREPARED = Dict{String,Int}()
+const _MANUAL_BLOCKED  = Set{String}()
+struct _ManualPrepTask <: CciaTask end
+struct _ManualSetPrepTask <: CciaTask end
+Cecelia._run_task(::_ManualPrepTask, img::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    (_MANUAL_PREPARED[img.uid] = get(_MANUAL_PREPARED, img.uid, 0) + 1; Dict{String,Any}("ok" => true))
+Cecelia._run_task(::_ManualSetPrepTask, imgs::Vector{CciaImage}, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) =
+    (for i in imgs; _MANUAL_PREPARED[i.uid] = get(_MANUAL_PREPARED, i.uid, 0) + 1; end;
+     Dict{String,Any}("ok" => true))
+Cecelia.manual_check(::Union{_ManualPrepTask,_ManualSetPrepTask}, img::CciaImage, ::Dict{String,Any}) =
+    img.uid in _MANUAL_BLOCKED ? "no gates on $(img.uid)" : nothing
+
 # A task whose _run_task always throws — used to assert the scheduler tees a crash into the task log.
 struct _CrashTask <: CciaTask end
 Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};

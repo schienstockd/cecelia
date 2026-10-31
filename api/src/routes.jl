@@ -562,8 +562,7 @@ function api_task_fun_params_sources(req::HTTP.Request)
         # first hit per name wins. `task` is nil for an unknown fun, so no log walk at all.
         if !isnothing(task)
             for e in Iterators.reverse(read_run_log(joinpath(proj_root, "1", uid)))
-                st = string(get(e, "status", get(e, :status, "")))
-                (isempty(st) || st == "done") || continue
+                run_entry_status(e) == "done" || continue
                 string(get(e, "fun", get(e, :fun, ""))) == String(fun) || continue
                 p = get(e, "params", get(e, :params, nothing))
                 p isa AbstractDict || continue
@@ -904,13 +903,18 @@ end
 # in-process fallback are here; module-page tasks are on the runner. A snapshot missing either half
 # is a quit/export busy-check that reads idle, and a browser that adopts only some running rows.
 # De-duplicated by id (runner wins) so a task that somehow appears in both is one row, not two.
-function api_tasks_list(_req)
+# `strict`: a runner that cannot be read throws instead of reading as idle (a check before a delete).
+function _tasks_snapshot(; strict::Bool = false)::Vector{Any}
     local_tasks = list_tasks()
-    remote = try; _runner_enabled() ? Cecelia.runner_tasks(_RUNNER) : Any[]; catch; Any[]; end
-    isempty(remote) && return 200, JSON3.write(local_tasks)
+    remote = try; _runner_enabled() ? Cecelia.runner_tasks(_RUNNER) : Any[]; catch; strict && rethrow(); Any[]; end
+    isempty(remote) && return collect(Any, local_tasks)
     seen = Set(String(get(t, "id", "")) for t in remote)
-    200, JSON3.write(vcat(remote, [t for t in local_tasks if !(t.id in seen)]))
+    vcat(Any[remote...], Any[t for t in local_tasks if !(t.id in seen)])
 end
+api_tasks_list(_req) = 200, JSON3.write(_tasks_snapshot())
+
+# One field of a `_tasks_snapshot` row: the runner's rows are parsed JSON, this process's NamedTuples.
+_task_field(t, k::AbstractString) = string(t isa AbstractDict ? get(t, k, get(t, Symbol(k), "")) : getproperty(t, Symbol(k)))
 
 # Terminal outcomes of recently finished tasks (reporting only). The companion to /api/tasks: that
 # one answers "what is in flight", this one "how did the ones that left it end". A poller needs both

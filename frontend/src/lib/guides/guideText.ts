@@ -9,7 +9,7 @@
 // The rendered catalogue is committed as mcp/cecelia_mcp/guides.json and checked by guideText.test.ts
 // (a file snapshot): edit a guide, re-run `npx vitest run -u src/lib/guides/guideText.test.ts`.
 
-import { GUIDES, guideById, RECIPES, isWanted } from './index'
+import { GUIDES, guideById, RECIPES, isWanted, isGuideStep } from './index'
 import type { GuideDef, WrittenRecipe } from './index'
 
 export interface GuideTextEntry {
@@ -39,10 +39,21 @@ export function guideText(g: GuideDef): string {
 export function recipeText(r: WrittenRecipe): string {
   const lines = [`# Recipe: ${r.title}`, '', `When this is you: ${r.whenThisIsYou}`, '', '## Steps', '']
   r.steps.forEach((s, i) => {
-    const g = guideById(s.guide)
-    lines.push(`${i + 1}. ${g?.title ?? s.guide} (guide \`${s.guide}\`)${s.optional ? ' — optional' : ''}: ${s.why}`)
+    const opt = s.optional ? ' — optional' : ''
+    if (isGuideStep(s)) {
+      const g = guideById(s.guide)
+      lines.push(`${i + 1}. ${g?.title ?? s.guide} (guide \`${s.guide}\`)${opt}: ${s.why}`)
+    } else {
+      lines.push(`${i + 1}. ${s.label} (page \`${s.page}\`, no guide)${opt}: ${s.why}`)
+    }
+    // What Claude adds here, and through which way in — so a paired session knows what it may do at
+    // the step the user is on (WORKFLOW_RECIPES_PLAN D11).
+    if (s.assist) lines.push(`   - Claude (${s.assist.where === 'kiwi' ? 'Kiwi or terminal' : 'terminal'}): ${s.assist.text}`)
   })
+  const seen = new Set<string>()
   for (const s of r.steps) {
+    if (!isGuideStep(s) || seen.has(s.guide)) continue
+    seen.add(s.guide)
     const g = guideById(s.guide)
     if (g) lines.push('', '---', '', guideText(g))
   }

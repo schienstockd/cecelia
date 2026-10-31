@@ -8,6 +8,7 @@
 // text. `sketchAnimation.id` points at a feijoa sketch (rendered inline by WhatNewCard); an id
 // that isn't in feijoa's catalogue falls back to the "coming soon" placeholder.
 import type { WhatNewCard } from './whatsNew'
+import { KIWI_LOOP, TERMINAL_MODE } from './claudeOverview'
 
 // First entry is the welcome card (kind 'about') — brief intro to cecelia; the rest are tips in
 // pipeline-arc order (segmentation is the entry point; analysis features read from it), with the
@@ -181,13 +182,10 @@ export const TIPS: WhatNewCard[] = [
   {
     id: 'tip-claude-mcp',
     kind: 'tip',
-    title: 'Claude Code can read your project',
-    description: 'The cecelia-observer MCP server gives a Claude Code session read-only access to this project — images, QC, cohort outliers, lineage, populations, behaviour, clusters. It points out what looks off and names the knob worth trying; you make the change and run it. Ask, and it notes the decision in the lab log or builds you a Pluto notebook.',
-    steps: [
-      'Kiwi → Assistant → Set up (once).',
-      'Run claude in a terminal.',
-      'Ask: "check my current project in cecelia".',
-    ],
+    title: 'Check a step with Claude',
+    description: 'Kiwi asks Claude about what you point at. It points and counts but doesn\'t judge, and it never runs anything or changes your data.',
+    // Kiwi's steps, then Claude Code as the other way in (lib/claudeOverview.ts) — as Kiwi's ? and its guide.
+    steps: [...KIWI_LOOP.map(s => `${s.title}: ${s.text}.`), `Or ${TERMINAL_MODE.title}: ${TERMINAL_MODE.start}, and work it through.`],
     sketchAnimation: { id: 'claude_mcp' },
   },
 ]

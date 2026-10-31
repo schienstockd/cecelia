@@ -137,8 +137,8 @@ end
 
                 # A slow env, so the job is still out when the backend "crashes".
                 py = Cecelia.hpc_env_python(root, hpc_lock_hash())
-                real = readlink(py)
-                rm(py)
+                real = py * ".real"                                   # the fake env's python wrapper
+                mv(py, real)
                 write(py, "#!/bin/sh\nsleep 3\nexec '$real' \"\$@\"\n"); chmod(py, 0o755)
                 rm(h5)
                 rec = Cecelia._register_task!("crash-1", "segment.measureLabels", "hpc", img.uid, "", _ -> nothing)

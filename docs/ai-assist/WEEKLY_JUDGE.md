@@ -40,7 +40,20 @@ test whether an agent can actually use the framework.
    branch, since two worktrees flagging one `file:line` share a slug), plus the last record's `open` / `unjudged` / `unmerged` / `parked` bugs. Free checks
    come first:
    - findings on frozen paths (a judge record, `docs/archive/`) are dropped;
-   - a finding whose branch hasn't reached the SHA is `unmerged` and waits;
+   - a finding whose branch hasn't reached the SHA is `unmerged` and waits. The change it was raised
+     on is the first commit after the finding's `commit` on its branch; it has reached the SHA when
+     the SHA contains it, or when a PR from that branch merged into the SHA with it in the PR's head.
+     The second is how a squash or rebase merge lands: it copies the commits, so ancestry never sees
+     them, and local branches are kept, so the deleted-branch rule never fires (on 2026-10-27, 76 of
+     138 bugs sat `unmerged` this way; 64 land with the check). `gh pr list --head <branch> --state
+     merged` is asked once per branch a pass, only for a branch ancestry doesn't place. No change
+     commit (none yet, or the branch was rebased past it) lands only when the branch's whole tip
+     merged in a PR: a finished branch, like a deleted one. A change whose patch the SHA already has
+     (`git cherry`: picked over, or landed again in another PR) has landed too. A commit after the
+     head the PR merged at, with no such patch on the SHA, never landed: its findings wait under that
+     branch's `stranded` bug (`waiting`) instead of as their own `unmerged` rows, which never ended.
+     When `gh` can't answer, those branches fall back to ancestry and the record's *Failed* row says
+     so (`landed`);
    - the excerpt is the whole function around the line (`enclosing.py`), found at the finding's
      own commit, so a moved line still shows the right code;
    - a function that no longer exists is `gone`;
@@ -48,8 +61,9 @@ test whether an agent can actually use the framework.
    - a `parked` bug (verify said `guard`, step 4) skips the judge and stays parked, unless a commit
      names its key (*Landed fixes* below: the guard may have gone in elsewhere) or one since its
      verify SHA touched its file (an agent-run error with no file: unless a run hit it again after it
-     was verified). Then it goes back to `open` with its verdict cleared, and verify looks at
-     it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
+     was verified). A file or function that no longer exists then makes it `gone` for free, as for
+     an open bug, without taking a re-check slot. Otherwise it goes back to `open` with its verdict
+     cleared, and verify looks at it again. At most 3 a pass (`PARKED_RECHECK`), a landed fix first, then the oldest parking:
      the check is a proxy, and a busy file would otherwise send its every parked bug back each
      week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
@@ -71,7 +85,7 @@ test whether an agent can actually use the framework.
    A **run review** (`kind: "review"`, key `rev-…`) has no code to excerpt either: it is `open`
    straight away and goes to verify. A person set its cause, so verify doesn't ask whether it is
    real: it checks whether the fix is in (the guide's text in `mcp/cecelia_mcp/guides.json`, or the
-   tool or surface the note names). `dismiss` means this code already has it. One run's reviews go
+   tool or surface the note names). `fixed` means this code has it now. One run's reviews go
    to one agent. The rows are stamped a second before the pass started, so the next pass's window
    doesn't read them again.
 
@@ -107,7 +121,7 @@ test whether an agent can actually use the framework.
    `rep-…`, `run-…`, `stranded-pr…`). They go on the bug as `fix_landed`, with the PR from `(#N)` in
    the subject or the `Merge pull request #N` that brought them in. That is evidence, not a verdict:
    the judge and verify prompts get it as a hint, and the judge still decides `gone`. The record says
-   *Fix landed: … — awaiting re-check* until it does, or verify dismisses it. So a fix you landed with `pixi run
+   *Fix landed: … — awaiting re-check* until it does, or verify calls it `fixed`. So a fix you landed with `pixi run
    judge-review` shows up even on a pass whose judge failed. On 2026-10-05, 6 of the 7 carried open
    bugs had a fix commit naming their key on main; the judge never ran, so the record said "0 fixed".
    A bug with a landed fix that is still `open` after the judge (it said `live_bug`, failed, or the
@@ -123,7 +137,14 @@ test whether an agent can actually use the framework.
    while what's spent plus its whole $1.50 budget fits, so $4 is four calls, 160 bugs, against a
    measured inflow of about 100 a week. Bugs with a landed fix go first, then carried `open` ones,
    then the rest oldest first. A failed call ends the sweep; what earlier calls judged stands.
-   Commits pushed to a PR's branch after it merged are reported as `stranded`. A bug the judge gives
+   Commits pushed to a PR's branch after it merged are reported as `stranded` (`stranded-pr<N>`):
+   by the scan of PRs merged since the last pass, and by any branch with findings waiting on it,
+   however long ago its PR merged. Commits made on the local branch after its PR merged and never
+   pushed are `stranded-local-<branch>`. The pass's checkout (`~/.cecelia-effectiveness/judge-worktree`)
+   is a worktree of the main clone, so it sees every local branch. Its card lists the commits with
+   subject and date and says to push them in a new PR or delete the branch. A stranded bug lists the
+   findings waiting on it; each is checked for landing again every pass. Once the commits land, the
+   findings are judged as usual and the bug is `gone`. A bug the judge gives
    no verdict for (a call failed, or the budget ran out before it) waits as `unjudged`, except one the
    last record had `open`: it stays `open`, with its verdict, because a missing check is no evidence
    it was fixed. A `not_a_bug` on a carried bug verify called `fix` or `decide` doesn't dismiss it:
@@ -144,7 +165,15 @@ test whether an agent can actually use the framework.
    - `guard`: it can't happen today, and the agent names what would make it live. The bug becomes
      `parked`: off the work list, listed under *Parked*, and back to verify when its file changes;
    - `decide`: only you can answer it, so it goes on the owner queue;
-   - `dismiss`: the bug becomes `dismissed`.
+   - `fixed`: the finding was right, but the code no longer has the defect (fixed since, or removed).
+     The bug becomes `gone`, and counts as a real bug fixed in the charts. A repeated agent error
+     becomes `dismissed` instead, which keeps it muted (step 3);
+   - `dismiss`: the finding is wrong. The bug becomes `dismissed`, and counts against the reviewer
+     in the record's `run.spend.verify.precision`. A `dismiss` on a bug with `fix_landed`, or whose
+     issue carries the `fix-landed` label (a record drops `fix_landed` once the fix predates the
+     previous pass), is taken as `fixed` (`record.verify_verdict`), in past records too: before
+     `fixed` existed, verify answered `dismiss` for a fixed bug. Read that way, the findings-flow
+     chart's history moves 10 bugs from *not a bug* to *fixed*.
 5. **Rules** (`rules.py`). Every fanout + convention finding from the last 30 days is mapped to the
    one CLAUDE.md `##` section it breaks, by one tool-less judge call. Git sorts each finding into
    `agent_made` (the reviewed diff wrote it) or `legacy` (the code was there before). A rule broken
@@ -155,6 +184,9 @@ test whether an agent can actually use the framework.
    Only findings that shipped count. One tagged `fixed_pre_commit` was caught by the reviewer before
    its commit — the mechanical check working, not the rule failing — so it shows in the table's
    *Caught* column and toward no proposal. A `false_positive` still counts, as in the bug sweep.
+   As in the sweep, each branch that flagged a finding answers for its own copy, so a fix on one
+   branch doesn't catch what another shipped. Unlike the sweep, a fix committed from a branch that
+   never flagged it (the session switched branch) still counts as caught.
 
    A finding counts only if it came after the section's last edit and after your last answer to a
    proposal for that rule in `judge-review`. So a rule you tightened, or a proposal you rejected,
@@ -182,10 +214,14 @@ test whether an agent can actually use the framework.
      `docs/ai-assist/judge-runs/`, commit it on `judge-run/<date>` with recital, and open the PR.
      Each new PR closes the previous one. A failure's PR closes none: the last pass's record is
      still the work list.
+     The commit and PR name the models the pass's judge calls ran on: each call's `modelUsage` keys,
+     kept in the meters as `run.spend.tokens.<step>.models` (`judge.usage`). A record without them,
+     such as a failure, names a bare `Claude`.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
-   verify called `fix` or `decide`, stranded commits and a repeated agent error get a GitHub issue,
+   verify called `fix` or `decide`, stranded commits (not local ones: GitHub has nothing to link)
+   and a repeated agent error get a GitHub issue,
    titled `[<key>] <verdict>: <where>` and locked as soon as it's filed. The issue follows its bug:
-   - closed as completed when the judge confirms it `gone`, or verify dismisses it after a fix landed;
+   - closed as completed when it is `gone` (the judge, or verify's `fixed`);
    - closed as not planned when it's `dismissed` (the comment says by whom: the owner, verify or the
      judge), `wont_fix` or `parked`;
    - closed too when GitHub still lists it open but the record no longer has its bug live, whatever
@@ -229,7 +265,7 @@ does it opens no FAILED PR. The failure record is still written; the retry's pas
 it. The attempt that gives up opens the FAILED PR as before. A retry pins the same commit: the timer
 runs `--ref HEAD` in the judge worktree, and a pass stopped by the limit never commits there. The
 wrapper **keeps the cron lock through the wait**, so the nightly agent run is skipped: it would hit
-the same limit. The unit's `TimeoutStartSec=12h` covers one wait. Any other failed judge call
+the same limit. The unit's `TimeoutStartSec=12h` covers one wait, then `judge-review --auto` (*After every pass*). Any other failed judge call
 doesn't stop the pass; the record's `run.failed` names the step, and the record and PR say that
 step didn't run instead of reporting a quiet week. The recital console warns when the newest record
 is more than 9 days old or failed, and when the backlog grew two passes in a row (`judge_staleness.py`).
@@ -309,6 +345,13 @@ reviewers are `claude -p` runs, which need the network), so this was deferred un
 routinely carried 5+ `fix` bugs (14 on 2026-10-09). The `[f]` sessions it was measured against had
 you in them; read the first few auto PRs for sibling call sites the agent missed.
 
+**After every pass.** The timer's pass (`cron_pass.sh`) runs `judge-review --auto` itself once the pass
+succeeds: no limit, on the record just written, under the same cron lock, logged to
+`~/.cecelia-effectiveness/cron/auto-*.log`. It starts no session 8h after the pass began (`--until`), so
+the last one (up to ~4h, CI included) ends inside the unit's 12h timeout instead of being killed mid-way. Its exit never changes
+the pass's: a failed session, the usage limit or the deadline leaves the rest for next week.
+`Environment=JUDGE_AUTO_FIX=0` in the unit (`systemctl --user edit weekly-judge.service`) skips it.
+
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.
@@ -328,19 +371,22 @@ lines from recital's unfixed notes to the bug check's total, which add up: wrong
 judge listed them, logged since the last pass, merged per function, and what else feeds it). What they show
 and what they can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` builds them in three steps:
 
-- **Aggregate.** Per ISO week: changes reviewed and sessions (from the `_run` rows), PRs merged
+- **Aggregate.** Per ISO week: changes reviewed, sessions, each reviewer's median wait and, once
+  logged, its tokens (from the `_run` rows), PRs merged
   (merge and `(#n)` squash subjects on the pinned SHA's first-parent line), findings by
   their latest outcome (the `_finding` / `_finding_resolved` rows, joined on slug the way the rollup
   does), and how many first-parent commits on the pinned SHA touched the reviewer prompts or
-  `CLAUDE.md`. Plus the newest pass record's bug counts by status, and per reviewer by week
-  raised. Numbers only.
-- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Five panels drawn like a paper
-  figure (lettered, y axes with round ticks): changes reviewed and PRs merged; findings per 100
-  changes and share fixed before commit, one line per reviewer; and the newest pass's verdicts as
-  one stacked bar per week, shares of its judged notes (its n under the date), one panel per reviewer, by the week raised (the judge's own `bugs._key` joins a record's bug to its log
-  row). Partial and low-session weeks are hollow points on dashed segments, and a low-session week
-  gets no rate (leading ones aren't drawn); the week still running
-  is left out of the picture. Okabe-Ito swatches from
+  `CLAUDE.md`. Per pass record (`judge_passes`): the real bugs still open by age since first
+  flagged, the real bugs found gone for the first time, and the tokens per stage. Numbers only.
+- **Render.** A hand-written SVG, deterministic: same numbers, same bytes. Six slots, 2 × 3, drawn
+  like a paper figure (lettered, y axes with round ticks): a changes reviewed and PRs merged; b share
+  fixed before commit, one line per reviewer; c real bugs open at each pass, stacked by age, with *N
+  fixed* over each bar; d judge tokens per pass, stacked by stage; e median review wait, per
+  reviewer; f the reviewers' tokens per week once a whole week is logged, until then a note. What
+  each counts: [`AGENT_RECORD.md`](AGENT_RECORD.md). Partial (including the week still running) and
+  low-session weeks are hollow points on dashed segments with a `*` (leading low-session ones aren't
+  drawn); a pass with no token data gets a `*` at d's baseline. c's ages are an ordinal orange ramp
+  (`chart.AGES`), the rest Okabe-Ito swatches from
   `share/console_palette.json` on the README figures' shared light surface and dark ink
   (`figure_style.py`), so it reads the same on GitHub's light and dark themes; the numbers are in its
   `<desc>` too. The flow chart is drawn the same way, its counts under `flow` in `effectiveness.json`. Every label is fixed text or a

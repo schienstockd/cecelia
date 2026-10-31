@@ -246,6 +246,10 @@ const SEG_MERGE_FRAC         = 0.15   # …and this share of them → merged
 const SEG_UNSTABLE_MIN_FRAMES = 5     # fewer timepoints → no count-stability verdict
 const SEG_UNSTABLE_MIN_MEAN   = 10    # fewer cells per frame on average → counting noise dominates
 const SEG_UNSTABLE_STEP       = 0.2   # median frame-to-frame change above 20% of the count → unstable
+# Tile seams (`seg_seam_qc_findings`): label-to-label contacts across a seam vs across control lines
+# halfway through each tile. Calibrated on one tile scan, docs/SEGMENTATION.md → *Seam QC*.
+const SEG_SEAM_MIN_CONTACTS   = 20    # fewer contacts on the seams → too few to say anything
+const SEG_SEAM_RATIO          = 10.0  # seam contact rate this many times the control rate → cut cells
 
 """
     _frac_below(q, x) -> Float64
@@ -317,6 +321,30 @@ function seg_object_qc_findings(stats; diameter_um::Union{Nothing,Real} = nothin
 end
 
 """
+    seg_seam_qc_findings(stats) -> Vector{Dict}
+
+`seg.seam_cuts` when cells look cut at tile seams: different labels touch across a seam far more
+often than across the control lines halfway through each tile (`segmentation_utils.seam_contacts`,
+banked as `objectStats.seam` only on a tiled run). A joined seam looks like any other line through
+the tissue; an unjoined one leaves a cut, two ids touching, along every cell it crosses.
+"""
+function seg_seam_qc_findings(stats)
+    stats isa AbstractDict || return Dict{String,Any}[]
+    seam = get(stats, "seam", get(stats, :seam, nothing))
+    seam isa AbstractDict || return Dict{String,Any}[]
+    _n(k) = Float64(get(seam, k, get(seam, Symbol(k), 0)))
+    sc, sp, cc, cp = _n("seamContacts"), _n("seamPixels"), _n("controlContacts"), _n("controlPixels")
+    (sc < SEG_SEAM_MIN_CONTACTS || sp <= 0) && return Dict{String,Any}[]
+    seam_rate = sc / sp
+    ctrl_rate = cp > 0 ? cc / cp : 0.0
+    ratio = ctrl_rate > 0 ? seam_rate / ctrl_rate : Inf
+    ratio >= SEG_SEAM_RATIO || return Dict{String,Any}[]
+    [qc_finding("info", "seg.seam_cuts";
+        detail = Dict{String,Any}("seamContacts" => Int(sc), "controlContacts" => Int(cc),
+                                  "ratio" => isfinite(ratio) ? round(ratio; digits = 1) : nothing))]
+end
+
+"""
     seg_given_diameter(models) -> Union{Nothing,Float64}
 
 The cell diameter (µm) the size findings compare against: the `cellDiameter` of the `base` model
@@ -357,7 +385,8 @@ function bank_segment_qc!(img::CciaImage, fun_name::AbstractString, out_value_na
         counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
         findings, primary = segment_qc_findings(counts)
         stats = get(qmeta, :objectStats, nothing)
-        seg = vcat(seg_object_qc_findings(stats; diameter_um = diameter_um), extra_findings(qmeta))
+        seg = vcat(seg_object_qc_findings(stats; diameter_um = diameter_um),
+                   seg_seam_qc_findings(stats), extra_findings(qmeta))
         append!(findings, seg)
         metrics = Dict{String,Any}("nCells" => primary, "byType" => counts)
         isnothing(diameter_um) || (metrics["diameterUm"] = diameter_um)

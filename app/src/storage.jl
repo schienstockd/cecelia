@@ -552,7 +552,9 @@ const _GATING_POP_TYPES = ("flow", "track", "clust", "trackclust", "region", "br
 function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_log)
     dir = joinpath(img._dir, "gating")
     isdir(dir) || return nothing
-    for pt in _GATING_POP_TYPES
+    # under the gating lock (gating/popmanager/copy.jl): an edit landing mid-rename would otherwise be
+    # overwritten, or rewrite the old path after it was removed
+    with_popmap_lock() do; for pt in _GATING_POP_TYPES
         old_path = gating_path(img._dir, from; pop_type = pt)
         isfile(old_path) || continue
         m = load_pop_map(img._dir, from; pop_type = pt)
@@ -567,7 +569,7 @@ function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_l
         save_pop_map!(m, img._dir)
         on_log("[INFO] Rewrote sidecar: $(old_path) → $(gating_path(img._dir, to; pop_type = pt))")
         old_path == gating_path(img._dir, to; pop_type = pt) || rm(old_path; force = true)
-    end
+    end; end
     nothing
 end
 

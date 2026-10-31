@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn, eyeKey,
-  flipPopEye, offPaths,
+  flipPopEye, offPaths, eyeTurnedOn, parseEyeKey,
   type EyePop, type PopEyes, type ListedPop,
 } from './popEyes'
 
@@ -139,5 +139,30 @@ describe('ribbon eyes', () => {
   it('offPaths projects the off eyes onto per-path hides for the movie', () => {
     expect(offPaths({ 'flow::/b': false, 'flow::/a': false, 'clust::/a': false, 'flow::/c': true }))
       .toEqual(['/a', '/b'])
+  })
+})
+
+describe('eyeTurnedOn', () => {
+  const eyes = (o: Record<string, PopEyes>) => new Map(Object.entries(o))
+
+  it('finds the pop the manager switched on, in whichever segmentation', () => {
+    const before = eyes({ a: { 'flow::/x': true }, b: { 'flow::/y': false } })
+    const after = eyes({ a: { 'flow::/x': true }, b: { 'flow::/y': true } })
+    expect(eyeTurnedOn(before, after)).toEqual({ vn: 'b', popType: 'flow', path: '/y' })
+  })
+
+  it('a pop with no eye before reads as off; a switch OFF is not a turn-on', () => {
+    expect(eyeTurnedOn(eyes({ a: {} }), eyes({ a: { 'clust::/c': true } })))
+      .toEqual({ vn: 'a', popType: 'clust', path: '/c' })
+    expect(eyeTurnedOn(eyes({ a: { 'flow::/x': true } }), eyes({ a: { 'flow::/x': false } }))).toBeNull()
+  })
+
+  it('parseEyeKey inverts eyeKey (a path may itself hold "::")', () => {
+    expect(parseEyeKey(eyeKey('clust', '/a::b'))).toEqual({ popType: 'clust', path: '/a::b' })
+    expect(parseEyeKey('/bare')).toEqual({ popType: '', path: '/bare' })
+  })
+
+  it('a first load (segmentation not held before) is not a toggle', () => {
+    expect(eyeTurnedOn(eyes({}), eyes({ a: { 'flow::/x': true } }))).toBeNull()
   })
 })

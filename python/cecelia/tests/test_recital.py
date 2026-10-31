@@ -32,7 +32,8 @@ import unittest
 from unittest import mock
 
 from cecelia.effectiveness import EVENT_TYPES, read_events
-from cecelia.effectiveness.recital import STAMP_RE, RecitalError, _slug, recital_stamp, run_recital
+from cecelia.effectiveness.claude_cli import rate_limit
+from cecelia.effectiveness.recital import STAMP_RE, RecitalError, ReviewerReply, _slug, recital_stamp, reviewer_errors, run_recital
 
 
 class RecitalTest(unittest.TestCase):
@@ -84,6 +85,43 @@ class RecitalTest(unittest.TestCase):
         for e in self._events():
             self.assertIn("duration_s", e["payload"])
             self.assertIsInstance(e["payload"]["duration_s"], (int, float))
+
+    def test_reviewer_errors_reads_only_the_error_blocks(self):
+        # `judge-review --auto` reads a usage limit from these: a finding beside them quoting a limit's
+        # wording must not look like one, and a real limit must still be found
+        quoting = "- **claude_cli.py:44** — the regex now matches \"You've hit your session limit · resets 1:40am\" [**plausible**]"
+
+        def one_errors(prompt: str) -> str:
+            if "FANOUT" in prompt:
+                raise RecitalError("claude exited 1; stderr:\nconnection reset\nby peer")
+            return quoting
+
+        body = run_recital("some diff", claude_runner=one_errors)
+        self.assertIn("session limit", body)
+        self.assertEqual(reviewer_errors(body), ["claude exited 1; stderr:\nconnection reset\nby peer"])
+        self.assertIsNone(rate_limit({"is_error": True, "result": "\n".join(reviewer_errors(body))}))
+
+        def limited(prompt: str) -> str:
+            raise RecitalError("claude exited 1; stdout:\nYou've hit your session limit · resets 1:40am")
+
+        body = run_recital("some diff", claude_runner=limited)
+        self.assertEqual(len(reviewer_errors(body)), 2)
+        self.assertIsNotNone(rate_limit({"is_error": True, "result": "\n".join(reviewer_errors(body))}))
+    def test_run_event_carries_tokens_and_cost_from_the_reply(self):
+        counts = {"input": 2, "cache_write": 100, "cache_read": 500, "output": 40}
+        run_recital("some diff", claude_runner=lambda _p: ReviewerReply("no findings", counts, 0.01234))
+        rows = [e for e in self._events() if e["event"] in {"fanout_audit_run", "convention_check_run"}]
+        self.assertEqual(len(rows), 2)
+        for e in rows:
+            self.assertEqual(e["payload"]["tokens"], counts)
+            self.assertEqual(e["payload"]["cost_usd"], 0.0123)
+
+    def test_a_bare_string_reply_logs_no_tokens(self):
+        run_recital("some diff", claude_runner=lambda _p: "no findings")
+        for e in self._events():
+            if e["event"] in {"fanout_audit_run", "convention_check_run"}:
+                self.assertNotIn("tokens", e["payload"])
+                self.assertNotIn("cost_usd", e["payload"])
 
     def test_reviewer_failure_still_emits_event_with_error(self):
         # Failure recording is important: rollup can see the error rate over time.
@@ -599,7 +637,7 @@ class DefaultRunnerEnvTest(unittest.TestCase):
     def test_reviewer_spawn_disables_observer_pairing(self):
         # A reviewer turn must not re-pair the user's project (observer MCP inherits env).
         from cecelia.effectiveness import recital
-        done = mock.Mock(returncode=0, stdout="ok", stderr="")
+        done = mock.Mock(returncode=0, stdout='{"result": "ok"}', stderr="")
         with mock.patch.object(recital, "_resolve_claude_bin", return_value="/bin/claude"), \
              mock.patch.object(recital.subprocess, "run", return_value=done) as run:
             recital._default_runner("prompt", timeout=5)
@@ -617,12 +655,12 @@ class DefaultRunnerTest(unittest.TestCase):
     def test_prompt_goes_over_stdin_not_argv(self):
         from cecelia.effectiveness import recital as r
         big = "x" * 300_000  # > Linux MAX_ARG_STRLEN (128 KB) — E2BIG if it were argv
-        done = mock.Mock(returncode=0, stdout="ok\n", stderr="")
+        done = mock.Mock(returncode=0, stdout='{"result": "ok\\n"}', stderr="")
         with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
                 mock.patch.object(r.subprocess, "run", return_value=done) as run:
-            self.assertEqual(r._default_runner(big), "ok")
+            self.assertEqual(r._default_runner(big).text, "ok")
         argv, kwargs = run.call_args.args[0], run.call_args.kwargs
-        self.assertEqual(argv, ["/bin/claude", "-p"])
+        self.assertEqual(argv, ["/bin/claude", "-p", "--output-format", "json"])
         self.assertEqual(kwargs["input"], big)
 
     def test_a_failure_with_empty_stderr_shows_stdout(self):
@@ -638,6 +676,37 @@ class DefaultRunnerTest(unittest.TestCase):
         with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
                 mock.patch.object(r.subprocess, "run", return_value=done):
             with self.assertRaisesRegex(RecitalError, "stderr:\nWarning: something\nstdout:\nYou've hit your session"):
+                r._default_runner("p")
+
+    def test_the_reply_carries_the_cli_s_tokens_and_cost(self):
+        from cecelia.effectiveness import recital as r
+        out = ('{"type": "result", "is_error": false, "result": "- **a.py:1** — x [**confirmed**]", '
+               '"total_cost_usd": 0.0412, "usage": {"input_tokens": 3, "cache_creation_input_tokens": 9000, '
+               '"cache_read_input_tokens": 41000, "output_tokens": 812}}')
+        done = mock.Mock(returncode=0, stdout=out, stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done):
+            reply = r._default_runner("p")
+        self.assertEqual(reply.text, "- **a.py:1** — x [**confirmed**]")
+        self.assertEqual(reply.tokens, {"input": 3, "cache_write": 9000, "cache_read": 41000, "output": 812})
+        self.assertEqual(reply.cost_usd, 0.0412)
+
+    def test_an_error_result_with_exit_zero_is_not_read_as_findings(self):
+        # `is_error` with exit 0: the CLI's message must not be parsed as the reviewer's answer
+        from cecelia.effectiveness import recital as r
+        done = mock.Mock(returncode=0, stdout='{"is_error": true, "result": "API Error: overloaded"}', stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done):
+            with self.assertRaisesRegex(RecitalError, "stdout:\nAPI Error: overloaded"):
+                r._default_runner("p")
+
+    def test_a_limit_in_the_json_result_shows_the_message_not_the_json(self):
+        from cecelia.effectiveness import recital as r
+        done = mock.Mock(returncode=1, stdout='{"is_error": true, "result": "You\'ve hit your session limit · resets 1:40am"}',
+                         stderr="")
+        with mock.patch.object(r, "_resolve_claude_bin", return_value="/bin/claude"), \
+                mock.patch.object(r.subprocess, "run", return_value=done):
+            with self.assertRaisesRegex(RecitalError, "stdout:\nYou've hit your session limit · resets 1:40am$"):
                 r._default_runner("p")
 
     def test_spawn_oserror_becomes_recital_error(self):

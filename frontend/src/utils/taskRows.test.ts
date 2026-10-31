@@ -68,6 +68,20 @@ describe('taskRow — pool', () => {
   })
 })
 
+describe('taskRow — a cluster run', () => {
+  it('shows a job still in the cluster queue as queued, with no progress bar', () => {
+    const q = taskRow(entry({ status: 'running', pool: 'hpc', hpcStage: 'queued', hpcJob: '42', progress: 0 }), ctx())
+    expect(q.status).toBe('running')                 // the scheduler's own status is kept
+    expect(q.shownStatus).toBe('queued')
+    expect(q.hasProgress).toBe(false)
+    expect(q.hpcTip).toBe('On the cluster: queued (job 42)')
+    const r = taskRow(entry({ status: 'running', pool: 'hpc', hpcStage: 'running', hpcJob: '42', progress: 0.5 }), ctx())
+    expect(r.shownStatus).toBe('running')
+    expect(r.hasProgress).toBe(true)
+    expect(taskRow(entry({ status: 'running' }), ctx()).shownStatus).toBe('running')
+  })
+})
+
 describe('taskPoolOptions', () => {
   it('offers each pool a listed task names, once, sorted, and never the unknown blank', () => {
     const ts = [entry({ pool: 'gpu' }), entry({ pool: 'cpu' }), entry({ pool: 'gpu' }), entry()]

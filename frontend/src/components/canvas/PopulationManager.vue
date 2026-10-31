@@ -30,6 +30,7 @@ import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { termsToSpec, specToTerms, booleanSpecValid, booleanSummary,
          type BooleanTerm } from '../../utils/booleanPopForm'
 import { popNameError, popPath, isInSubtree } from '../../utils/popName'
+import { claudeProposal } from '../../utils/authorStamp'
 import { useInlineEdit } from '../../composables/useInlineEdit'
 import { useWindowListener } from '../../composables/useKeepAlive'
 // `PALETTES` is gone from here on purpose: the swatch is `ColourPicker` now, which owns the default
@@ -37,6 +38,7 @@ import { useWindowListener } from '../../composables/useKeepAlive'
 import { type VisProps } from '../../plots/plot'
 import { DOT_R } from '../../plots/density'
 import { clusterMeasure, isClusterPopType, isGatingPopType } from '../../utils/clusterMeasure'
+import { eyeKey, offPaths, popEyeOn } from '../../utils/viewer/popEyes'
 import { isTypingTarget } from '../../utils/typingTarget'
 import { missingColumnsReason } from '../../utils/gatingCopyWarnings'
 import { SEVERITY } from '../../lib/severity'
@@ -127,11 +129,22 @@ const isLit = (p: FlatPop) => props.highlighted.includes(p.path)
 const fmtPct = (v?: number) => v == null ? '' : `${v.toFixed(1)}%`
 const missingReason = (path: string) => missingColumnsReason(g.missingColumns[path], g.colLabel)
 
-// Per-pop visibility: flip the persisted `show` flag, then ping the WebGPU viewer so it re-derives
-// the overlay set from the shared bag. The viewer routes to the right overlay for the popType
-// (Tracks layers vs Points) internally.
+// Per-pop visibility. The viewer draws by its own per-pop eyes (`utils/viewer/popEyes.ts`) — `show`
+// only seeds a pop it has never seen — so the button reads the eye and writes it (points + ribbons,
+// for every image the mutation is replayed to), then `show` to match. The eye crosses to the pop-out
+// through the bag channel before the write's refetch ping, and holds with the pop-out closed.
+const viewerEyeOn = (p: FlatPop) => !g.imageUid ? p.show : popEyeOn(
+  new Map([[g.valueName, settings.getPopEyes(g.imageUid, g.valueName)]]), g.valueName, g.popType, p.path, p.show)
 async function toggleViewer(p: FlatPop) {
-  await g.updatePop(p.path, { show: !p.show })
+  const on = !viewerEyeOn(p), k = eyeKey(g.popType, p.path)
+  for (const uid of [g.imageUid, ...g.mirrorUids]) {
+    if (!uid) continue
+    for (const layer of ['points', 'ribbons'] as const)
+      settings.setPopEyes(uid, g.valueName, { ...settings.getPopEyes(uid, g.valueName, layer), [k]: on }, layer)
+    // the ribbon eyes' per-path projection, as the pop-out's `storeRibbonEyes` keeps it
+    settings.setTrackPopHidden(uid, g.valueName, new Set(offPaths(settings.getPopEyes(uid, g.valueName, 'ribbons'))))
+  }
+  await g.updatePop(p.path, { show: on })
   g.refreshOverlays()
 }
 
@@ -590,6 +603,10 @@ function moveTo(target: string) {
           <i v-else-if="isBoolPop(p)" class="pi pi-link pm-filter-badge pm-bool-badge"
              v-tooltip.top="popBoolSummary(p)" />
 
+          <!-- a gate Claude proposed (observer add_gate) — the same ✦ that marks Claude's work elsewhere -->
+          <i v-if="claudeProposal(p.createdBy)" class="pi pi-sparkles pm-filter-badge"
+             v-tooltip.top="claudeProposal(p.createdBy)" :aria-label="claudeProposal(p.createdBy)" />
+
           <!-- why a pop reads 0 here: a column its gate/filter (or an ancestor's) reads is not in this
                image's table, e.g. `clusters.<run>` after a gating copy (#1769). Shape + colour, tip = the reason. -->
           <i v-if="missingReason(p.path)" class="pi pm-missing-col" :class="SEVERITY.warn.icon"
@@ -607,8 +624,8 @@ function moveTo(target: string) {
                   @click.stop="emit('toggleHighlight', p.path)">
             <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
           </button>
-          <button v-if="!p.transient" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: p.show }"
-                  v-tooltip.left="p.show ? 'Hide in viewer' : 'Show in viewer'"
+          <button v-if="!p.transient" class="pm-icon cc-btn cc-btn-bare cc-btn-icon" :class="{ lit: viewerEyeOn(p) }"
+                  v-tooltip.left="viewerEyeOn(p) ? 'Hide in viewer' : 'Show in viewer'"
                   @click.stop="toggleViewer(p)">
             <i class="pi pi-images" />
           </button>

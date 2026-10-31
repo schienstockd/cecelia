@@ -83,6 +83,7 @@ async function toggleLog(t: TaskEntry) {
 const TIP: Record<TaskStatus, string> = {
   queued:    'Waiting to run.',
   running:   'Task is running.',
+  waiting:   'Chain step waiting for you — continue it in the chain Live view.',
   done:      'Completed successfully.',
   failed:    'Task failed. Expand to see log.',
   cancelled: 'Cancelled.',
@@ -155,7 +156,7 @@ const TL_COLUMNS: SelectionColumn[] = [
       <div class="tasks-heading-actions">
         <button v-if="activeTasks.length" class="clear-btn cc-btn cc-btn-bare cc-btn-icon danger"
           @click="cancelAll"
-          v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module`">
+          v-tooltip.left="`Cancel all ${activeTasks.length} running, queued or waiting task(s) in this module`">
           <i class="pi pi-times-circle" />
         </button>
         <button class="clear-btn cc-btn cc-btn-bare cc-btn-icon" @click="clearFinished"
@@ -174,15 +175,15 @@ const TL_COLUMNS: SelectionColumn[] = [
       <SelectionTable
         class="tl-table" selection-mode="none" density="compact" headerless
         :columns="TL_COLUMNS" :rows="rows" id-key="id"
-        actions-width="5.5rem"
+        actions-width="7.2rem"
         :row-tooltip="r => r.task"
-        :row-class="r => `tone-${TASK_STATUS[r.status].tone} st-${r.status}`"
+        :row-class="r => `tone-${TASK_STATUS[r.shownStatus].tone} st-${r.shownStatus}`"
         :is-expanded="r => expanded.has(r.id)">
 
         <template #cell-status="{ row: r }">
-          <i :class="['pi', TASK_STATUS[r.status].icon, 'task-icon']"
-            :style="{ color: TASK_STATUS[r.status].color }"
-            v-tooltip.left="TIP[r.status]" />
+          <i :class="['pi', TASK_STATUS[r.shownStatus].icon, 'task-icon']"
+            :style="{ color: TASK_STATUS[r.shownStatus].color }"
+            v-tooltip.left="r.hpcTip || TIP[r.shownStatus]" />
         </template>
 
         <!-- The original TWO-ROW entry: label on top, image beneath, the running bar under both. One
@@ -298,6 +299,10 @@ const TL_COLUMNS: SelectionColumn[] = [
 .tl-table :deep(tr.st-cancelled) { opacity: 0.6; }
 /* the row buttons are dense here — the panel is 280px by default */
 .tl-table :deep(.sel-actions) .cc-btn { padding: 0.2rem 0.25rem; }
+/* `actions-width` is sized to the most a row shows AT ONCE — a finished row with a log: log, rerun,
+   copy, dismiss = 4 × 1.5rem + 3 × the compact 0.15rem gap + 2 × 0.3rem cell padding = 7.05rem,
+   plus slack. The table is headerless, so its cells clip (`overflow: hidden` + ellipsis): an
+   undersized column cut the buttons into each other behind a "…" rather than widening. */
 
 .task-icon { font-size: var(--cc-fs-md); flex-shrink: 0; }
 /* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */

@@ -266,7 +266,7 @@ end
         "/api/analysis/measures", "/api/analysis/populations",
         "/api/analysis/spatial", "/api/app/worktrees",
         "/api/chains", "/api/chains/get",
-        "/api/chains/run", "/api/chains/runs",
+        "/api/chains/run", "/api/chains/runs", "/api/chains/suggest",
         "/api/crop/frame", "/api/crop/info",
         "/api/viewer/marks",   # bidir point-out list (PR #4); the two POSTs at /api/viewer/marks/{tracks,cells} are below
         "/api/viewer/meta",
@@ -282,6 +282,7 @@ end
         "/api/gating/plotdata", "/api/gating/plotmeta",
         "/api/gating/popmap", "/api/gating/stats", "/api/rois",
         "/api/gating/plot-image", "/api/gating/cells-image",   # gating as pictures (gating_views_api.jl)
+        "/api/gating/examples",
         "/api/health", "/api/images",
         "/api/images/geometry", "/api/images/meta",
         "/api/images/stores",
@@ -292,14 +293,14 @@ end
         "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/blackboard", "/api/blackboard/entry",
-        "/api/notebooks/status", "/api/observer/briefing",
+        "/api/notebooks/status", "/api/observer/briefing", "/api/observer/chat",
         "/api/observer/labarchives",
         "/api/objects/find",
         "/api/optical-flow/models",
         "/api/denoise/models",
         "/api/kiwi/turns", "/api/observer/status", "/api/plots/attrs",
         "/api/plots/definitions", "/api/plots/populations",
-        "/api/plots/umap", "/api/pools", "/api/tasks/threads", "/api/runner/status",
+        "/api/plots/cluster-map", "/api/pools", "/api/tasks/threads", "/api/runner/status",
         "/api/preview/status", "/api/projects",
         "/api/projects/boards",   # GET; the POST at the same path is the autosave, listed below
         "/api/projects/bundle-info", "/api/projects/bundles",
@@ -331,6 +332,7 @@ end
         "/api/profile/settings",        # USER_PROFILE_PLAN Phase 4 — per-profile settings hydration
         "/api/hpc/settings",            # HPC_PLAN P1 — Settings → HPC
         "/api/hpc/env",                 # HPC_PLAN P2 — refuses without a configured host (no ssh)
+        "/api/hpc/nodes",               # node shapes of a class's queue — refuses without a host (no ssh)
     ]
     POST_ROUTES = [
         "/api/app/restart", "/api/app/shutdown",
@@ -340,11 +342,12 @@ end
         "/api/cell_cards",   # docs/todo/CELL_CARDS_PLAN.md — snapshot cards on the offline renderer
         "/api/motif_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 2 — motif-class snapshot cards
         "/api/hmm_state_cards",  # docs/todo/BEHAVIOUR_CARDS_PLAN.md Phase 3 — HMM-state snapshot cards
-        "/api/chains/create", "/api/chains/delete",
+        "/api/chains/create", "/api/chains/delete", "/api/chains/preflight",
         "/api/chains/rename", "/api/chains/save",
-        "/api/gating/copy", "/api/gating/pop/add",
+        "/api/gating/copy", "/api/gating/pop/add", "/api/gating/pop/add-gate",
         "/api/gating/pop/delete", "/api/gating/pop/move", "/api/gating/pop/rename",
         "/api/gating/pop/set-gate", "/api/gating/pop/update",
+        "/api/gating/pop/set-own-gate", "/api/gating/pop/delete-own",   # Claude-scoped (gating_api.jl)
         "/api/gating/redo", "/api/gating/undo",
         "/api/images/attr/create", "/api/images/attr/delete",
         "/api/images/analysis/reset", "/api/images/analysis/runs", "/api/images/analysis/runs/delete", "/api/images/attr/set",
@@ -374,12 +377,14 @@ end
         "/api/kiwi/profiles/rename",   # USER_PROFILE_PLAN D11 amendment — rename dir + update [ai].profile
         "/api/kiwi/profiles/delete",   # USER_PROFILE_PLAN D11 amendment — rm -rf profile dir
         "/api/kiwi/profiles/logout",   # LOGIN_CREDENTIAL_ISOLATION_PLAN P8 — claude auth logout
+        "/api/kiwi/profiles/end-session",   # D22 — delete the profile's Claude conversations on Log out
         "/api/kiwi/profiles/login",    # P9 — start claude auth login (private browser window)
         "/api/kiwi/profiles/login/code", "/api/kiwi/profiles/login/cancel",   # P9
         "/api/config/shared-workstation/set",
         "/api/profile/settings/patch", # USER_PROFILE_PLAN Phase 4 — merge partial dict, null deletes
         "/api/hpc/settings/set", "/api/hpc/test",   # HPC_PLAN P1
         "/api/hpc/env/install",                     # HPC_PLAN P2
+        "/api/hpc/env/cleanup",                     # Settings → HPC Clean up / Delete all
         "/api/projects/claim",         # USER_PROFILE_PLAN Phase 5 — add active profile to owners
         "/api/projects/unclaim",       # USER_PROFILE_PLAN Phase 5 — remove active profile from owners
         "/api/projects/share",         # clear every owner — visible to every profile
@@ -462,10 +467,11 @@ end
         "/api/update/apply", "/api/update/revert",
         "/api/hpc/test",   # would ssh to whatever host the config names
         "/api/hpc/env/install",   # would submit an install job to it
+        "/api/hpc/env/cleanup",   # would delete files in its remote folder
         "/api/observer/register", # runs `claude mcp add-json` / removes local-scope entries (runtests
                                   # also sandboxes CLAUDE_CONFIG_DIR — this keeps the CLI out entirely)
     ]
-    # counts pinned below: 67 GET, 92 POST, 17 not live-called
+    # counts pinned below: 67 GET, 92 POST, 18 not live-called
 
     # Served in handle_stream BEFORE handle_http (binary/Range responses), not part of the tables.
     STREAM_ROUTES = ["/api/board-assets", "/api/movies/file", "/api/viewer/slab", "/api/auth"]
@@ -494,7 +500,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 115 && length(POST_ROUTES) == 174
+    @test length(GET_ROUTES) == 119 && length(POST_ROUTES) == 180
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

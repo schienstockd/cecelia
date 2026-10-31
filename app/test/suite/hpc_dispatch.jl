@@ -44,6 +44,17 @@ end
     e = try; hpc_resources(ms, Dict{String,Any}("ram" => 4)); catch x; x; end
     @test e isa ArgumentError && occursin("Unknown cluster resource 'ram'", e.msg)
     @test_throws ArgumentError hpc_resources(ms, Dict{String,Any}("gpus" => "lots"))
+
+    # A site's CPUs-per-GPU rule sets the count exactly (Gadi refuses more as well as fewer); no rule,
+    # or a job without GPUs, keeps the run's own.
+    rule(n) = HpcClass("gpuvolta", "", "", "", "", n)
+    g2 = HpcResources(; cpus = 16, mem_gb = 64, gpus = 2, walltime_min = 60)
+    r, note = Cecelia.hpc_apply_site_rules(g2, rule(12))
+    @test r.cpus == 24 && r.gpus == 2 && r.mem_gb == 64 && note == "24 CPUs: this cluster takes 12 per GPU"
+    @test Cecelia.hpc_apply_site_rules(g2, rule(0)) == (g2, "")
+    @test Cecelia.hpc_apply_site_rules(HpcResources(; cpus = 24, gpus = 2), rule(12)) ==
+          (HpcResources(; cpus = 24, gpus = 2), "")
+    @test Cecelia.hpc_apply_site_rules(HpcResources(; cpus = 3, gpus = 0), rule(12))[1].cpus == 3
 end
 
 # Every task offered on the cluster declares the I/O of every `run_py` it makes, and a composite offered

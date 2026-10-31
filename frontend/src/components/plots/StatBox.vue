@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CardStat } from './cardsPanel'
+import { shortTrackMeasure } from '../../utils/measureGroups'
 
 const props = defineProps<{
   stat: CardStat
@@ -91,7 +92,7 @@ const medianStroke = computed(() => {
   return t < 0.6 ? '#ffffff' : '#0f172a'
 })
 
-const shortName = computed(() => props.stat.name.replace(/^live\.track\./, ''))
+const shortName = computed(() => shortTrackMeasure(props.stat.name))
 const fmt = (v: number) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2)
 const tip = computed(() =>
   `${shortName.value}\nmin ${fmt(props.stat.min)} · q25 ${fmt(props.stat.q25)} · median ${fmt(props.stat.median)} · q75 ${fmt(props.stat.q75)} · max ${fmt(props.stat.max)}`)

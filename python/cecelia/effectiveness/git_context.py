@@ -205,10 +205,11 @@ def recent_prs(limit: int = 100, cwd: str | None = None) -> list[dict] | None:
 
 
 def merged_pr_heads(branch: str, cwd: str | None = None) -> list[dict] | None:
-    """Merged PRs opened from `branch`, each with `number` and `headRefOid` (the head it merged at).
+    """Merged PRs opened from `branch`, each with `number`, `headRefOid` (the head it merged at) and
+    `mergeCommit` (`{"oid": …}`: the commit the merge put on the base branch).
 
     A squash merge leaves no ancestry link to main, so "is this branch's work merged?" is answered
-    by comparing a local HEAD against these heads. None on any failure, so a caller can tell "no
+    by comparing a local commit against these heads. None on any failure, so a caller can tell "no
     merged PR" (`[]`) from "couldn't ask". Same ladder as `pr_for_branch`.
     """
     gh = shutil.which("gh")
@@ -217,7 +218,7 @@ def merged_pr_heads(branch: str, cwd: str | None = None) -> list[dict] | None:
     try:
         result = subprocess.run(
             [gh, "pr", "list", "--head", branch, "--state", "merged",
-             "--json", "number,headRefOid"],
+             "--json", "number,headRefOid,mergeCommit"],
             capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8", cwd=cwd,
         )
     except (subprocess.TimeoutExpired, OSError):

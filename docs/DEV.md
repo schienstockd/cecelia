@@ -61,6 +61,24 @@ running session, don't copy it from here. This line named one version for a long
 naming it after that model was superseded, which made the trailer a record of when the rule was
 written rather than of who wrote the commit.
 
+The `commit-msg` hook then adds the exact record, the same one `author_stamp()` keeps for Claude's
+project writes. You don't type it:
+
+```
+Claude-Model: claude-opus-5-5
+Claude-Code: 2.1.312
+Claude-Session: <session id>
+```
+
+The model and version come from the **committing agent's own transcript**. A subagent's commit
+names the subagent's model, because its env is identical to the parent's and only the PreToolUse
+event says who is calling. The Bash guard records that just before the `git commit` runs. If no
+fresh record from this session exists, `Claude-Model` is left out rather than guessed. With one, the
+hook also corrects a Claude `Co-Authored-By` line that names another model (a subagent copies its
+parent's). It touches only a message with exactly one Claude co-author line; human co-authors are
+never touched. Code:
+`.claude/hooks/claude_attribution.py`, formatting in `python/cecelia/effectiveness/attribution.py`.
+
 Ship the test in the same commit as the code (see `CLAUDE.md` → **Testing**), and update the
 relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current* table).
 
@@ -96,11 +114,18 @@ Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merge
   and the PR body serve different readers (reviewers skim the PR on GitHub), so a body is always
   worth giving — short for small branches, but never omitted. Pass it as a file
   (`gh pr create --body-file <path>`) rather than inline, so markdown and newlines survive the shell.
-- End PR bodies (when an agent drafts one) with:
+- End PR bodies (when an agent drafts one) with the footer **naming the model id and Claude Code
+  version writing it**:
 
   ```
-  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+  🤖 Generated with [Claude Code](https://claude.com/claude-code) · <model id> · Claude Code <version>
   ```
+
+  The Bash guard blocks `gh pr create|edit` into a cecelia checkout whose `--body-file` / `--body`
+  lacks the exact line for the calling agent, and prints that line, so copy it from there. The same
+  goes for `gh api …/pulls[/N]` setting `body` (`-f`, `-F body=@file`, `--input`). Comment and review
+  endpoints aren't PR bodies: they carry the public-reply line below. A body piped on stdin
+  (`--body-file -`, `body=@-`) isn't checked.
 
 ```bash
 git push -u origin feat/<short-slug>
@@ -117,24 +142,31 @@ model:
 ```markdown
 ---
 
-*This reply was written by Claude Code (<model>), working in this repo on @schienstockd's behalf —
-as was the fix in #<pr>. Cecelia is openly AI-assisted; see [`CLAUDE.md`](../CLAUDE.md). Anything
-here that needs a human decision is his.*
+*This reply was written by Claude Code (<model>), working in this repo on @schienstockd's behalf
+— as was the fix in #<pr>. Cecelia is openly AI-assisted; see
+[`CLAUDE.md`](https://github.com/schienstockd/cecelia/blob/main/CLAUDE.md). Anything here that needs
+a human decision is his.*
 ```
 
-`<model>` is the model **actually writing that reply** (`Claude Opus 5`, …) — read it off the running
-session, don't copy a version out of this file. Same rule, and the same reason, as the commit trailer
-above: this doc pinned one model there for months and kept pinning it after that model was
-superseded, so what shipped recorded when the rule was written rather than who wrote the thing.
+`<model>` is the model **actually writing that reply** (`Claude Opus 5.5`, …), and the Bash guard
+enforces it. A `gh issue comment`, `gh pr comment`, `gh pr review`, `gh issue create|edit` or
+`gh api …/comments|reviews|issues` whose body lacks `Claude Code (<model>)` for the calling agent is
+blocked, **on any repo**, and the block prints the line with the model filled in
+(`attribution.reply_line`; for a user-report issue, the footer in [`USER_REPORTS.md`](USER_REPORTS.md)).
+Drop the `— as was the fix` clause when there is none. Bodies piped on stdin aren't checked.
+
+Same rule, and the same reason, as the commit trailer above: this doc pinned one model there for
+months and kept pinning it after that model was superseded, so what shipped recorded when the rule
+was written rather than who wrote the thing.
 
 The objection is not the AI involvement — this project says it is AI-assisted on the front page.
 It is the **implied claim of authorship**: the comment carries Dominik's name and an outside reader
 assumes he typed it. Prompted by the reply on #540 (2026-08-13), which went out unmarked and read,
 in his words, like AI.
 
-Scope: outward-facing text landing under his identity. **Not** commit messages (they already carry
-`Co-Authored-By: Claude <model>`), not PR bodies (the `🤖 Generated with Claude Code` trailer above
-does the same job), not code comments, not chat.
+Scope: outward-facing text landing under his identity. **Not** commit messages (they carry the
+`Claude-Model` trailers), not PR bodies (the footer above names the model), not code comments, not
+chat.
 
 ## What to press after you change something
 

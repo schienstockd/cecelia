@@ -351,7 +351,7 @@ const BOARD_VIEWS = Dict{String,NamedTuple}(
     "trackDiagnostics" => (; fields = ("pops",), cluster = false, trackOnly = false),
     "hmmStateCards"    => (; fields = ("valueName", "hmmCol"), cluster = false, trackOnly = false),
     "motifCards"       => (; fields = ("valueName",), cluster = false, trackOnly = false),
-    "umap"             => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
+    "clusterMap"       => (; fields = ("popType", "suffix", "basis"), cluster = true, trackOnly = false),
     "heatmap"          => (; fields = ("popType", "suffix"), cluster = true, trackOnly = false),
     "hmmStates"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
     "hmmTransitions"   => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
@@ -365,8 +365,17 @@ const BOARD_VIEWS_UNSUPPORTED = Dict{String,String}(
     "flowTraining"    => "it needs a model picked in the model vault",
     "flowProbability" => "it needs a model picked in the model vault",
 )
+# Retired view keys → the key that replaced them, for boards saved and specs written before a rename.
+# Mirrors `VIEW_ALIASES` in interactiveViews.ts; `normalise_boards` applies it to saved slots.
+# `umap` → `clusterMap`: the cluster view shows more than a UMAP (TRACK_BEHAVIOUR_AXES_PLAN Decision 7).
+const BOARD_VIEW_ALIASES = Dict{String,String}("umap" => "clusterMap")
+
+# The cluster map's layouts. Each names its embedding: `obsm['X_{basis}.{suffix}']` (the UMAP, or a track
+# run's diffusion axes — TRACK_BEHAVIOUR_AXES_PLAN). Read by the board spec and `/api/plots/cluster-map`.
+const CLUSTER_MAP_BASES = ("umap", "diffmap")
+
 # what a view's state starts as on a GUI-added panel (`initialState` / the cluster-panel `hl` bag)
-_view_initial_state(key) = key == "umap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
+_view_initial_state(key) = key == "clusterMap" ? Dict{String,Any}("labels" => true, "hl" => Any[]) :
     BOARD_VIEWS[key].cluster ? Dict{String,Any}("hl" => Any[]) : Dict{String,Any}()
 
 const _TRACK_FAMILIES = ("live", "track", "trackclust")   # interactiveViews.ts TRACK_FAMILIES
@@ -431,7 +440,15 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
                 "plots[$i]: mode must be one of paths, star, rose, got \"$mode\""))
             state["mode"] = mode
         end
-    elseif key in ("hmmStateCards", "motifCards")
+    elseif key == "clusterMap"
+        # layout: the UMAP (default) or a track run's named diffusion axes
+        b = str("basis")
+        if !isempty(b)
+            b in CLUSTER_MAP_BASES || throw(BoardSpecError(
+                "plots[$i]: basis must be one of $(join(CLUSTER_MAP_BASES, ", ")), got \"$b\""))
+            state["basis"] = b
+        end
+        elseif key in ("hmmStateCards", "motifCards")
         for k in ("valueName", "hmmCol")
             v = str(k); isempty(v) || (state[k] = v)
         end
@@ -567,6 +584,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
         p isa AbstractDict || throw(BoardSpecError("plots[$i] must be an object"))
         d = Dict{String,Any}(string(k) => v for (k, v) in pairs(p))
         key = _bs_str(get(d, "plot", get(d, "specId", nothing)))
+        key = get(BOARD_VIEW_ALIASES, key, key)
         if haskey(BOARD_VIEWS, key)
             contents[i], want = _expand_view(key, d, available, ctx, i)
             if want !== nothing
@@ -605,7 +623,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
 end
 
 """
-    append_board(doc, name, layout) -> (BoardsDoc, Int)
+    append_board(doc, name, layout; created_by = nothing) -> (BoardsDoc, Int)
 
 Add ONE board to a document — the add-only half of Decision 1. Never touches an existing tab, so the
 id bookkeeping lives here rather than in the route. Throws `BoardSpecError` if the name is taken (the
@@ -613,8 +631,12 @@ route turns that into a 409), because two boards with one name is a GUI the user
 
 The name is stored as `board_display_name` gives it (stripped, entities decoded) — normalised HERE, the
 invariant's owner, because the REPL reaches this without the route.
+
+`created_by` is the route's `author_stamp()`, stored on the tab as `createdBy` (a REPL add leaves it
+off). It survives later saves: the server passes tabs through and the client keeps each tab object
+whole (`frontend/src/stores/analysisTabs.ts`).
 """
-function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict)
+function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict; created_by = nothing)
     nm = board_display_name(name)
     for t in doc.tabs
         t isa AbstractDict || continue
@@ -622,7 +644,9 @@ function append_board(doc::BoardsDoc, name::AbstractString, layout::AbstractDict
             throw(BoardSpecError("a board named \"$nm\" already exists — pick another name"))
     end
     id = max(doc.next_id, length(doc.tabs)) + 1
-    tabs = vcat(doc.tabs, Any[Dict{String,Any}("id" => id, "name" => nm)])
+    tab = Dict{String,Any}("id" => id, "name" => nm)
+    created_by === nothing || (tab["createdBy"] = created_by)
+    tabs = vcat(doc.tabs, Any[tab])
     layouts = merge(doc.layouts, Dict{String,Any}("tab:$(id)" => layout))
     # `activeId` is deliberately NOT moved to the new board: this is an additive write into a project
     # the user may have open, and stealing their active tab is a modification of their view.

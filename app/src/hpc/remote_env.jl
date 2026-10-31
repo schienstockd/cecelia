@@ -7,6 +7,10 @@
 #                              Rebuilt only when pixi.lock changes; "Install on cluster" in Settings.
 #   <root>/bin/pixi-<version>  pixi itself, fetched by the install job.
 #   <root>/jobs/<name>/        each job's script, log and `.exit` (backend.jl).
+#   <root>/cache/pixi/         pixi's download cache, for the install job.
+#   <root>/projects/ assets/   the project mirrors and model files (dispatch.jl).
+#
+# Nothing here is ever removed by a run; `hpc_cleanup!` (Settings → HPC) is how it goes.
 #
 # The params contract cannot drift remotely: the code runs from the synced tree, so the runner and the
 # Julia that wrote its params are the same revision, and `CECELIA_PY_CONTRACT` (py_runner.jl) holds as
@@ -19,6 +23,17 @@ const HPC_PIXI_VERSION = "0.71.1"
 
 const HPC_ENV_MARKER  = ".cecelia-env"
 const HPC_CODE_MARKER = ".complete"
+
+"""Where the cluster keeps what every env version shares: models, weights."""
+hpc_assets_dir(remote_root::AbstractString)::String = remote_root * "/assets"
+
+# Cellpose's built-in weights (cellpose's own cache, `CELLPOSE_LOCAL_MODELS_PATH` on the cluster). A
+# built-in model is a NAME, not a file a run declares, so dispatch has nothing to upload; cellpose
+# would download it on first use, and compute nodes often have no internet (Gadi's GPU nodes refuse
+# the connection). The install job runs on the internet queue, so it fetches them there, once, and an
+# env without them is not installed. Shared by every env version, like the other assets.
+hpc_cellpose_weights_dir(remote_root::AbstractString)::String = hpc_assets_dir(remote_root) * "/cellpose"
+hpc_cellpose_builtin_weights()::Vector{String} = [m for (m, _, backend) in BUILTIN_CELLPOSE_MODELS if backend === :v4]
 
 # Resources for the install job: the solve is single-threaded, the download and unpack of a CUDA torch
 # want memory and time more than cores. Measured: SLURM site 1 min 16 s, MaxRSS 0.6 GB; NCI Gadi copyq
@@ -122,6 +137,7 @@ function hpc_env_install_body(remote_root::AbstractString, lock::AbstractString;
                               pixi_version::AbstractString = HPC_PIXI_VERSION)::String
     R = _sh_quote(remote_root)
     E = _sh_quote(hpc_env_dir(remote_root, lock))
+    W = _sh_quote(hpc_cellpose_weights_dir(remote_root))
     url = "https://github.com/prefix-dev/pixi/releases/download/v$(pixi_version)/pixi-x86_64-unknown-linux-musl.tar.gz"
     """
     set -eu
@@ -142,6 +158,12 @@ function hpc_env_install_body(remote_root::AbstractString, lock::AbstractString;
     echo "pixi install (lock $(lock))"
     "\$P" install --frozen -e default --manifest-path $E/pixi.toml
     PYTHONPATH=$E/python $E/.pixi/envs/default/bin/python -c "import cecelia, numpy, zarr; print('Environment imports OK')"
+    need=""
+    for m in $(join(hpc_cellpose_builtin_weights(), " ")); do [ -f $W/"\$m" ] || need="\$need \$m"; done
+    if [ -n "\$need" ]; then
+      echo "Downloading Cellpose weights:\$need"
+      CELLPOSE_LOCAL_MODELS_PATH=$W PYTHONPATH=$E/python $E/.pixi/envs/default/bin/python -m cecelia.utils.model_weights \$need
+    fi
     printf '{"lock":"%s","pixi":"%s"}\\n' $(_sh_quote(lock)) $(_sh_quote(pixi_version)) > $(HPC_ENV_MARKER)
     """
 end
@@ -151,12 +173,20 @@ struct HpcEnvStatus
     lock::String           # this checkout's lock hash
     installed::Bool
     job::String            # an install job still queued or running there, "" if none
+    cleaning::Bool         # a clean-up is removing files there (`_HPC_CLEANING_MARKER`)
 end
+HpcEnvStatus(lock, installed, job) = HpcEnvStatus(lock, installed, job, false)
 
 hpc_env_status_dict(s::HpcEnvStatus)::Dict{String,Any} =
-    Dict{String,Any}("lock" => s.lock, "installed" => s.installed, "job" => s.job)
+    Dict{String,Any}("lock" => s.lock, "installed" => s.installed, "job" => s.job, "clusterCleaning" => s.cleaning)
+
+# In the remote folder while a clean-up runs: on the cluster, so a dispatch from the runner process or
+# another workstation sees it too. Older than `_HPC_CLEANING_STALE_MIN` = an interrupted clean-up, ignored.
+const _HPC_CLEANING_MARKER = ".cecelia-cleaning"
+const _HPC_CLEANING_STALE_MIN = 120
 
 const _HPC_INSTALL_JOBFILE = ".install-job"
+const _HPC_INSTALL_JOB_NAME = "install-env"
 
 """
     hpc_env_status(b, conn, remote_root; lock) -> HpcEnvStatus
@@ -168,47 +198,57 @@ function hpc_env_status(b::HpcBackend, c::HpcConn, remote_root::AbstractString;
                         lock::AbstractString = hpc_lock_hash())::HpcEnvStatus
     E = hpc_env_dir(remote_root, lock)
     out = hpc_exec!(c, """
-        test -f $(_sh_quote(E * "/" * HPC_ENV_MARKER)) && echo CECELIA-ENV installed
+        test -f $(_sh_quote(E * "/" * HPC_ENV_MARKER)) $(join(["-a -f " * _sh_quote(hpc_cellpose_weights_dir(remote_root) * "/" * m) for m in hpc_cellpose_builtin_weights()], " ")) && echo CECELIA-ENV installed
         j=\$(cat $(_sh_quote(E * "/" * _HPC_INSTALL_JOBFILE)) 2>/dev/null) && echo "CECELIA-ENV job \$j"
+        [ -n "\$(find $(_sh_quote(remote_root)) -maxdepth 1 -name $(_HPC_CLEANING_MARKER) -mmin -$(_HPC_CLEANING_STALE_MIN) 2>/dev/null)" ] && echo CECELIA-ENV cleaning
         true
         """; what = "Cluster environment")
-    installed = occursin("CECELIA-ENV installed", out)
+    cleaning = occursin("CECELIA-ENV cleaning", out)
+    installed = occursin("CECELIA-ENV installed", out) && !cleaning
     m = match(r"CECELIA-ENV job (\S+)", out)
     job = ""
     if !installed && !isnothing(m)
         r = only(hpc_poll(b, c, [HpcPollJob(m[1], _hpc_install_job_dir(remote_root, lock), 0)]))
         r.state != JOB_GONE && isnothing(r.exit) && (job = String(m[1]))
     end
-    HpcEnvStatus(String(lock), installed, job)
+    HpcEnvStatus(String(lock), installed, job, cleaning)
 end
 
 _hpc_install_job_dir(remote_root::AbstractString, lock::AbstractString)::String =
     remote_root * "/jobs/install-env-" * lock
 
 """
-    hpc_install_env!(b, conn, remote_root; on_log, on_state, cancelled, poll_s, root) -> (; ok, message)
+    hpc_install_env!(b, conn, remote_root; on_log, on_state, on_job, cancelled, poll_s, root) -> (; ok, message)
 
 "Install on cluster": sync the env files, submit the install job (or attach to one in flight), and
-follow it to the end. Sink-agnostic, like a task: it reports through `on_log`/`on_state` and never
-throws for a failed install; `message` is one brief line.
+follow it to the end. Sink-agnostic, like a task: it reports through `on_log`, `on_job(id)` (once the
+job is known) and `on_state(state)`, and never throws for a failed install; `message` is one brief line.
 """
 function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString;
                           on_log::Function = println, on_state::Function = _ -> nothing,
-                          cancelled::Function = () -> false, poll_s::Real = 15,
+                          on_job::Function = _ -> nothing,
+                          cancelled::Function = () -> false, poll_s::Real = HPC_POLL_S[],
                           root::AbstractString = _hpc_repo_root(),
                           pixi_version::AbstractString = HPC_PIXI_VERSION)
     lock = hpc_lock_hash(; root)
     try
         st = hpc_env_status(b, c, remote_root; lock)
         st.installed && return (; ok = true, message = "Already installed")
+        st.cleaning && return (; ok = false, message = "The cluster is being cleaned up. Install once it is done")
         E = hpc_env_dir(remote_root, lock)
         dir = _hpc_install_job_dir(remote_root, lock)
         id = st.job
         if isempty(id)
+            # A submit that timed out may still have reached the scheduler, untracked here: a second
+            # install beside it would race it for the same env folder.
+            jn = hpc_job_name(b, _HPC_INSTALL_JOB_NAME)
+            other = isempty(jn) ? String[] : hpc_active_jobs(b, c; name = jn)
+            isempty(other) || return (; ok = false,
+                message = "An install job is already on the cluster ($(first(other))). Wait for it or cancel it first")
             on_log("Uploading the environment files")
             hpc_exec!(c, "mkdir -p $(_sh_quote(E))\n"; what = "Upload")
             hpc_rsync(c, String(root) * "/", E * "/"; files_from = hpc_env_files(; root), what = "Upload")
-            spec = HpcJobSpec(; name = "install-env", dir = dir, class = "cpu",
+            spec = HpcJobSpec(; name = _HPC_INSTALL_JOB_NAME, dir = dir, class = "cpu",
                               body = hpc_env_install_body(remote_root, lock; pixi_version),
                               _HPC_INSTALL_JOB...)
             id = hpc_submit(b, c, spec)
@@ -218,7 +258,13 @@ function hpc_install_env!(b::HpcBackend, c::HpcConn, remote_root::AbstractString
         else
             on_log("Following install job $id, already in flight")
         end
-        r = hpc_watch_job(b, c, id, dir; on_log, on_state, cancelled, poll_s)
+        on_job(id)
+        state(s) = (on_state(s); on_log(s === JOB_QUEUED ? "Queued on the cluster (job $id)" :
+                                        s === JOB_RUNNING ? "Running on the cluster (job $id)" : "Job $id ended"))
+        # the weights download's `[PROGRESS] bytes/total` (one per ~12 MB, ~200 lines) is noise in a log;
+        # its "downloading …" and "done" lines say the same
+        r = hpc_watch_job(b, c, id, dir; on_log = l -> startswith(l, "[PROGRESS]") || on_log(l), on_state = state, on_reason = x -> on_log("Waiting: $x"),
+                          cancelled, poll_s)
         hpc_exec(c, "rm -f $(_sh_quote(E * "/" * _HPC_INSTALL_JOBFILE))\n")
         r.cancelled && return (; ok = false, message = "Cancelled")
         r.exit == 0 || return (; ok = false, message = "Install failed: $(r.reason)")
@@ -241,7 +287,116 @@ function hpc_require_env(b::HpcBackend, c::HpcConn, remote_root::AbstractString;
                          lock::AbstractString = hpc_lock_hash())::String
     st = hpc_env_status(b, c, remote_root; lock)
     st.installed && return hpc_env_python(remote_root, lock)
+    st.cleaning && throw(HpcError("The cluster is being cleaned up. Run again once it is done"))
     throw(HpcError(isempty(st.job) ?
         "The cluster has no environment for this version of Cecelia. Install it in Settings → HPC" :
         "The cluster environment is still installing (job $(st.job))"))
+end
+
+# ── Clean up ───────────────────────────────────────────────────────────────────────────────────────
+
+# What Cecelia creates in the remote folder. "Delete all" moves exactly these: the folder may hold the
+# user's own files too, so it is never removed whole.
+const _HPC_ROOT_DIRS = ("bin", "env", "cache", "code", "jobs", "assets", "projects")
+
+"""How long a finished job's folder is kept by a clean-up, in days."""
+const HPC_JOB_KEEP_DAYS = 30
+
+"""
+    hpc_cleanup_script(remote_root; everything, lock, pixi_version, job_keep_days) -> String
+
+The clean-up's shell. Everything removed is first renamed into `<root>/.cecelia-trash-<pid>` (a rename
+is atomic), then the trash is deleted: an interrupted run leaves a whole env or none, never a
+half-deleted one that still has its marker, and the next run deletes the leftover trash. One
+`CECELIA-RM <kind>` line per thing removed. `everything = false` keeps `lock`'s env, this pixi,
+the model files and the project mirrors, and job folders younger than `job_keep_days`.
+"""
+function hpc_cleanup_script(remote_root::AbstractString; everything::Bool = false,
+                            lock::AbstractString = hpc_lock_hash(),
+                            pixi_version::AbstractString = HPC_PIXI_VERSION,
+                            job_keep_days::Integer = HPC_JOB_KEEP_DAYS)::String
+    io = IOBuffer()
+    print(io, """
+        cd $(_sh_quote(remote_root)) || exit 98
+        : > $(_HPC_CLEANING_MARKER) || exit 98
+        trap 'rm -f $(_HPC_CLEANING_MARKER)' EXIT
+        rm -rf .cecelia-trash-*
+        T=.cecelia-trash-\$\$
+        mkdir "\$T" || exit 98
+        gone() { mv "\$1" "\$T/\$2" && echo "CECELIA-RM \$3"; }
+        """)
+    if everything
+        println(io, "for x in $(join(_HPC_ROOT_DIRS, ' ')); do [ -e \"\$x\" ] && gone \"\$x\" \"\$x\" all; done")
+    else
+        print(io, """
+            for e in env/*; do [ -d "\$e" ] || continue; [ "\${e#env/}" = $(_sh_quote(lock)) ] && continue; gone "\$e" "env-\${e#env/}" env; done
+            for p in bin/pixi-*; do [ -e "\$p" ] || continue; [ "\$p" = $(_sh_quote("bin/pixi-" * pixi_version)) ] && continue; gone "\$p" "\${p#bin/}" bin; done
+            [ -d cache/pixi ] && gone cache/pixi cache-pixi cache
+            for d in code/*; do [ -d "\$d" ] && gone "\$d" "code-\${d#code/}" code; done
+            [ -d jobs ] && for d in \$(find jobs -mindepth 1 -maxdepth 1 -type d -mtime +$(job_keep_days)); do gone "\$d" "job-\${d#jobs/}" job; done
+            """)
+    end
+    print(io, "rm -rf \"\$T\"\ntrue\n")
+    String(take!(io))
+end
+
+"""
+    hpc_cleanup_summary(out; everything) -> String
+
+What a clean-up removed, in one line, from its `CECELIA-RM` lines. Pure, so it is tested alone.
+"""
+function hpc_cleanup_summary(out::AbstractString; everything::Bool = false)::String
+    n = Dict{String,Int}()
+    for m in eachmatch(r"^CECELIA-RM (\w+)"m, out)
+        n[m[1]] = get(n, m[1], 0) + 1
+    end
+    isempty(n) && return everything ? "Nothing to delete" : "Nothing to clean up"
+    everything && return "Deleted everything Cecelia put on the cluster"
+    k(x, one, many) = (c = get(n, x, 0); c == 0 ? nothing : c == 1 ? "1 $one" : "$c $many")
+    parts = filter(!isnothing, [k("env", "old environment", "old environments"),
+                                haskey(n, "cache") ? "the download cache" : nothing,
+                                k("bin", "old pixi", "old pixis"),
+                                k("code", "code copy", "code copies"),
+                                k("job", "job folder", "job folders")])
+    "Deleted " * (length(parts) == 1 ? only(parts) : join(parts[1:end-1], ", ") * " and " * parts[end])
+end
+
+"""
+    hpc_cleanup_refusal(b, conn) -> String
+
+Why a clean-up cannot run now, `""` when it can: a Cecelia job still queued or running on the cluster
+(from any workstation) may be using the env, the code or its job folder.
+"""
+function hpc_cleanup_refusal(b::HpcBackend, c::HpcConn)::String
+    act = hpc_active_jobs(b, c)
+    isempty(act) && return ""
+    n = length(act)
+    "$(n == 1 ? "A Cecelia job is" : "$n Cecelia jobs are") still on the cluster ($(join(first(act, 3), ", "))" *
+        "$(n > 3 ? ", …" : "")). Wait for $(n == 1 ? "it" : "them") or cancel first"
+end
+
+"""
+    hpc_cleanup!(b, conn, remote_root; everything, on_log, lock) -> (; ok, message)
+
+Settings → HPC's **Clean up** (`everything = false`: other versions' envs, old pixis, the download
+cache, code copies, job folders over `HPC_JOB_KEEP_DAYS`) and **Delete all** (everything in
+`_HPC_ROOT_DIRS`, project mirrors included; Install on cluster then starts from nothing). Refused while
+a Cecelia job is on the cluster. Never throws for a failure; `message` is one brief line.
+"""
+function hpc_cleanup!(b::HpcBackend, c::HpcConn, remote_root::AbstractString; everything::Bool = false,
+                      on_log::Function = println, lock::AbstractString = hpc_lock_hash(),
+                      job_keep_days::Integer = HPC_JOB_KEEP_DAYS)
+    try
+        why = hpc_cleanup_refusal(b, c)
+        isempty(why) || return (; ok = false, message = why)
+        on_log(everything ? "Deleting everything Cecelia put in $remote_root" :
+                            "Deleting old environments, the download cache, code copies and old job folders")
+        # A Lustre delete of an env's ~50k files takes minutes.
+        out = hpc_exec!(c, hpc_cleanup_script(remote_root; everything, lock, job_keep_days);
+                        what = "Clean up", timeout_s = 3600)
+        (; ok = true, message = hpc_cleanup_summary(out; everything))
+    catch e
+        e isa HpcError || rethrow()
+        (; ok = false, message = e.msg)
+    end
 end

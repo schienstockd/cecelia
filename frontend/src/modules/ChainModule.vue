@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, onActivated, markRaw, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 defineOptions({ name: 'ChainModule' })
 import {
   VueFlow, useVueFlow,
@@ -21,9 +22,10 @@ import ComingSoonBadge from '../components/ComingSoonBadge.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
-import { clampParamsToSpec } from '../tasks/paramValues'
+import { clampParamsToSpec, savedValueFor } from '../tasks/paramValues'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
+import ChainFromHistoryModal from '../components/ChainFromHistoryModal.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { debouncedLatest } from '../utils/debouncedLatest'
@@ -39,6 +41,13 @@ import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, isStartId, startTargetsOf, touchesStart, buildStartGraph, startDotPosition, DEFAULT_START_POS } from '../utils/startDot'
 import { layerLanes, layoutDag, LAYOUT_VARIANTS, EDITOR_GRID, ancestorsOf, type LayoutVariant } from '../utils/dagLayout'
 import { withChainProducedModels } from '../utils/chainModelOptions'
+import { waitingByNode, continueFrame } from '../utils/chainManual'
+import { groupByImage, type PreflightProblem } from '../utils/chainPreflight'
+import BaseModal from '../components/BaseModal.vue'
+import InlineNote from '../components/InlineNote.vue'
+import { isLiveStatus } from '../lib/taskStatus'
+import { moduleRouteFor } from '../utils/moduleRoute'
+import { NAV_GROUPS, navItemFor } from '../lib/navGroups'
 import { groupTaskDefs, type TaskGroup } from '../utils/taskGroups'
 import { fetchVersions } from '../utils/versions'
 import { parseAuthorStamp, authorSummary, profileLabel } from '../utils/authorStamp'
@@ -55,9 +64,11 @@ const log         = useLogStore()
 const activeTab = ref<'edit' | 'live'>('edit')
 const tabOptions = computed<ChipOption[]>(() => {
   const running = chainTasks.value.filter(t => t.status === 'running').length
+  // a step waiting for the user is the thing to go and look at, so it takes the badge
+  const waiting = chainTasks.value.filter(t => t.status === 'waiting').length
   return [
     { value: 'edit', label: 'Edit', icon: 'pi pi-pencil' },
-    { value: 'live', label: 'Live', icon: 'pi pi-bolt', badge: running || undefined },
+    { value: 'live', label: 'Live', icon: 'pi pi-bolt', badge: (waiting || running) || undefined },
   ]
 })
 
@@ -76,8 +87,8 @@ const {
   nodes, edges,
   addNodes, addEdges, removeNodes, removeEdges,
   findNode, updateNode, toObject,
-  onConnect, onNodeClick, onEdgeDoubleClick,
-  screenToFlowCoordinate, setCenter,
+  onConnect, onEdgeDoubleClick, getSelectedNodes,
+  screenToFlowCoordinate, setCenter, fitView, onNodesInitialized,
 } = useVueFlow({ id: 'chain-whiteboard' })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -219,7 +230,7 @@ watch(runOptions, (opts, old) => {
 // come from the run's chain template; fetched by name (falls back to a task-derived layout if the
 // template is gone). Copy run ID lets you reference a run in logs / REPL (load_chain_run).
 
-interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unknown> }
+interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unknown>; scope?: string }
 interface LiveTemplate { nodes: LiveTemplateNode[]; edges: { from: string; to: string }[] }
 const liveTemplate = ref<LiveTemplate | null>(null)
 
@@ -333,6 +344,17 @@ const liveNodes = computed<Node[]>(() => {
         imageUid: t.imageUid, status: t.status,
         startedAt: t.startedAt, finishedAt: t.finishedAt,
         nodeId: t.chainNodeId,                       // template node id — for "resume from here"
+        // a parked manual step: its prompt, and a Continue for this image (or the whole set)
+        ...(t.status === 'waiting' ? {
+          prompt:     manualOf(t.funName)?.prompt,
+          onContinue: () => continueStep(t.chainNodeId, isSetNode(t.chainNodeId) ? undefined : t.imageUid),
+          // …and where to do the work: the spec's `manual.open` page, with this image selected
+          ...(manualRoute(t.funName) ? {
+            onOpen:    () => openManualTarget(t.funName, t.imageUid),
+            openLabel: navItemFor(NAV_GROUPS, manualRoute(t.funName)!)?.label,
+            openIcon:  navItemFor(NAV_GROUPS, manualRoute(t.funName)!)?.icon,
+          } : {}),
+        } : {}),
         restart: t.chainNodeId === restartNodeId.value ? 'start'
                : rerunNodeIds.value.has(t.chainNodeId) ? 'rerun' : undefined,
       },
@@ -365,7 +387,7 @@ const liveEdges = computed<Edge[]>(() => {
 const { isCopied: runIdCopied, copy: copyRun } = useCopyFlash()
 async function copyRunId() {
   const id = selectedRunId.value
-  if (id && await copyRun(id)) log.info(`Copied run ID ${id}`, { source: 'whiteboard' })
+  if (id && await copyRun(id)) log.info(`Copied run ID ${id}`, { source: 'chains' })
 }
 
 // ── Live QC row ────────────────────────────────────────────────────────────────
@@ -504,9 +526,44 @@ const restartLabel = computed(() => {
   const n = liveTemplate.value?.nodes.find(nn => nn.id === restartNodeId.value)
   return n ? (allTaskDefs.value.find(d => d.fun_name === n.fn)?.label ?? n.fn.split('.').pop() ?? n.fn) : ''
 })
-// A run is busy (can't resume) while any of its nodes are running/queued.
+// A run is busy (can't resume) while any of its nodes are running/queued — or parked: that run is still
+// live, and a Continue (which resumes a run that is no longer live by itself) is the way on.
 const resumeBusy = computed(() =>
-  selectedRunTasks.value.some(t => t.status === 'running' || t.status === 'queued'))
+  selectedRunTasks.value.some(t => isLiveStatus(t.status)))
+
+// ── Manual steps (docs/SCHEDULER.md → Manual steps) ──────────────────────────
+const manualOf = (fn: string) => allTaskDefs.value.find(d => d.fun_name === fn)?.manual
+// a set-scope step parks once for all images, so its Continue never names one
+const isSetNode = (nodeId: string) =>
+  liveTemplate.value?.nodes.find(nn => nn.id === nodeId)?.scope === 'set'
+const waitingSteps = computed(() => waitingByNode(selectedRunTasks.value))
+const waitingCount = computed(() => [...waitingSteps.value.values()].reduce((n, u) => n + u.length, 0))
+function continueStep(nodeId: string, imageUid?: string) {
+  const uid = projectMeta.current?.uid
+  const rid = selectedRunId.value
+  if (!uid || !rid) return
+  ws.send(continueFrame(uid, rid, nodeId, imageUid))
+}
+// The page a manual step's `open` names, or null when it names none this app can route to.
+const router = useRouter()
+function manualRoute(fn: string): string | null {
+  const mod = manualOf(fn)?.open
+  if (!mod) return null
+  const path = moduleRouteFor(mod) ?? `/${mod}`
+  return router.resolve(path).matched.length ? path : null
+}
+// Go there with this image selected (the page's ModuleLayout reads its per-module selection on mount).
+function openManualTarget(fn: string, imageUid: string) {
+  const path = manualRoute(fn)
+  const mod  = manualOf(fn)?.open
+  if (!path || !mod) return
+  const setUid = project.setUidOfImage(imageUid)
+  if (setUid) project.focusImages(mod, setUid, [imageUid])
+  void router.push(path)
+}
+function continueAll() {
+  for (const nodeId of waitingSteps.value.keys()) continueStep(nodeId)
+}
 // clear the start-node pick when switching runs (it refers to the selected run's template)
 watch(selectedRunId, () => { restartNodeId.value = null })
 
@@ -536,8 +593,7 @@ const nameMode = ref<'create' | 'rename'>('create')
 // current template by name for its column layout. Persisted runs carry their own frozen template,
 // so they are unaffected (and keep their original chainName — what they ran as).
 const chainHasLiveRun = computed(() =>
-  chainTasks.value.some(t => t.chainName === activeChain.value &&
-                             (t.status === 'running' || t.status === 'queued')))
+  chainTasks.value.some(t => t.chainName === activeChain.value && isLiveStatus(t.status)))
 
 function openNameInput(mode: 'create' | 'rename') {
   if (mode === 'rename' && (!activeChain.value || chainHasLiveRun.value)) return
@@ -568,7 +624,7 @@ async function loadChainList() {
       await switchChain(chainNames.value[0])
     }
   } catch (e) {
-    log.warn(`Could not load chain list: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load chain list: ${e}`, { source: 'chains' })
   }
 }
 
@@ -601,10 +657,10 @@ async function loadChain(name: string) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const tmpl = await res.json() as ChainTemplate & { positions?: Record<string, {x:number; y:number}>
                                                        createdBy?: unknown; updatedBy?: unknown }
-    applyTemplate(tmpl, tmpl.positions ?? {})
+    await applyTemplate(tmpl, tmpl.positions ?? {})
     chainAuthor.value = authorSummary(parseAuthorStamp(tmpl.createdBy), parseAuthorStamp(tmpl.updatedBy))
   } catch (e) {
-    log.warn(`Could not load chain "${name}": ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load chain "${name}": ${e}`, { source: 'chains' })
   }
 }
 
@@ -617,14 +673,18 @@ function addStartNode() {
   addNodes([{ id: START_ID, type: 'start', position: DEFAULT_START_POS, data: {} }])
 }
 
-function applyTemplate(
+async function applyTemplate(
   tmpl: ChainTemplate,
   positions: Record<string, { x: number; y: number }>,
 ) {
-  // Clear canvas
+  // Clear canvas — and let Vue unmount it before adding the next chain. Every chain's start dot is
+  // `__start__` (and authored chains reuse ids like `track`/`hmm`), so a same-tick remove+add hands
+  // the new node the OLD element: Vue Flow never re-measures its handles and the edge draws from the
+  // node's top-left corner instead of the handle — "the start node is not connected".
   removeNodes(nodes.value.map(n => n.id))
   removeEdges(edges.value.map(e => e.id))
   selectedNodeId.value = null
+  await nextTick()
 
   // Computed once for the whole template, and only consulted where a saved position is missing — a
   // chain the user has dragged is never re-laid-out. That's their spatial memory of their own pipeline.
@@ -648,6 +708,7 @@ function applyTemplate(
       data: {
         fn:              n.fn,
         scope:           n.scope,
+        manual:          !!def?.manual,   // a step the run waits at (docs/SCHEDULER.md → Manual steps)
         // Clamped: a stored value outside a since-tightened min/max would fail validation on every run.
         params:          def ? clampParamsToSpec(def, { ...defaults, ...n.params }) : { ...defaults, ...n.params },
         barrier_policy:  n.barrier_policy,
@@ -679,8 +740,24 @@ function applyTemplate(
   )
   if (start) { newNodes.push(start.node); newEdges.push(...start.edges) }
 
+  fitOnInit = true
   addNodes(newNodes)
   addEdges(newEdges)
+}
+
+// Frame each loaded chain once Vue Flow has MEASURED its nodes — fitting before that frames nothing.
+// An authored chain's dot sits one column left of the first task, off the left edge of the default
+// viewport, so without this the start edge ran off-screen. Only after a load, not on every palette drop.
+let fitOnInit = false
+onNodesInitialized(() => {
+  if (!fitOnInit) return
+  fitOnInit = false
+  fitChain(0)
+})
+
+/** Zoom/pan so the whole chain is on screen (the toolbar's Fit button, and every chain load). */
+function fitChain(duration = 300) {
+  fitView({ padding: 0.2, maxZoom: 1, duration })
 }
 
 function currentTemplate(): ChainTemplate & { positions: Record<string, {x:number; y:number}> } {
@@ -718,10 +795,10 @@ async function saveChain() {
       body: JSON.stringify({ projectUid: uid, template: tmpl }),
     })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    log.info(`Chain "${activeChain.value}" saved.`, { source: 'whiteboard' })
+    log.info(`Chain "${activeChain.value}" saved.`, { source: 'chains' })
     void refreshChainAuthor(activeChain.value)
   } catch (e) {
-    log.error(`Save failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Save failed: ${e}`, { source: 'chains' })
   } finally {
     saving.value = false
   }
@@ -747,9 +824,9 @@ async function removeChain() {
     } else {
       activeChain.value = ''
     }
-    log.info(`Chain "${name}" deleted.`, { source: 'whiteboard' })
+    log.info(`Chain "${name}" deleted.`, { source: 'chains' })
   } catch (e) {
-    log.error(`Delete failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Delete failed: ${e}`, { source: 'chains' })
   }
 }
 
@@ -778,10 +855,26 @@ async function renameChain() {
     // Reload from disk so the canvas reflects the stored template (whose `name` field moved too)
     // rather than the pre-rename copy still in memory.
     await loadChain(stored)
-    log.info(`Chain renamed to "${stored}".`, { source: 'whiteboard' })
+    log.info(`Chain renamed to "${stored}".`, { source: 'chains' })
   } catch (e) {
-    log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'whiteboard' })
+    log.error(`Rename failed: ${e instanceof Error ? e.message : e}`, { source: 'chains' })
   }
+}
+
+// Save an empty template under `name` so it appears in the list, and make it the active chain. Returns
+// the STORED name — the server repairs one its filename guard refuses ("a + b" → "a b").
+async function saveEmptyChain(uid: string, name: string): Promise<string> {
+  const res = await fetch('/api/chains/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectUid: uid, template: { name, nodes: [], edges: [] } }),
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
+  if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
+  chainNames.value.sort()
+  activeChain.value = stored
+  return stored
 }
 
 async function createChain() {
@@ -789,22 +882,8 @@ async function createChain() {
   if (!name) return
   const uid = projectMeta.current?.uid
   if (!uid) return
-  // Save an empty template immediately so it appears in the list.
   try {
-    const res = await fetch('/api/chains/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid: uid,
-        template: { name, nodes: [], edges: [] },
-      }),
-    })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    // The stored name — the server repairs one its filename guard refuses ("a + b" → "a b").
-    const stored = ((await res.json().catch(() => ({}))) as { name?: string }).name ?? name
-    if (!chainNames.value.includes(stored)) chainNames.value.push(stored)
-    chainNames.value.sort()
-    activeChain.value = stored
+    const stored = await saveEmptyChain(uid, name)
     removeNodes(nodes.value.map(n => n.id))
     removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
@@ -815,9 +894,27 @@ async function createChain() {
     // off-screen at the origin. Offset right so there's room for tasks.
     await nextTick()
     setCenter(230, 60, { zoom: 1, duration: 350 })
-    log.info(`Chain "${stored}" created.`, { source: 'whiteboard' })
+    log.info(`Chain "${stored}" created.`, { source: 'chains' })
   } catch (e) {
-    log.error(`Create failed: ${e}`, { source: 'whiteboard' })
+    log.error(`Create failed: ${e}`, { source: 'chains' })
+  }
+}
+
+// ── Chain from history (docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part B) ─────────
+const historyOpen = ref(false)
+// The suggestion becomes a new chain on the canvas. Saved straight away when it validates; otherwise it
+// stays unsaved on the canvas with the reason in the log, for the user to fix and Save.
+async function openFromHistory(p: { name: string; template: ChainTemplate; valid: boolean; error: string }) {
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  try {
+    const stored = await saveEmptyChain(uid, p.name)
+    historyOpen.value = false
+    await applyTemplate({ ...p.template, name: stored }, {})
+    if (p.valid) await saveChain()
+    else log.warn(`Chain "${stored}" needs a fix before it can be saved: ${p.error}`, { source: 'whiteboard' })
+  } catch (e) {
+    log.error(`Could not create the chain: ${e}`, { source: 'whiteboard' })
   }
 }
 
@@ -836,7 +933,7 @@ async function loadPools() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     pools.value = await res.json() as PoolInfo[]
   } catch (e) {
-    log.warn(`Could not load resource pools: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load resource pools: ${e}`, { source: 'chains' })
   }
 }
 
@@ -855,7 +952,7 @@ async function loadAllTaskDefs() {
     }
     allTaskDefs.value = flat
   } catch (e) {
-    log.warn(`Could not load task definitions: ${e}`, { source: 'whiteboard' })
+    log.warn(`Could not load task definitions: ${e}`, { source: 'chains' })
   }
 }
 
@@ -923,6 +1020,7 @@ function onCanvasDrop(event: DragEvent) {
     data: {
       fn:             def.fun_name,
       scope,
+      manual:         !!def.manual,
       params:         initialParams,
       barrier_policy: 'all',
       resource_pool:  def.resource_pool ?? '',   // '' = inherit from the task spec, not 'default'
@@ -1041,8 +1139,13 @@ const selectedTaskDef = computed<TaskDef | null>(() => {
   return withChainProducedModels(def, upstreamModelStems(selectedNode.value!.id))
 })
 
-onNodeClick(({ node }: NodeMouseEvent) => {
-  selectedNodeId.value = selectedNodeId.value === node.id ? null : node.id
+// The config panel follows Vue Flow's own selection — the same state that draws the node's highlight.
+// It used to toggle on `node-click`, a second state that diverged: a click with ≥1px of mouse travel
+// is a drag to Vue Flow (selects + highlights, no click event), so the node lit up and the panel stayed
+// shut; clicking the selected node again closed the panel but kept the highlight; clicking the canvas
+// cleared the highlight but kept the panel.
+watch(() => getSelectedNodes.value.map(n => n.id), ids => {
+  selectedNodeId.value = ids.length === 1 ? ids[0] : null
 })
 
 function updateSelectedNodeData(patch: Record<string, unknown>) {
@@ -1194,12 +1297,36 @@ const runChainTip = computed(() =>
   `Run chain "${activeChain.value}" on ${runSelectedUids.value.length} image(s).`
 )
 
+// Pre-flight (docs/todo/CHAIN_FROM_HISTORY_PLAN.md → Pre-flight checks): Run first asks what the run
+// will hit on each image; anything found is shown with Run anyway / Cancel, nothing → it just runs.
+const preflight = ref<PreflightProblem[] | null>(null)
+const preflightGroups = computed(() => groupByImage(preflight.value ?? [], imageName))
+
 async function runChain() {
   const uid = projectMeta.current?.uid
   if (!uid || !activeChain.value || !runSelectedUids.value.length || chainRunning.value) return
   chainRunning.value = true
   // Save current params (defaults merged by applyTemplate) before backend loads the file.
   await saveChain()
+  try {
+    const res = await fetch('/api/chains/preflight', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: uid, chain: activeChain.value, imageUids: runSelectedUids.value }),
+    })
+    const problems = res.ok ? ((await res.json()).problems ?? []) as PreflightProblem[] : []
+    if (problems.length) { preflight.value = problems; chainRunning.value = false; return }
+  } catch { /* pre-flight is advice — never a reason not to run */ }
+  startRun(uid)
+}
+
+function runAnyway() {
+  const uid = projectMeta.current?.uid
+  preflight.value = null
+  if (uid) startRun(uid)
+}
+
+function startRun(uid: string) {
+  chainRunning.value = true
   ws.send({
     type:       'chain:run',
     projectUid: uid,
@@ -1270,7 +1397,7 @@ function applyAutoLayout(variant: LayoutVariant) {
     const p = pos[n.id]
     if (p) updateNode(n.id, { position: p })
   }
-  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'whiteboard' })
+  log.info(`Chain laid out (${variant.label.toLowerCase()}).`, { source: 'chains' })
 }
 
 // The ↻ button. It used to reload only the ACTIVE chain's content, which is not what its label says and
@@ -1319,6 +1446,25 @@ onActivated(async () => {
       />
     </div>
 
+    <BaseModal v-if="preflight" title="Before this run" icon="pi-exclamation-triangle" width="560px"
+               @close="preflight = null">
+      <div v-for="g in preflightGroups" :key="g.uid" class="preflight-image">
+        <div class="cc-eyebrow">{{ g.name }}</div>
+        <InlineNote v-for="(p, i) in g.problems" :key="i" :severity="p.level"
+                    :short="`${allTaskDefs.find(d => d.fun_name === p.fn)?.label ?? p.fn}: ${p.message}`" />
+      </div>
+      <template #footer>
+        <button class="cc-btn cc-btn-ghost" v-tooltip.top="'Change the chain or the images first'"
+                @click="preflight = null">Cancel</button>
+        <button class="cc-btn cc-btn-primary" v-tooltip.top="'Run on all the selected images regardless'"
+                @click="runAnyway"><i class="pi pi-play" /> Run anyway</button>
+      </template>
+    </BaseModal>
+
+    <ChainFromHistoryModal v-if="historyOpen && projectMeta.current?.uid" :project-uid="projectMeta.current.uid"
+                           :set-uid="runSetUid" :chain-names="chainNames"
+                           @close="historyOpen = false" @open="openFromHistory" />
+
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
     <div v-if="activeTab === 'live'" class="chain-live">
       <div class="live-toolbar">
@@ -1344,6 +1490,14 @@ onActivated(async () => {
               : 'Re-run failed, unfinished or changed nodes'"
         >
           <i class="pi pi-play" />
+        </button>
+        <button
+          v-if="waitingCount"
+          class="wb-btn cc-btn cc-btn-primary cc-btn-dense"
+          @click="continueAll"
+          v-tooltip.bottom="'Continue every step waiting for you'"
+        >
+          <i class="pi pi-step-forward" /> Continue {{ waitingCount }}
         </button>
         <button
           v-if="restartNodeId"
@@ -1459,6 +1613,14 @@ onActivated(async () => {
           </button>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!projectMeta.current?.uid"
+            @click="historyOpen = true"
+            v-tooltip.right="'Create a chain from what ran on some images'"
+          >
+            <i class="pi pi-history" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain || chainHasLiveRun"
             @click="openNameInput('rename')"
             v-tooltip.right="chainHasLiveRun ? 'Cannot rename while this chain is running'
@@ -1504,6 +1666,14 @@ onActivated(async () => {
           </TeleportPopover>
           <button
             class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+            :disabled="!activeChain || !nodes.length"
+            @click="fitChain()"
+            v-tooltip.right="'Fit the chain on screen'"
+          >
+            <i class="pi pi-reset-view" />
+          </button>
+          <button
+            class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
             :disabled="!activeChain"
             @click="reloadFromDisk"
             v-tooltip.right="'Reload chains from disk — discards unsaved edits'"
@@ -1536,6 +1706,10 @@ onActivated(async () => {
           v-tooltip.right="nameMode === 'rename' ? 'Rename the chain' : 'Create the chain'"
           @click="submitName" :disabled="!newChainName.trim()">
           <i class="pi pi-check" />
+        </button>
+        <button class="wb-btn cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense"
+          v-tooltip.right="'Cancel'" @click="closeNameInput">
+          <i class="pi pi-times" />
         </button>
       </div>
 
@@ -1727,7 +1901,8 @@ onActivated(async () => {
           >
             <option value="image">image</option>
             <option value="set">set (picnic)</option>
-            <option value="incremental">incremental</option>
+            <!-- a manual step must hold the run, which an event-driven node can't (validate.jl refuses it) -->
+            <option v-if="!selectedNode.data.manual" value="incremental">incremental</option>
           </select>
 
           <template v-if="selectedNode.data.scope === 'set'">
@@ -1810,7 +1985,7 @@ onActivated(async () => {
               v-for="p in selectedTaskDef.params"
               :key="p.key"
               :param="p"
-              :modelValue="selectedNode.data.params[p.key]"
+              :modelValue="savedValueFor(p, selectedNode.data.params)"
               :context="paramContext"
               @update:modelValue="updateParam(p.key, $event)"
             />
@@ -1839,6 +2014,7 @@ onActivated(async () => {
 </template>
 
 <style scoped>
+.preflight-image { margin-bottom: 0.5rem; }
 .chain-module {
   display: flex;
   flex-direction: column;
@@ -2113,7 +2289,6 @@ onActivated(async () => {
   flex-shrink: 0;
   background: var(--cc-surface-1);
   border-left: 1px solid var(--cc-border);
-  transition: width 0.18s ease;
   display: flex;
   flex-direction: column;
 }

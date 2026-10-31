@@ -230,7 +230,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     handler === nothing && return 404, JSON3.write((; error="Not found: $path"))
     # Bind who's asking for the whole handler, so a writer stamps `author_stamp()` without threading it.
     via = HTTP.header(req, "X-Cecelia-Client", "") == "claude" ? "claude" : "app"
-    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via)
+    caller = via == "claude" ?
+        request_caller(HTTP.header(req, "X-Cecelia-Model", ""), HTTP.header(req, "X-Cecelia-Session", "")) :
+        REQUEST_CALLER[]
+    Base.ScopedValues.with(() -> handler(req, body_bytes), REQUEST_VIA => via, REQUEST_CALLER => caller)
 end
 
 # ── GET ─────────────────────────────────────────────────────────────────────
@@ -298,8 +301,10 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/chains/get" => (req, body_bytes) -> (api_chains_get(req)),
     "/api/chains/runs" => (req, body_bytes) -> (api_chains_runs(req)),
     "/api/chains/run" => (req, body_bytes) -> (api_chains_run(req)),
+    "/api/chains/suggest" => (req, body_bytes) -> (api_chains_suggest(req)),
     "/api/logs/recent" => (req, body_bytes) -> (api_logs_recent(req)),
     "/api/observer/status" => (req, body_bytes) -> (api_observer_status(req)),
+    "/api/observer/chat"     => (req, body_bytes) -> (api_observer_chat(req)),
     "/api/kiwi/turns" => (req, body_bytes) -> (api_kiwi_turns(req)),
     "/api/preview/status" => (req, body_bytes) -> (api_preview_status(req)),
     "/api/optical-flow/models" => (req, body_bytes) -> (api_optical_flow_models(req)),
@@ -323,6 +328,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/gating/summary" => (req, body_bytes) -> (api_gating_summary(req)),
     "/api/gating/plot-image" => (req, body_bytes) -> (api_gating_plot_image(req)),
     "/api/gating/cells-image" => (req, body_bytes) -> (api_gating_cells_image(req)),
+    "/api/gating/examples" => (req, body_bytes) -> (api_gating_examples(req)),
     "/api/images/geometry" => (req, body_bytes) -> (api_image_geometry(req)),
     "/api/images/stores" => (req, body_bytes) -> (api_image_stores(req)),
     "/api/crop/info" => (req, body_bytes) -> (api_crop_info(req)),
@@ -337,7 +343,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/viewer/capture" => (req, body_bytes) -> (api_viewer_capture_get(req)),
     "/api/push/target" => (req, body_bytes) -> (api_push_target_get(req)),
     "/api/labels/ids" => (req, body_bytes) -> (api_labels_ids(req)),
-    "/api/plots/umap" => (req, body_bytes) -> (api_plots_umap(req)),
+    "/api/plots/cluster-map" => (req, body_bytes) -> (api_plots_cluster_map(req)),
     "/api/plots/definitions" => (req, body_bytes) -> (api_plot_definitions(req)),
     "/api/plots/populations" => (req, body_bytes) -> (api_plot_populations(req)),
     "/api/plots/attrs" => (req, body_bytes) -> (api_plot_attrs(req)),
@@ -359,6 +365,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/profile/settings"       => (req, body_bytes) -> (api_profile_settings_get(req)),
     "/api/hpc/settings"           => (req, body_bytes) -> (api_hpc_settings_get(req)),
     "/api/hpc/env"                => (req, body_bytes) -> (api_hpc_env_get(req)),
+    "/api/hpc/nodes"              => (req, body_bytes) -> (api_hpc_nodes(req)),
 )
 
 # ── POST ─────────────────────────────────────────────────────────────────────
@@ -431,6 +438,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/images/labels/rename" => (req, body_bytes) -> (api_images_rename_labels(body_bytes)),
     "/api/chains/save" => (req, body_bytes) -> (api_chains_save(body_bytes)),
     "/api/chains/create" => (req, body_bytes) -> (api_chains_create(body_bytes)),
+    "/api/chains/preflight" => (req, body_bytes) -> (api_chains_preflight(body_bytes)),
     # create-only: adds ONE board, never edits one. NOT /api/projects/boards, which overwrites the
     # whole document (see api_boards_add).
     "/api/boards/add" => (req, body_bytes) -> (api_boards_add(body_bytes)),
@@ -482,6 +490,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/kiwi/profiles/rename"     => (req, body_bytes) -> (api_kiwi_profiles_rename(body_bytes)),
     "/api/kiwi/profiles/delete"     => (req, body_bytes) -> (api_kiwi_profiles_delete(body_bytes)),
     "/api/kiwi/profiles/logout"     => (req, body_bytes) -> (api_kiwi_profiles_logout(body_bytes)),
+    "/api/kiwi/profiles/end-session" => (req, body_bytes) -> (api_kiwi_profiles_end_session(body_bytes)),
     "/api/kiwi/profiles/login"        => (req, body_bytes) -> (api_kiwi_profiles_login_start(body_bytes)),
     "/api/kiwi/profiles/login/code"   => (req, body_bytes) -> (api_kiwi_profiles_login_code(body_bytes)),
     "/api/kiwi/profiles/login/cancel" => (req, body_bytes) -> (api_kiwi_profiles_login_cancel(body_bytes)),
@@ -490,6 +499,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/hpc/settings/set"         => (req, body_bytes) -> (api_hpc_settings_set(body_bytes)),
     "/api/hpc/test"                 => (req, body_bytes) -> (api_hpc_test(body_bytes)),
     "/api/hpc/env/install"          => (req, body_bytes) -> (api_hpc_env_install(body_bytes)),
+    "/api/hpc/env/cleanup"          => (req, body_bytes) -> (api_hpc_env_cleanup(body_bytes)),
     "/api/blackboard/create"  => (req, body_bytes) -> (api_blackboard_create(body_bytes)),
     "/api/blackboard/revise"  => (req, body_bytes) -> (api_blackboard_revise(body_bytes)),
     "/api/blackboard/status"  => (req, body_bytes) -> (api_blackboard_status(body_bytes)),
@@ -536,7 +546,10 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/preview/stop" => (req, body_bytes) -> (api_preview_stop(body_bytes)),
     "/api/preview/run" => (req, body_bytes) -> (api_preview_run(body_bytes)),
     "/api/gating/pop/add" => (req, body_bytes) -> (api_gating_pop_add(body_bytes)),
+    "/api/gating/pop/add-gate" => (req, body_bytes) -> (api_gating_pop_add_gate(body_bytes)),
     "/api/gating/pop/set-gate" => (req, body_bytes) -> (api_gating_pop_set_gate(body_bytes)),
+    "/api/gating/pop/set-own-gate" => (req, body_bytes) -> (api_gating_pop_set_own_gate(body_bytes)),
+    "/api/gating/pop/delete-own" => (req, body_bytes) -> (api_gating_pop_delete_own(body_bytes)),
     "/api/gating/pop/delete" => (req, body_bytes) -> (api_gating_pop_delete(body_bytes)),
     "/api/gating/pop/update" => (req, body_bytes) -> (api_gating_pop_update(body_bytes)),
     "/api/gating/pop/rename" => (req, body_bytes) -> (api_gating_pop_rename(body_bytes)),

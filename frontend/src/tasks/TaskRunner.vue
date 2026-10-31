@@ -20,9 +20,9 @@ import { fetchHpcSettings, fetchHpcEnv, installHpcEnv, onHpcEnvChanged, hpcTestB
   type HpcSettings, type HpcEnvStatus } from '../utils/hpcSettings'
 import { isPreferencesOpen } from '../lib/preferencesOpen'
 import { profileStorage } from '../utils/profileStorage'
-import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS,
+import { hpcEligible, hpcDefaults, parseRunTargetChoice, hpcRunFields, runTargetKey, HPC_RESOURCE_FIELDS, hpcRuleCpus,
   hpcRunDestination, hpcRunEnvNote, hpcFieldsFor, hpcSteps, formatResource, hpcMemoryHint, type FrameSize,
-  type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
+  hpcShownStatus, type RunTargetChoice, type HpcResourcesForm } from '../utils/hpcRun'
 import type { TaskDef, ParamValues } from './types'
 import { buildParamValues, flattenParams, resolveInitialParams, missingRequired, findParamByKey } from './paramValues'
 import { cachedPyramidRecommendation } from './pyramidPeek'
@@ -55,6 +55,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
+import { isLiveStatus } from '../lib/taskStatus'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -159,9 +160,14 @@ function setTarget(v: string | string[]) {
 const hpcFields = computed(() => taskDef.value ? hpcFieldsFor(taskDef.value) : [])
 const hpcDefaultsNow = computed(() => taskDef.value ? hpcDefaults(taskDef.value) : null)
 const hpcDrag = ref<Partial<HpcResourcesForm>>({})
-const hpcValue = (key: keyof HpcResourcesForm) => hpcDrag.value[key] ?? hpcForm.value?.[key] ?? 0
+const hpcRaw = (key: keyof HpcResourcesForm) => hpcDrag.value[key] ?? hpcForm.value?.[key] ?? 0
+// A site rule (CPUs per GPU, Preferences → HPC) fixes the CPUs of a GPU job: shown, not slidable.
+const hpcRuleCpusNow = computed(() => taskDef.value ? hpcRuleCpus(hpcSettings.value, taskDef.value, hpcRaw('gpus')) : null)
+const hpcRuled = (key: keyof HpcResourcesForm) => key === 'cpus' && hpcRuleCpusNow.value !== null
+const hpcValue = (key: keyof HpcResourcesForm) => hpcRuled(key) ? hpcRuleCpusNow.value! : hpcRaw(key)
 const hpcStops = computed(() => Object.fromEntries(HPC_RESOURCE_FIELDS.map(f =>
-  [f.key, hpcSteps(f.key, hpcDefaultsNow.value?.[f.key] ?? NaN, hpcForm.value?.[f.key] ?? NaN)])) as
+  [f.key, hpcSteps(f.key, hpcDefaultsNow.value?.[f.key] ?? NaN, hpcForm.value?.[f.key] ?? NaN,
+                   f.key === 'cpus' ? hpcRuleCpusNow.value ?? NaN : NaN)])) as
   Record<keyof HpcResourcesForm, number[]>)
 function commitResource(key: keyof HpcResourcesForm) {
   const n = hpcDrag.value[key]
@@ -728,7 +734,7 @@ const runLabel = computed(() => {
 // ── Cancel all running/queued tasks for this module ────────────────────────
 const activeTasks = computed(() =>
   taskStore.forModule(props.module, projectMeta.current?.uid)
-    .filter(t => t.status === 'running' || t.status === 'queued')
+    .filter(t => isLiveStatus(t.status))
 )
 
 // What the collapsed task list would have shown. Rendered in the toggle bar ONLY while that half is
@@ -736,7 +742,7 @@ const activeTasks = computed(() =>
 // track of whether anything is still going.
 const hiddenTaskNote = computed(() => {
   if (pane.value !== 'top') return ''
-  const running = activeTasks.value.filter(t => t.status === 'running').length
+  const running = activeTasks.value.filter(t => hpcShownStatus(t.status, t.hpcStage) === 'running').length
   const queued  = activeTasks.value.length - running
   if (!activeTasks.value.length) return ''
   return queued ? `${running} running · ${queued} queued` : `${running} running`
@@ -876,8 +882,10 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           <input type="range" min="0" :max="hpcStops[f.key].length - 1" step="1" :aria-label="f.label"
                  :value="hpcStops[f.key].indexOf(hpcValue(f.key))"
                  @input="hpcDrag[f.key] = hpcStops[f.key][+($event.target as HTMLInputElement).value]"
-                 @change="commitResource(f.key)"
-                 v-tooltip.bottom="`${f.tip}; default ${formatResource(f.key, hpcDefaultsNow?.[f.key] ?? 0)}`" />
+                 @change="commitResource(f.key)" :disabled="hpcRuled(f.key)"
+                 v-tooltip.bottom="hpcRuled(f.key)
+                   ? `${hpcSettings?.site.gpu.cpusPerGpu} per GPU on this cluster (Preferences → HPC)`
+                   : `${f.tip}; default ${formatResource(f.key, hpcDefaultsNow?.[f.key] ?? 0)}`" />
         </label>
       </div>
       <div v-if="hpcMemory" class="cc-row hpc-res-foot">

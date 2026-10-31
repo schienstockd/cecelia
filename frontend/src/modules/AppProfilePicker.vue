@@ -83,7 +83,7 @@ function onProfileCreated(name: string) {
       <img class="pp-logo" src="/feijoa.svg" alt="" aria-hidden="true" width="40" height="40" />
       <h1 class="pp-title">{{ heading }}</h1>
       <p class="pp-sub cc-muted">
-        Pick a profile — this drives Kiwi's credentials, your preferences and which projects you see.
+        Profiles set Kiwi's login, preferences and projects.
       </p>
 
       <div v-if="loading" class="pp-loading cc-muted cc-fs-md">

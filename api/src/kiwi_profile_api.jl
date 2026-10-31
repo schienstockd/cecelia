@@ -14,6 +14,7 @@
 #   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
 #   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
 #   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
+#   POST /api/kiwi/profiles/end-session       → { name }               ; delete its conversations if wanted
 #   POST /api/kiwi/profiles/login             → { name }               ; start `claude auth login` (P9)
 #   GET  /api/kiwi/profiles/login?profile=N   → { state, url, browser, message } ; poll it
 #   POST /api/kiwi/profiles/login/code        → { name, code }         ; the pasted fallback code
@@ -127,6 +128,7 @@ function api_kiwi_profiles_select(body_bytes::Vector{UInt8})
                 error = "Profile `$(name)` is retired and can't be selected."))
     end
     set_active_profile!(name)
+    _purge_others_on_pick(name)
     200, JSON3.write((; ok = true, active = name, loggingOut = _enforce_one_claude_login(name)))
 end
 
@@ -175,6 +177,59 @@ function claude_logout_on_quit!()::Int
         end
     end
     length(dirs)
+end
+
+# ── Deleting conversations when a session ends (`app/src/ai/claude_conversations.jl`) ─────────────
+# Three moments, each only for profiles that want it (workstation policy OR their own preference):
+# the person's Log out (`api_kiwi_profiles_end_session`), every orderly quit, and — the backstop for a
+# crash or a hard kill, which reach neither — the next profile pick, for every profile but the one
+# picked. A profile with `claude` still running is skipped (the next moment retries).
+
+# Named profiles whose conversations go when `keep` is picked — never `default` (D21), never `keep`.
+_purge_on_pick_targets(keep::AbstractString)::Vector{String} =
+    String[p["dir"] for p in _kiwi_list_profiles()
+           if !p["isDefault"] && p["name"] != keep && Cecelia.purge_claude_conversations_wanted(p["name"])]
+
+# In the background: the picker is waiting, and a profile dir can hold thousands of transcripts.
+function _purge_others_on_pick(keep::AbstractString)::Int
+    dirs = _purge_on_pick_targets(keep)
+    isempty(dirs) && return 0
+    Threads.@spawn for d in dirs
+        ok, msg = Cecelia.purge_claude_conversations!(d)
+        ok || @warn "Shared workstation: could not delete a profile's Claude conversations" dir = d message = msg
+    end
+    length(dirs)
+end
+
+# Every named profile that wants it — the quit-time list. Split out so a test can check it.
+_purge_on_quit_targets()::Vector{String} =
+    String[p["dir"] for p in _kiwi_list_profiles()
+           if !p["isDefault"] && Cecelia.purge_claude_conversations_wanted(p["name"])]
+
+# Called by `api_app_shutdown` after the children are stopped, so Kiwi's own `claude` is gone first.
+# Synchronous — a delete is local disk, no CLI spawn. Returns how many were attempted.
+function claude_purge_on_quit!()::Int
+    dirs = _purge_on_quit_targets()
+    for d in dirs
+        ok, msg = Cecelia.purge_claude_conversations!(d)
+        ok || @warn "Quit: could not delete a profile's Claude conversations" dir = d message = msg
+    end
+    length(dirs)
+end
+
+# POST /api/kiwi/profiles/end-session {name} → {ok, purged} — the sidebar's Log out, after the Claude
+# logout. Deletes the profile's conversations when it wants that; otherwise a no-op (`purged = false`).
+# 409 when `claude` is still running under the profile, so Log out stays put and says why.
+function api_kiwi_profiles_end_session(body_bytes::Vector{UInt8})
+    name = _kiwi_body_name(body_bytes)
+    isempty(name) && return _MISSING_NAME
+    dir = _kiwi_claude_dir(name)   # validates the name; 404s a named profile not on disk
+    dir isa Tuple && return dir
+    Cecelia.purge_claude_conversations_wanted(name) ||
+        return 200, JSON3.write((; ok = true, purged = false))
+    ok, msg = Cecelia.purge_claude_conversations!(dir)
+    ok || return (Cecelia.claude_profile_in_use(dir) ? 409 : 500), JSON3.write((; ok = false, error = msg))
+    200, JSON3.write((; ok = true, purged = true))
 end
 
 # Retire a profile — write the sentinel marker so the picker grays it out and select rejects it.
@@ -287,6 +342,7 @@ end
 
 function api_kiwi_terminal_command(req::HTTP.Request)
     # `profile` query param names which profile the terminal one-liner is for; absent → active.
+    # `prompt` (optional) becomes the session's first message — Kiwi's Start in terminal.
     q = HTTP.queryparams(HTTP.URI(req.target))
     name = get(q, "profile", "")
     dir = _kiwi_claude_dir(name; must_exist = false)
@@ -294,7 +350,7 @@ function api_kiwi_terminal_command(req::HTTP.Request)
     200, JSON3.write((; ok = true,
                         profile = isempty(name) ? active_profile_name() : name,
                         profileDir = dir,
-                        command = kiwi_terminal_command(dir)))
+                        command = kiwi_terminal_command(dir; prompt = get(q, "prompt", ""))))
 end
 
 # A profile name → its `CLAUDE_CONFIG_DIR` (`""` for `default`), or an error response tuple. An empty

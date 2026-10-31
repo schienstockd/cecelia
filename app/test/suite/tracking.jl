@@ -194,6 +194,7 @@ function _diag_df(tracks::Vector{<:Pair})            # track_id => Vector of (t,
     DataFrame(label = lab, centroid_t = t, track_id = tid,
               centroid_x = x, centroid_y = y, centroid_z = z)
 end
+using Random: MersenneTwister
 const _DIAG_XY  = ["centroid_x", "centroid_y"]
 const _DIAG_XYZ = ["centroid_x", "centroid_y", "centroid_z"]
 
@@ -257,6 +258,88 @@ end
     @test persistence_lag([0.0, 1.0, 2.0], [1.0, ACOR_PERSIST_LEVEL, 0.0]) ≈ 1.0
     @test isnan(persistence_lag([0.0], [1.0]))
     @test_throws ArgumentError persistence_lag([0.0, 1.0], [1.0])
+end
+
+@testset "msd_furth_fit — recovers the model it fits, exactly" begin
+    # the curve IS the model (Fürth + Michalet offset), so M, P, σ must come back to solver precision
+    M, P, σ, N = 0.5, 3.0, 0.4, 2
+    lag = collect(1.0:20.0)
+    msd = [2N * M * (τ - P * (1 - exp(-τ / P))) + 2N * σ^2 for τ in lag]
+    f = msd_furth_fit(lag, msd, N)
+    @test f.ok
+    @test isapprox(f.M, M; rtol = 1e-4)
+    @test isapprox(f.P, P; rtol = 1e-3)
+    @test isapprox(f.sigma, σ; rtol = 1e-3)
+
+    # no noise floor: σ is clamped at 0, not driven negative
+    f0 = msd_furth_fit(lag, [2N * M * (τ - P * (1 - exp(-τ / P))) for τ in lag], N)
+    @test f0.ok && isapprox(f0.sigma, 0.0; atol = 1e-3) && isapprox(f0.P, P; rtol = 1e-3)
+end
+
+@testset "msd_furth_fit — a simulated persistent random walk with detection noise" begin
+    # Ornstein–Uhlenbeck velocity (Fürth's own model), integrated in 20 substeps per frame, then
+    # Gaussian position noise per axis. The fit sees only the battery's MSD of the sampled frames.
+    rng = MersenneTwister(20261031)
+    M, P, σ, sub = 1.0, 4.0, 0.3, 20
+    dt = 1.0 / sub
+    tracks = Pair{Int,Vector{NTuple{3,Float64}}}[]
+    for id in 1:300
+        v = randn(rng, 2) .* sqrt(M / P)          # stationary OU: per-axis variance D/P
+        x = zeros(2); pts = NTuple{3,Float64}[]
+        for t in 0:60
+            push!(pts, (Float64(t), x[1] + σ * randn(rng), x[2] + σ * randn(rng)))
+            for _ in 1:sub
+                v .+= (-v ./ P) .* dt .+ sqrt(2M * dt) / P .* randn(rng, 2)
+                x .+= v .* dt
+            end
+        end
+        push!(tracks, id => pts)
+    end
+    m = track_msd(_diag_df(tracks), _DIAG_XY; max_lag = 20)
+    f = msd_furth_fit(m.lag, m.msd, 2; weights = m.n)
+    @test f.ok
+    @test isapprox(f.M, M; rtol = 0.2)
+    @test isapprox(f.P, P; rtol = 0.3)
+    @test isapprox(f.sigma, σ; rtol = 0.3)
+end
+
+@testset "msd_furth_fit — too few lags, flat, ballistic" begin
+    @test !msd_furth_fit([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], 2).ok
+    @test !msd_furth_fit(collect(1.0:6.0), zeros(6), 2).ok
+    # perfectly straight: persistence longer than any window → P runs to the search edge, reported
+    lag = collect(1.0:10.0)
+    b = msd_furth_fit(lag, lag .^ 2, 2)
+    @test b.ok && b.P > 5 * maximum(lag)
+end
+
+@testset "track_duration_bias — short tracks fast is flagged, few tracks is not" begin
+    # track k lasts k frames and covers 10 µm whatever its length: shorter ⇒ faster, ρ = −1
+    mk(n) = _diag_df([k => [(Float64(t), 10.0 * t / k, 0.0) for t in 0:k] for k in 1:n])
+    b = track_duration_bias(mk(40), _DIAG_XY)
+    @test b.n == 40 && b.rho ≈ -1.0 && b.biased
+    # the SAME speed the user sees as live.track.speed (celltrackR `speed`), in frame units
+    ref = [Cecelia.track_speed(Cecelia.Track(k, Float64.(0:k), hcat(10.0 .* (0:k) ./ k, zeros(k + 1))))
+           for k in 1:40]
+    @test sort(b.speed) ≈ sort(ref)
+    @test !track_duration_bias(mk(Cecelia.DURATION_BIAS_MIN_TRACKS - 1), _DIAG_XY).biased
+    # constant speed whatever the length: no rank spread in speed → no ρ, no verdict
+    flat = _diag_df([k => [(Float64(t), Float64(t), 0.0) for t in 0:k] for k in 1:40])
+    c = track_duration_bias(flat, _DIAG_XY)
+    @test isnan(c.rho) && !c.biased
+
+    # and it reaches the QC findings through the one roll-up
+    keys = [f["key"] for f in track_diagnostic_findings(track_diagnostics(mk(40), _DIAG_XY))]
+    @test "tracking.duration_bias" in keys
+end
+
+@testset "track_order_index — aligned, opposed, and single-step frames dropped" begin
+    same = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)], 2 => [(0.0, 0.0, 5.0), (1.0, 2.0, 5.0)]])
+    o = track_order_index(same, _DIAG_XY)
+    @test o.t == [0.0] && o.phi ≈ [1.0] && o.n == [2]
+    opp = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)], 2 => [(0.0, 5.0, 5.0), (1.0, 4.0, 5.0)]])
+    @test track_order_index(opp, _DIAG_XY).phi ≈ [0.0]
+    lone = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]])
+    @test isempty(track_order_index(lone, _DIAG_XY).t)
 end
 
 @testset "plane_angle_profile — the geometry, and 2D has no plane" begin

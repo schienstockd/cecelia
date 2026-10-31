@@ -2051,7 +2051,7 @@ Do **not** hand-roll per-plot "…" text or an immediate spinner. **Small/embedd
 gate montage tiles (compact `GateScatterCell`, rendered by `GateMontage`) keep an unobtrusive dot, not a
 wheel per tile — gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel`, the
 full-size `GateScatterCell` (Gate page), and both flow plots (via `useFlowPlanes`, which owns the
-decision so the two cannot disagree); `UmapView` has its own empty-state wheel. New heavy plots: reuse
+decision so the two cannot disagree); `ClusterMapView` has its own empty-state wheel. New heavy plots: reuse
 these two primitives.
 
 **A slow plot should also say its content is STALE.** The flow plots dim the planes while a render is
@@ -2158,7 +2158,7 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
 - **Default ON** (`autoHide` prop, default `true`). The `#actions` (top) and `#footer` (bottom) slots
   render as absolute overlay strips over the body; a **pin** toggle (`pi-thumbtack`, next to the drag
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
-- **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
+- **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `ClusterMapView`
   `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
   panel in `state`, `ImageStripView` `.is-bar`, `FlowMetricsView` `.fmv-ctrl`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
@@ -2439,7 +2439,7 @@ button, plots auto-refresh off a **targeted, per-image version signal**:
   useDataRefresh(() => props.imageUids, load)   // refetch only when a task touches one of THESE images
   ```
   It watches `project.dataVersionFor(theirImages)` and calls the reload fn only when an image *that plot
-  shows* changed — never on unrelated tasks. Used by `useSummaryData`, `UmapView`, the cluster panels
+  shows* changed — never on unrelated tasks. Used by `useSummaryData`, `ClusterMapView`, the cluster panels
   (heatmap / HMM) and `GatingStrategyView`. **Do not** re-import the store and hand-weave a `dataVersion`
   watch in a new plot — call `useDataRefresh`.
 - Gated by the global **`autoRefreshOnTask`** setting (Preferences → Interface, on by default). Because
@@ -2594,6 +2594,8 @@ The whiteboard is the visual authoring tool for chain templates. It reads and wr
 
 The action row is **two `.cc-btn-group` strips** — chain-file actions (New / Rename / Delete) and canvas actions (Start dot / Tidy / Reload / Save). Seven free-floating icon buttons did not fit the 190px palette, and the grouping says which belong together. Two things made the last button in each strip sit visibly apart: Save carried `cc-btn-dense-save`, a class that exists nowhere (so it missed `.cc-btn-icon.cc-btn-dense`'s 1.25rem square and rendered full size), and `ConfirmDeleteButton` is the one group member that is not a `.cc-btn` — it keeps `.cc-del` because it owns its armed/danger states, and on its own that brings a radius, a transparent border and no background. `style.css` now composes `.cc-btn-group > button.cc-del` into the strip (element+class, so it outspecifies the component's scoped rule whatever order the sheets land in), squaring it only when it is icon-only so a labelled delete still sizes to its text. **A new group member that is not a `.cc-btn` needs the same treatment** — the group's joining rules key off `.cc-btn`.
 
+**Selection, framing.** The config panel follows Vue Flow's selection (the node highlight), never a `node-click` toggle — a click with any mouse travel is a drag to Vue Flow, so a click-driven panel diverged from the highlight. Every chain load fits the chain on screen, and the toolbar's **Fit** button (`pi-reset-view`) does the same after panning away. `applyTemplate` waits a tick between clearing and adding: node ids repeat across chains (`__start__` always), and a same-tick swap reuses the old element without re-measuring its handles, so edges drew from the node's corner.
+
 **Node positions and Tidy.** `positions` is whiteboard-only sidecar data, so a template authored elsewhere (the REPL, or Claude via the MCP `create_chain`) has none. `applyTemplate` then lays the DAG out via `layoutDag` (`utils/dagLayout.ts`) instead of stacking every node in one row, which hid a fan-out — and reviewing the graph is the whole safety model for an authored chain. Per-node fallback, so a partially-positioned file still places what it knows.
 
 **The start dot is laid out WITH the graph.** It is not a template node, so `layoutDag` never sees it — and its fallback position used to be a hardcoded constant. The two were then placed by unrelated mechanisms, and with `EDITOR_GRID.originY` at 120 against the dot's y of 40 an authored chain always opened with the dot parked in the corner and a long dashed swoop to the first task. It reads as *"the start node is not connected"* — the one thing a reviewer must be able to see at a glance — and it was wrong: the edge was there all along. `startDotPosition` (`utils/startDot.ts`) now places it one depth step left of its first target, on the same row. A persisted `positions['__start__']` still wins, so a dot the user moved stays put.
@@ -2664,11 +2666,39 @@ them from the run). By default it re-runs only failed / unfinished / params-chan
 that node **and everything downstream** even if `:done` — so it's obvious *where* a resume begins.
 The picked node (solid accent + "resume from" badge) and its descendants (`rerunNodeIds`, dashed
 accent) are highlighted; a ✕ clears the pick. Resume is disabled while the run is busy (`resumeBusy`
-— any node running/queued). A resumed run **merges** live status over the persisted snapshot
+— any node running/queued/waiting). A resumed run **merges** live status over the persisted snapshot
 (`selectedRunTasks`), so skipped `:done` nodes stay on the graph while the re-run section updates
 live, rather than the graph collapsing to only the re-run nodes.
 
-The tab badge shows the count of currently-running nodes.
+**Manual steps** (`docs/SCHEDULER.md` → *Manual steps*): a node parked for the user shows `waiting`
+(amber, `pi-pause`) with a **Continue** button on the node, tooltip = the spec's `manual.prompt`, and
+an **Open** button when the spec's `manual.open` names a page (label + icon from that page's nav item,
+`navItemFor`): it selects the image in that page's per-module selection and navigates there. On an
+image-scope step it continues that image; on a set-scope step, the whole set. The toolbar adds
+**Continue N** while anything waits (`continueAll`). Both send `chain:continue` (`utils/chainManual.ts`);
+a refused continue (the step's check failed) is logged as a warning naming the image and the reason, and
+the node stays waiting. A waiting row in the Task Manager can be cancelled like any chain row. On the
+Edit canvas a manual step carries a `pi-pause` mark, and its Scope select has no *incremental*.
+
+The tab badge shows the count of steps waiting for you, else of currently-running nodes.
+
+**Chain from history** (`pi-history` beside *Create*; `ChainFromHistoryModal.vue`, logic in
+`utils/chainFromHistory.ts`): select a set (starts on the Run panel's) and exemplar images in it →
+**Suggest** (`GET /api/chains/suggest`). The suggestion is shown as **Steps**, one row per task
+(`groupSteps`): a step with one version is a toggle; a step whose versions are alternatives (two region
+clusterings) is a select — newest preselected, or *Leave out*; a step whose versions are a real fork
+(`multi`: each writes a label set, or runs per population — segmentations, tracking frags/cells) is a
+checkbox per version, all kept by default (`defaultKeep`). Every change re-suggests with `keep`. Then a
+value per param the exemplars disagree on, *Reuse trained models*, one line each for gate steps and
+reused models, and the runs not repeated folded per reason under a collapsed **Left out (N)**
+(`groupLeftOut`). **Open in whiteboard** creates the chain and saves it if it validates; the name
+defaults to one no chain has (`uniqueChainName`), and a name that exists blocks Open with a note — it
+never overwrites a chain.
+
+**Pre-flight on Run**: Run first posts `/api/chains/preflight` (`utils/chainPreflight.ts` groups the
+answer per image, failures first). Nothing found → the run starts as before; anything found → a
+*Before this run* dialog lists it (`InlineNote` per problem) with **Cancel** / **Run anyway**. A failed
+pre-flight request never blocks a run.
 
 ### Node types
 
@@ -2677,7 +2707,7 @@ The tab badge shows the count of currently-running nodes.
 | `"task"` | `"image"` or `"incremental"` | Purple accent border, solid (image) or dashed (incremental) |
 | `"picnic"` | `"set"` | Amber/orange border, ◆ badge, barrier policy shown |
 | `"start"` | (not a task) | UML initial node — a filled dot; drag + link to the first task(s). Moveable, source-only |
-| `"live"` | (live view only) | Status-colored header bar; grey=queued, blue=running, green=done, red=failed, grey=cancelled |
+| `"live"` | (live view only) | Status-colored header bar; grey=queued, blue=running, amber=waiting (+ Continue), green=done, red=failed, grey=cancelled |
 
 Custom node components: `ChainTaskNode.vue`, `ChainStartNode.vue`, `ChainPicnicNode.vue`, `ChainLiveNode.vue`.
 
@@ -2934,8 +2964,8 @@ Two plot families share the canvas shell; the distinction matters for where a ne
 - **Interactive** — client-side 2D-canvas point clouds with per-point interaction, each with its own
   data endpoint + rendering. Gating scatter, **UMAP**. These can't be a single generic renderer, so
   they live in a **registry** of self-contained view components:
-  **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { umap: { label, component } }`.
-  A view (e.g. **`components/plots/UmapView.vue`**) fetches + renders + owns its controls; the generic
+  **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { clusterMap: { label, component } }`.
+  A view (e.g. **`components/plots/ClusterMapView.vue`**) fetches + renders + owns its controls; the generic
   **`components/canvas/InteractivePanel.vue`** wraps any view in `CanvasPanel` and spreads the plot
   `context` (project/images/popType/suffix) + the panel's persisted `state` onto it. **Adding an
   interactive plot = one `XView.vue` + one registry line** — no panel/canvas changes. (Shared infra,

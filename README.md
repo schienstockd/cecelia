@@ -15,6 +15,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 > workflow works, per-subsystem validation, and sources:
 > [How this software was built](#how-this-software-was-built).
 
+- **New to Cecelia:** [`user-docs/`](user-docs/README.md) — what each part is for and what you need on day one
 - **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **FAQ (why it's built this way):** [`FAQ.md`](FAQ.md)
 
 ---
@@ -192,6 +193,7 @@ Running from source with hot-reload (`pixi run dev`) is covered in [`docs/DEV.md
 | `pixi run bootstrap-worktree <name>` | New git worktree, ready to run (own env, `.env`, `npm ci`) |
 | `pixi run prune-worktrees` | Lists worktrees safe to remove; `--remove` removes them |
 | `pixi run console` | Live view of the task scheduler: running, queued, finished, per-pool load (see [*Monitoring tasks*](#monitoring-tasks-terminal-console) above) |
+| `pixi run chat [<projectUid>]` | Cecelia with no GUI — Claude in the terminal is the front end. Uses your running server, or starts one and stops it when Claude exits (see [`docs/INSTALL.md`](docs/INSTALL.md) → *Without the GUI*) |
 | `pixi run agents` | One row per live Claude Code session: state, context fill, branch, PR + CI; → shows each session's recap and recital findings |
 | `pixi run recital` | Runs the pre-commit reviewers on the current diff |
 | `pixi run recital-console` | Live view of reviewer runs and findings, with the agents pane on top |
@@ -254,7 +256,7 @@ or not judged yet. Where the findings went so far:
 
 <p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/findings-flow.svg" alt="Where the reviewers' findings went since logging began, redrawn by the weekly judge, each column to its own scale. Recital: findings fixed in the commit, not fixed, and untagged plausible notes. Below it, the steps from the unfixed notes to the bug check's bugs: wrong-home notes feed only the rule count; notes already gone when the judge first read them aren't listed; notes logged since the last pass wait for the next; notes on one function merge into one bug; errors from unattended agent runs are added. Bug check: bugs already gone or not a bug, waiting, or sent to a verify agent. Verify agent: not a bug, parked as not live yet, not checked yet, or real. Real bugs: fixed, open with a GitHub issue, open and not filed yet, or won't fix. The counts are in effectiveness.json on the judge-assets branch." width="100%"></p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Weekly chart of the agents' pre-commit reviews since logging began on 27 September 2026: five panels: changes reviewed and PRs merged per week; findings per 100 changes and the share fixed before commit, for each of the two reviewers (fan-out audit and convention check); and, per reviewer, stacked bars of the weekly judge's verdicts on the notes nobody fixed (fan-out: real bug, gone, not a bug; convention: duplicate still there, gone, not a bug), hollow under 10 notes. Early data: under four weeks the points are dots with their values, not joined; no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/schienstockd/cecelia/judge-assets/effectiveness.svg" alt="Chart of the agents' pre-commit reviews since logging began on 27 September 2026, six panels: changes reviewed and PRs merged per week; the share of findings fixed before commit per week, for each of the two reviewers (fan-out audit and convention check); at each weekly judge pass, the real bugs still open stacked by how long since they were flagged (under 1 week, 1 to 2 weeks, over 2 weeks), with how many that pass found fixed; the judge's tokens per pass by stage (verify, sweep, rules); the median wait for each reviewer per week; and the reviewers' own tokens per week once a whole week is logged. A hollow point with an asterisk is a week still running or under 10 sessions. Early data: no trend fitted; the numbers are in the image description and in effectiveness.json on the judge-assets branch." width="100%"></p>
 
 Both charts are redrawn by the weekly judge. What they count and what they can't tell you:
 [`docs/ai-assist/AGENT_RECORD.md`](docs/ai-assist/AGENT_RECORD.md).

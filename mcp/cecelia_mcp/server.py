@@ -1,12 +1,13 @@
 """Cecelia MCP observer server.
 
 Exposes the running Cecelia project to Claude over stdio: project state, images, task logs, QC, and
-the lab log — plus a small set of additive writes (lab-log append, notebooks, and a chain TEMPLATE).
+the lab log — plus a small set of additive writes (lab-log append, notebooks, a chain TEMPLATE, an
+Analysis board, one proposed gate).
 No destructive mutation is possible; the enforced allow-list lives in
 ``cecelia_mcp.client.ALLOWED_ROUTES``.
 
 Note the split that shapes this server: Claude can DESIGN work but never START it. ``create_chain``
-authors a pipeline the user then runs from the whiteboard; there is no run/submit tool, because
+authors a pipeline the user then runs from the Chains page; there is no run/submit tool, because
 launching is a WebSocket message and this server speaks only HTTP.
 
 The server also carries its own briefing — ``cecelia_mcp.guidance``. ``SERVER_INSTRUCTIONS`` goes out
@@ -29,16 +30,18 @@ import functools
 import json
 import os
 
-from mcp.server.mcpserver import Image, MCPServer
+from mcp.server.mcpserver import Image
 from mcp.server.mcpserver.exceptions import ToolError
 
 from cecelia.utils import loopback
+from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.discovery import discovery_enabled
-from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, with_doc
+from cecelia_mcp.gating_views import register_gating_tools, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
+from cecelia_mcp.no_gui import no_gui_enabled
 from cecelia_mcp.monitor import SessionMonitor
 from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
@@ -58,7 +61,7 @@ _monitor = SessionMonitor()
 # is what makes "check my project in cecelia" enough on its own — the assistant knows to resolve the
 # project and pull the briefing without the user pasting a prompt. Kept short on purpose; the long
 # form is delivered by get_session_briefing. See cecelia_mcp/guidance.py for the split and its budget.
-mcp = MCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
+mcp = CallerMCPServer("cecelia-observer", instructions=SERVER_INSTRUCTIONS)
 
 
 # ── Discovery toggle (TASK_DISCOVERY_PLAN Decision 9) ────────────────────────────────────────────
@@ -138,6 +141,11 @@ def _tool_if(enabled: bool):
     """`@_tool`, registered only when `enabled`. For a tool an experiment arm must not see at all — not
     see fail (the `--discovery off` guide-run arm; TASK_DISCOVERY_PLAN Decision 9)."""
     return _tool if enabled else (lambda fn: fn)
+
+
+# A tool that reads or drives the GUI (the viewer, a mounted plot, a capture, the push pairing): not
+# registered in no-GUI mode, where there is no GUI for it to reach (no_gui.py).
+_gui_tool = _tool_if(not no_gui_enabled())
 
 
 def _noting_repairs(out, repaired: list[str]):
@@ -296,16 +304,32 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
-@_tool
-def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
-    """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run."""
-    r = _client.get_task_log(project_uid, image_uid, fun)
-    return _strip_discovery_log(r.get("content", "")) if r.get("exists") else ""
+# Observed task logs run to ~19 KB today; the cap keeps a log that keeps growing from crowding out
+# the rest of a session.
+_TASK_LOG_MAX_BYTES = 20_000
 
 
 @_tool
-def get_task_history(project_uid: str, limit: int = 100) -> list:
-    """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
+def get_task_log(project_uid: str, image_uid: str, fun: str, max_bytes: int = _TASK_LOG_MAX_BYTES) -> str:
+    """Raw log text for one task function (e.g. "segment.cellpose") on one image; '' if never run.
+    The log is cumulative — every run of that fun on that image appends to it — so only the last
+    `max_bytes` come back, newest at the end. When it was cut, the first line says how much was left
+    out; pass `max_bytes=0` for the whole log."""
+    r = _client.get_task_log(project_uid, image_uid, fun, max_bytes)
+    if not r.get("exists"):
+        return ""
+    text = _strip_discovery_log(r.get("content", ""))
+    if r.get("truncated"):
+        text = (f"[showing the last {r.get('bytes')} of {r.get('totalBytes')} bytes — "
+                f"pass max_bytes=0 for the whole log]\n" + text)
+    return text
+
+
+@_tool
+def get_task_history(project_uid: str, limit: int = 100) -> dict:
+    """Recent task runs across all images, newest first: `{count, total, truncated, history}`.
+    `truncated: true` means `limit` cut the list — `total` runs exist, raise `limit` to see older
+    ones. Each `history` row: `imageUid`, `imageName`, `fun`,
     `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
     outcome — and **`params`**, the params that run used (the tuning trail; `{}` on older runs). Pair
     `params` with get_module_params + get_cohort_qc to suggest a param adjustment on an outlier: what
@@ -327,7 +351,8 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
     to catch repeated failures** — a failed task leaves little other trace, and the live-pattern
     detector (`poll_observations`) starts empty each run, so it won't have older failures. Cross-check
     `get_task_log` / `get_recent_logs` for the actual error before surfacing."""
-    return _client.get_task_history(project_uid, limit).get("history", [])
+    r = _client.get_task_history(project_uid, limit)
+    return {k: r.get(k) for k in ("count", "total", "truncated", "history")}
 
 
 @_tool
@@ -343,7 +368,7 @@ def get_module_params(category: str = "", fun_name: str = "") -> dict:
 
     **A `group` or `section` param NESTS its real knobs under its own `params`** — cellpose's diameter and
     channel assignment live inside its `models` group, not at the top level. When you set one, send it
-    nested the same way (`{"models": {"cellDiameter": 30}}`); that is how the whiteboard stores it and how
+    nested the same way (`{"models": {"cellDiameter": 30}}`); that is how the Chains page stores it and how
     the task reads it. Read the LABEL as well as the key: a unit usually lives there (`cellDiameter` is
     labelled "Cell diameter (µm)", so its default of 10 is 10 µm, not 10 px).
 
@@ -432,10 +457,12 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
       - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
       - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
-      - clustering plots "umap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
+      - clustering plots "clusterMap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
         "cellCards" (track clustering only) {suffix, popType?: clust|trackclust} — `suffix` is the run
         (get_cluster_summary). ONE run per board: a second suffix needs a second board. Here popType
         names the clustering family and IS a field (trackOnly views default to "trackclust").
+        "clusterMap" also takes `basis: umap|diffmap`: diffmap lays a TRACK run out on its two named
+        diffusion axes instead of the UMAP.
     `template` is "<cols>x<rows>" (e.g. "2x2"); omitted picks a grid that fits. The comic plates are
     GUI-only. Grid areas, styling and captions are the user's — you choose which plots, in what order.
 
@@ -531,7 +558,7 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
         - `segmentations`: the label-set value_names; `tracked`: those with a per-track table.
         - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
         - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
-      - `chains`: wired whiteboard templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
+      - `chains`: wired chain templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
       - `boards`: analysis-board tab NAMES (best-effort). For what each board actually plots, use
         get_analysis_boards — this is the cheap name-only view.
       - `rollup`: `{pipeline, divergences}` — the common stage sequence across images, and which images
@@ -562,20 +589,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     return _client.get_populations(project_uid, image_uid or None, set_uid or None)
 
 
-@_tool
-@with_doc(GATE_PLOT_DOC)
-def gate_plot(project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-              transform: dict | None = None, pop: str = "root") -> list:
-    png, meta = _client.gate_plot(project_uid, image_uid, value_name, x, y, transform, pop)
-    return [Image(data=png, format="png"), meta]
-
-
-@_tool
-@with_doc(GATE_CELLS_VIEW_DOC)
-def gate_cells_view(project_uid: str, image_uid: str, value_name: str, pop: str, t: int = -1,
-                    channels: list[int] | None = None, image_version: str = "") -> list:
-    png, meta = _client.gate_cells_view(project_uid, image_uid, value_name, pop, t, channels, image_version)
-    return [Image(data=png, format="png"), meta]
+# The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
+# set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# Writes change only what Claude drew (the server checks `createdBy`).
+globals().update(register_gating_tools(_tool, _client))
 
 
 @_tool
@@ -711,7 +728,7 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
 
 @_tool
 def get_chains(project_uid: str) -> dict:
-    """The project's whiteboard CHAINS — the wired analysis pipelines and their runs. Use this to see the
+    """The project's CHAINS (the Chains page) — the wired analysis pipelines and their runs. Use this to see the
     INTENDED pipeline (which task feeds which) and which chains were actually executed — the run log is a
     recent capped window, so a pipeline that ran earlier may have no dated steps, but its chain is here.
 
@@ -724,6 +741,37 @@ def get_chains(project_uid: str) -> dict:
         is a pipeline that broke partway — cross-check get_task_log.
     Project-level (no image/set scope). Reads current on-disk state."""
     return _client.get_chains(project_uid)
+
+
+@_tool
+def suggest_chain(project_uid: str, image_uids: list[str], keep: list[str] | None = None,
+                  retrain: bool = False) -> dict:
+    """A chain template built MECHANICALLY from what already ran on `image_uids` (the exemplars) — the
+    same answer as the whiteboard's "From history…" dialog. Use it when the user wants the rest of
+    their images processed "the same way": start from this, not from your own reading of the history.
+
+    It takes the latest successful run of each step, wires steps by the names they read and write,
+    reuses trained models, and inserts a `gate.manual_gate` step wherever a gated population is read
+    (gating can't be automated — the run waits there for the user).
+
+    Returns:
+      - `template` — `{name, nodes: [{id, fn, scope, params, …}], edges, startTargets}`
+      - `finalOutputs` — `[{id, fn, output, kept}]`: the end results. An exemplar's abandoned experiment
+        looks the same as a kept result, so ASK which to keep; pass their ids as `keep` to rebuild.
+      - `conflicts` — `[{nodeId, param, values: {imageUid: value}}]`: the exemplars used different
+        values. The template holds the latest; never pick for the user — show the values and ask.
+      - `notReplayed` (left out, with why), `reusedModels`, `gateSteps`, `valid` + `error`.
+
+    Follow the SAME steps as the dialog, so a chain you build and one the user builds there are
+    comparable: exemplars → this tool → ask which `finalOutputs` to keep (rebuild with `keep`) → ask
+    each conflict → create_chain with the template's nodes/edges as returned. Your part on top, all
+    optional: explain the chain in plain language; flag a param that looks tuned to one image (a
+    threshold, a diameter) or a conflict where one exemplar is the odd one out; propose a name.
+
+    If you change ANYTHING relative to the suggestion — a node added or dropped, a param, an edge —
+    list every change and why when you hand it over. An unlisted difference makes the two paths
+    incomparable. Read-only; nothing here runs anything."""
+    return _client.suggest_chain(project_uid, image_uids, keep, retrain)
 
 
 _BRIEFING_OPEN_ENTRIES_MAX = 8    # Decision 5 — briefing carries up to this many open blackboard entries
@@ -1614,11 +1662,12 @@ def revise_notebook(project_uid: str, file: str, cells: list[str], description: 
 @_tool
 def create_chain(project_uid: str, name: str, nodes: list, edges: list,
                  start_targets: list | None = None) -> dict:
-    """DESIGN a whiteboard chain — the wired pipeline for a project. You author it; **you cannot run
-    it**. There is no run tool: starting a chain is the user's act, in the Chains whiteboard. Say so
-    when you're done ("it's in the Chains whiteboard — have a look and press Run when it looks right"),
-    and never imply it has started. (Exception: an unattended session that also has the separate
-    cecelia-autonomous server starts it with that server's run_chain.)
+    """DESIGN a chain — the wired pipeline for a project. You author it; **you cannot run
+    it**. There is no run tool: starting a chain is the user's act, on the Chains page. Say so
+    when you're done ("it's on the Chains page — have a look and press Run when it looks right"),
+    and never imply it has started. (Exception: a session that also has the separate
+    cecelia-autonomous server — an unattended run, or one with no GUI — starts it with that server's
+    run_chain; with no GUI, once the user says so.)
 
     `name` — letters, numbers, spaces, `.` `_` `-`; max 64 characters. Anything else (`+`, `(…)`, `/`)
     is REPAIRED to spaces, not refused: the reply's `name` is the name it was stored under, and
@@ -1636,11 +1685,13 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
         behaviour.hmm or clustTracks.cluster becomes a picnic node on its own.
       - `resource_pool` — omit unless you mean it (cpu / gpu / io / hpc); the task spec knows.
     `edges` = `[{from, to}]` — node id → node id, i.e. "to runs after from". Leave `start_targets`
-    unset: the server fills it with the chain's roots, which is what makes the whiteboard's start dot
+    unset: the server fills it with the chain's roots, which is what makes the Chains page's start dot
     appear. Pass it only to start a run PART-WAY in (then only that node and its descendants run).
 
     BEFORE you call this, resolve what is resolvable — a chain built without these is a guess, and the
     guesses land on the user:
+      0. "Do the rest the same way"? suggest_chain first — it builds the template from what ran on their
+         exemplar images; your job is then the review, not the reconstruction.
       1. get_chains — the pipelines they already wired. Match their conventions and their task choices.
       2. get_analysis_lineage — what actually ran on these images, in order, and the `value_name`s it
          wrote. This is how you get the pipeline they really use (e.g. denoise BEFORE drift correction)
@@ -1669,7 +1720,7 @@ def create_chain(project_uid: str, name: str, nodes: list, edges: list,
     return _client.create_chain(project_uid, name, nodes, edges, start_targets)
 
 
-@_tool
+@_gui_tool
 def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: list[int],
                 focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a set of TRACKS on the user's viewer — your "look at THESE tracks" pointer.
@@ -1694,7 +1745,7 @@ def mark_tracks(project_uid: str, image_uid: str, value_name: str, track_ids: li
     return _client.mark_tracks(project_uid, image_uid, value_name, track_ids, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: list[int],
                focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Outline a set of CELLS on the user's viewer — your "look at THESE cells" pointer.
@@ -1713,7 +1764,7 @@ def mark_cells(project_uid: str, image_uid: str, value_name: str, label_ids: lis
     return _client.mark_cells(project_uid, image_uid, value_name, label_ids, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def select_on_plot(project_uid: str, kind: str, sources: list[dict],
                    focus_id: int | None = None, label: str = "", ttl_s: int = 300) -> dict:
     """Highlight a MULTI-SOURCE set of tracks or cells — the reverse of a user's plot brush.
@@ -1748,7 +1799,7 @@ def select_on_plot(project_uid: str, kind: str, sources: list[dict],
     return _client.select_on_plot(project_uid, kind, sources, focus_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300) -> dict:
     """Point at a UI CONTROL on the user's screen — your "click here" pointer.
 
@@ -1770,7 +1821,7 @@ def point_at_ui(project_uid: str, anchor: str, label: str = "", ttl_s: int = 300
     return _client.mark_ui(project_uid, anchor, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def mark_freeform(project_uid: str, capture_id: str, overlay: list,
                   label: str = "", ttl_s: int = 300) -> dict:
     """Draw a FREEFORM overlay on a stored CAPTURE — your "look right HERE" pointer.
@@ -1796,7 +1847,7 @@ def mark_freeform(project_uid: str, capture_id: str, overlay: list,
     return _client.mark_freeform(project_uid, capture_id, overlay, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def list_plots(project_uid: str) -> list[dict]:
     """Every plot panel currently MOUNTED in the user's browser for this project — call this
     BEFORE `mark_plot` when the user says "the UMAP" / "that heatmap" and you don't already have
@@ -1823,7 +1874,7 @@ def list_plots(project_uid: str) -> list[dict]:
     return _client.list_plots(project_uid)
 
 
-@_tool
+@_gui_tool
 def mark_plot(project_uid: str, family: str, plot_id: str,
               u: float, v: float,
               cell: str = "", label: str = "", ttl_s: int = 300) -> dict:
@@ -1836,7 +1887,7 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     `family` is the plot family:
       `gate-scatter` — flow-cytometry gating scatter tile (single-cell).
       `pairs-matrix` / `gating-strategy` — a tile in a gating montage (`cell="<pane-key>"`).
-      `umap`         — UMAP / cluster embedding. Faceted: address a facet with `cell="<facet-label>"`.
+      `cluster-map`  — cluster map (UMAP embedding). Faceted: address a facet with `cell="<facet-label>"`.
       `heatmap`      — cluster heatmap (Observable Plot; the pointer lands on the axis rect).
       `hmm-states` / `hmm-transitions` — HMM behaviour plot's axis rect.
       `summary`      — summary panel (histogram, boxplot, violin, …) via PlotChart's axis rect.
@@ -1858,7 +1909,7 @@ def mark_plot(project_uid: str, family: str, plot_id: str,
     return _client.mark_plot(project_uid, family, plot_id, u, v, cell, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
                              measure: str = "", pop: str = "") -> dict:
     """Open an Analysis board that contains a specific plot — your "pull up the UMAP" pointer
@@ -1910,7 +1961,7 @@ def open_analysis_board_plot(project_uid: str, plot_spec_id: str,
     return {"ok": True, "board": board_name}
 
 
-@_tool
+@_gui_tool
 def seek_viewer(project_uid: str, image_uid: str,
                 t: int | None = None, z: int | None = None) -> dict:
     """Move the user's VIEWER to a specific frame — your "look at t=40" imperative when you want
@@ -1938,7 +1989,7 @@ def seek_viewer(project_uid: str, image_uid: str,
     return _client.seek_viewer(project_uid, image_uid, t, z)
 
 
-@_tool
+@_gui_tool
 def mark_tile(project_uid: str, image_uid: str, cell_id: str,
               label: str = "", ttl_s: int = 300) -> dict:
     """Highlight ONE landscape/grid TILE on the viewer — your "look at THIS region" pointer when
@@ -1956,7 +2007,7 @@ def mark_tile(project_uid: str, image_uid: str, cell_id: str,
     return _client.mark_tile(project_uid, image_uid, cell_id, label, ttl_s)
 
 
-@_tool
+@_gui_tool
 def get_landscape(project_uid: str, image_uid: str) -> dict:
     """The LANDSCAPE of what the user's viewer shows RIGHT NOW — tile-level map + measured data.
 
@@ -1976,7 +2027,7 @@ def get_landscape(project_uid: str, image_uid: str) -> dict:
     return slim_landscape_for_mcp(_client.get_landscape(project_uid, image_uid))
 
 
-@_tool
+@_gui_tool
 def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     """What the user has SHARED with you from their viewer — the "look at this" surface (BIDIR).
 
@@ -1997,7 +2048,7 @@ def get_recent_captures(project_uid: str, limit: int = 10) -> list:
     return _client.get_recent_captures(project_uid, limit).get("items", [])
 
 
-@_tool
+@_gui_tool
 def get_capture(project_uid: str, capture_id: str) -> list:
     """The full envelope of ONE capture — the pixels the user shared PLUS what they drew on top.
 
@@ -2038,6 +2089,8 @@ def get_capture(project_uid: str, capture_id: str) -> list:
           • `tiles[i].channels = {<channelName>: {mean, snr}}` — per-channel mean + SNR from
             the raw multi-channel plane, untangling the colour-blend. A yellow tile might read
             "high mean on Tcells, low mean on SHG" even when its category is `bright-textured`.
+            `mean` is in [0, 1] of the channel's fixed display range (`sourceRun.channels.range`),
+            so it does not shift when something bright enters elsewhere in the view.
           • `tiles[i].segCount` — how many segmented objects have a centroid inside this tile
             at the shown t. The "5 vs 12 cells" answer a downsampled composite can't give.
           • `tiles[i].pops = [{path, name, count, layer}]` — which populations occupy this tile at
@@ -2065,9 +2118,13 @@ def get_capture(project_uid: str, capture_id: str) -> list:
       • `sourceRun.pops     = [{valueName, popType, gatingMtime}]` — one per pop layer counted, with
         its gating file's on-disk mtime (older captures: a single object)
       • `sourceRun.tracks   = {valueName, labelsVersion}`
-      • `sourceRun.channels = {valueName, imageVersion, level}` — pyramid level actually read
+      • `sourceRun.channels = {valueName, imageVersion, level, range, rangeSource}` — pyramid
+        level read; `range = {<channelName>: [lo, hi]}` the window each mean is normalised by,
+        `rangeSource` `viewer` (saved contrast) or `sampled` (older captures: no range, and means
+        normalised per frame — not comparable)
     Use these to answer "which run produced this number", or to compare two capture envelopes
-    and see whether the underlying gating map / re-tracked h5ad moved between shares.
+    and see whether the underlying gating map / re-tracked h5ad moved between shares. Channel
+    means compare across captures only where `range` matches.
 
     A v2 landscape also carries `viewport` describing how the compute reduced Z, so a tile's
     counts and channel stats read consistently with the viewer that produced them:
@@ -2135,7 +2192,7 @@ def get_capture(project_uid: str, capture_id: str) -> list:
     return blocks
 
 
-@_tool
+@_gui_tool
 def get_capture_landscape_tiles(project_uid: str, capture_id: str,
                                 tile_ids: list[str] | None = None,
                                 bbox: list[float] | None = None) -> dict:
@@ -2172,7 +2229,7 @@ def get_capture_landscape_tiles(project_uid: str, capture_id: str,
     return {"captureId": capture_id, "landscape": slim.get("landscape") or {"tiles": []}}
 
 
-@_tool
+@_gui_tool
 def register_push_target(project_uid: str, session_label: str = "") -> dict:
     """Pair THIS Claude Code session with a Cecelia project for cross-session push (BIDIR Part 5).
 
@@ -2252,7 +2309,7 @@ def get_recent_logs(level: str = "", source: str = "", limit: int = 100) -> list
     return logs[-limit:] if limit and limit > 0 else logs
 
 
-@_tool
+@_gui_tool
 def poll_observations(project_uid: str) -> dict:
     """Drain the observer's pending observations since the last poll — the "sit next to me" signal.
 
@@ -2283,7 +2340,7 @@ def poll_observations(project_uid: str) -> dict:
     return {"observations": observations, "stats": _monitor.stats()}
 
 
-@_tool
+@_gui_tool
 def set_observer_active(active: bool) -> dict:
     """Turn the live observer on or off (the off switch, per OBSERVER.md §6).
 
@@ -2295,7 +2352,7 @@ def set_observer_active(active: bool) -> dict:
     return _monitor.stats()
 
 
-@_tool
+@_gui_tool
 def get_observer_stats() -> dict:
     """The observer's running per-session state without draining anything: whether it's `enabled`,
     how many observations were `surfacedCount` (vs the `surfaceCap`), whether it's `throttled`, and a

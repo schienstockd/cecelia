@@ -14,7 +14,8 @@ verdict, as on any section.
 
 With no transcript it records the Claude Code session it runs under — so "record this co-drive" at
 the end of a session is Claude running it (`.claude/skills/codrive-record/SKILL.md`).
-`--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing.
+`--dry-run DIR` writes entry.md + the pictures to DIR and posts nothing. Recording the same session
+(over the same window) again revises its entry — the session has grown since — rather than adding one.
 """
 from __future__ import annotations
 
@@ -43,6 +44,14 @@ POINT_TOOLS = {"mark_cells", "mark_tracks", "mark_tile", "mark_freeform", "mark_
 # a run's actions (cecelia-autonomous) plus the observer's other additive writes
 WRITE_TOOLS = run_record.ACTIONS | {"set_blackboard_status", "set_blackboard_outcome", "set_blackboard_section_outcome",
                                     "set_notebook_description", "create_chain", "set_labarchives_context"}
+
+
+def _wrote(call: dict) -> bool:
+    """A call that changed the project — a gate tool's `dry_run` preview did not (`run_record.is_action`)."""
+    name = call["name"]
+    return (name in WRITE_TOOLS and name not in run_record.ACTIONS) or run_record.is_action(name, call["input"])
+
+
 FIX_RE = re.compile(r"(?<![\w#])#fix\b", re.IGNORECASE)
 SHARED_RE = re.compile(r"\[cecelia\] shared capture (cap-[0-9T]+-[0-9a-f]+) from project (\w+)")
 _REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
@@ -53,9 +62,16 @@ USER_MAX, SAID_MAX = 1500, 1200
 # ── transcript → events ──────────────────────────────────────────────────────────────────────────
 
 def _split_tool(name: str) -> tuple[str, str]:
-    """`mcp__cecelia-observer__get_capture` → ("cecelia-observer", "get_capture"); built-ins → ("", name)."""
+    """`mcp__cecelia-observer__get_capture` → ("cecelia-observer", "get_capture"); built-ins → ("", name).
+    A plugin's server is `plugin_<plugin>_<server>` (`mcp__plugin_cecelia_cecelia-observer__…`, the
+    terminal plugin's naming) → the bare server name, so both namings read as one server."""
     parts = name.split("__")
-    return (parts[1], parts[-1]) if len(parts) >= 3 and parts[0] == "mcp" else ("", name)
+    if len(parts) < 3 or parts[0] != "mcp":
+        return ("", name)
+    server = parts[1]
+    if server.startswith("plugin_") and server.count("_") >= 2:
+        server = server.split("_", 2)[2]
+    return (server, parts[-1])
 
 
 def events(path: str) -> list[dict]:
@@ -245,9 +261,9 @@ def render(meta: dict, secs: list[dict], caps: dict) -> str:
         lines.append(heading(s))
         if s["you"]:
             lines += ["- **You:**", run_record._quote(run_record._short(s["you"], USER_MAX))]
-        groups = (("Looked at", lambda c: c["name"] not in POINT_TOOLS | WRITE_TOOLS),
+        groups = (("Looked at", lambda c: c["name"] not in POINT_TOOLS and not _wrote(c)),
                   ("Pointed at", lambda c: c["name"] in POINT_TOOLS),
-                  ("Wrote", lambda c: c["name"] in WRITE_TOOLS))
+                  ("Wrote", _wrote))
         ok = [c for c in s["calls"] if not c["isError"]]
         for label, keep in groups:
             got = [_call_text(c) for c in ok if keep(c)]
@@ -349,12 +365,17 @@ def write(path: pathlib.Path, api: str | None, dry_run: pathlib.Path | None, pro
             f.write(f"# {title}\n\n{content}")
         write_json_atomic(dry_run / "record.json", local, indent=2)
         return {**out, "dryRun": str(dry_run)}
-    r = run_record._post(api, "/api/blackboard/create", {"projectUid": meta["projectUid"], "title": title,
-                                                         "content": content, "attachments": attach})
     records = records or state_dir() / "codrive"      # beside the effectiveness log (Decision 9)
+    record = records / f"{meta['sessionId']}.json"
+    # recorded before over the same window: update that entry (the session has grown since)
+    window = {"since": since, "until": until}
+    before = json.loads(record.read_text(encoding="utf-8")) if record.exists() else {}
+    prior = before.get("entryId") if before.get("window", {"since": None, "until": None}) == window else None
+    saved = run_record.save_entry(api, meta["projectUid"], prior,
+                                  {"title": title, "content": content, "attachments": attach})
     records.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(records / f"{meta['sessionId']}.json", {**local, "entryId": r.get("entryId")}, indent=2)
-    return {**out, "entryId": r.get("entryId")}
+    write_json_atomic(record, {**local, "window": window, "entryId": saved["entryId"]}, indent=2)
+    return {**out, **saved}
 
 
 def main(argv=None) -> int:

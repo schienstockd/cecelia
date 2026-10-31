@@ -72,7 +72,7 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: 'Pipeline',
     items: [
       { to: '/tasks',    label: 'Tasks',      icon: 'pi-list-check', tip: 'View and manage all running and completed analysis tasks.' },
-      { to: '/chain',    label: 'Whiteboard', icon: 'pi-cog',        tip: 'Visual chain editor — drag tasks, connect nodes, build pipelines.', requiresProject: true },
+      { to: '/chain',    label: 'Chains', icon: 'pi-cog',        tip: 'Wire tasks into a chain and run it over a set.', requiresProject: true },
     ],
   },
 ]
@@ -112,11 +112,16 @@ export function navGroupFor(groups: NavGroup[], path: string): string | null {
   return null
 }
 
-/** A page's menu label, for messages that must name a page rather than show a raw path. */
-export function navLabelFor(groups: NavGroup[], path: string): string {
+/** The menu item for exactly `path` (its label + icon), or null — for a button that sends you there. */
+export function navItemFor(groups: NavGroup[], path: string): NavItem | null {
   for (const g of groups) {
     const hit = g.items.find(i => i.to === path)
-    if (hit) return hit.label
+    if (hit) return hit
   }
-  return path
+  return null
+}
+
+/** A page's menu label, for messages that must name a page rather than show a raw path. */
+export function navLabelFor(groups: NavGroup[], path: string): string {
+  return navItemFor(groups, path)?.label ?? path
 }

@@ -66,6 +66,12 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(d["verify"], {"not_a_bug": 1, "parked": 1, "unchecked": 0, "real": 5})
         self.assertEqual(d["real"], {"fixed": 1, "open_issue": 2, "not_filed": 1, "wont_fix": 1})
 
+    def test_a_bug_verify_found_fixed_is_a_real_bug_fixed_not_a_false_positive(self):
+        legacy = {**_bug("k2", "dismissed", "dismiss"), "fix_landed": [{"commit": "f" * 40}]}   # before `fixed`
+        d = self.f.aggregate([], [{"bugs": [_bug("k1", "gone", "fixed"), legacy, _bug("k3", "dismissed", "dismiss")]}])
+        self.assertEqual((d["verify"]["real"], d["verify"]["not_a_bug"]), (2, 1))
+        self.assertEqual(d["real"]["fixed"], 2)
+
     def test_the_lines_under_the_first_gap_add_up_to_the_bug_check(self):
         convention = lambda slug, marker: _row("convention_check_finding",
                                                {"slug": slug, "file": "c.py", "line": 1, "marker": marker})
@@ -93,7 +99,19 @@ class FlowTest(unittest.TestCase):
         svg = self.f.render_svg(d)
         ET.fromstring(svg)
         self.assertIn("From 6 notes to 4 bugs", svg)
-        self.assertNotIn("commits pushed", svg)   # a line with nothing on it is left out
+        self.assertNotIn("commits made on", svg)   # a line with nothing on it is left out
+
+    def test_a_finding_waiting_on_stranded_commits_reached_that_bug(self):
+        events = [_finding("fanout-00000001"), _finding("fanout-00000002")]
+        record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [
+            {"key": "fanout-00000001", "status": "open"},
+            {"key": "stranded-local-feat-x", "kind": "stranded", "local": True, "status": "open",
+             "waiting": [{"key": "fanout-00000002"}]}]}
+        d = self.f.aggregate(events, [record])
+        into = d["into_check"]
+        self.assertEqual((into["not_listed"], into["merged"], into["stranded"]), (0, 1, 1))
+        ledger = self.f._ledger(into, sum(d["check"].values()))
+        self.assertEqual(sum({"": 1, "+": 1, "−": -1}[sign] * n for sign, n, _ in ledger if sign != "="), ledger[-1][1])
 
     def test_a_finding_from_before_slugs_counts_by_its_inline_outcome(self):
         old = [_row("fanout_audit_finding", {"file": "a.py", "line": 1, "outcome": "fixed_pre_commit"}),
@@ -108,6 +126,21 @@ class FlowTest(unittest.TestCase):
         d = self.f.aggregate([note, _resolved(key, "fixed_pre_commit"), _plausible(10)], [])
         self.assertEqual(d["recital"], {"fixed": 1, "not_fixed": 0, "plausible": 1})
         self.assertEqual(d["required"], 0)
+
+    def test_a_fix_tagged_on_another_branch_leaves_the_finding_unfixed_as_the_sweep_does(self):
+        on = lambda row, branch: {**row, "branch": branch}   # noqa: E731
+        note = _plausible(9, slug="fanout-0000000a")
+        events = [on(_finding("fanout-00000001"), "feat-a"), on(_resolved("fanout-00000001", "fixed_pre_commit"), "feat-a"),
+                  on(_finding("fanout-00000001"), "feat-b"), on(_resolved("fanout-00000001", "shipped_with_finding"), "feat-b"),
+                  on(_finding("fanout-00000002"), "feat-a"), on(_resolved("fanout-00000002", "fixed_pre_commit"), "feat-c"),
+                  on(note, "feat-a"), on(_resolved("fanout-0000000a", "fixed_pre_commit"), "feat-c")]
+        swept = {c["key"] for c in self.f._bugs.candidates(events, since="")}
+        self.assertEqual(swept, {"fanout-00000001", "fanout-00000002", "fanout-0000000a"})
+        record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [{"key": k, "status": "open"} for k in sorted(swept)]}
+        d = self.f.aggregate(events, [record])
+        self.assertEqual(d["recital"], {"fixed": 0, "not_fixed": 2, "plausible": 1})
+        into = d["into_check"]
+        self.assertEqual((into["notes"], into["tagged_later"], into["not_listed"]), (3, 0, 0))
 
     def test_same_counts_same_bytes_and_the_svg_parses_with_no_finding_text(self):
         events = [_finding("fanout-00000001"), _plausible(3)]

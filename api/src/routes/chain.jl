@@ -88,7 +88,7 @@ function api_chains_run(req::HTTP.Request)
     (isempty(uid) || isempty(rid)) && return 400, JSON3.write((; error="projectUid and runId required"))
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
     run  = try load_chain_run(proj, rid) catch; return 404, JSON3.write((; error="run not found: $rid")) end
-    nodes = [(; id=n.id, fn=n.fn, params=n.params) for n in run.template_snapshot.nodes]
+    nodes = [(; id=n.id, fn=n.fn, params=n.params, scope=string(n.scope)) for n in run.template_snapshot.nodes]
     edges = [(; from=e.from, to=e.to) for e in run.template_snapshot.edges]
     states = Dict{String,Any}()
     for (u, nm) in run.image_states
@@ -96,6 +96,41 @@ function api_chains_run(req::HTTP.Request)
     end
     200, JSON3.write((; runId=run.id, chainName=run.chain_name, createdAt=run.created_at,
                         imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states))
+end
+
+# GET /api/chains/suggest?projectUid&imageUids=a,b[&keep=id1,id2][&retrain=1][&name=]
+# A chain template from what ran on the exemplar images — `chain_from_history` (tasks/chain/from_history.jl;
+# docs/todo/CHAIN_FROM_HISTORY_PLAN.md Part B). Read-only: the whiteboard shows it for review and saves it
+# through `/api/chains/save` like any chain. `keep` = the final-output step ids to build towards.
+function api_chains_suggest(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    uid  = get(q, "projectUid", "")
+    csv(k) = String[strip(x) for x in split(get(q, k, ""), ',') if !isempty(strip(x))]
+    uids = csv("imageUids")
+    (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    keep = haskey(q, "keep") ? csv("keep") : nothing
+    r = chain_from_history(proj, uids; keep, retrain = get(q, "retrain", "") in ("1", "true"),
+                           name = get(q, "name", "From history"))
+    200, JSON3.write(r)
+end
+
+# POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
+# message}] } — what the run will hit on each image, before it starts (`chain_preflight`,
+# tasks/chain/preflight.jl). The chain's start dot is honoured, so only the steps that will run are read.
+function api_chains_preflight(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid   = _wstr(body, :projectUid)
+    chain = _wstr(body, :chain)
+    uids  = String[String(u) for u in get(body, :imageUids, [])]
+    (isempty(uid) || isempty(chain) || isempty(uids)) &&
+        return 400, JSON3.write((; error="projectUid, chain and imageUids required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    tpl  = try Cecelia._prune_to_start(load_chain_template(proj, chain)) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; problems = chain_preflight(proj, tpl, uids)))
 end
 
 function api_chains_save(body_bytes::Vector{UInt8})

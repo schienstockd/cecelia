@@ -2,6 +2,8 @@
 # Pure pieces + route round-trip against a temp config dir. Live `claude login` (or spawning a real
 # shell) is out of CI — that's what the terminal one-liner exists for.
 
+using Base64: base64decode
+
 @testset "Kiwi profile — name validator" begin
     ok = _valid_kiwi_profile_name
     @test ok("alice")
@@ -45,25 +47,59 @@ end
     @test endswith(cmd_missing, " claude")
 end
 
+@testset "Kiwi profile — terminal one-liner (prompt)" begin
+    # A prompt rides as the CLI's first positional argument, single-quoted for the shell — an
+    # apostrophe in it (the chat starter has one) must survive the quoting.
+    prompt = "I'm working in the Cecelia project Demo (abc123). Look at \$HOME — or not."
+    cmd = Cecelia.kiwi_terminal_command("/tmp/kiwi/alice"; claude_bin = "/usr/local/bin/claude",
+                                        prompt = prompt, is_windows = false)
+    @test endswith(cmd, "/usr/local/bin/claude 'I'\\''m working in the Cecelia project Demo (abc123). Look at \$HOME — or not.'")
+    # The shell hands the CLI the prompt verbatim.
+    if !Sys.iswindows()
+        arg = cmd[findfirst("/usr/local/bin/claude ", cmd).stop+1:end]
+        @test readchomp(`sh -c "printf %s $arg"`) == prompt
+    end
+    # A path the shell would split is quoted; a plain one stays bare (asserted above).
+    spaced = Cecelia.kiwi_terminal_command("/home/a b/kiwi"; claude_bin = "/opt/my apps/claude",
+                                           is_windows = false)
+    @test occursin("CLAUDE_CONFIG_DIR='/home/a b/kiwi' '/opt/my apps/claude'", spaced)
+    # Empty prompt → no trailing argument (the Copy-command path).
+    @test endswith(Cecelia.kiwi_terminal_command(""; claude_bin = "/usr/local/bin/claude",
+                                                 prompt = "", is_windows = false),
+                   "/usr/local/bin/claude")
+end
+
+# The Windows command is `powershell -NoProfile -EncodedCommand <base64 of UTF-16LE script>`.
+_decode_ps(cmd) = transcode(String, collect(reinterpret(UInt16,
+    base64decode(last(split(cmd, "-EncodedCommand "))))))
+# What the command does, on this OS — the route builds for the host it runs on.
+_cmd_text(cmd) = Sys.iswindows() ? _decode_ps(String(cmd)) : String(cmd)
+
 @testset "Kiwi profile — terminal one-liner (Windows)" begin
     # Default profile → PowerShell branch scrubs but does NOT set CLAUDE_CONFIG_DIR.
     cmd_default = Cecelia.kiwi_terminal_command(""; claude_bin = "C:\\Program Files\\Claude\\claude.cmd",
                                                     is_windows = true)
-    @test occursin("powershell -NoProfile",                             cmd_default)
-    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                 cmd_default)
-    @test occursin("Remove-Item Env:ANTHROPIC_AUTH_TOKEN",              cmd_default)
-    @test !occursin("CLAUDE_CONFIG_DIR",                                cmd_default)
-    @test occursin("& 'C:\\Program Files\\Claude\\claude.cmd'",         cmd_default)
+    @test startswith(cmd_default, "powershell -NoProfile -EncodedCommand ")
+    # No `$` or `"` reaches the outer shell — a pasted PowerShell would otherwise expand `$env:…`.
+    @test !occursin('\$', cmd_default) && !occursin('"', cmd_default)
+    script = _decode_ps(cmd_default)
+    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                 script)
+    @test occursin("Remove-Item Env:ANTHROPIC_AUTH_TOKEN",              script)
+    @test !occursin("CLAUDE_CONFIG_DIR",                                script)
+    @test endswith(script, "& 'C:\\Program Files\\Claude\\claude.cmd'")
 
-    # Named profile → $env:CLAUDE_CONFIG_DIR = '<dir>' + scrub + direct `claude` launch.
+    # Named profile → $env:CLAUDE_CONFIG_DIR = '<dir>' + scrub + direct `claude` launch + prompt,
+    # with `'` doubled inside PowerShell single quotes.
     cmd_named = Cecelia.kiwi_terminal_command("C:\\Users\\alice\\.claude";
                                               claude_bin = "C:\\Program Files\\Claude\\claude.cmd",
+                                              prompt = "I'm \"here\" \$x",
                                               is_windows = true)
-    @test occursin("\$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\alice\\.claude'", cmd_named)
-    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                     cmd_named)
-    @test occursin("& 'C:\\Program Files\\Claude\\claude.cmd'",             cmd_named)
+    script = _decode_ps(cmd_named)
+    @test occursin("\$env:CLAUDE_CONFIG_DIR = 'C:\\Users\\alice\\.claude'", script)
+    @test occursin("Remove-Item Env:ANTHROPIC_API_KEY",                     script)
+    @test endswith(script, "& 'C:\\Program Files\\Claude\\claude.cmd' 'I''m \"here\" \$x'")
     for k in Cecelia._AMBIENT_CLAUDE_ENV
-        @test occursin("Remove-Item Env:$(k)", cmd_named)
+        @test occursin("Remove-Item Env:$(k)", script)
     end
 end
 
@@ -90,8 +126,8 @@ end
             @test isdir(joinpath(tmp, "user-profiles", "alice"))
             # Platform-agnostic — POSIX `CLAUDE_CONFIG_DIR=<path>` and PowerShell
             # `$env:CLAUDE_CONFIG_DIR = '<path>'` both mention the profile name.
-            @test occursin("CLAUDE_CONFIG_DIR", String(b.terminalCommand))
-            @test occursin("alice",             String(b.terminalCommand))
+            @test occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.terminalCommand))
+            @test occursin("alice",             _cmd_text(b.terminalCommand))
 
             # Duplicate create → 409, no rewrite.
             code, _ = api_kiwi_profiles_create(Vector{UInt8}(JSON3.write((; name = "alice"))))
@@ -146,12 +182,18 @@ end
             @test code == 200
             b = JSON3.read(body)
             @test b.profile == "default"
-            @test !occursin("CLAUDE_CONFIG_DIR", String(b.command))
+            @test !occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.command))
             code, body = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=alice"))
             b = JSON3.read(body)
             @test b.profile == "alice"
-            @test occursin("CLAUDE_CONFIG_DIR", String(b.command))
-            @test occursin("alice",             String(b.command))
+            @test occursin("CLAUDE_CONFIG_DIR", _cmd_text(b.command))
+            @test occursin("alice",             _cmd_text(b.command))
+            # `prompt` reaches the command (POSIX: plain text; Windows: inside the encoded script).
+            code, body = api_kiwi_terminal_command(HTTP.Request("GET",
+                "/api/kiwi/terminal/command?prompt=" * HTTP.escapeuri("hello there")))
+            @test code == 200
+            c = String(JSON3.read(body).command)
+            @test occursin("hello there", _cmd_text(c))
             code, body = api_kiwi_terminal_command(HTTP.Request("GET", "/api/kiwi/terminal/command?profile=Bad"))
             @test code == 400
         end
@@ -269,6 +311,44 @@ end
             finally
                 set_shared_workstation!("claudeLogoutOnQuit", false)
             end
+
+            # Delete conversations: off → nobody; bob's own preference → bob only; the workstation
+            # floor → every named profile. Never default; on a pick, never the profile picked.
+            bob = joinpath(tmp, "user-profiles", "bob")
+            @test isempty(_purge_on_quit_targets()) && isempty(_purge_on_pick_targets("alice"))
+            patch_profile_settings!(Dict("purgeClaudeConversations" => true), "bob")
+            @test _purge_on_quit_targets() == [bob]
+            @test _purge_on_pick_targets("alice") == [bob]
+            @test isempty(_purge_on_pick_targets("bob"))
+            set_shared_workstation!("purgeClaudeConversations", true)
+            try
+                @test sort(_purge_on_quit_targets()) == sort([alice, bob])
+                @test _purge_on_pick_targets("default") == [alice, bob]
+            finally
+                set_shared_workstation!("purgeClaudeConversations", false)
+            end
+
+            # end-session: validates like logout; a profile that doesn't want it is a no-op; one that
+            # does is purged (memory kept)
+            es(b) = api_kiwi_profiles_end_session(Vector{UInt8}(JSON3.write(b)))
+            @test api_kiwi_profiles_end_session(Vector{UInt8}("{}"))[1] == 400
+            @test es((; name = "ghost"))[1] == 404
+            @test es((; name = "Bad Name"))[1] == 400
+            @test JSON3.read(es((; name = "default"))[2]).purged == false
+            write(joinpath(alice, "history.jsonl"), "x")
+            @test JSON3.read(es((; name = "alice"))[2]).purged == false
+            @test isfile(joinpath(alice, "history.jsonl"))
+            write(joinpath(bob, "history.jsonl"), "x")
+            mkpath(joinpath(bob, "projects", "p", "memory")); write(joinpath(bob, "projects", "p", "s.jsonl"), "x")
+            code, body = es((; name = "bob"))
+            @test code == 200 && JSON3.read(body).purged == true
+            @test !isfile(joinpath(bob, "history.jsonl")) && !isfile(joinpath(bob, "projects", "p", "s.jsonl"))
+            @test isdir(joinpath(bob, "projects", "p", "memory")) && isfile(joinpath(bob, "settings.toml"))
+            # a running `claude` under the profile → 409, nothing deleted
+            write(joinpath(bob, "history.jsonl"), "x")
+            mkpath(joinpath(bob, "sessions")); write(joinpath(bob, "sessions", "$(getpid()).json"), "{}")
+            @test es((; name = "bob"))[1] == 409
+            @test isfile(joinpath(bob, "history.jsonl"))
         end
         init_cecelia!()   # restore
     end

@@ -10,6 +10,7 @@
  */
 
 import type { CardFamily, CardFamilyContext } from './cardsPanel'
+import { shortTrackMeasure } from '../../utils/measureGroups'
 
 // Motif / HMM request shape for "show another example": `seeds: {cardPath: n}` (only non-zero
 // entries; cell cards carry theirs per pop instead). Absent = every card on its medoid.
@@ -38,7 +39,7 @@ export const cellFamily: CardFamily = {
   emptyNoRoot: 'Select an image.',
   emptyNoSuffix: 'No clustering run in context.',
   emptyNoShownPops: 'Tick one or more track clusters in the panel on the right.',
-  footerStatLabel: name => name.replace(/^live\.track\./, ''),
+  footerStatLabel: shortTrackMeasure,
   reshuffle: true,
 }
 

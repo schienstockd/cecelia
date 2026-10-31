@@ -1264,6 +1264,20 @@ end
         js = JSON3.read(JSON3.write(st(ramp(1, 6))))
         @test scodes(Cecelia.seg_object_qc_findings(js; diameter_um = 10)) == ["seg.fragmented"]
 
+        # seg.seam_cuts: contacts across tile seams vs control lines. Counts from a real 2048 px crop
+        # tiled at 512: stitching off (6520 vs 52, ratio ~167) fires; stitched (72 vs 52, ~1.9) is quiet.
+        sm(sc, sp, cc, cp) = Dict{String,Any}("seam" => Dict{String,Any}("seamContacts" => sc,
+            "seamPixels" => sp, "controlContacts" => cc, "controlPixels" => cp))
+        cut = Cecelia.seg_seam_qc_findings(sm(6520, 12288, 52, 16384))
+        @test scodes(cut) == ["seg.seam_cuts"] && cut[1]["level"] == "info"
+        @test occursin("Tile overlap", cut[1]["long"])
+        @test isempty(Cecelia.seg_seam_qc_findings(sm(72, 12288, 52, 16384)))
+        @test isempty(Cecelia.seg_seam_qc_findings(sm(10, 12288, 0, 16384)))     # too few to say
+        @test scodes(Cecelia.seg_seam_qc_findings(sm(40, 12288, 0, 16384))) == ["seg.seam_cuts"]
+        @test isempty(Cecelia.seg_seam_qc_findings(st(ramp(7, 13))))              # untiled: no `seam`
+        @test scodes(Cecelia.seg_seam_qc_findings(JSON3.read(JSON3.write(sm(6520, 12288, 52, 16384))))) ==
+              ["seg.seam_cuts"]
+
         # the diameter compared against: the base group's; ambiguous or own-estimate → nothing
         @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12))) == 12.0
         @test Cecelia.seg_given_diameter(Dict("0" => Dict("matchAs" => "base", "cellDiameter" => 12),
@@ -1773,6 +1787,11 @@ end
         @test doc2.active_id == doc.active_id
         @test_throws BoardSpecError append_board(doc2, "B vs T", lay)          # duplicate name
         @test_throws BoardSpecError append_board(doc2, "  Track measures ", lay)  # …ignoring whitespace
+        # authorship: the route passes `author_stamp()`; the REPL leaves it off
+        @test !haskey(doc2.tabs[end], "createdBy")
+        by = Dict("profile" => "alice", "via" => "claude", "model" => "claude-opus-5-5")
+        docb, _ = append_board(doc2, "Stamped", lay; created_by = by)
+        @test docb.tabs[end]["createdBy"] == by
 
         # ── the name is STORED as it will render (board_display_name) ───────────────────────────────
         # Vue escapes text, so a stored entity displays as the entity — on a tab the authoring tool
@@ -1800,9 +1819,16 @@ end
         ex(plots; pops = pops, kw...) = expand_board(proj, "stage", plots; pops = pops, clusters = clusters,
                                         image_uids = ["img1", "img2"], kw...)
 
-        lay = ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement"),
+        lay = ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement"),
                   Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement", "title" => "Heat")])
-        @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "umap"
+        @test lay["contents"][1]["kind"] == "interactive" && lay["contents"][1]["ref"] == "clusterMap"
+        # the layout is a field: diffusion axes are asked for by name, anything else is refused
+        @test ex([Dict("plot" => "clusterMap", "popType" => "trackclust", "suffix" => "movement",
+                       "basis" => "diffmap")])["contents"][1]["state"]["basis"] == "diffmap"
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "popType" => "trackclust",
+                                             "suffix" => "movement", "basis" => "pca")])
+        # the retired view key still authors, and is written as the current one (BOARD_VIEW_ALIASES)
+        @test ex([Dict("plot" => "umap", "popType" => "trackclust", "suffix" => "movement")])["contents"][1]["ref"] == "clusterMap"
         @test lay["contents"][1]["state"]["labels"] == true          # the view's own initialState
         @test lay["contents"][2]["state"]["title"] == "Heat"
         @test lay["shared"]["clustPopType"] == "trackclust" && lay["shared"]["clustSuffix"] == "movement"
@@ -1810,9 +1836,9 @@ end
         @test ex([Dict("plot" => "hmmStates", "suffix" => "movement")])["shared"]["clustPopType"] == "trackclust"
         @test_throws BoardSpecError ex([Dict("plot" => "hmmStates", "popType" => "clust", "suffix" => "cells")])
         # a run that does not exist, no suffix, and two runs on one board are all refused
-        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "nope")])
-        @test_throws BoardSpecError ex([Dict("plot" => "umap")])
-        @test_throws BoardSpecError ex([Dict("plot" => "umap", "suffix" => "cells"),
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "suffix" => "nope")])
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap")])
+        @test_throws BoardSpecError ex([Dict("plot" => "clusterMap", "suffix" => "cells"),
                                         Dict("plot" => "heatmap", "popType" => "trackclust", "suffix" => "movement")])
 
         # track plots take track-family populations, as tkeys, and the board reads them per slot
@@ -1991,12 +2017,13 @@ end
                 Dict("kind" => "summary", "ref" => "track_measures", "state" => Dict("chartType" => "boxplot"))])))))
         @test board_summaries(proj)[1]["plots"][1]["measure"] == "live.track.speed"
 
-        # degradation: a slot with no state, and an unparseable file
+        # degradation: a slot with no state, and an unparseable file. The slot was saved under the
+        # retired `umap` key, so the reader also reports it under the current one (normalise_boards).
         write(bf, JSON3.write(Dict(
             "tabs" => Dict("tabs" => [Dict("id" => 1, "name" => "bare")]),
             "layouts" => Dict("tab:1" => Dict("contents" => [Dict("kind" => "interactive", "ref" => "umap")])))))
         b = board_summaries(proj)
-        @test b[1]["plots"][1]["ref"] == "umap" && !haskey(b[1]["plots"][1], "measure")
+        @test b[1]["plots"][1]["ref"] == "clusterMap" && !haskey(b[1]["plots"][1], "measure")
         @test b[1]["cols"] == 0                                     # missing grid → 0, not an error
         write(bf, "{not json")
         @test (@test_logs (:warn,) match_mode=:any board_summaries(proj)) == Any[]
@@ -2381,6 +2408,13 @@ end
         try
             init_cecelia!()
             projroot = joinpath(tmp, "projects"); mkpath(projroot)
+            set_projects_dir!(projroot)
+            # exports land BESIDE the projects dir, also when the stored path ends in a separator —
+            # the setup screen stores what was typed (on Windows a trailing backslash put them inside)
+            for typed in (projroot, projroot * "/", projroot * (Sys.iswindows() ? "\\" : "/"))
+                set_projects_dir!(typed)
+                @test default_export_dir() == joinpath(tmp, "cecelia_exports")
+            end
             set_projects_dir!(projroot)
 
             proj = create_project!(name = "io-test")

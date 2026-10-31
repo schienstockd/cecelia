@@ -10,8 +10,8 @@ hpc_render_script(::LocalShellBackend, spec::HpcJobSpec)::String = "#!/bin/bash\
 # `nohup` + every stream redirected, so the job outlives the `sh -s` that started it.
 hpc_submit(b::LocalShellBackend, c::HpcConn, spec::HpcJobSpec)::String = begin
     out = hpc_exec!(c, _hpc_submit_script(spec, hpc_render_script(b, spec),
-                                          "nohup bash $(HPC_JOB_SCRIPT) > $(HPC_JOB_LOG) 2>&1 < /dev/null &\necho \$!");
-                    what = "Submit")
+                                          "nohup bash $(HPC_JOB_SCRIPT) > $(HPC_SCHED_LOG) 2>&1 < /dev/null &\necho \$!");
+                    what = "Submit", timeout_s = HPC_SUBMIT_TIMEOUT_S)
     id = _last_line(out, "")
     occursin(r"^\d+$", id) || throw(HpcError("Submit: no pid"))
     id
@@ -23,6 +23,18 @@ _hpc_status_script(::LocalShellBackend, ids::AbstractVector{<:AbstractString}) =
 _hpc_parse_status(::LocalShellBackend, out::AbstractString) =
     Dict{String,RemoteJobState}(m[1] => JOB_RUNNING
                                 for m in eachmatch(Regex("^$(_HPC_STATUS_TAG) (\\S+) RUNNING", "m"), out))
+
+# Every job this machine is running for Cecelia (its jobs are `bash job.sh`, the id the pid).
+# This machine is the one node: its cores, NVIDIA GPUs and memory (Linux; 0 where it cannot tell).
+_hpc_nodes_script(::LocalShellBackend, ::AbstractString) = """
+    c=\$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)
+    g=\$(nvidia-smi -L 2>/dev/null | grep -c '^GPU' || true)
+    m=\$(awk '/^MemTotal:/ {print int(\$2 / 1024)}' /proc/meminfo 2>/dev/null)
+    echo "$(_HPC_NODES_TAG) q 1 \$c \${g:-0} \${m:-0}"
+    """
+
+_hpc_active_script(::LocalShellBackend) =
+    "for p in \$(pgrep -f 'bash $(HPC_JOB_SCRIPT)' 2>/dev/null); do echo \"$(_HPC_ACTIVE_TAG) \$p\"; done\ntrue\n"
 
 # Children first, then the job's own bash: the task's Python must not outlive a cancel. This runs on
 # the job's machine as script text (the remote side), not as a local spawn.

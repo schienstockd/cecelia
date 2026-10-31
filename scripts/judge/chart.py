@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Effectiveness chart — the README's public picture of how the agents' pre-commit reviews go, per week.
+"""Effectiveness chart — the README's public picture of how the agents' pre-commit reviews go.
 
 Design and what it can't tell you: docs/ai-assist/AGENT_RECORD.md. Operator notes:
 docs/ai-assist/WEEKLY_JUDGE.md → *The chart*.
 
 Three steps, each its own function so a test can drive it:
 
-1. `aggregate` — the effectiveness log, the judge's pass records and `git log` → per-week numbers.
-   Aggregates only: no finding text, path, uid, branch or session id leaves this step.
+1. `aggregate` — the effectiveness log, the judge's pass records and `git log` → per-week and
+   per-pass numbers. Aggregates only: no finding text, path, uid, branch or session id leaves this step.
 2. `render_svg` — those numbers → one SVG, byte-for-byte deterministic (same numbers, same bytes).
    No LLM, no free text from the log: every label is ours or a number, and still escaped.
 3. `publish` — an orphan single-commit `judge-assets` branch, force-pushed, built with git plumbing
@@ -36,6 +36,7 @@ import math
 import pathlib
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import typing as _t
@@ -69,13 +70,12 @@ _flow = _load_sibling("flow_chart")
 BRANCH = "judge-assets"
 REF = f"refs/heads/{BRANCH}"
 SVG_NAME, DATA_NAME = "effectiveness.svg", "effectiveness.json"
-#: Weeks shown, newest last. Older weeks stay in the JSON beside the SVG.
+#: Weeks and judge passes shown, newest last. Older ones stay in the JSON beside the SVG.
 MAX_WEEKS = 12
-#: A week with fewer sessions than this is drawn hollow, like a partial one, and gets no rate: a
-#: handful of findings makes any percentage.
+MAX_PASSES = 12
+#: A week with fewer sessions than this is drawn hollow, like a partial one, with a `*`: a handful
+#: of findings makes any percentage.
 LOW_SESSIONS = 10
-#: A judge bar over fewer notes than this is drawn hollow: two notes make a 50 / 50 that means nothing.
-LOW_NOTES = 10
 #: Fewer weeks than this and a series is dots with their values, not a line: two points joined read
 #: as a trend.
 MIN_LINE_WEEKS = 4
@@ -85,15 +85,13 @@ RULE_DOCS = ("CLAUDE.md",)
 _RUN_EVENTS = ("fanout_audit_run", "convention_check_run")
 #: Legend text and swatch per outcome in the log's closed vocabulary, plus `none`: no outcome logged,
 #: or one this map doesn't know. The chart never echoes a value from the log.
-#: Good is sky blue and bad vermillion, here and in the recital console: not green against red,
-#: the pair red-green colour blindness loses. Sky blue means nothing else on the chart.
 _OUTCOME_LOOK = {
     "fixed_pre_commit": ("fixed before commit", "sky_blue"),
     "shipped_with_finding": ("shipped knowingly", "orange"),
     "false_positive": ("called a false positive", "reddish_purple"),
     "dropped_no_action": ("dropped", "vermillion"),
 }
-assert set(_OUTCOME_LOOK) == OUTCOME_VOCABULARY, "a new outcome needs a legend entry and a swatch here"
+assert set(_OUTCOME_LOOK) == OUTCOME_VOCABULARY, "a new outcome needs a legend entry here"
 #: Outcome buckets, in the log's display order, then `none`: the JSON's and the description's split.
 OUTCOMES = tuple((k, *_OUTCOME_LOOK[k]) for k in OUTCOME_DISPLAY_ORDER if k in _OUTCOME_LOOK) \
     + (("none", "no outcome logged", "grey"),)
@@ -101,11 +99,20 @@ _OUTCOME_KEYS = set(_OUTCOME_LOOK)
 #: Ink for labels, series and axes: the README figures' shared look (`figure_style.py`), on its own
 #: light surface so the chart reads the same on GitHub's light and dark themes.
 INK = _style.INK
-#: The two reviewers: key, legend name, swatch.
+#: The two reviewers: key, legend name, swatch, `_run` event.
 REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"))
+_RUN_OF = {"fanout_audit_run": "fanout", "convention_check_run": "convention"}
 #: Merged PRs, beside the changes reviewed: how many checks went into each PR.
 PR_SWATCH = "reddish_purple"
 _REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention"}
+#: A pass's spend stages, stacked bottom-up in panel d: key, swatch.
+STAGES = (("verify", "blue"), ("sweep", "orange"), ("rules", "reddish_purple"))
+#: Age since a real bug was first flagged, in panel c: key, legend name, upper bound in days
+#: (exclusive; None = no bound), fill. Bottom-up in the stack. Ordinal fills, light to dark, checked
+#: against the figure surface.
+AGES = (("under_1w", "under 1 week", 7, "#ee9563"),
+        ("1_2w", "1–2 weeks", 14, "#cf5420"),
+        ("over_2w", "over 2 weeks", None, "#7f2a0c"))
 
 
 # ── 1. aggregate ───────────────────────────────────────────────────────────────────────────────
@@ -145,21 +152,33 @@ def pr_merges(*, repo: pathlib.Path = _REPO, ref: str = "HEAD") -> list[_dt.date
     return pr_dates(git_output("log", "--first-parent", "--format=%cs %s", ref, cwd=str(repo)) or "")
 
 
+def _token_sum(counts: _t.Any) -> int:
+    """All of a usage block's tokens (`judge.tokens`' counts), cache reads included, as
+    `record.tokens_line` sums them; 0 for anything that isn't one."""
+    if not isinstance(counts, dict):
+        return 0
+    return sum(v for v in counts.values() if isinstance(v, (int, float)) and not isinstance(v, bool))
+
+
 def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
               prompt_edits: _t.Sequence[_dt.date] = (), rule_edits: _t.Sequence[_dt.date] = (),
               prs: _t.Sequence[_dt.date] = (), as_of: _dt.date | None = None) -> dict:
-    """Per-week numbers for the chart; JSON-ready and free of any text from the log.
+    """Per-week and per-pass numbers for the chart; JSON-ready and free of any text from the log.
 
     A *change reviewed* is one branch + parent commit a recital reviewed (reruns on the same change
     count once; an errored reviewer counts none). A *finding* is one fanout or convention finding,
-    once per slug, in the week it was first raised, with its latest logged outcome. A week is
-    *partial* if logging began inside it, or it hasn't ended by `as_of` (default: the last logged day)."""
+    once per slug, in the week it was first raised, with its latest logged outcome. A week's *wait*
+    is each reviewer's median `duration_s` over its clean runs; its *reviewer tokens*, the sum over
+    the runs that logged them (None before any did). A week is *partial* if logging began inside
+    it, or it hasn't ended by `as_of` (default: the last logged day). `passes`: `judge_passes`."""
     events = list(events)
     changes: dict[_dt.date, set] = collections.defaultdict(set)
     sessions: dict[_dt.date, set] = collections.defaultdict(set)
+    waits: dict[tuple, list] = collections.defaultdict(list)
+    tokens: dict[tuple, int] = collections.defaultdict(int)
+    tokens_from: _dt.date | None = None
     first: dict[str, dict] = {}
     slugless: list[dict] = []
-    raised: dict[str, _dt.date] = {}  # judge key → week raised, for every finding and advisory
     days: list[_dt.date] = []
     for e in events:
         day = _day(e.get("ts"))
@@ -170,9 +189,13 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
         if name in _RUN_EVENTS and not is_errored_run(payload):
             changes[week_of(day)].add((e.get("branch"), e.get("commit")))
             sessions[week_of(day)].add(e.get("session"))
-        if name in ("fanout_audit_finding", "fanout_audit_advisory", "convention_check_finding"):
-            key = _bugs._key(e)
-            raised[key] = min(raised.get(key, week_of(day)), week_of(day))
+            d = payload.get("duration_s")
+            if isinstance(d, (int, float)) and not isinstance(d, bool) and d > 0:
+                waits[week_of(day), _RUN_OF[name]].append(float(d))
+        if name in _RUN_EVENTS and isinstance(payload.get("tokens"), dict):
+            # an errored run spent its tokens too
+            tokens[week_of(day), _RUN_OF[name]] += _token_sum(payload["tokens"])
+            tokens_from = min(tokens_from or day, day)
         if name in _FINDING_EVENTS:
             slug = payload.get("slug")
             if slug in _REDTEAM_SLUGS:
@@ -187,9 +210,10 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
             + [(e, (e.get("payload") or {}).get("outcome")) for e in slugless]:
         found[week_of(_day(e["ts"])), _REVIEWER_OF[e["event"]]][outcome if outcome in _OUTCOME_KEYS else "none"] += 1
 
+    passes = judge_passes(records)
     if not days:
-        return {"weeks": [], "first_day": None, "last_day": None, "sessions": 0,
-                "judge": _judge_summary(records, raised)}
+        return {"weeks": [], "first_day": None, "last_day": None, "sessions": 0, "tokens_from": None,
+                "passes": passes}
     first_day, last_day = min(days), max(days)
     as_of = max(as_of or last_day, last_day)
     weeks = []
@@ -197,6 +221,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
     while monday <= last_day:
         sunday = monday + _dt.timedelta(days=6)
         by_reviewer = {r: {k: found[monday, r][k] for k, _, _ in OUTCOMES} for r, _, _ in REVIEWERS}
+        logged = tokens_from is not None and sunday >= tokens_from
         weeks.append({
             "week": monday.isoformat(),
             "partial": monday < first_day or sunday >= as_of,
@@ -206,66 +231,68 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
             "sessions": len(sessions[monday] - {None}),
             "findings": {k: sum(c[k] for c in by_reviewer.values()) for k, _, _ in OUTCOMES},
             "by_reviewer": by_reviewer,
+            "wait_s": {r: round(statistics.median(waits[monday, r]), 1) if waits[monday, r] else None
+                       for r, _, _ in REVIEWERS},
+            "reviewer_tokens": {r: tokens[monday, r] for r, _, _ in REVIEWERS} if logged else None,
             "prompt_edits": sum(max(monday, first_day) <= d <= sunday for d in prompt_edits),
             "rule_edits": sum(max(monday, first_day) <= d <= sunday for d in rule_edits),
         })
         monday += _dt.timedelta(days=7)
     all_sessions = set().union(*sessions.values()) - {None} if sessions else set()
     return {"weeks": weeks, "first_day": first_day.isoformat(), "last_day": last_day.isoformat(),
-            "sessions": len(all_sessions), "judge": _judge_summary(records, raised)}
+            "sessions": len(all_sessions), "tokens_from": tokens_from and tokens_from.isoformat(),
+            "passes": passes}
 
 
-#: The bug statuses the chart's judge line names: the ones with a verdict. `unjudged` / `unmerged`
-#: are still waiting for one, and `wont_fix` is the owner's answer, not the judge's.
-JUDGE_STATUSES = ("open", "parked", "gone", "dismissed")
-assert set(JUDGE_STATUSES) <= set(_record.BUG_STATUSES)
-#: The judge panel's lines: a verdict, the statuses it pools, its swatch. Open and parked are both
-#: real bugs (parked: can't happen in today's code yet).
-JUDGE_LINES = (
-    ("real bug", ("open", "parked"), "vermillion"),
-    ("gone", ("gone",), "sky_blue"),
-    ("not a bug", ("dismissed",), "grey"),
-)
-assert {s for _, group, _ in JUDGE_LINES for s in group} == set(JUDGE_STATUSES)
+def real_bug(b: dict) -> bool:
+    """A bug verify called live (`fix`), the owner's call (`decide`) or already fixed (`fixed`, which
+    `record.verify_verdict` also reads off a dismissed landed fix), or a stranded commit: the flow
+    chart's *real* column."""
+    return _flow._bug_class(b)[1] == "real"
 
 
-def _judge_name(reviewer: str, line: str) -> str:
-    """A judge line's legend name: a live convention duplicate isn't a bug."""
-    return "still there" if reviewer == "convention" and line == "real bug" else line
+def _gone(b: dict) -> bool:
+    """Fixed by this pass: `gone`, or dismissed with its fix found: the flow chart's *fixed* segment."""
+    return _flow._real_class(b) == "fixed"
 
 
-def _judge_kind(b: dict) -> str | None:
-    """Which reviewer a judged bug came from: `fanout` (unfixed findings and advisories), `convention`
-    (unfixed `should reuse` duplicates), or None (agent-run errors, stranded commits)."""
-    if b.get("kind") == "duplicate":
-        return "convention"
-    return "fanout" if str(b.get("key") or "").startswith("fanout-") else None
+def _age_bucket(days: int) -> str:
+    return next(k for k, _, upper, _ in AGES if upper is None or days < upper)
 
 
-def _judge_summary(records: _t.Sequence[dict], raised: dict[str, _dt.date] | None = None) -> dict | None:
-    """The newest pass record's bug counts by status: what the judge found when it checked the
-    findings that shipped against `main`. `by_week` splits the reviewer items among them per reviewer
-    (`_judge_kind`) by the week they were raised, from `raised` (judge key → Monday) or else the week
-    the judge first saw them. `swept` is what that pass read: a reviewer it didn't has no verdicts."""
-    passes = [r for r in records if r.get("kind") == "pass"]
-    if not passes:
-        return None
-    last = max(passes, key=lambda r: r.get("date", ""))
-    bugs = last.get("bugs") or []
-    counts = collections.Counter(b.get("status") for b in bugs)
-    by_week: dict[tuple, collections.Counter] = collections.defaultdict(collections.Counter)
-    for b in bugs:
-        key, status, who = str(b.get("key") or ""), b.get("status"), _judge_kind(b)
-        if who is None or status not in JUDGE_STATUSES:
-            continue
-        monday = (raised or {}).get(key) or (_day(b.get("first_seen")) and week_of(_day(b["first_seen"])))
-        if monday:
-            by_week[who, monday.isoformat()][status] += 1
-    return {"date": last.get("date"), "passes": len(passes),
-            "swept": list((last.get("run") or {}).get("swept") or ["fanout"]),
-            **{s: counts.get(s, 0) for s in JUDGE_STATUSES},
-            "by_week": {r: {w: {s: c[s] for s in JUDGE_STATUSES} for (who, w), c in sorted(by_week.items()) if who == r}
-                        for r, _, _ in REVIEWERS}}
+def judge_passes(records: _t.Sequence[dict]) -> list[dict]:
+    """One entry per pass record, oldest first: its real bugs still `open`, by age since flagged
+    (`AGES`); how many real bugs it found gone for the first time (`fixed`); and its tokens per
+    stage (`STAGES`, cache reads included), None when it logged none.
+
+    A bug is *flagged* at the first pass where it was real (`real_bug`): a pass record carries every
+    bug forward with its latest verify verdict, so earlier records are what date it."""
+    flagged: dict[str, _dt.date] = {}
+    fixed_once: set[str] = set()
+    out = []
+    for r in sorted((r for r in records if r.get("kind") == "pass" and _day(r.get("date"))),
+                    key=lambda r: r["date"]):
+        day = _day(r["date"])
+        ages = collections.Counter()
+        fixed = 0
+        for b in r.get("bugs") or []:
+            key = b.get("key")
+            if not key:
+                continue
+            if key not in flagged and real_bug(b):
+                flagged[key] = day
+            if key not in flagged:
+                continue
+            if b.get("status") == "open":
+                ages[_age_bucket((day - flagged[key]).days)] += 1
+            elif _gone(b) and key not in fixed_once:
+                fixed_once.add(key)
+                fixed += 1
+        spent = ((r.get("run") or {}).get("spend") or {}).get("tokens") or {}
+        stages = {k: _token_sum(spent.get(k)) for k, _ in STAGES}
+        out.append({"date": r["date"], "open": {k: ages[k] for k, _, _, _ in AGES}, "fixed": fixed,
+                    "tokens": stages if sum(stages.values()) else None})
+    return out
 
 
 # ── 2. render ──────────────────────────────────────────────────────────────────────────────────
@@ -288,30 +315,37 @@ def _week_label(monday: str) -> str:
     return f"{_fmt_day(monday)}–{_fmt_day((start + _dt.timedelta(days=6)).isoformat())}"
 
 
+def _mtok(n: float) -> str:
+    """A token count in millions, as labelled: `6.5M`; `0.04M` below a tenth of a million."""
+    m = n / 1e6
+    return f"{m:.1f}M" if m >= 0.1 or m == 0 else f"{m:.2f}M"
+
+
 def describe(data: dict) -> str:
-    """The chart in words: the SVG's `<desc>`, for a screen reader or anyone who can't see the lines."""
-    if not data["weeks"]:
+    """The chart in words: the SVG's `<desc>`, for a screen reader or anyone who can't see the bars."""
+    if not data["weeks"] and not data.get("passes"):
         return "No reviews logged yet."
     parts = []
     for w in data["weeks"]:
         f = w["findings"]
-        total = sum(f.values())
         split = "; ".join(f"{name}: {sum(w['by_reviewer'][r].values())} findings, "
                           f"{w['by_reviewer'][r]['fixed_pre_commit']} fixed before commit"
+                          + (f", median wait {w['wait_s'][r]:g} s" if w["wait_s"][r] is not None else "")
+                          + (f", {_mtok(w['reviewer_tokens'][r])} tokens" if w["reviewer_tokens"] else "")
                           for r, name, _ in REVIEWERS)
-        parts.append(f"Week of {_week_label(w['week'])}{' (partial)' if w['partial'] else ''}: "
+        thin_why = " (still running)" if w["ongoing"] else " (partial)" if w["partial"] else \
+            f" (under {LOW_SESSIONS} sessions)" if w["sessions"] < LOW_SESSIONS else ""
+        parts.append(f"Week of {_week_label(w['week'])}{thin_why}: "
                      f"{w['changes']} changes reviewed across {w['sessions']} sessions, {w['prs']} PRs merged; "
-                     f"{total} findings, "
+                     f"{sum(f.values())} findings, "
                      + ", ".join(f"{f[k]} {label}" for k, label, _ in OUTCOMES) + f" ({split}).")
-    j = data.get("judge")
-    if j:
-        parts.append(f"Weekly judge, pass of {j['date']}: {j['open']} open bugs, {j['parked']} parked, "
-                     f"{j['gone']} gone, {j['dismissed']} not a bug.")
-        for r, name, _ in REVIEWERS:
-            for week, c in j["by_week"].get(r, {}).items():
-                parts.append(f"{name} notes nobody fixed, raised the week of {_week_label(week)}: "
-                             + ", ".join(f"{sum(c[s] for s in group)} {_judge_name(r, line)}"
-                                         for line, group, _ in JUDGE_LINES) + ".")
+    for p in data.get("passes") or []:
+        tok = p["tokens"]
+        parts.append(f"Judge pass of {_fmt_day(p['date'])}: {sum(p['open'].values())} real bugs open ("
+                     + ", ".join(f"{p['open'][k]} {name}" for k, name, _, _ in AGES)
+                     + f"), {p['fixed']} fixed; "
+                     + (f"{_mtok(sum(tok.values()))} tokens (" + ", ".join(f"{k} {_mtok(tok[k])}" for k, _ in STAGES)
+                        + ")." if tok else "no token data."))
     return " ".join(parts)
 
 
@@ -319,23 +353,15 @@ def _total(c: dict) -> int:
     return sum(c.values())
 
 
-def _per_100(w: dict, r: str) -> float | None:
-    n = _total(w["by_reviewer"][r])
-    return 100 * n / w["changes"] if w["changes"] and n and w["sessions"] >= LOW_SESSIONS else None
-
-
 def _fixed(w: dict, r: str) -> float | None:
+    """The share of the week's findings fixed before commit; None when it had none."""
     c = w["by_reviewer"][r]
-    return 100 * c["fixed_pre_commit"] / _total(c) if _total(c) and w["sessions"] >= LOW_SESSIONS else None
+    return 100 * c["fixed_pre_commit"] / _total(c) if _total(c) else None
 
 
 def thin(w: dict) -> bool:
-    """A week drawn hollow and dashed: still filling up, or too few sessions to lean on."""
+    """A week drawn hollow and dashed, with a `*`: still filling up, or too few sessions to lean on."""
     return w["partial"] or w["sessions"] < LOW_SESSIONS
-
-
-def _ends(w: dict) -> str:
-    return (_dt.date.fromisoformat(w["week"]) + _dt.timedelta(days=6)).isoformat()
 
 
 def _ticks(peak: float, *, percent: bool = False) -> list[float]:
@@ -349,112 +375,154 @@ def _ticks(peak: float, *, percent: bool = False) -> list[float]:
     return [k * step for k in range(math.ceil(peak / step - 1e-9) + 1)]
 
 
-def _panel(add, *, x: float, y: float, w: float, letter: str, title: str, ylabel: str, weeks: list[dict],
-           series: list[tuple[str, str, list, list]], percent: bool = False, xlabel: bool = False,
-           n_per_week: list[int | None] | None = None, stacked: bool = False) -> None:
-    """One panel at (x, y), drawn like a paper figure: a letter, a title, a legend, a y axis with
-    round ticks and its label, x ticks per week. `series` is (legend name, colour, value per week
-    (None = no point), hollow per week). `n_per_week` prints each week's n under its date.
-    `stacked`: one bar per week, the series stacked bottom-up in order, for shares of one whole
-    (lines would hide the total, and equal shares would draw on top of each other)."""
-    top, bot = y + 40, y + 170
-    ax, x1 = x + 58, x + w - 10
-    add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
-    add(f'<text x="{x + 18:.1f}" y="{y:.1f}" font-size="13" font-weight="700">{esc(title)}</text>')
-    lx = x + 18
-    for name, colour, _, _ in series:
-        if stacked:
-            add(f'<rect x="{lx + 3:.1f}" y="{y + 14:.1f}" width="10" height="10" fill="{colour}"/>')
-        else:
-            if len(weeks) >= MIN_LINE_WEEKS:
+#: Rough text widths at the chart's sizes, to keep labels apart: px per character.
+_CHAR_W = {9: 5.0, 10: 5.6, 11: 5.9}
+#: Panel geometry, from the panel's title baseline: plot top and bottom. The gap between stacked segments.
+_TOP, _BOT = 40, 186
+_GAP = 1.5
+
+
+class _Axes:
+    """One panel's frame: its letter and title, a legend row, a y axis with round ticks and its label,
+    and one x slot per label (dates). `at(i, v)` is slot i's centre at value v."""
+
+    def __init__(self, add, *, x: float, y: float, w: float, letter: str, title: str, ylabel: str,
+                 labels: list[str], peak: float, legend: list[tuple[str, str, str]] = (),
+                 legend_title: str | None = None, xlabel: str | None = None, percent: bool = False):
+        self.add, self.n = add, len(labels)
+        self.top, self.bot = y + _TOP, y + _BOT
+        self.ax, x1 = x + 52, x + w - 6
+        add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
+        add(f'<text x="{x + 18:.1f}" y="{y:.1f}" font-size="13">{esc(title)}</text>')
+        lx = x + 18
+        if legend_title:
+            add(f'<text x="{lx:.1f}" y="{y + 23:.1f}" font-size="11" fill="{_style.DIM}">{esc(legend_title)}</text>')
+            lx += _CHAR_W[11] * len(legend_title) + 8
+        for kind, name, colour in legend:
+            if kind == "box":
+                add(f'<rect x="{lx + 3:.1f}" y="{y + 14:.1f}" width="10" height="10" fill="{colour}"/>')
+            else:
                 add(f'<line x1="{lx:.1f}" x2="{lx + 16:.1f}" y1="{y + 19:.1f}" y2="{y + 19:.1f}" stroke="{colour}" '
                     f'stroke-width="2"/>')
-            add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
-        add(f'<text x="{lx + 21:.1f}" y="{y + 23:.1f}" font-size="11">{esc(name)}</text>')
-        lx += 21 + 6.2 * len(name) + 14
-    tops = ([sum(vals[i] or 0 for _, _, vals, _ in series) for i in range(len(weeks))] if stacked else
-            [v for _, _, vals, _ in series for v in vals if v is not None])
-    ticks = _ticks(max(tops or [1]), percent=percent)
-    peak = ticks[-1]
-    # axes: left and bottom spines, ticks outward
-    add(f'<path d="M{ax:.1f},{top:.1f} V{bot:.1f} H{x1:.1f}" fill="none" stroke="{_style.DIM}" stroke-width="1"/>')
-    for t in ticks:
-        ty = bot - (bot - top) * t / peak
-        add(f'<line x1="{ax - 4:.1f}" x2="{ax:.1f}" y1="{ty:.1f}" y2="{ty:.1f}" stroke="{_style.DIM}"/>')
-        add(f'<text x="{ax - 7:.1f}" y="{ty + 4:.1f}" font-size="11" text-anchor="end">{t:g}</text>')
-    cy = (top + bot) / 2
-    add(f'<text x="{x + 12:.1f}" y="{cy:.1f}" font-size="11" text-anchor="middle" '
-        f'transform="rotate(-90 {x + 12:.1f} {cy:.1f})">{esc(ylabel)}</text>')
-    n = len(weeks)
-    every = n <= 6  # a date under every tick while they fit; past that, the first and the last
+                add(f'<circle cx="{lx + 8:.1f}" cy="{y + 19:.1f}" r="3" fill="{colour}"/>')
+            add(f'<text x="{lx + 19:.1f}" y="{y + 23:.1f}" font-size="11">{esc(name)}</text>')
+            lx += 19 + _CHAR_W[11] * len(name) + 12
+        ticks = _ticks(peak, percent=percent)
+        self.peak = ticks[-1]
+        add(f'<path d="M{self.ax:.1f},{self.top:.1f} V{self.bot:.1f} H{x1:.1f}" fill="none" '
+            f'stroke="{_style.DIM}" stroke-width="1"/>')
+        for t in ticks:
+            ty = self.y(t)
+            add(f'<line x1="{self.ax - 4:.1f}" x2="{self.ax:.1f}" y1="{ty:.1f}" y2="{ty:.1f}" stroke="{_style.DIM}"/>')
+            add(f'<text x="{self.ax - 7:.1f}" y="{ty + 4:.1f}" font-size="11" text-anchor="end">{t:g}</text>')
+        cy = (self.top + self.bot) / 2
+        add(f'<text x="{x + 12:.1f}" y="{cy:.1f}" font-size="11" text-anchor="middle" '
+            f'transform="rotate(-90 {x + 12:.1f} {cy:.1f})">{esc(ylabel)}</text>')
+        self.slot = (x1 - self.ax - 6) / max(self.n, 1)
+        self.x0 = self.ax + 6
+        # a date under every slot while they fit, else every k-th, always the newest
+        widest = max((len(s) for s in labels), default=0) * _CHAR_W[11] + 3
+        every = max(1, math.ceil(widest / self.slot))
+        for i, label in enumerate(labels):
+            px = self.px(i)
+            add(f'<line x1="{px:.1f}" x2="{px:.1f}" y1="{self.bot:.1f}" y2="{self.bot + 4:.1f}" stroke="{_style.DIM}"/>')
+            if (self.n - 1 - i) % every == 0:
+                add(f'<text x="{px:.1f}" y="{self.bot + 17:.1f}" font-size="11" text-anchor="middle">{esc(label)}</text>')
+        if xlabel:
+            add(f'<text x="{(self.ax + x1) / 2:.1f}" y="{self.bot + 34:.1f}" font-size="11" '
+                f'text-anchor="middle">{esc(xlabel)}</text>')
 
-    # the last week sits 10 px in from the axis end; a bar's half-width further in, so it doesn't overhang
-    bw = min(26.0, (x1 - ax - 30) / max(n - 1, 1) / 2) if stacked else 0.0
-    span = x1 - ax - 30 - bw / 2
+    def px(self, i: int) -> float:
+        return self.x0 + self.slot * (i + 0.5)
 
-    def at(i: int, v: float) -> tuple[float, float]:
-        px = (ax + 20 + x1) / 2 if n == 1 else ax + 20 + span * i / (n - 1)
-        return px, bot - (bot - top) * v / peak
+    def y(self, v: float) -> float:
+        return self.bot - (self.bot - self.top) * v / self.peak
 
-    for i, wk in enumerate(weeks):
-        px = at(i, 0)[0]
-        add(f'<line x1="{px:.1f}" x2="{px:.1f}" y1="{bot:.1f}" y2="{bot + 4:.1f}" stroke="{_style.DIM}"/>')
-        if every or i in (0, n - 1):
-            add(f'<text x="{px:.1f}" y="{bot + 17:.1f}" font-size="11" text-anchor="middle">'
-                f'{esc(_fmt_day(wk["week"]))}</text>')
-        if n_per_week and n_per_week[i] is not None:
-            add(f'<text x="{px:.1f}" y="{bot + 30:.1f}" font-size="10" text-anchor="middle">n = {n_per_week[i]}</text>')
-    if xlabel:
-        below = bot + (48 if n_per_week else 35)
-        add(f'<text x="{(ax + x1) / 2:.1f}" y="{below:.1f}" font-size="11" text-anchor="middle">Week starting</text>')
-    if stacked:
-        # a bar no wider than half the gap between weeks; a hollow week's segments are outlines
-        for i in range(n):
-            base = 0.0
-            for _, colour, vals, hollow in series:
-                if not vals[i]:
-                    continue
-                px, ytop = at(i, base + vals[i])
-                ybot = at(i, base)[1]
-                fill = f'fill="none" stroke="{colour}" stroke-width="1.5"' if hollow[i] else f'fill="{colour}"'
-                add(f'<rect x="{px - bw / 2:.1f}" y="{ytop:.1f}" width="{bw:.1f}" height="{ybot - ytop:.1f}" {fill}/>')
-                base += vals[i]
-        return
+    def star(self, px: float, py: float, colour: str) -> None:
+        """The `*` beside a point or above a baseline: thin data, or none logged."""
+        self.add(f'<text x="{px:.1f}" y="{py:.1f}" font-size="15" font-weight="700" fill="{colour}">*</text>')
+
+
+def _lines(axes: _Axes, series: list[tuple[str, list, list]]) -> None:
+    """Line series: (colour, value per slot (None = no point), hollow per slot). A hollow point has a
+    `*` beside it and the segments touching it are dashed. Under MIN_LINE_WEEKS slots the points
+    aren't joined and carry their values instead."""
+    n, add = axes.n, axes.add
     joined = n >= MIN_LINE_WEEKS
-    for k, (_, colour, vals, hollow) in enumerate(series):
+    for k, (colour, vals, hollow) in enumerate(series):
         for i in range(n - 1 if joined else 0):
             if vals[i] is None or vals[i + 1] is None:
                 continue
-            (xa, ya), (xb, yb) = at(i, vals[i]), at(i + 1, vals[i + 1])
             dash = ' stroke-dasharray="4 3"' if hollow[i] or hollow[i + 1] else ""
-            add(f'<line x1="{xa:.1f}" y1="{ya:.1f}" x2="{xb:.1f}" y2="{yb:.1f}" stroke="{colour}" '
-                f'stroke-width="1.75"{dash}/>')
+            add(f'<line x1="{axes.px(i):.1f}" y1="{axes.y(vals[i]):.1f}" x2="{axes.px(i + 1):.1f}" '
+                f'y2="{axes.y(vals[i + 1]):.1f}" stroke="{colour}" stroke-width="1.75"{dash}/>')
         for i, v in enumerate(vals):
             if v is None:
                 continue
-            px, py = at(i, v)
-            fill = 'fill="none" stroke-width="1.5"' if hollow[i] else f'fill="{colour}" stroke-width="0"'
+            px, py = axes.px(i), axes.y(v)
+            fill = f'fill="{_style.SURFACE}" stroke-width="1.5"' if hollow[i] else f'fill="{colour}" stroke-width="0"'
             add(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.5" stroke="{colour}" {fill}/>')
-            if not joined:   # its number beside it: above the week's highest dot, below the rest
-                top_k = max(range(len(series)), key=lambda j: (series[j][2][i] is not None, series[j][2][i] or 0, -j))
-                add(f'<text x="{px + 7:.1f}" y="{py + (-6 if k == top_k else 14):.1f}" font-size="11" '
-                    f'fill="{colour}">{v:.0f}</text>')
+            if hollow[i]:
+                axes.star(px + 5, py + 1, colour)
+            if not joined:   # its number beside it: above the slot's highest dot, below the rest
+                top_k = max(range(len(series)), key=lambda j: (series[j][1][i] is not None, series[j][1][i] or 0, -j))
+                add(f'<text x="{px + (16 if hollow[i] else 7):.1f}" y="{py + (-6 if k == top_k else 14):.1f}" '
+                    f'font-size="11" fill="{colour}">{v:.0f}</text>')
+
+
+def _bars(axes: _Axes, stacks: list[list[tuple[float, str]] | None], *, hollow: list[bool] | None = None,
+          above: list[tuple[str, str] | None] | None = None) -> None:
+    """Stacked bars: per slot, (value, fill) bottom-up, or None for no data (a `*` at the baseline).
+    Segments are split by a 1.5 px gap of surface. A hollow slot's segments are outlines with a `*`.
+    `above`: lines of text, in a colour, printed over a slot's stack."""
+    add = axes.add
+    bw = min(30.0, axes.slot * 0.62)
+    for i, stack in enumerate(stacks):
+        px = axes.px(i)
+        if stack is None:
+            axes.star(px - 4, axes.bot - 3, _style.DIM)
+            continue
+        base = 0.0
+        for v, fill in stack:
+            if not v:
+                continue
+            ytop, ybot = axes.y(base + v), axes.y(base) - (_GAP if base else 0)
+            look = f'fill="none" stroke="{fill}" stroke-width="1.5"' if hollow and hollow[i] else f'fill="{fill}"'
+            add(f'<rect x="{px - bw / 2:.1f}" y="{ytop:.1f}" width="{bw:.1f}" height="{max(ybot - ytop, 0.5):.1f}" {look}/>')
+            base += v
+        top = axes.y(base)
+        if hollow and hollow[i]:
+            axes.star(px + bw / 2 + 1, top + 10, _style.DIM)
+        if above and above[i]:
+            lines, colour = above[i]
+            for k, text in enumerate(lines):
+                add(f'<text x="{px:.1f}" y="{top - 4 - 11 * (len(lines) - 1 - k):.1f}" font-size="10" '
+                    f'font-weight="700" text-anchor="middle" fill="{colour}">{esc(text)}</text>')
+
+
+def _fixed_labels(passes: list[dict], slot: float) -> list[tuple[str, ...] | None]:
+    """`N fixed` over each pass that fixed any: one line while the widest fits its slot, else the
+    number over the word."""
+    texts = [f"{p['fixed']} fixed" if p["fixed"] else None for p in passes]
+    fits = max((len(t) for t in texts if t), default=0) * _CHAR_W[10] <= slot - 2
+    return [t and ((t,) if fits else tuple(t.split())) for t in texts]
 
 
 def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     """The chart. Same `data`, same bytes: no clock, no random ids, fixed number formatting."""
     pal = palette or load_hex()
-    W, H = 960, 590
+    W, H = 1280, 692
     left = 20
-    # a week still running is in the JSON, not the picture: a day or two of it reads as a collapse.
-    # Nor are the thin weeks before logging got going: they'd only stretch the axis.
-    weeks = [w for w in data["weeks"] if not w.get("ongoing")]
+    # the thin weeks before logging got going are in the JSON, not the picture: they'd only stretch
+    # the axis. A thin week after that is drawn, hollow, with a `*`.
+    weeks = list(data["weeks"])
     while weeks[1:] and weeks[0]["sessions"] < LOW_SESSIONS:
         weeks = weeks[1:]
     weeks = weeks[-MAX_WEEKS:]
+    passes = (data.get("passes") or [])[-MAX_PASSES:]
     out: list[str] = []
     add = out.append
-    title = "Agent pre-commit reviews, per week"
+    title = "Agent pre-commit reviews"
     add(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" role="img" '
         f'aria-labelledby="t d" font-family="{_style.FONT}" fill="{INK}">')
     add(f'<title id="t">{esc(title)}</title>')
@@ -471,60 +539,102 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
         add("</svg>")
         return "\n".join(out) + "\n"
 
-    gap = 50
-    half, third = (W - 2 * left - gap) / 2, (W - 2 * left - 2 * gap) / 3
-    row = (88, 318)
+    gap = 40
+    col = (W - 2 * left - 2 * gap) / 3
+    xs = [left + k * (col + gap) for k in range(3)]
+    row = (96, 376)
     hollow = [thin(w) for w in weeks]
+    days = [_fmt_day(w["week"]) for w in weeks]
+    reviewer_legend = [("line", name, pal[swatch]) for _, name, swatch in REVIEWERS]
 
     def by_reviewer(value) -> list:
-        return [(name, pal[swatch], [value(w, r) for w in weeks], hollow) for r, name, swatch in REVIEWERS]
+        return [(pal[swatch], [value(w, r) for w in weeks], hollow) for r, _, swatch in REVIEWERS]
 
-    _panel(add, x=left, y=row[0], w=half, letter="a", title="Changes reviewed and PRs merged",
-           ylabel="Count per week", weeks=weeks,
-           series=[("changes reviewed", INK, [w["changes"] for w in weeks], hollow),
-                   ("PRs merged", pal[PR_SWATCH], [w["prs"] for w in weeks], hollow)])
-    _panel(add, x=left + half + gap, y=row[0], w=half, letter="b", title="Finding rate", ylabel="Findings per 100 changes",
-           weeks=weeks, series=by_reviewer(_per_100))
-    _panel(add, x=left, y=row[1], w=third, letter="c", title="Fixed before commit",
-           ylabel="Fixed before commit (%)", weeks=weeks, series=by_reviewer(_fixed), percent=True, xlabel=True)
-    j = data.get("judge")
-    for k, (r, name, _) in enumerate(REVIEWERS):
-        x = left + (k + 1) * (third + gap)
-        if not j or r not in j["swept"]:
-            add(f'<text x="{x:.1f}" y="{row[1]}" font-size="15" font-weight="700">{"de"[k]}</text>')
-            add(f'<text x="{x + 18:.1f}" y="{row[1]}" font-size="13" font-weight="700">Judge: {esc(name.lower())}</text>')
-            add(f'<text x="{x + 18:.1f}" y="{row[1] + 60}" font-size="11">'
-                f'{"No judge pass yet." if not j else "Judged from the next pass on."}</text>')
-            continue
-        judged = j["by_week"].get(r, {})
-        # a week the judge's pass fell inside is only partly judged
-        late = [h or _ends(w) >= j["date"] for h, w in zip(hollow, weeks)]
-        # shares, not counts: a week's count says how much backlog was swept, not how good it was;
-        # no point for a week the judge has nothing from (not swept, or not yet), nor, like every
-        # rate here, for one under LOW_SESSIONS
-        n = [sum(judged[w["week"]].values()) or None
-             if w["week"] in judged and w["sessions"] >= LOW_SESSIONS else None for w in weeks]
-        few = [h or (c or 0) < LOW_NOTES for h, c in zip(late, n)]   # too few notes for a share to mean much
-        _panel(add, x=x, y=row[1], w=third, letter="de"[k],
-               title=f"Judge: {name.lower()} ({_fmt_day(j['date'])})",
-               ylabel="Share of unfixed notes (%)", weeks=weeks, xlabel=True, percent=True, n_per_week=n, stacked=True,
-               series=[(_judge_name(r, line), pal[swatch],
-                        [100 * sum(judged[w["week"]][s] for s in group) / c if c else None
-                         for w, c in zip(weeks, n)], few)
-                       for line, group, swatch in JUDGE_LINES])
+    def peak(series) -> float:
+        return max([v for _, vals, _ in series for v in vals if v is not None] or [1])
+
+    # a: counts
+    counts = [(INK, [w["changes"] for w in weeks], hollow), (pal[PR_SWATCH], [w["prs"] for w in weeks], hollow)]
+    _lines(_Axes(add, x=xs[0], y=row[0], w=col, letter="a", title="Changes reviewed and PRs merged, per week",
+                 ylabel="Count per week", labels=days, peak=peak(counts),
+                 legend=[("line", "changes reviewed", INK), ("line", "PRs merged", pal[PR_SWATCH])]), counts)
+    # b: fixed before commit
+    _lines(_Axes(add, x=xs[1], y=row[0], w=col, letter="b", title="Fixed before commit, per week",
+                 ylabel="Fixed before commit (%)", labels=days, peak=100, percent=True, legend=reviewer_legend),
+           by_reviewer(_fixed))
+    # c: real bugs open at each pass, by age
+    pass_days = [_fmt_day(p["date"]) for p in passes]
+    if passes:
+        tops = [sum(p["open"].values()) for p in passes]
+        c = _Axes(add, x=xs[2], y=row[0], w=col, letter="c", title="Real bugs still open at each judge pass, by age",
+                  ylabel="Open real bugs", labels=pass_days, peak=max(tops) * 1.12 or 1, xlabel="Judge pass",
+                  legend=[("box", name, fill) for _, name, _, fill in reversed(AGES)], legend_title="open for")
+        labels = _fixed_labels(passes, c.slot)
+        _bars(c, [[(p["open"][k], fill) for k, _, _, fill in AGES] for p in passes],
+              above=[(t, pal["blue"]) if t else None for t in labels])
+    else:
+        _note(add, xs[2], row[0], "c", "Real bugs still open at each judge pass", "No judge pass yet.")
+    # d: judge tokens per pass, by stage
+    if passes:
+        totals = [sum(p["tokens"].values()) if p["tokens"] else 0 for p in passes]
+        d = _Axes(add, x=xs[0], y=row[1], w=col, letter="d", title="Judge tokens per pass, by stage",
+                  ylabel="Million tokens", labels=pass_days, peak=max(totals) / 1e6 * 1.12 or 1, xlabel="Judge pass",
+                  legend=[("box", k, pal[swatch]) for k, swatch in STAGES])
+        _bars(d, [[(p["tokens"][k] / 1e6, pal[swatch]) for k, swatch in STAGES] if p["tokens"] else None
+                  for p in passes],
+              above=[((_mtok(t),), _style.DIM) if t else None for t in totals])
+    else:
+        _note(add, xs[0], row[1], "d", "Judge tokens per pass, by stage", "No judge pass yet.")
+    # e: review wait
+    wait = by_reviewer(lambda w, r: w["wait_s"][r])
+    _lines(_Axes(add, x=xs[1], y=row[1], w=col, letter="e", title="Pre-commit review wait, per week",
+                 ylabel="Median wait (s)", labels=days, peak=peak(wait), xlabel="Week starting",
+                 legend=reviewer_legend), wait)
+    # f: reviewer tokens, once a whole week of them is logged; until then, when logging began
+    if any(w["reviewer_tokens"] and not w["ongoing"] for w in weeks):
+        rt = [sum(w["reviewer_tokens"].values()) if w["reviewer_tokens"] else 0 for w in weeks]
+        began = week_of(_dt.date.fromisoformat(data["tokens_from"])).isoformat()
+        f = _Axes(add, x=xs[2], y=row[1], w=col, letter="f", title="Reviewer tokens per week",
+                  ylabel="Million tokens", labels=days, peak=max(rt) / 1e6 * 1.12 or 1, xlabel="Week starting",
+                  legend=[("box", name, pal[swatch]) for _, name, swatch in REVIEWERS])
+        _bars(f, [[(w["reviewer_tokens"][r] / 1e6, pal[swatch]) for r, _, swatch in REVIEWERS]
+                  if w["reviewer_tokens"] else None for w in weeks],
+              hollow=[h or w["week"] == began for h, w in zip(hollow, weeks)],
+              above=[((_mtok(t),), _style.DIM) if t else None for t in rt])
+    else:
+        since = (f"logged since {_fmt_day(data['tokens_from'])} (#1807)" if data.get("tokens_from")
+                 else "not logged yet (#1807)")
+        _note(add, xs[2], row[1], "f", f"Reviewer tokens: {since}",
+              "Each review now logs its tokens and cost. Once a whole",
+              "week is logged, this panel plots the two reviewers'",
+              "tokens per week, next to the judge's in d.")
     add(_footer(data, left, H))
     add("</svg>")
     return "\n".join(out) + "\n"
 
 
+def _note(add, x: float, y: float, letter: str, title: str, *lines: str) -> None:
+    """A panel slot with text instead of a plot."""
+    add(f'<text x="{x:.1f}" y="{y:.1f}" font-size="15" font-weight="700">{esc(letter)}</text>')
+    add(f'<text x="{x + 18:.1f}" y="{y:.1f}" font-size="13">{esc(title)}</text>')
+    for k, line in enumerate(lines):
+        add(f'<text x="{x + 18:.1f}" y="{y + 30 + 17 * k:.1f}" font-size="12" fill="{_style.DIM}">{esc(line)}</text>')
+
+
 def _footer(data: dict, x: int, H: int) -> str:
     through = (f"Data through {_fmt_day(data['last_day'])} · {data['sessions']} sessions"
                if data["last_day"] else "No data yet")
-    gloss = ("Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a "
-             "helper or sit in the wrong place · b: lower = fewer flagged, not necessarily better code")
-    return (f'<text x="{x}" y="{H - 28}" font-size="11">{esc(gloss)}</text>\n'
-            f'<text x="{x}" y="{H - 12}" font-size="11">{esc(through)} · hollow = partial week, under '
-            f'{LOW_SESSIONS} sessions (no rate drawn) or under {LOW_NOTES} notes judged · how it is counted: docs/ai-assist/AGENT_RECORD.md</text>')
+    lines = (
+        "Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a helper or "
+        "sit in the wrong place",
+        f"* beside a hollow point or bar: a week still running, or under {LOW_SESSIONS} sessions · * on its own: "
+        "no tokens logged · tokens include cache reads",
+        "c: a real bug is one the verify agent called fix or decide (or found already fixed), or a stranded commit · "
+        "fixed = gone at that pass, the first time since it was flagged",
+        f"{through} · how it is counted: docs/ai-assist/AGENT_RECORD.md",
+    )
+    return "\n".join(f'<text x="{x}" y="{H - 12 - 16 * (len(lines) - 1 - k)}" font-size="11">{esc(t)}</text>'
+                     for k, t in enumerate(lines))
 
 
 # ── 3. publish ─────────────────────────────────────────────────────────────────────────────────
@@ -594,7 +704,7 @@ BRANCH_README = """# judge-assets
 Generated by the weekly judge (`scripts/judge/chart.py`). One commit, force-pushed each week:
 history is not kept here. Do not edit; do not merge into `main`.
 
-- `effectiveness.svg` — the weekly chart the main README embeds.
+- `effectiveness.svg` — the chart the main README embeds: per week, and per judge pass.
 - `findings-flow.svg` — where every finding went, start to finish (`flow_chart.py`).
 - `effectiveness.json` — the numbers behind both (aggregates only; the flow's under `flow`).
 

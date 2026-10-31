@@ -38,7 +38,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
-import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor } from './interactiveViews'
+import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
@@ -51,7 +51,7 @@ import CanvasSelectionOverlay from './CanvasSelectionOverlay.vue'
 import FrameAnnotator from '../FrameAnnotator.vue'
 import CaptureViewSurface from '../CaptureViewSurface.vue'
 import { useCaptureReshowStore } from '../../stores/captureReshow'
-import type { CaptureAddress } from '../../utils/captureAddress'
+import { resolveStoredAddress } from '../../utils/captureAddress'
 import type { CaptureEnvelope } from '../../utils/kiwiCaptures'
 import type { PanelHit } from '../../utils/panelSelectionHit'
 import { useCanvasShare, type SharePanelExported } from '../../composables/useCanvasShare'
@@ -188,9 +188,15 @@ const {
   }),
 })
 
-// Migrate boards persisted before the four per-popType population summaries collapsed into one spec: a
-// summary slot's `ref` IS the spec id, so a stale id would resolve to no spec and render an empty slot.
+// Migrate boards persisted before a rename: a summary slot's `ref` IS the spec id (the four per-popType
+// population summaries collapsed into one), an interactive slot's `ref` IS the view key (`VIEW_ALIASES`).
+// A stale ref resolves to nothing and renders an empty slot.
 for (const c of entry.value.contents) {
+  if (c?.kind === 'interactive') {
+    const v = { kind: c.ref }
+    if (migrateViewKey(v)) c.ref = v.kind
+    continue
+  }
   if (!c || c.kind !== 'summary') continue          // slots may be empty (null)
   const state = (c.state ?? {}) as Record<string, unknown>
   const s = { specId: c.ref, popType: state.popType as string | undefined }
@@ -353,7 +359,8 @@ const clustSuffix = computed<string>({
   set: v => (entry.value.shared.clustSuffix = v) })
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
         featureOptions: clustFeatureOptions, labelMap: clustNameMap,
-        hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor } =
+        hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor,
+        clusterAxes: clustAxes } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot,
                       // the board's own gating store (its cluster slots' pop tree + read-only manager)
@@ -403,6 +410,7 @@ function ctxFor(c: SlotContent, i: number) {
     projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
     popType: clustPopType.value, suffix: clustSuffix.value,
     shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
+    axes: clustAxes.value[clustSuffix.value] ?? null, nameMap: clustNameMap.value,
   }
   const base = { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
   if (railOf(c) === 'flowModels') return { ...base, model: panelFlowModel(c) }
@@ -609,10 +617,7 @@ watch(() => shareSel.active.value, on => {
   if (on) { reshown.value = null; bumpSlotHits() }
 })
 // Reshow surface bindings (zoom-to-source deferred; frame + marks still show).
-const reshownAddress = computed<CaptureAddress>(() => {
-  const a = reshown.value?.address as CaptureAddress | null | undefined
-  return a ?? { projectUid: projectUid.value }
-})
+const reshownAddress = computed(() => resolveStoredAddress(reshown.value?.address, projectUid.value))
 const reshownAddressLine = computed(() => {
   const panelsN = (reshown.value?.panels?.length) ?? 0
   return panelsN > 0 ? `analysis · ${panelsN} panels` : `analysis · board`

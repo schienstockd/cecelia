@@ -58,9 +58,12 @@ function _relay_runner_frame(f::Dict{String,Any})
         # VERBATIM. The one thing that must still happen here is the BANK: `/api/tasks/recent` is served
         # from this process, so an outcome banked only in the runner is unrecoverable for a browser that
         # missed the live frame. Banked with the RUNNER's timestamps, never re-derived.
-        if t in ("chain:node:done", "chain:node:failed")
+        # A manual step: prepare's task is banked when the node parks (`waiting`, as done), and the
+        # user's later continue/cancel is not banked again — the same rule as `chain_frames.jl`'s `bank`.
+        # The runner's builder drops times on that later frame, so banking it would restamp the task.
+        if t in ("chain:node:done", "chain:node:failed", "chain:node:waiting") && get(f, "waited", false) !== true
             record_task_outcome!(String(get(f, "taskId", "")),
-                                 t == "chain:node:done" ? "done" : String(get(f, "status", "failed"));
+                                 t == "chain:node:failed" ? String(get(f, "status", "failed")) : "done";
                                  image_uid   = String(get(f, "imageUid", "")),
                                  fun         = String(get(f, "fn", "")),
                                  pool        = String(get(f, "pool", "")),
@@ -416,3 +419,14 @@ end
 
 _cancel_chain_on_runner(run_id::AbstractString) =
     (_runner_enabled() && try; Cecelia.runner_cancel_chain(_RUNNER, run_id); catch; end; nothing)
+
+# The runner's answer to a continue, or `nothing` when there is no runner (or it can't be reached).
+function _continue_chain_on_runner(run_id::AbstractString, node_id::AbstractString, image_uids)
+    _runner_enabled() || return nothing
+    try
+        Cecelia.runner_continue_chain(_RUNNER, run_id, node_id; image_uids)
+    catch e
+        @warn "Runner unreachable — continuing the chain step here only" exception = e
+        nothing
+    end
+end

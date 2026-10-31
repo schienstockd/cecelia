@@ -32,6 +32,8 @@ const KIWI_READ_TOOLS = [
     "read_lab_log", "list_notebooks", "get_notebook",
     "get_guide",   # the in-app guides the user sees — "how do I…" is a fair Kiwi question
     "get_task_catalogue",   # what each step is for — "which step fixes this?" is a fair Kiwi question
+    "gate_plot", "gate_cells_view",   # a population's gate and its cells in the image, as pictures
+    "gate_histogram", "gate_stats", "gate_examples",   # its distribution, counts, and example crops
 ]
 const KIWI_EXCLUDED_TOOLS = Dict(
     "list_projects" => "other projects — a turn is scoped to one",
@@ -43,8 +45,9 @@ const KIWI_EXCLUDED_TOOLS = Dict(
     "append_lab_log" => "write", "create_blackboard_entry" => "write", "revise_blackboard_entry" => "write",
     "set_blackboard_status" => "write", "set_blackboard_outcome" => "write",
     "set_blackboard_section_outcome" => "write", "create_chain" => "write",
+    "suggest_chain" => "drafts a chain for create_chain — Kiwi builds no chains",
     "create_notebook" => "write", "revise_notebook" => "write", "set_notebook_description" => "write",
-    "add_analysis_board" => "write", "open_analysis_board_plot" => "drives the user's UI",
+    "add_analysis_board" => "write", "add_gate" => "write", "set_gate" => "write", "delete_gate" => "write", "open_analysis_board_plot" => "drives the user's UI",
     "seek_viewer" => "drives the user's UI", "point_at_ui" => "point-out — Kiwi points through refs",
     "mark_cells" => "point-out", "mark_tracks" => "point-out", "mark_plot" => "point-out",
     "mark_tile" => "point-out", "mark_freeform" => "point-out", "select_on_plot" => "point-out",
@@ -140,6 +143,8 @@ Point at the EVIDENCE — what the user would open to check the claim:
   attached plot, or a `proposedPlot` for that measure and those populations (a click opens the board
   that already shows it, or makes it) — per image (`statUnit: "image"`) when the claim counts images;
 - a claim about particular cells or tracks (which, how many, where) → a population, cells or tracks ref.
+- a claim that a step ran or produced output → a `task` ref with that image's `imageUid` (and
+  the `valueName` it made, if named) — a task without an image only names the kind of step.
 Never cite a population on one or two images as evidence for a claim about the whole set.
 
 When the look worth taking is a plot nobody has made, point at it: a `proposedPlot` ref is that plot —
@@ -293,7 +298,8 @@ function _kiwi_ref_anchors(ref)::Vector{Any}
     kind == "tile"       && return Any[String(g("imageUid")), String(g("cellId"))]
     kind == "plot"       && return Any[String(g("plotId"))]
     kind == "capture"    && return Any[String(g("captureId"))]
-    kind == "task"       && return Any[String(g("funName"))]
+    # a task on an image claims a run there — its image must have been in view too
+    kind == "task"       && return Any[String(g("funName")), (g("imageUid") === nothing ? () : (String(g("imageUid")),))...]
     kind == "ui"         && return Any[String(g("anchor"))]
     kind == "blackboard" && return Any[String(g("entryId"))]
     # a proposal names nothing that exists yet — what keeps it honest is the resolver checking it can be
@@ -539,7 +545,8 @@ function run_kiwi_turn(project_uid::AbstractString, prompt::AbstractString;
     schema = kiwi_reply_schema(; reasoning)
     opts = (; system_prompt = kiwi_system_prompt(project_uid), replace_system_prompt = true,
               json_schema = schema, allowed_tools = _kiwi_allowed_tools(), strict_mcp = true,
-              builtin_tools = "", stream = true, timeout_s)
+              builtin_tools = "", stream = true, timeout_s,
+              settings_path = _write_observer_hook_settings())
     usage = [0, 0]; tool_calls = 0; reask_errors = String[]
     turn(p, sid) = (r = Cecelia.run_agent_turn(agent, p, mcp_config_path; session_id = sid,
                                                on_progress, on_process, opts...);

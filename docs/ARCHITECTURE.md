@@ -535,11 +535,13 @@ records as ones it already had — a restart that silently ate its own startup.
 | S→C | `task:cancel:ack` | `taskId`, `found` | `ws.ts` → `cancelAcked`. `found: false` = nothing in this backend was running it; the row drops its "Cancelling…" and logs why. A hit needs no more — the task's own `cancelled` frame follows |
 | C→S | `chain:run` | `projectUid`, `chain`, `imageUids` | `sockets.jl` → `handle_chain_run` — starts a chain run in a `Threads.@spawn`; does not block the WS thread |
 | C→S | `chain:cancel` | `runId` | `sockets.jl` → `cancel_chain_run!(runId)` — sets the cancelled flag; nodes check it between steps (does **not** kill currently-executing subprocesses — see `docs/TODO.md` → *Set-scope / incremental node subprocesses not killed on chain cancel*) |
+| C→S | `chain:continue` | `projectUid`, `runId`, `nodeId`, `imageUids?` | `sockets.jl` → `handle_chain_continue` — continue a parked manual step: this process, then the runner, then (run not live) on disk + resume. Answers `chain:continue:result` (`continued`, `refused` uid→reason). See `docs/SCHEDULER.md` → *Manual steps* |
 | S→C | `chain:run:started` | `runId`, `projectUid` | broadcast when a chain run begins |
 | S→C | `chain:run:done` | `runId`, `projectUid` | broadcast when `run_chain` returns successfully |
 | S→C | `chain:run:failed` | `runId`, `projectUid`, `error` | broadcast on unhandled error in `run_chain` |
 | S→C | `chain:node:queued` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params` | `server.jl` event-bus subscriber → all clients; `ws.ts` → `taskStore.addFromChainEvent`. Node submitted to its pool, waiting for a worker slot (no `startedAt` yet) |
 | S→C | `chain:node:running` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params` | Same path. Fired when a pool worker actually starts the job — this is when `startedAt`/elapsed begins |
+| S→C | `chain:node:waiting` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params` | same path. A manual step finished prepare and is parked for the user (`chain:continue`) |
 | S→C | `chain:node:done` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `params`, `result` | same path as above |
 | S→C | `chain:node:failed` | `runId`, `projectUid`, `imageUid`, `nodeId`, `fn`, `status` | same path; `status` is `failed`/`skipped`/`cancelled` (the frontend maps `cancelled` to a cancelled entry, not failed) |
 | S→C | `server:log` | `seq`, `ts`, `level`, `source`, `message`, `detail?` | `ws.ts` → `log.pushServer`. Everything the backend side says — its own logs and every child process's output. `seq` lets a client detect a dropped frame and refetch it; see *The log rail* |

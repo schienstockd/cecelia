@@ -23,8 +23,9 @@
 //                         share) plus the lab-log sibling that most users find first. Replaced the
 //                         earlier `lab-log-and-claude` two-step pointer in 2026-09 — see D13.
 
-import type { GuideDef } from './types'
+import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
+import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
 
 // ── User profile: the header chip is the mid-session entry point ─────────────────────────────────
 // The launch picker (AppProfilePicker.vue) is a bare-route boot interstitial — the router bounces
@@ -71,7 +72,7 @@ export const userProfileGuide: GuideDef = {
 // every hidden page is still reachable by URL. Settings → View profile is the only entry point.
 export const viewProfileGuide: GuideDef = {
   id: 'use-a-view-profile',
-  title: 'Use a view profile',
+  title: 'Use a sidebar layout',
   group: 'Start',
   icon: 'pi-eye',
   summary: 'Curate the sidebar down to the pages you actually work on — declutter, not access control.',
@@ -82,7 +83,7 @@ export const viewProfileGuide: GuideDef = {
       anchor: 'nav:/settings',
       placement: 'right',
       title: 'Settings',
-      text: 'View profiles live in Settings — they curate the sidebar down to the pages this user actually works on.',
+      text: 'Sidebar layouts live in Settings — they curate the sidebar down to the pages this user actually works on.',
       bullets: ['This is decluttering, not access control — every page still opens by URL.'],
       clickAnchor: true,
     },
@@ -91,20 +92,20 @@ export const viewProfileGuide: GuideDef = {
       route: '/settings',
       placement: 'left',
       title: 'Pick or edit one',
-      text: 'The chip row picks which profile is active; Edit opens the builder.',
-      bullets: ['"All pages" is the default — you never lose access to a page by picking a profile.'],
+      text: 'The chip row picks which layout is active; Edit opens the builder.',
+      bullets: ['"All pages" is the default — you never lose access to a page by picking a layout.'],
     },
     {
       anchor: 'viewProfile.editor',
       placement: 'bottom',
-      title: 'Tick pages into a profile',
-      text: 'One row per sidebar group — tick the pages this profile should surface.',
+      title: 'Tick pages into a layout',
+      text: 'One row per sidebar group — tick the pages this layout should surface.',
       bullets: ['Great for handing a colleague a "just the segmentation bits" cecelia.'],
       reveal: {
         // The editor only exists once the user clicks Edit in the previous step.
         needed: c => !c.anchorExists('viewProfile.editor'),
         anchor: 'settings.viewProfile',
-        text: 'Click Edit above to open the view-profile builder.',
+        text: 'Click Edit above to open the layout builder.',
         placement: 'left',
       },
     },
@@ -208,7 +209,7 @@ export const runChainGuide: GuideDef = {
     {
       anchor: 'nav:/chain',
       placement: 'right',
-      title: 'Whiteboard',
+      title: 'Chains',
       text: 'A chain is your pipeline drawn as a graph — correct, segment, track, cluster, in order.',
       bullets: ['Build it once and every new image goes through the same steps.'],
       clickAnchor: true,
@@ -281,7 +282,7 @@ export const useTheBlackboardGuide: GuideDef = {
       anchor: 'nav:/blackboard',
       placement: 'right',
       title: 'Blackboard',
-      text: 'One markdown surface per project — every Kiwi turn about this project lands here too.',
+      text: 'One markdown surface per project — save a Kiwi reply here to keep it.',
       bullets: ['Reach it from the sidebar; the list opens straight away.'],
       clickAnchor: true,
     },
@@ -299,7 +300,7 @@ export const useTheBlackboardGuide: GuideDef = {
       placement: 'right',
       title: 'The entry list',
       text: 'Sort by any column; the two chip rows above filter by status and outcome.',
-      bullets: ['The project profile row stays pinned to the top.'],
+      bullets: ['The About this project row stays pinned to the top.'],
     },
     {
       anchor: 'blackboard.edit',
@@ -408,83 +409,82 @@ export const correctAMaskGuide: GuideDef = {
 // Pairing / chat / share rows are `v-if`'d on `projectUid` (KiwiCockpit.vue:276-279 — no project =
 // no pairing target), so the prereq is `projectOpen`. Kiwi itself is `v-if`'d in App.vue on
 // `settings.kiwiOpen`, so anchor-not-found reveals point at `sidebar.kiwiCta`.
+// Kiwi's three steps (lib/claudeOverview.ts → KIWI_LOOP), one per control, then Claude Code as the
+// OTHER way in — not a fourth step (two ways in, either first: WORKFLOW_RECIPES_PLAN.md → *Two ways
+// in*). The titles and text ARE claudeOverview's — Kiwi's `?` dialog and user-docs/README.md say the
+// same thing — so they can't drift into three explanations.
+const [loopPoint, loopAsk, loopKeep] = KIWI_LOOP
+const openKiwiFirst = (anchor: string): Reveal => ({
+  needed: c => !c.anchorExists(anchor),
+  anchor: 'sidebar.kiwiCta',
+  text: 'Open Kiwi first.',
+  placement: 'right',
+})
 export const kiwiGuide: GuideDef = {
   id: 'assist-with-kiwi',
   title: 'Assist with Kiwi',
   group: 'Analysis',
   icon: 'pi-comments',
-  summary: 'The assistant cockpit — pairing status, chat handoff, and sharing what is on screen.',
+  summary: 'Point at it, ask, keep what holds up — or work it through in Claude Code instead.',
   prereqs: [PREREQ.projectOpen],
 
   steps: [
     {
-      anchor: 'sidebar.labLogCta',
-      placement: 'right',
-      title: 'The lab log',
-      text: 'A per-project, append-only record — Cecelia adds a digest when a run finishes, you and Kiwi append notes.',
-      bullets: ['Floating panel, reachable from any page.'],
-    },
-    {
       anchor: 'sidebar.kiwiCta',
       placement: 'right',
-      title: 'Kiwi is the assist cockpit',
-      text: 'Everything Claude-adjacent lives in this panel — pairing, chat starter, and the buttons that share what is on screen.',
-      bullets: ['On-demand only; nothing happens until you ask.'],
+      title: 'Kiwi',
+      text: 'Answers you can check: every claim links to its data, and it can’t change anything.',
+      bullets: ['Log in once from the account row at the top of the panel.'],
       clickAnchor: true,
     },
     {
-      anchor: 'kiwi.account',
+      anchor: 'kiwi.attach',
       placement: 'left',
-      title: 'Your Claude account',
-      text: 'The account this profile\'s turns bill — log in or out right here.',
-      bullets: ['Logging in opens a private browser window, so the last person\'s session can\'t sign you in.',
-                'Assistant → Terminal → Copy command starts claude in a terminal as you.'],
-      reveal: {
-        needed: c => !c.anchorExists('kiwi.account'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the Account row is at its top.',
-        placement: 'right',
-      },
+      title: loopPoint.title,
+      text: loopPoint.text,
+      bullets: ['The @ buttons sit on image rows, populations, plots, the viewer and Blackboard entries.',
+                'Here, + attaches a set, image or task by name.'],
+      reveal: openKiwiFirst('kiwi.attach'),
     },
     {
-      anchor: 'kiwi.pairing',
+      anchor: 'kiwi.ask',
       placement: 'left',
-      title: 'Pairing status',
-      text: 'The chip shows whether a claude-code session on this machine is paired — the refresh button probes the socket.',
-      bullets: ['Unpaired Kiwi still holds state; shared frames just fall back to the clipboard.'],
+      title: loopAsk.title,
+      text: loopAsk.text,
+      bullets: ['Follow up on a reply to keep the same conversation.'],
+      reveal: openKiwiFirst('kiwi.ask'),
+    },
+    {
+      anchor: 'kiwi.turnActions',
+      placement: 'left',
+      title: loopKeep.title,
+      text: loopKeep.text,
+      bullets: ['Replies expire after 50; the Blackboard keeps them.',
+                'Bad tags are how Claude warns you when a failure comes back.'],
       reveal: {
-        needed: c => !c.anchorExists('kiwi.pairing'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the pairing row lives inside the panel.',
-        placement: 'right',
+        needed: c => !c.anchorExists('kiwi.turnActions'),
+        anchor: 'kiwi.ask',
+        text: 'Ask something first — Save sits under the reply.',
+        placement: 'left',
       },
     },
     {
       anchor: 'kiwi.chat',
       placement: 'left',
-      title: 'Copy a chat starter',
-      text: 'Copies a one-line opener naming this project — paste it into the paired session to start a Kiwi conversation about it.',
-    },
-    {
-      anchor: 'kiwi.share',
-      placement: 'left',
-      title: 'Ship what you are looking at',
-      text: 'Two targets: the viewer frame or a canvas plot — both land in the same capture envelope.',
-      bullets: ['Falls back to the clipboard if nothing is paired.'],
+      title: `Or: ${TERMINAL_MODE.title}`,
+      text: 'Work the analysis through with Claude in a terminal — it builds for you.',
+      bullets: [`${TERMINAL_MODE.start}.`,
+                'Or press Continue in terminal on a reply to carry it over.',
+                'It marks cells and builds chains, boards and notebooks for you to review.'],
+      reveal: openKiwiFirst('kiwi.chat'),
     },
     {
       anchor: 'kiwi.assistantHelp',
       placement: 'bottom-start',
-      title: 'What Kiwi can see and do',
-      text: 'This ? explains Ask vs Chat, captures, chains, blackboard, limits — read once.',
-      bullets: ['Also reports whether the assist is actually set up.'],
+      title: 'Kiwi and Claude Code',
+      text: 'The ? recaps both ways in and what each can do.',
       clickAnchor: true,
-      reveal: {
-        needed: c => !c.anchorExists('kiwi.assistantHelp'),
-        anchor: 'sidebar.kiwiCta',
-        text: 'Open Kiwi first — the ? sits in its header.',
-        placement: 'right',
-      },
+      reveal: openKiwiFirst('kiwi.assistantHelp'),
     },
   ],
 }

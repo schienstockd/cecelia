@@ -57,6 +57,10 @@ describe('canCancelTask', () => {
     expect(canCancelTask(c({ status: 'queued' }))).toBe(true)
   })
 
+  it('offers it on a chain step waiting for the user', () => {
+    expect(canCancelTask(c({ status: 'waiting' }))).toBe(true)
+  })
+
   it('withholds it once the task has finished', () => {
     for (const status of ['done', 'failed', 'cancelled'] as const)
       expect(canCancelTask(c({ status }))).toBe(false)

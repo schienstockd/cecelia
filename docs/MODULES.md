@@ -822,6 +822,11 @@ of an image; a follow-up geometry (`box2d`, `point2d`, `line2d`, `polygon2d`) is
 extending the modal's drawing branch. Handler reads the value as a nested dict — coerce JSON3 keys
 with `pairs(box)` before unpacking.
 
+**`imageSelection`** — one image of the open project, by uid; `""` = none. A plain select listing
+`Set / image` for every image the frontend has loaded (`ParamRenderer.vue`). The validator treats it as a
+string, and the handler resolves it with `init_object(img_project_uid(img), uid)`. Use it when a task
+names ANOTHER image than the one it runs on — today `gate.manual_gate`'s `copyFrom` exemplar.
+
 ### Which picker — decide this before writing the param
 
 Every picker below already documents *how it works*. This table is the question that comes first:
@@ -930,6 +935,16 @@ reason: otherwise a conditional param is never reached and reads as one with no 
 
 A `showIf` naming a key no param declares can never be satisfied, so the control is hidden forever
 with no error. The suite rejects that (`showIf conditions name a param that exists`).
+
+**`formerKeys` — the keys a param was stored under before a rename.** Saved funParams and saved
+chains keep the old key forever, so renaming a `key` silently resets every saved setting to the default
+(it happened to `divisionChannels` → `competingChannels`). List the old key and both sides read it when
+the new one is absent: the form (`savedValueFor` in `paramValues.ts`) and every run
+(`_apply_spec_defaults`). Only the new key is written from then on.
+
+```json
+{ "key": "createUmap", "formerKeys": ["mergeUmap"], "label": "Calculate UMAP", "type": "bool", "default": true }
+```
 
 **`labelUnit` — relabel a chipSelect's options with a physical quantity read off the SELECTED
 IMAGES.** Frontend-only, and it changes the label while leaving the `value` untouched, so the

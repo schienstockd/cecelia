@@ -24,6 +24,7 @@ MIRROR_REL = pathlib.PurePosixPath("docs/ai-assist/judge-runs")   # in any check
 _MIRROR_DIR = _REPO / MIRROR_REL
 
 sys.path.insert(0, str(_REPO / "python"))
+from cecelia.effectiveness.claude_cli import USAGE_KEYS  # noqa: E402
 from cecelia.effectiveness.judge_staleness import backlog, judge_store  # noqa: E402
 from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E402
 
@@ -46,13 +47,31 @@ _BUGS_HOW_TO = (
     "The next pass checks each one again and marks the fixed ones `gone`. "
     "`pixi run judge-review` walks these one at a time and can open a briefed fix session for each, "
     "or answer `wont_fix` for a bug that isn't worth fixing. "
-    "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. "
+    "A `stranded` bug is commits pushed to a PR's branch after it merged: land them in a new PR. A local one "
+    "(`stranded-local-…`) is commits made on the local branch after its PR merged and never pushed: push them "
+    "in a new PR, or delete the branch if they were abandoned. Findings raised on those commits wait under it. "
     "An *agent run* bug is an error an autonomous run hit; with no `file:line`, start from the tool and the error. "
     "A *repeated agent error* is a 4xx with a reason that agents hit in several runs: the input was wrong each "
     "time, so the fix is the guidance (the tool's description, the MCP guidance, the error message), not the API. "
     "A *run review* is a section of an agent run's record a person marked bad with cause `guide` (the guide didn't "
     "say it) or `platform` (the agent couldn't see it): fix the guide or the surface the note names. "
     "*Waiting for the judge* lists candidates nobody has checked yet: not work until a pass judges them.")
+
+
+def verify_verdict(verdict: str | None, b: dict) -> str | None:
+    """A verify verdict as counted: `dismiss` on a bug a commit naming its key landed for is `fixed`
+    (the agent found the fix, not a wrong finding; records from before `fixed` existed said that).
+    The landed fix is `fix_landed`, or its issue's `fix-landed` label: a record drops `fix_landed`
+    once the fix is older than the previous pass, and the issue keeps the label."""
+    issue = b.get("issue") if isinstance(b.get("issue"), dict) else {}
+    landed = b.get("fix_landed") or "fix-landed" in (issue.get("labels") or ())
+    return "fixed" if verdict == "dismiss" and landed else verdict
+
+
+def verified_fixed(b: dict) -> bool:
+    """Verify found this bug real and already fixed. Its status is `gone`, except a repeated agent
+    error's (`dismissed`, to stay muted) and an older record's dismiss of a landed fix: count it fixed."""
+    return verify_verdict((b.get("verify") or {}).get("verdict"), b) == "fixed"
 
 
 def parked_why(v: dict) -> str:
@@ -210,7 +229,8 @@ def tokens_line(spend: dict) -> str:
     def one(t: dict) -> str:
         return (f"{_count(t.get('output', 0))} out · {_count(t.get('input', 0))} in "
                 f"(+ cache read {_count(t.get('cache_read', 0))}, cache write {_count(t.get('cache_write', 0))})")
-    steps = " · ".join(f"{k} {_count(sum(v.values()))}" for k, v in tok.items() if k != "total")
+    steps = " · ".join(f"{k} {_count(sum(v.get(u, 0) for u in USAGE_KEYS))}" for k, v in tok.items()
+                       if k != "total")
     return f"{one(tok.get('total') or {})} — {steps}"
 
 
@@ -284,7 +304,7 @@ def bug_location(b: dict) -> str:
 
 def _bug_where(b: dict) -> str:
     if b.get("kind") == "stranded":
-        return f"stranded · PR #{b.get('pr')} `{b.get('branch')}`"
+        return f"stranded{' locally' if b.get('local') else ''} · PR #{b.get('pr')} `{b.get('branch')}`"
     return f"`{bug_location(b)}`"
 
 
@@ -317,14 +337,18 @@ def _render_bugs(bugs: _t.Sequence[dict]) -> list[str]:
                     f"- Evidence: {v.get('evidence', '')}", ""]
         if b.get("kind") == "stranded":
             out += [f"**Commits:** {', '.join(f'`{c}`' for c in b.get('commits', []))}", ""]
+            out += [f"**Waiting on them** (`{w['key']}`, {_bug_where(w)}): {w.get('desc') or ''}"
+                    for w in b.get("waiting", [])]
+            out += [""] if b.get("waiting") else []
             continue
         if b.get("review"):
             out += [f"**Run review** (cause `{b.get('cause')}`, run {b.get('run') or '?'}, entry `{b.get('entry')}` in "
                     f"`{b.get('project')}`" + (f", guide `{b['guide']}`" if b.get("guide") else "")
                     + f", first seen {b['first_seen']}): {b['desc']}", ""]
         elif b.get("kind") == "agent_run":
-            out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first seen "
-                    f"{b['first_seen']}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
+            # first and last hit, both run dates: `first_seen` is the pass that listed it, after the run
+            out += [f"**{'Repeated error' if b.get('repeat') else 'Error'}** (`{b.get('tool') or '?'}`, hit in {b.get('runs') or 1} run(s), first hit "
+                    f"{(b.get('logged') or b['first_seen'])[:10]}, last {(b.get('last_seen') or '?')[:10]}): {b['desc']}", ""]
         else:
             out += [f"**{'Duplicate' if b.get('kind') == 'duplicate' else 'Finding'}** ({b.get('marker') or '?'}, branch `{b.get('branch') or '?'}`, "
                     f"first seen {b['first_seen']}): {b['desc']}", ""]

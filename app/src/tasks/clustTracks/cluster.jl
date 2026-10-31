@@ -43,9 +43,10 @@ Base.@kwdef struct ClustTracksParams
     normalisePercentileBottom::Float64 = 0.0
     transformation::String             = "NONE"
     logBase::Int                       = 0
-    mergeUmap::Bool                    = true
+    createUmap::Bool                    = true
     usePaga::Bool                      = false
     pagaThreshold::Float64             = 0.1
+    reversePath::Bool                  = false
 end
 
 function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
@@ -62,9 +63,10 @@ function parse_clust_tracks_params(d::AbstractDict)::ClustTracksParams
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
         logBase                    = _int_param(d, "logBase", 0),
-        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        createUmap                  = Bool(get(d, "createUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
-        pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
+        pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)),
+        reversePath                = Bool(get(d, "reversePath", false)))
 end
 
 function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,Any};
@@ -163,21 +165,29 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
         "normalisePercentileBottom" => p.normalisePercentileBottom,
         "transformation" => p.transformation,
         "logBase" => p.logBase,
-        "createUmap" => p.mergeUmap,
+        "createUmap" => p.createUmap,
         "usePaga" => p.usePaga,
         "pagaThreshold" => p.pagaThreshold,
+        "reversePath" => p.reversePath,
         "randomState" => 0)
     # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
     qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
     task_params["qcOutPath"] = qc_out_path
+    # behaviour axes (axis names + path root) — recorded on the run's sidecar entry below
+    axes_out_path = joinpath(task_run_dir(imgs[1]._dir), "behaviour_axes.json")
+    rm(axes_out_path; force = true)     # a stale file from an earlier run must not label this one
+    task_params["axesOutPath"] = axes_out_path
     on_progress(3, 4)
 
     ok = run_py("tasks/clustTracks/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
                 on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || (on_log("[ERROR] clustTracks: Python runner failed"); return nothing)
-    # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
+    # record the feature list + the clustered-together uIDs (partOf) + the behaviour axes per
+    # segment's sidecar (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4)
+    axes = isfile(axes_out_path) ? JSON3.read(read(axes_out_path, String), Dict{String,Any}) : nothing
     for seg in segments
-        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids)
+        _write_clust_features!(seg["propsPath"], p.valueNameSuffix, present_cols, uids;
+                               behaviour_axes = axes)
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
     write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = p.valueNameSuffix, on_log = on_log)

@@ -5,7 +5,8 @@
 //
 // Rows, in visible order:
 //   - Pairing chip (mirrors what ViewerPanel used to show; ViewerPanel's copy is removed too).
-//   - Copy chat starter (moved from LabLogPanel).
+//   - Chat — Start in terminal (copies the command that starts a session already pointed at this
+//     project) + a chat-starter icon (just the opener, for a session that is already running).
 //   - Share — viewer / canvas buttons.
 //   - Ask — the structured duck (KiwiAsk.vue, docs/todo/KIWI_ASSISTANT_PLAN.md Phase 4).
 //     Wrapped in a CollapsibleSection so a long conversation thread can be folded away when the
@@ -35,16 +36,18 @@ import CollapsibleSection from '../CollapsibleSection.vue'
 import ConfirmButton from '../ConfirmButton.vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAppControlStore } from '../../stores/appControl'
-import { claudeLoginLabel, fetchTerminalCommand } from '../../utils/profileApi'
+import { claudeLoginLabel } from '../../utils/profileApi'
 import BaseModal from '../BaseModal.vue'
 import ClaudeLoginPanel from '../profile/ClaudeLoginPanel.vue'
 import { dotClass } from '../../utils/statusDot'
 import { useCopyFlash } from '../../composables/useCopyFlash'
+import { useStartInTerminal } from '../../composables/useStartInTerminal'
+import { useFlash } from '../../composables/useFlash'
 import { useObserverStore } from '../../stores/observer'
 import { fetchPushTarget, pushChipLabel, clearPushTarget, probePushTarget,
          type PairedState } from '../../utils/pushTarget'
 import { terminalCta, terminalSetupTooltip } from '../../utils/observerSetup'
-import { CLAUDE_TERMINAL } from '../../lib/claudeOverview'
+import { CLAUDE_DATA_NOTICE, CLAUDE_TERMINAL } from '../../lib/claudeOverview'
 import { usePushStore } from '../../stores/push'
 import { buildChatPrompt } from '../../lib/chatHandoff'
 import { fetchRecentCaptures, formatAddress, fetchCaptureEnvelope, type CaptureEnvelope,
@@ -62,7 +65,6 @@ import AddToKiwiButton from './AddToKiwiButton.vue'
 // dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
 import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
-import { useSingleOpenSection } from '../../composables/useSingleOpenSection'
 import { formatAgo } from '../../utils/formatAgo'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -77,11 +79,9 @@ const showAssistantOverview = ref(false)
 // the ACTIVE profile server-side) lies until the panel is reopened.
 const observer = useObserverStore()
 
-// Accordion — one section open at a time (docs/ui/PRIMITIVES.md + composables/useSingleOpenSection).
-// Ask can then use the whole panel height when open, and the tiny status rows above stay pinned.
-// Default to Ask open — it's the reason to open the panel.
-const { isOpen: sectionOpen, toggle: toggleSection } =
-  useSingleOpenSection('cc.kiwi.openSection', 'ask')
+// The sections below are one accordion (`accordion="cc.kiwi.openSection"`, docs/ui/PRIMITIVES.md):
+// one open at a time, so Ask can use the whole panel height and the tiny status rows above stay
+// pinned. Ask is the default — it's the reason to open the panel.
 
 // USER_PROFILE_PLAN Phase 6: the profile picker is gone from Kiwi. Identity is chosen at launch
 // (AppProfilePicker) and managed in Preferences → Profiles. Kiwi only SHOWS the Claude account its
@@ -111,13 +111,6 @@ async function logoutAccount() {
 const accountTip = computed(() => appCtl.claudeLogin?.state === 'loggedOut'
   ? `Profile ${appCtl.activeProfileDisplayName} is not logged in`
   : `Assistant turns run on this account (profile ${appCtl.activeProfileDisplayName})`)
-// Terminal row: copy the one-liner that starts the assistant CLI in a terminal under THIS profile's
-// login (`kiwi_terminal_command` builds it server-side). A bare terminal run uses the default login.
-const { isCopied: termCopied, copy: copyTerm } = useCopyFlash()
-async function copyTerminalCommand() {
-  const r = await fetchTerminalCommand()
-  if (r?.command) await copyTerm(r.command)
-}
 
 // Step aside: Kiwi floats over the page, so a plot it points at is often UNDER it — the pointer bubble
 // showed on top of Kiwi, over nothing visible. When the target overlaps the panel, roll up to the header
@@ -134,8 +127,7 @@ const projectName = computed(() => pm.current?.name ?? undefined)
 
 // ── Pairing chip ──────────────────────────────────────────────────────────────
 const pushTarget = ref<PairedState>({ paired: false })
-const pushSentFlash = ref(false)
-let pushFlashTimer: ReturnType<typeof setTimeout> | null = null
+const { isOn: pushSent, flash: flashPushSent } = useFlash(3000)
 const probing = ref(false)
 
 async function refreshPushTarget() {
@@ -161,9 +153,7 @@ watch(() => pushStore.tick, () => {
   if (evt.kind === 'push_target:changed') {
     void refreshPushTarget()
   } else if (evt.kind === 'push:sent') {
-    pushSentFlash.value = true
-    if (pushFlashTimer) clearTimeout(pushFlashTimer)
-    pushFlashTimer = setTimeout(() => { pushSentFlash.value = false; pushFlashTimer = null }, 3000)
+    flashPushSent()
     // A successful push means a fresh capture just landed on disk — reload the list without waiting
     // for the user to reopen the panel.
     void refreshCaptures()
@@ -172,7 +162,6 @@ watch(() => pushStore.tick, () => {
   }
 })
 
-onUnmounted(() => { if (pushFlashTimer) clearTimeout(pushFlashTimer) })
 // observer.refresh() runs app-wide in App.vue on project change; ALSO on mount here because the
 // Assistant → Terminal row + its Set up / Fix button live in this panel now (moved from the lab log,
 // which used to refresh on mount for the same reason). A user who registers/breaks `cecelia-observer`
@@ -201,6 +190,13 @@ const { isCopied: chatCopied, copy: copyChatPrompt } = useCopyFlash(2500)
 async function copyChatStarter() {
   if (!projectUid.value) return
   await copyChatPrompt(buildChatPrompt(projectUid.value, projectName.value))
+}
+// Start in terminal: one implementation with a Kiwi turn's "Continue in terminal" —
+// `composables/useStartInTerminal.ts` (registers a missing/stale MCP entry first).
+const { start: startTerminal, starting, isCopied: startCopied } = useStartInTerminal()
+async function startInTerminal() {
+  if (!projectUid.value) return
+  await startTerminal(buildChatPrompt(projectUid.value, projectName.value))
 }
 
 // ── Recent captures ───────────────────────────────────────────────────────────
@@ -279,10 +275,10 @@ async function clearPairing() {
 // ── Observer state (availability + terminal setup) — store declared with the picker above ─
 const terminalStateLabel = computed(() => {
   const s = observer.terminalState
-  if (s === 'current')   return 'Registered'
-  if (s === 'stale')     return 'Stale (re-register)'
-  if (s === 'shadowed')  return 'Shadowed (local scope wins)'
-  if (s === 'missing' || !s) return 'Not registered'
+  if (s === 'current')   return 'Plugin installed'
+  if (s === 'stale')     return 'Out of date'
+  if (s === 'shadowed')  return 'Overridden by a folder entry'
+  if (s === 'missing' || !s) return 'Not set up'
   return s
 })
 const terminalStateKind = computed<'ok' | 'warn' | 'fail'>(() => {
@@ -308,11 +304,15 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
       <button class="fp-btn cc-btn cc-btn-bare cc-btn-icon kiwi-help"
               data-guide="kiwi.assistantHelp"
               @click="showAssistantOverview = true"
-              v-tooltip.bottom="'What Kiwi does here — Ask vs Chat, captures, chains, blackboard, limits'">
+              v-tooltip.bottom="'The two ways in, and what each can do'">
         <i class="pi pi-question-circle" />
       </button>
     </template>
     <div class="kiwi-body">
+      <!-- Standing data notice — always on, never dismissible (see CLAUDE_DATA_NOTICE). Above Account so
+           it is the first line in every state, project open or not. -->
+      <InlineNote class="kiwi-data-note cc-fs-sm" severity="warn"
+                  :short="CLAUDE_DATA_NOTICE.short" :detail="CLAUDE_DATA_NOTICE.detail" />
       <!-- The account Kiwi bills, + Log in / Log out. Switching profiles lives in Preferences →
            Profiles (USER_PROFILE_PLAN Phase 6 removed the picker from here). Hidden while unknown. -->
       <div v-if="accountLabel" class="kiwi-row" data-guide="kiwi.account">
@@ -348,13 +348,13 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <div class="kiwi-row" data-guide="kiwi.pairing">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Pairing</span>
           <span class="kiwi-chip cc-fs-xs"
-                :class="{ 'kiwi-chip-paired': pushTarget.paired, 'kiwi-chip-sent': pushSentFlash }"
-                v-tooltip.bottom="pushSentFlash
+                :class="{ 'kiwi-chip-paired': pushTarget.paired, 'kiwi-chip-sent': pushSent() }"
+                v-tooltip.bottom="pushSent()
                   ? 'Sent to your paired assistant session'
                   : pushTarget.paired
                     ? `Paired — shared frames post to your assistant session\nSocket: ${(pushTarget as Extract<PairedState, { paired: true }>).socketPath}`
                     : 'No paired assistant session — shared frames fall back to the clipboard'">
-            {{ pushSentFlash ? 'sent ✓' : pushChipLabel(pushTarget) }}
+            {{ pushSent() ? 'sent ✓' : pushChipLabel(pushTarget) }}
           </span>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   :disabled="probing || !projectUid" @click="checkPairing"
@@ -365,14 +365,28 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <div class="kiwi-row" data-guide="kiwi.chat">
           <span class="kiwi-lbl cc-eyebrow cc-fs-2xs">Chat</span>
           <button class="cc-btn cc-btn-ghost cc-fs-xs"
+                  :disabled="!observer.available || !!starting"
+                  @click="startInTerminal"
+                  v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
+                    : startCopied('chat') ? 'Copied — paste it in a terminal'
+                    : `Copy a command that starts a session on this project as ${appCtl.activeProfileDisplayName}`">
+            <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied('chat') ? 'pi-check' : 'pi-copy']" />
+            {{ startCopied('chat') ? 'Copied' : 'Start in terminal' }}
+          </button>
+          <!-- Secondary: just the opener, for a session that is already running (or an assistant not
+               started from a terminal). Start covers the usual path, so this one is an icon. -->
+          <button class="cc-btn cc-btn-ghost cc-btn-icon"
                   @click="copyChatStarter"
                   v-tooltip.bottom="chatCopied()
                     ? 'Copied — paste it into your assistant chat'
-                    : 'Copy a one-line opener naming this project for your assistant'">
+                    : 'Copy chat starter — for a session already running'">
             <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" />
-            {{ chatCopied() ? 'Copied' : 'Copy chat starter' }}
           </button>
         </div>
+        <!-- Setup failures from either button (this row's Start, Assistant → Terminal's Set up). -->
+        <InlineNote v-if="observer.registerError" severity="warn"
+                    :short="observer.registerError"
+                    detail="See Settings → MCP connections." />
 
         <!-- Share — two targets, one row. Viewer = the pop-out's WebGPU frame (existing flow);
              Canvas = whatever module page has registered a shareable plot canvas. Both land in
@@ -402,14 +416,14 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Ask" max-height="none"
                             fill
-                            :open="sectionOpen('ask')" @update:open="() => toggleSection('ask')"
+                            accordion="cc.kiwi.openSection" section="ask" default-open
                             tip="Ask a structured question — every claim in the reply carries a pointer you can click.">
           <KiwiAsk />
         </CollapsibleSection>
 
         <CollapsibleSection label="Recent captures" max-height="none"
                             fill
-                            :open="sectionOpen('captures')" @update:open="() => toggleSection('captures')"
+                            accordion="cc.kiwi.openSection" section="captures"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">
           <div v-if="capturesLoading" class="kiwi-empty cc-muted cc-fs-xs">Loading…</div>
           <div v-else-if="captures.length === 0" class="kiwi-empty cc-muted cc-fs-xs">
@@ -471,7 +485,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Session identity" max-height="none"
                             fill
-                            :open="sectionOpen('session')" @update:open="() => toggleSection('session')"
+                            accordion="cc.kiwi.openSection" section="session"
                             tip="Which assistant session is paired here — and a button to unpair.">
           <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
             Not paired. Your assistant session pairs on its next MCP tool call.
@@ -507,8 +521,8 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Assistant" max-height="none"
                             fill
-                            :open="sectionOpen('assistant')" @update:open="() => toggleSection('assistant')"
-                            tip="Is the assistant CLI installed, and is its MCP entry registered in your terminal?">
+                            accordion="cc.kiwi.openSection" section="assistant"
+                            tip="Is the assistant CLI installed, and is the Cecelia plugin set up for your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
             <span class="cc-dot" :class="observer.available ? 'cc-dot-ok' : 'cc-dot-fail'"
@@ -529,16 +543,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
               {{ observer.registering ? CLAUDE_TERMINAL.busy
                  : terminalCtaMode === 'resync' ? CLAUDE_TERMINAL.resync : CLAUDE_TERMINAL.action }}
             </button>
-            <button v-else class="cc-btn cc-btn-ghost cc-fs-2xs kiwi-obs-fix" @click="copyTerminalCommand"
-                    v-tooltip.bottom="termCopied() ? 'Copied — paste it in a terminal'
-                      : `Starts the assistant in a terminal as ${appCtl.activeProfileDisplayName}`">
-              <i :class="['pi', termCopied() ? 'pi-check' : 'pi-copy']" />
-              {{ termCopied() ? 'Copied' : 'Copy command' }}
-            </button>
           </div>
-          <InlineNote v-if="observer.registerError" severity="warn"
-                      :short="observer.registerError"
-                      detail="See Settings → MCP connections." class="kiwi-obs-err" />
         </CollapsibleSection>
       </template>
     </div>
@@ -611,6 +616,5 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 /* Fix action sits at the right end of the Terminal row so the label + dot + state read first, then
    the action. Not warn-toned itself — the dot already carries severity. */
 .kiwi-obs-fix { margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem; }
-.kiwi-obs-err { padding-top: 0.2rem; }
 
 </style>

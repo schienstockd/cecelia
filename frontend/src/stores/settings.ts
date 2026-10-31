@@ -12,6 +12,7 @@ import { fetchProfileSettings, patchProfileSettings,
 import { profileStorage, adoptLiveProfileBag } from '../utils/profileStorage'
 import { useAppControlStore } from './appControl'
 import { POP_EYES_KEYS, type EyeLayer } from '../utils/viewer/popEyes'
+import { isMaskColour, type MaskColour } from '../utils/maskPopTable'
 
 // ── USER_PROFILE_PLAN Phase 4: per-profile setting manifest ────────────────────────
 // Keys in this list are hydrated from `<config_dir>/user-profiles/<name>/settings.toml` on
@@ -30,7 +31,7 @@ const PROFILE_KEYS = [
   'viewerLandscape', 'viewerLandscapeLabels',
   'viewerScaleBarPx', 'viewerTimestampPx',
   'viewerPointSize', 'viewerPointBorder', 'viewerTailLength', 'viewerTailWidth',
-  'viewerLabelOpacity', 'viewerLabelContour', 'viewerMaskByPop', 'viewerPointZTol', 'viewerTrackZTol',
+  'viewerLabelOpacity', 'viewerLabelContour', 'viewerMaskColour', 'viewerPointZTol', 'viewerTrackZTol',
   // Movies + animation
   'moviesPlaybackRate', 'moviesZoom', 'moviesAutoplay', 'moviesEndMode',
   'moviesShowDetails', 'moviesChannelMode',
@@ -43,7 +44,8 @@ const PROFILE_KEYS = [
   // Kiwi capture-destination toggles (KIWI_CAPTURE_AND_BLACKBOARD_PLAN Decisions 2–4)
   'captureAttachToKiwi', 'captureSendToPaired',
   // Kiwi / lab log / tips / view profile
-  'kiwiReasoning', 'kiwiModel', 'labLogAutoContext', 'labLogShowNames',
+  'kiwiReasoning', 'kiwiModel', 'purgeClaudeConversations', 'labLogAutoContext', 'labLogShowNames',
+  'guidesShowClaude',
   'tipsOnLaunch', 'tipsLastShown', 'viewProfile',
 ] as const
 type ProfileKey = typeof PROFILE_KEYS[number]
@@ -218,9 +220,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // default is the shared one a 3D movie also reads (`shaders/constants.json`).
   const viewerLabelOpacity = ref(Number(localStorage.getItem('cc.viewerLabelOpacity') ?? String(LABEL_OPACITY)))
   const viewerLabelContour = ref(Number(localStorage.getItem('cc.viewerLabelContour') ?? '0') || 0)
-  // Colour the shown mask by its cells' deepest visible population instead of the per-id palette
-  // (`utils/maskPopTable.ts`).
-  const viewerMaskByPop = ref(localStorage.getItem('cc.viewerMaskByPop') === 'true')
+  // Where the shown mask's colours come from (`MaskColour`, `utils/maskPopTable.ts`): the per-id
+  // palette, or each cell's deepest visible population — cell pops or track clusters. Seeded once from
+  // the boolean *Pop colour* toggle it replaced (`cc.viewerMaskByPop`).
+  const storedMaskColour = localStorage.getItem('cc.viewerMaskColour')
+  const viewerMaskColour = ref<MaskColour>(isMaskColour(storedMaskColour) ? storedMaskColour
+    : localStorage.getItem('cc.viewerMaskByPop') === 'true' ? 'pops' : 'id')
   // How many z planes either side of the one on screen still draw their cell's marker.
   //
   // 0 is the strict reading — a marker appears only on the plane its centroid falls on. On real data
@@ -348,6 +353,10 @@ export const useSettingsStore = defineStore('settings', () => {
   const kiwiReasoning = ref(localStorage.getItem('cc.kiwiReasoning') === 'true')
   // the model Kiwi turns run — the allow-list is `observer.models` (OBSERVER_MODELS on the backend)
   const kiwiModel = ref(localStorage.getItem('cc.kiwiModel') || 'sonnet')
+  // Delete this profile's Claude conversations when its session ends. Profile bag ONLY (no
+  // localStorage): the backend reads it from settings.toml at log out / quit / the next pick, and a
+  // browser-wide copy would leak one person's choice to the next. `app/src/ai/claude_conversations.jl`.
+  const purgeClaudeConversations = ref(false)
   // Which mode the cockpit is on. Persisted so the user's last mode is what they see on reopen.
   const correctionCockpitMode = ref<'tracks' | 'labels' | 'review'>(
     (['tracks', 'labels', 'review'] as const)
@@ -372,6 +381,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // change; UIDs don't), so this is a display-only swap resolved against live project data. Default
   // false (show the compact, stable UIDs). See components/LabLogPanel.vue.
   const labLogShowNames = ref(localStorage.getItem('cc.labLogShowNames') === 'true')
+  // The Guides map's Claude toggle: shows the loop and what Claude adds at each recipe step. Off by
+  // default — everything in Cecelia works without Claude, and the map should say so first.
+  const guidesShowClaude = ref(localStorage.getItem('cc.guidesShowClaude') === 'true')
   // Tip of the day (WHATS_NEW_PLAN.md → W4). On app launch, if these say "show + last shown was
   // not today", the What's New modal opens with today's tip prepended. Opt-out from a checkbox on
   // the tip card. Default ON — biologists opening the app benefit from a nudge; power users can
@@ -475,7 +487,8 @@ export const useSettingsStore = defineStore('settings', () => {
   // per layer — `points` (the Populations rows, `cc.viewerPopEyes`) and `ribbons` (the Tracks rows,
   // `cc.viewerRibbonEyes`; #1766). Separate from the Population Manager's `show`, which only seeds a
   // pop with no entry here; kept across the refetch every gate write triggers
-  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). The pop-out writes them; they cross windows through
+  // (`utils/viewer/popEyes.ts::reconcilePopEyes`). The pop-out writes them, and so does the
+  // Population Manager's per-pop viewer toggle; they cross windows through
   // the bag channel, so a movie recorded from the main window draws the viewer's eyes (`viewerLook`).
   const _popEyesStores = {
     points: ref<Record<string, Record<string, Record<string, boolean>>>>(
@@ -764,7 +777,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerRoiStatus,          v => localStorage.setItem('cc.viewerRoiStatus',          String(v)))
   watch(viewerLabelOpacity,       v => localStorage.setItem('cc.viewerLabelOpacity',       String(v)))
   watch(viewerLabelContour,       v => localStorage.setItem('cc.viewerLabelContour',       String(v)))
-  watch(viewerMaskByPop,          v => localStorage.setItem('cc.viewerMaskByPop',          String(v)))
+  watch(viewerMaskColour,         v => localStorage.setItem('cc.viewerMaskColour',         v))
   watch(viewerPointZTol,          v => localStorage.setItem('cc.viewerPointZTol',          String(v)))
   watch(viewerTrackZTol,          v => localStorage.setItem('cc.viewerTrackZTol',          String(v)))
   watch(viewerScaleBarPx,         v => localStorage.setItem('cc.viewerScaleBarPx',         String(v)))
@@ -793,6 +806,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(hiddenMcpAccounts, v => profileStorage.setItem('cc.hiddenMcpAccounts', JSON.stringify(v)), { deep: true })
   watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
+  watch(guidesShowClaude,         v => localStorage.setItem('cc.guidesShowClaude',         String(v)))
   watch(viewProfile,              v => localStorage.setItem('cc.viewProfile',              v))
   watch(tipsOnLaunch,             v => localStorage.setItem('cc.tipsOnLaunch',             String(v)))
   watch(tipsLastShown,            v => localStorage.setItem('cc.tipsLastShown',            v))
@@ -854,7 +868,7 @@ export const useSettingsStore = defineStore('settings', () => {
     viewerLandscape, viewerLandscapeLabels,
     viewerScaleBarPx, viewerTimestampPx,
     viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth,
-    viewerLabelOpacity, viewerLabelContour, viewerMaskByPop, viewerPointZTol, viewerTrackZTol,
+    viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol,
     moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode,
     moviesShowDetails, moviesChannelMode,
     sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed,
@@ -863,7 +877,8 @@ export const useSettingsStore = defineStore('settings', () => {
     correctionCockpitMode, correctionCockpitValueName,
     kiwiOpen, viewerSelectMode,
     captureAttachToKiwi, captureSendToPaired,
-    kiwiReasoning, kiwiModel, labLogAutoContext, labLogShowNames,
+    kiwiReasoning, kiwiModel, purgeClaudeConversations, labLogAutoContext, labLogShowNames,
+    guidesShowClaude,
     tipsOnLaunch, tipsLastShown, viewProfile,
   } as unknown as Record<ProfileKey, Ref<ProfileSettingsValue>>
 
@@ -910,6 +925,9 @@ export const useSettingsStore = defineStore('settings', () => {
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => { void _autosave.flush() })
   }
+  /** Write any pending profile-setting change now — for a caller about to act on the stored value
+   *  server-side (Log out reads `purgeClaudeConversations` from settings.toml). */
+  const flushProfileSettings = () => _autosave.flush()
 
   async function hydrateFromProfile() {
     if (profileHydrated.value) return
@@ -956,7 +974,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerLabelOpacity, viewerLabelContour, viewerMaskByPop, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
+  return { viewProfile, taskListAutoFollow, tasksThisProjectOnly, tasksShowHistory, vaultOtherUsers, vaultOtherProjects, csvIncludeAttrs, autoRefreshOnTask, pickZMode, pickZWindow, viewerAutoUpdate, preferDevChannel, importPyramidAdvisor, animationSyncViewer, viewerAutoSaveLayerProps, viewerSteps, viewerCompress, viewerFps, viewerLoop, viewerCacheFrames, viewerVolumeLevel, viewerVolumeProjection, viewerAutoContrastPercent, viewerPlaneLevel, viewerBricksMode, viewerBrickTier, viewerCacheMB, viewerScaleBar, viewerTimestamp, viewerGrid, viewerGridDensity, viewerLandscape, viewerLandscapeLabels, viewerScaleBarPx, viewerTimestampPx, viewerPointSize, viewerPointBorder, viewerTailLength, viewerTailWidth, viewerRoiSuffix, viewerRoiStatus, viewerLabelOpacity, viewerLabelContour, viewerMaskColour, viewerPointZTol, viewerTrackZTol, moviesPlaybackRate, moviesZoom, moviesAutoplay, moviesEndMode, moviesShowDetails, moviesChannelMode, sidebarCollapsed, rightPanelCollapsed, viewerWindowSideCollapsed, plotsMaximised, viewerPanelOpen, viewerSelectMode, labLogPanelOpen, correctionCockpitOpen, correctionCockpitMode, correctionCockpitValueName, kiwiOpen, kiwiReasoning, kiwiModel, purgeClaudeConversations, captureAttachToKiwi, captureSendToPaired, hiddenMcpAccounts, labLogAutoContext, labLogShowNames, guidesShowClaude, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, tipsOnLaunch, tipsLastShown, tipsEverShown, profileHydrated, hydrateFromProfile, flushProfileSettings, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getTrackPopHidden, setTrackPopHidden, getPopEyes, getImagePopEyes, setPopEyes, getBranchVisibility, setBranchVisibility, getImageVersion, setImageVersion, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPointBorder, setPointBorder, getPopVisible, setPopVisible, getTrackColorMode, setTrackColorMode, getTrackSourceColours, setTrackSourceColour, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig, replaceBatchMovieConfig }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

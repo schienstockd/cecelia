@@ -1,6 +1,6 @@
 # Bidirectional context sharing — plan
 
-**Status:** planning (design complete 2026-09-18, no implementation yet). Design outputs from the
+**Status:** built. Part 4 (the Blackboard) has shipped; see *BIDIR Part 4 status* below. The design was completed 2026-09-18. Design outputs from the
 audit/design run described in [`docs/archive/bidirectional-context-sharing-audit-prompt_v2.md`](../archive/bidirectional-context-sharing-audit-prompt_v2.md)
 and the prior-art audit in [`docs/archive/landscape-anchor-prior-art-audit.md`](../archive/landscape-anchor-prior-art-audit.md).
 Written to be picked up cold by another session.
@@ -165,7 +165,7 @@ Numbered so code and other docs can cite them (`Decision 5`).
     `origin?: 'user' | 'claude'` on both bags; WS `viewer:mark` sets `'claude'`. Slice A
     consumers (natively per-item-glyph): TrackSchemeView, TrackPathsView, CardsPanelInner (→
     cellCards / motifCards), CellCardDetailPanel. Slice B (needed backend `withLabels=1` payload
-    extension to carry label_id / track_id per point): UmapView, GateScatterCell (→ GatePlotPanel,
+    extension to carry label_id / track_id per point): ClusterMapView, GateScatterCell (→ GatePlotPanel,
     GateMontage → pairs matrix, gating strategy). Magenta accent (Decision 8 palette) + "C"
     glyph; positioned via each family's own projection so the ring lands on the actual pixel.
     **Deferred residual — aggregate-render plots:** TrackDiagnosticsView (per-group curves via

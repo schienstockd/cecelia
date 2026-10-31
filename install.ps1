@@ -326,7 +326,13 @@ set "PIXI_HOME=$PixiHome"
 set "JULIAUP_DEPOT_PATH=$JuliaupDepot"
 set "JULIA_DEPOT_PATH=%USERPROFILE%\.cecelia\julia-depot;$JuliaupDepot\depot;"
 set "PATH=$PixiHome\bin;$JuliaupDepot\bin;%PATH%"
+rem No arguments = the app (Start Menu). "cecelia-launch.cmd chat [project]" = no GUI. Labels, not
+rem an if-block: a ")" in the install path would close the block early.
+if not "%~1"=="" goto args
 cd /d "$InstallDir" && "$Pixi" run --as-is app
+goto :eof
+:args
+cd /d "$InstallDir" && "$Pixi" run --as-is %*
 "@ | Set-Content -Path $Launch -Encoding ASCII
   $Programs = [Environment]::GetFolderPath('CommonPrograms')
   $Lnk = Join-Path $Programs 'Cecelia.lnk'
@@ -352,3 +358,8 @@ cd /d "$InstallDir" && "$Pixi" run --as-is app
 }
 
 Say "Done. Launch Cecelia from the Start Menu."
+if ($Scope -eq 'system') {
+  Say "No GUI (Claude in the terminal):  `"$(Join-Path $InstallDir 'cecelia-launch.cmd')`" chat"
+} else {
+  Say "No GUI (Claude in the terminal):  cd `"$InstallDir`"; & `"$Pixi`" run chat"
+}

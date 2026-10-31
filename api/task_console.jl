@@ -90,8 +90,8 @@ col(c, s) = STREAM_MODE ? s : string(c, s, RESET)
 function status_colour(s::AbstractString)
     # Semantic-colour mapping over the CVD-safe swatches: in progress yellow (as the recital
     # console's CI `running`), waiting orange, good sky blue, bad vermillion.
-    s == "running"   ? YELLOW          :
-    s == "queued"    ? ORANGE          :
+    s in ("running", "uploading", "on hpc", "fetching") ? YELLOW :
+    s in ("queued", "hpc queued")                       ? ORANGE :
     s == "done"      ? GOOD            :
     s == "failed"    ? VERMILLION      :
     s == "cancelled" ? REDDISH_PURPLE  : GREY
@@ -135,6 +135,10 @@ mutable struct TaskView
     # IS prunable). `misses` counts consecutive snapshots it went missing from.
     in_snapshot::Bool
     misses::Int
+    # A cluster run's stage (`sync` / `queued` / `running` / `pull`, `hpc_stage` on the snapshot and the
+    # `task:hpc` frame) and its job id; `""` for a local run. See `shown_status`.
+    hpc_stage::String
+    hpc_job::String
 end
 
 const TASKS      = Dict{String,TaskView}()   # taskId => view — ACTIVE tasks only (finished ones drop out)
@@ -223,7 +227,7 @@ end
 function _task!(id::AbstractString)
     get!(TASKS, String(id)) do
         TaskView(String(id), "", "", "", "", "", "queued", -1.0, "", Dates.now(),
-                 Dates.now(UTC), false, false, false, 0)
+                 Dates.now(UTC), false, false, false, 0, "", "")
     end
 end
 
@@ -250,6 +254,15 @@ function _set_phase!(t::TaskView, status::AbstractString; witnessed::Bool = fals
     t.status    = status
     t
 end
+
+# The status a row SHOWS. A cluster run is `running` to the scheduler from the moment it holds its slot,
+# but while its job waits in the cluster's queue nothing computes — so it reads `hpc queued` and counts
+# as queued. The other stages say where the running work is.
+const _HPC_STAGE_SHOWN = Dict("sync" => "uploading", "queued" => "hpc queued", "running" => "on hpc",
+                              "pull" => "fetching")
+shown_status(t::TaskView)::String =
+    t.status == "running" ? get(_HPC_STAGE_SHOWN, t.hpc_stage, t.status) : t.status
+_waiting(t::TaskView) = shown_status(t) in ("queued", "hpc queued")
 
 function push_event!(kind::AbstractString, detail::AbstractString; colour=nothing)
     c = colour === nothing ? GREY : colour
@@ -446,6 +459,8 @@ function _reconcile_snapshot!(rows)
             t.project_uid  = String(get(row, :project_uid, t.project_uid))
             t.pool_name    = String(get(row, :pool_name, t.pool_name))
             t.chain_run_id = String(get(row, :chain_run_id, t.chain_run_id))
+            t.hpc_stage    = String(something(get(row, :hpc_stage, ""), ""))
+            t.hpc_job      = String(something(get(row, :hpc_job, ""), ""))
             # The snapshot carries the scheduler's own timestamps, so elapsed is exact even for a task
             # that was already running when this console connected — which is the case the console used
             # to have to report as a floor. `queued_at` does the same for the queue wait. Falls back to
@@ -606,6 +621,18 @@ function handle_ws(raw::AbstractString)
                 t.updated = Dates.now()
             end
 
+        elseif type == "task:hpc"
+            id = String(get(msg, :taskId, "")); (isempty(id) || id in SEEN_TERM) && return
+            t = _task!(id)
+            stage, job = String(get(msg, :stage, "")), String(get(msg, :jobId, ""))
+            stage == t.hpc_stage && return
+            t.hpc_stage, t.hpc_job = stage, job
+            t.updated = Dates.now()
+            isempty(stage) || push_event!("hpc", string(col(BOLD, short(id)), " ",
+                                          col(status_colour(shown_status(t)), shown_status(t)),
+                                          isempty(job) ? "" : col(DIM, " (job $job)"));
+                                          colour = status_colour(shown_status(t)))
+
         elseif type == "task:progress"
             id = String(get(msg, :taskId, "")); (isempty(id) || id in SEEN_TERM) && return
             t = _task!(id)
@@ -686,9 +713,9 @@ function render()
     w = min(cols, 100)
 
     # Only ACTIVE tasks are rows — running first, then queued. Finished ones live in TALLY as counts.
-    tasks = sort(collect(values(TASKS)), by = t -> (t.status == "running" ? 0 : 1, t.fun_name, t.id))
-    n_run = count(t -> t.status == "running", tasks)
-    n_q   = count(t -> t.status == "queued", tasks)
+    tasks = sort(collect(values(TASKS)), by = t -> (_waiting(t) ? 1 : 0, t.fun_name, t.id))
+    n_q   = count(_waiting, tasks)
+    n_run = length(tasks) - n_q
 
     # ── ONE height budget so nothing ever clips: fixed chrome counted exactly (title, counts, pools,
     # blank, table header, dividers, footer); the rest splits between the task table (priority), a small
@@ -760,9 +787,10 @@ function render()
                 rpad(short(t.project_uid), 8),
                 rpad(short(t.image_uid), 8),
                 rpad(trunc_s(t.pool_name, 7), 8),
-                col(status_colour(t.status), rpad(t.status, 11)),
-                t.status == "running" ? rpad(dur_since(t), 9) : col(DIM, rpad(dur_since(t), 9)),
-                t.status == "running" ? progress_bar(t.progress) : col(DIM, "waiting"),
+                col(status_colour(shown_status(t)), rpad(shown_status(t), 11)),
+                !_waiting(t) ? rpad(dur_since(t), 9) : col(DIM, rpad(dur_since(t), 9)),
+                !_waiting(t) ? progress_bar(t.progress) :
+                    col(DIM, isempty(t.hpc_job) ? "waiting" : "job $(t.hpc_job)"),
                 "\n")
         end
         truncated && print(io, col(DIM, "  …and $(length(tasks) - nShown) more active\n"))

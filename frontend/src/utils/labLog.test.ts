@@ -14,6 +14,7 @@ describe('labLog.authorKind', () => {
     expect(authorKind('User — correction')).toBe('correction')
     expect(authorKind('User')).toBe('user')
     expect(authorKind('Claude')).toBe('claude')
+    expect(authorKind('Claude · claude-opus-5-5')).toBe('claude')   // the model suffix (lab_log_claude_author)
     expect(authorKind('Cecelia')).toBe('cecelia')
     expect(authorKind('Someone else')).toBe('other')
   })

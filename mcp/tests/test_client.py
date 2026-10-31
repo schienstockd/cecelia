@@ -84,6 +84,9 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/blackboard/status"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
+            ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
+            ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
+            ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),
             ("POST", "/api/notebooks/revise"),
@@ -144,6 +147,21 @@ class ClientTest(unittest.TestCase):
                              ("POST", "/api/chains/start")):
             with self.assertRaises(DisallowedRoute):
                 self.c._request(method, path, body={"projectUid": "p"})
+
+    def test_suggest_chain_is_a_read_of_the_history_builder(self):
+        # the same answer as the whiteboard's From-history dialog: a GET that writes nothing
+        with _patch_urlopen({"template": {}, "finalOutputs": []}) as u:
+            self.c.suggest_chain("p", ["a", "b"])
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/chains/suggest?", req.full_url)
+        self.assertIn("imageUids=a%2Cb", req.full_url)
+        self.assertNotIn("keep=", req.full_url)        # absent = every final output
+        with _patch_urlopen({}) as u:
+            self.c.suggest_chain("p", ["a"], keep=["n1", "n2"], retrain=True)
+        url = u.call_args[0][0].full_url
+        self.assertIn("keep=n1%2Cn2", url)
+        self.assertIn("retrain=1", url)
 
     def test_create_chain_posts_a_template(self):
         nodes = [{"id": "seg", "fn": "segment.cellpose", "params": {"cellDiameter": 30}},
@@ -717,6 +735,40 @@ class ClientTest(unittest.TestCase):
             {"projectUid": "p", "author": "Claude", "lines": ["hello", "world"]},
         )
 
+    def test_add_gate_posts_one_gate_in_the_stored_shape(self):
+        # The observer's gating create, with the autonomous add_gate's arguments: the `gate` dict
+        # goes out untouched (the sidecar's own `gate_spec` shape), so the server stores exactly what a
+        # GUI-drawn gate stores.
+        gate = {"kind": "rectangle", "x_channel": "mean_intensity_0", "y_channel": "area",
+                "x_transform": {"kind": "asinh", "cof": 150}, "y_transform": {"kind": "linear"},
+                "x_min": 0.1, "x_max": 0.5, "y_min": 0, "y_max": 900}
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_gate("P", "I", "B", "dim", gate, parent="/qc")
+        req = u.call_args[0][0]
+        self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-gate"))
+        self.assertEqual(json.loads(req.data), {
+            "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "dim",
+            "gate": gate, "dryRun": False, "colour": "#22c55e"})
+        with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
+            self.c.add_gate("P", "I", "B", "blob", {"kind": "polygon", "vertices": [[0, 0], [1, 0], [0, 1]]},
+                            colour="#ff0000")
+        body = json.loads(u.call_args[0][0].data)
+        self.assertEqual((body["parent"], body["gate"]["kind"], body["colour"]), ("root", "polygon", "#ff0000"))
+
+    def test_add_gate_conflict_and_missing_parent_surface_as_api_errors(self):
+        for status, msg in ((409, "A population \"/qc/dim\" already exists"),
+                            (404, "Population not found: /nope — existing: /qc")):
+            def make_err(*a, status=status, msg=msg, **kw):
+                raise urllib.error.HTTPError("http://x", status, "e", {},
+                                             io.BytesIO(json.dumps({"error": msg}).encode()))
+            with mock.patch.dict("os.environ", {}, clear=True), \
+                 mock.patch("cecelia_mcp.client.urllib.request.urlopen", side_effect=make_err):
+                with self.assertRaises(ApiError) as ctx:
+                    self.c.add_gate("P", "I", "B", "dim", {"kind": "rectangle", "x_channel": "a",
+                                    "y_channel": "b", "x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}, "/qc")
+            self.assertEqual(ctx.exception.status, status)
+            self.assertIn(msg, ctx.exception.message)
+
     def test_http_error_becomes_apierror_with_detail(self):
         # clear=True on os.environ isolates the test from the bidir Part 5 auto-pair middleware
         # (which would fire an extra /api/push/target POST if CLAUDE_CODE_MESSAGING_* were set,
@@ -828,6 +880,16 @@ class ClientTest(unittest.TestCase):
         with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
             self.c.list_images("proj-abc")
         self.assertEqual(up.call_count, 2)
+
+    def test_auto_pair_skipped_in_no_gui_mode(self):
+        # No GUI (CECELIA_MCP_NO_GUI=1): a pairing is how pushes reach the GUI, so none is written.
+        env = {"CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/s.sock",
+               "CLAUDE_CODE_MESSAGING_TOKEN":  "t",
+               "CECELIA_MCP_NO_GUI":           "1"}
+        with mock.patch.dict("os.environ", env, clear=True), _patch_urlopen({"images": []}) as up:
+            self.c.list_images("proj-abc")
+        self.assertEqual(up.call_count, 1)               # the tool call only — no pair POST
+        self.assertEqual({}, self.c._paired)
 
     def test_register_push_target_errors_without_env(self):
         # Explicit re-pair when env vars are absent ⇒ ApiError with an actionable message so the

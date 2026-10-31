@@ -380,7 +380,9 @@ export PIXI_HOME="$PIXI_HOME"
 export JULIAUP_DEPOT_PATH="$JULIAUP_DEPOT_PATH"
 export JULIA_DEPOT_PATH="\$HOME/.cecelia/julia-depot:$INSTALL_DIR/juliaup/depot:"
 export PATH="$PIXI_HOME/bin:$JULIAUP_DEPOT_PATH/bin:\$PATH"
-cd "$INSTALL_DIR" && exec "$PIXI" run --as-is app
+# No arguments = the app (menu entry, .app). \`cecelia-launch.sh chat [<project>]\` = no GUI.
+[ \$# -eq 0 ] && set -- app
+cd "$INSTALL_DIR" && exec "$PIXI" run --as-is "\$@"
 EOF
   chmod 755 "$LAUNCH"
   # Every account can read + run the shared tree; only the owner can change it. `go-w` matters: a
@@ -451,6 +453,7 @@ PLIST
       ;;
   esac
   say "Done (system-wide, owned by $OWNER). Any user can launch Cecelia; $OWNER updates it by re-running this."
+  say "No GUI (Claude in the terminal):  $LAUNCH chat"
 else
   case "$OS" in
     Linux)
@@ -503,6 +506,7 @@ PLIST
       ;;
   esac
   say "Done. Launch Cecelia from your menu, or run:  cd \"$INSTALL_DIR\" && \"$PIXI\" run app"
+  say "No GUI (Claude in the terminal):  cd \"$INSTALL_DIR\" && \"$PIXI\" run chat"
 fi
 
 # ── Remote-access handoff ─────────────────────────────────────────────────────

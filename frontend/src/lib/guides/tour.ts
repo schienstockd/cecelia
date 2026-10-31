@@ -52,9 +52,9 @@ export const tourGuide: GuideDef = {
       anchor: 'header.guides',
       placement: 'bottom',
       title: 'The guides',
-      text: 'This compass lists every guide, including this one — it is how you get back here.',
+      text: 'This compass opens the map: pick a recipe for your data, or jump to any page or guide.',
       bullets: [
-        'Each one walks you through a real step on your own data.',
+        'It is how you get back here; each guide walks a real step on your own data.',
         'A guide only points and watches; it never clicks for you.',
       ],
     },
@@ -109,9 +109,10 @@ export const tourGuide: GuideDef = {
     {
       anchor: 'sidebar.kiwiCta',
       placement: 'right',
-      title: 'Kiwi — the assist cockpit',
-      text: 'Pairing, chat handoff and the buttons that share what is on screen with Claude — all here.',
-      bullets: ['On-demand only: nothing happens until you ask.'],
+      title: 'Kiwi — answers you can check',
+      text: 'Ask about what’s on screen: every claim links to its data, and Kiwi can’t change anything.',
+      bullets: ['On-demand only: nothing happens until you ask.',
+                'Want Claude to build something? Start a Claude Code session from here.'],
     },
     {
       anchor: 'sidebar.settings',

@@ -109,6 +109,17 @@ matching labels + labelProps — `ccid.json` stays lean:
 Plain JSON — readable by Julia and Python. (This supersedes the earlier
 `ARCHITECTURE.md:248` "gating in ccid.json" plan.)
 
+**`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
+server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
+`Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,
+`utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
+routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the
+population AND everything under it carries a Claude stamp — once the user gates under a proposal, that
+subtree is theirs. It cannot rename or move anything, and never reaches the general `/pop/*` routes;
+the user deletes or undoes a proposal. Each write takes `dryRun` (the counts, nothing written), and
+`/api/gating/examples` shows the cells just inside and outside a gate — written or proposed — as
+crops, so a cut is judged on the cells before it lands.
+
 `live` populations span multiple value_names (their path prefix names the segmentation). They are
 **derived populations** — membership from a column rule layered on the `flow` gates, not a stored
 gate — so they need **no** pop-map storage of their own: `pop_df` reads the `flow` gates and layers
@@ -199,7 +210,7 @@ assignment is exclusive *within* a run. Switching the run dropdown therefore swa
 set — pops from a different run on the same segmentation are hidden, not shown.
 
 **Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
-(`api_plots_umap`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
+(`api_plots_cluster_map`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
 resolve their value_name via `co_clustered_value_names(img, suffix)` — a segmentation that actually
 took part in the run — instead of the drifting *active* value_name. This is load-bearing: evaluating a
 cluster pop against a segmentation not in its run means the `clusters.{suffix}` column is absent, which
@@ -370,7 +381,9 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
 `track` gates tracks), as opposed to the filter pop types (`clust`/`trackclust`) and derived `live`.
 One abstraction (`is_gating_pop_type`) so gating features treat both uniformly, no flow special-casing.
 
-**Copy gating → other images** (`POST /api/gating/copy`, ports R "Propagate to Selected"): because
+**Copy gating → other images** (`POST /api/gating/copy` → the package's `copy_gating!`,
+`app/src/gating/popmanager/copy.jl`, ports R "Propagate to Selected"; `replace = false` is the manual gate
+chain step's prefill, which never overwrites an image's own gates): because
 gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet like R) and membership
 recomputes per image on read, copying a strategy is just writing the source sidecar to each target
 (REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking

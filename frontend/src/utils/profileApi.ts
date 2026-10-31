@@ -5,7 +5,7 @@
 //   POST /api/kiwi/profiles/select            → { name }               ; writes [ai].profile in custom.toml
 //   POST /api/kiwi/profiles/create            → { name }               ; mkpath under user-profiles/
 //   POST /api/kiwi/profiles/retire            → { name }               ; writes `.kiwi-retired` sentinel (D11)
-//   GET  /api/kiwi/terminal/command?profile=N → { command, profile, profileDir }
+//   GET  /api/kiwi/terminal/command?profile=N&prompt=P → { command, profile, profileDir }
 //   GET  /api/kiwi/profiles/auth?profile=N    → { profile, state, email, method, org } ; Claude login
 //   POST /api/kiwi/profiles/logout            → { name }               ; `claude auth logout` for it
 //   POST /api/kiwi/profiles/login             → { name }               ; start `claude auth login` (P9)
@@ -41,9 +41,9 @@ export interface ProfileRoster {
 }
 
 /** The terminal one-liner + which profile it targets. On POSIX the shape is
- *  `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir> <shell> -i`; on Windows a PowerShell
- *  `Remove-Item Env:… ; $env:CLAUDE_CONFIG_DIR = '<dir>' ; & '<shell>'` string. The frontend
- *  just copies the string — it never parses it. */
+ *  `env -u ANTHROPIC_API_KEY … CLAUDE_CONFIG_DIR=<dir> <claude> ['<prompt>']`; on Windows
+ *  `powershell -NoProfile -EncodedCommand <base64>`. The frontend just copies the string — it
+ *  never parses it. */
 export interface TerminalCommand {
   command: string
   profile: string
@@ -196,12 +196,15 @@ export async function createProfile(name: string, apiBase = ''): Promise<CreateP
   }
 }
 
-/** Fetch the terminal one-liner. Omit `profile` to get the active one; pass a name to preview
- *  a specific profile's command (used by the create-dialog's Retry-copy fallback). */
-export async function fetchTerminalCommand(profile?: string, apiBase = ''):
-  Promise<TerminalCommand | null> {
+/** Fetch the terminal one-liner. Omit `profile` to get the active one. A `prompt` becomes the
+ *  session's first message (Kiwi's *Start in terminal* passes its chat starter). */
+export async function fetchTerminalCommand(
+  opts: { profile?: string; prompt?: string } = {}, apiBase = ''): Promise<TerminalCommand | null> {
   try {
-    const qs = profile ? `?profile=${encodeURIComponent(profile)}` : ''
+    const q = new URLSearchParams()
+    if (opts.profile) q.set('profile', opts.profile)
+    if (opts.prompt) q.set('prompt', opts.prompt)
+    const qs = q.size ? `?${q}` : ''
     const res = await fetch(`${apiBase}/api/kiwi/terminal/command${qs}`)
     if (!res.ok) return null
     return await _json(res) as TerminalCommand
@@ -256,6 +259,19 @@ export async function fetchClaudeLogin(profile?: string, fresh = false,
 export async function logoutClaude(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(`${apiBase}/api/kiwi/profiles/logout`,
+      { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
+    const body = await _json(res)
+    return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Network error' }
+  }
+}
+
+/** End a profile's session (sidebar Log out): deletes its Claude conversations when the profile or
+ *  the workstation wants that, else a no-op. Fails (409) while `claude` still runs under it. */
+export async function endClaudeSession(name: string, apiBase = ''): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${apiBase}/api/kiwi/profiles/end-session`,
       { method: 'POST', headers: _JSON, body: JSON.stringify({ name }) })
     const body = await _json(res)
     return res.ok ? { ok: true } : { ok: false, error: body?.error ?? `HTTP ${res.status}` }

@@ -84,10 +84,12 @@ reading for this plan):
   by both suites) and one `MASK_PARENT_PALE` (`shaders/constants.json`). A look with the toggle on and
   pops shown sends `maskAllCells: false`; `mask_pop_scope` then colours the mask by the look's pop
   types on the mask's own segmentation (the viewer's `maskPopLayers`). A batch's population mask draws
-  the same rule (so its ungated cells are grey now, not undrawn).
+  the same rule (so its ungated cells are grey now, not undrawn). The toggle is now the mask's
+  *Colour* chooser (`viewerMaskColour`: cell id / pops / track clusters); on track clusters a look sends
+  `maskPopTypes: ["trackclust"]`, which `mask_pop_scope` takes over `popTypes`.
 - **P8 pop eyes.** The viewer draws a pop's points and its cell-track ribbon each by its own eye
   (`popEyes.ts`, `settings.getPopEyes(…, 'points' | 'ribbons')`); the manager's `show` only seeds a pop
-  with no eye. A look carries both bags whole — `popEyes` / `ribbonEyes`, `{vn: {"<popType>::<path>":
+  with no eye; the manager's per-pop viewer toggle writes the eye directly. A look carries both bags whole — `popEyes` / `ribbonEyes`, `{vn: {"<popType>::<path>":
   on}}` (`settings.getImagePopEyes`; both cross windows through the bag channel) — and the renderer
   draws by them (`look_eye_on`, the viewer's `popEyeOn`): points in `_overlay_parts` (`point_on`),
   ribbons (`track_on`, an eye outranking the path-only `hiddenTrackPops`), the *Pop colour* mask

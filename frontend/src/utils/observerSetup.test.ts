@@ -60,9 +60,9 @@ describe('terminalCta — which terminal button Kiwi\'s Terminal row shows', () 
 describe('terminalSetupTooltip', () => {
   it('names the actual blocker per state', () => {
     expect(terminalSetupTooltip('shadowed')).toMatch(/overrides/)
-    expect(terminalSetupTooltip('stale')).toMatch(/points somewhere else/)
-    expect(terminalSetupTooltip('missing')).toMatch(/^Register/)
-    expect(terminalSetupTooltip(undefined)).toMatch(/^Register/)
+    expect(terminalSetupTooltip('stale')).toMatch(/out of date/)
+    expect(terminalSetupTooltip('missing')).toMatch(/^Install the Cecelia plugin/)
+    expect(terminalSetupTooltip(undefined)).toMatch(/^Install the Cecelia plugin/)
   })
   it('stays one short line — a tooltip, not an explanation', () => {
     for (const st of ['missing', 'stale', 'shadowed', undefined]) {

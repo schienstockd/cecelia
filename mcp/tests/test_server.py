@@ -41,6 +41,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "list_plots",                   # bidir PR #8 — live plot registry discovery
             "seek_viewer",                  # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z) without a mark/capture
             "gate_plot", "gate_cells_view", # gating as pictures (shared with the autonomous server)
+            "add_gate",                     # ONE proposed gate, additive only (POST /api/gating/pop/add-gate)
             "open_analysis_board_plot",     # RUBBER_DUCK_FIT_PLAN P2B — navigate main window to an existing board carrying a plot spec
             "get_recent_captures", "get_capture",   # bidir share-in (BIDIR_CONTEXT_PLAN PR #3)
             "get_capture_landscape_tiles",          # landscape drill-down (LANDSCAPE Phase 6 follow-up)
@@ -310,6 +311,33 @@ class GetGuideTest(unittest.TestCase):
         self.assertIn("intravital-timelapse", str(cm.exception))
 
 
+class TruncationIsSaidTest(unittest.TestCase):
+    """A capped result says it was capped — a silently cut list or log reads as the whole of it."""
+
+    def test_task_log_cut_says_so_in_its_first_line(self):
+        reply = {"exists": True, "content": "[t] line 5\n", "bytes": 11, "totalBytes": 145, "truncated": True}
+        with unittest.mock.patch.object(server._client, "get_task_log", lambda *a: reply):
+            log = server.get_task_log("p", "i1", "segment.cellpose")
+        first, rest = log.split("\n", 1)
+        self.assertEqual("[showing the last 11 of 145 bytes — pass max_bytes=0 for the whole log]", first)
+        self.assertEqual("[t] line 5\n", rest)
+
+    def test_task_log_default_cap_reaches_the_api(self):
+        seen = []
+        def fake(*a):
+            seen.append(a)
+            return {"exists": True, "content": "x", "truncated": False}
+        with unittest.mock.patch.object(server._client, "get_task_log", fake):
+            self.assertEqual("x", server.get_task_log("p", "i1", "f"))
+        self.assertEqual(server._TASK_LOG_MAX_BYTES, seen[0][3])
+
+    def test_task_history_carries_total_and_truncated(self):
+        reply = {"projectUid": "p", "count": 1, "total": 2, "truncated": True, "history": [{"fun": "f"}]}
+        with unittest.mock.patch.object(server._client, "get_task_history", lambda *a: reply):
+            out = server.get_task_history("p", 1)
+        self.assertEqual({"count": 1, "total": 2, "truncated": True, "history": [{"fun": "f"}]}, out)
+
+
 class ToolErrorSurfacingTest(unittest.TestCase):
     """mcp 2.x hides any non-`ToolError` message behind `Error executing tool <name>`. The client's
     `ApiError` text is written for the model ("cannot reach Cecelia API … Is `pixi run dev`
@@ -326,6 +354,29 @@ class ToolErrorSurfacingTest(unittest.TestCase):
                 asyncio.run(server.mcp.call_tool("list_projects", {}))
         self.assertNotIsInstance(cm.exception, UnexpectedToolError)
         self.assertIn("cannot reach Cecelia API", str(cm.exception))
+
+    def test_add_gate_refusals_reach_the_model(self):
+        # A 409 (name taken) / 404 (no such parent) is something to act on — pick another name, fix
+        # the path — so its message must reach the model, not "Error executing tool add_gate".
+        from cecelia_mcp.client import ApiError
+        from mcp.server.mcpserver.exceptions import ToolError
+        args = {"project_uid": "P", "image_uid": "I", "value_name": "B", "parent": "/qc", "name": "dim",
+                "gate": {"kind": "rectangle", "x_channel": "a", "y_channel": "b",
+                         "x_min": 0, "x_max": 1, "y_min": 0, "y_max": 1}}
+        for status, msg in ((409, "already exists"), (404, "Population not found")):
+            def refuse(*a, status=status, msg=msg, **kw):
+                raise ApiError(status, msg)
+            with unittest.mock.patch.object(server._client, "add_gate", refuse):
+                with self.assertRaises(ToolError) as cm:
+                    asyncio.run(server.mcp.call_tool("add_gate", args))
+            self.assertIn(f"HTTP {status}: {msg}", str(cm.exception))
+
+    def test_observer_add_gate_takes_the_autonomous_arguments(self):
+        # One shape for "add a gate" on both servers, so a gate (and a run record) reads the same
+        import inspect
+        from cecelia_mcp import autonomous_server
+        sig = lambda f: [(p.name, p.default) for p in inspect.signature(f).parameters.values()]   # noqa: E731
+        self.assertEqual(sig(server.add_gate), sig(autonomous_server.add_gate))
 
     def test_wrapping_keeps_the_argument_schema(self):
         tools = {t.name: t for t in asyncio.run(server.mcp.list_tools())}
@@ -369,6 +420,13 @@ class GuidanceTest(unittest.TestCase):
         # go off configuring an MCP server it cannot reach.
         self.assertIn("START", guidance.SERVER_INSTRUCTIONS)
         self.assertIn("configure", guidance.SERVER_INSTRUCTIONS)
+
+    def test_instructions_reach_a_session_editing_cecelia(self):
+        # A session working on Cecelia's files never opens a briefing, so the always-in-context half is
+        # the only place that can point it at a custom module instead of a hand edit
+        # (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
+        for phrase in ("custom module", "docs/CUSTOM_MODULES.md", "ccid.json", "patch"):
+            self.assertIn(phrase, guidance.SERVER_INSTRUCTIONS)
 
     def test_instructions_stay_short(self):
         # These sit in the system prompt of EVERY session with this server registered — and the
@@ -995,3 +1053,37 @@ class DiscoveryToggleQcTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoGuiSurfaceTest(unittest.TestCase):
+    """No-GUI mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN P2): the tools that read or drive the GUI
+    are not registered, and the briefing says what replaces the GUI's half of the rules."""
+
+    GUI_ONLY = {"mark_tracks", "mark_cells", "select_on_plot", "point_at_ui", "mark_freeform", "list_plots",
+                "mark_plot", "open_analysis_board_plot", "seek_viewer", "mark_tile", "get_landscape",
+                "get_recent_captures", "get_capture", "get_capture_landscape_tiles", "register_push_target",
+                "poll_observations", "set_observer_active", "get_observer_stats"}
+
+    def _load(self, no_gui: str):
+        import importlib
+        import os
+        with unittest.mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": no_gui}):
+            g = importlib.reload(guidance)
+            s = importlib.reload(server)
+            names = {t.name for t in asyncio.run(s.mcp.list_tools())}
+            out = (names, g.SERVER_INSTRUCTIONS, g.BRIEFING_GUIDANCE)
+        importlib.reload(guidance)
+        importlib.reload(server)
+        return out
+
+    def test_gui_tools_only_with_a_gui(self):
+        names, _, briefing = self._load("")
+        self.assertTrue(self.GUI_ONLY <= names)
+        self.assertNotIn("NO GUI", briefing)
+        names, instructions, briefing = self._load("1")
+        self.assertFalse(self.GUI_ONLY & names)
+        self.assertIn("get_session_briefing", names)          # the reading half is untouched
+        for phrase in ("NO GUI", "run_chain", "create_project", "pixi run console", "need the GUI"):
+            self.assertIn(phrase, briefing)
+        self.assertIn("no GUI", instructions)
+        self.assertLess(len(instructions.split()), 300)

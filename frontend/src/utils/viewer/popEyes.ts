@@ -3,7 +3,8 @@
  * rows) and as cell-track ribbons (the Tracks rows, #1766). One eye per layer, same rules for both.
  *
  * The eye is USER intent, separate from the Population Manager's `show` (#1730): `show` only SEEDS
- * the eye of a pop the viewer has never stored a state for. Stored per (image × segmentation) as
+ * the eye of a pop the viewer has never stored a state for. The manager's per-pop viewer toggle writes
+ * the eye itself (and `show` with it), so it works with the pop-out closed. Stored per (image × segmentation) as
  * `{ "<popType>::<path>": visible }` (`settings.getPopEyes`), so the choice survives a reopen and
  * — the reason it exists — a refetch: the manager pings the viewer on every gate write, and a set
  * rebuilt from `show` on each fetch reset every toggle the user had just made.
@@ -26,6 +27,11 @@ export type PopEyes = Record<string, boolean>
 export interface EyePop { popType: string; path: string; uid?: string; show: boolean }
 
 export const eyeKey = (popType: string, path: string) => `${popType}::${path}`
+/** `eyeKey`'s inverse. A key without `::` (none is written so) reads as a bare path. */
+export function parseEyeKey(k: string): { popType: string; path: string } {
+  const i = k.indexOf('::')
+  return i < 0 ? { popType: '', path: k } : { popType: k.slice(0, i), path: k.slice(i + 2) }
+}
 
 /**
  * One segmentation's eyes after a fetch. Per pop type that was fetched:
@@ -46,8 +52,7 @@ export function reconcilePopEyes(
   const remaps = new Map([...fetched].map(pt => [pt, makePopPathRemap(
     prev.filter(p => p.popType === pt).map(ident), next.filter(p => p.popType === pt).map(ident))]))
   for (const [k, v] of Object.entries(stored)) {
-    const i = k.indexOf('::')
-    const popType = i < 0 ? '' : k.slice(0, i), path = i < 0 ? k : k.slice(i + 2)
+    const { popType, path } = parseEyeKey(k)
     const remap = remaps.get(popType)
     if (!remap) { out[k] = v; continue }
     const to = remap(path)
@@ -124,6 +129,22 @@ export function popEyeOn(eyes: ReadonlyMap<string, Readonly<PopEyes>>, vn: strin
   return eyes.get(vn)?.[eyeKey(popType, path)] ?? show
 }
 
+/** The first pop whose eye went OFF → ON between two reads of the eyes — a toggle from OUTSIDE the
+ *  viewer (the Population Manager writes the eye). Only segmentations `before` already held count, so
+ *  a first load is not a toggle; a pop with no eye in `before` reads as off. */
+export function eyeTurnedOn(before: ReadonlyMap<string, Readonly<PopEyes>>,
+                            after: ReadonlyMap<string, Readonly<PopEyes>>): ListedPop | null {
+  for (const [vn, eyes] of after) {
+    const was = before.get(vn)
+    if (!was) continue
+    for (const [k, on] of Object.entries(eyes)) {
+      if (!on || was[k] === true) continue
+      return { vn, ...parseEyeKey(k) }
+    }
+  }
+  return null
+}
+
 /** The paths whose eye is off, sorted — the ribbon eyes' projection onto `settings.setTrackPopHidden`,
  *  the per-path shape older looks and the batch take (a recorded look carries the eyes themselves,
  *  `viewerLook` `ribbonEyes`; the renderer falls back to these paths only for a pop with no eye). */
@@ -131,8 +152,7 @@ export function offPaths(eyes: Readonly<PopEyes>): string[] {
   const out = new Set<string>()
   for (const [k, v] of Object.entries(eyes)) {
     if (v) continue
-    const i = k.indexOf('::')
-    out.add(i < 0 ? k : k.slice(i + 2))
+    out.add(parseEyeKey(k).path)
   }
   return [...out].sort()
 }

@@ -33,7 +33,7 @@ handler continues: register labels, QC, run log
 | Where | Fields | Stored in | Why there |
 |---|---|---|---|
 | **Settings → HPC** | scheduler, host, port, internet queue; Cluster environment | `custom.toml` `[hpc]` | which cluster this machine reaches, and which of its queues can download, is not personal |
-| **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
+| **Preferences → HPC** | username, SSH key, remote folder, email, CPU/GPU queue · account · QoS · directives · preamble, GPU CPUs per GPU | the profile (`hpcUser`, `hpcKeyFile`, `hpc` table) | a remote folder is usually `/scratch/<user>/…`, and accounts follow a person's group |
 | **Settings → HPC → This project** | account override | `<project>/settings/hpc.json` | billing follows the grant |
 
 Preferences opens from the profile chip in the header, or from **Your HPC settings** on Settings → HPC. Test connection
@@ -41,6 +41,20 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 
 - **Directives** are extra `#SBATCH`/`#PBS` lines, used verbatim. **Preamble** is shell run before
   the task, e.g. `module load cuda/12`.
+- **Accounts.** A task job bills the project's account when one is set, else the class account (CPU
+  or GPU) from Preferences. The cluster environment install always uses the CPU class account: one env
+  serves every project.
+- **Nodes** (a compact table under the job classes) is what the scheduler says each class's queue runs
+  on: one row per kind of node, with CPUs, GPUs and memory per node (`GET /api/hpc/nodes`). PBS follows a routing queue (Gadi's `gpuvolta`) to where it sends jobs
+  and matches nodes by their `queue`; a queue that owns no nodes draws on the untagged pool, marked
+  *(shared)* with its three commonest kinds and a "+N more kinds" row, because PBS picks among them by
+  internal tags Cecelia cannot read. SLURM
+  reads the partition from `sinfo`. Facts only; nothing is applied from them.
+- **CPUs per GPU** (GPU class) is a site rule, set by you: blank on most sites, where a job may ask for
+  any count. Where the site wants an exact count (Gadi's GPU queues refuse anything but 12 per GPU),
+  set it, or click **Use N**, which offers the GPU nodes' CPUs ÷ GPUs. With it set, the run form shows
+  a GPU job's CPUs as `GPUs × N` and greys the slider, and dispatch asks for exactly that
+  (`hpc_apply_site_rules`), logging `[HPC] 12 CPUs: this cluster takes 12 per GPU`.
 - **Test connection** is the only call that may trust a new host key. It writes to Cecelia's own
   `<config_dir>/hpc/known_hosts` and shows the fingerprint. Every other call is strict and runs with
   `BatchMode`.
@@ -53,7 +67,15 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 **Install on cluster** sends a job that:
 1. fetches pixi into `<remote>/bin/`;
 2. runs `pixi install --frozen` of `pixi.lock` into `<remote>/env/<lock hash>/`;
-3. checks that it imports.
+3. checks that it imports;
+4. downloads Cellpose's built-in weights (`cpsam_v2`, `cpsam`, about 1.2 GB each) into
+   `<remote>/assets/cellpose/`, the folder a run's `CELLPOSE_LOCAL_MODELS_PATH` points at. Only the
+   missing ones are fetched.
+
+The weights are part of "installed": a built-in model is a name, not a file a run declares, so dispatch
+has nothing to upload, and cellpose would download it on the node. Compute nodes often have no internet
+(Gadi's GPU nodes refuse the connection), so the install job, which runs on the internet queue, fetches
+them once. An env without them reads as not installed, and Install fetches only what is missing.
 
 - The job is 1 CPU (an internet queue may allow no more), 8 GB and up to 30 min. On a SLURM site it took 1 min 16 s and 0.6 GB;
   on NCI Gadi's copyq 2 min, with PBS reporting all 4 GB then requested as used; the env
@@ -63,6 +85,18 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
   install job goes there. Empty = the CPU queue.
 - It is rebuilt only when `pixi.lock` changes, i.e. a new Cecelia version.
 - A dispatch refuses a missing or outdated env, naming the fix.
+- **Clean up** (the ⋯ beside Install) removes other versions' envs, old pixis, the download cache, the code
+  copies and job folders over 30 days old; this version's env, the project mirrors and model files
+  stay. **Delete all** (confirm) deletes everything Cecelia made in the remote folder, project mirrors
+  included, but never the folder itself or files of your own in it; Install on cluster then starts
+  from nothing. Both are refused while a Cecelia job is queued or running on the cluster (from any
+  workstation) or a cluster run is in progress here. Each runs as a Task Manager row. Things are moved
+  into `.cecelia-trash-<n>/` first, then deleted, so an interrupted clean-up never leaves a
+  half-deleted env that still looks installed; the next one removes the leftover.
+- The install is a Task Manager row (*Install cluster environment*) with the same stages as a run,
+  and its log. The line beside **Install on cluster** follows it: *Uploading the environment files*,
+  *Queued on the cluster (job N)*, *Installing on the cluster (job N)*. A page opened mid-install
+  gets the row and the stage from `GET /api/hpc/env`.
 - The code (`python/` and the task runners) is synced on every run into a content-hashed
   `<remote>/code/<hash>/`, so the runner always matches the Julia that wrote its params.
 
@@ -83,12 +117,15 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 4. Above that, a **memory line** says whether the memory covers the most demanding selected image
    (*Memory hint* below), with a **Use N GB** button when it does not.
 5. The run waits in the `hpc` pool, then goes through these stages, shown on the Task Manager's pool
-   tag (`hpc · queued`, with the job id in the tooltip):
+   tag (`hpc · queued`, with the job id in the tooltip). While the job is queued on the cluster, the row
+   shows the queued icon and no progress bar (`hpcShownStatus`), though it holds its `hpc` slot. `pixi
+   run console` shows the stage in its STATUS column (`uploading`, `hpc queued`, `on hpc`, `fetching`)
+   and the job id under PROGRESS while it waits:
 
 | Stage | What happens |
 |---|---|
 | uploading | env check, code sync, the declared inputs rsynced into the mirror |
-| queued / running | the scheduler's own state, polled every 15 s (one ssh call for every job in flight) |
+| queued / running | the scheduler's own state: polled every 5 s while running, every 30 s while queued (one ssh call per job). The log streams while it runs; a wait reason, when the scheduler gives one, is logged as `[HPC] Waiting: …` |
 | downloading | the declared outputs copied back through `<path>.hpc-incoming` and swapped in by rename |
 
 - **Cancel** runs `scancel`/`qdel`. If the cluster is unreachable at that moment, the cancel is kept
@@ -113,8 +150,8 @@ is on both; when it is disabled, the reason shows beside it. Each field saves on
 - chains, which always run locally;
 - Windows workstations.
 
-Built-in Cellpose weights are downloaded by Cellpose on the compute node into `<remote>/assets/cellpose`
-on first use. Custom models from `<config_dir>/models` are synced to `<remote>/assets/models`.
+Built-in Cellpose weights are fetched into `<remote>/assets/cellpose` by **Install on cluster**, on the
+internet queue: compute nodes often have no internet (Gadi's GPU nodes do not). Custom models from `<config_dir>/models` are synced to `<remote>/assets/models`.
 
 ### Memory hint
 
@@ -178,6 +215,31 @@ temporal scales 1–8):
 Treat the hint as a floor with some headroom, not a guarantee. If a job is stopped for memory, the
 scheduler's reason appears in the log, and the measured numbers above should be updated.
 
+### Resources used
+
+When a job ends, succeeded or failed (not cancelled), the task log gets what it used against what it
+booked, from the scheduler's own accounting (`hpc_job_usage`, `app/src/hpc/usage.jl`):
+
+```
+[HPC] Resources used:
+[HPC]   Memory    2.7 GB of 64 GB (4%)
+[HPC]   Walltime  2 min of 8 h (1%)
+[HPC]   CPUs      0.3 of 12 busy on average (2%)
+[HPC]   GPU       0% utilised
+```
+
+- **Where from:** PBS `qstat -x -f` (`resources_used.*` against `Resource_List.*`; GPU utilisation
+  where the site reports it, as Gadi does); SLURM `sacct` (peak `MaxRSS` over the job's steps, `Elapsed`,
+  `TotalCPU` against `ReqMem`, `AllocCPUS`, `Timelimit`).
+- **Waiting for final figures:** a job's `.exit` appears before the scheduler closes its accounting,
+  so the query asks again every 5 s until the job reads finished, for up to a minute, in one ssh call.
+  If it is still open by then, the header says so, and the figures may stop short of the end. A site
+  that keeps no accounting (SLURM without `slurmdbd`, PBS without job history) is given up on after
+  two asks, and nothing is logged.
+- **CPUs busy** is CPU time ÷ walltime: 0.3 of 12 means the job mostly waited on the GPU or on disk.
+- **One run, one image.** It is the use of that image's run; a bigger image needs more (*Memory hint*).
+  A Gadi gpuvolta node has 384 GB for 48 CPUs, so a GPU job's 12 CPUs come with a node share of 96 GB.
+
 ## On the cluster
 
 ```
@@ -187,9 +249,21 @@ scheduler's reason appears in the log, and the measured numbers above should be 
   cache/pixi/               jobs/<task>-<runner>-<n>/ job.sh · job.log · .exit · params.json
 ```
 
+Nothing here is removed by a run; Settings → HPC → **Clean up** / **Delete all** (*Cluster
+environment* above) is how it goes. An env is ~8.3 GB and tens of thousands of files, which counts
+against file-number quotas (Gadi's), and each Cecelia version that changes `pixi.lock` adds one.
+
 A project folder that another workstation already mirrors (a different `.cecelia-mirror`) is refused,
 naming the folder to remove. Every job's `job.sh` and `job.log` stay in `jobs/`, which is the first
 place to look when something fails.
+
+- **`job.log` is written by the job itself** (`exec > job.log` at the top of the body, Python
+  unbuffered), so the Task Manager shows lines as they are printed. PBS spools a job's `-o` file on
+  the node and copies it over only when the job ends; measured on Gadi, the old `-o job.log` appeared
+  only at state E.
+- **`scheduler.log`** is the scheduler's own output (`--output` / `-o`): mostly empty, plus PBS's
+  end-of-job footer (resource usage, SUs). A failed job's last 20 lines are added to the task log as
+  `[scheduler] …`.
 
 ## Schedulers
 
@@ -201,7 +275,8 @@ One resource model, mapped per backend (HPC_PLAN D8):
 | CPUs / memory / GPUs | `--cpus-per-task` `--mem=NG` `--gres=gpu:N` | `-l ncpus=…` `-l mem=…gb` `-l ngpus=…` (job-wide; Gadi refuses `select`) |
 | walltime | `--time` | `-l walltime` |
 | account / QoS | `--account` `--qos` | `-A` and `-P` / — |
-| status | `squeue -u me` | `qselect -u me -s <state>` |
+| status | `squeue -u me` | `qstat -f <ids>` (one query per poll; `job_state`) |
+| why it waits | `squeue` `%r` (`Priority`, `Resources` in words; others as named) | `qstat -f` `comment` (Gadi sets none on a fresh job) |
 | why it vanished | `sacct`, `scontrol show job` | `qstat -x -f` (Exit_status, comment) |
 | cancel | `scancel` | `qdel` |
 
@@ -235,7 +310,7 @@ attributes, since the OME-XML reader falls back there. Any read takes its `<path
 
 | Where | What | How |
 |---|---|---|
-| Every CI leg | settings, renderers, parsers; the whole path against a local "remote" (`HpcLocalConn` + `LocalShellBackend`): code sync, env install with a stub pixi, a real Measure-labels dispatch (same table as local, rerun sends 0 B, purged mirror resyncs, undeclared write named, foreign mirror refused), cancel, reattach after a crash, cancel retry; PBS through shim `qsub`/`qselect`/`qdel` | `pixi run test-pkg` / `test-hpc` |
+| Every CI leg | settings, renderers, parsers; the whole path against a local "remote" (`HpcLocalConn` + `LocalShellBackend`): code sync, env install with a stub pixi, a real Measure-labels dispatch (same table as local, rerun sends 0 B, purged mirror resyncs, undeclared write named, foreign mirror refused), cancel, reattach after a crash, cancel retry; PBS through shim `qsub`/`qstat`/`qdel` | `pixi run test-pkg` / `test-hpc` |
 | `verify-hpc.yml` | a single-node SLURM + sshd container: connection test, real `sbatch`/`scancel`/walltime kill, a real `pixi install` of the env, a dispatched Measure labels | path-filtered on HPC code and `pixi.lock` |
 | A real site | Cellpose, GPUs, the site's partitions and modules | below |
 
@@ -256,7 +331,7 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
    the labels and table appear as after a local run.
 5. **Then:**
    - rerun with Overwrite existing; the log should say `Inputs synced: 0 B sent`;
-   - cancel one while queued; `squeue` should drop it within about 15 s;
+   - cancel one while queued; `squeue` should drop it within about 30 s;
    - quit mid-job and rerun the same; the log should say `Re-attached` or `already finished`, and
      there should be no second job;
    - run a whole slide.
@@ -280,7 +355,12 @@ We have no cluster. This is the procedure for whoever tests on one, and what we 
 | `The cluster has no environment for this version of Cecelia` | run Install on cluster (once per version) |
 | `[ERROR] … needs Linux x86_64; this node is …` | the install landed on a non-x86 node: pick another partition |
 | `Submit: qsub: Error: …` beside Install on cluster | the scheduler refused the install job; the reason is PBS's or SLURM's own |
+| `Submit: the cluster did not answer within 180 s` | the login node's qsub/sbatch stalled; try again. A submit that timed out can still land, so the next Install first asks the scheduler and stops with `An install job is already on the cluster (id)` if one did |
+| `qsub: Error: You have requested N CPUs which is not 12 times the number of GPUs` | Gadi wants exactly 12 CPUs per GPU: set **CPUs per GPU** on the GPU class in Preferences → HPC (or **Use 12**) |
+| `urlopen error [Errno 101] Network is unreachable` in a Cellpose run | cellpose tried to download weights on a node with no internet: an env installed before the weights step. Click **Install on cluster** (it fetches only the weights) |
+| `No queue named X on the cluster` beside Nodes | the class's queue is not one the scheduler knows: check its spelling |
 | `rsync is not installed on the cluster` | the login node has no rsync. Rare; tell us |
 | `Cannot send <path> to the cluster: it is outside the project` | the task reads a file it has not declared; it needs porting work |
 | `Cluster job N failed: Walltime reached` / `Out of memory` | raise Minutes / GB on the run form |
+| `[HPC] Waiting: …` | the scheduler's reason the job has not started: a busy queue, or a limit of your account. On PBS, `Not enough free mem yet: asks 64gb, 8gb free of 60tb` is PBS's `R:` (requested), `A:` (available) and `T:` (total) across the queue's nodes: the queue is full, and a smaller request will not help much |
 | `The cluster copy of project 'X' belongs to …` | another workstation mirrors a project with the same folder name; remove the named folder on the cluster |

@@ -787,17 +787,17 @@ async function switchWt(path: string) {
       <!-- View profile: curate the sidebar down to the pages this user actually works on. Hidden
            pages stay reachable by URL — this declutters, it does not restrict. -->
       <div class="field" data-guide="settings.viewProfile">
-        <label class="field-label">View profile</label>
+        <label class="field-label">Sidebar layout</label>
         <div class="field-row">
           <!-- Edit FIRST: the chip row grows with every profile, and a trailing button would drift
                right (and eventually wrap) as it does. A fixed control belongs on the fixed side. -->
           <button class="cc-btn cc-btn-primary" @click="showProfileEditor = true"
-                  v-tooltip.right="'Create or change a profile'">
+                  v-tooltip.right="'Create or change a layout'">
             <i class="pi pi-pencil" /> Edit
           </button>
           <ChipSelect :options="profileOptions" :model-value="settings.viewProfile"
-                      aria-label="Active view profile"
-                      v-tooltip.bottom="'Show only the pages this profile lists'"
+                      aria-label="Active sidebar layout"
+                      v-tooltip.bottom="'Show only the pages this layout lists'"
                       @update:model-value="viewProfiles.select($event as string)" />
         </div>
         <span class="field-hint cc-muted cc-fs-xs">

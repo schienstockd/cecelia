@@ -130,7 +130,6 @@ function _run_env_install(name::AbstractString, pixi::AbstractString, meta::Name
         install_ok = proc.exitcode == 0 && proc.termsignal == 0 && _env_installed(name)
         if !install_ok
             _log("[ERROR] pixi install exited with status $(proc.exitcode) / signal $(proc.termsignal)")
-            ws_status(nothing, job_id, "failed", ""; fun = fun, pool = "job")
             return
         end
         _prog(0.85)
@@ -142,12 +141,12 @@ function _run_env_install(name::AbstractString, pixi::AbstractString, meta::Name
         _prog(1.0)
         _log("[DONE] $name env ready")
         ok = _env_installed(name)
-        ws_status(nothing, job_id, ok ? "done" : "failed", ""; fun = fun, pool = "job")
     catch e
         _log("[ERROR] $(sprint(showerror, e))")
-        ws_status(nothing, job_id, "failed", ""; fun = fun, pool = "job")
     finally
+        # Off the registry first, so an Install clicked on the terminal frame can claim the id again.
         finish_job!(job_id)
+        ws_status(nothing, job_id, ok ? "done" : "failed", ""; fun = fun, pool = "job")
     end
 end
 
@@ -206,8 +205,9 @@ function _run_weights_fetch(name::AbstractString, job_id::AbstractString)
     catch e
         _log("[ERROR] $(sprint(showerror, e))")
     finally
-        ws_status(nothing, job_id, ok ? "done" : "failed", ""; fun = fun, pool = "job")
+        # Off the registry first: the terminal frame makes the preview re-ask, and `fetching` reads it.
         finish_job!(job_id)
+        ws_status(nothing, job_id, ok ? "done" : "failed", ""; fun = fun, pool = "job")
     end
 end
 

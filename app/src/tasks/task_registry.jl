@@ -37,6 +37,10 @@ function _spec_path(::Branching)
     joinpath(@__DIR__, "segment", "branching.json")
 end
 
+function _spec_path(::ManualGate)
+    joinpath(@__DIR__, "gate", "manual_gate.json")
+end
+
 function _spec_path(::Ridges)
     joinpath(@__DIR__, "segment", "ridges.json")
 end
@@ -237,6 +241,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "segment.measureLabels"             => MeasureLabels(),
         "segment.branching"                 => Branching(),
         "segment.ridges"                    => Ridges(),
+        "gate.manual_gate"                  => ManualGate(),
         "segment.importLabels"              => ImportLabels(),
         "segment.correct"                   => SegmentCorrect(),
         "segment.correct_carryover_snapshot" => SegmentCorrectCarryOverSnapshot(),

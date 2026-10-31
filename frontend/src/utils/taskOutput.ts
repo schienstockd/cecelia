@@ -15,6 +15,7 @@
 // it is an easy one to write, because the two callers genuinely want different SHAPES of the answer —
 // that difference belongs in the callers, not in a second copy of the rule.
 import type { TaskDef, ParamDef, ParamValues } from '../tasks/types'
+import { savedValueFor } from '../tasks/paramValues'
 
 /**
  * The storage namespaces a task can write a name into. `scope` is deliberately NOT uniform:
@@ -78,7 +79,7 @@ export function taskOutput(
 
   for (const p of flatten(def.params)) {
     if (!isValueNameNamespace(p.namespace)) continue
-    const v = str(params?.[p.key]) ?? str(p.default)
+    const v = str(savedValueFor(p, params ?? {})) ?? str(p.default)
     if (v) return { name: v, namespace: p.namespace }
   }
 

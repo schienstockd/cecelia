@@ -250,6 +250,15 @@ class MirrorTest(_IssuesFixture):
         self.assertEqual((self.github.issues[1]["reason"], self.github.issues[1]["comments"][-1]),
                          ("completed", "Fix confirmed by verify: the ribbon takes its drawn colour"))
 
+    def test_a_repeated_error_verify_found_fixed_closes_as_completed(self):
+        record = self.build(bugs=[_fix("B1")])
+        self.mirror(record)
+        later = self.build("2026-10-12", bugs=[{**record["bugs"][0], "status": "dismissed", "repeat": True,
+                                                "verify": {"verdict": "fixed", "effect": "the guidance says it"}}])
+        self.mirror(later, previous=record)
+        self.assertEqual((self.github.issues[1]["reason"], self.github.issues[1]["comments"][-1]),
+                         ("completed", "Fix confirmed by verify: the guidance says it"))
+
     def test_a_bug_answered_before_its_issue_existed_gets_the_answer_when_filed(self):
         record = self.build(bugs=[_bug("B1", verify={"verdict": "decide", "date": "x"}, owner_decision="open",
                                        owner_answer="keep the guard")])

@@ -22,7 +22,8 @@ Python (cellpose_run.py)
   → calls predict_from_zarr(im_dat)
 
 SegmentationUtils.predict_from_zarr
-  → computes global norm params from im_dat[-1] (lowest-res level) if normaliseToWhole=true
+  → computes global norm params from im_dat[-1] (lowest-res level) if normaliseToWhole=true,
+    otherwise one window per frame from the frame in RAM (`_frame_norm_params`)
   → outer loop: T timepoints × XY tiles
   → inner loop: one model per tile → predict_slice → crop → accumulate into label arrays
   → post-processing per label type
@@ -231,7 +232,12 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 
 ### `SegmentationUtils` responsibilities
 - XY tiling with overlap (`blockSize`, `overlap`)
-- Global normalisation params from lowest-res zarr level (`normaliseToWhole`)
+- Intensity window (`normaliseToWhole`). **On** (default): one window for the whole image, from the
+  lowest-res level (or a streamed histogram on a single-level store). **Off**: one window per FRAME,
+  over the whole frame (`_frame_norm_params`, the same `(100 - p, p)` percentiles of non-zero voxels),
+  for a movie that bleaches or brightens. Never per tile: before this, Off fell through to each
+  engine windowing its own tile, which gives every tile its own brightness on a tiled image. The
+  preview does the same over the previewed timepoint's frame, at the lowest-res level.
   - **Cached per image** (`norm_cache`), because the range is a property of the image and the
     percentile, not of the run — it was recomputed from scratch every time, and two model groups over
     the same channel paid for it twice inside ONE run. Measured on `zolIMa/fXgbTl` (single level, so
@@ -251,7 +257,8 @@ any model/checkpoint lookup (for cellpose: `BUILTIN_CELLPOSE_MODELS` + `cellpose
 - GPU detection (CUDA → MPS → CPU)
 - Model loading and caching (`_get_model`)
 - Channel preparation: threshold → median/gaussian filter → percentile normalise
-- Calling `cellpose.model.eval` with correct channel stacking and 3D stitch mode
+- Calling `cellpose.model.eval` with correct channel stacking; 3D stitching via `stitch_planes` (v4)
+- Declaring its channels (`_model_channels`) and reading them through `tile_channel`
 - Physical diameter conversion: `cell_diam_um / phys_size_x` → pixels
 - Returns a single `uint32` label array per call
 
@@ -296,11 +303,156 @@ contract (`[C, Y, X]`, checked) at its two `predict_slice` call sites.
 - `write_yx` — slice without overlap (where we write to the label array)
 - `crop_yx` — `(pad_top, pad_bottom, pad_left, pad_right)` amounts to trim from the prediction
 
-After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` merges via `np.maximum`.
+After prediction, `_crop_masks` trims the overlap, then `_write_tile_to_arr` merges, filling only pixels an earlier model group left unlabelled.
 
-Z dimension is handled by cellpose's built-in `stitch_threshold` (2D-per-slice + inter-slice stitch). No explicit Z tiling is done.
+**Only the channels the models use are read.** `predict_from_zarr` reads one whole frame and tiles
+it in RAM, so the frame's channel count is the run's memory, whatever the tile size. An engine
+declares its channels per model group (`_model_channels`: cellpose's cell + nucleus, coastal's
+cell). The base reads their union (`_context_channels`) into both the frame and the temporal window,
+and an engine that declares nothing still gets every channel. Narrowing renumbers the channel axis,
+so a subclass reads a channel through `tile_channel(tile, ch)` (or `TemporalWindow.channels`), never
+`tile[ch]`. On a 25-channel 16898 × 20329 tile scan segmented on one channel, the frame went from
+17 GB to 0.7 GB, and the whole cellpose run peaked at 6.0 GB (measured 2026-10-29,
+`4rNbMp/f8gzA2`). The window was narrowed first: on a 4-channel movie where coastal projects one
+channel, the all-channel window read was 3.14 s of a 9.35 s timepoint (`zolIMa/fXgbTl`).
 
-That stitch (`cellpose.utils.stitch3D`) reuses ids across an empty plane before its first match, so two cells several planes apart can come back as ONE label whose centroid sits in the gap. `split_z_gaps` (`cellpose_utils.py`) gives every z-contiguous run its own id after every stitched call; a stitched cell is contiguous by construction, so a correct stitch passes through unchanged.
+### Auto tile size and overlap
+
+`blockSize` and `overlap` default to **Auto** (`tile_budget.py`). Nobody can pick a tile size from the
+image alone: it depends on the engine, cellpose's rescaling, the number of planes, and how much RAM
+and GPU memory is free **when the run starts**. A browser viewer on the same laptop can hold 6 of
+8 GB of GPU memory, so the card's total memory is the wrong number to plan with.
+
+- **Tile size.** Resolved in the Python runner (`SegmentationUtils.resolve_block_size`), so it reads
+  the machine the run is on, an HPC node included. The rule is the whole frame if it fits, otherwise
+  the largest tile that does, rounded down to 256 px, never below 256.
+  - Each engine declares what a tile pixel costs (`_tile_cost` → `TileCost`). The budget is 70% of
+    free RAM, minus the frame and label buffers the run already holds, and 80% of free VRAM, minus
+    the engine's fixed GPU cost. A limit the machine cannot report (RAM on Windows, VRAM without
+    CUDA) is skipped, not guessed.
+  - An engine with no measured cost gets the whole frame.
+  - A bigger tile is not faster per pixel (flat from 1024 px up, below), only seam-free, so the
+    safety margin costs nothing but seams.
+- **Overlap.** 1.5 × the object size (`_object_size_um`: cellpose's `cellDiameter`, coastal's
+  `seedSize`), converted with the pixel size. The seam stitch matches each tile's prediction of a
+  band `overlap` px either side of the seam (`_collect_seam_strips`), so a band narrower than a cell
+  holds only fragments. At overlap 0 the stitch matches nothing.
+- **The log says what Auto picked**, e.g. `>> tiling: auto: whole frame (2024 px fits in gpu memory);
+  overlap 44 px`. The preview's "Run would tile this" warning resolves the size the same way
+  (`_run_block_size`). The preview worker holds its own model on the GPU, so it errs towards
+  predicting tiles.
+- **Out of memory.** Auto plans with a margin, but another process can take memory mid-run. The run
+  then stops (`predict_or_stop`) with one line: `Ran out of GPU memory at 4096 px tiles. Set Tile
+  size to 2048 px (Image tiling) and run again.`
+
+Cellpose's cost (`CellposeUtils._tile_cost`), measured on `cpsam_v2` on an RTX 2000 Ada (8 GB) and
+33 GB RAM (2026-10-29), per pixel of the padded tile:
+
+| | GPU | RAM |
+|---|---|---|
+| one plane | ~2.5 GB fixed + ~580 B per px **after** cellpose rescales to diameter 30 | ~70 B / px |
+| stitched stack | the same per plane (planes go through one at a time) | ~35 B / px / plane |
+
+Calibrated against these sweeps:
+
+| `f8gzA2`, 2D, 8 µm at 0.16 µm/px (×0.36 rescale) | s | s/Mpx | RAM Δ GB | VRAM reserved GB |
+|---|---|---|---|---|
+| 1024 | 1.0 | 1.0 | 0.12 | 2.88 |
+| 2048 | 5.4 | 1.3 | 0.36 | 3.04 |
+| 4096 | 24.1 | 1.4 | 1.24 | 5.98 |
+| 6144 | 63.0 | 1.7 | 2.63 | 7.48 of 8 |
+
+The 3D figure is from the whole 2024 px `FtGoJO` frame (26 planes) after `stitch_planes`: 5.4 GB peak.
+How the RAM term changes with the diameter has not been measured yet; the GPU term follows cellpose's
+rescale by construction.
+
+**Coastal declares no cost yet, so its Auto is the whole frame.** That is what every coastal run has
+used: its intravital frames are a few hundred to ~1000 px. One measured point so far:
+`zolIMa/fXgbTl` (420 × 441, 32 planes, 4 channels, ±8-frame window) peaked at 9.2 GB RAM and
+0.8 GB GPU over 31 frames. Its memory is the temporal window and the flow caches, not the model.
+A cost model needs a second frame size.
+
+### Blank tiles are skipped
+
+A tile is skipped (`_tile_is_blank`) when every channel its model group reads is at or below the low
+end of that channel's intensity window: whole-image, or the frame's with `normaliseToWhole` off.
+That is lossless, not a heuristic. The engine maps the low end to 0 and clips, and thresholds and
+filters before that only lower or smooth, so such a tile would reach the model as all zeros.
+- **Engines opt in** (`_blank_is_empty`) only if they find nothing in zeros. Cellpose does unless
+  `invert` is on, since inverted zeros are ones; it returns no labels for all-zero 2D and stitched 3D
+  input (checked on `cpsam_v2`).
+- **Coastal does not opt in.** Its tile carries a temporal window that can bring in signal from
+  other frames.
+- **A channel without a window** (too empty to have one) is never skipped.
+
+On a tile scan these are the tiles outside the tissue. `4rNbMp/f8gzA2` (16898 × 20329, 1024 px tiles):
+- 70 of 340 tiles skipped;
+- 459 s → 411 s;
+- labels byte-identical to the run without the skip.
+
+The other two lymphoid scans in that set have no blank tiles. Patchworks' empty-tile skip
+thresholds by Otsu instead, which is lossy: a cell dimmer than the cut is dropped.
+
+### Seam stitching rule and seam QC
+
+**The rule stays IoU ≥ `labelOverlap`, greedy and one-to-one.** Patchworks' alternative was compared
+on the same tile predictions: mutual best match where the overlap covers at least half of the smaller
+piece. It made no difference.
+
+| 512 px tiles vs the same crop segmented as one tile | splits | merges |
+|---|---|---|
+| `f8gzA2` 2048 px crop (2D), stitching off | 218 | 52 |
+| IoU ≥ 0.25 (current) | 39 | 35 |
+| overlap of the smaller ≥ 0.5, mutual best | 40 | 35 |
+| `FtGoJO` 1024 px crop, 26 planes, stitching off | 1391 | 1355 |
+| IoU ≥ 0.25 (current) | 1287 | 1284 |
+| overlap of the smaller ≥ 0.5, mutual best | 1294 | 1292 |
+
+In 2D the stitch repairs ~82% of the seam splits. In 3D most of the disagreement with the one-tile
+reference is not at the seams at all (it is there with stitching off as well), so no seam rule can
+remove it.
+
+**Seam QC (`seg.seam_cuts`, info).**
+- **What is counted.** On a tiled run, `seam_contacts` counts, after the stitch, the pixels where two
+  *different* labels touch across each seam line. It counts the same across control lines halfway
+  through each tile. A joined seam looks like any other line through the tissue; an unjoined one
+  leaves two ids touching along every cell it cuts.
+- **Where the verdict lives.** The counts ride in `objectStats.seam`; Julia decides
+  (`seg_seam_qc_findings`): at least 20 seam contacts, and a seam rate ≥ 10× the control rate.
+- **Calibration.** On the 2D crop above, stitching off gave 6520 seam vs 52 control contacts (ratio
+  ~167); stitched gave 72 vs 52 (~1.9). That is why the cut-off is 10, not patchworks' 2.
+
+Z: each plane is segmented in 2D, then stitched across Z (`stitchThreshold`). No explicit Z tiling
+is done. Cellpose's stitched eval runs three steps:
+1. per-plane masks with the size filter off;
+2. `stitch3D`;
+3. holes filled and objects under 15 voxels removed on the stitched volume.
+
+`CellposeUtils` runs the same three steps with its own stitch (`stitch_planes`). `stitch3D` builds
+a dense overlap matrix of (labels on a plane) × (largest id so far), so its cost grows with the
+square of the tile area. `stitch_planes` uses the same matching rule over only the label pairs
+that share a pixel.
+
+| 26-plane FtGoJO tile | `stitch3D` | `stitch_planes` |
+|---|---|---|
+| 1024 px | 77.7 s, 3.6 GB | 73.9 s, 3.2 GB (labels byte-identical) |
+| 2024 px (whole frame) | 1242 s, 21.3 GB | 265 s, 5.4 GB |
+
+At 2024 px the outputs differ, and both differences are `stitch3D` defects:
+- **24 objects merged across the tile.** Each is a cell on the last plane that took the id of an
+  unrelated cell about 1500 px away, which spans every plane. The id offset is the same (65,098) in
+  every case, which points to a 16-bit id wrap inside `stitch3D` (not traced further). There is no Z
+  gap between the two, so `split_z_gaps` cannot repair it.
+- **29 fragments under 15 voxels kept.** They were one colliding id when the size filter ran, and
+  only became separate objects in `split_z_gaps` afterwards.
+
+`stitch_planes` produces neither.
+
+`stitch3D` also reuses ids across an empty plane before its first match, so two cells several planes
+apart can come back as ONE label whose centroid sits in the gap. `stitch_planes` gives every
+unmatched label a fresh id instead. `split_z_gaps` (`cellpose_utils.py`) still runs after every
+stitched call: a correct stitch passes through it unchanged. The cellpose 3 opt-in path still calls
+cellpose's own stitch.
 
 ---
 
@@ -433,7 +585,7 @@ is segmented, which is most images.
 | `haloWholeCell` | bool | false | Halo is the whole grown object, not the ring |
 | `clearTouchingBorder` | bool | false | Remove cells touching XY image border |
 | `clearDepth` | bool | false | Remove cells touching first/last Z slice (3D only) |
-| `normaliseToWhole` | bool | true | Use lowest-res level for global percentile (timecourse-safe) |
+| `normaliseToWhole` | bool | true | One intensity window for the whole image; false: one per frame (never per tile) |
 | `useDask` | bool | false | Load image as Dask array |
 
 The Julia handler converts channel names → 0-based indices before writing params JSON.
@@ -628,6 +780,29 @@ that cannot be left to the user re-entering it. A checkpoint with no manifest st
 min/max. `normaliseToWhole` supplies that statistic; the projection then pins coastal's own scaling
 to the same range. With it off, every tile gets its own scale — the patchiness the option exists to
 prevent, plus a train/inference mismatch on the structure-tensor planes.
+
+**What carries between timepoints.** At radius 8, the windows for `t` and `t+1` share 16 of 17
+frames, so three things are carried forward rather than recomputed. Each is keyed on everything that
+decides its pixels besides the timepoint, and falls back to recomputing on any mismatch:
+
+| Carried | By | Keyed on | Not carried when |
+|---|---|---|---|
+| raw window frames | base, `_window_frames` | tile, z span, channels read | more than one XY tile (only the last window is kept) |
+| projected frames | `CoastalUtils._carried_projection` | region (tile, z span, channels) + group (channels, `normalise`), checked against the clip range | the clip range moved (`normaliseToWhole` off: it is the current frame's); preview windows (no `z_span`) |
+| consecutive-frame flows | `CoastalUtils._flow_caches_for` | region + group, per z, checked against the clip range | the clip range moved |
+
+The first two are bit-identical to recomputing: before they landed they were 14% and 13% of a
+timepoint (zolIMa/UMq4v3, 3 groups). Memory stays at one window per group — the projection lives in a
+fixed buffer that is shifted down a frame at a time, never reallocated beside the previous one. Storage
+is per GROUP, not per clip range: when the range moves (every timepoint, with `normaliseToWhole` off)
+the group's buffer is re-projected in place and its flows dropped, rather than a new entry added.
+
+> The flow cache used to be keyed on the region alone. With several model groups projecting
+> **different** channels, every later group read the first group's consecutive-frame flows — so
+> `mag_1`, `cumulative_mag`, strain, divergence, vorticity and the rest were another channel's
+> motion; only the lag-pair `mag_{2,4,8}` and `edge_strength` were the group's own. Two-pass runs on
+> one channel at one clip range were unaffected. Pinned by
+> `SharedFlowBetweenTimepointsTest.test_a_group_on_other_channels_computes_its_own_flow`.
 
 **Training reads `zPlanes` planes per movie, and each is its own sequence.** Motion exists within one
 recording of one plane; flow between plane *k* and plane *k+1* of the same timepoint is not motion,

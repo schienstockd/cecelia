@@ -263,6 +263,159 @@ carry the "send us images" ask on its own.
 **Nothing here posts anything.** The row opens a browser at a prefilled issue — the same mechanism as
 the What's New *Report a problem* link. No form in the app, no upload path, no new endpoint.
 
+### D10 — Four more recipes, from the paper and the R-version missions  *(Dominik, 2026-10-30)*
+
+D9's rule stands: no recipe without measured data behind it. The data now exists. These are the lab's
+own published workflows: the paper's Results (Figs 2–5, PMC11850795) and the eight R-version missions
+(`cecelia.readthedocs.io/en/latest/missions.html`; the raw steps are in `_sources/msn_*.rst.txt`).
+
+**This answers open question 3: there are two axes.** The *data* picks the recipe, and the *question*
+is a set of steps inside it.
+- Data: does it move (static or live), and how many markers (few → gate, many → cluster).
+- Question: interactions, regions, behaviour, structures.
+
+All recipes share one spine: import → metadata → cleanup if needed → segment (one Cellpose model per
+population, grouped into one segmentation via the `models` list).
+
+The three wanted rows:
+- `large-multiplex` becomes *Multiplex tissue* below.
+- `cell-interactions` is a question, not an image type, so it shows up as steps inside the recipes.
+- `many-small-confocal` is not a recipe. Its shape is the **last step of every recipe**: settle the
+  parameters on a few images, then build a chain from that task history and run it over the set
+  (the chain-from-history work).
+
+Each row lists its steps as guide ids. **Gap** marks a step with no guide yet.
+
+| Recipe | Source | Steps |
+|---|---|---|
+| **Few-marker tissue** (static confocal) | Fig 2, mission *spleen LCMV confocal* | `import-images` → `fix-metadata` → `af-correct` (opt.) → `segment-an-image` (a model per population, grouped) → `gate-populations` (drop debris on volume × surface:volume; gate sparse populations first, the most abundant last) → `spatial-analysis` (neighbours) → aggregates (**gap**) → `build-plots` → `run-a-chain` |
+| **Multiplex tissue** (IBEX, CODEX) | Fig 3a–b, missions *IBEX*, *CODEX* | `import-images` → `fix-metadata` → `segment-an-image` (membrane + nuclear) → `cluster-cells` → `spatial-analysis` → `cluster-regions` → structures (opt.): segment the stroma, then branching (**gap**) and nearest-branch contact (**gap**) → `build-plots` → `run-a-chain` |
+| **Intravital timelapse** | Fig 4, missions *LN HSV* | As written above, plus aggregates/contacts (opt., Fig 4d) and `run-a-chain` |
+| **Live + structures** | Fig 5a, mission *skin lymphatics* | Intravital, plus segment the structure separately → distance/contact to it (**gap**) as a `cluster-tracks` input |
+| **In vitro migration** | Fig 5b, mission *cancer flow tracks* | `import-images` → `fix-metadata` → `segment-an-image` → `gate-populations` → `track-cells` → `behaviour-states` → `cluster-tracks` → `run-a-chain` |
+
+**Left out, on purpose:**
+- **Xenium** was a one-off test that Dominik never liked.
+- **Registering staining cycles (IBEX):** `editImages/register.json` exists, but nothing has validated
+  it and there is no test dataset for it yet.
+- **Track flow fields** (`binariseTracks` → branching) are deferred in `SPATIAL_ANISOTROPY_PLAN.md`
+  D11. The anisotropy that is built is the structure orientation field, not one from tracks.
+
+**Settled 2026-10-30 (Dominik):**
+- **The three remaining gaps (aggregates, branching, contact/distance to a structure) are specialised
+  functions.** They become optional recipe steps with no guide, naming the page and task. A guide
+  follows only if people get stuck there.
+- **Denoise is not an in vitro step.** Today it's an option for photon-limited intravital data, so it
+  moves into the intravital recipe as optional, beside the flow-model fork. In vitro migration drops it.
+- **The *why* lines:** Claude drafts them from the paper's Results and the R tutorial; Dominik
+  corrects them.
+- **Live + structures is wired in code, but has not been run end to end.** Both contact tasks write
+  per-cell `{pop}.cell.min_distance#<target>` and `contact#<target>` columns
+  (`cell_contacts_mesh_run.py:102-103`), and the target can sit in another segmentation
+  (`contact_targets.jl`). Cluster tracks aggregates any cell measure per track to
+  `.mean/.median/.sd/.qUp/.qLow` (`clustTracks/cluster.jl:89-97`). Those are the paper's Fig 5a
+  heatmap columns (sd, qUp, qLow distance). The R version did this. Before shipping, run it once on a
+  movie with a structure.
+
+**Claude is not in these steps.** This is the Claude-free first pass. D11 covers what Claude changes.
+
+### D11 — Claude is an overlay on the same recipes, not a recipe of its own  *(Dominik, 2026-10-30; built with the map)*
+
+The steps stay the same with or without Claude. Claude changes *how you check* a step, not which steps
+exist. A separate Claude recipe would repeat every step and drift away from the original. So each
+recipe step gets an optional `assist` field with three parts:
+- the shipped tool it uses;
+- where it works (**Kiwi** or **terminal**);
+- one line on what to do.
+
+It shows as a marker only when a Claude toggle is on. A step Claude doesn't help with gets no marker,
+not a line saying "no help here". The field lives on `RecipeStep` (`recipes.ts`) and is rendered by `recipeText` (`guideText.ts`).
+`guides.json` is that renderer's output, so a paired session gets the same markers through `get_guide`
+and knows the step and what it may do there.
+
+Where it helps. All of these use shipped tools; the audit was read-only and checked against
+`server.py`, `kiwi_turn.jl` and `guidance.py`.
+
+| Step (recipes) | What Claude adds | Where |
+|---|---|---|
+| Segment QC (all) | Share a frame with a bad mask. Claude reads the landscape, marks the suspect cells, and names the knob from `get_module_params` plus the run log | terminal (marks); Kiwi (reading only) |
+| Cleanup, Segment: cohort outliers (all) | `get_cohort_qc` → which image, which knob, which way | both |
+| Gate (few-marker, live) | Describes a gate from `gate_plot` / `gate_cells_view`; it **cannot draw one** | both |
+| Track QC (live) | `mark_tracks` + `seek_viewer` to the bad frame | terminal |
+| Cluster cells / regions (multiplex) | Describes cluster *n* from z-scored profiles and marks it on the UMAP. Claude describes; the user names it | both; marking needs the terminal |
+| Spatial, behaviour readouts (all) | `get_contact_stats`, `get_behaviour_summary` → cited sentences | both |
+| Plots (all) | `add_analysis_board` with the replicate check; it adds boards and never edits one | terminal |
+| **Chain step (all)** | `get_analysis_lineage` → `create_chain`: the chain from history, which the user reviews and runs. **The largest change**, because the GUI has no chain-from-history yet (that's the chain-from-history work) | terminal |
+| Settled result (all) | Blackboard entry with a good/bad outcome. Bad tags feed the repeat-failure warning, so tagging is what makes the loop learn | both (Kiwi: Save to Blackboard) |
+
+It adds nothing to import, metadata, registration or denoise. One exception: LabArchives context can
+fill in the subject and goal before metadata, but only from the terminal.
+
+### Two ways in, not a loop *(Dominik, 2026-10-31; supersedes the four-step loop below)*
+
+Kiwi and Claude Code are **two ways in, not two steps**. Kiwi is the structured rubber duck: it points
+at the evidence and you decide. Claude Code is the interactive route: you work the analysis through in
+a terminal. Either can come first, and some people go straight to Claude Code, so the terminal is not
+step 4 after Kiwi. What stays from the loop: Kiwi's own three steps (point at it, ask, keep it) and
+the Blackboard as the bridge (**Continue in terminal**). Content: `claudeOverview.ts` → `KIWI_MODE`,
+`KIWI_LOOP`, `TERMINAL_MODE`, `CLAUDE_BRIDGE`; one renderer, `ClaudeWaysIn.vue`. The audit behind it:
+`docs/archive/AI_PATHWAYS_WORDING_PROMPT.md`.
+
+*Superseded 2026-10-31, kept for the record:*
+
+**The overlay needs a loop to hang on** *(Dominik, 2026-10-30: "otherwise the integration part is a bit lost")*.
+Markers on single steps don't tell a user what the Blackboard is for, when to attach evidence, or
+when a terminal session is worth it. The map's Claude cluster is therefore this four-step loop, worded
+the same here, in `user-docs/README.md` → *Working with Claude* and in Kiwi's help
+(`claudeOverview.ts` entry points):
+1. **@ the evidence** (Add to Kiwi on an image, population, plot, viewer, task or entry), or **Share**
+   a frame and draw on it.
+2. **Ask Kiwi**, the rubber duck. It points and counts and doesn't judge. You click a ref to check
+   a claim.
+3. **Settled? Save to Blackboard** (the reply's **Save**), then tag it good/bad with a why on the Blackboard. Kiwi turns expire after 50
+   (`KIWI_TURNS_KEEP`), and bad tags feed the repeat-failure warning.
+4. **A terminal session** when one question isn't enough, or when Claude should *make* something
+   (chain from history, board, notebook, lab-log line) or mark cells and tracks.
+   **Continue in terminal** on a Kiwi reply saves it as an entry and starts the session naming
+   that entry, since the Blackboard is the only Kiwi state a terminal session can read (built
+   2026-10-30; `composables/useStartInTerminal.ts`).
+
+Step markers then just name which part of the loop applies at that step.
+
+Points the overlay has to respect:
+- **Kiwi and the terminal can do different things.** Kiwi only reads. Marking, pointing, the lab log,
+  writing chains/boards/notebooks, and LabArchives are terminal only. Each marker names which one.
+- **The data notice shows only in Kiwi.** A terminal session never sees it.
+- **Marks and seeks report success even when no browser is paired** to show them. The co-driving
+  fixes from #1748 are still unverified live.
+- **The `assist` lines must come from shipped tools.** The Kiwi help had promised "prior captures on
+  this cell", but nothing looks captures up by object. That line was corrected on 2026-10-30 along
+  with this decision.
+
+### The map — built 2026-10-30 (`feat/inapp-map`)
+
+The front of the Guides dialog, merged with the guide list (Dominik: one view; D11 of GUIDE_SYSTEM_PLAN
+not reopened, so no new first-run entry — the tour's compass step names it).
+
+- **Recipes on top** (ChipSelect, none picked by default). None picked = nothing lit: there is no
+  default path, it depends on the data and the question. A picked recipe lights its pages and lists
+  its steps, each Start (a guide) or Open (a specialised page step, `RecipePageStep`).
+- **The groups** — a card per sidebar group, a button per page (click goes there; hover says what for,
+  its pair, hidden-by-layout). A card's heading opens that group in the **accordion** below; one group
+  open at a time, starting on the group for the page you're on, else Start. Not persisted.
+- **Claude toggle** (`settings.guidesShowClaude`, off by default): a ✦ on the pages where Claude makes
+  something you keep (board, Blackboard entry, notebook, chain — not reading, which is every page),
+  the two ways in (`ClaudeWaysIn.vue`), and a ✦ on each recipe step with an `assist`. A separate line of
+  pairs under the cards was dropped: unlabelled it read as noise, and each chip's hover names its pair.
+- **One source.** `lib/guides/mapData.ts` holds only what for / pair / guide / what Claude makes per route;
+  everything else is `navGroups.ts`. `utils/guideMap.test.ts` fails on a sidebar page with no entry,
+  an entry for no page, or a missing guide or pair. `user-docs/README.md` is generated from the same
+  data (`utils/userDocs.ts`), its prose from `user-docs/parts/`; a stale README fails
+  `utils/userDocs.test.ts`.
+- **Not built:** Mermaid generated from the data (the README's diagram stays hand-written in
+  `parts/top.md`); the brief's quiet clusters for Panels / Scale up / Settings (the README covers them;
+  the map stays on the sidebar).
+
 ## Constraints the build has to satisfy
 
 Not advice — these all fail CI:
@@ -360,14 +513,14 @@ predicates.
 
 ## Open questions
 
-1. **The picker heading.** "What are you trying to do?" is the recognition question, and it is longer
+1. ~~**The picker heading.**~~ **Settled (Dominik, 2026-10-30): `Recipes`.** "What are you trying to do?" is the recognition question, and it is longer
    than every other heading in the dialog. Alternative: a plain `Recipes` eyebrow matching
    `Start`/`Data`/`Populations`, with the question as the section's one-line intro.
-2. **A `recipe_request.yml` template, or a prefilled `feature_request.yml`?** D9 recommends the new
+2. ~~**A `recipe_request.yml` template, or a prefilled `feature_request.yml`?**~~ **Built:** `.github/ISSUE_TEMPLATE/recipe_request.yml` exists, and `recipeRequestUrl` opens it. D9 recommends the new
    template — it can ask for example images, which is the thing that actually unblocks a recipe, and
    the existing one requires a proposed solution the requester does not have. One more file in
    `.github/ISSUE_TEMPLATE/` is the whole cost.
-3. **Is "intravital" one recipe or two axes crossed?** Dominik's list mixes *what the data is*
+3. ~~**Is "intravital" one recipe or two axes crossed?**~~ **Answered by D10:** the data picks the recipe, and the question is the steps inside it. Dominik's list mixes *what the data is*
    (intravital, large multiplex, many small confocal) with *what you want* (behaviour, tracks,
    interactions). Moot while only one is written — and the requests are what will answer it, since a
    request names the data and the wanted output separately.

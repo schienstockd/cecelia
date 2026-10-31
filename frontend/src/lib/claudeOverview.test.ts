@@ -1,63 +1,72 @@
 import { describe, it, expect } from 'vitest'
 import {
-  CLAUDE_ENTRY_POINTS, CLAUDE_CAPABILITIES, CLAUDE_EXAMPLES,
-  CLAUDE_TERMINAL, claudeChatCommand,
-  claudeCapabilities,
+  KIWI_LOOP, KIWI_MODE, TERMINAL_MODE, CLAUDE_BRIDGE, CLAUDE_PROVISIONAL,
+  CLAUDE_TERMINAL, CLAUDE_DATA_NOTICE, claudeChatCommand, type Mode,
 } from './claudeOverview'
+import { isMultiSentence, isTooLong } from '../utils/uiCopy'
+
+const lines = (m: Mode) => [m.use, m.start, ...(m.note ? [m.note] : []), ...m.only, ...m.ask]
+const only = (m: Mode) => m.only.join(' ')
 
 describe('claudeOverview content model', () => {
-  it('has the two entry points (Ask Kiwi / Chat), each with how-to steps', () => {
-    const names = CLAUDE_ENTRY_POINTS.map(e => e.name)
-    expect(names).toEqual(['Ask Kiwi', 'Chat to Claude'])
-    for (const e of CLAUDE_ENTRY_POINTS) {
-      expect(e.steps.length).toBeGreaterThanOrEqual(2)   // it's a how-to, not just a blurb
-      expect(e.icon).toMatch(/^pi-/)
+  // Kiwi's steps are what the guide walks, one per control, so each has to name the control.
+  it('is Kiwi’s three steps, each naming its control', () => {
+    expect(KIWI_LOOP.map(s => s.title)).toEqual(['Point at it', 'Ask Kiwi', 'Keep it'])
+    expect(KIWI_LOOP[0].text).toMatch(/@ Add to Kiwi/)
+    expect(KIWI_LOOP[0].text).toMatch(/Share/)
+    expect(KIWI_LOOP[1].text).toMatch(/ref/)
+    expect(KIWI_LOOP[2].text).toMatch(/Save/)
+    expect(KIWI_LOOP[2].text).toMatch(/Blackboard/)        // the record is the product
+  })
+
+  // Two modes, not two steps: some people go straight to Claude Code. No Kiwi step may hand off to
+  // the terminal (that was the old "Go further" step 4), and the bridge has to say either comes first.
+  it('presents Claude Code as the other mode, not a step after Kiwi', () => {
+    expect(KIWI_LOOP.some(s => /terminal/i.test(s.text))).toBe(false)
+    expect(TERMINAL_MODE.start).toMatch(/Start in terminal/)  // the direct entry, no Kiwi turn needed
+    expect(CLAUDE_BRIDGE).toMatch(/Either can come first/)
+    expect(CLAUDE_BRIDGE).toMatch(/Continue in terminal/)
+  })
+
+  // Kiwi's case is what only it gives: answers checked against the data, a guarantee it changes
+  // nothing, no terminal. Its example asks are questions — never something for it to make.
+  it('leads Kiwi with what only it gives — checked, changes nothing, no terminal', () => {
+    expect(KIWI_MODE.use).toMatch(/check/)
+    for (const re of [/Checks every claim/, /Can’t change anything/, /No terminal/]) expect(only(KIWI_MODE)).toMatch(re)
+    for (const q of KIWI_MODE.ask) expect(q.endsWith('?')).toBe(true)
+  })
+
+  // What only a session can do — the reason to open one. The limit is Cecelia's tools, not Claude
+  // Code itself (its own Bash/Edit sit outside Cecelia), so it must name the tools, not promise more.
+  it('names what only Claude Code does, and bounds it by Cecelia’s tools', () => {
+    for (const re of [/Marks cells/, /chains/, /boards/, /notebooks/, /gates/, /lab-log/]) {
+      expect(only(TERMINAL_MODE)).toMatch(re)
+    }
+    expect(TERMINAL_MODE.note).toBe('You run what it builds')   // no promise its own shell can't keep
+  })
+
+  // The cards sit side by side in Kiwi's `?` dialog, ~300 px each: a line that wraps there doubles the
+  // card. The line beside the schematic is narrower still.
+  it('keeps every card line on one line', () => {
+    for (const m of [KIWI_MODE, TERMINAL_MODE]) {
+      expect(m.use.length, m.use).toBeLessThanOrEqual(34)
+      for (const t of lines(m).slice(1)) expect(t.length, t).toBeLessThanOrEqual(42)
     }
   })
 
-  it('covers sees / suggests / creates / cant, with the limits set apart', () => {
-    const byKey = Object.fromEntries(CLAUDE_CAPABILITIES.map(g => [g.key, g]))
-    expect(Object.keys(byKey).sort()).toEqual(['cant', 'creates', 'sees', 'suggests'])
-    expect(byKey.cant.tone).toBe('muted')                // the "can't" group reads as recessive
-    expect(byKey.creates.items.join(' ')).toMatch(/notebook/i)   // notebooks are the headline "create"
-    expect(byKey.creates.items.join(' ')).toMatch(/chain/i)      // …and chains, since it can author one
-    expect(byKey.creates.items.join(' ')).toMatch(/board/i)      // …and boards (add_analysis_board)
-    // Documentation-helper framing (docs/archive/kiwi-purpose-and-framing.md): the RECORD is the
-    // product, so Sees must name the capture surface, Creates must include the durable-note
-    // pathway (blackboard entries), and Can't must say replies are provisional. If any of these
-    // drifts back out, the dialog undersells what Kiwi actually is.
-    expect(byKey.sees.items.join(' ')).toMatch(/mark|capture/i)
-    expect(byKey.creates.items.join(' ')).toMatch(/blackboard/i)
-    expect(byKey.cant.items.join(' ')).toMatch(/provisional|not.*verified/i)
-    // RUBBER_DUCK_FIT_PLAN Decision 1 — the shipped guardrail digest is a proactive warning,
-    // not a passive reflection. Users should be told the tool will speak up on recurring
-    // bad-tagged failures. Drift out of Suggests and the modal misrepresents what Kiwi does.
-    expect(byKey.suggests.items.join(' ')).toMatch(/recurred|repeat|recurring/i)
-    for (const g of CLAUDE_CAPABILITIES) expect(g.items.length).toBeGreaterThan(0)
-  })
-
-  // The dialog is where someone goes to find out what Claude will do to their project, so the "Can't"
-  // list has to state the two limits that make chain authoring safe — it designs but never launches,
-  // and it can't overwrite what the user built. A stale reassurance here is worse than none.
-  it('states that it cannot run what it builds, or overwrite the user’s work', () => {
-    const cant = CLAUDE_CAPABILITIES.find(g => g.key === 'cant')!.items.join(' ')
-    expect(cant).toMatch(/run anything|cannot run|can't run/i)
-    expect(cant).toMatch(/chain/i)
-    expect(cant).toMatch(/overwrite|rename|delete/i)
-    // boards are ADD-ONLY, and this dialog is where someone checks before letting Claude near their
-    // Analysis page — the limit has to be stated wherever the capability is
-    expect(cant).toMatch(/board/i)
-  })
-
-  it('offers example prompts spanning QC → notebook → chain', () => {
-    expect(CLAUDE_EXAMPLES.length).toBeGreaterThanOrEqual(3)
-    expect(CLAUDE_EXAMPLES.join(' ')).toMatch(/notebook/i)
-    expect(CLAUDE_EXAMPLES.join(' ')).toMatch(/chain/i)
+  it('keeps every line to one short sentence', () => {
+    for (const t of [CLAUDE_BRIDGE, ...lines(KIWI_MODE), ...lines(TERMINAL_MODE), ...KIWI_LOOP.map(s => s.text)]) {
+      expect(isMultiSentence(t)).toBe(false)
+      expect(isTooLong(t)).toBe(false)
+    }
+    expect(CLAUDE_PROVISIONAL).toMatch(/provisional/i)
   })
 
   it('builds the fallback command from the REAL config path, or nothing at all', () => {
     expect(claudeChatCommand('/home/u/.cecelia/observer-mcp.json'))
       .toBe('claude --mcp-config /home/u/.cecelia/observer-mcp.json')
+    expect(claudeChatCommand('C:\\Users\\First Last\\.cecelia\\observer-mcp.json'))
+      .toBe('claude --mcp-config "C:\\Users\\First Last\\.cecelia\\observer-mcp.json"')
     // No path yet → empty, so the dialog renders nothing. A placeholder here would be a command a
     // user copies verbatim into a terminal and gets an error from — the exact failure to design out.
     expect(claudeChatCommand('')).toBe('')
@@ -68,24 +77,18 @@ describe('claudeOverview content model', () => {
   })
 })
 
-describe('claudeCapabilities — hidden connectors', () => {
-  it('drops lines that need a connector the user hid', () => {
-    const shown = claudeCapabilities([])
-    const hidden = claudeCapabilities(['LabArchives'])
-    expect(JSON.stringify(shown)).toMatch(/LabArchives/)
-    expect(JSON.stringify(hidden)).not.toMatch(/LabArchives/)
-    // …and nothing else is lost with it
-    expect(hidden.length).toBe(shown.length)
-    expect(JSON.stringify(hidden)).toMatch(/Analysis lineage/)
-    expect(JSON.stringify(hidden)).toMatch(/Pluto notebooks/)
+describe('CLAUDE_DATA_NOTICE', () => {
+  // A standing line in Kiwi: it has to stay inside the copy budget to stay read (docs/ui/COPY.md)
+  it('is one short phrase with a one-line action on hover', () => {
+    expect(CLAUDE_DATA_NOTICE.short.split(/\s+/).length).toBeLessThanOrEqual(10)
+    for (const t of [CLAUDE_DATA_NOTICE.short, CLAUDE_DATA_NOTICE.detail]) {
+      expect(isMultiSentence(t)).toBe(false)
+      expect(isTooLong(t)).toBe(false)
+      expect(t.endsWith('.')).toBe(false)
+    }
   })
 
-  it('returns plain strings, so the dialog renders them unchanged', () => {
-    for (const g of claudeCapabilities([]))
-      for (const i of g.items) expect(typeof i).toBe('string')
-  })
-
-  it('an unknown connector name hides nothing', () => {
-    expect(claudeCapabilities(['NotAThing'])).toEqual(claudeCapabilities([]))
+  it('names who receives the data', () => {
+    expect(CLAUDE_DATA_NOTICE.short).toContain('Anthropic')
   })
 })

@@ -164,16 +164,90 @@ end
 @testset "API: _tile_channel_stats over a view crop" begin
     # 8×8 plane, left half 0, right half 1. Whole-plane 2×1 tiles: means 0 and 1.
     plane = zeros(Float32, 8, 8); plane[5:8, :] .= 1
-    st = _tile_channel_stats(plane, 2, 1)
+    st = _tile_channel_stats(plane, 2, 1; range = (0, 1))
     @test st[1][1] ≈ 0.0 && st[2][1] ≈ 1.0
     # The view spans 16 px starting 8 px left of the plane: tile 1 is wholly off the plane (nothing),
     # tile 2 covers the whole plane (mean 0.5).
-    st2 = _tile_channel_stats(plane, 2, 1; frame = (-8.0, 0.0, 8.0, 8.0))
+    st2 = _tile_channel_stats(plane, 2, 1; range = (0, 1), frame = (-8.0, 0.0, 8.0, 8.0))
     @test st2[1] === nothing
     @test st2[2][1] ≈ 0.5
     # A tile thinner than a pixel reads the pixel under its centre.
-    st3 = _tile_channel_stats(plane, 32, 1; frame = (4.0, 0.0, 5.0, 8.0))
+    st3 = _tile_channel_stats(plane, 32, 1; range = (0, 1), frame = (4.0, 0.0, 5.0, 8.0))
     @test all(x -> x !== nothing && x[1] ≈ 1.0, st3)
+end
+
+@testset "API: _tile_channel_stats normalises by the fixed range, not the plane's extrema" begin
+    # Left tile 100..300 ramp, right tile flat 200. Range (100, 500) → left mean 0.25.
+    base = zeros(Float32, 8, 8)
+    for x in 1:4, y in 1:8; base[x, y] = 100 + 200 * (y - 1) / 7; end
+    base[5:8, :] .= 200
+    rng = (100.0, 500.0)
+    a = _tile_channel_stats(base, 2, 1; range = rng)
+    @test a[1][1] ≈ 0.25 atol = 1e-6
+    # A bright object entering the RIGHT tile does not move the LEFT tile's mean or SNR.
+    bright = copy(base); bright[7, 4] = 60000
+    b = _tile_channel_stats(bright, 2, 1; range = rng)
+    @test b[1] == a[1]
+    @test b[2][1] > a[2][1]
+    # Same left-tile pixels in a different frame (rest of the frame differs) → identical stats.
+    other = copy(base); other[5:8, :] .= 0
+    @test _tile_channel_stats(other, 2, 1; range = rng)[1] == a[1]
+    # Values outside the range clamp to [0, 1].
+    sat = fill(Float32(1000), 8, 8); sat[1:4, :] .= 0
+    c = _tile_channel_stats(sat, 2, 1; range = rng)
+    @test c[1][1] == 0.0 && c[2][1] == 1.0
+end
+
+# Handler-level: the compute resolves one fixed range per channel and records it, so two frames of the
+# same image report the same mean for an unchanged tile even when the other tile lights up.
+@testset "API: landscape compute — channel means use the image's fixed range (sourceRun.channels.range)" begin
+    axes_ms(names) = Dict("multiscales" => [Dict("axes" => [Dict("name" => n) for n in names],
+                                                 "datasets" => [Dict("path" => "0")])])
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = "LNDTST"; img = "IMGLND"
+        img_dir = joinpath(tmp, proj, "1", img); mkpath(img_dir)
+        store = joinpath(tmp, proj, "0", img, "ccidImage.ome.zarr"); mkpath(dirname(store))
+        g = zgroup(Zarr.DirectoryStore(store); attrs = axes_ms(["t", "c", "z", "y", "x"]))
+        nx, ny = 16, 16
+        a = zcreate(UInt16, g, "0", nx, ny, 1, 1, 2; chunks = (nx, ny, 1, 1, 1))
+        # t=0: textured background. t=1: identical, plus a bright object in the right half only.
+        vol = UInt16[100 + x + y for x in 1:nx, y in 1:ny, z in 1:1, c in 1:1, t in 1:2]
+        vol[13:14, 5:6, 1, 1, 2] .= 60000
+        a[:, :, :, :, :] = vol
+        write(joinpath(img_dir, "ccid.json"),
+              JSON3.write(Dict("filepath" => Dict("default" => "ccidImage.ome.zarr", "_active" => "default"))))
+        compute(t) = begin
+            st, body = api_viewer_landscape_compute(Vector{UInt8}(JSON3.write(Dict(
+                "projectUid" => proj, "imageUid" => img, "t" => t, "cols" => 2, "rows" => 2,
+                "channels" => [Dict("index" => 0, "name" => "c0")]))))
+            @test st == 200
+            JSON3.read(body, Dict{String,Any})
+        end
+        mean_of(r, id) = only(x for x in r["tiles"] if x["tileId"] == id)["channels"]["c0"]["mean"]
+        r0 = compute(0); r1 = compute(1)
+        @test mean_of(r0, "A1") == mean_of(r1, "A1")          # left tiles unchanged …
+        @test mean_of(r0, "A2") == mean_of(r1, "A2")
+        @test mean_of(r1, "B1") > mean_of(r0, "B1")           # … only the lit tile moves
+        ch0 = r0["sourceRun"]["channels"]
+        @test ch0["rangeSource"] == "sampled"
+        @test ch0["range"]["c0"] == r1["sourceRun"]["channels"]["range"]["c0"]
+        # The viewer's saved contrast wins, and is what the record names.
+        zp, td, _ = resolve_image_version(proj, img, nothing; version = nothing)
+        props = _props_path(td, zp); mkpath(dirname(props))
+        write(props, JSON3.write(Dict("webgpu" => Dict("channels" => [Dict("lo" => 100, "hi" => 140, "hex" => "#ffffff")]))))
+        r2 = compute(0)
+        @test r2["sourceRun"]["channels"]["rangeSource"] == "viewer"
+        @test r2["sourceRun"]["channels"]["range"]["c0"] == [100.0, 140.0]
+        # Mean of A1 (x, y in 1:8 → 102..116) under (100, 140): (109 - 100) / 40.
+        @test mean_of(r2, "A1") ≈ 0.225 atol = 1e-3
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
 end
 
 @testset "API: _pick_view_level + _landscape_view" begin

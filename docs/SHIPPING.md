@@ -427,8 +427,8 @@ fall back to system `python3` and fail.
 `python_bin_path()` **resolves to an absolute path** (via `Sys.which`), it does not return the bare
 config default. Two reasons the bare name wasn't enough:
 
-- The string **escapes the activated environment.** The observer registers it into the user's own
-  Claude Code config (`claude mcp add-json`), which launches it from a plain shell with no Pixi
+- The string **escapes the activated environment.** The observer's plugin hands it to the user's own
+  Claude Code (`claude plugin install --config python=…`), which launches it from a plain shell with no Pixi
   activation — where bare `python3` is the *system* python, with neither `mcp` nor `websockets`. The
   observer's tools failed to start in exactly the sessions one-click setup exists to enable.
 - **Windows** conda/pixi envs ship `python.exe` and frequently no `python3` at all, so the name has to

@@ -88,9 +88,13 @@ Lock-guarded + atomic, like every other project sidecar. Returns the stored doc.
 
 A full replace, not a merge: the sidecar mirrors what LabArchives says NOW, and a merge would let a
 stale section outlive its deletion in the notebook with no way to tell.
+
+`updated_by` is the route's `author_stamp()` (who wrote it, and through which model), stored as
+`updatedBy`; a REPL write leaves it off.
 """
 function write_la_doc!(proj::CciaProject; source = Dict{String,Any}(), sections = Any[],
-                       cohort = Any[], synced_by::AbstractString = "claude")::Dict{String,Any}
+                       cohort = Any[], synced_by::AbstractString = "claude",
+                       updated_by = nothing)::Dict{String,Any}
     src = source isa AbstractDict ? source : Dict{String,Any}()
     secs = Any[]
     for s in (sections isa AbstractVector ? sections : Any[])
@@ -115,6 +119,7 @@ function write_la_doc!(proj::CciaProject; source = Dict{String,Any}(), sections 
         "syncedBy" => _la_str(Dict("v" => synced_by), "v", "claude"),
         "sections" => secs,
         "cohort"   => arms)
+    updated_by === nothing || (doc["updatedBy"] = updated_by)
     with_transaction(proj) do
         p = la_doc_path(proj)
         mkpath(dirname(p))

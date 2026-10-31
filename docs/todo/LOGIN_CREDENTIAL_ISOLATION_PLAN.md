@@ -327,7 +327,8 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
   unasked; the New profile dialog now only points at Kiwi.
 - **D18. The login lives in Kiwi, not Preferences** (user, 2026-10-17). Kiwi's *Account* row holds
   the active profile's account + Log in + Log out, and Assistant → Terminal gets *Copy command*
-  (terminal `claude` as this profile). Preferences → Profiles drops the per-row Claude label, Log
+  (terminal `claude` as this profile). *Later:* that button became Chat → **Start in terminal**,
+  which also passes the chat starter as the session's first message. Preferences → Profiles drops the per-row Claude label, Log
   in / Log out, *Claude in a terminal* and the re-check button — it is back to identity only.
   Given up: seeing or logging out a profile that isn't the active one; the Shared-workstation
   *One Claude login at a time* policy covers the hand-over case that served.
@@ -348,6 +349,18 @@ Also confusing, not fixed here: `default`/peanut *is* `~/.claude`, i.e. every pl
   reach it: the logout route answers 409, both Shared-workstation target lists skip it, Kiwi shows no
   Log out on peanut, and the sidebar Log out on peanut only returns to the picker. Logging peanut IN
   from Kiwi still works.
+- **D22. Deleting a profile's Claude conversations — a workstation floor plus a personal opt-in**
+  (user, 2026-10-29). A named profile's config dir collects full transcripts, `history.jsonl` (every
+  prompt typed) and pasted text, readable by anyone on the shared OS login until the CLI's own 30-day
+  cleanup. Settings → Shared workstation → *Delete Claude conversations on log out* forces it for every
+  named profile; Preferences → Kiwi → *Delete my conversations on log out* lets one person opt in
+  when the policy is off (locked on when it's on). It runs at the sidebar Log out (before the Claude
+  logout, so a refusal leaves nothing half-done), on every orderly quit (after the children stop), and
+  at the next profile pick for every other profile, which covers a crash. An allowlist of the CLI's
+  conversation stores goes, while the login, `.claude.json`, plugins, Cecelia's own settings and
+  `projects/*/memory/` stay. A profile with a live `sessions/<pid>.json` is skipped, and Log out
+  refuses with a reason. Never peanut (D21). This is hygiene, not access control. Code:
+  `app/src/ai/claude_conversations.jl`.
 
 **Not verified / not done:**
 - A real end-to-end login through the private window (needs a person) — Dominik on the lab box.

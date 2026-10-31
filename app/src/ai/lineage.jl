@@ -9,8 +9,8 @@
 # `get_analysis_lineage` tool. Richer per-stage numbers (populations, measures, HMM/clusters) are the
 # later slices B–E.
 
-# fun_name ("category.task") → a coarse pipeline stage. Gating is interactive (not a task fun), so it
-# has no run-log step — it surfaces via `gatedPops`, not here.
+# fun_name ("category.task") → a coarse pipeline stage. Gating itself is interactive and surfaces via
+# `gatedPops`; the one gating TASK is the manual gate chain step (`gate.*`), whose runs land in "gate".
 function _stage_of(fun::AbstractString)::String
     cat = String(first(split(fun, "."; limit = 2)))
     cat == "importImages"  && return "import"
@@ -18,6 +18,7 @@ function _stage_of(fun::AbstractString)::String
     cat == "editImages"    && return "edit"
     cat == "segment"       && return "segment"
     cat == "tracking"      && return "track"
+    cat == "gate"          && return "gate"
     cat == "behaviour"     && return "behaviour"
     (cat == "clustPops" || cat == "clustTracks") && return "cluster"
     "other"
@@ -29,12 +30,12 @@ _stage_order(stages) = vcat([s for s in _LINEAGE_STAGE_ORDER if s in stages],
                             sort([s for s in stages if !(s in _LINEAGE_STAGE_ORDER)]))
 
 # Ordered run-log steps for an image → the task order + outcome + which value_name each wrote. Legacy
-# entries lack `status` (treated "done").
+# entries lack `status` (`run_entry_status` reads them as "done").
 _run_log_steps(img::CciaImage) =
     [(; stage     = _stage_of(string(get(e, "fun", ""))),
         fun       = string(get(e, "fun", "")),
         valueName = string(get(e, "valueName", "")),
-        status    = string(get(e, "status", "done")),
+        status    = run_entry_status(e),
         at        = string(get(e, "at", "")))
      for e in read_run_log(img)]
 

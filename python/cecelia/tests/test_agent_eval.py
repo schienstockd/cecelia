@@ -412,6 +412,28 @@ class TestRunRecord(unittest.TestCase):
         self.assertEqual([len(s["units"]) for s in gates], [2, 1])
         self.assertIn("add `/a` on T: rectangle a (linear) 0–1 × b (linear) 0–2", gates[0]["units"][0]["did"])
 
+    def test_the_observers_add_gate_shape_reads_like_the_autonomous_one(self):
+        # the observer's add_gate takes the autonomous one's arguments — one `gate` dict + `parent`
+        dec = self._decisions(("call", "o", "add_gate", {"image_uid": "cp1", "value_name": "T", "parent": "/qc",
+                                                         "name": "p", "gate": {
+                                                             "kind": "polygon", "x_channel": "a", "y_channel": "b",
+                                                             "x_transform": {"kind": "asinh", "cof": 150},
+                                                             "vertices": [[0, 0], [1, 0], [0, 1]]}}),
+                              ("result", "o", "{}", False))
+        unit = [s for s in dec["sections"] if s["step"] == "gate"][0]["units"][0]
+        self.assertEqual(unit["did"], "add `/qc/p` on T: polygon on a (asinh) × b (linear), 3 vertices")
+
+    def test_a_dry_run_gate_is_a_look_not_an_action(self):
+        # `dry_run=True` previews a gate and writes nothing — it must not be recorded as an add
+        dec = self._decisions(("call", "d", "add_gate", {"image_uid": "cp1", "value_name": "T", "name": "p",
+                                                         "gate": _RECT, "dry_run": True}),
+                              ("result", "d", "{}", False))
+        self.assertFalse([s for s in dec["sections"] if s["step"] == "gate"])
+        dec = self._decisions(("call", "d", "add_gate", {"image_uid": "cp1", "value_name": "T", "name": "p",
+                                                         "gate": _RECT, "dry_run": False}),
+                              ("result", "d", "{}", False))
+        self.assertEqual(len([s for s in dec["sections"] if s["step"] == "gate"]), 1)
+
     def test_render_heads_each_section_and_lists_errors_apart(self):
         dec = self._decisions(("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
                               ("result", "x", "Error executing tool set_gate", True))
@@ -747,6 +769,38 @@ class TestRunFindings(unittest.TestCase):
             self.skipTest("not a git checkout")
         self.assertEqual(run_findings.full_sha(head[:8]), head)
 
+
+
+class TestRunRecordRerun(unittest.TestCase):
+    """A run record written again (`--ask-why` afterwards) revises the entry the first write made."""
+
+    def test_rerun_by_hand_revises_the_entry_and_remembers_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "record.json").write_text(json.dumps({"startedAt": "t0", "blackboard": {"entryId": "bb-1"}}),
+                                              encoding="utf-8")
+            seen = {}
+            def fake_write(r, api, pdir, dry, why, claude, boards):
+                seen["prior"] = json.loads((r / "record.json").read_text(encoding="utf-8"))["blackboard"]["entryId"]
+                return {"title": "x", "entryId": "bb-1", "revised": True}
+            with mock.patch.object(run_record, "write", side_effect=fake_write), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                run_record.main([d, "--ask-why"])
+            rec = json.loads((root / "record.json").read_text(encoding="utf-8"))
+            self.assertEqual((seen["prior"], rec["startedAt"], rec["blackboard"]["revised"]), ("bb-1", "t0", True))
+
+    def test_save_entry_revises_a_live_prior_and_creates_otherwise(self):
+        posts = []
+        def post(api, path, body):
+            posts.append(path)
+            return {"entryId": "bb-new"}
+        with mock.patch.object(run_record, "_post", side_effect=post), \
+             mock.patch.object(run_record, "_get", return_value={"entry": {}}):
+            self.assertEqual(run_record.save_entry("http://x", "P", "bb-1", {"content": "c", "attachments": []}),
+                             {"entryId": "bb-1", "revised": True})
+            self.assertEqual(run_record.save_entry("http://x", "P", None, {"content": "c", "attachments": []}),
+                             {"entryId": "bb-new", "revised": False})
+        self.assertEqual(posts, ["/api/blackboard/revise", "/api/blackboard/create"])
 
 if __name__ == "__main__":
     unittest.main()

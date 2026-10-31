@@ -78,6 +78,20 @@ function hpc_resources(task::CciaTask, overrides::AbstractDict = Dict{String,Any
                  walltime_min = vals["walltime_min"])
 end
 
+"""
+    hpc_apply_site_rules(r, cls::HpcClass) -> (HpcResources, note)
+
+The run's resources after the site rules the user set on the class: with `cpus_per_gpu` set, a job
+with GPUs asks for exactly that many CPUs per GPU. `note` says what changed, `""` when nothing did.
+"""
+function hpc_apply_site_rules(r::HpcResources, cls::HpcClass)::Tuple{HpcResources,String}
+    (cls.cpus_per_gpu > 0 && r.gpus > 0) || return (r, "")
+    want = r.gpus * cls.cpus_per_gpu
+    want == r.cpus && return (r, "")
+    (HpcResources(; cpus = want, mem_gb = r.mem_gb, gpus = r.gpus, walltime_min = r.walltime_min),
+     "$want CPUs: this cluster takes $(cls.cpus_per_gpu) per GPU")
+end
+
 """Everything a dispatched `run_py` needs, fixed when the job starts."""
 struct HpcDispatch
     task_id::String
@@ -90,11 +104,13 @@ struct HpcDispatch
     resources::HpcResources
     account::String             # the project's override, "" = the class account
     on_stage::Function          # (::HpcStage, job_id) → the task record + the `task:hpc` frame
+    rule_note::String           # what a site rule changed in `resources` (`hpc_apply_site_rules`), or ""
 end
 
-HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account) =
+HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
+            on_stage = (stage, job) -> nothing) =
     HpcDispatch(task_id, conn, backend, remote_root, project_root, assets_root, class, resources, account,
-                (stage, job) -> nothing)
+                on_stage, "")
 
 """The active dispatch, `nothing` for a local run. Set by `_with_run_target`."""
 const HPC_DISPATCH = Base.ScopedValues.ScopedValue{Union{Nothing,HpcDispatch}}(nothing)
@@ -128,8 +144,10 @@ function hpc_dispatch_for(rec::TaskRecord, task::CciaTask, img::CciaImage;
                                    hpc_remote_root(conn)
     proj = dirname(dirname(img._dir))
     account = read_hpc_project_settings(proj)["account"]
-    HpcDispatch(rec.id, conn, backend, root, proj, config_dir(), hpc_task_class(task),
-                hpc_resources(task, rec.hpc), account, on_stage)
+    class = hpc_task_class(task)
+    site = hpc_backend_site(backend)
+    res, note = hpc_apply_site_rules(hpc_resources(task, rec.hpc), hpc_class(site, class))
+    HpcDispatch(rec.id, conn, backend, root, proj, config_dir(), class, res, account, on_stage, note)
 end
 
 """
@@ -153,6 +171,7 @@ function _with_run_target(f::Function, rec::TaskRecord, task::CciaTask, img::Cci
     end
     on_log("[HPC] Running on the cluster: $(d.class) class, $(d.resources.cpus) CPUs, " *
            "$(d.resources.mem_gb) GB, $(d.resources.gpus) GPUs, $(d.resources.walltime_min) min")
+    isempty(d.rule_note) || on_log("[HPC] " * d.rule_note)
     try
         Base.ScopedValues.with(f, HPC_DISPATCH => d)
     finally
@@ -163,7 +182,7 @@ end
 # ── Paths: local ↔ mirror ──────────────────────────────────────────────────────────────────────────
 
 hpc_mirror_dir(d::HpcDispatch)::String = d.remote_root * "/projects/" * basename(d.project_root)
-hpc_assets_dir(d::HpcDispatch)::String = d.remote_root * "/assets"
+hpc_assets_dir(d::HpcDispatch)::String = hpc_assets_dir(d.remote_root)
 
 _under(p::AbstractString, root::AbstractString) = p == root || startswith(p, root * "/")
 
@@ -384,8 +403,15 @@ function _hpc_job_env(d::HpcDispatch, code_dir::AbstractString)::String
             println(io, "export $k=$(_sh_quote(v))")
         end
     end
-    println(io, "export CELLPOSE_LOCAL_MODELS_PATH=$(_sh_quote(hpc_assets_dir(d) * "/cellpose"))")
+    println(io, "export CELLPOSE_LOCAL_MODELS_PATH=$(_sh_quote(hpc_cellpose_weights_dir(d.remote_root)))")
     String(take!(io))
+end
+
+# What the job used against what it booked, logged with the task once it is over — succeeded or
+# failed (an out-of-memory run is when it matters most). Never fails the run: it is advice.
+function _hpc_log_usage(d::HpcDispatch, id::AbstractString, on_log::Function)
+    u = try; hpc_job_usage(d.backend, d.conn, id); catch; nothing; end
+    isnothing(u) || foreach(on_log, hpc_usage_lines(u))
 end
 
 """
@@ -460,12 +486,14 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
                        st === JOB_RUNNING ? "[HPC] Running on the cluster (job $id)" : "[HPC] Job $id ended")
             end
             w = hpc_watch_job(d.backend, d.conn, id, dir; on_log = line, on_state = state,
-                              cancelled = () -> is_cancelled(d.task_id), poll_s = HPC_POLL_S[])
+                              on_reason = r -> on_log("[HPC] Waiting: $r"),
+                              cancelled = () -> is_cancelled(d.task_id))
             if w.cancelled
                 rm(record; force = true)
                 on_log("[HPC] Cancelled job $id")
                 return false
             end
+            _hpc_log_usage(d, id, on_log)
             if w.exit != 0
                 rm(record; force = true)
                 on_log("[ERROR] Cluster job $id failed: $(w.reason)")
@@ -488,5 +516,3 @@ function _run_py_hpc(script_rel::AbstractString, params, task_dir::AbstractStrin
     end
 end
 
-"""How often a dispatched task asks the cluster for news, in seconds (the tests shorten it)."""
-const HPC_POLL_S = Ref{Float64}(15.0)

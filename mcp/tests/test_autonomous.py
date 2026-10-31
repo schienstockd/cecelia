@@ -105,6 +105,100 @@ class Lock(unittest.TestCase):
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"}
         self.assertTrue(writes)
         self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
+        # no-GUI mode's creation routes are a separate set, and additive (no delete/rename/move)
+        self.assertFalse(au.NO_GUI_ROUTES & au.AUTONOMOUS_ROUTES)
+        self.assertTrue(all(p.endswith(("/create", "/register")) for _, p in au.NO_GUI_ROUTES))
+
+
+class NoGuiLock(unittest.TestCase):
+    """No-GUI mode (CECELIA_MCP_NO_GUI=1, HEADLESS_MODE_PLAN D2): the lock is the named project plus
+    the projects this session created, and creation routes open — only there."""
+
+    def setUp(self):
+        au._session_projects.clear()
+        self.addCleanup(au._session_projects.clear)
+
+    def test_created_project_joins_the_lock_only_in_no_gui_mode(self):
+        au.allow_session_project("new001")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": "1"}):
+            au.check_project("named1")
+            au.check_project("new001")
+            with self.assertRaisesRegex(au.LockViolation, "pixi run chat"):
+                au.check_project("other1")
+        # the eval sandbox: a session project never widens the lock
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": ""}):
+            with self.assertRaises(au.LockViolation):
+                au.check_project("new001")
+
+    def test_new_project_session_starts_empty_and_says_how_to_start(self):
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "", "CECELIA_MCP_NO_GUI": "1"}):
+            with self.assertRaisesRegex(au.LockViolation, "create_project"):
+                au.check_project("abc123")
+            self.assertEqual(au.allowed_projects(), [])
+
+    def test_creation_routes_open_only_in_no_gui_mode(self):
+        c = au.AutonomousClient("http://127.0.0.1:1")
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": ""}):
+            with self.assertRaises(DisallowedRoute):
+                c._request("POST", "/api/projects/create", body={"name": "x"})
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": "1", au.PROJECT_ENV: "named1"}), \
+                mock.patch.object(au, "http_json", return_value={"uid": "s1"}) as http:
+            c._request("POST", "/api/sets/create", body={"projectUid": "named1", "name": "a"})
+            self.assertEqual(http.call_count, 1)
+            with self.assertRaises(au.LockViolation):        # still inside the lock
+                c._request("POST", "/api/sets/create", body={"projectUid": "other1", "name": "a"})
+
+    def test_create_project_adds_it_to_the_lock(self):
+        c = au.AutonomousClient("http://x")
+        reply = {"project": {"uid": "new001", "name": "Expt", "path": "/p/new001"}}
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "", "CECELIA_MCP_NO_GUI": "1"}), \
+                mock.patch.object(au, "http_json", return_value=reply):
+            self.assertEqual(c.create_project("Expt")["projectUid"], "new001")
+            au.check_project("new001")
+
+    def test_register_names_the_paths_it_skipped(self):
+        import tempfile
+        c = au.AutonomousClient("http://x")
+        with tempfile.NamedTemporaryFile(suffix=".tif") as f, \
+                mock.patch.dict(os.environ, {au.PROJECT_ENV: "named1", "CECELIA_MCP_NO_GUI": "1"}), \
+                mock.patch.object(au, "http_json", return_value={"images": [
+                    {"uid": "i1", "name": "a", "filepath": f.name}]}) as http:
+            got = c.register_images("named1", "s1", [f.name, "/no/such.tif", "rel.tif"])
+            self.assertEqual(got["skipped"], ["/no/such.tif", "rel.tif"])
+            self.assertEqual(got["images"][0]["imageUid"], "i1")
+            self.assertEqual(http.call_args[0][4]["filepaths"], [f.name])
+            with self.assertRaisesRegex(au.ApiError, "absolute path"):
+                c.register_images("named1", "s1", ["rel.tif"])
+
+    def test_switch_rejects_a_typo(self):
+        from cecelia_mcp.no_gui import no_gui_enabled
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": "yes"}):
+            with self.assertRaises(ValueError):
+                no_gui_enabled()
+
+
+class NoGuiTools(unittest.TestCase):
+    """The creation tools exist only in no-GUI mode: the eval sandbox's agent never sees them."""
+
+    def _tool_names(self, no_gui: str) -> set[str]:
+        import importlib
+        from cecelia_mcp import autonomous_server
+        with mock.patch.dict(os.environ, {"CECELIA_MCP_NO_GUI": no_gui}):
+            mod = importlib.reload(autonomous_server)
+            names = {t.name for t in asyncio.run(mod.mcp.list_tools())}
+            text = mod.INSTRUCTIONS
+        importlib.reload(autonomous_server)
+        return names, text
+
+    def test_registered_and_named_only_with_the_switch(self):
+        creation = {"create_project", "create_set", "register_images"}
+        names, text = self._tool_names("")
+        self.assertFalse(creation & names)
+        self.assertNotIn("register_images", text)
+        names, text = self._tool_names("1")
+        self.assertTrue(creation <= names)
+        for t in creation | {"importImages.omezarr"}:
+            self.assertIn(t, text)
 
 
 class RunChainStoredName(unittest.TestCase):
@@ -123,28 +217,72 @@ class RunChainStoredName(unittest.TestCase):
         self.assertEqual((out["chain"], out["runId"]), ("Drift segment", "r1"))
 
 
+class WaitChainManualStep(unittest.TestCase):
+    def test_a_run_parked_for_a_person_is_settled_not_finished(self):
+        # nothing queued or running, but a manual step waits: wait_chain must stop (no point polling)
+        # and must not report the run as finished
+        c = au.AutonomousClient("http://x")
+        replies = {"/api/chains/run": {"chainName": "c", "nodes": [],
+                                       "imageStates": {"img1": {"seg": "done", "gate": "waiting"}}},
+                   "/api/tasks": []}
+        with mock.patch.object(c, "_request", side_effect=lambda m, r, *a, **k: replies[r]):
+            out = c.wait_chain("copy01", "r1", timeout_s=60, poll_s=0)
+        self.assertTrue(out["waiting"])
+        self.assertFalse(out["finished"])
+
+
+class TaskStatesHistoryFallback(unittest.TestCase):
+    def test_a_capped_history_is_read_whole_before_giving_up(self):
+        c = au.AutonomousClient("http://x")
+        c._launched["t1"] = ("tSJpBI", "segment.cellpose", "img1", "2026-10-27T10:00:00")
+        row = {"fun": "segment.cellpose", "imageUid": "img1", "at": "2026-10-27T10:00:05", "runStatus": "failed"}
+        def reply(method, route, params=None, *a, **k):
+            if route == "/api/tasks/history":
+                return ({"history": [row], "total": 201, "truncated": False} if params["limit"] == 201
+                        else {"history": [], "total": 201, "truncated": True})
+            return []
+        with mock.patch.object(c, "_request", side_effect=reply):
+            self.assertEqual({"t1": "failed"}, c.task_states(["t1"]))
+
+
 class RequireMeasured(unittest.TestCase):
     def test_refuses_when_api_resolves_a_different_value_name(self):
         c = au.AutonomousClient("http://x")
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
                 mock.patch.object(c, "_request", return_value={"valueName": "default"}) as req:
             with self.assertRaisesRegex(au.ApiError, "no measurements"):
-                c.gating_post("/api/gating/pop/add", "copy01", "img", "T", name="pos")
+                c.add_gate("copy01", "img", "T", "pos", {"kind": "rectangle"})
             self.assertEqual(req.call_count, 1)          # never reached the write
         with mock.patch.object(c, "_request", return_value={"valueName": "T"}):
             c._require_measured("copy01", "img", "T")
 
+    def test_a_write_keeps_to_the_label_set_prefix(self):
+        c = au.AutonomousClient("http://x")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01", au.PREFIX_ENV: "agent"}), \
+                mock.patch.object(c, "_request", return_value={"valueName": "T"}) as req:
+            with self.assertRaisesRegex(au.LockViolation, "starting with 'agent'"):
+                c.delete_gate("copy01", "img", "T", "/pos")
+            req.assert_not_called()
+            c.gate_stats("copy01", "img", "T", "/pos")   # a read of another label set is fine
 
-class GatingPost(unittest.TestCase):
-    def test_population_path_is_a_body_field_not_the_route(self):
+
+class GatingWrites(unittest.TestCase):
+    def test_writes_go_to_the_claude_scoped_routes(self):
+        # never /api/gating/pop/add, set-gate or delete — those change the user's populations too
         c = au.AutonomousClient("http://x")
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
                 mock.patch.object(c, "_require_measured"), \
                 mock.patch.object(c, "_request", return_value={"ok": True}) as req:
-            c.gating_post("/api/gating/pop/set-gate", "copy01", "img", "T", path="/pos", gate={"kind": "rectangle"})
-        method, route = req.call_args[0][:2]
-        self.assertEqual((method, route), ("POST", "/api/gating/pop/set-gate"))
-        self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
+            c.add_gate("copy01", "img", "T", "pos", {"kind": "rectangle"}, dry_run=True)
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/add-gate"))
+            self.assertTrue(req.call_args.kwargs["body"]["dryRun"])
+            c.set_gate("copy01", "img", "T", "/pos", {"kind": "rectangle"})
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/set-own-gate"))
+            self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
+            c.delete_gate("copy01", "img", "T", "/pos")
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/delete-own"))
+        for route in ("/api/gating/pop/add", "/api/gating/pop/set-gate", "/api/gating/pop/delete"):
+            self.assertNotIn(("POST", route), au.AUTONOMOUS_ROUTES)
 
 
 class GatingPictures(unittest.TestCase):
@@ -211,7 +349,22 @@ class GatingPicturesShared(unittest.TestCase):
         for mod in (server, autonomous_server):
             tools = {t.name: t for t in asyncio.run(mod.mcp.list_tools())}
             self.assertTrue(tools["gate_plot"].description.startswith("The gate plot as an image"))
-            self.assertTrue(tools["gate_cells_view"].description.startswith("The image with population"))
+            self.assertTrue(tools["gate_cells_view"].description.startswith("The image with populations"))
+
+    def test_both_servers_register_the_one_gating_toolset(self):
+        # the same tools, the same argument schemas, the same text — defined once in gating_views.py
+        from cecelia_mcp import autonomous_server, server
+        from cecelia_mcp.client import ALLOWED_ROUTES
+        from cecelia_mcp import gating_views as gv
+        def gating(mod):
+            return {t.name: (t.description, t.input_schema) for t in asyncio.run(mod.mcp.list_tools())
+                    if t.name in {"gate_histogram", "gate_plot", "gate_cells_view", "gate_examples",
+                                  "gate_stats", "add_gate", "set_gate", "delete_gate"}}
+        obs, auto = gating(server), gating(autonomous_server)
+        self.assertEqual(len(obs), 8)
+        self.assertEqual(obs, auto)
+        self.assertTrue(gv.GATING_ROUTES <= ALLOWED_ROUTES)
+        self.assertTrue(gv.GATING_ROUTES <= au.AUTONOMOUS_ROUTES)
 
 
 if __name__ == "__main__":

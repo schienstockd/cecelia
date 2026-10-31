@@ -6,6 +6,7 @@ export interface ParamDef {
        | 'popSelection' | 'labelPropsColsSelection'
        | 'motionDimsSelection'
        | 'imagePicker'
+       | 'imageSelection'   // one image of the open project, by uid ('' = none) — e.g. an exemplar
        | 'group' | 'section'
   // imagePicker: which spatial selection to author. v1 = 'box3d' (crop's box + z/t ranges).
   // box2d / point2d / line2d / polygon2d slot into the same modal when a task needs them.
@@ -70,6 +71,10 @@ export interface ParamDef {
   labelUnit?: 'frameDuration'
   // channelRoles: a sibling channelSelection whose channels get no row (AF correction's target)
   exclude?: string
+  // Keys this param was stored under before a rename. A saved value under a former key fills the
+  // param when its own key is absent — in the form (`buildParamValues`) and in a run
+  // (`_apply_spec_defaults`), so old funParams and chains keep their value. See docs/MODULES.md.
+  formerKeys?: string[]
   showIf?: Record<string, string | number | boolean | (string | number | boolean)[]
                         | { endsWith?: string | string[]; notEndsWith?: string | string[];
                             minItems?: number; equals?: string }>
@@ -165,6 +170,10 @@ export interface TaskDef {
   // Cluster job defaults when `env` lists "hpc" (docs/todo/HPC_PLAN.md; utils/hpcRun.ts).
   hpc?: { cpus?: number; mem_gb?: number; gpus?: number; walltime_min?: number; mem?: HpcMemModel[] }
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
+  // A MANUAL chain step (docs/SCHEDULER.md → Manual steps): the task prepares, then a chain run parks at
+  // this node until the user continues it. `prompt` is shown while it waits; `open` is where to go to do
+  // the work. Absent on every ordinary task.
+  manual?: { prompt?: string; open?: string }
   outputValueName?: string // the value_name this task produces (e.g. "driftCorrected"); read by the
                            // whiteboard to prefill a downstream node's input valueName. Absent when
                            // the output name is a user-set param instead (segment.cellpose).

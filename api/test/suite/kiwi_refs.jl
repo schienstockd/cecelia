@@ -180,6 +180,28 @@ end
         some_fun = first(sort!(collect(keys(Cecelia._fun_name_map()))))
         @test yes(Dict("kind" => "task", "funName" => some_fun))
         @test no(Dict("kind" => "task", "funName" => "get_project_info"), "no task")
+        # task ON an image: a configured task is not evidence a step ran — only a `done` run in the
+        # image's run log is. Entries written by the real writer (`append_run_log!`) into the temp copy.
+        seg, trk = "segment.cellpose", "tracking.bayesian_tracking"
+        ran(extra...) = Dict{String,Any}("kind" => "task", "imageUid" => "KDIeEm", extra...)
+        @test isempty(Cecelia.read_run_log(img))                       # the fixture has no run log
+        @test no(ran("funName" => seg), "no completed run")
+        @test no(ran("funName" => seg, "imageUid" => "zzzzzz"), "no image")
+        @test no(Dict("kind" => "task", "funName" => seg, "valueName" => "B"), "needs an imageUid")
+        append_run_log!(img, trk, "B", "failed")
+        append_run_log!(img, seg, "B", Cecelia.RUN_LOG_RUNNING)
+        @test no(ran("funName" => trk), "no completed run")             # failed is not ran
+        @test occursin("failed", res(ran("funName" => trk))["error"])  # …and the chip says how it ended
+        @test no(ran("funName" => seg), "no completed run")             # running is not ran (yet)
+        append_run_log!(img, seg, "B", "done")
+        r = res(ran("funName" => seg))
+        @test r["ok"] && r["check"] == "exists" && occursin("ran on $(img.name)", r["label"])
+        @test yes(ran("funName" => seg, "valueName" => "B"))
+        @test no(ran("funName" => seg, "valueName" => "T"), "no completed run")
+        @test !haskey(r, "detail")
+        append_run_log!(img, seg, "B", "failed")                       # a later re-run failed
+        r = res(ran("funName" => seg))
+        @test r["ok"] && occursin("failed", get(r, "detail", ""))      # still ran, but say the newest didn't
 
         # ui: format only — never claims existence
         @test res(Dict("kind" => "ui", "anchor" => "viewer.play"))["check"] == "format"

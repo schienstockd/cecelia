@@ -5,9 +5,10 @@
 //     following-up note, and Kiwi's `note` line. Human-readable in a plain editor; the discipline
 //     is the same as `renderBlackboardMarkdown` reads today.
 //   • `kiwiRefs` — a per-ref sidecar map (`{refKey → {ref, label, snapshot?, savedAt}}`) for the
-//     SIX FRAGILE kinds only (Decision 7): population, cells, tracks, plot, tile, ui. The other
-//     six (project/set/image/viewer/task/blackboard/proposedPlot) resolve-or-say-"gone" without a
-//     snapshot — their identifiers are already stable enough (Decision 7's table).
+//     FRAGILE kinds only (Decision 7): population, cells, tracks, plot, tile, ui, and a task that
+//     names an image (a claimed run). The rest (project/set/image/viewer/blackboard/proposedPlot, a
+//     task with no image) resolve-or-say-"gone" without a snapshot — their identifiers are already
+//     stable enough (Decision 7's table).
 //
 // The sidecar lets the chip fall back to "was: <label> · <snapshot>" when the underlying object is
 // gone months later (`KiwiRefChip`). It also rides in `meta.json` as an additive field, so no
@@ -19,7 +20,7 @@ import type { KiwiRef } from './kiwiRef'
 import type { KiwiTurn, KiwiClaim, KiwiClaimRef } from './kiwiTurn'
 import { refKey, refLabel } from './kiwiTurn'
 
-/** One entry in the `kiwiRefs` sidecar. Keyed by `refKey(ref)`. `snapshot` present only for the six
+/** One entry in the `kiwiRefs` sidecar. Keyed by `refKey(ref)`. `snapshot` present only for the
  *  fragile kinds; absent for the stable kinds (resolve-or-"gone"). */
 export interface KiwiRefSidecar {
   ref: KiwiRef
@@ -38,6 +39,7 @@ export type KiwiRefSnapshot =
   | { kind: 'plot';       plotSummary: string; label: string }
   | { kind: 'tile';       imageName: string; cellId: string }
   | { kind: 'ui';         anchor: string }
+  | { kind: 'task';       imageName: string }
 
 export type KiwiRefsSidecar = Record<string, KiwiRefSidecar>
 
@@ -53,9 +55,9 @@ export interface KiwiSaveCallbacks {
   plotSummary: (plotId: string) => string
 }
 
-/** Build a sidecar entry for one ref. Fragile kinds (population, cells, tracks, plot, tile, ui)
- *  carry a kind-specific `snapshot` for the "was: <label>" fallback per Decision 7. Stable kinds
- *  (project, set, image, viewer, task, blackboard, proposedPlot) carry NO snapshot — their live
+/** Build a sidecar entry for one ref. Fragile kinds (population, cells, tracks, plot, tile, ui, a task on an
+ *  image) carry a kind-specific `snapshot` for the "was: <label>" fallback per Decision 7. Stable kinds
+ *  (project, set, image, viewer, a task with no image, blackboard, proposedPlot) carry NO snapshot — their live
  *  resolver either finds the object or reports it gone, and that's enough. Both flavours land in
  *  the sidecar so the saved Blackboard entry can chip every ref cited on the turn, not just the
  *  fragile ones. `capture` is the exception: it already lands in `attachments`, so returning `null`
@@ -82,12 +84,15 @@ export function snapshotForRef(
       return { ...base, snapshot: { kind: 'tile', imageName: cb.imageName(ref.imageUid), cellId: ref.cellId } }
     case 'ui':
       return { ...base, snapshot: { kind: 'ui', anchor: ref.anchor } }
+    // A task ON an image claims a run there — fragile like the other image-scoped kinds. Without an
+    // image it names a kind of step, which the registry keeps stable.
+    case 'task':
+      return ref.imageUid ? { ...base, snapshot: { kind: 'task', imageName: cb.imageName(ref.imageUid) } } : base
     // Stable — no snapshot; the chip renders live-only.
     case 'project':
     case 'set':
     case 'image':
     case 'viewer':
-    case 'task':
     case 'blackboard':
     case 'proposedPlot':
       return base

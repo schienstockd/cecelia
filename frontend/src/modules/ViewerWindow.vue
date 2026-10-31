@@ -38,7 +38,7 @@ import { visibleRegion as computeVisibleRegion, type VisibleRegion } from '../ut
 import { soloVisibility, stepChannel } from '../utils/viewer/channelSolo'
 import { reconcilePopEyes, reconcileRibbonEyes, samePopEyes, setAllPopEyes, soloPopEyes, popEyeOn,
          eyeKey, flipPopEye, offPaths,
-         type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
+         eyeTurnedOn, type PopEyes, type ListedPop } from '../utils/viewer/popEyes'
 import { isCompact, toggleFlip, nextAllCompact, defaultCompact } from '../utils/viewer/channelCards'
 import { buildViewState, applyViewStateToBrowser, type ViewerViewState } from '../utils/viewer/viewState'
 import { readGatingCurrent as readGatingCurrentFor } from '../utils/viewer/viewerLook'
@@ -65,7 +65,7 @@ import { fetchCaptureEnvelope } from '../utils/kiwiCaptures'
 import { onViewerCacheClear, readViewerCacheClearRev,
          viewerCacheClearMatches } from '../lib/viewerCacheClearChannel'
 import { sampleCanvas, type CanvasSample } from '../utils/canvasSample'
-import { adapterNameText, classifiedByText, collectGpuDiagnostics, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
+import { adapterNameText, classifiedByText, collectGpuDiagnostics, groupAdapterDiags, probeWebGpu, type GpuDiagnostics } from '../utils/webgpuProbe'
 import { MAX_ATLASES, atlasCountForBudget } from '../utils/brickAtlas'
 import { markViewerAttempt, clearViewerAttempt, viewerCrashedLastTime } from '../utils/viewerCrashGuard'
 import {
@@ -103,7 +103,7 @@ import { captureOverlayLayers, trackPopSourceKey, type CapturedLayer } from '../
 import { CELL_POP_TYPES } from '../utils/overlayAutoShow'
 import { widenLabelSlab, labelBpv, maskStoreFor, maskStoreQuery, drawnMaskVn, landscapeLabelsVn,
          type MaskStore } from '../utils/viewerLabels'
-import { maskPopTable } from '../utils/maskPopTable'
+import { maskPopTable, trackclustMaskLayer, type MaskColour, type MaskPopLayer } from '../utils/maskPopTable'
 import {
   buildBlob as buildBenchBlob, benchFilename, summarize as summarizeBench,
   type BenchSample, type BenchMeta, type BenchVram, type BenchWriteSample,
@@ -120,7 +120,7 @@ import { computeLandscape, readCanvasImageData, augmentLandscape, landscapeViewL
 import { plotHostToImageURL, loadImg } from '../plots/export'
 import DrawSurface from '../components/DrawSurface.vue'
 import CaptureViewSurface from '../components/CaptureViewSurface.vue'
-import { buildCaptureAddress, captureTimeS, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
+import { buildCaptureAddress, captureTimeS, resolveStoredAddress, type OverlayMark, type CaptureAddress } from '../utils/captureAddress'
 import { composeFrameWithOverlay } from '../utils/overlayCompose'
 import { announceShareOutcome, shareFailMessage } from '../utils/shareOutcome'
 import AxesGizmo from '../components/AxesGizmo.vue'
@@ -195,6 +195,8 @@ const stableAdapterReport = ref<AdapterReport | null>(null)
 /** Raw adapter readout (every `powerPreference`, plus page context) for the Debug panel's GPU block and
  *  the bench JSON — the evidence for WHY `stableAdapterReport.looksDiscrete` came out the way it did. */
 const gpuDiag = ref<GpuDiagnostics | null>(null)
+/** `gpuDiag.adapters` with identical readouts merged — one row when every preference got the same GPU. */
+const adapterRows = computed(() => groupAdapterDiags(gpuDiag.value?.adapters ?? []))
 /** Which signal decided `stableAdapterReport.looksDiscrete` — the Debug panel's "Classified" row. */
 const classifiedByLabel = computed(() => {
   const a = stableAdapterReport.value
@@ -967,18 +969,46 @@ let appliedMaskSource: string | null = null
 // `starting.value` guard: `maskName` recomputes when `meta.value` is set during `loadVersion`, which is
 // about to run its own reallocate reading the mask at call time.
 watch(maskSourceId, () => { if (!starting.value) applyMaskSource() })
-// "Colour by population": the shown mask's colour table from the population layers on ITS segmentation
-// (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the rest grey). `null` = the
-// per-id palette: the toggle off, no mask, no pops loaded for it, or a preview / live store, whose ids
+// The shown mask's track-cluster pops, for *Colour: Track clusters* — fetched for the mask's
+// segmentation whatever the trackclust ribbon chip says (the ribbons' `trackclustPayloads` is only
+// filled while it is on). Kept with an empty `pops`, so a segmentation without track clusters draws
+// its cells grey, as a movie's mask does (`mask_pop_colours`).
+const maskTrackclust = ref<{ vn: string; payload: OverlayPayload } | null>(null)
+// The mask's *Colour* (`settings.viewerMaskColour`): the shown mask's colour table from the population
+// layers on ITS segmentation (`utils/maskPopTable.ts` — deepest visible pop wins, parents pale, the
+// rest grey) — the cell pop types on, or the segmentation's track clusters (`maskTrackclust`). `null` =
+// the per-id palette: *Cell id*, no mask, no pops loaded for it, or a preview / live store, whose ids
 // are not the cell table's. Every renderer takes it per frame; the same object is a no-op there.
-const maskPopLayers = computed(() => {
+const maskPopLayers = computed<MaskPopLayer[]>(() => {
   const vn = drawnMaskVn(maskName.value, maskHidden.value)
-  return vn && !maskStoreOf(vn).store ? popLayers.value.filter(l => l.vn === vn) : []
+  if (!vn || maskStoreOf(vn).store) return []
+  if (settings.viewerMaskColour === 'pops')
+    return popLayers.value.filter(l => l.vn === vn).map(l => ({ payload: l.payload, hidden: layerHidden(l) }))
+  const tc = maskTrackclust.value
+  return settings.viewerMaskColour === 'trackclust' && tc?.vn === vn ? [trackclustMaskLayer(tc.payload)] : []
 })
-const maskTable = computed(() => settings.viewerMaskByPop && maskPopLayers.value.length
-  ? maskPopTable(maskPopLayers.value.map(l => ({ payload: l.payload, hidden: layerHidden(l) })))
-  : null)
+const maskTable = computed(() => maskPopLayers.value.length ? maskPopTable(maskPopLayers.value) : null)
 watch(maskTable, () => frame.redraw())
+/** One segmentation's track-cluster pops (`popType=trackclust`) — the ribbons' and the mask's one
+ *  fetch. `null` when it failed (no cell table); a segmentation without track clusters has `pops: []`. */
+async function fetchTrackclustPayload(vn: string): Promise<OverlayPayload | null> {
+  if (!projectUid || !imageUid) return null
+  try {
+    const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
+                            { cache: 'no-store' })
+    return res.ok ? await res.json() as OverlayPayload : null
+  } catch { return null }
+}
+async function loadMaskTrackclust() {
+  const vn = settings.viewerMaskColour === 'trackclust' ? maskName.value : ''
+  if (!vn || !projectUid || !imageUid) { maskTrackclust.value = null; return }
+  // null = no cell table: the palette, as for pops
+  const payload = trackclustPayloads.value.get(vn) ?? await fetchTrackclustPayload(vn)
+  // a later mask / mode change has overtaken this fetch
+  if (settings.viewerMaskColour !== 'trackclust' || maskName.value !== vn) return
+  maskTrackclust.value = payload ? { vn, payload } : null
+}
+watch([() => settings.viewerMaskColour, maskName], () => { void loadMaskTrackclust() })
 // Renderer swap when the classification flips — user toggled `viewerBricksMode`, or `mode`
 // crossed the plane/volume threshold on a Dml3RG-shape store (2D fits flat, 3D doesn't; auto
 // picks per view). `ensureRenderer` now owns the destroy+recreate atomically (see
@@ -1365,6 +1395,21 @@ const PROJECTIONS = [
  *  than "Auto-select/Force brick/Force flat" in a segmented control. All three chips stay
  *  enabled even after an OOM fallback — the flag is mode-scoped, so a 3D flat OOM does not
  *  block a 2D flat pick, and an explicit user pick beats the fallback in `bricksEnabled`. */
+const MASK_COLOUR_OPTIONS: { value: MaskColour; label: string; tip: string }[] = [
+  { value: 'id', label: 'Cell id', tip: 'A colour per cell' },
+  { value: 'pops', label: 'Pops', tip: 'Each cell by its deepest shown population' },
+  { value: 'trackclust', label: 'Track clusters', tip: 'Each tracked cell by its track cluster' },
+]
+/** Why the mask's *Colour* draws the palette or all grey — '' when it draws what was asked. */
+const maskColourNote = computed(() => {
+  const mode = settings.viewerMaskColour
+  if (mode === 'id') return ''
+  if (previewVn.value || liveVn.value) return 'Not for a preview mask'
+  if (mode === 'pops') return maskTable.value ? '' : 'No populations shown on this mask'
+  const tc = maskTrackclust.value
+  return tc?.vn === maskName.value && tc.payload.pops.some(p => p.show !== false) ? ''
+    : 'No track clusters on this mask'
+})
 const BRICKS_MODES = [
   { value: 'auto', label: 'Auto', tip: 'Pick based on movie size vs cache' },
   { value: 'brick', label: 'Brick', tip: 'Force per-viewport streaming' },
@@ -1908,7 +1953,16 @@ async function loadOverlays() {
     eyesNext.set(vn, kept)
     if (!samePopEyes(stored, kept)) settings.setPopEyes(imageUid, vn, kept)
   }
-  popEyes.value = eyesNext
+  // One-at-a-time spans every segmentation, so a pop the manager switched on (it writes the stored
+  // eye, read just above) takes over the one-pop view here, not per segmentation.
+  const turned = soloPop.value ? eyeTurnedOn(popEyes.value, eyesNext) : null
+  if (turned) {
+    const listed = listPops(next)
+    const solo = soloPopEyes(eyesNext, listed, listed.findIndex(p =>
+      p.vn === turned.vn && p.popType === turned.popType && p.path === turned.path))
+    for (const [vn, e] of solo) if (!samePopEyes(eyesNext.get(vn) ?? {}, e)) settings.setPopEyes(imageUid, vn, e)
+    popEyes.value = solo
+  } else popEyes.value = eyesNext
   // Ribbon eyes: the same reconcile, their own bag (#1766) — a gate edit no longer resets them.
   const ribbonNext = new Map(ribbonEyes.value)
   for (const vn of new Set(next.map(l => l.vn))) {
@@ -1922,8 +1976,9 @@ async function loadOverlays() {
 }
 
 /** Every pop row the section lists, in list order — what the master row's all / solo act on. */
-const listedPops = computed<ListedPop[]>(() => listedPopLayers.value.flatMap(l =>
-  l.payload.pops.map(x => ({ vn: l.vn, popType: l.popType, path: x.path }))))
+const listPops = (layers: readonly PopLayer[]): ListedPop[] => layers.flatMap(l =>
+  l.payload.pops.map(x => ({ vn: l.vn, popType: l.popType, path: x.path })))
+const listedPops = computed<ListedPop[]>(() => listPops(listedPopLayers.value))
 const listedPopOn = (p: ListedPop) => !hiddenPops.value.has(popKey(p.vn, p.popType, p.path))
 /** True when every listed pop is on; a mixed state reads "not all on", as for channels. */
 const allPopsVisible = computed(() => listedPops.value.length > 0 && listedPops.value.every(listedPopOn))
@@ -2025,16 +2080,11 @@ async function loadTracks() {
     const tcVns = names   // every trackable vn, not just the ticked-eyes set
     const tcNext = new Map<string, OverlayPayload>()
     await Promise.all(tcVns.map(async vn => {
-      try {
-        const res = await fetch(overlaysUrl({ projectUid, imageUid, valueName: vn, popType: 'trackclust' }),
-                                { cache: 'no-store' })
-        if (res.ok) {
-          const payload = await res.json() as OverlayPayload
-          // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
-          // but would show up as a source count if it made it into the map.
-          if ((payload?.pops ?? []).length) tcNext.set(vn, payload)
-        }
-      } catch { /* one vn's failure must not take the others down */ }
+      // one vn's failure must not take the others down (`null`)
+      const payload = await fetchTrackclustPayload(vn)
+      // Skip vns with no trackclust pops — an empty entry adds nothing in `rebuildOverlays`
+      // but would show up as a source count if it made it into the map.
+      if (payload && (payload.pops ?? []).length) tcNext.set(vn, payload)
     }))
     trackclustPayloads.value = tcNext
   } else if (trackclustPayloads.value.size) {
@@ -2043,6 +2093,8 @@ async function loadTracks() {
     trackclustPayloads.value = new Map()
   }
   rebuildOverlays()
+  // after the ribbons' fetch, whose payload it reuses — and on every gating ping, as they refresh
+  void loadMaskTrackclust()
 }
 
 function pushChannels() {
@@ -3494,24 +3546,15 @@ const keysBtn = ref<HTMLElement | null>(null)
  * put (View, Timepoint) are deliberately not in the accordion, because they are the ones you reach for
  * while looking at something else.
  *
- * Uses the shared `useSingleOpenSection` composable — same rule as the app sidebar's nav-group
- * accordion. '' is a real state (everything collapsed), persisted like every other user-settable
- * option.
+ * The sections are one `CollapsibleSection accordion="cc.vw.section"` group; this script reads the
+ * SAME state (`useSingleOpenSection` with that keyword) to wire the Debug readouts. '' is a real
+ * state (everything collapsed), persisted like every other user-settable option.
  */
 const { open: openSection } = useSingleOpenSection('cc.vw.section', 'channels')
 // Re-wire the renderer's frame-timings callback when Debug opens/closes OR when the bench
 // toggle flips, so the query-set resolve path is only paid when someone is looking at the
 // readouts. The bench toggle also gates whether the arrays grow unbounded (save-blob) or roll.
 watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
-/**
- * Takes the key AND the event, rather than returning a handler.
- *
- * Binding `@update:open="sectionOpen('channels')"` looks like it binds the returned handler and does
- * not: Vue compiles a CALL expression as an inline STATEMENT, so it runs the outer function on every
- * event and throws the returned one away — the boolean never arrives and nothing ever expands.
- * Only a bare identifier or a member expression is bound as the handler itself.
- */
-const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
  * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — a fourth implementation of a scale bar
@@ -4798,10 +4841,7 @@ watch(() => [viewerStore.pendingViewState?.updateId, !!meta.value, !!canvas.valu
   if (overlay?.captureId && projectUid) {
     const env = await fetchCaptureEnvelope(projectUid, overlay.captureId)
     if (env && env.frame) {
-      // kiwiCaptures has a subtly looser CaptureAddress shape than captureAddress.ts (projectUid /
-      // plotSpec.specId are optional there); a plot-shaped field wouldn't appear on a viewer_frame
-      // capture anyway, and we fill projectUid from the popup's own uid — cast bridges the drift.
-      const addr = { ...(env.address ?? {}), projectUid } as CaptureAddress
+      const addr = resolveStoredAddress(env.address, projectUid)
       captureView.value = {
         captureId: env.captureId,
         frameDataUrl: env.frame,
@@ -4893,9 +4933,7 @@ async function start() {
     if (probe.verdict === 'reduced') vlog('warn', 'Viewer: ' + probe.reason)
     void collectGpuDiagnostics().then(d => {
       gpuDiag.value = d
-      const names = d.adapters.map(a => `${a.powerPreference}: ${a.found
-        ? (adapterNameText(a.name) || '(blank name)')
-        : 'none'}`).join(' · ')
+      const names = groupAdapterDiags(d.adapters).map(r => `${r.prefs.join('/')}: ${r.text}`).join(' | ')
       vlog('info', 'Viewer GPU adapters — ' + names, JSON.stringify(d))
     })
     // Prime `stableAdapterReport` from the probe BEFORE any renderer is constructed. Without this,
@@ -6203,8 +6241,8 @@ onUnmounted(() => {
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
         <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
-                            :open="openSection === 'ann'"
-                            @update:open="v => setSection('ann', v)" fill>
+                            accordion="cc.vw.section" section="ann"
+                            fill>
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
                in front of you, and a separate row for each would double the group's height. -->
           <div class="cc-row cc-row-tight">
@@ -6278,8 +6316,8 @@ onUnmounted(() => {
              flooding off the bottom of the panel with no way to reach the controls below. All-on/all-off buttons at the top so a 24-channel image can be soloed to one
              marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
-                            :open="openSection === 'channels'"
-                            @update:open="v => setSection('channels', v)" fill>
+                            accordion="cc.vw.section" section="channels"
+                            fill>
           <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
                colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
                state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
@@ -6403,8 +6441,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
-                            :open="openSection === 'seg'"
-                            @update:open="v => setSection('seg', v)" fill>
+                            accordion="cc.vw.section" section="seg"
+                            fill>
           <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
                is decided in the ViewerPanel per image and reaches this window via the P2
                storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
@@ -6452,13 +6490,14 @@ onUnmounted(() => {
               <span class="cc-readout cc-fs-2xs vw-num">{{ settings.viewerLabelContour || 'fill' }}</span>
             </div>
             <div class="cc-row cc-row-tight">
-              <span class="cc-muted cc-fs-2xs cc-lbl-col">Pop colour</span>
-              <CcToggle v-model="settings.viewerMaskByPop" aria-label="Colour mask by population"
-                        v-tooltip.bottom="'Colour each cell by its deepest shown population'" />
+              <span class="cc-muted cc-fs-2xs cc-lbl-col">Colour</span>
+              <ChipSelect
+                :options="MASK_COLOUR_OPTIONS" :model-value="settings.viewerMaskColour"
+                variant="segmented" aria-label="Colour mask by"
+                @update:model-value="v => (settings.viewerMaskColour = v as MaskColour)"
+              />
             </div>
-            <div v-if="settings.viewerMaskByPop && !maskTable" class="cc-muted cc-fs-3xs">
-              {{ previewVn || liveVn ? 'Not for a preview mask' : 'No populations shown on this mask' }}
-            </div>
+            <div v-if="maskColourNote" class="cc-muted cc-fs-3xs">{{ maskColourNote }}</div>
             <div v-else-if="maskTable?.truncated" class="cc-muted-warn cc-fs-3xs">
               Cells past id {{ maskTable.width * maskTable.rows - 1 }} not drawn
             </div>
@@ -6472,8 +6511,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
-                            :open="openSection === 'pops'"
-                            @update:open="v => setSection('pops', v)" fill>
+                            accordion="cc.vw.section" section="pops"
+                            fill>
           <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
                and no populations, and an empty group would read as a broken feature rather than as an
                image that has not been through segmentation yet.
@@ -6590,8 +6629,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
-                            :open="openSection === 'tracks'"
-                            @update:open="v => setSection('tracks', v)" fill>
+                            accordion="cc.vw.section" section="tracks"
+                            fill>
           <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
                section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
                drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
@@ -6686,8 +6725,8 @@ onUnmounted(() => {
           <RoiSection v-if="openSection === 'rois'" :project-uid="projectUid" :image-uid="imageUid" />
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
-                            :open="openSection === 'debug'"
-                            @update:open="v => setSection('debug', v)" fill>
+                            accordion="cc.vw.section" section="debug"
+                            fill>
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
                measure. Steps + Keep for volume mode, then three toggles. Eyebrow matches the
                readouts below so the whole panel reads as one column of labelled sub-blocks. -->
@@ -6785,12 +6824,9 @@ onUnmounted(() => {
               <span class="cc-muted" v-tooltip.left="'Name first; subgroup size, then the 3D texture limit, when the name is blank'">Classified</span>
               <span>{{ stableAdapterReport.looksDiscrete ? 'discrete' : 'integrated' }} ({{ classifiedByLabel }})</span>
             </template>
-            <template v-for="a in gpuDiag?.adapters ?? []" :key="a.powerPreference">
-              <span class="cc-muted">{{ a.powerPreference }}</span>
-              <span v-if="a.found">{{ adapterNameText(a.name) || '(blank name)' }}
-                · 3D {{ a.limits.maxTextureDimension3D }} · buf {{ (a.limits.maxBufferSize / 2 ** 30).toFixed(1) }} GiB<template
-                  v-if="a.info.isFallbackAdapter"> · fallback</template></span>
-              <span v-else>no adapter</span>
+            <template v-for="row in adapterRows" :key="row.prefs.join()">
+              <span class="cc-muted" v-tooltip.left="row.prefs.join(' · ')">{{ adapterRows.length === 1 ? 'Adapter' : row.prefs.join(' · ') }}</span>
+              <span>{{ row.text }}</span>
             </template>
             <template v-if="gpuDiag">
               <span class="cc-muted">Page</span>

@@ -1,5 +1,5 @@
-"""The `claude` CLI — finding it, and reading a usage-limit refusal from its result — for every
-`claude -p` caller in the AI-assist tooling.
+"""The `claude` CLI — finding it, reading a usage-limit refusal from its result, and reading the
+token counts it reports — for every `claude -p` caller in the AI-assist tooling.
 
 Callers: `recital` (the reviewers), the weekly judge (`scripts/judge/judge.py`, `verify.py`) and
 the autonomous runs (`scripts/agent_eval/run_overnight.py`, `run_app.py`, `run_record.py`). Julia's
@@ -173,6 +173,24 @@ def limit_exit(prog: str, error: BaseException, now: _dt.datetime | None = None)
     lifts = reset_at(str(error), now).isoformat(timespec="minutes")
     print(f"{prog}: usage limit — lifts {lifts}: {str(error)[-300:]}", file=sys.stderr)
     return EX_TEMPFAIL
+
+
+#: The token counts the CLI reports, under the names the judge record and the effectiveness log use.
+USAGE_KEYS = {"input": "input_tokens", "cache_write": "cache_creation_input_tokens",
+              "cache_read": "cache_read_input_tokens", "output": "output_tokens"}
+
+
+def tokens(out: dict) -> dict[str, int]:
+    """Token counts from one `claude -p --output-format json` result; zeros when it reported none."""
+    usage = out.get("usage") or {}
+    return {k: int(usage.get(src) or 0) for k, src in USAGE_KEYS.items()}
+
+
+def models(out: dict) -> list[str]:
+    """The model ids one `claude -p --output-format json` result ran on (its `modelUsage` keys, e.g.
+    `claude-haiku-5-5`), sorted; [] when it reported none."""
+    usage = out.get("modelUsage")
+    return sorted(str(m) for m in usage) if isinstance(usage, dict) else []
 
 
 def read_result(proc: subprocess.CompletedProcess) -> dict:

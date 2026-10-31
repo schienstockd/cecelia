@@ -51,6 +51,16 @@ _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
 #: reviewer didn't run (`judge-review --auto` stops on it rather than commit unreviewed).
 ERROR_MARKER = "RECITAL SCRIPT ERROR"
 
+#: One reviewer's error block as `_run_reviewer` writes it: the marker line, then its message up to
+#: the next italic line (the section's `_<title>: not run …_` tail) or the end.
+_ERROR_BLOCK = re.compile(r"> \*\*" + re.escape(ERROR_MARKER) + r"\*\* — (.*?)(?=\n\n_|\Z)", re.S)
+
+
+def reviewer_errors(body: str) -> list[str]:
+    """The reviewer error messages in a recital body, and nothing else: the reviewers' findings sit
+    in the same body and may quote anything (a limit's wording included)."""
+    return _ERROR_BLOCK.findall(body)
+
 
 class RecitalError(RuntimeError):
     """Raised when a reviewer subprocess fails hard (non-zero exit, timeout, missing CLI).
@@ -216,7 +226,8 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
     return bold - len(findings)
 
 
-from .claude_cli import resolve_claude_bin  # noqa: E402
+from .claude_cli import RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
+from .claude_cli import tokens as _tokens  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
@@ -230,8 +241,17 @@ def _resolve_claude_bin() -> str:
     return resolved
 
 
-def _default_runner(prompt: str, timeout: float = 180.0) -> str:
-    """Spawn `claude -p`, prompt on stdin, and return stdout. Raises `RecitalError` on failure.
+class ReviewerReply(_t.NamedTuple):
+    """One reviewer's answer and what it cost, as the CLI reported it. A runner may return a bare
+    `str` instead (test fakes do): its row then carries no token counts."""
+    text: str
+    tokens: dict[str, int]
+    cost_usd: float | None
+
+
+def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
+    """Spawn `claude -p --output-format json`, prompt on stdin, and return its answer with the token
+    counts and cost it reports. Raises `RecitalError` on failure.
 
     The prompt embeds the whole staged diff, so it goes over stdin, not argv: one argv string
     is capped at 128 KB on Linux (`MAX_ARG_STRLEN`) and the whole command line at 32 KB on
@@ -244,7 +264,7 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
     env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     try:
         result = subprocess.run(
-            [claude_bin, "-p"],
+            [claude_bin, "-p", "--output-format", "json"],
             input=prompt,
             env=env,
             capture_output=True,
@@ -260,14 +280,22 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> str:
         # that leaves the log with no trace of the attempt.
         raise RecitalError(f"claude could not be spawned: {e}") from e
 
-    if result.returncode != 0:
+    stderr, stdout = (result.stderr or "").strip(), (result.stdout or "").strip()
+    try:
+        out = read_result(result)
+        said = None if result.returncode == 0 and not out.get("is_error") and isinstance(out.get("result"), str) \
+            else failure_text(result, out) if out else stdout[-400:]
+    except RateLimited as e:   # still a reviewer error here: the run row logs it, `auto_fix` reads the limit
+        said = str(e)
+    if said is not None:
         # A usage limit or API error is reported on stdout, often with stderr empty: show both, so a
         # warning on stderr can't hide the limit on stdout from `rate_limit` downstream.
-        stderr, stdout = (result.stderr or "").strip(), (result.stdout or "").strip()
         detail = "\n".join([*([f"stderr:\n{stderr}"] if stderr else []),
-                            *([f"stdout:\n{stdout[-400:]}"] if stdout else [])]) or "no output"
+                            *([f"stdout:\n{said}"] if said else [])]) or "no output"
         raise RecitalError(f"claude exited {result.returncode}; {detail}")
-    return (result.stdout or "").strip()
+    cost = out.get("total_cost_usd")
+    return ReviewerReply(out["result"].strip(), _tokens(out),
+                         float(cost) if isinstance(cost, (int, float)) else None)
 
 
 def _reviewer_prompt(doc_path: str, diff: str) -> str:
@@ -301,7 +329,7 @@ def _run_reviewer(
     tail_none: str,
     doc_path: str,
     diff: str,
-    claude_runner: _t.Callable[[str], str],
+    claude_runner: _t.Callable[[str], str | ReviewerReply],
     pr: str | None,
     commit: str | None,
     branch: str | None,
@@ -311,13 +339,21 @@ def _run_reviewer(
     start = time.monotonic()
     error: str | None = None
     output: str = ""
+    reply: str | ReviewerReply = ""
     try:
-        output = claude_runner(prompt)
+        reply = claude_runner(prompt)
     except RecitalError as e:
         error = str(e)
 
     duration = time.monotonic() - start
     payload: dict = {"duration_s": round(duration, 2)}
+    if isinstance(reply, ReviewerReply):
+        output = reply.text
+        payload["tokens"] = reply.tokens
+        if reply.cost_usd is not None:
+            payload["cost_usd"] = round(reply.cost_usd, 4)
+    else:
+        output = reply
     if error is not None:
         payload["error"] = error
     append_event(event_name, payload, pr=pr, commit=commit, branch=branch)
@@ -414,13 +450,14 @@ def recital_stamp(branch: str | None, commit: str | None) -> str:
 def run_recital(
     diff: str,
     *,
-    claude_runner: _t.Callable[[str], str] | None = None,
+    claude_runner: _t.Callable[[str], str | ReviewerReply] | None = None,
 ) -> str:
     """Spawn both reviewers, emit `_run` events, return the formatted recital body.
 
     - `diff`: the staged diff string (from `git diff --staged`).
     - `claude_runner`: optional; injected in tests to bypass real subprocess. Signature:
-      `callable(prompt: str) -> str` (stdout on success, raises `RecitalError` on failure).
+      `callable(prompt: str) -> str | ReviewerReply` (the answer on success, raises `RecitalError`
+      on failure). A `ReviewerReply` puts its `tokens` and `cost_usd` on the `_run` row.
 
     Return value is markdown ready to append to the commit-message body. Includes both
     reviewers' evidence folds and tail lines, and ends with `recital_stamp(branch, commit)`. `_run` events are appended to

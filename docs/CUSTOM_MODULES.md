@@ -1,6 +1,9 @@
 # Extending Cecelia — custom modules and plugins
 
 You can add your own analysis step to Cecelia without touching the package or rebuilding anything.
+This is also where a step written by your own Claude Code session belongs: see
+[`ai-assist/OBSERVER-SETUP.md`](ai-assist/OBSERVER-SETUP.md) → *When your terminal session works on
+Cecelia itself*.
 Two ways to do it, and the difference is only **how it is packaged**:
 
 |  | **Custom module** | **Plugin** |

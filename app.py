@@ -380,6 +380,23 @@ def _crashed(rc: int) -> bool:
     return (-rc in _FAULT_SIGNALS) if rc < 0 else rc not in (0, RESTART_EXIT_CODE)
 
 
+def _spawn_server(julia: str, **popen_kwargs) -> tuple:
+    """Start the Julia server the one way both launchers do (`main` here, `chat.py`): the supervised
+    env, the thread args read per launch, and the LIFELINE — the server's stdin is a pipe only the
+    launcher holds, which the OS closes when the launcher dies by any route (the window closed, a
+    kill), and the server stops on that EOF (`_watch_supervisor!`, app/src/lifeline.jl), on every OS.
+    `popen_kwargs` adds what a caller needs on top (chat: output to a log, its own process group).
+    Returns `(proc, launched_at)` for `_launched_port`."""
+    # Read per launch, so Settings → "Use all CPU cores" lands on the in-app Restart.
+    targs, applied = _thread_args()
+    env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied,
+           lifeline.LIFELINE_ENV: "1"}
+    launched_at = time.time()
+    proc = subprocess.Popen([julia, "--project", *targs, "src/server.jl"], cwd=os.path.join(ROOT, "api"),
+                            env=env, stdin=subprocess.PIPE, **popen_kwargs)
+    return proc, launched_at
+
+
 def main() -> int:
     global PORT
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
@@ -399,20 +416,7 @@ def main() -> int:
         _apply_pending_revert()
         _apply_pending_update()
         _reexec_if_launcher_changed(launcher, browser_opened=not first)
-        # Read per iteration, so Settings → "Use all CPU cores" lands on the in-app Restart.
-        targs, applied = _thread_args()
-        # LIFELINE: the server's stdin is a pipe only we hold (`proc.stdin`), which the OS closes when
-        # this launcher dies by any route — the window closed, a kill — and the server stops on that
-        # EOF (`_watch_supervisor!`, app/src/lifeline.jl), on every OS.
-        env = {**os.environ, "CECELIA_SUPERVISED": "1", "CECELIA_LAUNCH_THREADS": applied,
-               lifeline.LIFELINE_ENV: "1"}
-        launched_at = time.time()
-        proc = subprocess.Popen(
-            [julia, "--project", *targs, "src/server.jl"],
-            cwd=os.path.join(ROOT, "api"),
-            env=env,
-            stdin=subprocess.PIPE,
-        )
+        proc, launched_at = _spawn_server(julia)
         try:
             print("Starting Cecelia…")
             port = _launched_port(proc, launched_at)

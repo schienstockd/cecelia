@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { GUIDES, GROUP_ORDER, guideById, guidesByGroup, RECIPES, isWanted } from './index'
+import { GUIDES, GROUP_ORDER, guideById, guidesByGroup, RECIPES, isWanted, isGuideStep } from './index'
+import { NAV_GROUPS } from '../navGroups'
 import { recipeRequestUrl } from '../links'
 import { PREREQ } from './prereqs'
 import { TASK_RUN_USES } from './moduleTask'
@@ -215,14 +216,30 @@ describe('the What\'s New tips link to real guides', () => {
 // shipping half-written — a row with neither steps nor the request link reads as a recipe that exists
 // and does nothing.
 describe('recipes compose real guides', () => {
-  it('every step names a guide in the catalogue', () => {
+  it('every step names a guide in the catalogue, or a sidebar page and its task', () => {
+    const routes = NAV_GROUPS.flatMap(g => g.items.map(i => i.to))
     const dangling: string[] = []
     for (const r of RECIPES) {
       for (const s of r.steps ?? []) {
-        if (!guideById(s.guide)) dangling.push(`${r.id} → ${s.guide}`)
+        if (isGuideStep(s)) { if (!guideById(s.guide)) dangling.push(`${r.id} → ${s.guide}`) }
+        else if (!routes.includes(s.page) || !s.label.trim()) dangling.push(`${r.id} → ${s.page}`)
       }
     }
     expect(dangling).toEqual([])
+  })
+
+  // A step with no guide is the specialised kind (Dominik, 2026-10-30): never the spine of a recipe.
+  it('keeps steps without a guide optional, except where the recipe is about them', () => {
+    for (const r of RECIPES) for (const s of r.steps ?? [])
+      if (!isGuideStep(s) && !s.optional) expect(r.id, `${r.id} → ${s.label} is required with no guide`).toBe('live-structures')
+  })
+
+  it('says what Claude adds in one line, and only through a real way in', () => {
+    for (const r of RECIPES) for (const s of r.steps ?? []) {
+      if (!s.assist) continue
+      expect(['kiwi', 'terminal']).toContain(s.assist.where)
+      expect(s.assist.text.length, `${r.id} assist`).toBeLessThanOrEqual(90)
+    }
   })
 
   it('ids are unique, and distinct from the guide ids they compose', () => {
@@ -241,7 +258,7 @@ describe('recipes compose real guides', () => {
         expect(r.steps.length, `${r.id} has no steps`).toBeGreaterThan(0)
         expect(r.whenThisIsYou.trim().length, `${r.id} has no recognition line`).toBeGreaterThan(0)
         for (const s of r.steps) {
-          expect(s.why.trim().length, `${r.id} → ${s.guide} has no reason`).toBeGreaterThan(0)
+          expect(s.why.trim().length, `${r.id} → ${s.guide ?? s.page} has no reason`).toBeGreaterThan(0)
         }
       }
     }
@@ -256,7 +273,7 @@ describe('recipes compose real guides', () => {
       if (isWanted(r)) continue
       if (r.whenThisIsYou.length > 100) over.push(`${r.id} whenThisIsYou ${r.whenThisIsYou.length} chars`)
       for (const s of r.steps) {
-        if (s.why.length > 110) over.push(`${r.id} → ${s.guide} why ${s.why.length} chars`)
+        if (s.why.length > 110) over.push(`${r.id} → ${s.guide ?? s.page} why ${s.why.length} chars`)
       }
     }
     expect(over).toEqual([])

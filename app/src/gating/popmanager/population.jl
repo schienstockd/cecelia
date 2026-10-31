@@ -50,6 +50,10 @@ mutable struct Population
     # no runtime element-type check.
     explicit_labels::Union{Vector{Int},Nothing}
     transient::Bool                        # ephemeral (napari selection) — never written to disk
+    # Who drew it — an `author_stamp()` dict (`{profile, via, model?, session?}`), persisted as
+    # `createdBy`. Set by the Claude-facing add routes (`via == "claude"`), so the manager can mark a
+    # Claude-proposed gate; `nothing` for a GUI gate and every sidecar written before the field.
+    created_by::Union{Dict{String,Any},Nothing}
 end
 
 # ── PopulationMap (a tree for one value_name) ────────────────────────────────────

@@ -25,13 +25,16 @@ disciplines that no single tool can state on its own.
 from __future__ import annotations
 
 from cecelia_mcp.discovery import discovery_enabled
+from cecelia_mcp.no_gui import no_gui_enabled
 
 # ── Always in context — the entry point only ──────────────────────────────────────────────────────
 #
 # Budget: a few sentences. Every line here is paid for in every unrelated session, so anything that
 # can wait for the briefing waits for the briefing. It must, however, be enough on its own to stop
 # the two failure modes that happen BEFORE any tool call: guessing a project uid, and diving into
-# analysis without orienting.
+# analysis without orienting. The last paragraph is for a session working on Cecelia's FILES rather
+# than through these tools: it never opens a briefing, so this is the only place that reaches it
+# (docs/todo/USER_CLAUDE_GUIDE_PLAN.md).
 SERVER_INSTRUCTIONS = """\
 Read-only access to a running Cecelia project (immunological image analysis): images, processing \
 state, task logs, QC, populations, measurements, clustering, chains, notebooks and the lab log. The \
@@ -52,9 +55,13 @@ is relevant.
 
 Everything here is read-only except a handful of additive actions taken only when the user asks. You \
 can DESIGN work (a chain, a board, a notebook) but nothing here can START it — that is the design, \
-not a limitation to apologise for. (The one exception is an UNATTENDED run that was also given the \
-separate cecelia-autonomous server: there, its run_chain / run_task start what you design here.) If \
-these tools cannot reach Cecelia, say so; do not try to install, register or configure anything."""
+not a limitation to apologise for. (The exception is a session also given the separate \
+cecelia-autonomous server — an unattended run, or one with no GUI: there, its run_chain / run_task \
+start what you design here.) If \
+these tools cannot reach Cecelia, say so; do not try to install, register or configure anything.
+
+Editing Cecelia itself? A new step is a custom module (docs/CUSTOM_MODULES.md). Never hand-edit its \
+code, ccid.json or stores; updates overwrite edits, so report fixes with the patch."""
 
 # ── Delivered by get_session_briefing — the working rules ─────────────────────────────────────────
 #
@@ -79,8 +86,9 @@ field carries the stacktrace, its `source` says which process spoke: backend, na
 runner or notebooks). How the data was \
 produced: get_analysis_lineage (the pipeline behind an image, and `rollup.divergences` for the odd \
 image out), get_chains. The analysis itself: get_populations (what a population MEANS — its gate \
-geometry or filter rule), gate_plot and gate_cells_view (a population's gate plot, and its cells \
-outlined in the image — as pictures), get_measure_summary (phenotype + motility per population), \
+geometry or filter rule), gate_histogram / gate_plot (a population's distribution and gate plot), \
+gate_cells_view and gate_examples (its cells in the image — zoomed, and as example crops), gate_stats, \
+get_measure_summary (phenotype + motility per population), \
 get_behaviour_summary (HMM states), get_cluster_summary (cluster sizes, and what defines each \
 cluster: its z-scored feature profile — describe from it, the name is the user's call), \
 get_region_clusters (spatial niches), \
@@ -96,10 +104,11 @@ workflow — the in-app guides and whole-pipeline recipes the user follows: get_
 
 WHAT YOU CAN WRITE — additive only, and only when asked: append_lab_log (one short line, tagged \
 [Claude] server-side), create_notebook / revise_notebook (revise snapshots first, so nothing is \
-lost) / set_notebook_description, create_chain, add_analysis_board, set_labarchives_context, \
-create_blackboard_entry / revise_blackboard_entry (Markdown notes shared across sessions; revise \
-snapshots first). Nothing can change or delete existing analysis data, edit gates, or start any \
-work.
+lost) / set_notebook_description, create_chain, add_analysis_board, add_gate (set_gate / \
+delete_gate change only gates YOU drew), \
+set_labarchives_context, create_blackboard_entry / revise_blackboard_entry (Markdown notes shared \
+across sessions; revise snapshots first). Nothing can change or delete existing analysis data, edit \
+a gate the user drew, or start any work.
 
 BEFORE ANY FIGURE OR CROSS-IMAGE COMPARISON. Call get_image_attributes for the axes these images can \
 be grouped by (e.g. Mouse, Location), and use list_images' per-image `attr` to size the groups once \
@@ -124,20 +133,33 @@ is compare_by="Mouse", not a per-image board with an apology. Prefer statUnit "i
 per-image n is small — pooling every track treats one image's 400 tracks as 400 replicates. Then say \
 which values you read from the data and which you defaulted.
 
+ON GATES. add_gate PROPOSES one new population under an existing one — only when the user asked \
+for a gate or agreed to yours. It lands marked as yours (✦); set_gate and delete_gate change only \
+those, never a population the user drew or gated under yours. Place a cut from gate_histogram's grid \
+(a valley) or gate_plot on the parent with the same transform: coordinates are in the TRANSFORMED \
+space (`extent`, the stored gates), never the raw tick labels. Before writing, add_gate dry_run=True \
+gives the counts and gate_examples with parent + gate shows the cells just inside and just outside the \
+cut — LOOK at them: a gate is judged on the cells, not the plot. After writing, gate_cells_view with \
+`pops` + a `region` and a few `z` planes shows the tree the way the viewer does. Give the user the \
+counts and say it is a proposal.
+
 ON CHAINS. You can DESIGN one but you cannot run it. create_chain writes a template that sits inert \
-in the Chains whiteboard until the user presses Run, and there is no tool that starts it — so hand \
+on the Chains page until the user presses Run, and there is no tool that starts it — so hand \
 it over as something to review, never as something you have started. Set only the params you mean to \
 change; the rest take their task defaults when the user opens it. It cannot overwrite an existing \
 chain: to offer an alternative, create a new one named for what it does and say it sits beside the \
 original so both graphs can be compared. Resolve what you can before authoring rather than leaving \
-params empty — get_chains for how this user already wires things, get_analysis_lineage for the order \
+params empty — when they want more images processed like ones they already did, suggest_chain builds \
+the template from that history: follow the dialog's steps (ask which final outputs to keep, never settle \
+its conflicts for them) and list every change you make to it, so your chain and theirs stay comparable; \
+get_chains for how this user already wires things, get_analysis_lineage for the order \
 the pipeline actually runs in and the value_names it wrote, get_module_params for the real \
 keys/ranges, and get_image_info for the CHANNEL names (a drift reference channel, or cellpose \
 cell/nuc channels, cannot be picked without them). Then say which values came from the data, which \
 you left at defaults, and what genuinely could not be resolved yet — a population a later node \
 creates does not exist at author time. Nothing checks that the wiring makes SENSE for this data; \
-that part is the user's. In an unattended run that also has the cecelia-autonomous server, the chain \
-IS how you run the pipeline: author it here, start it with run_chain, and the whiteboard keeps it as \
+that part is the user's. In a session that also has the cecelia-autonomous server (unattended, or no GUI), the chain \
+IS how you run the pipeline: author it here, start it with run_chain, and the Chains page keeps it as \
 the record of what ran. A segmentation (or other label set) onto a name the image already has is \
 refused, and the refusal names a free one ("use 'default_2'") — take that name. Never set \
 `overwrite` on a name you did not create unless the user asked for it: it replaces their data.
@@ -189,7 +211,7 @@ matches what you're referring to, all ephemeral (5-min default TTL, in-memory on
   `get_spatial_stats`); do NOT rely on shared-frame pixels for statistics.
 - `mark_plot(family, plot_id, u, v, cell?, label?, ttl_s?)` — point at a spot on a PLOT panel (a \
   peak on a histogram, a cluster on a UMAP, a bright cell on a strip, a heatmap cell). `family` is \
-  the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `umap` / `heatmap` / \
+  the plot family (`gate-scatter` / `pairs-matrix` / `gating-strategy` / `cluster-map` / `heatmap` / \
   `hmm-states` / `hmm-transitions` / `summary` / `image-strip` / `cell-cards` / `motif-cards`); \
   `plot_id` addresses one panel (its \
   `persistKey` from the capture envelope). `u` / `v` are 0..1 in that family's own frame — the \
@@ -380,3 +402,18 @@ lab notebook and store it (set_labarchives_context). Expect real searching for t
 notebook may be a colleague's, the project name may match hundreds of unrelated pages, and the \
 user may not know which page it is. Then follow their lead."""
 BRIEFING_GUIDANCE = BRIEFING_GUIDANCE.replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
+
+# No-GUI mode (no_gui.py, docs/todo/HEADLESS_MODE_PLAN.md): the user has no GUI, only this session.
+# The tools that point at or read the GUI are not registered then (server.py `_gui_tool`); this says
+# what replaces the GUI's half of the rules above.
+NO_GUI_GUIDANCE = """
+
+This session has NO GUI: the user works only through you, in a terminal. Where the rules above say \
+the user presses Run, here you start it (cecelia-autonomous run_chain / run_task) once they say so; \
+new data comes in through its create_project / create_set / register_images. Show results as text, \
+tables and pictures (gate_plot, gate_cells_view, gate_examples) — never "have a look in the viewer". Segmentation \
+correction, the image viewer and movies need the GUI: if the user wants one, say so and name the page; \
+no workarounds. Before long work, tell them once that `pixi run console` in a second terminal shows \
+the tasks live."""
+if no_gui_enabled():
+    BRIEFING_GUIDANCE += NO_GUI_GUIDANCE

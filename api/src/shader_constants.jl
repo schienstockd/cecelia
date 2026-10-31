@@ -15,5 +15,5 @@ const OVERLAY_Z_TOL = Int(SHADER_CONSTANTS.OVERLAY_Z_TOL)
 #: the viewer carries its own value (`maskOpacity`).
 const MASK_FILL_OPACITY = Float32(SHADER_CONSTANTS.LABEL_OPACITY)
 #: How far a population mask's parent pop (one with a shown descendant) moves its own cells towards
-#: white — the viewer's *Pop colour* mask (`MASK_PARENT_PALE`, `frontend/src/utils/maskPopTable.ts`).
+#: white — the viewer's *Colour* mask (`MASK_PARENT_PALE`, `frontend/src/utils/maskPopTable.ts`).
 const MASK_PARENT_PALE = Float64(SHADER_CONSTANTS.MASK_PARENT_PALE)

@@ -74,13 +74,16 @@ produced by the same `plot_summary_data` matrix call as the panel — no second 
 relative (across the run's clusters), so it says which features push a cluster apart, not absolute
 values; the tool docstring says how to read it, and that a cluster's NAME stays the user's call.
 
-**Write (the non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
+**Write (the non-destructive writes — none touch cell data / images / an existing gate / QC / notebook content):**
 ```
 append_lab_log            → append a dated [Claude] entry. Append-only, never edits existing content.
 create_notebook           → create a Pluto notebook from cells (Phase 2). Create-only (409 on existing); the user edits/owns it.
 revise_notebook           → new version of an EXISTING notebook: snapshots it (restorable) then overwrites its cells. Real versioning, not a "-v2" copy.
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 create_chain              → author a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-validated. INERT until the user presses Run — there is no tool to launch it.
+add_gate                  → ADD one proposed gate (new population under an existing one), stamped as Claude's (409 on a taken name, 404 on a missing parent). `dry_run` = the counts, nothing written. One stored-shape `gate` dict in gate_plot's transformed space.
+set_gate / delete_gate    → move / remove a gate CLAUDE drew — the server refuses (403) anything at or under the path the user drew. `dry_run` too.
+                            The gating toolset (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats + these three) is ONE definition, `mcp/cecelia_mcp/gating_views.py`, registered by the autonomous server too.
 add_analysis_board        → ADD one board to /analysis. Add-only (409 on a duplicate name): cannot modify, rename, reorder or delete a board, so it sits beside the user's own. Server-validated against the project (422 rather than a board that renders blank).
 ```
 
@@ -120,8 +123,18 @@ of text they had no reason to read. Two things fixed it, both in `mcp/cecelia_mc
 | `SERVER_INSTRUCTIONS` | `MCPServer(instructions=…)` → the `initialize` response → the client's system prompt | **always in context**, in every session with the server registered | the entry point only: resolve the project via `list_projects`, then `get_session_briefing`; read-only + designs-but-never-starts; don't self-configure |
 | `BRIEFING_GUIDANCE` | `get_session_briefing`'s `guidance` field | nothing until a session opens a project | the working rules: grouping/replicates, boards, chains, cohort QC, how to open |
 
-The split is a budget, not taste. The observer is registered **user-scope** (`claude mcp add-json …
--s user`, see OBSERVER-SETUP.md), so `instructions` sits in the system prompt of *every* `claude`
+### The data notice
+
+Kiwi opens with one amber line: *What Claude reads is sent to Anthropic* (`CLAUDE_DATA_NOTICE`,
+`frontend/src/lib/claudeOverview.ts`), with *Check your institute's rules for unpublished or patient
+data* on hover. Everything Claude reads — attached captures, plots, tool results, notes — leaves the
+machine, in Kiwi and in a terminal session alike. It is **always shown and not dismissible**: a notice
+clicked away once stops doing its job, and asking an AI has become ordinary enough that people no
+longer think of it unprompted. Amber, not neutral info, because it is a caution to act on. The rules
+themselves are the institute's, so the hover names the action, not a policy.
+
+The split is a budget, not taste. The observer is installed **user-scope** (the Cecelia Claude Code
+plugin, see OBSERVER-SETUP.md), so `instructions` sits in the system prompt of *every* `claude`
 session on the machine — most of which are not about Cecelia. Anything that can wait for the
 briefing waits for the briefing; a rule that must hold *before* the first tool call cannot.
 
@@ -207,7 +220,7 @@ The observer session becomes more valuable over time, not immediately. Early in 
 | `append_lab_log` (write) | **NEW** `POST /api/lablog/append` (`LAB-LOG.md` step 4), lock-guarded, append-only | **new** |
 
 - Adding each new route = write `api_*(req)` + one `elseif` in `handle_http`'s GET/POST block (`api/src/server.jl:168-391`) + **server restart** (api/ is not Revise-tracked). Response shape: `(status, JSON3.write((; …)))` (`docs/API.md:36-47`).
-- **No-mutation guarantee**: the MCP server only ever calls the read routes above + `POST /api/lablog/append`. It never touches task submission, gate CRUD, or inclusion routes. Enforce by allow-listing the exact routes in the MCP adapter (Phase 1).
+- **No-mutation guarantee**: the MCP server only ever calls the read routes above + `POST /api/lablog/append`. It never touches task submission, gate CRUD, or inclusion routes. *(Superseded since: the additive writes listed under *Durable boundaries* — incl. one create-only gate route, `add-gate` — joined; edit/delete stay off.)* Enforce by allow-listing the exact routes in the MCP adapter (Phase 1).
 
 ### 3. Read-only enforcement
 
@@ -326,6 +339,14 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   populations, in what order); the server expands it to the stored layout and refuses a spec the
   project cannot plot, because a bad selection renders an EMPTY panel with no error. Add-only.
   See `docs/todo/MCP_BOARD_AUTHORING_PLAN.md` and `docs/ANALYSIS.md`.
+- **Gating** — `add_gate` ADDS one proposed gate under an existing population (`POST
+  /api/gating/pop/add-gate`): stored like a GUI gate plus `createdBy`, shown with ✦ in the population
+  manager, undoable, one click to delete. `set_gate` / `delete_gate` change only what Claude drew
+  (`set-own-gate` / `delete-own`, 403 on anything the user drew or gated under a proposal); never
+  rename/move. To judge a cut on the cells, not the plot: `gate_examples` (crops just inside and
+  just outside a gate, written or proposed) and `gate_cells_view` (`pops` in their colours, a
+  `region`, a few `z` planes). The same toolset, one definition (`gating_views.py`), on both MCP
+  servers. See `docs/POPULATION.md` → *Storage*.
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in Kiwi): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
@@ -335,9 +356,12 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
   /api/notebooks/revise` (snapshots first), `POST /api/chains/create` (create-only + validated) and
   `POST /api/boards/add` (create-only + validated — ADDS one Analysis board; cannot modify, rename,
   reorder or delete one, and is deliberately NOT the browser's whole-document board autosave, which
-  would let a single request replace every board in the project).
-  None touch cell data, images, gates, QC, or notebook content; the invariant test asserts the exact
-  set. No task-run, gate, h5ad, or config write.
+  would let a single request replace every board in the project) and the gating writes (`POST
+  /api/gating/pop/add-gate`, create-only + validated; `set-own-gate` / `delete-own`, which the server
+  refuses for any population the user drew or gated under; the general `/api/gating/pop/*` routes are
+  not on the list). None touch cell data, images, the user's gates, QC, or notebook content; the
+  invariant test asserts the exact set. No task-run, h5ad, or config write, and no edit of a gate
+  the user drew.
 - **Claude designs; the user runs — enforced by the transport.** `create_chain` writes a chain
   template; launching one is the WS message `chain:run`, which has no HTTP route, and the MCP client
   speaks only HTTP. So there is nothing to remember and nothing to bypass. This is why `submit_task`

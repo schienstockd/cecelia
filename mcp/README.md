@@ -81,8 +81,8 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `get_image_info(project_uid, image_uid)` | `GET /api/images/meta` | channels, dims, physical sizes, labels, QC, run log, note |
 | `get_image_notes(project_uid, image_uid)` | `GET /api/images/meta` | the user's note for the image |
 | `get_qc_metrics(project_uid, image_uid)` | `GET /api/images/meta` | per-image QC flags/metrics |
-| `get_task_log(project_uid, image_uid, fun)` | `GET /api/images/tasklog` | raw log text for one task fn on one image |
-| `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | recent runs across all images, newest first; each row carries the run's `params` (tuning trail) for parameter suggestions |
+| `get_task_log(project_uid, image_uid, fun, max_bytes=20000)` | `GET /api/images/tasklog` | raw log text for one task fn on one image — the newest `max_bytes`; a first line says when it was cut (`0` = whole log) |
+| `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | `{count, total, truncated, history}` — recent runs across all images, newest first; each row carries the run's `params` (tuning trail) for parameter suggestions |
 | `get_module_params(category="")` | `GET /api/tasks/definitions` | task param specs (valid ranges/defaults/types) for parameter suggestions; pass the category (fun_name prefix). Project-independent |
 | `get_available_plots(module="")` | `GET /api/plots/definitions` | plot types the board can render (chart types, data needs, scope modes) — to suggest a visualization. Project-independent |
 | `get_cohort_qc(project_uid, set_uid, fun_name, value_name=None)` | `GET /api/qc/cohort` | per-set mean/SD + z-scored outliers over a task's banked metric; no `value_name` → `byValueName` map |
@@ -94,6 +94,7 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `get_region_clusters(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | per-image spatial region-clustering runs (regions.{suffix}: n regions, sizes) — neighbourhood-composition niches |
 | `get_contact_stats(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | per-image pairwise cell-type contact log-odds (association/avoidance per population pair, with permutation z/p) |
 | `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |
+| `suggest_chain(project_uid, image_uids, keep=None, retrain=False)` | `GET /api/chains/suggest` | a chain template built mechanically from what ran on the exemplar images — the same answer as the whiteboard's *From history…* dialog (final outputs to keep, conflicts to ask, gate steps). Read-only; Claude follows the dialog's steps and lists any change it makes, so its chain and the dialog's stay comparable |
 | `get_repl_api()` | `GET /api/repl/api` | notebook/REPL data-access surface: the read accessors + their live docstrings + the `docs/REPL.md` cookbook (write rules). Read before generating `using Cecelia` code. Project-independent |
 | `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count + `excludedCount`, flagged images (warn/fail QC — each with `included`, each finding with its `fun`), recent lab-log entries (7 days), and the `guidance`. Call first when a chat begins |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
@@ -104,6 +105,9 @@ proves it, and fails on a new unlisted one. Two rules keep it honest:
 | `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write 1/2** — appends a dated `[Claude]` entry, append-only |
 | `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write 2/2** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
 | `add_analysis_board(project_uid, name, plots, template="", compare_by="")` | `POST /api/boards/add` | **write 6/6** — ADDS one Analysis board (a figure on `/analysis`). Add-only: cannot modify, rename, reorder or delete a board, so it lands beside the user's own and is one click to delete. `compare_by` is what it compares across images — `"per_image"`, `"summarised"`, or an image ATTRIBUTE name (`"Mouse"`, or `"Treatment,Mouse"`); omitting it gives a single-image board, not a cross-image figure. 409 on a duplicate name; server-**validated** against the project (unknown plot id / chart the spec doesn't offer / measure it doesn't carry / population that doesn't exist / a `popType` that cannot reach the named populations / an attribute the project lacks → 422 naming what was available), because a bad `tkey` renders an EMPTY panel with no error. NOT `/api/projects/boards`, the browser's whole-document autosave |
+| `add_gate(project_uid, image_uid, value_name, name, gate, parent="root", colour="#22c55e", dry_run=False)` | `POST /api/gating/pop/add-gate` | **write** — ADDS one gated population (a PROPOSED gate, stamped `createdBy`, ✦ in the manager) under an existing parent. 409 on a taken name, 404 on a missing parent, 422 on a bad column / transform / geometry — before anything is written. `dry_run` = the counts, nothing written |
+| `set_gate(…, path, gate, dry_run=False)` / `delete_gate(…, path, dry_run=False)` | `POST /api/gating/pop/set-own-gate` / `delete-own` | **write** — move / remove a gate CLAUDE drew; 403 `not_claude_made` for anything at or under `path` the user drew |
+| `gate_histogram`, `gate_plot`, `gate_cells_view(…, pops?, z?, region?)`, `gate_examples(…, pop \| parent+gate, mode=boundary\|random)`, `gate_stats` | `GET /api/gating/summary`, `plot-image`, `cells-image`, `examples`, `stats` | the distribution, the plot, the cells in the image (zoomed, several pops in their colours), example crops just inside / outside a cut, the counts. The whole gating toolset is ONE definition (`gating_views.py`) registered by both servers |
 | `create_chain(project_uid, name, nodes, edges, start_targets=None)` | `POST /api/chains/create` | **write 5/6** — authors a whiteboard chain TEMPLATE (the wired task DAG). Create-only (409) + server-**validated** (unknown task / dangling edge / cycle / out-of-range param → 400 naming the offender). Params may be sparse. **There is no tool to run it** — the user launches it from the whiteboard |
 
 ## Live observation — the 10-attempts pattern (Slice B)
@@ -139,11 +143,15 @@ history.
 
 ## The no-mutation guarantee
 
-Every request goes through `ALLOWED_ROUTES` in `client.py`. The non-GET routes on it are
-`POST /api/lablog/append` (append-only), `POST /api/notebooks/{write,describe,revise}` (create-only /
-description-text-only / snapshot-then-overwrite) and `POST /api/chains/create` (create-only +
-validated). All are **additive / non-destructive**: no allow-listed route can edit or delete project
-data (no h5ad, gates, ccid.json, or an existing notebook's content or chain). A call to any other
+Every request goes through `ALLOWED_ROUTES` in `client.py`. Its writes, each commented there:
+`POST /api/lablog/append` (append-only); `POST /api/notebooks/{write,describe,revise}` and
+`POST /api/blackboard/{create,revise}` (create-only, or snapshot-then-overwrite so the old version is
+restorable); `POST /api/blackboard/{status,outcome,section-outcome}` (metadata only; a section verdict
+never replaces a person's); `POST /api/chains/create` and `POST /api/boards/add` (create-only +
+validated); and `POST /api/observer/labarchives/set` (replaces the LabArchives context sidecar).
+The `POST /api/viewer/*` and `/api/push/target` routes write nothing to disk: they draw marks, move
+the viewer, or register where to push. No allow-listed route can edit or delete project data (no
+h5ad, gates, ccid.json, or an existing chain or board). A call to any other
 route raises `DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite
 fails loudly rather than a project being silently mutated. `test_client.py` asserts the exact write
 set, and changing that list is the deliberate gate on widening what Claude can do.
@@ -175,14 +183,16 @@ Chains need no snapshot/versioning of the kind notebooks have — see `docs/SCHE
 ### Wire into Claude Code
 
 **You don't have to do this by hand.** Kiwi → Assistant has a **Set up** / **Fix** button on the
-Terminal row: it POSTs `/api/observer/register`, which runs `claude mcp add-json cecelia-observer <spec> -s user`
-with the spec below already resolved (python bin, `PYTHONPATH`, API port), so plain `claude` gets the
-tools in every session. It removes-then-adds, so it's also the re-sync after a move/reinstall. The
-config file it uses for the *in-app* agent is `<config_dir>/observer-mcp.json`
-(`api/src/observer_api.jl` → `_write_observer_mcp_config`), which also works as
-`claude --mcp-config <path>` for a single session. See
-[`../docs/ai-assist/OBSERVER-SETUP.md`](../docs/ai-assist/OBSERVER-SETUP.md). The manual route below is
-for when you'd rather edit the config yourself.
+Terminal row: it POSTs `/api/observer/register`, which installs the **Cecelia Claude Code plugin**
+(`claude-plugin/`: this server plus the caller hook that stamps model + session on Claude's writes)
+with every machine-specific value resolved, so plain `claude` gets the tools in every session. **Fix**
+is the re-sync after a move, reinstall or port change, and also replaces an old
+`claude mcp add-json` registration. The config file it uses for the *in-app* agent is
+`<config_dir>/observer-mcp.json` (`api/src/observer_api.jl` → `_write_observer_mcp_config`), which
+also works as `claude --mcp-config <path>` for a single session. See
+[`../docs/ai-assist/OBSERVER-SETUP.md`](../docs/ai-assist/OBSERVER-SETUP.md). The manual route below
+gives the tools **without** the caller hook, so Claude's writes are stamped without a model; use it
+only when you'd rather edit the config yourself.
 
 Add to your Claude Code MCP config (adjust the absolute path to this checkout):
 

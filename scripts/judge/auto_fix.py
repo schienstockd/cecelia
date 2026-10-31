@@ -57,7 +57,9 @@ from cecelia.effectiveness.claude_cli import (  # noqa: E402
     RateLimited, failure_text, limit_in_text, limit_resets_at, rate_limit, read_result, reset_at, resolve_claude_bin,
     synthetic_limit, with_reset)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
-from cecelia.effectiveness.recital import ERROR_MARKER  # noqa: E402
+from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
+from cecelia.effectiveness.claude_sessions import session_stamp  # noqa: E402
+from cecelia.effectiveness.recital import reviewer_errors  # noqa: E402
 # one look with `judge-review` and `pixi run recital-console`: dividers, palette, hanging-indent wrap
 from cecelia.effectiveness.console import _BOLD, _DIM, _clip, _col, _fmt_duration, _hr, _terminal_size, _wrap_desc  # noqa: E402
 from cecelia.effectiveness.palette import GREY, ORANGE, SKY_BLUE, VERMILLION, YELLOW  # noqa: E402
@@ -121,8 +123,12 @@ EXEC_SURFACE = (".git", ".githooks", ".claude", ".mcp.json")
 #: What an unattended PR may not touch (a `/` suffix: the directory; `CLAUDE.md`: at any depth).
 PROTECTED = (".github/", ".githooks/", ".claude/", ".mcp.json", "pixi.toml", "pixi.lock", "CLAUDE.md",
              "scripts/judge/auto_fix.py", "python/cecelia/effectiveness/agent_sandbox.py")
-TRAILER = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
-PR_FOOTER = "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+
+
+def attribution_trailers(stamp: dict) -> list[str]:
+    """The commit's Claude lines: who wrote it, from the fix session's own transcript
+    (`session_stamp`) — never a pinned model name, which goes stale (docs/DEV.md → *Commits*)."""
+    return [coauthor_line(stamp), *trailer_lines(stamp)]
 
 
 def _home_rule(path: pathlib.Path) -> str:
@@ -446,17 +452,18 @@ def _tail(proc: subprocess.CompletedProcess) -> str:
     return f"{lead} · …{text[-200:]}" if lead else tail
 
 
-def commit_message(record: dict, bugs: _t.Sequence[dict], answer: dict, tags: _t.Sequence[str], recital: str) -> str:
+def commit_message(record: dict, bugs: _t.Sequence[dict], answer: dict, tags: _t.Sequence[str], recital: str,
+                   stamp: dict | None = None) -> str:
     fixed = [b for b in bugs if b["key"] in _fixed_keys(answer)]
     refs = [f"Refs #{_rv._issue_of(b)}" for b in fixed if _rv._issue_of(b)]
     head = [answer["title"].strip(), "", answer["summary"].strip(), "",
             "Unattended fix from the weekly judge record of " + record["date"] + " (`judge-review --auto`): "
             + ", ".join(b["key"] for b in fixed) + "."]
     return "\n".join([*head, *([""] + refs if refs else []), *([""] + list(tags) if tags else []),
-                      "", recital.strip(), "", TRAILER]) + "\n"
+                      "", recital.strip(), "", *attribution_trailers(stamp or {})]) + "\n"
 
 
-def pr_body(record: dict, bugs: _t.Sequence[dict], answer: dict) -> str:
+def pr_body(record: dict, bugs: _t.Sequence[dict], answer: dict, stamp: dict | None = None) -> str:
     said = {r["key"]: r for r in answer["bugs"]}
     rows = [f"- `{b['key']}` ({b['id']}): **{said.get(b['key'], {}).get('outcome', 'left')}** — "
             f"{said.get(b['key'], {}).get('reason', '')}" for b in bugs]
@@ -464,7 +471,7 @@ def pr_body(record: dict, bugs: _t.Sequence[dict], answer: dict) -> str:
                       "worked unattended by `pixi run judge-review --auto`. Nothing here is merged until you merge it.",
                       *(["", "**Changes what is drawn on screen:** look at it before you merge."]
                         if answer.get("visual") else []),
-                      "", *rows, "", PR_FOOTER]) + "\n"
+                      "", *rows, "", footer(stamp or {})]) + "\n"
 
 
 def _fixed_keys(answer: dict) -> set[str]:
@@ -599,9 +606,11 @@ def failed_logs(failed: _t.Sequence[dict], cwd: pathlib.Path, sh: _t.Callable) -
     return "\n\n".join(parts)
 
 
-def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str], recital: str) -> str:
+def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str], recital: str,
+                     stamp: dict | None = None) -> str:
     return "\n".join([subject[:72], "", summary.strip(), "", f"Unattended follow-up on {pr} (`judge-review --auto`).",
-                      *([""] + list(tags) if tags else []), "", recital.strip(), "", TRAILER]) + "\n"
+                      *([""] + list(tags) if tags else []), "", recital.strip(), "",
+                      *attribution_trailers(stamp or {})]) + "\n"
 
 
 def adopt(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *, main: pathlib.Path,
@@ -753,13 +762,15 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                 with Progress("recital" + round_, out=out) as step:
                     rec = sh([sys.executable, str(_REPO / "scripts" / "recital.py"), "--stdin"], tree, input=diff)
                     recital = rec.stdout or ""
-                    step.failed = "_Recital stamp:" not in recital or ERROR_MARKER in recital
+                    # the error blocks only: a finding may quote the marker, or a limit's wording
+                    errored = reviewer_errors(recital)
+                    step.failed = "_Recital stamp:" not in recital or bool(errored)
                 if "_Recital stamp:" not in recital:
                     return stop(f"recital failed: {_tail(rec)}")
-                if ERROR_MARKER not in recital:
+                if not errored:
                     break
                 # it printed, but a reviewer didn't run: nothing to commit on. The limit: wait, run it again
-                limited = rate_limit({"is_error": True, "result": recital})
+                limited = rate_limit({"is_error": True, "result": "\n".join(errored)})
                 if limited and waits < MAX_LIMIT_WAITS and wait_for_reset(limited, out=out):
                     waits += 1
                     continue
@@ -802,11 +813,12 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         return None
 
     opened_pr: str | None = None
-    stopped = ship(lambda tags, recital: commit_message(record, bugs, answer, tags, recital))
+    stamp = session_stamp(sid or "")
+    stopped = ship(lambda tags, recital: commit_message(record, bugs, answer, tags, recital, stamp))
     if stopped is not None:
         return stopped
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as fh:
-        fh.write(pr_body(record, bugs, answer))
+        fh.write(pr_body(record, bugs, answer, stamp))
     try:
         opened = sh(["gh", "pr", "create", "--base", "main", "--head", branch, "--title", answer["title"].strip(),
                      "--body-file", fh.name], tree)
@@ -893,7 +905,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                 say(f"the agent changed nothing: {reply['summary'][:160]}")   # it found it fixed already
                 continue
             title, summary = reply.get("title") or "fix: make CI pass", reply["summary"]
-            stopped = ship(lambda tags, recital: followup_message(title, summary, pr, tags, recital))
+            stopped = ship(lambda tags, recital: followup_message(title, summary, pr, tags, recital, stamp))
         if stopped is not None:
             return stopped
 
@@ -925,9 +937,11 @@ def _without(items: list[dict], by_id: dict, keys: _t.Container[str]) -> list[di
 
 def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _t.TextIO = sys.stdout,
         path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None, older: _t.Sequence[dict] = (),
-        main: pathlib.Path | None = None, **kw) -> int:
+        main: pathlib.Path | None = None, until: float | None = None, clock: _t.Callable[[], float] = time.time,
+        **kw) -> int:
     """Every bundle from `review.auto_items` (up to `limit` sessions), one after another. Returns the
-    sessions run."""
+    sessions run. Past `until` (epoch seconds) it starts no new session; the one running finishes, so a
+    caller with a hard stop (the weekly unit's timeout) passes one that leaves a session's length."""
     main = main or _rv.main_checkout()
     items = _rv.auto_items(record, _rv.read_reviews(path), older, _rv.read_auto(auto_log))
     by_id = {b["id"]: b for b in record.get("bugs", [])}
@@ -958,8 +972,12 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     for line in outcome_rows(rows, use_colour=colour):
         print(line, file=out)
     spent, ran, handed = 0.0, 0, 0
+    late = False
     for item in items:
         if ran >= limit or dry_run and items.index(item) >= limit:
+            break
+        if until is not None and not dry_run and clock() >= until:
+            late = True
             break
         bugs = [by_id[r] for r in item.get("refs") or [item["ref"]]]
         label = (f"{bugs[0]['id']} {bugs[0]['key']}" if len(bugs) == 1
@@ -981,6 +999,7 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
     if not dry_run:
         left = len(items) - ran - handed
         print("\n" + _hr(f"{ran} session(s) · ${spent:.2f}" + (f" · {handed} handed back" if handed else "")
-                         + (f" · {left} left: run again" if left > 0 else ""),
+                         + (f" · {left} left: run again" if left > 0 and not late else "")
+                         + (f" · {left} left: past the deadline, next pass" if late else ""),
                          width, use_colour=colour), file=out)
     return ran

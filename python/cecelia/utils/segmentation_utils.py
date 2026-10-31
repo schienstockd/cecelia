@@ -18,6 +18,7 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.intensity_utils as intensity_utils
 import cecelia.utils.norm_cache as norm_cache
+import cecelia.utils.tile_budget as tile_budget
 
 from skimage import morphology, segmentation
 from scipy import ndimage
@@ -66,6 +67,32 @@ def object_stats(frame_sizes, voxel_size_um, is_3d):
     return out
 
 
+def seam_contacts(labels, block, axis):
+    """Contacts between DIFFERENT labels across tile seams, and across control lines halfway
+    through each tile, along one axis (-2 = Y, -1 = X) of a frame's labels.
+
+    A cell crossing a seam that the stitch joined has one id on both sides, so across a seam only
+    genuinely touching neighbours should differ — the same rate as anywhere else in the image,
+    which the control lines measure. Cells cut by the seam and left unjoined show up as extra
+    contacts on the seam lines only. Returns the raw counts (contacts, pixels examined) for both;
+    the verdict lives in Julia (`seg_seam_qc_findings`).
+    """
+    extent = labels.shape[axis]
+    seams = list(range(block, extent, block))
+    controls = [c for c in (s + block // 2 for s in range(0, extent, block)) if 0 < c < extent]
+
+    def count(positions):
+        n = px = 0
+        for pos in positions:
+            a = np.take(labels, pos - 1, axis=axis)
+            b = np.take(labels, pos, axis=axis)
+            n += int(np.count_nonzero((a > 0) & (b > 0) & (a != b)))
+            px += int(a.size)
+        return n, px
+
+    (sn, spx), (cn, cpx) = count(seams), count(controls)
+    return {'seamContacts': sn, 'seamPixels': spx, 'controlContacts': cn, 'controlPixels': cpx}
+
 
 class TemporalWindow(typing.NamedTuple):
     """The tile through time, plus everything a subclass needs to know about where it came from.
@@ -95,8 +122,14 @@ class TemporalWindow(typing.NamedTuple):
               their `id()`, would both be wrong: two windows can hold equal pixels, and a freed
               array's `id()` gets reused.
 
-    `start` + `tile` are what let a subclass carry work between TIMEPOINTS, and `id` deliberately
-    cannot — it changes with every window, which is what makes it safe for the per-window cache.
+    z_span:   `(z0, z1)` — the planes of the store `frames` covers, or None when the caller did not
+              say. Each timepoint is narrowed to its OWN span (a drift-padded store moves it), and
+              every frame of the window is read at that span, so `z` in one window and `z` in the
+              next are the same plane only while the span holds.
+
+    `start` + `tile` + `z_span` are what let a subclass carry work between TIMEPOINTS, and `id`
+    deliberately cannot — it changes with every window, which is what makes it safe for the
+    per-window cache.
     """
 
     frames: object
@@ -105,6 +138,7 @@ class TemporalWindow(typing.NamedTuple):
     tile: tuple
     channels: object = None
     id: int = 0
+    z_span: tuple = None
 
 
 class SegmentationUtils:
@@ -137,8 +171,16 @@ class SegmentationUtils:
         self.phys_size_x = (dim_utils.im_physical_size('x', default=1.0) if dim_utils else 1.0)
         self.phys_size_y = (dim_utils.im_physical_size('y', default=self.phys_size_x)
                             if dim_utils else 1.0)
-        self.block_size = int(params.get('blockSize', 512))
-        self.overlap = int(params.get('overlap', 64))
+        # `auto` (the default) is resolved per run: the tile size once the frame and the machine are
+        # known (`resolve_block_size`), the overlap from the cell size (`_auto_overlap`, below, once
+        # the physical pixel size is known). A number is taken as given.
+        self.block_size_param = tile_budget.parse_tiling_param(params.get('blockSize', tile_budget.AUTO))
+        self.block_size = self.block_size_param
+        self.overlap_param = tile_budget.parse_tiling_param(params.get('overlap', tile_budget.AUTO),
+                                                            allow_zero=True)
+        self.tiling_note = ''
+        self.overlap = (self.overlap_param if self.overlap_param is not None
+                        else self._auto_overlap())
         # Min IoU to join a cell cut by a tile seam (see `_stitch_tile_seams`); 0 = off
         self.label_overlap = float(params.get('labelOverlap', 0.25))
         self.match_threshold = float(params.get('matchThreshold', 0.3))
@@ -163,10 +205,16 @@ class SegmentationUtils:
         self.clear_touching_border = bool(params.get('clearTouchingBorder', False))
         self.clear_depth = bool(params.get('clearDepth', False))
         self.normalise_to_whole = bool(params.get('normaliseToWhole', True))
+        # The image channels the tile's channel axis carries, in axis order — None while it carries
+        # all of them. Set by `predict_from_zarr` for the length of a run; a caller handing
+        # `predict_slice` its own full-channel tile (the preview) leaves it None. See `tile_channel`.
+        self.tile_channels = None
         self.task_dir = params['taskDir']
         # Hands out `TemporalWindow.id`. Monotonic for the life of the instance so a value is never
         # reused, which is the property a subclass caching against it depends on.
         self._context_counter = 0
+        # The last temporal window's raw frames, for `_window_frames` to carry into the next one.
+        self._prev_window = None
         self.output_value_name = params.get('outputValueName', 'default')
         # P1d pass-through: chain-run pinned version (docs/todo/VN_VERSIONING_PLAN.md → D3);
         # stored for logs / future writer routing. Path assembly stays legacy (P4b rewrites).
@@ -210,12 +258,20 @@ class SegmentationUtils:
         """
         return sorted(models.keys(), key=lambda k: (len(str(k)), str(k)))
 
-    def _context_channels(self):
-        """Which image channels the temporal window has to carry — None for all of them.
+    def _model_channels(self, model_params):
+        """The image channel indices one model group reads — None when the engine cannot say.
 
-        A subclass that reads only some channels out of the window says so here and the base never
-        reads the rest: on a 4-channel movie where coastal projects one, that is three quarters of
-        the biggest read in the task (3.14 s of a 9.35 s timepoint, measured on zolIMa/fXgbTl).
+        None (the default) keeps every channel in the read. An engine that declares its channels
+        here never has the others read at all — not into the frame, not into the temporal window.
+        """
+        return None
+
+    def _context_channels(self):
+        """Which image channels the run reads — the frame AND the temporal window. None for all.
+
+        The union of `_model_channels` over every group, or None as soon as one group cannot say.
+        The others are never read. The frame's channel count IS the run's memory, whatever the tile
+        size (measured in `docs/SEGMENTATION.md` → *Tiling*).
 
         Returns a SORTED tuple, and it is a property of the RUN, not of one model group: the window
         is built once per (tile, timepoint) and shared by every group (see `predict_slice`), so the
@@ -223,9 +279,100 @@ class SegmentationUtils:
         missing its channel. The base passes the same tuple back as `TemporalWindow.channels` so the
         subclass can map an image channel index onto its position in the window it was given —
         without that the axis silently means something different and the wrong channel is
-        segmented, which is why `_project_window` maps rather than indexes directly.
+        segmented, which is why `_project_window` and `tile_channel` map rather than index directly.
         """
+        per_group = [self._model_channels(mp)
+                     for mp in (self.params.get('models') or {}).values()]
+        if not per_group or any(c is None for c in per_group):
+            return None
+        return tuple(sorted({int(c) for chans in per_group for c in chans}))
+
+    def tile_channel(self, tile, ch):
+        """Image channel `ch` of a tile, whether or not the run narrowed the tile's channel axis.
+
+        A subclass indexes the tile through this, never with `tile[ch]`: once the read is narrowed
+        (`_context_channels`) position `ch` holds a DIFFERENT channel, and segmenting the wrong one
+        raises nothing.
+        """
+        if self.tile_channels is None:
+            return tile[ch]
+        position = {int(c): i for i, c in enumerate(self.tile_channels)}
+        if int(ch) not in position:
+            # Not a fallback: segmenting a channel other than the one asked for is the silent
+            # wrong answer this mapping exists to prevent.
+            raise ValueError(f'the tile carries channels {list(self.tile_channels)} but channel '
+                             f'{ch} was asked for — `_model_channels` must declare it')
+        return tile[position[int(ch)]]
+
+    # ── Tiling ────────────────────────────────────────────────────────────────
+
+    def _blank_is_empty(self, model_params):
+        """True when this engine, given an all-zero input, finds nothing — so a blank tile can be
+        skipped. False (the default) keeps every tile: an engine that inverts its input, or one
+        that is not purely a function of the normalised pixels, must not opt in."""
+        return False
+
+    def _tile_is_blank(self, tile, model_params, norm_params):
+        """True when every channel this group reads is at or below its window's low end.
+
+        Lossless, not a guess: the engines map `lo` to 0 and clip, and thresholds and filters
+        before that only lower or smooth values, so such a tile reaches the model as all zeros. It
+        needs a known window for every channel (`norm_params`) and an engine that finds nothing in
+        zeros (`_blank_is_empty`); otherwise the tile is segmented. On a tile scan, the tiles outside
+        the tissue are blank (measured in `docs/SEGMENTATION.md` → *Blank tiles are skipped*).
+        """
+        if not norm_params or not self._blank_is_empty(model_params):
+            return False
+        channels = self._model_channels(model_params)
+        if not channels:
+            return False
+        for ch in channels:
+            if ch not in norm_params:
+                return False
+            if float(np.max(self.tile_channel(tile, ch))) > norm_params[ch][0]:
+                return False
+        return True
+
+    def _object_size_um(self, model_params):
+        """The size, in µm, of one object this model group segments — None when the engine cannot
+        say. Sets the Auto overlap (`tile_budget.auto_overlap`)."""
         return None
+
+    def _tile_cost(self, n_z):
+        """What one tile pixel costs this engine (`tile_budget.TileCost`) for an `n_z`-plane tile —
+        None when it has not been measured, which makes Auto use the whole frame."""
+        return None
+
+    def _auto_overlap(self):
+        sizes = [self._object_size_um(mp) for mp in (self.params.get('models') or {}).values()]
+        sizes = [s for s in sizes if s]
+        size_px = self.px_from_um(max(sizes)) if sizes else None
+        return tile_budget.auto_overlap(size_px)
+
+    def resolve_block_size(self, height, width, n_z, held_bytes=0):
+        """Set `block_size` for a frame of `height` × `width` × `n_z`, and return it.
+
+        A number from the params is kept. `auto` asks `tile_budget` for the largest tile that fits
+        what is free NOW, `held_bytes` being what the run already holds (frame + label buffers). The
+        run and the preview both call this, so the preview's seam warning matches what a run started
+        now would do. `tiling_note` keeps the reason for the log.
+        """
+        if self.block_size_param is not None:
+            self.block_size = self.block_size_param
+            self.tiling_note = f'{self.block_size} px (set)'
+            return self.block_size
+        cost = self._tile_cost(n_z)
+        free_vram = None
+        if cost is not None and cost.vram_per_px > 0:
+            from cecelia.utils.gpu_utils import free_vram_gb     # torch: only an engine that uses it
+            gb = free_vram_gb()
+            free_vram = gb * 1e9 if gb is not None else None
+        import cecelia.utils.cpu_utils as cpu_utils
+        self.block_size, why = tile_budget.auto_block_size(
+            cost, height, width, self.overlap, held_bytes=held_bytes,
+            free_ram=cpu_utils.available_memory_bytes(), free_vram=free_vram)
+        self.tiling_note = f'auto: {why}'
+        return self.block_size
 
     def predict_slice(self, tile, model_params, norm_params=None, window=None):
         """Override in subclass. tile=[C,Z,Y,X] or [C,Y,X]. Returns uint32 label mask.
@@ -244,6 +391,22 @@ class SegmentationUtils:
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 
+    def predict_or_stop(self, im_dat):
+        """`predict_from_zarr`, but an out-of-memory error stops the run with the tile size to set.
+
+        What the runners call. On OOM the process exits, which frees the models and caches with it;
+        the log gets one line naming the size that ran out and the one to try instead
+        (`tile_budget.out_of_memory_message`), rather than a CUDA stack.
+        """
+        try:
+            return self.predict_from_zarr(im_dat)
+        except Exception as exc:
+            msg = tile_budget.out_of_memory_message(exc, self.block_size)
+            if msg is None:
+                raise
+            self.logger.log(f'[ERROR] {msg}')
+            raise SystemExit(1) from exc
+
     def predict_from_zarr(self, im_dat):
         """Segment: iterate T × XY tiles for each model, ONE TIMEPOINT AT A TIME.
 
@@ -256,6 +419,7 @@ class SegmentationUtils:
         models = self.params.get('models', {})
         model_keys = self.model_order(models)
         dim_utils = self.dim_utils
+        self._prev_window = None
 
         # Global norm params (from lowest-res level)
         all_norm_params = {}
@@ -302,6 +466,7 @@ class SegmentationUtils:
         ifa_y = in_axes.index('Y')
         ifa_x = in_axes.index('X')
         ifa_z = in_axes.index('Z') if 'Z' in in_axes else None
+        ifa_c = in_axes.index('C') if 'C' in in_axes else None
 
         # Which planes/rows/columns actually hold data, per timepoint. `None` for every store that
         # never padded, which is most of them — then the spans are the whole frame and nothing changes.
@@ -329,6 +494,8 @@ class SegmentationUtils:
             n_c = int(dim_utils.dim_val('C'))
             if not ctx_channels or len(ctx_channels) >= n_c:
                 ctx_channels = None
+        # The frame is read with the same channels as the window, so the tile carries them too.
+        self.tile_channels = ctx_channels
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
@@ -376,6 +543,17 @@ class SegmentationUtils:
                 'Y': self._valid_span(box, 'Y', H),
                 'X': self._valid_span(box, 'X', W),
             }
+
+        # Auto tile size, against what is free now minus what this run holds for its whole length:
+        # the frame (only the channels read) and one label buffer per type.
+        planes = n_z if is_3d else 1
+        n_read = len(ctx_channels) if ctx_channels else (int(dim_utils.dim_val('C')) if ia_c is not None else 1)
+        held = H * W * planes * (n_read * np.dtype(im_dat[0].dtype).itemsize
+                                 + len(store_types) * np.dtype(self.LABEL_DTYPE).itemsize)
+        self.resolve_block_size(H, W, planes, held_bytes=held)
+        self.logger.log(f'>> tiling: {self.tiling_note}; overlap {self.overlap} px')
+        blank_tiles = 0
+        seam_totals = {}
 
         # Tiles are cut over the NARROWED frame, so their count can differ per timepoint.
         xy_tiles_by_t = {t: self._create_xy_tiles(sp['Y'][1] - sp['Y'][0],
@@ -428,7 +606,8 @@ class SegmentationUtils:
                 # tile it in memory. Reading each tile from the store instead re-fetches whole chunks per
                 # tile — the over-read the old whole-level fortify() worked around. See
                 # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
-                frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+                frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True,
+                                                     channels=ctx_channels)
                 if drop_z:
                     frame_in = np.squeeze(frame_in, axis=read_z)
 
@@ -443,6 +622,11 @@ class SegmentationUtils:
                     frame_in = self._narrow_axis(frame_in, ifa_z, z0, z1)
                 frame_in = self._narrow_axis(frame_in, ifa_y, y0, y1)
                 frame_in = self._narrow_axis(frame_in, ifa_x, x0, x1)
+
+                # `normaliseToWhole` off: one window per frame, over the whole frame (not per tile).
+                frame_norm = ({} if self.normalise_to_whole or ifa_c is None else
+                              {k: self._frame_norm_params(frame_in, ifa_c, models[k], ctx_channels)
+                               for k in model_keys})
 
                 # One frame's labels per type (uint32 zeros), no time axis — sized to the span we
                 # actually segment, so the buffer and the tiles agree. Allocated AFTER the span is
@@ -482,32 +666,38 @@ class SegmentationUtils:
                         # temporal subclass pixels that do not correspond to its own tile.
                         read_yx_full = (slice(read_yx[0].start + y0, read_yx[0].stop + y0),
                                         slice(read_yx[1].start + x0, read_yx[1].stop + x0))
-                        frames = np.stack([
-                            self._extract_tile(im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
-                                               z_idx=ia_z if narrowed else None, z=(z0, z1),
-                                               c_idx=ia_c if ctx_channels else None,
-                                               c=ctx_channels)
-                            for t2 in range(lo, hi + 1)])
+                        tile_box = (read_yx_full[0].start, read_yx_full[0].stop,
+                                    read_yx_full[1].start, read_yx_full[1].stop)
+                        frames = self._window_frames(
+                            (tile_box, (z0, z1), ctx_channels), lo, hi,
+                            lambda t2: self._extract_tile(
+                                im_dat[0], t2, ia_t, ia_y, ia_x, read_yx_full,
+                                z_idx=ia_z if narrowed else None, z=(z0, z1),
+                                c_idx=ia_c if ctx_channels else None, c=ctx_channels))
                         if drop_z:
                             # the window is the tile through time, so it is 2D like the tile
                             frames = np.squeeze(frames, axis=1 + read_z)
                         self._context_counter += 1
                         window = TemporalWindow(
-                            frames=frames, index=t - lo, start=lo,
-                            tile=(read_yx_full[0].start, read_yx_full[0].stop,
-                                  read_yx_full[1].start, read_yx_full[1].stop),
-                            channels=ctx_channels, id=self._context_counter)
+                            frames=frames, index=t - lo, start=lo, tile=tile_box,
+                            channels=ctx_channels, id=self._context_counter, z_span=(z0, z1))
 
                     for model_key in model_keys:
                         model_params = models[model_key]
                         match_as = model_params.get('matchAs', 'base')
-                        norm_p = all_norm_params.get(model_key)
+                        norm_p = (all_norm_params.get(model_key) if self.normalise_to_whole
+                                  else frame_norm.get(model_key))
 
                         # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
                         tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
                         self.check_rank(tile, tile_rank, is_3d, 'tile')
 
-                        if window is not None:
+                        if window is None and self._tile_is_blank(tile, model_params, norm_p):
+                            # Nothing above the window's low end: after normalisation the model
+                            # would see zeros. Skipped, not approximated — see `_tile_is_blank`.
+                            masks = np.zeros(tile.shape[1:], dtype=self.LABEL_DTYPE)
+                            blank_tiles += 1
+                        elif window is not None:
                             # Narrowed to THIS timepoint's span, like the tile — the window is the
                             # tile through time and must match it on every axis. A subclass takes
                             # its pixels from the window, so a full-depth one silently re-segments
@@ -516,7 +706,7 @@ class SegmentationUtils:
                             # one the output is written back at.
                             masks = self.predict_slice(tile, model_params, norm_p, window)
                         else:
-                            # unchanged call for every non-temporal subclass
+                            # every non-temporal subclass
                             masks = self.predict_slice(tile, model_params, norm_p)
                         self.check_rank(masks, 3 if is_3d else 2, is_3d,
                                         f'{type(self).__name__}.predict_slice masks')
@@ -553,6 +743,13 @@ class SegmentationUtils:
                     ma = models[model_key].get('matchAs', 'base')
                     frame[ma] = self._stitch_tile_seams(frame[ma], strips)
                 del seam_strips
+
+                # How well the seams were joined, for `seg.seam_cuts` — only where there are seams.
+                if len(xy_tiles_by_t[t]) > 1:
+                    for ax in (fa_y, fa_x):
+                        for k, v in seam_contacts(frame[stats_type], self.block_size,
+                                                  ax - len(frame_axes)).items():
+                            seam_totals[k] = seam_totals.get(k, 0) + v
 
                 for ma in frame:
                     # no `real_border`: a run processes whole frames, so its array edge IS the image edge
@@ -626,9 +823,47 @@ class SegmentationUtils:
             (self.phys_size_x, self.phys_size_y,
              dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
             is_3d)
+        if seam_totals:
+            self.object_stats['seam'] = seam_totals
 
+        if blank_tiles:
+            self.logger.log(f'>> skipped {blank_tiles} blank tile(s): no signal above the '
+                            f'intensity window')
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
+        self.tile_channels = None
+        self._prev_window = None
         return counts
+
+    def _window_frames(self, key, lo, hi, read):
+        """Frames `lo..hi` of one tile, stacked `[W, ...]` — carrying over the previous window's.
+
+        Consecutive windows of one tile overlap by all but one frame (at radius 8, 16 of 17), and
+        re-reading the overlap from the store was 14% of a coastal timepoint. So the frames the
+        previous window already holds are copied across and only the new ones are read.
+
+        `key` is everything that decides what a frame's pixels ARE besides its timepoint — the tile,
+        the z span, the channels — and a frame is reused only when it matches; anything else reads
+        the whole window, as before. Only the LAST window is kept, so a run of several XY tiles
+        (which walks every tile of a timepoint before moving on) never matches and behaves as before.
+
+        Peak memory is unchanged: building a window used to hold its frames twice at once (the list
+        and its stack), and now it holds the previous window and the new one.
+        """
+        prev = self._prev_window
+        self._prev_window = None
+        if prev is not None and prev[0] == key and lo <= prev[2] and hi >= prev[1]:
+            _, plo, phi, parr = prev
+            a, b = max(lo, plo), min(hi, phi)
+            out = np.empty((hi - lo + 1,) + parr.shape[1:], dtype=parr.dtype)
+            out[a - lo:b - lo + 1] = parr[a - plo:b - plo + 1]
+            del prev, parr
+            for t2 in list(range(lo, a)) + list(range(b + 1, hi + 1)):
+                out[t2 - lo] = read(t2)
+        else:
+            del prev
+            out = np.stack([read(t2) for t2 in range(lo, hi + 1)])
+        self._prev_window = (key, lo, hi, out)
+        return out
 
     # ── Tile helpers ──────────────────────────────────────────────────────────
 
@@ -849,11 +1084,9 @@ class SegmentationUtils:
             for ch in todo:
                 idx = [slice(None)] * low_res.ndim
                 idx[c_idx] = ch
-                ch_data = low_res[tuple(idx)].ravel()
-                valid = ch_data[ch_data > 0]
-                if len(valid) > 100:
-                    fresh[ch] = (float(np.percentile(valid, 100 - normalise_perc)),
-                                 float(np.percentile(valid, normalise_perc)))
+                rng = self._percentile_range(low_res[tuple(idx)], normalise_perc)
+                if rng is not None:
+                    fresh[ch] = rng
 
         result.update(fresh)
         # Only what was actually derived. A channel too empty to have a range (the `> 100` guards)
@@ -862,6 +1095,43 @@ class SegmentationUtils:
             cache.update({keys[ch]: v for ch, v in fresh.items()})
             norm_cache.write(im_path, fp, cache)
         return result
+
+    @staticmethod
+    def _percentile_range(data, normalise_perc):
+        """`(lo, hi)` at the `100 - p` / `p` percentiles of the non-zero voxels — None when fewer than
+        100 are non-zero, so an empty channel gets no window rather than a made-up one. The one
+        formula for both the whole-image and the per-frame window."""
+        valid = np.asarray(data).ravel()
+        valid = valid[valid > 0]
+        if len(valid) <= 100:
+            return None
+        return (float(np.percentile(valid, 100 - normalise_perc)),
+                float(np.percentile(valid, normalise_perc)))
+
+    def _frame_norm_params(self, frame, c_axis, model_params, frame_channels=None):
+        """Per-channel window over ONE frame — `normaliseToWhole` off: each frame on its own.
+
+        The same statistic as `_compute_norm_params`, over one timepoint instead of the whole image,
+        so a movie that bleaches or brightens is windowed frame by frame. Over the WHOLE frame, never
+        the tile: per-tile windows give every tile its own brightness, which is the patchiness the
+        whole-image window exists to remove. `frame_channels` names the image channel at each
+        position of `frame`'s channel axis when the read was narrowed (`_context_channels`).
+        """
+        perc = float(model_params.get('normalise', 99.9))
+        channels = script_utils.channel_indices(
+            list(model_params.get('cellChannels', [])) + list(model_params.get('nucChannels', [])),
+            'cellChannels/nucChannels', 'cellpose_models_for_python (cellpose.jl)')
+        position = ({int(c): i for i, c in enumerate(frame_channels)} if frame_channels
+                    else None)
+        out = {}
+        for ch in channels:
+            pos = ch if position is None else position.get(int(ch))
+            if pos is None:
+                continue
+            rng = self._percentile_range(np.take(frame, pos, axis=c_axis), perc)
+            if rng is not None:
+                out[ch] = rng
+        return out
 
     # ── Post-processing ───────────────────────────────────────────────────────
 

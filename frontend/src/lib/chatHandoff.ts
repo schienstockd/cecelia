@@ -17,12 +17,20 @@
 // resolve it itself via list_projects (most-recently-opened first), but that is an inference; the app
 // knows. Keep it that way — if you find yourself explaining a tool or a rule here, it belongs in
 // guidance.py.
-export function buildChatPrompt(projectUid: string, projectName?: string): string {
+import type { BlackboardEntrySummary } from '../utils/blackboardApi'
+
+export function buildChatPrompt(projectUid: string, projectName?: string,
+                                entry?: Pick<BlackboardEntrySummary, 'entryId' | 'title'>): string {
   const proj = projectName ? `${projectName} (${projectUid})` : projectUid
   // Naming the server orients an assistant whose registration went stale (it can say "those tools
   // aren't here" instead of guessing what Cecelia is), and the second sentence stops it going off to
   // install one — without the tools there is no `instructions` payload carrying that rule.
-  return `I'm working in the Cecelia project ${proj}. Have a look at it with the ` +
+  const base = `I'm working in the Cecelia project ${proj}. Have a look at it with the ` +
     `cecelia-observer MCP tools. If they are not available in this session, just tell me — do not ` +
     `try to install, register, or configure anything.`
+  if (!entry) return base
+  // Kiwi → terminal hand-off ("Continue in terminal"): the turn was just saved as a Blackboard entry,
+  // which is the only Kiwi state a terminal session can read. Like the project, this only says WHICH.
+  const title = entry.title.replace(/[\s"<>]+/g, ' ').trim()
+  return `${base} I left off in Kiwi on the Blackboard entry "${title}" (${entry.entryId}) — pick up from there.`
 }

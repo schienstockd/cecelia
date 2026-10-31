@@ -15,7 +15,8 @@ and PR say how it moved, and the recital console warns when it grew two passes i
 The record's `bugs` list is the work list: a session pointed at the record fixes the `open` ones
 on a normal branch, and the next pass re-checks them and marks the fixed ones `gone`. A finding
 whose change hasn't reached the SHA yet (uncommitted, or on an unmerged branch) is `unmerged`
-and waits, unjudged.
+and waits, unjudged. A change reaches it by ancestry or in the head of a PR from its branch that
+merged into the SHA (a squash or rebase merge leaves no ancestry): `gh` is asked once per branch.
 
 A convention finding marked `should reuse` that nobody fixed is swept too, as `kind: "duplicate"`:
 new code that copies a helper the codebase already has. It can't misbehave, so the judge asks a
@@ -31,13 +32,15 @@ dropped; the judge sees the whole function a finding sits in, found at the findi
 `gone` without a call; findings on one file + function are one bug listing every source; findings
 over the sweep budget, or with no verdict, are `unjudged` (carried, never on the owner queue). And
 one check no finding raises: commits pushed to a PR's branch after it merged, which the merge
-never took (`stranded`).
+never took (`stranded`). A finding waiting on commits made after its branch's PR merged joins that
+branch's stranded bug (`waiting`), pushed or local-only (`stranded-local-<branch>`).
 
 A bug verify called `guard` (the flaw is there, nothing reachable triggers it) is `parked`: carried,
 off the work list, and not judged again. Each pass checks for free whether a commit names its key
 (`fix_landed`) or one since its verify SHA touched its file (an agent-run error with no file: whether
-a run hit it again); if so, it goes back to `open` with its verdict cleared, so verify looks at it
-again: at most `PARKED_RECHECK` a pass, the rest wait parked for a slot.
+a run hit it again); if so, a file or function that no longer exists makes it `gone` for free, and
+otherwise it goes back to `open` with its verdict cleared, so verify looks at it again: at most
+`PARKED_RECHECK` a pass, the rest wait parked for a slot.
 
 A carried `open` / `unjudged` bug whose key a commit since the last pass names (`previous sha..sha`)
 gets `fix_landed`: the commits, and their PR where git shows one. No Claude call; it is evidence for
@@ -74,7 +77,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
 from cecelia.effectiveness.log import RESOLVED_EVENTS, latest_resolutions_by_slug  # noqa: E402
-from cecelia.effectiveness.git_context import git_output, merged_prs_since  # noqa: E402
+from cecelia.effectiveness.git_context import git_output, merged_pr_heads, merged_prs_since  # noqa: E402
 from cecelia.effectiveness.recital import _slug  # noqa: E402
 
 
@@ -108,8 +111,8 @@ FROZEN_PATHS = ("docs/ai-assist/judge-runs/", "docs/archive/")
 #: Statuses the next pass carries; the rest are reported once.
 CARRY = ("open", "unjudged", "unmerged", "parked")
 #: An agent-run error the owner closed is carried too, unchanged: the next run that hits it would
-#: otherwise raise it as new. Not `gone` / `dismissed`: verify dismisses a fixed bug too, so one that
-#: comes back is a regression and is raised again.
+#: otherwise raise it as new. Not `gone` / `dismissed`: a fixed one (verify's `fixed`, which is `gone`)
+#: that comes back is a regression and is raised again.
 MUTED = ("wont_fix",)
 #: A dismissed repeated error is carried muted too: its message still fires on every run that makes
 #: the mistake, fixed or not, so a new hit is no regression. It re-opens once its run count reaches
@@ -215,6 +218,21 @@ def swept(row: dict) -> bool:
     return row.get("event") in _FANOUT_EVENTS
 
 
+def branch_resolutions(events: _t.Iterable[dict]) -> dict[str | None, dict[str, dict]]:
+    """branch → slug → its newest resolution row on that branch: what `tag` reads."""
+    by_branch: dict[str | None, list[dict]] = {}
+    for r in events:
+        if r.get("event") in RESOLVED_EVENTS:
+            by_branch.setdefault(r.get("branch"), []).append(r)
+    return {b: latest_resolutions_by_slug(rows) for b, rows in by_branch.items()}
+
+
+def tag(resolved: dict[str | None, dict[str, dict]], row: dict) -> dict:
+    """The payload of reviewer `row`'s tag on its own branch (`resolved`: `branch_resolutions`), or {}.
+    Slugs carry no branch, so one worktree's `fixed_pre_commit` mustn't hide what another shipped."""
+    return ((resolved.get(row.get("branch")) or {}).get(_key(row)) or {}).get("payload") or {}
+
+
 def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
@@ -225,11 +243,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     A fix logged from another branch costs a judge look; the other way a shipped bug goes unjudged."""
     events = list(events)
     convention_since = since if convention_since is None else convention_since
-    by_branch: dict[str | None, list[dict]] = {}
-    for r in events:
-        if r.get("event") in RESOLVED_EVENTS:
-            by_branch.setdefault(r.get("branch"), []).append(r)
-    resolved = {b: latest_resolutions_by_slug(rows) for b, rows in by_branch.items()}
+    resolved = branch_resolutions(events)
     out: dict[str, dict] = {}
     for r in events:
         if r.get("ts", "") < (convention_since if r.get("event") == _CONVENTION_EVENT else since):
@@ -243,26 +257,52 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
             continue
         if not swept(r):
             continue
-        key = _key(r)
-        tag = ((resolved.get(r.get("branch")) or {}).get(key) or {}).get("payload") or {}
-        if tag.get("outcome") in _HANDLED:
+        key, t = _key(r), tag(resolved, r)
+        if t.get("outcome") in _HANDLED:
             continue
         p = r["payload"]
         out[key] = {"key": key, **({"kind": "duplicate"} if r["event"] == _CONVENTION_EVENT else {}),
                     "marker": p.get("marker"), "file": p.get("file"), "line": p.get("line"),
                     "desc": p.get("desc", ""), "branch": r.get("branch"), "commit": r.get("commit"),
-                    "logged": r.get("ts"), "outcome": tag.get("outcome"),
-                    **({"reason": tag["reason"]} if tag.get("reason") else {})}
+                    "logged": r.get("ts"), "outcome": t.get("outcome"),
+                    **({"reason": t["reason"]} if t.get("reason") else {})}
     return sorted(out.values(), key=lambda c: c["logged"] or "")
 
 
-def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path) -> bool:
+class PrHeads:
+    """The merged PRs opened from each branch (`git_context.merged_pr_heads`), asked once per branch
+    per pass. `lookup` answers None when `gh` can't; `unavailable` names the branches that happened to."""
+
+    def __init__(self, lookup: _t.Callable[[str], list[dict] | None]):
+        self._lookup, self._seen, self.unavailable = lookup, {}, []
+
+    def __call__(self, branch: str) -> list[dict]:
+        if branch not in self._seen:
+            prs = self._lookup(branch)
+            if prs is None:
+                self.unavailable.append(branch)
+            self._seen[branch] = prs or []
+        return self._seen[branch]
+
+
+def _is_ancestor(a: str | None, b: str | None, repo: pathlib.Path) -> bool:
+    return bool(a and b) and git_output("merge-base", "--is-ancestor", a, b, cwd=str(repo)) is not None
+
+
+def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path,
+            heads: _t.Callable[[str], list[dict]] | None = None) -> bool:
     """Whether the change a finding was raised on has reached `sha`.
 
     Recital reviews the uncommitted diff on top of `commit`, so the change is the first commit
-    after `commit` on `branch`: no such commit yet means it is still being worked on, and one that
-    `sha` doesn't contain means it hasn't merged. A deleted branch counts as landed (merged and
-    cleaned up, or abandoned — either way main is what's live), and so does a row with no branch.
+    after `commit` on `branch`. It has landed when `sha` contains it, or when a PR from `branch`
+    merged into `sha` with it in the PR's head: a squash or rebase merge copies the branch's commits,
+    so ancestry alone never sees them. A change whose patch `sha` already has (`git cherry`: picked
+    over, or landed again in another PR) has landed too. A commit after the head the PR merged at
+    never landed (its findings wait under the branch's stranded bug, `branch_stranded`). No such commit (none yet, or the branch was rebased past
+    `commit`) means it is still being worked on, unless the branch's whole tip merged in a PR: the
+    branch is finished, like a deleted one. A deleted branch counts as landed (merged and cleaned up,
+    or abandoned — either way main is what's live), and so does a row with no branch.
+    `heads(branch)`: its merged PRs (`PrHeads`); without it, ancestry only.
     """
     if not branch:
         return True
@@ -270,11 +310,17 @@ def _landed(branch: str | None, commit: str | None, sha: str, repo: pathlib.Path
         tip = git_output("rev-parse", "-q", "--verify", ref, cwd=str(repo))
         if not tip:
             continue
-        if not commit:
-            return git_output("merge-base", "--is-ancestor", tip, sha, cwd=str(repo)) is not None
         after = (git_output("rev-list", "--ancestry-path", "--reverse", f"{commit}..{tip}", cwd=str(repo))
-                 or "").split()
-        return bool(after) and git_output("merge-base", "--is-ancestor", after[0], sha, cwd=str(repo)) is not None
+                 or "").split() if commit else []
+        change = after[0] if after else tip
+        if after or not commit:
+            if _is_ancestor(change, sha, repo):
+                return True
+        if after and (git_output("cherry", sha, change, f"{change}^", cwd=str(repo)) or "").startswith("- "):
+            return True   # its patch is on `sha` already: cherry-picked, or re-landed in another PR
+        return any(_is_ancestor(change, pr.get("headRefOid"), repo)
+                   and _is_ancestor((pr.get("mergeCommit") or {}).get("oid"), sha, repo)
+                   for pr in (heads(branch) if heads else []))
     return True
 
 
@@ -389,17 +435,22 @@ def _merge(group: list[dict]) -> dict:
     return {**lead, **({"sources": sources, "also": also} if len(sources) > 1 else {})}
 
 
-def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pathlib.Path) -> list[str]:
+def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pathlib.Path,
+                     local: bool = False) -> list[str]:
     """Commits on `origin/<head>` after `head_oid` (the head the PR merged at) that `sha` lacks.
+    `local`: on the local branch `<head>` instead, and not on `origin/<head>` either (never pushed).
 
     A commit already on `sha` as a cherry-pick (same patch) doesn't count. A deleted branch, or a
     head commit this clone doesn't have, gives nothing: there's nothing left to land.
     """
     cwd = str(repo)
-    tip = git_output("rev-parse", "-q", "--verify", f"refs/remotes/origin/{head}^{{commit}}", cwd=cwd) if head else None
+    ref = f"refs/heads/{head}" if local else f"refs/remotes/origin/{head}"
+    tip = git_output("rev-parse", "-q", "--verify", f"{ref}^{{commit}}", cwd=cwd) if head else None
     if not tip or not head_oid or git_output("cat-file", "-e", f"{head_oid}^{{commit}}", cwd=cwd) is None:
         return []
-    after = (git_output("rev-list", "--reverse", "--no-merges", tip, f"^{head_oid}", f"^{sha}", cwd=cwd) or "").split()
+    pushed = git_output("rev-parse", "-q", "--verify", f"refs/remotes/origin/{head}^{{commit}}", cwd=cwd) if local else None
+    after = (git_output("rev-list", "--reverse", "--no-merges", tip, f"^{head_oid}", f"^{sha}",
+                        *([f"^{pushed}"] if pushed else []), cwd=cwd) or "").split()
     if not after:
         return []
     unlanded = {ln[2:].strip() for ln in (git_output("cherry", sha, tip, cwd=cwd) or "").splitlines()
@@ -407,15 +458,38 @@ def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pat
     return [c for c in after if c in unlanded]
 
 
-def _stranded_bug(pr: dict, commits: list[str], date: str, repo: pathlib.Path) -> dict:
+def _stranded_bug(pr: dict, commits: list[str], date: str, repo: pathlib.Path, local: bool = False) -> dict:
+    """A `stranded` bug for commits after the head PR `pr` merged at. `local`: commits only on the
+    local branch, never pushed (key `stranded-local-<branch>`): no issue is filed for one, since
+    GitHub has nothing to link, and its card says to push them or delete the branch."""
     n, head = pr.get("number"), pr.get("headRefName")
-    subjects = "; ".join(f"`{c[:8]}` {git_output('log', '-1', '--format=%s', c, cwd=str(repo)) or ''}".rstrip()
+    subjects = "; ".join(f"`{c[:8]}` {git_output('log', '-1', '--format=%s (%as)', c, cwd=str(repo)) or ''}".rstrip()
                          for c in commits)
-    return {"key": f"stranded-pr{n}", "kind": "stranded", "marker": "stranded", "file": "", "line": 0,
-            "branch": head, "pr": n, "head_oid": pr.get("headRefOid"), "commits": commits,
-            "desc": f"{len(commits)} commit(s) pushed to `{head}` after #{n} merged never reached main: {subjects}. "
-                    "Land them in a new PR from that branch, or answer wont_fix if they were dropped on purpose.",
-            "first_seen": date}
+    key = f"stranded-local-{re.sub(r'[^A-Za-z0-9_-]+', '-', head or '?')}" if local else f"stranded-pr{n}"
+    desc = (f"{len(commits)} commit(s) on the local branch `{head}` after #{n} merged were never pushed: {subjects}. "
+            f"Push them on a new branch and open a PR, or delete the branch (`git branch -D {head}`) if they were "
+            "abandoned." if local else
+            f"{len(commits)} commit(s) pushed to `{head}` after #{n} merged never reached main: {subjects}. "
+            "Land them in a new PR from that branch, or answer wont_fix if they were dropped on purpose.")
+    return {"key": key, "kind": "stranded", "marker": "stranded", "file": "", "line": 0,
+            "branch": head, "pr": n, "head_oid": pr.get("headRefOid"), "commits": commits, "desc": desc,
+            **({"local": True} if local else {}), "first_seen": date}
+
+
+def branch_stranded(branch: str, heads: _t.Callable[[str], list[dict]], date: str, sha: str,
+                    repo: pathlib.Path) -> dict | None:
+    """The stranded bug a branch with findings waiting on it is: a PR from it merged into `sha`, and
+    commits after the head it merged at never landed, pushed (`stranded-pr<N>`) or only local
+    (`stranded-local-<branch>`). None when no merged PR, or nothing after its head."""
+    for pr in heads(branch):
+        if not _is_ancestor((pr.get("mergeCommit") or {}).get("oid"), sha, repo):
+            continue
+        pr = {**pr, "headRefName": branch}
+        for local in (False, True):
+            commits = stranded_commits(branch, pr.get("headRefOid"), sha, repo, local=local)
+            if commits:
+                return _stranded_bug(pr, commits, date, repo, local=local)
+    return None
 
 
 def default_merged_prs(since: str, repo: pathlib.Path = _REPO) -> list[dict]:
@@ -532,6 +606,7 @@ def _queue_order(group: list[dict]) -> tuple:
 def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | None,
           judge: _t.Callable[[str], tuple[dict, float]] | None = None, no_judge: bool = False,
           merged_prs: _t.Callable[[str], list[dict]] | None = None,
+          pr_heads: _t.Callable[[str], list[dict] | None] | None = None,
           repo: pathlib.Path = _REPO, meter: dict | None = None,
           failures: dict | None = None) -> tuple[list[dict], float]:
     """This pass's `bugs` list and the judge's cost.
@@ -544,8 +619,13 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     the judge calls gone was fixed before it was ever listed and isn't. A bug the judge didn't
     answer for (failed, or over the budget) waits `unjudged`, except a carried `open` one, which stays
     open. A carried `parked` bug skips the judge: it stays parked unless its file changed since it
-    was verified, and then only up to `PARKED_RECHECK` a pass go back to verify. A failed judge call is said in `failures["sweep"]` and ends the sweep; a
-    `judge.RateLimited` propagates.
+    was verified; one whose file or function is gone is `gone` for free, and only up to
+    `PARKED_RECHECK` of the rest a pass go back to verify. A failed judge call is said in
+    `failures["sweep"]` and ends the sweep; a `judge.RateLimited` propagates.
+
+    `pr_heads(branch)`: the merged PRs from a branch (default `gh`, asked only for a branch whose change
+    ancestry doesn't place in `sha`), so a squash-merged branch lands. When it can't answer, those
+    branches fall back to ancestry and stay `unmerged`, said in `failures["landed"]`.
     """
     since = (previous or {}).get("run", {}).get("ts") or (
         (_dt.date.fromisoformat(date) - _dt.timedelta(days=WINDOW_DAYS)).isoformat())
@@ -566,6 +646,10 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                if (b.get("status") in CARRY or b.get("kind") == "agent_run" and b.get("status") in MUTED
                    or b.get("repeat") and b.get("status") == "dismissed")
                and not _frozen(b.get("file"))}
+    # findings a stranded bug held (`waiting`) go back in the stream: each is checked for landing again
+    for held in [b for b in carried.values() if b.get("kind") == "stranded"]:
+        for w in held.pop("waiting", None) or []:
+            carried.setdefault(w["key"], {**w, "carried": True, "was": "unmerged"})
     known = {k for b in carried.values() for k in (b.get("sources") or [b["key"]])}
     owner = {k: b for b in carried.values() if b.get("was") in LANDED_FROM for k in (b.get("sources") or [b["key"]])}
     for k, commits in landed_fixes(owner, (previous or {}).get("run", {}).get("sha"), sha, repo).items():
@@ -582,6 +666,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
     groups: dict[tuple, list[dict]] = {}
     waits: dict[tuple, list[dict]] = {}   # unmerged: not at `sha` yet, so merged by branch + file:line
     unpark: list[tuple[dict, str]] = []   # parked bugs whose re-check fired, and why
+    heads = PrHeads(pr_heads or (lambda br: merged_pr_heads(br, cwd=str(repo))))
     for b in [*(b for b in carried.values() if b.get("kind") != "stranded"), *fresh]:
         if b.get("was") in MUTED:
             bugs.append({**_strip(b), "status": b["was"], "muted": True,
@@ -601,7 +686,11 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             continue
         if _parked(b):
             back = _touched(b, sha, repo)
-            if back:
+            gone = back and locate(b, sha, repo)["gone"]   # free, before it takes a re-check slot
+            if gone:
+                bugs.append({**_strip(b), "status": "gone",
+                             "why": f"{gone} (parked {(b.get('verify') or {}).get('date') or '?'} as guard)"})
+            elif back:
                 unpark.append((b, back))
             else:
                 bugs.append({**_strip(b), "status": "parked", "why": _record.parked_why(b.get("verify") or {})})
@@ -614,7 +703,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                    "an agent run hit this error; no file:line to excerpt, so verify traces it")
             bugs.append({**_strip(b), "status": "open", "opened": _opened(b, date), "why": why})
             continue
-        if not _landed(b.get("branch"), b.get("commit"), sha, repo):
+        if not _landed(b.get("branch"), b.get("commit"), sha, repo, heads):
             # `?` (no location) names no place to merge on: its own key
             waits.setdefault((b.get("branch"), b.get("file"),
                               b["key"] if b.get("file") == _record.NO_FILE else b.get("line")), []).append(b)
@@ -629,9 +718,14 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
              b["key"] if b.get("kind") == "agent_run" else b.get("kind"))   # a duplicate joins duplicates
         groups.setdefault(g, []).append({**b, "code": where["code"],
                                          **({"canonical": canonical(b, sha, repo)} if b.get("kind") == "duplicate" else {})})
+    if heads.unavailable:
+        said = (f"gh couldn't list merged PRs for {len(heads.unavailable)} branch(es) "
+                f"({', '.join(heads.unavailable[:3])}{', …' if len(heads.unavailable) > 3 else ''}): "
+                "a squash-merged one among them stays `unmerged` this pass")
+        print(f"bug sweep: {said}", file=sys.stderr)
+        if failures is not None:
+            failures["landed"] = said
     bugs += _unpark(unpark, date)
-    bugs += [{**_strip(_merge(g)), "status": "unmerged", "why": f"`{g[0]['branch']}` hasn't reached {sha[:8]}"}
-             for g in waits.values()]
     ask = [_merge(g) for g in sorted(groups.values(), key=_queue_order)]
     cost, verdicts, asked, broke = 0.0, {}, set(), False
     if ask and not no_judge:
@@ -668,12 +762,14 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             bugs.append({**_strip(b), "status": status, "why": v["why"],
                          **({"opened": _opened(b, date)} if status == "open" else {})})
     # Stranded commits: no finding raises them, so the scan is its own source.
+    stranded: dict[str, dict] = {}   # by key: a branch's waiting findings join its bug
     for b in (b for b in carried.values() if b.get("kind") == "stranded"):
-        left = stranded_commits(b.get("branch"), b.get("head_oid"), sha, repo)
-        bugs.append({**_strip(b), "commits": left or b.get("commits", []),
-                     **({"opened": _opened(b, date)} if left else {}),
-                     "status": "open" if left else "gone",
-                     "why": "still not on main" if left else "landed, or the branch was deleted"})
+        left = stranded_commits(b.get("branch"), b.get("head_oid"), sha, repo, local=bool(b.get("local")))
+        stranded[b["key"]] = {**_strip(b), "commits": left or b.get("commits", []),
+                              **({"opened": _opened(b, date)} if left else {}),
+                              "status": "open" if left else "gone",
+                              "why": "still not on main" if left else "landed, or the branch was deleted"}
+        bugs.append(stranded[b["key"]])
     for pr in (merged_prs or (lambda d: default_merged_prs(d, repo)))(since[:10]):
         merge = (pr.get("mergeCommit") or {}).get("oid")
         if f"stranded-pr{pr.get('number')}" in carried or (
@@ -681,8 +777,28 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
             continue   # carried already, or merged after `sha`: none of its commits are in this pass's code
         commits = stranded_commits(pr.get("headRefName"), pr.get("headRefOid"), sha, repo)
         if commits:
-            bugs.append({**_stranded_bug(pr, commits, date, repo), "status": "open", "opened": date,
-                         "why": "stranded-commit scan: pushed after the merge, so the merge never took them"})
+            new = {**_stranded_bug(pr, commits, date, repo), "status": "open", "opened": date,
+                   "why": "stranded-commit scan: pushed after the merge, so the merge never took them"}
+            stranded[new["key"]] = new
+            bugs.append(new)
+    # Unmerged findings. One whose branch merged in a PR but whose change came after the merged head
+    # waits on stranded commits, pushed or local-only: it joins that bug (`waiting`) instead of waiting
+    # on its own forever. Any PR merged since the scan's window counts, not only this window's.
+    by_branch: dict[str, dict | None] = {}
+    for g in waits.values():
+        branch = g[0].get("branch")
+        if branch and branch not in by_branch:
+            by_branch[branch] = branch_stranded(branch, heads, date, sha, repo)
+        found = by_branch.get(branch) if branch else None
+        if found is None:
+            bugs.append({**_strip(_merge(g)), "status": "unmerged", "why": f"`{branch}` hasn't reached {sha[:8]}"})
+            continue
+        bug = stranded.get(found["key"])
+        if bug is None:
+            bug = stranded[found["key"]] = {**found, "status": "open", "opened": date,
+                                            "why": "findings wait on commits made after the PR merged"}
+            bugs.append(bug)
+        bug.setdefault("waiting", []).extend(_strip(f) for f in g)
     bugs = [_reverify(b) for b in bugs]
     order = {s: i for i, s in enumerate(_record.BUG_STATUSES)}
     bugs.sort(key=lambda b: (order[b["status"]], b.get("first_seen") or "", b["key"]))
@@ -696,7 +812,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--date", help="sweep as of this pass date (default: today)")
     ap.add_argument("--ref", default="origin/main", help="the code to check against")
     ap.add_argument("--no-judge", action="store_true", help="no judge call: what it would see is `unjudged`")
-    ap.add_argument("--no-stranded", action="store_true", help="skip the stranded-commit scan (no gh, no fetch)")
+    ap.add_argument("--no-stranded", action="store_true",
+                    help="skip the stranded-commit scan (no merged-PR list, no fetch; landing still asks gh per branch)")
     args = ap.parse_args(argv)
     date = args.date or _dt.date.today().isoformat()
     earlier = _load_sibling("review").applied_pass_records(before=date)

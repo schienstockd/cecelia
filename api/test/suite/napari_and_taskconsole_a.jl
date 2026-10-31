@@ -144,6 +144,33 @@ end
     @test C._task!("job1").project_uid == ""
 end
 
+# ── Task console: a cluster run waiting in the cluster's queue reads as queued ──
+# The scheduler holds such a run as `running` from the moment it takes its slot, so the console listed a
+# job sitting in Gadi's queue for an hour as running. Its stage comes from the snapshot and `task:hpc`.
+@testset "API: task console shows a cluster run's stage" begin
+    C = TaskConsoleUT
+    feed(frame) = redirect_stdout(devnull) do; C.handle_ws(JSON3.write(frame)) end
+    recon(rows)  = redirect_stdout(devnull) do; C._reconcile_snapshot!(rows) end
+    empty!(C.TASKS); empty!(C.SEEN_TERM); empty!(C.EVENTS); empty!(C.ENDED_IDS)
+
+    recon([(; id="h1", status="running", fun_name="segment.cellpose", pool_name="hpc", image_uid="fXgbTl",
+              chain_run_id="", hpc_stage="queued", hpc_job="182408015.gadi-pbs")])
+    t = C.TASKS["h1"]
+    @test C.shown_status(t) == "hpc queued" && C._waiting(t) && t.hpc_job == "182408015.gadi-pbs"
+
+    feed((; type="task:hpc", taskId="h1", stage="running", jobId="182408015.gadi-pbs"))
+    @test C.shown_status(t) == "on hpc" && !C._waiting(t)
+    @test occursin("on hpc", C.EVENTS[end])
+    feed((; type="task:hpc", taskId="h1", stage="pull", jobId="182408015.gadi-pbs"))
+    @test C.shown_status(t) == "fetching"
+
+    # a local run, and an older server with no stage on the snapshot, read as before
+    recon([(; id="l1", status="running", fun_name="segment.cellpose", pool_name="gpu", image_uid="x",
+              chain_run_id="")])
+    @test C.shown_status(C.TASKS["l1"]) == "running"
+    empty!(C.TASKS); empty!(C.EVENTS)
+end
+
 # ── Task console: post-mortem log frames must not resurrect a finished task ────
 # The zombie-queued-row regression. Cancelling a running task broadcasts the terminal `task:status`
 # at once (cancel_task! → on_status_change), then the killed subprocess's reader flushes whatever was

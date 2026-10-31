@@ -27,7 +27,7 @@ const cb = {
 }
 
 describe('snapshotForRef', () => {
-  it('carries a sidecar for the six fragile kinds', () => {
+  it('carries a sidecar for the fragile kinds (a task only when it names an image)', () => {
     const savedAt = '2026-09-25T12:00:00.000Z'
     const kinds: KiwiRef[] = [
       { kind: 'population', imageUid: 'IMG1', valueName: 'default', popPath: '/foo' },
@@ -36,6 +36,7 @@ describe('snapshotForRef', () => {
       { kind: 'plot',       plotId: 'p1' },
       { kind: 'tile',       imageUid: 'IMG1', valueName: 'default', cellId: 'c42' },
       { kind: 'ui',         anchor: 'nav:analysis' },
+      { kind: 'task',       funName: 'segment.cellpose', imageUid: 'IMG1' },
     ]
     for (const r of kinds) {
       const s = snapshotForRef(r, cb, savedAt)

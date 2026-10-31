@@ -278,11 +278,13 @@ async function postJson(url: string, body: Record<string, unknown>): Promise<Rec
  *  a normal Blackboard write omits it. */
 export async function createBlackboardEntry(
   projectUid: string, title: string, content: string, attachments: string[] = [],
-  opts?: { kiwiRefs?: Record<string, unknown> },
+  opts?: { kiwiRefs?: Record<string, unknown>; sourceKey?: string },
   apiBase = '',
 ): Promise<string> {
   const body: Record<string, unknown> = { projectUid, title, content, attachments }
   if (opts?.kiwiRefs && Object.keys(opts.kiwiRefs).length > 0) body.kiwiRefs = opts.kiwiRefs
+  // `kiwi:<turnId>[:claim:<n>]` — the server returns the entry this turn/claim already made, if any.
+  if (opts?.sourceKey) body.sourceKey = opts.sourceKey
   const r = await postJson(`${apiBase}/api/blackboard/create`, body)
   return r && typeof r.entryId === 'string' ? r.entryId : ''
 }

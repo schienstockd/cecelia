@@ -96,19 +96,33 @@ function _clust_list(kind, img, family, table)
     _cross_seg_runs(kind, hits)
 end
 
+# What one clustering run owns on one table: `(obs columns, obsm keys)` to drop. Pure, so the
+# ownership rules are unit-tested without writing embeddings. `shared` = the OTHER family (cell
+# clusters ↔ regions) has this suffix on the same cell table, so the `X_umap.{suffix}` stays.
+function _clust_run_keys(family, table, s, cols, shared::Bool)
+    drops = ["$family.$s"]
+    # region composition columns `spatial.comp.{pop}.{suffix}` belong to the region run
+    family == "regions" && append!(drops, [c for c in cols if startswith(c, "spatial.comp.") && endswith(c, ".$s")])
+    embeds = shared ? String[] : ["X_umap.$s"]
+    # a track cluster run's behaviour axes: path position + diffusion embedding (never shared)
+    if family == "clusters" && table === :track
+        "path.$s" in cols && push!(drops, "path.$s")
+        push!(embeds, "X_diffmap.$s")
+    end
+    drops, embeds
+end
+
 function _clust_delete!(img, run, family, table, fun; on_log = _ -> nothing)
     s = run.key
     other = family == "regions" ? "clusters" : "regions"
     for vn in run.value_names
         p = table === :track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(p) || continue
-        cols  = _run_obs_cols(p)
-        drops = ["$family.$s"]
-        # region composition columns `spatial.comp.{pop}.{suffix}` belong to the region run
-        family == "regions" && append!(drops, [c for c in cols if startswith(c, "spatial.comp.") && endswith(c, ".$s")])
+        cols   = _run_obs_cols(p)
         shared = "$other.$s" in cols
+        drops, embeds = _clust_run_keys(family, table, s, cols, shared)
         on_log("[INFO] $(run.label): dropping $(join(drops, ", ")) from $(basename(p))")
-        label_props(p) |> drop_obs(drops) |> drop_obsm(shared ? String[] : ["X_umap.$s"]) |> save!
+        label_props(p) |> drop_obs(drops) |> drop_obsm(embeds) |> save!
         # the legacy family-less sidecar key matches every family — only take it when nothing else uses it
         _drop_sidecar_keys!(_clustfeatures_path(p), _clustfeatures_raw(p),
                             shared ? [_clustfeatures_key(s, family)] : [_clustfeatures_key(s, family), s])
@@ -356,6 +370,7 @@ const NOT_RUN_TASKS = Dict{String,String}(
     "editImages.zProject" => "image version",
     "importImages.omezarr" => "image import", "importImages.migrateLegacy" => "image import",
     "importImages.remove" => "deletes, produces nothing",
+    "gate.manual_gate" => "copies gates — user work, never a run's to delete",
     "exportImages.ome_tiff" => "writes outside the project",
     # new label sets → the dialog's Label sets scope
     "segment.cellpose" => "label set", "segment.cellposeMeasure" => "label set",

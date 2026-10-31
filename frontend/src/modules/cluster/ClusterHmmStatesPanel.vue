@@ -9,7 +9,7 @@
   Data: the shared `frequency` aggregation (POST /api/plot_data, popType=trackclust,
   granularity=cell → member cells carry their HMM state; scope=summarised pools images). Per-cluster
   mode adds groupBy=clusters.<suffix> + collapseSeries (one series per cluster, over root). Rendering
-  is self-contained (lazy Observable Plot, like UmapView) because the layout is a transpose
+  is self-contained (lazy Observable Plot, like ClusterMapView) because the layout is a transpose
   of the generic stacked bar (x = group, fill = state) — not worth a new shared chart type.
 -->
 <script setup lang="ts">
@@ -273,7 +273,7 @@ function markStyle(m: { u: number; v: number }): Record<string, string> | null {
 /* .hmm-iconbtn → cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense */
 .hmm-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .hmm-export { max-width: 7rem; }
-/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in UmapView + ClusterHeatmapPanel) */
+/* + .cc-empty .cc-empty-overlay (was a byte-identical copy of the same overlay empty in ClusterMapView + ClusterHeatmapPanel) */
 .hmm-empty { padding: 1rem; }
 .hmm-empty .pi { font-size: 1.4rem; opacity: 0.6; }
 .hmm-empty p { margin: 0; font-size: var(--cc-fs-md); max-width: 22rem; }

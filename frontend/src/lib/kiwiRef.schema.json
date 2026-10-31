@@ -81,8 +81,12 @@
       "properties": { "kind": { "const": "capture" }, "captureId": { "$ref": "#/definitions/uid" } }
     },
     "task": {
+      "$comment": "funName alone = this kind of step (exists in the registry). With imageUid = a step that RAN: the resolver requires a `done` run in that image's run log, so a configured task is never evidence a step ran. valueName (needs imageUid) narrows to a run that read or wrote that name.",
       "type": "object", "additionalProperties": false, "required": ["kind", "funName"],
-      "properties": { "kind": { "const": "task" }, "funName": { "$ref": "#/definitions/uid" } }
+      "properties": {
+        "kind": { "const": "task" }, "funName": { "$ref": "#/definitions/uid" },
+        "imageUid": { "$ref": "#/definitions/uid" }, "valueName": { "$ref": "#/definitions/uid" }
+      }
     },
     "ui": {
       "type": "object", "additionalProperties": false, "required": ["kind", "anchor"],

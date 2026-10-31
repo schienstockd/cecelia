@@ -17,8 +17,9 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 # the usage-limit reading is shared with the autonomous runs; judge callers keep reaching it as `judge.X`
 from cecelia.effectiveness.claude_cli import (  # noqa: E402,F401
-    EX_TEMPFAIL, RESET_FALLBACK, RateLimited, failure_text, limit_exit, rate_limit, read_result, reset_at,
-    resolve_claude_bin)
+    EX_TEMPFAIL, RESET_FALLBACK, USAGE_KEYS, RateLimited, failure_text, limit_exit, rate_limit, read_result,
+    reset_at, resolve_claude_bin, tokens)
+from cecelia.effectiveness.claude_cli import models as _models  # noqa: E402
 
 CALL_USD = 0.75
 TIMEOUT_SEC = 240
@@ -30,23 +31,22 @@ class JudgeError(RuntimeError):
     nothing was judged."""
 
 
-#: The token counts the CLI reports, under the names the record uses.
-_USAGE_KEYS = {"input": "input_tokens", "cache_write": "cache_creation_input_tokens",
-               "cache_read": "cache_read_input_tokens", "output": "output_tokens"}
-
-
-def tokens(out: dict) -> dict[str, int]:
-    """Token counts from one `claude -p --output-format json` result; zeros when it reported none."""
-    usage = out.get("usage") or {}
-    return {k: int(usage.get(src) or 0) for k, src in _USAGE_KEYS.items()}
+def usage(out: dict) -> dict:
+    """One call's meter entry: its token counts (`tokens`) plus `models`, the model ids it ran on
+    (what the record's commit and PR name — docs/DEV.md → *Commits*)."""
+    return {**tokens(out), "models": _models(out)}
 
 
 def add_tokens(meter: dict | None, counts: dict | None) -> None:
-    """Add one call's counts into `meter`, in place. A caller that passes no meter keeps nothing."""
+    """Add one call's counts into `meter`, in place, and union its `models`. A caller that passes no
+    meter keeps nothing. Readers that sum a meter take only its numbers (`record.tokens_line`)."""
     if meter is None:
         return
-    for k in _USAGE_KEYS:
+    for k in USAGE_KEYS:
         meter[k] = meter.get(k, 0) + int((counts or {}).get(k, 0))
+    used = (counts or {}).get("models") or []
+    if used:
+        meter["models"] = sorted(set(meter.get("models") or []) | set(used))
 
 
 def unpack(result: tuple) -> tuple[dict, float, dict]:
@@ -76,4 +76,4 @@ def call_judge(prompt: str, schema: dict, *, budget_usd: float = CALL_USD,
     answer = out.get("structured_output")
     if proc.returncode != 0 or out.get("is_error") or not isinstance(answer, dict):
         raise JudgeError(f"judge failed (exit {proc.returncode}): {failure_text(proc, out)}")
-    return answer, float(out.get("total_cost_usd") or 0.0), tokens(out)
+    return answer, float(out.get("total_cost_usd") or 0.0), usage(out)

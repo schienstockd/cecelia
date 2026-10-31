@@ -334,7 +334,7 @@ reason is ssh's own failure in brief when ssh failed (exit 255), else the script
 function hpc_exec!(c::HpcConn, script::AbstractString; what::AbstractString, timeout_s::Real = 60)::String
     r = hpc_exec(c, script; timeout_s = timeout_s)
     r.code == 0 && return r.out
-    why = r.timed_out ? "no reply within $(timeout_s) s" :
+    why = r.timed_out ? "the cluster did not answer within $(round(Int, timeout_s)) s. It may be busy; try again" :
           (c isa HpcSshConn && r.code == 255) ? _ssh_error_line(r.err) :
           r.code == 127 ? "not installed on the cluster (" * _last_line(r.err, "command not found") * ")" :
           _last_line(r.err, "exit code $(r.code)")

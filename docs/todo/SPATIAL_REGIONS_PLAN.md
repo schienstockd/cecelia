@@ -404,7 +404,7 @@ ENABLER written but never rendered: the clustfeatures sidecar recorded the basis
 Python runner wrote `spatial.comp.{sanitised}.{suffix}` columns, so the heatmap requested columns that
 did not exist and 400'd. Fixed by making Julia the single namer (`_comp_col`, passed to Python as
 `compCols` AND recorded in the sidecar) plus a `labels` map so rows still display as population names.
-Item 4 (region UMAP) 500'd twice over: `api_plots_umap` hardcoded `clusters.{suffix}` (so region codes
+Item 4 (region UMAP) 500'd twice over: `api_plots_cluster_map` hardcoded `clusters.{suffix}` (so region codes
 were never found) and its missing-column fallback called `nrow`, which is not imported in `api/src` at
 all. Item 3 was never built — there was **no** `clustRegions` plot definition, so the region page's
 summary canvas said "No plot types available for this module yet"; added
@@ -446,7 +446,7 @@ Spatial Analysis population selectors show **all poptypes** (`flow`/`clust`/`liv
 | Positional remapping (region-colored dots) | `sq.pl.spatial_scatter` (trivial) | interactive **PositionalScatterView** + napari points (Phase 5/8) |
 | Region adjacency (% shared-border force graph) | `interaction_matrix` approximates | **custom** border-% metric + network overlay (Phase 8) |
 | Per-region population frequency | none (one-line groupby) | **summary plot**, `popType:"region"` (Phase 5) |
-| UMAP of composition colored by region | (scanpy umap) | reuse `X_umap.{suffix}` + `UmapView` (Phase 4) |
+| UMAP of composition colored by region | (scanpy umap) | reuse `X_umap.{suffix}` + `ClusterMapView` (Phase 4) |
 
 ---
 

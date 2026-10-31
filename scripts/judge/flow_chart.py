@@ -21,7 +21,7 @@ import typing as _t
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
-from cecelia.effectiveness.log import FINDING_EVENTS, latest_resolutions_by_slug  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS  # noqa: E402
 from cecelia.effectiveness.palette import load_hex  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
 
@@ -45,9 +45,10 @@ _FIXED = "fixed_pre_commit"
 
 
 #: Bug-check / verify column per verify verdict. A bug with one went to a verify agent.
-_BY_VERDICT = {"fix": "real", "decide": "real", "guard": "parked", "dismiss": "not_a_bug"}
+#: `fixed` is a real bug already fixed: real, but not filed (its status is `gone`, so it counts as fixed).
+_BY_VERDICT = {"fix": "real", "decide": "real", "fixed": "real", "guard": "parked", "dismiss": "not_a_bug"}
 assert set(_BY_VERDICT) == set(_verify.VERDICTS), "a new verdict needs a column here"
-assert {v for v, c in _BY_VERDICT.items() if c == "real"} == set(_issues.FILED_VERDICTS)
+assert {v for v, c in _BY_VERDICT.items() if c == "real"} - {"fixed"} == set(_issues.FILED_VERDICTS)
 #: Bug-check column per status, for a bug no verify agent has seen. `open` / `parked` are waiting on one.
 _BY_STATUS = {"unmerged": "waiting", "unjudged": "waiting", "gone": "settled", "dismissed": "settled",
               "wont_fix": "settled", "open": "verify", "parked": "verify"}
@@ -66,34 +67,42 @@ def _bug_class(b: dict) -> tuple[str, str]:
 
 
 def _real_class(b: dict) -> str:
+    if _record.verified_fixed(b):   # `dismissed` when a repeated error, or an older record's dismiss
+        return "fixed"
     return _REAL_BY_STATUS.get(b.get("status")) or ("open_issue" if b.get("issue") else "not_filed")
 
 
 def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
     """The counts behind the picture. `records`: the judge's pass records, oldest first."""
     events = list(events)
-    resolved = latest_resolutions_by_slug(events)
-    outcome = lambda key: ((resolved.get(key) or {}).get("payload") or {}).get("outcome")  # noqa: E731
+    resolved = _bugs.branch_resolutions(events)
     required: dict[str, dict] = {}
     slugless: list[dict] = []      # rows from before slugs, outcome inline — counted like `chart.aggregate`
     plausible: dict[str, dict] = {}
+    # by key, the first row no tag on its own branch fixed: a key with one is unfixed, as in `bugs.candidates`
+    req_open: dict[str, dict] = {}
+    pl_open: dict[str, dict] = {}
     for e in events:
         p = e.get("payload") or {}
         if e.get("event") in FINDING_EVENTS and not p.get("slug"):
             slugless.append(e)
         elif e.get("event") in FINDING_EVENTS and p["slug"] not in _REDTEAM_SLUGS:
             required.setdefault(p["slug"], e)
+            if _bugs.tag(resolved, e).get("outcome") != _FIXED:
+                req_open.setdefault(p["slug"], e)
         elif e.get("event") == _PLAUSIBLE_EVENT and p.get("marker") == "plausible":
             plausible.setdefault(_bugs._key(e), e)
+            if _bugs.tag(resolved, e).get("outcome") != _FIXED:
+                pl_open.setdefault(_bugs._key(e), e)
     # the notes behind the Recital's not-fixed and untagged-plausible segments, by the sweep's key
-    unfixed = {**{s: e for s, e in required.items() if outcome(s) != _FIXED},
+    unfixed = {**req_open,
                **{_bugs._key(e): e for e in slugless if (e.get("payload") or {}).get("outcome") != _FIXED},
-               **{k: e for k, e in plausible.items() if outcome(k) != _FIXED}}
+               **pl_open}
     days = sorted(e["ts"][:10] for e in (*required.values(), *slugless, *plausible.values()) if e.get("ts"))
-    req_fixed = (sum(outcome(s) == _FIXED for s in required)
+    req_fixed = (len(required) - len(req_open)
                  + sum((e.get("payload") or {}).get("outcome") == _FIXED for e in slugless))
     n_required = len(required) + len(slugless)
-    pl_fixed = sum(outcome(k) == _FIXED for k in plausible)
+    pl_fixed = len(plausible) - len(pl_open)
 
     latest: dict[str, dict] = {}
     for record in records:
@@ -133,6 +142,8 @@ def _into_check(unfixed: dict[str, dict], bugs: _t.Iterable[dict], last_pass: st
     reached: set[str] = set()
     from_notes = tagged_later = 0
     for b in bugs:
+        # findings waiting on stranded commits reached that bug: merged into it, like one function's notes
+        reached |= {w["key"] for w in b.get("waiting", [])} & eligible
         if b.get("kind") in ("agent_run", "stranded"):
             continue
         mine = set(b.get("sources") or [b["key"]]) & eligible
@@ -259,9 +270,9 @@ def _ledger(into: dict, bugs: int) -> list[tuple[str, int, str]]:
              ("−", into["rules_only"], "wrong home: these feed only the rule count"),
              ("−", into["not_listed"], "already gone when the judge first read them: not listed"),
              ("−", into["since_pass"], since),
-             ("−", into["merged"], "on a function another note names: one bug between them"),
+             ("−", into["merged"], "on a function another note names, or waiting on stranded commits: one bug"),
              ("+", into["tagged_later"], "tagged fixed only after the judge had listed them"),
              ("+", into["agent_run"], "errors hit by unattended agent runs"),
-             ("+", into["stranded"], "commits pushed to a PR after it merged"),
+             ("+", into["stranded"], "commits made on a PR's branch after it merged"),
              ("=", bugs, "bugs in the bug check")]
     return [ln for ln in lines if ln[1] or ln[0] in ("", "=")]

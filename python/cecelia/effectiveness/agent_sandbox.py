@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import tempfile
@@ -46,10 +47,68 @@ CREDENTIAL_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENT
                   "DBUS_SESSION_BUS_ADDRESS")
 
 
+#: The repo's pinned Node major (fnm and CI read the same file).
+_NODE_VERSION_FILE = pathlib.Path(__file__).resolve().parents[3] / ".node-version"
+
+
+def _node_major(version: str) -> int | None:
+    m = re.match(r"v?(\d+)", version.strip())
+    return int(m.group(1)) if m else None
+
+
+def _fnm_dirs(env: dict[str, str]) -> list[pathlib.Path]:
+    """Where fnm keeps its installs: `FNM_DIR` when set (fnm's own rule), else its default places."""
+    if env.get("FNM_DIR"):
+        return [pathlib.Path(env["FNM_DIR"])]
+    home = pathlib.Path.home()
+    data = pathlib.Path(env["XDG_DATA_HOME"]) if env.get("XDG_DATA_HOME") else home / ".local" / "share"
+    return [data / "fnm", home / "Library" / "Application Support" / "fnm", home / ".fnm"]
+
+
+def node_bin_dir(env: dict[str, str] | None = None, version_file: pathlib.Path | None = None) -> str | None:
+    """A directory holding the repo's pinned Node major that a sandboxed agent can read, or None.
+
+    The shell's `node` is often fnm's per-shell symlink under `/run/user/<uid>`, which the sandbox
+    denies (`_RUNTIME`), so it is followed to its real installation; under systemd PATH has no fnm at
+    all and the system node is too old for the frontend's vitest. Then fnm's own installs, newest first."""
+    env = dict(os.environ if env is None else env)
+    try:
+        want = _node_major((version_file or _NODE_VERSION_FILE).read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    if want is None:
+        return None
+    found = shutil.which("node", path=env.get("PATH"))
+    if found:
+        real = pathlib.Path(found).resolve()
+        # an fnm install names its version in its path (`node-versions/v24.16.0/…`): no spawn needed
+        named = next((p.name for p in real.parents if p.parent.name == "node-versions"), None)
+        if named is None:
+            try:
+                named = subprocess.run([str(real), "--version"], capture_output=True, text=True, timeout=10,
+                                       check=False, encoding="utf-8").stdout
+            except (OSError, subprocess.TimeoutExpired):
+                named = ""
+        if _node_major(named) == want:
+            return str(real.parent)
+    for d in _fnm_dirs(env):
+        versions = sorted(((tuple(int(x) for x in re.findall(r"\d+", v.name)), v) for v in d.glob(f"node-versions/v{want}.*")),
+                          reverse=True)
+        for _, v in versions:
+            bin_dir = v / "installation" / "bin"
+            if (bin_dir / "node").is_file():
+                return str(bin_dir)
+    return None
+
+
 def agent_env(**extra: str) -> dict[str, str]:
     """This process's env for a sandboxed agent: without `CREDENTIAL_ENV`, with `CECELIA_OBSERVER_NO_PAIR`
-    (a throwaway session mustn't re-pair the owner's project), plus `extra`."""
+    (a throwaway session mustn't re-pair the owner's project), the repo's pinned Node first on PATH
+    (`node_bin_dir`), plus `extra`."""
     env = {k: v for k, v in os.environ.items() if k not in CREDENTIAL_ENV}
+    node = node_bin_dir(env)
+    if node:
+        env["PATH"] = os.pathsep.join([node, *(p for p in env.get("PATH", "").split(os.pathsep) if p and p != node)])
     return {**env, "CECELIA_OBSERVER_NO_PAIR": "1", **extra}
 
 

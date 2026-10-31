@@ -467,6 +467,21 @@ function _tasklog_slice(content::AbstractString, since::AbstractString, until::A
     String(take!(out))
 end
 
+"""
+    _tasklog_tail(content, max_bytes) -> (text, truncated)
+
+The last `max_bytes` of a log, cut forward to a line start so no line arrives half-read. The log is
+cumulative across every run of a fun on an image, so without a cap it only grows; `max_bytes <= 0`
+keeps the whole log.
+"""
+function _tasklog_tail(content::String, max_bytes::Int)
+    (max_bytes <= 0 || sizeof(content) <= max_bytes) && return content, false
+    i = thisind(content, sizeof(content) - max_bytes + 1)
+    j = findnext('\n', content, i)
+    # One last line longer than the cap would leave nothing after its newline — send it cut instead.
+    (j === nothing || j == lastindex(content) ? content[i:end] : content[nextind(content, j):end]), true
+end
+
 function api_images_tasklog(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
@@ -475,6 +490,7 @@ function api_images_tasklog(req::HTTP.Request)
     fun         = get(query, "fun", "")
     since       = get(query, "since", "")
     until       = get(query, "until", "")
+    max_bytes   = something(tryparse(Int, get(query, "maxBytes", "")), 0)   # 0 / absent = whole log
     isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
     isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
     isempty(fun)         && return 400, JSON3.write((; error="fun required"))
@@ -493,14 +509,17 @@ function api_images_tasklog(req::HTTP.Request)
                                                   fun, exists=false, content=""))
     content = read(logfile, String)
     (isempty(since) && isempty(until)) || (content = _tasklog_slice(content, since, until))
+    total_bytes = sizeof(content)
+    content, truncated = _tasklog_tail(content, max_bytes)
     200, JSON3.write((; projectUid=project_uid, imageUid=image_uid, fun,
-                        exists=true, content, bytes=sizeof(content)))
+                        exists=true, content, bytes=sizeof(content), totalBytes=total_bytes, truncated))
 end
 
 # GET /api/tasks/history?projectUid[&limit] → recent task runs across all images, newest first.
 # Aggregates each image's runlog.json (fun, valueName, timestamp) plus the image's current status.
 # Read-only; backs the MCP observer's get_task_history tool. (Attempt counts arrive with the
-# per-node counter in a later slice.) limit caps the returned rows (default 100).
+# per-node counter in a later slice.) limit caps the returned rows (default 100); `total` and
+# `truncated` say when it did, so a capped list never reads as the whole history.
 function api_tasks_history(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)
@@ -532,8 +551,10 @@ function api_tasks_history(req::HTTP.Request)
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological
     sort!(rows, by = r -> r["at"], rev = true)
-    length(rows) > limit && (rows = rows[1:limit])
-    200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
+    total = length(rows)
+    truncated = total > limit
+    truncated && (rows = rows[1:limit])
+    200, JSON3.write((; projectUid=project_uid, count=length(rows), total, truncated, history=rows))
 end
 
 # The 400 for a fun with no cohort metrics and no steps that bank any (a composite is answered from
@@ -718,7 +739,8 @@ function api_observer_labarchives_set(body_bytes::Vector{UInt8})
                       source     = json_native(get(body, :source, Dict{String,Any}())),
                       sections   = json_native(get(body, :sections, Any[])),
                       cohort     = json_native(get(body, :cohort, Any[])),
-                      synced_by  = _wstr(body, :syncedBy, "claude"))
+                      synced_by  = _wstr(body, :syncedBy, "claude"),
+                      updated_by = author_stamp())
     catch e
         return 400, JSON3.write((; error=sprint(showerror, e)))
     end

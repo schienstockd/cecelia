@@ -187,7 +187,8 @@ end
     end
 
     # register (one-click terminal setup) is deliberately NOT called here: on a machine with Claude
-    # Code installed it would rewrite the developer's own ~/.claude.json. Its command builders are
-    # pure and covered in app/test/runtests.jl (`_build_mcp_register_cmd`/`_build_mcp_remove_cmd`).
+    # Code installed it would install a plugin into the developer's own Claude config. Its command
+    # builders and state are pure and covered in app/test/suite/observer.jl (`_build_plugin_*_cmd`,
+    # `observer_plugin_state`).
 end
 

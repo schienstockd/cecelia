@@ -965,7 +965,7 @@ end
 # against a segmentation that actually took part in the clustering run — NOT the drifting *active*
 # value_name, which may not be in the run at all (its track/label table then lacks `clusters.{suffix}`,
 # which is exactly what produced the `column name :clusters.default not found` crash). Mirror the UMAP
-# endpoint's resolution (api/src/gating_api.jl `api_plots_umap`): pick a co-clustered value_name for the
+# endpoint's resolution (api/src/gating_api.jl `api_plots_cluster_map`): pick a co-clustered value_name for the
 # run's suffix. Only kicks in for cluster pop_types with a known suffix and NO explicit value_name — the
 # per-cluster path (category="clusters.{suffix}") still pools via `_pool_co_clustered`, and an explicit
 # value_name is always honoured.

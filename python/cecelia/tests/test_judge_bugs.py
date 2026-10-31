@@ -1,7 +1,8 @@
 """Tests for `scripts/judge/bugs.py` — the weekly bug sweep.
 
 Design: docs/ai-assist/WEEKLY_JUDGE.md. The code is a throwaway
-git repo; the judge and the merged-PR list are injected. Nothing spawns `claude` or `gh`.
+git repo; the judge, the merged-PR list and each branch's merged PRs are injected (the last is
+stubbed for every test, so a default lookup can't reach `gh`). Nothing spawns `claude` or `gh`.
 
 Run with `pixi run test-py`.
 """
@@ -70,6 +71,14 @@ class _Repo(unittest.TestCase):
         self.git("commit", "-q", "-m", "a")
         self.sha = self.git("rev-parse", "HEAD")
         self.prompts: list[str] = []
+        self.heads_asked: list[str] = []
+
+        def no_merged_prs(branch, cwd=None):   # the default lookup, so no sweep here reaches `gh`
+            self.heads_asked.append(branch)
+            return []
+        patch = mock.patch.object(self.b, "merged_pr_heads", no_merged_prs)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def git(self, *args):
         return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=self.repo,
@@ -445,6 +454,25 @@ class SweepTest(_Repo):
                          [("fanout-00000009", "open"), ("fanout-00000008", "parked")])
         self.assertIn("a commit naming its key landed", nxt[0]["why"])
 
+    def test_a_parked_bug_whose_file_is_gone_is_gone_for_free_and_takes_no_slot(self):
+        one = self._guarded()["bugs"][0]
+        other = {**one, "key": "fanout-00000002", "sources": ["fanout-00000002"], "file": "b.py",
+                 "verify": {**one["verify"], "date": "2026-10-06"}}
+        self.commit("b.py", "".join(f"line {i}\n" for i in range(1, 61)), msg="add b")
+        previous = {"run": {"ts": "2026-10-05T00:00:00Z", "sha": self.sha}, "bugs": [one, other]}
+        self.git("rm", "-q", "a.py")
+        self.git("commit", "-q", "-m", "drop a")
+        sha = self.commit("b.py", "".join(f"line {i}\n" for i in range(1, 62)), msg="touch b")
+        self.prompts.clear()
+        with mock.patch.object(self.b, "PARKED_RECHECK", 1):
+            later = self.b.sweep([], date="2026-10-12", sha=sha, previous=previous, judge=self.judge(),
+                                 merged_prs=lambda since: [], repo=self.repo)[0]
+        self.assertEqual({b["key"]: b["status"] for b in later},
+                         {"fanout-00000001": "gone", "fanout-00000002": "open"})   # the one slot went to b.py
+        gone = next(b for b in later if b["status"] == "gone")
+        self.assertEqual(gone["why"], f"`a.py` isn't in {sha[:8]} (parked 2026-10-05 as guard)")
+        self.assertEqual(self.prompts, [])
+
     def test_a_parked_run_error_goes_back_when_a_run_hits_it_again(self):
         bugs, _ = self.sweep([_run_error("run-00000001", ts="2026-10-04T00:30:00Z")])
         bugs[0].update(status="parked", verify={"verdict": "guard", "date": "2026-10-05", "sha": self.sha})
@@ -663,6 +691,107 @@ class StrandedTest(_Repo):
         self.assertEqual(self.sweep([], prs=[{**self.pr, "headRefOid": "f" * 40}])[0], [])
 
 
+class SquashLandedTest(_Repo):
+    """A branch whose PR was squash-merged: main has a copy of its commits, not the commits."""
+
+    def setUp(self):
+        super().setUp()
+        self.git("checkout", "-q", "-b", "feat/x")
+        self.change = self.commit("b.py", "def f():\n    return 1\n", msg="add f")
+        # a second commit, so the squash's patch is neither commit's (else `git cherry` lands it)
+        self.head = self.commit("c.py", "g = 1\n", msg="add g")
+        self.git("checkout", "-q", "main")
+        self.git("merge", "-q", "--squash", "feat/x")
+        self.git("commit", "-q", "-m", "add f (#5)")
+        self.squash = self.sha = self.git("rev-parse", "HEAD")
+        self.pr = {"number": 5, "headRefOid": self.head, "mergeCommit": {"oid": self.squash}}
+        # reviewed on top of main's first commit, then committed as `change` on the kept local branch
+        self.found = _finding("fanout-00000001", file="b.py", line=2, branch="feat/x") | {"commit": self.git("rev-parse", "HEAD~1")}
+
+    def lands(self, heads, found=None, failures=None):
+        bugs, _ = self.sweep([found or self.found], pr_heads=heads, failures=failures)
+        return [b["status"] for b in bugs]
+
+    def test_without_the_pr_lookup_ancestry_never_lands_a_squash(self):
+        self.assertEqual(self.lands(lambda br: []), ["unmerged"])
+
+    def test_a_change_in_a_merged_prs_head_has_landed(self):
+        asked = []
+        twin = _finding("fanout-00000002", file="b.py", line=1, branch="feat/x") | {"commit": self.found["commit"]}
+        bugs, _ = self.sweep([self.found, twin], pr_heads=lambda br: asked.append(br) or [self.pr])
+        self.assertEqual([b["status"] for b in bugs], ["open"])   # judged: one function, one bug
+        self.assertEqual(asked, ["feat/x"])                        # once per branch a pass
+
+    def after_the_merge(self):
+        """A commit on `feat/x` after the head #5 merged at, and a finding reviewed on top of that head."""
+        self.git("checkout", "-q", "feat/x")
+        self.late = self.commit("b.py", "def f():\n    return 2\n", msg="after the merge")
+        self.git("checkout", "-q", "main")
+        return self.found | {"commit": self.head}
+
+    def test_a_commit_after_the_merged_head_never_pushed_is_a_local_stranded_bug(self):
+        later = self.after_the_merge()
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"], b.get("local")) for b in bugs],
+                         [("stranded-local-feat-x", "open", True)])   # no forever-unmerged row
+        s = bugs[0]
+        self.assertEqual((s["commits"], s["pr"], [w["key"] for w in s["waiting"]]), ([self.late], 5, ["fanout-00000001"]))
+        self.assertIn("after #5 merged were never pushed: `", s["desc"])
+        self.assertIn("after the merge (", s["desc"])   # subject and date
+        self.assertIn("git branch -D feat/x", s["desc"])
+        spec = importlib.util.spec_from_file_location("issues", _REPO / "scripts" / "judge" / "issues.py")
+        issues = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(issues)
+        self.assertFalse(issues.filed(s))   # nothing on GitHub to link
+
+    def test_a_pushed_commit_after_the_merged_head_joins_the_stranded_pr_bug(self):
+        later = self.after_the_merge()
+        self.git("update-ref", "refs/remotes/origin/feat/x", self.late)
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b.get("local"), [w["key"] for w in b["waiting"]]) for b in bugs],
+                         [("stranded-pr5", None, ["fanout-00000001"])])
+        # carried: the finding comes back out, is still waiting, and joins the carried bug again
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs},
+                              pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"], [w["key"] for w in b.get("waiting", [])]) for b in again],
+                         [("stranded-pr5", "open", ["fanout-00000001"])])
+
+    def test_once_the_commits_land_the_finding_is_judged_and_the_stranded_bug_is_gone(self):
+        later = self.after_the_merge()
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.sha = self.commit("b.py", "def f():\n    return 2\n", msg="after the merge (#6)")   # #6, squashed
+        second = {"number": 6, "headRefOid": self.late, "mergeCommit": {"oid": self.sha}}
+        again, _ = self.sweep([], previous={"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": bugs},
+                              pr_heads=lambda br: [second, self.pr])
+        self.assertEqual({b["key"]: b["status"] for b in again},
+                         {"fanout-00000001": "open", "stranded-local-feat-x": "gone"})
+
+    def test_a_commit_after_the_merged_head_whose_patch_main_has_landed(self):
+        later = self.after_the_merge()
+        self.sha = self.commit("b.py", "def f():\n    return 2\n", msg="picked over")   # same patch, new commit
+        bugs, _ = self.sweep([later], pr_heads=lambda br: [self.pr])
+        self.assertEqual([(b["key"], b["status"]) for b in bugs], [("fanout-00000001", "open")])   # judged
+
+    def test_a_pr_merged_after_the_pinned_sha_has_not_landed(self):
+        self.sha = self.git("rev-parse", "HEAD~1")
+        self.assertEqual(self.lands(lambda br: [self.pr]), ["unmerged"])
+
+    def test_a_finished_branch_lands_with_no_change_commit(self):
+        # reviewed on top of the tip the PR merged at; the diff never got its own commit on the branch
+        at_tip = self.found | {"commit": self.head}
+        self.assertEqual(self.lands(lambda br: [], found=at_tip), ["unmerged"])
+        self.assertEqual(self.lands(lambda br: [self.pr], found=at_tip), ["open"])
+
+    def test_gh_unavailable_falls_back_to_ancestry_and_says_so(self):
+        failures = {}
+        self.assertEqual(self.lands(lambda br: None, failures=failures), ["unmerged"])
+        self.assertIn("gh couldn't list merged PRs for 1 branch(es) (feat/x)", failures["landed"])
+
+    def test_the_default_lookup_is_merged_pr_heads(self):
+        self.assertEqual(self.lands(None), ["unmerged"])
+        self.assertEqual(self.heads_asked, ["feat/x"])   # the setUp stub, never the real gh
+
+
 class AgentRunTest(_Repo):
     def test_one_candidate_per_error_key_counting_its_runs(self):
         events = [_run_error("run-aaaa"), _run_error("run-aaaa", ts="2026-10-04T01:00:00Z"),
@@ -763,6 +892,17 @@ class AgentRunTest(_Repo):
 
 
 class RenderTest(unittest.TestCase):
+    def test_a_local_stranded_bug_lists_the_findings_waiting_on_it(self):
+        spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
+        record = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(record)
+        md = "\n".join(record._render_bugs([{"id": "B1", "key": "stranded-local-feat-x", "kind": "stranded", "local": True,
+                                             "status": "open", "pr": 5, "branch": "feat/x", "commits": ["c" * 40],
+                                             "desc": "d", "why": "w", "first_seen": "2026-10-05",
+                                             "waiting": [{"key": "fanout-1", "file": "a.py", "line": 2, "desc": "wd"}]}]))
+        self.assertIn("### B1 · open · stranded locally · PR #5 `feat/x` · `stranded-local-feat-x`", md)
+        self.assertIn("**Waiting on them** (`fanout-1`, `a.py:2`): wd", md)
+
     def test_unjudged_bugs_render_apart_and_stranded_ones_name_their_pr(self):
         spec = importlib.util.spec_from_file_location("record", _REPO / "scripts" / "judge" / "record.py")
         record = importlib.util.module_from_spec(spec)
@@ -784,12 +924,13 @@ class RenderTest(unittest.TestCase):
         spec.loader.exec_module(record)
         common = {"kind": "agent_run", "marker": "agent run", "tool": "create_chain", "file": None, "line": None,
                   "desc": "`create_chain` failed: 400", "first_seen": "2026-10-05", "runs": 3,
-                  "last_seen": "2026-10-12T00:00:00Z", "why": "w"}
+                  "logged": "2026-10-04T09:38:43Z", "last_seen": "2026-10-12T00:00:00Z", "why": "w"}
         md = "\n".join(record._render_bugs([{**common, "id": "B1", "key": "run-aaaa", "status": "open"},
                                             {**common, "id": "B2", "key": "run-bbbb", "status": "wont_fix",
                                              "muted": True}]))
         self.assertIn("### B1 · open · `agent run · create_chain` · `run-aaaa`", md)
-        self.assertIn("**Error** (`create_chain`, hit in 3 run(s), first seen 2026-10-05, last 2026-10-12)", md)
+        # both dates are run dates: the pass that listed it (`first_seen`) came after the first run
+        self.assertIn("**Error** (`create_chain`, hit in 3 run(s), first hit 2026-10-04, last 2026-10-12)", md)
         self.assertNotIn("### B2", md)
         self.assertIn("- B2 · wont fix · `agent run · create_chain` · `run-bbbb` — hit in 3 run(s), last 2026-10-12", md)
         md = "\n".join(record._render_bugs([{**common, "id": "B1", "key": "rep-aaaa", "status": "open", "repeat": True,

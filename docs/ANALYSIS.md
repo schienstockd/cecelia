@@ -41,7 +41,7 @@ and is where a user checks before letting Claude near their Analysis page. See
 
 A `plot` is a summary spec id **or a board VIEW key** — the interactive views and cluster panels the
 board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`,
-`hmmStateCards`, `motifCards`, and the clustering plots `umap`, `heatmap`, `hmmStates`,
+`hmmStateCards`, `motifCards`, and the clustering plots `clusterMap` (was `umap`), `heatmap`, `hmmStates`,
 `hmmTransitions`, `cellCards`), each with its own few fields, stored as `{kind: "interactive", ref,
 state}`. Clustering views name their run (`suffix` + `popType` clust/trackclust), which becomes the
 board's `shared.clustPopType`/`clustSuffix` — one run per board, so a second suffix is refused rather
@@ -158,7 +158,7 @@ not one per surface (`docs/UI.md`). The `+ Plot` picker groups them:
 - **Summary** (server-aggregated, Observable Plot): the plot-spec registry (`GET /api/plots/definitions`),
   rendered by one `SummaryPanel` → `PlotChart`. Identical to `SummaryCanvas` (behaviour/summary pages).
 - **Interactive** (WebGL/self-contained): `components/canvas/interactiveViews.ts` (`INTERACTIVE_VIEWS`),
-  hosted by the generic `InteractivePanel`. Members: **UMAP** (`UmapView`), **gating strategy**
+  hosted by the generic `InteractivePanel`. Members: **cluster map** (`ClusterMapView`: the UMAP, or for a track run its two named diffusion axes, picked in the panel's options as *Layout*), **gating strategy**
   (`GatingStrategyView`), **image/strip** (`ImageStripView`), **flow metrics** (`FlowMetricsView`),
   **training convergence** (`FlowTrainingView`), **model probability** (`FlowProbabilityView`),
   **tracks** (`TrackPathsView` — paths / star / rose) and **track diagnostics** (`TrackDiagnosticsView`
@@ -192,7 +192,7 @@ registry `rail` (`canvasManager.ts` → `RailKind`), never a branch in `LayoutCa
 | `rail` | rail shows | who declares it |
 |---|---|---|
 | `'pops'` (default) | `SeriesPicker` — the summary population/series list | every summary spec; the two track plots; any view that doesn't say otherwise |
-| `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `umap` + every `CLUSTER_PANELS` entry |
+| `'clusterPops'` | `PopulationManager`, read-only, on the board's one clustering run | `clusterMap` + every `CLUSTER_PANELS` entry |
 | `'flowModels'` | `FlowModelVault`, docked | `flowTraining`, `flowProbability` |
 | `'none'` | `SeriesPicker` with the list suppressed — the styling block + scope footer only | `gatingStrategy`, `filmstrip`, `flowMetrics` |
 
@@ -261,6 +261,11 @@ a track run those include per-track AGGREGATES of cell measures — HMM-state / 
 (`track_aggregate_measures`; `docs/PLOTS.md` §9). The same matrix, rounded, is what the observer's
 `get_cluster_summary` returns as each run's `profiles` entry (`app/src/ai/behaviour_clusters.jl`), so
 an agent reads the numbers the user sees.
+
+The board can switch the run under a mounted heatmap (cells ↔ tracks, or the suffix), and a cell
+run's columns don't exist in a track table. So the context offers no features until the new
+popType's metadata has loaded, the panel requests only the columns the run has, and a pick that shares
+nothing with the new run is reseeded to that run's features (`utils/clusterHeatmapFeatures.ts`).
 
 ### Behaviour cards — one family per registry entry
 Three snapshot-card families on the analysis board, sharing a spine:
@@ -395,7 +400,7 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
 - **Light theme**: dark theme is on-screen only. Each plot exposes `exportImage()` → a plot-only
   **light-theme** PNG (summary via `PlotChart.toImageURL(_, light)`; interactive/cluster via a
   `forceLight`/`.cc-light` re-render). Chrome is excluded (the plot host is captured, not the slot).
-  `UmapView` also drops its plot bounding-box border under `forceLight` so the exported figure is
+  `ClusterMapView` also drops its plot bounding-box border under `forceLight` so the exported figure is
   frameless. The summary charts' HTML legend + title overlays are drawn INTO the export from their on-screen
   layout (`PlotChart.toImageURL` → `plots/export.ts` `svgWithOverlays`; `docs/PLOTS.md` → *Legend &
   sizing*) — they used to be dropped, so a board PDF lost every series legend and heatmap colour bar.

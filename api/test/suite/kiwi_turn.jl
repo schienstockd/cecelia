@@ -38,7 +38,14 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     @test all(t -> startswith(t, "mcp__" * OBSERVER_MCP_NAME * "__"), _kiwi_allowed_tools())
     # every observer tool is decided: allowed or excluded with a reason — a new tool fails here
     server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
-    tools = Set(m.captures[1] for m in eachmatch(r"@_tool(?:_if\([^\n]*)?\s*\ndef ([a-z_]+)\(", server))   # `_tool` / `_tool_if` = server.py's registrars
+    tools = Set(m.captures[1] for m in eachmatch(r"@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(", server))   # `_tool` / `_tool_if` / `_gui_tool` = server.py's registrars, then any stacked decorators (`@with_doc`)
+    @test length(tools) == count(r"^@_(?:gui_)?tool"m, server)   # every registration seen — the pattern once missed two @with_doc tools
+    # …plus the gating toolset server.py registers from gating_views.py (`register_gating_tools`)
+    gv = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "gating_views.py"), String)
+    gating = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", gv))
+    @test length(gating) == count(r"^    @tool$"m, gv) && "add_gate" in gating
+    @test occursin("register_gating_tools(_tool, _client)", server)
+    tools = union(tools, gating)
     @test length(tools) > 40
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))
@@ -52,6 +59,9 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     @test !kiwi_ref_seen(Dict("kind" => "cells", "imageUid" => "KDIeEm", "valueName" => "B", "labelIds" => [23]), seen, [])
     @test kiwi_ref_seen(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/Directed"), seen, [])
     @test kiwi_ref_seen(Dict("kind" => "project"), "", [])
+    # a task on an image claims a run there: the image must have been seen, not just the task name
+    @test kiwi_ref_seen(Dict("kind" => "task", "funName" => "segment.cellpose", "imageUid" => "KDIeEm"), seen * " segment.cellpose", [])
+    @test !kiwi_ref_seen(Dict("kind" => "task", "funName" => "segment.cellpose", "imageUid" => "zzzzzz"), seen * " segment.cellpose", [])
     # attached refs count as seen whatever the text — key order and Symbol keys don't matter
     att = [Dict("imageUid" => "QQQQQQ", "kind" => "image")]
     @test kiwi_ref_seen(JSON3.read("""{"kind":"image","imageUid":"QQQQQQ"}"""), "", att)

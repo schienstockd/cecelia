@@ -46,7 +46,7 @@ Base.@kwdef struct ClustPopsParams
     normalisePercentileBottom::Float64 = 0.0
     transformation::String             = "NONE"
     logBase::Int                       = 0
-    mergeUmap::Bool                    = true
+    createUmap::Bool                    = true
     usePaga::Bool                      = false
     pagaThreshold::Float64             = 0.1
 end
@@ -64,7 +64,7 @@ function parse_clust_pops_params(d::AbstractDict)::ClustPopsParams
         normalisePercentileBottom  = Float64(get(d, "normalisePercentileBottom", 0.0)),
         transformation             = string(get(d, "transformation", "NONE")),
         logBase                    = _int_param(d, "logBase", 0),
-        mergeUmap                  = Bool(get(d, "mergeUmap", true)),
+        createUmap                  = Bool(get(d, "createUmap", true)),
         usePaga                    = Bool(get(d, "usePaga", false)),
         pagaThreshold              = Float64(get(d, "pagaThreshold", 0.1)))
 end
@@ -87,17 +87,21 @@ end
 # `labels` optionally maps column name → display label, for runs whose feature columns are machine
 # names but whose meaning is a user-facing string (region composition: `spatial.comp.B_qc__tracked.x`
 # → "B/qc/_tracked"). Empty for the cluster tasks, whose columns are already channel/measure names
-# relabelled via the channels endpoint's nameMap.
+# relabelled via the channels endpoint's nameMap. `behaviour_axes` (track runs only) is the metadata
+# `clustering_utils.behaviour_axes` returns — axis names + path root — stored as `behaviourAxes`
+# (docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md, Decision 4). Untyped until a Julia reader needs it.
 function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
                                 features::Vector{String}, part_of::Vector{String};
                                 family::AbstractString = "clusters",
-                                labels::AbstractDict = Dict{String,String}())
+                                labels::AbstractDict = Dict{String,String}(),
+                                behaviour_axes::Union{Nothing,AbstractDict} = nothing)
     sidecar = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
     existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) : Dict{String,Any}()
     merged = Dict{String,Any}(String(k) => v for (k, v) in existing)
-    merged[_clustfeatures_key(suffix, family)] =
-        Dict{String,Any}("features" => features, "partOf" => part_of,
-                         "family" => String(family), "labels" => Dict{String,Any}(labels))
+    entry = Dict{String,Any}("features" => features, "partOf" => part_of,
+                             "family" => String(family), "labels" => Dict{String,Any}(labels))
+    behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
+    merged[_clustfeatures_key(suffix, family)] = entry
     write_json_atomic(sidecar, merged)
 end
 
@@ -150,7 +154,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
         "normalisePercentileBottom" => p.normalisePercentileBottom,
         "transformation" => p.transformation,
         "logBase" => p.logBase,
-        "createUmap" => p.mergeUmap,
+        "createUmap" => p.createUmap,
         "usePaga" => p.usePaga,
         "pagaThreshold" => p.pagaThreshold,
         "randomState" => 0)

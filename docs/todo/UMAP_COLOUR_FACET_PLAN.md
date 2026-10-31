@@ -26,7 +26,7 @@ attribute} × **facet by** {none | attribute | population}.
 | uid → attr value join | server `attr_map` rule ("join non-empty values with `.`", `api/src/plotting_api.jl`). UMAP fetches per-image already → build the same map client-side from the project store's `img.attr`; one shared `attrKey()` util so the two can't drift |
 | Palette resolution | `paletteRange`/VisProps (`frontend/src/plots/plot.ts`) — already shared |
 | Per-point pop membership | endpoint `_live_map(img, vn, pop_type)` + `cells_in_pop` (already used for the `pop` subset param) — extend from one pop to an ordered list |
-| Scatter paint | UmapView's own `paintDots(ctx, mapPx, subset)` — it's a **2D canvas, not WebGL**, so small-multiples = call it per sub-rect. No GL-context-per-tile problem |
+| Scatter paint | ClusterMapView's own `paintDots(ctx, mapPx, subset)` — it's a **2D canvas, not WebGL**, so small-multiples = call it per sub-rect. No GL-context-per-tile problem |
 
 ## Decisions (2026-07-13)
 
@@ -53,7 +53,7 @@ attribute} × **facet by** {none | attribute | population}.
 
 ## Wire / API changes
 
-`GET /api/plots/umap` (in `api/src/gating_api.jl`, NOT Revise-tracked → **server restart**):
+`GET /api/plots/cluster-map` (in `api/src/gating_api.jl`, NOT Revise-tracked → **server restart**):
 - New params: `colourPopType` (default = UMAP `popType`), `colourPops` (comma list of pop paths; bare
   paths resolve within each vn's own map; empty → `popIdx` all `-1`).
 - Per vn: `m = _live_map(img, vn, colourPopType)`; for each requested pop `has_pop`/`cells_in_pop` →
@@ -67,7 +67,7 @@ attribute} × **facet by** {none | attribute | population}.
 - **Phase 1 — backend + wire.** Endpoint `popIdx` channel + `colourPopType`/`colourPops` + header.
   Frontend: parse 4 floats and record per-point image uid in the fetch loop (no UI change yet — popIdx
   unused, uid unused). Package/API test. Ship. (Server restart to load.)
-- **Phase 2 — colour-by (figure 1).** UmapView `colourBy: cluster | population | attribute` selector
+- **Phase 2 — colour-by (figure 1).** ClusterMapView `colourBy: cluster | population | attribute` selector
   (persisted state). `population` → pop picker → refetch with `colourPops`, colour by `popIdx`,
   legend from `X-Colour-Pops`. `attribute` → attr picker (shared composable) → client uid→attr colour.
   Reuse `paletteRange` + the existing legend/centroid render.
@@ -83,4 +83,4 @@ attribute} × **facet by** {none | attribute | population}.
 - `api/src/*.jl` not Revise-tracked → restart to test Phase 1.
 - Keep colour-by-cluster the default (no regression to today's behaviour).
 - Persist every new option in panel `state` (UI convention).
-- One renderer: faceting is a *layout parameter* of UmapView's paint, not a second scatter component.
+- One renderer: faceting is a *layout parameter* of ClusterMapView's paint, not a second scatter component.

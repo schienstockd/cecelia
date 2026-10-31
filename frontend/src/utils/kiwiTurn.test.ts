@@ -41,6 +41,8 @@ describe('refLabel + pointTarget cover every kind', () => {
     expect(refLabel(samples.tracks)).toBe('track 12 · B')
     expect(refLabel(samples.viewer)).toBe('viewer i t=3 z=7')
     expect(refLabel(samples.ui)).toBe('/gate')
+    expect(refLabel(samples.task)).toBe('segment.cellpose')
+    expect(refLabel({ kind: 'task', funName: 'segment.cellpose', imageUid: 'i', valueName: 'B' })).toBe('segment.cellpose · i · B')
     expect(refLabel(samples.proposedPlot)).toBe('live.track.speed · B/qc/_tracked')
   })
 })

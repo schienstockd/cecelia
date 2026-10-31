@@ -86,9 +86,9 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
+export read_run_log, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
-export read_lab_log, append_lab_log!, lab_log_user_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
+export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
 export la_doc_path, read_la_doc, write_la_doc!, la_gaps, la_briefing, LA_DOC_FILE
 export attr_value_counts, image_attr_groups
@@ -132,6 +132,7 @@ export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export pop_uid, pop_path_by_uid, pop_by_uid
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export copy_gating!, with_popmap_lock
 export co_clustered_value_names
 export clustering_features_pooled, medoid_track, pick_card_example, track_bbox, card_stats, cell_cards_metadata, CELL_CARD_STATS_MEASURES
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
@@ -161,7 +162,8 @@ export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUAN
 export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
 export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
-export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
+export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag,
+       msd_furth_fit, track_duration_bias, track_order_index
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
 export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
@@ -243,7 +245,7 @@ export RUNNER_PROTOCOL, runner_serve, runner_identity, runner_emit
 export RunnerHandle, runner_launch!, runner_stop!, runner_ping, runner_alive, runner_subscribe!
 export runner_submit, runner_cancel, runner_tasks, runner_recent, runner_logs, runner_pools, runner_set_pool_limit
 export runner_set_task_workers
-export runner_submit_chain, runner_cancel_chain, runner_chain_runs
+export runner_submit_chain, runner_cancel_chain, runner_continue_chain, runner_chain_runs
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!
@@ -253,12 +255,14 @@ export ChainNode, ChainEdge, ChainTemplate, ChainRun, ImageNodeState, ChainNodeS
 export ChainScope, CHAIN_IMAGE, CHAIN_SET, CHAIN_INCREMENTAL
 export ChainBarrierPolicy, BARRIER_ALL, BARRIER_REQUIRE_ALL, BARRIER_SUCCESSFUL_ONLY
 export parse_chain_scope, parse_chain_barrier_policy
-export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED
+export NODE_PENDING, NODE_QUEUED, NODE_RUNNING, NODE_DONE, NODE_FAILED, NODE_CANCELLED, NODE_SKIPPED, NODE_WAITING
 export parse_chain_node_status
 export load_chain_template, save_chain_template!, load_template_from_cache
 export validate_chain_template, ChainTemplateError, chain_template_from_raw, chain_root_ids
 export load_chain_run
 export run_chain
+export continue_chain_node!, continue_parked_on_disk!, chain_run_parked_here, task_manual, manual_check
+export chain_from_history, chain_preflight
 export chain_node, make_chain
 
 # ── Task preview (resident worker) ────────────────────────────────────────────
@@ -361,6 +365,7 @@ include("tasks/segment/coastal.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/segment/branching.jl")
 include("tasks/segment/ridges.jl")
+include("tasks/gate/manual_gate.jl")
 include("tasks/segment/import_labels.jl")
 include("tasks/segment/correct.jl")     # manual label correction — pairs with `label_correction.jl`
 include("tasks/segment/carry_over.jl")  # obs carry-over across measureLabels in the correction composite
@@ -420,9 +425,11 @@ include("project_io.jl")
 # scheduler.jl (uses _kill_proc_tree). The lab log's one-off "Ask Claude" pass was removed 2026-09-24:
 # Kiwi's validated turn supersedes it; interactive sessions still write the lab log via append_lab_log.
 include("ai/agent_runner.jl")
+include("ai/observer_plugin.jl")   # the terminal plugin: observer MCP + caller hook
 include("ai/claude_auth.jl")   # per-profile Claude login: status, log in, log out
 # Per-profile settings — after agent_runner.jl so `active_profile_name()` is in scope.
 include("config/profile_settings.jl")
+include("ai/claude_conversations.jl")   # delete a profile's Claude conversations (shared workstation)
 # HPC settings (site / profile identity / project override) + the ssh transport. After
 # profile_settings.jl (identity lives in the profile bag) and jobs.jl (`_kill_proc_tree`).
 # docs/todo/HPC_PLAN.md.
@@ -431,6 +438,7 @@ include("hpc/transport.jl")
 # The scheduler-backend tier (D7) and the code + env on the cluster (Q1/P2). After py_runner.jl
 # (`_app_dir`) and utils.jl (`_file_sha256`).
 include("hpc/backend.jl")
+include("hpc/usage.jl")
 include("hpc/backends/slurm.jl")
 include("hpc/backends/pbs.jl")
 include("hpc/backends/local.jl")
@@ -461,9 +469,10 @@ export spatial_summary, contact_matrix
 export active_profile_name, active_profile_dir, set_active_profile!, kiwi_terminal_command
 export ClaudeAuth, claude_auth_status, claude_auth_logout!,
        claude_login_start!, claude_login_status, claude_login_code!, claude_login_cancel!
+export purge_claude_conversations!, purge_claude_conversations_wanted, claude_profile_in_use
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
-export REQUEST_VIA, author_stamp
+export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp
 export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
        set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
        set_hpc_project_account!, hpc_test_connection,
@@ -471,16 +480,19 @@ export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_availa
        hpc_remote_root, HpcBackend, SlurmBackend, LocalShellBackend, PbsBackend, HpcJobSpec, RemoteJobState,
        JOB_QUEUED, JOB_RUNNING, JOB_GONE, hpc_backend, hpc_render_script, hpc_submit, hpc_poll,
        hpc_cancel, hpc_exit_reason, hpc_watch_job, hpc_sync_code!, hpc_lock_hash, hpc_env_status,
-       hpc_install_env!, hpc_require_env, RunTarget, TARGET_LOCAL, TARGET_HPC, run_target,
+       hpc_install_env!, hpc_require_env, hpc_cleanup!, hpc_active_jobs, hpc_node_shapes, HpcUsage, hpc_job_usage, hpc_usage_lines, RunTarget, TARGET_LOCAL, TARGET_HPC, run_target,
        HpcStage, HPC_STAGE_NONE, HPC_STAGE_SYNC, HPC_STAGE_QUEUED, HPC_STAGE_RUNNING, HPC_STAGE_PULL,
        task_runs_on_hpc, hpc_resources, HpcResources, hpc_task_cpus, hpc_queue_cancel!,
        hpc_pending_cancels, hpc_retry_cancels!
 export ClaudeAgent, agent_available, agent_bin_path, observer_mcp_config, observer_mcp_spec,
-       observer_api_url,
-       OBSERVER_MCP_NAME, register_observer_mcp, observer_registration_state,
+       chat_mcp_config, chat_claude_argv, chat_claude_env, AUTONOMOUS_MCP_NAME,
+       observer_api_url, observer_hook_settings, observer_caller_hook, OBSERVER_HOOK_MATCHER,
+       OBSERVER_MCP_NAME, observer_registration_state,
        claude_config_path, read_registered_observer_spec,
        read_local_observer_specs, observer_shadow_dirs, shadowing_observer_dirs, mcp_connections,
        remove_shadowing_observer_mcps,
+       OBSERVER_PLUGIN_ID, observer_marketplace_dir, observer_plugin_options, shipped_plugin_version,
+       claude_settings_path, read_observer_plugin, observer_plugin_state, install_observer_plugin,
        observer_agent_bin, OBSERVER_MODELS, observer_default_model, observer_valid_model,
        turn_profile
 

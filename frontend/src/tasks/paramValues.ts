@@ -17,6 +17,13 @@ import type { TaskDef, ParamValues, ParamDef } from './types'
 import type { CciaImage } from '../stores/project'
 import { imageAxes, type Axis } from '../utils/taskGating'
 
+/** A param's saved value: its own key, else the first former key (a renamed param) holding one. */
+export function savedValueFor(p: ParamDef, saved: ParamValues): unknown {
+  if (saved[p.key] !== undefined) return saved[p.key]
+  for (const k of p.formerKeys ?? []) if (saved[k] !== undefined) return saved[k]
+  return undefined
+}
+
 /**
  * One entry of a repeatable `group`, reconciled against the group's declared sub-params.
  *
@@ -27,9 +34,9 @@ function buildGroupEntry(params: TaskDef['params'][number]['params'], saved: Par
   const out: ParamValues = {}
   for (const p of params ?? []) {
     if (p.type === 'section') {
-      for (const sp of p.params ?? []) out[sp.key] = clampToSpec(sp, saved[sp.key] ?? sp.default ?? null)
+      for (const sp of p.params ?? []) out[sp.key] = clampToSpec(sp, savedValueFor(sp, saved) ?? sp.default ?? null)
     } else {
-      out[p.key] = clampToSpec(p, saved[p.key] ?? p.default ?? null)
+      out[p.key] = clampToSpec(p, savedValueFor(p, saved) ?? p.default ?? null)
     }
   }
   return out
@@ -124,18 +131,19 @@ export function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues 
       const savedSection = ((saved[p.key] ?? {}) as ParamValues)
       const sectionVals: ParamValues = {}
       for (const sp of p.params ?? []) {
-        sectionVals[sp.key] = clampToSpec(sp, savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null)
+        sectionVals[sp.key] = clampToSpec(sp, savedValueFor(sp, savedSection) ?? savedValueFor(sp, saved)
+                                              ?? sp.default ?? null)
       }
       vals[p.key] = sectionVals
     } else if (p.type === 'group') {
-      const savedGroup = ((saved[p.key] ?? p.default ?? {}) as Record<string, unknown>)
+      const savedGroup = ((savedValueFor(p, saved) ?? p.default ?? {}) as Record<string, unknown>)
       const groupVals: Record<string, ParamValues> = {}
       for (const [entryKey, entry] of Object.entries(savedGroup)) {
         groupVals[entryKey] = buildGroupEntry(p.params, (entry ?? {}) as ParamValues)
       }
       vals[p.key] = groupVals
     } else {
-      vals[p.key] = clampToSpec(p, saved[p.key] ?? p.default ?? null)
+      vals[p.key] = clampToSpec(p, savedValueFor(p, saved) ?? p.default ?? null)
     }
   }
   // The order chips' sibling keys, which no walk of `def.params` can see. Absent stays absent — an

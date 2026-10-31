@@ -9,6 +9,22 @@
 
 _gerr(status, msg) = (status, JSON3.write((; error = msg)))
 
+const _POP_404_SHOWN = 8
+
+# A population 404 names the paths that DO exist, so the caller (a person or an agent) corrects the
+# path in one step instead of guessing again. Those sharing the requested leaf name come first.
+function _pop_not_found(m::PopulationMap, pop::AbstractString)
+    paths = String[p for p in pop_paths(m) if !pop_at(m, p).transient]
+    isempty(paths) && return _gerr(404, "Population not found: $pop — this label set has no populations yet")
+    parts = split(String(pop), '/'; keepempty = false)
+    leaf  = lowercase(isempty(parts) ? "" : String(parts[end]))
+    rank(p) = (q = lowercase(p); endswith(q, "/" * leaf) ? 0 : (!isempty(leaf) && occursin(leaf, q)) ? 1 : 2)
+    ranked = sort(paths; by = rank, alg = MergeSort)    # stable: equal ranks keep the map's order
+    more   = length(ranked) - _POP_404_SHOWN
+    _gerr(404, "Population not found: $pop — existing: " * join(first(ranked, _POP_404_SHOWN), ", ") *
+               (more > 0 ? " (+$more more)" : ""))
+end
+
 # ── Pick-selection registry (linked brushing) ────────────────────────────────
 # A spatial selection made in the viewer (pick-cell / pick-rect) is mirrored onto the
 # flow plots as a transient population ("see those XY cells in channel space"). The
@@ -284,8 +300,9 @@ end
 # load the same tree and the second save would clobber the first (lost update). One process-wide
 # ReentrantLock held across the whole load→save is enough — gating edits are user-paced and cheap,
 # so contention across images/value_names is negligible. (save_pop_map! also writes atomically.)
-const _POPMAP_LOCK = ReentrantLock()
-_with_popmap_lock(f) = lock(f, _POPMAP_LOCK)
+# The lock lives in the package (`with_popmap_lock`, gating/popmanager/copy.jl) so a task that writes
+# gating — the manual gate chain step — serialises with these handlers.
+_with_popmap_lock(f) = with_popmap_lock(f)
 
 # ── Undo / redo for HAND-DRAWN gating ─────────────────────────────────────────
 #
@@ -320,7 +337,7 @@ _gating_snapshot(img::CciaImage, vn, pop_type)::Dict{String,Any} =
 
 # Record the PRE-edit state. Called from `_persist_and_broadcast!` — the one choke point every
 # mutating handler already goes through, so a new mutation cannot forget to be undoable. Runs under
-# `_POPMAP_LOCK` (the handler holds it across load→save), so what is on disk here is exactly what
+# the gating lock (`with_popmap_lock`; the handler holds it across load→save), so what is on disk here is exactly what
 # this edit is about to replace. A new edit invalidates the redo branch, as everywhere else.
 function _history_record!(proj, image_uid, vn, pop_type, img::CciaImage)
     is_gating_pop_type(pop_type) || return
@@ -444,6 +461,18 @@ end
 # 0..k-1 codes present in ITS objects; scanning one image under-reports (e.g. 2 of 4). Pool across the
 # run's MEMBER images (`partOf`, from _clust_members) so the universe matches the pooled UMAP/heatmap.
 # A suffix with no recorded members (pre-partOf run) falls back to the primary image's own column.
+# per-suffix behaviour axes (track runs: axis names + path root, written by clustTracks as
+# `behaviourAxes`). Suffixes without them are absent, so the cluster map offers its diffusion layout only
+# for runs that have one.
+function _clust_axes(props_path::AbstractString, suffixes, family)
+    out = Dict{String,Any}()
+    for s in suffixes
+        a = _entry_field(Cecelia._clustfeatures_entry(props_path, s; family = family), "behaviourAxes")
+        a isa AbstractDict && (out[s] = a)
+    end
+    out
+end
+
 function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString, vn::AbstractString,
                       suffixes::Vector{String}, members::AbstractDict, track::Bool,
                       pop_type::PopTypeArg = "clust")
@@ -584,6 +613,7 @@ function api_gating_channels(req::HTTP.Request)
             clusterFeatures = _clust_features(tpath, tsfx, tfam),
             clusterMembers  = _clust_members(tpath, tsfx, tfam),  # uIDs clustered together (partOf)
             clusterFeatureLabels = _clust_feature_labels(tpath, tsfx, tfam),
+            clusterAxes     = _clust_axes(tpath, tsfx, tfam),     # diffusion axis names (track runs)
             clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, scope_vn,
                                 tsfx, _clust_members(tpath, tsfx, tfam), true, pt) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
@@ -678,7 +708,7 @@ function api_gating_stats(req::HTTP.Request)
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", "")); pop = get(q, "pop", ROOT)
     m = _live_map(img, vn, _read_pop_type(q, img, vn, pop); labels_version = _labels_version_pin(q))
-    (is_root(pop) || has_pop(m, pop)) || return _gerr(404, "Population not found: $pop")
+    (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     s = pop_stats(m, pop)
     200, JSON3.write((; count = s.count, parentCount = s.parent_count, pctParent = s.pct_parent))
 end
@@ -696,7 +726,7 @@ function api_gating_membership(req::HTTP.Request)
     pt = length(pts) == 1 ? only(pts) : issubset(pts, ("flow", "live")) ? "live" : get(q, "popType", "flow")
     m = _live_map(img, vn, pt; labels_version = _labels_version_pin(q))
     for p in pops
-        (is_root(p) || has_pop(m, p)) || return _gerr(404, "Population not found: $p")
+        (is_root(p) || has_pop(m, p)) || return _pop_not_found(m, p)
     end
     if get(q, "binary", "") == "1"
         length(pops) == 1 || return _gerr(400, "binary=1 requires exactly one pop")
@@ -972,7 +1002,7 @@ function api_gating_plotdata(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
-# ── GET /api/plots/umap → binary Float32 [x, y, clusterCode, popIdx] per point ─
+# ── GET /api/plots/cluster-map → binary Float32 [x, y, clusterCode, popIdx] per point ─
 # `popIdx` = index (0-based) into the requested `colourPops` list that this point belongs to (-1 = in
 # none / not requested), so the frontend can colour/facet the embedding by the individually-tracked
 # populations (docs/todo/UMAP_COLOUR_FACET_PLAN.md). `code` (cluster) is always present too.
@@ -986,7 +1016,10 @@ end
 # 19) can find the labels its bag names without a second round-trip. `label` is `cdf.label` (the
 # same column pop-membership resolution reads): for `trackclust` = track_id, for `clust` = cell
 # label_id. Old callers get the 4-float layout untouched. Small ints stay exact in Float32.
-function api_plots_umap(req::HTTP.Request)
+# The obsm key a cluster-map layout reads, or `nothing` for an unknown basis (`CLUSTER_MAP_BASES`).
+_cluster_map_key(basis, suffix) = basis in Cecelia.CLUSTER_MAP_BASES ? "X_$(basis).$(suffix)" : nothing
+
+function api_plots_cluster_map(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
@@ -995,7 +1028,12 @@ function api_plots_umap(req::HTTP.Request)
     pop      = get(q, "pop", ROOT)
     # the code column is the pop_type's OWN family (`clusters.{suffix}` | `regions.{suffix}`) — see
     # `_cluster_suffixes`. Hardcoding "clusters." here left every region UMAP point uncoloured.
-    umap_key = "X_umap.$suffix"; clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
+    # `basis` picks the layout: the UMAP, or a track run's diffusion axes (DC1, DC2 —
+    # docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md). Both are (n_obs, 2) obsm matrices in obs order.
+    basis = get(q, "basis", "umap")
+    emb_key = _cluster_map_key(basis, suffix)
+    emb_key === nothing && return _gerr(400, "basis must be one of $(join(Cecelia.CLUSTER_MAP_BASES, ", "))")
+    clust_col = "$(Cecelia._cluster_measure_prefix(pop_type))$(suffix)"
     track    = is_track_grained(pop_type)
     # POOL across every segmentation that took part in this clustering run (co-clustered value_names),
     # so the UMAP shows all segments' points in the ONE shared embedding — not just the active one
@@ -1035,7 +1073,7 @@ function api_plots_umap(req::HTTP.Request)
     for vn in vns
         path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(path) || continue
-        xy = obsm(label_props(path), umap_key)          # (n_obs, 2), obs order
+        xy = obsm(label_props(path), emb_key)          # (n_obs, 2), obs order
         size(xy, 1) == 0 && continue
         # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
         cdf = label_props(path) |> select_cols([clust_col]) |> as_df
@@ -1071,7 +1109,8 @@ function api_plots_umap(req::HTTP.Request)
             end
         end
     end
-    isempty(out) && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
+    isempty(out) && return _gerr(404, basis == "diffmap" ? "No $emb_key — a track run writes it; re-run clustering" :
+                                                         "No $emb_key — run clustering with UMAP enabled")
     200, collect(reinterpret(UInt8, out))
 end
 
@@ -1112,7 +1151,7 @@ function api_gating_summary(req::HTTP.Request)
         # (which is an answer, n = 0). The whole-segmentation read tells the first apart.
         columns_ok = !is_root(pop) && !isempty(_plot_xy(img, vn, pop_type, x, y, ROOT, xt, yt)[1])
         columns_ok || return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
-        has_pop(_live_map(img, vn, pop_type), pop) || return _gerr(404, "Population not found: $pop")
+        (pm = _live_map(img, vn, pop_type); has_pop(pm, pop)) || return _pop_not_found(pm, pop)
     end
     out = Dict{String,Any}(
         "valueName" => vn, "pop" => pop, "n" => count(isfinite, xv),
@@ -1190,12 +1229,214 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
     end
 end
 
+# ── POST /api/gating/pop/add-gate — ONE proposed gate, additive only (observer `add_gate`) ──────
+# { projectUid, imageUid, valueName, parent?, name, gate:{kind, x_channel, y_channel, x_transform?,
+#   y_transform?, x_min…y_max | vertices}, colour? }
+# → { ok, path, valueName, parent, count, parentCount, outside, pctParent, gate, colour, createdBy }
+#
+# The observer's write into gating, kept apart from /api/gating/pop/add exactly as /api/boards/add is
+# kept apart from the boards autosave: that route also takes filters, booleans, track pops and any pop
+# type, and answers every refusal with a 400. This one can only ADD one `flow` gate under a parent that
+# exists, and refuses with the status the caller acts on — 404 (no such parent / segmentation), 409 (the
+# path is taken, here or by another pop type: `pop_name_conflict`), 422 (a column, transform or geometry
+# that cannot be a gate) — all BEFORE anything is written. It never edits, moves or deletes a pop.
+# Stored through `add_pop!` + `_persist_and_broadcast!`, so the sidecar entry is a GUI gate's (plus
+# `createdBy` = `author_stamp()`), the open manager refreshes, and the user's Undo removes it.
+function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    name = strip(_wstr(body, "name"))
+    isempty(name) && return _gerr(422, "name required")
+    occursin('/', name) && return _gerr(422, "A population name cannot contain \"/\" — give the name only, and the parent separately")
+    is_reserved_pop_name(name) && return _gerr(422,
+        "Names beginning with \"$DERIVED_POP_PREFIX\" are reserved for derived populations — choose another name")
+    parent = let p = strip(_wstr(body, "parent", ROOT)); is_root(p) ? ROOT : String(p) end
+    colour = _wstr(body, "colour", "#22c55e")
+    occursin(r"^#[0-9a-fA-F]{6}$", colour) || return _gerr(422, "colour must be a hex colour like \"#22c55e\"")
+    gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
+    gerr === nothing || return _gerr(422, gerr)
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        (is_root(parent) || has_pop(m, parent)) || return _pop_not_found(m, parent)
+        path = pop_path(parent, name)
+        has_pop(m, path) && return 409, JSON3.write((; error = "A population \"$path\" already exists — " *
+            "choose another name; an existing population is never replaced", code = "pop_exists"))
+        conflict = pop_name_conflict(img, vn, path; pop_type = "flow")
+        conflict === nothing || return 409, JSON3.write((; error = "A $conflict population named \"$name\" " *
+            "already exists in this segmentation — names must be unique across population types. Choose another name.",
+            code = "pop_name_conflict"))
+        stamp = author_stamp()
+        add_pop!(m, String(name); parent = parent, gate = gate, colour = colour, show = true, created_by = stamp)
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# ── Claude's own gates — the MCP servers' whole write surface into gating ─────────────────────────
+# Both servers (the observer and the autonomous one) draw through /pop/add-gate (above) and change what
+# they drew through these two; neither is allowed /pop/add, /pop/set-gate or /pop/delete, which act on
+# anything. "Own" = every population at and below `path` carries a `createdBy` stamped by a Claude
+# request (`via: claude`, the ✦ in the population manager): once the user has gated something under
+# a proposal, its subtree is theirs too and only they change it (403 `not_claude_made`, naming the
+# populations). Each route takes `dryRun: true` — validate, apply to the map in hand, answer with the
+# counts, write nothing — so a gate can be tried before it lands.
+
+# The parsed body + the image + its EXACT segmentation, or the refusal. No fallback to the active
+# segmentation (`_resolve_vn`): a write lands where it was asked, or nowhere.
+function _claude_gate_body(body_bytes::Vector{UInt8})
+    body = try
+        JSON3.read(String(body_bytes), Dict{String,Any})
+    catch
+        return (nothing, nothing, nothing, _gerr(400, "Invalid JSON body"))
+    end
+    img, err = _gating_image(_wstr(body, "projectUid"), _wstr(body, "imageUid"))
+    err === nothing || return (nothing, nothing, body, err)
+    vn = _wstr(body, "valueName")
+    isempty(vn) && return (nothing, nothing, body, _gerr(400, "valueName required"))
+    vns = versioned_keys(img.label_props)
+    vn in vns || return (nothing, nothing, body, _gerr(404, "No segmentation \"$vn\" on this image" *
+        (isempty(vns) ? " — it has not been segmented" : " — it has: " * join(vns, ", "))))
+    (img, vn, body, nothing)
+end
+
+claude_made(p) = p.created_by !== nothing && get(p.created_by, "via", "") == "claude"
+
+# `path` and everything under it must be Claude's; else the 403 that names what is the user's.
+function _own_subtree(m::PopulationMap, path::AbstractString)
+    sub = [String(path); descendants(m, path)]
+    theirs = [q for q in sub if !claude_made(m.pops[q])]
+    isempty(theirs) && return (sub, nothing)
+    what = theirs[1] == path ? "\"$path\" was not drawn by Claude" :
+           "the user's population$(length(theirs) > 1 ? "s" : "") $(join(("\"$q\"" for q in theirs), ", ")) " *
+           "sit$(length(theirs) > 1 ? "" : "s") under \"$path\""
+    (sub, (403, JSON3.write((; error = what * " — only the user changes it. Propose a new gate instead (add_gate).",
+                              code = "not_claude_made", populations = theirs))))
+end
+
+# The reply every own-gate write gives: the population's counts on the map just written — or, for a
+# `dryRun`, on the map in hand, which is never saved. One recompute on the edited map either way, so a
+# preview and the write it previews report the same numbers.
+function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::AbstractString)
+    dry = _wbool(body, "dryRun", false)
+    if !dry
+        saved = _persist_and_broadcast!(m, img, body, vn, "flow")
+        saved isa Tuple && return saved
+    end
+    recompute!(m, pop_membership_fetch(img, vn, "flow"))
+    p = m.pops[String(path)]
+    s = pop_stats(m, path)
+    200, JSON3.write((; ok = true, dryRun = dry, path, valueName = vn,
+                        parent = is_root(p.parent) ? "root" : p.parent,
+                        count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
+                        pctParent = round(s.pct_parent; digits = 2),
+                        gate = p.gate === nothing ? nothing : gate_spec(p.gate), colour = p.colour,
+                        createdBy = p.created_by))
+end
+
+# ── POST /api/gating/pop/set-own-gate — move a gate Claude drew ──
+# { projectUid, imageUid, valueName, path, gate, dryRun? } → the add-gate reply. 404 / 403 / 422.
+function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    path = strip(_wstr(body, "path"))
+    isempty(path) && return _gerr(422, "path required")
+    gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
+    gerr === nothing || return _gerr(422, gerr)
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        has_pop(m, path) || return _pop_not_found(m, path)
+        _, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        m.pops[String(path)].gate === nothing && return _gerr(422, "\"$path\" is not a gate")
+        set_gate!(m, String(path), gate)
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# ── POST /api/gating/pop/delete-own — remove a gate Claude drew, with its subtree ──
+# { projectUid, imageUid, valueName, path, dryRun? } → { ok, dryRun, deleted: [paths] }. 404 / 403 / 409.
+function api_gating_pop_delete_own(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    path = strip(_wstr(body, "path"))
+    isempty(path) && return _gerr(422, "path required")
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        has_pop(m, path) || return _pop_not_found(m, path)
+        sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        deps = boolean_dependents(m, sub)
+        isempty(deps) || return 409, JSON3.write((; code = "boolean_dependents", error = "Can't delete: " *
+            join(["\"$(d)\" combines $(join(rs, ", "))" for (d, rs) in deps], "; ") * " — the user's to change"))
+        dry = _wbool(body, "dryRun", false)
+        if !dry
+            del_pop!(m, String(path))
+            saved = _persist_and_broadcast!(m, img, body, vn, "flow")
+            saved isa Tuple && return saved
+        end
+        200, JSON3.write((; ok = true, dryRun = dry, valueName = vn, deleted = sub))
+    end
+end
+
+# The `gate` of an add-gate request → (Gate, nothing), or (nothing, why it cannot be one). Coordinates
+# are TRANSFORMED (the space `/api/gating/plot-image` reports gates and extents in), so only their shape
+# is checked here, not their range. A transform is accepted in either key spelling the API speaks —
+# the plot routes' `cof` and the stored spec's `cofactor` — so a gate_plot reply can be passed back as is.
+function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,Nothing}}
+    spec isa AbstractDict || return (nothing, "gate required: {kind: rectangle|polygon, x_channel, y_channel, …}")
+    g(k) = get(spec, k, nothing)
+    kind = lowercase(string(something(g("kind"), "")))
+    kind in ("rectangle", "polygon") || return (nothing, "gate.kind must be \"rectangle\" or \"polygon\"")
+    xc = g("x_channel"); yc = g("y_channel")
+    (xc isa AbstractString && yc isa AbstractString && !isempty(xc) && !isempty(yc)) ||
+        return (nothing, "gate.x_channel and gate.y_channel required")
+    lp = label_props(img; value_name = vn)
+    cols = Set(vcat(col_names(lp; data_type = :vars), col_names(lp; data_type = :obs)))
+    (xc in cols && yc in cols) || return (nothing, _missing_column_hint(img, vn, (xc, yc)))
+    xt_spec, terr = _proposed_transform(g("x_transform"), "x"); terr === nothing || return (nothing, terr)
+    yt_spec, terr = _proposed_transform(g("y_transform"), "y"); terr === nothing || return (nothing, terr)
+    finite_num(v) = v isa Real && !(v isa Bool) && isfinite(v)
+    full = Dict{String,Any}("kind" => kind, "x_channel" => xc, "y_channel" => yc,
+                            "x_transform" => xt_spec, "y_transform" => yt_spec)
+    if kind == "rectangle"
+        ks = ("x_min", "x_max", "y_min", "y_max")
+        all(k -> finite_num(g(k)), ks) || return (nothing, "a rectangle needs finite x_min, x_max, y_min, y_max")
+        (g("x_min") < g("x_max") && g("y_min") < g("y_max")) ||
+            return (nothing, "a rectangle needs x_min < x_max and y_min < y_max")
+        for k in ks; full[k] = float(g(k)); end
+    else
+        vs = g("vertices")
+        (vs isa AbstractVector && length(vs) >= 3) || return (nothing, "a polygon needs at least 3 vertices [[x, y], …]")
+        all(v -> v isa AbstractVector && length(v) == 2 && all(finite_num, v), vs) ||
+            return (nothing, "every polygon vertex must be [x, y] with finite numbers")
+        full["vertices"] = [[float(v[1]), float(v[2])] for v in vs]
+    end
+    try
+        (gate_from_spec(full), nothing)
+    catch e
+        (nothing, "not a valid gate: " * sprint(showerror, e))
+    end
+end
+
+# One axis transform of a proposed gate → its stored spec, or why not. Absent ⇒ linear.
+function _proposed_transform(t, axis::AbstractString)::Tuple{Union{Dict{String,Any},Nothing},Union{String,Nothing}}
+    t === nothing && return (Dict{String,Any}("kind" => "linear"), nothing)
+    t isa AbstractDict || return (nothing, "gate.$(axis)_transform must be an object like {\"kind\": \"linear\"}")
+    d = Dict{String,Any}(String(k) => v for (k, v) in t)
+    kind = lowercase(string(get(d, "kind", "linear")))
+    params = Dict("linear" => String[], "log" => ["floor"], "asinh" => ["cofactor"], "logicle" => ["T", "W", "M", "A"])
+    haskey(params, kind) || return (nothing, "gate.$(axis)_transform.kind must be linear, asinh, log or logicle")
+    kind == "asinh" && haskey(d, "cof") && !haskey(d, "cofactor") && (d["cofactor"] = pop!(d, "cof"))
+    out = Dict{String,Any}("kind" => kind)
+    for k in params[kind]
+        haskey(d, k) || continue
+        v = d[k]
+        (v isa Real && !(v isa Bool) && isfinite(v)) || return (nothing, "gate.$(axis)_transform.$k must be a finite number")
+        out[k] = float(v)
+    end
+    (out, nothing)
+end
+
 function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "gate")) || return _gerr(400, "path and gate required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         try
             set_gate!(m, String(body["path"]), gate_from_spec(body["gate"]))
         catch e
@@ -1213,7 +1454,7 @@ function api_gating_pop_delete(body_bytes::Vector{UInt8})
     haskey(body, "path") || return _gerr(400, "path required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         _path = String(body["path"])
         _children_only = _wbool(body, "childrenOnly", false)
         # A boolean pop (Decision 16) references pops by PATH, so deleting one it combines would leave
@@ -1235,7 +1476,7 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
     haskey(body, "path") || return _gerr(400, "path required")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         p = pop_at(m, String(body["path"]))
         haskey(body, "colour") && (p.colour = String(body["colour"]))
         haskey(body, "show")   && (p.show = Bool(body["show"]))
@@ -1288,7 +1529,7 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         newpath = try
             rename_pop!(m, String(body["path"]), String(body["newName"]))
         catch e
@@ -1317,7 +1558,7 @@ function api_gating_pop_move(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Rename it first.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        has_pop(m, _path) || return _gerr(404, "Population not found: $_path")
+        has_pop(m, _path) || return _pop_not_found(m, _path)
         newpath = try
             move_pop!(m, _path, _parent)
         catch e
@@ -1343,39 +1584,19 @@ function api_gating_copy(body_bytes::Vector{UInt8})
     tgt_raw = get(body, "toImageUids", nothing)
     (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
     proj, src_uid, err = _require_ids(body); err === nothing || return err
-    _with_popmap_lock() do
-        m = load_pop_map(img; value_name = vn, pop_type = pt)
-        isempty(m.order) && return _gerr(400, "Source image has no $pt gating to copy")
-        copied = String[]; skipped = Dict{String,String}(); warnings = Dict{String,Vector{@NamedTuple{column::String, pops::Vector{String}}}}()
-        for t in tgt_raw
-            tuid = String(t)
-            tuid == src_uid && continue
-            timg, terr = _gating_image(proj, tuid)
-            timg === nothing && (skipped[tuid] = "not found"; continue)
-            img_has_value_name(timg, vn) ||
-                (skipped[tuid] = "no segmentation '$vn'"; continue)   # gates would reference absent channels
-            # A µm POSITION gate needs the target's own pixel size to be evaluated. Without one the
-            # coordinates would silently be read as pixels — wrong by the pixel size, which is the
-            # exact silent-drift this unit change removes. Refuse rather than warn-and-proceed
-            # (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7). Intensity-only strategies copy fine.
-            (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
-                (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
-            try
-                save_pop_map!(m, timg)                        # writes target gating sidecar (replace)
-                _broadcast_popmap(proj, tuid, vn, pt, m, timg) # refresh any client viewing the target
-                push!(copied, tuid)
-            catch e
-                skipped[tuid] = sprint(showerror, e); continue
-            end
-            # Copied, but a gate/filter column the target's table lacks (e.g. `clusters.<run>` from a
-            # clustering run it wasn't in) leaves those populations empty. Still copy; say which (#1737).
-            miss = try
-                missing_gate_columns(m, timg; value_name = vn)
-            catch e
-                @warn "gating copy: could not check columns on $tuid" exception = e; nothing
-            end
-            (miss === nothing || isempty(miss)) || (warnings[tuid] = miss)
-        end
-        200, JSON3.write((; copied = copied, skipped = skipped, warnings = warnings))
+    targets = CciaImage[]; absent = Dict{String,String}()
+    for t in tgt_raw
+        tuid = String(t)
+        tuid == src_uid && continue
+        timg, _ = _gating_image(proj, tuid)
+        timg === nothing ? (absent[tuid] = "not found") : push!(targets, timg)
     end
+    r = try
+        copy_gating!(img, targets; value_name = vn, pop_type = pt,
+                     on_copied = (timg, m) -> _broadcast_popmap(proj, timg.uid, vn, pt, m, timg))
+    catch e
+        e isa ArgumentError || rethrow()
+        return _gerr(400, "Source image has no $pt gating to copy")
+    end
+    200, JSON3.write((; copied = r.copied, skipped = merge(absent, r.skipped), warnings = r.warnings))
 end

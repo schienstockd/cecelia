@@ -22,6 +22,7 @@ Usage:
     pixi run judge-review --date 2026-10-06
     pixi run judge-review --auto --dry-run      # the briefs it would send
     pixi run judge-review --auto [--limit 3]    # work every `fix` bug (or the first 3 sessions)
+    pixi run judge-review --auto --until EPOCH  # no new session after EPOCH (the weekly pass's deadline)
 """
 from __future__ import annotations
 
@@ -291,9 +292,15 @@ def _bug_lines(bug: dict) -> list[str]:
     if bug.get("kind") == "duplicate":
         lines += ["", "This is a duplicate, not a defect: the fix is to call the existing helper the finding "
                   "names and delete the copy, at every call site of the copy."]
-    if bug.get("kind") == "stranded":
+    if bug.get("kind") == "stranded" and bug.get("local"):
+        lines += ["", "These commits were made on the local branch after its PR merged and never pushed: "
+                  + ", ".join(bug.get("commits", [])) + ". Push them in a new PR if they are still wanted; "
+                  "if they were abandoned, say so and I delete the branch (never one a worktree has checked out)."]
+    elif bug.get("kind") == "stranded":
         lines += ["", "These commits were pushed to the PR's branch after it merged: "
                   + ", ".join(bug.get("commits", [])) + ". Land them in a new PR if they are still wanted."]
+    lines += [f"Waiting on them: {w['key']} at {_record.bug_location(w)}: {w.get('desc') or ''}"
+              for w in bug.get("waiting", [])]
     return lines
 
 
@@ -493,7 +500,7 @@ def default_launch(prompt: str, cwd: pathlib.Path) -> str | None:
 _LABELS = {"w": ("won't fix", VERMILLION), "o": ("follow recommendation", SKY_BLUE), "a": ("answer", REDDISH_PURPLE),
            "f": ("fix now", BLUE), "s": ("one by one", GREY), "e": ("edit the rule", BLUE),
            "r": ("reject", VERMILLION)}
-_VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "dismiss": GREY}
+_VERDICT_COLOUR = {"decide": ORANGE, "fix": VERMILLION, "guard": YELLOW, "fixed": SKY_BLUE, "dismiss": GREY}
 #: Section label → colour, in the order they are shown; a card shows the ones it has text for.
 _SECTIONS = (("Question", BLUE), ("Bug", BLUE), ("Verified", ORANGE), ("Auto-fix", BLUE),
              ("Your answer", REDDISH_PURPLE), ("Recommendation", SKY_BLUE), ("Live once", YELLOW),
@@ -825,6 +832,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--auto", action="store_true", help="work the `fix` bugs unattended, one PR per session")
     ap.add_argument("--limit", type=int, default=None, help="--auto: at most this many sessions (default: all)")
     ap.add_argument("--dry-run", action="store_true", help="--auto: print the briefs, run nothing")
+    ap.add_argument("--until", type=float, default=None,
+                    help="--auto: start no session after this time (epoch seconds); the running one finishes")
     args = ap.parse_args(argv)
     try:
         if args.date:
@@ -851,7 +860,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         auto_fix = _load_sibling("auto_fix")
         try:
-            auto_fix.run(record, limit=args.limit, dry_run=args.dry_run, older=older)
+            auto_fix.run(record, limit=args.limit, dry_run=args.dry_run, older=older, until=args.until)
         except RateLimited as e:
             return limit_exit("judge-review --auto", e)
         return 0

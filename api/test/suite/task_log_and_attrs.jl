@@ -85,6 +85,20 @@
         write(joinpath(logdir, "segment.cellpose.log"), "[2026-07-15 10:00:00] running cellpose\n")
         let r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=segment.cellpose")[2])
             @test r.exists == true && occursin("running cellpose", r.content)
+            @test r.truncated == false && r.totalBytes == r.bytes
+        end
+        # maxBytes keeps the newest lines whole and says what it left out
+        let logf = joinpath(logdir, "tracking.bayesian_tracking.log")
+            write(logf, join(("[2026-07-15 10:00:0$i] line $i" for i in 1:5), "\n") * "\n")
+            full = filesize(logf)
+            r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=tracking.bayesian_tracking&maxBytes=60")[2])
+            @test r.truncated == true && r.totalBytes == full && r.bytes == sizeof(r.content) <= 60
+            @test startswith(r.content, "[2026") && endswith(r.content, "line 5\n")   # cut at a line start
+            r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=tracking.bayesian_tracking&maxBytes=0")[2])
+            @test r.truncated == false && r.bytes == full                             # 0 = the whole log
+            # one line longer than the cap still comes back (cut), never as nothing
+            r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=tracking.bayesian_tracking&maxBytes=10")[2])
+            @test r.truncated == true && !isempty(r.content) && endswith(r.content, "line 5\n")
         end
         # bad requests + path-traversal guard (%2F decodes to '/', so fun becomes "../secret")
         @test tl("")[1] == 400                                             # projectUid missing
@@ -116,8 +130,11 @@
             @test byfun["tracking.bayesian_tracking"].params.maxSearchRadius == 20
             @test isempty(byfun["segment.cellpose"].params)                      # no params → {}
         end
-        # limit caps rows
-        @test JSON3.read(hist("projectUid=$uid&limit=1")[2]).count == 1
+        # limit caps rows, and says so — a capped list must not read as the whole history
+        let r = JSON3.read(hist("projectUid=$uid&limit=1")[2])
+            @test r.count == 1 && r.total == 2 && r.truncated == true
+        end
+        @test JSON3.read(hist("projectUid=$uid")[2]).truncated == false
         # bad requests
         @test hist("")[1] == 400                     # projectUid missing
         @test hist("projectUid=nope")[1] == 404

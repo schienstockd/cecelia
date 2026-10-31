@@ -3,8 +3,9 @@ import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
 import { shortId } from '../utils/id'
 import { useAppControlStore } from './appControl'
+import { isLiveStatus } from '../lib/taskStatus'
 
-export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+export type TaskStatus = 'queued' | 'running' | 'waiting' | 'done' | 'failed' | 'cancelled'
 
 export interface TaskEntry {
   id: string
@@ -154,6 +155,8 @@ export const useTaskStore = defineStore('tasks', () => {
     // that started it. Clearing it here makes that unreachable by construction rather than by
     // argument, which is the only way a silent exclusion should be relied on.
     if (t.history && (status === 'running' || status === 'queued')) t.history = false
+    // A manual chain step's work ended when it parked; the user's continue is not part of its run time
+    const prepEnd = t.status === 'waiting' ? t.finishedAt : undefined
     t.status = status
     // the frame's pool is the scheduler's resolved one, so it overrides whatever the dispatch requested
     if (at.pool) t.pool = at.pool
@@ -161,8 +164,9 @@ export const useTaskStore = defineStore('tasks', () => {
     // only ever moves the number closer to the truth.
     if (at.startedAt) t.startedAt = at.startedAt
     else if (status === 'running' && !t.startedAt) t.startedAt = new Date()
+    if (status === 'waiting' && at.finishedAt) t.finishedAt = at.finishedAt
     if (status === 'done' || status === 'failed' || status === 'cancelled') {
-      t.finishedAt = at.finishedAt ?? new Date()
+      t.finishedAt = at.finishedAt ?? prepEnd ?? new Date()
       t.cancelling = t.cancelSentAt = undefined   // answered — by the cancel, or by the task finishing first
     }
   }
@@ -204,7 +208,7 @@ export const useTaskStore = defineStore('tasks', () => {
   // Mark a cancel as SENT — the status itself changes only when the backend says so (see `cancelling`).
   function cancel(id: string) {
     const t = tasks.value.find(t => t.id === id)
-    if (t && (t.status === 'running' || t.status === 'queued')) {
+    if (t && isLiveStatus(t.status)) {
       t.cancelling   = true
       t.cancelSentAt = Date.now()
     }
@@ -236,7 +240,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
   function cancelChainRun(runId: string) {
     for (const t of tasks.value) {
-      if (t.chainRunId === runId && (t.status === 'running' || t.status === 'queued'))
+      if (t.chainRunId === runId && isLiveStatus(t.status))
         t.status = 'cancelled'
     }
   }
@@ -302,6 +306,15 @@ export const useTaskStore = defineStore('tasks', () => {
         ...(r.params ? {} : { paramsUnknown: true }),
       })
     }
+  }
+
+  /**
+   * Show a job the BACKEND started (utils/railJobs.ts): under its own fixed id, in place of an earlier
+   * run's finished row with that id.
+   */
+  function adoptJob(row: Omit<TaskEntry, 'seq' | 'log'>) {
+    tasks.value = tasks.value.filter(t => t.id !== row.id)
+    tasks.value.unshift({ ...row, log: [], seq: ++_seqRef.value })
   }
 
   /**
@@ -391,7 +404,7 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, lastStarted, add, addMany, adopt, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, setHpc, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addMany, adopt, adoptJob, setHistory, clearHistory, addFromChainEvent, appendLog, setLog, setStatus, setProgress, setHpc, restart, cancel, cancelAcked, cancelTimedOut, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
 
 // Replace the live instance on hot-reload — see the note in `stores/customModules.ts`.

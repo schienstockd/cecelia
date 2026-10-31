@@ -59,7 +59,7 @@ export const router = createRouter({
     { path: '/movies',    component: () => import('./modules/MoviesModule.vue'),        meta: { label: 'Movies' } },
     { path: '/tasks',     component: () => import('./modules/TasksModule.vue'),         meta: { label: 'Tasks' } },
     { path: '/blackboard', component: () => import('./modules/BlackboardModule.vue'),   meta: { label: 'Blackboard' } },
-    { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Whiteboard' } },
+    { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Chains' } },
     // Generic page for a user custom-module category with no built-in page (docs/CUSTOM_MODULES.md).
     { path: '/custom/:category', component: () => import('./modules/CustomModule.vue'),  meta: { label: 'Custom', customPage: true } },
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },

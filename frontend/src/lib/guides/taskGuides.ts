@@ -261,7 +261,7 @@ export const trackCellsGuide = moduleTaskGuide({
   ],
   params: [
     'Segmentation — which label set to track; a gated population narrows it.',
-    'Max search radius (µm) — the furthest a cell may move between frames (~20 for T cells).',
+    'Max search radius (µm) — the furthest a cell may move per frame; the note under it shows the µm/min.',
     'Allowed gaps and minimum timepoints — how forgiving linking is, and what counts as a real track.',
     'Motion dimensions — 2D or 3D for the measures; it detects and recommends one.',
   ],

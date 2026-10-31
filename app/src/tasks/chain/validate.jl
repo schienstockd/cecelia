@@ -68,6 +68,11 @@ function validate_chain_template(t::ChainTemplate)
         (isempty(n.resource_pool) || n.resource_pool in pools) ||
             throw(ChainTemplateError("node '$(n.id)': resource_pool '$(n.resource_pool)' is not " *
                                      "configured — known pools: " * join(sort(collect(pools)), ", ")))
+        # A manual step holds the run until the user continues it; an incremental node is driven by
+        # upstream events and holds nothing, so the pair would be a step nobody waits for.
+        (n.scope == CHAIN_INCREMENTAL && !isnothing(task_manual(task))) &&
+            throw(ChainTemplateError("node '$(n.id)': a manual step can't be incremental — " *
+                                     "use image or set scope"))
         _validate_node_params(t, n, task, n.params)
     end
 
