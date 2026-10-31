@@ -142,6 +142,8 @@ Point at the EVIDENCE — what the user would open to check the claim:
   attached plot, or a `proposedPlot` for that measure and those populations (a click opens the board
   that already shows it, or makes it) — per image (`statUnit: "image"`) when the claim counts images;
 - a claim about particular cells or tracks (which, how many, where) → a population, cells or tracks ref.
+- a claim that a step ran or produced output → a `task` ref with that image's `imageUid` (and
+  the `valueName` it made, if named) — a task without an image only names the kind of step.
 Never cite a population on one or two images as evidence for a claim about the whole set.
 
 When the look worth taking is a plot nobody has made, point at it: a `proposedPlot` ref is that plot —
@@ -295,7 +297,8 @@ function _kiwi_ref_anchors(ref)::Vector{Any}
     kind == "tile"       && return Any[String(g("imageUid")), String(g("cellId"))]
     kind == "plot"       && return Any[String(g("plotId"))]
     kind == "capture"    && return Any[String(g("captureId"))]
-    kind == "task"       && return Any[String(g("funName"))]
+    # a task on an image claims a run there — its image must have been in view too
+    kind == "task"       && return Any[String(g("funName")), (g("imageUid") === nothing ? () : (String(g("imageUid")),))...]
     kind == "ui"         && return Any[String(g("anchor"))]
     kind == "blackboard" && return Any[String(g("entryId"))]
     # a proposal names nothing that exists yet — what keeps it honest is the resolver checking it can be
