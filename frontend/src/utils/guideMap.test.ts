@@ -106,8 +106,12 @@ describe('buildMap', () => {
   it('says what Claude makes on a page only with the Claude toggle on', () => {
     const chain = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/chain')!
     expect(chain.claude).toBeTruthy()
-    expect(chipTip(chain)).not.toMatch(/Claude:/)
-    expect(chipTip(chain, true)).toMatch(/Claude: /)
+    expect(chipTip(chain)).not.toContain(chain.claude!)
+    expect(chipTip(chain, true)).toContain(chain.claude!)
+    // the line names the mode itself — there is no "Claude:" prefix any more — so every one must
+    for (const c of buildMap(null, visibleWith(null)).flatMap(g => g.chips).filter(c => c.claude)) {
+      expect(c.claude, c.route).toMatch(/Claude Code|Kiwi/)
+    }
   })
   it('names the pair and the guide on a chip', () => {
     const gate = buildMap(null, visibleWith(null)).flatMap(g => g.chips).find(c => c.route === '/gate')!

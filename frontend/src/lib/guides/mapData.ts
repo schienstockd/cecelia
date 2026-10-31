@@ -26,7 +26,7 @@ export const MAP: Record<string, MapEntry> = {
   '/segment':        { what: 'Find cells, with segmentation QC', guide: 'segment-an-image' },
   // Populations — define who the cells are
   '/gate':           { what: 'Draw gates on cell measures, like flow cytometry', pairedWith: '/phenotype', guide: 'gate-populations',
-                      claude: 'A terminal session proposes a gate; keep or delete it' },
+                      claude: 'Claude Code proposes a gate; keep or delete it' },
   '/track':          { what: 'Link cells over time; gate tracks', pairedWith: '/behaviour', guide: 'track-cells' },
   '/clust-cells':    { what: 'Group cells by phenotype across a set', pairedWith: '/phenotype', guide: 'cluster-cells' },
   '/clust-tracks':   { what: 'Group tracks by behaviour', pairedWith: '/behaviour', guide: 'cluster-tracks' },
@@ -37,18 +37,18 @@ export const MAP: Record<string, MapEntry> = {
   '/spatial':        { what: 'Neighbours, interactions, contacts — build the graph first', guide: 'spatial-analysis' },
   // Analysis — your own figures and notes
   '/analysis':       { what: 'Combine any plots across pages and images; export PDF or CSV', guide: 'build-plots',
-                      claude: 'A terminal session builds a board of plots for you' },
+                      claude: 'Claude Code builds a board of plots for you' },
   '/blackboard':     { what: 'Notes for an open question, versioned, tagged good or bad', guide: 'use-the-blackboard',
-                      claude: 'Kiwi replies you save land here; a terminal session writes entries' },
+                      claude: 'Kiwi replies you save land here; Claude Code writes entries' },
   '/notebooks':      { what: 'Pluto (Julia) notebooks for what the board can’t do', guide: 'create-a-notebook',
-                      claude: 'A terminal session writes a notebook for you' },
+                      claude: 'Claude Code writes a notebook for you' },
   '/animation':      { what: 'Keyframe a fly-through of one image into a movie', guide: 'build-an-animation' },
   '/batch-movies':   { what: 'One movie setup, one timelapse movie per image', guide: 'record-a-movie' },
   '/movies':         { what: 'Play the movies this project has rendered' },
   // Pipeline — run many images
   '/tasks':          { what: 'Everything running or finished; history of past runs' },
   '/chain':          { what: 'Wire the steps you settled on into a chain; run it over a set', guide: 'run-a-chain',
-                      claude: 'A terminal session designs the chain; you run it' },
+                      claude: 'Claude Code designs the chain; you run it' },
 }
 
 // Every observer tool that creates something (`create_*` / `add_*` / `append_*` in
