@@ -6,15 +6,14 @@
   same knobs everywhere, and the future universal analysis board gets them for free.
 
   Each section is a `CollapsibleSection` (canonical primitive, see `frontend/CLAUDE.md` — the
-  hand-rolled `.po-toggle` chevrons drifted away from the ones every other menu uses). Open/closed
-  persists across nav via profileStorage under `plotOptions.<key>`, mirroring the other menus' pattern.
+  hand-rolled `.po-toggle` chevrons drifted away from the ones every other menu uses). They are one
+  accordion (`accordion="plotOptions.openSection"`): one open at a time, persisted per profile.
 
   `sections` optionally restricts which sub-sections show (e.g. a plot family with no raw points hides
   Points). Default = all four.
 -->
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
-import { profileStorage } from '../../utils/profileStorage'
+import { computed } from 'vue'
 import { facetMode, type VisProps } from '../../plots/plot'
 import CcToggle from '../CcToggle.vue'
 import CollapsibleSection from '../CollapsibleSection.vue'
@@ -34,18 +33,8 @@ const props = withDefaults(defineProps<{
 }>(), { sections: () => ['layout', 'points', 'colours', 'labels'], readout: emptyReadout })
 const emit = defineEmits<{ 'update:vis': [patch: Partial<VisProps>] }>()
 
-// ACCORDION: only one section open at a time. `CollapsibleSection` supports this via its controlled
-// mode (`:open` + `@update:open`); a group-level fact like "one at a time" cannot live in a section
-// (see the component's own comment). Persist the currently-open key across nav via profileStorage —
-// same policy as the individual `storageKey`s the other menus use, just at the group level.
-const OPEN_KEY = 'plotOptions.openSection'
-const openKey = ref<SectionKey | null>((() => {
-  const v = typeof window !== 'undefined' ? profileStorage.getItem(OPEN_KEY) : null
-  return (v === 'layout' || v === 'points' || v === 'colours' || v === 'labels' || v === 'stats') ? v : null
-})())
-watch(openKey, v => { try { profileStorage.setItem(OPEN_KEY, v ?? '') } catch { /* ignore */ } })
-const isOpen = (k: SectionKey) => openKey.value === k
-const setOpen = (k: SectionKey, v: boolean) => { openKey.value = v ? k : (openKey.value === k ? null : openKey.value) }
+// ACCORDION: only one section open at a time — the sections below share
+// `accordion="plotOptions.openSection"` (persisted per profile under that key; none open by default).
 
 // the facet mode, migrating the legacy boolean so a canvas saved before the mode existed still
 // shows as faceted rather than silently reverting to None
@@ -84,7 +73,7 @@ const has = (s: SectionKey) => props.sections.includes(s)
   <div class="po">
     <!-- Layout / scale -->
     <CollapsibleSection v-if="has('layout')" label="Layout" max-height="none"
-                        :open="isOpen('layout')" @update:open="v => setOpen('layout', v)">
+                        accordion="plotOptions.openSection" section="layout">
       <div class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Show the series key beside the plot'"><span>Legend</span>
           <CcToggle aria-label="Legend" :model-value="vis.legend" @update:model-value="set({ legend: $event })" /></div>
@@ -127,7 +116,7 @@ const has = (s: SectionKey) => props.sections.includes(s)
 
     <!-- Points / data -->
     <CollapsibleSection v-if="has('points')" label="Points" max-height="none"
-                        :open="isOpen('points')" @update:open="v => setOpen('points', v)">
+                        accordion="plotOptions.openSection" section="points">
       <div class="po-body">
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Data offset (beeswarm / random / none)'"><span>Offset</span>
           <select class="po-sel" :value="vis.jitter" @change="set({ jitter: ($event.target as HTMLSelectElement).value as VisProps['jitter'] })">
@@ -148,7 +137,7 @@ const has = (s: SectionKey) => props.sections.includes(s)
 
     <!-- Colours -->
     <CollapsibleSection v-if="has('colours')" label="Colours" max-height="none"
-                        :open="isOpen('colours')" @update:open="v => setOpen('colours', v)">
+                        accordion="plotOptions.openSection" section="colours">
       <div class="po-body">
         <label class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Colour scheme series are drawn in'"><span>Palette</span>
           <select class="po-sel" :value="vis.palette" @change="set({ palette: ($event.target as HTMLSelectElement).value as VisProps['palette'] })">
@@ -167,7 +156,7 @@ const has = (s: SectionKey) => props.sections.includes(s)
 
     <!-- Stats — between-group hypothesis test (applies to bar/boxplot/violin/strip) -->
     <CollapsibleSection v-if="has('stats')" label="Stats" max-height="none"
-                        :open="isOpen('stats')" @update:open="v => setOpen('stats', v)">
+                        accordion="plotOptions.openSection" section="stats">
       <div class="po-body">
         <div class="po-row cc-muted cc-fs-xs" v-tooltip.top="'Between-group test — Mann-Whitney (2 groups) / Kruskal-Wallis (>2) by default'"><span>Compare groups</span>
           <CcToggle aria-label="Compare groups" :model-value="!!vis.statsEnabled" @update:model-value="set({ statsEnabled: $event })" /></div>
@@ -194,7 +183,7 @@ const has = (s: SectionKey) => props.sections.includes(s)
 
     <!-- Labels / captions -->
     <CollapsibleSection v-if="has('labels')" label="Labels" max-height="none"
-                        :open="isOpen('labels')" @update:open="v => setOpen('labels', v)">
+                        accordion="plotOptions.openSection" section="labels">
       <div class="po-body">
         <label class="po-row po-col cc-muted cc-fs-xs" v-tooltip.top="'Heading above the plot (blank = none)'"><span>Title</span>
           <input class="po-txt wide" type="text" v-model="titleDraft" @change="set({ title: titleDraft })" /></label>

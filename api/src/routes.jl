@@ -562,8 +562,7 @@ function api_task_fun_params_sources(req::HTTP.Request)
         # first hit per name wins. `task` is nil for an unknown fun, so no log walk at all.
         if !isnothing(task)
             for e in Iterators.reverse(read_run_log(joinpath(proj_root, "1", uid)))
-                st = string(get(e, "status", get(e, :status, "")))
-                (isempty(st) || st == "done") || continue
+                run_entry_status(e) == "done" || continue
                 string(get(e, "fun", get(e, :fun, ""))) == String(fun) || continue
                 p = get(e, "params", get(e, :params, nothing))
                 p isa AbstractDict || continue

@@ -3,14 +3,22 @@
   Props
   ─────
     label       string   Heading text shown in the toggle bar.
-    defaultOpen bool     Whether the section starts open (default: true).
+    defaultOpen bool     Whether the section starts open (default: true). In an accordion, marks THIS section as
+                         the group's default (the one open before the user has chosen) — say it once per group.
     maxHeight   string   CSS max-height for the body div (default: '320px').
     storageKey  string   When set, the open/closed state is remembered per profile (profileStorage) under this
                          key (so it survives navigation — see the "persist every option" rule).
-    open        bool|null CONTROLLED mode: pass it (with @update:open, or v-model:open) and the parent
-                         owns which sections are open. Omit it — it is `null` — and the section manages
-                         itself, exactly as before. This is what an ACCORDION needs: "only one open at a
-                         time" is a fact about a GROUP of sections, and no section can know it alone.
+    accordion   string   ONE-OPEN ACCORDION keyword: every section given the same keyword is one group, and
+                         opening one closes the others. The keyword IS the group's profileStorage key (so
+                         it must be unique, like any storage key). Pair it with `section`. A script that
+                         needs the same state (read which is open, open one programmatically) calls
+                         `useSingleOpenSection(<keyword>)` and gets the SAME state object
+                         (`utils/singleOpen.ts` — one registry per app instance, never two refs per key).
+                         Takes precedence over `open` and `storageKey`.
+    section     string   This section's id within its accordion (what is persisted; default: `label`).
+    open        bool|null CONTROLLED mode, outside an accordion: pass it (with @update:open, or v-model:open)
+                         and the parent owns open/closed. Omit it — it is `null` — and the section manages
+                         itself. For one-open-at-a-time use `accordion`, not this.
                          `null` rather than `undefined` is load-bearing — see the note by the computed.
     fill        bool     ACCORDION FILL: while open, the section takes the remaining height of its flex-column
                          parent and its body scrolls inside it (closed, it is header-only). The parent must be
@@ -22,26 +30,30 @@
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { onSectionOpen } from '../utils/sectionOpen'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 
 const props = withDefaults(defineProps<{
   label:        string
   // one short line on what the section is for — a collapsed section is a control like any other, and
   // "Sensitivity" alone does not say what it is sensitive TO (docs/UI.md → every control needs a tooltip)
   tip?:         string
-  defaultOpen?: boolean
+  // null = not said (reads as true outside an accordion); in an accordion only an explicit `true` counts
+  defaultOpen?: boolean | null
   maxHeight?:   string
   storageKey?:  string
   open?:        boolean | null
+  accordion?:   string
+  section?:     string
   fill?:        boolean
 }>(), {
-  defaultOpen: true,
+  defaultOpen: null,
   maxHeight:   '320px',
   open:        null,
 })
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
 const stored = props.storageKey ? profileStorage.getItem(props.storageKey) : null
-const inner = ref(stored === null ? props.defaultOpen : stored === '1')
+const inner = ref(stored === null ? props.defaultOpen !== false : stored === '1')
 watch(inner, v => {
   if (props.storageKey) { try { profileStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
 })
@@ -58,9 +70,19 @@ if (props.storageKey) onBeforeUnmount(onSectionOpen(props.storageKey, v => { inn
 //
 // Two modes rather than one because a parent that passes `:open="false"` must still be CONTROLLING it;
 // falling back to internal state there would read as a section that will not stay shut.
+// Accordion mode: the group is fixed at setup (a section does not move between accordions).
+const group = props.accordion ? useSingleOpenSection(props.accordion) : null
+const sectionId = () => props.section ?? props.label
+if (group && props.defaultOpen === true) group.offerDefault(sectionId())
+
 const open = computed({
-  get: () => (props.open === null ? inner.value : props.open),
-  set: (v: boolean) => { props.open === null ? (inner.value = v) : emit('update:open', v) },
+  get: () => (group ? group.isOpen(sectionId())
+    : props.open === null ? inner.value : props.open),
+  set: (v: boolean) => {
+    if (group) { if (v) group.set(sectionId()); else if (group.isOpen(sectionId())) group.set('') }
+    else if (props.open === null) inner.value = v
+    else emit('update:open', v)
+  },
 })
 </script>
 

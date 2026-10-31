@@ -59,6 +59,9 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     @test !kiwi_ref_seen(Dict("kind" => "cells", "imageUid" => "KDIeEm", "valueName" => "B", "labelIds" => [23]), seen, [])
     @test kiwi_ref_seen(Dict("kind" => "population", "imageUid" => "KDIeEm", "valueName" => "B", "popPath" => "/Directed"), seen, [])
     @test kiwi_ref_seen(Dict("kind" => "project"), "", [])
+    # a task on an image claims a run there: the image must have been seen, not just the task name
+    @test kiwi_ref_seen(Dict("kind" => "task", "funName" => "segment.cellpose", "imageUid" => "KDIeEm"), seen * " segment.cellpose", [])
+    @test !kiwi_ref_seen(Dict("kind" => "task", "funName" => "segment.cellpose", "imageUid" => "zzzzzz"), seen * " segment.cellpose", [])
     # attached refs count as seen whatever the text — key order and Symbol keys don't matter
     att = [Dict("imageUid" => "QQQQQQ", "kind" => "image")]
     @test kiwi_ref_seen(JSON3.read("""{"kind":"image","imageUid":"QQQQQQ"}"""), "", att)

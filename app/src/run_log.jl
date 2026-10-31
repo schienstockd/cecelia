@@ -142,6 +142,10 @@ end
 _rl_get(e, k, dflt = "") = (v = get(e, k, get(e, Symbol(k), nothing)); v === nothing ? dflt : v)
 _rl_str(e, k) = string(_rl_get(e, k, ""))
 
+# An entry's status, with a legacy entry (no status: the log was append-on-finish for done/failed only,
+# see the header) read as the historical success it is. The one rule every "did it succeed" reader uses.
+run_entry_status(e)::String = (s = _rl_str(e, "status"); isempty(s) ? "done" : s)
+
 """
     open_run_log!(img, fun_name, value_name, params; task_id, at) -> entries
 
@@ -282,8 +286,7 @@ function run_log_params_for_output(ccid_dir::AbstractString, fun::AbstractString
         # legacy entries carry no status and are historical successes (the log was append-on-finish
         # for :done/:failed only — see the header). `running` is skipped with the rest: a run in
         # flight has not written its output yet, so the picker is not offering that name either.
-        st = _rl_str(e, "status")
-        (isempty(st) || st == "done") || continue
+        run_entry_status(e) == "done" || continue
         _rl_str(e, "fun") == String(fun) || continue
         p = _rl_get(e, "params", nothing)
         p isa AbstractDict || continue
