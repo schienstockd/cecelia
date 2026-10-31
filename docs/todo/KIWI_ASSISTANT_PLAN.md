@@ -116,7 +116,7 @@ does not invent new addressing.
 | `tracks` | `imageUid`, `valueName`, `trackIds[]` | — | `mark_tracks` |
 | `tile` | `imageUid`, `valueName`, `cellId`, `t?`, `z?` | landscape grid | `mark_tile` |
 | `capture` | `captureId` | `<proj>/captures/<id>` | `mark_freeform` |
-| `task` | `funName`, optional run / `valueName` | task registry | `point_at_ui` (nav path) |
+| `task` | `funName`; optional `imageUid` (+ `valueName`) = a step that RAN: needs a `done` run in that image's run log | task registry; `runlog.json` | `point_at_ui` (nav path) |
 | `ui` | `anchor` (data-guide id or nav path) | `CaptureAddress.domAnchor` | `point_at_ui` |
 | `blackboard` | `entryId`, `version?` | Blackboard | (open entry) |
 | `project` | `projectUid` | `get_project_info` | (navigate) |

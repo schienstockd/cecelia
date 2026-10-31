@@ -19,7 +19,8 @@ export type KiwiRef =
   | { kind: 'plot'; plotId: string; u?: number; v?: number }
   | { kind: 'tile'; imageUid: string; valueName: string; cellId: string; t?: number; z?: number }
   | { kind: 'capture'; captureId: string }
-  | { kind: 'task'; funName: string }
+  // funName alone = a kind of step; with imageUid = a step that RAN there (resolver checks the run log)
+  | { kind: 'task'; funName: string; imageUid?: string; valueName?: string }
   | { kind: 'ui'; anchor: string }
   | { kind: 'blackboard'; entryId: string; version?: number }
   // a plot nobody has made — Kiwi pointing at a look not yet taken; a click plots it

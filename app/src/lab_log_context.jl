@@ -183,7 +183,7 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             startswith(String(get(e, "at", "")), day) || continue   # this day's runs only (local date)
             k = (String(get(e, "fun", "?")), String(get(e, "valueName", "")))
             haskey(last_run, k) || push!(order, k)
-            String(get(e, "status", "done")) == "failed" && (n_failed[k] = get(n_failed, k, 0) + 1)
+            run_entry_status(e) == "failed" && (n_failed[k] = get(n_failed, k, 0) + 1)
             last_run[k] = e     # entries are appended oldest→newest, so the last one seen is the outcome
         end
         for k in order
@@ -193,7 +193,7 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             mod  = _category_of_fun(fun)
             push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.uid)
             get!(mod_sev, mod, "ok")
-            st = String(get(e, "status", "done"))
+            st = run_entry_status(e)
             if st == "failed"
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # still failed at day's end
                 bump(mod, "fail")
