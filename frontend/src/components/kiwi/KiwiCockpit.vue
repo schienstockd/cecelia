@@ -65,7 +65,6 @@ import AddToKiwiButton from './AddToKiwiButton.vue'
 // dialog opens from here (was in the lab log toolbar until 2026-09-22). The dialog itself lives
 // outside `kiwi/` and is free to name its provider; the local alias below keeps the ratchet happy.
 import AssistantOverviewDialog from '../ClaudeOverviewDialog.vue'
-import { useSingleOpenSection } from '../../composables/useSingleOpenSection'
 import { formatAgo } from '../../utils/formatAgo'
 
 defineEmits<{ (e: 'close'): void }>()
@@ -80,11 +79,9 @@ const showAssistantOverview = ref(false)
 // the ACTIVE profile server-side) lies until the panel is reopened.
 const observer = useObserverStore()
 
-// Accordion — one section open at a time (docs/ui/PRIMITIVES.md + composables/useSingleOpenSection).
-// Ask can then use the whole panel height when open, and the tiny status rows above stay pinned.
-// Default to Ask open — it's the reason to open the panel.
-const { isOpen: sectionOpen, toggle: toggleSection } =
-  useSingleOpenSection('cc.kiwi.openSection', 'ask')
+// The sections below are one accordion (`accordion="cc.kiwi.openSection"`, docs/ui/PRIMITIVES.md):
+// one open at a time, so Ask can use the whole panel height and the tiny status rows above stay
+// pinned. Ask is the default — it's the reason to open the panel.
 
 // USER_PROFILE_PLAN Phase 6: the profile picker is gone from Kiwi. Identity is chosen at launch
 // (AppProfilePicker) and managed in Preferences → Profiles. Kiwi only SHOWS the Claude account its
@@ -419,14 +416,14 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Ask" max-height="none"
                             fill
-                            :open="sectionOpen('ask')" @update:open="() => toggleSection('ask')"
+                            accordion="cc.kiwi.openSection" section="ask" default-open
                             tip="Ask a structured question — every claim in the reply carries a pointer you can click.">
           <KiwiAsk />
         </CollapsibleSection>
 
         <CollapsibleSection label="Recent captures" max-height="none"
                             fill
-                            :open="sectionOpen('captures')" @update:open="() => toggleSection('captures')"
+                            accordion="cc.kiwi.openSection" section="captures"
                             tip="Click a row to copy its captureId; the × button deletes it from disk.">
           <div v-if="capturesLoading" class="kiwi-empty cc-muted cc-fs-xs">Loading…</div>
           <div v-else-if="captures.length === 0" class="kiwi-empty cc-muted cc-fs-xs">
@@ -488,7 +485,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Session identity" max-height="none"
                             fill
-                            :open="sectionOpen('session')" @update:open="() => toggleSection('session')"
+                            accordion="cc.kiwi.openSection" section="session"
                             tip="Which assistant session is paired here — and a button to unpair.">
           <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
             Not paired. Your assistant session pairs on its next MCP tool call.
@@ -524,7 +521,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
 
         <CollapsibleSection label="Assistant" max-height="none"
                             fill
-                            :open="sectionOpen('assistant')" @update:open="() => toggleSection('assistant')"
+                            accordion="cc.kiwi.openSection" section="assistant"
                             tip="Is the assistant CLI installed, and is the Cecelia plugin set up for your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
