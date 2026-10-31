@@ -1,6 +1,7 @@
 # Motility metrics from the Pizzagalli / Cabini / Wortel review — plan
 
-> **Status: parked (2026-10-31) — plan only, nothing built.** Branch `docs/motility-metrics-plan`.
+> **Status: in progress (2026-10-31).** P0 done; P1 built (#1862); P4 built (#1865); P2/P3 next —
+> decisions answered below. Plan branch `docs/motility-metrics-plan`.
 > Source: Pizzagalli, Cabini & Wortel (2025), *Quantifying Biological Processes in Motion and Across
 > Scales*, in *Bioimaging Modalities in Bioengineering*, pp. 627–656, doi:10.1007/978-3-031-99410-4_29
 > (CC BY; open PDF at `susi.usi.ch/documents/335519/files/978-3-031-99410-4_29.pdf`). A review — its
@@ -178,7 +179,20 @@ Decision 5. `trackMeasures` writes per-cell `approach#<target>` and the per-trac
 `min_distance#*` column present at measure time (re-run it after contacts). Per-track means then come
 free from `track_props`. About 3 files.
 
-## Open questions (Dominik)
+## Answered (Dominik, 2026-10-31)
+
+- **Q1 → one window per run.** `windowMinutes` on `trackMeasures`; a second time scale is a second
+  segmentation run. Decision 2 locked as written.
+- **Q2 → arrest via a gated population.** `track_props` takes population membership as per-cell flags
+  (through `pop_membership_fetch`) and the dwell family aggregates them; no speed threshold anywhere.
+- **Q3 → no smoothed arrest column.** The windowed per-cell speed (P2) is the smooth stop/go signal.
+- **Q5 → bridge gaps.** A missing detection with contact (or membership) on both sides continues the
+  bout; only a MEASURED out-of-population frame ends it. Censoring at track start/end is unchanged.
+- **Q4 shrinks:** dwell is compute-on-read, so no column is stored under a population's name — a
+  rename can only break a saved track gate drawn on a dwell column. Key the columns by population
+  path (the same rule as `contact#<target>`); revisit only if a renamed gate actually breaks.
+
+## Open questions (Dominik) — as first asked
 
 1. **Decision 2 storage.** One window per `valueName` run (proposed), or several windows side by side
    (`live.cell.window5m.speed`, `…window15m…`)? Side by side lets HMM mix scales, at the cost of a
