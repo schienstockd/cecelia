@@ -351,6 +351,18 @@ Where it helps. All of these use shipped tools; the audit was read-only and chec
 It adds nothing to import, metadata, registration or denoise. One exception: LabArchives context can
 fill in the subject and goal before metadata, but only from the terminal.
 
+### Two ways in, not a loop *(Dominik, 2026-10-31; supersedes the four-step loop below)*
+
+Kiwi and Claude Code are **two ways in, not two steps**. Kiwi is the structured rubber duck: it points
+at the evidence and you decide. Claude Code is the interactive route: you work the analysis through in
+a terminal. Either can come first, and some people go straight to Claude Code, so the terminal is not
+step 4 after Kiwi. What stays from the loop: Kiwi's own three steps (point at it, ask, keep it) and
+the Blackboard as the bridge (**Continue in terminal**). Content: `claudeOverview.ts` → `KIWI_MODE`,
+`KIWI_LOOP`, `TERMINAL_MODE`, `CLAUDE_BRIDGE`; one renderer, `ClaudeWaysIn.vue`. The audit behind it:
+`docs/archive/AI_PATHWAYS_WORDING_PROMPT.md`.
+
+*Superseded 2026-10-31, kept for the record:*
+
 **The overlay needs a loop to hang on** *(Dominik, 2026-10-30: "otherwise the integration part is a bit lost")*.
 Markers on single steps don't tell a user what the Blackboard is for, when to attach evidence, or
 when a terminal session is worth it. The map's Claude cluster is therefore this four-step loop, worded
@@ -393,7 +405,7 @@ not reopened, so no new first-run entry — the tour's compass step names it).
   open at a time, starting on the group for the page you're on, else Start. Not persisted.
 - **Claude toggle** (`settings.guidesShowClaude`, off by default): a ✦ on the pages where Claude makes
   something you keep (board, Blackboard entry, notebook, chain — not reading, which is every page),
-  the loop (`ClaudeLoop.vue`), and a ✦ on each recipe step with an `assist`. A separate line of
+  the two ways in (`ClaudeWaysIn.vue`), and a ✦ on each recipe step with an `assist`. A separate line of
   pairs under the cards was dropped: unlabelled it read as noise, and each chip's hover names its pair.
 - **One source.** `lib/guides/mapData.ts` holds only what for / pair / guide / what Claude makes per route;
   everything else is `navGroups.ts`. `utils/guideMap.test.ts` fails on a sidebar page with no entry,

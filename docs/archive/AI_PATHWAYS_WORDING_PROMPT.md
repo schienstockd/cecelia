@@ -5,12 +5,21 @@
 > [`docs/ai-assist/OBSERVER.md`](../ai-assist/OBSERVER.md); Kiwi's design in
 > [`docs/todo/KIWI_ASSISTANT_PLAN.md`](../todo/KIWI_ASSISTANT_PLAN.md).
 >
-> **Outcome:** not yet run. Archived 2026-10-31. Checked against `origin/main` on archiving:
+> **Outcome (2026-10-31):** audited (history, capabilities from code, string inventory); not as a
+> single proposal PR. Dominik's call: **two ways in, not a loop**. Kiwi (structured rubber duck) and
+> Claude Code (the interactive route) sit side by side, either first, Blackboard as the bridge. Kiwi's
+> `?` now shows the two modes with a schematic each, plus *What each can use* — `lib/claudeTools.ts`,
+> pinned by its test to the real tool registrations and `KIWI_READ_TOOLS` (replaces the hand-written
+> `CLAUDE_ACCESS` table). The Guides toggle is *AI help*. Decision in
+> `docs/todo/WORKFLOW_RECIPES_PLAN.md` → *Two ways in*. Still open: one name per surface (the
+> `components/kiwi/` naming ratchet still bans "Claude"), ✦ meaning only "Claude made this" (Cleanup,
+> What's new and the drift guide still use it — needs a new glyph). Premise corrections, checked
+> against `origin/main` on archiving:
 > - c4045a2 ("one explanation of Claude") has **merged** via #1841, so `claudeOverview.ts` and its
 >   test are on `main`, not only on `docs/user-docs`.
 > - The #1841 renames have **landed** (e.g. *Whiteboard*); use them.
-> - #1852 (`add_gate`) is **still open**; `CLAUDE_ACCESS` has no gate row because nothing on `main`
->   adds gates yet.
+> - #1852 (`add_gate`) was open on archiving and merged the same day; its tool is a line in
+>   `claudeTools.ts`.
 > - `pixi run chat` exists (`pixi.toml` → `chat.py`), so the third surface is real.
 
 # AI_PATHWAYS_WORDING_PROMPT

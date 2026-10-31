@@ -6,8 +6,8 @@
                  nothing lit: there is no default path, it depends on the data and the question.
     The groups   one card per sidebar group, a button per page: click goes there. A card's heading
                  opens that group's guides in the accordion below (the map IS the accordion's index).
-    Claude       one toggle: ✦ on the pages where Claude makes something (mapData.ts → claude), the loop
-                 (ClaudeLoop.vue — the same cards as Kiwi's ?)
+    Claude       one toggle: ✦ on the pages where Claude makes something (mapData.ts → claude), the two
+                 ways in (ClaudeWaysIn.vue — the same cards as Kiwi's ?)
                  and what Claude adds at each recipe step. Off by default — Cecelia works without it.
 
   All joins live in `utils/guideMap.ts` (tested); this file only renders them.
@@ -22,7 +22,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useViewProfilesStore } from '../stores/viewProfiles'
 import { RECIPES, isWanted, guideById, isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides'
 import type { GuideDef } from '../lib/guides/types'
-import ClaudeLoop from './ClaudeLoop.vue'
+import ClaudeWaysIn from './ClaudeWaysIn.vue'
 import { recipeRequestUrl } from '../lib/links'
 import { closeGuides } from '../lib/guideOpen'
 import { buildMap, chipTip, mapCaption } from '../utils/guideMap'
@@ -61,7 +61,7 @@ function startStep(r: Row) {
   else if (!isGuideStep(r.s)) go(r.s.page)
 }
 const assistTip = (s: RecipeStep) =>
-  s.assist ? `${s.assist.where === 'kiwi' ? 'Kiwi or a terminal session' : 'A terminal session'}: ${s.assist.text}` : ''
+  s.assist ? `${s.assist.where === 'kiwi' ? 'Kiwi or Claude Code' : 'Claude Code'}: ${s.assist.text}` : ''
 </script>
 
 <template>
@@ -70,8 +70,8 @@ const assistTip = (s: RecipeStep) =>
       <span class="cc-eyebrow cc-fs-2xs">Recipes</span>
       <ChipSelect v-model="recipeId" :options="recipeOptions" allow-empty aria-label="Recipe" />
       <span class="gm-grow" />
-      <CcToggle v-model="settings.guidesShowClaude" label="Claude"
-                v-tooltip.bottom="'Show where Claude helps'" />
+      <CcToggle v-model="settings.guidesShowClaude" label="AI help"
+                v-tooltip.bottom="'Show where Kiwi or Claude Code helps — optional, needs a Claude plan'" />
     </div>
 
     <!-- the picked recipe: its steps, each with the fork it states -->
@@ -114,8 +114,8 @@ const assistTip = (s: RecipeStep) =>
 
     <p class="gm-caption cc-muted cc-fs-2xs">{{ mapCaption(recipe) }}</p>
 
-    <!-- Claude: the loop, in the same words as Kiwi's ? and its guide -->
-    <ClaudeLoop v-if="settings.guidesShowClaude" />
+    <!-- Claude: the two ways in, in the same words as Kiwi's ? and its guide -->
+    <ClaudeWaysIn v-if="settings.guidesShowClaude" />
 
     <p class="gm-ask cc-muted cc-fs-2xs">
       Not your kind of data?
