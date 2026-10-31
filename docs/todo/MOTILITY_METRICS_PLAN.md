@@ -138,6 +138,22 @@ Each phase is independently shippable, ordered by value per cost.
 - How the frame interval reaches `track_props` (bout lengths in minutes).
 - Confirm `Track` / `_step_dists` treat frame gaps the way Decision 2's windows assume.
 
+**P0 findings (2026-10-31)** — answered by reading the code:
+- **The tracker itself drops short tracks.** `bayesianTracking` removes every track under
+  `minTimepoints` (default 5) before writing (`python/cecelia/utils/tracking_utils.py`, the "filter
+  short tracks" step); those cells come back untracked. That is the short-track removal the review
+  says amplifies selection bias, applied before any measure runs. Nothing downstream (track measures,
+  `track_props`, HMM) drops by length — they return NaN for too-short inputs. Worth an option and a
+  form tip once P1's `tracking.duration_bias` finding shows real data is affected; not changed here.
+- **btrack bridges gaps** (`max_lost = 5` in `cell_config.json`), so tracks DO contain missing
+  frames. `step_speeds` divides by the real Δt, so per-cell speed is gap-safe; P2's windows must be
+  windows in TIME (the Δt between positions), never a count of positions. Same for Decision 7's
+  bout lengths.
+- **Frame interval reaches `track_props`** for free: it holds the image, and `img_physical_sizes(img)`
+  returns `(pixel_res, time_step)`.
+- **Membership read for arrest**: `pop_membership_fetch` (`gating/popmanager/pop_df.jl`) is the
+  canonical reader; costing it per track plot remains for P3.
+
 ### P1 — guards in the battery (no storage change)
 Decisions 3, 4 and 8. Touchpoints: `track_diagnostics.jl` (three functions plus the summary fields),
 `qc/text.jl` (`tracking.duration_bias`), `COHORT_METRICS`, `api/src/tracking_api.jl` (wire fields),
