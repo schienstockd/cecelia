@@ -296,6 +296,78 @@ end
   end
 end
 
+# An unparameterised logicle / asinh axis takes its parameters from the channel's own data (the
+# flow-cytometer defaults squash imaging intensities into a sliver); a parameter the caller sends wins,
+# and plotmeta reports the full spec so the client draws, fetches and stores gates in that one transform.
+@testset "API: data-derived transform parameters (logicle top, asinh cofactor)" begin
+    raw = collect(0.0:100.0)
+    t = _auto_params(LogicleTransform(), Dict{String,String}(), "x", raw)
+    @test t isa LogicleTransform && t.T == 100.0 && t.W == 0.5 && t.M == 4.5
+    @test _auto_params(LogicleTransform(), Dict("xT" => "262144"), "x", raw).T == 262144.0   # sent → kept
+    a = _auto_params(AsinhTransform(), Dict{String,String}(), "y", raw)
+    @test a isa AsinhTransform && a.cofactor ≈ 0.01 * 99.0                                  # 1 % of p99
+    @test _auto_params(AsinhTransform(cofactor = 5), Dict("ycof" => "5"), "y", raw).cofactor == 5.0
+    @test _auto_params(LogicleTransform(), Dict{String,String}(), "x", [0.0, -1.0]).T == 262144.0   # nothing positive
+    @test _auto_params(LinearTransform(), Dict{String,String}(), "x", raw) isa LinearTransform
+
+    if !api_have_fixture(api_fixture("testpr"))
+        @test_skip "testpr fixture missing"
+    else
+        dir = mktempdir()
+        cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            base = "projectUid=testpr&imageUid=KDIeEm&valueName=B&x=mean_intensity_0&y=area&autoLinear=1"
+            meta(q) = JSON3.read(api_gating_plotmeta(HTTP.Request("GET", "/x?$base&$q"))[2])
+            img = Cecelia.init_object("testpr", "KDIeEm")
+            xmax = maximum(filter(isfinite, _plot_cols_raw(img, "B", "flow", ["mean_intensity_0"], ROOT)[1]))
+            m = meta("xt=logicle&yt=asinh")
+            @test String(m.xSpec.kind) == "logicle" && m.xSpec.T ≈ xmax
+            @test String(m.ySpec.kind) == "asinh" && m.ySpec.cofactor > 0
+            m = meta("xt=logicle&xT=262144&xW=0.5&xM=4.5&xA=0&yt=asinh&ycof=7")
+            @test m.xSpec.T == 262144.0 && m.ySpec.cofactor == 7.0
+            # the picture route (MCP gate_plot) derives the same parameters and says which it used
+            pi = JSON3.read(api_gating_plot_image(HTTP.Request("GET", "/x?$base&xt=logicle&yt=linear"))[2])
+            @test pi.x.transform.T ≈ xmax
+            # the histogram an agent picks cuts from is in the same coordinates…
+            sm = JSON3.read(api_gating_summary(HTTP.Request("GET", "/x?$base&xt=logicle&yt=linear"))[2])
+            @test sm.x.transform.T ≈ xmax
+            # …and a gate it writes without parameters is stored in them, not the cytometer default
+            ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B")
+            st, b = api_gating_pop_add_gate(Vector{UInt8}(JSON3.write(merge(ids, Dict("name" => "bare",
+                "gate" => Dict("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                               "x_transform" => Dict("kind" => "logicle"), "x_min" => 0.1, "x_max" => 0.5,
+                               "y_min" => 0, "y_max" => 1e9))))))
+            @test st == 200 && JSON3.read(b).gate.x_transform.T ≈ xmax
+            st, b = api_gating_pop_add_gate(Vector{UInt8}(JSON3.write(merge(ids, Dict("name" => "explicit",
+                "gate" => Dict("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                               "x_transform" => Dict("kind" => "asinh", "cof" => 150), "x_min" => 0.1, "x_max" => 0.5,
+                               "y_min" => 0, "y_max" => 1e9))))))
+            @test st == 200 && JSON3.read(b).gate.x_transform.cofactor == 150.0   # sent → kept
+            # the general routes (the autonomous add_gate / set_gate) fill a bare transform the same way
+            ids2 = merge(ids, Dict{String,Any}("popType" => "flow"))
+            bare = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                    "x_transform" => Dict("kind" => "logicle"), "x_min" => 0.1, "x_max" => 0.5,
+                                    "y_min" => 0, "y_max" => 1e9)
+            @test _post(api_gating_pop_add, merge(ids2, Dict("name" => "gen", "gate" => bare)))[1] == 200
+            @test _post(api_gating_pop_set_gate, merge(ids2, Dict("path" => "/gen", "gate" => bare)))[1] == 200
+            m = load_pop_map(img; value_name = "B", pop_type = "flow")
+            @test pop_at(m, "/gen").gate.x_transform.T ≈ xmax
+            # plotdata sent a bare kind lands in the coordinates plotmeta reported
+            buf = reinterpret(Float32, api_gating_plotdata(HTTP.Request("GET", "/x?$base&xt=logicle&yt=linear"))[2])
+            full = reinterpret(Float32, api_gating_plotdata(HTTP.Request("GET",
+                       "/x?$base&xt=logicle&xT=$(xmax)&xW=0.5&xM=4.5&xA=0&yt=linear"))[2])
+            @test buf ≈ full
+            # the reported spec reproduces the extent plotmeta drew — plotdata sent it gets the same axes
+            m = meta("xt=logicle&yt=linear&x0=1")
+            @test m.xExtent[2] >= apply_transform(LogicleTransform(T = m.xSpec.T), xmax) - 1e-6
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
+    end
+end
+
 # The example sheet's choices and the cells view's query parsing, pinned without an image store (the
 # stills themselves render through `render_view_stills`, covered by offline_renderer_plumbing.jl).
 @testset "API: gate examples — which cells, the edge distance, the sheet" begin

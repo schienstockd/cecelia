@@ -77,7 +77,7 @@ export function withinReach(p: [number, number], w: number, h: number, reach = E
 // A gate has vertex AND edge handles, so its reach is `handleRadius(pts)` (utils/drawGeometry.ts):
 // 10 px, capped at a quarter of the shorter on-screen side so a small gate's body still moves it.
 // The drawn handles scale with the same radius (GateOverlay `drawHandles`).
-import { distToSeg, pointInPoly, handleRadius, type Point as Px } from '../utils/drawGeometry'
+import { distToSeg, pointInPoly, handleRadius, polygonAreaPx, type Point as Px } from '../utils/drawGeometry'
 
 export type GatePart = { part: 'vertex'; i: number } | { part: 'edge'; i: number } | { part: 'body' }
 
@@ -87,4 +87,19 @@ export function hitGateShape(pts: Px[], p: Px, r = handleRadius(pts)): GatePart 
   for (let i = 0; i < pts.length; i++) if (Math.hypot(pts[i][0] - p[0], pts[i][1] - p[1]) < r) return { part: 'vertex', i }
   for (let i = 0; i < pts.length; i++) if (distToSeg(p, pts[i], pts[(i + 1) % pts.length]) < r) return { part: 'edge', i }
   return pointInPoly(p, pts) ? { part: 'body' } : null
+}
+
+// ── Which gate a click selects ─────────────────────────────────────────────────
+// A gate's BODY moves it only once it is selected (GateOverlay): gates that fill the plot would
+// otherwise grab every press, so nothing could be deselected and the plot could not pan or zoom. A
+// click (not a drag) selects the SMALLEST gate whose outline contains it — with nested gates the
+// inner one is the one you can only reach there — and a click inside none selects nothing.
+export function gateAt(shapes: { path: string; pts: Px[] }[], p: Px): string | null {
+  let best: string | null = null, bestArea = Infinity
+  for (const s of shapes) {
+    if (!pointInPoly(p, s.pts)) continue
+    const a = polygonAreaPx(s.pts)
+    if (a < bestArea) { best = s.path; bestArea = a }
+  }
+  return best
 }

@@ -136,14 +136,15 @@ async function loadPanels() {
       const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true, colour)}`)).json() as {
         xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[]
         usedX?: string; usedY?: string; gates?: SrvGate[]
-        zExtent?: [number, number] | null; zTicks?: Tick[]; usedZ?: string }
+        zExtent?: [number, number] | null; zTicks?: Tick[]; usedZ?: string
+        xSpec?: TransformSpec; ySpec?: TransformSpec; zSpec?: TransformSpec }
       return { extents: { xMin: m.xExtent[0], xMax: m.xExtent[1], yMin: m.yExtent[0], yMax: m.yExtent[1] },
                xTicks: m.xTicks, yTicks: m.yTicks,
-               effA: effSpec(m.usedX, o.ta), effB: effSpec(m.usedY, o.tb),
+               effA: effSpec(m.usedX, o.ta, m.xSpec), effB: effSpec(m.usedY, o.tb, m.ySpec),
                coerced: (!!m.usedX && m.usedX !== o.ta.kind) || (!!m.usedY && m.usedY !== o.tb.kind),
                gates: m.gates ?? [],
                ramp: colour && m.zExtent ? { extent: m.zExtent, ticks: m.zTicks ?? [] } : null,
-               effZ: colour ? { col: colour.col, t: effSpec(m.usedZ, colour.t) } : null } as MetaData
+               effZ: colour ? { col: colour.col, t: effSpec(m.usedZ, colour.t, m.zSpec) } : null } as MetaData
     })())
     return metaCache.get(o.groupKey)!
   }

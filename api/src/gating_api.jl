@@ -172,6 +172,40 @@ function _axis_transform(q::AbstractDict, p::AbstractString)
     LinearTransform()
 end
 
+# A logicle or asinh axis the caller left UNPARAMETERISED takes its parameters from the channel's own
+# data (`raw`, the whole segmentation): logicle's top `T` = the channel maximum, asinh's cofactor = 1 %
+# of its 99th percentile (linear below that, log above — about two decades of log range under the
+# bulk of the data). The fixed defaults are a flow cytometer's (T = 262144, cofactor 150): on imaging
+# intensities in the tens they squeeze every cell into a sliver or leave the axis effectively linear.
+# A parameter the caller sends wins. plotmeta reports the result (`xSpec`…) and the client sends it
+# back verbatim to plotdata and when it stores a gate, so dots, outlines and gates share one transform.
+function _auto_params(t::AxisTransform, q::AbstractDict, p::AbstractString, raw::AbstractVector)
+    if t isa LogicleTransform && !haskey(q, p * "T")
+        f = filter(isfinite, raw)                      # an empty read (a column this table lacks) → keep t
+        isempty(f) && return t
+        hi = maximum(f)
+        hi > 0 || return t
+        return LogicleTransform(T = float(hi), W = t.W, M = t.M, A = t.A)
+    elseif t isa AsinhTransform && !haskey(q, p * "cof")
+        pos = sort!(Float64[v for v in raw if isfinite(v) && v > 0])
+        isempty(pos) && return t
+        return AsinhTransform(cofactor = 0.01 * pos[clamp(round(Int, 0.99 * length(pos)), 1, length(pos))])
+    end
+    t
+end
+
+_needs_auto(t::AxisTransform, q::AbstractDict, p::AbstractString) =
+    (t isa LogicleTransform && !haskey(q, p * "T")) || (t isa AsinhTransform && !haskey(q, p * "cof"))
+
+# `_auto_params` for a route that has not read the whole segmentation itself (summary, density, the
+# plot picture): reads the two raw columns over ROOT only when an axis needs it, so every gating read of
+# the same query lands in the same coordinates as plotmeta's axes.
+function _auto_axes(q::AbstractDict, img, vn, pop_type, x, y, xt, yt; labels_version = nothing)
+    (_needs_auto(xt, q, "x") || _needs_auto(yt, q, "y")) || return (xt, yt)
+    rx, ry = _xy_pair(_plot_cols_raw(img, vn, pop_type, [x, y], ROOT; labels_version = labels_version))
+    (_auto_params(xt, q, "x", rx), _auto_params(yt, q, "y", ry))
+end
+
 _fmt_tick(v) = abs(v) >= 1000 || (v != 0 && abs(v) < 0.01) ?
                string(round(v; sigdigits = 3)) : string(round(v; digits = 2))
 
@@ -865,7 +899,9 @@ function api_gating_plotmeta(req::HTTP.Request)
             xUnit = "", yUnit = "",              # same response shape as the real path below
             xTicks = Dict{String,Any}[], yTicks = Dict{String,Any}[],
             usedX = "linear", usedY = "linear", gates = Dict{String,Any}[],
-            zExtent = nothing, zTicks = Dict{String,Any}[], zUnit = "", usedZ = "linear"))
+            xSpec = transform_spec(LinearTransform()), ySpec = transform_spec(LinearTransform()),
+            zExtent = nothing, zTicks = Dict{String,Any}[], zUnit = "", usedZ = "linear",
+            zSpec = transform_spec(LinearTransform())))
     end
     xt0 = _axis_transform(q, "x"); yt0 = _axis_transform(q, "y")
     # "colour by" (optional): a THIRD measure painted onto the 2D plot as the dot colour. It has no
@@ -878,6 +914,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     rv = _plot_cols_raw(img, vn, pop_type, isempty(z) ? [x, y] : [x, y, z], ROOT; labels_version = pin)
     rxv, ryv = _xy_pair(rv)
     rxext = _finite_extrema(rxv); ryext = _finite_extrema(ryv)
+    xt0 = _auto_params(xt0, q, "x", rxv); yt0 = _auto_params(yt0, q, "y", ryv)
     # A non-linear transform that would collapse a bounded/small-range measure (morphology like
     # solidity ∈ [0,1]) into a sliver is auto-swapped to linear; usedX/usedY tell the client so it can
     # flag the axis. Both plotmeta and plotdata transform with these EFFECTIVE transforms, so the
@@ -894,7 +931,7 @@ function api_gating_plotmeta(req::HTTP.Request)
     # (or when it isn't a column on this table — an empty read).
     zt = LinearTransform(); zext = nothing; zticks = Dict{String,Any}[]
     if !isempty(z) && !isempty(rv[3])
-        zt0 = _axis_transform(q, "z")
+        zt0 = _auto_params(_axis_transform(q, "z"), q, "z", rv[3])
         rzext = _finite_extrema(rv[3])
         zt = auto ? effective_transform(zt0, rzext[1], rzext[2]) : zt0
         # robust range (see `_ramp_range`): the ramp is a contrast setting, not an axis
@@ -944,6 +981,9 @@ function api_gating_plotmeta(req::HTTP.Request)
         xTicks = _axis_ticks(xt, rxext[1], rxext[2]),
         yTicks = _axis_ticks(yt, ryext[1], ryext[2]),
         usedX = transform_kind(xt), usedY = transform_kind(yt),
+        # the transforms with every parameter (incl. the data-derived ones, `_auto_params`) — what the
+        # client sends to plotdata and stores in a gate drawn on these axes
+        xSpec = transform_spec(xt), ySpec = transform_spec(yt), zSpec = transform_spec(zt),
         gates = gates,
         # colour-by: the ramp's [lo, hi] in TRANSFORMED space (plotdata sends transformed values), the
         # unit for the legend, and the transform actually used — same auto-linearisation as an axis.
@@ -968,8 +1008,11 @@ function api_gating_plotdata(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
+    # the GUI echoes plotmeta's full spec (no read here); a caller sending a bare kind gets the same
+    # data-derived parameters plotmeta's axes used, not dots in a different transform under them
+    xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
+                        labels_version = _labels_version_pin(q))
     # `z` (optional) = the colour-by measure: the response becomes TRIPLES [x,y,z,…] instead of pairs,
     # read in the SAME pass as x/y so each z belongs to its own dot (`_plot_cols_raw`). The client
     # switches stride on whether it asked for z, so old callers are untouched.
@@ -991,7 +1034,10 @@ function api_gating_plotdata(req::HTTP.Request)
         end
         return 200, collect(reinterpret(UInt8, buf))
     end
-    xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, _axis_transform(q, "z"); labels_version = pin)
+    zt = _axis_transform(q, "z")
+    _needs_auto(zt, q, "z") &&
+        (zt = _auto_params(zt, q, "z", first(_plot_cols_raw(img, vn, pop_type, [z], ROOT; labels_version = pin))))
+    xv, yv, zv = _plot_xyz(img, vn, pop_type, x, y, z, pop, xt, yt, zt; labels_version = pin)
     n = length(xv)
     stride = with_labels ? 4 : 3
     buf = Vector{Float32}(undef, stride*n)
@@ -1123,8 +1169,9 @@ function api_gating_density(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     bins = parse(Int, get(q, "bins", "256"))
-    xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
     pop = get(q, "pop", ROOT)
+    xt, yt = _auto_axes(q, img, vn, _read_pop_type(q, img, vn, pop), x, y, _axis_transform(q, "x"), _axis_transform(q, "y");
+                        labels_version = _labels_version_pin(q))
     xv, yv = _plot_xy(img, vn, _read_pop_type(q, img, vn, pop), x, y, pop, xt, yt;
                        labels_version = _labels_version_pin(q))
     d = density_2d(xv, yv; bins = bins)
@@ -1144,7 +1191,7 @@ function api_gating_summary(req::HTTP.Request)
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop = get(q, "pop", ROOT); pop_type = _read_pop_type(q, img, vn, pop)
     bins = clamp(something(tryparse(Int, get(q, "bins", "30")), 30), 5, 80)
-    xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
+    xt, yt = _auto_axes(q, img, vn, pop_type, x, y, _axis_transform(q, "x"), _axis_transform(q, "y"))
     xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
     if isempty(xv)
         # nothing read: a column the table lacks, a population that doesn't exist, or an empty one
@@ -1206,7 +1253,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
         "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
-        gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(body["gate"]) : nothing
+        gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)) : nothing
         flt = get(body, "filter", nothing)
         bl = get(body, "boolean", nothing)      # Decision 16: a set operation over other pops
         try
@@ -1389,6 +1436,9 @@ function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,N
     (xc in cols && yc in cols) || return (nothing, _missing_column_hint(img, vn, (xc, yc)))
     xt_spec, terr = _proposed_transform(g("x_transform"), "x"); terr === nothing || return (nothing, terr)
     yt_spec, terr = _proposed_transform(g("y_transform"), "y"); terr === nothing || return (nothing, terr)
+    # a logicle / asinh sent without its parameters is stored with the channel's own — the ones gate_plot
+    # and gate_histogram drew and summarised it in (`_auto_params`), not the cytometer defaults
+    xt_spec, yt_spec = _proposed_auto(xt_spec, yt_spec, img, vn, xc, yc)
     finite_num(v) = v isa Real && !(v isa Bool) && isfinite(v)
     full = Dict{String,Any}("kind" => kind, "x_channel" => xc, "y_channel" => yc,
                             "x_transform" => xt_spec, "y_transform" => yt_spec)
@@ -1410,6 +1460,30 @@ function _proposed_gate(spec, img, vn)::Tuple{Union{Gate,Nothing},Union{String,N
     catch e
         (nothing, "not a valid gate: " * sprint(showerror, e))
     end
+end
+
+# A whole gate spec with any unparameterised logicle / asinh axis filled from the channel's data — the
+# general add / set-gate routes. The GUI always sends every parameter, so for it this changes nothing.
+# Cell (`flow`) gates only: a track gate's axes are track aggregates, read differently.
+function _gate_spec_auto(spec, img, vn, pop_type)
+    (spec isa AbstractDict && pop_type == "flow") || return spec
+    d = Dict{String,Any}(String(k) => v for (k, v) in spec)
+    (haskey(d, "x_channel") && haskey(d, "y_channel")) || return d
+    # the add-gate normaliser (`cof` → `cofactor`, finite params); a bad spec is left for gate_from_spec to refuse
+    xs, xerr = _proposed_transform(get(d, "x_transform", nothing), "x")
+    ys, yerr = _proposed_transform(get(d, "y_transform", nothing), "y")
+    (xerr === nothing && yerr === nothing) || return d
+    d["x_transform"], d["y_transform"] = _proposed_auto(xs, ys, img, vn, String(d["x_channel"]), String(d["y_channel"]))
+    d
+end
+
+function _proposed_auto(xs::Dict{String,Any}, ys::Dict{String,Any}, img, vn, xc, yc)
+    q = Dict{String,String}()
+    haskey(xs, "T") && (q["xT"] = "1"); haskey(xs, "cofactor") && (q["xcof"] = "1")
+    haskey(ys, "T") && (q["yT"] = "1"); haskey(ys, "cofactor") && (q["ycof"] = "1")
+    xt, yt = _auto_axes(q, img, vn, "flow", xc, yc, transform_from_spec(xs), transform_from_spec(ys))
+    (_needs_auto(transform_from_spec(xs), q, "x") ? transform_spec(xt) : xs,
+     _needs_auto(transform_from_spec(ys), q, "y") ? transform_spec(yt) : ys)
 end
 
 # One axis transform of a proposed gate → its stored spec, or why not. Absent ⇒ linear.
@@ -1438,7 +1512,7 @@ function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         try
-            set_gate!(m, String(body["path"]), gate_from_spec(body["gate"]))
+            set_gate!(m, String(body["path"]), gate_from_spec(_gate_spec_auto(body["gate"], img, vn, pt)))
         catch e
             return _gerr(400, sprint(showerror, e))
         end
