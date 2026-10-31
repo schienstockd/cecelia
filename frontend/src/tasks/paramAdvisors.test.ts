@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   anisoGridEstimate, anisoGridAdvisory, motionDimsAdvisory, imageVersionAdvisory, formatBytes,
   paramAdvisor, spatialSigmaAdvisory, temporalSpanAdvisory, backendAdvisor, popsCompatAdvisor,
-  cellposeModelAdvisory, pyramidLevelsAdvisory, pyramidDeepestDims, labelsTakenAdvisory, freeLabelName,
+  cellposeModelAdvisory, pyramidLevelsAdvisory, searchRadiusSpeedAdvisory, pyramidDeepestDims, labelsTakenAdvisory, freeLabelName,
   ANISO_BYTES_PER_BOX_PER_FRAME, ANISO_WARN_BYTES, ANISO_MIN_BOX_PX,
 } from './paramAdvisors'
 import { isImageVersionField, preferredValueName } from './paramValues'
@@ -508,6 +508,56 @@ describe('ParamRenderer advisory placement', () => {
     // the empty-state inside channelSelection). A `v-if` at the chain's own indent level is the bug.
     const siblingIf = chain.split('\n').filter(l => /^ {4}<\w[^>]*\sv-if=/.test(l))
     expect(siblingIf).toEqual([])
+  })
+})
+
+// ── what a per-frame search radius means as a speed ─────────────────────────────────────────────
+describe('searchRadiusSpeedAdvisory', () => {
+  const at = (uid: string, v: number | null, unit: string | null = 'second') =>
+    ({ uid, timeIncrement: v, timeIncrementUnit: unit })
+
+  it('converts the radius to µm/min at the shared interval', () => {
+    const a = searchRadiusSpeedAdvisory(20, [at('a', 30), at('b', 30)])
+    expect(a?.message).toBe('20 µm/frame ≈ 40 µm/min at 30 s/frame')
+    expect(a?.severity).toBe('ok')
+    expect(a?.flag).toBeUndefined()
+  })
+
+  // The same radius is a quarter of the speed at 2 min/frame — the reason this exists.
+  it('reads minute intervals, and prints them as minutes', () => {
+    expect(searchRadiusSpeedAdvisory(20, [at('a', 2, 'min')])?.message)
+      .toBe('20 µm/frame ≈ 10 µm/min at 2 min/frame')
+    expect(searchRadiusSpeedAdvisory(20, [at('a', 7, 's')])?.message)
+      .toBe('20 µm/frame ≈ 171 µm/min at 7 s/frame')
+  })
+
+  it('gives the range and flags mixed intervals', () => {
+    const a = searchRadiusSpeedAdvisory(20, [at('a', 30), at('b', 2, 'min'), at('c', 60)])
+    expect(a?.message).toBe('20 µm/frame ≈ 10–40 µm/min across 30 s–2 min/frame')
+    expect(a?.flag?.severity).toBe('warn')
+  })
+
+  // An interval nobody recorded is not 1 s: no value, skip the image, never guess.
+  it('skips images without a usable interval and is silent when none has one', () => {
+    expect(searchRadiusSpeedAdvisory(20, [at('a', 30), at('b', null)])?.message)
+      .toBe('20 µm/frame ≈ 40 µm/min at 30 s/frame')
+    expect(searchRadiusSpeedAdvisory(20, [at('b', null)])).toBeNull()
+    expect(searchRadiusSpeedAdvisory(20, [])).toBeNull()
+    expect(searchRadiusSpeedAdvisory(20, undefined)).toBeNull()
+  })
+
+  it('reads an interval with no unit as seconds, as the runner does', () => {
+    expect(searchRadiusSpeedAdvisory(20, [at('c', 30, null)])?.message)
+      .toBe('20 µm/frame ≈ 40 µm/min at 30 s/frame')
+  })
+
+  it('says nothing without a positive radius', () => {
+    expect(searchRadiusSpeedAdvisory(0, [at('a', 30)])).toBeNull()
+    expect(searchRadiusSpeedAdvisory('x', [at('a', 30)])).toBeNull()
+  })
+
+  it('is registered under the key', () => {
+    expect(paramAdvisor({ key: 'maxSearchRadius', type: 'int' })).toBeDefined()
   })
 })
 
