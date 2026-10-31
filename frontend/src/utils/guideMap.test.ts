@@ -36,12 +36,13 @@ describe('the map covers the sidebar, exactly', () => {
   })
 })
 
-// The observer's source, read as text — the same `?raw` glob idiom as userDocs.test.ts.
-const SERVER = Object.values(import.meta.glob('../../../mcp/cecelia_mcp/server.py',
-  { query: '?raw', import: 'default', eager: true }) as Record<string, string>)[0] ?? ''
+// The observer's source, read as text — the same `?raw` glob idiom as userDocs.test.ts. Its tools live
+// in server.py and in the gating toolset it registers (gating_views.py, shared with the autonomous server).
+const SERVER = Object.values(import.meta.glob(['../../../mcp/cecelia_mcp/server.py', '../../../mcp/cecelia_mcp/gating_views.py'],
+  { query: '?raw', import: 'default', eager: true }) as Record<string, string>).join('\n')
 
 describe('the ✦ follows what Claude can make', () => {
-  const makers = [...SERVER.matchAll(/^(?:async )?def ((?:create|add|append)_\w+)/gm)].map(m => m[1]).sort()
+  const makers = [...SERVER.matchAll(/^ *(?:async )?def ((?:create|add|append)_\w+)\(project_uid/gm)].map(m => m[1]).sort()
   it('reads the observer’s create tools', () => {
     expect(makers).toContain('create_chain')
   })

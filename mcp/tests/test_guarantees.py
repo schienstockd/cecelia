@@ -114,19 +114,23 @@ GUARANTEES: dict[str, tuple[str, str, str, str]] = {
         "mcp/cecelia_mcp/server.py", "a UID matches EXACTLY (case-sensitive)",
         "api/test/suite/project_ops.jl", "A uid must not be matched case-insensitively",
     ),
-    # It must not offer to move, fix or delete a gate — it can only add one beside the user's.
-    "gates are add-only": (
-        "mcp/cecelia_mcp/server.py", "cannot edit, move, rename or delete any population",
+    # It must not offer to move, fix or delete the user's gates — only the ones it drew itself.
+    "add-gate never touches an existing population": (
+        "mcp/cecelia_mcp/gating_views.py", "never try to replace theirs",
         "api/test/suite/gating_add_gate.jl", "add-gate is ADD-ONLY",
+    ),
+    "only Claude's own gates can be moved or removed": (
+        "mcp/cecelia_mcp/gating_views.py", "only they change those",
+        "api/test/suite/gating_add_gate.jl", "own-gate routes change ONLY what Claude drew",
     ),
     # It must pick another name, never try to replace theirs.
     "a taken gate name is refused": (
-        "mcp/cecelia_mcp/server.py", "409 if the name is taken under that parent or by another population type",
+        "mcp/cecelia_mcp/gating_views.py", "409 if the name is taken under that parent or by another population type",
         "api/test/suite/gating_add_gate.jl", "pop_name_conflict",
     ),
     # It must say the gate is a proposal it made — the stamp is what lets the manager show that.
     "a proposed gate is marked as Claude's": (
-        "mcp/cecelia_mcp/server.py", "marked as yours",
+        "mcp/cecelia_mcp/gating_views.py", "marked as yours",
         "api/test/suite/gating_add_gate.jl", "node[\"createdBy\"][\"via\"] == \"claude\"",
     ),
     # The whole designs-but-never-starts split, which it is told not to apologise for.

@@ -45,6 +45,7 @@ export const CLAUDE_ACCESS: AccessRow[] = [
   { text: 'Warns when a bad-tagged failure keeps coming back', kiwi: true, terminal: true },
   { text: 'Marks cells and tracks on the viewer', kiwi: false, terminal: true },
   { text: 'Adds a chain, board, notebook or lab-log line for you to review', kiwi: false, terminal: true },
+  { text: 'Proposes a gate (marked ✦, undoable); moves or removes only its own', kiwi: false, terminal: true },
   { text: 'Writes a custom module for a step Cecelia lacks — you reload and run it', kiwi: false, terminal: true },
   { text: 'Reads your LabArchives notebook, once linked', kiwi: false, terminal: true, needs: 'LabArchives' },
   { text: 'Runs a task or chain, or changes or deletes your data and work', kiwi: false, terminal: false },
