@@ -32,7 +32,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
-from cecelia.effectiveness.log import FINDING_EVENTS as _FINDING_EVENTS, latest_resolutions_by_slug  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS as _FINDING_EVENTS  # noqa: E402
 from cecelia.effectiveness.git_context import git_output, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import MARKERS  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402
@@ -265,10 +265,31 @@ def default_assign(prompt: str) -> tuple[dict, float, dict]:
 
 
 def resolutions(events: _t.Iterable[dict]) -> dict[str, str]:
-    """slug → its latest outcome. Not scoped to the finding's branch: a session that switches branch
-    before committing logs the fix on another one, and no slug has yet been flagged on two branches."""
-    return {slug: (row.get("payload") or {}).get("outcome") or ""
-            for slug, row in latest_resolutions_by_slug(events).items()}
+    """slug → the outcome `tally` reads. Each branch that flagged a slug answers for its own copy with
+    its newest resolution, as in the bug sweep (`bugs.tag`), so one's fix can't hide what another
+    shipped; the slug is the first unhandled copy's outcome, else the first copy's. A copy with no
+    resolution of its own takes the newest from a branch that never flagged the slug: a session that
+    switched branch before committing. The sweep gives that fix a judge look instead, so here it
+    counts as caught while the sweep may still list it."""
+    events = list(events)
+    resolved = _bugs.branch_resolutions(events)
+    flagged: dict[str, list[str | None]] = {}
+    for e in events:
+        slug = (e.get("payload") or {}).get("slug")
+        if e.get("event") in _FINDING_EVENTS and slug and e.get("branch") not in flagged.setdefault(slug, []):
+            flagged[slug].append(e.get("branch"))
+
+    def outcome(slug: str, branch: str | None) -> str:
+        row = (resolved.get(branch) or {}).get(slug) or max(
+            (rs[slug] for b, rs in resolved.items() if slug in rs and b not in flagged[slug]),
+            key=lambda r: r.get("ts") or "", default=None)
+        return ((row or {}).get("payload") or {}).get("outcome") or ""
+
+    out = {}
+    for slug, branches in flagged.items():
+        outs = [outcome(slug, b) for b in branches]
+        out[slug] = next((o for o in outs if o not in _bugs._HANDLED), outs[0])
+    return out
 
 
 def tally(findings: _t.Sequence[dict], assignments: _t.Iterable[dict], bins: _t.Mapping[str, str],
