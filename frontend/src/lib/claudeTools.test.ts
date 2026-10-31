@@ -7,18 +7,24 @@ import { isTooLong } from '../utils/uiCopy'
 // KIWI_READ_TOOLS in kiwi_turn.jl.
 const raw = (g: Record<string, string>) => Object.values(g)[0] ?? ''
 const SERVER = raw(import.meta.glob('../../../mcp/cecelia_mcp/server.py', { query: '?raw', import: 'default', eager: true }))
+// …plus the gating toolset server.py registers from gating_views.py (`register_gating_tools`)
+const GATING = raw(import.meta.glob('../../../mcp/cecelia_mcp/gating_views.py', { query: '?raw', import: 'default', eager: true }))
 const KIWI_JL = raw(import.meta.glob('../../../api/src/kiwi_turn.jl', { query: '?raw', import: 'default', eager: true }))
 
 // The same registrar pattern api/test/suite/kiwi_turn.jl uses: `_tool` / `_tool_if(…)` / `_gui_tool`,
 // then any stacked decorators (`@with_doc`), then the def.
-const REGISTERED = new Set([...SERVER.matchAll(/@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(/g)].map(m => m[1]))
+const SERVER_TOOLS = [...SERVER.matchAll(/@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(/g)].map(m => m[1])
+const GATING_TOOLS = [...GATING.matchAll(/\n {4}@tool\s*\n(?: {4}@[^\n]*\n)* {4}def ([a-z_]+)\(/g)].map(m => m[1])
+const REGISTERED = new Set([...SERVER_TOOLS, ...GATING_TOOLS])
 const KIWI_BLOCK = KIWI_JL.match(/const KIWI_READ_TOOLS = \[([\s\S]*?)\n\]/)?.[1] ?? ''
 const KIWI_TOOLS = new Set([...KIWI_BLOCK.replace(/#[^\n]*/g, '').matchAll(/"([a-z_]+)"/g)].map(m => m[1]))
 
 describe('claudeTools — pinned to the real allow-lists', () => {
   it('found both sources', () => {
     // A glob or pattern that matched nothing would make every check below vacuously pass.
-    expect(REGISTERED.size).toBe((SERVER.match(/^@_(?:gui_)?tool/gm) ?? []).length)
+    expect(SERVER_TOOLS.length).toBe((SERVER.match(/^@_(?:gui_)?tool/gm) ?? []).length)
+    expect(GATING_TOOLS.length).toBe((GATING.match(/^ {4}@tool$/gm) ?? []).length)
+    expect(SERVER).toContain('register_gating_tools(_tool, _client)')
     expect(REGISTERED.size).toBeGreaterThan(40)
     expect(KIWI_TOOLS.size).toBeGreaterThan(20)
   })

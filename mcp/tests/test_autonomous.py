@@ -251,22 +251,38 @@ class RequireMeasured(unittest.TestCase):
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
                 mock.patch.object(c, "_request", return_value={"valueName": "default"}) as req:
             with self.assertRaisesRegex(au.ApiError, "no measurements"):
-                c.gating_post("/api/gating/pop/add", "copy01", "img", "T", name="pos")
+                c.add_gate("copy01", "img", "T", "pos", {"kind": "rectangle"})
             self.assertEqual(req.call_count, 1)          # never reached the write
         with mock.patch.object(c, "_request", return_value={"valueName": "T"}):
             c._require_measured("copy01", "img", "T")
 
+    def test_a_write_keeps_to_the_label_set_prefix(self):
+        c = au.AutonomousClient("http://x")
+        with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01", au.PREFIX_ENV: "agent"}), \
+                mock.patch.object(c, "_request", return_value={"valueName": "T"}) as req:
+            with self.assertRaisesRegex(au.LockViolation, "starting with 'agent'"):
+                c.delete_gate("copy01", "img", "T", "/pos")
+            req.assert_not_called()
+            c.gate_stats("copy01", "img", "T", "/pos")   # a read of another label set is fine
 
-class GatingPost(unittest.TestCase):
-    def test_population_path_is_a_body_field_not_the_route(self):
+
+class GatingWrites(unittest.TestCase):
+    def test_writes_go_to_the_claude_scoped_routes(self):
+        # never /api/gating/pop/add, set-gate or delete — those change the user's populations too
         c = au.AutonomousClient("http://x")
         with mock.patch.dict(os.environ, {au.PROJECT_ENV: "copy01"}), \
                 mock.patch.object(c, "_require_measured"), \
                 mock.patch.object(c, "_request", return_value={"ok": True}) as req:
-            c.gating_post("/api/gating/pop/set-gate", "copy01", "img", "T", path="/pos", gate={"kind": "rectangle"})
-        method, route = req.call_args[0][:2]
-        self.assertEqual((method, route), ("POST", "/api/gating/pop/set-gate"))
-        self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
+            c.add_gate("copy01", "img", "T", "pos", {"kind": "rectangle"}, dry_run=True)
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/add-gate"))
+            self.assertTrue(req.call_args.kwargs["body"]["dryRun"])
+            c.set_gate("copy01", "img", "T", "/pos", {"kind": "rectangle"})
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/set-own-gate"))
+            self.assertEqual(req.call_args.kwargs["body"]["path"], "/pos")
+            c.delete_gate("copy01", "img", "T", "/pos")
+            self.assertEqual(req.call_args[0][:2], ("POST", "/api/gating/pop/delete-own"))
+        for route in ("/api/gating/pop/add", "/api/gating/pop/set-gate", "/api/gating/pop/delete"):
+            self.assertNotIn(("POST", route), au.AUTONOMOUS_ROUTES)
 
 
 class GatingPictures(unittest.TestCase):
@@ -333,7 +349,22 @@ class GatingPicturesShared(unittest.TestCase):
         for mod in (server, autonomous_server):
             tools = {t.name: t for t in asyncio.run(mod.mcp.list_tools())}
             self.assertTrue(tools["gate_plot"].description.startswith("The gate plot as an image"))
-            self.assertTrue(tools["gate_cells_view"].description.startswith("The image with population"))
+            self.assertTrue(tools["gate_cells_view"].description.startswith("The image with populations"))
+
+    def test_both_servers_register_the_one_gating_toolset(self):
+        # the same tools, the same argument schemas, the same text — defined once in gating_views.py
+        from cecelia_mcp import autonomous_server, server
+        from cecelia_mcp.client import ALLOWED_ROUTES
+        from cecelia_mcp import gating_views as gv
+        def gating(mod):
+            return {t.name: (t.description, t.input_schema) for t in asyncio.run(mod.mcp.list_tools())
+                    if t.name in {"gate_histogram", "gate_plot", "gate_cells_view", "gate_examples",
+                                  "gate_stats", "add_gate", "set_gate", "delete_gate"}}
+        obs, auto = gating(server), gating(autonomous_server)
+        self.assertEqual(len(obs), 8)
+        self.assertEqual(obs, auto)
+        self.assertTrue(gv.GATING_ROUTES <= ALLOWED_ROUTES)
+        self.assertTrue(gv.GATING_ROUTES <= au.AUTONOMOUS_ROUTES)
 
 
 if __name__ == "__main__":

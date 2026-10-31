@@ -40,6 +40,12 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     server = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "server.py"), String)
     tools = Set(m.captures[1] for m in eachmatch(r"@_(?:gui_)?tool(?:_if\([^\n]*)?\s*\n(?:@[^\n]*\n)*def ([a-z_]+)\(", server))   # `_tool` / `_tool_if` / `_gui_tool` = server.py's registrars, then any stacked decorators (`@with_doc`)
     @test length(tools) == count(r"^@_(?:gui_)?tool"m, server)   # every registration seen — the pattern once missed two @with_doc tools
+    # …plus the gating toolset server.py registers from gating_views.py (`register_gating_tools`)
+    gv = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "gating_views.py"), String)
+    gating = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", gv))
+    @test length(gating) == count(r"^    @tool$"m, gv) && "add_gate" in gating
+    @test occursin("register_gating_tools(_tool, _client)", server)
+    tools = union(tools, gating)
     @test length(tools) > 40
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))

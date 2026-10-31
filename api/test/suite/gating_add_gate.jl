@@ -101,12 +101,87 @@
         # an app request (no Claude header) is stamped `via: app` — the stamp is who asked, never assumed
         st, b = add_gate(Dict("name" => "byapp", "gate" => poly); hdrs = Pair{String,String}[])
         @test st == 200 && String(JSON3.read(b).createdBy.via) == "app"
-        # …and the general route stamps a Claude add (the autonomous server's add_gate), not a GUI one
+        # …and the general route never stamps: it is the GUI's, and no MCP server is allowed it
         st, _ = handle_http(HTTP.Request("POST", "/api/gating/pop/add", claude_hdrs),
             Vector{UInt8}(JSON3.write(merge(ids, Dict("popType" => "flow", "name" => "auto", "gate" => poly)))))
         @test st == 200
         m = load_pop_map(img; value_name = "B", pop_type = "flow")
-        @test pop_at(m, "/auto").created_by["via"] == "claude" && pop_at(m, "/dim/small").created_by === nothing
+        @test pop_at(m, "/auto").created_by === nothing && pop_at(m, "/dim/small").created_by === nothing
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
+
+# `set-own-gate` / `delete-own` — the MCP servers' only way to change a gate, and only one Claude drew:
+# every population at and below the path must carry a Claude `createdBy`, else 403 naming the user's.
+# `dryRun` on all three writes answers with the numbers and leaves the sidecar byte-identical.
+@testset "API: own-gate routes change ONLY what Claude drew" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B")
+        rect(x0, x1) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                        "x_min" => x0, "x_max" => x1, "y_min" => 0.0, "y_max" => 1e9)
+        claude = ["X-Cecelia-Client" => "claude", "X-Cecelia-Session" => "s1"]
+        function call(route, obj; hdrs = claude)
+            r = handle_http(HTTP.Request("POST", route, hdrs), Vector{UInt8}(JSON3.write(merge(ids, obj))))
+            (r[1], JSON3.read(r[2]))
+        end
+        img = Cecelia.init_object("testpr", "KDIeEm")
+        sidecar() = read(gating_path(img._dir, "B"), String)
+        # the user's gate, and Claude's proposal beside it
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "mine", "gate" => rect(0.0, 1e6))))[1] == 200
+        snap = sidecar()
+        # dry run of the add: the numbers, nothing written — and the same numbers the real add reports
+        st, dry = call("/api/gating/pop/add-gate", Dict("name" => "prop", "gate" => rect(0.0, 500.0), "dryRun" => true))
+        @test st == 200 && dry.dryRun == true && dry.path == "/prop"
+        @test sidecar() == snap
+        st, real = call("/api/gating/pop/add-gate", Dict("name" => "prop", "gate" => rect(0.0, 500.0)))
+        @test st == 200 && real.dryRun == false && (real.count, real.parentCount) == (dry.count, dry.parentCount)
+
+        # move it — dry first (counts change, file does not), then for real
+        snap = sidecar()
+        st, d = call("/api/gating/pop/set-own-gate", Dict("path" => "/prop", "gate" => rect(0.0, 50.0), "dryRun" => true))
+        @test st == 200 && d.count < real.count && sidecar() == snap
+        st, r = call("/api/gating/pop/set-own-gate", Dict("path" => "/prop", "gate" => rect(0.0, 50.0)))
+        @test st == 200 && r.count == d.count && r.gate.x_max == 50.0
+        @test pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/prop").gate.x_max == 50.0
+        @test String(r.createdBy.via) == "claude"                     # moving keeps who drew it
+
+        # the user's gate: neither moved nor removed, and nothing written
+        snap = sidecar()
+        st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/mine", "gate" => rect(0.0, 1.0)))
+        @test st == 403 && e.code == "not_claude_made" && collect(e.populations) == ["/mine"]
+        st, e = call("/api/gating/pop/delete-own", Dict("path" => "/mine"))
+        @test st == 403 && e.code == "not_claude_made"
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/nope", "gate" => rect(0.0, 1.0)))[1] == 404
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/prop", "gate" => rect(1.0, 0.0)))[1] == 422
+        @test sidecar() == snap
+
+        # once the user gates under Claude's proposal, that subtree is theirs too
+        @test _post(api_gating_pop_add, merge(ids, Dict("popType" => "flow", "name" => "kept", "parent" => "/prop",
+                                                         "gate" => rect(0.0, 10.0))))[1] == 200
+        snap = sidecar()
+        st, e = call("/api/gating/pop/delete-own", Dict("path" => "/prop"))
+        @test st == 403 && collect(e.populations) == ["/prop/kept"] && occursin("/prop/kept", String(e.error))
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/prop", "gate" => rect(0.0, 5.0)))[1] == 403
+        @test sidecar() == snap
+
+        # a clean Claude subtree goes whole — dry run lists it and keeps it, then it is gone
+        @test call("/api/gating/pop/add-gate", Dict("name" => "p2", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test call("/api/gating/pop/add-gate", Dict("name" => "p2c", "parent" => "/p2", "gate" => rect(0.0, 100.0)))[1] == 200
+        snap = sidecar()
+        st, d = call("/api/gating/pop/delete-own", Dict("path" => "/p2", "dryRun" => true))
+        @test st == 200 && collect(d.deleted) == ["/p2", "/p2/p2c"] && sidecar() == snap
+        st, _ = call("/api/gating/pop/delete-own", Dict("path" => "/p2"))
+        m = load_pop_map(img; value_name = "B", pop_type = "flow")
+        @test st == 200 && !has_pop(m, "/p2") && has_pop(m, "/mine") && has_pop(m, "/prop/kept")
     finally
         Cecelia.cecelia_conf()["dirs"]["projects"] = old
     end

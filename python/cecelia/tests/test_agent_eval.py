@@ -423,6 +423,17 @@ class TestRunRecord(unittest.TestCase):
         unit = [s for s in dec["sections"] if s["step"] == "gate"][0]["units"][0]
         self.assertEqual(unit["did"], "add `/qc/p` on T: polygon on a (asinh) × b (linear), 3 vertices")
 
+    def test_a_dry_run_gate_is_a_look_not_an_action(self):
+        # `dry_run=True` previews a gate and writes nothing — it must not be recorded as an add
+        dec = self._decisions(("call", "d", "add_gate", {"image_uid": "cp1", "value_name": "T", "name": "p",
+                                                         "gate": _RECT, "dry_run": True}),
+                              ("result", "d", "{}", False))
+        self.assertFalse([s for s in dec["sections"] if s["step"] == "gate"])
+        dec = self._decisions(("call", "d", "add_gate", {"image_uid": "cp1", "value_name": "T", "name": "p",
+                                                         "gate": _RECT, "dry_run": False}),
+                              ("result", "d", "{}", False))
+        self.assertEqual(len([s for s in dec["sections"] if s["step"] == "gate"]), 1)
+
     def test_render_heads_each_section_and_lists_errors_apart(self):
         dec = self._decisions(("call", "x", "set_gate", {"image_uid": "cp1", "value_name": "T", "path": "/a"}),
                               ("result", "x", "Error executing tool set_gate", True))

@@ -1221,10 +1221,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
                      is_track = _wbool(body, "is_track", false),
                      boolean_op   = bl === nothing ? nothing : get(bl, "op", nothing),
                      boolean_pops = bl === nothing ? nothing : get(bl, "pops", nothing),
-                     boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing),
-                     # a pop Claude drew (the autonomous server's add_gate) carries who; a GUI one
-                     # stays unstamped so the sidecar a person writes keeps its shape
-                     created_by = REQUEST_VIA[] == "claude" ? author_stamp() : nothing)
+                     boolean_not  = bl === nothing ? nothing : get(bl, "not", nothing))
         catch e
             return _gerr(400, sprint(showerror, e))
         end
@@ -1246,19 +1243,7 @@ end
 # Stored through `add_pop!` + `_persist_and_broadcast!`, so the sidecar entry is a GUI gate's (plus
 # `createdBy` = `author_stamp()`), the open manager refreshes, and the user's Undo removes it.
 function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
-    body = try
-        JSON3.read(String(body_bytes), Dict{String,Any})
-    catch
-        return _gerr(400, "Invalid JSON body")
-    end
-    img, err = _gating_image(_wstr(body, "projectUid"), _wstr(body, "imageUid"))
-    err === nothing || return err
-    # no fallback to the active segmentation (`_resolve_vn`): a write lands where it was asked, or nowhere
-    vn = _wstr(body, "valueName")
-    isempty(vn) && return _gerr(400, "valueName required")
-    vns = versioned_keys(img.label_props)
-    vn in vns || return _gerr(404, "No segmentation \"$vn\" on this image" *
-                                   (isempty(vns) ? " — it has not been segmented" : " — it has: " * join(vns, ", ")))
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
     name = strip(_wstr(body, "name"))
     isempty(name) && return _gerr(422, "name required")
     occursin('/', name) && return _gerr(422, "A population name cannot contain \"/\" — give the name only, and the parent separately")
@@ -1281,13 +1266,109 @@ function api_gating_pop_add_gate(body_bytes::Vector{UInt8})
             code = "pop_name_conflict"))
         stamp = author_stamp()
         add_pop!(m, String(name); parent = parent, gate = gate, colour = colour, show = true, created_by = stamp)
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# ── Claude's own gates — the MCP servers' whole write surface into gating ─────────────────────────
+# Both servers (the observer and the autonomous one) draw through /pop/add-gate (above) and change what
+# they drew through these two; neither is allowed /pop/add, /pop/set-gate or /pop/delete, which act on
+# anything. "Own" = every population at and below `path` carries a `createdBy` stamped by a Claude
+# request (`via: claude`, the ✦ in the population manager): once the user has gated something under
+# a proposal, its subtree is theirs too and only they change it (403 `not_claude_made`, naming the
+# populations). Each route takes `dryRun: true` — validate, apply to the map in hand, answer with the
+# counts, write nothing — so a gate can be tried before it lands.
+
+# The parsed body + the image + its EXACT segmentation, or the refusal. No fallback to the active
+# segmentation (`_resolve_vn`): a write lands where it was asked, or nowhere.
+function _claude_gate_body(body_bytes::Vector{UInt8})
+    body = try
+        JSON3.read(String(body_bytes), Dict{String,Any})
+    catch
+        return (nothing, nothing, nothing, _gerr(400, "Invalid JSON body"))
+    end
+    img, err = _gating_image(_wstr(body, "projectUid"), _wstr(body, "imageUid"))
+    err === nothing || return (nothing, nothing, body, err)
+    vn = _wstr(body, "valueName")
+    isempty(vn) && return (nothing, nothing, body, _gerr(400, "valueName required"))
+    vns = versioned_keys(img.label_props)
+    vn in vns || return (nothing, nothing, body, _gerr(404, "No segmentation \"$vn\" on this image" *
+        (isempty(vns) ? " — it has not been segmented" : " — it has: " * join(vns, ", "))))
+    (img, vn, body, nothing)
+end
+
+claude_made(p) = p.created_by !== nothing && get(p.created_by, "via", "") == "claude"
+
+# `path` and everything under it must be Claude's; else the 403 that names what is the user's.
+function _own_subtree(m::PopulationMap, path::AbstractString)
+    sub = [String(path); descendants(m, path)]
+    theirs = [q for q in sub if !claude_made(m.pops[q])]
+    isempty(theirs) && return (sub, nothing)
+    what = theirs[1] == path ? "\"$path\" was not drawn by Claude" :
+           "the user's population$(length(theirs) > 1 ? "s" : "") $(join(("\"$q\"" for q in theirs), ", ")) " *
+           "sit$(length(theirs) > 1 ? "" : "s") under \"$path\""
+    (sub, (403, JSON3.write((; error = what * " — only the user changes it. Propose a new gate instead (add_gate).",
+                              code = "not_claude_made", populations = theirs))))
+end
+
+# The reply every own-gate write gives: the population's counts on the map just written — or, for a
+# `dryRun`, on the map in hand, which is never saved. One recompute on the edited map either way, so a
+# preview and the write it previews report the same numbers.
+function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::AbstractString)
+    dry = _wbool(body, "dryRun", false)
+    if !dry
         saved = _persist_and_broadcast!(m, img, body, vn, "flow")
         saved isa Tuple && return saved
-        s = pop_stats(_live_map(img, vn, "flow"), path)
-        200, JSON3.write((; ok = true, path, valueName = vn, parent = is_root(parent) ? "root" : parent,
-                            count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
-                            pctParent = round(s.pct_parent; digits = 2),
-                            gate = gate_spec(gate), colour, createdBy = stamp))
+    end
+    recompute!(m, pop_membership_fetch(img, vn, "flow"))
+    p = m.pops[String(path)]
+    s = pop_stats(m, path)
+    200, JSON3.write((; ok = true, dryRun = dry, path, valueName = vn,
+                        parent = is_root(p.parent) ? "root" : p.parent,
+                        count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
+                        pctParent = round(s.pct_parent; digits = 2),
+                        gate = p.gate === nothing ? nothing : gate_spec(p.gate), colour = p.colour,
+                        createdBy = p.created_by))
+end
+
+# ── POST /api/gating/pop/set-own-gate — move a gate Claude drew ──
+# { projectUid, imageUid, valueName, path, gate, dryRun? } → the add-gate reply. 404 / 403 / 422.
+function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    path = strip(_wstr(body, "path"))
+    isempty(path) && return _gerr(422, "path required")
+    gate, gerr = _proposed_gate(get(body, "gate", nothing), img, vn)
+    gerr === nothing || return _gerr(422, gerr)
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        has_pop(m, path) || return _pop_not_found(m, path)
+        _, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        m.pops[String(path)].gate === nothing && return _gerr(422, "\"$path\" is not a gate")
+        set_gate!(m, String(path), gate)
+        _claude_gate_reply(m, img, body, vn, path)
+    end
+end
+
+# ── POST /api/gating/pop/delete-own — remove a gate Claude drew, with its subtree ──
+# { projectUid, imageUid, valueName, path, dryRun? } → { ok, dryRun, deleted: [paths] }. 404 / 403 / 409.
+function api_gating_pop_delete_own(body_bytes::Vector{UInt8})
+    img, vn, body, err = _claude_gate_body(body_bytes); err === nothing || return err
+    path = strip(_wstr(body, "path"))
+    isempty(path) && return _gerr(422, "path required")
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = "flow")
+        has_pop(m, path) || return _pop_not_found(m, path)
+        sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        deps = boolean_dependents(m, sub)
+        isempty(deps) || return 409, JSON3.write((; code = "boolean_dependents", error = "Can't delete: " *
+            join(["\"$(d)\" combines $(join(rs, ", "))" for (d, rs) in deps], "; ") * " — the user's to change"))
+        dry = _wbool(body, "dryRun", false)
+        if !dry
+            del_pop!(m, String(path))
+            saved = _persist_and_broadcast!(m, img, body, vn, "flow")
+            saved isa Tuple && return saved
+        end
+        200, JSON3.write((; ok = true, dryRun = dry, valueName = vn, deleted = sub))
     end
 end
 
