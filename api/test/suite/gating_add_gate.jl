@@ -187,3 +187,91 @@ end
     end
   end
 end
+
+# A ✦ gate stops being Claude's once the user edits or copies it (`updatedBy`), or once a task has read it — a
+# clustering on it is a snapshot of its cells, so moving the gate would leave that result out of step.
+# Both refuse with a 403 and write nothing; showing/hiding is not an edit.
+@testset "API: own-gate routes refuse what the user edited or ran a task on" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        ids = Dict{String,Any}("projectUid" => "testpr", "imageUid" => "KDIeEm", "valueName" => "B")
+        rect(x0, x1) = Dict{String,Any}("kind" => "rectangle", "x_channel" => "mean_intensity_0", "y_channel" => "area",
+                                        "x_min" => x0, "x_max" => x1, "y_min" => 0.0, "y_max" => 1e9)
+        claude = ["X-Cecelia-Client" => "claude", "X-Cecelia-Session" => "s1"]
+        function call(route, obj)
+            r = handle_http(HTTP.Request("POST", route, claude), Vector{UInt8}(JSON3.write(merge(ids, obj))))
+            (r[1], JSON3.read(r[2]))
+        end
+        img = Cecelia.init_object("testpr", "KDIeEm")
+        sidecar() = read(gating_path(img._dir, "B"), String)
+        flow(o) = merge(ids, Dict{String,Any}("popType" => "flow"), o)
+
+        # ── adoption ──
+        @test call("/api/gating/pop/add-gate", Dict("name" => "seen", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test _post(api_gating_pop_update, flow(Dict("path" => "/seen", "show" => false)))[1] == 200
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/seen", "gate" => rect(0.0, 400.0)))[1] == 200
+
+        @test call("/api/gating/pop/add-gate", Dict("name" => "edited", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test _post(api_gating_pop_set_gate, flow(Dict("path" => "/edited", "gate" => rect(0.0, 300.0))))[1] == 200
+        p = pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/edited")
+        @test p.created_by["via"] == "claude" && p.updated_by["via"] == "app"
+        snap = sidecar()
+        st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/edited", "gate" => rect(0.0, 1.0)))
+        @test st == 403 && e.code == "not_claude_made" && collect(e.populations) == ["/edited"]
+        @test call("/api/gating/pop/delete-own", Dict("path" => "/edited"))[1] == 403
+        @test sidecar() == snap
+
+        @test call("/api/gating/pop/add-gate", Dict("name" => "renamed", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test _post(api_gating_pop_rename, flow(Dict("path" => "/renamed", "newName" => "mine")))[1] == 200
+        @test call("/api/gating/pop/delete-own", Dict("path" => "/mine"))[1] == 403
+        # Claude moving its own gate records its own edit, and the gate stays Claude's
+        st, r = call("/api/gating/pop/set-own-gate", Dict("path" => "/seen", "gate" => rect(0.0, 300.0)))
+        @test st == 200 && String(r.updatedBy.via) == "claude"
+        # a user's GUI gate is never stamped by an edit — its sidecar keeps its shape
+        @test _post(api_gating_pop_add, flow(Dict("name" => "plain", "gate" => rect(0.0, 500.0))))[1] == 200
+        @test _post(api_gating_pop_set_gate, flow(Dict("path" => "/plain", "gate" => rect(0.0, 200.0))))[1] == 200
+        @test pop_at(load_pop_map(img; value_name = "B", pop_type = "flow"), "/plain").updated_by === nothing
+
+        # ── a task read it ──
+        @test call("/api/gating/pop/add-gate", Dict("name" => "used", "gate" => rect(0.0, 500.0)))[1] == 200
+        @test call("/api/gating/pop/add-gate", Dict("name" => "sub", "parent" => "/used", "gate" => rect(0.0, 100.0)))[1] == 200
+        # a failed run left nothing that depends on it
+        append_run_log!(img, "clustPops.cluster", "B", "failed", Dict("popsToCluster" => ["B/used/sub"]))
+        @test call("/api/gating/pop/set-own-gate", Dict("path" => "/used/sub", "gate" => rect(0.0, 90.0), "dryRun" => true))[1] == 200
+        # a done one does — on the child, so the parent is refused too (moving it moves the child's cells)
+        append_run_log!(img, "clustPops.cluster", "B", "done", Dict("popsToCluster" => ["B/used/sub/_tracked"]))
+        snap = sidecar()
+        st, e = call("/api/gating/pop/set-own-gate", Dict("path" => "/used", "gate" => rect(0.0, 50.0), "dryRun" => true))
+        @test st == 403 && e.code == "used_by_runs" && collect(e.populations) == ["/used/sub"] &&
+              collect(e.tasks) == ["clustPops.cluster"]
+        st, e = call("/api/gating/pop/delete-own", Dict("path" => "/used/sub"))
+        @test st == 403 && e.code == "used_by_runs"
+        @test sidecar() == snap
+        # another segmentation's population of the same path is not this one
+        append_run_log!(img, "clustPops.cluster", "T", "done", Dict("popsToCluster" => ["T/seen"]))
+        @test call("/api/gating/pop/delete-own", Dict("path" => "/seen", "dryRun" => true))[1] == 200
+
+        # ── copied to another image: the copies are the user's ──
+        proj = joinpath(dir, "testpr")
+        tgt = joinpath(proj, "1", "TgtImg")
+        cp(joinpath(proj, "1", "KDIeEm"), tgt)
+        rm(joinpath(tgt, "gating"); recursive = true, force = true)
+        rm(joinpath(tgt, "runlog.json"); force = true)
+        ccid = joinpath(tgt, "ccid.json")
+        write(ccid, replace(read(ccid, String), "\"uid\": \"KDIeEm\"" => "\"uid\": \"TgtImg\""))
+        @test _post(api_gating_copy, flow(Dict("toImageUids" => ["TgtImg"])))[1] == 200
+        st, e = call("/api/gating/pop/delete-own", Dict("imageUid" => "TgtImg", "path" => "/seen", "dryRun" => true))
+        @test st == 403 && e.code == "not_claude_made"
+        # the source is not re-saved by a copy, so its proposal is still Claude's
+        @test call("/api/gating/pop/delete-own", Dict("path" => "/seen", "dryRun" => true))[1] == 200
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end

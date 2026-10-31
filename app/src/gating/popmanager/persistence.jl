@@ -30,6 +30,7 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
     p.transient && (d["transient"] = true)
     # authorship (a Claude-proposed gate) — only when set, so a GUI-drawn tree keeps its exact shape
     p.created_by === nothing || (d["createdBy"] = p.created_by)
+    p.updated_by === nothing || (d["updatedBy"] = p.updated_by)
     # explicit-label pops (the napari selection) have no gate/filter, so the client can't tell
     # from gate/filter alone that membership changed (e.g. the user resizes the selection shape).
     # Emit a membership signature so the client bumps its per-pop version and refreshes the plots.
@@ -86,6 +87,7 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
                     filter_conditions = flt === nothing ? nothing : get(flt, "conditions", get(flt, :conditions, nothing)),
                     is_track = Bool(g("is_track", false)), validate_refs = false,
                     created_by = let c = g("createdBy"); c isa AbstractDict ? c : nothing end,
+                    updated_by = let c = g("updatedBy"); c isa AbstractDict ? c : nothing end,
                     boolean_op   = bl === nothing ? nothing : get(bl, "op", get(bl, :op, nothing)),
                     boolean_pops = bl === nothing ? nothing : get(bl, "pops", get(bl, :pops, nothing)),
                     boolean_not  = bl === nothing ? nothing : get(bl, "not", get(bl, :not, nothing)))

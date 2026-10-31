@@ -128,7 +128,14 @@ server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp(
 `utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
 routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the
 population AND everything under it carries a Claude stamp — once the user gates under a proposal, that
-subtree is theirs. It cannot rename or move anything, and never reaches the general `/pop/*` routes;
+subtree is theirs. Editing a proposal (its gate, filter, colour, name or parent — not show/hide), or copying it to
+other images, records `updatedBy` = that request's `author_stamp()` (`stamp_edit!`; only on stamped
+populations, so a GUI gate keeps its shape). A person's edit makes it theirs: `createdBy` stays,
+the ✦ tooltip adds "edited by …", and Claude's routes refuse it. Claude moving its own gate stamps
+`updatedBy` too, with `via: claude`, and it stays Claude's.
+A proposal a task has read (`run_pop_reads` over the image's run log — a clustering, tracking or
+spatial run on it or anything under it) is refused too (403 `used_by_runs`, naming the tasks): the
+run is a snapshot of the gate's cells, and moving the gate would leave it out of step. It cannot rename or move anything, and never reaches the general `/pop/*` routes;
 the user deletes or undoes a proposal. Each write takes `dryRun` (the counts, nothing written), and
 `/api/gating/examples` shows the cells just inside and outside a gate — written or proposed — as
 crops, so a cut is judged on the cells before it lands.

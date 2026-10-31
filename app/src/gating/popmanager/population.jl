@@ -54,6 +54,10 @@ mutable struct Population
     # `createdBy`. Set by the Claude-facing add routes (`via == "claude"`), so the manager can mark a
     # Claude-proposed gate; `nothing` for a GUI gate and every sidecar written before the field.
     created_by::Union{Dict{String,Any},Nothing}
+    # Who last edited a STAMPED population (`updatedBy`) — kept only where `created_by` is, so a GUI
+    # gate's sidecar keeps its shape. A user's edit of a Claude proposal makes it the user's
+    # (`claude_made` in api/src/gating_api.jl); copying one to other images counts as that edit.
+    updated_by::Union{Dict{String,Any},Nothing}
 end
 
 # ── PopulationMap (a tree for one value_name) ────────────────────────────────────

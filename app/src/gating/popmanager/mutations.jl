@@ -18,6 +18,7 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                   uid::AbstractString="",
                   # `author_stamp()` of the request that drew it — see `Population.created_by`
                   created_by::Union{AbstractDict,Nothing}=nothing,
+                  updated_by::Union{AbstractDict,Nothing}=nothing,
                   reserved_ok::Bool=false, validate_refs::Bool=true)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
     # injection (reserved_ok=true) may create them, so a hand-drawn gate can't shadow one.
@@ -52,12 +53,26 @@ function add_pop!(m::PopulationMap, name::AbstractString;
                               filter_fun === nothing ? nothing : _coerce_filter_fun(filter_fun),
                               filter_values, filter_default_all, conds, is_track, bop, bpops, bnot,
                               explicit_labels === nothing ? nothing : Int[Int(l) for l in explicit_labels], transient,
-                              created_by === nothing ? nothing :
-                                  Dict{String,Any}(String(k) => v for (k, v) in created_by))
+                              _stamp_dict(created_by), _stamp_dict(updated_by))
     m.uid_index[resolved_uid] = path
     push!(m.order, path)
     _invalidate!(m)
     path
+end
+
+_stamp_dict(s) = s === nothing ? nothing : Dict{String,Any}(String(k) => v for (k, v) in s)
+
+"""
+    stamp_edit!(m, path) -> Bool
+
+Record the request's `author_stamp()` as `updated_by` on a population that carries an author stamp
+(a Claude proposal); a plain GUI gate is left alone, so its sidecar keeps its shape. `true` if stamped.
+"""
+function stamp_edit!(m::PopulationMap, path::AbstractString)::Bool
+    p = get(m.pops, String(path), nothing)
+    (p === nothing || p.created_by === nothing) && return false
+    p.updated_by = author_stamp()
+    true
 end
 
 function set_gate!(m::PopulationMap, path::AbstractString, gate::Gate)

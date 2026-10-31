@@ -35,4 +35,12 @@ describe('authorStamp', () => {
     expect(claudeProposal({ profile: 'alice', via: 'app' })).toBe('')
     expect(claudeProposal(undefined)).toBe('')
   })
+
+  it('a proposal a person edited says so; Claude moving its own does not', () => {
+    const c = { profile: 'alice', via: 'claude' }
+    expect(claudeProposal(c, { profile: 'alice', via: 'app' })).toBe('Proposed by Claude for alice · edited by alice')
+    expect(claudeProposal({ profile: 'default', via: 'claude' }, { profile: 'default', via: 'app' }))
+      .toBe('Proposed by Claude · edited by you')
+    expect(claudeProposal(c, { profile: 'alice', via: 'claude' })).toBe('Proposed by Claude for alice')
+  })
 })

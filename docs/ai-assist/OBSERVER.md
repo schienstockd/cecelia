@@ -342,7 +342,8 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **Gating** — `add_gate` ADDS one proposed gate under an existing population (`POST
   /api/gating/pop/add-gate`): stored like a GUI gate plus `createdBy`, shown with ✦ in the population
   manager, undoable, one click to delete. `set_gate` / `delete_gate` change only what Claude drew
-  (`set-own-gate` / `delete-own`, 403 on anything the user drew or gated under a proposal); never
+  (`set-own-gate` / `delete-own`, 403 on anything the user drew, edited or gated under a proposal,
+  or that a task has read); never
   rename/move. To judge a cut on the cells, not the plot: `gate_examples` (crops just inside and
   just outside a gate, written or proposed) and `gate_cells_view` (`pops` in their colours, a
   `region`, a few `z` planes). The same toolset, one definition (`gating_views.py`), on both MCP
