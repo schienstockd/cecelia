@@ -23,6 +23,9 @@ sidecar there. Membership recomputes per image on read, so gates alone are enoug
 - `warnings[uid]` — copied, but a gate/filter column the target's table lacks leaves those populations
   empty (`missing_gate_columns`).
 
+A copied Claude proposal is the copier's edit (`stamp_edit!`, the current `author_stamp()`): a copy made
+from the GUI is the user's, and Claude's own-gate routes refuse it.
+
 Throws `ArgumentError` when the source has no gating to copy. `on_copied` runs after each write (the
 API broadcasts the new map to any client viewing that image). Takes the gating lock itself.
 """
@@ -33,6 +36,7 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
     with_popmap_lock() do
         m = load_pop_map(src; value_name = vn, pop_type = pt)
         isempty(m.order) && throw(ArgumentError("$(src.uid) has no $pt gating on '$vn' to copy"))
+        foreach(path -> stamp_edit!(m, path), m.order)    # in memory only — the source is not re-saved
         copied   = String[]
         skipped  = Dict{String,String}()
         warnings = Dict{String,Vector{@NamedTuple{column::String, pops::Vector{String}}}}()

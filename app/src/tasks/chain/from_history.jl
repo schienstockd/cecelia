@@ -140,14 +140,9 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
         img = init_object(proj.uid, uid)
         img isa CciaImage || continue
         for e in read_run_log(img)
-            g(k) = (v = get(e, k, get(e, Symbol(k), nothing)); v === nothing ? "" : string(v))
-            g("status") in _HISTORY_DONE || continue
-            raw = get(e, "params", get(e, :params, nothing))
-            p = raw isa AbstractDict ? Dict{String,Any}(string(k) => v for (k, v) in raw) : Dict{String,Any}()
-            legacy = isempty(p)                       # logged before the run log recorded params
-            vn = g("valueName")                       # the run log keeps valueName beside params
-            isempty(vn) || (p["valueName"] = vn)
-            push!(rows, (; fn = g("fun"), params = p, at = g("at"), uid, legacy))
+            r = run_log_row(e)
+            r.status in _HISTORY_DONE || continue
+            push!(rows, (; r.fn, r.params, r.at, uid, r.legacy))
         end
     end
     # chain run records: a run's frozen template + per-image status, from before the run log existed
@@ -310,10 +305,12 @@ end
 # the step's own `valueName`; `B/qc/_tracked` names its label set. System segments (`_tracked`, …) are
 # cut: what must exist is the gated population above them. A segment naming a run (`clusters.immune`)
 # is a population a task produces, not a gate, so that reference is skipped.
-function _history_pop_refs(s::HistoryStep, lv)::Vector{Tuple{String,String}}
+_history_pop_refs(s::HistoryStep, lv) = gated_pop_refs(s.params, lv)
+
+function gated_pop_refs(params::AbstractDict, lv)::Vector{Tuple{String,String}}
     refs = Tuple{String,String}[]
-    own = string(get(s.params, "valueName", VERSIONED_DEFAULT_VAL))
-    for (k, str) in _keyed_strings(s.params)
+    own = string(get(params, "valueName", VERSIONED_DEFAULT_VAL))
+    for (k, str) in _keyed_strings(params)
         l = get(lv, k, nothing)
         (l !== nothing && l.type == "popSelection" && (isempty(l.accepts) || "live" in l.accepts)) || continue
         str in ("", "NONE", "root", "/") && continue

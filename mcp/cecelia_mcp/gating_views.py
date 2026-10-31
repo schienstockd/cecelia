@@ -100,13 +100,14 @@ shows the cells the cut decides. The reply carries the stored `path`, `count` (i
 over `parentCount`, and the `gate` as stored. Tell the user it is a proposal, with the numbers."""
 
 SET_GATE_DOC = """MOVE a gate YOU drew (✦) — same `gate` shape as add_gate; `path` the population.
-403 `not_claude_made` when it, or anything gated under it, is the user's: only they change those
-(propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
+403 `not_claude_made` when it, or anything gated under it, is the user's — including one of yours they
+have since edited; 403 `used_by_runs` when a task (clustering, tracking, …) read it or anything under
+it, naming the tasks. Only the user changes those (propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
 reply is add_gate's."""
 
 DELETE_GATE_DOC = """REMOVE a gate YOU drew (✦), with everything under it — every one of those must be yours
-too, else 403 `not_claude_made` naming the user's; 409 when a combined (boolean) population of the
-user's reads it. `dry_run=True` lists what would go and removes nothing. The user can undo it."""
+too, else 403 `not_claude_made` naming the user's; 403 `used_by_runs` when a task read one of them;
+409 when a combined (boolean) population of the user's reads it. `dry_run=True` lists what would go and removes nothing. The user can undo it."""
 
 PLOT_ROUTE = "/api/gating/plot-image"
 CELLS_ROUTE = "/api/gating/cells-image"

@@ -605,7 +605,8 @@ function moveTo(target: string) {
 
           <!-- a gate Claude proposed (observer add_gate) — the same ✦ that marks Claude's work elsewhere -->
           <i v-if="claudeProposal(p.createdBy)" class="pi pi-sparkles pm-filter-badge"
-             v-tooltip.top="claudeProposal(p.createdBy)" :aria-label="claudeProposal(p.createdBy)" />
+             v-tooltip.top="claudeProposal(p.createdBy, p.updatedBy)"
+             :aria-label="claudeProposal(p.createdBy, p.updatedBy)" />
 
           <!-- why a pop reads 0 here: a column its gate/filter (or an ancestor's) reads is not in this
                image's table, e.g. `clusters.<run>` after a gating copy (#1769). Shape + colour, tip = the reason. -->

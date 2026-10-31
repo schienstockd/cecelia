@@ -75,6 +75,41 @@ function read_run_log(ccid_dir::AbstractString)::Vector{Any}
     end
 end
 
+# One run-log entry as plain values: `params` with the entry's `valueName` put back in (the log keeps
+# it beside the params), `legacy` = logged before the run log recorded params. Missing fields read "".
+function run_log_row(e)
+    raw = _rl_get(e, "params", nothing)
+    p = raw isa AbstractDict ? Dict{String,Any}(string(k) => v for (k, v) in raw) : Dict{String,Any}()
+    legacy = isempty(p)
+    vn = _rl_str(e, "valueName")
+    isempty(vn) || (p["valueName"] = vn)
+    (; fn = _rl_str(e, "fun"), params = p, at = _rl_str(e, "at"), status = _rl_str(e, "status"), legacy)
+end
+
+"""
+    run_pop_reads(img) -> Dict{(value_name, path) => [fun, …]}
+
+The gated populations this image's runs READ, each with the tasks that read it — a clustering on
+`B/qc/_tracked` reads `("B", "/qc")`. Runs that finished, or are still running; a failed or cancelled
+run left nothing that depends on its input. Read through the task specs' population pickers
+(`gated_pop_refs`), so a task that no longer exists is skipped.
+"""
+function run_pop_reads(img::CciaImage)::Dict{Tuple{String,String},Vector{String}}
+    out = Dict{Tuple{String,String},Vector{String}}()
+    leaves = Dict{String,Any}()
+    for e in read_run_log(img)
+        r = run_log_row(e)
+        r.status in ("done", "", RUN_LOG_RUNNING) || continue
+        lv = get!(() -> _history_leaves(r.fn), leaves, r.fn)
+        lv === nothing && continue
+        for ref in gated_pop_refs(r.params, lv)
+            fns = get!(out, ref, String[])
+            r.fn in fns || push!(fns, r.fn)
+        end
+    end
+    out
+end
+
 # Sanitise task params for the run-log trail: drop internal keys (any leading-underscore key, e.g. the
 # injected `_task_id`) and the redundant `valueName` (already its own field). Keeps the real tuning
 # knobs. Returns a String-keyed Dict; `nothing`/empty → an empty Dict (so entries are shape-stable).

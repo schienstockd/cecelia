@@ -1276,7 +1276,9 @@ end
 # anything. "Own" = every population at and below `path` carries a `createdBy` stamped by a Claude
 # request (`via: claude`, the ✦ in the population manager): once the user has gated something under
 # a proposal, its subtree is theirs too and only they change it (403 `not_claude_made`, naming the
-# populations). Each route takes `dryRun: true` — validate, apply to the map in hand, answer with the
+# populations). So is a proposal the user has EDITED (moved, renamed, recoloured, re-parented,
+# copied — `updatedBy` from a non-Claude request), and one a task has READ: a clustering or tracking run does not follow its gate, so
+# moving the gate would leave that result out of step (403 `used_by_runs`). Each route takes `dryRun: true` — validate, apply to the map in hand, answer with the
 # counts, write nothing — so a gate can be tried before it lands.
 
 # The parsed body + the image + its EXACT segmentation, or the refusal. No fallback to the active
@@ -1297,7 +1299,10 @@ function _claude_gate_body(body_bytes::Vector{UInt8})
     (img, vn, body, nothing)
 end
 
-claude_made(p) = p.created_by !== nothing && get(p.created_by, "via", "") == "claude"
+# Claude drew it and nobody else has edited it since: the last edit (`updatedBy`, `stamp_edit!`) was
+# Claude's own or there was none.
+_via_claude(s) = s !== nothing && get(s, "via", "") == "claude"
+claude_made(p) = _via_claude(p.created_by) && (p.updated_by === nothing || _via_claude(p.updated_by))
 
 # `path` and everything under it must be Claude's; else the 403 that names what is the user's.
 function _own_subtree(m::PopulationMap, path::AbstractString)
@@ -1309,6 +1314,21 @@ function _own_subtree(m::PopulationMap, path::AbstractString)
            "sit$(length(theirs) > 1 ? "" : "s") under \"$path\""
     (sub, (403, JSON3.write((; error = what * " — only the user changes it. Propose a new gate instead (add_gate).",
                               code = "not_claude_made", populations = theirs))))
+end
+
+# None of `sub` may be a population a task has read (`run_pop_reads`), else the 403 naming them and
+# the tasks. A clustering, tracking or spatial run on a gate is a snapshot of its cells: moving the gate
+# under it would leave that result describing cells the gate no longer holds.
+function _unread_subtree(img::CciaImage, vn::AbstractString, sub::AbstractVector)
+    reads = run_pop_reads(img)
+    hit = [q for q in sub if haskey(reads, (String(vn), q))]
+    isempty(hit) && return nothing
+    tasks = unique(vcat((reads[(String(vn), q)] for q in hit)...))
+    403, JSON3.write((; error = join(("\"$q\"" for q in hit), ", ") * " " *
+                         (length(hit) > 1 ? "were" : "was") * " used by " * join(tasks, ", ") *
+                         " — changing it would leave that result out of step; only the user changes it. " *
+                         "Propose a new gate instead (add_gate).",
+                      code = "used_by_runs", populations = hit, tasks))
 end
 
 # The reply every own-gate write gives: the population's counts on the map just written — or, for a
@@ -1328,7 +1348,7 @@ function _claude_gate_reply(m::PopulationMap, img::CciaImage, body, vn, path::Ab
                         count = s.count, parentCount = s.parent_count, outside = s.parent_count - s.count,
                         pctParent = round(s.pct_parent; digits = 2),
                         gate = p.gate === nothing ? nothing : gate_spec(p.gate), colour = p.colour,
-                        createdBy = p.created_by))
+                        createdBy = p.created_by, updatedBy = p.updated_by))
 end
 
 # ── POST /api/gating/pop/set-own-gate — move a gate Claude drew ──
@@ -1342,9 +1362,11 @@ function api_gating_pop_set_own_gate(body_bytes::Vector{UInt8})
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = "flow")
         has_pop(m, path) || return _pop_not_found(m, path)
-        _, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        refusal = _unread_subtree(img, vn, sub); refusal === nothing || return refusal
         m.pops[String(path)].gate === nothing && return _gerr(422, "\"$path\" is not a gate")
         set_gate!(m, String(path), gate)
+        stamp_edit!(m, path)
         _claude_gate_reply(m, img, body, vn, path)
     end
 end
@@ -1359,6 +1381,7 @@ function api_gating_pop_delete_own(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = "flow")
         has_pop(m, path) || return _pop_not_found(m, path)
         sub, refusal = _own_subtree(m, path); refusal === nothing || return refusal
+        refusal = _unread_subtree(img, vn, sub); refusal === nothing || return refusal
         deps = boolean_dependents(m, sub)
         isempty(deps) || return 409, JSON3.write((; code = "boolean_dependents", error = "Can't delete: " *
             join(["\"$(d)\" combines $(join(rs, ", "))" for (d, rs) in deps], "; ") * " — the user's to change"))
@@ -1442,6 +1465,7 @@ function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
         catch e
             return _gerr(400, sprint(showerror, e))
         end
+        stamp_edit!(m, String(body["path"]))
         200, JSON3.write(_persist_and_broadcast!(m, img, body, vn, pt))
     end
 end
@@ -1478,6 +1502,8 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
         p = pop_at(m, String(body["path"]))
+        # showing/hiding is looking, not editing; anything else here is the user's edit
+        any(haskey(body, k) for k in ("colour", "filter", "boolean")) && stamp_edit!(m, String(body["path"]))
         haskey(body, "colour") && (p.colour = String(body["colour"]))
         haskey(body, "show")   && (p.show = Bool(body["show"]))
         # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
@@ -1530,6 +1556,7 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _pop_not_found(m, body["path"])
+        stamp_edit!(m, String(body["path"]))
         newpath = try
             rename_pop!(m, String(body["path"]), String(body["newName"]))
         catch e
@@ -1559,6 +1586,7 @@ function api_gating_pop_move(body_bytes::Vector{UInt8})
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, _path) || return _pop_not_found(m, _path)
+        stamp_edit!(m, _path)
         newpath = try
             move_pop!(m, _path, _parent)
         catch e

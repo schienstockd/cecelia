@@ -40,8 +40,13 @@ export function authorSummary(created?: AuthorStamp, updated?: AuthorStamp): str
 
 /** The tooltip for something Claude added for the user to keep or delete — "Proposed by Claude" /
  *  "Proposed by Claude for alice" — or '' when a person made it (or nobody is recorded). A gate
- *  carries `createdBy` only when it came through Claude (POST /api/gating/pop/add-gate). */
-export function claudeProposal(raw: unknown): string {
+ *  carries `createdBy` only when it came through Claude (POST /api/gating/pop/add-gate). Once a person
+ *  has edited it (`updatedBy` not Claude's) it is theirs and Claude can no longer change it — the
+ *  tooltip says so: "Proposed by Claude · edited by you". */
+export function claudeProposal(raw: unknown, updatedRaw?: unknown): string {
   const s = parseAuthorStamp(raw)
-  return s?.via === 'claude' ? `Proposed by ${authorLabel(s)}` : ''
+  if (s?.via !== 'claude') return ''
+  const u = parseAuthorStamp(updatedRaw)
+  const edited = u && u.via !== 'claude' ? ` · edited by ${authorLabel(u) || 'you'}` : ''
+  return `Proposed by ${authorLabel(s)}${edited}`
 }
