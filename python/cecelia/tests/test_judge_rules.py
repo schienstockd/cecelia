@@ -72,6 +72,24 @@ class TallyTest(unittest.TestCase):
                          {"findings": 2, "sessions": 2, "agent_made": 2, "caught": 2})
         self.assertEqual(self.r.proposals_from(rows), [])
 
+    def test_a_fix_on_one_branch_does_not_catch_what_another_shipped(self):
+        # slugs carry no branch: feat/y's fix of `s` is its own copy, feat/x shipped the same file:line
+        ev = [{**_finding_event("s"), "branch": "feat/x"},
+              {**_finding_event("s", ts="2026-10-01T01:00:00Z"), "branch": "feat/y"},
+              {"event": "convention_check_finding_resolved", "ts": "2026-10-01T02:00:00Z", "branch": "feat/y",
+               "payload": {"slug": "s", "outcome": "fixed_pre_commit"}}]
+        self.assertEqual(self.r.resolutions(ev), {"s": ""})
+        rows = self.r.tally(ev[:1], [{"slug": "s", "rule": self.RULES[0]}], {"s": "agent_made"}, self.RULES,
+                            self.r.resolutions(ev))
+        self.assertEqual((rows[0]["agent_made"], rows[0]["caught"]), (1, 0))
+
+    def test_a_fix_after_a_branch_switch_still_counts_as_caught(self):
+        # flagged on feat/x, committed from feat/z, which never flagged it: the same session's fix
+        ev = [{**_finding_event("s"), "branch": "feat/x"},
+              {"event": "convention_check_finding_resolved", "ts": "2026-10-01T00:05:00Z", "branch": "feat/z",
+               "payload": {"slug": "s", "outcome": "fixed_pre_commit"}}]
+        self.assertEqual(self.r.resolutions(ev), {"s": "fixed_pre_commit"})
+
     def test_none_and_invented_rules_are_dropped(self):
         ev = [_finding_event("a"), _finding_event("b")]
         rows = self._rows(ev, {"a": "none", "b": "NOT_A_RULE.md → *Invented*"}, {})

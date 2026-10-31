@@ -184,6 +184,9 @@ test whether an agent can actually use the framework.
    Only findings that shipped count. One tagged `fixed_pre_commit` was caught by the reviewer before
    its commit — the mechanical check working, not the rule failing — so it shows in the table's
    *Caught* column and toward no proposal. A `false_positive` still counts, as in the bug sweep.
+   As in the sweep, each branch that flagged a finding answers for its own copy, so a fix on one
+   branch doesn't catch what another shipped. Unlike the sweep, a fix committed from a branch that
+   never flagged it (the session switched branch) still counts as caught.
 
    A finding counts only if it came after the section's last edit and after your last answer to a
    proposal for that rule in `judge-review`. So a rule you tightened, or a proposal you rejected,
