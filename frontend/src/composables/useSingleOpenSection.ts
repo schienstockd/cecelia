@@ -1,39 +1,26 @@
-import { ref, watch, type Ref } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
+import {
+  createSingleOpenRegistry, type SingleOpenGroup, type SingleOpenOptions,
+} from '../utils/singleOpen'
 
 /**
  * Accordion state — ONE section open at a time, persisted per profile (profileStorage).
  *
- * Two callers today: the viewer window's control accordion (Overlays / Channels / Segmentation /
- * Populations / …) and the app sidebar's nav-group accordion (Data / Populations / Explore / …).
- * Same rule, one implementation — a bespoke second copy is the divergent-re-implementation bug
- * (CLAUDE.md → "one way to do each thing; the second way is the bug").
+ * Usually you don't call this: give each `CollapsibleSection` the same `accordion` keyword (the
+ * storage key) and a `section` id, and they share the group. Call it when a SCRIPT needs the state
+ * too — the viewer window reads `open` for its own layout, the sidebar (plain headings, not
+ * CollapsibleSections) opens the current page's group on navigation, the guides dialog opens the
+ * group the map points at. Same key ⇒ the same state object as the sections', never a second copy
+ * (`utils/singleOpen.ts`: one registry per app instance, keyed by name).
  *
- * Behaviour:
- * - `open` starts from profileStorage if present, else `defaultOpen`.
- * - `toggle(key)` opens `key` if a different section (or nothing) is open; closes it if it is
- *   already open. `''` is a real state (everything collapsed), because clicking the currently-open
- *   header being a no-op is worse — the user has no way to see everything at once.
- * - Persists on every change.
+ * A profile switch reloads the page (`profileStorage.adoptLiveProfileBag`), so the registry never
+ * holds another person's choice.
  */
-export interface SingleOpenSection {
-  open: Ref<string>
-  isOpen(key: string): boolean
-  toggle(key: string): void
-  set(key: string): void
-}
+export type SingleOpenSection = SingleOpenGroup
 
-export function useSingleOpenSection(storageKey: string, defaultOpen: string = ''): SingleOpenSection {
-  const stored = typeof window !== 'undefined' ? profileStorage.getItem(storageKey) : null
-  const open = ref<string>(stored ?? defaultOpen)
-  watch(open, v => {
-    if (typeof window !== 'undefined') profileStorage.setItem(storageKey, v)
-  })
+const registry = createSingleOpenRegistry(() => (typeof window !== 'undefined' ? profileStorage : null))
 
-  return {
-    open,
-    isOpen: (key: string) => open.value === key,
-    toggle: (key: string) => { open.value = open.value === key ? '' : key },
-    set:    (key: string) => { open.value = key },
-  }
+export function useSingleOpenSection(storageKey: string, defaultOpen: string = '',
+                                     opts?: SingleOpenOptions): SingleOpenSection {
+  return registry(storageKey, defaultOpen, opts)
 }
