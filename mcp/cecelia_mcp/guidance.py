@@ -110,6 +110,14 @@ set_labarchives_context, create_blackboard_entry / revise_blackboard_entry (Mark
 across sessions; revise snapshots first). Nothing can change or delete existing analysis data, edit \
 a gate the user drew, or start any work.
 
+WHEN CECELIA CANNOT DO IT YET. Before saying it is missing, look: {lookup} \
+— it may exist under another name, or be a GUI or REPL step rather than a tool here. get_guide's \
+catalogue also lists `dataset-call` entries: capabilities that are decided and wait only for a real \
+dataset. When the user's data matches one, say so and give its issue link. For anything else, give \
+them the feature-request link in get_guide("request-a-feature"). Hand over the link, never file an \
+issue yourself, and keep project names, uids and paths out of what you suggest they write: the \
+repository is public.
+
 BEFORE ANY FIGURE OR CROSS-IMAGE COMPARISON. Call get_image_attributes for the axes these images can \
 be grouped by (e.g. Mouse, Location), and use list_images' per-image `attr` to size the groups once \
 excluded images are dropped: four images from one mouse are not four replicates, and a group of one \
@@ -401,7 +409,9 @@ this session has a LabArchives connector — track down what this experiment act
 lab notebook and store it (set_labarchives_context). Expect real searching for that last one: the \
 notebook may be a colleague's, the project name may match hundreds of unrelated pages, and the \
 user may not know which page it is. Then follow their lead."""
-BRIEFING_GUIDANCE = BRIEFING_GUIDANCE.replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
+BRIEFING_GUIDANCE = (BRIEFING_GUIDANCE
+                     .replace("{catalogue}", _CATALOGUE_LINE if discovery_enabled() else "")
+                     .replace("{lookup}", "get_task_catalogue and get_guide" if discovery_enabled() else "get_guide"))
 
 # No-GUI mode (no_gui.py, docs/todo/HEADLESS_MODE_PLAN.md): the user has no GUI, only this session.
 # The tools that point at or read the GUI are not registered then (server.py `_gui_tool`); this says

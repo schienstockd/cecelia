@@ -138,6 +138,7 @@ class ServerToggleTest(unittest.TestCase):
         self.assertIn("get_task_catalogue", view["names"])
         self.assertIn("get_task_catalogue", view["guidance"])
         self.assertNotIn("{catalogue}", view["guidance"])
+        self.assertNotIn("{lookup}", view["guidance"])
         self.assertIn("useWhen", view["params_doc"])
 
     def test_off_leaves_it_unregistered_and_unmentioned(self):
@@ -146,6 +147,7 @@ class ServerToggleTest(unittest.TestCase):
         self.assertIn("get_module_params", view["names"])
         self.assertNotIn("get_task_catalogue", view["guidance"])
         self.assertNotIn("{catalogue}", view["guidance"])
+        self.assertNotIn("{lookup}", view["guidance"])
         self.assertNotIn("useWhen", view["params_doc"])   # the tool text does not describe absent fields
         self.assertNotIn("{discovery}", view["params_doc"])
 

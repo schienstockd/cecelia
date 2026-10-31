@@ -105,6 +105,18 @@ can't act on the dataset, it doesn't belong here.
   still lands in a shape we can act on.
 - Update `docs/UI.md` → *Help row* to describe the third icon.
 
+### P4 — Claude sees the asks
+
+- `guideText.ts` renders each entry into `mcp/cecelia_mcp/guides.json` as `kind: dataset-call`
+  (title, blurb, the data that would unblock it, the prefilled issue link), so `get_guide` serves it
+  with no new MCP tool. The modal is unchanged and stays the user's way in.
+- The briefing (`guidance.py` → *When Cecelia cannot do it yet*): check the task catalogue and the
+  guides first; offer a matching `dataset-call` link; anything else goes to the feature-request
+  form. Claude hands over the link and never files an issue; no project data in it (public repo).
+- Third entry, `cluster-grouping-highplex`: Claude-proposed cluster groupings (✦ cluster
+  populations), waiting on a multiplex dataset with 10+ clusters — see
+  [`CLUSTER_POP_PROPOSALS_PLAN.md`](CLUSTER_POP_PROPOSALS_PLAN.md).
+
 ## What could go wrong
 
 - **Silent bit-rot.** An entry sits in the registry for months, someone shares a dataset, and no
