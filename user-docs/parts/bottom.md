@@ -14,19 +14,25 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 
 Everything above works without Claude. Claude doesn't add steps to your analysis. It helps you
 **check** one: a segmentation that looks off, a gate, a cluster you can't name, a result you want to
-state carefully. One loop, the same one Kiwi's **?** and the guide *Assist with Kiwi* show:
+state carefully. There are two ways in, and either can come first; Kiwi's **?** and the guide
+*Assist with Kiwi* show the same:
+
+**Kiwi** is a rubber duck in the app: it points at the evidence, you decide.
 
 1. **Point at it.** Press **@ Add to Kiwi** on what puzzles you: an image row, a population, a plot,
    the viewer or a Blackboard entry. If it is a spot *in* the picture, **Share** a frame and draw on
    it; that's a *capture*.
-2. **Ask Kiwi.** Kiwi is a rubber duck: it points and counts, it doesn't judge. Every claim in its
-   reply has a reference; click it to see what the claim rests on.
+2. **Ask Kiwi.** It points and counts, it doesn't judge. Every claim in its reply has a reference;
+   click it to see what the claim rests on.
 3. **Keep it.** **Save** the reply, then tag it good or bad on the Blackboard, with a why. Replies
    expire after 50 turns; the Blackboard keeps them, and bad tags are how Claude warns you when the
    same failure comes back.
-4. **Go further.** **Continue in terminal** on a reply when one question isn't enough. It saves the
-   reply and copies a command that starts Claude in a terminal, picking up from that entry. The
-   Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't save.
+
+**Claude Code** is the interactive route: you work the analysis through with Claude in a terminal.
+Start it from Kiwi's Chat row (**Start in terminal**); you don't need to ask Kiwi first. It can mark
+cells and add chains, boards and notebooks for you to review. To carry a Kiwi reply over, press
+**Continue in terminal** on it: that saves the reply and starts the session from that entry. The
+Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't save.
 
 | | Kiwi | Terminal | `pixi run chat` (no GUI, experimental) |
 |---|:-:|:-:|:-:|

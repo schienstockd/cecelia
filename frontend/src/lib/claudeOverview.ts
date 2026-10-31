@@ -1,63 +1,76 @@
-// Content model for the "What Kiwi does here" overview (ClaudeOverviewDialog). Kept as data (not
-// inline template) so it's testable and edited in one place. The dialog renders the loop (how Claude
-// fits the work) and one Kiwi-vs-terminal table (what each way in can do) — nothing else: what Claude
-// can read in detail is the tools' business, not the user's. Keep it honest — if a tool lands or a
-// limit changes, update here.
+// Content model for Kiwi's `?` dialog (ClaudeOverviewDialog) and the Guides map's AI help: the two
+// modes, Kiwi and Claude Code. Kept as data (not inline template) so it's testable and edited in one
+// place. The per-tool "What each can use" list is lib/claudeTools.ts.
 //
-// FRAMING: Kiwi is a **documentation helper**, not a discussion helper. Its job is a faithful
-// record of what was observed and what was tried — dead ends included — not to be right about the
-// interpretation. Replies from Claude are provisional; the record is the product. See
-// `docs/archive/kiwi-purpose-and-framing.md` for the full framing — its ARCHIVED banner also
-// covers the deliberate 2026-09 drift toward *curating and warning* (bad-tagged repeat-failure
-// digest at ≥3 hits, `bad`>`good`>untagged ranking); the "Warns when a bad-tagged failure keeps
-// coming back" row below is how that surfaces to the user.
-
-// ── The loop: how Claude fits the work ───────────────────────────────────────────────────────────
-// THE wording of the four steps. Kiwi's `?` dialog renders it, the "Assist with Kiwi" guide uses it for
-// its step titles and text, and user-docs/README.md → *Working with Claude* says the same thing — so a
-// user meets one loop, not three. Change it here and the guide follows (guides.json regenerates).
+// Kiwi and a Claude Code session are two ways in, NOT two steps: either can come first, and some
+// people go straight to Claude Code. Kiwi is the structured rubber duck (points at the evidence, you
+// decide); Claude Code is the interactive route. The Blackboard links them (Continue in terminal).
+// Why, and what it replaced: WORKFLOW_RECIPES_PLAN.md → *Two ways in*. The "Assist with Kiwi" guide
+// uses KIWI_LOOP for its step titles and text, and user-docs/README.md → *Working with Claude* says
+// the same thing. Change it here and the guide follows (guides.json regenerates).
+//
+// FRAMING: Kiwi's replies are provisional; the record is the product — see
+// `docs/archive/kiwi-purpose-and-framing.md`, whose banner also covers the drift toward *curating and
+// warning* (bad-tagged repeat-failure digest). That warning is a line in claudeTools.ts.
 export interface LoopStep {
   title: string
   text: string      // one line
 }
-export const CLAUDE_LOOP: LoopStep[] = [
+// Kiwi's own steps — what the "Assist with Kiwi" guide walks, one per control.
+export const KIWI_LOOP: LoopStep[] = [
   { title: 'Point at it', text: '@ Add to Kiwi on what puzzles you — or Share a frame and draw on it' },
   { title: 'Ask Kiwi', text: 'It points and counts, it doesn’t judge — click a claim’s ref to check it' },
   { title: 'Keep it', text: 'Save the reply, then tag it good or bad on the Blackboard' },
-  { title: 'Go further', text: 'Continue in terminal when one question isn’t enough' },
 ]
 
-// ── Kiwi vs a terminal session ───────────────────────────────────────────────────────────────────
-// What each way in can do. `needs` marks a row that depends on an ACCOUNT-managed MCP connector: if
-// the user hid that connector in Settings → MCP connections, the row would advertise something they
-// switched off. (The observer's own guidance handles this differently, because it cannot see a browser
-// setting: it makes the LabArchives direction conditional on the session actually HAVING the
-// connector — see mcp/cecelia_mcp/guidance.py.) Mirrors the real tool lists: Kiwi's is
-// `KIWI_READ_TOOLS` (api/src/kiwi_turn.jl), a terminal's is the observer's (docs/ai-assist/OBSERVER.md).
-export interface AccessRow {
-  text: string
-  kiwi: boolean
-  terminal: boolean
-  needs?: string
+// ── What each mode is for, and what you can do with it ──────────────────────────────────────────
+// The two cards (ClaudeWaysIn.vue), each led by a small schematic so a glance says "I need Kiwi" or
+// "I need Claude Code". Every line must fit on ONE line in the narrowest place the cards render
+// (Kiwi's `?` dialog) — claudeOverview.test.ts caps them. The full per-tool list is claudeTools.ts. Kiwi's `can` are QUESTIONS you'd ask it; Claude Code's are THINGS it
+// makes. Each must be backed by the mode's real tool list: Kiwi's is `KIWI_READ_TOOLS`
+// (api/src/kiwi_turn.jl), a terminal session's is the observer's (docs/ai-assist/OBSERVER.md). If a
+// tool lands or a limit changes, update here.
+export interface Mode {
+  title: string
+  use: string        // when to use it — one line
+  canLabel: string   // what the `can` list is: questions to ask, or things it makes
+  can: string[]
+  start: string      // how to begin
+  never: string      // the limit
 }
-export const CLAUDE_ACCESS: AccessRow[] = [
-  { text: 'Reads your project, captures, Blackboard and lab log', kiwi: true, terminal: true },
-  { text: 'Warns when a bad-tagged failure keeps coming back', kiwi: true, terminal: true },
-  { text: 'Marks cells and tracks on the viewer', kiwi: false, terminal: true },
-  { text: 'Adds a chain, board, notebook or lab-log line for you to review', kiwi: false, terminal: true },
-  { text: 'Proposes a gate (marked ✦, undoable); moves or removes only its own', kiwi: false, terminal: true },
-  { text: 'Writes a custom module for a step Cecelia lacks — you reload and run it', kiwi: false, terminal: true },
-  { text: 'Reads your LabArchives notebook, once linked', kiwi: false, terminal: true, needs: 'LabArchives' },
-  { text: 'Runs a task or chain, or changes or deletes your data and work', kiwi: false, terminal: false },
-]
-
-/** The rows with connector-dependent ones dropped when the user hid that connector. */
-export function claudeAccess(hiddenConnectors: string[] = []): AccessRow[] {
-  const hidden = new Set(hiddenConnectors)
-  return CLAUDE_ACCESS.filter(r => !r.needs || !hidden.has(r.needs))
+export const KIWI_MODE: Mode = {
+  title: 'Kiwi',
+  use: 'In the app — it points, you decide',
+  canLabel: 'Ask it',
+  can: [
+    'Why does this mask look off?',          // get_landscape, get_module_params, get_task_log
+    'What sets this cluster apart?',         // get_cluster_summary, get_measure_summary
+    'Which images stand out in QC?',         // get_cohort_qc, get_qc_metrics
+    'Have I seen this before?',              // get_recent_captures, search_blackboard
+  ],
+  start: '@ Add to Kiwi or Share a frame, then ask',
+  never: 'Never judges, runs or changes your work',
 }
+export const TERMINAL_MODE: Mode = {
+  title: 'Claude Code',
+  use: 'In a terminal — it builds for you',
+  canLabel: 'It makes',
+  can: [
+    'Marks on cells and tracks',              // mark_cells, mark_tracks
+    'Chains from what you ran',               // create_chain (never run)
+    'Boards and notebooks',                   // add_analysis_board, create_notebook
+    'Lab-log and Blackboard entries',         // append_lab_log, create_blackboard_entry
+    'Gates, marked ✦ — it changes only its own',   // add_gate, set_gate, delete_gate
+  ],
+  start: 'Start in terminal on Kiwi’s Chat row',
+  // Not "it can't run or delete": Claude Code's own shell sits outside Cecelia's tools, so the honest
+  // limit is who presses Run on what it builds (docs/ai-assist/OBSERVER.md).
+  never: 'You run what it builds',
+}
+/** How the two meet. Said once, under both. */
+export const CLAUDE_BRIDGE = 'Either can come first — Continue in terminal hands a Kiwi reply over via the Blackboard'
 
-/** Said once under the table: every reply is a claim to check, not a verdict. */
+/** Said once under the cards: every reply is a claim to check, not a verdict. */
 export const CLAUDE_PROVISIONAL = 'Replies are provisional — not checked against the biology'
 
 // ── Terminal hand-off ────────────────────────────────────────────────────────────────────────────

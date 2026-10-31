@@ -89,7 +89,7 @@ export function chipTip(c: MapChip, showClaude = false): string {
   const parts = [c.what]
   if (c.pairedLabel) parts.push(`summarised on ${c.pairedLabel}`)
   if (c.hidden) parts.push('hidden by your sidebar layout')
-  if (showClaude && c.claude) parts.push(`Claude: ${c.claude}`)
+  if (showClaude && c.claude) parts.push(c.claude)
   return parts.join(' · ')
 }
 

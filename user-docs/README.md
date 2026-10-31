@@ -75,7 +75,7 @@ page that defines a population names the page that summarises it.
 
 | Page | What it's for | Summarised on | Guide | Claude |
 |---|---|---|---|---|
-| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | A terminal session proposes a gate; keep or delete it |
+| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | Claude Code proposes a gate; keep or delete it |
 | Track | Link cells over time; gate tracks | Behaviour | Track cells |  |
 | Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes |  |
 | Cluster tracks | Group tracks by behaviour | Behaviour | Cluster tracks into behaviours |  |
@@ -93,9 +93,9 @@ page that defines a population names the page that summarises it.
 
 | Page | What it's for | Summarised on | Guide | Claude |
 |---|---|---|---|---|
-| Analysis board | Combine any plots across pages and images; export PDF or CSV |  | Build plots | A terminal session builds a board of plots for you |
-| Blackboard | Notes for an open question, versioned, tagged good or bad |  | Use the blackboard | Kiwi replies you save land here; a terminal session writes entries |
-| Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | A terminal session writes a notebook for you |
+| Analysis board | Combine any plots across pages and images; export PDF or CSV |  | Build plots | Claude Code builds a board of plots for you |
+| Blackboard | Notes for an open question, versioned, tagged good or bad |  | Use the blackboard | Kiwi replies you save land here; Claude Code writes entries |
+| Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | Claude Code writes a notebook for you |
 | Animation | Keyframe a fly-through of one image into a movie |  | Build an animation |  |
 | Batch movies | One movie setup, one timelapse movie per image |  | Record a movie |  |
 | Movies | Play the movies this project has rendered |  |  |  |
@@ -105,7 +105,7 @@ page that defines a population names the page that summarises it.
 | Page | What it's for | Summarised on | Guide | Claude |
 |---|---|---|---|---|
 | Tasks | Everything running or finished; history of past runs |  |  |  |
-| Chains | Wire the steps you settled on into a chain; run it over a set |  | Run a pipeline over a whole set | A terminal session designs the chain; you run it |
+| Chains | Wire the steps you settled on into a chain; run it over a set |  | Run a pipeline over a whole set | Claude Code designs the chain; you run it |
 
 ## Panels beside the pages
 
@@ -123,19 +123,25 @@ Opened from the icon row in the sidebar; they stay open while you change pages.
 
 Everything above works without Claude. Claude doesn't add steps to your analysis. It helps you
 **check** one: a segmentation that looks off, a gate, a cluster you can't name, a result you want to
-state carefully. One loop, the same one Kiwi's **?** and the guide *Assist with Kiwi* show:
+state carefully. There are two ways in, and either can come first; Kiwi's **?** and the guide
+*Assist with Kiwi* show the same:
+
+**Kiwi** is a rubber duck in the app: it points at the evidence, you decide.
 
 1. **Point at it.** Press **@ Add to Kiwi** on what puzzles you: an image row, a population, a plot,
    the viewer or a Blackboard entry. If it is a spot *in* the picture, **Share** a frame and draw on
    it; that's a *capture*.
-2. **Ask Kiwi.** Kiwi is a rubber duck: it points and counts, it doesn't judge. Every claim in its
-   reply has a reference; click it to see what the claim rests on.
+2. **Ask Kiwi.** It points and counts, it doesn't judge. Every claim in its reply has a reference;
+   click it to see what the claim rests on.
 3. **Keep it.** **Save** the reply, then tag it good or bad on the Blackboard, with a why. Replies
    expire after 50 turns; the Blackboard keeps them, and bad tags are how Claude warns you when the
    same failure comes back.
-4. **Go further.** **Continue in terminal** on a reply when one question isn't enough. It saves the
-   reply and copies a command that starts Claude in a terminal, picking up from that entry. The
-   Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't save.
+
+**Claude Code** is the interactive route: you work the analysis through with Claude in a terminal.
+Start it from Kiwi's Chat row (**Start in terminal**); you don't need to ask Kiwi first. It can mark
+cells and add chains, boards and notebooks for you to review. To carry a Kiwi reply over, press
+**Continue in terminal** on it: that saves the reply and starts the session from that entry. The
+Blackboard is the bridge: a terminal session can't see Kiwi replies you didn't save.
 
 | | Kiwi | Terminal | `pixi run chat` (no GUI, experimental) |
 |---|:-:|:-:|:-:|

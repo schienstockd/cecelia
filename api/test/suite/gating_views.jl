@@ -63,6 +63,11 @@ end
         @test r.gates[1].y_max == 1e9                               # stated in full, clipped only in the picture
         @test r.x.extent[1] < r.x.extent[2]
 
+        # logicle axes: the route inverts the Float32 display coords for its extent — once a MethodError
+        # in the logicle Taylor helper for low (near-zero) values
+        st, b = get_(api_gating_plot_image, "x=mean_intensity_0&y=area&xt=logicle&yt=logicle")
+        @test st == 200 && JSON3.read(b).x.transform.kind == "logicle"
+
         # a swapped axis pair still draws the gate; a different pair does not
         st, b = get_(api_gating_plot_image, "x=area&y=mean_intensity_0")
         @test length(JSON3.read(b).gates) == 1

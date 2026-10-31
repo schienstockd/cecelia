@@ -8,7 +8,7 @@
 // text. `sketchAnimation.id` points at a feijoa sketch (rendered inline by WhatNewCard); an id
 // that isn't in feijoa's catalogue falls back to the "coming soon" placeholder.
 import type { WhatNewCard } from './whatsNew'
-import { CLAUDE_LOOP } from './claudeOverview'
+import { KIWI_LOOP, TERMINAL_MODE } from './claudeOverview'
 
 // First entry is the welcome card (kind 'about') — brief intro to cecelia; the rest are tips in
 // pipeline-arc order (segmentation is the entry point; analysis features read from it), with the
@@ -184,8 +184,8 @@ export const TIPS: WhatNewCard[] = [
     kind: 'tip',
     title: 'Check a step with Claude',
     description: 'Kiwi asks Claude about what you point at. It points and counts but doesn\'t judge, and it never runs anything or changes your data.',
-    // THE loop (lib/claudeOverview.ts → CLAUDE_LOOP): the same four steps as Kiwi's ? and its guide.
-    steps: CLAUDE_LOOP.map(s => `${s.title}: ${s.text}.`),
+    // Kiwi's steps, then Claude Code as the other way in (lib/claudeOverview.ts) — as Kiwi's ? and its guide.
+    steps: [...KIWI_LOOP.map(s => `${s.title}: ${s.text}.`), `Or ${TERMINAL_MODE.title}: ${TERMINAL_MODE.start}, and work it through.`],
     sketchAnimation: { id: 'claude_mcp' },
   },
 ]
