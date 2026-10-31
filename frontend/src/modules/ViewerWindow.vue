@@ -6720,8 +6720,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
-                            :open="openSection === 'rois'"
-                            @update:open="v => setSection('rois', v)" fill>
+                            accordion="cc.vw.section" section="rois"
+                            fill>
           <RoiSection v-if="openSection === 'rois'" :project-uid="projectUid" :image-uid="imageUid" />
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
