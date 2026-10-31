@@ -305,6 +305,7 @@ Measures are split by their natural grain (no redundant broadcast):
 |---|---|---|
 | `live.cell.speed` | per-cell | step speed to this cell (celltrackR `subtracks(·,1)` speed; cell 1 = `NaN`) |
 | `live.cell.angle` | per-cell | turning angle at this cell, degrees (`subtracks(·,2)` `overallAngle`; cells 1–2 = `NaN`) |
+| `<pt>.cell.approach#<target>` | per-cell | approach speed toward the target population, µm/min: −Δ`min_distance#<target>` / Δt, positive = closing in (cell 1 = `NaN`). Only for targets whose `min_distance#` column exists when the task runs — run contacts first, then re-run track measures |
 
 Per-cell angle assignment follows celltrackR's `increment.cell.id=TRUE` (the step measure is
 assigned to its endpoint cell). Untracked cells get `NaN`.
@@ -315,7 +316,11 @@ assigned to its endpoint cell). Untracked cells get `NaN`.
   `.displacement`, `.straightness`, `.displacementRatio`, `.outreachRatio`, `.meanTurningAngle`,
   `.overallAngle`, `.asphericity`.
 - `obs` = lineage carried over per track (`track_root`, `track_parent`, `track_state`,
-  `track_generation`); `obs._index` = `track_id`.
+  `track_generation`); `obs._index` = `track_id`. Plus `<pt>.track.approachIndex#<target>` per contacts
+  target present at measure time: (first − last distance to the target) ÷ path length, the McCutcheon
+  index toward the nearest target surface, in [−1, 1]. The nearest target can change between frames, so
+  this is approach to the population, not to one partner. It is in obs, not X/var, so deleting the
+  contacts run (`_contacts_delete!`) can drop it with its per-cell sibling.
 - Created via Python `anndata` (`tracking_utils.write_track_props`, called by the
   `track_props_run.py` subprocess) — new-file creation is Python's job (`docs/DATAMODEL.md`).
   Julia computes the measures (the celltrackR port) and hands the table over as JSON.

@@ -159,6 +159,7 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
     end
     isempty(targets) && (on_log("[ERROR] cellContacts: no B cells for $(p.popsB)"); return nothing)
     label_props(props_path) |> add_obs(out) |> save!
+    drop_stale_approach!(img, value_name, pop_type, targets; on_log = on_log)
 
     # cohort metrics stay comparable with earlier runs: "in contact" = with ANY target, which is exactly
     # what the single pooled column used to report; `nTargets` says how many column sets were written
