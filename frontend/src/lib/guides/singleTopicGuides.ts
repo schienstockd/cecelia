@@ -25,7 +25,7 @@
 
 import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
-import { CLAUDE_LOOP } from '../claudeOverview'
+import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
 
 // ── User profile: the header chip is the mid-session entry point ─────────────────────────────────
 // The launch picker (AppProfilePicker.vue) is a bare-route boot interstitial — the router bounces
@@ -409,10 +409,11 @@ export const correctAMaskGuide: GuideDef = {
 // Pairing / chat / share rows are `v-if`'d on `projectUid` (KiwiCockpit.vue:276-279 — no project =
 // no pairing target), so the prereq is `projectOpen`. Kiwi itself is `v-if`'d in App.vue on
 // `settings.kiwiOpen`, so anchor-not-found reveals point at `sidebar.kiwiCta`.
-// How Claude fits the work: the four-step loop (lib/claudeOverview.ts → CLAUDE_LOOP), one step per
-// loop step, each on the control it is about. The titles and text ARE the loop's — Kiwi's `?` dialog
-// and user-docs/README.md say the same thing — so they can't drift into three explanations.
-const [loopPoint, loopAsk, loopKeep, loopFurther] = CLAUDE_LOOP
+// Kiwi's three steps (lib/claudeOverview.ts → KIWI_LOOP), one per control, then Claude Code as the
+// OTHER way in — not a fourth step (two ways in, either first: WORKFLOW_RECIPES_PLAN.md → *Two ways
+// in*). The titles and text ARE claudeOverview's — Kiwi's `?` dialog and user-docs/README.md say the
+// same thing — so they can't drift into three explanations.
+const [loopPoint, loopAsk, loopKeep] = KIWI_LOOP
 const openKiwiFirst = (anchor: string): Reveal => ({
   needed: c => !c.anchorExists(anchor),
   anchor: 'sidebar.kiwiCta',
@@ -424,7 +425,7 @@ export const kiwiGuide: GuideDef = {
   title: 'Assist with Kiwi',
   group: 'Analysis',
   icon: 'pi-comments',
-  summary: 'How Claude fits your work: point at it, ask, keep what holds up, go further in a terminal.',
+  summary: 'Point at it, ask, keep what holds up — or work it through in Claude Code instead.',
   prereqs: [PREREQ.projectOpen],
 
   steps: [
@@ -432,7 +433,7 @@ export const kiwiGuide: GuideDef = {
       anchor: 'sidebar.kiwiCta',
       placement: 'right',
       title: 'Kiwi',
-      text: 'Ask Claude about your project. Nothing happens until you ask.',
+      text: 'A rubber duck for your project: it points at the evidence, you decide.',
       bullets: ['Log in once from the account row at the top of the panel.'],
       clickAnchor: true,
     },
@@ -468,24 +469,20 @@ export const kiwiGuide: GuideDef = {
       },
     },
     {
-      anchor: 'kiwi.turnActions',
+      anchor: 'kiwi.chat',
       placement: 'left',
-      title: loopFurther.title,
-      text: loopFurther.text,
-      bullets: ['It saves the reply and copies a command; the terminal session picks up from that entry.',
-                'Only a terminal session can mark cells, or add a chain, board, notebook or lab-log line.'],
-      reveal: {
-        needed: c => !c.anchorExists('kiwi.turnActions'),
-        anchor: 'kiwi.chat',
-        text: 'No reply yet — Start in terminal opens a fresh session.',
-        placement: 'left',
-      },
+      title: `Or: ${TERMINAL_MODE.title}`,
+      text: 'Work the analysis through with Claude in a terminal — it builds for you.',
+      bullets: [`${TERMINAL_MODE.start}.`,
+                'Or press Continue in terminal on a reply to carry it over.',
+                'It marks cells and builds chains, boards and notebooks for you to review.'],
+      reveal: openKiwiFirst('kiwi.chat'),
     },
     {
       anchor: 'kiwi.assistantHelp',
       placement: 'bottom-start',
-      title: 'What Kiwi does here',
-      text: 'The ? recaps this loop and what Kiwi and a terminal session can each do.',
+      title: 'Kiwi and Claude Code',
+      text: 'The ? recaps both ways in and what each can do.',
       clickAnchor: true,
       reveal: openKiwiFirst('kiwi.assistantHelp'),
     },
