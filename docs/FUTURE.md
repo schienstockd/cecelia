@@ -253,6 +253,11 @@ then: detection + metrics on every import, a finding only for unmistakable damag
 
 ## Temporal downsampling / overlapping tracklets for behaviour
 
+> **Resolved — built.** `trackMeasures` → **Window (min)** writes `live.cell.window.*` per cell (a
+> trailing window in minutes, every cell — overlapping by construction) and `live.track.window.*`
+> medians per track; HMM / motif / clustering select them like any `live.cell.*` column.
+> `docs/TRACKING.md` → per-cell measures. Kept below as the record of why it was deferred.
+
 **What.** Two celltrackR knobs the old R framework exposed on HMM: `skipTimesteps` (treat 10 s/frame
 data as if it were 30 s/frame, so movies acquired at different rates can be compared) and
 `subtrackOverlap` (generate overlapping tracklets rather than disjoint ones). The old stack could

@@ -1190,3 +1190,64 @@ end
         @test !isfile(cell_side)
     end
 end
+
+@testset "window_measures — trailing, fixed span in minutes, truncated windows are NaN" begin
+    # straight line, 1 µm/min, a frame per minute: a 4-min window ENDS at its cell
+    t = collect(0.0:10.0); xy = hcat(t, zeros(11))
+    w = window_measures(t, xy, 4.0)
+    @test all(isnan, w.speed[1:4])                          # under 4 min since the start: not a shorter window
+    @test w.speed[5:11] ≈ fill(1.0, 7)
+    @test w.displacement[5:11] ≈ fill(4.0, 7)
+    @test w.straightness[5:11] ≈ fill(1.0, 7)
+
+    # zig-zag: 1 µm forward, ±1 µm sideways each frame → straightness well below 1
+    zz = hcat(t, [isodd(i) ? 1.0 : 0.0 for i in 0:10])
+    @test all(s -> s < 0.75, window_measures(t, zz, 4.0).straightness[5:11])
+
+    # a window narrower than the frame interval holds one position — no measure, never a fake 0
+    @test all(isnan, window_measures(t, xy, 0.5).speed)
+    @test all(isnan, window_measures(t, xy, 0.0).speed)
+end
+
+@testset "window_span — whole frames only" begin
+    @test window_span(5.0, 1.0) == 5.0
+    @test window_span(5.0, 0.5) == 5.0
+    @test window_span(5.0, 2.0) == 4.0                      # "5 min" on 2-min frames measures 4
+    @test window_span(0.5, 1.0) == 0.0
+end
+
+@testset "window_measures — the same path at two frame rates gives the same numbers" begin
+    # what minutes buy over frames. An ODD window on purpose: a centred
+    # 5-min window reaches ±2 frames (a 4-min span) at 1 min/frame but the full 5 at 0.5 min/frame
+    t1 = collect(0.0:1.0:12.0);  p1 = hcat(t1 .* 2, sin.(t1))
+    t2 = collect(0.0:0.5:12.0);  p2 = hcat(t2 .* 2, sin.(t2))
+    a = window_measures(t1, p1, 5.0); b = window_measures(t2, p2, 5.0)
+    for (i, ti) in enumerate(t1)
+        j = findfirst(==(ti), t2)
+        @test isnan(a.speed[i]) == isnan(b.speed[j])
+        isnan(a.speed[i]) && continue
+        @test isapprox(a.displacement[i], b.displacement[j]; rtol = 1e-9)   # same two endpoints
+        @test isapprox(a.speed[i], b.speed[j]; rtol = 0.05)  # finer sampling sees a little more curve
+    end
+end
+
+@testset "window_measures — a bridged gap: fine inside, NaN at the window's start" begin
+    # frames 0,1,2 then 5..8 (btrack bridged 3,4); constant 1 µm/min throughout
+    t = [0.0, 1.0, 2.0, 5.0, 6.0, 7.0, 8.0]; xy = hcat(t, zeros(7))
+    w = window_measures(t, xy, 4.0)
+    @test w.speed[4] ≈ 1.0 && w.speed[5] ≈ 1.0              # windows [1,5], [2,6]: gap inside, real Δt
+    @test isnan(w.speed[6]) && isnan(w.speed[7])            # [3,7], [4,8] open on the gap — not 4 min
+end
+
+@testset "track_window_measures — per-track median, snapped window, nothing when off" begin
+    mk(id, n, v) = (Cecelia.Track(id, collect(0.0:n), hcat(v .* (0:n), zeros(n + 1))), collect(1:n + 1))
+    tw = [mk(1, 10, 1.0), mk(2, 10, 3.0), mk(3, 2, 1.0)]     # track 3 is shorter than the window
+    r = track_window_measures(tw, 4.0, 1.0)
+    @test r.tracks["live.track.window.speed"][1:2] ≈ [1.0, 3.0]
+    @test isnan(r.tracks["live.track.window.speed"][3])
+    @test length(r.cells["live.cell.window.speed"]) == 11 + 11 + 3   # aligned to every cell
+    # 4.5 min on 1-min frames measures 4 — same values as asking for 4
+    @test track_window_measures(tw, 4.5, 1.0).tracks["live.track.window.speed"][1:2] ≈ [1.0, 3.0]
+    off = track_window_measures(tw, 0.0, 1.0)
+    @test isempty(off.cells) && isempty(off.tracks)
+end

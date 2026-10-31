@@ -163,6 +163,7 @@ export track_path_dicts
 export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
+export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS
 export TrackPlotGroup, TrackPlotSource, track_plot_groups, track_group_paths, track_group_diagnostics
 export track_group_frame
 export track_group_images, track_group_value_name, track_group_pop
@@ -306,6 +307,7 @@ include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
+include("tracking/track_windows.jl")      # fixed-duration (tracklet) measures (pure; used by trackMeasures)
 include("tracking/track_cohort.jl")       # (images × population) grouping for the two track plots
 include("behaviour/hmm.jl")
 include("model/set.jl")
