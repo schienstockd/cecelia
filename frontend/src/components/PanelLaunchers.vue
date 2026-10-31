@@ -64,8 +64,8 @@ const labLogBadgeStyle = computed(() =>
             :class="{ on: settings.kiwiOpen }"
             @click="settings.kiwiOpen = !settings.kiwiOpen"
             v-tooltip.right="settings.kiwiOpen
-              ? 'Close Kiwi (assist cockpit)'
-              : 'Kiwi — pairing, chat handoff, and other assistant controls'">
+              ? 'Close Kiwi'
+              : 'Kiwi — ask about your project, get answers you can check'">
       <i class="pi pi-comments" />
     </button>
   </div>

@@ -19,11 +19,12 @@ defineEmits<{ (e: 'close'): void }>()
 const GROUPS = capabilityGroups().map(g => ({ ...g, rows: g.items.map(c => ({ ...c })) }))
 const COLUMNS: SelectionColumn[] = [
   { key: 'label', label: '' },
-  { key: 'kiwi', label: 'Kiwi', width: 64 },
-  { key: 'terminal', label: 'Claude Code', width: 96 },
+  { key: 'kiwi', label: 'Kiwi', width: 64, fixed: true },
+  { key: 'terminal', label: 'Claude Code', width: 96, fixed: true },
 ]
 // The groups below are an accordion like every other in the app (`accordion="cc.claudeOverview.openGroup"`):
-// one open at a time, remembered, none to start with.
+// one open at a time, remembered, none to start with. What only each mode does is on the cards above;
+// this is the per-tool detail.
 
 // Terminal set-up is NOT repeated here. It lives on Kiwi's Terminal row — one button, in the place
 // people act from — and duplicating it in this dialog cost a whole band of chrome to say what the
@@ -40,12 +41,14 @@ const COLUMNS: SelectionColumn[] = [
                           accordion="cc.claudeOverview.openGroup" :section="g.key"
                           :tip="`What Kiwi and Claude Code can use: ${g.title.toLowerCase()}`">
         <!-- icons carry the meaning, not colour alone -->
-        <SelectionTable selection-mode="none" density="compact" :columns="COLUMNS" :rows="g.rows" id-key="label">
+        <!-- one shared width key: every group's table is sized alike, so the tick columns line up -->
+        <SelectionTable selection-mode="none" density="compact" :columns="COLUMNS" :rows="g.rows" id-key="label"
+                        column-width-key="claudeOverview.uses">
           <template #cell-kiwi="{ row }">
-            <i :class="['pi', row.kiwi ? 'pi-check co-yes' : 'pi-minus co-no']" :aria-label="row.kiwi ? 'yes' : 'no'" />
+            <i :class="['pi', row.kiwi ? 'pi-check co-kiwi' : 'pi-minus co-no']" :aria-label="row.kiwi ? 'yes' : 'no'" />
           </template>
           <template #cell-terminal="{ row }">
-            <i :class="['pi', row.terminal ? 'pi-check co-yes' : 'pi-minus co-no']" :aria-label="row.terminal ? 'yes' : 'no'" />
+            <i :class="['pi', row.terminal ? 'pi-check co-claude' : 'pi-minus co-no']" :aria-label="row.terminal ? 'yes' : 'no'" />
           </template>
         </SelectionTable>
       </CollapsibleSection>
@@ -57,7 +60,8 @@ const COLUMNS: SelectionColumn[] = [
 <style scoped>
 .co-uses { margin-top: 14px; }
 .co-uses-title { margin-bottom: 4px; }
-.co-yes { color: var(--cc-accent); }
+.co-kiwi { color: var(--cc-kiwi); }
+.co-claude { color: var(--cc-claude); }
 .co-no { color: var(--cc-text-dim); }
 .co-note { margin: 10px 0 0; }
 </style>
