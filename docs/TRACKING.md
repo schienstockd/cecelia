@@ -91,7 +91,7 @@ creates a track by hand (see correction, below) must follow that convention; wri
 - **µm-space tracking (2026-08-07).** Centroids are scaled to **µm** before btrack sees them
   — `physicalSizes` from `img_physical_sizes`, skimage order `[sz, sy, sx]`, the same
   accessor `track_measures`, `cellNeighbours` and the mesh tasks already use. Every distance
-  param is therefore µm: `maxSearchRadius` (default **20**, ~T cell), `distThresh`,
+  param is therefore µm: `maxSearchRadius` (default **20**, per frame — the form shows the µm/min it allows at each image's interval), `distThresh`,
   `thetaDist`. Time stays in **frames** (`maxLost`, `timeThresh`) because btrack's `t` is a
   frame index.
 

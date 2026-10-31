@@ -50,6 +50,21 @@ export interface RateImage {
 }
 
 /**
+ * Seconds per frame as the RUNNER reads it, or `null` when the image records no positive interval.
+ *
+ * An ABSENT unit reads as seconds, which `toSeconds` (and so `timeAxis.frameSeconds`) deliberately will
+ * not do — it answers `null` so a PLOT axis is not relabelled off an assumption. A task-form readout is
+ * the opposite case: `dim_utils.im_time_increment_unit` defaults to `'s'`, and so does OME's spec, so
+ * the runner WILL use such a movie, and the form has to describe the run that happens.
+ * (`metadata.frame_interval_no_unit` is the QC finding that says the gap out loud.)
+ */
+export function runFrameSeconds(im: RateImage): number | null {
+  if (typeof im.timeIncrement !== 'number' || !(im.timeIncrement > 0)) return null
+  const secs = im.timeIncrementUnit ? toSeconds(im.timeIncrement, im.timeIncrementUnit) : im.timeIncrement
+  return secs != null && secs > 0 ? secs : null
+}
+
+/**
  * The interval the spans are anchored on, or `null` when no image records one in seconds.
  *
  * The COARSEST of the set, which is the rule `train_run.reference_interval` applies on the server. The
@@ -60,20 +75,10 @@ export interface RateImage {
  */
 export function spanAnchorRate(images: readonly RateImage[] | undefined): FrameRate | null {
   const imgs = images ?? []
-  // `toSeconds` is the unit rule (`s` / `sec` / `second` / `ms` / `min` / `h`); the positive guard is
-  // `frameSeconds`', restated because that one is typed to the full `CciaImage` and this is
-  // structural so a task form's param context fits without a cast.
   const usable = imgs.flatMap(im => {
-    if (typeof im.timeIncrement !== 'number' || !(im.timeIncrement > 0)) return []
+    const secs = runFrameSeconds(im)
+    if (secs == null) return []
     const unit = (im.timeIncrementUnit ?? '').toLowerCase()
-    // An ABSENT unit reads as seconds, which `toSeconds` deliberately will not do — it answers `null`
-    // so a PLOT axis is not relabelled off an assumption. Here the assumption is the right one and
-    // matching it is the point: `dim_utils.im_time_increment_unit` defaults to `'s'`, and OME's spec
-    // default is `'s'`, so the runner WILL train such a movie. Refusing it here would have the form
-    // say "cannot be resolved" about a run that then works. (`metadata.frame_interval_no_unit` is the
-    // QC finding that says the gap out loud; that is its job, not this readout's.)
-    const secs = unit ? toSeconds(im.timeIncrement, im.timeIncrementUnit) : im.timeIncrement
-    if (secs == null || !(secs > 0)) return []
     return [{ im, secs, converted: !!unit && !unit.startsWith('s') }]
   })
   if (!usable.length) return null
