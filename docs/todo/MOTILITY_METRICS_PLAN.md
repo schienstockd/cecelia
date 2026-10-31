@@ -1,12 +1,8 @@
 # Motility metrics from the Pizzagalli / Cabini / Wortel review — plan
 
-> **Status: in progress (2026-10-31).** P0 done; P1 built (#1862); P4 built (#1865); P2/P3 next —
-> decisions answered below. Plan branch `docs/motility-metrics-plan`.
-> Source: Pizzagalli, Cabini & Wortel (2025), *Quantifying Biological Processes in Motion and Across
-> Scales*, in *Bioimaging Modalities in Bioengineering*, pp. 627–656, doi:10.1007/978-3-031-99410-4_29
-> (CC BY; open PDF at `susi.usi.ch/documents/335519/files/978-3-031-99410-4_29.pdf`). A review — its
-> metric set is celltrackR's and Beltman et al. (2009)'s, which we already ported. This plan is the
-> delta, and where each piece fits.
+> **Status: in progress (2026-10-31).** P0 done; P1 (#1862), P4 (#1865) and P2 (#1868) merged;
+> P3 not started — scope grew, see *P3 — what building it actually takes*. Plan branch history:
+> `docs/motility-metrics-plan`.
 
 ## Goal
 
@@ -173,6 +169,27 @@ Decisions 1, 6 and 7. Touchpoints: `track_props.jl` (dwell family, suffix consta
 KM dwell plot definition (population-level, per `docs/PLOTS.md`), the MCP summary picks the columns up
 (check `mcp/cecelia_mcp/guidance.py`), `docs/TRACKING.md` / `docs/ANALYSIS.md`, and a pointer in
 `BEHAVIOUR_READOUT_PLAN.md`. About 6 files, plus the `pops` route for arrest if chosen.
+
+#### P3 — what building it actually takes (found 2026-10-31, before starting)
+
+The plan treated P3 as "a suffix family in `track_props`". Reading the read path, it is three pieces:
+1. **Pure bouts** (`tracking/track_bouts.jl`): run-lengths of a per-cell 0/1 or categorical series in
+   TIME, with the answered gap rule (bridge a missing detection when in on both sides; a measured
+   out frame ends the bout) and start/end censoring; plus a Kaplan–Meier median over bouts.
+   Unit-testable alone.
+2. **`track_props` family**: `{m}[.{cat}].nBouts/.boutMean/.boutMax/.nCensored`, registered beside
+   `_TRACK_NUM_AGG_SUFFIXES` so `track_aggregate_base` inverts them (with `cell_cols` the longest-base
+   rule already handles `{m}.{cat}.boutMax`; the name-only rule needs the suffixes stripped first).
+   Needs the frame interval (`img_physical_sizes`) inside `track_props`.
+3. **Reachability — the part the plan missed.** Nothing computes unless a plot or gate NAMES the
+   column (`pop_df` → `track_aggregate_measures`), and the track gate-axis picker today offers only the
+   motility table (`/api/gating/channels` `columns`); per-track aggregates of cell columns are offered
+   only by the clustering feature picker (`cellObsMeasures` + `trackAggregates`). So P3 needs the
+   channels endpoint to list dwell columns for flag/categorical obs, and the axis picker to show them
+   (`frontend/src/utils/measureGroups.ts` grouping). Arrest via a gated population (answered Q2) adds
+   population membership as flag columns (`pop_membership_fetch`) and a picker entry per population.
+Split into P3a (1 + 2 + clustering-picker exposure, contacts/HMM/motif) and P3b (gate-axis picker +
+population-membership flags for arrest). P3b changes the gating UI — needs Dominik's eyes.
 
 ### P4 — approach toward a target
 Decision 5. `trackMeasures` writes per-cell `approach#<target>` and the per-track index for each
