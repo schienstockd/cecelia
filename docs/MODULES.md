@@ -740,12 +740,12 @@ not the field — the field the suggestions come from follows from it, so a spec
 ```
 
 Namespaces: `filepaths`, `labels`, `spatialGraphs`, `tracks`, `branches`, `clusters`, `regions`,
-`stats`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
+`stats`, `rois`, `models`, `obsCols`. Where the suggestions come from depends on the namespace's **scope**,
 which is not uniform:
 
 | scope | namespaces | source |
 |---|---|---|
-| per image | `filepaths`, `labels`, `spatialGraphs`, `stats` | the image payload (`consumerField` names the field) |
+| per image | `filepaths`, `labels`, `spatialGraphs`, `stats`, `rois` | the image payload (`consumerField` names the field) |
 | per (image, value_name) | `clusters`, `regions` | the payload, for the ACTIVE segmentation — a clustering belongs to a segmentation, not an image |
 | **global** | `models` | injected spec `options` (`_inject_dynamic_options!`), because the model vault is not a property of any image |
 | not wired | `tracks`, `branches`, `obsCols` | renders as a plain input — no suggestions, everything else still works |
@@ -874,6 +874,11 @@ Current users: `behaviour.hmm_states` / `behaviour.hmm_transitions` / `behaviour
 ```json
 { "key": "modelMeasurements", "label": "Properties", "type": "labelPropsColsSelection", "multiple": true, "default": ["live.cell.speed", "live.cell.angle"] }
 ```
+
+**`allObs`** — on a `labelPropsColsSelection`, `"allObs": true` offers EVERY obs measure rather than only `live.*` — the spatial readouts
+(`flow.cell.contact#…`, `…contains_n#…`, `…min_distance#…`) land under *Other measures*. For a task
+that can rank or weight by any measure (`spatialAnalysis.roiDiscovery` → *Rank by*); a model-fitting
+picker keeps the default, where an id-like obs column would be a feature nobody meant.
 
 **`motionDimsSelection`** — `auto | 2D | 3D` selector for whether track/behaviour measures are computed in-plane or in full 3D (used by `tracking.track_measures`). In `auto` it calls `GET /api/tracking/motion-dims` for the selected image + sibling `valueName` (server-side detector, cached by h5ad mtime) and shows the recommendation **+ a warning before Run** (e.g. "Auto → 2D — z is non-migratory jitter…"), with override to 2D/3D. Value sent: `"auto"`/`"2D"`/`"3D"`; the handler resolves `auto` via `detect_motion_dims`. See `docs/TRACKING.md` → *Motion dimensionality*.
 ```json

@@ -195,6 +195,26 @@ function img_stats_suffixes(img::CciaImage)::Vector{String}
 end
 
 """
+    img_rois_path(img, suffix) / img_roi_reviews_path(img, suffix) / img_rois_suffixes(img)
+
+ROI auto-discovery (`docs/todo/ROI_TRIAGE_PLAN.md`): the ROI SET a `spatialAnalysis.roiDiscovery`
+run writes (`rois/{suffix}.json`, recomputable output) and the REVIEWS of it (`roiReviews/{suffix}.json`
+— labels, notes and their history, written by `/api/rois/review`). Two directories on purpose
+(Decision 6): a re-run replaces the set and never touches a review, and a review is user work that an
+analysis reset keeps (`ANALYSIS_KEEP`), like the gates. Suffixes are listed from disk, as for stats.
+"""
+img_rois_dir(img::CciaImage)::String = joinpath(img._dir, "rois")
+img_rois_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_rois_dir(img), "$(suffix).json")
+img_roi_reviews_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img._dir, "roiReviews", "$(suffix).json")
+function img_rois_suffixes(img::CciaImage)::Vector{String}
+    d = img_rois_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
     img_cluster_suffixes(img[, value_name]; family = "clusters") -> Vector{String}
 
 The clustering runs recorded for one segmentation — the `valueNameSuffix` values already used.

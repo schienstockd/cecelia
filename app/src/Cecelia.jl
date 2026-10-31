@@ -75,6 +75,8 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_trac
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
+export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
+export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
 export read_module_fun_params, read_module_fun_params_by_name, write_module_fun_params!
 export state_file, obj_meta_dir, STATE_FILENAME
@@ -213,7 +215,7 @@ export stale_artefacts_for, staleness_sidecar_path
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
+export CellNeighbours, ClustRegions, NeighbourStats, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
@@ -383,6 +385,7 @@ include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
+include("tasks/spatialAnalysis/roiDiscovery.jl")
 include("tasks/spatialAnalysis/detectAggregates.jl")
 include("tasks/spatialAnalysis/contact_targets.jl")   # target grouping shared by both contact routes
 include("tasks/spatialAnalysis/cellContacts.jl")
@@ -391,6 +394,7 @@ include("tasks/spatialAnalysis/aggregatesMeshes.jl")
 include("tasks/clustRegions/cluster.jl")
 include("cell_cards.jl")   # docs/todo/CELL_CARDS_PLAN.md — pooled feature reader, medoid, bbox, stats
 include("storage.jl")
+include("rois.jl")            # ROI sets + reviews (ROI_TRIAGE_PLAN); pure guard logic for /api/rois
 include("analysis_runs.jl")   # per-run delete registry (IMAGE_DELETE_PLAN Decision 14); after the task files it names
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")

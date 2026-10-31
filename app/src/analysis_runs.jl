@@ -226,11 +226,19 @@ function _stats_delete!(img, run; on_log = _ -> nothing)
     _rm_if(qc_path(img, "spatialAnalysis.neighbourStats", run.key); on_log)
 end
 
-# `{pt}.cell.contact#{target}` (+ min_distance / contact_id) — one run per (segmentation, pt, target).
-# Points and mesh contacts share the columns, so one run covers both tasks.
+# The ROI set only. Its reviews (`roiReviews/`) are user work, like gates (`ANALYSIS_KEEP`), and a
+# re-run under the same name re-attaches them by ROI id (ROI_TRIAGE_PLAN Decisions 5–6).
+function _rois_delete!(img, run; on_log = _ -> nothing)
+    _rm_if(img_rois_path(img, run.key); on_log)
+    _rm_if(qc_path(img, "spatialAnalysis.roiDiscovery", run.key); on_log)
+end
+
+# `{pt}.cell.contact#{target}` (+ min_distance / contact_id, and the mesh route's optional
+# contained_by / contains_n) — one run per (segmentation, pt, target). Points and mesh contacts share
+# the columns, so one run covers both tasks.
 const _CONTACT_RE = contact_col_regex("contact")
-_contact_cols(pt, t) = ["$pt.cell.contact#$t", "$pt.cell.min_distance#$t", "$pt.cell.contact_id#$t",
-                         approach_cell_col(pt, t)]   # derived by trackMeasures — goes with its source
+_contact_cols(pt, t) = vcat(["$pt.cell.$(k)#$t" for k in ("contact", "min_distance", "contact_id", CONTAINMENT_COLS...)],
+                            approach_cell_col(pt, t))   # derived by trackMeasures — goes with its source
 
 function _contacts_list(img)
     out = AnalysisRun[]
@@ -341,6 +349,8 @@ const RUN_KINDS = RunKind[
             img -> _file_runs("graphs", img_spatial_graph_suffixes(img)), _graph_delete!),
     RunKind("stats", "Neighbour stats", ["spatialAnalysis.neighbourStats"],
             img -> _file_runs("stats", img_stats_suffixes(img)), _stats_delete!),
+    RunKind("rois", "ROI sets", ["spatialAnalysis.roiDiscovery"],
+            img -> _file_runs("rois", img_rois_suffixes(img)), _rois_delete!),
     RunKind("contacts", "Contacts", ["spatialAnalysis.cellContacts", "spatialAnalysis.contactsMeshes"],
             _contacts_list, _contacts_delete!),
     RunKind("aggregates", "Aggregates", ["spatialAnalysis.detectAggregates", "spatialAnalysis.aggregatesMeshes"],

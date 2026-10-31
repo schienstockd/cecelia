@@ -50,6 +50,7 @@ export interface CciaImage {
   // Plain arrays, not versioned dicts: these are listed from disk / a sidecar manifest, never
   // registered in ccid.json, so there is no `_active` to carry.
   statsSuffixes?: string[]      // spatialAnalysis.neighbourStats runs
+  roiSuffixes?: string[]        // spatialAnalysis.roiDiscovery ROI sets (rois/{suffix}.json)
   clusterSuffixes?: string[]    // clustPops / clustTracks runs, for the ACTIVE segmentation
   regionSuffixes?: string[]     // clustRegions runs, same segmentation, separate family
   attr?: Record<string, string>           // user-defined metadata attributes

@@ -21,6 +21,7 @@ export interface ParamDef {
   tips?: Array<{ text: string; requires?: { axes?: string[] } }>
   placeholder?: string  // text / dirPath / filePath: shown when empty — for dirPath, the default destination
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
+  allObs?: boolean      // labelPropsColsSelection: offer every obs measure, not just `live.*`
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
   includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
   popScope?: 'cells' | 'tracks'  // popSelection: LEGACY two-scope shim (cells → live+clust+region, tracks → track+trackclust). Built-ins all declare `accepts`; kept so user custom modules written against it still render
@@ -104,7 +105,7 @@ export interface ParamDef {
   // Read by `utils/taskOutput.taskOutput` for the suggestion list, chain propagation and the preview
   // layer stem. See docs/todo/VALUE_NAME_INPUT_PLAN.md → D1.
   namespace?: 'filepaths' | 'labels' | 'spatialGraphs' | 'tracks' | 'branches'
-            | 'clusters' | 'regions' | 'stats' | 'models' | 'obsCols'
+            | 'clusters' | 'regions' | 'stats' | 'rois' | 'models' | 'obsCols'
   // valueNameInput in the `labels` namespace: which ccid.json registry the written name lands in, when
   // it is not `labels` (segment.branching → 'branch_labels'). One declaration read by BOTH the run's
   // taken-name guard (`output_registry`, segmentation.jl) and the form's hint (`labelsTakenAdvisory`).

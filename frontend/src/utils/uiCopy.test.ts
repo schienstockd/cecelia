@@ -139,6 +139,8 @@ describe('isTitleCase', () => {
   it('does not flag acronyms, proper nouns or single letters', () => {
     // These read as violations without the allowance, and drown the real hits.
     expect(isTitleCase('Calculate UMAP')).toBe(false)
+    expect(isTitleCase('Find ROIs')).toBe(false)   // a plural acronym is still an acronym
+    expect(isTitleCase('Find Regions')).toBe(true)
     expect(isTitleCase('Use Dask')).toBe(false)
     expect(isTitleCase('Flatten Z')).toBe(false)
     expect(isTitleCase('Segmentation QC')).toBe(false)

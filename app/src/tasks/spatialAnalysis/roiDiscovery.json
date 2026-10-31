@@ -1,0 +1,88 @@
+{
+  "task": "roiDiscovery",
+  "fun_name": "spatialAnalysis.roiDiscovery",
+  "label": "Find ROIs",
+  "purpose": "Rank the places where a population's objects gather, for review in the viewer",
+  "useWhen": [
+    "Too many events to find by eye, and a population that marks them",
+    "Building a review queue for the viewer's ROI list"
+  ],
+  "notWhen": [
+    "You need per-object tracks: use tracking"
+  ],
+  "category": "Spatial analysis",
+  "group": "Regions of interest",
+  "env": [
+    "local"
+  ],
+  "resource_pool": "cpu",
+  "requires": {
+    "scale": [
+      "xy"
+    ]
+  },
+  "params": [
+    {
+      "key": "roisSuffix",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "rois",
+      "default": "default",
+      "tip": "Output name → rois/<name>.json; reviews are kept per name"
+    },
+    {
+      "key": "pops",
+      "required": true,
+      "requiredMessage": "Select the objects to find ROIs for",
+      "label": "Population",
+      "type": "popSelection",
+      "accepts": [
+        "live",
+        "clust",
+        "region",
+        "track",
+        "trackclust"
+      ],
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The objects whose gatherings become ROIs"
+    },
+    {
+      "key": "rankBy",
+      "label": "Rank by",
+      "type": "labelPropsColsSelection",
+      "multiple": true,
+      "allObs": true,
+      "default": [],
+      "tip": "Optional: measures that make an object count more; none = count objects"
+    },
+    {
+      "key": "minObjects",
+      "label": "Min objects",
+      "type": "int",
+      "min": 2,
+      "max": 200,
+      "step": 1,
+      "default": 20,
+      "tip": "Fewest objects, pooled over 12 frames, that make an ROI"
+    },
+    {
+      "key": "maxRois",
+      "label": "Max ROIs",
+      "type": "int",
+      "min": 1,
+      "max": 500,
+      "step": 1,
+      "default": 50,
+      "tip": "Keep the top ROIs"
+    },
+    {
+      "key": "reviewLabels",
+      "label": "Review labels",
+      "type": "text",
+      "default": "of interest, artefact, unsure",
+      "tip": "Comma-separated labels offered when reviewing these ROIs"
+    }
+  ]
+}

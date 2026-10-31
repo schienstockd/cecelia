@@ -358,7 +358,7 @@ end
     # from the image payload yet, so they offer no suggestions, but declaring one is still how the
     # param says what it names. See docs/todo/VALUE_NAME_INPUT_PLAN.md.
     known_value_name_namespaces = Set(["filepaths", "labels", "labelProps", "spatialGraphs", "tracks", "branches",
-                                       "clusters", "regions", "stats", "models", "obsCols"])
+                                       "clusters", "regions", "stats", "rois", "models", "obsCols"])
 
     # A value the spec itself calls valid: the declared default, else something in range/options.
     function valid_value(p)

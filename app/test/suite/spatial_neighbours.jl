@@ -157,6 +157,7 @@ end
     @test g(["B/T", "B/T"]) == [["B/T"]]                                 # duplicate pick
     @test Cecelia.parse_cell_contacts_params(Dict{String,Any}()).combineTargets === false
     @test Cecelia.parse_contacts_meshes_params(Dict{String,Any}()).combineTargets === false
+    @test Cecelia.parse_contacts_meshes_params(Dict{String,Any}()).checkContained === false
     @test Cecelia.parse_cell_contacts_params(Dict{String,Any}("combineTargets" => true)).combineTargets
     for task in (CellContacts(), ContactsMeshes())
         good = Dict{String,Any}("popsA" => ["B/a"], "popsB" => ["B/b"], "maxContactDist" => 5.0,
@@ -335,6 +336,29 @@ end
         empty!(logs)
         run(["seg/near", "seg/far"])
         @test any(l -> occursin("earlier combined columns", l) && occursin("seg_far+seg_near", l), logs)
+
+        # containment: the cubes sit side by side, so no A cell is inside a
+        # near cell and none holds one — the columns are written, and a run without containment
+        # drops them rather than leaving them beside fresh distances (positives: test_mesh_containment.py)
+        res = Cecelia._run_task(ContactsMeshes(), img, Dict{String,Any}("popsA" => ["seg/A"],
+            "popsB" => ["seg/near"], "maxContactDist" => 5.0, "checkContained" => true); on_log = l -> push!(logs, l))
+        @test res !== nothing || error(join(logs, "\n"))
+        cont = sort(label_props(img; value_name="seg") |>
+            select_cols([col("contained_by", "flow.seg_near"), col("contains_n", "flow.seg_near")]) |> as_df, :label)[[1, 4], :]
+        @test cont[!, col("contained_by", "flow.seg_near")] == [0.0, 0.0]
+        @test cont[!, col("contains_n", "flow.seg_near")] == [0.0, 0.0]
+        @test Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")["metrics"]["nContained"] == 0
+        run(["seg/near"])
+        obs = col_names(label_props(img; value_name="seg"); data_type = :obs)
+        @test !(col("contained_by", "flow.seg_near") in obs) && col("contact", "flow.seg_near") in obs
+        # …and so does a POINTS run on the same target (the two routes share the column set)
+        Cecelia._run_task(ContactsMeshes(), img, Dict{String,Any}("popsA" => ["seg/A"],
+            "popsB" => ["seg/near"], "maxContactDist" => 5.0, "checkContained" => true); on_log = l -> push!(logs, l))
+        @test col("contains_n", "flow.seg_near") in col_names(label_props(img; value_name="seg"); data_type = :obs)
+        @test Cecelia._run_task(CellContacts(), img, Dict{String,Any}("popsA" => ["seg/A"], "popsB" => ["seg/near"],
+            "maxContactDist" => 5.0); on_log = l -> push!(logs, l)) !== nothing || error(join(logs, "\n"))
+        obs = col_names(label_props(img; value_name="seg"); data_type = :obs)
+        @test !(col("contains_n", "flow.seg_near") in obs) && col("contact", "flow.seg_near") in obs
         rm(td; recursive=true)
     end
 end

@@ -100,6 +100,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.aggregatesMeshes" => ["nCells", "nAggregates", "fracAggregated"],
+    # ROI discovery: an image whose mask covers far more of the volume than its peers is thresholding
+    # bleed-through, and one with far more/fewer ROIs is worth a look (ROI_TRIAGE_PLAN §4).
+    "spatialAnalysis.roiDiscovery"     => ["nCandidates", "nRois", "maskCoverage"],
     # region clustering (set-scope, one run): per-image region distribution — an image collapsed to
     # one region / a very different dominant-region fraction is an outlier. See clustRegions/cluster.jl.
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],

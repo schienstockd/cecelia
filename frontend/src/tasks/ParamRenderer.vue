@@ -370,7 +370,8 @@ function resolveColValueName(): string {
 // motility, then Morphology and Channels (the intensities, by CHANNEL NAME), then Behaviour (obs
 // `live.*`). The one "Object measures" heading used to hold the shape descriptors AND the markers.
 // `trimPrefix` collapses to one flat group filtered to that prefix with the label trimmed (the
-// transitions HMM-state picker shows just the suffix).
+// transitions HMM-state picker shows just the suffix). `allObs` offers every obs measure (spatial
+// readouts like `flow.cell.contains_n#…` too), not just `live.*` — for a task that ranks by any measure.
 const COL_DENYLIST = new Set(['label', 'track_id', 'track_parent', 'track_root', 'track_state',
   'track_generation', 'cell_id', 'pop', 'value_name'])
 const colGroups = ref<{ title: string; opts: { label: string; value: string }[] }[]>([])
@@ -420,8 +421,10 @@ async function loadCols() {
     const groups = measureGroups(track
       ? { trackColumns: vars, columns: (d.cellMeasures ?? []).filter(c => !COL_DENYLIST.has(c)),
           channels: d.channels,
-          obsColumns: (d.cellObsMeasures ?? []).filter(c => !COL_DENYLIST.has(c) && c.startsWith('live.')) }
-      : { columns: vars, channels: d.channels, obsColumns: obs.filter(c => c.startsWith('live.')) })
+          obsColumns: (d.cellObsMeasures ?? []).filter(c => !COL_DENYLIST.has(c)
+            && (props.param.allObs || c.startsWith('live.'))) }
+      : { columns: vars, channels: d.channels,
+          obsColumns: obs.filter(c => props.param.allObs || c.startsWith('live.')) })
     colGroups.value = groups.map(grp => ({
       title: grp.title, opts: grp.cols.map(c => ({ label: channelLabel(c, chans), value: c })) }))
   } catch { /* no columns available yet */ }

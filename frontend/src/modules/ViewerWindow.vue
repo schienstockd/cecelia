@@ -130,6 +130,7 @@ import ChipSelect from '../components/ChipSelect.vue'
 import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
+import RoiSection from '../components/RoiSection.vue'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
@@ -6717,6 +6718,11 @@ onUnmounted(() => {
             No tracks shown — tick a segmentation in the viewer panel
           </div>
 
+        </CollapsibleSection>
+        <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
+                            accordion="cc.vw.section" section="rois"
+                            fill>
+          <RoiSection v-if="openSection === 'rois'" :project-uid="projectUid" :image-uid="imageUid" />
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
                             accordion="cc.vw.section" section="debug"

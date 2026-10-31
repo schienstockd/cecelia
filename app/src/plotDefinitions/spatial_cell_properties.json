@@ -17,6 +17,8 @@
     "obsMeasurePatterns": [
       { "match": ".cell.min_distance#", "label": "distance to" },
       { "match": ".cell.contact#",      "label": "contact with" },
+      { "match": ".cell.contained_by#", "label": "inside" },
+      { "match": ".cell.contains_n#",   "label": "holds" },
       { "match": ".cell.is.aggregate",  "label": "aggregated" },
       { "match": "spatial.comp.",       "label": "composition" }
     ]

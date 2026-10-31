@@ -140,7 +140,8 @@ export function textStrings(src: string): string[] {
 // Without this allowance "Calculate UMAP", "Use Dask" and "Flatten Z" all read as violations and the
 // signal is mostly noise — 16 real hits hid behind 23 raw ones.
 const PROPER = /^(?:Cellpose|Bayesian|Dask|Cecelia|Leiden|Python|Julia|ImageJ|Fiji|OME|Viewer|Zarr|Pluto|Rscript)$/
-const expectedCap = (w: string) => /^[A-Z0-9+&/–-]+$/.test(w) || w.length === 1 || PROPER.test(w)
+// a plural acronym (`ROIs`, `IDs`) is still an acronym, not a Title-Cased word
+const expectedCap = (w: string) => /^[A-Z0-9+&/–-]+$/.test(w) || /^[A-Z]{2,}s$/.test(w) || w.length === 1 || PROPER.test(w)
 
 /**
  * Whether a label is Title Cased rather than the house sentence case.

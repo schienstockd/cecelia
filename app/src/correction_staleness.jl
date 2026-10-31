@@ -24,6 +24,7 @@ const _STALE_KIND_CLUSTERS       = "cluster_runs"
 const _STALE_KIND_GATING         = "gating_pops"
 const _STALE_KIND_SPATIAL_GRAPH  = "spatial_graph"
 const _STALE_KIND_CELL_CARDS     = "cell_cards"
+const _STALE_KIND_ROI_SETS       = "roi_sets"
 
 """
     stale_artefacts_for(img, value_name; changed) -> Vector{Dict{String,Any}}
@@ -100,6 +101,18 @@ function stale_artefacts_for(img::CciaImage, value_name::AbstractString;
             (endswith(f, ".json") && startswith(basename(f), prefix)) || continue
             push!(out, _stale_entry(_STALE_KIND_CELL_CARDS, f, img._dir;
                                     summary = "cell-cards ($(basename(f)))"))
+        end
+    end
+
+    # ROI sets (`rois/{suffix}.json`, ROI_TRIAGE_PLAN) score ONE segmentation's objects — the set
+    # records it as `valueName` — so a `:labels` change to that segmentation leaves its boxes and object
+    # tables describing labels that may no longer exist. The REVIEWS are user work and are not listed:
+    # a re-run keeps those whose ROI id recurs and reports the rest as orphaned.
+    if changed === :labels
+        for suffix in roi_suffixes_on(img, vn)
+            push!(out, _stale_entry(_STALE_KIND_ROI_SETS, img_rois_path(img, suffix), img._dir;
+                                    summary = "ROI set ($(suffix))",
+                                    detail  = Dict{String,Any}("suffix" => suffix)))
         end
     end
 

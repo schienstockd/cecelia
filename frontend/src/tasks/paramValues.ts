@@ -556,6 +556,7 @@ export function imageNamesForField(img: CciaImage, field: string | undefined | n
   // Suggestion-only sources for a `valueNameInput` — plain arrays, listed from disk rather than
   // registered in ccid.json, so there are no keys to take.
   if (field === 'statsSuffixes') return img.statsSuffixes ?? []
+  if (field === 'roiSuffixes') return img.roiSuffixes ?? []
   if (field === 'clusterSuffixes') return img.clusterSuffixes ?? []
   if (field === 'regionSuffixes') return img.regionSuffixes ?? []
   return Object.keys(img.filepaths ?? { default: '' })

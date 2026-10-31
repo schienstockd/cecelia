@@ -9,6 +9,9 @@
 # physical sizes; Python (`cell_contacts_mesh_run.py`) does the mask I/O + meshing + surface distance.
 # One column set per target population, as the points route (`_contact_target_groups`, #1734);
 # `combineTargets` pools every B pop into one set. B is meshed once and split per target in Python.
+# `checkContained` adds `.contained_by#<target>` (0/1, the A cell sits inside
+# a B cell) and `.contains_n#<target>` (B cells inside this A cell) — on hole-filled label voxels, so an
+# engulfed fragment, a hole in its host's segmentation, still reads as inside (mesh_utils).
 
 using DataFrames: nrow
 
@@ -19,6 +22,7 @@ Base.@kwdef struct ContactsMeshesParams
     popsB::Vector{String}    = String[]
     maxContactDist::Float64  = 5.0
     combineTargets::Bool     = false
+    checkContained::Bool     = false
 end
 
 function parse_contacts_meshes_params(d::AbstractDict)::ContactsMeshesParams
@@ -26,7 +30,8 @@ function parse_contacts_meshes_params(d::AbstractDict)::ContactsMeshesParams
         popsA          = _str_list(d, "popsA"),
         popsB          = _str_list(d, "popsB"),
         maxContactDist = Float64(get(d, "maxContactDist", 5.0)),
-        combineTargets = Bool(get(d, "combineTargets", false)))
+        combineTargets = Bool(get(d, "combineTargets", false)),
+        checkContained = Bool(get(d, "checkContained", false)))
 end
 
 _label_zarr_path(img::CciaImage, vn::AbstractString) =
@@ -82,6 +87,7 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
         "aLabelPath" => _label_zarr_path(img, vnA), "bLabelPath" => _label_zarr_path(img, vnB),
         "aLabels" => Int.(aMem.label), "targets" => targets,
         "physicalSizes" => sizes, "maxContactDist" => p.maxContactDist,
+        "checkContained" => p.checkContained,
         "popType" => pop_type, "propsPath" => img_label_props_path(img, vnA),
         "qcOutPath" => qc_out_path)
 
@@ -101,9 +107,10 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
         for t in empty
             push!(findings, qc_finding("warn", "contact.no_target_cells"; detail = Dict{String,Any}("target" => t)))
         end
-        write_qc(img, "spatialAnalysis.contactsMeshes", vnA, findings;
-                 metrics = Dict{String,Any}("nCellsA" => n_a, "nContacts" => n_c, "fracInContact" => frac,
-                                            "nTargets" => length(targets) - length(empty)))
+        metrics = Dict{String,Any}("nCellsA" => n_a, "nContacts" => n_c, "fracInContact" => frac,
+                                   "nTargets" => length(targets) - length(empty))
+        haskey(qc, "nContained") && (metrics["nContained"] = Int(qc["nContained"]))
+        write_qc(img, "spatialAnalysis.contactsMeshes", vnA, findings; metrics = metrics)
         on_log("[QC] mesh contact: $(n_c)/$(n_a) A cells in contact.")
     catch e
         on_log("[QC] could not compute contactsMeshes QC: $e")

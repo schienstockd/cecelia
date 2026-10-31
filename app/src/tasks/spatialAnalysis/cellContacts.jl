@@ -158,7 +158,9 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                "$(target) (≤$(p.maxContactDist)µm).")
     end
     isempty(targets) && (on_log("[ERROR] cellContacts: no B cells for $(p.popsB)"); return nothing)
-    label_props(props_path) |> add_obs(out) |> save!
+    # containment is a mesh-route measure on the same column set (CONTAINMENT_COLS, contact_targets.jl)
+    stale = ["$(pop_type).cell.$(k)#$(t)" for t in targets for k in CONTAINMENT_COLS]
+    label_props(props_path) |> drop_obs(stale) |> add_obs(out) |> save!
     drop_stale_approach!(img, value_name, pop_type, targets; on_log = on_log)
 
     # cohort metrics stay comparable with earlier runs: "in contact" = with ANY target, which is exactly

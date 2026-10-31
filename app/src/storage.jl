@@ -146,12 +146,15 @@ the `analysis keep-list` testset fails until it is made.
   value_name makes the existing strategy apply to the new cells. This is also what
   `/api/images/labels/delete` does when it drops a single label set, so the two scopes agree — neither
   destroys gates (Decision 13).
+- `roiReviews/` — the person's labels and notes on discovered ROIs (`docs/todo/ROI_TRIAGE_PLAN.md`).
+  User work for the same reason as the gates, and the ground truth the triage is validated against;
+  the ROI sets themselves (`rois/`) are output and do go.
 
 `qc/` is NOT kept: its findings score outputs that no longer exist, so keeping them would assert a QC
 verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/` and the
 rest ARE output — every one is recomputable from the labels plus a task run.
 """
-const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating"])
+const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating", "roiReviews"])
 
 """
     analysis_bytes_of(img) -> Int
@@ -570,6 +573,19 @@ function _rename_gating_sidecars!(img::CciaImage, from::String, to::String, on_l
     nothing
 end
 
+# ROI sets (`rois/{suffix}.json`) are keyed by run suffix, not value_name, but each records the
+# segmentation it scored as `valueName` — what the viewer highlights against and what correction
+# staleness matches on. Rewrite that field; the suffix and the reviews (keyed by ROI id) are untouched.
+function _rename_roi_sets!(img::CciaImage, from::String, to::String, on_log)
+    for suffix in roi_suffixes_on(img, from)
+        set = load_roi_set(img, suffix)
+        set["valueName"] = to
+        write_json_atomic(img_rois_path(img, suffix), set)
+        on_log("[INFO] Rewrote ROI set: rois/$(suffix).json → valueName $(to)")
+    end
+    nothing
+end
+
 # The ccid.json registrations that key by value_name. Every write goes into ONE `commit_state!` block
 # so a concurrent task's writes are re-read fresh, not clobbered. `funParamsByName[fun][from]` is the
 # per-output-name recall bank (`FUN_PARAMS_BY_NAME_META_KEY`); if we skip it, the form for the renamed
@@ -761,6 +777,7 @@ function rename_value_name!(img::CciaImage, from::AbstractString, to::AbstractSt
     _rename_branch_labels_dir!(img, from_s, to_s, on_log)
     _rename_label_props_dir!(img, from_s, to_s, on_log)
     _rename_gating_sidecars!(img, from_s, to_s, on_log)
+    _rename_roi_sets!(img, from_s, to_s, on_log)
 
     # ONE commit — re-read fresh so a concurrent write isn't clobbered.
     commit_state!(img) do raw

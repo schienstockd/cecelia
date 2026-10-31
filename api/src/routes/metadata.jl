@@ -136,6 +136,15 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
         end
     end
 
+    # ROI sets (`rois/{suffix}.json`) are keyed by run suffix but score ONE segmentation, recorded as
+    # `valueName` — a set built on this value_name describes labels that are about to stop existing, so
+    # it goes with them. Its reviews (`roiReviews/`) are user work and stay, as orphans (ANALYSIS_KEEP).
+    let img = init_object(project_uid, image_uid)
+        for suffix in roi_suffixes_on(img, value_name)
+            rm(img_rois_path(img, suffix); force = true)
+        end
+    end
+
     # Commit under the image's lock, and only now — the deletes above can be a multi-GB label store,
     # which must not be held under it. Re-derive from the FRESH raw inside the transaction so a
     # concurrent task's registration isn't clobbered (`raw` above is only used to find what to delete).

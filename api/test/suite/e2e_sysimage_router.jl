@@ -280,7 +280,7 @@ end
         "/api/fs/list", "/api/gating/channels",
         "/api/gating/density", "/api/gating/summary", "/api/gating/membership",
         "/api/gating/plotdata", "/api/gating/plotmeta",
-        "/api/gating/popmap", "/api/gating/stats",
+        "/api/gating/popmap", "/api/gating/stats", "/api/rois",
         "/api/gating/plot-image", "/api/gating/cells-image",   # gating as pictures (gating_views_api.jl)
         "/api/gating/examples",
         "/api/health", "/api/images",
@@ -407,6 +407,7 @@ end
         "/api/viewer/marks/plot",    # bidir plot point-out (PR #4b)
         "/api/viewer/marks/select",  # LINKED_BRUSHING follow-up — multi-source Claude → plot brush
         "/api/viewer/seek",          # RUBBER_DUCK_FIT_PLAN P2A — imperative jump to (t, z)
+        "/api/rois/review",          # ROI_TRIAGE_PLAN — attributed, guarded ROI review write
         "/api/viewer/navigate",      # RUBBER_DUCK_FIT_PLAN P2B — main-window router.push + optional tab select
         "/api/viewer/plots/register",   # bidir PR #8 — live plot registry write
         "/api/viewer/plots/deregister", # bidir PR #8 — live plot registry drop
@@ -499,7 +500,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 118 && length(POST_ROUTES) == 179
+    @test length(GET_ROUTES) == 119 && length(POST_ROUTES) == 180
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

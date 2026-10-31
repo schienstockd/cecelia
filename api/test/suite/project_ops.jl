@@ -366,6 +366,12 @@ end
                   "B2.h5ad")                                  # B2 must NOT be swept by the "B" prefix
             write(joinpath(props_dir, f), "x")
         end
+        # ROI sets: one scored on B (goes with it), one on B2 (stays); B's review stays as user work
+        mkpath(img_rois_dir(img))
+        write_json_atomic(img_rois_path(img, "onB"),  Dict("valueName" => "B",  "rois" => []))
+        write_json_atomic(img_rois_path(img, "onB2"), Dict("valueName" => "B2", "rois" => []))
+        mkpath(dirname(img_roi_reviews_path(img, "onB")))
+        write_json_atomic(img_roi_reviews_path(img, "onB"), Dict("reviews" => Dict()))
         img.labels        = Dict("B"=>["B.zarr"], "B2"=>["B2.zarr"])
         img.label_props   = Dict("B"=>"B.h5ad", "B2"=>"B2.h5ad")
         img.branch_labels = Dict("B"=>["B.zarr"])
@@ -382,6 +388,8 @@ end
             @test !isfile(joinpath(props_dir, f))
         end
         @test isfile(joinpath(props_dir, "B2.h5ad"))                        # a sibling name survives
+        @test !isfile(img_rois_path(img, "onB")) && isfile(img_rois_path(img, "onB2"))
+        @test isfile(img_roi_reviews_path(img, "onB"))                      # reviews are user work
 
         ri = init_object(proj.uid, img.uid)
         @test !haskey(ri.labels, "B") && !haskey(ri.branch_labels, "B")     # registrations cleared

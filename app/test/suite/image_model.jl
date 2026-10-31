@@ -432,6 +432,16 @@ end
     write(joinpath(img_stats_dir(img), "notes.txt"), "x")     # not a .json → not a run
     @test img_stats_suffixes(img) == ["aggregates", "contacts"]
 
+    # ROI sets list from rois/{suffix}.json; their reviews live in a SIBLING dir (user work, kept by an
+    # analysis reset) and never show up as a set
+    @test img_rois_suffixes(img) == String[]
+    mkpath(img_rois_dir(img))
+    write(img_rois_path(img, "frags"), "{}")
+    mkpath(dirname(img_roi_reviews_path(img, "frags")))
+    write(img_roi_reviews_path(img, "frags"), "{}")
+    @test img_rois_suffixes(img) == ["frags"]
+    @test dirname(img_roi_reviews_path(img, "frags")) != img_rois_dir(img)
+
     # clustering runs come from the clustfeatures manifest beside the label props, per SEGMENTATION,
     # and the two families are listed separately so `clusters.immune` and `regions.immune` coexist
     mkpath(img_label_props_dir(img))
@@ -910,7 +920,7 @@ end
 # asserted by NAME rather than by count, so adding a new analysis dir to the image layout fails here
 # until it is deliberately classified (Decision 7 — a delete-list would have leaked it silently).
 @testset "Analysis reset keeps the image and drops the numbers" begin
-    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "gating"])
+    @test Cecelia.ANALYSIS_KEEP == Set(["ccid.json", "runlog.json", "gating", "roiReviews"])
 
     proj = create_project!(name="reset-test-$(rand(1000:9999))")
     s    = add_set!(proj; name="s")
@@ -1027,6 +1037,10 @@ end
         m = Cecelia.PopulationMap(; pop_type=pt, value_name=src_vn)
         Cecelia.save_pop_map!(m, img._dir)
     end
+    # an ROI set scored on this segmentation records it as `valueName`; another one does not
+    mkpath(img_rois_dir(img))
+    write_json_atomic(img_rois_path(img, "frags"), Dict{String,Any}("valueName" => src_vn, "rois" => Any[]))
+    write_json_atomic(img_rois_path(img, "other"), Dict{String,Any}("valueName" => "nuc", "rois" => Any[]))
     # meta funParamsByName: per-fun bank keyed by vn (see FUN_PARAMS_BY_NAME_META_KEY)
     img.meta[Cecelia.FUN_PARAMS_BY_NAME_META_KEY] = Dict{String,Any}(
         "segment.cellpose" => Dict{String,Any}("$(src_vn)" => Dict{String,Any}("cellDiameter"=>17.5)),
@@ -1070,6 +1084,8 @@ end
 
     # every file moved
     @test !ispath(joinpath(img._dir, "labels", "$(src_vn).zarr"))
+    @test load_roi_set(img, "frags")["valueName"] == dst_vn
+    @test load_roi_set(img, "other")["valueName"] == "nuc"
     @test !ispath(joinpath(img._dir, "labels", "$(src_vn)_nuc.zarr"))
     @test  isdir(joinpath(img._dir, "labels", "$(dst_vn).zarr"))
     @test  isdir(joinpath(img._dir, "labels", "$(dst_vn)_nuc.zarr"))

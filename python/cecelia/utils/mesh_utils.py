@@ -146,3 +146,64 @@ def mesh_aggregates(meshes, max_dist, min_cells):
             for m in members:
                 out[m] = aid
     return out
+
+
+# ── Containment: is an A cell inside a B cell, and how many B cells does an A cell hold ──────────
+# Measured on the LABEL voxels the meshes come from, after filling each
+# object's holes plane by plane: an engulfed fragment is dark in the host's channel, so the host's
+# segmentation has a hole exactly where the fragment sits, and a mesh or raw-voxel test then reads it
+# as OUTSIDE — the one case the measure exists for.
+
+
+def fill_label_holes(vol, labels):
+    """Copy of the label volume `vol` with each listed object's holes filled, one z-plane at a time.
+
+    Holes are filled into background only (never over another object), within the object's own
+    bounding box — a gap that opens onto the box edge is not a hole. A 2D `vol` is one plane."""
+    from scipy import ndimage
+
+    wanted = {int(l) for l in labels}
+    out = np.array(vol, copy=True)
+    for i, sl in enumerate(ndimage.find_objects(vol)):
+        if sl is None or i + 1 not in wanted:
+            continue
+        m = vol[sl] == i + 1
+        filled = (np.stack([ndimage.binary_fill_holes(p) for p in m]) if m.ndim == 3
+                  else ndimage.binary_fill_holes(m))
+        sub = out[sl]                                   # a view: writes land in `out`
+        sub[filled & (sub == 0)] = i + 1
+    return out
+
+
+def _hosts(src_vol, src_labels, host_vol, min_frac):
+    """`{src_label: host_label}` for each src object with ≥ `min_frac` of its voxels on ONE host."""
+    ids = np.fromiter((int(l) for l in src_labels), dtype=np.int64)
+    m = np.isin(src_vol, ids)
+    if not m.any():
+        return {}
+    s = src_vol[m].astype(np.int64)
+    h = host_vol[m].astype(np.int64)
+    size = dict(zip(*np.unique(s, return_counts=True)))
+    pairs, cnt = np.unique(np.stack([s, h]), axis=1, return_counts=True)
+    return {int(si): int(hi) for (si, hi), c in zip(pairs.T, cnt) if hi != 0 and c >= min_frac * size[si]}
+
+
+def containment_per_target(a_vol, a_labels, b_vol, targets, min_frac=0.5):
+    """Per target: which A cells sit inside one of its B cells, and how many of its B cells each A holds.
+
+    `targets` is `[(name, {b_label, ...}), ...]` as for `nearest_surface_per_target`. "Inside" = at
+    least `min_frac` of the cell's voxels lie on ONE hole-filled host. Returns
+    `{name: (contained_by {a: 0|1}, contains_n {a: int})}` over the A labels present in `a_vol`."""
+    b_all = set().union(*(labs for _, labs in targets)) if targets else set()
+    a_host = _hosts(a_vol, a_labels, fill_label_holes(b_vol, b_all), min_frac)
+    b_host = _hosts(b_vol, b_all, fill_label_holes(a_vol, a_labels), min_frac)
+    present = {int(l) for l in np.unique(a_vol)} & {int(l) for l in a_labels}
+    out = {}
+    for name, labs in targets:
+        contained = {a: int(a_host.get(a) in labs) for a in present}
+        n = {a: 0 for a in present}
+        for b, a in b_host.items():
+            if b in labs and a in n:
+                n[a] += 1
+        out[name] = (contained, n)
+    return out
