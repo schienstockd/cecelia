@@ -33,6 +33,16 @@
     end
     # vectorised
     @test apply_transform(lc, [0.0, 262144.0]) ≈ [0.1111111111, 1.0] atol=1e-6
+    # Float32 in (h5ad measures; the API's Float32 display coords): `float(::Float32)` stays Float32,
+    # which once hit the Float64-only Taylor helper below xTaylor → MethodError (gate_plot, logicle)
+    for s in (Float32(0.12), Float32(0.05), Float32(0.5))      # near x1 (Taylor), reflected negative, log region
+        @test invert_transform(lc, s) ≈ invert_transform(lc, Float64(s))
+    end
+    @test apply_transform(lc, Float32(1.0)) ≈ apply_transform(lc, 1.0)
+    @test apply_transform(lc, Float32[-100, 0, 10, 1000]) ≈ apply_transform(lc, [-100.0, 0.0, 10.0, 1000.0])
+    @test invert_transform(lc, Float32[0.12, 0.5]) isa Vector{Float64}
+    # Float32 parameters reach the Float64-only solver through the constructor's promotion too
+    @test apply_transform(LogicleTransform(T=Float32(262144), W=Float32(0.5), M=Float32(4.5), A=Float32(0)), 1000.0) ≈ apply_transform(lc, 1000.0)
 
     # Range-based auto-linearisation: logicle collapses a bounded 0–1 measure (morphology) but
     # spreads a real intensity range → effective_transform swaps to linear only for the former.
