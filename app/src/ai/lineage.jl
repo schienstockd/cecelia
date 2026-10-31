@@ -30,12 +30,12 @@ _stage_order(stages) = vcat([s for s in _LINEAGE_STAGE_ORDER if s in stages],
                             sort([s for s in stages if !(s in _LINEAGE_STAGE_ORDER)]))
 
 # Ordered run-log steps for an image → the task order + outcome + which value_name each wrote. Legacy
-# entries lack `status` (treated "done").
+# entries lack `status` (`run_entry_status` reads them as "done").
 _run_log_steps(img::CciaImage) =
     [(; stage     = _stage_of(string(get(e, "fun", ""))),
         fun       = string(get(e, "fun", "")),
         valueName = string(get(e, "valueName", "")),
-        status    = string(get(e, "status", "done")),
+        status    = run_entry_status(e),
         at        = string(get(e, "at", "")))
      for e in read_run_log(img)]
 

@@ -51,15 +51,9 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/chains/get"),         # a chain template (the guard checks every node's params)
     ("GET", "/api/chains/runs"),        # chain runs, newest first
     ("GET", "/api/chains/run"),         # one run's per-image node status
-    ("GET", "/api/gating/channels"),    # gateable columns of a segmentation
-    ("GET", "/api/gating/summary"),     # quantiles + counts per axis, and the joint x × y grid
-    ("GET", "/api/gating/stats"),       # count / % of parent for one population
-    ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates)
-    ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
-    ("POST", "/api/gating/pop/add"),    # WRITE — add a population (gate) to a segmentation
-    ("POST", "/api/gating/pop/set-gate"),  # WRITE — move an existing population's gate
-    ("POST", "/api/gating/pop/delete"),    # WRITE — remove a population this agent drew
-})
+    ("GET", "/api/gating/channels"),    # gateable columns of a segmentation (`_gating_guard`)
+}) | gv.GATING_ROUTES                   # the gating toolset's, the observer's too: its writes change
+                                        # only what Claude drew (add-gate / set-own-gate / delete-own)
 
 # Allowed ONLY in no-GUI mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
 # does there. Each is additive — a new project, a new set, new pending images.
@@ -212,7 +206,7 @@ def output_name_violations(spec: dict, params: dict, prefix: str) -> list[str]:
 
 # ── client ─────────────────────────────────────────────────────────────────────────────────────────
 
-class AutonomousClient:
+class AutonomousClient(gv.GatingClient):
     def __init__(self, base_url: str | None = None, timeout: float = 60.0):
         self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
@@ -434,35 +428,9 @@ class AutonomousClient:
                                 "gating needs a measured segmentation: run a *Measure task (e.g. "
                                 "segment.cellposeMeasure, or segment.measureLabels on existing labels)")
 
-    def gate_histogram(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-                       transform: dict | None, pop: str, bins: int) -> dict:
-        self._require_measured(project_uid, image_uid, value_name)
-        q = {**gv.plot_query(project_uid, image_uid, value_name, x, y, transform, pop), "bins": bins}
-        return self._request("GET", "/api/gating/summary", q)
-
-    def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-                  transform: dict | None, pop: str) -> tuple[bytes, dict]:
-        self._require_measured(project_uid, image_uid, value_name)
-        return gv.split_png(self._request("GET", gv.PLOT_ROUTE, gv.plot_query(
-            project_uid, image_uid, value_name, x, y, transform, pop)))
-
-    def gate_cells_view(self, project_uid: str, image_uid: str, value_name: str, pop: str, t: int,
-                        channels: list[int] | None, image_version: str) -> tuple[bytes, dict]:
-        self._require_measured(project_uid, image_uid, value_name)
-        return gv.split_png(self._request("GET", gv.CELLS_ROUTE, gv.cells_query(
-            project_uid, image_uid, value_name, pop, t, channels, image_version)))
-
-    def gating_post(self, route: str, project_uid: str, image_uid: str, value_name: str, **fields) -> dict:
-        # `route` (not `path`): `path` is a FIELD here — the population path set-gate/delete address
+    def _gating_guard(self, project_uid: str, image_uid: str, value_name: str, write: bool) -> None:
+        # the project lock is `_request`'s; a write also keeps to the session's label-set prefix
         prefix = required_prefix()
-        if prefix and not value_name.startswith(prefix):
+        if write and prefix and not value_name.startswith(prefix):
             raise LockViolation(f"gates may only be drawn on label sets starting with {prefix!r}")
         self._require_measured(project_uid, image_uid, value_name)
-        body = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
-                "popType": "flow", **{k: v for k, v in fields.items() if v is not None}}
-        return self._request("POST", route, body=body)
-
-    def pop_stats(self, project_uid: str, image_uid: str, value_name: str, pop: str) -> dict:
-        self._require_measured(project_uid, image_uid, value_name)
-        return self._request("GET", "/api/gating/stats", {"projectUid": project_uid, "imageUid": image_uid,
-                                                          "valueName": value_name, "pop": pop})

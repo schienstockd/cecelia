@@ -347,11 +347,39 @@ function _kiwi_resolve_capture(puid, ref)
     _kiwi_ok("exists", isempty(surface) ? id : "$surface capture · $id")
 end
 
+# `funName` alone names a KIND of step — the registry is all it checks. With `imageUid` the ref claims the
+# step RAN there, and a configured task is not evidence of that: only a `done` entry in the image's run
+# log is (`read_run_log`, the reader behind GET /api/tasks/history; `run_entry_status` reads a legacy
+# entry with no status as a success, as there). `valueName` narrows to runs that read it (the entry's
+# own field) or wrote it (`task_output_name` of the run's params) — a segmentation is named by what it
+# made.
 function _kiwi_resolve_task(puid, ref)
     fn = String(_kiwi_get(ref, "funName"))
     task = try _task_from_fun_name(fn) catch; return _kiwi_bad("exists", "no task $fn") end
     spec = try Cecelia._task_spec(task) catch; Dict{String,Any}() end
-    _kiwi_ok("exists", string(get(spec, "label", fn)))
+    label = string(get(spec, "label", fn))
+    vn = _kiwi_get(ref, "valueName")
+    if _kiwi_get(ref, "imageUid") === nothing
+        vn === nothing || return _kiwi_bad("exists", "a task's valueName needs an imageUid")
+        return _kiwi_ok("exists", label)
+    end
+    img = _kiwi_image(puid, ref); img isa String && return _kiwi_bad("exists", img)
+    function touches(e)
+        vn === nothing && return true
+        Cecelia._rl_str(e, "valueName") == vn && return true
+        p = Cecelia._rl_get(e, "params", nothing)
+        p isa AbstractDict || return false
+        (try Cecelia.task_output_name(task, Dict{String,Any}(String(k) => v for (k, v) in p)) catch; "" end) == vn
+    end
+    runs = [e for e in read_run_log(img) if Cecelia._rl_str(e, "fun") == fn && touches(e)]
+    on = vn === nothing ? img.name : "$(img.name) · $vn"
+    i = findlast(e -> run_entry_status(e) == "done", runs)
+    i === nothing && return _kiwi_bad("exists", isempty(runs) ? "no completed run on $on" :
+                                                "no completed run on $on (last run $(run_entry_status(runs[end])))")
+    r = _kiwi_ok("exists", "$label · ran on $on")
+    # it ran — but if a newer run did not finish, the output may not be that run's; say so
+    i < length(runs) && (r["detail"] = "latest run $(run_entry_status(runs[end]))")
+    r
 end
 
 # `<area>.<control>` (a data-guide id) or `nav:/<route>` — the two schemes `resolveAnchor`

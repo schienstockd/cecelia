@@ -22,7 +22,7 @@
 import type { Severity } from '../lib/severity'
 import { isImageVersionField } from './paramValues'
 import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
-import { spanAnchorRate, secondsLabel, type RateImage } from '../utils/frameDuration'
+import { spanAnchorRate, runFrameSeconds, secondsLabel, type RateImage } from '../utils/frameDuration'
 import { getSystemEnvs } from '../utils/systemEnvs'
 
 /** What the renderer shows: a one-line readout, a severity, and the full reasoning on hover. */
@@ -620,6 +620,61 @@ export function temporalSpanAdvisory(
   }
 }
 
+/** `30` → `"30 s"`, `120` → `"2 min"` — a frame interval as a person would say it. */
+const intervalLabel = (secs: number): string => {
+  const r = (v: number) => Number(v.toFixed(2))
+  return secs >= 60 ? `${r(secs / 60)} min` : `${r(secs)} s`
+}
+
+/** µm/min to the precision a speed is read at: whole numbers from 10 up, one decimal below. */
+const speedLabel = (v: number): string => `${v >= 10 ? Math.round(v) : Number(v.toFixed(1))}`
+
+/**
+ * What a per-frame search radius allows as a SPEED, at the selected images' frame intervals.
+ *
+ * `maxSearchRadius` is µm per frame (btrack links frame to frame), so one number is a different speed
+ * at every interval: 20 µm/frame is 40 µm/min at 30 s/frame and 10 µm/min at 2 min/frame. A radius
+ * copied from a recipe without its interval is the mistake this makes visible. Only the conversion —
+ * no "cells move X µm/min" threshold: the right speed is a property of the cells, not of the app.
+ *
+ * Interval rule is `runFrameSeconds` — the runner's, so an interval with no unit reads as seconds (as
+ * the tracking measures will) and an image with no interval is skipped. None usable ⇒ `null`.
+ */
+export function searchRadiusSpeedAdvisory(
+  value: unknown, images: readonly AdvisorImage[] | undefined,
+): ParamAdvisory | null {
+  const radius = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(radius) || !(radius > 0)) return null
+  const all = (images ?? []).map(runFrameSeconds)
+  const known = all.filter((s): s is number => s != null)
+  if (!known.length) return null
+  const secs = [...new Set(known)].sort((a, b) => a - b)
+  const skipped = all.length - known.length
+  const per = `${speedLabel(radius)} µm/frame`
+  const speed = (s: number) => radius * 60 / s
+  const unknown = skipped ? ` ${skipped} selected image(s) record no frame interval and are not counted.` : ''
+  if (secs.length === 1) {
+    return {
+      severity: 'ok',
+      message: `${per} ≈ ${speedLabel(speed(secs[0]))} µm/min at ${intervalLabel(secs[0])}/frame`,
+      tip: 'The radius is per frame, so the speed it allows depends on the frame interval. Cells '
+         + 'faster than this break their tracks; a much larger radius links neighbours.' + unknown,
+    }
+  }
+  const lo = secs[0], hi = secs[secs.length - 1]
+  return {
+    severity: 'ok',
+    // finest interval = fastest allowed speed, so the range reads slow → fast from the coarsest
+    message: `${per} ≈ ${speedLabel(speed(hi))}–${speedLabel(speed(lo))} µm/min across `
+           + `${intervalLabel(lo)}–${intervalLabel(hi)}/frame`,
+    tip: 'The radius is per frame, so the speed it allows depends on the frame interval.' + unknown,
+    // A property of the data, not of the setting — so a flag, not the severity (see `DataFlag`).
+    flag: { severity: 'warn',
+            tip: 'the selected images have different frame intervals, so one radius allows '
+               + 'different speeds' },
+  }
+}
+
 /**
  * Fetch a form-time advisory from the Julia backend. Use this INSTEAD of writing a client-side
  * mirror of a rule the runner already enforces: the same helper the task's `_run_task` calls at Run
@@ -860,6 +915,14 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
                       ctx.values?.temporalScaleMode],
     advise: async (value, ctx) =>
       temporalSpanAdvisory(value, ctx.images, ctx.values?.temporalScaleMode),
+  },
+
+  // Tracking's per-frame radius, read as µm/min at each selected image's interval. Registered under
+  // the KEY: `int` is the widget type and would match every integer in every task.
+  maxSearchRadius: {
+    reloadOn: ctx => [(ctx.images ?? [])
+      .map(i => `${i.uid}:${i.timeIncrement ?? ''}:${i.timeIncrementUnit ?? ''}`).join(',')],
+    advise: async (value, ctx) => searchRadiusSpeedAdvisory(value, ctx.images),
   },
 
   // ASYNC, not pure: the frame extent belongs to the ACTIVE image version, and only its store knows

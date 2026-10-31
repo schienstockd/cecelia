@@ -88,7 +88,7 @@ export function refLabel(ref: KiwiRef): string {
     case 'plot':       return 'plot'
     case 'tile':       return `tile ${ref.cellId}`
     case 'capture':    return 'capture'
-    case 'task':       return ref.funName
+    case 'task':       return [ref.funName, ref.imageUid, ref.valueName].filter(Boolean).join(' · ')
     case 'ui':         return ref.anchor.startsWith('nav:') ? ref.anchor.slice(4) : ref.anchor
     case 'blackboard': return `note ${ref.entryId}${ref.version != null ? ` v${ref.version}` : ''}`
     case 'proposedPlot': return [ref.measure ?? ref.plot, ...(ref.pops ?? [])].join(' · ')

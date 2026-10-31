@@ -11,10 +11,12 @@ notebook first — a restorable version — then overwrites its cells; it's how 
 version, never a "-v2" copy), ``POST /api/chains/create`` (create-only + server-validated —
 writes a chain TEMPLATE the user then runs themselves), and ``POST /api/observer/labarchives/set``
 (REPLACES the ELN context sidecar — a cache of an external system of record, so a rewrite loses
-nothing), and ``POST /api/gating/pop/add-gate`` (create-only — adds ONE gated population under an
-existing parent, 409 on a taken name; the general ``/api/gating/pop/*`` routes that edit, move or
-delete a population stay off the list). All eight are recoverable / non-destructive to
-project & analysis data: no allow-listed route can touch cell data, images, an existing gate, or QC, revise
+nothing), and the gating toolset's Claude-scoped writes (``gating_views.GATING_WRITE_ROUTES``:
+``/api/gating/pop/add-gate`` creates ONE stamped gate, 409 on a taken name; ``set-own-gate`` /
+``delete-own`` change only populations Claude drew — the server refuses, 403, anything at or under the
+path the user drew; the general ``/api/gating/pop/*`` routes stay off the list). All are recoverable /
+non-destructive to project & analysis data: no allow-listed route can touch cell data, images, the
+user's gates, or QC, revise
 can't lose a notebook's content (the pre-revision state is always snapshotted), a template is
 inert until a human presses Run, and an added board is one tab beside the user's own. Any attempt to call a route not on the list raises
 ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails loudly in
@@ -56,13 +58,6 @@ ALLOWED_ROUTES = frozenset(
                                           # population that doesn't exist → 422 before anything is
                                           # written), 409 on a duplicate name. NOT
                                           # /api/projects/boards, the browser's whole-document autosave
-        ("POST", "/api/gating/pop/add-gate"),  # WRITE 8/8 — create-only: adds ONE gated population
-                                          # (flow) under an existing parent, stamped as Claude's. 409 on
-                                          # a taken path / a name another pop type holds, 404 on a
-                                          # missing parent, 422 on a bad column/transform/geometry —
-                                          # before anything is written. NOT /api/gating/pop/add (also
-                                          # filters, booleans, any pop type) nor set-gate/delete/rename/
-                                          # move, which change the user's populations
         ("GET", "/api/projects"),
         ("GET", "/api/images"),
         ("GET", "/api/images/meta"),
@@ -98,8 +93,6 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("GET", "/api/viewer/captures"),   # bidir share-in: newest-first list of what the user shared
         ("GET", "/api/viewer/capture"),    # bidir share-in: one capture envelope + inlined PNG frame
-        ("GET", "/api/gating/plot-image"),  # the gate plot as a PNG (+ axes, named gates) — gating_views.py
-        ("GET", "/api/gating/cells-image"), # one timepoint with a population's cells outlined (PNG)
         ("GET", "/api/labels/ids"),        # bidir follow-up: enumerate cell/track ids so mark_cells / mark_tracks stop guessing
         ("GET", "/api/viewer/plots"),      # bidir PR #8 — live plot registry; discover mounted panels so mark_plot's plot_id isn't guessed
         ("GET", "/api/blackboard"),        # bidir Part 4 — list a project's blackboard entries (title + version + updatedAt)
@@ -147,7 +140,12 @@ ALLOWED_ROUTES = frozenset(
         # fresh session pairs on first use without the user typing anything.
         ("POST", "/api/push/target"),
     }
-)
+) | gv.GATING_ROUTES   # the gating toolset (gating_views.py), shared with the autonomous server. Its
+                       # three writes are Claude-scoped: add-gate creates ONE stamped gate (409 on a
+                       # taken name, 404/422 before anything is written); set-own-gate / delete-own
+                       # change only populations Claude drew — every one at and below the path must
+                       # carry a Claude `createdBy`, else 403. NOT /api/gating/pop/add, set-gate,
+                       # delete, rename or move, which act on the user's populations
 
 
 # Per-param fields worth keeping for a suggestion: the key to name it, its type, the valid range, the
@@ -297,7 +295,7 @@ class ApiError(RuntimeError):
         self.message = message
 
 
-class CeceliaClient:
+class CeceliaClient(gv.GatingClient):
     def __init__(self, base_url: str | None = None, timeout: float = 30.0):
         self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
@@ -507,16 +505,6 @@ class CeceliaClient:
         # content block).
         return self._request("GET", "/api/viewer/capture",
                              {"projectUid": project_uid, "captureId": capture_id})
-
-    def gate_plot(self, project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-                  transform: dict | None, pop: str) -> tuple[bytes, dict]:
-        return gv.split_png(self._request("GET", gv.PLOT_ROUTE, gv.plot_query(
-            project_uid, image_uid, value_name, x, y, transform, pop)))
-
-    def gate_cells_view(self, project_uid: str, image_uid: str, value_name: str, pop: str, t: int,
-                        channels: list[int] | None, image_version: str) -> tuple[bytes, dict]:
-        return gv.split_png(self._request("GET", gv.CELLS_ROUTE, gv.cells_query(
-            project_uid, image_uid, value_name, pop, t, channels, image_version)))
 
     def get_object_ids(self, project_uid: str, image_uid: str, value_name: str,
                        kind: str = "cells", limit: int = 200, sample: bool = False):
@@ -820,18 +808,6 @@ class CeceliaClient:
             template["startTargets"] = start_targets
         return self._request("POST", "/api/chains/create",
                              body={"projectUid": project_uid, "template": template})
-
-    def add_gate(self, project_uid: str, image_uid: str, value_name: str, name: str, gate: dict,
-                 parent: str = "root", colour: str = "#22c55e"):
-        # Create-only: ONE new gated population under an existing parent — never edits, moves or
-        # deletes one (409 on a taken name, 404 on a missing parent, 422 on a column / transform /
-        # geometry that cannot be a gate). `gate` is the stored gate shape (`gate_spec`, the same as
-        # the autonomous server's add_gate); the server validates every field of it.
-        body: dict = {"projectUid": project_uid, "imageUid": image_uid, "valueName": value_name,
-                      "parent": parent or "root", "name": name, "gate": gate}
-        if colour:
-            body["colour"] = colour
-        return self._request("POST", "/api/gating/pop/add-gate", body=body)
 
     def add_analysis_board(self, project_uid: str, name: str, plots: list, template: str = "",
                            compare_by: str = ""):

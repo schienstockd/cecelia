@@ -189,5 +189,17 @@ class CodriveRecordTest(unittest.TestCase):
             cr.write(p, None, self.tmp / "dry2", records=self.tmp / "r2")
 
 
+class WroteTest(unittest.TestCase):
+    def test_a_gate_preview_is_not_a_write(self):
+        # `dry_run=True` on a gate tool previews and writes nothing — "Looked at", never "Wrote"
+        call = lambda tool, **inp: {"name": tool, "input": inp}   # noqa: E731
+        self.assertTrue(cr._wrote(call("add_gate", name="p")))
+        self.assertFalse(cr._wrote(call("add_gate", name="p", dry_run=True)))
+        self.assertFalse(cr._wrote(call("delete_gate", path="/p", dry_run=True)))
+        self.assertTrue(cr._wrote(call("create_chain", name="c")))
+        self.assertFalse(cr._wrote(call("gate_examples", pop="/p")))
+
+
 if __name__ == "__main__":
     unittest.main()
+

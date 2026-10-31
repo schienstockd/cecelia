@@ -33,6 +33,7 @@ import { useGuideStore } from '../stores/guide'
 import { guidesByGroup, guideById } from '../lib/guides'
 import GuideMap from './GuideMap.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { defaultOpenGroup } from '../utils/guideMap'
 import { closeGuides } from '../lib/guideOpen'
 import type { GuideDef } from '../lib/guides/types'
@@ -43,11 +44,13 @@ const groups = computed(() => guidesByGroup())
 // ── the map + the accordion: one view (WORKFLOW_RECIPES_PLAN → *The map*) ──────────────────────────
 // The map (GuideMap) holds the recipes; its group cards open the matching guide group here. One group
 // open at a time, like the sidebar's nav accordion; it opens on the group whose guides teach the page
-// you're on, else Start. Not persisted: where you are decides what's useful.
+// you're on, else Start. Not persisted: where you are decides what's useful — so it is re-set on
+// every open. The sections share it through `accordion="cc.guides.openGroup"`.
 const openRecipe = ref('')
-const openGroup = ref(defaultOpenGroup(guide.currentPath))
+const guideGroups = useSingleOpenSection('cc.guides.openGroup', '', { persist: false })
+guideGroups.set(defaultOpenGroup(guide.currentPath))
 function showGroup(heading: string) {
-  openGroup.value = heading
+  guideGroups.set(heading)
   void nextTick(() => document.querySelector(`[data-guide-group="${heading}"]`)?.scrollIntoView({ block: 'nearest' }))
 }
 
@@ -91,8 +94,7 @@ function firstFixable(g: GuideDef) {
     <section v-for="grp in groups" :key="grp.group" class="gd-group" :data-guide-group="grp.group">
       <CollapsibleSection :label="`${grp.group} · ${grp.guides.length}`" max-height="none"
                           :tip="`Guides for ${grp.group}`"
-                          :open="openGroup === grp.group"
-                          @update:open="(v: boolean) => (openGroup = v ? grp.group : '')">
+                          accordion="cc.guides.openGroup" :section="grp.group">
 
       <div class="gd-row" v-for="g in grp.guides" :key="g.id">
         <i :class="['pi', g.icon, 'gd-icon']" />

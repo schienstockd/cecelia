@@ -122,12 +122,16 @@ matching labels + labelProps — `ccid.json` stays lean:
 Plain JSON — readable by Julia and Python. (This supersedes the earlier
 `ARCHITECTURE.md:248` "gating in ccid.json" plan.)
 
-**`createdBy` — a gate Claude proposed.** A population added through Claude (the observer's
-`add_gate` → `POST /api/gating/pop/add-gate`, or `/api/gating/pop/add` with `X-Cecelia-Client: claude`)
-carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
+**`createdBy` — a gate Claude proposed.** A population added through Claude (`add_gate` on either MCP
+server → `POST /api/gating/pop/add-gate`) carries `createdBy` = `author_stamp()` (`{profile, via: "claude", model?, session?}`) on its node;
 `Population.created_by` round-trips it, and the manager marks the row with ✦ (`claudeProposal`,
 `utils/authorStamp.ts`). A GUI-drawn gate has no key, so a person's sidecar keeps its shape. Claude's
-route is add-only: it cannot set-gate, move, rename or delete — the user deletes or undoes a proposal.
+routes change only what it drew: `set-own-gate` / `delete-own` refuse (403 `not_claude_made`) unless the
+population AND everything under it carries a Claude stamp — once the user gates under a proposal, that
+subtree is theirs. It cannot rename or move anything, and never reaches the general `/pop/*` routes;
+the user deletes or undoes a proposal. Each write takes `dryRun` (the counts, nothing written), and
+`/api/gating/examples` shows the cells just inside and outside a gate — written or proposed — as
+crops, so a cut is judged on the cells before it lands.
 
 `live` populations span multiple value_names (their path prefix names the segmentation). They are
 **derived populations** — membership from a column rule layered on the `flow` gates, not a stored

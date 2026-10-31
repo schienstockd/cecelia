@@ -60,6 +60,7 @@ export const TERMINAL_MODE: Mode = {
     'Chains from what you ran',               // create_chain (never run)
     'Boards and notebooks',                   // add_analysis_board, create_notebook
     'Lab-log and Blackboard entries',         // append_lab_log, create_blackboard_entry
+    'Gates, marked ✦ — it changes only its own',   // add_gate, set_gate, delete_gate
   ],
   start: 'Start in terminal on Kiwi’s Chat row',
   // Not "it can't run or delete": Claude Code's own shell sits outside Cecelia's tools, so the honest

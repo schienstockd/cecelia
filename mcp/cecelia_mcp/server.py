@@ -38,7 +38,7 @@ from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.discovery import discovery_enabled
-from cecelia_mcp.gating_views import GATE_CELLS_VIEW_DOC, GATE_PLOT_DOC, GATE_SHAPE_DOC, with_doc
+from cecelia_mcp.gating_views import register_gating_tools, with_doc
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.no_gui import no_gui_enabled
@@ -589,47 +589,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
     return _client.get_populations(project_uid, image_uid or None, set_uid or None)
 
 
-@_tool
-@with_doc(GATE_PLOT_DOC)
-def gate_plot(project_uid: str, image_uid: str, value_name: str, x: str, y: str,
-              transform: dict | None = None, pop: str = "root") -> list:
-    png, meta = _client.gate_plot(project_uid, image_uid, value_name, x, y, transform, pop)
-    return [Image(data=png, format="png"), meta]
-
-
-@_tool
-@with_doc(GATE_CELLS_VIEW_DOC)
-def gate_cells_view(project_uid: str, image_uid: str, value_name: str, pop: str, t: int = -1,
-                    channels: list[int] | None = None, image_version: str = "") -> list:
-    png, meta = _client.gate_cells_view(project_uid, image_uid, value_name, pop, t, channels, image_version)
-    return [Image(data=png, format="png"), meta]
-
-
-ADD_GATE_DOC = """ADD one gated population — a PROPOSED gate the user reviews in the population manager.
-
-Additive and one gate per call: this cannot edit, move, rename or delete any population. It lands
-as a new child of `parent`, marked as yours, and the user deletes (or undoes) it in one click.
-409 if the name is taken under that parent or by another population type (pick another name;
-never try to replace theirs); 404 if `parent` does not exist; 422 on a column, transform or
-geometry that cannot be a gate — the message says which. Only when the user asked for a gate or
-agreed to one.
-
-""" + GATE_SHAPE_DOC + """
-`value_name` is the segmentation, exactly; `parent` an existing path as gate_plot's `pop` takes it
-("root", "/qc"); `name` plain, no "/" and not starting with "_" — you cannot rename it afterwards.
-
-Read gate_plot on `parent` with the SAME transform first, and place the gate from what it shows.
-The reply carries the stored `path`, `count` (inside) and `outside` over `parentCount`, and the
-`gate` as stored. Then CHECK it: gate_plot on `parent` draws it outlined and named;
-gate_cells_view on `path` shows which cells in the image it took. Tell the user it is a proposal
-they can delete, with the numbers."""
-
-
-@_tool
-@with_doc(ADD_GATE_DOC)
-def add_gate(project_uid: str, image_uid: str, value_name: str, name: str, gate: dict,
-             parent: str = "root", colour: str = "#22c55e") -> dict:
-    return _client.add_gate(project_uid, image_uid, value_name, name, gate, parent, colour)
+# The gating toolset — gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats, add_gate,
+# set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
+# Writes change only what Claude drew (the server checks `createdBy`).
+globals().update(register_gating_tools(_tool, _client))
 
 
 @_tool
