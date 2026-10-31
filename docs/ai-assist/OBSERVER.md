@@ -59,7 +59,7 @@ get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage
 get_repl_api              → notebook/REPL data-access surface: read accessors + live docstrings + cookbook (Phase 2)
-get_guide                 → the in-app guides + whole-pipeline recipes as Markdown (rendered from frontend/src/lib/guides; committed as cecelia_mcp/guides.json)
+get_guide                 → the in-app guides + whole-pipeline recipes as Markdown (rendered from frontend/src/lib/guides; committed as cecelia_mcp/guides.json), plus the Call for Datasets asks (`dataset-call`, with their issue links) — what to offer when Cecelia cannot do it yet
 get_task_catalogue        → every visible task's purpose / useWhen / notWhen by pipeline stage (from the task specs; unregistered when CECELIA_MCP_DISCOVERY=off)
 get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
 list_notebooks            → a project's notebooks (name, file, description, version) + shipped examples (Phase 2)

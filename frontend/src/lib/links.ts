@@ -32,6 +32,10 @@ export function recipeRequestUrl(name: string): string {
   return `${CECELIA_REPO_URL}/issues/new?${q}`
 }
 
+/** The general feature-request form — what Claude hands over when Cecelia cannot do something and no
+ *  Call for Datasets entry fits (served to it through `get_guide`, `guideText.ts`). */
+export const FEATURE_REQUEST_URL = `${CECELIA_NEW_ISSUE_URL}?${new URLSearchParams({ template: 'feature_request.yml' })}`
+
 // Zulip, not a GitHub Discussion: the lab already runs one, and a question people ask in chat is a
 // question they would not have opened an issue for.
 export const CECELIA_CHAT_URL = 'https://cecelia.zulipchat.com/'

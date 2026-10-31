@@ -5,7 +5,10 @@
       reaches a little past the plot border and pins those points to it, so a gate can enclose a cloud
       piled against an axis (plots/gateGeometry.ts → "Drawing past the plot border").
    2. EDIT existing gates (mode = off) — move / resize rectangles (corner + edge handles),
-      drag / insert (dbl-click edge) / delete (right-click vertex) polygon vertices. Live local
+      drag / insert (dbl-click edge) / delete (right-click vertex) polygon vertices. An outline or
+      corner grabs on hover; a gate's BODY moves it only once the gate is SELECTED — click inside it
+      (the smallest gate there wins, `gateAt`); click outside every gate, outside the plot, or Esc
+      deselects — and while nothing is selected, presses inside gates reach the plot (pan/zoom). Live local
       redraw while dragging; emits `edit` with the new spec only on release (server recomputes +
       broadcasts → smooth cross-plot propagation). See docs/UI.md "rendering & UX hacks".
       Holding Shift while a draw tool is armed enters this edit path too (grab the gate under the
@@ -25,7 +28,7 @@ import { dataToPx as mapDataToPx, pxToData as mapPxToData, type PxBox } from '..
 import type { GateSpec } from '../../stores/gating'
 import { svgPolygon, svgEsc, svgClip } from '../../plots/export'
 import { gateLabelPos } from '../../utils/gateLabel'
-import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape } from '../../plots/gateGeometry'
+import { isClickNotDrag, isDegeneratePolygon, clampToBox, withinReach, hitGateShape, gateAt } from '../../plots/gateGeometry'
 import { handleRadius } from '../../utils/drawGeometry'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
@@ -91,23 +94,25 @@ type Handle =
   | { path: string; kind: 'poly-edge'; ei: number }
 
 // grab-zone radius + vertex/edge/body priority: plots/gateGeometry.ts (`hitGateShape`)
-function hitGate(entry: { path: string; gate: GateSpec }, p: [number, number]): Handle | null {
+// `anyBody`: the Shift-while-armed grab (header) takes ANY gate's body; otherwise only the selected one's
+function hitGate(entry: { path: string; gate: GateSpec }, p: [number, number], anyBody = false): Handle | null {
+  const bodyOk = anyBody || entry.path === selected.value
   const g = entry.gate
   if (g.kind === 'rectangle') {
     const hit = hitGateShape(rectCorners(g).map(c => dataToPx(c[0], c[1])) as [number, number][], p)
     if (hit?.part === 'vertex') return { path: entry.path, kind: 'rect-corner', ix: hit.i }
     if (hit?.part === 'edge') return { path: entry.path, kind: 'rect-edge', edge: hit.i }
-    if (hit?.part === 'body') return { path: entry.path, kind: 'rect-move' }
+    if (hit?.part === 'body' && bodyOk) return { path: entry.path, kind: 'rect-move' }
   } else if (g.kind === 'polygon' && g.vertices) {
     const hit = hitGateShape(g.vertices.map(v => dataToPx(v[0], v[1])) as [number, number][], p)
     if (hit?.part === 'vertex') return { path: entry.path, kind: 'poly-vertex', vi: hit.i }
     if (hit?.part === 'edge') return { path: entry.path, kind: 'poly-edge', ei: hit.i }
-    if (hit?.part === 'body') return { path: entry.path, kind: 'poly-move' }
+    if (hit?.part === 'body' && bodyOk) return { path: entry.path, kind: 'poly-move' }
   }
   return null
 }
-function hitTest(p: [number, number]): Handle | null {
-  for (const e of props.gates ?? []) { const h = hitGate(e, p); if (h) return h }
+function hitTest(p: [number, number], anyBody = false): Handle | null {
+  for (const e of props.gates ?? []) { const h = hitGate(e, p, anyBody); if (h) return h }
   return null
 }
 function cursorFor(h: Handle | null): string {
@@ -121,6 +126,32 @@ function cursorFor(h: Handle | null): string {
   if (h.kind === 'poly-edge') return 'copy'
   return 'move'
 }
+
+// ── selection: the one gate whose body moves it (header) ──
+const selected = ref<string | null>(null)
+function outlinePx(g: GateSpec): [number, number][] {
+  const pts = g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])
+  return pts.map(v => dataToPx(v[0], v[1])) as [number, number][]
+}
+function select(path: string | null) { if (selected.value !== path) { selected.value = path; draw() } }
+// a press-and-release on the plot that did not drag selects the gate under it (or none) — tracked on
+// the PARENT, so it also sees clicks that pass through to the dot canvas while nothing is grabbed
+let pressAt: [number, number] | null = null
+function onParentDown(e: MouseEvent) { pressAt = e.button === 0 ? evtPx(e) : null }
+function onParentUp(e: MouseEvent) {
+  const from = pressAt; pressAt = null
+  if (!from || props.readonly || props.mode !== 'off' || e.shiftKey) return
+  const p = evtPx(e); if (!isClickNotDrag(from, p)) return
+  const h = hitTest(p)
+  if (h && !h.kind.endsWith('-move')) return      // a click on an outline / corner keeps the selection
+  select(gateAt((props.gates ?? []).map(g => ({ path: g.path, pts: outlinePx(g.gate) })), p))
+}
+// a press anywhere outside this plot deselects
+function onWindowDown(e: MouseEvent) {
+  const host = canvasEl.value?.parentElement
+  if (selected.value && host && !host.contains(e.target as Node)) select(null)
+}
+useWindowListener('mousedown', onWindowDown)
 
 // ── editing state ──
 const draft = ref<GateSpec | null>(null)     // gate being edited (shown instead of stored)
@@ -245,8 +276,9 @@ function draw() {
   ctx.clearRect(0, 0, w, h)
 
   paintGates()
-  // handles on the hovered / edited gate
-  const active = editPath ? gateOf(editPath) : hover.value ? gateOf(hover.value.path) : undefined
+  // handles on the edited / hovered / selected gate
+  const active = editPath ? gateOf(editPath) : hover.value ? gateOf(hover.value.path)
+               : selected.value ? gateOf(selected.value) : undefined
   if (active && (props.mode === 'off' || shiftEdit.value || editHandle)) {
     const spec = active.path === editPath && draft.value ? draft.value : active.gate
     drawHandles(spec, active.colour || '#a78bfa')
@@ -315,16 +347,22 @@ function applyEdit(p: [number, number]) {
   draft.value = d
 }
 
+let editDownPx: [number, number] | null = null
 function startEdit(h: Handle, p: [number, number]) {
   const entry = gateOf(h.path); if (!entry) return
+  editDownPx = p
   editPath = h.path; editHandle = h; orig = clone(entry.gate)
   dragStart = pxToData(p[0], p[1]); draft.value = clone(entry.gate)
   window.addEventListener('mousemove', onEditMove); window.addEventListener('mouseup', onEditUp)
 }
 function onEditMove(e: MouseEvent) { applyEdit(evtPx(e)); draw() }
-function onEditUp() {
+function onEditUp(e: MouseEvent) {
   window.removeEventListener('mousemove', onEditMove); window.removeEventListener('mouseup', onEditUp)
-  if (editPath && draft.value) emit('edit', { path: editPath, gate: draft.value })
+  // a click on a grab zone is not an edit: re-storing the same gate would add an undo step for nothing
+  const moved = !editDownPx || !isClickNotDrag(editDownPx, evtPx(e))
+  if (editPath && draft.value && moved) emit('edit', { path: editPath, gate: draft.value })
+  if (!moved) { draft.value = null; editPath = null; draw() }
+  editDownPx = null
   editHandle = null; orig = null; dragStart = null
   // keep draft + editPath until the authoritative tree arrives (gates watch clears them) → no flash
 }
@@ -343,7 +381,7 @@ function onParentMove(e: MouseEvent) {
 // ── canvas handlers ──
 function onDown(e: MouseEvent) {
   if (editIntent(e)) {                            // armed + Shift → edit the gate under the cursor, never draw
-    const h = hitTest(evtPx(e)); if (h) startEdit(h, evtPx(e))
+    const h = hitTest(evtPx(e), true); if (h) startEdit(h, evtPx(e))
     return
   }
   if (props.mode === 'rectangle') return startRectDrag(drawPx(e))
@@ -355,7 +393,7 @@ function onMove(e: MouseEvent) {
   if (props.mode !== 'off') {                     // armed: Shift gives edit-hover feedback, else draw
     if (editIntent(e) && !dragging && !editHandle) {   // (mid Shift-drag is driven by onEditMove)
       shiftEdit.value = true
-      const h = hitTest(evtPx(e)); hover.value = h; cursor.value = h ? cursorFor(h) : 'crosshair'
+      const h = hitTest(evtPx(e), true); hover.value = h; cursor.value = h ? cursorFor(h) : 'crosshair'
       return draw()
     }
     if (shiftEdit.value) { shiftEdit.value = false; hover.value = null; cursor.value = 'crosshair'; draw() }
@@ -459,6 +497,10 @@ useWindowListener('dblclick', onBandDblClick)
 useWindowListener('mousemove', onBandMove)
 
 function onKey(e: KeyboardEvent) {
+  // idle Esc deselects (claimed only when there is a selection, so the maximised-layout Esc still works)
+  if (e.key === 'Escape' && props.mode === 'off' && !editHandle && selected.value) {
+    e.preventDefault(); select(null); return
+  }
   if (e.key === 'Escape') {
     // claim the key only while drawing, so an idle overlay does not block the maximised-layout Esc
     if (props.mode !== 'off' || dragging || polyPts.value.length) e.preventDefault()
@@ -471,7 +513,11 @@ useWindowListener('keydown', onKey)
 // drawing modes always capture; off mode toggles via proximity
 watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' ? 'default' : 'crosshair'; shiftEdit.value = false })
 // authoritative gates arrived → drop the local draft (unless mid-drag)
-watch(() => props.gates, () => { if (!editHandle) { draft.value = null; editPath = null } draw() }, { deep: true })
+watch(() => props.gates, () => {
+  if (!editHandle) { draft.value = null; editPath = null }
+  if (selected.value && !gateOf(selected.value)) selected.value = null   // deleted / moved off these axes
+  draw()
+}, { deep: true })
 watch(() => [props.extents, props.viewTick, props.lineWidth, props.showLabels], draw, { deep: true })
 
 onMounted(() => {
@@ -479,12 +525,16 @@ onMounted(() => {
   draw()
   ro = observeBoxChanges(canvasEl.value!, draw)
   canvasEl.value!.parentElement?.addEventListener('mousemove', onParentMove)
+  canvasEl.value!.parentElement?.addEventListener('mousedown', onParentDown)
+  canvasEl.value!.parentElement?.addEventListener('mouseup', onParentUp)
 })
 onBeforeUnmount(() => {
   ro?.disconnect(); ro = null
   window.removeEventListener('mousemove', onEditMove); window.removeEventListener('mouseup', onEditUp)
   window.removeEventListener('mousemove', onDrawMove); window.removeEventListener('mouseup', onUp)
   canvasEl.value?.parentElement?.removeEventListener('mousemove', onParentMove)
+  canvasEl.value?.parentElement?.removeEventListener('mousedown', onParentDown)
+  canvasEl.value?.parentElement?.removeEventListener('mouseup', onParentUp)
 })
 </script>
 

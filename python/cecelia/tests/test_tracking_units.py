@@ -17,7 +17,7 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 
-from cecelia.utils.tracking_utils import BayesianTrackingUtils, merge_track_lineage
+from cecelia.utils.tracking_utils import BayesianTrackingUtils, merge_track_lineage, is_stale_track_measure
 from cecelia.utils.label_props_utils import LabelPropsView
 
 
@@ -490,3 +490,12 @@ class DeleteTrackSourceTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StaleTrackMeasureTest(unittest.TestCase):
+    def test_approach_goes_stale_with_the_tracks_any_prefix(self):
+        self.assertTrue(is_stale_track_measure("live.cell.speed"))
+        self.assertTrue(is_stale_track_measure("live.track.straightness"))
+        self.assertTrue(is_stale_track_measure("flow.cell.approach#flow.T"))
+        self.assertFalse(is_stale_track_measure("flow.cell.min_distance#flow.T"))
+        self.assertFalse(is_stale_track_measure("track_id"))

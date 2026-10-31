@@ -24,8 +24,9 @@ is clipped at the border), titled with the channel names.
 `x`/`y` are gateable columns of segmentation `value_name` (e.g. `mean_intensity_2` = channel index 2;
 get_measure_summary lists them, get_image_info lists channel names in index order).
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
-{"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}.
-Alongside the image: each axis's extent and the gates with their path and coordinates (a
+{"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
+asinh sent without its parameters takes the channel's own (logicle top = its max — the reply's
+`transform` says which). Alongside the image: each axis's extent and the gates with their path and coordinates (a
 gate reaching past the axes is clipped in the picture, not in the list). The tick labels are RAW
 values; gate coordinates and `extent` are TRANSFORMED — with a non-linear transform, read vertices
 off gate_histogram's `grid`, not off the ticks."""
@@ -63,7 +64,8 @@ round a population or put a cut in a valley. Which columns exist depends on the 
 measures such as `volume_mesh` only come from the mesh-measuring tasks); get_image_info lists channel
 names in index order.
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
-{"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}."""
+{"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
+asinh sent without its parameters takes the channel's own (logicle top = its max), as gate_plot draws it."""
 
 GATE_STATS_DOC = """Cells in population `pop` and its % of the parent. `pop` may be a gate (`/qc`) or a
 tracked set (`/qc/_tracked`, `/_tracked`) — the same paths a task takes as input."""
@@ -77,7 +79,8 @@ raw tick labels:
 `x_channel`/`y_channel` are gateable columns (e.g. `mean_intensity_2`, `volume_mesh`); each
 transform is gate_plot's `transform` for that axis: {"kind": "linear"} (default) |
 {"kind": "asinh", "cof": 150} | {"kind": "log", "floor": 1} |
-{"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}. A gate listed by gate_plot has the
+{"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or asinh sent without its
+parameters takes the channel's own (logicle top = its max), as gate_plot draws it. A gate listed by gate_plot has the
 same geometry fields — add the channels and transforms you plotted with. A one-channel threshold
 is a rectangle spanning the whole other axis; write its open side at the data's own edge
 (gate_histogram's `min`/`max`, or gate_plot's `extent`, a little beyond), not at an arbitrary large

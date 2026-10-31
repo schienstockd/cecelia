@@ -91,6 +91,24 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     labels: ['call-for-datasets', 'area:registration'],
     planPath: 'docs/audit/simpleitk-opportunities.md',
   },
+  {
+    id: 'cluster-grouping-highplex',
+    title: 'Group many clusters into populations, with Claude',
+    oneLiner: 'Claude proposes which of your tens of clusters belong together; you accept or rename.',
+    blurb:
+      "Clustering a high-plex panel often gives tens of clusters, and it is hard to see which belong " +
+      "together. Claude can already read each cluster's marker profile and suggest groupings in chat; " +
+      "the next step is letting it write a proposed population (marked ✦) with the marker evidence " +
+      "beside it, for you to accept, rename or delete. We haven't built it because our own data " +
+      "clusters into a handful of groups, and a dataset with many is what tells us whether the " +
+      "proposals hold up.",
+    sceneryHint:
+      'A multiplex image (roughly 10+ markers) whose cell clustering gives 10+ clusters — and, if you ' +
+      'have it, how you would group and name them yourself, so the proposals can be checked against it.',
+    issueTitle: 'Call for dataset: grouping many clusters (high-plex)',
+    labels: ['call-for-datasets', 'area:clustering'],
+    planPath: 'docs/todo/CLUSTER_POP_PROPOSALS_PLAN.md',
+  },
 ]
 
 /**

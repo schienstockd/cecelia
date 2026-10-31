@@ -301,6 +301,16 @@ class GetGuideTest(unittest.TestCase):
         self.assertEqual("guide", rows["track-cells"]["kind"])
         self.assertNotIn("text", rows["track-cells"])
 
+    def test_catalogue_lists_dataset_calls_with_their_issue_link(self):
+        rows = {g["id"]: g for g in server.get_guide()["guides"]}
+        self.assertEqual("dataset-call", rows["cluster-grouping-highplex"]["kind"])
+        self.assertIn("github.com/schienstockd/cecelia/issues/new",
+                      server.get_guide("cluster-grouping-highplex")["text"])
+        # the briefing tells Claude when to use them, and where everything else goes
+        self.assertIn("dataset-call", guidance.BRIEFING_GUIDANCE)
+        self.assertIn("request-a-feature", guidance.BRIEFING_GUIDANCE)
+        self.assertIn("feature_request.yml", server.get_guide("request-a-feature")["text"])
+
     def test_one_guide_carries_its_function(self):
         out = server.get_guide("segment-by-motion")
         self.assertIn("segment.coastalMeasure", out["text"])

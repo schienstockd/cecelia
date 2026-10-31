@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { orientGate, convertGateKind, otherGateKind, clampToBox, withinReach, EDGE_REACH_PX,
+import { orientGate, convertGateKind, otherGateKind, clampToBox, withinReach, EDGE_REACH_PX, gateAt,
          hitGateShape } from './gateGeometry'
 import { handleRadius, HANDLE_R_PX, HANDLE_MIN_R_PX } from '../utils/drawGeometry'
 import { pxToData } from './axisMap'
@@ -136,5 +136,20 @@ describe('gate grab zones', () => {
     expect(hitGateShape(tri, [3, 3])).toEqual({ part: 'vertex', i: 0 })
     expect(hitGateShape(tri, [50, 2])).toEqual({ part: 'edge', i: 0 })
     expect(hitGateShape(tri, [50, 40])).toEqual({ part: 'body' })
+  })
+})
+
+describe('which gate a click selects', () => {
+  const sq = (x0: number, y0: number, x1: number, y1: number): [number, number][] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+  const shapes = [{ path: '/all', pts: sq(0, 0, 100, 100) }, { path: '/all/inner', pts: sq(20, 20, 40, 40) },
+                  { path: '/side', pts: sq(60, 60, 90, 90) }]
+  it('picks the smallest gate containing the click — the nested one where they overlap', () => {
+    expect(gateAt(shapes, [30, 30])).toBe('/all/inner')
+    expect(gateAt(shapes, [70, 70])).toBe('/side')
+    expect(gateAt(shapes, [10, 80])).toBe('/all')
+  })
+  it('selects nothing outside every gate — the click that deselects', () => {
+    expect(gateAt(shapes, [150, 150])).toBeNull()
+    expect(gateAt([], [1, 1])).toBeNull()
   })
 })

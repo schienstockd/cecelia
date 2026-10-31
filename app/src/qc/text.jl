@@ -105,6 +105,9 @@ const QC_TEXT = Dict{String,@NamedTuple{short::String, long::String}}(
     "tracking.plane_artefact" => (
         short = "Steps flatten near the volume edge",
         long  = "Steps nearest the lower z boundary average {value}° to it against the 32.7° of unbiased 3D motion — crop the z range or exclude those tracks."),
+    "tracking.duration_bias" => (
+        short = "Speed depends on track length",
+        long  = "Per-track speed correlates with track duration (ρ = {value}) — fast cells leave the volume sooner, so compare tracks of similar length rather than dropping short ones."),
     "tracking.duplicate_tracks" => (
         short = "{count} track pair(s) look like one cell",
         long  = "Two tracks moved in near-parallel within a few µm of each other for several frames — review them in the correction worklist."),

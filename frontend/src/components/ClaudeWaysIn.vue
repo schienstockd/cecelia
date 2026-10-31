@@ -1,25 +1,27 @@
 <!--
   The two modes — Kiwi and Claude Code — side by side, not as a sequence (lib/claudeOverview.ts →
-  KIWI_MODE / TERMINAL_MODE / CLAUDE_BRIDGE). Each card leads with a small schematic, so a glance says
+  KIWI_MODE / TERMINAL_MODE / CLAUDE_BRIDGE). Each card is in its mode's own colour (--cc-kiwi teal,
+  --cc-claude clay — not the form-control purple) and leads with a small schematic, so a glance says
   which one you need: Kiwi = a reply pointing at a cell in the app; Claude Code = a terminal that
-  builds a chain, a board and a notebook. Then what you'd ask it / what it makes, how to start, and
-  its limit. Static and theme-coloured (tokens, no fixed colours) — the feijoa sketches are animated
+  builds a chain, a board and a notebook. Then what ONLY that mode does (the reason to pick it),
+  example asks, and how to start. Static, theme tokens only — the feijoa sketches are animated
   720×360 explainers on a paper palette, wrong at 72 px in a dark card. One renderer for every place
   that shows it — Kiwi's `?` dialog (ClaudeOverviewDialog) and the Guides map (GuideMap).
 -->
 <script setup lang="ts">
 import { KIWI_MODE, TERMINAL_MODE, CLAUDE_BRIDGE, type Mode } from '../lib/claudeOverview'
 
-const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; quoted: boolean }[] = [
-  { mode: KIWI_MODE, fig: 'kiwi', quoted: true },          // questions you'd ask
-  { mode: TERMINAL_MODE, fig: 'terminal', quoted: false }, // things it makes
+const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; colour: string }[] = [
+  { mode: KIWI_MODE, fig: 'kiwi', colour: 'var(--cc-kiwi)' },
+  { mode: TERMINAL_MODE, fig: 'terminal', colour: 'var(--cc-claude)' },
 ]
 </script>
 
 <template>
   <div class="cw">
     <div class="cw-modes">
-      <section v-for="{ mode: m, fig, quoted } in MODES" :key="m.title" class="cw-mode cc-card cc-card-2">
+      <section v-for="{ mode: m, fig, colour } in MODES" :key="m.title" class="cw-mode cc-card cc-card-2"
+               :style="{ '--cw-mode': colour }">
         <div class="cw-head">
           <svg v-if="fig === 'kiwi'" class="cw-fig" viewBox="0 0 96 60" fill="none" aria-hidden="true">
             <!-- the app, a few cells, one marked -->
@@ -58,13 +60,18 @@ const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; quoted: boolean }[] = [
             <div class="cc-muted cw-line1">{{ m.use }}</div>
           </div>
         </div>
-        <div class="cc-eyebrow cc-fs-2xs">{{ m.canLabel }}</div>
-        <ul :class="['cw-can', { 'cw-quoted': quoted }]">
-          <li v-for="c in m.can" :key="c" class="cc-fs-sm cw-line1">{{ c }}</li>
+        <div class="cc-eyebrow cc-fs-2xs">Only {{ m.title }}</div>
+        <ul class="cw-list">
+          <li v-for="c in m.only" :key="c" class="cw-only cc-fs-sm cw-line1">
+            <i class="pi pi-check cw-tick" aria-hidden="true" />{{ c }}
+          </li>
+        </ul>
+        <ul class="cw-list cw-ask">
+          <li v-for="a in m.ask" :key="a" class="cc-fs-sm cw-line1">{{ a }}</li>
         </ul>
         <div class="cw-foot cc-fs-sm">
           <span class="cw-line1">{{ m.start }}</span>
-          <span class="cw-never cw-line1">{{ m.never }}</span>
+          <span v-if="m.note" class="cw-note cw-line1">{{ m.note }}</span>
         </div>
       </section>
     </div>
@@ -74,29 +81,32 @@ const MODES: { mode: Mode; fig: 'kiwi' | 'terminal'; quoted: boolean }[] = [
 
 <style scoped>
 .cw-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-/* a raised card ON a dialog's surface-1 body — the surface-2 variant of .cc-card */
-.cw-mode { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+/* a raised card ON a dialog's surface-1 body — the surface-2 variant of .cc-card; the mode's colour
+   on its top edge, its ticks and its schematic */
+.cw-mode { padding: 12px; display: flex; flex-direction: column; gap: 6px; border-top: 2px solid var(--cw-mode); }
 .cw-head { display: flex; gap: 10px; align-items: center; }
 .cw-head > div { min-width: 0; }
 /* one line each — the copy is capped to fit (claudeOverview.test.ts); this only guards a wider font */
 .cw-line1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cw-fig { flex: none; width: 72px; height: 45px; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.3; }
 .cw-title { font-weight: 600; color: var(--cc-text); }
-.cw-can { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; flex: 1; color: var(--cc-text); }
-.cw-quoted li::before { content: '“'; color: var(--cc-text-dim); }
-.cw-quoted li::after { content: '”'; color: var(--cc-text-dim); }
-.cw-can:not(.cw-quoted) li::before { content: '•\00a0\00a0'; color: var(--cc-accent); }
+.cw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.cw-only { color: var(--cc-text); }
+.cw-tick { color: var(--cw-mode); font-size: var(--cc-fs-xs); margin-right: 8px; }
+.cw-ask { color: var(--cc-text-dim); flex: 1; }
+.cw-ask li::before { content: '“'; }
+.cw-ask li::after { content: '”'; }
 .cw-foot { display: flex; flex-direction: column; gap: 3px; padding-top: 7px; border-top: 1px solid var(--cc-border); color: var(--cc-text); }
-.cw-never { color: var(--cc-text-dim); }
+.cw-note { color: var(--cc-text-dim); }
 .cw-bridge { margin: 8px 0 0; }
 
-/* schematic strokes — theme tokens only, so it follows light/dark */
+/* schematic strokes — theme tokens only, so it follows light/dark; the accent is the mode's colour */
 .cw-frame { stroke: var(--cc-border); stroke-width: 1.5; fill: var(--cc-surface-1); }
 .cw-term { fill: var(--cc-bg); }
 .cw-line { stroke: var(--cc-border); stroke-width: 1.5; }
 .cw-ink { stroke: var(--cc-text); }
 .cw-dim { stroke: var(--cc-text-dim); }
-.cw-acc { stroke: var(--cc-accent); }
+.cw-acc { stroke: var(--cw-mode); }
 .cw-dash { stroke-dasharray: 2.5 2.5; }
 .cw-bubble { fill: var(--cc-surface-2); }
 </style>
