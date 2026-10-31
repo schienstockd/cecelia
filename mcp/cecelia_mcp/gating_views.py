@@ -105,7 +105,7 @@ over `parentCount`, and the `gate` as stored. Tell the user it is a proposal, wi
 SET_GATE_DOC = """MOVE a gate YOU drew (✦) — same `gate` shape as add_gate; `path` the population.
 403 `not_claude_made` when it, or anything gated under it, is the user's — including one of yours they
 have since edited; 403 `used_by_runs` when a task (clustering, tracking, …) read it or anything under
-it, naming the tasks. Only the user changes those (propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
+it, naming the tasks — only they change those (propose a new gate instead). `dry_run=True` answers with the new counts and writes nothing. The
 reply is add_gate's."""
 
 DELETE_GATE_DOC = """REMOVE a gate YOU drew (✦), with everything under it — every one of those must be yours
