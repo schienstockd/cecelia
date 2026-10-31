@@ -305,6 +305,7 @@ Measures are split by their natural grain (no redundant broadcast):
 |---|---|---|
 | `live.cell.speed` | per-cell | step speed to this cell (celltrackR `subtracks(·,1)` speed; cell 1 = `NaN`) |
 | `live.cell.angle` | per-cell | turning angle at this cell, degrees (`subtracks(·,2)` `overallAngle`; cells 1–2 = `NaN`) |
+| `live.cell.window.{speed,displacement,straightness}` | per-cell | only with **Window (min)** > 0: over the window ENDING at this cell (`tracking/track_windows.jl`). Same duration for every value, so free of the track-length dependence of the whole-track measures; in minutes, so comparable across frame rates. `NaN` where the track does not cover the full window (its first minutes, or a window opening on a bridged gap) |
 | `<pt>.cell.approach#<target>` | per-cell | approach speed toward the target population, µm/min: −Δ`min_distance#<target>` / Δt, positive = closing in (cell 1 = `NaN`). Only for targets whose `min_distance#` column exists when the task runs — run contacts first, then re-run track measures |
 
 Per-cell angle assignment follows celltrackR's `increment.cell.id=TRUE` (the step measure is
@@ -314,7 +315,17 @@ assigned to its endpoint cell). Untracked cells get `NaN`.
 
 - `X`/`var` = the 10 track measures: `live.track.speed`, `.duration`, `.trackLength`,
   `.displacement`, `.straightness`, `.displacementRatio`, `.outreachRatio`, `.meanTurningAngle`,
-  `.overallAngle`, `.asphericity`.
+  `.overallAngle`, `.asphericity` — plus, with a window set, `live.track.window.{speed,straightness}`:
+  the median of the track's windowed values (`NaN` for a track shorter than the window).
+
+**Why trailing windows, snapped to whole frames.** A centred window is symmetric only for an even
+number of frames — 5 min on 1-min frames reaches ±2 frames (a 4-min span) while 0.5-min frames give the
+full 5 — which would break the cross-frame-rate comparison the window exists for. A window ending at its
+cell (celltrackR's `increment.cell.id`, as `live.cell.speed`) is exact for any whole number of frames.
+The task snaps the asked window to whole frames (`window_span`), logs a `[WARN]` when that shortens it
+("5 min" on 2-min frames measures 4), and banks both in QC (`windowMinutes`, `windowSpanMinutes`).
+Re-running with the window off drops the windowed columns. One window per run (a second time scale is
+a second segmentation run).
 - `obs` = lineage carried over per track (`track_root`, `track_parent`, `track_state`,
   `track_generation`); `obs._index` = `track_id`. Plus `<pt>.track.approachIndex#<target>` per contacts
   target present at measure time: (first − last distance to the target) ÷ path length, the McCutcheon

@@ -19,13 +19,15 @@ Base.@kwdef struct TrackMeasuresParams
     valueName::String     = VERSIONED_DEFAULT_VAL
     forceRecompute::Bool  = true
     dims::String          = "auto"      # "auto" | "2d" | "3d"
+    windowMinutes::Float64 = 0.0        # tracklet window (tracking/track_windows.jl); 0 = off
 end
 
 function parse_track_measures_params(d::AbstractDict)::TrackMeasuresParams
     TrackMeasuresParams(;
         valueName      = string(get(d, "valueName", VERSIONED_DEFAULT_VAL)),
         forceRecompute = Bool(get(d, "forceRecompute", true)),
-        dims           = lowercase(strip(string(get(d, "dims", "auto")))))
+        dims           = lowercase(strip(string(get(d, "dims", "auto")))),
+        windowMinutes  = Float64(something(get(d, "windowMinutes", 0.0), 0.0)))
 end
 
 # ── Track data structure ───────────────────────────────────────────────────────
@@ -474,6 +476,18 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         push!(track_ids, tr.id)
         push!(X, Any[_jsonsafe(fn(tr)) for (_, fn) in _TRACK_AGG_COLS])
     end
+    # fixed-duration (tracklet) measures, window in minutes (tracking/track_windows.jl)
+    win = track_window_measures(tracks_with_labels, p.windowMinutes, time_step)
+    span = window_span(p.windowMinutes, time_step)
+    if p.windowMinutes > 0
+        tag = isapprox(span, p.windowMinutes; rtol = 1e-6) ? "[INFO]" : "[WARN]"
+        on_log("$tag Window $(p.windowMinutes) min → $(round(Int, span / time_step)) frames = $(span) min measured")
+    end
+    for name in WINDOW_TRACK_COLS
+        haskey(win.tracks, name) || continue
+        push!(agg_names, name)
+        foreach(((row, v),) -> push!(row, _jsonsafe(v)), zip(X, win.tracks[name]))
+    end
     # approach toward each contacts target already measured (tracking/track_approach.jl)
     appr = approach_measures(props_path, tracks_with_labels)
     on_progress(3, 5)
@@ -483,8 +497,10 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     cell_df = DataFrame("label"           => rows_label,
                         "live.cell.speed" => rows_speed,
                         "live.cell.angle" => rows_angle)
+    foreach(((name, vals),) -> (cell_df[!, name] = vals), win.cells)    # rows_label order
     foreach(((name, vals),) -> (cell_df[!, name] = vals), appr.cells)   # rows_label order
-    stale = filter(c -> startswith(c, "live.track."),
+    # + windowed columns from an earlier run when this run has the window off
+    stale = filter(c -> startswith(c, "live.track.") || (c in WINDOW_CELL_COLS && !haskey(win.cells, c)),
                    col_names(label_props(props_path); data_type=:obs))
     isempty(stale) ||
         on_log("[INFO] Removing $(length(stale)) stale broadcast live.track.* columns from cell obs")
@@ -522,6 +538,8 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         end
         ms = _meas_mean(speed_idx); md = _meas_mean(disp_idx)
         metrics = Dict{String,Any}("nTracks" => n_tracks, "motionDims" => resolved)
+        p.windowMinutes > 0 && (metrics["windowMinutes"] = p.windowMinutes;
+                                metrics["windowSpanMinutes"] = window_span(p.windowMinutes, time_step))
         isnan(ms) || (metrics["meanSpeed"] = round(ms; digits = 4))
         isnan(md) || (metrics["meanDisplacement"] = round(md; digits = 4))
         findings = track_measures_qc_findings(n_tracks, p.dims, resolved, det.dims,
