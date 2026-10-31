@@ -55,7 +55,7 @@ import { facetGrid, facetSlot, facetBox } from '../../plots/facetGrid'
 import {
   availableModes, resolveMode, modeHint, referenceLine, axisLabels,
   cohortSummary, cohortFindings, pairCapNote, diagnosticsCsvRows, resolveTrackValueName,
-  diagGroups, diagCurveRows, diagCloudRows, diagFitRows, DIAG_LABEL,
+  diagGroups, diagCurveRows, diagCloudRows, diagFitRows, furthFitRows, lengthRows, orderRows, DIAG_LABEL,
   type DiagnosticsResponse, type DiagMode,
 } from '../../plots/trackDiagnostics'
 import {
@@ -225,6 +225,10 @@ async function render() {
       const fit = diagFitRows(d)
       if (fit.length) marks.push(Plot.line(fit, { x: 'lag', y: 'value', z: 'g',
                                                  stroke: '#e8a33d', strokeDasharray: '4,3', ...fch }))
+      // the Fürth curve (server-fitted M, P, σ): its bend is the persistence time, its floor the noise
+      const furth = furthFitRows(d)
+      if (furth.length) marks.push(Plot.line(furth, { x: 'lag', y: 'value', z: 'g',
+                                                     stroke: '#e8a33d', strokeWidth: 1, ...fch }))
     } else {
       // the sign matters here (a negative lag-1 is the jitter signature), so zero stays on screen
       yOpts = { ...yOpts, domain: [Math.min(-0.2, ...pts.map(p => p.value)), 1] }
@@ -236,6 +240,21 @@ async function render() {
     marks.push(Plot.line(pts, { x: 'lag', y: 'value', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
     marks.push(Plot.dot(pts, { x: 'lag', y: 'value', fill, r: 2.5, tip: true, ...fch,
                                channels: { group: 'label' } }))
+  } else if (m === 'length') {
+    const pts = lengthRows(d)
+    marks.push(Plot.dot(pts, { x: 'duration', y: 'speed', fill, r: 1.6, fillOpacity: 0.45, tip: true, ...fch,
+                               channels: { group: 'label' } }))
+    // the trend is the readout: flat = no length bias
+    if (pts.length > 5)
+      // a moving mean needs the points in x order — the window walks the data as given
+      marks.push(Plot.line([...pts].sort((a, b) => a.duration - b.duration),
+        Plot.windowY({ k: Math.max(5, Math.round(pts.length / 10)) },
+          { x: 'duration', y: 'speed', z: 'g', stroke: '#e8a33d', strokeWidth: 1.5, ...fch })))
+  } else if (m === 'order') {
+    const pts = orderRows(d)
+    marks.push(Plot.line(pts, { x: 't', y: 'phi', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
+    marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n' } }))
+    yOpts = { ...yOpts, domain: [0, 1] }
   } else {
     const cloud = diagCloudRows(d, m)
     marks.push(Plot.dot(cloud, { x: 'distance', y: 'angle', fill, r: 1.3, fillOpacity: 0.35, ...fch }))
