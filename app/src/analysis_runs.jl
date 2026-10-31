@@ -228,8 +228,9 @@ end
 
 # `{pt}.cell.contact#{target}` (+ min_distance / contact_id) — one run per (segmentation, pt, target).
 # Points and mesh contacts share the columns, so one run covers both tasks.
-const _CONTACT_RE = r"^([A-Za-z]+)\.cell\.contact#(.+)$"
-_contact_cols(pt, t) = ["$pt.cell.contact#$t", "$pt.cell.min_distance#$t", "$pt.cell.contact_id#$t"]
+const _CONTACT_RE = contact_col_regex("contact")
+_contact_cols(pt, t) = ["$pt.cell.contact#$t", "$pt.cell.min_distance#$t", "$pt.cell.contact_id#$t",
+                         approach_cell_col(pt, t)]   # derived by trackMeasures — goes with its source
 
 function _contacts_list(img)
     out = AnalysisRun[]
@@ -246,6 +247,9 @@ end
 function _contacts_delete!(img, run; on_log = _ -> nothing)
     pt, t = split(run.key, "#"; limit = 2)
     label_props(img_label_props_path(img, run.value_name)) |> drop_obs(_contact_cols(pt, t)) |> save!
+    tp = img_track_props_path(img, run.value_name)
+    approach_track_col(pt, t) in _run_obs_cols(tp) &&
+        (label_props(tp) |> drop_obs([approach_track_col(pt, t)]) |> save!)
     on_log("[INFO] contacts $(run.label): dropped")
 end
 

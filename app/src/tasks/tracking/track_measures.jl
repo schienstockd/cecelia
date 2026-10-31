@@ -474,6 +474,8 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         push!(track_ids, tr.id)
         push!(X, Any[_jsonsafe(fn(tr)) for (_, fn) in _TRACK_AGG_COLS])
     end
+    # approach toward each contacts target already measured (tracking/track_approach.jl)
+    appr = approach_measures(props_path, tracks_with_labels)
     on_progress(3, 5)
 
     # ── per-cell measures → cell obs; drop any stale broadcast live.track.* (old design) ──
@@ -481,6 +483,7 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     cell_df = DataFrame("label"           => rows_label,
                         "live.cell.speed" => rows_speed,
                         "live.cell.angle" => rows_angle)
+    foreach(((name, vals),) -> (cell_df[!, name] = vals), appr.cells)   # rows_label order
     stale = filter(c -> startswith(c, "live.track."),
                    col_names(label_props(props_path); data_type=:obs))
     isempty(stale) ||
@@ -491,6 +494,9 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     # ── per-track table (measures in X/var, lineage in obs) → {vn}__tracks.h5ad via Python ──
     on_log("[INFO] Writing per-track table → $track_path")
     lineage = _track_lineage(props_path, track_ids)
+    for (name, vals) in appr.tracks   # per-track obs, so a contacts-run delete can drop it
+        lineage[name] = Any[_jsonsafe(v) for v in vals]
+    end
     ok = _write_track_props(track_path, track_ids, agg_names, X, lineage;
                             on_log = on_log, on_progress = on_progress,
                             on_process = on_process)

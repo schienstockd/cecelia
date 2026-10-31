@@ -1273,3 +1273,70 @@ end
         @test !isfile(cell_side)
     end
 end
+
+@testset "approach_columns — one approach column per min_distance target" begin
+    cols = ["label", "live.cell.speed", "live.cell.min_distance#DC", "live.cell.contact#DC",
+            "live.cell.min_distance#vessel/accepted", "live.cell.contact_id#DC"]
+    a = approach_columns(cols)
+    @test [x.src for x in a] == ["live.cell.min_distance#DC", "live.cell.min_distance#vessel/accepted"]
+    @test [x.cell for x in a] == ["live.cell.approach#DC", "live.cell.approach#vessel/accepted"]
+    @test [x.track for x in a] == ["live.track.approachIndex#DC", "live.track.approachIndex#vessel/accepted"]
+    @test isempty(approach_columns(["label", "live.cell.speed"]))
+    # one grammar: the contacts-run lister's regex is the same rule
+    @test match(Cecelia._CONTACT_RE, "flow.cell.contact#flow.T").captures == ["flow", "flow.T"]
+end
+
+@testset "step_approach — closing is positive, gaps use the real interval" begin
+    # 10 µm → 8 → 8 → 4 over t = 0, 1, 2, 4 (a bridged gap before the last): +2, 0, +2 µm/min
+    a = step_approach([0.0, 1.0, 2.0, 4.0], [10.0, 8.0, 8.0, 4.0])
+    @test isnan(a[1])
+    @test a[2:end] ≈ [2.0, 0.0, 2.0]
+    # a missing distance blanks the steps on both sides of it, never reads as zero
+    b = step_approach([0.0, 1.0, 2.0], [10.0, NaN, 6.0])
+    @test all(isnan, b)
+    @test step_approach([0.0, 1.0], [3.0, 5.0])[2] ≈ -2.0          # moving away
+end
+
+@testset "approach_index — McCutcheon toward the nearest surface" begin
+    @test approach_index([10.0, 7.0, 4.0], 6.0) ≈ 1.0              # every µm closed the gap
+    @test approach_index([10.0, 12.0, 10.0], 8.0) ≈ 0.0             # no net approach
+    @test approach_index([4.0, 10.0], 12.0) ≈ -0.5                  # moved away
+    @test approach_index([NaN, 10.0, 7.0, NaN], 3.0) ≈ 1.0          # first/last FINITE distances
+    @test isnan(approach_index([NaN, 5.0], 2.0))
+    @test isnan(approach_index([5.0, 4.0], 0.0))
+    @test approach_index([10.0, 0.0], 2.0) == 1.0                   # a moving target is clamped
+end
+
+@testset "is_stale_track_measure — approach goes stale with the tracks, any prefix" begin
+    @test Cecelia.is_stale_track_measure("live.cell.speed")
+    @test Cecelia.is_stale_track_measure("live.track.straightness")
+    @test Cecelia.is_stale_track_measure("flow.cell.approach#flow.T")      # not `live.`, still stale
+    @test !Cecelia.is_stale_track_measure("flow.cell.min_distance#flow.T") # contacts are per frame
+    @test !Cecelia.is_stale_track_measure("track_id")
+end
+
+@testset "drop_stale_approach! — a contacts re-run takes its derived approach columns, only its own" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "drop_stale_approach! (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad")); cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+        img = CciaImage(uid = "KDIeEm", dir = td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        cp_, tp = Cecelia.img_label_props_path(img, "B"), Cecelia.img_track_props_path(img, "B")
+        labs = (label_props(cp_) |> select_cols(["label"]) |> as_df).label
+        tids = (label_props(tp)  |> select_cols(["label"]) |> as_df).label
+        label_props(cp_) |> add_obs(DataFrame("label" => labs, "live.cell.approach#T1" => zeros(length(labs)),
+                                              "live.cell.approach#T2" => zeros(length(labs)))) |> save!
+        label_props(tp)  |> add_obs(DataFrame("label" => tids, "live.track.approachIndex#T1" => zeros(length(tids)),
+                                              "live.track.approachIndex#T2" => zeros(length(tids)))) |> save!
+
+        @test drop_stale_approach!(img, "B", "live", ["T1"]) == 2
+        cobs = col_names(label_props(cp_); data_type = :obs); tobs = col_names(label_props(tp); data_type = :obs)
+        @test !("live.cell.approach#T1" in cobs) && "live.cell.approach#T2" in cobs
+        @test !("live.track.approachIndex#T1" in tobs) && "live.track.approachIndex#T2" in tobs
+        @test drop_stale_approach!(img, "B", "live", ["T1"]) == 0         # first run / already clean: no-op
+    end
+end

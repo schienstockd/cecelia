@@ -426,8 +426,7 @@ def merge_track_lineage(props_path: str, track_df: pd.DataFrame, track_source: s
     # ── 5. invalidate stale track measures + write ─────────────────────────────
     # Same policy as the pre-provenance path: any cached `live.cell.*` / `live.track.*` was
     # computed against the previous tracking output and is now wrong.
-    stale = [c for c in obs.columns
-             if c.startswith("live.cell.") or c.startswith("live.track.")]
+    stale = [c for c in obs.columns if is_stale_track_measure(c)]
     if stale:
         log.log(f">> Invalidate {len(stale)} stale track-measure columns")
 
@@ -441,6 +440,14 @@ def merge_track_lineage(props_path: str, track_df: pd.DataFrame, track_source: s
         "track_generation": cur_gen,
         "cell_id":          cur_cellid,
     }).add_categorical_obs("track_source", labels_all, src_obj).save()
+
+def is_stale_track_measure(col: str) -> bool:
+    """A cell-obs column computed along the tracks, so wrong once they change: every `live.cell.*` /
+    `live.track.*`, and any `<pt>.cell.approach#` (track_approach.jl) whatever its pop-type prefix —
+    it differences distances along the old tracks. Mirrors `is_stale_track_measure` in Julia
+    (app/src/tasks/tracking/correct.jl)."""
+    return col.startswith("live.cell.") or col.startswith("live.track.") or ".cell.approach#" in col
+
 
 def write_track_props(params: dict, log):
     """
