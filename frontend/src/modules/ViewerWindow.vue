@@ -3545,24 +3545,15 @@ const keysBtn = ref<HTMLElement | null>(null)
  * put (View, Timepoint) are deliberately not in the accordion, because they are the ones you reach for
  * while looking at something else.
  *
- * Uses the shared `useSingleOpenSection` composable — same rule as the app sidebar's nav-group
- * accordion. '' is a real state (everything collapsed), persisted like every other user-settable
- * option.
+ * The sections are one `CollapsibleSection accordion="cc.vw.section"` group; this script reads the
+ * SAME state (`useSingleOpenSection` with that keyword) to wire the Debug readouts. '' is a real
+ * state (everything collapsed), persisted like every other user-settable option.
  */
 const { open: openSection } = useSingleOpenSection('cc.vw.section', 'channels')
 // Re-wire the renderer's frame-timings callback when Debug opens/closes OR when the bench
 // toggle flips, so the query-set resolve path is only paid when someone is looking at the
 // readouts. The bench toggle also gates whether the arrays grow unbounded (save-blob) or roll.
 watch([openSection, benchEnabled], () => wireFrameTimings(lastWiredRenderer))
-/**
- * Takes the key AND the event, rather than returning a handler.
- *
- * Binding `@update:open="sectionOpen('channels')"` looks like it binds the returned handler and does
- * not: Vue compiles a CALL expression as an inline STATEMENT, so it runs the outer function on every
- * event and throws the returned one away — the boolean never arrives and nothing ever expands.
- * Only a bare identifier or a member expression is bound as the handler itself.
- */
-const setSection = (key: string, v: boolean) => { openSection.value = v ? key : '' }
 /**
  * Scale bar + elapsed time, through the SAME component the captured stills and the animation timeline
  * use (`StillOverlay` / `elapsedLabel` / `niceScaleBar`) — a fourth implementation of a scale bar
@@ -6249,8 +6240,8 @@ onUnmounted(() => {
              is what changes while you look; Annotations is set once. See
              docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md (P1: sort what exists). -->
         <CollapsibleSection label="Annotations" tip="Overlays on the view — not in captures"
-                            :open="openSection === 'ann'"
-                            @update:open="v => setSection('ann', v)" fill>
+                            accordion="cc.vw.section" section="ann"
+                            fill>
           <!-- Toggle and text size share a row: the size is only ever adjusted with the thing it sizes
                in front of you, and a separate row for each would double the group's height. -->
           <div class="cc-row cc-row-tight">
@@ -6324,8 +6315,8 @@ onUnmounted(() => {
              flooding off the bottom of the panel with no way to reach the controls below. All-on/all-off buttons at the top so a 24-channel image can be soloed to one
              marker in two clicks instead of 23. -->
         <CollapsibleSection label="Channels" tip="Colour and contrast per channel"
-                            :open="openSection === 'channels'"
-                            @update:open="v => setSection('channels', v)" fill>
+                            accordion="cc.vw.section" section="channels"
+                            fill>
           <!-- ONE icon row for the section-wide controls: what is shown on the left (all on, distinct
                colours, one at a time — its stepper is the chip on the canvas), contrast and card layout on the right. Pressed
                state matches the View row at the top (ghost icon, `.cc-btn-on-tint` engaged) — icons rather than
@@ -6449,8 +6440,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Segmentation" tip="Draw a segmentation mask over the image"
-                            :open="openSection === 'seg'"
-                            @update:open="v => setSection('seg', v)" fill>
+                            accordion="cc.vw.section" section="seg"
+                            fill>
           <!-- No picker: locked decision 3 — the viewer has no selectors. WHICH segmentation is shown
                is decided in the ViewerPanel per image and reaches this window via the P2
                storage-event bridge. The row below just SHOWS what's on and offers opacity + contour
@@ -6519,8 +6510,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Populations" tip="Gated cell populations drawn as coloured points"
-                            :open="openSection === 'pops'"
-                            @update:open="v => setSection('pops', v)" fill>
+                            accordion="cc.vw.section" section="pops"
+                            fill>
           <!-- Populations. Only when there is something to say: an unsegmented image has no cell table
                and no populations, and an empty group would read as a broken feature rather than as an
                image that has not been through segmentation yet.
@@ -6637,8 +6628,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Tracks" tip="Track ribbons from each ticked segmentation"
-                            :open="openSection === 'tracks'"
-                            @update:open="v => setSection('tracks', v)" fill>
+                            accordion="cc.vw.section" section="tracks"
+                            fill>
           <!-- Tracks. The per-segmentation "directions" eye in the ViewerPanel ticks vns on; this
                section colours + shapes the ribbons. Gated on a ribbon-drawable pop as well as on
                drawn segments: hiding every pop's ribbon drops segCount to 0, and the per-pop eyes
@@ -6728,8 +6719,8 @@ onUnmounted(() => {
 
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
-                            :open="openSection === 'debug'"
-                            @update:open="v => setSection('debug', v)" fill>
+                            accordion="cc.vw.section" section="debug"
+                            fill>
           <!-- ── Controls (throttles first): the knobs that shape everything the readouts below
                measure. Steps + Keep for volume mode, then three toggles. Eyebrow matches the
                readouts below so the whole panel reads as one column of labelled sub-blocks. -->

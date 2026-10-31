@@ -44,6 +44,14 @@ POINT_TOOLS = {"mark_cells", "mark_tracks", "mark_tile", "mark_freeform", "mark_
 # a run's actions (cecelia-autonomous) plus the observer's other additive writes
 WRITE_TOOLS = run_record.ACTIONS | {"set_blackboard_status", "set_blackboard_outcome", "set_blackboard_section_outcome",
                                     "set_notebook_description", "create_chain", "set_labarchives_context"}
+
+
+def _wrote(call: dict) -> bool:
+    """A call that changed the project — a gate tool's `dry_run` preview did not (`run_record.is_action`)."""
+    name = call["name"]
+    return (name in WRITE_TOOLS and name not in run_record.ACTIONS) or run_record.is_action(name, call["input"])
+
+
 FIX_RE = re.compile(r"(?<![\w#])#fix\b", re.IGNORECASE)
 SHARED_RE = re.compile(r"\[cecelia\] shared capture (cap-[0-9T]+-[0-9a-f]+) from project (\w+)")
 _REMINDER_RE = re.compile(r"<system-reminder>.*?</system-reminder>", re.DOTALL)
@@ -253,9 +261,9 @@ def render(meta: dict, secs: list[dict], caps: dict) -> str:
         lines.append(heading(s))
         if s["you"]:
             lines += ["- **You:**", run_record._quote(run_record._short(s["you"], USER_MAX))]
-        groups = (("Looked at", lambda c: c["name"] not in POINT_TOOLS | WRITE_TOOLS),
+        groups = (("Looked at", lambda c: c["name"] not in POINT_TOOLS and not _wrote(c)),
                   ("Pointed at", lambda c: c["name"] in POINT_TOOLS),
-                  ("Wrote", lambda c: c["name"] in WRITE_TOOLS))
+                  ("Wrote", _wrote))
         ok = [c for c in s["calls"] if not c["isError"]]
         for label, keep in groups:
             got = [_call_text(c) for c in ok if keep(c)]

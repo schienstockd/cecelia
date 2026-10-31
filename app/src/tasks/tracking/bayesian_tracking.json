@@ -44,7 +44,7 @@
       "max": 200,
       "step": 1,
       "default": 20,
-      "tip": "Furthest a cell may move between consecutive frames; ~20 for T cells"
+      "tip": "Furthest a cell may move per frame, so scale it with the frame interval"
     },
     {
       "key": "maxLost",

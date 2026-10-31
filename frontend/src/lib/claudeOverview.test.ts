@@ -5,8 +5,8 @@ import {
 } from './claudeOverview'
 import { isMultiSentence, isTooLong } from '../utils/uiCopy'
 
-const lines = (m: Mode) => [m.use, m.canLabel, m.start, m.never, ...m.can]
-const can = (m: Mode) => m.can.join(' ')
+const lines = (m: Mode) => [m.use, m.start, ...(m.note ? [m.note] : []), ...m.only, ...m.ask]
+const only = (m: Mode) => m.only.join(' ')
 
 describe('claudeOverview content model', () => {
   // Kiwi's steps are what the guide walks, one per control, so each has to name the control.
@@ -28,21 +28,21 @@ describe('claudeOverview content model', () => {
     expect(CLAUDE_BRIDGE).toMatch(/Continue in terminal/)
   })
 
-  // Kiwi is the duck: it points, the user decides. What it lists are questions you'd ask it — never
-  // something it makes — and its limit must say it changes nothing.
-  it('keeps Kiwi a pointer — questions in, the user decides', () => {
-    expect(KIWI_MODE.use).toMatch(/you decide/)
-    expect(KIWI_MODE.never).toMatch(/Never judges, runs or changes your work/)
-    for (const q of KIWI_MODE.can) expect(q.endsWith('?')).toBe(true)
+  // Kiwi's case is what only it gives: answers checked against the data, a guarantee it changes
+  // nothing, no terminal. Its example asks are questions — never something for it to make.
+  it('leads Kiwi with what only it gives — checked, changes nothing, no terminal', () => {
+    expect(KIWI_MODE.use).toMatch(/check/)
+    for (const re of [/Checks every claim/, /Can’t change anything/, /No terminal/]) expect(only(KIWI_MODE)).toMatch(re)
+    for (const q of KIWI_MODE.ask) expect(q.endsWith('?')).toBe(true)
   })
 
   // What only a session can do — the reason to open one. The limit is Cecelia's tools, not Claude
   // Code itself (its own Bash/Edit sit outside Cecelia), so it must name the tools, not promise more.
   it('names what only Claude Code does, and bounds it by Cecelia’s tools', () => {
-    for (const re of [/Marks on cells/, /Chains/, /Boards/, /notebooks/, /Lab-log/]) {
-      expect(can(TERMINAL_MODE)).toMatch(re)
+    for (const re of [/Marks cells/, /chains/, /boards/, /notebooks/, /gates/, /lab-log/]) {
+      expect(only(TERMINAL_MODE)).toMatch(re)
     }
-    expect(TERMINAL_MODE.never).toBe('You run what it builds')   // no promise its own shell can't keep
+    expect(TERMINAL_MODE.note).toBe('You run what it builds')   // no promise its own shell can't keep
   })
 
   // The cards sit side by side in Kiwi's `?` dialog, ~300 px each: a line that wraps there doubles the
@@ -50,7 +50,7 @@ describe('claudeOverview content model', () => {
   it('keeps every card line on one line', () => {
     for (const m of [KIWI_MODE, TERMINAL_MODE]) {
       expect(m.use.length, m.use).toBeLessThanOrEqual(34)
-      for (const t of [m.start, m.never, ...m.can]) expect(t.length, t).toBeLessThanOrEqual(42)
+      for (const t of lines(m).slice(1)) expect(t.length, t).toBeLessThanOrEqual(42)
     }
   })
 

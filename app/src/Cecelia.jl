@@ -84,7 +84,7 @@ export write_qc, read_qc, read_all_qc, all_qc_docs, img_cleanup_facts, qc_findin
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!, cohort_parts, cohort_no_metrics_message, cohort_qc_reply, cohort_qc_by_step, cohort_reply_docs
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
-export read_run_log, append_run_log!, run_log_path, run_log_params_for_output
+export read_run_log, append_run_log!, run_log_path, run_log_params_for_output, run_entry_status
 export open_run_log!, close_run_log!, reap_run_log!, RUN_LOG_RUNNING, RUN_LOG_INTERRUPTED
 export read_lab_log, append_lab_log!, lab_log_user_author, lab_log_claude_author, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_dismissed, set_dismissed!
@@ -160,7 +160,8 @@ export TRACK_GAP_MAX_FRAMES, TRACK_GAP_STEPS, TRACK_JUMP_FACTOR, TRACK_JUMP_QUAN
 export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_drift
 export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
-export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag
+export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag,
+       msd_furth_fit, track_duration_bias, track_order_index
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
 export approach_columns, step_approach, approach_index, approach_measures,

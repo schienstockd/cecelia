@@ -91,7 +91,7 @@ creates a track by hand (see correction, below) must follow that convention; wri
 - **µm-space tracking (2026-08-07).** Centroids are scaled to **µm** before btrack sees them
   — `physicalSizes` from `img_physical_sizes`, skimage order `[sz, sy, sx]`, the same
   accessor `track_measures`, `cellNeighbours` and the mesh tasks already use. Every distance
-  param is therefore µm: `maxSearchRadius` (default **20**, ~T cell), `distThresh`,
+  param is therefore µm: `maxSearchRadius` (default **20**, per frame — the form shows the µm/min it allows at each image's interval), `distThresh`,
   `thetaDist`. Time stays in **frames** (`maxLost`, `timeThresh`) because btrack's `t` is a
   frame index.
 
@@ -670,6 +670,9 @@ the arithmetic (see below).
 | Volume edge | step angle vs distance to the lower z plane (`angleToPlane`/`distanceToPlane`), 3D only | unbiased 3D motion averages **32.7°** (Beltman 2009) at every distance; a sag ONLY near the edge is a tracking artefact |
 | Drift | Hotelling's T² on step displacement vectors (`hotellingsTest`) | a net field direction — stage drift *or* chemotaxis, the user decides |
 | Track pairs | angle vs distance between every pair of paths (`analyzeCellPairs`) | far-apart pairs average 90°; lower = the field moves together |
+| Fürth fit | `MSD = 2N·M·(τ − P(1 − e^(−τ/P))) + 2N·σ²` on the MSD curve (`msd_furth_fit`; Fürth 1920 + Michalet 2010 noise offset) | M (µm²/frame) and P (frames) don't depend on track length; σ (µm) is the detection-noise floor under every speed and angle. Field drift adds a ballistic term and inflates P — read P only when the drift finding is absent. P well above the 1/e lag usually means noise is scrambling step directions, which σ quantifies |
+| Track length | Spearman ρ of per-track speed vs duration (`track_duration_bias`) | fast cells leave the volume sooner; \|ρ\| ≥ 0.3 over ≥ 30 tracks = speed partly measures track length (`tracking.duration_bias`) |
+| Alignment | order index φ = \|Σv\|/Σ\|v\| per frame (`track_order_index`; Vicsek & Zafeiris 2012) | 1 = all cells one way; a step up over time = a field-wide event. Random directions give ≈ 1/√n |
 
 **Three things that are easy to get wrong, and are pinned by the goldens:**
 

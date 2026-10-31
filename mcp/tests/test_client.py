@@ -85,6 +85,8 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
+            ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
+            ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)
             ("POST", "/api/lablog/append"),
             ("POST", "/api/notebooks/describe"),
             ("POST", "/api/notebooks/revise"),
@@ -734,7 +736,7 @@ class ClientTest(unittest.TestCase):
         )
 
     def test_add_gate_posts_one_gate_in_the_stored_shape(self):
-        # The observer's only gating write, with the autonomous add_gate's arguments: the `gate` dict
+        # The observer's gating create, with the autonomous add_gate's arguments: the `gate` dict
         # goes out untouched (the sidecar's own `gate_spec` shape), so the server stores exactly what a
         # GUI-drawn gate stores.
         gate = {"kind": "rectangle", "x_channel": "mean_intensity_0", "y_channel": "area",
@@ -746,7 +748,7 @@ class ClientTest(unittest.TestCase):
         self.assertEqual((req.method, req.full_url), ("POST", "http://x:8080/api/gating/pop/add-gate"))
         self.assertEqual(json.loads(req.data), {
             "projectUid": "P", "imageUid": "I", "valueName": "B", "parent": "/qc", "name": "dim",
-            "gate": gate, "colour": "#22c55e"})
+            "gate": gate, "dryRun": False, "colour": "#22c55e"})
         with mock.patch.dict("os.environ", {}, clear=True), _patch_urlopen({"ok": True}) as u:
             self.c.add_gate("P", "I", "B", "blob", {"kind": "polygon", "vertices": [[0, 0], [1, 0], [0, 1]]},
                             colour="#ff0000")

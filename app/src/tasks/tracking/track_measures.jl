@@ -539,6 +539,10 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
             metrics["motionKind"] = diag.summary.motionKind
             isfinite(diag.summary.persistenceLag) &&
                 (metrics["persistenceLag"] = round(diag.summary.persistenceLag; digits = 2))
+            isfinite(diag.summary.furthM) && (metrics["furthM"] = round(diag.summary.furthM; sigdigits = 4))
+            isfinite(diag.summary.furthP) && (metrics["furthP"] = round(diag.summary.furthP; digits = 2))
+            isfinite(diag.summary.furthSigma) && (metrics["furthSigma"] = round(diag.summary.furthSigma; digits = 3))
+            isfinite(diag.summary.durationRho) && (metrics["durationRho"] = round(diag.summary.durationRho; digits = 3))
             isfinite(diag.summary.driftP) && (metrics["driftP"] = round(diag.summary.driftP; sigdigits = 3))
             metrics["nDuplicatePairs"] = diag.summary.nDuplicatePairs
         end

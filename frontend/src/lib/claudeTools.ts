@@ -57,6 +57,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'runs', label: 'The app console', tools: ['get_recent_logs'], kiwi: false, terminal: true },
 
   { group: 'results', label: 'Populations, and gates as pictures', tools: ['get_populations', 'gate_plot', 'gate_cells_view'], kiwi: true, terminal: true },
+  { group: 'results', label: 'A gate’s distribution, counts and example cells', tools: ['gate_histogram', 'gate_stats', 'gate_examples'], kiwi: true, terminal: true },
   { group: 'results', label: 'Phenotype and motility summaries', tools: ['get_measure_summary'], kiwi: true, terminal: true },
   { group: 'results', label: 'Behaviour states', tools: ['get_behaviour_summary'], kiwi: true, terminal: true },
   { group: 'results', label: 'Clusters and spatial regions', tools: ['get_cluster_summary', 'get_region_clusters'], kiwi: true, terminal: true },
@@ -78,7 +79,7 @@ export const CAPABILITIES: Capability[] = [
 
   { group: 'builds', label: 'A chain from what you ran — you run it', tools: ['suggest_chain', 'create_chain'], kiwi: false, terminal: true },
   { group: 'builds', label: 'An analysis board', tools: ['add_analysis_board'], kiwi: false, terminal: true },
-  { group: 'builds', label: 'A gate as a new population — marked ✦, undoable', tools: ['add_gate'], kiwi: false, terminal: true },
+  { group: 'builds', label: 'A gate as a new population — marked ✦, undoable; moves only its own', tools: ['add_gate', 'set_gate', 'delete_gate'], kiwi: false, terminal: true },
   { group: 'builds', label: 'A Pluto notebook, or a new version of one',
     tools: ['create_notebook', 'revise_notebook', 'set_notebook_description'], kiwi: false, terminal: true },
   { group: 'builds', label: 'Blackboard entries it writes, revises and tags good/bad',

@@ -295,3 +295,66 @@ end
     end
   end
 end
+
+# The example sheet's choices and the cells view's query parsing, pinned without an image store (the
+# stills themselves render through `render_view_stills`, covered by offline_renderer_plumbing.jl).
+@testset "API: gate examples — which cells, the edge distance, the sheet" begin
+    # distance to a rectangle's edge, both axes scaled to the cells' own 1–99 % range (x: 10 units)
+    g = RectangleGate("a", "b", 2.0, 8.0, 2.0, 8.0)
+    xs = collect(0.0:10.0); ys = [2.0 + 6.0 * (i - 1) / 10 for i in 1:11]   # y spans 6 units → scale 6
+    d = _gate_edge_distance(g, xs, ys)
+    @test d[3] ≈ 0.0                                  # x = 2, on the left edge
+    @test d[2] ≈ 0.1                                  # x = 1: one unit of a 10-unit range outside
+    @test d[6] ≈ min(0.3, (ys[6] - 2.0) / 6, (8.0 - ys[6]) / 6)
+    poly = PolygonGate("a", "b", [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)])
+    @test _gate_edge_distance(poly, xs, ys) ≈ d       # the same square as a polygon
+    @test isinf(_gate_edge_distance(g, [NaN, 1.0], [1.0, 2.0])[1])
+    ins = inside(g, xs, ys)
+    # boundary: n per side, nearest first, each from its own side
+    p = _example_picks("boundary", 2, ins, d)
+    @test [x[1] for x in p] == ["inside", "inside", "outside", "outside"]
+    @test all(ins[i] for (s, i, _) in p if s == "inside") && !any(ins[i] for (s, i, _) in p if s == "outside")
+    @test issorted([x[3] for x in p if x[1] == "inside"]) && issorted([x[3] for x in p if x[1] == "outside"])
+    @test _example_picks("boundary", 2, ins, d; seed = 7) == p     # the nearest band IS n here: no draw
+    # random: only inside cells, seeded
+    r = _example_picks("random", 3, ins, nothing; seed = 3)
+    @test length(r) == 3 && all(ins[i] for (_, i, _) in r) && isequal(r, _example_picks("random", 3, ins, nothing; seed = 3))
+    @test isempty(_example_picks("random", 3, falses(4), nothing))
+
+    @test _parse_z("") == (nothing, nothing) && _parse_z("12")[1] == 12:12 && _parse_z("14-10")[1] == 10:14
+    @test _parse_z("a")[2] !== nothing
+    @test _parse_region("10,20,30,60")[1] == (; x = 10:29, y = 20:59)
+    @test _parse_region("30,20,10,60")[2] !== nothing && _parse_region("1,2,3")[2] !== nothing
+
+    # the sheet: a row per side, a pair (raw | outline) per cell, the row's colour as a bar above it
+    tile(c) = (io = IOBuffer(); PNGFiles.save(io, fill(c, 10, 10)); take!(io))
+    red, blue = RGB{N0f8}(1, 0, 0), RGB{N0f8}(0, 0, 1)
+    pr = (raw = tile(red), outline = tile(blue))
+    sheet = PNGFiles.load(IOBuffer(_example_sheet([[pr, pr], [pr]], [RGB{N0f8}(0, 1, 0), RGB{N0f8}(1, 0, 1)])))
+    @test size(sheet) == (2 * (6 + 10) + 3 * 6, 2 * (2 * 10 + 2) + 3 * 6)
+    @test sheet[7, 7] == RGB{N0f8}(0, 1, 0)               # the inside row's bar
+    @test sheet[13, 7] == red && sheet[13, 7 + 12] == blue  # raw, then outline
+end
+
+@testset "API: gate examples + cells view guards" begin
+  if !api_have_fixture(api_fixture("testpr"))
+    @test_skip "testpr fixture missing"
+  else
+    dir = mktempdir()
+    cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+    old = Cecelia.cecelia_conf()["dirs"]["projects"]
+    try
+        Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+        base = "projectUid=testpr&imageUid=KDIeEm&valueName=B"
+        get_(route, q) = route(HTTP.Request("GET", "/x?$base&$q"))
+        @test get_(api_gating_examples, "pop=/nope")[1] == 404
+        @test api_gating_examples(HTTP.Request("GET", "/x?projectUid=testpr&imageUid=KDIeEm&valueName=zz&pop=/x"))[1] == 404
+        @test get_(api_gating_examples, "parent=root&gate=%7B")[1] == 422            # not JSON
+        @test get_(api_gating_examples, "parent=root&gate=%7B%7D")[1] == 422         # not a gate
+        @test get_(api_gating_examples, "mode=all&pop=/x")[1] == 422
+        @test get_(api_gating_cells_image, "pops=/nope")[1] == 404
+    finally
+        Cecelia.cecelia_conf()["dirs"]["projects"] = old
+    end
+  end
+end
