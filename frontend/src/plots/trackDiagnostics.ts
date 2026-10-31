@@ -33,8 +33,16 @@ export interface DiagGroup extends TrackGroupMeta {
             skipped?: boolean; maxTracks?: number }
   drift?: { p: number | null; n: number; meanStep: number[]; drifting: boolean
             stepSpacing: number; alpha: number }
+  /** Fürth fit to the MSD — M µm²/frame, P frames, σ µm (localisation noise). Server-fitted. */
+  furth?: { M: number | null; P: number | null; sigma: number | null; ok: boolean; nDims: number }
+  /** per-track speed (µm/frame) vs duration (frames) — the track-length bias check */
+  durationBias?: { speed: number[]; duration: number[]; rho: number | null; n: number; biased: boolean }
+  /** order index φ per frame, with the steps it was computed over */
+  order?: { t: number[]; phi: number[]; n: number[] }
   summary?: { msdSlope: number | null; motionKind: string
-              persistenceLag: number | null; nDuplicatePairs: number }
+              persistenceLag: number | null; nDuplicatePairs: number
+              furthM?: number | null; furthP?: number | null; furthSigma?: number | null
+              durationRho?: number | null; orderMean?: number | null }
   findings?: DiagFinding[]
 }
 
@@ -50,13 +58,15 @@ export interface DiagnosticsResponse {
 export const diagGroups = (d: DiagnosticsResponse | null): DiagGroup[] =>
   (d?.groups ?? []).filter(g => g.tracked !== false)
 
-export type DiagMode = 'msd' | 'acor' | 'plane' | 'pairs'
+export type DiagMode = 'msd' | 'acor' | 'plane' | 'pairs' | 'length' | 'order'
 
 export const DIAG_LABEL: Record<DiagMode, string> = {
   msd: 'Displacement',
   acor: 'Persistence',
   plane: 'Volume edge',
   pairs: 'Track pairs',
+  length: 'Track length',
+  order: 'Alignment',
 }
 
 /**
@@ -78,6 +88,8 @@ export function availableModes(d: DiagnosticsResponse | null): DiagMode[] {
   // a skipped scan has no cloud AND no verdict — offering the mode would show an empty box that
   // reads as "no pairs are suspicious"
   if (any(g => !!g.pairs?.angle.length && !g.pairs.skipped)) out.push('pairs')
+  if (any(g => (g.durationBias?.speed.length ?? 0) > 2)) out.push('length')
+  if (any(g => !!g.order?.t.length)) out.push('order')
   return out
 }
 
@@ -133,6 +145,8 @@ export function modeHint(mode: DiagMode): string {
     case 'acor':  return 'How long a cell keeps its direction — flat at 0 means none'
     case 'plane': return 'Angles dipping only near the edge = tracking artefact'
     case 'pairs': return 'Far-apart pairs should average 90° — lower means the field moves together'
+    case 'length': return 'A trend means speed partly measures track length'
+    case 'order':  return '1 = all cells move one way, 0 = no shared direction'
   }
 }
 
@@ -159,8 +173,12 @@ export function axisLabels(mode: DiagMode): [string, string] {
     case 'acor':  return ['lag (frames)', 'autocorrelation']
     case 'plane': return ['distance to edge (µm)', 'step angle (°)']
     case 'pairs': return ['distance between tracks (µm)', 'angle between paths (°)']
+    case 'length': return ['track duration (frames)', 'mean speed (µm/frame)']
+    case 'order':  return ['frame', 'order index φ']
   }
 }
+
+const fin = (v: number | null | undefined): boolean => v !== null && v !== undefined && Number.isFinite(v)
 
 /**
  * The header line: the scalars worth reading before any curve, in words.
@@ -176,6 +194,8 @@ export function diagnosticsSummary(g: DiagGroup | null): string {
     bits.push(`${s.motionKind} (slope ${s.msdSlope.toFixed(2)})`)
   if (s.persistenceLag !== null && s.persistenceLag !== undefined && Number.isFinite(s.persistenceLag))
     bits.push(`persistence ${s.persistenceLag.toFixed(1)} frames`)
+  if (g.furth?.ok && fin(s.furthP) && fin(s.furthSigma))
+    bits.push(`Fürth P ${s.furthP!.toFixed(1)} f, noise ${s.furthSigma!.toFixed(2)} µm`)
   // A drift p-value is only meaningful with the spacing it was computed at — celltrackR's whole point
   // about this test — so the two are never shown apart.
   if (g.drift && g.drift.p !== null && Number.isFinite(g.drift.p))
@@ -238,6 +258,43 @@ export function diagFitRows(
 }
 
 /**
+ * The Fürth curve per group, evaluated at the group's own MSD lags from the SERVER's M, P, σ — never
+ * re-fitted here, same rule as `diagFitRows`. Empty when the fit failed.
+ */
+export function furthFitRows(
+  d: DiagnosticsResponse | null,
+): { lag: number; value: number; g: string }[] {
+  return diagGroups(d).flatMap(g => {
+    const f = g.furth
+    if (!f?.ok || !fin(f.M) || !fin(f.P) || !fin(f.sigma)) return []
+    const M = f.M!, P = f.P!, s = f.sigma!, nDims = f.nDims
+    return curvePoints(g.msd).map(p => ({
+      lag: p.lag,
+      value: 2 * nDims * M * (p.lag - P * (1 - Math.exp(-p.lag / P))) + 2 * nDims * s * s,
+      g: g.key,
+    }))
+  })
+}
+
+/** Per-track speed-vs-duration points, tagged by group. */
+export function lengthRows(
+  d: DiagnosticsResponse | null,
+): { duration: number; speed: number; g: string; label: string }[] {
+  return diagGroups(d).flatMap(g => {
+    const b = g.durationBias
+    return (b?.duration ?? []).map((duration, i) => ({ duration, speed: b!.speed[i], g: g.key, label: g.label }))
+  })
+}
+
+/** Order index per frame, tagged by group. */
+export function orderRows(
+  d: DiagnosticsResponse | null,
+): { t: number; phi: number; n: number; g: string; label: string }[] {
+  return diagGroups(d).flatMap(g =>
+    (g.order?.t ?? []).map((t, i) => ({ t, phi: g.order!.phi[i], n: g.order!.n[i], g: g.key, label: g.label })))
+}
+
+/**
  * What the pair cloud is not showing, or empty. Same rule as the track plot: never a silent cap.
  *
  * Two different absences, and conflating them would be the bug: `skipped` means the O(tracks²) scan
@@ -261,6 +318,12 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
   if (!gs.length) return []
   // a `group` column only when there IS more than one — a single-group export keeps the old shape
   const tag = (g: DiagGroup) => (gs.length > 1 ? { group: g.label || g.key } : {})
+  if (mode === 'length')
+    return gs.flatMap(g => (g.durationBias?.duration ?? [])
+      .map((duration, i) => ({ ...tag(g), duration, speed: g.durationBias!.speed[i] })))
+  if (mode === 'order')
+    return gs.flatMap(g => (g.order?.t ?? [])
+      .map((t, i) => ({ ...tag(g), frame: t, phi: g.order!.phi[i], n: g.order!.n[i] })))
   if (mode === 'msd' || mode === 'acor') {
     return gs.flatMap(g => curvePoints(mode === 'msd' ? g.msd : g.acor)
       .map(p => ({ ...tag(g), lag: p.lag, value: p.value, sem: p.sem ?? '', n: p.n })))

@@ -71,6 +71,7 @@ Small: adopts the shape on the three existing MCP tools using only banked column
 
 Only after P1 lands and the inventory is authoritative.
 
+- **Arrest moved (2026-10-31):** `MOTILITY_METRICS_PLAN.md` Decision 1 proposes arrest as dwell in a user-gated speed population (no threshold param anywhere), which would close open question 4 below.
 - **Grep-audit first**: does the existing `live.track.displacementRatio` = confinement ratio (max_displacement / path_length), or is it displacement/trackLength (= straightness)? Answer names what gets added. Same audit for arrest coefficient (fraction of time below a speed threshold) — genuinely absent, but the threshold has to be per-experiment (see Decision 5); ship it as a *parameterized* descriptor consumed at query-time via `get_measure_summary(..., arrest_threshold_um_per_min=<x>)`, not as a banked column with a hard-coded threshold.
 - Add only descriptors the audit confirms are missing. Each addition = one row in the inventory + one entry in `_TRACK_AGG_COLS` + one celltrackR call at the existing site. No new file.
 - `test_behaviour_descriptor_inventory.py` catches any drift from adding a column without inventorying it.

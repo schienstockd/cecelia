@@ -62,10 +62,18 @@ end
         cols = ["clusters.alpha", "regions.alpha", "spatial.comp.B_qc.alpha",
                 "live.cell.hmm.state.movement", "live.cell.hmm.transitions.movement",
                 "flow.cell.contact#flow.T", "flow.cell.min_distance#flow.T", "flow.cell.contact_id#flow.T",
+                "flow.cell.approach#flow.T",   # derived by trackMeasures — must go with its run
                 "flow.cell.is.aggregate", "flow.cell.aggregate.id", "track_id"]
         df = DataFrame("label" => labs)
         for c in cols; df[!, c] = c == "track_id" ? [i <= 3 ? 1.0 : NaN for i in 1:n] : ones(n); end
         label_props(props) |> add_obs(df) |> save!
+        # the per-track approach index derived from that contacts run lives in the TRACK table's obs
+        trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+        tprops = Cecelia.img_track_props_path(img, "B")
+        cp(trk, tprops)
+        tids = (label_props(tprops) |> select_cols(["label"]) |> as_df).label
+        label_props(tprops) |> add_obs(DataFrame("label" => tids,
+                                                 "flow.track.approachIndex#flow.T" => zeros(length(tids)))) |> save!
         write_json_atomic(replace(props, r"\.h5ad$" => ".clustfeatures.json"),
                           Dict("clusters.alpha" => Dict("features" => ["a"]),
                                "regions.alpha"  => Dict("features" => ["b"])))
@@ -100,6 +108,7 @@ end
         @test !any(c -> startswith(c, "live.cell.hmm."), obs())
         @test delete_analysis_run!(img, "contacts", "flow#flow.T", "B")
         @test !any(c -> occursin("#flow.T", c), obs())
+        @test !("flow.track.approachIndex#flow.T" in col_names(label_props(tprops); data_type = :obs))
         @test delete_analysis_run!(img, "aggregates", "flow", "B")
         @test !any(c -> occursin("aggregate", c), obs())
         @test delete_analysis_run!(img, "graphs", "g1") && !isfile(Cecelia.img_spatial_graph_path(img, "g1"))

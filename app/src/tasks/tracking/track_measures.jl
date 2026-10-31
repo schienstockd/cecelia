@@ -488,6 +488,8 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         push!(agg_names, name)
         foreach(((row, v),) -> push!(row, _jsonsafe(v)), zip(X, win.tracks[name]))
     end
+    # approach toward each contacts target already measured (tracking/track_approach.jl)
+    appr = approach_measures(props_path, tracks_with_labels)
     on_progress(3, 5)
 
     # ── per-cell measures → cell obs; drop any stale broadcast live.track.* (old design) ──
@@ -495,7 +497,8 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     cell_df = DataFrame("label"           => rows_label,
                         "live.cell.speed" => rows_speed,
                         "live.cell.angle" => rows_angle)
-    foreach(((name, vals),) -> (cell_df[!, name] = vals), win.cells)   # rows_label order
+    foreach(((name, vals),) -> (cell_df[!, name] = vals), win.cells)    # rows_label order
+    foreach(((name, vals),) -> (cell_df[!, name] = vals), appr.cells)   # rows_label order
     # + windowed columns from an earlier run when this run has the window off
     stale = filter(c -> startswith(c, "live.track.") || (c in WINDOW_CELL_COLS && !haskey(win.cells, c)),
                    col_names(label_props(props_path); data_type=:obs))
@@ -507,6 +510,9 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     # ── per-track table (measures in X/var, lineage in obs) → {vn}__tracks.h5ad via Python ──
     on_log("[INFO] Writing per-track table → $track_path")
     lineage = _track_lineage(props_path, track_ids)
+    for (name, vals) in appr.tracks   # per-track obs, so a contacts-run delete can drop it
+        lineage[name] = Any[_jsonsafe(v) for v in vals]
+    end
     ok = _write_track_props(track_path, track_ids, agg_names, X, lineage;
                             on_log = on_log, on_progress = on_progress,
                             on_process = on_process)
@@ -551,6 +557,10 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
             metrics["motionKind"] = diag.summary.motionKind
             isfinite(diag.summary.persistenceLag) &&
                 (metrics["persistenceLag"] = round(diag.summary.persistenceLag; digits = 2))
+            isfinite(diag.summary.furthM) && (metrics["furthM"] = round(diag.summary.furthM; sigdigits = 4))
+            isfinite(diag.summary.furthP) && (metrics["furthP"] = round(diag.summary.furthP; digits = 2))
+            isfinite(diag.summary.furthSigma) && (metrics["furthSigma"] = round(diag.summary.furthSigma; digits = 3))
+            isfinite(diag.summary.durationRho) && (metrics["durationRho"] = round(diag.summary.durationRho; digits = 3))
             isfinite(diag.summary.driftP) && (metrics["driftP"] = round(diag.summary.driftP; sigdigits = 3))
             metrics["nDuplicatePairs"] = diag.summary.nDuplicatePairs
         end

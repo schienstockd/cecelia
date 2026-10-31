@@ -282,6 +282,10 @@ frame intervals — that is the case the knobs existed for, and it is the one th
 three options above. (Option (c) is the only one that solves it without asking the user to guess a
 stride.) Nobody has hit it on current data.
 
+**Proposed resolution (2026-10-31).** `docs/todo/MOTILITY_METRICS_PLAN.md` Decision 2: per-cell
+centred-window columns with the window in minutes — one design that covers all three options.
+Parked, not yet agreed.
+
 **Reference:** `docs/TRACKING.md`, `app/src/tasks/tracking/track_measures.jl`. Old implementation:
 `old-R-shiny-version/R/trackHelpers.R` (`celltrackR::subtracks(x, steps.subtracks, steps.overlap)`),
 called from `inst/modules/sources/behaviourAnalysis/hmmStates.R:42-43`.

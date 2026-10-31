@@ -194,6 +194,7 @@ function _diag_df(tracks::Vector{<:Pair})            # track_id => Vector of (t,
     DataFrame(label = lab, centroid_t = t, track_id = tid,
               centroid_x = x, centroid_y = y, centroid_z = z)
 end
+using Random: MersenneTwister
 const _DIAG_XY  = ["centroid_x", "centroid_y"]
 const _DIAG_XYZ = ["centroid_x", "centroid_y", "centroid_z"]
 
@@ -257,6 +258,88 @@ end
     @test persistence_lag([0.0, 1.0, 2.0], [1.0, ACOR_PERSIST_LEVEL, 0.0]) ≈ 1.0
     @test isnan(persistence_lag([0.0], [1.0]))
     @test_throws ArgumentError persistence_lag([0.0, 1.0], [1.0])
+end
+
+@testset "msd_furth_fit — recovers the model it fits, exactly" begin
+    # the curve IS the model (Fürth + Michalet offset), so M, P, σ must come back to solver precision
+    M, P, σ, N = 0.5, 3.0, 0.4, 2
+    lag = collect(1.0:20.0)
+    msd = [2N * M * (τ - P * (1 - exp(-τ / P))) + 2N * σ^2 for τ in lag]
+    f = msd_furth_fit(lag, msd, N)
+    @test f.ok
+    @test isapprox(f.M, M; rtol = 1e-4)
+    @test isapprox(f.P, P; rtol = 1e-3)
+    @test isapprox(f.sigma, σ; rtol = 1e-3)
+
+    # no noise floor: σ is clamped at 0, not driven negative
+    f0 = msd_furth_fit(lag, [2N * M * (τ - P * (1 - exp(-τ / P))) for τ in lag], N)
+    @test f0.ok && isapprox(f0.sigma, 0.0; atol = 1e-3) && isapprox(f0.P, P; rtol = 1e-3)
+end
+
+@testset "msd_furth_fit — a simulated persistent random walk with detection noise" begin
+    # Ornstein–Uhlenbeck velocity (Fürth's own model), integrated in 20 substeps per frame, then
+    # Gaussian position noise per axis. The fit sees only the battery's MSD of the sampled frames.
+    rng = MersenneTwister(20261031)
+    M, P, σ, sub = 1.0, 4.0, 0.3, 20
+    dt = 1.0 / sub
+    tracks = Pair{Int,Vector{NTuple{3,Float64}}}[]
+    for id in 1:300
+        v = randn(rng, 2) .* sqrt(M / P)          # stationary OU: per-axis variance D/P
+        x = zeros(2); pts = NTuple{3,Float64}[]
+        for t in 0:60
+            push!(pts, (Float64(t), x[1] + σ * randn(rng), x[2] + σ * randn(rng)))
+            for _ in 1:sub
+                v .+= (-v ./ P) .* dt .+ sqrt(2M * dt) / P .* randn(rng, 2)
+                x .+= v .* dt
+            end
+        end
+        push!(tracks, id => pts)
+    end
+    m = track_msd(_diag_df(tracks), _DIAG_XY; max_lag = 20)
+    f = msd_furth_fit(m.lag, m.msd, 2; weights = m.n)
+    @test f.ok
+    @test isapprox(f.M, M; rtol = 0.2)
+    @test isapprox(f.P, P; rtol = 0.3)
+    @test isapprox(f.sigma, σ; rtol = 0.3)
+end
+
+@testset "msd_furth_fit — too few lags, flat, ballistic" begin
+    @test !msd_furth_fit([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], 2).ok
+    @test !msd_furth_fit(collect(1.0:6.0), zeros(6), 2).ok
+    # perfectly straight: persistence longer than any window → P runs to the search edge, reported
+    lag = collect(1.0:10.0)
+    b = msd_furth_fit(lag, lag .^ 2, 2)
+    @test b.ok && b.P > 5 * maximum(lag)
+end
+
+@testset "track_duration_bias — short tracks fast is flagged, few tracks is not" begin
+    # track k lasts k frames and covers 10 µm whatever its length: shorter ⇒ faster, ρ = −1
+    mk(n) = _diag_df([k => [(Float64(t), 10.0 * t / k, 0.0) for t in 0:k] for k in 1:n])
+    b = track_duration_bias(mk(40), _DIAG_XY)
+    @test b.n == 40 && b.rho ≈ -1.0 && b.biased
+    # the SAME speed the user sees as live.track.speed (celltrackR `speed`), in frame units
+    ref = [Cecelia.track_speed(Cecelia.Track(k, Float64.(0:k), hcat(10.0 .* (0:k) ./ k, zeros(k + 1))))
+           for k in 1:40]
+    @test sort(b.speed) ≈ sort(ref)
+    @test !track_duration_bias(mk(Cecelia.DURATION_BIAS_MIN_TRACKS - 1), _DIAG_XY).biased
+    # constant speed whatever the length: no rank spread in speed → no ρ, no verdict
+    flat = _diag_df([k => [(Float64(t), Float64(t), 0.0) for t in 0:k] for k in 1:40])
+    c = track_duration_bias(flat, _DIAG_XY)
+    @test isnan(c.rho) && !c.biased
+
+    # and it reaches the QC findings through the one roll-up
+    keys = [f["key"] for f in track_diagnostic_findings(track_diagnostics(mk(40), _DIAG_XY))]
+    @test "tracking.duration_bias" in keys
+end
+
+@testset "track_order_index — aligned, opposed, and single-step frames dropped" begin
+    same = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)], 2 => [(0.0, 0.0, 5.0), (1.0, 2.0, 5.0)]])
+    o = track_order_index(same, _DIAG_XY)
+    @test o.t == [0.0] && o.phi ≈ [1.0] && o.n == [2]
+    opp = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)], 2 => [(0.0, 5.0, 5.0), (1.0, 4.0, 5.0)]])
+    @test track_order_index(opp, _DIAG_XY).phi ≈ [0.0]
+    lone = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]])
+    @test isempty(track_order_index(lone, _DIAG_XY).t)
 end
 
 @testset "plane_angle_profile — the geometry, and 2D has no plane" begin
@@ -1250,4 +1333,70 @@ end
     @test track_window_measures(tw, 4.5, 1.0).tracks["live.track.window.speed"][1:2] ≈ [1.0, 3.0]
     off = track_window_measures(tw, 0.0, 1.0)
     @test isempty(off.cells) && isempty(off.tracks)
+end
+@testset "approach_columns — one approach column per min_distance target" begin
+    cols = ["label", "live.cell.speed", "live.cell.min_distance#DC", "live.cell.contact#DC",
+            "live.cell.min_distance#vessel/accepted", "live.cell.contact_id#DC"]
+    a = approach_columns(cols)
+    @test [x.src for x in a] == ["live.cell.min_distance#DC", "live.cell.min_distance#vessel/accepted"]
+    @test [x.cell for x in a] == ["live.cell.approach#DC", "live.cell.approach#vessel/accepted"]
+    @test [x.track for x in a] == ["live.track.approachIndex#DC", "live.track.approachIndex#vessel/accepted"]
+    @test isempty(approach_columns(["label", "live.cell.speed"]))
+    # one grammar: the contacts-run lister's regex is the same rule
+    @test match(Cecelia._CONTACT_RE, "flow.cell.contact#flow.T").captures == ["flow", "flow.T"]
+end
+
+@testset "step_approach — closing is positive, gaps use the real interval" begin
+    # 10 µm → 8 → 8 → 4 over t = 0, 1, 2, 4 (a bridged gap before the last): +2, 0, +2 µm/min
+    a = step_approach([0.0, 1.0, 2.0, 4.0], [10.0, 8.0, 8.0, 4.0])
+    @test isnan(a[1])
+    @test a[2:end] ≈ [2.0, 0.0, 2.0]
+    # a missing distance blanks the steps on both sides of it, never reads as zero
+    b = step_approach([0.0, 1.0, 2.0], [10.0, NaN, 6.0])
+    @test all(isnan, b)
+    @test step_approach([0.0, 1.0], [3.0, 5.0])[2] ≈ -2.0          # moving away
+end
+
+@testset "approach_index — McCutcheon toward the nearest surface" begin
+    @test approach_index([10.0, 7.0, 4.0], 6.0) ≈ 1.0              # every µm closed the gap
+    @test approach_index([10.0, 12.0, 10.0], 8.0) ≈ 0.0             # no net approach
+    @test approach_index([4.0, 10.0], 12.0) ≈ -0.5                  # moved away
+    @test approach_index([NaN, 10.0, 7.0, NaN], 3.0) ≈ 1.0          # first/last FINITE distances
+    @test isnan(approach_index([NaN, 5.0], 2.0))
+    @test isnan(approach_index([5.0, 4.0], 0.0))
+    @test approach_index([10.0, 0.0], 2.0) == 1.0                   # a moving target is clamped
+end
+
+@testset "is_stale_track_measure — approach goes stale with the tracks, any prefix" begin
+    @test Cecelia.is_stale_track_measure("live.cell.speed")
+    @test Cecelia.is_stale_track_measure("live.track.straightness")
+    @test Cecelia.is_stale_track_measure("flow.cell.approach#flow.T")      # not `live.`, still stale
+    @test !Cecelia.is_stale_track_measure("flow.cell.min_distance#flow.T") # contacts are per frame
+    @test !Cecelia.is_stale_track_measure("track_id")
+end
+
+@testset "drop_stale_approach! — a contacts re-run takes its derived approach columns, only its own" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "drop_stale_approach! (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad")); cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+        img = CciaImage(uid = "KDIeEm", dir = td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        cp_, tp = Cecelia.img_label_props_path(img, "B"), Cecelia.img_track_props_path(img, "B")
+        labs = (label_props(cp_) |> select_cols(["label"]) |> as_df).label
+        tids = (label_props(tp)  |> select_cols(["label"]) |> as_df).label
+        label_props(cp_) |> add_obs(DataFrame("label" => labs, "live.cell.approach#T1" => zeros(length(labs)),
+                                              "live.cell.approach#T2" => zeros(length(labs)))) |> save!
+        label_props(tp)  |> add_obs(DataFrame("label" => tids, "live.track.approachIndex#T1" => zeros(length(tids)),
+                                              "live.track.approachIndex#T2" => zeros(length(tids)))) |> save!
+
+        @test drop_stale_approach!(img, "B", "live", ["T1"]) == 2
+        cobs = col_names(label_props(cp_); data_type = :obs); tobs = col_names(label_props(tp); data_type = :obs)
+        @test !("live.cell.approach#T1" in cobs) && "live.cell.approach#T2" in cobs
+        @test !("live.track.approachIndex#T1" in tobs) && "live.track.approachIndex#T2" in tobs
+        @test drop_stale_approach!(img, "B", "live", ["T1"]) == 0         # first run / already clean: no-op
+    end
 end

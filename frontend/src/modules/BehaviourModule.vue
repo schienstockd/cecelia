@@ -86,7 +86,9 @@ const badgeCount = computed(() => linkedSel.bag?.ids.length ?? 0)
    non-empty (v-if in the template), so idle state adds no chrome. Colour + press state come from
    .cc-btn-on + .cc-btn-on-tint; this rule is layout only (position + z-index so the button
    floats above the plot canvas). Wrapper is `position: relative` so the button anchors to the
-   plots slot, not the viewport. */
-.sp-plots-slot { position: relative; }
+   plots slot, not the viewport. `height: 100%` passes the maximised plots section's height
+   through to SummaryCanvas (its own `height: 100%` needs a sized parent) — without it the canvas
+   stopped at its 80vh floor in max mode, cutting off plots dragged to the bottom. */
+.sp-plots-slot { position: relative; height: 100%; }
 .sp-clear-selection { position: absolute; top: 8px; right: 8px; z-index: 30; }
 </style>

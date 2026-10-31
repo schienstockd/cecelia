@@ -16,6 +16,8 @@
   the ramp's range comes from the whole dataset, so it doesn't re-map as you walk the tree.
 -->
 <script setup lang="ts">
+import { axisQ } from '../../plots/montage'
+import { useFieldDraft } from '../../composables/useFieldDraft'
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import { useGatingStore, type GateSpec, type TransformSpec } from '../../stores/gating'
 import { popNameError } from '../../utils/popName'
@@ -43,7 +45,9 @@ const props = defineProps<{
   ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
         yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: RenderMode
         // colour-by: the third measure painted as the dot colour ('' = density pseudocolour)
-        z?: string; zt?: 'linear' | 'log' | 'asinh' | 'logicle' }
+        z?: string; zt?: 'linear' | 'log' | 'asinh' | 'logicle'
+        // an asinh cofactor the user typed (unset = the server derives it from the data, `_auto_params`)
+        xcof?: number; ycof?: number; zcof?: number }
   // window-arrangement command (Tile/Cascade); seq bumps to force re-apply
   arrange?: ArrangeCmd | null
   persistKey?: string        // CanvasPanel geometry persistence key
@@ -115,9 +119,13 @@ const pending = ref<Partial<GateSpec> | null>(null)
 const newName = ref('')
 
 const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
-const tspec = (k: Kind): TransformSpec => k === 'logicle' ? { kind: k, T: 262144, W: 0.5, M: 4.5, A: 0 } : { kind: k }
-const axisQ = (p: string, k: Kind) => k === 'logicle'
-  ? `&${p}t=logicle&${p}T=262144&${p}W=0.5&${p}M=4.5&${p}A=0` : `&${p}t=${k}`
+// A transform on the wire: its kind and whatever parameters it carries. The PREFERRED transform goes
+// to plotmeta with only what the user set (an asinh cofactor they typed) — the server fills the rest
+// from the channel's own data (logicle top = the channel max, asinh cofactor from its spread) and
+// reports the full spec back (`xSpec`…); `axisQ` (plots/montage.ts) puts a spec on the wire. Everything after that — the dots, child-pop overlays, a gate
+// drawn or moved — uses exactly that reported spec, so they all share one transform.
+const prefSpec = (k: Kind, cof?: number): TransformSpec =>
+  k === 'asinh' && cof && cof > 0 ? { kind: k, cofactor: cof } : { kind: k }
 
 // Colour-by paints in the two PER-EVENT modes: `points` (each dot takes the ramp) and `binned` (the
 // mean of the measure per cell). Contour rings and the outlier tail describe a distribution, not
@@ -126,17 +134,18 @@ const colourOn = computed(() =>
   !!zChan.value && (renderMode.value === 'points' || renderMode.value === 'binned'))
 // query for a given population on given axis transforms. `zk` adds the colour-by measure (a third
 // value per point); the child-POP overlays never ask for it — they're drawn in the pop's own colour.
-function plotQ(pop: string, xk: Kind, yk: Kind, zk?: Kind) {
+function plotQ(pop: string, xs: TransformSpec, ys: TransformSpec, zs?: TransformSpec) {
   const z0 = props.axisFromZero ? 1 : 0
   return `projectUid=${g.projectUid()}&imageUid=${g.imageUid}&valueName=${g.valueName}&popType=${g.popType}` +
     `&x=${encodeURIComponent(xChan.value)}&y=${encodeURIComponent(yChan.value)}` +
-    `&pop=${encodeURIComponent(pop)}${axisQ('x', xk)}${axisQ('y', yk)}&x0=${z0}&y0=${z0}&autoLinear=1` +
-    (zk && colourOn.value ? `&z=${encodeURIComponent(zChan.value)}${axisQ('z', zk)}` : '')
+    `&pop=${encodeURIComponent(pop)}${axisQ('x', xs)}${axisQ('y', ys)}&x0=${z0}&y0=${z0}&autoLinear=1` +
+    (zs && colourOn.value ? `&z=${encodeURIComponent(zChan.value)}${axisQ('z', zs)}` : '')
 }
 // meta is fetched with the PREFERRED transforms (xt/yt/zt); the server decides what's actually usable
 // and reports it as usedX/usedY/usedZ (a non-linear transform that would collapse a bounded/0–1
 // measure → linear).
-const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value, zt.value))
+const metaQ = computed(() => plotQ(parent.value, prefSpec(xt.value, props.ui.xcof),
+                                    prefSpec(yt.value, props.ui.ycof), prefSpec(zt.value, props.ui.zcof)))
 
 // The transform the server actually USED for each axis (from plotmeta). It differs from the preferred
 // xt/yt when the measure's range can't use it (auto-linearised): the axis select then shows this and
@@ -144,6 +153,10 @@ const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value, zt.value))
 const effXt = ref<Kind>(xt.value)
 const effYt = ref<Kind>(yt.value)
 const effZt = ref<Kind>(zt.value)
+// …and with every parameter, as the server used it (plotmeta `xSpec`…)
+const effXs = ref<TransformSpec>({ kind: xt.value })
+const effYs = ref<TransformSpec>({ kind: yt.value })
+const effZs = ref<TransformSpec>({ kind: zt.value })
 // the shared "we substituted a setting" shape — one wording, one amber marker, and the WHY is never
 // optional (the select's tooltip used to say only "Axis transform"). See plots/autoOverride.ts.
 const xOverride = computed(() => transformOverride(xt.value, effXt.value))
@@ -153,6 +166,23 @@ const zOverride = computed(() => colourOn.value ? transformOverride(zt.value, ef
 const xtSel = computed<Kind>({ get: () => effXt.value, set: v => { xt.value = v } })
 const ytSel = computed<Kind>({ get: () => effYt.value, set: v => { yt.value = v } })
 const ztSel = computed<Kind>({ get: () => effZt.value, set: v => { zt.value = v } })
+// asinh cofactor box: shows the cofactor in use (auto or typed); typing sets it, clearing returns to
+// auto. The logicle top (T) is always the channel's own max and is named in the select's tooltip.
+const fmtParam = (v?: number) => v === undefined ? '' : String(Number(v.toPrecision(3)))
+const xCofDraft = useFieldDraft(() => effXs.value.cofactor, fmtParam)
+const yCofDraft = useFieldDraft(() => effYs.value.cofactor, fmtParam)
+// (Vue's v-model hands a type="number" field back as a number once it parses, a string while empty)
+function setCof(axis: 'x' | 'y', raw: string | number) {
+  const v = Number(raw)
+  props.ui[`${axis}cof`] = String(raw).trim() === '' || !(v > 0) ? undefined : v
+}
+function transformTip(axis: 'x' | 'y'): string {
+  const s = axis === 'x' ? effXs.value : effYs.value
+  return s.kind === 'logicle' && s.T !== undefined ? `Axis transform — logicle, top ${fmtParam(s.T)} (the channel's max)`
+       : 'Axis transform'
+}
+const cofTip = (axis: 'x' | 'y') => props.ui[`${axis}cof`] ? 'asinh cofactor — linear below it. Clear for auto'
+  : 'asinh cofactor, auto: 1% of the channel’s 99th percentile. Type to set'
 
 // child-gate outlines for the current axes, already projected into the effective display transform by
 // the server (plotmeta) — the client has no transform math, so it can't re-project a gate drawn under a
@@ -164,7 +194,7 @@ const serverGates = ref<SrvGate[]>([])
 const currentGates = computed(() => serverGates.value.map(s => ({
   path: s.path, colour: s.colour,
   gate: { kind: s.kind, x_channel: xChan.value, y_channel: yChan.value,
-          x_transform: tspec(effXt.value), y_transform: tspec(effYt.value),
+          x_transform: effXs.value, y_transform: effYs.value,
           x_min: s.x_min, x_max: s.x_max, y_min: s.y_min, y_max: s.y_max, vertices: s.vertices } as GateSpec })))
 
 async function fetchBuf(q: string): Promise<Float32Array> {
@@ -187,6 +217,7 @@ async function fetchMeta() {
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
     usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean
+    xSpec?: TransformSpec; ySpec?: TransformSpec; zSpec?: TransformSpec
     xUnit?: string; yUnit?: string; zUnit?: string
     zExtent?: [number, number] | null; zTicks?: { pos: number; label: string }[]; usedZ?: Kind }
   // A newer fetch (image/segmentation/axis/parent switch) is already in flight — a late stale meta
@@ -202,6 +233,9 @@ async function fetchMeta() {
   // when there is no colour measure the select just shows the preference — reporting the server's
   // "linear" default for a ramp nobody asked for would amber a control for no reason
   effZt.value = colourOn.value ? (meta.usedZ ?? zt.value) : zt.value
+  effXs.value = meta.xSpec ?? { kind: effXt.value }
+  effYs.value = meta.ySpec ?? { kind: effYt.value }
+  effZs.value = colourOn.value ? (meta.zSpec ?? { kind: effZt.value }) : { kind: effZt.value }
   // the ramp's range is the server's (whole dataset, in the transform it actually used); null means it
   // has nothing to colour by — the dots fall back to density rather than to a made-up range
   valueExtent.value = colourOn.value ? (meta.zExtent ?? null) : null
@@ -240,7 +274,7 @@ async function fetchPoints() {
   if (notTracked.value) { points.value = new Float32Array(0); baseValues.value = null; pointLabels.value = null; return }
   const key = metaQ.value                    // snapshot the view; drop a stale response
   const colour = colourOn.value              // snapshot too: the response's stride depends on it
-  const buf = await fetchBufWithLabels(plotQ(parent.value, effXt.value, effYt.value, effZt.value))
+  const buf = await fetchBufWithLabels(plotQ(parent.value, effXs.value, effYs.value, effZs.value))
   // same last-writer guard as fetchMeta: if the image/segmentation/axis/parent changed while this
   // was in flight, an out-of-order resolve must NOT clobber the current cloud (the intermittent
   // "blank until I toggle a control" gap on image switch).
@@ -289,7 +323,7 @@ async function loadPopLayers() {
   try {
     popLayers.value = await Promise.all(hl.map(async path =>
       ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee',
-         points: await fetchBuf(plotQ(path, effXt.value, effYt.value)) })))
+         points: await fetchBuf(plotQ(path, effXs.value, effYs.value)) })))
   } catch (e) {
     log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   }
@@ -299,7 +333,7 @@ function onDraw(geom: Partial<GateSpec>) {
   // stamp the EFFECTIVE transform (what the axis is actually displayed in), not the preference — the
   // geometry was drawn in that space, so this is what membership must test against.
   pending.value = { ...geom, x_channel: xChan.value, y_channel: yChan.value,
-                    x_transform: tspec(effXt.value), y_transform: tspec(effYt.value) }
+                    x_transform: effXs.value, y_transform: effYs.value }
   // keep the draw tool armed (rectangle/polygon) so you can gate repeatedly without re-selecting it.
   // To adjust a gate without disarming, hold Shift over the plot — GateOverlay grabs/moves/resizes the
   // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
@@ -452,8 +486,12 @@ watch(() => props.reloadToken, fetchPlot)
             </optgroup>
           </select>
           <select class="tsel" :class="{ 'cc-auto-override': !!xOverride }" v-model="xtSel"
-                  v-tooltip.bottom="overrideTooltip(xOverride, 'Axis transform')">
+                  v-tooltip.bottom="overrideTooltip(xOverride, transformTip('x'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+          <input v-if="effXt === 'asinh'" type="number" min="0" step="any" class="cc-input-xs cof"
+                 v-model="xCofDraft" aria-label="X asinh cofactor"
+                 :class="{ 'cof-auto': !ui.xcof }" v-tooltip.bottom="cofTip('x')"
+                 @change="setCof('x', xCofDraft)" />
           <i v-if="xOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(xOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">Y</span>
@@ -463,8 +501,12 @@ watch(() => props.reloadToken, fetchPlot)
             </optgroup>
           </select>
           <select class="tsel" :class="{ 'cc-auto-override': !!yOverride }" v-model="ytSel"
-                  v-tooltip.bottom="overrideTooltip(yOverride, 'Axis transform')">
+                  v-tooltip.bottom="overrideTooltip(yOverride, transformTip('y'))">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+          <input v-if="effYt === 'asinh'" type="number" min="0" step="any" class="cc-input-xs cof"
+                 v-model="yCofDraft" aria-label="Y asinh cofactor"
+                 :class="{ 'cof-auto': !ui.ycof }" v-tooltip.bottom="cofTip('y')"
+                 @change="setCof('y', yCofDraft)" />
           <i v-if="yOverride" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="overrideTooltip(yOverride, '')" /></label>
         <label class="ax-row cc-muted"><span class="ax-lbl">colour</span>
@@ -551,6 +593,9 @@ watch(() => props.reloadToken, fetchPlot)
    (background, border, chevron, focus) comes from the global form base in style.css */
 .panel-ctrl select { width: 8rem; padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
+/* the asinh cofactor beside its transform; muted while it is the automatic one */
+.ax-row .cof { width: 3.6rem; flex-shrink: 0; }
+.ax-row .cof.cof-auto { color: var(--cc-text-dim); }
 /* the amber marker for an auto-overridden control is the shared .cc-auto-override utility (style.css) */
 .ax-warn { color: var(--cc-sev-warn); font-size: var(--cc-fs-xs); flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { border-color: var(--cc-accent); }

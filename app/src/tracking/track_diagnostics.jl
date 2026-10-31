@@ -25,6 +25,7 @@
 # `track_id`, `centroid_t` and the spatial centroid columns ALREADY IN µm (`scale_centroids!`).
 
 using HypothesisTests: OneSampleHotellingT2Test, pvalue
+using Statistics: cor, std
 
 # ── Expected values, and what a deviation means ────────────────────────────────
 
@@ -76,6 +77,17 @@ const DRIFT_ALPHA        = 0.05
 # The fix, when it is worth doing, is a spatial grid per timepoint (bucket side = TRACK_DUP_DIST_UM,
 # test only the 3×3 neighbourhood) — near-linear for the duplicate half. Recorded in docs/TODO.md.
 const PAIR_SCAN_MAX_TRACKS = 800
+
+# Fürth fit needs this many MSD lags: three parameters (M, P, σ) and at least one degree of freedom.
+const FURTH_MIN_LAGS = 4
+
+# Track-length bias (Beltman, Marée & de Boer 2009): the imaging window drops fast, straight cells
+# sooner, so their tracks are short — whole-track speeds then partly measure track LENGTH. Spearman ρ
+# of per-track speed against duration flags it. Only speed: straightness falls with duration for ANY
+# random walk, so a straightness correlation would fire on every image. |ρ| ≥ 0.3 is the conventional
+# "moderate" correlation; below 30 tracks a rank correlation is too noisy to report.
+const DURATION_BIAS_RHO      = 0.3
+const DURATION_BIAS_MIN_TRACKS = 30
 
 # ── Mean squared displacement ──────────────────────────────────────────────────
 
@@ -234,6 +246,169 @@ function persistence_lag(lag::AbstractVector{<:Real}, acor::AbstractVector{<:Rea
         end
     end
     NaN
+end
+
+# ── Fürth fit: motility coefficient, persistence time, localisation noise ──────
+
+# Fürth's persistent-random-walk MSD shape, without its 2·N·M prefactor.
+_furth_shape(τ::Real, P::Real) = τ - P * (1 - exp(-τ / P))
+
+"""
+    msd_furth_fit(lag, msd, n_dims; weights = nothing) -> (M, P, sigma, rss, ok, n_dims)
+
+Fits the persistent-random-walk MSD to the curve from [`track_msd`]:
+
+    MSD(τ) = 2·N·M·(τ − P·(1 − e^(−τ/P))) + 2·N·σ²
+
+`M` is the motility coefficient (µm² per frame — the diffusion-coefficient analogue), `P` the
+persistence time (frames), `σ` the static localisation noise per axis (µm), `N` = `n_dims`. Unlike the
+log-log slope, M and P do not depend on track length; σ is the noise floor detection jitter puts under
+every speed and turning angle.
+
+Sources: Fürth (1920), Z. Phys. 2:244–256 — the PRW term. Michalet (2010), Phys. Rev. E 82:041914,
+doi:10.1103/PhysRevE.82.041914 — the constant `2·N·σ²` offset for static localisation error.
+Thomas et al. (2020), Physica A 550:124493, modify Fürth differently (a short-time diffusive term for
+cells whose instantaneous velocity is ill-defined); that variant is NOT what is fitted here.
+
+For fixed P the model is linear in `(2·N·M, 2·N·σ²)`, so those come from a weighted least-squares
+solve and only P is searched (log grid, then golden-section) — no optimiser dependency, and no local
+minimum in the linear pair. Both are constrained ≥ 0. `weights` defaults to equal; pass the per-lag
+sample counts to trust short lags (many samples) over long ones.
+
+`ok = false` (all NaN) with fewer than `FURTH_MIN_LAGS` finite lags or a flat curve. P at the edge
+of the search range (`P ≥ 10 ×` the longest lag) means the motion is ballistic within the window —
+reported, not hidden; read it like `persistence_lag` returning NaN.
+"""
+function msd_furth_fit(lag::AbstractVector{<:Real}, msd::AbstractVector{<:Real}, n_dims::Integer;
+                       weights::Union{Nothing,AbstractVector{<:Real}} = nothing)
+    fail = (M = NaN, P = NaN, sigma = NaN, rss = NaN, ok = false, n_dims = Int(n_dims))
+    w0 = weights === nothing ? ones(length(lag)) : Float64.(weights)
+    keep = [i for i in eachindex(lag) if isfinite(lag[i]) && lag[i] > 0 && isfinite(msd[i]) && w0[i] > 0]
+    length(keep) < FURTH_MIN_LAGS && return fail
+    τ = Float64.(lag[keep]); y = Float64.(msd[keep]); w = w0[keep]
+    maximum(y) > 0 || return fail
+
+    # weighted least squares of y ≈ a·f + b, with a, b ≥ 0; returns (a, b, rss)
+    function _solve(P)
+        f = _furth_shape.(τ, P)
+        sw = sum(w); fm = sum(w .* f) / sw; ym = sum(w .* y) / sw
+        sff = sum(w .* (f .- fm) .^ 2)
+        a = sff > 0 ? sum(w .* (f .- fm) .* (y .- ym)) / sff : 0.0
+        b = ym - a * fm
+        if a < 0                       # no motility: constant only
+            a = 0.0; b = ym
+        end
+        if b < 0                       # no noise floor: through the origin
+            b = 0.0; sf2 = sum(w .* f .^ 2)
+            a = sf2 > 0 ? max(sum(w .* f .* y) / sf2, 0.0) : 0.0
+        end
+        (a, b, sum(w .* (y .- (a .* f .+ b)) .^ 2))
+    end
+
+    lo, hi = log(1e-3), log(10 * maximum(τ))
+    grid = range(lo, hi; length = 121)
+    rss  = [_solve(exp(g))[3] for g in grid]
+    k = argmin(rss)
+    # golden-section on log P inside the bracketing grid cells
+    a_, b_ = grid[max(k - 1, 1)], grid[min(k + 1, length(grid))]
+    φ = (sqrt(5) - 1) / 2
+    c_, d_ = b_ - φ * (b_ - a_), a_ + φ * (b_ - a_)
+    for _ in 1:60
+        if _solve(exp(c_))[3] < _solve(exp(d_))[3]
+            b_ = d_
+        else
+            a_ = c_
+        end
+        c_, d_ = b_ - φ * (b_ - a_), a_ + φ * (b_ - a_)
+    end
+    P = exp((a_ + b_) / 2)
+    a, b, r = _solve(P)
+    (M = a / (2 * n_dims), P = P, sigma = sqrt(b / (2 * n_dims)), rss = r, ok = true, n_dims = Int(n_dims))
+end
+
+# ── Track-length (selection) bias ──────────────────────────────────────────────
+
+# average ranks (ties share the mean rank) — what Spearman's ρ is Pearson's r of
+function _avg_ranks(x::AbstractVector{<:Real})::Vector{Float64}
+    o = sortperm(x); r = zeros(Float64, length(x))
+    i = 1
+    while i <= length(o)
+        j = i
+        while j < length(o) && x[o[j + 1]] == x[o[i]]; j += 1; end
+        r[o[i:j]] .= (i + j) / 2
+        i = j + 1
+    end
+    r
+end
+
+function _spearman(x::AbstractVector{<:Real}, y::AbstractVector{<:Real})::Float64
+    length(x) < 3 && return NaN
+    rx, ry = _avg_ranks(x), _avg_ranks(y)
+    sx, sy = std(rx), std(ry)
+    (sx > 0 && sy > 0) || return NaN
+    cor(rx, ry)
+end
+
+"""
+    track_duration_bias(df, spatial) -> (rho, n, biased, speed, duration)
+
+Spearman ρ between each track's mean speed (path length ÷ frame span, µm/frame) and its duration
+(frame span). The speed is `live.track.speed` (`track_speed`, celltrackR `speed`) in frame units —
+pinned equal by a test; ρ is rank-based, so the time unit cannot change the verdict. Tracks with fewer than two positions are skipped.
+
+Why it matters (Beltman, Marée & de Boer 2009, Nat. Rev. Immunol. 9:789, doi:10.1038/nri2638): cells
+leave a finite imaging volume, the fast and straight ones soonest, so they end up with short tracks.
+A per-track measure averaged over tracks of mixed length then partly measures track length, and two
+conditions can differ only because one was imaged in a thinner volume. Fragmented tracking pushes the
+same way — short fragments carry more detection jitter, which reads as speed. Either way the fix is to
+compare like-length tracks (the windowed measures), not to drop short tracks, which makes it worse.
+
+`biased` = `|ρ| ≥ DURATION_BIAS_RHO` with at least `DURATION_BIAS_MIN_TRACKS` tracks. `speed` and
+`duration` are returned per track so the panel can draw the scatter the verdict is about.
+"""
+function track_duration_bias(df::DataFrame, spatial::Vector{String})
+    speed = Float64[]; dur = Float64[]
+    for (_, p) in _track_paths(df, spatial)
+        length(p) < 2 && continue
+        span = p[end][1] - p[1][1]
+        span > 0 || continue
+        len = sum(sqrt(sum((p[i + 1][2] .- p[i][2]) .^ 2)) for i in 1:(length(p) - 1))
+        push!(speed, len / span); push!(dur, span)
+    end
+    n = length(speed)
+    rho = _spearman(speed, dur)
+    (rho = rho, n = n,
+     biased = n >= DURATION_BIAS_MIN_TRACKS && isfinite(rho) && abs(rho) >= DURATION_BIAS_RHO,
+     speed = speed, duration = dur)
+end
+
+# ── Order index over time ──────────────────────────────────────────────────────
+
+"""
+    track_order_index(df, spatial) -> (t, phi, n)
+
+Per frame, the order parameter φ = |Σ vᵢ| / Σ |vᵢ| over every step that STARTS at that frame
+(consecutive frames only, the battery's gap rule). 1 = every cell moving the same way, 0 = no shared
+direction. Vicsek & Zafeiris (2012), Phys. Rep. 517:71–140, doi:10.1016/j.physrep.2012.03.004.
+
+Read as a curve over time: a step up is a field-wide event (chemokine release, tissue damage, or the
+stage moving). Random directions still give φ ≈ 1/√n for `n` steps, so a frame with few steps reads
+high by chance — `n` is returned for that reason. Frames with fewer than two steps are omitted.
+"""
+function track_order_index(df::DataFrame, spatial::Vector{String})
+    acc = Dict{Float64,Tuple{Vector{Float64},Float64,Int}}()
+    for (_, p) in _track_paths(df, spatial), i in 1:(length(p) - 1)
+        isapprox(p[i + 1][1] - p[i][1], 1.0; atol = 1e-6) || continue
+        v = p[i + 1][2] .- p[i][2]
+        m = sqrt(sum(v .^ 2))
+        m > 0 || continue
+        s, tot, k = get(acc, p[i][1], (zeros(length(v)), 0.0, 0))
+        acc[p[i][1]] = (s .+ v, tot + m, k + 1)
+    end
+    ts = sort([t for (t, (_, _, k)) in acc if k >= 2])
+    (t = ts,
+     phi = [(a = acc[t]; sqrt(sum(a[1] .^ 2)) / a[2]) for t in ts],
+     n = [acc[t][3] for t in ts])
 end
 
 # ── Step angle to a boundary plane (3D only) ───────────────────────────────────
@@ -489,10 +664,18 @@ function track_diagnostics(df::DataFrame, spatial::Vector{String};
     pdr  = track_pair_drift(prs)
 
     slope = msd_log_slope(msd.lag, msd.msd)
+    # weighted by samples per lag: short lags carry most of the data and the least noise
+    fur = msd_furth_fit(msd.lag, msd.msd, length(spatial); weights = msd.n)
+    dbias = track_duration_bias(df, spatial)
+    ord = track_order_index(df, spatial)
     (msd = msd, acor = acor, plane = (profile = prof, verdict = pl),
      drift = (test = dr, pairs = pdr), pairs = prs, duplicates = dup,
+     furth = fur, durationBias = dbias, order = ord,
      summary = (msdSlope = slope, motionKind = msd_motion_kind(slope),
                 persistenceLag = persistence_lag(acor.lag, acor.acor),
+                furthM = fur.M, furthP = fur.P, furthSigma = fur.sigma,
+                durationRho = dbias.rho,
+                orderMean = isempty(ord.phi) ? NaN : sum(ord.phi .* ord.n) / sum(ord.n),
                 driftP = dr.p, driftMeanStep = dr.mean_step,
                 pairAngleFar = pdr.mean_angle_far, pairsSkipped = skip_pairs,
                 planeAngleNear = pl.mean_angle_near, planeAngleFar = pl.mean_angle_far,
@@ -531,6 +714,12 @@ function track_diagnostic_findings(diag)::Vector{Dict{String,Any}}
                               value = string(round(s.planeAngleNear; digits = 1)),
                               detail = "$(diag.plane.verdict.n_near) steps nearest the plane; " *
                                        "farther steps average $(round(s.planeAngleFar; digits = 1))°"))
+
+    diag.durationBias.biased &&
+        push!(out, qc_finding("warn", "tracking.duration_bias";
+                              value = string(round(diag.durationBias.rho; digits = 2)),
+                              detail = "Spearman ρ of per-track speed vs duration over " *
+                                       "$(diag.durationBias.n) tracks"))
 
     # NB `nDuplicatePairs == 0` means either "none found" or "not looked for" (`pairsSkipped`) — the
     # absence of this finding is therefore not evidence of absence on a very large image

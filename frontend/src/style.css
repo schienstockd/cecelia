@@ -49,6 +49,7 @@
   --cc-kiwi-strong:  #0d9488;   /* deeper teal — borders on an engaged/active kiwi control */
   --cc-kiwi-soft:    #5eead4;   /* pale teal — text on a kiwi-tinted surface */
   --cc-kiwi-tint:    #134e4a;   /* dark teal wash — the tinted "option is on" surface */
+  --cc-claude:       #d97757;   /* warm clay — Claude Code (a terminal session), beside Kiwi's teal */
   /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
      analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
   --cc-selected:   #ff8c1a;

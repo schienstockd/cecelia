@@ -35,6 +35,7 @@ function api_gating_plot_image(req::HTTP.Request)
     m = _live_map(img, vn, pt)
     (is_root(pop) || has_pop(m, pop)) || return _pop_not_found(m, pop)
     xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
+    xt, yt = _auto_axes(q, img, vn, "flow", x, y, xt, yt)   # unparameterised → the channel's own, as on the GUI plot
     rxv, ryv = _plot_xy(img, vn, "flow", x, y, ROOT, xt, yt)
     isempty(rxv) && return _gerr(400, "No values for $x / $y on $vn — " * _missing_column_hint(img, vn, (x, y)))
     xv, yv = is_root(pop) ? (rxv, ryv) : _plot_xy(img, vn, pt, x, y, pop, xt, yt)

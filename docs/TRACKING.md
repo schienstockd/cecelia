@@ -306,6 +306,7 @@ Measures are split by their natural grain (no redundant broadcast):
 | `live.cell.speed` | per-cell | step speed to this cell (celltrackR `subtracks(·,1)` speed; cell 1 = `NaN`) |
 | `live.cell.angle` | per-cell | turning angle at this cell, degrees (`subtracks(·,2)` `overallAngle`; cells 1–2 = `NaN`) |
 | `live.cell.window.{speed,displacement,straightness}` | per-cell | only with **Window (min)** > 0: over the window ENDING at this cell (`tracking/track_windows.jl`). Same duration for every value, so free of the track-length dependence of the whole-track measures; in minutes, so comparable across frame rates. `NaN` where the track does not cover the full window (its first minutes, or a window opening on a bridged gap) |
+| `<pt>.cell.approach#<target>` | per-cell | approach speed toward the target population, µm/min: −Δ`min_distance#<target>` / Δt, positive = closing in (cell 1 = `NaN`). Only for targets whose `min_distance#` column exists when the task runs — run contacts first, then re-run track measures |
 
 Per-cell angle assignment follows celltrackR's `increment.cell.id=TRUE` (the step measure is
 assigned to its endpoint cell). Untracked cells get `NaN`.
@@ -326,7 +327,11 @@ The task snaps the asked window to whole frames (`window_span`), logs a `[WARN]`
 Re-running with the window off drops the windowed columns. One window per run (a second time scale is
 a second segmentation run).
 - `obs` = lineage carried over per track (`track_root`, `track_parent`, `track_state`,
-  `track_generation`); `obs._index` = `track_id`.
+  `track_generation`); `obs._index` = `track_id`. Plus `<pt>.track.approachIndex#<target>` per contacts
+  target present at measure time: (first − last distance to the target) ÷ path length, the McCutcheon
+  index toward the nearest target surface, in [−1, 1]. The nearest target can change between frames, so
+  this is approach to the population, not to one partner. It is in obs, not X/var, so deleting the
+  contacts run (`_contacts_delete!`) can drop it with its per-cell sibling.
 - Created via Python `anndata` (`tracking_utils.write_track_props`, called by the
   `track_props_run.py` subprocess) — new-file creation is Python's job (`docs/DATAMODEL.md`).
   Julia computes the measures (the celltrackR port) and hands the table over as JSON.
@@ -676,6 +681,9 @@ the arithmetic (see below).
 | Volume edge | step angle vs distance to the lower z plane (`angleToPlane`/`distanceToPlane`), 3D only | unbiased 3D motion averages **32.7°** (Beltman 2009) at every distance; a sag ONLY near the edge is a tracking artefact |
 | Drift | Hotelling's T² on step displacement vectors (`hotellingsTest`) | a net field direction — stage drift *or* chemotaxis, the user decides |
 | Track pairs | angle vs distance between every pair of paths (`analyzeCellPairs`) | far-apart pairs average 90°; lower = the field moves together |
+| Fürth fit | `MSD = 2N·M·(τ − P(1 − e^(−τ/P))) + 2N·σ²` on the MSD curve (`msd_furth_fit`; Fürth 1920 + Michalet 2010 noise offset) | M (µm²/frame) and P (frames) don't depend on track length; σ (µm) is the detection-noise floor under every speed and angle. Field drift adds a ballistic term and inflates P — read P only when the drift finding is absent. P well above the 1/e lag usually means noise is scrambling step directions, which σ quantifies |
+| Track length | Spearman ρ of per-track speed vs duration (`track_duration_bias`) | fast cells leave the volume sooner; \|ρ\| ≥ 0.3 over ≥ 30 tracks = speed partly measures track length (`tracking.duration_bias`) |
+| Alignment | order index φ = \|Σv\|/Σ\|v\| per frame (`track_order_index`; Vicsek & Zafeiris 2012) | 1 = all cells one way; a step up over time = a field-wide event. Random directions give ≈ 1/√n |
 
 **Three things that are easy to get wrong, and are pinned by the goldens:**
 
