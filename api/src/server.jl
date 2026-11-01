@@ -470,6 +470,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_set(body_bytes)),
     "/api/movies/delete" => (req, body_bytes) -> (api_movies_delete(body_bytes)),
     "/api/figures/render" => (req, body_bytes) -> (api_figures_render(body_bytes)),
+    "/api/figures/delete-own" => (req, body_bytes) -> (api_figures_delete_own(body_bytes)),
     "/api/notebooks/duplicate" => (req, body_bytes) -> (api_notebooks_duplicate(body_bytes)),
     "/api/notebooks/revise" => (req, body_bytes) -> (api_notebooks_revise(body_bytes)),
     "/api/notebooks/snapshot" => (req, body_bytes) -> (api_notebooks_snapshot(body_bytes)),

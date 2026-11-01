@@ -9,7 +9,8 @@ font stack.
 
 **Spec** (params dict; camelCase like every ``run_py`` contract):
     ``zarrPath``        : image store
-    ``outDir``          : where ``figure.png``, ``tiles/`` and ``figure.json`` (the resolved spec) land
+    ``outDir``          : where ``figure.png``, ``preview.png`` (≤ ``PREVIEW_PX``), ``tiles/`` and
+                          ``figure.json`` (the resolved spec) land
     ``kind``            : ``sequence`` (one region over ``frames``) | ``zstack`` (one ``t``, planes ``planes``)
     ``center``          : ``[y, x]`` in level-0 pixels — the crop centre
     ``sizePx``          : crop side in level-0 pixels (square)
@@ -44,6 +45,7 @@ from cecelia.writers import render_animation_run
 KINDS = ('sequence', 'zstack')
 MAX_TILES = 64
 MAX_TILE_PX = 4096
+PREVIEW_PX = 1600
 _DEFAULT_PERCENTILES = (1.0, 99.8)
 
 
@@ -283,6 +285,12 @@ def render_figure(spec, host=None, log=None):
     fig_path = os.path.join(s['outDir'], 'figure.png')
     with atomic_path(fig_path) as tmp:
         out.save(tmp, format='PNG', dpi=(style['dpi'], style['dpi']))
+    # What a caller LOOKS at (Claude's dry run, a list thumbnail): the same figure, no side over
+    # PREVIEW_PX, so a 64-tile print figure cannot flood a model's context.
+    prev = out.copy()
+    prev.thumbnail((PREVIEW_PX, PREVIEW_PX), Image.LANCZOS)
+    with atomic_path(os.path.join(s['outDir'], 'preview.png')) as tmp:
+        prev.save(tmp, format='PNG')
     resolved = dict(s, style=style, tilePxResolved=tile,
                     resolvedRanges={f'{c}:{i}': list(v) for (c, i), v in ranges.items()})
     write_json_atomic(os.path.join(s['outDir'], 'figure.json'), resolved)

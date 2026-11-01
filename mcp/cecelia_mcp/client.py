@@ -42,6 +42,7 @@ import urllib.parse
 import urllib.request
 
 from cecelia_mcp import gating_views as gv
+from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.caller import caller_headers
@@ -140,7 +141,8 @@ ALLOWED_ROUTES = frozenset(
         # fresh session pairs on first use without the user typing anything.
         ("POST", "/api/push/target"),
     }
-) | gv.GATING_ROUTES   # the gating toolset (gating_views.py), shared with the autonomous server. Its
+) | ft.FIGURE_ROUTES | gv.GATING_ROUTES   # figures (figure_tools.py: render + delete-own, Claude's own only)
+                       # + the gating toolset (gating_views.py), shared with the autonomous server. Its
                        # three writes are Claude-scoped: add-gate creates ONE stamped gate (409 on a
                        # taken name, 404/422 before anything is written); set-own-gate / delete-own
                        # change only populations Claude drew — every one at and below the path must
@@ -295,7 +297,7 @@ class ApiError(RuntimeError):
         self.message = message
 
 
-class CeceliaClient(gv.GatingClient):
+class CeceliaClient(gv.GatingClient, ft.FigureClient):
     def __init__(self, base_url: str | None = None, timeout: float = 30.0):
         self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout

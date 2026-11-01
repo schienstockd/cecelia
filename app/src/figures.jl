@@ -67,9 +67,9 @@ _figure_row(row, names) = row          # not a dict: left for the renderer's own
 _channel_key(k) = (s = String(k); i = tryparse(Int, s); i === nothing ? s : i)
 
 """
-    render_figure(img, spec; out_dir, task_dir = task_run_dir(img._dir), on_log = println) -> (; figure, spec)
+    render_figure(img, spec; out_dir, task_dir = task_run_dir(img._dir), on_log = println) -> (; figure, spec, preview)
 
-Render `spec` on `img` into `out_dir`: `figure.png` (the layout at the style's dpi), `tiles/` (each tile
+Render `spec` on `img` into `out_dir`: `figure.png` (the layout at the style's dpi), `preview.png` (≤ 1600 px a side), `tiles/` (each tile
 alone) and `figure.json` (the spec as rendered — measured display ranges included). `spec` holds only
 what to show; see `render_figure.py` for its fields (`kind`, `center`, `sizePx`, `z`, `zHalf`, `frames` or
 `t` + `planes`, `rows` (a channel's `c` is a name or a 0-based index), `display`, `interpolation`, `scaleBarUm`, `style`, `valueName`).
@@ -92,5 +92,6 @@ function render_figure(img::CciaImage, spec::AbstractDict; out_dir::AbstractStri
     log = line -> (startswith(line, "[ERROR]") && push!(errs, line); on_log(line))
     ok = run_py("writers/render_figure.py", params, task_dir; on_log = log)
     ok || error("figure: the renderer failed" * (isempty(errs) ? " — see the log" : ": " * join(errs, "; ")))
-    (; figure = joinpath(params["outDir"], "figure.png"), spec = joinpath(params["outDir"], "figure.json"))
+    (; figure = joinpath(params["outDir"], "figure.png"), spec = joinpath(params["outDir"], "figure.json"),
+       preview = joinpath(params["outDir"], "preview.png"))
 end

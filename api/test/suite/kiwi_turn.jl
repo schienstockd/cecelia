@@ -45,7 +45,12 @@ _kiwi_fake_reply(reply; seen = String[], sid = "s1") =
     gating = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", gv))
     @test length(gating) == count(r"^    @tool$"m, gv) && "add_gate" in gating
     @test occursin("register_gating_tools(_tool, _client)", server)
-    tools = union(tools, gating)
+    # …and the figure toolset from figure_tools.py (`register_figure_tools`), the same way
+    ft = read(joinpath(@__DIR__, "..", "..", "..", "mcp", "cecelia_mcp", "figure_tools.py"), String)
+    figures = Set(m.captures[1] for m in eachmatch(r"\n    @tool\s*\n(?:    @[^\n]*\n)*    def ([a-z_]+)\(", ft))
+    @test length(figures) == count(r"^    @tool$"m, ft) && "add_figure" in figures
+    @test occursin("register_figure_tools(_tool, _client)", server)
+    tools = union(tools, gating, figures)
     @test length(tools) > 40
     @test tools == union(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS))
     @test isempty(intersect(Set(KIWI_READ_TOOLS), keys(KIWI_EXCLUDED_TOOLS)))

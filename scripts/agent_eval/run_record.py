@@ -55,15 +55,18 @@ from cecelia.utils.atomic_io import write_atomic, write_json_atomic  # noqa: E40
 
 STEPS = ("cleanup", "segment", "measure", "gate", "track", "behaviour", "report")
 GATE_TOOLS = {"add_gate", "set_gate", "delete_gate"}
+FIGURE_TOOLS = {"add_figure", "set_figure", "delete_figure"}
 REPORT_TOOLS = {"add_analysis_board", "append_lab_log", "create_blackboard_entry", "revise_blackboard_entry",
-                "create_notebook", "revise_notebook"}
+                "create_notebook", "revise_notebook"} | FIGURE_TOOLS
+# Tools whose `dry_run` only previews — a look, not an action.
+DRY_RUN_TOOLS = GATE_TOOLS | FIGURE_TOOLS
 ACTIONS = {"run_chain", "run_task"} | GATE_TOOLS | REPORT_TOOLS
 
 
 def is_action(name: str, inp: dict) -> bool:
-    """A call that changed the project. A gate tool's `dry_run` only previews — it writes nothing, so
-    it is a look, not an action."""
-    return name in ACTIONS and not (name in GATE_TOOLS and (inp or {}).get("dry_run"))
+    """A call that changed the project. A gate or figure tool's `dry_run` only previews — it writes
+    nothing, so it is a look, not an action."""
+    return name in ACTIONS and not (name in DRY_RUN_TOOLS and (inp or {}).get("dry_run"))
 # calls that only wait on an action already recorded — not something the agent looked at
 _WAITS = {"wait_for_chain", "wait_for_tasks", "get_lock"}
 SURFACE = "agent_run"

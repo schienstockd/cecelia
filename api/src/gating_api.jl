@@ -1349,7 +1349,10 @@ end
 # Claude drew it and nobody else has edited it since: the last edit (`updatedBy`, `stamp_edit!`) was
 # Claude's own or there was none.
 _via_claude(s) = s !== nothing && get(s, "via", "") == "claude"
-claude_made(p) = _via_claude(p.created_by) && (p.updated_by === nothing || _via_claude(p.updated_by))
+# THE ownership rule, for any record carrying the two stamps — a population here, a figure in
+# figures_api.jl (`figure_claude_made`).
+claude_made(created_by, updated_by) = _via_claude(created_by) && (updated_by === nothing || _via_claude(updated_by))
+claude_made(p) = claude_made(p.created_by, p.updated_by)
 
 # `path` and everything under it must be Claude's; else the 403 that names what is the user's.
 function _own_subtree(m::PopulationMap, path::AbstractString)
