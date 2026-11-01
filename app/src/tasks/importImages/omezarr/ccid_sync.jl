@@ -152,6 +152,28 @@ function resync_ome_meta!(img::CciaImage)::Bool
     true
 end
 
+"""
+    adopt_store_counts!(raw, zarr_path) -> raw
+
+Overwrite `SizeC` / `SizeT` / `SizeZ` in a ccid `raw["meta"]` with the counts the store at
+`zarr_path` actually has (`read_ome_metadata`). For the editImages tasks that write a NEW image from
+one VERSION of a source (crop, copy, bin, project, resample, register): their inherited meta is the
+source IMAGE's, which describes its import — but a drift-corrected version is padded in Z (and X/Y),
+so its plane count can exceed the image's `SizeZ`. The written store is the only thing that
+describes the new image. Call inside the task's post-write `commit_state!`. Counts the store
+doesn't report are left as inherited; calibration (PhysicalSize*, TimeIncrement) is not touched —
+ccid stays authoritative for that.
+"""
+function adopt_store_counts!(raw::AbstractDict, zarr_path::AbstractString)
+    counts = read_ome_metadata(String(zarr_path))
+    m = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
+    for k in ("SizeC", "SizeT", "SizeZ")
+        haskey(counts, k) && (m[k] = counts[k])
+    end
+    raw["meta"] = m
+    raw
+end
+
 # ── Task ──────────────────────────────────────────────────────────────────────
 
 # Files belonging to ONE multi-file image: the main file plus Olympus OIR companions, which are named

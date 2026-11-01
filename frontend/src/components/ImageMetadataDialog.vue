@@ -21,6 +21,7 @@ import { storeFormatFacts, storeFormatTitle, storeLevelRows,
          type StoreEncoding } from '../utils/storeFormat'
 import { formatPhysicalSize, formatTimeIncrement } from '../utils/physicalSize'
 import { buildLineageForest, flattenLineage } from '../utils/versionLineage'
+import { cropSourceLine } from '../utils/cropSource'
 import { useTaskDefsStore } from '../stores/taskDefs'
 
 const props = defineProps<{ image: CciaImage }>()
@@ -103,6 +104,11 @@ const size = (s: StoreInfo | null | undefined) => (s && s.bytes > 0 ? formatByte
 const labels = computed(() => Object.entries(img.value.labels ?? {}))
 const attrs = computed(() => Object.entries(img.value.attr ?? {}).filter(([, v]) => v && v.length))
 const extra = computed(() => Object.entries(img.value.extraMeta ?? {}))
+// A crop names its source image (by name when it's in the open project) + version + pixel box.
+const cropLine = computed(() => {
+  const cs = img.value.cropSource
+  return cropSourceLine(cs, cs ? project.imageByUid(cs.uid)?.name : null)
+})
 
 // copy-to-clipboard for path-like values — shared helper, keyed per field
 const { isCopied, copy: copyValue } = useCopyFlash()
@@ -199,6 +205,7 @@ async function saveEditVn() {
           </button>
         </div>
         <p v-else class="md-none cc-muted">Not recorded — imported before source paths were tracked, or created in-app.</p>
+        <p v-if="cropLine" class="md-crop cc-muted">{{ cropLine }}</p>
       </section>
 
       <section class="md-section">
@@ -411,6 +418,7 @@ async function saveEditVn() {
 /* .md-copy → cc-btn cc-btn-bare cc-btn-icon */
 .md-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 .md-none { margin: 0; font-style: italic; }
+.md-crop { margin: 0.3rem 0 0; }
 
 .md-chips { list-style: none; margin: 0; padding: 0; counter-reset: ch; }
 .md-chip {
