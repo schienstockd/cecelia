@@ -39,9 +39,10 @@ const WS_MAX_FRAME_SIZE = 64 * 1024 * 1024
 # which is the TERMINATING chunk, and `closewrite` then emits a second one. Those 4 extra bytes stay in
 # the connection, so the NEXT response on that keep-alive connection is parsed starting at them.
 #
-# Measured (HTTP.jl 2.4.0, and 2.5.5 frames it the same way, so this is ours to guard, not an upstream
-# fix to wait for): two requests on one socket came back as
-# `HTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\nHTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\n`.
+# Measured on HTTP.jl 2.4.0 and 2.5.5: two requests on one socket came back as
+# `HTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\nHTTP/1.1 200 OK … 0\r\n\r\n0\r\n\r\n`. HTTP.jl 2.14.1 no
+# longer does this, but the guard stays: it costs one branch and holds if an older HTTP.jl resolves
+# or the upstream behaviour regresses (the testset watches both).
 # What that cost on screen: ONE handler legitimately returned zero bytes — a track-grained gating plot
 # of an untracked segmentation has no points — and Vite's proxy then died with
 # `HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>` on the OTHER, perfectly good
