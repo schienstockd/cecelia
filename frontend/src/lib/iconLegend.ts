@@ -120,6 +120,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-reply', lucide: 'reply', means: 'Reply to what the assistant wrote — correct it, or follow it up' },
       { icon: 'pi-external-link', lucide: 'external-link', means: 'Opens outside the app' },
       { icon: 'pi-github', lucide: 'folder-git-2', means: 'Opens the repository' },
+      { icon: 'pi-gift', lucide: 'gift', means: 'What’s new in this version' },
       { icon: 'pi-megaphone', lucide: 'megaphone', means: 'Call for Datasets — what we can build with your data' },
       { icon: 'pi-comments', lucide: 'messages-square', means: 'Chat to Claude' },
       { icon: 'pi-at', lucide: 'at-sign', means: 'Add to Kiwi — attach it to your next question' },
@@ -217,6 +218,7 @@ export const ICON_LEGEND: IconFamily[] = [
     title: 'What the pages do',
     note: 'A population keeps its glyph everywhere it appears — in the nav, the viewer and the plots.',
     icons: [
+      { icon: 'pi-brush-cleaning', lucide: 'brush-cleaning', means: 'Cleanup — correct and denoise images' },
       { icon: 'pi-th-large', lucide: 'layout-grid', means: 'Segmentation — masks and label sets' },
       { icon: 'pi-chart-scatter', lucide: 'chart-scatter', means: 'Gating' },
       { icon: 'pi-sitemap', lucide: 'network', means: 'Track clusters' },

@@ -67,7 +67,7 @@ const canInstall = computed(() =>
 </script>
 
 <template>
-  <BaseModal title="What's new" icon="pi-sparkles" width="640px" @close="$emit('close')">
+  <BaseModal title="What's new" icon="pi-gift" width="640px" @close="$emit('close')">
     <div v-if="hasAnyCard" class="wn-list">
       <template v-if="tipCard">
         <!-- Position counter ABOVE the card so it doesn't move vertically when sketch aspect

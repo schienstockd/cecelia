@@ -91,7 +91,7 @@ export const driftCorrectGuide = moduleTaskGuide({
   id: 'drift-correct',
   title: 'Drift correct a time series',
   group: 'Data',
-  icon: 'pi-sparkles',
+  icon: 'pi-brush-cleaning',
   summary: 'Register a drifting time series so cells stay put between frames.',
   route: '/cleanup',
   navLabel: 'Cleanup',

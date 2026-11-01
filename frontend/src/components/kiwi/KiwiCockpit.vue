@@ -24,7 +24,8 @@
 //
 // v2 adds MCP health, setup CTA merge, lab-log peek, Blackboard list — see
 // docs/todo/KIWI_PLAN.md → *Contents — v2*. The provider-neutral wording is enforced by
-// kiwiNamingRatchet.test.ts, which greps this directory for the literal "Claude".
+// kiwiNamingRatchet.test.ts: Kiwi's own engine is never named "Claude" here (it reads
+// `engine_label`); "Claude Code" — the terminal route — is.
 //
 // Observer state descope note: the plan mentions surfacedCount/surfaceCap/throttled/enabled, but
 // those live only inside the MCP server's Python `_monitor` singleton — there's no HTTP path to
@@ -350,10 +351,10 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
           <span class="kiwi-chip cc-fs-xs"
                 :class="{ 'kiwi-chip-paired': pushTarget.paired, 'kiwi-chip-sent': pushSent() }"
                 v-tooltip.bottom="pushSent()
-                  ? 'Sent to your paired assistant session'
+                  ? 'Sent to your paired Claude Code session'
                   : pushTarget.paired
-                    ? `Paired — shared frames post to your assistant session\nSocket: ${(pushTarget as Extract<PairedState, { paired: true }>).socketPath}`
-                    : 'No paired assistant session — shared frames fall back to the clipboard'">
+                    ? `Paired — shared frames post to your Claude Code session\nSocket: ${(pushTarget as Extract<PairedState, { paired: true }>).socketPath}`
+                    : 'No paired Claude Code session — shared frames fall back to the clipboard'">
             {{ pushSent() ? 'sent ✓' : pushChipLabel(pushTarget) }}
           </span>
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
@@ -367,7 +368,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
           <button class="cc-btn cc-btn-ghost cc-fs-xs"
                   :disabled="!observer.available || !!starting"
                   @click="startInTerminal"
-                  v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
+                  v-tooltip.bottom="!observer.available ? 'Claude Code not installed'
                     : startCopied('chat') ? 'Copied — paste it in a terminal'
                     : `Copy a command that starts a session on this project as ${appCtl.activeProfileDisplayName}`">
             <i :class="['pi', starting ? 'pi-spin pi-spinner' : startCopied('chat') ? 'pi-check' : 'pi-copy']" />
@@ -378,7 +379,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
           <button class="cc-btn cc-btn-ghost cc-btn-icon"
                   @click="copyChatStarter"
                   v-tooltip.bottom="chatCopied()
-                    ? 'Copied — paste it into your assistant chat'
+                    ? 'Copied — paste it into your Claude Code chat'
                     : 'Copy chat starter — for a session already running'">
             <i :class="['pi', chatCopied() ? 'pi-check' : 'pi-comments']" />
           </button>
@@ -436,7 +437,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
                 <button class="kiwi-cap-copy cc-btn cc-btn-bare"
                         @click="copyId(c.captureId)"
                         v-tooltip.right="capCopied(c.captureId)
-                          ? 'Copied — paste it into your assistant chat'
+                          ? 'Copied — paste it into your Claude Code chat'
                           : (c.previousCaptureId
                               ? `Copy captureId · ${c.captureId} (refines an earlier capture)`
                               : `Copy captureId · ${c.captureId}`)">
@@ -486,9 +487,9 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <CollapsibleSection label="Session identity" max-height="none"
                             fill
                             accordion="cc.kiwi.openSection" section="session"
-                            tip="Which assistant session is paired here — and a button to unpair.">
+                            tip="Which Claude Code session is paired here — and a button to unpair.">
           <div v-if="!pushTarget.paired" class="kiwi-empty cc-muted cc-fs-xs">
-            Not paired. Your assistant session pairs on its next MCP tool call.
+            Not paired. Your Claude Code session pairs on its next MCP tool call.
           </div>
           <template v-else>
             <div class="kiwi-obs-row">
@@ -522,7 +523,7 @@ const terminalCtaMode = computed(() => terminalCta(observer.available, observer.
         <CollapsibleSection label="Assistant" max-height="none"
                             fill
                             accordion="cc.kiwi.openSection" section="assistant"
-                            tip="Is the assistant CLI installed, and is the Cecelia plugin set up for your terminal?">
+                            tip="Is Claude Code installed, and is the Cecelia plugin set up for your terminal?">
           <div class="kiwi-obs-row">
             <span class="kiwi-obs-lbl cc-eyebrow cc-fs-2xs">CLI</span>
             <span class="cc-dot" :class="observer.available ? 'cc-dot-ok' : 'cc-dot-fail'"

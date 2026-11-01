@@ -312,7 +312,7 @@ function pick(c: RefCandidate) {
         <button v-if="t.reply" class="cc-btn cc-btn-ghost cc-fs-2xs"
                 :disabled="!observer.available || !!starting || saveBusy[t.turnId]"
                 @click="continueInTerminal(t)"
-                v-tooltip.bottom="!observer.available ? 'Assistant CLI not installed'
+                v-tooltip.bottom="!observer.available ? 'Claude Code not installed'
                   : startCopied(t.turnId) ? 'Copied — paste it in a terminal'
                   : 'Save to Blackboard, then copy a command that starts a terminal session on it'">
           <i :class="['pi', starting === t.turnId ? 'pi-spin pi-spinner' : startCopied(t.turnId) ? 'pi-check' : 'pi-comments']" />
