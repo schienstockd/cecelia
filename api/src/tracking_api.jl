@@ -308,17 +308,20 @@ function api_track_diagnostics(req::HTTP.Request)
                 drift = (; p = d.drift.test.p, statistic = d.drift.test.statistic, n = d.drift.test.n,
                            meanStep = d.drift.test.mean_step, drifting = d.drift.test.drifting,
                            stepSpacing = d.drift.test.step_spacing, alpha = DRIFT_ALPHA),
+                # `pBound`: "below" = P under one frame (unresolved, M/σ still fitted), "above" = past
+                # the lags (ok = false) — `msd_furth_fit`; null when P was resolved
                 furth = (; M = d.furth.M, P = d.furth.P, sigma = d.furth.sigma, ok = d.furth.ok,
-                          nDims = d.furth.n_dims),
+                          nDims = d.furth.n_dims,
+                          pBound = d.furth.p_bound === :none ? nothing : String(d.furth.p_bound)),
                 durationBias = (; speed = d.durationBias.speed, duration = d.durationBias.duration,
                                   rho = d.durationBias.rho, n = d.durationBias.n,
                                   biased = d.durationBias.biased),
-                order = (; t = d.order.t, phi = d.order.phi, n = d.order.n),
+                order = (; t = d.order.t, phi = d.order.phi, n = d.order.n, chance = d.order.chance),
                 summary = (; msdSlope = d.summary.msdSlope, motionKind = d.summary.motionKind,
                              persistenceLag = d.summary.persistenceLag,
                              furthM = d.summary.furthM, furthP = d.summary.furthP,
                              furthSigma = d.summary.furthSigma, durationRho = d.summary.durationRho,
-                             orderMean = d.summary.orderMean,
+                             orderMean = d.summary.orderMean, orderChance = d.summary.orderChance,
                              nDuplicatePairs = d.summary.nDuplicatePairs),
                 findings = track_diagnostic_findings(d)))
         end

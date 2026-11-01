@@ -249,6 +249,29 @@
         @test Cecelia.series_base(joinpath(tempdir(), "nope-$(rand(UInt32))")) isa String
     end
 
+    # A new image written from a padded VERSION (crop of a drift-corrected store) inherits the source
+    # IMAGE's SizeZ — 31 over a 35-plane store. `adopt_store_counts!` takes C/T/Z from the written
+    # store and leaves calibration + unrelated keys alone.
+    @testset "adopt_store_counts!" begin
+        mktempdir() do d
+            make_zarr(d; layout = :flat, axes = ["t", "c", "z", "y", "x"],
+                      level_scales = [[1.0, 1.0, 2.0, 0.5, 0.5]], shape = [181, 4, 35, 468, 467])
+            raw = Dict{String,Any}("meta" => Dict{String,Any}(
+                "SizeZ" => 31, "SizeT" => 181, "SizeC" => 4, "PhysicalSizeZ" => 2.0,
+                "crop_source_uid" => "abc123"))
+            adopt_store_counts!(raw, d)
+            @test raw["meta"]["SizeZ"] == 35
+            @test raw["meta"]["SizeT"] == 181 && raw["meta"]["SizeC"] == 4
+            @test raw["meta"]["PhysicalSizeZ"] == 2.0 && raw["meta"]["crop_source_uid"] == "abc123"
+        end
+        # a store with no readable metadata leaves the inherited counts as they were
+        mktempdir() do d
+            raw = Dict{String,Any}("meta" => Dict{String,Any}("SizeZ" => 31))
+            adopt_store_counts!(raw, d)
+            @test raw["meta"]["SizeZ"] == 31
+        end
+    end
+
     # ── Cross-language: the Julia and Python calibration stamps must agree ──
     # Calibration lives in two on-disk copies (NGFF `.zattrs`, OME-XML `<Pixels>`) and has two
     # writers that cannot call each other: Python `zarr_utils.write_calibration` (used by every

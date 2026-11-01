@@ -5,6 +5,7 @@ import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useSettingsStore } from './settings'
 import { prunedImageVersion } from '../utils/staleImageVersion'
+import type { CropSource } from '../utils/cropSource'
 import { publishViewerImageMeta } from '../lib/viewerImageMetaChannel'
 
 // Image-table sort preference (which column + direction) — see utils/imageTable.sortImages.
@@ -27,6 +28,7 @@ export interface CciaImage {
   channelNames?: string[]
   oriPath?: string | null                 // original source file location (before OME-Zarr conversion)
   extraMeta?: Record<string, string | number | boolean>  // any other meta not surfaced as a field
+  cropSource?: CropSource | null           // set on a crop: source image + version + pixel box
   filepath?: string                       // active version filename (for display)
   activeValueName?: string                // active value name (the _active key from versioned dict)
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)

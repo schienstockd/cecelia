@@ -30,6 +30,22 @@ function parse_crop_box(d::AbstractDict)::CropBox
         t0 = Int(get(b, "t0", -1)), t1 = Int(get(b, "t1", -1)))
 end
 
+"""
+    crop_source(meta) -> (; uid, value_name, box::CropBox) | nothing
+
+Where a cropped image came from, as `_run_task(::CropImage, …)` recorded it in the new image's meta:
+the source image uid, the source VERSION it cropped, and the box (`parse_crop_box`). Adding
+`(x0, y0, z0, t0)` to a coordinate in the crop maps it back into the source (skip an axis at `-1`).
+`nothing` when the image isn't a crop (no `crop_source_uid`).
+"""
+function crop_source(meta::AbstractDict)
+    uid = meta_str(meta, "crop_source_uid")
+    isnothing(uid) && return nothing
+    raw_box = get(meta, "crop_box", nothing)
+    (; uid, value_name = meta_str(meta, "crop_source_value_name"),
+       box = raw_box isa AbstractDict ? parse_crop_box(raw_box) : CropBox())
+end
+
 function parse_crop_image_params(d::AbstractDict)::CropImageParams
     box_raw = get(d, "cropBox", nothing)
     box     = box_raw isa AbstractDict ? parse_crop_box(box_raw) : CropBox()
@@ -44,6 +60,8 @@ end
 # shrinks — so the physical scale/unit and channel count carry over unchanged; the Z/T counts shrink to
 # the box when that axis is trimmed (a `-1` bound means "keep the whole axis"). Kept out of `_run_task`
 # so it's unit-testable without a project/zarr on disk. See the crop-metadata note in `_run_task`.
+# The counts are provisional: the source IMAGE's SizeZ can differ from the cropped VERSION's (drift
+# correction pads Z), so `adopt_store_counts!` re-reads them from the written crop.
 function _crop_inherited_meta(src_meta::AbstractDict, box::NamedTuple)::Dict{String,Any}
     out = Dict{String,Any}()
     for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
@@ -156,6 +174,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
         raw2["status"] = "done"   # a crop is a complete image (zarr written) — mark it imported, not 'pending'
+        adopt_store_counts!(raw2, im_out_path)   # the written store, not the source image, sizes C/T/Z
     end
 
     # Carry the source's napari layer-props sidecar (per-channel colormap/contrast JSON) to the crop, so

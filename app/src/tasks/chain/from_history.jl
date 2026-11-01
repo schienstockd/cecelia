@@ -327,6 +327,24 @@ function gated_pop_refs(params::AbstractDict, lv)::Vector{Tuple{String,String}}
     unique!(refs)
 end
 
+# A run's params with label set `from` renamed to `to`: a population picker's `from/…` prefix, and a
+# label-set name picker (`labels` namespace) holding exactly `from`. Walks the keys as `_keyed_strings`
+# does, so a nested group is matched by its own keys. A key the task's spec doesn't declare is left alone.
+function rename_label_set_in_params(v, lv, from::String, to::String, key::String = "")
+    if v isa AbstractString
+        l = get(lv, key, nothing)
+        l === nothing && return v
+        l.type == "popSelection" && startswith(v, from * "/") && return to * v[ncodeunits(from)+1:end]
+        (l.ns == "labels" && v == from) && return to
+        return v
+    elseif v isa AbstractDict
+        return Dict{String,Any}(string(k) => rename_label_set_in_params(x, lv, from, to, string(k)) for (k, x) in v)
+    elseif v isa AbstractVector
+        return Any[rename_label_set_in_params(x, lv, from, to, key) for x in v]
+    end
+    v
+end
+
 # What tells this version of a step from its siblings: the name it writes, else what it read (the
 # populations — tracking `/qc/frags` vs `/qc/cells`), else "" (one version only).
 function _history_detail(s::HistoryStep, lv)::String

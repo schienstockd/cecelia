@@ -70,7 +70,7 @@ export delete_image!, delete_set!, rename_set!, set_name_taken, move_image!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes,
        image_included
 export img_axes, img_has_time
-export meta_int, meta_float, meta_str
+export meta_int, meta_float, meta_str, crop_source
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name, resolve_version
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
@@ -163,10 +163,11 @@ export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_d
 export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
 export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag,
-       msd_furth_fit, track_duration_bias, track_order_index
+       msd_furth_fit, track_duration_bias, track_order_index, order_chance
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
-export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS
+export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS,
+       window_coverage
 export approach_columns, step_approach, approach_index, approach_measures,
        contact_col_regex, approach_cell_col, approach_track_col, is_stale_track_measure,
        drop_stale_approach!
@@ -202,7 +203,7 @@ export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixel
 # `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
 # the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
 export ngff_attrs, ngff_multiscales, zarr_array_meta, ngff_version, store_rev, store_written_at
-export resync_ome_meta!
+export resync_ome_meta!, adopt_store_counts!
 export RemoveImage
 export CellposeSegment
 export CoastalSegment, coastal_models_for_python

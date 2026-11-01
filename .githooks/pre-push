@@ -1,0 +1,5 @@
+#!/bin/sh
+# Refuse a push to a branch whose PR already merged or closed — it would re-create the branch on
+# GitHub with unreviewed commits. Logic: scripts/pre_push_check.py. Activated with the other hooks
+# by `pixi run install-git-hooks`. `git push --no-verify` skips it.
+exec python3 "$(git rev-parse --show-toplevel)/scripts/pre_push_check.py"

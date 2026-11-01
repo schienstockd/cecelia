@@ -1,6 +1,6 @@
 # scripts/doctor.jl — "why isn't this working on a fresh clone / new worktree" in one command.
 #
-# Design pattern adapted from spaCR (Olafsson et al., BSD-3-Clause). See THIRD_PARTY.md → Design
+# Design pattern adapted from spaCR (Olafsson et al.). See THIRD_PARTY.md → Design
 # patterns adopted. No code lifted.
 #
 # WHAT IT IS. A dispatcher over checks that already exist elsewhere in the tree. It never

@@ -239,7 +239,9 @@ def list_images(project_uid: str) -> list:
 
 @_tool
 def get_image_info(project_uid: str, image_uid: str) -> dict:
-    """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log, note."""
+    """One image's full metadata: channels, dimensions, physical sizes, label props, QC, run log, note,
+    and for a crop `cropSource` {uid, valueName, box} — add box x0/y0/z0/t0 to map its coordinates
+    into the source (-1 = axis kept whole)."""
     return _strip_discovery_image(_client.get_image_meta(project_uid, image_uid).get("image", {}))
 
 

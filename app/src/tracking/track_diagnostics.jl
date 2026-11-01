@@ -254,7 +254,7 @@ end
 _furth_shape(τ::Real, P::Real) = τ - P * (1 - exp(-τ / P))
 
 """
-    msd_furth_fit(lag, msd, n_dims; weights = nothing) -> (M, P, sigma, rss, ok, n_dims)
+    msd_furth_fit(lag, msd, n_dims; weights = nothing) -> (M, P, sigma, rss, ok, n_dims, p_bound)
 
 Fits the persistent-random-walk MSD to the curve from [`track_msd`]:
 
@@ -275,13 +275,19 @@ solve and only P is searched (log grid, then golden-section) — no optimiser de
 minimum in the linear pair. Both are constrained ≥ 0. `weights` defaults to equal; pass the per-lag
 sample counts to trust short lags (many samples) over long ones.
 
-`ok = false` (all NaN) with fewer than `FURTH_MIN_LAGS` finite lags or a flat curve. P at the edge
-of the search range (`P ≥ 10 ×` the longest lag) means the motion is ballistic within the window —
-reported, not hidden; read it like `persistence_lag` returning NaN.
+`ok = false` (all NaN) with fewer than `FURTH_MIN_LAGS` finite lags or a flat curve.
+
+P is only measured INSIDE the fitted lags; `p_bound` says when it is not:
+- `:below` — P shorter than the shortest lag (one frame). The curve is straight from the first lag
+  on, so P is unresolved ("< 1 frame"), but M and σ are still the pure-diffusion fit: `ok` stays true.
+- `:above` — P longer than the longest lag. The motion is ballistic over the whole window and M and
+  P trade off along a ridge (any large P fits, each with its own M), so `ok = false`. σ is kept: the ballistic term vanishes as τ² toward the short lags,
+  so the offset under them is still pinned.
+- `:none` — resolved.
 """
 function msd_furth_fit(lag::AbstractVector{<:Real}, msd::AbstractVector{<:Real}, n_dims::Integer;
                        weights::Union{Nothing,AbstractVector{<:Real}} = nothing)
-    fail = (M = NaN, P = NaN, sigma = NaN, rss = NaN, ok = false, n_dims = Int(n_dims))
+    fail = (M = NaN, P = NaN, sigma = NaN, rss = NaN, ok = false, n_dims = Int(n_dims), p_bound = :none)
     w0 = weights === nothing ? ones(length(lag)) : Float64.(weights)
     keep = [i for i in eachindex(lag) if isfinite(lag[i]) && lag[i] > 0 && isfinite(msd[i]) && w0[i] > 0]
     length(keep) < FURTH_MIN_LAGS && return fail
@@ -323,7 +329,9 @@ function msd_furth_fit(lag::AbstractVector{<:Real}, msd::AbstractVector{<:Real},
     end
     P = exp((a_ + b_) / 2)
     a, b, r = _solve(P)
-    (M = a / (2 * n_dims), P = P, sigma = sqrt(b / (2 * n_dims)), rss = r, ok = true, n_dims = Int(n_dims))
+    p_bound = P < minimum(τ) ? :below : P > maximum(τ) ? :above : :none
+    (M = a / (2 * n_dims), P = P, sigma = sqrt(b / (2 * n_dims)), rss = r, ok = p_bound !== :above,
+     n_dims = Int(n_dims), p_bound = p_bound)
 end
 
 # ── Track-length (selection) bias ──────────────────────────────────────────────
@@ -384,31 +392,50 @@ end
 
 # ── Order index over time ──────────────────────────────────────────────────────
 
+# Γ((d+1)/2) / Γ(d/2) for the two spatial dimensionalities a track has — the chi-distribution mean
+# factor in `order_chance`, spelled out rather than taking a SpecialFunctions dependency for two numbers
+const _ORDER_CHI = Dict(1 => sqrt(2 / pi), 2 => sqrt(pi) / 2, 3 => 2 / sqrt(pi))
+
 """
-    track_order_index(df, spatial) -> (t, phi, n)
+    order_chance(sum_m, sum_m2, d) -> Float64
+
+The φ that `d`-dimensional steps of lengths `m` reach with NO shared direction: E|Σ mᵢ uᵢ| / Σ mᵢ for
+random unit `uᵢ`. Each component of Σ mᵢ uᵢ has variance Σ mᵢ² / d, so its length is a scaled chi with
+`d` degrees of freedom — mean `Γ((d+1)/2)/Γ(d/2) · √(2 Σmᵢ² / d)`. That is the large-n (Gaussian)
+limit; at two equal steps it is within 2% of the exact value (2D 0.627 vs 2/π = 0.637, 3D 0.651 vs
+2/3). Deterministic, and it uses the frame's OWN step lengths: uneven speeds raise the chance level
+(one fast cell dominates the sum), which a `1/√n` rule would miss.
+"""
+order_chance(sum_m::Real, sum_m2::Real, d::Integer)::Float64 =
+    sum_m > 0 ? _ORDER_CHI[d] * sqrt(2 * sum_m2 / d) / sum_m : NaN
+
+"""
+    track_order_index(df, spatial) -> (t, phi, n, chance)
 
 Per frame, the order parameter φ = |Σ vᵢ| / Σ |vᵢ| over every step that STARTS at that frame
 (consecutive frames only, the battery's gap rule). 1 = every cell moving the same way, 0 = no shared
 direction. Vicsek & Zafeiris (2012), Phys. Rep. 517:71–140, doi:10.1016/j.physrep.2012.03.004.
 
 Read as a curve over time: a step up is a field-wide event (chemokine release, tissue damage, or the
-stage moving). Random directions still give φ ≈ 1/√n for `n` steps, so a frame with few steps reads
-high by chance — `n` is returned for that reason. Frames with fewer than two steps are omitted.
+stage moving). Random directions do NOT give 0: a frame with few steps reads high by chance (three
+steps reach ≈ 0.5), so `chance` is that frame's no-alignment level ([`order_chance`]) and φ is read
+against it, never against 0. Frames with fewer than two steps are omitted.
 """
 function track_order_index(df::DataFrame, spatial::Vector{String})
-    acc = Dict{Float64,Tuple{Vector{Float64},Float64,Int}}()
+    acc = Dict{Float64,Tuple{Vector{Float64},Float64,Float64,Int}}()
     for (_, p) in _track_paths(df, spatial), i in 1:(length(p) - 1)
         isapprox(p[i + 1][1] - p[i][1], 1.0; atol = 1e-6) || continue
         v = p[i + 1][2] .- p[i][2]
         m = sqrt(sum(v .^ 2))
         m > 0 || continue
-        s, tot, k = get(acc, p[i][1], (zeros(length(v)), 0.0, 0))
-        acc[p[i][1]] = (s .+ v, tot + m, k + 1)
+        s, tot, tot2, k = get(acc, p[i][1], (zeros(length(v)), 0.0, 0.0, 0))
+        acc[p[i][1]] = (s .+ v, tot + m, tot2 + m^2, k + 1)
     end
-    ts = sort([t for (t, (_, _, k)) in acc if k >= 2])
+    ts = sort([t for (t, a) in acc if a[4] >= 2])
     (t = ts,
      phi = [(a = acc[t]; sqrt(sum(a[1] .^ 2)) / a[2]) for t in ts],
-     n = [acc[t][3] for t in ts])
+     n = [acc[t][4] for t in ts],
+     chance = [(a = acc[t]; order_chance(a[2], a[3], length(a[1]))) for t in ts])
 end
 
 # ── Step angle to a boundary plane (3D only) ───────────────────────────────────
@@ -673,9 +700,13 @@ function track_diagnostics(df::DataFrame, spatial::Vector{String};
      furth = fur, durationBias = dbias, order = ord,
      summary = (msdSlope = slope, motionKind = msd_motion_kind(slope),
                 persistenceLag = persistence_lag(acor.lag, acor.acor),
-                furthM = fur.M, furthP = fur.P, furthSigma = fur.sigma,
+                # a bounded P is not a number to compare across images (`msd_furth_fit`), and past
+                # the lags M trades off against it — the cohort sees NaN, the panel sees the bound
+                furthM = fur.ok ? fur.M : NaN, furthP = fur.p_bound === :none ? fur.P : NaN,
+                furthSigma = fur.sigma, furthPBound = fur.p_bound,
                 durationRho = dbias.rho,
                 orderMean = isempty(ord.phi) ? NaN : sum(ord.phi .* ord.n) / sum(ord.n),
+                orderChance = isempty(ord.chance) ? NaN : sum(ord.chance .* ord.n) / sum(ord.n),
                 driftP = dr.p, driftMeanStep = dr.mean_step,
                 pairAngleFar = pdr.mean_angle_far, pairsSkipped = skip_pairs,
                 planeAngleNear = pl.mean_angle_near, planeAngleFar = pl.mean_angle_far,

@@ -204,9 +204,11 @@ def recent_prs(limit: int = 100, cwd: str | None = None) -> list[dict] | None:
         return None
 
 
-def merged_pr_heads(branch: str, cwd: str | None = None) -> list[dict] | None:
-    """Merged PRs opened from `branch`, each with `number`, `headRefOid` (the head it merged at) and
-    `mergeCommit` (`{"oid": …}`: the commit the merge put on the base branch).
+def merged_pr_heads(branch: str, cwd: str | None = None, state: str = "merged") -> list[dict] | None:
+    """Merged PRs opened from `branch`, each with `number`, `state`, `headRefOid` (the head it merged
+    at) and `mergeCommit` (`{"oid": …}`: the commit the merge put on the base branch). `state="all"`
+    returns every PR from the branch instead (open, closed, merged; `headRefOid` = its last head) —
+    `prune-worktrees`' GitHub-branch check.
 
     A squash merge leaves no ancestry link to main, so "is this branch's work merged?" is answered
     by comparing a local commit against these heads. None on any failure, so a caller can tell "no
@@ -217,8 +219,8 @@ def merged_pr_heads(branch: str, cwd: str | None = None) -> list[dict] | None:
         return None
     try:
         result = subprocess.run(
-            [gh, "pr", "list", "--head", branch, "--state", "merged",
-             "--json", "number,headRefOid,mergeCommit"],
+            [gh, "pr", "list", "--head", branch, "--state", state,
+             "--json", "number,state,headRefOid,mergeCommit"],
             capture_output=True, text=True, timeout=10.0, check=False, encoding="utf-8", cwd=cwd,
         )
     except (subprocess.TimeoutExpired, OSError):
