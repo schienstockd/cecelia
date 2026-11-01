@@ -13,7 +13,7 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
-## [0.2.12] — 2026-11-01
+## [0.2.12] — 2026-11-02
 
 ### Read this first
 
@@ -26,6 +26,7 @@ These change results when old work is re-run:
   Cellpose no longer merges across planes (#1825).
 - **Cell contacts:** one column set per target; tick *Combine targets* for the old behaviour (#1734).
 - **Crops made before 0.2.12** may record the wrong Z size; re-crop (#1877).
+- **Mesh contact distances** are measured to the nearest vertex; they shift by up to ~half a voxel (#1891).
 - **AF correction:** saved settings don't pre-fill the new role rows (#1711).
 - **Renamed:** UMAP → Cluster map, `mergeUmap` → `createUmap` (#1822); `pixi run headless` →
   `pixi run chat` (#1849).
@@ -36,7 +37,7 @@ These change results when old work is re-run:
 - AF correction: mark a channel as AF for a marker; bright AF zeroes the marker (#1711).
 - Figures from the viewer, kept with movies and placeable on boards (#1880–#1890).
 - Find ROIs: where a population gathers, reviewed in the viewer (#1793, #1884).
-- Containment in *Cell contacts (meshes)* (#1793).
+- Containment in *Cell contacts (meshes)*: how enclosed each cell is (0–1), and how many each holds (#1793, #1891).
 - Motility: persistence, order index, windowed measures, approach to a target (#1862–#1875).
 - Behaviour axes for track clusters (#1821, #1823).
 - Colour masks by population or track cluster (#1756, #1792, #1819).
@@ -52,6 +53,8 @@ These change results when old work is re-run:
 ### Changed
 
 - Coastal ~24% faster on time-lapses (#1825, #1831, #1837).
+- Mesh contacts take seconds per frame, not minutes (#1891).
+- Range sliders: drag the span to move the whole range (#1895).
 - Gate plot: click to select before dragging (#1752, #1776, #1866).
 - Task forms hide settings that don't apply (#1763, #1774).
 - Landscape captures aren't comparable with earlier ones (#1710, #1824).
