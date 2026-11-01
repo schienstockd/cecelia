@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // A compact dual-thumb range slider (min + max on one track). Native <input type="range"> is
 // single-thumb only, so this is a small pointer-driven control that matches the app's accent styling.
+// Drag a thumb to move one end; drag the span between them to move the whole range.
 // Reusable — v-model:lo / v-model:hi. Used for the 3D-crop z/t ranges (ViewerPanel) and, with
 // `scale="log"` + a `samples` buffer, for the viewer's per-channel contrast window.
 import { computed, ref } from 'vue'
@@ -29,11 +30,15 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   (e: 'update:lo', v: number): void
   (e: 'update:hi', v: number): void
+  // Both ends in ONE event, after any lo/hi update. A range drag moves both; a parent that rebuilds
+  // its pair from its own (not-yet-updated) props on each half would drop the first — listen here.
+  (e: 'update:pair', v: [number, number]): void
   (e: 'change'): void
 }>()
 
 const track = ref<HTMLElement | null>(null)
-let active: 'lo' | 'hi' | null = null
+// 'range' = dragging the span between the thumbs: both move together, width kept.
+let active: 'lo' | 'hi' | 'range' | null = null
 
 // Half the thumb width — must match `.rs-thumb { width }` and the `.rs-rail` inset. The rail spans
 // from THUMB_HALF to width-THUMB_HALF, so value → position must map into that inset track.
@@ -52,38 +57,89 @@ function clampSnap(v: number): number {
   const s = props.step || 1
   return Math.max(props.min, Math.min(props.max, Math.round(v / s) * s))
 }
-function valueFromEvent(e: PointerEvent): number {
+// Pointer x → rail position in [0, 1] (unclamped; valueFromPos clamps).
+function posFromEvent(e: PointerEvent): number {
   const el = track.value
-  if (!el) return props.min
+  if (!el) return 0
   const r = el.getBoundingClientRect()
   // Pointer at the rail's left end (r.left + THUMB_HALF) is value=min, right end value=max.
   const trackW = r.width - 2 * THUMB_HALF
-  const f = trackW > 0 ? (e.clientX - r.left - THUMB_HALF) / trackW : 0
-  return clampSnap(valueFromPos(f, props.min, props.max, props.scale))
+  return trackW > 0 ? (e.clientX - r.left - THUMB_HALF) / trackW : 0
 }
+function valueFromEvent(e: PointerEvent): number {
+  return clampSnap(valueFromPos(posFromEvent(e), props.min, props.max, props.scale))
+}
+
+// Range drag state: where the pointer went down and where the thumbs were, in POSITION space, so
+// the thumbs track the cursor pixel-for-pixel on a log rail too (linear: same as a value shift).
+// A press that never moves past DRAG_SLOP is a click, and keeps the rail's click behaviour —
+// jump the nearer thumb there — so a click inside the range can still narrow it.
+const DRAG_SLOP = 3
+let downX = 0
+let downPos = 0
+let loPos0 = 0
+let hiPos0 = 0
+let rangeMoved = false
+
 function onMove(e: PointerEvent) {
   if (!active) return
+  if (active === 'range') {
+    if (!rangeMoved && Math.abs(e.clientX - downX) < DRAG_SLOP) return
+    rangeMoved = true
+    // Clamp the shift so neither end runs off the rail — the width is kept, the span stops at the end.
+    const d = Math.max(-loPos0, Math.min(1 - hiPos0, posFromEvent(e) - downPos))
+    const lo = clampSnap(valueFromPos(loPos0 + d, props.min, props.max, props.scale))
+    const hi = clampSnap(valueFromPos(hiPos0 + d, props.min, props.max, props.scale))
+    if (lo !== props.lo || hi !== props.hi) {
+      emit('update:lo', lo)
+      emit('update:hi', Math.max(hi, lo))
+      emit('update:pair', [lo, Math.max(hi, lo)])
+    }
+    return
+  }
   const v = valueFromEvent(e)
-  if (active === 'lo') emit('update:lo', Math.min(v, props.hi))
-  else emit('update:hi', Math.max(v, props.lo))
+  if (active === 'lo') {
+    const lo = Math.min(v, props.hi)
+    emit('update:lo', lo)
+    emit('update:pair', [lo, props.hi])
+  } else {
+    const hi = Math.max(v, props.lo)
+    emit('update:hi', hi)
+    emit('update:pair', [props.lo, hi])
+  }
 }
-function onUp() {
+function onUp(e: PointerEvent) {
+  if (active === 'range' && !rangeMoved) {
+    // A click on the span, not a drag — behave like a click on the rail.
+    active = nearer(valueFromEvent(e))
+    onMove(e)
+  }
   active = null
   window.removeEventListener('pointermove', onMove)
   window.removeEventListener('pointerup', onUp)
   emit('change')
 }
-function grab(which: 'lo' | 'hi', e: PointerEvent) {
+function grab(which: 'lo' | 'hi' | 'range', e: PointerEvent) {
   active = which
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
   e.preventDefault()
 }
+const nearer = (v: number): 'lo' | 'hi' =>
+  Math.abs(v - props.lo) <= Math.abs(v - props.hi) ? 'lo' : 'hi'
 // click/drag on the rail → move whichever thumb is nearer, then keep dragging it
 function onTrackDown(e: PointerEvent) {
-  const v = valueFromEvent(e)
-  grab(Math.abs(v - props.lo) <= Math.abs(v - props.hi) ? 'lo' : 'hi', e)
+  grab(nearer(valueFromEvent(e)), e)
   onMove(e)
+}
+// press on the span between the thumbs → drag the whole range (or, if it's just a click, see onUp)
+function onSpanDown(e: PointerEvent) {
+  downX = e.clientX
+  downPos = posFromEvent(e)
+  loPos0 = frac(props.lo)
+  hiPos0 = frac(props.hi)
+  rangeMoved = false
+  grab('range', e)
 }
 
 // Histogram behind the rail — a smooth filled density curve, not bars: at 16px tall the bar
@@ -144,6 +200,10 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
     </svg>
     <div class="rs-rail" />
     <div class="rs-fill" :style="{ left: fillLeft(lo), right: fillRight(hi) }" />
+    <!-- Full-height grab band over the span between the thumbs: drag it to move the range. Thumbs
+         come after it in the DOM, so where they overlap the band the thumb wins. -->
+    <div class="rs-span" :style="{ left: fillLeft(lo), right: fillRight(hi) }"
+         @pointerdown.stop="onSpanDown" />
     <div class="rs-thumb" :style="{ left: thumbLeft(lo) }" @pointerdown.stop="grab('lo', $event)" />
     <div class="rs-thumb" :style="{ left: thumbLeft(hi) }" @pointerdown.stop="grab('hi', $event)" />
   </div>
@@ -230,6 +290,14 @@ const histPaths = computed<{ area: string; line: string } | null>(() => {
      edge against the rail and (with the histogram on) against the density silhouette behind. */
   box-shadow: 0 0 0 1px var(--cc-bg);
 }
+/* Invisible hit band, the full height of the control, between the thumbs. */
+.rs-span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  cursor: grab;
+}
+.rs-span:active { cursor: grabbing; }
 .rs-thumb {
   position: absolute;
   width: 11px;
