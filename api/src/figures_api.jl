@@ -58,12 +58,35 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
                          for ch in get(row, :channels, [])])
         register_movie!(project_uid, fname; produced_by = "figure", image_uid = img.uid,
                         channels = filter(!isempty, shown),
-                        config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved),
+                        config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved,
+                                              source = figure_source(img, _spec_value_name(spec))),
                         config_kind = "figure", author = author_stamp())
         (; name = fname, png, resolved)
     finally
         isdir(tmp) && rm(tmp; force = true, recursive = true)
     end
+end
+
+_spec_value_name(spec::AbstractDict) = (v = get(spec, "valueName", nothing); (v === nothing || v == "") ? nothing : String(v))
+
+"""
+    _figure_stale(project_uid, entry, images) -> Union{Nothing,String}
+
+Why a listed figure no longer shows the data (`Cecelia.figure_stale_reason`), or `nothing` — also for a
+figure saved before sources were recorded (nothing to compare). `images` caches each image's load
+across one listing.
+"""
+function _figure_stale(project_uid::AbstractString, e::AbstractDict, images::AbstractDict)
+    cfg = get(e, "config", nothing)
+    src = cfg isa AbstractDict ? get(cfg, "source", nothing) : nothing
+    src isa AbstractDict || return nothing
+    iu = String(get(cfg, "imageUid", get(e, "imageUid", "")))
+    isempty(iu) && return nothing
+    img = get!(images, iu) do
+        isfile(state_file(joinpath(projects_dir(), project_uid), iu)) ? init_object(project_uid, iu) : nothing
+    end
+    img isa CciaImage || return "its image is gone"
+    figure_stale_reason(img, Dict{String,Any}(String(k) => v for (k, v) in src))
 end
 
 # Claude made it and nobody has re-made it since — the gate rule (`claude_made`, gating_api.jl).

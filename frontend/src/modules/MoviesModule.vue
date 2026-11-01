@@ -21,6 +21,7 @@ import { sortRows, parseSortState, type SortState, type SortValue } from '../uti
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
 import FigureEditor from '../components/FigureEditor.vue'
+import InlineNote from '../components/InlineNote.vue'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
          type AttrFilterState } from '../utils/attrFilter'
 import { useInlineEdit } from '../composables/useInlineEdit'
@@ -562,7 +563,9 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
           </div>
 
           <div v-if="currentIsFigure && projectUid" class="cc-card">
-            <FigureEditor :project-uid="projectUid" :name="selected" @rendered="refresh" />
+            <FigureEditor :project-uid="projectUid" :name="selected"
+                          :stale-reason="allRows.find(r => r.name === selected)?.staleReason ?? ''"
+                          @rendered="refresh" />
           </div>
 
           <div class="mov-list cc-card">
@@ -659,6 +662,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                          @blur="saveRename(row)" />
                   <span v-else class="mov-label" :title="row.name"
                         @click.stop="beginRename(row)">{{ row.label }}</span>
+                  <InlineNote v-if="row.staleReason" severity="warn" short="out of date"
+                              :detail="`${row.staleReason} — re-make it`" />
                 </span>
               </template>
 

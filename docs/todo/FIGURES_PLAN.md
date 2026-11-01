@@ -1,6 +1,7 @@
 # Figures — paper figures from the raw data, in one standard look
 
-**Status:** in progress (2026-11-01) — P1 built (#1880), P2 (#1881), P3 built on `feat/figures-p3`; P4 next.
+**Status:** built (2026-11-01) — P1 #1880, P2 #1881, P3 #1882, P4 on `feat/figures-p4`; awaiting Dominik's
+visual pass. Open: decisions B, C, F; a second row from the editor; board placement.
 
 ## Goal
 
@@ -157,7 +158,12 @@ rendered preview as an image, and `set_figure` / `delete_figure` for Claude-made
 (`api/src/kiwi_turn.jl`) gets the writes; recorders count the preview as a look and a write as a
 write. Validation errors name the field and the allowed values. Caps on frames and output px.
 
-**P4 — staleness.** Each figure records the image version, segmentation / track / population run
+**P4 — staleness. BUILT** (`feat/figures-p4`): a figure banks its source (`Cecelia.figure_source`:
+image version, vN, store mtime); `/api/movies` reports `figureStale` + `staleReason`
+(`figure_stale_reason`) — the row's warning, the editor's note, `list_figures`' `stale`. A figure
+draws pixels only, so the image version is the whole of its input; segmentation / population run
+stamps join when figures draw overlays. A style (preset) change does not mark figures stale yet —
+there is no preset editing (decision B). Original scope: Each figure records the image version, segmentation / track / population run
 stamps (see `docs/todo/EVIDENCE_PROVENANCE_PLAN.md`) and the preset version. A changed input marks
 the figure stale on its row. That is data staleness; the registry's existing `configStale`
 (`_config_stale`, `movies_api.jl:256`) only means the file was edited after recording. Re-render is

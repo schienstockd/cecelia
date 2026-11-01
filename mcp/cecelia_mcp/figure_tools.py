@@ -55,8 +55,9 @@ figures, and yours once the user has re-made them, are refused (403). `dry_run=T
 and removes nothing. The user can delete anything from the Movies & figures page."""
 
 LIST_FIGURES_DOC = """The project's figures: `name`, `imageUid`, `mine` (made by Claude and not re-made by the user —
-the ones set_figure / delete_figure may change), its legend channels, and its saved `spec` (the one to
-start a set_figure from)."""
+the ones set_figure / delete_figure may change), its legend channels, its saved `spec` (the one to
+start a set_figure from), and `stale` — why it no longer shows the data (its image version was
+re-processed or removed since), else null."""
 
 
 class FigureClient:
@@ -89,7 +90,9 @@ class FigureClient:
             e = meta.get("entry") or {}
             # `claudeMade` is the server's ownership rule (`claude_made`) — never re-derived here
             out.append({"name": m["name"], "imageUid": m.get("imageUid", ""), "channels": m.get("channels", []),
-                        "mine": bool(m.get("claudeMade")), "spec": (e.get("config") or {}).get("spec")})
+                        "mine": bool(m.get("claudeMade")), "spec": (e.get("config") or {}).get("spec"),
+                        # its image version changed since — re-make it (set_figure / the user's Re-make)
+                        "stale": m.get("staleReason") or None if m.get("figureStale") else None})
         return out
 
 

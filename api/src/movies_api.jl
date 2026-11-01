@@ -210,6 +210,7 @@ function movies_with_meta(project_uid::AbstractString)
     reg = _read_movies_registry(project_uid)
     out = NamedTuple[]
     present = Set{String}()
+    images = Dict{String,Any}()          # figures' images, loaded once per listing (`_figure_stale`)
     if isdir(dir)
         for name in readdir(dir)
             # skip in-progress temps: `prepend_title_to_movie` stages `{name}.mp4.tmp.mp4` beside the
@@ -221,6 +222,7 @@ function movies_with_meta(project_uid::AbstractString)
             f = joinpath(dir, name)
             mt = mtime(f)
             e  = get(reg, name, Dict{String,Any}())
+            stale = _movie_kind(name) == "figure" ? _figure_stale(project_uid, e, images) : nothing
             push!(out, (; name, kind = _movie_kind(name), size = filesize(f), mtime = mt,
                           displayName = _clean_movie_name(get(e, "displayName", "")),
                           starred     = get(e, "starred", false) === true,
@@ -238,7 +240,9 @@ function movies_with_meta(project_uid::AbstractString)
                           configStale = _config_stale(e, mt),
                           createdBy   = get(e, "createdBy", nothing),
                           # Claude made it and nobody re-made it since — what Claude may change
-                          claudeMade  = figure_claude_made(e)))
+                          claudeMade  = figure_claude_made(e),
+                          # a figure whose image version changed since — it no longer shows the data
+                          figureStale = stale !== nothing, staleReason = something(stale, "")))
         end
         sort!(out; by = m -> m.mtime, rev = true)
     end

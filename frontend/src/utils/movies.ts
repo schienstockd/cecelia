@@ -29,6 +29,8 @@ export interface MovieEntry {
   configStale?: boolean  // the file was re-recorded after the config was saved (Decision 5)
   createdBy?: { profile?: string, via?: string } | null   // who made it — figures stamp it
   claudeMade?: boolean   // Claude made it and nobody re-made it since (the server's `claude_made`)
+  figureStale?: boolean  // a figure whose image version changed since it was rendered
+  staleReason?: string   // why, in a phrase ("image version denoised was re-processed since")
 }
 
 /** The extensions the movies dir holds — a movie or a still figure. */
@@ -189,6 +191,7 @@ export interface MovieRow {
   producedBy: string
   renamed: boolean       // a display name is set — the file name is then worth showing on hover
   configStale: boolean
+  staleReason: string    // a figure no longer shows the data — why ('' = it does, or not a figure)
   // A saved generation config exists, and which page can edit it (Phase 6 — utils/movieRestore.ts).
   // Carried on the row so the table can offer the action without a second lookup per row; '' means the
   // movie predates the registry, which is most of them in an older project.
@@ -226,6 +229,7 @@ export function movieRows(movies: MovieEntry[],
       producedBy: m.producedBy ?? '',
       renamed: !!(m.displayName ?? '').trim(),
       configStale: m.configStale === true,
+      staleReason: m.figureStale ? (m.staleReason || 'its image changed since') : '',
       hasConfig: m.hasConfig === true,
       configKind: m.configKind ?? '',
       imageUid: uid,
