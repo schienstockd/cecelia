@@ -20,6 +20,10 @@
     @test p["timeIncrementS"] ≈ 15 && p["scaleBarUm"] == 5
     @test !haskey(spec, "zarrPath")                                    # the caller's spec is not mutated
 
+    # display ranges by name (the viewer's contrast) or by index, both land as the index the renderer reads
+    r = figure_params(img, merge(spec, Dict("display" => Dict("ranges" => Dict("mem-TOM" => [0, 68], "2" => [0, 10])))))
+    @test r["display"]["ranges"] == Dict("1" => [0, 68], "2" => [0, 10])
+
     # no version given → the active one
     @test figure_params(img, Dict{String,Any}("rows" => rows))["zarrPath"] == img_filepath(img)
 

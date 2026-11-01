@@ -31,6 +31,15 @@ function figure_params(img::CciaImage, spec::AbstractDict)::Dict{String,Any}
     # A row's channel may be a NAME (what the user knows) or a 0-based index — `channel_indices` is the
     # one resolver, and it raises by name on a miss.
     p["rows"] = [_figure_row(r, names) for r in get(p, "rows", Any[])]
+    # Explicit display ranges may be keyed by name too (the viewer's on-screen contrast is).
+    disp = get(p, "display", nothing)
+    if disp isa AbstractDict && get(disp, "ranges", nothing) isa AbstractDict
+        d = Dict{String,Any}(String(k) => v for (k, v) in disp)
+        d["ranges"] = Dict{String,Any}(string(only(channel_indices([_channel_key(k)], names;
+                                                                   what = "figure display range"))) => v
+                                       for (k, v) in d["ranges"])
+        p["display"] = d
+    end
     axes = img_scale_axes(img)
     sizes, step_min = img_physical_sizes(img)          # (z, y, x) µm; minutes per frame
     if :XY in axes
@@ -53,6 +62,9 @@ function _figure_row(row::AbstractDict, names::Vector{String})::Dict{String,Any}
     r
 end
 _figure_row(row, names) = row          # not a dict: left for the renderer's own validation to name
+
+# A range key arrives as a JSON object key — always a string — so "2" is the index 2, not a name.
+_channel_key(k) = (s = String(k); i = tryparse(Int, s); i === nothing ? s : i)
 
 """
     render_figure(img, spec; out_dir, task_dir = task_run_dir(img._dir), on_log = println) -> (; figure, spec)

@@ -115,6 +115,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-upload', lucide: 'upload', means: 'Import' },
       { icon: 'pi-camera', lucide: 'camera', means: 'Freeze this version as a snapshot' },
       { icon: 'pi-video', lucide: 'video', means: 'Record a movie' },
+      { icon: 'pi-print', lucide: 'printer', means: 'A still figure for a paper — save one, or one in the movies list' },
       { icon: 'pi-share-alt', lucide: 'share-2', means: 'Apply to the others — and cell tracks; polygon draw tool' },
       { icon: 'pi-power-off', lucide: 'power', means: 'Quit Cecelia' },
       { icon: 'pi-reply', lucide: 'reply', means: 'Reply to what the assistant wrote — correct it, or follow it up' },

@@ -65,7 +65,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: '/notebooks',  label: 'Notebooks',      icon: 'pi-book',      tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
       { to: '/animation', label: 'Animation',      icon: 'pi-video', tip: 'Capture viewer snapshots and record them as movies (channels, populations, colour-by).', requiresProject: true },
       { to: '/batch-movies', label: 'Batch movies', icon: 'pi-images', tip: 'Author one config (channels, overlays, colour-by) and generate a timelapse mp4 for every selected image.', requiresProject: true },
-      { to: '/movies',    label: 'Movies',         icon: 'pi-play-circle', tip: 'Play the movies rendered for this project — native player with adjustable speed and zoom.', requiresProject: true },
+      { to: '/movies',    label: 'Movies & figures', icon: 'pi-play-circle', tip: 'Play the project\'s movies and view its still figures — native player with adjustable speed and zoom.', requiresProject: true },
     ],
   },
   {

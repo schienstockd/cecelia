@@ -1,6 +1,6 @@
 # Figures — paper figures from the raw data, in one standard look
 
-**Status:** in progress (2026-11-01) — P1 built on `feat/figures-p1`; P2–P4 next.
+**Status:** in progress (2026-11-01) — P1 built (#1880), P2 built on `feat/figures-p2`; P3–P4 next.
 
 ## Goal
 
@@ -138,7 +138,11 @@ that a figure row registers. Acceptance: on zolIMa / UMq4v3 it reproduces the PI
 spec, at print size, with the interval and pixel size read from the image. Registered via
 `register_movie!` with `configKind: "figure"` (if A holds). Checkable headlessly.
 
-**P2 — figures on the Movies page + "save this view as a figure".** A figure row with preview and a
+**P2 — figures on the Movies page + "save this view as a figure". BUILT** (`feat/figures-p2`): the
+viewer's **Save as figure** (`figureSpecFromView`, `pi-print` beside Record) and `FigureEditor` on the
+Movies page (frames, legend names, mm, scale bar, crisp/smooth → re-make in place); the page is labelled
+**Movies & figures** (route unchanged). Display ranges may be keyed by channel name. Not built: a second
+row (e.g. tdTom alone) from the editor, and seeding from the board's image strip. Original scope: A figure row with preview and a
 form editor (frames, channels, range, rows, crop, style). "Save as figure" sits next to the viewer's
 Record button and records the same snapshot as a still sequence (the board image strip's snapshot can
 seed one too). Needs Dominik's eyes.
