@@ -36,8 +36,8 @@ strip.** The session wrote `ingest_strip.py`, `ingest_z.py` and `ingest_movie.py
 
 So "high res" cannot mean more detail than the camera recorded. It can mean: a larger output with
 smooth interpolation rather than blocks, proper fonts at print size, a tighter contrast, a single
-frame instead of a strip, and (if one exists) a denoised image version. UMq4v3 has only
-`ccidImage.ome.zarr`; there is no denoised version.
+frame instead of a strip. Denoising is already spent: UMq4v3 is itself cropped from a denoised
+image (Dominik, 2026-11-01).
 
 ## What already exists (verified 2026-11-01)
 
@@ -98,7 +98,7 @@ frame instead of a strip, and (if one exists) a denoised image version. UMq4v3 h
 
 | # | Question | Pick |
 |---|---|---|
-| A | Where figures live | **In the movie registry as `configKind: "figure"`, listed on the Movies page.** That reuses star, tags, delete, remake-from-config and `.ccbundle` export, so the new work is a figure row's preview and editor. The alternative is a separate `{project}/figures/` store and its own page: cleaner naming, but a second registry, page and set of routes for the same lifecycle. Renaming the page is a copy change, if wanted |
+| A | Where figures live | **Widen the movie pages; no new home.** Figures go in the movie registry as `configKind: "figure"` and are listed on the Movies page (star, tags, delete, remake, `.ccbundle` export come free). Authoring sits on the viewer ("Save as figure" next to Record) and on Animation, whose captured snapshot list is already the frame list a strip needs: interpolate it into a movie, or lay it out as panels. Rename by **label only** and keep the routes (`/movies`, `/animation`; 13 route references don't move): Movies → "Movies & figures", Animation → "Compose". Cost: `frontend/src/lib/navGroups.ts:66-68` labels + tips, the `main.ts` meta labels and the regenerated user docs / guide map. A separate Figures page would only pay if figures become multi-panel paper layouts that mix stills and data plots, and that is the Analysis board's job (Decision 1 keeps those apart) |
 | B | Style preset scope | One app-wide default plus a per-project override. A preset change marks existing figures stale and never silently re-renders them |
 | C | Output formats | PNG and 16-bit-safe TIFF for the image; SVG for the composition with the tiles embedded as raster, so labels stay vector for the journal. The SVG canonical is `frontend/src/plots/export.ts` (`svgDoc` / `svgImage` / `svgText`), so either compose SVG there or say why the backend needs a second serialiser |
 | D | Default interpolation | Smooth (bicubic), with nearest neighbour a toggle |
