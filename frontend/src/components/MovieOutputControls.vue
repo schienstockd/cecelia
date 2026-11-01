@@ -192,7 +192,7 @@ const onAxis = (axis: 'sizeX' | 'sizeY', raw: string) =>
       <template v-if="hasZRange && (zMode === 'max' || show3D)">
         <RangeSlider class="mo-range" :lo="zPair[0]" :hi="zPair[1]" :min="0" :max="zMax" :step="1"
                      v-tooltip.bottom="show3D ? 'Slices to render' : 'Slices to take the max over'"
-                     @update:lo="v => setZPair(v, zPair[1])" @update:hi="v => setZPair(zPair[0], v)" />
+                     @update:pair="([lo, hi]) => setZPair(lo, hi)" />
         <span class="mo-val cc-readout">{{ zPair[0] }}–{{ zPair[1] }}</span>
       </template>
       <template v-else-if="!show3D">
