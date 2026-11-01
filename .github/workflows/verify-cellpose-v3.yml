@@ -35,7 +35,7 @@ jobs:
 
       # cellpose 3 downloads cyto3 into ~/.cellpose/models on first use; cache it across runs.
       - name: Cache cellpose models
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cellpose/models
           key: cellpose-v3-models-cyto3
