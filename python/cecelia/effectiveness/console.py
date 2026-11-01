@@ -113,6 +113,24 @@ WHEEL_ROWS = 3
 #: puts the shell back.
 ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN = "\033[?1049h", "\033[?1049l"
 
+#: How every `overwrite_frame` begins: synchronized output on, cursor home.
+FRAME_START = "\033[?2026h\033[H"
+
+
+def overwrite_frame(frame: str) -> str:
+    """`frame` as a repaint over the previous one, for a live view on the alternate screen.
+
+    Clearing the screen first (`\033[2J`) shows a blank screen between two frames, which
+    flickers at a twice-a-second repaint. This homes the cursor and overwrites instead: each
+    line is cleared just before it's written (`\033[K` at its start, so a line the full width
+    of the terminal keeps its last character) and `\033[J` clears whatever the old frame left
+    below. Synchronized output (`\033[?2026h`…`l`) asks the terminal to show the frame at once;
+    one that doesn't know it ignores it.
+    """
+    *lines, last = frame.split("\n")
+    body = "".join(f"\033[K{line}\n" for line in lines) + (f"\033[K{last}" if last else "")
+    return FRAME_START + body + "\033[J\033[?2026l"
+
 
 def scroll_step(key: str, page: int) -> int:
     """How far `key` moves a `scroll_window` offset: a page for PgUp/PgDn, `WHEEL_ROWS` for ↑/↓
@@ -1251,19 +1269,28 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
     refresh_agents(state, log_path, pr_cache.get() if pr_cache else recent_prs() or ())
     agents_at = time.monotonic()
 
+    last_frame = [""]
+
     def _paint() -> None:
         width, height = _terminal_size()
-        # `\033[2J\033[3J\033[H` — clear the viewport AND the scrollback (`\033[3J`), then
-        # home the cursor. Without the scrollback clear the previous frame lives one page
-        # up and Shift-PgUp reveals a ghost trail. `\033[?25l` hides the cursor so it
-        # doesn't jitter mid-paint; restored on exit. The `-1` on height reserves one row
-        # for the trailing newline `print` adds — otherwise the last row of the dashboard
-        # sits under the terminal's own bottom line and the topmost row is scrolled off.
-        out.write("\033[?25l\033[2J\033[3J\033[H")
-        out.write(render_dashboard(state, log_path, width=width, height=height - 1,
-                                    use_colour=True, judge_warning=judge_warning,
-                                    agents_only=agents_only))
-        out.write("\n")
+        # The `-1` on height reserves one row for the trailing newline — otherwise the last
+        # row of the dashboard sits under the terminal's own bottom line and the topmost row
+        # is scrolled off. `\033[?25l` hides the cursor so it doesn't jitter mid-paint;
+        # restored on exit.
+        frame = render_dashboard(state, log_path, width=width, height=height - 1,
+                                 use_colour=True, judge_warning=judge_warning,
+                                 agents_only=agents_only) + "\n"
+        if follow:
+            # Live, on the alternate screen: overwrite in place (`overwrite_frame`), and skip
+            # a tick whose frame is unchanged — the clock moves once a second, the tick is 0.5 s.
+            if frame == last_frame[0]:
+                return
+            last_frame[0] = frame
+            out.write("\033[?25l" + overwrite_frame(frame))
+        else:
+            # One frame on the normal screen: clear the viewport AND the scrollback
+            # (`\033[3J`) so Shift-PgUp shows no earlier output above it.
+            out.write("\033[?25l\033[2J\033[3J\033[H" + frame)
         out.flush()
 
     if not follow:
@@ -1313,6 +1340,8 @@ def _run_dashboard_mode(seed_events: _t.Iterable[dict], log_path: pathlib.Path,
             if time.monotonic() - agents_at >= _AGENTS_REFRESH:
                 refresh_agents(state, log_path, pr_cache.get())
                 agents_at = time.monotonic()
+            if resize_pending[0]:
+                last_frame[0] = ""   # the terminal may have reflowed the old frame: paint anyway
             _paint()
             resize_pending[0] = False
             # Sleep in small slices so SIGWINCH can shorten the wait — a signal interrupts

@@ -706,6 +706,15 @@ function progress_bar(p::Float64, width::Int=14)
     string(bar, " ", lpad(string(round(Int, p * 100)), 3), "%")
 end
 
+# `frame` as a repaint over the previous one. Clearing the screen first (`\e[2J`) shows a blank screen
+# between two frames — a flicker at every 2 s tick and every event burst. This homes the cursor and
+# overwrites instead: each line is cleared just before it's written (`\e[K` at its start, so a
+# full-width line keeps its last character) and `\e[J` clears what the old frame left below.
+# Synchronized output (`\e[?2026h`…`l`) asks the terminal to show it at once; others ignore it.
+# Same as `overwrite_frame` in `python/cecelia/effectiveness/console.py` (`pixi run recital-console`).
+overwrite_frame(frame::AbstractString) =
+    string("\e[?2026h\e[H", join(("\e[K" * l for l in split(frame, '\n')), '\n'), "\e[J\e[?2026l")
+
 function render()
     io = IOBuffer()
     rows, cols = try displaysize(stdout) catch; (40, 120) end
@@ -740,7 +749,6 @@ function render()
     padRows   = max(0, content - tableRows - length(logLines) - evtRows)
 
     # header — live counts + cumulative finished tallies (so you see "how many done" without 50 rows)
-    print(io, "\e[H\e[2J")
     print(io, col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"),
           "   ", col(GREY, Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")), "\n")
     print(io, col(YELLOW, "$n_run running"), col(DIM, " · "), col(ORANGE, "$n_q queued"),
@@ -810,7 +818,7 @@ function render()
     print(io, "\n"^padRows)
     print(io, col(DIM, "(reporting only — Ctrl-C to quit)"))
 
-    print(String(take!(io)))
+    print(overwrite_frame(String(take!(io))))
     flush(stdout)
     _last_render[] = Dates.now()
 end
@@ -831,10 +839,8 @@ function show_waiting(reason::AbstractString)
     if STREAM_MODE
         push_event!("console", col(YELLOW, reason))
     else
-        print("\e[H\e[2J")
-        println(col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"))
-        println()
-        println(col(YELLOW, reason))
+        print(overwrite_frame(string(col(BOLD, "Cecelia task console"), col(DIM, "  $(HTTP_BASE[])"),
+                                     "\n\n", col(YELLOW, reason), "\n")))
         flush(stdout)
     end
 end

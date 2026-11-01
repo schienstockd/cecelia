@@ -45,7 +45,8 @@ from cecelia.effectiveness import git_context, read_events  # noqa: E402
 from cecelia.effectiveness.claude_cli import RateLimited, limit_exit, resolve_claude_bin  # noqa: E402
 # one look with `pixi run recital-console`: its divider, hanging-indent wrap and the shared palette
 from cecelia.effectiveness.console import (  # noqa: E402
-    _BOLD, _DIM, ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, LEFT, RESIZE, RIGHT, _col, _hr, _terminal_size, _wrap_desc,
+    _BOLD, _DIM, ENTER_ALT_SCREEN, FRAME_START, LEAVE_ALT_SCREEN, LEFT, RESIZE, RIGHT, _col, _hr, _terminal_size,
+    _wrap_desc, overwrite_frame,
     poll_key, scroll_step, scroll_window)
 from cecelia.effectiveness.palette import (  # noqa: E402
     BLUE, GREY, ORANGE, REDDISH_PURPLE, SKY_BLUE, VERMILLION, YELLOW)
@@ -630,7 +631,9 @@ def _prompt(keys: dict[str, str], *, use_colour: bool) -> str:
 
 
 #: Full screen: the terminal's alternate screen, as a pager does, so quitting puts the shell back.
-_ENTER, _LEAVE, _CLEAR = ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, "\033[2J\033[H"
+#: A card overwrites the last one (`overwrite_frame`) rather than clearing first, so a wheel scroll
+#: doesn't flash a blank screen; `_CLEAR` is where each paint starts.
+_ENTER, _LEAVE, _CLEAR = ENTER_ALT_SCREEN, LEAVE_ALT_SCREEN, FRAME_START
 
 
 def read_key(prompt: str) -> str:
@@ -722,7 +725,7 @@ def run_queue(record: dict, *, read: _t.Callable[[str], str] = input,
         if fullscreen:
             # title, status, card, then a blank and the prompt row at the bottom
             lines, offset, page = scroll_window(card(w), rows - 5, offset, use_colour=use_colour)
-            out.write(_CLEAR + "\n".join([title, status, *lines, ""]) + "\n")
+            out.write(overwrite_frame("\n".join([title, status, *lines, ""]) + "\n"))
             out.flush()
             return offset, page
         for ln in [*([status] if status else []), *card(w), ""]:

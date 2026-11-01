@@ -328,7 +328,7 @@ end
 # terminal empty once long lines stopped overflowing into it.
 @testset "API: task console frame fills the terminal" begin
     C = TaskConsoleUT
-    plain(s) = replace(s, r"\e\[[0-9;]*m" => "")
+    plain(s) = replace(s, r"\e\[[0-9;?]*[A-Za-z]" => "")   # colours AND the repaint's cursor/erase codes
     empty!(C.TASKS); empty!(C.EVENTS); empty!(C.LOGS); empty!(C.POOLS)
     push!(C.POOLS, C.PoolView("cpu", 3, 1, 0))
     redirect_stdout(devnull) do
@@ -342,13 +342,14 @@ end
     frame(rows, cols) = withenv("LINES" => string(rows), "COLUMNS" => string(cols)) do
         path, io = mktemp()
         redirect_stdout(io) do; C.render() end
-        close(io); lines = split(plain(read(path, String)), '\n'); rm(path)
-        lines
+        close(io); raw = read(path, String); rm(path)
+        @test !occursin("\e[2J", raw)     # overwrites in place: a clear flashes a blank screen
+        split(plain(raw), '\n')
     end
     for (rows, cols) in ((24, 80), (50, 100), (40, 70))
         lines = frame(rows, cols)
         @test length(lines) == rows                                   # filled, not padded or overrun
-        @test all(l -> textwidth(replace(l, r"\e\[[HJ2]*" => "")) <= cols, lines)
+        @test all(l -> textwidth(l) <= cols, lines)
         @test occursin("Cecelia task console", lines[1])              # header still on screen
     end
 

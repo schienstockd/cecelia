@@ -488,6 +488,15 @@ class MainTest(unittest.TestCase):
         # Cursor is restored on exit — otherwise the terminal is broken after `pixi run`.
         self.assertIn("\033[?25h", out)
 
+    def test_live_repaint_overwrites_instead_of_clearing(self):
+        # Clearing the screen before each 0.5 s repaint flashed a blank frame. The live frame
+        # homes the cursor and clears each line as it rewrites it, and the trailing `\033[J`
+        # wipes what a taller old frame left below.
+        out = console.overwrite_frame("title\nrow\n")
+        self.assertNotIn("\033[2J", out)
+        self.assertTrue(out.startswith("\033[?2026h\033[H\033[Ktitle\n\033[Krow\n\033[J"))
+        self.assertTrue(out.endswith("\033[J\033[?2026l"))
+
     def test_a_plausible_fix_stays_advisory_when_its_note_is_older_than_the_window(self):
         # The resolution row carries no advisory marker; if the note's `_advisory` row fell
         # before `--tail`, the fix must still not be counted as a required resolution.
