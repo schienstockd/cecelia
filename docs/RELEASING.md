@@ -211,8 +211,15 @@ node scripts/changelogSection.mjs v0.1.1        # exactly what the release (and 
 ```
 
 **Lead with what a user can act on wrongly.** A format change, a default that moved, a one-way door —
-those go first and in full. Feature bullets can be discovered by using the app; a store written in a
-format the previous version cannot read cannot.
+those go first, under *Read this first*. Feature bullets can be discovered by using the app; a store
+written in a format the previous version cannot read cannot.
+
+**One line per bullet: what changed, and the PR number.** No measurements, no rationale, no "before,
+X did Y" — that is the PR body, one click away. A read-first bullet adds the action ("re-run",
+"re-crop") and nothing else. Don't take the previous section's length as the model: v0.2.11 ran to
+1,700 words, and v0.2.12 was first drafted at 1,400 by copying it, then cut to ~450. Source the
+bullets from PR *titles*, not bodies. `utils/changelogSection.test.ts` fails when a bullet in the
+newest section or `[Unreleased]` is over 30 words.
 
 ## Overdue check
 

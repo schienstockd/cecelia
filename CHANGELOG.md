@@ -17,120 +17,58 @@ stack. Per-tag notes are also on the
 
 ### Read this first
 
-Nothing on disk is marked when these apply, so check here before re-running old work.
+These change results when old work is re-run:
 
-- **Re-run multi-group Coastal segmentations** (#1837). When one Coastal run used several model
-  groups with different channels or clip ranges, groups 2 onwards were segmented using group 1's
-  motion between frames. That is fixed. On one movie about 22% of voxels and ~5% of labels per frame
-  change. Single-group runs give the same labels as before.
-- **Cellpose results change on re-run** (#1705). Flow threshold now defaults to 1.0 instead of 0.4,
-  and Cellpose no longer re-normalises each tile on top of Cecelia's own windowing. Saved settings
-  without a flow threshold get 1.0. Cell probability threshold, flow threshold, invert and
-  test-time augmentation are now under Advanced.
-- **Tile size and overlap default to Auto** (#1827). The tile is the whole frame if it fits in free
-  memory, otherwise the largest tile that does; overlap is 1.5× the object size. Saved numbers still
-  apply.
-- **Other segmentation results that change on re-run:** with *Normalise to whole image* off, the
-  window is now set per frame, not per tile (#1830); stitched 3D Cellpose with large tiles no longer
-  merges cells across planes or keeps tiny fragments (#1825).
-- **Several contact targets give several column sets** (#1760). See *Cell contacts* below. Saved
-  chains with more than one target produce new columns on re-run.
-- **Saved AF correction settings don't pre-fill** the new channel-role rows (#1711). Saved chains
-  still run.
-- **Crops made before this version may record the wrong number of Z planes** (#1877), e.g. a crop
-  of a drift-corrected image. New crops, copies, bins, projections and registrations take their
-  sizes from what was written. Re-crop to fix an old one.
-- **"UMAP" is now "Cluster map"** (#1822): the plot, and the task (`createUmap`, was `mergeUmap`).
-  Saved settings and board slots carry over; a board saved in this version shows no UMAP slot if
-  opened in 0.2.11.
-- **Claude Code terminal setup is now the Cecelia plugin** (#1826). Installing it removes the older
-  `claude mcp add-json` registration from your Claude settings.
-- **`pixi run headless` is now `pixi run chat`** (#1849).
+- **Coastal with several model groups:** re-run. Groups 2+ used group 1's motion (#1837).
+- **Cellpose:** flow threshold 1.0 (was 0.4), no per-tile re-normalising (#1705).
+- **Tile size and overlap** default to Auto (#1827).
+- **Segmentation:** per-frame window when *Normalise to whole image* is off (#1830); stitched 3D
+  Cellpose no longer merges across planes (#1825).
+- **Cell contacts:** one column set per target; tick *Combine targets* for the old behaviour (#1734).
+- **Crops made before 0.2.12** may record the wrong Z size; re-crop (#1877).
+- **AF correction:** saved settings don't pre-fill the new role rows (#1711).
+- **Renamed:** UMAP → Cluster map, `mergeUmap` → `createUmap` (#1822); `pixi run headless` →
+  `pixi run chat` (#1849).
+- **Claude Code setup** is now the Cecelia plugin; it replaces the old MCP registration (#1826).
 
 ### Added
 
-- **AF correction: AF channels, and one role per channel.** For each channel you correct, every
-  other channel now gets one row where you pick what it does to that channel: **Competes** (takes the
-  share of signal it outshines, as before) or **AF** (a channel that only picks up
-  autofluorescence), or nothing. A channel can't do both to the same marker, but it can be AF for one
-  marker and compete with another. Wherever an AF channel is clearly bright, the marker is set to
-  zero, including where AF overlaps a real cell. Before, AF could only compete, so AF that was as
-  bright in your marker stayed in: on one CAR-T movie about 70% of the marker survived on AF
-  granules, and now almost none does, while about 97% of the marker is kept. Any of your marker that
-  leaks into the AF channel is removed first, so bright cells are not hollowed out. The threshold
-  comes from the AF channel's own noise, so there is nothing to tune. A figure next to each marker's
-  roles shows what that setup does to a sketch of cells and AF. **Different cell types** now only
-  appears when something competes with that marker. Saved chains still run; an image's previously
-  saved AF settings will not pre-fill the new rows.
-- **Figures** (#1880, #1881, #1882, #1883, #1887, #1890). *Save as figure* in the viewer makes a
-  figure from the raw image, using the project's style; split channels are an option. Figures live
-  with movies, can be re-made from the Movies page and placed on a board, and are flagged when their
-  image changes. Claude can make figures too.
-- **Find ROIs** (#1793, #1884). Pick a population and it finds where those objects gather over time,
-  ranked by how much denser than usual each spot is. Review the ROIs in the viewer with keys,
-  auto-next and a spotlight, and label them with your own labels.
-- **Containment on mesh contacts** (#1793). *Cell contacts (meshes)* can also record which cells sit
-  inside cells of a target population, and how many each holds.
-- **Motility measures** (#1862, #1865, #1868, #1875): persistence fit, track-length bias and order
-  index with QC; measures over a time window in minutes; approach toward a contact target. Tracking
-  shows the µm/min a search radius allows (#1858).
-- **Behaviour axes for track clusters** (#1821, #1823). Track clustering records where each track
-  sits along its behaviour path, and the cluster map can lay track runs out on those axes.
-- **Colour the mask** by population or by track cluster in the viewer (#1756, #1819) and in movies
-  (#1792).
-- **Populations: all on, all off, one at a time** in the viewer (#1751).
-- **Chains: manual steps** (#1847). A chain can pause for you, e.g. to draw a gate, then carry on.
-  Build a chain from history, and check it before it runs.
-- **In-app map and guides** (#1850): every page and panel, and where to start.
-- **Claude and gating** (#1852, #1856, #1869). Claude can propose a gate as a new population and
-  edit only its own gates. It won't change a gate you've edited or one a task has read.
-- **Claude login inside Cecelia** (#1717, #1718): no terminal; log out from the sidebar, and
-  optionally on quit. On a shared workstation, a profile's Claude conversations can be deleted on
-  log out (#1840).
-- **Kiwi and Claude Code as two modes**, each saying what it can use (#1860, #1864). Claude's writes
-  record which model made them (#1826).
-- **Chat from the terminal**: `pixi run chat` brings data in and asks questions without the GUI
-  (#1835, #1836, #1838, #1839).
-- **HPC on NCI Gadi (PBS)** (#1786), live job logs and Task Manager rows (#1796), node shapes per
-  queue (#1800), a warning when the cluster environment is out of date (#1758).
-- **Share a project when you create it** (#1716), or make one you own shared.
-- **Seam QC** flags visible tile seams in a segmentation (#1832).
+- AF correction: mark a channel as AF for a marker; bright AF zeroes the marker (#1711).
+- Figures from the viewer, kept with movies and placeable on boards (#1880–#1890).
+- Find ROIs: where a population gathers, reviewed in the viewer (#1793, #1884).
+- Containment in *Cell contacts (meshes)* (#1793).
+- Motility: persistence, order index, windowed measures, approach to a target (#1862–#1875).
+- Behaviour axes for track clusters (#1821, #1823).
+- Colour masks by population or track cluster (#1756, #1792, #1819).
+- Chains can pause for a manual step (#1847).
+- In-app map and guides (#1850).
+- Claude can propose gates; it never edits yours (#1852, #1856, #1869).
+- Claude login inside Cecelia (#1717, #1718, #1840); Kiwi and Claude Code modes (#1860, #1864).
+- `pixi run chat` (#1835–#1839).
+- HPC on NCI Gadi (#1786, #1796, #1800).
+- Share a project when creating it (#1716).
+- Seam QC for tiled segmentation (#1832).
 
 ### Changed
 
-- **Cell contacts give one distance per target** (#1734). Picking several target populations used to
-  give one distance, to the nearest cell of any of them. Now each target gets its own contact,
-  distance and nearest-cell columns, as in the old R version. The same population picked from
-  several segmentations still counts as one target. Tick **Combine targets** for the old single
-  distance. Columns from earlier runs are kept; delete them under Analysis runs if not wanted.
-- **Coastal is about 24% faster** on time-lapses (#1837); segmentation reads only the channels the
-  model uses (#1825) and skips blank tiles without changing results (#1831).
-- **Gate plot:** click a gate to select it before dragging moves it; axis transforms fit the data
-  (#1866). Grab zones are 10 px and fit small gates (#1752, #1776).
-- **Task forms hide settings that don't apply** to the chosen method (#1763, #1774).
-- **Landscape captures** are registered to the screen, and tile channel means use the image's fixed
-  display range, so they don't compare with earlier captures (#1710, #1824).
-- **Confirm buttons flip in place** instead of opening a Confirm/Cancel pair (#1719).
-- **Viewer:** channel stepper on the canvas, toolbars fit one line (#1708).
+- Coastal ~24% faster on time-lapses (#1825, #1831, #1837).
+- Gate plot: click to select before dragging (#1752, #1776, #1866).
+- Task forms hide settings that don't apply (#1763, #1774).
+- Landscape captures aren't comparable with earlier ones (#1710, #1824).
+- Confirm buttons flip in place (#1719).
+- Viewer channel stepper on the canvas (#1708).
 
 ### Fixed
 
-- **Clustering crashed on every run** of cluster populations, and on *Log base* (#1743, #1744).
-- **Population Manager's *Show in viewer*** works again (#1818).
-- **Gate plot no longer errors** on Float32 data with a logicle transform (#1851).
-- **Renaming a segmentation** also renames it in saved run and form settings (#1876).
-- **Warnings instead of silent results:** a sparse neighbour graph (#1764, #1775, #1782), copied
-  gates reading a column the target lacks (#1761), why a population is 0 (#1783), a result that was
-  cut short (#1797).
-- **Viewer:** *Save PNG* captures what's on screen (#1791); the preview mask is never stale from an
-  earlier page load (#1790); track-ribbon visibility survives refreshes (#1778); movies draw the
-  viewer's population and ribbon visibility (#1792).
-- **Board** cluster heatmaps show the shown run's features (#1820); facet headers and rotated labels
-  fit (#1755, #1789); square panels resize without flicker (#1787).
-- **Windows:** exports no longer land inside the projects folder (#1829).
-- **HPC:** series reads send their metadata and normalisation along (#1745); settings layout and
-  Test connection fixes (#1753, #1757, #1781).
-- **Crops show their source and offset** in image info (#1877).
+- Clustering crashed on cluster populations (#1743, #1744).
+- Population Manager *Show in viewer* (#1818).
+- Gate plot error on Float32 + logicle (#1851).
+- Renaming a segmentation updates saved settings (#1876).
+- Warnings where results were silently empty or cut short (#1761, #1764, #1783, #1797).
+- Viewer *Save PNG*, stale preview mask, ribbon visibility (#1778, #1790, #1791, #1792).
+- Board heatmaps, facet labels, panel resize (#1755, #1787, #1789, #1820).
+- Windows exports landing in the projects folder (#1829).
+- HPC series metadata and settings (#1745, #1753, #1757, #1781).
 
 ## [0.2.11] — 2026-10-16
 

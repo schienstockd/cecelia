@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest'
 // The extractor lives in scripts/ because release.yml runs it, not the app — but what it produces is
 // what every user reads in the What's New modal, so it is tested here with the rest of the pure logic.
 // @ts-expect-error — plain .mjs, no type declarations
-import { changelogSection, releaseBody, normaliseVersion } from '../../../scripts/changelogSection.mjs'
+import { changelogSection, releaseBody, normaliseVersion, overlongBullets } from '../../../scripts/changelogSection.mjs'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const MD = `# Changelog
 
@@ -87,5 +89,23 @@ describe('releaseBody', () => {
 
   it('is null when the section is missing — the caller must fail the release, not publish empty', () => {
     expect(releaseBody(MD, '9.9.9', { repo: 'x/y', previousTag: 'v0.1.0' })).toBeNull()
+  })
+})
+
+describe('changelog bullet budget', () => {
+  it('flags a wrapped bullet over the budget, not a short one', () => {
+    const long = Array(31).fill('word').join(' ')
+    const sec = `- short (#1)\n- ${long.slice(0, 40)}\n  ${long.slice(40)}\n`
+    expect(overlongBullets(sec)).toHaveLength(1)
+    expect(overlongBullets('- short (#1)')).toEqual([])
+  })
+
+  // The real file: the newest release and [Unreleased]. Older sections are history and stay as written.
+  it('the newest section and [Unreleased] stay within budget', () => {
+    const md = readFileSync(resolve(__dirname, '../../../CHANGELOG.md'), 'utf8')
+    const newest = md.match(/^## \[(\d[^\]]*)\]/m)?.[1]
+    const unreleased = (md.split(/^## \[Unreleased\]/m)[1] ?? '').split(/^## /m)[0]
+    expect(overlongBullets(changelogSection(md, newest))).toEqual([])
+    expect(overlongBullets(unreleased)).toEqual([])
   })
 })
