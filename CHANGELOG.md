@@ -715,7 +715,8 @@ denoise, drift/register, viewer, and import.
   toggles on its own row.
 - **Plugin contribution model** — user drop-in tasks under `<config_dir>/modules/` (see
   `docs/CUSTOM_MODULES.md`); ccia-example plugins publishable to their own repos.
-- **Workflow recipes** — one-click template chains on the Analysis board.
+- **Workflow recipes** — "what are you trying to do?" sequences of guides with a reason per step, in
+  the guide picker.
 - **Measure groups** on the Analysis board and a **cohort split** for the two track plots (`paths`,
   `diagnostics`) — treatments and populations side by side, driven by the board's own compare rail.
 - **Boolean populations** in the population manager.

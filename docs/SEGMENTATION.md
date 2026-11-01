@@ -1,6 +1,6 @@
 # Segmentation
 
-Design reference for the cellpose segmentation pipeline and the extension points for future algorithms (Stardist, etc.).
+Design reference for the cellpose segmentation pipeline and the extension points for future algorithms (e.g. optical flow).
 
 ---
 
@@ -209,7 +209,7 @@ app/src/tasks/segment/cellpose_run.py      entry point (named _run to avoid shad
 app/src/tasks/segment/coastal_run.py       entry point
 ```
 
-Further algorithms (Stardist, …) subclass `SegmentationUtils` and implement `predict_slice`.
+Further algorithms subclass `SegmentationUtils` and implement `predict_slice`.
 
 ### The Julia half — `app/src/segmentation.jl`
 

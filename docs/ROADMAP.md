@@ -135,7 +135,7 @@ package it" is one action. CHANGELOG (per-release detail) hangs off this.
 ## Backlog (post-v1, not scheduled)
 
 From the old-R inventory, captured so nothing is lost — pull into a phase only on instruction:
-more segmentation (StarDist/Mesmer/donblo/watershed/blob/iLEE/branching), more cleanup
+more segmentation (Mesmer/donblo/watershed/blob/iLEE/branching), more cleanup
 (drift/AF/N2V/stripe/registration/filters), spatial analysis (neighbours/contacts/regions/meshes/
 distances), classifiers (object + pixel), signal peaks, flow (FCS) import, model training (N2V),
 region clustering, infra (HPC offload, mflux backup, launchpad), more import (Xenium/cellToLocation,

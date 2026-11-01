@@ -3,7 +3,7 @@
 # The Julia-side counterpart to `python/cecelia/utils/segmentation_utils.py`. On the Python side the
 # algorithm is already a swappable detail: `SegmentationUtils` owns the tiled T × XY loop, global
 # label IDs, seam stitching, post-processing, nuc↔cyto matching and the label-zarr writing, and a
-# concrete backend only implements `predict_slice` (`CellposeUtils` today; "cellpose, stardist, etc."
+# concrete backend only implements `predict_slice` (`CellposeUtils`, `CoastalUtils`; "cellpose, optical flow, etc."
 # per its own docstring). This file is the same idea for the Julia handler: everything a segmentation
 # task does with its label output that is NOT specific to one algorithm lives here, so a second
 # backend adds a `_run_task` + its own param resolution and nothing else.
