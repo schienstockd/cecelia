@@ -41,7 +41,7 @@ and is where a user checks before letting Claude near their Analysis page. See
 
 A `plot` is a summary spec id **or a board VIEW key** — the interactive views and cluster panels the
 board hosts (`BOARD_VIEWS` in the expander: `gatingStrategy`, `trackPaths`, `trackDiagnostics`,
-`hmmStateCards`, `motifCards`, and the clustering plots `clusterMap` (was `umap`), `heatmap`, `hmmStates`,
+`hmmStateCards`, `motifCards`, `figure` (a rendered figure by file `name`), and the clustering plots `clusterMap` (was `umap`), `heatmap`, `hmmStates`,
 `hmmTransitions`, `cellCards`), each with its own few fields, stored as `{kind: "interactive", ref,
 state}`. Clustering views name their run (`suffix` + `popType` clust/trackclust), which becomes the
 board's `shared.clustPopType`/`clustSuffix` — one run per board, so a second suffix is refused rather

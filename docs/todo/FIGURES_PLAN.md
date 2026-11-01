@@ -1,7 +1,7 @@
 # Figures — paper figures from the raw data, in one standard look
 
 **Status:** built (2026-11-01) — P1 #1880, P2 #1881, P3 #1882, P4 on `feat/figures-p4`; awaiting Dominik's
-visual pass. Open: decisions B, C, F; a second row from the editor; board placement.
+visual pass. Open: decision C; a second row from the editor.
 
 ## Goal
 
@@ -123,16 +123,32 @@ image (Dominik, 2026-11-01).
     view (the viewer snapshot is banked with the spec) or an animation's first keyframe. Viewer and
     batch movies bank no camera, so they open on the image.
 
+17. **Time labels stay the viewer's `0:12:30`** (Dominik, 2026-11-01: "17.2 min is just weird");
+    `12.5 min` is a project style option (`timeFormat`). Decision F closed.
+18. **The figure style is per project** (Decision B closed): the house style is ONE file
+    (`frontend/src/lib/figureStyle.json`) the renderer, the package and the editor read; a project
+    overrides keys in `settings/figureStyle.json`, edited on the Movies page beside a to-scale diagram
+    of a figure in that style. A spec's own `style` wins key by key. A project style change marks the
+    figures drawn in the old one out of date.
+19. **Split channels**: the merge plus one grey row per channel — a toggle in Save as figure's options
+    and in the editor.
+20. **A viewer recording banks its view** (`MovieRecordConfig.viewState`), so "open at source" restores
+    it; batch movies (one config, many images) still open the image only.
+21. **A figure can sit on the Analysis board** (`figure` view, `FigureView.vue`): picked by file name and
+    shown as made, never re-rendered there — Decision 1 still holds, the board only displays it. The
+    board's PDF export takes the figure file itself. Claude places one with `add_analysis_board`
+    (`{plot: "figure", name}`).
+
 ## Open decisions (Dominik's)
 
 | # | Question | Pick |
 |---|---|---|
 | A | Where figures live | **Widen the movie pages; no new home.** Figures go in the movie registry as `configKind: "figure"` and are listed on the Movies page (star, tags, delete, remake, `.ccbundle` export come free). Authoring sits on the viewer ("Save as figure" next to Record) and on Animation, whose captured snapshot list is already the frame list a strip needs: interpolate it into a movie, or lay it out as panels. Rename by **label only** and keep the routes (`/movies`, `/animation`; 13 route references don't move): Movies → "Movies & figures", Animation → "Compose". Cost: `frontend/src/lib/navGroups.ts:66-68` labels + tips, the `main.ts` meta labels and the regenerated user docs / guide map. A separate Figures page would only pay if figures become multi-panel paper layouts that mix stills and data plots, and that is the Analysis board's job (Decision 1 keeps those apart) |
-| B | Style preset scope | One app-wide default plus a per-project override. A preset change marks existing figures stale and never silently re-renders them |
+| B (closed → 18) | Style preset scope | One app-wide default plus a per-project override. A preset change marks existing figures stale and never silently re-renders them |
 | C | Output formats | PNG and 16-bit-safe TIFF for the image; SVG for the composition with the tiles embedded as raster, so labels stay vector for the journal. The SVG canonical is `frontend/src/plots/export.ts` (`svgDoc` / `svgImage` / `svgText`), so either compose SVG there or say why the backend needs a second serialiser |
 | D | Default interpolation | Smooth (bicubic), with nearest neighbour a toggle |
 | E | Does P2's GUI ship before the agent tools (P3)? | Yes: the value must stand without an agent |
-| F | Time label format | Today `h:mm:ss` (the movies' format); papers usually want `12.5 min` |
+| F (closed → 17) | Time label format | Today `h:mm:ss` (the movies' format); papers usually want `12.5 min` |
 
 ## Phases
 
@@ -183,7 +199,7 @@ the figure stale on its row. That is data staleness; the registry's existing `co
 (`_config_stale`, `movies_api.jl:256`) only means the file was edited after recording. Re-render is
 explicit.
 
-**Later, if asked:** board placement of a figure; a movie from the same spec (the renderer and the
+**Later, if asked:** a movie from the same spec (the renderer and the
 registry are already shared).
 
 ## Ways this goes wrong, and the test that catches each

@@ -356,6 +356,8 @@ const BOARD_VIEWS = Dict{String,NamedTuple}(
     "hmmStates"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
     "hmmTransitions"   => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
     "cellCards"        => (; fields = ("popType", "suffix"), cluster = true, trackOnly = true),
+    # a rendered figure from `{project}/figures/` (docs/todo/FIGURES_PLAN.md), named by its file
+    "figure"           => (; fields = ("name",), cluster = false, trackOnly = false),
 )
 # Board-flagged, but nothing a spec could name would make them render: they show a viewer screenshot
 # the user captured, or a model picked in the vault.
@@ -405,6 +407,13 @@ end
 
 _project_image_uids(proj::CciaProject) = String[String(img.uid) for img in images(proj)]
 
+# the figure files a `figure` view may name: the PNGs in `{project}/figures/`
+function _project_figure_names(proj::CciaProject)
+    dir = joinpath(proj.root, "figures")
+    isdir(dir) || return String[]
+    sort!(String[f for f in readdir(dir) if endswith(lowercase(f), ".png")])
+end
+
 # One VIEW entry of `plots` → (`SlotContent`, the clustering run it needs or `nothing`).
 function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, ctx, i::Int)
     def = BOARD_VIEWS[key]
@@ -426,6 +435,14 @@ function _expand_view(key::AbstractString, d::AbstractDict, pops::AbstractDict, 
             v = str(k); isempty(v) || (state[sk] = v)
         end
         haskey(d, "hierarchy") && (state["showHierarchy"] = get(d, "hierarchy", false) === true)
+    elseif key == "figure"
+        nm = str("name")
+        have = ctx.figures()
+        isempty(nm) && throw(BoardSpecError("plots[$i]: \"figure\" needs the figure's `name`. " *
+            (isempty(have) ? "This project has no figures yet." : "Figures: $(join(have, ", "))")))
+        nm in have || throw(BoardSpecError(
+            "plots[$i]: no figure \"$nm\" in this project. Figures: $(join(have, ", "))"))
+        state["name"] = nm
     elseif key in ("trackPaths", "trackDiagnostics")
         wanted = _board_pop_refs(pops, _bs_strs(get(d, "pops", nothing)), i, ctx.resolved)
         for p in wanted
@@ -532,7 +549,7 @@ Validate a board spec against the project and expand it into a `LayoutEntry` (th
 ones — rather than writing a board that would render blank.
 
 A `plot` is a plot-spec id (a summary plot) or a board VIEW key (`BOARD_VIEWS`: the gating strategy,
-the track plots, HMM/motif cards, and the clustering plots). Clustering plots on one board must name the
+the track plots, HMM/motif cards, a rendered figure by file name, and the clustering plots). Clustering plots on one board must name the
 same run (`popType` + `suffix`), which becomes the board's `shared.clustPopType`/`clustSuffix`. Any plot
 may carry a `title` (the slot caption).
 
@@ -557,6 +574,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
                       attrs::Union{Vector{String},Nothing} = nothing,
                       clusters::Union{AbstractDict,Nothing} = nothing,
                       image_uids::Union{Vector{String},Nothing} = nothing,
+                      figures::Union{Vector{String},Nothing} = nothing,
                       resolved_pops::Union{AbstractVector,Nothing} = nothing)
     isempty(strip(String(name))) && throw(BoardSpecError("the board needs a name"))
     plots isa AbstractVector || throw(BoardSpecError("`plots` must be a list"))
@@ -577,6 +595,7 @@ function expand_board(proj::CciaProject, name::AbstractString, plots; template::
     img_memo = Ref{Any}(image_uids)
     ctx = (; clusters = () -> clust_memo[] === nothing ? (clust_memo[] = board_spec_cluster_suffixes(proj)) : clust_memo[],
              images = () -> img_memo[] === nothing ? (img_memo[] = _project_image_uids(proj)) : img_memo[],
+             figures = () -> figures === nothing ? _project_figure_names(proj) : figures,
              resolved = resolved_pops)
     contents = Any[nothing for _ in 1:slots]
     run = nothing          # the board's ONE clustering run, as (popType, suffix)

@@ -1882,6 +1882,13 @@ end
         @test_throws BoardSpecError ex([Dict("plot" => "gatingStrategy", "suffix" => "movement")])
         # board-flagged views nothing in a spec could fill are refused with the reason
         @test_throws BoardSpecError ex([Dict("plot" => "filmstrip")])
+        # a figure is named by its file in {project}/figures/; a missing or absent name is refused
+        mkpath(joinpath(proj.root, "figures"))
+        write(joinpath(proj.root, "figures", "img1_strip.png"), UInt8[0x89])
+        @test ex([Dict("plot" => "figure", "name" => "img1_strip.png")])["contents"][1]["state"]["name"] == "img1_strip.png"
+        @test_throws BoardSpecError ex([Dict("plot" => "figure", "name" => "nope.png")])
+        @test_throws BoardSpecError ex([Dict("plot" => "figure")])
+        @test ex([Dict("plot" => "figure", "name" => "x.png")]; figures = ["x.png"])["contents"][1]["ref"] == "figure"
         # views and summary specs mix on one board
         mix = ex([Dict("plot" => "hmmStateCards", "valueName" => "Tcells"),
                   Dict("plot" => "track_measures", "measure" => "live.track.speed")])

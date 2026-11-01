@@ -363,8 +363,9 @@ export function mediaNouns(kinds: Iterable<MediaKind>): { one: string; many: str
 }
 
 /** Where "open in viewer" goes for a registry entry (`GET /api/movies/meta`): the image, its version,
- *  and the view to restore when one was saved — a figure's view (`figureViewState`), an animation's
- *  first keyframe. A viewer or batch movie banks no camera, so it opens on the image. */
+ *  and the view to restore when one was saved — a figure's view (`figureViewState`), a viewer
+ *  recording's snapshot, an animation's first keyframe. A batch movie (one config, many images) and a
+ *  recording from before the snapshot was banked open on the image. */
 export function sourceOf(entry: Record<string, unknown> | null | undefined,
                          viewOfFigure: (spec: Record<string, unknown>) => unknown):
   { imageUid: string; valueName?: string; viewState: unknown | null } | null {
@@ -378,5 +379,6 @@ export function sourceOf(entry: Record<string, unknown> | null | undefined,
   }
   const kf = cfg.keyframes as { viewState?: unknown } | undefined
   const look = (cfg.look ?? {}) as { valueName?: string }
-  return { imageUid, valueName: look.valueName || undefined, viewState: kf?.viewState ?? null }
+  // a viewer recording banks the snapshot it was made from; an animation its first keyframe
+  return { imageUid, valueName: look.valueName || undefined, viewState: cfg.viewState ?? kf?.viewState ?? null }
 }

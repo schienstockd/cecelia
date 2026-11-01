@@ -11,7 +11,7 @@ import { ref, watch, computed } from 'vue'
 import CcToggle from './CcToggle.vue'
 import InlineNote from './InlineNote.vue'
 import MovieTimeRange from './MovieTimeRange.vue'
-import { applyFigureEdits, figureFrames, framesAsRange, type FigureSpec } from '../utils/figureSpec'
+import { applyFigureEdits, figureFrames, framesAsRange, isSplit, type FigureSpec } from '../utils/figureSpec'
 import { resolveFrameRange, storeFrameEnd } from '../utils/batchMovie'
 import { useToast } from '../composables/useToast'
 import { fetchMovieEntry } from '../utils/movieRestore'
@@ -38,6 +38,7 @@ const names = ref<Record<string, string>>({})
 const tileMm = ref<number | null>(null)
 const barUm = ref<number | null>(null)
 const crisp = ref(true)
+const split = ref(false)
 const busy = ref(false)
 const error = ref('')
 
@@ -61,6 +62,7 @@ async function load() {
   tileMm.value = spec.value.style?.tileMm ?? null
   barUm.value = spec.value.scaleBarUm ?? null
   crisp.value = spec.value.interpolation !== 'smooth'
+  split.value = isSplit(spec.value.rows)
 }
 watch(() => [props.projectUid, props.name], load, { immediate: true })
 
@@ -68,7 +70,7 @@ async function rerender() {
   if (!spec.value) return
   error.value = ''
   const next = applyFigureEdits(spec.value, {
-    frames: customFrames.value ?? picked.value.frames, names: names.value, tileMm: tileMm.value ?? undefined,
+    frames: customFrames.value ?? picked.value.frames, names: names.value, split: split.value, tileMm: tileMm.value ?? undefined,
     scaleBarUm: barUm.value && barUm.value > 0 ? barUm.value : null,
     interpolation: crisp.value ? 'pixels' : 'smooth',
   })
@@ -118,6 +120,7 @@ async function rerender() {
     </span>
     <span class="cc-row-group">
       <CcToggle v-model="crisp" label="crisp pixels" v-tooltip.bottom="'Native pixels as sharp blocks; off = smooth'" />
+      <CcToggle v-model="split" label="split channels" v-tooltip.bottom="'One grey row per channel under the merge'" />
       <button class="cc-btn cc-btn-primary" :disabled="busy" @click="rerender"
               v-tooltip.bottom="'Re-make this figure with these settings'">
         <i :class="['pi', busy ? 'pi-spin pi-spinner' : 'pi-replay']" /> Re-make

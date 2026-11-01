@@ -598,7 +598,7 @@ export const useSettingsStore = defineStore('settings', () => {
               // Which stretch of the timelapse to record, as FRAME INDICES — `tEnd` null/absent = the
               // last frame, which is what every recording did before the control existed. Deliberately
               // NOT the `cropT` pair above: that one is a 0-100 % crop range for making a new image.
-              tStart?: number; tEnd?: number | null; figureEvery?: number | null
+              tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean
               // 3D ray-cast quality (draft / standard / high). Per set, like the other viewer prefs.
               renderQuality?: RenderQuality
               compareLayout?: CompareLayout; compareContrast?: CompareContrast
@@ -672,6 +672,7 @@ export const useSettingsStore = defineStore('settings', () => {
     showTimestamp: boolean; showScaleBar: boolean
     tStart: number; tEnd: number | null
     figureEvery: number | null
+    figureSplit: boolean
     matchViewer: boolean
   } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
@@ -700,6 +701,8 @@ export const useSettingsStore = defineStore('settings', () => {
     tEnd: _setPrefs.value[setUid]?.movie?.tEnd ?? null,
     // Save as figure takes every Nth frame of that range; null = auto (`figureFrames`, ~9 frames)
     figureEvery: _setPrefs.value[setUid]?.movie?.figureEvery ?? null,
+    // …and whether it adds one grey row per channel under the merge (`splitRows`)
+    figureSplit: _setPrefs.value[setUid]?.movie?.figureSplit ?? false,
     // default ON — "record" means record what is on screen
     matchViewer: _setPrefs.value[setUid]?.movie?.matchViewer ?? true,
   })
@@ -712,7 +715,7 @@ export const useSettingsStore = defineStore('settings', () => {
                                    compareLayout?: CompareLayout
                                    compareContrast?: CompareContrast
                                    showTimestamp?: boolean; showScaleBar?: boolean
-                                   tStart?: number; tEnd?: number | null; figureEvery?: number | null
+                                   tStart?: number; tEnd?: number | null; figureEvery?: number | null; figureSplit?: boolean
                                    matchViewer?: boolean }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }

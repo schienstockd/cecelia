@@ -26,6 +26,7 @@ import { sortRows, parseSortState, type SortState, type SortValue } from '../uti
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { RESTORE_ROUTE, fetchMovieEntry, type RestoreKind } from '../utils/movieRestore'
 import FigureEditor from '../components/FigureEditor.vue'
+import FigureStyleEditor from '../components/FigureStyleEditor.vue'
 import InlineNote from '../components/InlineNote.vue'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
          type AttrFilterState } from '../utils/attrFilter'
@@ -454,9 +455,11 @@ async function openSource(r: MovieRow) {
   if (src.viewState) viewer.setPendingViewState(src.viewState as ViewerViewState)
   openViewerWindow({ projectUid: projectUid.value, imageUid: src.imageUid, valueName: src.valueName })
 }
+const styleDialog = ref(false)       // the project's figure style editor
 const sourceTip = (r: MovieRow) => r.kind === 'figure'
   ? 'Open the image in the viewer at this figure\'s view'
-  : r.configKind === 'keyframes' ? 'Open the image in the viewer at the first keyframe' : 'Open the image in the viewer'
+  : r.configKind === 'keyframes' ? 'Open the image in the viewer at the first keyframe'
+  : r.producedBy === 'viewer' ? 'Open the image in the viewer at the recorded view' : 'Open the image in the viewer'
 
 const canEdit = (r: MovieRow) => r.hasConfig && r.configKind in RESTORE_ROUTE
 function editConfig(r: MovieRow) {
@@ -536,11 +539,22 @@ async function deleteChecked() {
   }
 }
 
-const filterOptions = computed<ChipOption[]>(() => {
-  const { tags, producers } = movieFilterOptions(movies.value)
-  return [...tags.map(t => ({ value: t, label: t })),
-          ...producers.map(p => ({ value: p, label: p, icon: p === 'figure' ? 'pi pi-print' : 'pi pi-video' }))]
+// Two controls over the one `pickedTags` list: what MADE it (a short fixed set, joined) and the user's
+// own tags (pills). They used to share one chip row, where a tag and a producer read alike.
+const producerOptions = computed<ChipOption[]>(() =>
+  movieFilterOptions(movies.value).producers.map(p => ({ value: p, label: p })))
+const tagOptions = computed<ChipOption[]>(() =>
+  movieFilterOptions(movies.value).tags.map(t => ({ value: t, label: t })))
+const filterOptions = computed<ChipOption[]>(() => [...tagOptions.value, ...producerOptions.value])
+const pickedSubset = (opts: () => ChipOption[]) => computed<string[]>({
+  get: () => { const own = new Set(opts().map(o => o.value)); return pickedTags.value.filter(t => own.has(t)) },
+  set: v => {
+    const own = new Set(opts().map(o => o.value))
+    pickedTags.value = [...pickedTags.value.filter(t => !own.has(t)), ...v]
+  },
 })
+const pickedProducers = pickedSubset(() => producerOptions.value)
+const pickedTagChips = pickedSubset(() => tagOptions.value)
 // A picked chip whose tag no longer exists anywhere would hide every row with no visible cause.
 watch(filterOptions, opts => {
   const live = new Set(opts.map(o => o.value))
@@ -609,6 +623,10 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                       v-tooltip.left="'Re-scan the project\'s movies and figures'">
                 <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
               </button>
+              <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="styleDialog = true"
+                      v-tooltip.left="'How this project\'s figures look'">
+                <i class="pi pi-print" /> Figure style
+              </button>
             </div>
           </div>
 
@@ -660,8 +678,11 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                       v-tooltip.bottom="starredOnly ? `Show all ${nouns.many}` : `Show only starred ${nouns.many}`">
                 <i :class="starredOnly ? 'pi pi-star-fill' : 'pi pi-star'" /> {{ starredCount }}
               </button>
-              <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
-                          aria-label="Filter by tag" v-tooltip.bottom="'Filter by tag or by what recorded it'" />
+              <ChipSelect v-if="producerOptions.length > 1" multiple variant="segmented" :options="producerOptions"
+                          v-model="pickedProducers" aria-label="Filter by what made it"
+                          v-tooltip.bottom="'Show only what these made'" />
+              <ChipSelect v-if="tagOptions.length" multiple :options="tagOptions" v-model="pickedTagChips"
+                          aria-label="Filter by tag" v-tooltip.bottom="'Show only these tags'" />
               <!-- the image table's attribute filter, same panel. Opens a dropdown under this row. -->
               <button v-if="filterAttrKeys.length" class="cc-btn cc-btn-ghost cc-btn-micro mov-filter-btn"
                       :class="{ 'cc-btn-on cc-btn-on-tint': attrFilterActive(attrFilter) || filtersOpen }"
@@ -771,7 +792,10 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 
     <!-- Bulk tagging. `addTags` is a set operation server-side, so this ADDS to what each movie already
          carries — categorising a selection must not flatten the tags they differ by. -->
-    <BaseModal v-if="tagDialog" title="Tag movies" width="420px" @close="tagDialog = false">
+    <BaseModal v-if="styleDialog && projectUid" title="Figure style" width="960px" @close="styleDialog = false">
+      <FigureStyleEditor :project-uid="projectUid" @saved="refresh" />
+    </BaseModal>
+    <BaseModal v-if="tagDialog" :title="`Tag ${nouns.many}`" width="420px" @close="tagDialog = false">
       <p class="cc-muted cc-fs-md">Added to {{ checked.length }} selected {{ checked.length === 1 ? nouns.one : nouns.many }}.</p>
       <!-- Pick one already in use, rather than retyping it. A tag typed a second time with different
            capitalisation is a second category that looks like the first. -->
@@ -832,7 +856,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-star { opacity: .25; }
 .mov-star:hover { opacity: .7; }
 .mov-star.on { opacity: 1; color: var(--cc-warn); }
-.mov-filters { padding: 0 0.5rem 0.4rem; }
+.mov-filters { padding: 0 0.5rem 0.4rem; flex-wrap: wrap; row-gap: 0.3rem; }
 .mov-filter-btn { margin-left: auto; }
 /* the shared panel is sized for a page-wide action bar; inside a side panel it needs the card's own
    padding, and it is not the thing that scrolls */

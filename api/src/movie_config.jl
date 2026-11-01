@@ -74,6 +74,9 @@ Base.@kwdef struct MovieRecordConfig <: MovieConfig
     # An animation's render payload — `{viewState, steps}`. Nothing on a plain timelapse or
     # compare grid; recorded verbatim under the movie for reproducibility.
     keyframes::Any                          = nothing
+    # The viewer snapshot (camera, dims, channels) the recording was made from — what the Movies
+    # page's "open at source" restores. Nothing for a recording that sent none.
+    viewState::Any                          = nothing
 end
 
 # The batch flavour. `config` is the AUTHORED config the batch is applying (not a `look` snapshot);

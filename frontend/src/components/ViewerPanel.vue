@@ -230,6 +230,9 @@ const movieTStart = computed<number>({
 const figureEvery = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).figureEvery : null,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { figureEvery: v }) } })
+const figureSplit = computed<boolean>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).figureSplit : false,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { figureSplit: v }) } })
 const figureRange = computed(() => {
   const r = resolveFrameRange(movieTStart.value, movieTEnd.value, openedImage.value?.sizeT ?? 1)
   return figureFrames(r.lo, r.hi, figureEvery.value)
@@ -440,7 +443,7 @@ async function saveFigure() {
   const valueName = viewerStore.openImage?.valueName || undefined
   // the Record range, every Nth frame — a one-frame range is a single still
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
-  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames })
+  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
   r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, img.physicalSizeX)
   savingFigure.value = true
@@ -1203,6 +1206,13 @@ onUnmounted(() => {
             <MovieTimeRange v-if="(openedImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
                             v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1"
                             show-every v-model:every="figureEvery" :every-auto="figureRange.every" />
+            <div class="cc-row">
+              <span class="cc-row-group">
+                <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
+                      v-tooltip.bottom="'Save as figure: one grey row per channel under the merge'">split</span>
+                <CcToggle v-model="figureSplit" aria-label="Split channels in the figure" />
+              </span>
+            </div>
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" data-guide="viewer.record"

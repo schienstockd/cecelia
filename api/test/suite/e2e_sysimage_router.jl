@@ -289,7 +289,7 @@ end
         "/api/images/tasklog", "/api/lablog",
         "/api/logs/recent", "/api/maintenance/patches",
         "/api/mcp/connections",
-        "/api/movies", "/api/movies/meta",
+        "/api/movies", "/api/movies/meta", "/api/figures/style",
         "/api/notebooks",
         "/api/notebooks/content", "/api/notebooks/snapshots",
         "/api/blackboard", "/api/blackboard/entry",
@@ -363,7 +363,7 @@ end
         "/api/import/series/probe",
         "/api/lablog/append", "/api/lablog/capture",
         "/api/lablog/dismiss",
-        "/api/movies/delete", "/api/movies/meta", "/api/figures/render", "/api/figures/delete-own",
+        "/api/movies/delete", "/api/movies/meta", "/api/figures/render", "/api/figures/delete-own", "/api/figures/style",
         "/api/notebooks/build-sysimage",
         "/api/kiwi/refs/resolve",
         "/api/kiwi/refs/cells",
@@ -500,7 +500,7 @@ end
 
     # Anti-vacuity: a loop over nothing passes trivially.
     @test checked >= 130
-    @test length(GET_ROUTES) == 119 && length(POST_ROUTES) == 182
+    @test length(GET_ROUTES) == 120 && length(POST_ROUTES) == 183
 
     # A path nobody registered must still 404, else "dispatched" means nothing.
     @test !dispatched("GET",  "/api/definitely-not-a-route")

@@ -460,6 +460,7 @@ def add_analysis_board(project_uid: str, name: str, plots: list, template: str =
         (popType "live" for a segmentation's gates); `hierarchy: true` draws every gate below it.
       - "trackPaths" {pops?, mode?: paths|star|rose} · "trackDiagnostics" {pops?} — tracked populations.
       - "hmmStateCards" {valueName?, hmmCol?} · "motifCards" {valueName?} — example-cell cards.
+      - "figure" {name} — a rendered figure (list_figures for the names), shown as made.
       - clustering plots "clusterMap", "heatmap" (cell or track clustering) and "hmmStates", "hmmTransitions",
         "cellCards" (track clustering only) {suffix, popType?: clust|trackclust} — `suffix` is the run
         (get_cluster_summary). ONE run per board: a second suffix needs a second board. Here popType

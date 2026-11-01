@@ -28,12 +28,14 @@ SPEC_DOC = """`spec` (what to show; the image supplies its store, channel names,
   - `frames`: [t, …] (sequence) — at most 64 tiles in all
   - `rows`: [{"channels": [{"c": "mem-TOM", "colour": "#ff00ff", "name": "tdTom"}, …]}, …] — one row of
     tiles per entry; `c` is a channel NAME (get_image_info) or 0-based index, `colour` #rrggbb, `name` the
-    legend's (paper) name. A second row with one channel in "#ffffff" shows that channel alone.
+    legend's (paper) name.
   - `valueName`: the image version (default the active one; prefer the denoised version when there is one)
   - `display`: {"percentiles": [1, 99.8]} measured over ALL tiles (default) | {"ranges": {"mem-TOM": [0, 68]}}
     | add "perTile": true for a range per tile (the legend then says so). Shared is what makes frames comparable.
   - `scaleBarUm`: bar length (none if omitted); `interpolation`: "pixels" (default, crisp) | "smooth"
-  - `style`: {"tileMm": 20, "dpi": 300, "scaleBarOn": "first"|"last"|"all"} — the house look otherwise.
+  - `style`: {"tileMm": 20, "dpi": 300, "scaleBarOn": "first"|"last"|"all", "timeFormat": "clock"|"min"} —
+    the project's figure style otherwise (the user sets it on the Movies & figures page).
+  - Split channels: rows = the merge, then one row per channel in "#ffffff" (the editor's "split channels").
 To find a cell: get_object_ids / pop_df coordinates give y, x, z, t in level-0 pixels."""
 
 ADD_FIGURE_DOC = f"""Make a figure of image `image_uid` from `spec` — rendered by the app at native resolution in the

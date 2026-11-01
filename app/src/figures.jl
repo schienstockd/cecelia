@@ -49,6 +49,7 @@ function figure_params(img::CciaImage, spec::AbstractDict)::Dict{String,Any}
         delete!(p, "scaleBarUm")
     end
     :T in axes && (p["timeIncrementS"] = step_min * 60)
+    p["style"] = _effective_figure_style(img, get(p, "style", nothing))   # the project's, under the spec's
     p
 end
 
@@ -107,12 +108,16 @@ What a figure was rendered from: the image version's name (the active one when `
 version (`vN`) and the store's mtime. A re-process replaces the store (staged writes rename a new
 directory into place), so its mtime moves even when the version name does not.
 """
-function figure_source(img::CciaImage, value_name::Union{AbstractString,Nothing} = nothing)::Dict{String,Any}
+function figure_source(img::CciaImage, value_name::Union{AbstractString,Nothing} = nothing;
+                       spec_style = nothing)::Dict{String,Any}
     # the IMAGE version (`filepath`), not `resolve_value_name` — that resolves a segmentation
     vn = value_name === nothing ? String(versioned_active(img.filepath)) : String(value_name)
     zp = img_filepath(img, vn)
     Dict{String,Any}("valueName" => vn, "version" => resolve_version(img, :filepath, vn),
-                     "storeMtime" => (zp !== nothing && ispath(zp)) ? mtime(zp) : nothing)
+                     "storeMtime" => (zp !== nothing && ispath(zp)) ? mtime(zp) : nothing,
+                     # the style it was drawn in beyond the house defaults — a project style change
+                     # then marks it out of date
+                     "style" => _effective_figure_style(img, spec_style))
 end
 
 """
@@ -120,7 +125,7 @@ end
 
 Why a figure rendered from `source` (`figure_source`) no longer shows the data, or `nothing`.
 """
-function figure_stale_reason(img::CciaImage, source::AbstractDict)::Union{Nothing,String}
+function figure_stale_reason(img::CciaImage, source::AbstractDict; spec_style = nothing)::Union{Nothing,String}
     vn = String(get(source, "valueName", ""))
     zp = img_filepath(img, isempty(vn) ? nothing : vn)
     (zp === nothing || !ispath(zp)) && return "image version $(repr(vn)) is gone"
@@ -130,5 +135,89 @@ function figure_stale_reason(img::CciaImage, source::AbstractDict)::Union{Nothin
     was = get(source, "storeMtime", nothing)
     (was isa Real && now["storeMtime"] isa Real && now["storeMtime"] > was + 1) &&
         return "image version $vn was re-processed since"
+    # recorded since figures followed the project style; absent (older figures) = nothing to compare
+    if haskey(source, "style")
+        drawn = Dict{String,Any}(String(k) => v for (k, v) in source["style"])
+        drawn == _effective_figure_style(img, spec_style) || return "the project's figure style changed since"
+    end
     nothing
 end
+
+# ── The project's figure style (FIGURES_PLAN Decision B) ──────────────────────────────────────────
+# The house style lives in ONE file the renderer and the style editor also read; a project may override
+# any of its keys in `{project}/settings/figureStyle.json`. A spec's own `style` wins over the project's.
+
+const FIGURE_STYLE_FILE = normpath(joinpath(@__DIR__, "..", "..", "frontend", "src", "lib", "figureStyle.json"))
+
+"""
+    figure_style_schema() -> JSON3.Object
+
+The house style file: `defaults`, numeric `limits` and string `choices` for every style key.
+"""
+figure_style_schema() = JSON3.read(read(FIGURE_STYLE_FILE, String))
+
+_project_figure_style_path(project_dir::AbstractString) = joinpath(project_dir, "settings", "figureStyle.json")
+
+"""
+    project_figure_style(project_dir) -> Dict{String,Any}
+
+The project's overrides of the house style (`{}` when it has none, or the file is unreadable).
+"""
+function project_figure_style(project_dir::AbstractString)::Dict{String,Any}
+    f = _project_figure_style_path(project_dir)
+    isfile(f) || return Dict{String,Any}()
+    raw = try JSON3.read(read(f, String)) catch; nothing end
+    raw isa AbstractDict || return Dict{String,Any}()
+    first(clean_figure_style(raw))
+end
+
+"""
+    clean_figure_style(raw) -> (style, errors)
+
+`raw` reduced to the keys the house style has, each checked against its limit or choices: `style` holds
+the valid ones, `errors` one line per rejected key naming what is allowed. `tileMm` may be `nothing`
+(auto by frame count).
+"""
+function clean_figure_style(raw::AbstractDict)::Tuple{Dict{String,Any},Vector{String}}
+    schema = figure_style_schema()
+    out, errs = Dict{String,Any}(), String[]
+    for (k, v) in raw
+        key = String(k)
+        if !haskey(schema[:defaults], Symbol(key))
+            push!(errs, "$key: not a style setting"); continue
+        end
+        if haskey(schema[:choices], Symbol(key))
+            opts = collect(String, schema[:choices][Symbol(key)])
+            String(something(v, "")) in opts ? (out[key] = String(v)) :
+                push!(errs, "$key: one of $(join(opts, ", "))")
+        elseif key == "tileMm" && v === nothing
+            out[key] = nothing
+        elseif v isa Real
+            lo, hi = schema[:limits][Symbol(key)]
+            lo <= v <= hi ? (out[key] = v) : push!(errs, "$key: $(lo)–$(hi)")
+        else
+            push!(errs, "$key: a number")
+        end
+    end
+    out, errs
+end
+
+"""
+    set_project_figure_style!(project_dir, raw) -> Vector{String}
+
+Replace the project's overrides with `raw` (`{}` = the house style) — only when every key is valid;
+returns the errors otherwise, writing nothing.
+"""
+function set_project_figure_style!(project_dir::AbstractString, raw::AbstractDict)::Vector{String}
+    style, errs = clean_figure_style(raw)
+    isempty(errs) || return errs
+    write_atomic(_project_figure_style_path(project_dir)) do io
+        JSON3.write(io, style)
+    end
+    String[]
+end
+
+# The style a figure is drawn in, beyond the house defaults: the project's, then the spec's own.
+_effective_figure_style(img::CciaImage, spec_style) =
+    merge(project_figure_style(img_project_dir(img)),
+          spec_style isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in spec_style) : Dict{String,Any}())

@@ -56,7 +56,8 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
         register_movie!(project_uid, fname; produced_by = "figure", image_uid = img.uid,
                         channels = filter(!isempty, shown),
                         config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved,
-                                              source = figure_source(img, _spec_value_name(spec))),
+                                              source = figure_source(img, _spec_value_name(spec);
+                                                                     spec_style = get(spec, "style", nothing))),
                         config_kind = "figure", author = author_stamp())
         _movies_changed(project_uid)
         (; name = fname, png, resolved)
@@ -84,7 +85,9 @@ function _figure_stale(project_uid::AbstractString, e::AbstractDict, images::Abs
         isfile(state_file(joinpath(projects_dir(), project_uid), iu)) ? init_object(project_uid, iu) : nothing
     end
     img isa CciaImage || return "its image is gone"
-    figure_stale_reason(img, Dict{String,Any}(String(k) => v for (k, v) in src))
+    spec = get(cfg, "spec", nothing)
+    figure_stale_reason(img, Dict{String,Any}(String(k) => v for (k, v) in src);
+                        spec_style = spec isa AbstractDict ? get(spec, "style", nothing) : nothing)
 end
 
 # Claude made it and nobody has re-made it since — the gate rule (`claude_made`, gating_api.jl).
@@ -150,4 +153,32 @@ function api_figures_delete_own(body_bytes::Vector{UInt8})
     _write_movies_registry!(pu, reg)
     _movies_changed(pu)
     200, JSON3.write((; ok = true, deleted = name))
+end
+
+# GET /api/figures/style?projectUid → {defaults, limits, choices, style} — the house style file and the
+# project's overrides of it (`{}` = the house style). POST {projectUid, style} replaces the overrides;
+# a bad key is a 400 naming it, and nothing is written. Figures drawn in the old style list as out of
+# date (`figure_stale_reason`).
+function api_figures_style_get(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    uid = get(q, "projectUid", "")
+    pdir = joinpath(projects_dir(), uid)
+    (isempty(uid) || !isdir(pdir)) && return 404, JSON3.write((; error = "Project not found"))
+    schema = figure_style_schema()
+    200, JSON3.write((; defaults = schema[:defaults], limits = schema[:limits], choices = schema[:choices],
+                       style = project_figure_style(pdir)))
+end
+
+function api_figures_style_set(body_bytes::Vector{UInt8})
+    body = _parse_body(body_bytes)
+    body isa Tuple && return body
+    uid = _wstr(body, :projectUid)
+    pdir = joinpath(projects_dir(), uid)
+    (isempty(uid) || !isdir(pdir)) && return 404, JSON3.write((; error = "Project not found"))
+    raw = get(body, :style, nothing)
+    raw isa AbstractDict || return 400, JSON3.write((; error = "style: required, an object"))
+    errs = set_project_figure_style!(pdir, raw)
+    isempty(errs) || return 400, JSON3.write((; ok = false, error = join(errs, "; ")))
+    _movies_changed(uid)                    # the list re-reads which figures are now out of date
+    200, JSON3.write((; ok = true, style = project_figure_style(pdir)))
 end

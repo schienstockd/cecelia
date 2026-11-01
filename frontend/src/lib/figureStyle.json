@@ -1,0 +1,16 @@
+{
+  "$comment": "The house figure style (docs/todo/FIGURES_PLAN.md Decision 8) — ONE source for the renderer (python/cecelia/writers/render_figure.py), the per-project override (app/src/figures.jl) and the style editor (FigureStyleEditor.vue). Lengths in mm, text in pt; tileMm null = auto by frame count.",
+  "defaults": {
+    "dpi": 300, "tileMm": null, "figureWidthMm": 180, "tileMmMin": 20, "tileMmMax": 80,
+    "gapMm": 0.4, "fontPt": 7, "scaleFontPt": 6, "barMm": 0.35,
+    "scaleBarOn": "first", "timeFormat": "clock"
+  },
+  "limits": {
+    "dpi": [72, 1200], "tileMm": [5, 200], "figureWidthMm": [40, 400], "tileMmMin": [5, 200],
+    "tileMmMax": [5, 200], "gapMm": [0, 5], "fontPt": [4, 24], "scaleFontPt": [4, 24], "barMm": [0.1, 3]
+  },
+  "choices": {
+    "scaleBarOn": ["first", "last", "all"],
+    "timeFormat": ["clock", "min"]
+  }
+}
