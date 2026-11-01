@@ -13,7 +13,39 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
-_Changes on `main` that have not yet been tagged in a release._
+## [0.2.12] — 2026-11-01
+
+### Read this first
+
+Nothing on disk is marked when these apply, so check here before re-running old work.
+
+- **Re-run multi-group Coastal segmentations** (#1837). When one Coastal run used several model
+  groups with different channels or clip ranges, groups 2 onwards were segmented using group 1's
+  motion between frames. That is fixed. On one movie about 22% of voxels and ~5% of labels per frame
+  change. Single-group runs give the same labels as before.
+- **Cellpose results change on re-run** (#1705). Flow threshold now defaults to 1.0 instead of 0.4,
+  and Cellpose no longer re-normalises each tile on top of Cecelia's own windowing. Saved settings
+  without a flow threshold get 1.0. Cell probability threshold, flow threshold, invert and
+  test-time augmentation are now under Advanced.
+- **Tile size and overlap default to Auto** (#1827). The tile is the whole frame if it fits in free
+  memory, otherwise the largest tile that does; overlap is 1.5× the object size. Saved numbers still
+  apply.
+- **Other segmentation results that change on re-run:** with *Normalise to whole image* off, the
+  window is now set per frame, not per tile (#1830); stitched 3D Cellpose with large tiles no longer
+  merges cells across planes or keeps tiny fragments (#1825).
+- **Several contact targets give several column sets** (#1760). See *Cell contacts* below. Saved
+  chains with more than one target produce new columns on re-run.
+- **Saved AF correction settings don't pre-fill** the new channel-role rows (#1711). Saved chains
+  still run.
+- **Crops made before this version may record the wrong number of Z planes** (#1877), e.g. a crop
+  of a drift-corrected image. New crops, copies, bins, projections and registrations take their
+  sizes from what was written. Re-crop to fix an old one.
+- **"UMAP" is now "Cluster map"** (#1822): the plot, and the task (`createUmap`, was `mergeUmap`).
+  Saved settings and board slots carry over; a board saved in this version shows no UMAP slot if
+  opened in 0.2.11.
+- **Claude Code terminal setup is now the Cecelia plugin** (#1826). Installing it removes the older
+  `claude mcp add-json` registration from your Claude settings.
+- **`pixi run headless` is now `pixi run chat`** (#1849).
 
 ### Added
 
@@ -30,6 +62,39 @@ _Changes on `main` that have not yet been tagged in a release._
   roles shows what that setup does to a sketch of cells and AF. **Different cell types** now only
   appears when something competes with that marker. Saved chains still run; an image's previously
   saved AF settings will not pre-fill the new rows.
+- **Figures** (#1880, #1881, #1882, #1883, #1887, #1890). *Save as figure* in the viewer makes a
+  figure from the raw image, using the project's style; split channels are an option. Figures live
+  with movies, can be re-made from the Movies page and placed on a board, and are flagged when their
+  image changes. Claude can make figures too.
+- **Find ROIs** (#1793, #1884). Pick a population and it finds where those objects gather over time,
+  ranked by how much denser than usual each spot is. Review the ROIs in the viewer with keys,
+  auto-next and a spotlight, and label them with your own labels.
+- **Containment on mesh contacts** (#1793). *Cell contacts (meshes)* can also record which cells sit
+  inside cells of a target population, and how many each holds.
+- **Motility measures** (#1862, #1865, #1868, #1875): persistence fit, track-length bias and order
+  index with QC; measures over a time window in minutes; approach toward a contact target. Tracking
+  shows the µm/min a search radius allows (#1858).
+- **Behaviour axes for track clusters** (#1821, #1823). Track clustering records where each track
+  sits along its behaviour path, and the cluster map can lay track runs out on those axes.
+- **Colour the mask** by population or by track cluster in the viewer (#1756, #1819) and in movies
+  (#1792).
+- **Populations: all on, all off, one at a time** in the viewer (#1751).
+- **Chains: manual steps** (#1847). A chain can pause for you, e.g. to draw a gate, then carry on.
+  Build a chain from history, and check it before it runs.
+- **In-app map and guides** (#1850): every page and panel, and where to start.
+- **Claude and gating** (#1852, #1856, #1869). Claude can propose a gate as a new population and
+  edit only its own gates. It won't change a gate you've edited or one a task has read.
+- **Claude login inside Cecelia** (#1717, #1718): no terminal; log out from the sidebar, and
+  optionally on quit. On a shared workstation, a profile's Claude conversations can be deleted on
+  log out (#1840).
+- **Kiwi and Claude Code as two modes**, each saying what it can use (#1860, #1864). Claude's writes
+  record which model made them (#1826).
+- **Chat from the terminal**: `pixi run chat` brings data in and asks questions without the GUI
+  (#1835, #1836, #1838, #1839).
+- **HPC on NCI Gadi (PBS)** (#1786), live job logs and Task Manager rows (#1796), node shapes per
+  queue (#1800), a warning when the cluster environment is out of date (#1758).
+- **Share a project when you create it** (#1716), or make one you own shared.
+- **Seam QC** flags visible tile seams in a segmentation (#1832).
 
 ### Changed
 
@@ -38,6 +103,34 @@ _Changes on `main` that have not yet been tagged in a release._
   distance and nearest-cell columns, as in the old R version. The same population picked from
   several segmentations still counts as one target. Tick **Combine targets** for the old single
   distance. Columns from earlier runs are kept; delete them under Analysis runs if not wanted.
+- **Coastal is about 24% faster** on time-lapses (#1837); segmentation reads only the channels the
+  model uses (#1825) and skips blank tiles without changing results (#1831).
+- **Gate plot:** click a gate to select it before dragging moves it; axis transforms fit the data
+  (#1866). Grab zones are 10 px and fit small gates (#1752, #1776).
+- **Task forms hide settings that don't apply** to the chosen method (#1763, #1774).
+- **Landscape captures** are registered to the screen, and tile channel means use the image's fixed
+  display range, so they don't compare with earlier captures (#1710, #1824).
+- **Confirm buttons flip in place** instead of opening a Confirm/Cancel pair (#1719).
+- **Viewer:** channel stepper on the canvas, toolbars fit one line (#1708).
+
+### Fixed
+
+- **Clustering crashed on every run** of cluster populations, and on *Log base* (#1743, #1744).
+- **Population Manager's *Show in viewer*** works again (#1818).
+- **Gate plot no longer errors** on Float32 data with a logicle transform (#1851).
+- **Renaming a segmentation** also renames it in saved run and form settings (#1876).
+- **Warnings instead of silent results:** a sparse neighbour graph (#1764, #1775, #1782), copied
+  gates reading a column the target lacks (#1761), why a population is 0 (#1783), a result that was
+  cut short (#1797).
+- **Viewer:** *Save PNG* captures what's on screen (#1791); the preview mask is never stale from an
+  earlier page load (#1790); track-ribbon visibility survives refreshes (#1778); movies draw the
+  viewer's population and ribbon visibility (#1792).
+- **Board** cluster heatmaps show the shown run's features (#1820); facet headers and rotated labels
+  fit (#1755, #1789); square panels resize without flicker (#1787).
+- **Windows:** exports no longer land inside the projects folder (#1829).
+- **HPC:** series reads send their metadata and normalisation along (#1745); settings layout and
+  Test connection fixes (#1753, #1757, #1781).
+- **Crops show their source and offset** in image info (#1877).
 
 ## [0.2.11] — 2026-10-16
 
@@ -1370,7 +1463,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/schienstockd/cecelia/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/schienstockd/cecelia/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9

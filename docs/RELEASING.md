@@ -109,8 +109,13 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 
 ## Versioning (pre-1.0)
 
-- `0.1.x` — "works end-to-end for me" (current state). Patch bumps ride the heartbeat.
-- `0.2`, `0.3` — something **substantial** lands (e.g. clustering, behaviour hardening).
+- **Patch** (`0.2.x`) — the heartbeat, however large. Size is not a reason to bump: `v0.2.11` was
+  147 PRs and stayed a patch. Changes that alter existing results go in the notes' *Read this first*
+  section whatever the number is — the notes, not the version, carry that warning.
+- **Minor** (`0.3`, `0.4`) — a **milestone**: a new kind of work Cecelia can now do, recorded as an
+  M-entry in `MILESTONES.md`. `0.2.0` was the browser viewer replacing napari; the napari removal
+  came with it rather than being the reason. Not "something was removed" and not "a format changed"
+  — `0.1.3` and `0.2.5` changed store formats and stayed patches.
 - `1.0.0` — the module functions **this** work needs are in, and a couple of external people use it
   without hand-holding.
 
@@ -130,26 +135,6 @@ cycle if nothing changed). This is the whole schedule. It gives you:
 **Hard blocker before *any* external handoff:** a root `LICENSE` (GPL-3-or-later) + third-party
 acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.md`, and the
 `license` key in `app/Project.toml` are all in place.
-
-### One-time constraint: everything shipped so far is stuck behind `v0.1.0-rc9`
-
-`api/src/update_api.jl` compares tags with Julia's `VersionNumber`, which parses `rc10`'s prerelease
-as the single **string** `"rc10"` — and `"rc10" < "rc9"` lexicographically. `_parse_ver` now rewrites
-`-rc10` → `-rc.10` so the digits compare numerically, **but that fix only helps clients that already
-have it.** Anyone running `v0.1.0-rc9` compares with their own copy of the old function, so:
-
-| Next tag | Reaches an rc9 client? |
-|---|---|
-| `v0.1.0-rc10` (…and rc11 … rc19) | **no** — sorts *below* rc9; the GUI says "up to date" |
-| `v0.1.0` / `v0.2.0` / any release | **yes** — a release always outranks its own prereleases |
-| `v0.1.0-rc9.1` | yes, but it is an unreadable version to hand anyone |
-
-Worse, an rc8 client offered the "newest" release is sent to **rc9** and then dead-ends there, so
-rc9 is a terminal state for every existing install until a tag outranks it.
-
-**So the next tag must be a plain release** (`v0.1.0` or higher). After that the ladder is safe and
-`-rcN` works normally again. This also fixes `releases/latest`, which only ever resolves to a
-non-prerelease and has therefore never worked (`docs/SHIPPING.md` → *Install channels*).
 
 ## Cutting a release — the short checklist
 
