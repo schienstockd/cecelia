@@ -28,21 +28,21 @@ These change results when old work is re-run:
 - **Crops made before 0.2.12** may record the wrong Z size; re-crop (#1877).
 - **Mesh contact distances** are measured to the nearest vertex; they shift by up to ~half a voxel (#1891).
 - **AF correction:** saved settings don't pre-fill the new role rows (#1711).
-- **Renamed:** UMAP → Cluster map, `mergeUmap` → `createUmap` (#1822); `pixi run headless` →
-  `pixi run chat` (#1849).
+- **Renamed:** UMAP → Cluster map, `mergeUmap` → `createUmap` (#1822); Whiteboard → Chains;
+  Project profile → About this project (#1841); `pixi run headless` → `pixi run chat` (#1849).
 - **Claude Code setup** is now the Cecelia plugin; it replaces the old MCP registration (#1826).
 
 ### Added
 
 - AF correction: mark a channel as AF for a marker; bright AF zeroes the marker (#1711).
-- Figures from the viewer, kept with movies and placeable on boards (#1880–#1890).
+- Figures from the viewer, kept with movies and placeable on boards; Claude can make them (#1880–#1890).
 - Find ROIs: where a population gathers, reviewed in the viewer (#1793, #1884).
 - Containment in *Cell contacts (meshes)*: how enclosed each cell is (0–1), and how many each holds (#1793, #1891).
 - Motility: persistence, order index, windowed measures, approach to a target (#1862–#1875).
 - Behaviour axes for track clusters (#1821, #1823).
 - Colour masks by population or track cluster (#1756, #1792, #1819).
 - Viewer populations: all on, all off, one at a time (#1751).
-- Chains can pause for a manual step (#1847).
+- Chains: pause for a manual step, build from history, pre-flight check (#1847).
 - In-app map and guides (#1850).
 - Claude can propose gates; it never edits yours (#1852, #1856, #1869).
 - Claude login inside Cecelia (#1717, #1718, #1840); Kiwi and Claude Code modes (#1860, #1864).
