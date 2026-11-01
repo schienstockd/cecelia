@@ -30,7 +30,7 @@
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, nextTick, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { sortRows, cycleSort, sortIconFor, parseSortState,
          type SortState, type SortValue } from '../utils/sortRows'
@@ -201,6 +201,19 @@ const props = withDefaults(defineProps<{
    * are genuinely not wanted — a table the user might want to sort keeps its header.
    */
   headerless?: boolean
+  /**
+   * Keep the header row in view while the rows scroll VERTICALLY inside the caller's scroll box (a
+   * list under fixed controls). Opt-in: on a table that scrolls with its page, a pinned header would
+   * stick to the page top instead. The header sits above the pinned pick column, so its radios never
+   * draw over the column titles.
+   */
+  stickyHeader?: boolean
+  /**
+   * Scroll the picked row into view when the selection changes from OUTSIDE a click — a keyboard
+   * pager stepping a long list (the viewer's ROI list). `nearest`, so a row already on screen does not
+   * move. Opt-in: a table whose selection is set elsewhere for other reasons should not jump.
+   */
+  followSelection?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -405,6 +418,11 @@ const tableStyle = computed(() =>
 // never report the panel shrinking back. The width is applied a frame later (`rafCoalesce`), never in
 // the observer callback: the column it widens sits inside the observed box.
 const tableEl = ref<HTMLTableElement | null>(null)
+// `followSelection`: after the DOM has the new `.sel-on`, bring it into view
+watch(() => props.modelValue, () => {
+  if (!props.followSelection) return
+  void nextTick(() => tableEl.value?.querySelector('tbody tr.sel-on')?.scrollIntoView({ block: 'nearest' }))
+})
 const parentPx = ref(0)
 const measureParent = rafCoalesce((w: number) => { parentPx.value = w })
 let fillRo: ResizeObserver | null = null
@@ -433,7 +451,7 @@ function colStyle(c: SelectionColumn) {
 </script>
 
 <template>
-  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact' }" :style="tableStyle">
+  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact', 'sticky-head': stickyHeader }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="sized">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
@@ -585,6 +603,16 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-table.sized th { position: relative; }
 .sel-table.sized th.sel-sticky, .sel-table.sized td.sel-sticky { position: sticky; }
 .sel-table.sized th, .sel-table.sized td { overflow: hidden; text-overflow: ellipsis; }
+/* `stickyHeader`: the header row pins to the TOP of the caller's scroll box, above the body's pinned
+   cells (z 2); a header cell that is also a pinned column is above both. Opaque, and the bottom rule is
+   a shadow because a collapsed border does not travel with a sticky cell. Out-ranks `.sized th`. */
+.sel-table.sticky-head thead th {
+  position: sticky; top: 0; z-index: 3; background: var(--cc-bg);
+  box-shadow: inset 0 -1px 0 var(--cc-border);
+}
+.sel-table.sticky-head thead th.sel-sticky { z-index: 4; }
+/* a row scrolled into view (`followSelection`) stops below the pinned header, not under it */
+.sel-table.sticky-head tbody tr { scroll-margin-top: 2rem; }
 .sel-col-resize {
   position: absolute; right: 0; top: 0; width: 5px; height: 100%;
   cursor: col-resize; z-index: 1;

@@ -36,8 +36,8 @@ export interface FocusOnCellTarget {
  * PRESERVES: zoom, angles, perspective, ndisplay, layers, canvas. These reflect the user's
  * current framing and should NOT change on a focus — a Show that also reset the zoom to some
  * default would be a bug, not a feature. Camera.center gets [cz, cy, cx]; current_step[0] +
- * point[0] get `t`. cx/cy are always applied; cz falls through to the current cz when the
- * caller passes none (2D view).
+ * point[0] get `t`, current_step[1] + point[1] the plane `cz` (rounded). cx/cy are always applied;
+ * cz falls through to the current cz — and the current plane — when the caller passes none.
  */
 /** Fraction of the fit bbox to leave as breathing room around the track — 20% each side. */
 const FIT_PADDING = 0.2
@@ -82,5 +82,17 @@ export function buildFocusViewState(
   // set; better to leave t alone than to write into an out-of-bounds index.
   if (next.dims.current_step.length > 0) next.dims.current_step[0] = target.t
   if (next.dims.point.length > 0)        next.dims.point[0]        = target.t
+  // z sits at index 1, and it is what the browser viewer moves to (`applyViewStateToBrowser` reads the
+  // plane from current_step[1]; camera.center[0] is never read back). Only with a cz: without one the
+  // caller means "this plane".
+  if (target.cz !== undefined && Number.isFinite(target.cz)) {
+    const z = Math.max(0, Math.round(target.cz))
+    if (next.dims.current_step.length > 1) next.dims.current_step[1] = z
+    if (next.dims.point.length > 1)        next.dims.point[1]        = z
+    // …and the loaded range goes: it was the OLD plane's (a ±n window round it, or a Depth crop), and
+    // sent with the new plane it reads as a crop elsewhere. Without it the viewer keeps its own
+    // settings — a ± window re-centres on the new plane, a whole stack stays whole.
+    if (z !== current.dims.current_step?.[1]) delete next.dims.zRange
+  }
   return next
 }

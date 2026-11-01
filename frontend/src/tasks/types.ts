@@ -55,7 +55,8 @@ export interface ParamDef {
   // `showIf` because the condition is often not expressible in the form alone: "the file you picked
   // is an XML export, which has no columns" needs the file read.
   hidden?: boolean
-  /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown. */
+  /** select: `'chips'` renders the same closed set as a segmented ChipSelect instead of a dropdown.
+   *  text: `'chips'` types a comma-separated list as chips (ChipInput); `max` caps how many. */
   variant?: 'chips'
   // Show this param only while the form satisfies these conditions: `{ "mode": "attach" }`, or
   // `{ "method": ["gaussian", "bilateral"] }` for one-of. Keys AND, values within a key OR, compared

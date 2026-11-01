@@ -81,8 +81,10 @@
       "key": "reviewLabels",
       "label": "Review labels",
       "type": "text",
+      "variant": "chips",
+      "max": 12,
       "default": "of interest, artefact, unsure",
-      "tip": "Comma-separated labels offered when reviewing these ROIs"
+      "tip": "The answers you select per ROI, e.g. ingested, contact only, artefact"
     }
   ]
 }

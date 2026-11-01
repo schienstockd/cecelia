@@ -995,6 +995,16 @@ that might be long. Keep the labels short — the row label already carries the 
   "default": "1", "options": [{ "value": "0", "label": "0" }, { "value": "1", "label": "1" }] }
 ```
 
+`"chips"` on a `text` types a list of words the user invents as chips (`ChipInput`: Enter or a comma
+adds one, × removes it). The value is still ONE comma-separated string, so the task parses it as
+before (split on commas, trim, drop empties and repeats — `utils/chipInput.ts` mirrors that); `max`
+caps the count. Use it when the field is a vocabulary, like Find ROIs' review labels:
+
+```json
+{ "key": "reviewLabels", "label": "Review labels", "type": "text", "variant": "chips", "max": 12,
+  "default": "of interest, artefact, unsure", "tip": "The answers you select per ROI, …" }
+```
+
 **`optionsFrom`** — fill a picker's `options` from a named runtime source, instead of writing a Julia
 hook to walk the spec and do it by hand:
 

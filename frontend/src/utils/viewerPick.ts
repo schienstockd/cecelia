@@ -16,7 +16,7 @@
 //
 // See docs/todo/VIEWER_CONTROLS_SPLIT_PLAN.md → P8.
 
-import { visibleExtentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
+import { visibleExtentUm, projectWorld, extentUm, type OrbitCamera, type ViewerMeta, type Vec3 } from './volumeViewer'
 
 export interface PickCoord {
   /** Image pixel column, 0-based, floored. */
@@ -127,4 +127,51 @@ export function screenToL0(
   const v = cameraViewL0(cam, meta, canvasW, canvasH)
   return [v.x0 + (px / Math.max(canvasW, 1)) * (v.x1 - v.x0),
           v.y0 + (py / Math.max(canvasH, 1)) * (v.y1 - v.y0)]
+}
+
+/** An image box in L0 voxels, z included — inclusive bounds, so a one-voxel box has a size. */
+export interface L0Box { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number }
+
+/** The box's twelve edges as corner-index pairs into `l0BoxCorners` (corner i = x bit 4, y bit 2, z bit 1). */
+export const BOX_EDGES: [number, number][] = [
+  [0, 1], [2, 3], [4, 5], [6, 7],   // along z
+  [0, 2], [1, 3], [4, 6], [5, 7],   // along y
+  [0, 4], [1, 5], [2, 6], [3, 7],   // along x
+]
+
+/**
+ * An image box's eight corners on the canvas (CSS px from the top-left), in EITHER view, through the
+ * shaders' own projection (`projectWorld`) — so a box drawn from them sits on the rendered volume
+ * under rotation and perspective, not only pan and zoom. `zLoaded` is the slab on the GPU (the box the
+ * renderer centres on the origin); `orthographic` is the projection in use — the plane view always
+ * is. Null when a corner is behind the eye. Corner order: see `BOX_EDGES`.
+ */
+export function l0BoxCorners(
+  b: L0Box, cam: OrbitCamera, meta: ViewerMeta, zLoaded: [number, number],
+  orthographic: boolean, canvasW: number, canvasH: number,
+): { x: number; y: number }[] | null {
+  const v = [meta.voxelUm[0] || 1, meta.voxelUm[1] || 1, meta.voxelUm[2] || 1]
+  const [ex, ey, ez] = extentUm(meta, zLoaded[1] - zLoaded[0] + 1)
+  const centre: Vec3 = [ex / 2, ey / 2, Math.max(0, zLoaded[0]) * v[2] + ez / 2]
+  const aspect = Math.max(canvasW, 1) / Math.max(canvasH, 1)
+  const out: { x: number; y: number }[] = []
+  for (const x of [b.x0, b.x1 + 1]) for (const y of [b.y0, b.y1 + 1]) for (const z of [b.z0, b.z1 + 1]) {
+    const q = projectWorld([x * v[0] - centre[0], y * v[1] - centre[1], z * v[2] - centre[2]], cam, aspect, orthographic)
+    if (!orthographic && q[2] <= 0) return null
+    out.push({ x: (q[0] + 1) / 2 * canvasW, y: (1 - q[1]) / 2 * canvasH })
+  }
+  return out
+}
+
+/** The screen rectangle bounding a box's corners (`l0BoxCorners`). Face-on in the plane view it is
+ *  `l0RectToScreen` exactly. */
+export function l0BoxToScreen(
+  b: L0Box, cam: OrbitCamera, meta: ViewerMeta, zLoaded: [number, number],
+  orthographic: boolean, canvasW: number, canvasH: number,
+): { x: number; y: number; w: number; h: number } | null {
+  const c = l0BoxCorners(b, cam, meta, zLoaded, orthographic, canvasW, canvasH)
+  if (!c) return null
+  const xs = c.map(p => p.x), ys = c.map(p => p.y)
+  const x = Math.min(...xs), y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
 }

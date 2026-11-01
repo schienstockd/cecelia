@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cameraViewL0, screenToImagePx } from './viewerPick'
+import { cameraViewL0, screenToImagePx, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES } from './viewerPick'
 import { fitCamera, extentUm, visibleExtentUm, type OrbitCamera, type ViewerMeta } from './volumeViewer'
 
 /** 100 x 80 image, 1 µm/px in x and y — a click at the canvas centre with a face-on fitted camera
@@ -116,5 +116,56 @@ describe('cameraViewL0', () => {
     expect((v.y1 - v.y0) * 2).toBeCloseTo(h)
     expect(((v.x0 + v.x1) / 2) * 0.5).toBeCloseTo(7 + (100 * 0.5) / 2)   // panX + image half-width, µm
     expect(((v.y0 + v.y1) / 2) * 2).toBeCloseTo(3 + (80 * 2) / 2)      // -panY + image half-height, µm
+  })
+})
+
+describe('l0BoxToScreen', () => {
+  const m = meta({ nZ: 10, voxelUm: [0.5, 0.5, 2] })
+  const box = { x0: 10, x1: 29, y0: 40, y1: 59, z0: 3, z1: 5 }
+  const near = (a: { x: number, y: number, w: number, h: number } | null, b: { x: number, y: number, w: number, h: number }) => {
+    expect(a).not.toBeNull()
+    for (const k of ['x', 'y', 'w', 'h'] as const) expect(a![k]).toBeCloseTo(b[k], 6)
+  }
+
+  it('face-on and orthographic, it is the plane view\'s own rectangle (two derivations agree)', () => {
+    const cam: OrbitCamera = { ...fitCamera(extentUm(m), 400 / 300), panX: 3, panY: -7, dist: 20 }
+    near(l0BoxToScreen(box, cam, m, [0, 9], true, 400, 300),
+         l0RectToScreen({ x0: 10, y0: 40, x1: 30, y1: 60 }, cam, m, 400, 300))
+  })
+
+  it('under perspective, a box flat on the loaded slab\'s centre plane projects as under orthographic', () => {
+    const cam: OrbitCamera = { ...fitCamera(extentUm(m), 1, true), panX: 2, panY: 1 }
+    // slab 0–9 → centre at z = 5 voxels; z0 5 / z1 4 puts both z faces on that plane (z1 + 1 = 5)
+    const flat = { ...box, z0: 5, z1: 4 }
+    near(l0BoxToScreen(flat, cam, m, [0, 9], false, 300, 300), l0BoxToScreen(flat, cam, m, [0, 9], true, 300, 300)!)
+  })
+
+  it('follows rotation: turned 90° about y, the box\'s screen width is its depth, not its x extent', () => {
+    const cam: OrbitCamera = { yaw: Math.PI / 2, pitch: 0, dist: 50, panX: 0, panY: 0 }
+    const r = l0BoxToScreen(box, cam, m, [0, 9], true, 300, 300)!
+    const pxPerUm = 300 / (2 * 50 * visibleExtentUm(1, 1)[1] / 2)
+    expect(r.w).toBeCloseTo((box.z1 + 1 - box.z0) * 2 * pxPerUm, 6)   // 3 planes × 2 µm
+    expect(r.h).toBeCloseTo((box.y1 + 1 - box.y0) * 0.5 * pxPerUm, 6)
+  })
+
+  it('is null when the box is behind the eye under perspective', () => {
+    const cam: OrbitCamera = { yaw: 0, pitch: 0, dist: 1, panX: 0, panY: 0 }
+    expect(l0BoxToScreen({ ...box, z0: 9, z1: 9 }, cam, m, [0, 9], false, 300, 300)).toBeNull()
+  })
+})
+
+describe('BOX_EDGES', () => {
+  it('are the twelve edges of a box: each joins corners that differ on exactly one axis, each once', () => {
+    expect(BOX_EDGES).toHaveLength(12)
+    const key = new Set(BOX_EDGES.map(([a, b]) => `${Math.min(a, b)}-${Math.max(a, b)}`))
+    expect(key.size).toBe(12)
+    for (const [a, b] of BOX_EDGES) expect([1, 2, 4]).toContain(a ^ b)
+  })
+  it('index the corners in l0BoxCorners\' order (x bit 4, y bit 2, z bit 1)', () => {
+    const m = meta({ nZ: 4 })
+    const cam: OrbitCamera = { ...fitCamera(extentUm(m), 1), panX: 0, panY: 0 }
+    const c = l0BoxCorners({ x0: 10, x1: 19, y0: 20, y1: 29, z0: 0, z1: 1 }, cam, m, [0, 3], true, 200, 200)!
+    expect(c[4].x).toBeGreaterThan(c[0].x)   // x bit → further right
+    expect(c[2].y).toBeGreaterThan(c[0].y)   // y bit → further down
   })
 })

@@ -78,9 +78,26 @@ describe('buildFocusViewState', () => {
     expect(s.camera.center).toEqual([2, 250, 300])
   })
 
-  it('leaves the other slider indices (z/y/x) in current_step alone — only t moves', () => {
+  it('moves the z slider to cz — the browser viewer takes its plane from current_step[1], not the camera', () => {
+    // Every caller (track Show, the correction cockpit's pager, the ROI list) passes the object's z;
+    // `applyViewStateToBrowser` reads the plane from current_step[1] and never camera.center[0], so a
+    // cz written only to the camera left the viewer on whatever plane it was on.
     const s = buildFocusViewState(state(), { t: 9, cx: 0, cy: 0, cz: 0 })!
-    // fixture had current_step=[7, 2]; only [0] changes
+    expect(s.dims.current_step).toEqual([9, 0])
+    expect(s.dims.point).toEqual([9, 0])
+    expect(buildFocusViewState(state(), { t: 9, cx: 0, cy: 0, cz: 4.6 })!.dims.current_step[1]).toBe(5)
+  })
+
+  it('drops the old loaded range when it moves z, so the viewer\'s own ± window re-centres on the new plane', () => {
+    // A ±2 window round plane 19 is zRange [17, 21]; sent with plane 4 it reads as a 3D Depth crop of
+    // 17–21 (zControlsForLoaded), which turns the window off and still hides the object.
+    const src = state({ dims: { ndisplay: 3, current_step: [7, 19], point: [7, 19], zRange: [17, 21] } })
+    expect(buildFocusViewState(src, { t: 9, cx: 0, cy: 0, cz: 4 })!.dims.zRange).toBeUndefined()
+    expect(buildFocusViewState(src, { t: 9, cx: 0, cy: 0 })!.dims.zRange).toEqual([17, 21])
+  })
+
+  it('leaves the z slider alone when the caller gives no cz', () => {
+    const s = buildFocusViewState(state(), { t: 9, cx: 0, cy: 0 })!
     expect(s.dims.current_step).toEqual([9, 2])
     expect(s.dims.point).toEqual([9, 2])
   })

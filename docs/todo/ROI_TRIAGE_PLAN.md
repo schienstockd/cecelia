@@ -177,8 +177,21 @@ is what separates real gatherings from that; the bottom of the list is noise by 
 **Panel.** A "ROIs" section in the viewer window's side rail (`ViewerWindow.vue`, key `rois`):
 `components/RoiSection.vue`, logic in `utils/rois.ts`. Set picker, `pageSummary` + prev/next, status
 `ChipSelect`, `SelectionTable` (# · site · objects · t · status · Claude), accept / reject / flag /
-undo, the set's labels, a note. A row moves the viewer (seek t/z, fit the box) and outlines the ROI's
-objects (pick highlight).
+undo, the set's labels (one-click pills; the form types them as chips, `text` + `variant: "chips"`), a
+note. A row moves the viewer (seek t/z, fit the box) and outlines the ROI's objects (pick highlight).
+The pager, review controls and status filter sit above the list, which scrolls on its own.
+
+**Review by keyboard** (while the section is open; `roiKeyAction`): ↑ / ↓ step the list (they take the
+keys from a solo channel), A / R / F accept / reject / flag (again → pending), U undoes, 1–9 picks a
+label (again clears it); Ctrl / ⌘ / Alt keys stay the browser's. ← / → still step time.
+
+**Auto-next** (⏭ icon toggle beside it, off by default, `cc.viewerRoiAutoNext`): accept / reject / flag moves
+to the next ROI of the list as it stood before the review (`nextRoiId`), so a status filter that drops
+the reviewed row does not skip one.
+
+**Spotlight** (◎ icon toggle in the pager, View-row style, on by default, `cc.viewerRoiSpotlight`): everything outside the
+ROI's box is dimmed and the box is named `ROI n · t t0–t1` — dashed while the shown frame is outside
+that window. In 3D there is no dimming: the box itself is drawn, its twelve edges (`l0BoxCorners` + `BOX_EDGES`, through `projectWorld` — the shaders' `project()`), so it turns with the volume and follows perspective. A dimmed screen rectangle round a rotated box covered far more than the box.
 
 **State.** Definitions `{img}/rois/{suffix}.json` (task output, atomic, immutable between runs);
 reviews `{img}/roiReviews/{suffix}.json` (API, under a lock; kept by an analysis reset, like

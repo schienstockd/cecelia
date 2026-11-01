@@ -3,12 +3,18 @@
 // Same wrapper pattern as blackboardApi.ts: each call catches its own network error.
 
 import type { FocusOnCellTarget } from './viewer/focusOnCell'
+import { nextIndex } from './reviewPager'
+import type { L0Box } from './viewerPick'
 
 export type RoiStatus = 'pending' | 'claude-labelled' | 'accepted' | 'rejected' | 'flagged'
 export const ROI_STATUSES: readonly RoiStatus[] =
   ['pending', 'claude-labelled', 'accepted', 'rejected', 'flagged'] as const
 
-export interface RoiBox { x0: number, x1: number, y0: number, y1: number, z0: number, z1: number }
+/** An ROI's box: inclusive L0 voxel bounds — the viewer's `L0Box`, one shape under one name. */
+export type RoiBox = L0Box
+
+/** What the viewer draws for the ROI under review: its box (spotlight) and when it happens. */
+export interface RoiSpot { rank: number, box: RoiBox, t0: number, t1: number }
 
 export interface RoiClaudeLabel {
   /** one of the set's `labels` */
@@ -125,4 +131,28 @@ export function claudeLabelText(rv: RoiReview | null | undefined): string {
 /** Whether the person and Claude disagree on this ROI (both labelled, different labels). */
 export function disagrees(rv: RoiReview | null | undefined): boolean {
   return !!(rv?.userLabel && rv.claudeLabel && rv.userLabel !== rv.claudeLabel.label)
+}
+
+/** What a key means while the viewer's ROIs section is open: A / R / F set the status (again clears
+ *  it back to pending, like the buttons), U undoes, 1–9 picks that review label. A key held with
+ *  Ctrl / ⌘ / Alt is the browser's (Ctrl+R reloads), never a review. */
+export type RoiKeyAction = { kind: 'status', status: 'accepted' | 'rejected' | 'flagged' } | { kind: 'label', index: number } | { kind: 'undo' }
+export function roiKeyAction(e: { key: string, ctrlKey?: boolean, metaKey?: boolean, altKey?: boolean },
+                             nLabels: number): RoiKeyAction | null {
+  if (e.ctrlKey || e.metaKey || e.altKey) return null
+  const k = e.key.toLowerCase()
+  if (k === 'a') return { kind: 'status', status: 'accepted' }
+  if (k === 'r') return { kind: 'status', status: 'rejected' }
+  if (k === 'f') return { kind: 'status', status: 'flagged' }
+  if (k === 'u') return { kind: 'undo' }
+  const n = /^[1-9]$/.test(k) ? Number(k) : 0
+  return n && n <= nLabels ? { kind: 'label', index: n - 1 } : null
+}
+
+/** The ROI to move to after reviewing `id`: the next row of the list as it stood BEFORE the review
+ *  (a status filter can drop the reviewed row on reload), wrapping round; null when it is the only one. */
+export function nextRoiId(rows: Pick<RoiRow, 'id'>[], id: string): string | null {
+  const i = rows.findIndex(r => r.id === id)
+  if (i < 0 || rows.length < 2) return null
+  return rows[nextIndex(i, rows.length)].id
 }
