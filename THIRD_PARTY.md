@@ -27,7 +27,7 @@ THIRD_PARTY.md → Design patterns adopted.`), same as the inline-cite conventio
 
 | Component | License (source) | Relationship |
 |-----------|------------------|--------------|
-| **spaCR** (`EinarOlafsson/spacr`) — Olafsson et al. | BSD-3-Clause with additional noncommercial terms (custom; none attach — no code lifted) | The one-command fresh-clone environment audit exposed as `pixi run doctor` (`scripts/doctor.jl`) — a dispatcher over cecelia's existing checks (`scripts/check_claude_env.sh`, `scripts/bundle_check.sh`, `pixi.toml` sanity, `npm ci` on the worktree, optional pixi envs, `set_projects_dir` isolation) that prints one ordered green/amber/red report with a fix hint per row — is modelled on spaCR's `spacr doctor` (`spacr/doctor.py`). No code lifted. Source: [github.com/EinarOlafsson/spacr](https://github.com/EinarOlafsson/spacr). |
+| **spaCR** (`EinarOlafsson/spacr`) — Olafsson et al. | BSD-3-Clause with additional noncommercial terms (custom; none attach — no code lifted) | The one-command fresh-clone environment audit exposed as `pixi run doctor` (`scripts/doctor.jl`) — a dispatcher over cecelia's existing checks (`scripts/check_claude_env.sh`, `scripts/bundle_check.sh`, `pixi.toml` sanity, `npm ci` on the worktree, optional pixi envs, `set_projects_dir` isolation) that prints one ordered green/amber/red report with a fix hint per row — is modelled on spaCR's `spacr doctor` ([spacr/doctor.py](https://github.com/EinarOlafsson/spacr/blob/main/spacr/doctor.py)). No code lifted. Source: [github.com/EinarOlafsson/spacr](https://github.com/EinarOlafsson/spacr). |
 
 ## Bundled / dependencies
 
