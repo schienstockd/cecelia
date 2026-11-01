@@ -610,32 +610,33 @@ function _rename_ccid_fields!(raw::AbstractDict, from::String, to::String)
         end
         raw[field] = mutable
     end
-    # funParamsByName rename — per-fun keys, nested by value_name.
+    # funParamsByName rename — per-fun keys, nested by value_name. The saved params name it too
+    # (`from/qc` in a population picker), in the by-name bank and in the flat `funParams` blob a new
+    # name falls back to — same rewrite as the run log.
     meta = get(raw, "meta", nothing)
-    if meta isa AbstractDict
-        mmeta = Dict{String,Any}(String(k) => v for (k, v) in meta)
-        fpbn = get(mmeta, FUN_PARAMS_BY_NAME_META_KEY, nothing)
-        if fpbn isa AbstractDict
-            mfpbn = Dict{String,Any}(String(k) => v for (k, v) in fpbn)
-            changed = false
-            # collect keys up-front — mutating a Dict during iteration is undefined
-            for fun in collect(keys(mfpbn))
-                per_vn = mfpbn[fun]
-                per_vn isa AbstractDict || continue
-                mvn = Dict{String,Any}(String(k) => v for (k, v) in per_vn)
-                if haskey(mvn, from) && !haskey(mvn, to)
-                    mvn[to] = mvn[from]
-                    delete!(mvn, from)
-                    mfpbn[fun] = mvn
-                    changed = true
-                end
+    meta isa AbstractDict || return nothing
+    mmeta = Dict{String,Any}(String(k) => v for (k, v) in meta)
+    in_params(fun, p) = (lv = _history_leaves(fun);
+                         (lv === nothing || !(p isa AbstractDict)) ? p : rename_label_set_in_params(p, lv, from, to))
+    fpbn = get(mmeta, FUN_PARAMS_BY_NAME_META_KEY, nothing)
+    if fpbn isa AbstractDict
+        mfpbn = Dict{String,Any}(String(k) => v for (k, v) in fpbn)
+        for fun in collect(keys(mfpbn))
+            per_vn = mfpbn[fun]
+            per_vn isa AbstractDict || continue
+            mvn = Dict{String,Any}(String(k) => v for (k, v) in per_vn)
+            if haskey(mvn, from) && !haskey(mvn, to)
+                mvn[to] = mvn[from]
+                delete!(mvn, from)
             end
-            if changed
-                mmeta[FUN_PARAMS_BY_NAME_META_KEY] = mfpbn
-                raw["meta"] = mmeta
-            end
+            mfpbn[fun] = Dict{String,Any}(k => in_params(fun, p) for (k, p) in mvn)
         end
+        mmeta[FUN_PARAMS_BY_NAME_META_KEY] = mfpbn
     end
+    fp = get(mmeta, FUN_PARAMS_META_KEY, nothing)
+    fp isa AbstractDict &&
+        (mmeta[FUN_PARAMS_META_KEY] = Dict{String,Any}(String(f) => in_params(String(f), p) for (f, p) in fp))
+    raw["meta"] = mmeta
     nothing
 end
 
@@ -670,15 +671,22 @@ function _rewrite_one_filename(fn::String, from::String, to::String)::String
     fn
 end
 
-# Rewrite `runlog.json` entries whose `valueName == from` to `to`, so the task-history dialog reads
-# consistently after a rename. Bulk update through the same `_update_run_log!` lock the writers use.
+# Rewrite `runlog.json` for the rename: an entry's `valueName == from`, and `from` inside any entry's
+# params — a population picker's `from/…` prefix or a label-set picker naming `from`
+# (`rename_label_set_in_params`). Without the params half, the task-history dialog, chain-from-history
+# and the own-gate routes' `used_by_runs` check (`run_pop_reads`) lose every run that read a population
+# of the renamed segmentation. Bulk update through the same `_update_run_log!` lock the writers use.
 function _rename_run_log!(img::CciaImage, from::String, to::String)
+    leaves = Dict{String,Any}()
     _update_run_log!(img) do entries
         for (i, e) in pairs(entries)
             e isa AbstractDict || continue
-            _rl_str(e, "valueName") == from || continue
             d = Dict{String,Any}(String(k) => v for (k, v) in pairs(e))
-            d["valueName"] = to
+            _rl_str(e, "valueName") == from && (d["valueName"] = to)
+            fn = _rl_str(e, "fun")
+            lv = get!(() -> _history_leaves(fn), leaves, fn)
+            p = get(d, "params", nothing)
+            (lv !== nothing && p isa AbstractDict) && (d["params"] = rename_label_set_in_params(p, lv, from, to))
             entries[i] = d
         end
         entries
@@ -722,7 +730,8 @@ Rename a segmentation's value_name (`labels[from]` → `labels[to]`) across ever
 `.clustfeatures.json` companions, `gating/{from}{,__tracks,__clust,__trackclust,__region,__branch}.json`
 sidecars (loaded, `value_name` fields rewritten, saved under the new path), plus `ccid.json`'s
 `labels`/`label_props`/`branch_labels` keys, `label_props._active` when it named `from`, and
-`meta.funParamsByName[fun][from]`. Also rewrites every `runlog.json` entry with `valueName == from`.
+`meta.funParamsByName[fun][from]`. Also rewrites every `runlog.json` entry with `valueName == from`, and
+`from` inside saved and logged params (a population picker's `from/…`, a label-set picker naming it).
 
 Returns `Dict("moved" => [filenames], "renamed" => true)` on success. Errors on: `from` absent, `to`
 empty or invalid (reserved suffix, contains `/` or `.` or leading whitespace), `to` already registered

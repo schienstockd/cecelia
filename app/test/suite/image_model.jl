@@ -1045,11 +1045,20 @@ end
     img.meta[Cecelia.FUN_PARAMS_BY_NAME_META_KEY] = Dict{String,Any}(
         "segment.cellpose" => Dict{String,Any}("$(src_vn)" => Dict{String,Any}("cellDiameter"=>17.5)),
         "tracking.bayesian_tracking" => Dict{String,Any}("$(src_vn)" => Dict{String,Any}("maxSearchRadius"=>25.0)),
+        "spatialAnalysis.cellContacts" => Dict{String,Any}("nuc" => Dict{String,Any}("popsA"=>["$(src_vn)/qc"])),
     )
+    img.meta[Cecelia.FUN_PARAMS_META_KEY] = Dict{String,Any}(
+        "spatialAnalysis.cellContacts" => Dict{String,Any}("popsA"=>["$(src_vn)/qc"]))
     save!(img)
     # runlog: pretend the segmentation ran, so the vn appears in the history
     Cecelia.append_run_log!(img, "segment.cellpose", src_vn, "done",
                             Dict{String,Any}("cellDiameter"=>17.5))
+    # runs that READ the segmentation by name: a contact analysis on another label set naming
+    # `T cells/qc` and `nuc/qc`, and a measure naming it as its label set
+    Cecelia.append_run_log!(img, "spatialAnalysis.cellContacts", "nuc", "done",
+                            Dict{String,Any}("popsA" => ["$(src_vn)/qc", "nuc/qc"], "popsB" => ["$(src_vn)/"]))
+    Cecelia.append_run_log!(img, "segment.measureLabels", src_vn, "done",
+                            Dict{String,Any}("outputValueName" => src_vn))
 
     dst_vn = "default"
 
@@ -1120,11 +1129,19 @@ end
           haskey(fpbn["segment.cellpose"], dst_vn) && !haskey(fpbn["segment.cellpose"], src_vn)
     @test haskey(fpbn, "tracking.bayesian_tracking") &&
           haskey(fpbn["tracking.bayesian_tracking"], dst_vn)
+    @test fpbn["spatialAnalysis.cellContacts"]["nuc"]["popsA"] == ["$(dst_vn)/qc"]   # saved form params too
+    @test ri.meta[Cecelia.FUN_PARAMS_META_KEY]["spatialAnalysis.cellContacts"]["popsA"] == ["$(dst_vn)/qc"]
 
     # runlog entries rewritten — history reads consistently after a rename
     entries = Cecelia.read_run_log(ri)
     @test any(e -> String(get(e, :valueName, get(e, "valueName", ""))) == dst_vn, entries)
     @test !any(e -> String(get(e, :valueName, get(e, "valueName", ""))) == src_vn, entries)
+    # …and so are the names inside the params, so whatever reads a run's populations still finds them
+    contacts = Cecelia.run_log_row(only(filter(e -> e["fun"] == "spatialAnalysis.cellContacts", entries)))
+    @test contacts.params["popsA"] == ["$(dst_vn)/qc", "nuc/qc"]
+    @test contacts.params["popsB"] == ["$(dst_vn)/"]
+    @test Cecelia.run_log_row(only(filter(e -> e["fun"] == "segment.measureLabels", entries))).params["outputValueName"] == dst_vn
+    @test haskey(Cecelia.run_pop_reads(ri), (dst_vn, "/qc")) && !haskey(Cecelia.run_pop_reads(ri), (src_vn, "/qc"))
 
     # idempotency: renaming the same from again now fails cleanly (no partial state to reason about)
     @test_throws Exception rename_value_name!(ri, src_vn, dst_vn)
