@@ -21,8 +21,9 @@ const _MAX_CATEGORICAL_LEVELS = 20
 
 # Spatial-analysis obs columns that are quantities, not code sets — see the name-rule in
 # `_is_categorical_col`. `contact#`/`is.aggregate` are 0/1 flags whose MEAN is the fraction in
-# contact / aggregated; `contained_by#` likewise (fraction inside); `contains_n#` is a count of held
-# cells; `min_distance#` is µm; `spatial.comp.*` is a neighbourhood fraction.
+# contact / aggregated; `contained_by#` is a 0–1 enclosure share (its mean is the average
+# enclosure); `contains_n#` is a count of held cells; `min_distance#` is µm; `spatial.comp.*` is a
+# neighbourhood fraction.
 const _SPATIAL_NUMERIC_MEASURE =
     r"(\.cell\.min_distance#|\.cell\.contact#|\.cell\.contained_by#|\.cell\.contains_n#|\.cell\.is\.aggregate$|^spatial\.comp\.)"
 

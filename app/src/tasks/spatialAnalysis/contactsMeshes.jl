@@ -3,15 +3,15 @@
 # The MESH counterpart to spatialAnalysis.cellContacts (points): surface-to-surface distance from
 # meshes built on the fly (marching cubes on the label submasks), rather than centroid distance —
 # mostly for live images where cell surfaces matter (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11).
-# Per timepoint; candidate pairs pre-filtered by centroid distance (mesh_utils), so O(edges) not O(N²);
-# no fcl (trimesh.proximity). A and B are each ONE segmentation (label ids collide across
+# Per timepoint; the nearest B surface is one KD-tree lookup over the B mesh vertices (mesh_utils); no fcl. A and B are each ONE segmentation (label ids collide across
 # segmentations). Legacy `cellContactsMeshes`, re-homed: Julia resolves membership + label-zarr paths +
 # physical sizes; Python (`cell_contacts_mesh_run.py`) does the mask I/O + meshing + surface distance.
 # One column set per target population, as the points route (`_contact_target_groups`, #1734);
 # `combineTargets` pools every B pop into one set. B is meshed once and split per target in Python.
-# `checkContained` adds `.contained_by#<target>` (0/1, the A cell sits inside
-# a B cell) and `.contains_n#<target>` (B cells inside this A cell) — on hole-filled label voxels, so an
-# engulfed fragment, a hole in its host's segmentation, still reads as inside (mesh_utils).
+# `checkContained` adds `.contained_by#<target>` (0–1: the share of a thin shell round the A cell that
+# is the target's label — how enclosed it is) and `.contains_n#<target>` (target cells this A cell
+# encloses) — on label voxels, so an engulfed fragment in a vacuole that is open in some planes still
+# reads as mostly enclosed (mesh_utils.enclosure_per_target).
 
 using DataFrames: nrow
 
