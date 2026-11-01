@@ -1,13 +1,14 @@
-# Figures — render a spec on an image and bank it beside the movies. docs/todo/FIGURES_PLAN.md.
+# Figures — render a spec on an image and bank it with the movies. docs/todo/FIGURES_PLAN.md.
 #
 # The package does the rendering (`Cecelia.render_figure`, which fills in everything the image knows);
-# this file decides where the result lives: `{proj}/movies/<name>.png` registered in the movie registry
-# as `configKind: "figure"`, with its tiles and the as-rendered spec in `{proj}/movies/.figures/<stem>/`.
-# The Movies page lists it, and its star / tags / delete apply unchanged.
+# this file decides where the result lives: `{proj}/figures/<name>.png` — the ONE file kept — registered
+# in the movie registry as `configKind: "figure"`, the authored spec, the as-rendered spec and the source
+# in its entry. The Movies & figures page lists it; its star / tags / delete apply unchanged.
 
-# The per-figure side files: tiles + `figure.json`. Hidden from the listing (a directory, dot-named).
-_figure_extras_dir(project_uid::AbstractString, filename::AbstractString)::String =
-    joinpath(_movies_dir_for_project(String(project_uid)), ".figures", splitext(filename)[1])
+# Tell open Movies & figures pages (any window) to re-list — a figure is not a task, so the task-finished
+# refresh never sees one.
+_movies_changed(project_uid::AbstractString) =
+    broadcast_ws(Dict{String,Any}("type" => "movies:changed", "projectUid" => String(project_uid)))
 
 """
     _figure_filename(dir, img, name, replace) -> String
@@ -33,7 +34,7 @@ end
         -> (; name, png, resolved)   # `png` = the preview (≤ 1600 px a side), not the print figure
 
 Render `spec` on `img`. `dry_run` renders into a temp dir and keeps nothing — `png` is the bytes, for a
-preview. Otherwise the figure is moved into the movies dir as `name` (see `_figure_filename`) and
+preview. Otherwise the figure is moved into the figures dir as `name` (see `_figure_filename`) and
 registered (`producedBy = "figure"`, the authored `spec` and the as-rendered `resolved` spec as its
 config, `author_stamp()` as `createdBy`/`updatedBy`).
 """
@@ -46,14 +47,10 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
         png = read(isfile(r.preview) ? r.preview : r.figure)
         resolved = JSON3.read(read(r.spec, String))
         dry_run && return (; name = "", png, resolved)
-        dir = _movies_dir_for_project(String(project_uid))
+        dir = _figures_dir_for_project(project_uid)
         mkpath(dir)
         fname = _figure_filename(dir, img, name, replace)
-        extras = _figure_extras_dir(project_uid, fname)
-        rm(extras; force = true, recursive = true)
-        mkpath(dirname(extras))
-        mv(r.figure, joinpath(dir, fname); force = true)
-        mv(tmp, extras; force = true)
+        mv(r.figure, joinpath(dir, fname); force = true)   # the preview and figure.json stay in tmp
         shown = unique!([String(something(get(ch, :name, nothing), "")) for row in get(resolved, :rows, [])
                          for ch in get(row, :channels, [])])
         register_movie!(project_uid, fname; produced_by = "figure", image_uid = img.uid,
@@ -61,6 +58,7 @@ function make_figure!(project_uid::AbstractString, img::CciaImage, spec::Abstrac
                         config = FigureConfig(imageUid = img.uid, spec = spec, resolved = resolved,
                                               source = figure_source(img, _spec_value_name(spec))),
                         config_kind = "figure", author = author_stamp())
+        _movies_changed(project_uid)
         (; name = fname, png, resolved)
     finally
         isdir(tmp) && rm(tmp; force = true, recursive = true)
@@ -114,7 +112,7 @@ function api_figures_render(body_bytes::Vector{UInt8})
     repl = get(body, :replace, false) === true
     dry  = get(body, :dryRun, false) === true
     if repl && !dry
-        dir = _movies_dir_for_project(pu)
+        dir = _figures_dir_for_project(pu)
         target = _figure_filename(dir, img, _wstr(body, :name), true)
         isfile(joinpath(dir, target)) && (denied = _figure_own_check(pu, target); denied === nothing || return denied)
     end
@@ -132,8 +130,8 @@ function api_figures_render(body_bytes::Vector{UInt8})
     end
 end
 
-# POST /api/figures/delete-own {projectUid, name, dryRun?} — remove a figure CLAUDE made (its file, side
-# files and registry entry). Any other figure is the user's: 403. The general `/api/movies/delete` stays
+# POST /api/figures/delete-own {projectUid, name, dryRun?} — remove a figure CLAUDE made (its file and
+# registry entry). Any other figure is the user's: 403. The general `/api/movies/delete` stays
 # the GUI's.
 function api_figures_delete_own(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -142,8 +140,7 @@ function api_figures_delete_own(body_bytes::Vector{UInt8})
     isempty(pu) && return 400, JSON3.write((; error = "projectUid required"))
     (_valid_movie_name(name) && _movie_kind(name) == "figure") ||
         return 400, JSON3.write((; error = "name: a figure's file name, e.g. cell_figure.png"))
-    dir = _movies_dir_for_project(pu)
-    isfile(joinpath(dir, name)) || return 404, JSON3.write((; error = "No such figure: $name"))
+    isfile(_media_path(pu, name)) || return 404, JSON3.write((; error = "No such figure: $name"))
     e = get(_read_movies_registry(pu), name, Dict{String,Any}())
     figure_claude_made(e) || return 403, JSON3.write((; ok = false,
         error = "$name is the user's figure — Claude may delete only figures it made"))
@@ -151,5 +148,6 @@ function api_figures_delete_own(body_bytes::Vector{UInt8})
     reg = _read_movies_registry(pu)
     _delete_movie_file!(pu, reg, name)
     _write_movies_registry!(pu, reg)
+    _movies_changed(pu)
     200, JSON3.write((; ok = true, deleted = name))
 end

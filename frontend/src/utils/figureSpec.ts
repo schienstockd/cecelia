@@ -21,11 +21,13 @@ export interface FigureSpec {
   scaleBarUm?: number
   interpolation?: 'pixels' | 'smooth'
   style?: { tileMm?: number }
+  /** The viewer snapshot it was saved from — what "open at source" restores (the renderer ignores it). */
+  view?: ViewerViewState
 }
 
 /** Why a view can't become a figure, or the spec. Figures are 2D: a 3D view has no single crop. */
 export function figureSpecFromView(vs: ViewerViewState | null | undefined, channelNames: string[],
-                                   opts: { valueName?: string; scaleBarUm?: number } = {}):
+                                   opts: { valueName?: string; scaleBarUm?: number; frames?: number[] } = {}):
   { spec: FigureSpec } | { error: string } {
   if (!vs || !vs.canvas?.height) return { error: 'Open the image in the viewer first' }
   if (vs.dims.ndisplay === 3) return { error: 'Figures are 2D — switch the viewer to 2D' }
@@ -51,11 +53,39 @@ export function figureSpecFromView(vs: ViewerViewState | null | undefined, chann
     kind: 'sequence',
     center: [Math.round(vs.camera.center[1]), Math.round(vs.camera.center[2])],
     sizePx, z: Math.round((lo + hi) / 2), zHalf: Math.max(0, Math.round((hi - lo) / 2)),
-    frames: [t], rows: [{ channels }], display: { ranges },
+    frames: opts.frames?.length ? opts.frames : [t], rows: [{ channels }], display: { ranges },
+    view: vs,
   }
   if (opts.valueName) spec.valueName = opts.valueName
   if (opts.scaleBarUm) spec.scaleBarUm = opts.scaleBarUm
   return { spec }
+}
+
+/** How many frames an AUTO interval aims for — one page-width strip of 20 mm tiles. */
+export const FIGURE_AUTO_FRAMES = 9
+
+/** The frames a figure takes from the range `lo..hi`: every `every`th (null = auto — the smallest
+ *  step giving at most FIGURE_AUTO_FRAMES), always including `lo`. Returns the step it used, so the
+ *  control can show what auto picked. */
+export function figureFrames(lo: number, hi: number, every: number | null | undefined):
+  { frames: number[]; every: number; auto: boolean } {
+  const a = Math.max(0, Math.round(Math.min(lo, hi))), b = Math.max(a, Math.round(Math.max(lo, hi)))
+  const auto = !every || every < 1
+  const step = auto ? Math.max(1, Math.ceil((b - a) / (FIGURE_AUTO_FRAMES - 1))) : Math.round(every as number)
+  const frames: number[] = []
+  for (let t = a; t <= b; t += step) frames.push(t)
+  return { frames, every: step, auto }
+}
+
+/** The figure's file name: `<image>_t64` for a still, `<image>_t50-110` for a strip. */
+export const figureName = (image: string, frames: number[]): string =>
+  frames.length > 1 ? `${image}_t${frames[0]}-${frames[frames.length - 1]}` : `${image}_t${frames[0] ?? 0}`
+
+/** The Save-as-figure button's tooltip: which frames it will take, so "auto" says what it picked. */
+export function figureTipText(r: { frames: number[]; every: number; auto: boolean } | null): string {
+  if (!r || r.frames.length <= 1) return `Save this view as a figure${r ? ` (t${r.frames[0]})` : ''} → Movies`
+  const last = r.frames[r.frames.length - 1]
+  return `Save t${r.frames[0]}–${last}, every ${r.every}${r.auto ? ' (auto)' : ''}: ${r.frames.length} frames → Movies`
 }
 
 /** A round scale bar about a fifth of the crop — the movies' `niceScaleBar` ladder. */
@@ -64,22 +94,17 @@ export function niceFigureBarUm(sizePx: number, pixelUm: number | null | undefin
   return niceScaleBar(sizePx * pixelUm, 'µm', 0.2)?.um
 }
 
-/** "50, 54, 57" or "50-110:10" (a range with an optional step) → sorted unique frames; an error names
- *  the token that isn't one. */
-export function parseFrames(text: string): { frames: number[] } | { error: string } {
-  const out = new Set<number>()
-  for (const raw of text.split(/[,\s]+/).filter(Boolean)) {
-    const m = /^(\d+)(?:-(\d+)(?::(\d+))?)?$/.exec(raw)
-    if (!m) return { error: `"${raw}" is not a frame or a range (50-110:10)` }
-    const a = Number(m[1]), b = m[2] !== undefined ? Number(m[2]) : a, step = Number(m[3] ?? 1)
-    if (b < a || step < 1) return { error: `"${raw}": a range runs low-high with a step ≥ 1` }
-    for (let t = a; t <= b; t += step) out.add(t)
-  }
-  if (!out.size) return { error: 'No frames' }
-  return { frames: [...out].sort((x, y) => x - y) }
+/** A saved frame list as the range + interval controls: first, last, and the step when the list is
+ *  exactly `figureFrames(first, last, step)` (`exact`); a hand-picked list is not. `every` is null when
+ *  the step is what auto would pick, so the control shows "auto". */
+export function framesAsRange(frames: number[]): { lo: number; hi: number; every: number | null; exact: boolean } {
+  const f = [...frames].sort((a, b) => a - b)
+  const lo = f[0] ?? 0, hi = f[f.length - 1] ?? lo
+  const step = f.length > 1 ? f[1] - f[0] : 1
+  const exact = f.every((t, i) => t === lo + i * step) && figureFrames(lo, hi, step).frames.length === f.length
+  const auto = figureFrames(lo, hi, null)
+  return { lo, hi, exact, every: auto.every === step && auto.frames.length === f.length ? null : step }
 }
-
-export const formatFrames = (frames: number[] | undefined): string => (frames ?? []).join(', ')
 
 export interface FigureEdits {
   frames?: number[]
@@ -91,7 +116,9 @@ export interface FigureEdits {
 
 /** The spec with the editor's changes — a new object, the stored one untouched. */
 export function applyFigureEdits<T extends Record<string, unknown>>(spec: T, e: FigureEdits): T {
-  const s: Record<string, unknown> = structuredClone(spec)
+  // A spec is JSON by definition; a JSON copy also takes the editor's Vue reactive proxy, which
+  // structuredClone refuses (DataCloneError).
+  const s: Record<string, unknown> = JSON.parse(JSON.stringify(spec))
   if (e.frames) s.frames = e.frames
   if (e.names) {
     const rows = (s.rows ?? []) as { channels: { c: string | number; name?: string }[] }[]
@@ -106,4 +133,35 @@ export function applyFigureEdits<T extends Record<string, unknown>>(spec: T, e: 
   else if (e.scaleBarUm) s.scaleBarUm = e.scaleBarUm
   if (e.interpolation) s.interpolation = e.interpolation
   return s as T
+}
+
+/** The view a figure was made from, for "open in viewer": the viewer snapshot it was saved with
+ *  (`spec.view`), else rebuilt from the spec — crop centre and size as the camera, its first frame and
+ *  z window, its channels at its display ranges. A figure Claude made has no snapshot. */
+export function figureViewState(spec: Record<string, unknown> | null | undefined): ViewerViewState | null {
+  if (!spec) return null
+  const view = spec.view as ViewerViewState | undefined
+  if (view?.camera && view?.dims) return view
+  const center = spec.center as [number, number] | undefined
+  const sizePx = Number(spec.sizePx)
+  if (!center || !(sizePx > 0)) return null
+  const z = Math.round(Number(spec.z ?? 0)), zh = Math.round(Number(spec.zHalf ?? 0))
+  const t = ((spec.frames as number[] | undefined) ?? [Number(spec.t ?? 0)])[0] ?? 0
+  const CANVAS = 720
+  const ranges = ((spec.display as { ranges?: Record<string, [number, number]> } | undefined)?.ranges) ?? {}
+  const layers: ViewerViewState['layers'] = {}
+  for (const row of (spec.rows as { channels: { c: string | number; colour?: string }[] }[] | undefined) ?? []) {
+    for (const ch of row.channels) {
+      const name = String(ch.c)
+      if (layers[name]) continue
+      const r = ranges[name]
+      layers[name] = { visible: true, colormap: ch.colour ?? null,
+                       contrast_limits: r ? [r[0], r[1]] : [0, 0] }
+    }
+  }
+  return {
+    camera: { center: [z, center[0], center[1]], zoom: CANVAS / sizePx, angles: [0, 0, 0], perspective: 0 },
+    dims: { ndisplay: 2, current_step: [t, z, 0, 0], point: [t, z, 0, 0], zRange: [Math.max(0, z - zh), z + zh] },
+    layers, canvas: { width: CANVAS, height: CANVAS },
+  }
 }

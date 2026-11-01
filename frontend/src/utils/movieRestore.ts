@@ -30,6 +30,14 @@ export interface MovieRegistryEntry {
   config?: Record<string, unknown>
 }
 
+/** One registry entry, `GET /api/movies/meta` — the ONE fetch of it (restore, open at source, the figure
+ *  editor). Throws the server's error; an unknown name reads as `{}`. */
+export async function fetchMovieEntry(projectUid: string, name: string): Promise<MovieRegistryEntry & Record<string, unknown>> {
+  const res = await fetch(`/api/movies/meta?projectUid=${encodeURIComponent(projectUid)}&name=${encodeURIComponent(name)}`)
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
+  return ((await res.json()) as { entry?: MovieRegistryEntry & Record<string, unknown> }).entry ?? {}
+}
+
 /** The two config kinds (Decision 7), and the page that owns each. */
 export type RestoreKind = 'look' | 'keyframes'
 export const RESTORE_ROUTE: Record<RestoreKind, string> = {

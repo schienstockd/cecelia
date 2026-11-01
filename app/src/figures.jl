@@ -69,8 +69,8 @@ _channel_key(k) = (s = String(k); i = tryparse(Int, s); i === nothing ? s : i)
 """
     render_figure(img, spec; out_dir, task_dir = task_run_dir(img._dir), on_log = println) -> (; figure, spec, preview)
 
-Render `spec` on `img` into `out_dir`: `figure.png` (the layout at the style's dpi), `preview.png` (≤ 1600 px a side), `tiles/` (each tile
-alone) and `figure.json` (the spec as rendered — measured display ranges included). `spec` holds only
+Render `spec` on `img` into `out_dir`: `figure.png` (the layout at the style's dpi), `preview.png` (≤ 1600 px
+a side) and `figure.json` (the spec as rendered — measured display ranges included). `spec` holds only
 what to show; see `render_figure.py` for its fields (`kind`, `center`, `sizePx`, `z`, `zHalf`, `frames` or
 `t` + `planes`, `rows` (a channel's `c` is a name or a 0-based index), `display`, `interpolation`, `scaleBarUm`, `style`, `valueName`).
 

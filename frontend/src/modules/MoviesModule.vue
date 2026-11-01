@@ -11,15 +11,20 @@ import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
 import { useTaskStore } from '../stores/tasks'
+import { usePushStore } from '../stores/push'
+import { useViewerStore } from '../stores/viewer'
+import { openViewerWindow } from '../utils/viewerWindow'
+import { figureViewState } from '../utils/figureSpec'
+import type { ViewerViewState } from '../utils/viewer/viewState'
 import { formatBytes } from '../utils/storage'
 import { formatWhen } from '../utils/formatWhen'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
-         movieChannelCells, movieChannelCount, nextMovieName, isFigure,
+         movieChannelCells, movieChannelCount, nextMovieName, isFigure, mediaNouns, sourceOf,
          type MovieEntry, type MovieRow } from '../utils/movies'
 import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
 import { rafCoalesce } from '../utils/rafCoalesce'
-import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
+import { RESTORE_ROUTE, fetchMovieEntry, type RestoreKind } from '../utils/movieRestore'
 import FigureEditor from '../components/FigureEditor.vue'
 import InlineNote from '../components/InlineNote.vue'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
@@ -154,6 +159,21 @@ onBeforeUnmount(() => {
 
 // A still figure (FIGURES_PLAN) shares the list: shown as an image in the same zoomable box.
 const currentIsFigure = computed(() => isFigure(movies.value.find(m => m.name === selected.value)))
+// Drag to pan a figure, like the viewer — the viewport scrolls; a <video> keeps its own controls.
+let panFrom: { x: number; y: number; left: number; top: number } | null = null
+function onPanStart(e: PointerEvent) {
+  const vp = viewportEl.value
+  if (!vp || e.button !== 0) return
+  panFrom = { x: e.clientX, y: e.clientY, left: vp.scrollLeft, top: vp.scrollTop }
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+}
+function onPanMove(e: PointerEvent) {
+  const vp = viewportEl.value
+  if (!vp || !panFrom) return
+  vp.scrollLeft = panFrom.left - (e.clientX - panFrom.x)
+  vp.scrollTop = panFrom.top - (e.clientY - panFrom.y)
+}
+const onPanEnd = () => { panFrom = null }
 function onFigureLoad(e: Event) {
   const im = e.target as HTMLImageElement
   natW.value = im.naturalWidth
@@ -219,6 +239,13 @@ watch(() => settings.moviesPlaybackRate, () => { if (videoEl.value) videoEl.valu
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4]
 
 onMounted(() => { refresh(); window.addEventListener('keydown', onKey) })
+// A figure is saved without a task (the viewer's button, the editor's Re-make, Claude's add_figure), so
+// the task-finished refresh below never sees it: the server broadcasts `movies:changed` instead.
+const push = usePushStore()
+watch(() => push.tick, () => {
+  const ev = push.lastEvent
+  if (ev?.kind === 'movies:changed' && (!ev.projectUid || ev.projectUid === projectUid.value)) refresh()
+})
 // re-list when the project changes (opening a different project) — the page can be left mounted
 watch(projectUid, refresh)
 // Auto-refresh when a movie:record/animation/batch task lands terminal — otherwise a render
@@ -259,7 +286,7 @@ function movieTime(mtime: number): string {
 const MOVIE_COLUMNS = computed<SelectionColumn[]>(() => [
   // Pinned: with the Details columns on, the table is wider than the panel, and scrolling sideways past
   // the name leaves rows you can no longer tell apart. Same reason the image table pins its own.
-  { key: 'label',    label: 'Movie',    sortable: true, width: 190, sticky: true },
+  { key: 'label',    label: nouns.value.title, sortable: true, width: 190, sticky: true },
   { key: 'tagText',  label: 'Tags',     sortable: true, width: 120 },
   ...(settings.moviesShowDetails
     // A channel column is not sortable — the same as the image table's, because its value is a slot's
@@ -268,7 +295,7 @@ const MOVIE_COLUMNS = computed<SelectionColumn[]>(() => [
     ? [...channelIndices.value.map(i => ({ key: `ch:${i}`, label: String(i), width: 90 })),
        ...attrKeys.value.map(k => ({ key: `attr:${k}`, label: k, sortable: true, width: 110 }))]
     : []),
-  { key: 'timeText', label: 'Recorded', sortable: true, sortKey: 'mtime', width: 120 },
+  { key: 'timeText', label: nouns.value.one === 'figure' ? 'Made' : 'Recorded', sortable: true, sortKey: 'mtime', width: 120 },
   { key: 'sizeText', label: 'Size',     sortable: true, sortKey: 'size',  width: 70 },
 ])
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -302,6 +329,11 @@ watch(filtersOpen, v => profileStorage.setItem('cc.movies.filtersOpen', String(v
 // client-side, so the Details columns cost no request (utils/movies.ts → resolveMovieImageUid).
 const allImages = computed(() => project.sets.flatMap(s => s.images))
 const allRows = computed(() => movieRows(movies.value, formatBytes, movieTime, allImages.value))
+// What the page calls its rows — "movie", "figure", or both — from what the list actually holds.
+const nouns = computed(() => mediaNouns(allRows.value.map(r => r.kind)))
+const selectedRow = computed(() => allRows.value.find(r => r.name === selected.value))
+const selectedFrames = computed(() =>
+  allImages.value.find(i => i.uid === selectedRow.value?.imageUid)?.sizeT ?? 1)
 const movieTableRows = computed(() =>
   filterMovieRows(allRows.value, starredOnly.value, pickedTags.value)
     .filter(r => matchesAttrFilter(r.attr, attrFilter.value)))
@@ -409,6 +441,23 @@ const toggleStar = (r: MovieRow) => patchMeta([r.name], { starred: !r.starred })
 // KIND, not from who recorded it: a viewer look and a batch look edit in the same place (Decision 7).
 // The movie name rides in the query; the destination reads it, applies it, and takes it back out of the
 // URL so a reload can't silently re-apply it (composables/useMovieRestore.ts).
+// Open at the source: the image (its version) in the viewer, at the saved view when there is one — a
+// figure's, an animation's first keyframe. Same route as the board strip's zoom-to-source.
+const viewer = useViewerStore()
+async function openSource(r: MovieRow) {
+  if (!projectUid.value || !r.imageUid) return
+  let entry: Record<string, unknown> = { imageUid: r.imageUid }
+  try { entry = { imageUid: r.imageUid, ...(await fetchMovieEntry(projectUid.value, r.name)) } }
+  catch { /* no entry — open the image anyway */ }
+  const src = sourceOf(entry, figureViewState)
+  if (!src) return
+  if (src.viewState) viewer.setPendingViewState(src.viewState as ViewerViewState)
+  openViewerWindow({ projectUid: projectUid.value, imageUid: src.imageUid, valueName: src.valueName })
+}
+const sourceTip = (r: MovieRow) => r.kind === 'figure'
+  ? 'Open the image in the viewer at this figure\'s view'
+  : r.configKind === 'keyframes' ? 'Open the image in the viewer at the first keyframe' : 'Open the image in the viewer'
+
 const canEdit = (r: MovieRow) => r.hasConfig && r.configKind in RESTORE_ROUTE
 function editConfig(r: MovieRow) {
   if (!canEdit(r)) return
@@ -465,7 +514,7 @@ async function applyBulkTags() {
   tagDialog.value = false
   if (!tags.length) return
   await patchMeta(checked.value, { addTags: tags })
-  log.info(`Tagged ${checked.value.length} movie(s)`, { source: 'movies' })
+  log.info(`Tagged ${checked.value.length} ${nouns.value.many}`, { source: 'movies' })
 }
 
 async function deleteChecked() {
@@ -478,19 +527,19 @@ async function deleteChecked() {
     })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
     const body = await res.json().catch(() => ({})) as { deleted?: string[]; rejected?: string[] }
-    log.info(`Deleted ${body.deleted?.length ?? n} movie(s)`, { source: 'movies' })
+    log.info(`Deleted ${body.deleted?.length ?? n} ${nouns.value.many}`, { source: 'movies' })
     if (body.rejected?.length) log.warn(`Could not delete: ${body.rejected.join(', ')}`, { source: 'movies' })
     checked.value = []
     await refresh()
   } catch (e) {
-    log.error(`Could not delete ${n} movie(s): ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
+    log.error(`Could not delete ${n} ${nouns.value.many}: ${e instanceof Error ? e.message : String(e)}`, { source: 'movies' })
   }
 }
 
 const filterOptions = computed<ChipOption[]>(() => {
   const { tags, producers } = movieFilterOptions(movies.value)
   return [...tags.map(t => ({ value: t, label: t })),
-          ...producers.map(p => ({ value: p, label: p, icon: 'pi pi-video' }))]
+          ...producers.map(p => ({ value: p, label: p, icon: p === 'figure' ? 'pi pi-print' : 'pi pi-video' }))]
 })
 // A picked chip whose tag no longer exists anywhere would hide every row with no visible cause.
 watch(filterOptions, opts => {
@@ -504,14 +553,15 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 
 <template>
   <ModulePage layout="fill">
-    <p v-if="!hasProject" class="cc-empty">Open a project to browse its movies.</p>
+    <p v-if="!hasProject" class="cc-empty">Open a project to browse its movies and figures.</p>
 
     <div v-else class="mov-body">
       <!-- Player -->
       <div class="mov-stage">
         <div v-if="currentUrl" ref="viewportEl" class="mov-viewport">
-          <img v-if="currentIsFigure" class="mov-video" :src="currentUrl" :style="videoStyle"
-               alt="" @load="onFigureLoad">
+          <img v-if="currentIsFigure" class="mov-video mov-figure" :src="currentUrl" :style="videoStyle"
+               alt="" draggable="false" @load="onFigureLoad" @pointerdown="onPanStart"
+               @pointermove="onPanMove" @pointerup="onPanEnd" @pointercancel="onPanEnd">
           <video v-else ref="videoEl" class="mov-video" :src="currentUrl" controls
                  :autoplay="settings.moviesAutoplay" :loop="settings.moviesEndMode === 'loop'"
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" @ended="onEnded" />
@@ -520,11 +570,11 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
              reachable in a project with no movies yet — it used to replace the whole page. -->
         <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
           Animation, Batch movies or Viewer panels, or save a figure from the Viewer; they appear here.</p>
-        <p v-else class="cc-empty">Select a movie to play.</p>
+        <p v-else class="cc-empty">Select a {{ nouns.one }}.</p>
       </div>
 
       <!-- The list — folds away and drags wider, like the module pages' functions panel -->
-      <CollapsiblePanel storage-key="cc.movies.width" label="movie list" :default-width="520" :max="900">
+      <CollapsiblePanel storage-key="cc.movies.width" label="list" :default-width="520" :max="900">
         <div class="mov-side">
           <!-- Playback options sit WITH the list rather than in a page header: they are what you reach for
                while picking a movie, and a header row holding four of them across an empty page read as
@@ -556,15 +606,15 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                             aria-label="When a movie ends" />
               </div>
               <button class="cc-btn cc-btn-ghost cc-btn-micro mov-refresh" :disabled="loading" @click="refresh"
-                      v-tooltip.left="'Re-scan the project movies folder'">
+                      v-tooltip.left="'Re-scan the project\'s movies and figures'">
                 <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
               </button>
             </div>
           </div>
 
           <div v-if="currentIsFigure && projectUid" class="cc-card">
-            <FigureEditor :project-uid="projectUid" :name="selected"
-                          :stale-reason="allRows.find(r => r.name === selected)?.staleReason ?? ''"
+            <FigureEditor :project-uid="projectUid" :name="selected" :frame-count="selectedFrames"
+                          :stale-reason="selectedRow?.staleReason ?? ''"
                           @rendered="refresh" />
           </div>
 
@@ -572,7 +622,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             <div class="mov-list-head cc-row cc-row-tight">
               <!-- the eyebrow is on the COUNT, not the row: it uppercases, and the toggle beside it is
                    a control with its own label -->
-              <span class="cc-eyebrow">{{ movies.length }} movie{{ movies.length === 1 ? '' : 's' }}<template
+              <span class="cc-eyebrow">{{ movies.length }} {{ movies.length === 1 ? nouns.one : nouns.many }}<template
                 v-if="hiddenCount"> · {{ hiddenCount }} hidden</template></span>
               <!-- The source image's channels + attributes beside each movie. The channel picker only
                    appears once the columns are on — it has nothing to switch otherwise. -->
@@ -588,14 +638,14 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
             <div v-if="checked.length" class="mov-bulk cc-row cc-row-tight">
               <span class="cc-eyebrow cc-fs-2xs">{{ checked.length }} selected</span>
               <button class="cc-btn cc-btn-ghost cc-btn-micro" @click="openTagDialog"
-                      v-tooltip.bottom="'Add tags to the selected movies'">
+                      v-tooltip.bottom="`Add tags to the selected ${nouns.many}`">
                 <i class="pi pi-tag" /> Tag
               </button>
               <!-- arm → confirm, the canonical destructive pattern. The button lives HERE, not inside
                    ConfirmButton, because a child's DOM can't take this file's scoped styles. -->
               <ConfirmButton @confirm="deleteChecked" v-slot="{ armed, press }">
                 <button class="cc-btn cc-btn-micro" :class="armed ? 'cc-btn-danger' : 'cc-btn-ghost mov-danger'" @click="press"
-                        v-tooltip.bottom="armed ? 'Click again — permanently delete these files' : 'Delete the selected movies'">
+                        v-tooltip.bottom="armed ? 'Click again — permanently delete these files' : `Delete the selected ${nouns.many}`">
                   <i class="pi" :class="armed ? 'pi-exclamation-triangle' : 'pi-trash'" /> Delete {{ checked.length }}
                 </button>
               </ConfirmButton>
@@ -607,7 +657,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
               <button v-if="starredCount" class="cc-btn cc-btn-ghost cc-btn-micro"
                       :class="{ 'cc-btn-on cc-btn-on-tint': starredOnly }"
                       @click="starredOnly = !starredOnly"
-                      v-tooltip.bottom="starredOnly ? 'Show all movies' : 'Show only starred movies'">
+                      v-tooltip.bottom="starredOnly ? `Show all ${nouns.many}` : `Show only starred ${nouns.many}`">
                 <i :class="starredOnly ? 'pi pi-star-fill' : 'pi pi-star'" /> {{ starredCount }}
               </button>
               <ChipSelect v-if="filterOptions.length" multiple :options="filterOptions" v-model="pickedTags"
@@ -640,17 +690,22 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                 <span class="mov-labelcell">
                   <button class="mov-eye cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                           :class="{ on: selected === row.name }" @click.stop="selected = row.name"
-                          v-tooltip.right="selected === row.name ? 'Playing' : 'Play this movie'">
+                          v-tooltip.right="row.kind === 'figure' ? (selected === row.name ? 'Showing' : 'Show this figure')
+                            : (selected === row.name ? 'Playing' : 'Play this movie')">
                     <i class="pi pi-eye" />
                   </button>
                   <button class="mov-star cc-btn cc-btn-bare cc-btn-icon cc-btn-micro" :class="{ on: row.starred }"
                           @click.stop="toggleStar(row)"
-                          v-tooltip.right="row.starred ? 'Unstar' : 'Star this movie'">
+                          v-tooltip.right="row.starred ? 'Unstar' : `Star this ${row.kind}`">
                     <i :class="row.starred ? 'pi pi-star-fill' : 'pi pi-star'" />
                   </button>
                   <!-- Only for a movie that banked a config. Absent rather than disabled: every movie
                        recorded before the registry has none, and a row of dead buttons in an older
                        project reads as broken rather than as "nothing was saved". -->
+                  <button v-if="row.imageUid" class="mov-edit cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
+                          @click.stop="openSource(row)" v-tooltip.right="sourceTip(row)">
+                    <i class="pi pi-locate" />
+                  </button>
                   <button v-if="canEdit(row)" class="mov-edit cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                           :class="{ stale: row.configStale }" @click.stop="editConfig(row)"
                           v-tooltip.right="editTip(row)">
@@ -717,7 +772,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
     <!-- Bulk tagging. `addTags` is a set operation server-side, so this ADDS to what each movie already
          carries — categorising a selection must not flatten the tags they differ by. -->
     <BaseModal v-if="tagDialog" title="Tag movies" width="420px" @close="tagDialog = false">
-      <p class="cc-muted cc-fs-md">Added to {{ checked.length }} selected movie(s).</p>
+      <p class="cc-muted cc-fs-md">Added to {{ checked.length }} selected {{ checked.length === 1 ? nouns.one : nouns.many }}.</p>
       <!-- Pick one already in use, rather than retyping it. A tag typed a second time with different
            capitalisation is a second category that looks like the first. -->
       <ChipSelect v-if="tagsInUse.length" multiple v-model="pickedExisting"
@@ -725,7 +780,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                   aria-label="Existing tags" v-tooltip.bottom="'Tags already used in this project'" />
       <input v-model="bulkTags" class="cc-input-xs mov-bulk-input"
              :placeholder="tagsInUse.length ? 'or a new tag, comma separated' : 'tags, comma separated'"
-             v-tooltip.bottom="'Comma separated; a movie keeps the tags it already has'"
+             v-tooltip.bottom="'Comma separated; each keeps the tags it already has'"
              @keyup.enter="applyBulkTags" />
       <template #footer>
         <button class="cc-btn cc-btn-ghost" @click="tagDialog = false">Cancel</button>
@@ -765,6 +820,8 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
   background: #000; border: 1px solid var(--cc-border); border-radius: var(--cc-radius-md);
 }
 .mov-video { margin: auto; display: block; flex-shrink: 0; }
+.mov-figure { cursor: grab; user-select: none; touch-action: none; }
+.mov-figure:active { cursor: grabbing; }
 /* the selected movie's metadata strip — name, what recorded it, tags */
 .mov-meta { align-items: baseline; }
 .mov-name-edit { flex: 1 1 12rem; max-width: 24rem; }

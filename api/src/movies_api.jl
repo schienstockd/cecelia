@@ -205,18 +205,37 @@ against the directory in the same pass (Decision 5):
 Reconciliation only ever REMOVES, and only writes when something actually changed, so listing a
 project stays a read in the normal case.
 """
+# The first figures build banked figures in `movies/` with side files in `movies/.figures/`. Move a
+# `.png` found there into `figures/` (its registry key is the file name, so it carries over) and drop
+# the side files — tiles and previews nothing reads. A no-op once done.
+function _adopt_legacy_figures!(project_uid::AbstractString)
+    mdir = _movies_dir_for_project(String(project_uid))
+    isdir(mdir) || return
+    pngs = filter(n -> _movie_kind(n) == "figure" && isfile(joinpath(mdir, n)), readdir(mdir))
+    side = joinpath(mdir, ".figures")
+    (isempty(pngs) && !isdir(side)) && return
+    fdir = _figures_dir_for_project(project_uid)
+    mkpath(fdir)
+    for n in pngs
+        isfile(joinpath(fdir, n)) || mv(joinpath(mdir, n), joinpath(fdir, n))
+    end
+    rm(side; force = true, recursive = true)
+end
+
 function movies_with_meta(project_uid::AbstractString)
-    dir = _movies_dir_for_project(project_uid)
+    _adopt_legacy_figures!(project_uid)
     reg = _read_movies_registry(project_uid)
     out = NamedTuple[]
     present = Set{String}()
     images = Dict{String,Any}()          # figures' images, loaded once per listing (`_figure_stale`)
-    if isdir(dir)
+    for (dir, kind) in ((_movies_dir_for_project(String(project_uid)), "movie"),
+                        (_figures_dir_for_project(project_uid), "figure"))
+        isdir(dir) || continue
         for name in readdir(dir)
             # skip in-progress temps: `prepend_title_to_movie` stages `{name}.mp4.tmp.mp4` beside the
             # real file and renames on success, so a run killed mid-encode leaves something a bare
             # `.mp4` filter would list as a real movie.
-            (_valid_movie_name(name) && !occursin(".tmp.", name) &&
+            (_valid_movie_name(name) && _movie_kind(name) == kind && !occursin(".tmp.", name) &&
                 isfile(joinpath(dir, name))) || continue
             push!(present, name)
             f = joinpath(dir, name)
@@ -244,8 +263,8 @@ function movies_with_meta(project_uid::AbstractString)
                           # a figure whose image version changed since — it no longer shows the data
                           figureStale = stale !== nothing, staleReason = something(stale, "")))
         end
-        sort!(out; by = m -> m.mtime, rev = true)
     end
+    sort!(out; by = m -> m.mtime, rev = true)
     orphans = setdiff(keys(reg), present)
     if !isempty(orphans)
         for k in orphans; delete!(reg, k); end
@@ -295,10 +314,9 @@ end
 # the case that produces N of them at once.
 function _movie_targets(uid::AbstractString, body)::Tuple{Vector{String},Vector{String}}
     raw = haskey(body, :names) ? collect(String, body[:names]) : [_wstr(body, :name)]
-    dir = _movies_dir_for_project(uid)
     ok, bad = String[], String[]
     for n in raw
-        (_valid_movie_name(n) && isfile(joinpath(dir, n))) ? push!(ok, n) : push!(bad, n)
+        (_valid_movie_name(n) && isfile(_media_path(uid, n))) ? push!(ok, n) : push!(bad, n)
     end
     ok, bad
 end
@@ -343,12 +361,11 @@ function api_movies_meta_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, names, rejected))
 end
 
-# Remove one movie or figure: its file, a figure's side files, and its entry from `reg` (the caller
+# Remove one movie or figure: its file and its entry from `reg` (the caller
 # writes `reg` back once). The one delete step — `/api/movies/delete` and Claude's
 # `/api/figures/delete-own` both go through it.
 function _delete_movie_file!(uid::AbstractString, reg::AbstractDict, name::AbstractString)
-    rm(joinpath(_movies_dir_for_project(String(uid)), name); force = true)
-    _movie_kind(name) == "figure" && rm(_figure_extras_dir(uid, name); force = true, recursive = true)
+    rm(_media_path(uid, name); force = true)
     delete!(reg, String(name))
 end
 
@@ -367,7 +384,6 @@ function api_movies_delete(body_bytes::Vector{UInt8})
     names, rejected = _movie_targets(uid, body)
     isempty(names) && return 404, JSON3.write((; error = "No such movie", rejected))
 
-    dir = _movies_dir_for_project(uid)
     reg = _read_movies_registry(uid)
     deleted = String[]
     for name in names
@@ -381,6 +397,7 @@ function api_movies_delete(body_bytes::Vector{UInt8})
         end
     end
     _write_movies_registry!(uid, reg)
+    _movies_changed(uid)
     @info "Deleted movies" n = length(deleted) project = uid
     200, JSON3.write((; ok = true, deleted, rejected))
 end

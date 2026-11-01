@@ -21,6 +21,17 @@ _movies_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_
 # `.png` = a still figure (docs/todo/FIGURES_PLAN.md) — same dir, same registry, same page.
 _valid_movie_name(name::AbstractString) = occursin(r"^[A-Za-z0-9._-]+\.(mp4|png)$", name)
 _movie_kind(name::AbstractString)::String = endswith(lowercase(name), ".png") ? "figure" : "movie"
+# Figures live in their own folder, `{proj}/figures/` — the project folder says what is in it. One
+# registry (settings/movies.json) and one page cover both; `_media_path` is the one name → file rule.
+_figures_dir_for_project(project_uid::AbstractString) = joinpath(projects_dir(), String(project_uid), "figures")
+# A figure the first build left in `movies/` resolves there until a listing moves it
+# (`_adopt_legacy_figures!`), so a route that runs before any listing still finds it.
+function _media_path(project_uid::AbstractString, name::AbstractString)::String
+    movie = joinpath(_movies_dir_for_project(String(project_uid)), String(name))
+    _movie_kind(name) == "figure" || return movie
+    fig = joinpath(_figures_dir_for_project(project_uid), String(name))
+    (!isfile(fig) && isfile(movie)) ? movie : fig
+end
 
 # GET /api/movies?projectUid=… → { movies: [{name, size, mtime, displayName, starred, tags,
 # producedBy, hasConfig, configKind, configStale}] } sorted newest-first. Lists the project's rendered

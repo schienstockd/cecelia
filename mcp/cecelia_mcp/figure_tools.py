@@ -2,7 +2,7 @@
 server (`autonomous_server.py`), the way `gating_views.py` is. docs/todo/FIGURES_PLAN.md (P3).
 
 A figure is a still, a filmstrip or a z-strip of one region, rendered by the app from the raw image in
-the house style and kept beside the movies. Claude writes a SPEC — what to show — and never rendering
+the house style and kept in the project's figures/ folder, listed with the movies. Claude writes a SPEC — what to show — and never rendering
 code. `dry_run` renders and keeps nothing: the reply's picture is what Claude looks at before it saves.
 
 Writes are Claude's own only: `set_figure` replaces and `delete_figure` deletes a figure Claude made and
@@ -50,7 +50,7 @@ replaced. The user's figures, and yours once the user has re-made them, are refu
 with add_figure instead. `dry_run=True` renders the preview and keeps nothing.
 {SPEC_DOC}"""
 
-DELETE_FIGURE_DOC = """Delete a figure YOU made (`name`, e.g. "cell_figure.png"): its file, tiles and entry. The user's
+DELETE_FIGURE_DOC = """Delete a figure YOU made (`name`, e.g. "cell_figure.png"): its file and its entry. The user's
 figures, and yours once the user has re-made them, are refused (403). `dry_run=True` says what would go
 and removes nothing. The user can delete anything from the Movies & figures page."""
 

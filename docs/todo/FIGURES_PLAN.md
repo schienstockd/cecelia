@@ -109,6 +109,20 @@ image (Dominik, 2026-11-01).
     version's few intensity levels (Katushka 0–11 counts) are the price. A spec names its `valueName`,
     so the same figure can be rendered from any version.
 
+13. **Figures get their own folder, `{project}/figures/`** (Dominik, 2026-11-01: "rename that folder"
+    once it holds both). A separate folder rather than renaming `movies/`: every existing movie and
+    every path that resolves one stays put, and each folder says what is in it. One registry
+    (`settings/movies.json`) and one page cover both; `_media_path` maps a name to its file. Only the
+    PNG is kept — no tiles, preview or `figure.json` on disk (the registry entry holds the spec, the
+    as-rendered spec and the source).
+14. **Save as figure takes the Record range, every Nth frame** (default auto: about 9 frames, the
+    readout says what it picked); the editor shows the same range + every. A one-frame range is a still.
+15. **Tile width is auto by frame count** — the strip fills a 180 mm page, 20–80 mm a tile — so text
+    is the same 7 pt on a still and on a strip.
+16. **Open at source** on every Movies & figures row: the image in the viewer, at the figure's saved
+    view (the viewer snapshot is banked with the spec) or an animation's first keyframe. Viewer and
+    batch movies bank no camera, so they open on the image.
+
 ## Open decisions (Dominik's)
 
 | # | Question | Pick |

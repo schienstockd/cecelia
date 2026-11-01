@@ -30,7 +30,7 @@ import { readViewerLook, timelapseKeyframes, volumeViewState, hexViewState, look
 import type { ViewerViewState } from '../utils/viewer/viewState'
 import { movieSizeParams } from '../utils/movieSize'
 import { writtenImageVersion } from '../utils/taskResultVersion'
-import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT,
+import { clampContour, seedConfigFromViewState, RENDER_QUALITY_DEFAULT, resolveFrameRange,
          type ViewStateLike, type RenderQuality } from '../utils/batchMovie'
 import { normaliseItems, compareSuffix, compareActionTip, compareShape,
          COMPARE_LAYOUT_DEFAULT, COMPARE_CONTRAST_DEFAULT,
@@ -38,7 +38,7 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
 import { publishViewerCacheClear } from '../lib/viewerCacheClearChannel'
 import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
-import { figureSpecFromView, niceFigureBarUm } from '../utils/figureSpec'
+import { figureSpecFromView, niceFigureBarUm, figureFrames, figureName, figureTipText } from '../utils/figureSpec'
 import type { Severity } from '../lib/severity'
 
 const projectStore = useProjectStore()
@@ -226,6 +226,15 @@ const zSlice = computed<number | null>({
 const movieTStart = computed<number>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).tStart : 0,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { tStart: v }) } })
+// Save as figure's frame interval over that range; null = auto (`figureFrames`)
+const figureEvery = computed<number | null>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).figureEvery : null,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { figureEvery: v }) } })
+const figureRange = computed(() => {
+  const r = resolveFrameRange(movieTStart.value, movieTEnd.value, openedImage.value?.sizeT ?? 1)
+  return figureFrames(r.lo, r.hi, figureEvery.value)
+})
+const figureTip = computed(() => figureTipText((openedImage.value?.sizeT ?? 1) > 1 ? figureRange.value : null))
 const movieTEnd = computed<number | null>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).tEnd : null,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { tEnd: v }) } })
@@ -429,7 +438,9 @@ async function saveFigure() {
   if (!img || !projectUid) return
   const vs = viewerStore.openImage?.imageUid === img.uid ? viewerStore.viewState as unknown as ViewerViewState | null : null
   const valueName = viewerStore.openImage?.valueName || undefined
-  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName })
+  // the Record range, every Nth frame — a one-frame range is a single still
+  const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
+  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
   r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, img.physicalSizeX)
   savingFigure.value = true
@@ -437,7 +448,7 @@ async function saveFigure() {
     const res = await fetch('/api/figures/render', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, imageUid: img.uid, spec: r.spec,
-                             name: `${img.name ?? img.uid}_t${r.spec.frames[0]}` }),
+                             name: figureName(img.name ?? img.uid, r.spec.frames) }),
     })
     const body = await res.json().catch(() => ({}))
     recordNote.value = res.ok
@@ -1190,7 +1201,8 @@ onUnmounted(() => {
                                  v-model:renderQuality="renderQuality" />
             <!-- Only for an actual timelapse — nothing to trim on a single frame -->
             <MovieTimeRange v-if="(openedImage?.sizeT ?? 1) > 1" v-model:tStart="movieTStart"
-                            v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1" />
+                            v-model:tEnd="movieTEnd" :frames="openedImage?.sizeT ?? 1"
+                            show-every v-model:every="figureEvery" :every-auto="figureRange.every" />
             <TitleCardControls v-model="movieTitleCardModel" />
           </MovieOptionsButton>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon movie-rec" data-guide="viewer.record"
@@ -1202,7 +1214,7 @@ onUnmounted(() => {
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
           </button>
           <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="savingFigure"
-                  @click="saveFigure" v-tooltip.bottom="'Save this view as a figure (native resolution) → Movies'">
+                  @click="saveFigure" v-tooltip.bottom="figureTip">
             <i :class="['pi', savingFigure ? 'pi-spin pi-spinner' : 'pi-print']" />
           </button>
         </div>

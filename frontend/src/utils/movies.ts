@@ -191,6 +191,7 @@ export interface MovieRow {
   producedBy: string
   renamed: boolean       // a display name is set — the file name is then worth showing on hover
   configStale: boolean
+  kind: MediaKind        // a movie, or a still figure (FIGURES_PLAN)
   staleReason: string    // a figure no longer shows the data — why ('' = it does, or not a figure)
   // A saved generation config exists, and which page can edit it (Phase 6 — utils/movieRestore.ts).
   // Carried on the row so the table can offer the action without a second lookup per row; '' means the
@@ -229,6 +230,7 @@ export function movieRows(movies: MovieEntry[],
       producedBy: m.producedBy ?? '',
       renamed: !!(m.displayName ?? '').trim(),
       configStale: m.configStale === true,
+      kind: isFigure(m) ? 'figure' : 'movie',
       staleReason: m.figureStale ? (m.staleReason || 'its image changed since') : '',
       hasConfig: m.hasConfig === true,
       configKind: m.configKind ?? '',
@@ -347,4 +349,34 @@ export function parseMovieEndMode(stored: string | null, legacyLoop: string | nu
 export function nextMovieName(order: string[], current: string): string {
   const i = order.indexOf(current)
   return i >= 0 && i + 1 < order.length ? order[i + 1] : ''
+}
+
+export type MediaKind = 'movie' | 'figure'
+
+/** What the page calls its rows: "movie" / "figure" when the list holds one kind, both when it holds
+ *  both — so a page of figures never says "Play this movie". */
+export function mediaNouns(kinds: Iterable<MediaKind>): { one: string; many: string; title: string } {
+  const has = new Set(kinds)
+  if (has.has('figure') && !has.has('movie')) return { one: 'figure', many: 'figures', title: 'Figure' }
+  if (has.has('figure')) return { one: 'movie or figure', many: 'movies and figures', title: 'Movie / figure' }
+  return { one: 'movie', many: 'movies', title: 'Movie' }
+}
+
+/** Where "open in viewer" goes for a registry entry (`GET /api/movies/meta`): the image, its version,
+ *  and the view to restore when one was saved — a figure's view (`figureViewState`), an animation's
+ *  first keyframe. A viewer or batch movie banks no camera, so it opens on the image. */
+export function sourceOf(entry: Record<string, unknown> | null | undefined,
+                         viewOfFigure: (spec: Record<string, unknown>) => unknown):
+  { imageUid: string; valueName?: string; viewState: unknown | null } | null {
+  if (!entry) return null
+  const cfg = (entry.config ?? {}) as Record<string, unknown>
+  const imageUid = String(cfg.imageUid ?? entry.imageUid ?? '')
+  if (!imageUid) return null
+  if (entry.configKind === 'figure' && cfg.spec) {
+    const spec = cfg.spec as Record<string, unknown>
+    return { imageUid, valueName: (spec.valueName as string) || undefined, viewState: viewOfFigure(spec) }
+  }
+  const kf = cfg.keyframes as { viewState?: unknown } | undefined
+  const look = (cfg.look ?? {}) as { valueName?: string }
+  return { imageUid, valueName: look.valueName || undefined, viewState: kf?.viewState ?? null }
 }

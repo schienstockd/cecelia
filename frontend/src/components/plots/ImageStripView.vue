@@ -492,7 +492,7 @@ useVisualPanel(
           <template v-if="!capturingStrip">
             <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="zoomToSource(i)"
                     :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Viewer and restore the exact view'">
-              <i class="pi pi-directions" /></button>
+              <i class="pi pi-locate" /></button>
             <button v-if="c.assetId || c.src" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
             <button v-if="cells.length > 1" class="is-mini cc-btn cc-btn-ghost cc-btn-icon cc-btn-dense" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
           </template>

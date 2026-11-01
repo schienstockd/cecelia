@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { figureSpecFromView, niceFigureBarUm, parseFrames, applyFigureEdits } from './figureSpec'
+import { figureSpecFromView, niceFigureBarUm, framesAsRange, applyFigureEdits, figureFrames, figureName, figureTipText, figureViewState } from './figureSpec'
 import type { ViewerViewState } from './viewer/viewState'
 
 const vs = (over: Partial<ViewerViewState> = {}): ViewerViewState => ({
@@ -28,6 +28,7 @@ describe('figureSpecFromView', () => {
     expect(s.rows[0].channels[0].colour).toMatch(/^#[0-9a-f]{6}$/i)               // a name becomes a hex
     expect(s.display.ranges['CD169-Kat']).toEqual([0, 10])                        // the on-screen contrast
     expect(s.valueName).toBe('denoised')
+    expect(s.view?.camera.zoom).toBe(8)                   // the snapshot rides along, for open-at-source
   })
   it('refuses what has no single 2D crop', () => {
     expect(figureSpecFromView(null, NAMES)).toEqual({ error: 'Open the image in the viewer first' })
@@ -46,16 +47,18 @@ describe('niceFigureBarUm', () => {
   })
 })
 
-describe('parseFrames', () => {
-  it('reads lists and stepped ranges', () => {
-    expect(parseFrames('50, 54 57')).toEqual({ frames: [50, 54, 57] })
-    expect(parseFrames('50-110:20, 60')).toEqual({ frames: [50, 60, 70, 90, 110] })
-    expect(parseFrames('64')).toEqual({ frames: [64] })
+describe('framesAsRange', () => {
+  it('reads a saved strip back as range + every', () => {
+    expect(framesAsRange([60, 64, 68, 72])).toEqual({ lo: 60, hi: 72, every: 4, exact: true })
+    expect(framesAsRange([64])).toEqual({ lo: 64, hi: 64, every: null, exact: true })
   })
-  it('names what it cannot read', () => {
-    expect(parseFrames('50, t60')).toEqual({ error: '"t60" is not a frame or a range (50-110:10)' })
-    expect(parseFrames('90-50')).toHaveProperty('error')
-    expect(parseFrames(' ')).toEqual({ error: 'No frames' })
+  it('says auto when auto over that range would pick the same frames', () => {
+    expect(framesAsRange(figureFrames(50, 58, null).frames)).toEqual({ lo: 50, hi: 58, every: null, exact: true })
+    // an auto strip over 0–180 ends at 161; auto over 0–161 steps differently, so the step is shown
+    expect(framesAsRange(figureFrames(0, 180, null).frames)).toEqual({ lo: 0, hi: 161, every: 23, exact: true })
+  })
+  it('flags a hand-picked list', () => {
+    expect(framesAsRange([50, 54, 57, 60]).exact).toBe(false)
   })
 })
 
@@ -70,5 +73,61 @@ describe('applyFigureEdits', () => {
     expect((out as Record<string, unknown>).style).toEqual({ tileMm: 40 })
     expect(spec.frames).toEqual([64])                                   // the input is untouched
     expect(applyFigureEdits(spec, { scaleBarUm: null })).not.toHaveProperty('scaleBarUm')
+  })
+})
+
+describe('figureFrames', () => {
+  it('takes every Nth frame of the range, starting at its first', () => {
+    expect(figureFrames(50, 110, 10)).toEqual({ frames: [50, 60, 70, 80, 90, 100, 110], every: 10, auto: false })
+    expect(figureFrames(50, 58, 4).frames).toEqual([50, 54, 58])
+    expect(figureFrames(64, 64, 5).frames).toEqual([64])                      // a one-frame range = a still
+  })
+  it('auto picks the smallest step that keeps a page-width strip', () => {
+    expect(figureFrames(0, 180, null)).toEqual({ frames: [0, 23, 46, 69, 92, 115, 138, 161], every: 23, auto: true })
+    expect(figureFrames(50, 58, null).frames).toEqual([50, 51, 52, 53, 54, 55, 56, 57, 58])
+  })
+  it("the view's spec carries the chosen frames", () => {
+    const r = figureSpecFromView(vs(), NAMES, { frames: [50, 60] })
+    expect('spec' in r && r.spec.frames).toEqual([50, 60])
+  })
+})
+
+describe('figureName / figureTipText', () => {
+  it('names a still by its frame and a strip by its range', () => {
+    expect(figureName('img', [64])).toBe('img_t64')
+    expect(figureName('img', [50, 60, 110])).toBe('img_t50-110')
+  })
+  it('says which frames the button will take, auto included', () => {
+    expect(figureTipText(figureFrames(50, 110, 10))).toBe('Save t50–110, every 10: 7 frames → Movies')
+    expect(figureTipText(figureFrames(0, 180, null))).toBe('Save t0–161, every 23 (auto): 8 frames → Movies')
+    expect(figureTipText(figureFrames(64, 64, null))).toBe('Save this view as a figure (t64) → Movies')
+    expect(figureTipText(null)).toBe('Save this view as a figure → Movies')
+  })
+})
+
+describe('applyFigureEdits on the editor\'s reactive spec', () => {
+  it('copies a Vue reactive proxy (structuredClone cannot)', async () => {
+    const { reactive } = await import('vue')
+    const spec = reactive({ frames: [64], rows: [{ channels: [{ c: 'mem-TOM', colour: '#ff00ff' }] }] })
+    const out = applyFigureEdits(spec, { frames: [50, 64] })
+    expect(out.frames).toEqual([50, 64])
+    expect(spec.frames).toEqual([64])
+  })
+})
+
+describe('figureViewState', () => {
+  it('uses the snapshot a figure was saved with', () => {
+    const v = vs()
+    expect(figureViewState({ view: v, center: [1, 1], sizePx: 9 })).toBe(v)
+  })
+  it("rebuilds a view from a spec without one (Claude's)", () => {
+    const r = figureViewState({ center: [597, 361], sizePx: 90, z: 9, zHalf: 1, frames: [64, 80],
+      rows: [{ channels: [{ c: 'mem-TOM', colour: '#ff00ff' }] }], display: { ranges: { 'mem-TOM': [0, 68] } } })!
+    expect(r.camera.center).toEqual([9, 597, 361])
+    expect(r.camera.zoom * 90).toBe(r.canvas.height)          // the crop fills the canvas
+    expect(r.dims.current_step.slice(0, 2)).toEqual([64, 9])
+    expect(r.dims.zRange).toEqual([8, 10])
+    expect(r.layers['mem-TOM']).toEqual({ visible: true, colormap: '#ff00ff', contrast_limits: [0, 68] })
+    expect(figureViewState({ rows: [] })).toBeNull()
   })
 })

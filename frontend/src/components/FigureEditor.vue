@@ -2,24 +2,38 @@
   Edit a still figure on the Movies page and re-make it (docs/todo/FIGURES_PLAN.md, P2). Reads the
   figure's saved spec from its registry entry, applies the edits (`applyFigureEdits`, tested) and
   re-renders it in place through `POST /api/figures/render`. Only the fields a figure request usually
-  changes: frames, legend names, tile size, scale bar, crisp/smooth. Crop and channels come from the
+  changes: frames (the same range + every as the viewer's Save as figure), legend names, tile size,
+  scale bar, crisp/smooth. Crop and channels come from the
   view it was saved from — save a new one from the viewer to change those.
 -->
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import CcToggle from './CcToggle.vue'
 import InlineNote from './InlineNote.vue'
-import { parseFrames, formatFrames, applyFigureEdits, type FigureSpec } from '../utils/figureSpec'
+import MovieTimeRange from './MovieTimeRange.vue'
+import { applyFigureEdits, figureFrames, framesAsRange, type FigureSpec } from '../utils/figureSpec'
+import { resolveFrameRange, storeFrameEnd } from '../utils/batchMovie'
 import { useToast } from '../composables/useToast'
+import { fetchMovieEntry } from '../utils/movieRestore'
 
-const props = defineProps<{ projectUid: string; name: string; staleReason?: string }>()
+const props = defineProps<{ projectUid: string; name: string; staleReason?: string
+                             /** the image's frame count — the range slider's length */
+                             frameCount: number }>()
 const emit = defineEmits<{ rendered: [name: string] }>()
 const toast = useToast()
 
 type Spec = FigureSpec & Record<string, unknown>
 const spec = ref<Spec | null>(null)
 const imageUid = ref('')
-const framesText = ref('')
+const tStart = ref(0)
+const tEnd = ref<number | null>(null)
+const every = ref<number | null>(null)
+// A spec whose frames are no range + interval (a list Claude chose) keeps them until the range is moved.
+const customFrames = ref<number[] | null>(null)
+const picked = computed(() => {
+  const r = resolveFrameRange(tStart.value, tEnd.value, props.frameCount)
+  return figureFrames(r.lo, r.hi, every.value)
+})
 const names = ref<Record<string, string>>({})
 const tileMm = ref<number | null>(null)
 const barUm = ref<number | null>(null)
@@ -31,13 +45,16 @@ const channels = computed(() => [...new Set((spec.value?.rows ?? []).flatMap(r =
 
 async function load() {
   spec.value = null; error.value = ''
-  const res = await fetch(`/api/movies/meta?projectUid=${encodeURIComponent(props.projectUid)}&name=${encodeURIComponent(props.name)}`)
-  const body = await res.json().catch(() => ({}))
-  const cfg = body.entry?.config
+  const entry = await fetchMovieEntry(props.projectUid, props.name).catch(() => ({} as Record<string, unknown>))
+  const cfg = entry.config as { spec?: Spec; imageUid?: string } | undefined
   if (!cfg?.spec) { error.value = 'No saved spec — save it again from the viewer'; return }
   spec.value = cfg.spec as Spec
-  imageUid.value = cfg.imageUid ?? body.entry?.imageUid ?? ''
-  framesText.value = formatFrames(spec.value.frames)
+  imageUid.value = cfg.imageUid ?? String(entry.imageUid ?? '')
+  const fr = framesAsRange(spec.value.frames ?? [0])
+  tStart.value = fr.lo
+  tEnd.value = storeFrameEnd(fr.hi, props.frameCount)
+  every.value = fr.every
+  customFrames.value = fr.exact ? null : [...(spec.value.frames ?? [])]
   const n: Record<string, string> = {}
   for (const r of spec.value.rows ?? []) for (const c of r.channels) n[String(c.c)] ??= c.name ?? ''
   names.value = n
@@ -49,11 +66,9 @@ watch(() => [props.projectUid, props.name], load, { immediate: true })
 
 async function rerender() {
   if (!spec.value) return
-  const f = parseFrames(framesText.value)
-  if ('error' in f) { error.value = f.error; return }
   error.value = ''
   const next = applyFigureEdits(spec.value, {
-    frames: f.frames, names: names.value, tileMm: tileMm.value ?? undefined,
+    frames: customFrames.value ?? picked.value.frames, names: names.value, tileMm: tileMm.value ?? undefined,
     scaleBarUm: barUm.value && barUm.value > 0 ? barUm.value : null,
     interpolation: crisp.value ? 'pixels' : 'smooth',
   })
@@ -79,10 +94,14 @@ async function rerender() {
   <div v-if="spec" class="fe cc-row">
     <InlineNote v-if="staleReason" class="fe-own-row" severity="warn" short="Out of date"
                 :detail="`${staleReason} — Re-make renders it from the current data`" />
-    <span class="cc-row-group fe-own-row">
-      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames: 50, 64 or a range 50-110:10'">frames</span>
-      <input v-model="framesText" class="cc-input-2xs fe-text" v-tooltip.bottom="'Frames: 50, 64 or a range 50-110:10'"
-             @keydown.enter="rerender" />
+    <MovieTimeRange v-if="frameCount > 1" class="fe-own-row" :frames="frameCount"
+                    :t-start="tStart" :t-end="tEnd" show-every :every="every" :every-auto="picked.every"
+                    @update:t-start="tStart = $event; customFrames = null"
+                    @update:t-end="tEnd = $event; customFrames = null"
+                    @update:every="every = $event; customFrames = null" />
+    <span class="cc-row-group fe-own-row cc-muted cc-fs-2xs">
+      {{ (customFrames ?? picked.frames).length }} frame{{ (customFrames ?? picked.frames).length === 1 ? '' : 's' }}:
+      {{ (customFrames ?? picked.frames).join(', ') }}{{ customFrames ? ' (as saved)' : '' }}
     </span>
     <span v-for="c in channels" :key="c" class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Name in the legend; blank = the channel name'">{{ c }}</span>
@@ -91,8 +110,8 @@ async function rerender() {
     </span>
     <span class="cc-row-group">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Tile width in mm at 300 dpi'">mm</span>
-      <input v-model.number="tileMm" type="number" min="5" max="200" class="cc-input-2xs fe-num" placeholder="20"
-             v-tooltip.bottom="'Tile width in mm at 300 dpi'" />
+      <input v-model.number="tileMm" type="number" min="5" max="200" class="cc-input-2xs fe-num" placeholder="auto"
+             v-tooltip.bottom="'Tile width in mm at 300 dpi; blank = auto (fills 180 mm)'" />
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Scale bar length; blank = none'">bar µm</span>
       <input v-model.number="barUm" type="number" min="0" class="cc-input-2xs fe-num"
              v-tooltip.bottom="'Scale bar length; blank = none'" />
@@ -111,7 +130,6 @@ async function rerender() {
 
 <style scoped>
 .fe-own-row { flex-basis: 100%; }
-.fe-text { flex: 1 1 14rem; }
 .fe-name { width: 8rem; }
 .fe-num { width: 4.5rem; }
 </style>

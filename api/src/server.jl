@@ -64,7 +64,7 @@ include("captures_api.jl")   # bidirectional context — share-in capture envelo
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("viewer_nav_api.jl") # viewer navigation — Claude → browser (RUBBER_DUCK_FIT_PLAN P2)
 include("rois_api.jl")       # ROI list + reviews (ROI_TRIAGE_PLAN)
-include("figures_api.jl")    # still figures banked beside the movies (FIGURES_PLAN)
+include("figures_api.jl")    # still figures in {proj}/figures/, one registry with the movies (FIGURES_PLAN)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("blackboard_run_review.jl") # agent run records: per-section verdicts (AGENT_RUN_REVIEW_PLAN P2)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
@@ -760,7 +760,7 @@ function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
     q = HTTP.queryparams(HTTP.URI(target))
     uid = get(q, "projectUid", ""); name = get(q, "name", "")
     (isempty(uid) || !_valid_movie_name(name)) && return false
-    f = joinpath(_movies_dir_for_project(String(uid)), String(name))
+    f = _media_path(String(uid), String(name))
     isfile(f) || return false
     total = filesize(f)
     status, start, stop, framing = _movie_plan(HTTP.header(stream.message, "Range", ""), total)
