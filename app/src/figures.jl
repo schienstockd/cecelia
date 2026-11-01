@@ -95,3 +95,40 @@ function render_figure(img::CciaImage, spec::AbstractDict; out_dir::AbstractStri
     (; figure = joinpath(params["outDir"], "figure.png"), spec = joinpath(params["outDir"], "figure.json"),
        preview = joinpath(params["outDir"], "preview.png"))
 end
+
+# ── Staleness (FIGURES_PLAN P4) ───────────────────────────────────────────────────────────────────
+# A figure draws image pixels only, so it describes the data while the image version it was rendered
+# from is the same store. Recorded at render time; compared when the figure is listed.
+
+"""
+    figure_source(img, value_name = nothing) -> Dict
+
+What a figure was rendered from: the image version's name (the active one when `nothing`), its
+version (`vN`) and the store's mtime. A re-process replaces the store (staged writes rename a new
+directory into place), so its mtime moves even when the version name does not.
+"""
+function figure_source(img::CciaImage, value_name::Union{AbstractString,Nothing} = nothing)::Dict{String,Any}
+    # the IMAGE version (`filepath`), not `resolve_value_name` — that resolves a segmentation
+    vn = value_name === nothing ? String(versioned_active(img.filepath)) : String(value_name)
+    zp = img_filepath(img, vn)
+    Dict{String,Any}("valueName" => vn, "version" => resolve_version(img, :filepath, vn),
+                     "storeMtime" => (zp !== nothing && ispath(zp)) ? mtime(zp) : nothing)
+end
+
+"""
+    figure_stale_reason(img, source) -> Union{Nothing,String}
+
+Why a figure rendered from `source` (`figure_source`) no longer shows the data, or `nothing`.
+"""
+function figure_stale_reason(img::CciaImage, source::AbstractDict)::Union{Nothing,String}
+    vn = String(get(source, "valueName", ""))
+    zp = img_filepath(img, isempty(vn) ? nothing : vn)
+    (zp === nothing || !ispath(zp)) && return "image version $(repr(vn)) is gone"
+    now = figure_source(img, isempty(vn) ? nothing : vn)
+    now["version"] == get(source, "version", now["version"]) ||
+        return "image version $vn is now $(now["version"]) (was $(source["version"]))"
+    was = get(source, "storeMtime", nothing)
+    (was isa Real && now["storeMtime"] isa Real && now["storeMtime"] > was + 1) &&
+        return "image version $vn was re-processed since"
+    nothing
+end

@@ -153,7 +153,7 @@ describe('movieRows', () => {
                               // a pre-registry movie carries the registry fields at their "unset"
                               // values, so the table reads ONE row shape and never has to branch
                               starred: false, tags: [], tagText: '', producedBy: '',
-                              renamed: false, configStale: false,
+                              renamed: false, configStale: false, staleReason: '',
                               hasConfig: false, configKind: '',
                               // …including the image join, which resolves to nothing when no images
                               // were handed in — the page reads one row shape either way
@@ -364,5 +364,17 @@ describe('isFigure', () => {
     expect(isFigure({ name: 'a.PNG' })).toBe(true)          // a server that predates `kind`
     expect(isFigure({ name: 'a.mp4' })).toBe(false)
     expect(isFigure(undefined)).toBe(false)
+  })
+})
+
+describe('movieRows — a stale figure', () => {
+  it('carries why it is out of date, and nothing for a current one', () => {
+    const rows = movieRows([
+      { name: 'a.png', kind: 'figure', size: 1, mtime: 1, figureStale: true, staleReason: 'image version denoised was re-processed since' },
+      { name: 'b.png', kind: 'figure', size: 1, mtime: 1, figureStale: false },
+      { name: 'c.png', kind: 'figure', size: 1, mtime: 1, figureStale: true },
+    ], String, String)
+    expect(rows.map(r => r.staleReason)).toEqual(
+      ['image version denoised was re-processed since', '', 'its image changed since'])
   })
 })

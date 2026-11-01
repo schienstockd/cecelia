@@ -8,10 +8,11 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import CcToggle from './CcToggle.vue'
+import InlineNote from './InlineNote.vue'
 import { parseFrames, formatFrames, applyFigureEdits, type FigureSpec } from '../utils/figureSpec'
 import { useToast } from '../composables/useToast'
 
-const props = defineProps<{ projectUid: string; name: string }>()
+const props = defineProps<{ projectUid: string; name: string; staleReason?: string }>()
 const emit = defineEmits<{ rendered: [name: string] }>()
 const toast = useToast()
 
@@ -76,6 +77,8 @@ async function rerender() {
 
 <template>
   <div v-if="spec" class="fe cc-row">
+    <InlineNote v-if="staleReason" class="fe-own-row" severity="warn" short="Out of date"
+                :detail="`${staleReason} — Re-make renders it from the current data`" />
     <span class="cc-row-group fe-own-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs" v-tooltip.bottom="'Frames: 50, 64 or a range 50-110:10'">frames</span>
       <input v-model="framesText" class="cc-input-2xs fe-text" v-tooltip.bottom="'Frames: 50, 64 or a range 50-110:10'"

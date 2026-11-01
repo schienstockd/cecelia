@@ -37,3 +37,25 @@
     q = figure_params(img, spec)
     @test !haskey(q, "pixelSizeUm") && !haskey(q, "scaleBarUm") && !haskey(q, "timeIncrementS")
 end
+
+@testset "figure_source / figure_stale_reason: is the image a figure was made from still the same?" begin
+    td = mktempdir()
+    img = CciaImage(uid = "FIG2", name = "fig", dir = joinpath(td, "1", "FIG2"))
+    mkpath(img._dir)
+    img.filepath = Dict{String,Any}("default" => "a.zarr", "denoised" => "d.zarr", "_active" => "default")
+    for f in ("a.zarr", "d.zarr"); mkpath(joinpath(img_zero_dir(img), f)); end
+
+    src = figure_source(img, "denoised")
+    @test src["valueName"] == "denoised" && src["storeMtime"] isa Real
+    @test figure_source(img)["valueName"] == "default"             # the active IMAGE version
+    @test figure_stale_reason(img, src) === nothing
+
+    # a re-process replaces the store (a staged write renames a new directory into place)
+    zp = img_filepath(img, "denoised")
+    rm(zp; recursive = true); mkpath(zp)
+    @test figure_stale_reason(img, merge(src, Dict("storeMtime" => src["storeMtime"] - 10))) ==
+          "image version denoised was re-processed since"
+    # the version itself was deleted
+    rm(zp; recursive = true)
+    @test figure_stale_reason(img, src) == "image version \"denoised\" is gone"
+end

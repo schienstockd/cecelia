@@ -409,3 +409,34 @@ end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end
 end
+
+@testset "API: a figure is flagged when its image changes" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTSTALE"
+        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        write(joinpath(mdir, "f.png"), "x"); write(joinpath(mdir, "old.png"), "x")
+        img = CciaImage(uid = "IMGS", name = "s", dir = joinpath(tmp, uid, "1", "IMGS"))
+        mkpath(img._dir)
+        img.filepath = Dict{String,Any}("denoised" => "d.zarr", "_active" => "denoised")
+        mkpath(joinpath(img_zero_dir(img), "d.zarr"))
+        save!(img)
+        src = figure_source(img, "denoised")
+        register_movie!(uid, "f.png"; produced_by = "figure", image_uid = "IMGS", config_kind = "figure",
+                        config = FigureConfig(imageUid = "IMGS", spec = Dict(), source = src))
+        register_movie!(uid, "old.png"; produced_by = "figure", image_uid = "IMGS", config_kind = "figure",
+                        config = FigureConfig(imageUid = "IMGS", spec = Dict()))   # saved before sources
+        row(n) = only(filter(m -> m.name == n, movies_with_meta(uid)))
+        @test !row("f.png").figureStale && !row("old.png").figureStale
+        # the image version is re-processed: the staged write renames a new store into place
+        reg = _read_movies_registry(uid)
+        reg["f.png"]["config"]["source"]["storeMtime"] = src["storeMtime"] - 100
+        _write_movies_registry!(uid, reg)
+        @test row("f.png").figureStale && occursin("re-processed", row("f.png").staleReason)
+        @test !row("old.png").figureStale                       # nothing recorded = nothing to compare
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

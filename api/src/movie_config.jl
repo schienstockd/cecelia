@@ -106,6 +106,9 @@ Base.@kwdef struct FigureConfig <: MovieConfig
     imageUid::String
     spec::Any                               = nothing
     resolved::Any                           = nothing
+    # What it was rendered from (`Cecelia.figure_source`: image version, vN, store mtime) — what the
+    # listing compares to say a figure no longer shows the data (`figureStale`).
+    source::Any                             = nothing
 end
 
 JSON3.StructTypes.StructType(::Type{FigureConfig})      = JSON3.StructTypes.Struct()
