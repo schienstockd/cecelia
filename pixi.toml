@@ -342,8 +342,8 @@ audit-rollup = "python scripts/audit_rollup.py"
 
 # Spawn both reviewers (fanout audit + convention check), emit `_run` events to the log, and
 # print the formatted recital body to stdout. The one-command replacement for the manual
-# "agent spawns two subagents, formats findings, emits events" protocol. Agent captures stdout
-# and appends to the commit message. See CLAUDE.md → Git & commits.
+# "agent spawns two subagents, formats findings, emits events" protocol. Also saves the body to
+# `<git dir>/recital-body.md`; agents append that file to the commit message. See CLAUDE.md → Git & commits.
 recital = "python scripts/recital.py"
 
 # Live console for the effectiveness log — the recital-side twin of `pixi run console`

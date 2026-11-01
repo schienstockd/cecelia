@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import pathlib
 import re
 import subprocess
 import time
@@ -231,6 +232,7 @@ from .claude_cli import tokens as _tokens  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
+from .git_context import git_dir as _git_dir  # noqa: E402
 
 
 def _resolve_claude_bin() -> str:
@@ -445,6 +447,18 @@ STAMP_RE = re.compile(r"_Recital stamp: (\S+)@([0-9a-f]{12}|\?)_")
 def recital_stamp(branch: str | None, commit: str | None) -> str:
     """`_Recital stamp: <branch>@<sha12>_` — `?` for a part git could not report."""
     return f"_Recital stamp: {branch or '?'}@{commit[:12] if commit else '?'}_"
+
+
+#: Where `scripts/recital.py` also saves the body, inside the worktree's own git dir. Each
+#: worktree has its own, so no other session's run can overwrite it. Agents append this file to
+#: the commit message instead of capturing stdout to a temp file and finding it again later.
+RECITAL_BODY_FILE = "recital-body.md"
+
+
+def recital_body_path(cwd: str | None = None) -> pathlib.Path | None:
+    """`<git dir>/recital-body.md` for the worktree at `cwd`, or None outside a git checkout."""
+    d = _git_dir(cwd)
+    return d / RECITAL_BODY_FILE if d else None
 
 
 def run_recital(

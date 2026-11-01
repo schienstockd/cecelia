@@ -786,10 +786,31 @@ class CommitMsgHookTest(unittest.TestCase):
                 "fix: thing\n\nConvention check: no findings. Inventory check: run\n")])
         self.assertEqual(rc, 1)
 
+    def _stamped(self, subject: str = "fix: thing") -> str:
+        from cecelia.effectiveness.recital import recital_stamp
+        return f"{subject}\n\n_Fanout audit: no fanout audit needed_\n\n{recital_stamp('feat/x', self.head)}\n"
+
     def test_agent_commit_with_recital_run_passes(self):
         append_event("convention_check_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
         with mock.patch.dict(os.environ, {"CLAUDECODE": "1"}):
-            rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n")])
+            rc = self.hook.main(["--commit-msg", self._msg_file(self._stamped())])
+        self.assertEqual(rc, 0)
+
+    def test_agent_commit_with_run_but_no_recital_body_blocks(self):
+        # Recital ran, but the message was built from the wrong temp file and carried no body.
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
+        body = pathlib.Path(self._tmp.name) / "recital-body.md"
+        with mock.patch.dict(os.environ, {"CLAUDECODE": "1"}), \
+                mock.patch.object(self.hook, "recital_body_path", return_value=body):
+            reason = self.hook.agent_recital_gate("fix: thing\n\nReservations: none.\n")
+            rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n\nReservations: none.\n")])
+        self.assertEqual(rc, 1)
+        self.assertIn("_Recital stamp:", reason)
+        self.assertIn(str(body), reason)
+
+    def test_human_commit_needs_no_stamp(self):
+        append_event("convention_check_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
+        rc = self.hook.main(["--commit-msg", self._msg_file("fix: thing\n")])
         self.assertEqual(rc, 0)
 
     def test_agent_gate_ignores_other_branch_run(self):
