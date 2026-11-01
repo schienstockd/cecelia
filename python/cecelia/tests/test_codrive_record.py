@@ -196,6 +196,10 @@ class WroteTest(unittest.TestCase):
         self.assertTrue(cr._wrote(call("add_gate", name="p")))
         self.assertFalse(cr._wrote(call("add_gate", name="p", dry_run=True)))
         self.assertFalse(cr._wrote(call("delete_gate", path="/p", dry_run=True)))
+        # a figure's dry run renders a preview and keeps nothing — the same look
+        self.assertTrue(cr._wrote(call("add_figure", spec={})))
+        self.assertFalse(cr._wrote(call("add_figure", spec={}, dry_run=True)))
+        self.assertFalse(cr._wrote(call("set_figure", name="f.png", spec={}, dry_run=True)))
         self.assertTrue(cr._wrote(call("create_chain", name="c")))
         self.assertFalse(cr._wrote(call("gate_examples", pop="/p")))
 

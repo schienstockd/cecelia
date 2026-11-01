@@ -47,7 +47,7 @@ WRITE_TOOLS = run_record.ACTIONS | {"set_blackboard_status", "set_blackboard_out
 
 
 def _wrote(call: dict) -> bool:
-    """A call that changed the project — a gate tool's `dry_run` preview did not (`run_record.is_action`)."""
+    """A call that changed the project — a gate or figure tool's `dry_run` preview did not (`run_record.is_action`)."""
     name = call["name"]
     return (name in WRITE_TOOLS and name not in run_record.ACTIONS) or run_record.is_action(name, call["input"])
 

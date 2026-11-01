@@ -1,6 +1,6 @@
 # Figures — paper figures from the raw data, in one standard look
 
-**Status:** in progress (2026-11-01) — P1 built (#1880), P2 built on `feat/figures-p2`; P3–P4 next.
+**Status:** in progress (2026-11-01) — P1 built (#1880), P2 (#1881), P3 built on `feat/figures-p3`; P4 next.
 
 ## Goal
 
@@ -147,7 +147,11 @@ form editor (frames, channels, range, rows, crop, style). "Save as figure" sits 
 Record button and records the same snapshot as a still sequence (the board image strip's snapshot can
 seed one too). Needs Dominik's eyes.
 
-**P3 — Claude's tools.** Following #1856: `list_figure_kinds`, `add_figure(dry_run)` returning the
+**P3 — Claude's tools. BUILT** (`feat/figures-p3`): `mcp/cecelia_mcp/figure_tools.py` (`add_figure`,
+`set_figure`, `delete_figure`, `list_figures`) on both servers; own-only enforced server-side
+(`figure_claude_made`, `/api/figures/delete-own`, the 403 on a Claude `replace`); Kiwi reads
+`list_figures` only; the recorders count a figure `dry_run` as a look. Previews are capped at 1600 px
+(`preview.png`). Original scope: Following #1856: `list_figure_kinds`, `add_figure(dry_run)` returning the
 rendered preview as an image, and `set_figure` / `delete_figure` for Claude-made figures only
 (`createdBy`). A user edit hands ownership to the user. Observer server; Kiwi's exclusion table
 (`api/src/kiwi_turn.jl`) gets the writes; recorders count the preview as a look and a write as a

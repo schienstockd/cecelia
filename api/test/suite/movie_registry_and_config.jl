@@ -372,3 +372,40 @@ end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end
 end
+
+@testset "API: Claude deletes and replaces only figures it made" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTOWN"
+        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        for n in ("mine.png", "theirs.png", "touched.png"); write(joinpath(mdir, n), "x"); end
+        claude = Dict("profile" => "default", "via" => "claude")
+        user   = Dict("profile" => "default", "via" => "app")
+        register_movie!(uid, "mine.png";    produced_by = "figure", author = claude)
+        register_movie!(uid, "theirs.png";  produced_by = "figure", author = user)
+        register_movie!(uid, "touched.png"; produced_by = "figure", author = claude)
+        register_movie!(uid, "touched.png"; produced_by = "figure", author = user)   # the user re-made it
+
+        as_claude(f) = Base.ScopedValues.with(f, REQUEST_VIA => "claude")
+        del(n; dry = false) = as_claude(() -> _post(api_figures_delete_own,
+                                                    Dict("projectUid" => uid, "name" => n, "dryRun" => dry)))
+        @test del("theirs.png")[1] == 403 && isfile(joinpath(mdir, "theirs.png"))
+        @test del("touched.png")[1] == 403                       # a user edit hands it to the user
+        @test del("mine.png"; dry = true)[1] == 200 && isfile(joinpath(mdir, "mine.png"))
+        @test del("mine.png")[1] == 200 && !isfile(joinpath(mdir, "mine.png"))
+        @test del("nope.png")[1] == 404
+        @test del("clip.mp4")[1] == 400                          # a movie is never Claude's to delete
+
+        # the replace guard: Claude is refused on the user's figure, the GUI is not
+        @test as_claude(() -> _figure_own_check(uid, "theirs.png"))[1] == 403
+        @test _figure_own_check(uid, "theirs.png") === nothing
+        @test as_claude(() -> _figure_own_check(uid, "new.png")) === nothing   # nothing there yet
+        # the listing says which are Claude's — the one rule, so the MCP client never re-derives it
+        @test Dict(m.name => m.claudeMade for m in movies_with_meta(uid)) ==
+              Dict("theirs.png" => false, "touched.png" => false)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

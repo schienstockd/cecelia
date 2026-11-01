@@ -17,6 +17,7 @@ from cecelia_mcp.autonomous import (AutonomousClient, LockViolation, allowed_pro
 from cecelia_mcp.caller import CallerMCPServer
 from cecelia_mcp.client import ApiError, DisallowedRoute
 from cecelia_mcp.gating_views import register_gating_tools
+from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.no_gui import no_gui_enabled
 
 INSTRUCTIONS = (
@@ -136,6 +137,8 @@ def wait_for_chain(project_uid: str, run_id: str, timeout_s: int = 1800) -> dict
 # The gating toolset — the observer's, defined ONCE in gating_views.py. This server's client adds the
 # project lock, the output-name prefix and the measured-segmentation check (`_gating_guard`).
 globals().update(register_gating_tools(_tool, _client))
+# The figure toolset (figure_tools.py) — the observer's too; the project lock applies through `_request`.
+globals().update(register_figure_tools(_tool, _client))
 
 
 def main():

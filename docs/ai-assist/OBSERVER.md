@@ -84,6 +84,9 @@ create_chain              → author a whiteboard chain TEMPLATE (the wired task
 add_gate                  → ADD one proposed gate (new population under an existing one), stamped as Claude's (409 on a taken name, 404 on a missing parent). `dry_run` = the counts, nothing written. One stored-shape `gate` dict in gate_plot's transformed space.
 set_gate / delete_gate    → move / remove a gate CLAUDE drew — the server refuses (403) anything at or under the path the user drew. `dry_run` too.
                             The gating toolset (gate_histogram, gate_plot, gate_cells_view, gate_examples, gate_stats + these three) is ONE definition, `mcp/cecelia_mcp/gating_views.py`, registered by the autonomous server too.
+add_figure                → ADD one figure (a still / strip / z-strip) from a SPEC — rendered by the app from the raw image in the house style, kept on Movies & figures, stamped as Claude's. Never overwrites. `dry_run` = the preview picture, nothing kept.
+set_figure / delete_figure → re-make / remove a figure CLAUDE made — the server refuses (403) the user's, and Claude's once the user re-made it. `dry_run` too. list_figures = the figures, their saved specs and which are Claude's.
+                            The figure toolset is ONE definition, `mcp/cecelia_mcp/figure_tools.py`, registered by the autonomous server too (docs/todo/FIGURES_PLAN.md).
 add_analysis_board        → ADD one board to /analysis. Add-only (409 on a duplicate name): cannot modify, rename, reorder or delete a board, so it sits beside the user's own. Server-validated against the project (422 rather than a board that renders blank).
 ```
 

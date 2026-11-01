@@ -84,6 +84,8 @@ class ClientTest(unittest.TestCase):
             ("POST", "/api/blackboard/status"),
             ("POST", "/api/boards/add"),
             ("POST", "/api/chains/create"),
+            ("POST", "/api/figures/delete-own"),  # removes only a figure Claude made (403 on the user's)
+            ("POST", "/api/figures/render"),  # renders a NEW figure; replace only Claude's own (403 otherwise)
             ("POST", "/api/gating/pop/add-gate"),  # create-only: ONE new gate, never edits a population
             ("POST", "/api/gating/pop/delete-own"),  # removes only what Claude drew (403 on the user's)
             ("POST", "/api/gating/pop/set-own-gate"),  # moves only what Claude drew (403 on the user's)

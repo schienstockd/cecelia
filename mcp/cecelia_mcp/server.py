@@ -39,6 +39,7 @@ from cecelia_mcp.agent_text import repair_escaped_newlines, repair_lines
 from cecelia_mcp.client import ApiError, CeceliaClient, DisallowedRoute
 from cecelia_mcp.discovery import discovery_enabled
 from cecelia_mcp.gating_views import register_gating_tools, with_doc
+from cecelia_mcp.figure_tools import register_figure_tools
 from cecelia_mcp.guidance import BRIEFING_GUIDANCE, SERVER_INSTRUCTIONS
 from cecelia_mcp.landscape_slim import filter_landscape_tiles, slim_landscape_for_mcp
 from cecelia_mcp.no_gui import no_gui_enabled
@@ -595,6 +596,10 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 # set_gate, delete_gate — defined ONCE in gating_views.py and registered by the autonomous server too.
 # Writes change only what Claude drew (the server checks `createdBy`).
 globals().update(register_gating_tools(_tool, _client))
+
+# The figure toolset — add_figure, set_figure, delete_figure, list_figures — defined ONCE in
+# figure_tools.py and registered by the autonomous server too. Writes change only Claude's own figures.
+globals().update(register_figure_tools(_tool, _client))
 
 
 @_tool

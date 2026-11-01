@@ -101,10 +101,11 @@ class Lock(unittest.TestCase):
             with self.assertRaises(au.LockViolation):
                 c._request("GET", "/api/gating/stats", {"projectUid": "tSJpBI"})
 
-    def test_write_routes_are_gating_only(self):
+    def test_write_routes_are_gating_and_figures_only(self):
         writes = {path for m, path in au.AUTONOMOUS_ROUTES if m != "GET"}
         self.assertTrue(writes)
-        self.assertTrue(all(p.startswith("/api/gating/pop/") for p in writes))
+        # gates and figures — both create-only or Claude's own only, checked on the server
+        self.assertTrue(all(p.startswith(("/api/gating/pop/", "/api/figures/")) for p in writes))
         # no-GUI mode's creation routes are a separate set, and additive (no delete/rename/move)
         self.assertFalse(au.NO_GUI_ROUTES & au.AUTONOMOUS_ROUTES)
         self.assertTrue(all(p.endswith(("/create", "/register")) for _, p in au.NO_GUI_ROUTES))

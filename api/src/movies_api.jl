@@ -236,7 +236,9 @@ function movies_with_meta(project_uid::AbstractString)
                           hasConfig   = haskey(e, "config"),
                           configKind  = String(get(e, "configKind", "")),
                           configStale = _config_stale(e, mt),
-                          createdBy   = get(e, "createdBy", nothing)))
+                          createdBy   = get(e, "createdBy", nothing),
+                          # Claude made it and nobody re-made it since — what Claude may change
+                          claudeMade  = figure_claude_made(e)))
         end
         sort!(out; by = m -> m.mtime, rev = true)
     end
@@ -337,6 +339,15 @@ function api_movies_meta_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, names, rejected))
 end
 
+# Remove one movie or figure: its file, a figure's side files, and its entry from `reg` (the caller
+# writes `reg` back once). The one delete step — `/api/movies/delete` and Claude's
+# `/api/figures/delete-own` both go through it.
+function _delete_movie_file!(uid::AbstractString, reg::AbstractDict, name::AbstractString)
+    rm(joinpath(_movies_dir_for_project(String(uid)), name); force = true)
+    _movie_kind(name) == "figure" && rm(_figure_extras_dir(uid, name); force = true, recursive = true)
+    delete!(reg, String(name))
+end
+
 # POST /api/movies/delete {projectUid, name|names} — remove the movie file(s) and their registry
 # entries. A movie is not an image: there are no version/label/analysis scopes to choose between
 # (MOVIE_MANAGEMENT_PLAN.md → Not doing), so this is a plain delete behind the page's confirm.
@@ -357,9 +368,7 @@ function api_movies_delete(body_bytes::Vector{UInt8})
     deleted = String[]
     for name in names
         try
-            rm(joinpath(dir, name); force = true)
-            _movie_kind(name) == "figure" && rm(_figure_extras_dir(uid, name); force = true, recursive = true)
-            delete!(reg, name)
+            _delete_movie_file!(uid, reg, name)
             push!(deleted, name)
         catch e
             # One locked/held file must not abandon the rest of the selection half-done

@@ -28,6 +28,7 @@ export interface MovieEntry {
   configKind?: string    // 'look' | 'keyframes' | 'figure' (Decision 7)
   configStale?: boolean  // the file was re-recorded after the config was saved (Decision 5)
   createdBy?: { profile?: string, via?: string } | null   // who made it — figures stamp it
+  claudeMade?: boolean   // Claude made it and nobody re-made it since (the server's `claude_made`)
 }
 
 /** The extensions the movies dir holds — a movie or a still figure. */

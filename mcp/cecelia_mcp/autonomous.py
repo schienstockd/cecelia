@@ -31,6 +31,7 @@ import string
 import time
 
 from cecelia_mcp import gating_views as gv
+from cecelia_mcp import figure_tools as ft
 from cecelia.utils import loopback
 from cecelia_mcp.auth import auth_headers
 from cecelia_mcp.client import ApiError, DisallowedRoute, http_json
@@ -52,7 +53,8 @@ AUTONOMOUS_ROUTES = frozenset({
     ("GET", "/api/chains/runs"),        # chain runs, newest first
     ("GET", "/api/chains/run"),         # one run's per-image node status
     ("GET", "/api/gating/channels"),    # gateable columns of a segmentation (`_gating_guard`)
-}) | gv.GATING_ROUTES                   # the gating toolset's, the observer's too: its writes change
+}) | gv.GATING_ROUTES | ft.FIGURE_ROUTES   # figures (figure_tools.py) — writes are Claude's own only
+                                        # the gating toolset's, the observer's too: its writes change
                                         # only what Claude drew (add-gate / set-own-gate / delete-own)
 
 # Allowed ONLY in no-GUI mode (`no_gui_enabled()`): getting data in, which the GUI's import wizard
@@ -206,7 +208,7 @@ def output_name_violations(spec: dict, params: dict, prefix: str) -> list[str]:
 
 # ── client ─────────────────────────────────────────────────────────────────────────────────────────
 
-class AutonomousClient(gv.GatingClient):
+class AutonomousClient(gv.GatingClient, ft.FigureClient):
     def __init__(self, base_url: str | None = None, timeout: float = 60.0):
         self.base_url = (base_url or loopback.default_base_url()).rstrip("/")
         self.timeout = timeout
