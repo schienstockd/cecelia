@@ -70,7 +70,26 @@
             @test !haskey(r.image.extraMeta, :ori_path)           # surfaced as oriPath
             @test !haskey(r.image.extraMeta, :funParams)          # internal nested dict
             @test !haskey(r.image.extraMeta, :channel_colormaps)  # nested display config
+            @test isnothing(r.image.cropSource)                   # not a crop
         end
+        # a crop's provenance (written by editImages.cropImage) → cropSource with the box offset, and
+        # none of the crop_* keys duplicated into extraMeta (crop_box was dropped there as nested)
+        img2.meta["crop_source_uid"]        = "Dml3RG"
+        img2.meta["crop_source_value_name"] = "denoised"
+        img2.meta["crop_box"] = Dict{String,Any}("x0" => 49, "x1" => 516, "y0" => 279, "y1" => 747,
+                                                 "z0" => -1, "z1" => -1, "t0" => -1, "t1" => -1)
+        save!(img2)
+        let r = JSON3.read(api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid&imageUid=$(img2.uid)"))[2])
+            cs = r.image.cropSource
+            @test cs.uid == "Dml3RG" && cs.valueName == "denoised"
+            @test (cs.box.x0, cs.box.x1, cs.box.y0, cs.box.y1) == (49, 516, 279, 747)
+            @test cs.box.z0 == -1 && cs.box.t1 == -1
+            for k in (:crop_source_uid, :crop_source_value_name, :crop_box)
+                @test !haskey(r.image.extraMeta, k)
+            end
+        end
+        for k in ("crop_source_uid", "crop_source_value_name", "crop_box"); delete!(img2.meta, k); end
+        save!(img2)
         @test api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid"))[1] == 400           # imageUid missing
         @test api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid&imageUid=nope"))[1] == 404
 

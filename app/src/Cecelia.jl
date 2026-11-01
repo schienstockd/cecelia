@@ -70,7 +70,7 @@ export delete_image!, delete_set!, rename_set!, set_name_taken, move_image!
 export img_filepath, img_zero_dir, img_project_dir, img_project_uid, img_physical_sizes, physical_size_for_axis, img_is_calibrated, img_scale_axes,
        image_included
 export img_axes, img_has_time
-export meta_int, meta_float, meta_str
+export meta_int, meta_float, meta_str, crop_source
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_track_value_names, img_value_names, img_has_value_name, resolve_value_name, resolve_version
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
@@ -202,7 +202,7 @@ export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixel
 # `api/src/image_geometry.jl` reads axes through it — without the export it resolved to nothing,
 # the reader's catch-all swallowed the UndefVarError, and EVERY store silently reported no axes.
 export ngff_attrs, ngff_multiscales, zarr_array_meta, ngff_version, store_rev, store_written_at
-export resync_ome_meta!
+export resync_ome_meta!, adopt_store_counts!
 export RemoveImage
 export CellposeSegment
 export CoastalSegment, coastal_models_for_python

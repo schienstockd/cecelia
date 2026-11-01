@@ -190,6 +190,7 @@ function _run_task(task::Register, imgs::Vector{CciaImage}, params::Dict{String,
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         versioned_set_field!(raw2, "imChannelNames", combined_names, VERSIONED_DEFAULT_VAL)
         raw2["status"] = "done"
+        adopt_store_counts!(raw2, im_out_path)   # the written store, not the source image, sizes C/T/Z
     end
 
     # Carry the REFERENCE image's napari-colours sidecar so the new image's first ref_C channels

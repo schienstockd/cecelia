@@ -100,6 +100,7 @@ function _run_task(task::ZProject, img::CciaImage, params::Dict{String,Any};
         versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
         isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
         raw2["status"] = "done"
+        adopt_store_counts!(raw2, im_out_path)   # the written store, not the source image, sizes C/T/Z
     end
 
     # Carry the source's napari layer-props sidecar (per-channel colormap/contrast). Best-effort:

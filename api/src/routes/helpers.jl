@@ -113,6 +113,7 @@ const _SURFACED_META_KEYS = Set([
     "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
     "TimeIncrement", "TimeIncrementUnit",
     "ori_path", "channel_names", "channel_colormaps", "funParams",
+    "crop_source_uid", "crop_source_value_name", "crop_box",   # → cropSource
 ])
 
 # Any scalar meta key not already surfaced as a field and not internal — rendered verbatim in the
@@ -125,6 +126,16 @@ function _extra_meta(meta::AbstractDict)
         out[ks] = v
     end
     out
+end
+
+# A crop's provenance as `cropSource` = {uid, valueName, box: {x0,x1,y0,y1,z0,z1,t0,t1}} (`-1` = axis
+# kept whole), or `nothing` for an image that isn't a crop. The box offset is what maps a crop's
+# coordinates back into the source — read through the package's `crop_source` accessor.
+function _crop_source_payload(meta::AbstractDict)
+    cs = crop_source(meta)
+    isnothing(cs) && return nothing
+    box = NamedTuple{fieldnames(Cecelia.CropBox)}(Tuple(getfield(cs.box, f) for f in fieldnames(Cecelia.CropBox)))
+    (; uid = cs.uid, valueName = cs.value_name, box)
 end
 
 # Enrich the per-image run log with each entry's OUTPUT value name — the STORED IMAGE VERSION it
@@ -229,6 +240,7 @@ function _image_payload(img::CciaImage)
         oriPath         = meta_str(img.meta, "ori_path"),
         # Any other meta the dialog can show generically (see _extra_meta) — empty for most images.
         extraMeta       = _extra_meta(img.meta),
+        cropSource      = _crop_source_payload(img.meta),
         filepath        = active_fn,
         activeValueName = active_vn,
         filepaths       = fps,
