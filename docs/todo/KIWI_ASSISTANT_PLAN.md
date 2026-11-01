@@ -477,7 +477,9 @@ Each independently shippable.
 - **Decision 1** ("Kiwi is the panel, not the assistant") — superseded by Decision 1 here.
 - **Decision 5** (prompt bar "OUT permanently") — superseded; the prompt input is Phase 4.
 - **Decision 12** (naming ratchet) — kept, and the engine seam is what makes it hold: UI copy reads
-  `engine_label`, so the literal "Claude" still never appears in `components/kiwi/`.
+  `engine_label`, so the literal "Claude" still never appears in `components/kiwi/`. Since the
+  *Two ways in* decision (2026-11-01) "Claude Code" may: it names the terminal session Kiwi pairs
+  with, not Kiwi's engine.
 
 ## Prior art (searched 2026-09-23)
 

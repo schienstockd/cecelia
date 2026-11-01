@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
-// Kiwi is the PANEL, not the assistant — see docs/todo/KIWI_PLAN.md → Decision 12
-// (naming discipline enforcement). Kiwi's job is to display + control whatever assistant is
-// paired, not to be one. Every file in `components/kiwi/` must use provider-neutral wording
-// ("the paired assistant", "your assistant session") rather than the specific vendor name.
+// Kiwi never names its own engine — docs/todo/KIWI_PLAN.md → Decision 12, as KIWI_ASSISTANT_PLAN
+// keeps it: the engine is a seam, so copy reads `engine_label` and never says "Claude". "Claude
+// Code" is allowed — it names the OTHER way in, the terminal session Kiwi pairs with and hands off
+// to (WORKFLOW_RECIPES_PLAN → *Two ways in*), not Kiwi's engine.
 //
 // Sanctioned exceptions:
 //   - This test file itself (its whole point is to talk about the rule).
@@ -31,12 +31,12 @@ const STRIP_COMMENTS = (src: string): string =>
     .join('\n')
 
 describe('kiwi/ naming ratchet', () => {
-  it('no "Claude" literal outside sanctioned exceptions', () => {
+  it('no bare "Claude" outside sanctioned exceptions — "Claude Code" is fine', () => {
     const offenders: string[] = []
     for (const [path, src] of Object.entries(SOURCES)) {
       if (SELF.has(path)) continue
       const stripped = STRIP_COMMENTS(src)
-      if (/\bClaude\b/.test(stripped)) offenders.push(path)
+      if (/\bClaude\b(?! Code\b)/.test(stripped)) offenders.push(path)
     }
     expect(offenders).toEqual([])
   })
