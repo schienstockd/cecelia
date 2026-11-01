@@ -337,9 +337,10 @@ end
         uid = "TESTFIG"
         mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
         write(joinpath(mdir, "m.mp4"), "m")
-        write(joinpath(mdir, "f.png"), "f")
-        mkpath(joinpath(mdir, ".figures", "f", "tiles"))       # side files: never listed
+        write(joinpath(mdir, "f.png"), "f")                    # where the first figures build put it…
+        mkpath(joinpath(mdir, ".figures", "f", "tiles"))       # …with side files nothing reads
         write(joinpath(mdir, "x.txt"), "x")                    # anything else: never listed
+        write(joinpath(mdir, "stray.mp4.png"), "x")            # a figure-named file is adopted, a movie never
 
         @test _valid_movie_name("f.png") && _valid_movie_name("m.mp4")
         @test !_valid_movie_name("../f.png") && !_valid_movie_name("f.jpg")
@@ -352,15 +353,19 @@ end
                         config_kind = "figure", author = me)
         register_movie!(uid, "f.png"; produced_by = "figure", author = Dict("profile" => "default", "via" => "gui"))
         ms = movies_with_meta(uid)
-        @test Set(m.name for m in ms) == Set(["m.mp4", "f.png"])
+        @test Set(m.name for m in ms) == Set(["m.mp4", "f.png", "stray.mp4.png"])
         f = only(filter(m -> m.name == "f.png", ms))
         @test f.kind == "figure" && f.producedBy == "figure" && f.configKind == "figure"
         @test f.createdBy["via"] == "claude"
         @test _read_movies_registry(uid)["f.png"]["updatedBy"]["via"] == "gui"
 
-        # delete takes the side files with it
+        # listing adopts a figure left in movies/ into figures/ and drops the old side files
+        fdir = joinpath(tmp, uid, "figures")
+        @test isfile(joinpath(fdir, "f.png")) && !isfile(joinpath(mdir, "f.png")) && !isdir(joinpath(mdir, ".figures"))
+        @test isfile(joinpath(mdir, "m.mp4"))                  # movies stay where they are
+        @test _media_path(uid, "f.png") == joinpath(fdir, "f.png") && _media_path(uid, "m.mp4") == joinpath(mdir, "m.mp4")
         @test _post(api_movies_delete, Dict("projectUid" => uid, "name" => "f.png"))[1] == 200
-        @test !isfile(joinpath(mdir, "f.png")) && !isdir(joinpath(mdir, ".figures", "f"))
+        @test !isfile(joinpath(fdir, "f.png"))
 
         # a deliberate artefact is not overwritten by a second one of the same name
         write(joinpath(mdir, "cell_figure.png"), "1")
@@ -379,7 +384,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     try
         uid = "TESTOWN"
-        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        mdir = joinpath(tmp, uid, "figures"); mkpath(mdir)
         for n in ("mine.png", "theirs.png", "touched.png"); write(joinpath(mdir, n), "x"); end
         claude = Dict("profile" => "default", "via" => "claude")
         user   = Dict("profile" => "default", "via" => "app")
@@ -416,7 +421,7 @@ end
     tmp  = mktempdir(); dirs["projects"] = tmp
     try
         uid = "TESTSTALE"
-        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        mdir = joinpath(tmp, uid, "figures"); mkpath(mdir)
         write(joinpath(mdir, "f.png"), "x"); write(joinpath(mdir, "old.png"), "x")
         img = CciaImage(uid = "IMGS", name = "s", dir = joinpath(tmp, uid, "1", "IMGS"))
         mkpath(img._dir)
@@ -436,6 +441,23 @@ end
         _write_movies_registry!(uid, reg)
         @test row("f.png").figureStale && occursin("re-processed", row("f.png").staleReason)
         @test !row("old.png").figureStale                       # nothing recorded = nothing to compare
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end
+
+@testset "API: a first-build figure in movies/ resolves before any listing moves it" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTLEG"
+        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        write(joinpath(mdir, "old.png"), "x")
+        @test _media_path(uid, "old.png") == joinpath(mdir, "old.png")           # not moved yet: found there
+        @test _media_path(uid, "new.png") == joinpath(tmp, uid, "figures", "new.png")
+        movies_with_meta(uid)                                                    # a listing adopts it
+        @test _media_path(uid, "old.png") == joinpath(tmp, uid, "figures", "old.png")
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
     end

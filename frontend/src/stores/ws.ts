@@ -245,7 +245,10 @@ export const useWsStore = defineStore('ws', () => {
     // successful push). The frontend consumers watch these to flip the "paired ✓" chip
     // without waiting for the next Share click, and to show a transient "sent ✓" state.
     // Any listener wanting per-project scoping filters on `projectUid` themselves.
-    if (type === 'push_target:changed' || type === 'push:sent' || type === 'captures:changed') {
+    // `movies:changed` (FIGURES_PLAN) — a figure saved / re-made / deleted, which no task reports; the
+    // Movies & figures page re-lists. Same tick: one more kind on the same thin store.
+    if (type === 'push_target:changed' || type === 'push:sent' || type === 'captures:changed' ||
+        type === 'movies:changed') {
       // Delivery model matches lab_log_updated: publish a bumped tick on the push store, panel
       // components decide whether to refetch. Kept intentionally cheap in the dispatch path.
       // `captures:changed` (post-PR #3) rides the same store because Kiwi is the only consumer

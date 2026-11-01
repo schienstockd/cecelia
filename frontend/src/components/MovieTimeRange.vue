@@ -20,6 +20,7 @@
 // another, which is what this first shipped as.
 import { computed } from 'vue'
 import RangeSlider from './RangeSlider.vue'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import { resolveFrameRange, storeFrameEnd } from '../utils/batchMovie'
 
 const props = defineProps<{
@@ -27,11 +28,22 @@ const props = defineProps<{
   tEnd?: number | null
   /** Frames available — the LONGEST timelapse in play, since the backend clamps the short ones. */
   frames: number
+  /** The viewer's Save as figure takes every Nth frame of this range (`figureFrames`); shown only
+   *  where a caller binds it. `null` = auto, and `everyAuto` is the step auto picked. */
+  showEvery?: boolean
+  every?: number | null
+  everyAuto?: number
 }>()
 const emit = defineEmits<{
   (e: 'update:tStart', v: number): void
   (e: 'update:tEnd', v: number | null): void
+  (e: 'update:every', v: number | null): void
 }>()
+const everyDraft = useFieldDraft(() => props.every)
+const onEvery = (raw: string) => {
+  const n = Math.round(Number(raw))
+  emit('update:every', raw.trim() && Number.isFinite(n) && n >= 1 ? n : null)
+}
 
 const last = computed(() => Math.max(0, props.frames - 1))
 const range = computed(() => resolveFrameRange(props.tStart, props.tEnd, props.frames))
@@ -42,16 +54,23 @@ const setHi = (v: number) => emit('update:tEnd', storeFrameEnd(v, props.frames))
   <div class="mtr cc-row">
     <span class="cc-row-group mtr-row">
       <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
-            v-tooltip.bottom="'Which frames to record'">frames</span>
+            v-tooltip.bottom="'Which frames'">frames</span>
       <RangeSlider class="mtr-slider" :lo="range.lo" :hi="range.hi" :min="0" :max="last"
                    @update:lo="emit('update:tStart', $event)" @update:hi="setHi"
-                   v-tooltip.bottom="'First and last frame to record'" />
+                   v-tooltip.bottom="'First and last frame'" />
       <span class="mtr-val cc-readout">{{ range.full ? 'all' : `${range.lo}–${range.hi}` }}</span>
       <button v-if="!range.full" class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
               @click="emit('update:tStart', 0); emit('update:tEnd', null)"
-              v-tooltip.bottom="'Record the whole timelapse'">
+              v-tooltip.bottom="'The whole timelapse'">
         <i class="pi pi-times" />
       </button>
+    </span>
+    <span v-if="showEvery" class="cc-row-group">
+      <span class="cc-lbl-col cc-eyebrow cc-fs-2xs"
+            v-tooltip.bottom="'Save as figure: every Nth frame of the range'">every</span>
+      <input type="number" min="1" class="cc-input-2xs mtr-every" v-model="everyDraft"
+             :placeholder="`auto (${everyAuto ?? 1})`" @change="onEvery(String(everyDraft))"
+             v-tooltip.bottom="'Frame interval for the figure; blank = auto (about 9 frames)'" />
     </span>
   </div>
 </template>
@@ -66,4 +85,5 @@ const setHi = (v: number) => emit('update:tEnd', storeFrameEnd(v, props.frames))
 .mtr-slider { flex: 1 1 3rem; min-width: 2.5rem; }
 /* room for "120–480" without the drag reflowing the row */
 .mtr-val { min-width: 3.4rem; text-align: right; }
+.mtr-every { width: 5.5rem; }
 </style>

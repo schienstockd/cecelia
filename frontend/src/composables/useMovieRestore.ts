@@ -12,7 +12,7 @@
 // Undo they were offered would restore something two edits old.
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { restoreKind, type MovieRegistryEntry, type RestoreKind } from '../utils/movieRestore'
+import { restoreKind, type MovieRegistryEntry, type RestoreKind, fetchMovieEntry } from '../utils/movieRestore'
 
 /** What the page did, and how to put it back. Returned by the caller's `apply`. */
 export interface RestoreResult {
@@ -57,10 +57,7 @@ export function useMovieRestore(opts: {
     if (!uid || !name) return
     consumeQuery()
     try {
-      const res = await fetch(
-        `/api/movies/meta?projectUid=${encodeURIComponent(uid)}&name=${encodeURIComponent(name)}`)
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText)
-      const entry = ((await res.json()) as { entry?: MovieRegistryEntry }).entry ?? {}
+      const entry = await fetchMovieEntry(uid, name)
       // Not ours — the other page is the destination and will have handled it. Silence is right here:
       // a movie has exactly one kind, so this is a page that simply was not asked.
       if (restoreKind(entry) !== opts.kind) return

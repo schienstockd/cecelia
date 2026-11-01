@@ -188,6 +188,7 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-window-maximize', lucide: 'maximize-2', means: 'Fill the window' },
       { icon: 'pi-window-minimize', lucide: 'minimize-2', means: 'Back to its own size' },
       { icon: 'pi-directions', lucide: 'navigation', means: 'Direction of movement' },
+      { icon: 'pi-locate', lucide: 'locate', means: 'Open it at its source — the image and the view it came from' },
     ],
   },
   {

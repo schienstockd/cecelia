@@ -3,7 +3,7 @@ import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows
          filterMovieRows, movieFilterOptions, parseMovieTags,
          resolveMovieImageUid, movieChannelCells, movieChannelCount,
          type MovieEntry, type MovieImage, movieSuffixesInUse,
-         parseMovieEndMode, nextMovieName, isFigure } from './movies'
+         parseMovieEndMode, nextMovieName, isFigure, mediaNouns, sourceOf } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -153,7 +153,7 @@ describe('movieRows', () => {
                               // a pre-registry movie carries the registry fields at their "unset"
                               // values, so the table reads ONE row shape and never has to branch
                               starred: false, tags: [], tagText: '', producedBy: '',
-                              renamed: false, configStale: false, staleReason: '',
+                              renamed: false, configStale: false, kind: 'movie', staleReason: '',
                               hasConfig: false, configKind: '',
                               // …including the image join, which resolves to nothing when no images
                               // were handed in — the page reads one row shape either way
@@ -376,5 +376,29 @@ describe('movieRows — a stale figure', () => {
     ], String, String)
     expect(rows.map(r => r.staleReason)).toEqual(
       ['image version denoised was re-processed since', '', 'its image changed since'])
+  })
+})
+
+describe('mediaNouns', () => {
+  it('names the list by what it holds', () => {
+    expect(mediaNouns(['movie', 'movie']).one).toBe('movie')
+    expect(mediaNouns(['figure']).title).toBe('Figure')
+    expect(mediaNouns(['movie', 'figure'])).toEqual({ one: 'movie or figure', many: 'movies and figures', title: 'Movie / figure' })
+    expect(mediaNouns([]).many).toBe('movies')
+  })
+})
+
+describe('sourceOf', () => {
+  const view = (s: Record<string, unknown>) => ({ from: s.sizePx })
+  it('a figure opens its image version at its view', () => {
+    expect(sourceOf({ configKind: 'figure', config: { imageUid: 'I', spec: { valueName: 'denoised', sizePx: 90 } } }, view))
+      .toEqual({ imageUid: 'I', valueName: 'denoised', viewState: { from: 90 } })
+  })
+  it('an animation opens at its first keyframe; a viewer movie on the image', () => {
+    expect(sourceOf({ configKind: 'keyframes', config: { imageUid: 'I', keyframes: { viewState: { k: 1 } }, look: { valueName: 'v' } } }, view))
+      .toEqual({ imageUid: 'I', valueName: 'v', viewState: { k: 1 } })
+    expect(sourceOf({ configKind: 'look', config: { imageUid: 'I', look: { channels: {} } } }, view))
+      .toEqual({ imageUid: 'I', valueName: undefined, viewState: null })
+    expect(sourceOf({ imageUid: '' }, view)).toBeNull()
   })
 })

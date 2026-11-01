@@ -16,7 +16,11 @@ class TestFigureSpec(unittest.TestCase):
     def test_defaults(self):
         s = rf.validate(_spec())
         self.assertEqual((s['kind'], s['interpolation'], s['zHalf']), ('sequence', 'pixels', 0))
-        self.assertEqual(rf.tile_px(s, rf.STYLE), 240)  # 20 mm at 300 dpi = 236 px, snapped to 12 x 20
+        # auto tile width: a still or a pair 80 mm, nine frames 20 mm (a page width), never past the clamps
+        self.assertEqual([rf.tile_mm(rf.STYLE, n) for n in (1, 2, 3, 9, 20)], [80, 80, 60, 20, 20])
+        self.assertEqual(rf.tile_mm(dict(rf.STYLE, tileMm=35), 9), 35)          # a chosen width wins
+        self.assertEqual(rf.tile_px(s, rf.STYLE, 9), 240)   # 20 mm at 300 dpi = 236 px, snapped to 12 x 20 px
+        self.assertEqual(rf.tile_px(s, rf.STYLE, 1), 940)   # 80 mm = 945 px → 47 x 20
 
     def test_errors_name_the_field(self):
         cases = [(dict(kind='montage'), 'kind'), (dict(frames=[]), 'frames'),

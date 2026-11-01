@@ -9,8 +9,8 @@ font stack.
 
 **Spec** (params dict; camelCase like every ``run_py`` contract):
     ``zarrPath``        : image store
-    ``outDir``          : where ``figure.png``, ``preview.png`` (≤ ``PREVIEW_PX``), ``tiles/`` and
-                          ``figure.json`` (the resolved spec) land
+    ``outDir``          : where ``figure.png``, ``preview.png`` (≤ ``PREVIEW_PX``) and ``figure.json`` (the
+                          resolved spec) land — a caller keeps what it needs (the app keeps figure.png)
     ``kind``            : ``sequence`` (one region over ``frames``) | ``zstack`` (one ``t``, planes ``planes``)
     ``center``          : ``[y, x]`` in level-0 pixels — the crop centre
     ``sizePx``          : crop side in level-0 pixels (square)
@@ -29,7 +29,7 @@ font stack.
     ``timeIncrementS``  : seconds per timepoint (``None`` = label ``t<n>``)
     ``pixelSizeUm``     : x pixel size; ``zStepUm``: z step (``zstack`` labels); ``zAniso`` = z / x
     ``scaleBarUm``      : scale-bar length (``None`` = none)
-    ``style``           : overrides of ``STYLE`` (dpi, tileMm, gapMm, fontPt, scaleFontPt, barMm,
+    ``style``           : overrides of ``STYLE`` (dpi, tileMm — default auto by frame count, gapMm, fontPt, scaleFontPt, barMm,
                           scaleBarOn ``first`` (default) | ``last`` | ``all``)
 """
 import os
@@ -175,8 +175,12 @@ def _states(s, row, cols, ranges, nc, canvas):
 #: a white page with thin white gaps, plain black column titles above, a black legend band below with
 #: each channel named in its own colour, a small plain scale bar. Lengths in mm / pt so text is the
 #: same size in every figure whatever the tile size.
-STYLE = {'dpi': 300, 'tileMm': 20.0, 'gapMm': 0.4, 'fontPt': 7.0, 'scaleFontPt': 6.0,
-         'barMm': 0.35, 'scaleBarOn': 'first'}
+STYLE = {'dpi': 300, 'tileMm': None, 'gapMm': 0.4, 'fontPt': 7.0, 'scaleFontPt': 6.0,
+         'barMm': 0.35, 'scaleBarOn': 'first',
+         # `tileMm: None` = auto: the strip fills a page width (`figureWidthMm`), each tile within
+         # [tileMmMin, tileMmMax] — 9 frames get 20 mm, a single still 80 mm. A fixed 20 mm made a still
+         # a 236 px tile whose 7 pt text was an eighth of its height.
+         'figureWidthMm': 180.0, 'tileMmMin': 20.0, 'tileMmMax': 80.0}
 _NAMED = {'#ff00ff': 'magenta', '#00ff00': 'green', '#ffffff': 'grey', '#00ffff': 'cyan',
           '#ff0000': 'red', '#0000ff': 'blue', '#ffff00': 'yellow'}
 
@@ -189,10 +193,18 @@ def _pt(pt, dpi):
     return max(6, int(round(pt / 72.0 * dpi)))
 
 
-def tile_px(s, style):
-    """Output tile side: ``tilePx`` if given, else ``tileMm`` at ``dpi``. In ``pixels`` mode it snaps to a
+def tile_mm(style, n_cols):
+    """The tile width: ``style.tileMm``, or auto — the page width shared by ``n_cols`` tiles, clamped."""
+    if style.get('tileMm'):
+        return float(style['tileMm'])
+    per = style['figureWidthMm'] / max(1, n_cols)
+    return max(style['tileMmMin'], min(style['tileMmMax'], per))
+
+
+def tile_px(s, style, n_cols=1):
+    """Output tile side: ``tilePx`` if given, else ``tile_mm`` at ``dpi``. In ``pixels`` mode it snaps to a
     whole multiple of the crop so every native pixel is the same size block."""
-    want = int(s.get('tilePx') or _px(style['tileMm'], style['dpi']))
+    want = int(s.get('tilePx') or _px(tile_mm(style, n_cols), style['dpi']))
     if s['interpolation'] == 'pixels':
         k = max(1, int(round(want / s['sizePx'])))
         return k * s['sizePx']
@@ -247,8 +259,8 @@ def _draw_scale_bar(img, bar, style):
 
 
 def render_figure(spec, host=None, log=None):
-    """Render ``spec`` into ``outDir``: ``figure.png`` (the layout, at ``dpi``), ``tiles/r<row>_c<col>.png``
-    (each tile alone) and ``figure.json`` (the spec with measured ranges). Returns the paths."""
+    """Render ``spec`` into ``outDir``: ``figure.png`` (the layout, at ``dpi``), ``preview.png`` and
+    ``figure.json`` (the spec with measured ranges). Returns the paths."""
     s = validate(spec)
     style = dict(STYLE, **(s.get('style') or {}))
     log = log or _PrintLog()
@@ -258,11 +270,12 @@ def render_figure(spec, host=None, log=None):
     nc = dict(zip([a.lower() for a in axes], levels[0].shape)).get('c', 1)
     cols = _columns(s)
     ranges = display_ranges(s, levels, axes, cols)
-    tile = tile_px(s, style)
+    tile = tile_px(s, style, len(cols))
+    style = dict(style, tileMm=tile_mm(style, len(cols)))     # figure.json records what auto picked
     canvas = s['sizePx'] if s['interpolation'] == 'smooth' else tile
     params = {'zarrPath': s['zarrPath'], 'canvasH': canvas, 'canvasW': canvas,
               'zAniso': float(s.get('zAniso', 1.0)), 'renderQuality': 'high'}
-    os.makedirs(os.path.join(s['outDir'], 'tiles'), exist_ok=True)
+    os.makedirs(s['outDir'], exist_ok=True)
     bar = None
     if s.get('scaleBarUm') and s.get('pixelSizeUm'):
         um = float(s['scaleBarUm'])
@@ -277,8 +290,6 @@ def render_figure(spec, host=None, log=None):
                 img = img.resize((tile, tile), Image.LANCZOS if s['interpolation'] == 'smooth' else Image.NEAREST)
             if _shows_bar(style['scaleBarOn'], ri, ci, len(s['rows']), len(cols)):
                 _draw_scale_bar(img, bar, style)
-            with atomic_path(os.path.join(s['outDir'], 'tiles', f'r{ri}_c{ci}.png')) as tmp:
-                img.save(tmp, format='PNG', dpi=(style['dpi'], style['dpi']))
             tiles.append(img)
         rows_px.append((tiles, _legend_parts(s, row)))
     out = _compose(rows_px, [c[3] for c in cols], tile, style)
