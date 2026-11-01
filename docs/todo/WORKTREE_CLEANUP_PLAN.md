@@ -101,8 +101,13 @@ turned out to be P1 as built, with one gate that doesn't hold on Dominik's machi
 14. **No interactive pick-list.** SAFE is defined so removal cannot lose work, and agents run
     `--remove` non-interactively on Dominik's go-ahead (root `CLAUDE.md`). A y/n prompt would
     only add a step.
-15. **Remote branches stay untouched.** `fetch --prune` already drops stale remote-tracking refs;
-    deleting `origin/<branch>` is GitHub's job (auto-delete on merge), not this tool's.
+15. **Remote branches: delete what a PR already holds, list the rest** (revised 2026-11-01; was
+    "untouched"). Auto-delete on merge wasn't enough: 23 leftovers had piled up, 16 of them merged
+    PRs' branches brought back by a later push, the rest closed-PR or never-PR'd. GONE (tip in main,
+    or a merged/closed PR at exactly this tip — the commits stay reachable under `refs/pull/`) is
+    deleted by `--remove` with a lease on the surveyed tip; STRAY (no PR after 14 days, or commits
+    after the PR) is printed for Dominik. The resurrection itself is stopped at the source by the
+    `pre-push` hook (`scripts/pre_push_check.py`).
 
 ## Phases
 

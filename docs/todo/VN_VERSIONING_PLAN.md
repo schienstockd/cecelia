@@ -328,12 +328,23 @@ segmentation_utils._store_path, store_sweep. Each is a rewrite site. P4 breaks i
 sub-plan (`P4a` migrator + `P4b` rewrite these helpers to compose through the resolver) so it is
 independently reviewable.
 
-**Design analysis (2026-09-19):** `docs/audit/vn-versioning-p4-design.md` — post-P1+P2, the
-"18 helpers" split into TWO buckets: 4 already routed (via `unversion_value`), 14 not yet routed.
-Design doc surfaces Q1 (on-disk layout suffix vs subdir), Q2 (per-family — do QC/corrections/gating
-truly need per-version files?), Q3 (re-import UX default). Also raises whether an eager migrator is
-needed at all given P2 infra's union type support. **Decision pending — answers direct P4b PR
-sequencing.**
+**Design analysis + locked decisions (2026-09-19):** `docs/audit/vn-versioning-p4-design.md`.
+The "18 helpers" split into TWO buckets post-P1+P2: 4 already routed (Bucket A), 14 not routed
+(Bucket B). Locked answers:
+
+- **Q1 layout**: per-version subdir (`{vn}/v{N}/{filename}`), Bucket A only. Bucket B stays flat.
+- **Q2 scope**: Bucket B (QC / corrections / gating / clustfeatures / trackProps / branchProps)
+  stays single-file, follows `_latest`. **No P4b sweep needed.** Safety comes from P3
+  chain/task-level pinning, not per-artifact files.
+- **Q3 re-import**: default overwrite; opt-in via Settings toggle *"Reprocessing keeps previous
+  version"* (default off). Autonomous execution is meant to force the toggle on — the
+  "mechanically can't overwrite" invariant lives at the writer (no autonomous mode forces it yet).
+- **Migrator deferred**: P2 infra's union type supports both shapes forever; the ccid.json schema
+  flips JIT on the first `versioned_upgrade_entry!`, so no eager migration.
+
+The pilot writer (`filepath` ingest, through `version_write!`) shipped; P4b collapses to zero
+under Q2's answer. As-built: `app/CLAUDE.md` → *Reprocessing writes route through
+`keep_previous_version()`*.
 
 ### P5 — Prune surface (Settings + route + UI)
 

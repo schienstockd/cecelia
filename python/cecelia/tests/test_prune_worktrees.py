@@ -91,6 +91,45 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(self.bucket(managed=False), P.OTHER)
 
 
+def _remote(**kw) -> "P.RemoteFacts":
+    base = dict(name="feat/x", sha="s1", age_days=30.0)
+    base.update(kw)
+    return P.RemoteFacts(**base)
+
+
+class ClassifyRemoteTest(unittest.TestCase):
+    def verdict(self, **kw):
+        v = P.classify_remote(_remote(**kw))
+        return v and v[0]
+
+    def test_a_branch_in_main_is_gone(self):
+        self.assertEqual(self.verdict(in_main=True), P.GONE)
+
+    def test_a_pr_merged_or_closed_at_this_tip_is_gone(self):
+        for state in ("MERGED", "CLOSED"):
+            self.assertEqual(self.verdict(prs=[{"number": 1, "state": state, "headRefOid": "s1"}]), P.GONE)
+
+    def test_commits_pushed_after_the_pr_are_stray_not_gone(self):
+        bucket, why = P.classify_remote(_remote(prs=[{"number": 7, "state": "MERGED", "headRefOid": "s0"}]))
+        self.assertEqual(bucket, P.STRAY)
+        self.assertIn("after PR #7", why)
+
+    def test_an_open_pr_keeps_it_off_the_list(self):
+        prs = [{"number": 1, "state": "MERGED", "headRefOid": "s0"}, {"number": 2, "state": "OPEN", "headRefOid": "s1"}]
+        self.assertIsNone(self.verdict(prs=prs))
+
+    def test_no_pr_is_stray_only_once_old(self):
+        self.assertEqual(self.verdict(age_days=30.0), P.STRAY)
+        self.assertIsNone(self.verdict(age_days=1.0))
+
+    def test_gh_failing_never_makes_a_branch_gone(self):
+        self.assertEqual(self.verdict(prs=None), P.STRAY)
+
+    def test_main_and_judge_assets_are_never_listed(self):
+        for name in P.KEEP_REMOTE:
+            self.assertIsNone(self.verdict(name=name, in_main=True))
+
+
 class HelpersTest(unittest.TestCase):
     def test_is_junk(self):
         ts = {"frontend/src/utils/a.ts"}
@@ -221,6 +260,56 @@ class EndToEndTest(unittest.TestCase):
         log = P.remove(rows, str(self.primary))
         self.assertTrue(self.merged.exists())
         self.assertTrue(any("skipped" in line and "session cecelia-56" in line for line in log), log)
+
+
+class RemoteEndToEndTest(unittest.TestCase):
+    """A real bare origin: GONE branches are deleted, STRAY ones and moved ones are left."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.origin, self.primary = self.tmp / "origin.git", self.tmp / "ws" / "cecelia-feijoa"
+        _git("init", "-q", "--bare", "-b", "main", str(self.origin), cwd=self.tmp)
+        _git("clone", "-q", str(self.origin), str(self.primary), cwd=self.tmp)
+        self.commit("f.txt", "one")
+        _git("push", "-q", "origin", "HEAD:main", "HEAD:in-main", "HEAD:judge-assets", cwd=self.primary)
+        self.commit("g.txt", "ahead")
+        _git("push", "-q", "origin", "HEAD:squashed", "HEAD:no-pr", cwd=self.primary)
+        _git("fetch", "-q", "origin", cwd=self.primary)
+        self.squashed_tip = self.rev("origin/squashed")
+        prs = {"squashed": [{"number": 5, "state": "MERGED", "headRefOid": self.squashed_tip}], "no-pr": []}
+        patcher = mock.patch.object(P, "merged_pr_heads", lambda b, **k: prs.get(b, []))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def commit(self, name, text):
+        (self.primary / name).write_text(text + "\n", encoding="utf-8")
+        _git("add", name, cwd=self.primary)
+        _git("commit", "-qm", text, cwd=self.primary)
+
+    def rev(self, ref):
+        return subprocess.run(["git", "rev-parse", ref], cwd=str(self.primary), capture_output=True,
+                              text=True, encoding="utf-8").stdout.strip()
+
+    def origin_branches(self):
+        return set(subprocess.run(["git", "branch", "--format=%(refname:short)"], cwd=str(self.origin),
+                                  capture_output=True, text=True, encoding="utf-8").stdout.split())
+
+    def test_survey_then_remove(self):
+        rows = P.survey_remote(str(self.primary), now=__import__("time").time())
+        self.assertEqual({r.name: b for r, b, _ in rows},
+                         {"in-main": P.GONE, "squashed": P.GONE})   # no-pr is under two weeks old
+        log = P.remove_remote(rows, str(self.primary))
+        self.assertEqual(self.origin_branches(), {"main", "judge-assets", "no-pr"}, log)
+
+    def test_a_branch_pushed_to_since_the_survey_is_kept(self):
+        rows = P.survey_remote(str(self.primary), now=__import__("time").time())
+        self.commit("late.txt", "late")
+        _git("push", "-q", "origin", "HEAD:squashed", cwd=self.primary)
+        log = P.remove_remote(rows, str(self.primary))
+        self.assertIn("squashed", self.origin_branches())
+        self.assertNotIn("in-main", self.origin_branches())
+        self.assertTrue(any("kept origin/squashed" in line for line in log), log)
 
 
 if __name__ == "__main__":

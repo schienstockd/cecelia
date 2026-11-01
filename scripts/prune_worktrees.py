@@ -1,4 +1,4 @@
-"""`pixi run prune-worktrees` — say which sibling worktrees can go; with `--remove`, remove only those.
+"""`pixi run prune-worktrees` — say which sibling worktrees and GitHub branches can go; with `--remove`, remove only those.
 
 Every worktree lands in ONE bucket. Only SAFE (merged, clean, unused, no stash) and DEAD (the
 folder is gone) are ever acted on, and only with `git worktree remove` / `git worktree prune` /
@@ -9,6 +9,12 @@ docs/todo/WORKTREE_CLEANUP_PLAN.md.
 A worktree is in use when a process runs from it (`/proc`) or a live Claude Code session is working
 in it: sessions are launched from the workspace root and `cd` into a worktree, so their own process
 cwd never points there — `claude_sessions` reads the session's current folder from its transcript.
+
+Branches on GitHub get the same treatment, in two buckets. GONE — the tip is in origin/main, or a
+PR merged or closed at exactly this commit (GitHub keeps every PR's commits under `refs/pull/`, so
+nothing is lost) — is deleted by `--remove`, only if the branch hasn't moved since the survey.
+STRAY — no PR after two weeks, or commits pushed after its PR — is printed with the delete command
+for a person. Open PRs, `main` and `judge-assets` are never listed.
 
 Fact gathering (git, gh, /proc, Claude Code's session files) is kept apart from `classify`, which is pure, so the tests drive
 the bucket rules with made-up facts and never touch a real repo.
@@ -112,6 +118,91 @@ def classify(f: Facts) -> tuple[str, str]:
             return JUNK, f"{len(untracked)} compile-output files"
         return DIRTY, f"{len(f.status)} uncommitted change{'s' if len(f.status) != 1 else ''}"
     return SAFE, "merged, clean, unused"
+
+
+# ── GitHub branches ─────────────────────────────────────────────────────────────────────────
+
+#: Never listed or deleted: the integration branch, and the weekly judge's orphan chart branch
+#: (README embeds its SVGs; it has no PR and is never in main).
+KEEP_REMOTE = ("main", "judge-assets")
+#: A branch with no PR this young is one an agent is about to open a PR for.
+REMOTE_FRESH_DAYS = 14
+GONE, STRAY = "gone", "stray"
+
+
+@dataclasses.dataclass
+class RemoteFacts:
+    """Everything `classify_remote` needs about one branch on origin."""
+    name: str
+    sha: str
+    age_days: float = 1e9            # since the tip's commit date
+    in_main: bool = False            # tip is an ancestor of origin/main
+    prs: list[dict] | None = dataclasses.field(default_factory=list)  # every PR from it; None = gh failed
+
+
+def classify_remote(r: RemoteFacts) -> tuple[str, str] | None:
+    """(GONE | STRAY, one-line reason), or None when the branch belongs on GitHub."""
+    if r.name in KEEP_REMOTE:
+        return None
+    if r.in_main:
+        return GONE, "already in origin/main"
+    if r.prs is None:
+        return STRAY, "not in origin/main; PR state unknown (gh failed)"
+    if any(p.get("state") == "OPEN" for p in r.prs):
+        return None
+    done = [p for p in r.prs if p.get("state") in ("MERGED", "CLOSED")]
+    if at := [p for p in done if p.get("headRefOid") == r.sha]:
+        return GONE, f"PR #{at[0]['number']} {at[0]['state'].lower()} at this commit"
+    if done:
+        return STRAY, f"commits after PR #{done[0]['number']} ({done[0]['state'].lower()})"
+    if r.age_days < REMOTE_FRESH_DAYS:
+        return None
+    return STRAY, f"no PR; last commit {r.age_days:.0f} days ago"
+
+
+def survey_remote(primary: str, now: float) -> list[tuple[RemoteFacts, str, str]]:
+    """Every origin branch that GONE or STRAY, from the remote-tracking refs (fetch first)."""
+    refs = git_output("for-each-ref", "refs/remotes/origin",
+                      "--format=%(refname:lstrip=3) %(objectname) %(committerdate:unix)", cwd=primary)
+    rows = []
+    for line in (refs or "").splitlines():
+        name, sha, ts = line.split(" ")
+        if name == "HEAD" or name in KEEP_REMOTE:
+            continue
+        r = RemoteFacts(name, sha, age_days=(now - int(ts)) / 86400)
+        r.in_main = git_output("merge-base", "--is-ancestor", sha, "origin/main", cwd=primary) is not None
+        if not r.in_main:
+            r.prs = merged_pr_heads(name, cwd=primary, state="all")
+        if verdict := classify_remote(r):
+            rows.append((r, *verdict))
+    return rows
+
+
+def report_remote(rows: list[tuple[RemoteFacts, str, str]]) -> str:
+    lines = []
+    for bucket, head in ((STRAY, "a person decides"), (GONE, "deleted by --remove")):
+        group = [(r, why) for r, b, why in rows if b == bucket]
+        if not group:
+            continue
+        lines.append(f"\nGITHUB {bucket.upper()} ({len(group)}) — {head}")
+        for r, why in group:
+            lines.append(f"  {r.name[:44]:<44} {why}")
+            if bucket == STRAY:
+                lines.append(f"    ! git push origin --delete {r.name}")
+    return "\n".join(lines)
+
+
+def remove_remote(rows: list[tuple[RemoteFacts, str, str]], primary: str) -> list[str]:
+    """Delete GONE branches on origin. The lease makes git refuse when the branch has moved since
+    the survey (someone pushed to it), so a branch is only ever deleted at the commit judged GONE."""
+    log = []
+    for r, bucket, _ in rows:
+        if bucket != GONE:
+            continue
+        ok = git_output("push", "--quiet", f"--force-with-lease=refs/heads/{r.name}:{r.sha}",
+                        "origin", f":refs/heads/{r.name}", cwd=primary) is not None
+        log.append(f"deleted origin/{r.name}" if ok else f"kept origin/{r.name}: push refused (moved?)")
+    return log
 
 
 # ── fact gathering ──────────────────────────────────────────────────────────────────────────
@@ -308,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--remove", action="store_true", help="remove SAFE worktrees and prune DEAD entries")
     ap.add_argument("--no-fetch", action="store_true", help="skip `git fetch --prune origin`")
+    ap.add_argument("--local-only", action="store_true", help="leave GitHub branches out")
     ap.add_argument("--summary", action="store_true",
                     help="print only `N removable, M dead — …` (nothing when both are 0); "
                          "the bootstrap-worktree nudge")
@@ -326,17 +418,20 @@ def main(argv: list[str] | None = None) -> int:
         if line:
             print(line)
         return 0
+    remote = [] if args.local_only else survey_remote(primary, time.time())
     before = disk_free(primary)
     print(report(rows, primary))
+    if remote:
+        print(report_remote(remote))
     if note := unreadable_note(sessions):
         print(note)
     if args.remove:
         print()
-        for line in remove(rows, primary):
+        for line in remove(rows, primary) + remove_remote(remote, primary):
             print(line)
         print(f"\ndisk: {before} → {disk_free(primary)}")
     else:
-        n = sum(b in (SAFE, DEAD) for _, b, _ in rows)
+        n = sum(b in (SAFE, DEAD) for _, b, _ in rows) + sum(b == GONE for _, b, _ in remote)
         print(f"\ndisk: {before}.  {n} removable — rerun with --remove." if n else f"\ndisk: {before}")
     return 0
 
