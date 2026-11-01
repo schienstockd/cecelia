@@ -44,7 +44,7 @@ function onInput(e: Event) {
 
 <template>
   <div class="chip-input cc-row-tight">
-    <span v-for="(c, i) in modelValue" :key="c" class="ci-chip cc-fs-2xs">
+    <span v-for="(c, i) in modelValue" :key="c" class="cc-tag ci-chip cc-fs-2xs">
       {{ c }}
       <button type="button" class="cc-btn cc-btn-bare ci-x cc-muted cc-fs-3xs" :aria-label="`Remove ${c}`"
               v-tooltip.bottom="'Remove'" @click="remove(i)"><i class="pi pi-times" /></button>
@@ -58,9 +58,7 @@ function onInput(e: Event) {
 </template>
 
 <style scoped>
-.ci-chip { display: inline-flex; align-items: center; gap: 0.1rem; background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border); border-radius: var(--cc-radius-pill); padding: 0 0.15rem 0 0.4rem;
-  color: var(--cc-text); }
+.ci-chip { gap: 0.1rem; padding-right: 0.15rem; color: var(--cc-text); }
 .ci-x { padding: 0 0.15rem; }
 .ci-x:hover { color: var(--cc-text); }
 .ci-box { flex: 1; min-width: 6rem; }

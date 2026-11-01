@@ -90,11 +90,12 @@ const columns: SelectionColumn[] = [
   { key: 'nObjects', label: 'Objects', sortable: true, width: 56 },
   { key: 'frames', label: 't', sortKey: 't0', sortable: true, width: 56 },
   { key: 'status', label: 'Status', sortable: true, width: 70 },
+  { key: 'label', label: 'Label', sortable: true, width: 80, ellipsis: true },
   { key: 'claude', label: 'Claude', ellipsis: true },
 ]
 const tableRows = computed(() => rows.value.map(r => ({
   id: r.id, rank: r.rank, site: r.site ?? r.rank, t0: r.t0, status: r.status,
-  nObjects: r.nObjects, frames: `${r.t0}–${r.t1}`,
+  nObjects: r.nObjects, frames: `${r.t0}–${r.t1}`, label: r.review?.userLabel ?? '',
   claude: claudeLabelText(r.review) + (disagrees(r.review) ? ' ≠' : ''),
 })))
 const rowTooltip = (row: Record<string, unknown>) => {
@@ -203,7 +204,12 @@ defineExpose({ step, onKey })
       <div class="roi-list">
         <SelectionTable :columns="columns" :rows="tableRows" id-key="id" :model-value="activeId"
                         density="compact" sticky-header column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
-                        @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }" />
+                        @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }">
+          <!-- the label as a pill, like a movie's tags -->
+          <template #cell-label="{ row }">
+            <span v-if="row.label" class="cc-tag cc-fs-2xs">{{ row.label }}</span>
+          </template>
+        </SelectionTable>
       </div>
 
     </template>

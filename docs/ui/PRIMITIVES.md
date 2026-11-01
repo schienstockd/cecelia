@@ -69,6 +69,7 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Choosing an ICON for anything | `frontend/src/lib/iconLegend.ts` — find the meaning, use its glyph | a glyph that "looks right", or a second glyph for a meaning that already has one |
 | Naming the RESOURCE POOL a task runs / queues in | `.cc-pool-tag` in `style.css` (`<i class="pi pi-server" />` + name; the site keeps only its colour/spacing) | an inline `pi-server` + `font-size` style per site |
 | Badge / pill / tag naming WHICH MODULE OR TASK something came from | `.cc-module-tag` (+ `-mod` / `-fun` parts) in `style.css`, tinted by `utils/taskModule.ts` → `moduleTagStyle(module)` | a scoped `.x-badge`/`.x-pill`/`.x-tag` rule, or `moduleColor(m) + '33'` inline (guarded by a detector in `taskModule.test.ts`) |
+| A user's own WORD on a row — a movie's tag, an ROI's label, a typed chip | `.cc-tag` in `style.css` (+ `cc-fs-2xs`); `ChipInput` builds its removable chip on it | a scoped `.x-tag { background; border; border-radius: pill }` — Movies, ChipInput and the ROI list each had one |
 | Making an accent colour readable as text on its own tint | `utils/colour.ts` → `readableOn(colour, bg)` (+ `composite`/`contrastRatio`/`luminance`, WCAG 2.1) | swapping the accent for `--cc-text` (throws the identity away), or eyeballing a lighter hex |
 
 **Semantic role utilities** (global classes in `style.css` — *compose* them, add only layout in scoped CSS). These generalise recurring text/surface **scenarios** rather than a component per widget:

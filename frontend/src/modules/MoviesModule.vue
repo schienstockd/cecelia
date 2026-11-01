@@ -679,7 +679,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                        @blur="saveTags(row)" />
                 <span v-else class="mov-tags" @click.stop="beginTags(row)"
                       v-tooltip.right="'Click to edit tags'">
-                  <span v-for="t in row.tags" :key="t" class="mov-tag cc-fs-2xs">{{ t }}</span>
+                  <span v-for="t in row.tags" :key="t" class="cc-tag cc-fs-2xs">{{ t }}</span>
                   <span v-if="!row.tags.length" class="cc-muted cc-fs-xs">+ tag</span>
                 </span>
               </template>
@@ -746,8 +746,6 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
 .mov-name-edit { flex: 1 1 12rem; max-width: 24rem; }
 .mov-tag-edit { flex: 1 1 10rem; max-width: 20rem; }
 .mov-tags { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; cursor: text; }
-.mov-tag { background: var(--cc-surface-2); border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-pill); padding: 0 0.4rem; color: var(--cc-text-dim); }
 /* Star — dim until hovered when unset, so a column of unset stars doesn't compete with the row text.
    Same treatment as ImageTable's per-image star. */
 .mov-star { opacity: .25; }

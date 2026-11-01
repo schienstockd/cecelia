@@ -651,6 +651,13 @@ body {
    only thing in the pill takes NEITHER part and puts its text in the tag directly. Wearing `-fun`
    there costs 0.85 of the label's contrast (4.55:1 -> 3.70:1), silently undoing the lift
    `moduleTagStyle` applies. Guarded in `lib/qc.test.ts`. */
+.cc-tag {
+  /* A user's own word on a row — a movie's tag, an ROI's label, a chip being typed (ChipInput). The
+     one pill for it; a module/task name is `.cc-module-tag`, a pool `.cc-pool-tag`. */
+  display: inline-flex; align-items: center; white-space: nowrap;
+  background: var(--cc-surface-2); border: 1px solid var(--cc-border);
+  border-radius: var(--cc-radius-pill); padding: 0 0.4rem; color: var(--cc-text-dim);
+}
 .cc-module-tag {
   display: inline-flex; align-items: baseline; gap: 0.3rem; flex-shrink: 0;
   padding: 0.05rem 0.4rem; border-radius: var(--cc-radius-xs);
