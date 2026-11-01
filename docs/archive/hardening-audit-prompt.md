@@ -159,5 +159,9 @@ Added on review (2026-11-02), before the audit was run.
    pass and the exact steps for each; do not claim a pass you could not watch.
 7. **Run it split, not as one session.** One agent per area under *What to look at*, then one pass
    that merges scores into the matrix, then the enforcement design last, reading the merged result.
-8. **Second-case data.** Test set `jFWePN` (3 tracked live images). Ask the maintainer for a
-   multi-group project and an old crop before starting; do not substitute the demo data.
+8. **Second-case data.** There is one user so far, on intravital data. Use the maintainer's current
+   projects and test set `jFWePN` (3 tracked live images), and record which data each score rests
+   on. A score earned only on intravital data from one lab is not general; say so. For each module,
+   name the small self-contained test image that would catch a wrong result and how it differs from
+   intravital data. These feed a test-set section in the in-app call for datasets.
+9. **The 0.3.0 gate is an ambition, not a release condition.** Write it as what "solid" would mean.
