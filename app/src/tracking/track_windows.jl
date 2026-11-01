@@ -96,3 +96,17 @@ function track_window_measures(tracks_with_labels, window::Real, frame_interval:
     tracks[WINDOW_TRACK_COLS[1]] = tsp; tracks[WINDOW_TRACK_COLS[2]] = tst
     (cells = cells, tracks = tracks)
 end
+
+"""
+    window_coverage(win) -> (cells, tracks)
+
+Fraction of cells and of tracks with a finite windowed value in a [`track_window_measures`] result —
+`NaN` for both when windows are off (nothing to cover). A window longer than most tracks leaves the
+windowed measures describing only the long-lived cells; the cell fraction is banked as QC
+(`windowCellCoverage`).
+"""
+function window_coverage(win)
+    isempty(win.cells) && return (cells = NaN, tracks = NaN)
+    frac(v) = isempty(v) ? NaN : count(isfinite, v) / length(v)
+    (cells = frac(win.cells[WINDOW_CELL_COLS[1]]), tracks = frac(win.tracks[WINDOW_TRACK_COLS[1]]))
+end

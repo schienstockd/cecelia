@@ -163,10 +163,11 @@ export track_step_scale, analyze_cell_pairs, find_duplicate_tracks, track_pair_d
 export track_path_dicts
 # ── Track diagnostics (celltrackR QC battery) ─────────────────────────────────
 export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persistence_lag,
-       msd_furth_fit, track_duration_bias, track_order_index
+       msd_furth_fit, track_duration_bias, track_order_index, order_chance
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
-export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS
+export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS,
+       window_coverage
 export approach_columns, step_approach, approach_index, approach_measures,
        contact_col_regex, approach_cell_col, approach_track_col, is_stale_track_measure,
        drop_stale_approach!

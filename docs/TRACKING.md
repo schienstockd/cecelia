@@ -323,7 +323,9 @@ number of frames — 5 min on 1-min frames reaches ±2 frames (a 4-min span) whi
 full 5 — which would break the cross-frame-rate comparison the window exists for. A window ending at its
 cell (celltrackR's `increment.cell.id`, as `live.cell.speed`) is exact for any whole number of frames.
 The task snaps the asked window to whole frames (`window_span`), logs a `[WARN]` when that shortens it
-("5 min" on 2-min frames measures 4), and banks both in QC (`windowMinutes`, `windowSpanMinutes`).
+("5 min" on 2-min frames measures 4), and banks both in QC (`windowMinutes`, `windowSpanMinutes`), with the share of cells that got a value
+(`windowCellCoverage`) — low coverage means the window outlasts most tracks and the windowed measures
+describe only the long-lived cells.
 Re-running with the window off drops the windowed columns. One window per run (a second time scale is
 a second segmentation run).
 - `obs` = lineage carried over per track (`track_root`, `track_parent`, `track_state`,
@@ -681,9 +683,9 @@ the arithmetic (see below).
 | Volume edge | step angle vs distance to the lower z plane (`angleToPlane`/`distanceToPlane`), 3D only | unbiased 3D motion averages **32.7°** (Beltman 2009) at every distance; a sag ONLY near the edge is a tracking artefact |
 | Drift | Hotelling's T² on step displacement vectors (`hotellingsTest`) | a net field direction — stage drift *or* chemotaxis, the user decides |
 | Track pairs | angle vs distance between every pair of paths (`analyzeCellPairs`) | far-apart pairs average 90°; lower = the field moves together |
-| Fürth fit | `MSD = 2N·M·(τ − P(1 − e^(−τ/P))) + 2N·σ²` on the MSD curve (`msd_furth_fit`; Fürth 1920 + Michalet 2010 noise offset) | M (µm²/frame) and P (frames) don't depend on track length; σ (µm) is the detection-noise floor under every speed and angle. Field drift adds a ballistic term and inflates P — read P only when the drift finding is absent. P well above the 1/e lag usually means noise is scrambling step directions, which σ quantifies |
+| Fürth fit | `MSD = 2N·M·(τ − P(1 − e^(−τ/P))) + 2N·σ²` on the MSD curve (`msd_furth_fit`; Fürth 1920 + Michalet 2010 noise offset) | M (µm²/frame) and P (frames) don't depend on track length; σ (µm) is the detection-noise floor under every speed and angle. Field drift adds a ballistic term and inflates P — read P only when the drift finding is absent. P well above the 1/e lag usually means noise is scrambling step directions, which σ quantifies. P is only measured inside the fitted lags: below one frame it reads `<1 f` (unresolved; M and σ still fit), past the longest lag `ok = false` and M is dropped too (the two trade off) — neither reaches the cohort |
 | Track length | Spearman ρ of per-track speed vs duration (`track_duration_bias`) | fast cells leave the volume sooner; \|ρ\| ≥ 0.3 over ≥ 30 tracks = speed partly measures track length (`tracking.duration_bias`) |
-| Alignment | order index φ = \|Σv\|/Σ\|v\| per frame (`track_order_index`; Vicsek & Zafeiris 2012) | 1 = all cells one way; a step up over time = a field-wide event. Random directions give ≈ 1/√n |
+| Alignment | order index φ = \|Σv\|/Σ\|v\| per frame (`track_order_index`; Vicsek & Zafeiris 2012) | 1 = all cells one way; a step up over time = a field-wide event. Read against the dashed chance line (`order_chance`, from each frame's own step lengths), not 0: with three steps a frame reaches ≈ 0.5 by chance |
 
 **Three things that are easy to get wrong, and are pinned by the goldens:**
 

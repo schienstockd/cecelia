@@ -196,7 +196,9 @@ async function render() {
   const { ink: fg, ground: bg } = plotTheme(dark)
   const facet = plan.value.facet
   const grid = facetGrid(facet ? groups.value.length : 1)
-  const ML = 54, MB = 36, MT = 10, MR = 12
+  // MT leaves room for the y-axis label, which Plot draws ABOVE the top tick — at 10 it rode up
+  // into the findings row
+  const ML = 54, MB = 36, MT = 22, MR = 12
   const box = facetBox({ cols: grid.cols, rows: grid.rows,
                          w: Math.max(220, host.value.clientWidth || 360),
                          h: Math.max(160, host.value.clientHeight || 240),
@@ -252,8 +254,13 @@ async function render() {
           { x: 'duration', y: 'speed', z: 'g', stroke: '#e8a33d', strokeWidth: 1.5, ...fch })))
   } else if (m === 'order') {
     const pts = orderRows(d)
+    // amber = the expectation: the φ random directions reach with this frame's steps. Few steps read
+    // high by chance, so alignment is the gap ABOVE this line, not the height above 0.
+    const chance = pts.filter(p => p.chance !== null)
+    if (chance.length) marks.push(Plot.line(chance, { x: 't', y: 'chance', z: 'g', stroke: '#e8a33d',
+                                                      strokeDasharray: '4,3', strokeWidth: 1, ...fch }))
     marks.push(Plot.line(pts, { x: 't', y: 'phi', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
-    marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n' } }))
+    marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n', chance: 'chance' } }))
     yOpts = { ...yOpts, domain: [0, 1] }
   } else {
     const cloud = diagCloudRows(d, m)
@@ -332,19 +339,21 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 <template>
   <div class="tdv">
     <div class="tdv-ctrl cc-panel-controls">
+      <!-- wraps: on a narrow panel the picker drops below the six modes instead of overflowing -->
       <div class="cc-row">
         <ChipSelect v-if="modeOptions.length" :options="modeOptions" :model-value="mode ?? ''"
-                    variant="segmented" aria-label="Diagnostic"
+                    variant="segmented" aria-label="Diagnostic" class="tdv-modes"
                     v-tooltip.top="mode ? modeHint(mode) : 'Which diagnostic to show'"
                     @update:model-value="v => (state.mode = v as string)" />
-        <span class="tdv-spacer" />
-        <PopFamilySelect :options="familyOptions" v-model="popType" />
-        <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Re-run the checks'"
-                :disabled="loading" @click="load">
-          <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
-        </button>
+        <!-- one unit, so a wrap moves the picker and its refresh together -->
+        <span class="cc-row-group tdv-pick">
+          <PopFamilySelect :options="familyOptions" v-model="popType" />
+          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.left="'Re-run the checks'"
+                  :disabled="loading" @click="load">
+            <i class="pi pi-refresh" :class="{ 'pi-spin': loading }" />
+          </button>
+        </span>
       </div>
-      <span v-if="summary" class="cc-muted cc-fs-xs">{{ summary }}</span>
     </div>
 
     <p v-if="error" class="cc-muted-warn">{{ error }}</p>
@@ -359,6 +368,8 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
     </div>
 
     <div ref="host" class="tdv-host" />
+    <!-- below the plot, in flow: in the overlaid controls it covered the top of the y-axis -->
+    <span v-if="summary" class="cc-muted cc-fs-xs tdv-summary">{{ summary }}</span>
     <PlotSpinner v-if="loading" label="Running the checks" />
     <span v-if="capNote || dropped" class="tdv-note cc-muted cc-fs-2xs">
       {{ [capNote, dropped ? `${dropped} more group${dropped === 1 ? '' : 's'} not shown` : ''].filter(Boolean).join(' · ') }}
@@ -377,7 +388,9 @@ defineExpose({ exportFormats, exportAs, exportImage, exportSvg })
 /* position: relative so the overlaid .tdv-ctrl (.cc-panel-controls) anchors to the plot box */
 .tdv { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .tdv-ctrl { display: flex; flex-direction: column; gap: 0.3rem; padding: 4px 6px; }
-.tdv-spacer { flex: 1; }
+.tdv-pick { margin-left: auto; }
+.tdv-modes { max-width: 100%; overflow-x: auto; }
+.tdv-summary { padding: 2px 6px; }
 /* .tdv-findings → .cc-row for the flex row; only the wrap and inset are its own */
 .tdv-findings { flex-wrap: wrap; padding: 0 6px; }
 .tdv-finding { white-space: nowrap; }
