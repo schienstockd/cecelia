@@ -41,12 +41,14 @@ These change results when old work is re-run:
 - Motility: persistence, order index, windowed measures, approach to a target (#1862–#1875).
 - Behaviour axes for track clusters (#1821, #1823).
 - Colour masks by population or track cluster (#1756, #1792, #1819).
+- Viewer populations: all on, all off, one at a time (#1751).
 - Chains can pause for a manual step (#1847).
 - In-app map and guides (#1850).
 - Claude can propose gates; it never edits yours (#1852, #1856, #1869).
 - Claude login inside Cecelia (#1717, #1718, #1840); Kiwi and Claude Code modes (#1860, #1864).
+- Claude's writes record which model made them (#1826).
 - `pixi run chat` (#1835–#1839).
-- HPC on NCI Gadi (#1786, #1796, #1800).
+- HPC on NCI Gadi; live job logs; out-of-date environment warning (#1758, #1786, #1796, #1800).
 - Share a project when creating it (#1716).
 - Seam QC for tiled segmentation (#1832).
 
