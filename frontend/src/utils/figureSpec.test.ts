@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { figureSpecFromView, niceFigureBarUm, framesAsRange, applyFigureEdits, figureFrames, figureName, figureTipText, figureViewState } from './figureSpec'
+import { figureSpecFromView, niceFigureBarUm, framesAsRange, applyFigureEdits, figureFrames, figureName, figureTipText, figureViewState, splitRows, isSplit } from './figureSpec'
 import type { ViewerViewState } from './viewer/viewState'
 
 const vs = (over: Partial<ViewerViewState> = {}): ViewerViewState => ({
@@ -129,5 +129,28 @@ describe('figureViewState', () => {
     expect(r.dims.zRange).toEqual([8, 10])
     expect(r.layers['mem-TOM']).toEqual({ visible: true, colormap: '#ff00ff', contrast_limits: [0, 68] })
     expect(figureViewState({ rows: [] })).toBeNull()
+  })
+})
+
+describe('split channels', () => {
+  const merge = [{ c: 'mem-TOM', colour: '#ff00ff', name: 'tdTom' }, { c: 'CD169-Kat', colour: '#00ff00' }]
+  it('adds one grey row per channel under the merge, keeping legend names', () => {
+    const rows = splitRows(merge, true)
+    expect(rows.map(r => r.channels.map(c => `${c.c}:${c.colour}`))).toEqual([
+      ['mem-TOM:#ff00ff', 'CD169-Kat:#00ff00'], ['mem-TOM:#ffffff'], ['CD169-Kat:#ffffff']])
+    expect(rows[1].channels[0].name).toBe('tdTom')
+    expect(splitRows(merge, false)).toHaveLength(1)
+    expect(splitRows([merge[0]], true)).toHaveLength(1)        // one channel: nothing to split
+  })
+  it('recognises a split figure, and the editor toggles it', () => {
+    expect(isSplit(splitRows(merge, true))).toBe(true)
+    expect(isSplit(splitRows(merge, false))).toBe(false)
+    const spec = { rows: splitRows(merge, false) }
+    expect((applyFigureEdits(spec, { split: true }).rows as unknown[]).length).toBe(3)
+    expect((applyFigureEdits(applyFigureEdits(spec, { split: true }), { split: false }).rows as unknown[]).length).toBe(1)
+  })
+  it('the view can save a split figure', () => {
+    const r = figureSpecFromView(vs(), NAMES, { split: true })
+    expect('spec' in r && r.spec.rows.length).toBe(3)
   })
 })

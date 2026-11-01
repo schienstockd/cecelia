@@ -357,6 +357,7 @@ const _GET_ROUTES = Dict{String, Function}(
     "/api/storage/summary" => (req, body_bytes) -> (api_storage_summary(req)),
     "/api/movies" => (req, body_bytes) -> (api_movies_list(req)),
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_get(req)),
+    "/api/figures/style" => (req, body_bytes) -> (api_figures_style_get(req)),
     # Kiwi profile roster + terminal one-liner (LOGIN_CREDENTIAL_ISOLATION_PLAN P3 + P6).
     "/api/kiwi/profiles"          => (req, body_bytes) -> (api_kiwi_profiles_list(req)),
     "/api/kiwi/terminal/command"  => (req, body_bytes) -> (api_kiwi_terminal_command(req)),
@@ -471,6 +472,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/movies/delete" => (req, body_bytes) -> (api_movies_delete(body_bytes)),
     "/api/figures/render" => (req, body_bytes) -> (api_figures_render(body_bytes)),
     "/api/figures/delete-own" => (req, body_bytes) -> (api_figures_delete_own(body_bytes)),
+    "/api/figures/style" => (req, body_bytes) -> (api_figures_style_set(body_bytes)),
     "/api/notebooks/duplicate" => (req, body_bytes) -> (api_notebooks_duplicate(body_bytes)),
     "/api/notebooks/revise" => (req, body_bytes) -> (api_notebooks_revise(body_bytes)),
     "/api/notebooks/snapshot" => (req, body_bytes) -> (api_notebooks_snapshot(body_bytes)),

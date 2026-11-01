@@ -59,3 +59,42 @@ end
     rm(zp; recursive = true)
     @test figure_stale_reason(img, src) == "image version \"denoised\" is gone"
 end
+
+@testset "project figure style: validated, merged under the spec, and a change marks figures stale" begin
+    schema = figure_style_schema()
+    @test schema[:defaults][:fontPt] == 7 && schema[:defaults][:timeFormat] == "clock"   # the viewer's
+    style, errs = clean_figure_style(Dict("fontPt" => 8, "timeFormat" => "min", "tileMm" => nothing))
+    @test isempty(errs) && style == Dict("fontPt" => 8, "timeFormat" => "min", "tileMm" => nothing)
+    _, errs = clean_figure_style(Dict("fontPt" => 99, "timeFormat" => "hours", "colour" => 1, "gapMm" => "x"))
+    @test length(errs) == 4 && any(occursin("fontPt: 4", e) for e in errs) &&
+          any(occursin("timeFormat: one of clock, min", e) for e in errs) &&
+          any(occursin("colour: not a style setting", e) for e in errs)
+
+    td = mktempdir()
+    img = CciaImage(uid = "FIG3", name = "fig", dir = joinpath(td, "1", "FIG3"))
+    mkpath(img._dir)
+    img.filepath = Dict{String,Any}("default" => "a.zarr", "_active" => "default")
+    mkpath(joinpath(img_zero_dir(img), "a.zarr"))
+    pdir = img_project_dir(img)
+    @test project_figure_style(pdir) == Dict{String,Any}()                      # none set: the house style
+    @test !isempty(set_project_figure_style!(pdir, Dict("fontPt" => 99)))      # rejected, nothing written
+    @test project_figure_style(pdir) == Dict{String,Any}()
+    @test isempty(set_project_figure_style!(pdir, Dict("fontPt" => 8)))
+    @test project_figure_style(pdir) == Dict("fontPt" => 8)
+
+    # the project's style under the spec's own: the spec wins key by key
+    p = figure_params(img, Dict{String,Any}("rows" => [], "style" => Dict("timeFormat" => "min")))
+    @test p["style"] == Dict("fontPt" => 8, "timeFormat" => "min")
+
+    # a figure drawn in the project style goes stale when the project style changes, not before —
+    # read back through JSON like the registry does
+    src = JSON3.read(JSON3.write(figure_source(img)))
+    srcd = Dict{String,Any}(String(k) => v for (k, v) in src)
+    @test figure_stale_reason(img, srcd) === nothing
+    set_project_figure_style!(pdir, Dict("fontPt" => 9))
+    @test figure_stale_reason(img, srcd) == "the project's figure style changed since"
+    # …unless the figure fixes that key itself
+    own = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(JSON3.write(figure_source(img; spec_style = Dict("fontPt" => 6)))))
+    set_project_figure_style!(pdir, Dict("fontPt" => 10))
+    @test figure_stale_reason(img, own; spec_style = Dict("fontPt" => 6)) === nothing
+end

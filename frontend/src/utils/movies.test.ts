@@ -399,6 +399,9 @@ describe('sourceOf', () => {
       .toEqual({ imageUid: 'I', valueName: 'v', viewState: { k: 1 } })
     expect(sourceOf({ configKind: 'look', config: { imageUid: 'I', look: { channels: {} } } }, view))
       .toEqual({ imageUid: 'I', valueName: undefined, viewState: null })
+    // a viewer recording that banked its snapshot opens at it
+    expect(sourceOf({ configKind: 'look', config: { imageUid: 'I', viewState: { cam: 1 } } }, view)?.viewState)
+      .toEqual({ cam: 1 })
     expect(sourceOf({ imageUid: '' }, view)).toBeNull()
   })
 })

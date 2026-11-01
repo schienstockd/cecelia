@@ -451,7 +451,7 @@ function handle_movie_record(ws, data)
         compareLayout = layout,
         compareContrast = String(get(data, :compareContrast, "")),
         showTimestamp = show_ts, showScaleBar = show_sb,
-        look = get(data, :look, nothing), keyframes = keyframes)
+        look = get(data, :look, nothing), keyframes = keyframes, viewState = view_state)
     # Route decision: everything runs through the offline renderer — plain timelapse, compare grids,
     # and keyframe animations.
     n_vns = max(1, length(value_names))

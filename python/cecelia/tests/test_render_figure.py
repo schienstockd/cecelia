@@ -35,10 +35,16 @@ class TestFigureSpec(unittest.TestCase):
                     rf.validate(_spec(**kw))
                 self.assertIn(needle, str(e.exception))
 
-    def test_clock_label_matches_movie_format(self):
-        self.assertEqual(rf.clock_label(50, 15), '0:12:30')
-        self.assertEqual(rf.clock_label(110, 900), '27:30:00')
-        self.assertEqual(rf.clock_label(7, None), 't7')
+    def test_elapsed_label(self):
+        # the viewer's clock by default; minutes (hours from two hours) as a style option
+        self.assertEqual(rf.elapsed_label(50, 15), '0:12:30')
+        self.assertEqual(rf.STYLE['timeFormat'], 'clock')
+        self.assertEqual(rf.elapsed_label(50, 15, 'min'), '12.5 min')
+        self.assertEqual(rf.elapsed_label(64, 15, 'min'), '16 min')
+        self.assertEqual(rf.elapsed_label(110, 900, 'min'), '27.5 h')
+        self.assertEqual(rf.elapsed_label(7, None), 't7')
+        with self.assertRaises(rf.FigureSpecError):     # an unknown format is named, not drawn as minutes
+            rf.elapsed_label(50, 15, 'hours')
 
     def test_zstack_columns_label_offset(self):
         s = rf.validate(_spec(kind='zstack', t=3, planes=[4, 5, 6], z=5, zStepUm=2))

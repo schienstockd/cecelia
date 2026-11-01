@@ -272,8 +272,11 @@ end
         compareLayout = "grid", compareContrast = "shared",
         showTimestamp = false, showScaleBar = true,
         look = Dict{String,Any}("colourBy" => "cluster"),
-        keyframes = Any[Dict{String,Any}("t" => 1.0)])
+        keyframes = Any[Dict{String,Any}("t" => 1.0)],
+        viewState = Dict{String,Any}("camera" => Dict("zoom" => 4.0)))
     round = JSON3.read(JSON3.write(rec))
+    # the snapshot "open at source" restores rides along whole
+    @test round[:viewState][:camera][:zoom] == 4.0
     # Every declared field survives a JSON round-trip under the SAME wire name — the frontend restore
     # path reads by these exact keys (movieRestore.ts).
     for f in fieldnames(MovieRecordConfig)

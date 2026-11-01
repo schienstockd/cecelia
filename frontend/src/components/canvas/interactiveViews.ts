@@ -4,6 +4,7 @@ import type { PopTypeOption, PopTypeSpecLike } from '../../plots/popTypes'
 import ClusterMapView from '../plots/ClusterMapView.vue'
 import GatingStrategyView from '../plots/GatingStrategyView.vue'
 import ImageStripView from '../plots/ImageStripView.vue'
+import FigureView from '../plots/FigureView.vue'
 import FlowMetricsView from '../plots/FlowMetricsView.vue'
 import FlowTrainingView from '../plots/FlowTrainingView.vue'
 import FlowProbabilityView from '../plots/FlowProbabilityView.vue'
@@ -91,6 +92,9 @@ export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   // reads `vis.fontSize` from it.
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true, rail: 'none', pluginPage: true },
   filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true, boardGroup: 'image', rail: 'none', pluginPage: true },
+  // A rendered figure (docs/todo/FIGURES_PLAN.md), picked by name and shown as made — the paper-quality
+  // counterpart of `filmstrip`'s viewer screenshots. Read-only; the Movies & figures page edits it.
+  figure: { label: 'Figure', component: FigureView, analysisBoard: true, boardGroup: 'image', rail: 'none' },
   // What the UNet reads: every flow metric plane, so the user can pick which to train on. Distinct
   // from `filmstrip`, which is a viewer SCREENSHOT montage — these planes are computed, are not
   // viewer layers, and have no reason to become any.

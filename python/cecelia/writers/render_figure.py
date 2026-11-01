@@ -32,7 +32,9 @@ font stack.
     ``style``           : overrides of ``STYLE`` (dpi, tileMm — default auto by frame count, gapMm, fontPt, scaleFontPt, barMm,
                           scaleBarOn ``first`` (default) | ``last`` | ``all``)
 """
+import json
 import os
+import pathlib
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -60,13 +62,23 @@ def _hex(colour):
     return [int(s[i:i + 2], 16) / 255.0 for i in (0, 2, 4)]
 
 
-def clock_label(t, inc_s):
-    """``h:mm:ss`` elapsed at timepoint ``t`` — the movie timestamp's format (``stillOverlay.ts``
-    ``elapsedLabel(..., 'clock')``), so a figure and a movie of the same frames agree."""
+TIME_FORMATS = ('clock', 'min')
+
+
+def elapsed_label(t, inc_s, fmt='clock'):
+    """Elapsed time at timepoint ``t`` as a column title. ``clock`` (default): ``h:mm:ss``, the viewer's
+    and the movies' timestamp (``stillOverlay.ts`` ``elapsedLabel(..., 'clock')``); ``min``: ``12.5 min``,
+    switching to ``2.5 h`` from two hours. No interval → ``t<n>``."""
+    if fmt not in TIME_FORMATS:
+        raise FigureSpecError(f'style.timeFormat {fmt!r}: expected one of {", ".join(TIME_FORMATS)}')
     if not inc_s:
         return f't{t}'
-    secs = int(round(t * float(inc_s)))
-    return f'{secs // 3600}:{(secs % 3600) // 60:02d}:{secs % 60:02d}'
+    secs = t * float(inc_s)
+    if fmt == 'clock':
+        s = int(round(secs))
+        return f'{s // 3600}:{(s % 3600) // 60:02d}:{s % 60:02d}'
+    mins = secs / 60
+    return f'{round(mins / 60, 1):g} h' if mins >= 120 else f'{round(mins, 1):g} min'
 
 
 def validate(spec):
@@ -108,7 +120,8 @@ def _columns(s):
     zh = int(s['zHalf'])
     if s['kind'] == 'sequence':
         z = int(s['z'])
-        return [(int(t), z - zh, z + zh, clock_label(int(t), s.get('timeIncrementS'))) for t in s['frames']]
+        fmt = (s.get('style') or {}).get('timeFormat') or STYLE['timeFormat']
+        return [(int(t), z - zh, z + zh, elapsed_label(int(t), s.get('timeIncrementS'), fmt)) for t in s['frames']]
     step = s.get('zStepUm')
     return [(int(s['t']), int(p) - zh, int(p) + zh,
              f'z{p}' + (f' ({(int(p) - int(s["z"])) * step:+g} µm)' if step else '')) for p in s['planes']]
@@ -175,12 +188,12 @@ def _states(s, row, cols, ranges, nc, canvas):
 #: a white page with thin white gaps, plain black column titles above, a black legend band below with
 #: each channel named in its own colour, a small plain scale bar. Lengths in mm / pt so text is the
 #: same size in every figure whatever the tile size.
-STYLE = {'dpi': 300, 'tileMm': None, 'gapMm': 0.4, 'fontPt': 7.0, 'scaleFontPt': 6.0,
-         'barMm': 0.35, 'scaleBarOn': 'first',
-         # `tileMm: None` = auto: the strip fills a page width (`figureWidthMm`), each tile within
-         # [tileMmMin, tileMmMax] — 9 frames get 20 mm, a single still 80 mm. A fixed 20 mm made a still
-         # a 236 px tile whose 7 pt text was an eighth of its height.
-         'figureWidthMm': 180.0, 'tileMmMin': 20.0, 'tileMmMax': 80.0}
+#: ONE source with the style editor and the per-project override: ``frontend/src/lib/figureStyle.json``
+#: (``tileMm: None`` = auto — the strip fills ``figureWidthMm``, each tile within [tileMmMin, tileMmMax]:
+#: 9 frames get 20 mm, a still 80 mm; a fixed 20 mm made a still's 7 pt text an eighth of its height).
+STYLE_FILE = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "figureStyle.json"
+with open(STYLE_FILE, encoding="utf-8") as _f:
+    STYLE = json.load(_f)["defaults"]
 _NAMED = {'#ff00ff': 'magenta', '#00ff00': 'green', '#ffffff': 'grey', '#00ffff': 'cyan',
           '#ff0000': 'red', '#0000ff': 'blue', '#ffff00': 'yellow'}
 

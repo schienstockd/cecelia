@@ -27,7 +27,8 @@ export interface FigureSpec {
 
 /** Why a view can't become a figure, or the spec. Figures are 2D: a 3D view has no single crop. */
 export function figureSpecFromView(vs: ViewerViewState | null | undefined, channelNames: string[],
-                                   opts: { valueName?: string; scaleBarUm?: number; frames?: number[] } = {}):
+                                   opts: { valueName?: string; scaleBarUm?: number; frames?: number[];
+                                           split?: boolean } = {}):
   { spec: FigureSpec } | { error: string } {
   if (!vs || !vs.canvas?.height) return { error: 'Open the image in the viewer first' }
   if (vs.dims.ndisplay === 3) return { error: 'Figures are 2D — switch the viewer to 2D' }
@@ -53,7 +54,7 @@ export function figureSpecFromView(vs: ViewerViewState | null | undefined, chann
     kind: 'sequence',
     center: [Math.round(vs.camera.center[1]), Math.round(vs.camera.center[2])],
     sizePx, z: Math.round((lo + hi) / 2), zHalf: Math.max(0, Math.round((hi - lo) / 2)),
-    frames: opts.frames?.length ? opts.frames : [t], rows: [{ channels }], display: { ranges },
+    frames: opts.frames?.length ? opts.frames : [t], rows: splitRows(channels, !!opts.split), display: { ranges },
     view: vs,
   }
   if (opts.valueName) spec.valueName = opts.valueName
@@ -106,7 +107,28 @@ export function framesAsRange(frames: number[]): { lo: number; hi: number; every
   return { lo, hi, exact, every: auto.every === step && auto.frames.length === f.length ? null : step }
 }
 
+type Row = { channels: FigureChannel[] }
+
+/** The rows for the merge's channels: the merge alone, or — split — the merge then one row per channel
+ *  in grey (the paper convention: a channel alone reads by brightness, not hue). */
+export function splitRows(merge: FigureChannel[], split: boolean): Row[] {
+  const rows: Row[] = [{ channels: merge.map(c => ({ ...c })) }]
+  if (split && merge.length > 1) {
+    for (const c of merge) rows.push({ channels: [{ ...c, colour: '#ffffff' }] })
+  }
+  return rows
+}
+
+/** Is this a split figure — the merge followed by one single-channel row per merged channel? */
+export function isSplit(rows: Row[] | undefined): boolean {
+  if (!rows || rows.length < 2) return false
+  const merged = rows[0].channels.map(c => String(c.c))
+  const singles = rows.slice(1).map(r => r.channels.length === 1 ? String(r.channels[0].c) : '')
+  return singles.length === merged.length && singles.every((c, i) => c === merged[i])
+}
+
 export interface FigureEdits {
+  split?: boolean                        // merge + one grey row per channel
   frames?: number[]
   names?: Record<string, string>         // channel (as the spec names it) → legend name; '' = the image's
   tileMm?: number
@@ -120,6 +142,10 @@ export function applyFigureEdits<T extends Record<string, unknown>>(spec: T, e: 
   // structuredClone refuses (DataCloneError).
   const s: Record<string, unknown> = JSON.parse(JSON.stringify(spec))
   if (e.frames) s.frames = e.frames
+  if (e.split !== undefined) {
+    const rows = (s.rows ?? []) as Row[]
+    if (rows.length) s.rows = splitRows(rows[0].channels, e.split)
+  }
   if (e.names) {
     const rows = (s.rows ?? []) as { channels: { c: string | number; name?: string }[] }[]
     for (const row of rows) for (const ch of row.channels) {

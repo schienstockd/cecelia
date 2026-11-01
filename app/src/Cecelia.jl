@@ -480,7 +480,7 @@ export ClaudeAuth, claude_auth_status, claude_auth_logout!,
 export purge_claude_conversations!, purge_claude_conversations_wanted, claude_profile_in_use
 export profile_settings_path, read_profile_settings, write_profile_settings!, patch_profile_settings!
 export read_profile_recents, touch_profile_recent!, overlay_profile_recents!, profile_names, record_profile_rename!
-export render_figure, figure_params, figure_source, figure_stale_reason   # figures.jl — FIGURES_PLAN
+export render_figure, figure_params, figure_source, figure_stale_reason, figure_style_schema, project_figure_style, set_project_figure_style!, clean_figure_style   # figures.jl — FIGURES_PLAN
 export REQUEST_VIA, REQUEST_CALLER, request_caller, author_stamp
 export HpcSite, HpcClass, HpcIdentity, HpcTestResult, HPC_SCHEDULERS, hpc_available, hpc_site,
        set_hpc_site!, hpc_identity, set_hpc_identity!, read_hpc_project_settings,
