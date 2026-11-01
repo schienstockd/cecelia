@@ -434,7 +434,7 @@ class FenceTest(_AutoFixture):
 
     def test_protected_paths(self):
         for p in (".github/workflows/ci.yml", ".githooks/commit-msg", ".claude/settings.json", "pixi.toml",
-                  "app/CLAUDE.md", "scripts/judge/auto_fix.py"):
+                  "app/CLAUDE.md", "scripts/judge/auto_fix.py", "scripts/judge/deps_fix.py"):
             self.assertTrue(self.af.protected(p), p)
         for p in ("scripts/judge/review.py", "app/src/a.jl", "app/CLAUDE.md.bak"):
             self.assertFalse(self.af.protected(p), p)

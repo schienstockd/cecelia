@@ -122,7 +122,7 @@ SECRET_RE = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]
 EXEC_SURFACE = (".git", ".githooks", ".claude", ".mcp.json")
 #: What an unattended PR may not touch (a `/` suffix: the directory; `CLAUDE.md`: at any depth).
 PROTECTED = (".github/", ".githooks/", ".claude/", ".mcp.json", "pixi.toml", "pixi.lock", "CLAUDE.md",
-             "scripts/judge/auto_fix.py", "python/cecelia/effectiveness/agent_sandbox.py")
+             "scripts/judge/auto_fix.py", "scripts/judge/deps_fix.py", "python/cecelia/effectiveness/agent_sandbox.py")
 
 
 def attribution_trailers(stamp: dict) -> list[str]:
@@ -607,8 +607,8 @@ def failed_logs(failed: _t.Sequence[dict], cwd: pathlib.Path, sh: _t.Callable) -
 
 
 def followup_message(subject: str, summary: str, pr: str, tags: _t.Sequence[str], recital: str,
-                     stamp: dict | None = None) -> str:
-    return "\n".join([subject[:72], "", summary.strip(), "", f"Unattended follow-up on {pr} (`judge-review --auto`).",
+                     stamp: dict | None = None, tool: str = "judge-review --auto") -> str:
+    return "\n".join([subject[:72], "", summary.strip(), "", f"Unattended follow-up on {pr} (`{tool}`).",
                       *([""] + list(tags) if tags else []), "", recital.strip(), "",
                       *attribution_trailers(stamp or {})]) + "\n"
 
@@ -676,6 +676,53 @@ def orphan_branch(record: dict, bugs: _t.Sequence[dict], branch: str, *, main: p
     return True
 
 
+class Job(_t.NamedTuple):
+    """What one session works, as `_work` needs it: everything that differs between a judge bug bundle
+    (`bug_job`) and a red dependency PR (`deps_fix.py`). The pipeline (fence, recital rounds, commit,
+    PR, CI rounds) is the same for both. `log(answer, pr, stopped=, tree=, stage=)` records the outcome
+    (`stopped`: why it stopped short of a green PR); `handback(trusted)` is the line that says where
+    the work went back to; `tool` is the command a follow-up commit names."""
+    brief: str
+    log: _t.Callable[..., None]
+    log_failed: _t.Callable[[str], None]
+    commit_message: _t.Callable[[dict, _t.Sequence[str], str, dict], str]
+    pr_body: _t.Callable[[dict, dict], str]
+    handback: _t.Callable[[bool], str]
+    on_green: _t.Callable[[dict, str], None] = lambda answer, pr: None
+    tool: str = "judge-review --auto"
+
+
+def sayer(out: _t.TextIO) -> _t.Callable[..., None]:
+    """A session's progress line: dim, or a red ✗ with `bad=True`."""
+    colour = out.isatty()
+
+    def say(msg: str, *, bad: bool = False) -> None:
+        mark = _col(VERMILLION, "✗", use_colour=colour) + " " if bad else "  "
+        print(f"  {mark}" + (msg if bad else _col(_DIM, msg, use_colour=colour)), file=out, flush=True)
+    return say
+
+
+def bug_job(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch: str, *,
+            path: pathlib.Path | None, auto_log: pathlib.Path | None) -> Job:
+    """A judge bundle as a `Job`: its outcomes go to `auto_fix.jsonl`, and back to the `[f]` queue."""
+    def handback(trusted: bool) -> str:
+        queued = ", ".join(b["id"] + " " + b["key"] for b in bugs)
+        return (f"back in your judge-review queue: {queued} · "
+                + (f"[f] there opens a session on the work in {tree.name}" if trusted else
+                   f"[f] there starts fresh; {tree.name} is left for you to inspect, not to work in"))
+
+    def on_green(answer: dict, pr: str) -> None:
+        for b in bugs:
+            if b["key"] in _fixed_keys(answer):
+                _rv.append_review("bug_work", record["date"], b["id"], "fix_session", note=f"auto PR {pr}", path=path)
+    return Job(brief=fix_brief(record, bugs, tree, branch),
+               log=lambda answer, pr, **kw: _log(record, bugs, answer, pr, auto_log, **kw),
+               log_failed=lambda why: _log_failed(record, bugs, why, auto_log),
+               commit_message=lambda answer, tags, recital, stamp: commit_message(record, bugs, answer, tags, recital, stamp),
+               pr_body=lambda answer, stamp: pr_body(record, bugs, answer, stamp),
+               handback=handback, on_green=on_green)
+
+
 def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: _t.TextIO,
              session: _t.Callable = default_session, sh: _t.Callable = default_sh,
              path: pathlib.Path | None = None, auto_log: pathlib.Path | None = None) -> float | None:
@@ -684,30 +731,34 @@ def work_one(record: dict, bugs: _t.Sequence[dict], *, main: pathlib.Path, out: 
     name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
     branch = name
     tree = main.parent / f"cecelia-{name}"
-    colour = out.isatty()
-
-    def say(msg: str, *, bad: bool = False) -> None:
-        mark = _col(VERMILLION, "✗", use_colour=colour) + " " if bad else "  "
-        print(f"  {mark}" + (msg if bad else _col(_DIM, msg, use_colour=colour)), file=out, flush=True)
+    say = sayer(out)
     if tree.exists() and adopt(record, bugs, tree, branch, main=main, say=say, sh=sh, auto_log=auto_log):
         return None
     if not tree.exists() and orphan_branch(record, bugs, branch, main=main, say=say, sh=sh, auto_log=auto_log):
         return None
+    return run_job(bug_job(record, bugs, tree, branch, path=path, auto_log=auto_log), tree, branch,
+                   main=main, out=out, say=say, session=session, sh=sh)
+
+
+def run_job(job: Job, tree: pathlib.Path, branch: str, *, main: pathlib.Path, out: _t.TextIO, say: _t.Callable,
+            session: _t.Callable = default_session, sh: _t.Callable = default_sh, base: str = "origin/main") -> float:
+    """`job` in a fresh worktree `tree` on `branch` off `base`, through to a green PR (or a hand-back);
+    what its sessions spent. The caller has made sure neither `tree` nor `branch` is there."""
     with Progress("worktree", out=out) as step:
-        made = sh(["pixi", "run", "bootstrap-worktree", name, branch, "origin/main"], main)
+        made = sh(["pixi", "run", "bootstrap-worktree", tree.name.removeprefix("cecelia-"), branch, base], main)
         step.failed = made.returncode != 0
     if made.returncode != 0:
         say(f"bootstrap-worktree failed: {_tail(made)}", bad=True)
         return 0.0
     with tempfile.TemporaryDirectory(prefix="auto-fix-hooks-") as hooks_dir:
-        return _work(record, bugs, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say,
-                     out=out, session=session, sh=sh, path=path, auto_log=auto_log)
+        return _work(job, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say,
+                     out=out, session=session, sh=sh)
 
 
-def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, path, auto_log) -> float:
+def _work(job, tree, branch, hooks, *, main, say, out, session, sh) -> float:
     before = snapshot(tree)
     try:
-        answer, spent, sid, failed = session(fix_brief(record, bugs, tree, branch), tree, FIX_SCHEMA, main=main,
+        answer, spent, sid, failed = session(job.brief, tree, FIX_SCHEMA, main=main,
                                              label="agent fixing", out=out)
     except RateLimited:
         # cut short by quota, not the agent's doing: its half-done edits go, no attempt is counted,
@@ -717,7 +768,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         sh(["git", "branch", "-D", branch], main)
         raise
     if failed:
-        _log_failed(record, bugs, f"{failed} (${spent:.2f})", auto_log)
+        job.log_failed(f"{failed} (${spent:.2f})")
         say(f"{failed}; worktree removed, tried again next run", bad=True)
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
@@ -726,7 +777,7 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                              use_colour=out.isatty()):
         print(line, file=out)
     if not _fixed_keys(answer):
-        _log(record, bugs, answer, "", auto_log)
+        job.log(answer, "")
         agent_sandbox.remove_worktree(main, tree)
         sh(["git", "branch", "-D", branch], main)
         say("nothing fixed: no PR, worktree removed")
@@ -737,13 +788,10 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
         sandbox: a session or a commit there would run it, so `[f]` starts fresh. `stage`: how far the
         work got (`STAGES`), for the `[f]` brief."""
         # once its PR is open, a stop is at the PR, whatever step it came from
-        _log(record, bugs, answer, opened_pr or "", auto_log, stopped=why, tree=tree if trusted else None,
-             stage="pr" if opened_pr else stage)
+        job.log(answer, opened_pr or "", stopped=why, tree=tree if trusted else None,
+                stage="pr" if opened_pr else stage)
         say(why, bad=True)
-        queued = ", ".join(b["id"] + " " + b["key"] for b in bugs)
-        say(f"back in your judge-review queue: {queued} · "
-            + (f"[f] there opens a session on the work in {tree.name}" if trusted else
-               f"[f] there starts fresh; {tree.name} is left for you to inspect, not to work in"))
+        say(job.handback(trusted))
         return spent
 
     def ship(message: _t.Callable[[list[str], str], str]) -> float | None:
@@ -814,11 +862,11 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
 
     opened_pr: str | None = None
     stamp = session_stamp(sid or "")
-    stopped = ship(lambda tags, recital: commit_message(record, bugs, answer, tags, recital, stamp))
+    stopped = ship(lambda tags, recital: job.commit_message(answer, tags, recital, stamp))
     if stopped is not None:
         return stopped
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".md", delete=False) as fh:
-        fh.write(pr_body(record, bugs, answer, stamp))
+        fh.write(job.pr_body(answer, stamp))
     try:
         opened = sh(["gh", "pr", "create", "--base", "main", "--head", branch, "--title", answer["title"].strip(),
                      "--body-file", fh.name], tree)
@@ -905,14 +953,13 @@ def _work(record, bugs, tree, branch, hooks, *, main, say, out, session, sh, pat
                 say(f"the agent changed nothing: {reply['summary'][:160]}")   # it found it fixed already
                 continue
             title, summary = reply.get("title") or "fix: make CI pass", reply["summary"]
-            stopped = ship(lambda tags, recital: followup_message(title, summary, pr, tags, recital, stamp))
+            stopped = ship(lambda tags, recital: followup_message(title, summary, pr, tags, recital, stamp,
+                                                                         tool=job.tool))
         if stopped is not None:
             return stopped
 
-    _log(record, bugs, answer, pr, auto_log)
-    for b in bugs:
-        if b["key"] in _fixed_keys(answer):
-            _rv.append_review("bug_work", record["date"], b["id"], "fix_session", note=f"auto PR {pr}", path=path)
+    job.log(answer, pr)
+    job.on_green(answer, pr)
     say(f"green and mergeable: {pr}")
     return spent
 

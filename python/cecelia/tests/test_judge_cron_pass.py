@@ -58,7 +58,8 @@ class CronPassTest(unittest.TestCase):
         env = {"PATH": f"{self.bin}{os.pathsep}/usr/bin{os.pathsep}/bin", "HOME": str(self.tmp), "PLAN": plan,
                "STUB_DIR": str(self.tmp), "STATE_DIR": str(self.tmp / "state"),
                "CECELIA_EFFECTIVENESS_LOG": str(self.tmp / "state" / "events.jsonl"),
-               "CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron"), "CECELIA_JUDGE_SLEEP": "fake-sleep", **env_extra}
+               "CECELIA_EVAL_CRON_LOG_DIR": str(self.tmp / "cron"), "CECELIA_JUDGE_SLEEP": "fake-sleep",
+               "JUDGE_DEPS_FIX": "0", **env_extra}   # its own tests switch it on
         return subprocess.run(["bash", str(_SCRIPT), mode], env=env, capture_output=True, text=True,
                               encoding="utf-8", timeout=60, check=False)
 
@@ -139,6 +140,28 @@ class CronPassTest(unittest.TestCase):
         (self.tmp / "calls").unlink()
         self.assertEqual(self.run_wrapper("0", JUDGE_AUTO_FIX="0").returncode, 0)
         self.assertEqual(self.lines("calls"), ["2 run judge-weekly --ref HEAD"])
+
+    def test_red_dependency_prs_are_worked_before_the_fix_bugs_with_the_same_deadline(self):
+        proc = self.run_wrapper("0,0,0", JUDGE_DEPS_FIX="1")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        calls = self.lines("calls")
+        self.assertEqual(len(calls), 3, calls)
+        self.assertTrue(calls[1].startswith(" run judge-deps --until "), calls)
+        self.assertTrue(calls[2].startswith(" run judge-review --auto --until "), calls)
+        self.assertEqual(calls[1].split()[-1], calls[2].split()[-1])
+        self.assertTrue(list((self.tmp / "cron").glob("deps-*.log")))
+
+    def test_a_failed_or_limited_deps_fix_never_fails_the_pass_or_skips_the_fix_bugs(self):
+        for plan, said in (("0,1,0", "judge-deps exited 1"), ("0,75,0", "judge-deps stopped on the usage limit")):
+            with self.subTest(plan=plan):
+                (self.tmp / "calls").unlink(missing_ok=True)
+                proc = self.run_wrapper(plan, JUDGE_DEPS_FIX="1")
+                self.assertEqual((proc.returncode, len(self.lines("calls"))), (0, 3))
+                self.assertIn(said, proc.stderr)
+
+    def test_no_deps_fix_after_a_failed_pass(self):
+        self.assertEqual(self.run_wrapper("1", JUDGE_DEPS_FIX="1").returncode, 1)
+        self.assertEqual(len(self.lines("calls")), 1)
 
     def test_chart_and_sync_skip_while_a_pass_holds_the_lock(self):
         import fcntl   # POSIX only; the class runs on Linux alone
