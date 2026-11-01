@@ -33,16 +33,19 @@ export interface DiagGroup extends TrackGroupMeta {
             skipped?: boolean; maxTracks?: number }
   drift?: { p: number | null; n: number; meanStep: number[]; drifting: boolean
             stepSpacing: number; alpha: number }
-  /** Fürth fit to the MSD — M µm²/frame, P frames, σ µm (localisation noise). Server-fitted. */
-  furth?: { M: number | null; P: number | null; sigma: number | null; ok: boolean; nDims: number }
+  /** Fürth fit to the MSD — M µm²/frame, P frames, σ µm (localisation noise). Server-fitted.
+   *  `pBound`: P outside the fitted lags — 'below' one frame (unresolved; M, σ still fitted) or
+   *  'above' the longest lag (ballistic; ok = false). */
+  furth?: { M: number | null; P: number | null; sigma: number | null; ok: boolean; nDims: number
+            pBound?: 'below' | 'above' | null }
   /** per-track speed (µm/frame) vs duration (frames) — the track-length bias check */
   durationBias?: { speed: number[]; duration: number[]; rho: number | null; n: number; biased: boolean }
-  /** order index φ per frame, with the steps it was computed over */
-  order?: { t: number[]; phi: number[]; n: number[] }
+  /** order index φ per frame, with the steps it was computed over and the φ random directions reach */
+  order?: { t: number[]; phi: number[]; n: number[]; chance?: number[] }
   summary?: { msdSlope: number | null; motionKind: string
               persistenceLag: number | null; nDuplicatePairs: number
               furthM?: number | null; furthP?: number | null; furthSigma?: number | null
-              durationRho?: number | null; orderMean?: number | null }
+              durationRho?: number | null; orderMean?: number | null; orderChance?: number | null }
   findings?: DiagFinding[]
 }
 
@@ -146,7 +149,7 @@ export function modeHint(mode: DiagMode): string {
     case 'plane': return 'Angles dipping only near the edge = tracking artefact'
     case 'pairs': return 'Far-apart pairs should average 90° — lower means the field moves together'
     case 'length': return 'A trend means speed partly measures track length'
-    case 'order':  return '1 = all cells move one way, 0 = no shared direction'
+    case 'order':  return 'Above the dashed line = cells share a direction; on it = chance'
   }
 }
 
@@ -194,8 +197,12 @@ export function diagnosticsSummary(g: DiagGroup | null): string {
     bits.push(`${s.motionKind} (slope ${s.msdSlope.toFixed(2)})`)
   if (s.persistenceLag !== null && s.persistenceLag !== undefined && Number.isFinite(s.persistenceLag))
     bits.push(`persistence ${s.persistenceLag.toFixed(1)} frames`)
-  if (g.furth?.ok && fin(s.furthP) && fin(s.furthSigma))
-    bits.push(`Fürth P ${s.furthP!.toFixed(1)} f, noise ${s.furthSigma!.toFixed(2)} µm`)
+  // a P outside the fitted lags is a bound, not a number — say which side, never print the edge value
+  const noise = fin(s.furthSigma) ? `, noise ${s.furthSigma!.toFixed(2)} µm` : ''
+  if (g.furth?.pBound === 'below') bits.push(`Fürth P <1 f${noise}`)
+  else if (g.furth?.pBound === 'above') bits.push(`Fürth P >${Math.max(0, ...curvePoints(g.msd).map(p => p.lag))} f${noise}`)
+  else if (g.furth?.ok && fin(s.furthP) && fin(s.furthSigma))
+    bits.push(`Fürth P ${s.furthP!.toFixed(1)} f${noise}`)
   // A drift p-value is only meaningful with the spacing it was computed at — celltrackR's whole point
   // about this test — so the two are never shown apart.
   if (g.drift && g.drift.p !== null && Number.isFinite(g.drift.p))
@@ -286,12 +293,13 @@ export function lengthRows(
   })
 }
 
-/** Order index per frame, tagged by group. */
+/** Order index per frame, tagged by group, with the frame's chance level (null when the server sent none). */
 export function orderRows(
   d: DiagnosticsResponse | null,
-): { t: number; phi: number; n: number; g: string; label: string }[] {
+): { t: number; phi: number; n: number; chance: number | null; g: string; label: string }[] {
   return diagGroups(d).flatMap(g =>
-    (g.order?.t ?? []).map((t, i) => ({ t, phi: g.order!.phi[i], n: g.order!.n[i], g: g.key, label: g.label })))
+    (g.order?.t ?? []).map((t, i) => ({ t, phi: g.order!.phi[i], n: g.order!.n[i],
+                                        chance: g.order!.chance?.[i] ?? null, g: g.key, label: g.label })))
 }
 
 /**
@@ -323,7 +331,8 @@ export function diagnosticsCsvRows(mode: DiagMode, d: DiagnosticsResponse | null
       .map((duration, i) => ({ ...tag(g), duration, speed: g.durationBias!.speed[i] })))
   if (mode === 'order')
     return gs.flatMap(g => (g.order?.t ?? [])
-      .map((t, i) => ({ ...tag(g), frame: t, phi: g.order!.phi[i], n: g.order!.n[i] })))
+      .map((t, i) => ({ ...tag(g), frame: t, phi: g.order!.phi[i], n: g.order!.n[i],
+                        chance: g.order!.chance?.[i] ?? '' })))
   if (mode === 'msd' || mode === 'acor') {
     return gs.flatMap(g => curvePoints(mode === 'msd' ? g.msd : g.acor)
       .map(p => ({ ...tag(g), lag: p.lag, value: p.value, sem: p.sem ?? '', n: p.n })))

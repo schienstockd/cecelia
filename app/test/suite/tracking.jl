@@ -306,10 +306,31 @@ end
 @testset "msd_furth_fit — too few lags, flat, ballistic" begin
     @test !msd_furth_fit([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], 2).ok
     @test !msd_furth_fit(collect(1.0:6.0), zeros(6), 2).ok
-    # perfectly straight: persistence longer than any window → P runs to the search edge, reported
+    # perfectly straight: persistence longer than any window → P past the lags, M and P unidentifiable
     lag = collect(1.0:10.0)
     b = msd_furth_fit(lag, lag .^ 2, 2)
-    @test b.ok && b.P > 5 * maximum(lag)
+    @test !b.ok && b.p_bound === :above && b.P > maximum(lag)
+end
+
+@testset "msd_furth_fit — P outside the fitted lags is bounded, not a number" begin
+    N, lag = 3, collect(1.0:10.0)
+    furth(M, P, σ) = [2N * M * (τ - P * (1 - exp(-τ / P))) + 2N * σ^2 for τ in lag]
+    # persistence well under one frame: straight from the first lag — P unresolved, M and σ still the
+    # pure-diffusion fit (the flowTom / spleen-B real-data case, P ≈ 0.001 frames)
+    lo = msd_furth_fit(lag, furth(0.5, 0.05, 0.4), N)
+    @test lo.ok && lo.p_bound === :below && lo.P < 1
+    @test isapprox(lo.M, 0.5; rtol = 0.05) && isapprox(lo.sigma, 0.4; rtol = 0.05)
+    # persistence 5× the longest lag: ballistic throughout, the k3Tx90 case
+    hi = msd_furth_fit(lag, furth(2.0, 50.0, 0.4), N)
+    @test !hi.ok && hi.p_bound === :above && isapprox(hi.sigma, 0.4; rtol = 0.1)
+    # inside the lags: resolved
+    @test msd_furth_fit(lag, furth(0.5, 3.0, 0.4), N).p_bound === :none
+
+    # the roll-up hands the cohort NaN for a bounded P (and for M past the lags), never the edge value
+    straight = _diag_df([k => [(Float64(t), 2.0 * t, 0.1 * k) for t in 0:15] for k in 1:20])
+    d = track_diagnostics(straight, _DIAG_XY)
+    @test d.furth.p_bound === :above
+    @test isnan(d.summary.furthP) && isnan(d.summary.furthM) && d.summary.furthPBound === :above
 end
 
 @testset "track_duration_bias — short tracks fast is flagged, few tracks is not" begin
@@ -340,6 +361,25 @@ end
     @test track_order_index(opp, _DIAG_XY).phi ≈ [0.0]
     lone = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)]])
     @test isempty(track_order_index(lone, _DIAG_XY).t)
+end
+
+@testset "order_chance — the no-alignment level φ is read against" begin
+    # the closed form against the exact small-n values it approximates (2 equal steps): within 2%
+    @test isapprox(order_chance(2.0, 2.0, 2), 2 / pi; rtol = 0.02)
+    @test isapprox(order_chance(2.0, 2.0, 3), 2 / 3; rtol = 0.03)
+    # and against simulation at the step counts the real data has (3 and 30 steps per frame)
+    rng = MersenneTwister(7)
+    sim(n, d) = sum(begin u = randn(rng, n, d); u ./= sqrt.(sum(u .^ 2; dims = 2))
+                        sqrt(sum(abs2, sum(u; dims = 1))) / n end for _ in 1:20_000) / 20_000
+    for n in (3, 30), d in (2, 3)
+        @test isapprox(order_chance(n, n, d), sim(n, d); rtol = 0.03)
+    end
+    # uneven step lengths raise it: one fast cell dominates the sum
+    @test order_chance(1 + 1 + 10, 1 + 1 + 100, 2) > order_chance(3, 3, 2)
+    # carried per frame and into the summary, n-weighted like orderMean
+    same = _diag_df([1 => [(0.0, 0.0, 0.0), (1.0, 1.0, 0.0)], 2 => [(0.0, 0.0, 5.0), (1.0, 2.0, 5.0)]])
+    o = track_order_index(same, _DIAG_XY)
+    @test o.chance ≈ [order_chance(3.0, 5.0, 2)]
 end
 
 @testset "plane_angle_profile — the geometry, and 2D has no plane" begin
@@ -1333,6 +1373,18 @@ end
     @test track_window_measures(tw, 4.5, 1.0).tracks["live.track.window.speed"][1:2] ≈ [1.0, 3.0]
     off = track_window_measures(tw, 0.0, 1.0)
     @test isempty(off.cells) && isempty(off.tracks)
+
+    # coverage: tracks 1–2 cover cells 5..11 (7 of 11 each), track 3 none → 14/25 cells, 2/3 tracks
+    c = window_coverage(r)
+    @test c.cells ≈ 14 / 25 && c.tracks ≈ 2 / 3
+    @test isnan(window_coverage(off).tracks)
+    @test isempty(window_coverage_qc_findings(c, 4.0))
+    # a window longer than most tracks warns, naming the share that is left (1 of 3 tracks)
+    long = window_coverage(track_window_measures([mk(1, 10, 1.0), mk(3, 2, 1.0), mk(4, 3, 1.0)], 4.0, 1.0))
+    @test long.tracks ≈ 1 / 3
+    f = window_coverage_qc_findings(long, 4.0)
+    @test length(f) == 1 && f[1]["key"] == "tracking.window_coverage" && f[1]["level"] == "warn"
+    @test isempty(window_coverage_qc_findings(window_coverage(off), 0.0))
 end
 @testset "approach_columns — one approach column per min_distance target" begin
     cols = ["label", "live.cell.speed", "live.cell.min_distance#DC", "live.cell.contact#DC",

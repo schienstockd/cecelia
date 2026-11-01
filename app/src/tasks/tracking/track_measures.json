@@ -39,7 +39,7 @@
       "max": 600,
       "step": 0.5,
       "default": 0,
-      "tip": "Start ~5 min; 0 = off; speed and straightness over a fixed span"
+      "tip": "Speed and straightness over a fixed span; keep it shorter than most tracks; 0 = off"
     },
     {
       "key": "forceRecompute",

@@ -252,8 +252,13 @@ async function render() {
           { x: 'duration', y: 'speed', z: 'g', stroke: '#e8a33d', strokeWidth: 1.5, ...fch })))
   } else if (m === 'order') {
     const pts = orderRows(d)
+    // amber = the expectation: the φ random directions reach with this frame's steps. Few steps read
+    // high by chance, so alignment is the gap ABOVE this line, not the height above 0.
+    const chance = pts.filter(p => p.chance !== null)
+    if (chance.length) marks.push(Plot.line(chance, { x: 't', y: 'chance', z: 'g', stroke: '#e8a33d',
+                                                      strokeDasharray: '4,3', strokeWidth: 1, ...fch }))
     marks.push(Plot.line(pts, { x: 't', y: 'phi', z: 'g', stroke, strokeWidth: 1.5, ...fch }))
-    marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n' } }))
+    marks.push(Plot.dot(pts, { x: 't', y: 'phi', fill, r: 2, tip: true, ...fch, channels: { group: 'label', steps: 'n', chance: 'chance' } }))
     yOpts = { ...yOpts, domain: [0, 1] }
   } else {
     const cloud = diagCloudRows(d, m)

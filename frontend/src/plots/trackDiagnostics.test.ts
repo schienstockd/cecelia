@@ -300,7 +300,7 @@ describe('Fürth, track length and alignment', () => {
   const extra = group({
     furth: { M: 0.5, P: 3, sigma: 0.4, ok: true, nDims: 2 },
     durationBias: { speed: [3, 2, 1], duration: [1, 2, 3], rho: -1, n: 3, biased: false },
-    order: { t: [0, 1], phi: [0.2, 0.9], n: [12, 10] },
+    order: { t: [0, 1], phi: [0.2, 0.9], n: [12, 10], chance: [0.26, 0.28] },
     summary: { msdSlope: 1.1, motionKind: 'random walk', persistenceLag: 2, nDuplicatePairs: 0,
                furthM: 0.5, furthP: 3, furthSigma: 0.4, durationRho: -1, orderMean: 0.5 },
   })
@@ -323,11 +323,26 @@ describe('Fürth, track length and alignment', () => {
     expect(diagnosticsSummary(g1)).not.toContain('Fürth')
   })
 
+  it('a P outside the fitted lags reads as a bound, never as the edge value', () => {
+    const below = group({ furth: { M: 0.5, P: 0.001, sigma: 0.4, ok: true, nDims: 2, pBound: 'below' },
+                          summary: { ...extra.summary!, furthP: null } })
+    expect(diagnosticsSummary(below)).toContain('Fürth P <1 f, noise 0.40 µm')
+    expect(furthFitRows(resp(below))).toHaveLength(3)          // M and σ still fit: the curve is drawn
+    const above = group({ furth: { M: 20, P: 34, sigma: 1.2, ok: false, nDims: 2, pBound: 'above' },
+                          summary: { ...extra.summary!, furthM: null, furthP: null, furthSigma: 1.2 } })
+    expect(diagnosticsSummary(above)).toContain('Fürth P >3 f, noise 1.20 µm')
+    expect(diagnosticsSummary(above)).not.toContain('34')
+    expect(furthFitRows(resp(above))).toEqual([])
+  })
+
   it('rows and CSV carry the per-track and per-frame points', () => {
     expect(lengthRows(resp(extra))).toHaveLength(3)
-    expect(orderRows(resp(extra))[1]).toMatchObject({ t: 1, phi: 0.9, n: 10 })
+    expect(orderRows(resp(extra))[1]).toMatchObject({ t: 1, phi: 0.9, n: 10, chance: 0.28 })
     expect(diagnosticsCsvRows('length', resp(extra))[0]).toEqual({ duration: 1, speed: 3 })
-    expect(diagnosticsCsvRows('order', resp(extra))[0]).toEqual({ frame: 0, phi: 0.2, n: 12 })
+    expect(diagnosticsCsvRows('order', resp(extra))[0]).toEqual({ frame: 0, phi: 0.2, n: 12, chance: 0.26 })
+    // an older server sent no chance level: the row says so rather than drawing a line at 0
+    const bare = group({ order: { t: [0], phi: [0.5], n: [3] } })
+    expect(orderRows(resp(bare))[0].chance).toBeNull()
   })
 
   it('every new mode has a label, a hint and axis labels', () => {

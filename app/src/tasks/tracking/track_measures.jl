@@ -538,12 +538,16 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
         end
         ms = _meas_mean(speed_idx); md = _meas_mean(disp_idx)
         metrics = Dict{String,Any}("nTracks" => n_tracks, "motionDims" => resolved)
+        wcov = window_coverage(win)
         p.windowMinutes > 0 && (metrics["windowMinutes"] = p.windowMinutes;
-                                metrics["windowSpanMinutes"] = window_span(p.windowMinutes, time_step))
+                                metrics["windowSpanMinutes"] = span)
+        isfinite(wcov.cells) && (metrics["windowCellCoverage"] = round(wcov.cells; digits = 3))
+        isfinite(wcov.tracks) && (metrics["windowTrackCoverage"] = round(wcov.tracks; digits = 3))
         isnan(ms) || (metrics["meanSpeed"] = round(ms; digits = 4))
         isnan(md) || (metrics["meanDisplacement"] = round(md; digits = 4))
         findings = track_measures_qc_findings(n_tracks, p.dims, resolved, det.dims,
                                               det.confidence, det.reason)
+        append!(findings, window_coverage_qc_findings(wcov, span))
 
         # ── the celltrackR diagnostic battery, run whether or not anyone opens the plot ──
         # This is what makes the ports routine rather than available: drift, motion kind, persistence

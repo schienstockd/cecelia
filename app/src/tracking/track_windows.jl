@@ -96,3 +96,34 @@ function track_window_measures(tracks_with_labels, window::Real, frame_interval:
     tracks[WINDOW_TRACK_COLS[1]] = tsp; tracks[WINDOW_TRACK_COLS[2]] = tst
     (cells = cells, tracks = tracks)
 end
+
+# Below half the tracks with a windowed value, the per-track median describes the long-lived minority
+# — the tracks that outlast the window — which is the length selection windows exist to remove. Half
+# is where "most tracks" stops being true.
+const WINDOW_MIN_TRACK_COVERAGE = 0.5
+
+"""
+    window_coverage(win) -> (cells, tracks)
+
+Fraction of cells and of tracks with a finite windowed value in a [`track_window_measures`] result —
+`NaN` for both when windows are off (nothing to cover).
+"""
+function window_coverage(win)
+    isempty(win.cells) && return (cells = NaN, tracks = NaN)
+    frac(v) = isempty(v) ? NaN : count(isfinite, v) / length(v)
+    (cells = frac(win.cells[WINDOW_CELL_COLS[1]]), tracks = frac(win.tracks[WINDOW_TRACK_COLS[1]]))
+end
+
+"""
+    window_coverage_qc_findings(coverage, span) -> Vector
+
+A warn when fewer than `WINDOW_MIN_TRACK_COVERAGE` of the tracks outlast the `span`-minute window
+(PURE → unit-tested). Nothing when windows are off or there are no tracks.
+"""
+function window_coverage_qc_findings(coverage, span::Real)
+    c = coverage.tracks
+    (isfinite(c) && c < WINDOW_MIN_TRACK_COVERAGE) || return Dict{String,Any}[]
+    [qc_finding("warn", "tracking.window_coverage"; value = string(round(Int, 100 * c)),
+                detail = Dict{String,Any}("trackCoverage" => c, "cellCoverage" => coverage.cells,
+                                          "spanMinutes" => span))]
+end
