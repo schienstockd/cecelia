@@ -1,11 +1,12 @@
-# Hardening audit — parked plan
+# Hardening audit — plan
 
-**Status:** **parked** (2026-11-02). The brief is written and reviewed; nothing has run. Steps 1–4
+**Status:** **in progress** (2026-11-02). Step 1 done (surface inventory); step 2 starting with result correctness. Steps 1–4
 are agreed in principle; the enforcement steps are deliberately deferred.
 
 **Related:**
 - Brief: [`../archive/hardening-audit-prompt.md`](../archive/hardening-audit-prompt.md) — includes
   *Notes for the run*.
+- Step 1 output: [`HARDENING_SURFACES.md`](HARDENING_SURFACES.md) — surface inventory, draft, 175 rows.
 - Test-data route: [`CALL_FOR_DATASETS_PLAN.md`](CALL_FOR_DATASETS_PLAN.md) — the in-app
   call-for-datasets registry (`frontend/src/lib/callForDatasets.ts`).
 - Prior decision: [`DRIFT_PREVENTION_ASSESSMENT.md`](DRIFT_PREVENTION_ASSESSMENT.md) — declined a
