@@ -87,6 +87,24 @@ def _font(size):
         return ImageFont.load_default()
 
 
+#: Figures (``writers/render_figure.py``) set text the way journals ask for it: an Arial / Helvetica
+#: face. Liberation Sans and Nimbus Sans are the metric-compatible clones Linux ships; DejaVu last,
+#: through ``_font``, so a figure still renders where none is installed.
+_FIGURE_FONT_CANDIDATES = ("Arial.ttf", "arial.ttf", "Helvetica.ttc", "LiberationSans-Regular.ttf",
+                           "NimbusSans-Regular.otf")
+
+
+def figure_font(size):
+    """An Arial-metric font at ``size`` px for figure text, else ``_font``'s stack."""
+    size = max(6, int(size))
+    for name in _FIGURE_FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            continue
+    return _font(size)
+
+
 def _bold_font(size):
     """Bold sibling of ``_font`` for the encoded-frame overlays. Falls through to ``_font`` if no
     bold TrueType is available — so a slim env without matplotlib still renders, just at regular

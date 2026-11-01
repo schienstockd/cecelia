@@ -3,7 +3,7 @@ import { movieStreamUrl, movieDisplayName, sortMovies, anchoredScroll, movieRows
          filterMovieRows, movieFilterOptions, parseMovieTags,
          resolveMovieImageUid, movieChannelCells, movieChannelCount,
          type MovieEntry, type MovieImage, movieSuffixesInUse,
-         parseMovieEndMode, nextMovieName } from './movies'
+         parseMovieEndMode, nextMovieName, isFigure } from './movies'
 
 describe('movieStreamUrl', () => {
   it('builds the range-serve URL with encoded params', () => {
@@ -19,6 +19,7 @@ describe('movieDisplayName', () => {
   it('drops the .mp4 extension', () => {
     expect(movieDisplayName('gBT_animation.mp4')).toBe('gBT_animation')
     expect(movieDisplayName('CASE.MP4')).toBe('CASE')
+    expect(movieDisplayName('cell_figure.png')).toBe('cell_figure')   // a still figure drops its extension too
   })
   it('leaves a name without extension alone', () => {
     expect(movieDisplayName('plain')).toBe('plain')
@@ -353,5 +354,15 @@ describe('nextMovieName', () => {
   })
   it('stops on an empty list', () => {
     expect(nextMovieName([], 'a.mp4')).toBe('')
+  })
+})
+
+describe('isFigure', () => {
+  it('reads the server kind, else the extension', () => {
+    expect(isFigure({ name: 'a.png', kind: 'figure' })).toBe(true)
+    expect(isFigure({ name: 'a.mp4', kind: 'movie' })).toBe(false)
+    expect(isFigure({ name: 'a.PNG' })).toBe(true)          // a server that predates `kind`
+    expect(isFigure({ name: 'a.mp4' })).toBe(false)
+    expect(isFigure(undefined)).toBe(false)
   })
 })

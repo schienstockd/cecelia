@@ -1,7 +1,6 @@
 # Figures — paper figures from the raw data, in one standard look
 
-**Status:** parked (2026-11-01). Not started. Trigger to un-park: the next "can you give me a still /
-strip of …" request. Until then, one-offs go through P0 below.
+**Status:** in progress (2026-11-01) — P1 built on `feat/figures-p1`; P2–P4 next.
 
 ## Goal
 
@@ -94,6 +93,21 @@ image (Dominik, 2026-11-01).
    because `ingest_z.py` already shows it's needed. Any further kind needs three recurring bespoke scripts first.
    Data plots stay on the board.
 
+8. **The house look is the Cecelia paper's image panels** (Nat Commun 2025, Fig. 4a; Dominik,
+   2026-11-01): black tiles on a white page with thin white gaps, plain black column titles above
+   (nothing written on the image but the scale bar), a black legend band below with each channel named
+   in its own colour, an Arial-metric face. Sizes are mm / pt at a dpi (default 20 mm tiles, 7 pt text,
+   300 dpi), so text is the same size in every figure whatever the tile size.
+9. **Crisp pixels by default.** Smooth (Lanczos) enlargement of a 90 px crop read as blurry. `pixels`
+   enlarges by a whole factor so every native pixel is an equal block; `smooth` stays an option.
+10. **One scale bar, on the first tile** (Dominik, 2026-11-01); `last` / `all` remain.
+11. **Channels by name, with a display name.** A spec names channels as the image does (`mem-TOM`) and
+    may give the legend a paper name (`tdTom`); the name resolves through `channel_indices`.
+12. **The source is the denoised image when there is one.** Checked on the PI's cell (2026-11-01): the
+    drift-corrected raw is photon noise at that crop and the fragment is not visible; the denoised
+    version's few intensity levels (Katushka 0–11 counts) are the price. A spec names its `valueName`,
+    so the same figure can be rendered from any version.
+
 ## Open decisions (Dominik's)
 
 | # | Question | Pick |
@@ -103,6 +117,7 @@ image (Dominik, 2026-11-01).
 | C | Output formats | PNG and 16-bit-safe TIFF for the image; SVG for the composition with the tiles embedded as raster, so labels stay vector for the journal. The SVG canonical is `frontend/src/plots/export.ts` (`svgDoc` / `svgImage` / `svgText`), so either compose SVG there or say why the backend needs a second serialiser |
 | D | Default interpolation | Smooth (bicubic), with nearest neighbour a toggle |
 | E | Does P2's GUI ship before the agent tools (P3)? | Yes: the value must stand without an agent |
+| F | Time label format | Today `h:mm:ss` (the movies' format); papers usually want `12.5 min` |
 
 ## Phases
 
@@ -110,7 +125,10 @@ image (Dominik, 2026-11-01).
 one chosen `t`, a larger output with smooth interpolation, a tighter percentile range, and a real font.
 Say plainly that the detail is native. It's a scratch script and doesn't need this plan.
 
-**P1 — spec + renderer, headless.** A `sequence` and `zstack` spec, `render_figure(spec) → files` in
+**P1 — spec + renderer, headless. BUILT** (`feat/figures-p1`): `writers/render_figure.py`,
+`Cecelia.render_figure` / `figure_params` (`app/src/figures.jl`), `POST /api/figures/render`
+(`api/src/figures_api.jl`), figures listed and shown on the Movies page. Reproduced the PI's strip
+from Dml3RG `denoised` with channel display names. Original scope: A `sequence` and `zstack` spec, `render_figure(spec) → files` in
 the REPL (`docs/REPL.md`). Tiles go through `render_stills` and the composition step through
 `title_card` fonts. Writes into the movie store (`_movies_dir`, `api/src/movie_helpers.jl:70`). The store
 only accepts `.mp4` today: `_valid_movie_name` is `^[A-Za-z0-9._-]+\.mp4$` (`api/src/routes.jl:21`), and

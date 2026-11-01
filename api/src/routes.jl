@@ -18,7 +18,9 @@ _valid_asset_id(id::AbstractString) = occursin(r"^[A-Za-z0-9_-]+$", id)   # guar
 # needed just to list). Filenames are sanitised at write time to [A-Za-z0-9._-] (see _movie_basename /
 # _movie_named_path), so this guard both validates and blocks path traversal.
 _movies_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_uid, "movies")
-_valid_movie_name(name::AbstractString) = occursin(r"^[A-Za-z0-9._-]+\.mp4$", name)
+# `.png` = a still figure (docs/todo/FIGURES_PLAN.md) — same dir, same registry, same page.
+_valid_movie_name(name::AbstractString) = occursin(r"^[A-Za-z0-9._-]+\.(mp4|png)$", name)
+_movie_kind(name::AbstractString)::String = endswith(lowercase(name), ".png") ? "figure" : "movie"
 
 # GET /api/movies?projectUid=… → { movies: [{name, size, mtime, displayName, starred, tags,
 # producedBy, hasConfig, configKind, configStale}] } sorted newest-first. Lists the project's rendered

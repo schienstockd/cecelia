@@ -68,7 +68,7 @@ end
 
 # Who recorded it (Decision 3). Written by the recorder, never by the user, so it needs no maintenance
 # and gives the fixed axis that free-form tags deliberately don't.
-const MOVIE_PRODUCERS = ("viewer", "animation", "batch")
+const MOVIE_PRODUCERS = ("viewer", "animation", "batch", "figure")
 _clean_producer(s)::String = (t = String(s === nothing ? "" : s); t ∈ MOVIE_PRODUCERS ? t : "")
 
 # The channel names a movie SHOWS. Same family as `producedBy` — written by the recorder, which is the
@@ -155,7 +155,10 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
                          # `_read_movies_registry`. `nothing` keeps a previously banked config
                          # standing rather than blanking it on a re-record.
                          config::Union{Nothing,MovieConfig,AbstractDict} = nothing,
-                         config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION)
+                         config_kind::AbstractString = "", config_version::Int = MOVIE_CONFIG_VERSION,
+                         # `author_stamp()` of the write: `createdBy` on the first registration,
+                         # `updatedBy` after — what lets Claude edit only figures it made.
+                         author::Union{Nothing,AbstractDict} = nothing)
     try
         _valid_movie_name(filename) || return nothing
         reg = _read_movies_registry(project_uid)
@@ -176,6 +179,9 @@ function register_movie!(project_uid::AbstractString, filename::AbstractString;
             e["configKind"]    = String(config_kind)
             e["configVersion"] = config_version
             e["config"]        = config
+        end
+        if author !== nothing
+            haskey(e, "createdBy") ? (e["updatedBy"] = author) : (e["createdBy"] = author)
         end
         reg[String(filename)] = e
         _write_movies_registry!(project_uid, reg)
@@ -209,13 +215,13 @@ function movies_with_meta(project_uid::AbstractString)
             # skip in-progress temps: `prepend_title_to_movie` stages `{name}.mp4.tmp.mp4` beside the
             # real file and renames on success, so a run killed mid-encode leaves something a bare
             # `.mp4` filter would list as a real movie.
-            (endswith(lowercase(name), ".mp4") && !occursin(".tmp.", name) &&
+            (_valid_movie_name(name) && !occursin(".tmp.", name) &&
                 isfile(joinpath(dir, name))) || continue
             push!(present, name)
             f = joinpath(dir, name)
             mt = mtime(f)
             e  = get(reg, name, Dict{String,Any}())
-            push!(out, (; name, size = filesize(f), mtime = mt,
+            push!(out, (; name, kind = _movie_kind(name), size = filesize(f), mtime = mt,
                           displayName = _clean_movie_name(get(e, "displayName", "")),
                           starred     = get(e, "starred", false) === true,
                           tags        = _clean_movie_tags(get(e, "tags", nothing)),
@@ -229,7 +235,8 @@ function movies_with_meta(project_uid::AbstractString)
                           suffix      = String(get(e, "suffix", "")),
                           hasConfig   = haskey(e, "config"),
                           configKind  = String(get(e, "configKind", "")),
-                          configStale = _config_stale(e, mt)))
+                          configStale = _config_stale(e, mt),
+                          createdBy   = get(e, "createdBy", nothing)))
         end
         sort!(out; by = m -> m.mtime, rev = true)
     end
@@ -334,7 +341,7 @@ end
 # entries. A movie is not an image: there are no version/label/analysis scopes to choose between
 # (MOVIE_MANAGEMENT_PLAN.md → Not doing), so this is a plain delete behind the page's confirm.
 #
-# `_movie_targets` is what keeps this inside the movies dir: it admits only `[A-Za-z0-9._-]+.mp4`, so
+# `_movie_targets` is what keeps this inside the movies dir: it admits only `[A-Za-z0-9._-]+.(mp4|png)`, so
 # no separator and no `..` can appear, and it drops anything that isn't a file that's actually there.
 function api_movies_delete(body_bytes::Vector{UInt8})
     body = _parse_body(body_bytes)
@@ -351,6 +358,7 @@ function api_movies_delete(body_bytes::Vector{UInt8})
     for name in names
         try
             rm(joinpath(dir, name); force = true)
+            _movie_kind(name) == "figure" && rm(_figure_extras_dir(uid, name); force = true, recursive = true)
             delete!(reg, name)
             push!(deleted, name)
         catch e

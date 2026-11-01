@@ -98,5 +98,16 @@ end
 # recorded decision, not an implicit one.
 # Reached through JSON3 to avoid adding StructTypes to api/Project.toml — JSON3 already depends on
 # it, and this is the ONLY code in api/src that names a StructType.
+# A still figure (docs/todo/FIGURES_PLAN.md) — banked in the same registry so it gets the Movies page's
+# star / tags / delete / remake. `spec` is what was ASKED (what to show; the image fills in the rest at
+# render time), `resolved` what was DRAWN — the renderer's `figure.json`, measured display ranges
+# included — so a remake can either re-measure or reproduce exactly.
+Base.@kwdef struct FigureConfig <: MovieConfig
+    imageUid::String
+    spec::Any                               = nothing
+    resolved::Any                           = nothing
+end
+
+JSON3.StructTypes.StructType(::Type{FigureConfig})      = JSON3.StructTypes.Struct()
 JSON3.StructTypes.StructType(::Type{MovieRecordConfig}) = JSON3.StructTypes.Struct()
 JSON3.StructTypes.StructType(::Type{MovieBatchConfig})  = JSON3.StructTypes.Struct()

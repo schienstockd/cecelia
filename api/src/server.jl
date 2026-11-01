@@ -64,6 +64,7 @@ include("captures_api.jl")   # bidirectional context — share-in capture envelo
 include("marks_api.jl")      # bidirectional context — point-out marks (BIDIR_CONTEXT_PLAN Part 3)
 include("viewer_nav_api.jl") # viewer navigation — Claude → browser (RUBBER_DUCK_FIT_PLAN P2)
 include("rois_api.jl")       # ROI list + reviews (ROI_TRIAGE_PLAN)
+include("figures_api.jl")    # still figures banked beside the movies (FIGURES_PLAN)
 include("blackboard_api.jl") # bidirectional context — Blackboard entries (BIDIR_CONTEXT_PLAN Part 4)
 include("blackboard_run_review.jl") # agent run records: per-section verdicts (AGENT_RUN_REVIEW_PLAN P2)
 include("landscape_api.jl")  # bidirectional context — landscape heatmap (BIDIR_CONTEXT_PLAN PR #6, Decision 14)
@@ -468,6 +469,7 @@ const _POST_ROUTES = Dict{String, Function}(
     "/api/notebooks/delete" => (req, body_bytes) -> (api_notebooks_delete(body_bytes)),
     "/api/movies/meta" => (req, body_bytes) -> (api_movies_meta_set(body_bytes)),
     "/api/movies/delete" => (req, body_bytes) -> (api_movies_delete(body_bytes)),
+    "/api/figures/render" => (req, body_bytes) -> (api_figures_render(body_bytes)),
     "/api/notebooks/duplicate" => (req, body_bytes) -> (api_notebooks_duplicate(body_bytes)),
     "/api/notebooks/revise" => (req, body_bytes) -> (api_notebooks_revise(body_bytes)),
     "/api/notebooks/snapshot" => (req, body_bytes) -> (api_notebooks_snapshot(body_bytes)),
@@ -763,7 +765,7 @@ function try_serve_movie(stream::HTTP.Stream, target::AbstractString)::Bool
     status, start, stop, framing = _movie_plan(HTTP.header(stream.message, "Range", ""), total)
     n = stop - start + 1
 
-    HTTP.setheader(stream, "Content-Type"                => "video/mp4")
+    HTTP.setheader(stream, "Content-Type" => _movie_kind(name) == "figure" ? "image/png" : "video/mp4")
     HTTP.setheader(stream, "Accept-Ranges"               => "bytes")
     HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
     if status == 206

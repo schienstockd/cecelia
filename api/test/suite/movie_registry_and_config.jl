@@ -328,3 +328,47 @@ end
     @test _t_range(JSON3.read("""{"tStart":3,"tEnd":9}""")) == (3, 9)
     @test _t_range(JSON3.read("""{"tStart":3,"tEnd":null}""")) == (3, nothing)
 end
+
+@testset "API: still figures share the movie registry" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTFIG"
+        mdir = joinpath(tmp, uid, "movies"); mkpath(mdir)
+        write(joinpath(mdir, "m.mp4"), "m")
+        write(joinpath(mdir, "f.png"), "f")
+        mkpath(joinpath(mdir, ".figures", "f", "tiles"))       # side files: never listed
+        write(joinpath(mdir, "x.txt"), "x")                    # anything else: never listed
+
+        @test _valid_movie_name("f.png") && _valid_movie_name("m.mp4")
+        @test !_valid_movie_name("../f.png") && !_valid_movie_name("f.jpg")
+        @test _movie_kind("f.png") == "figure" && _movie_kind("m.mp4") == "movie"
+
+        # the stamp: createdBy on the first registration, updatedBy after — what own-only edits read
+        me = Dict("profile" => "default", "via" => "claude")
+        register_movie!(uid, "f.png"; produced_by = "figure", image_uid = "IMG1",
+                        config = FigureConfig(imageUid = "IMG1", spec = Dict("sizePx" => 90)),
+                        config_kind = "figure", author = me)
+        register_movie!(uid, "f.png"; produced_by = "figure", author = Dict("profile" => "default", "via" => "gui"))
+        ms = movies_with_meta(uid)
+        @test Set(m.name for m in ms) == Set(["m.mp4", "f.png"])
+        f = only(filter(m -> m.name == "f.png", ms))
+        @test f.kind == "figure" && f.producedBy == "figure" && f.configKind == "figure"
+        @test f.createdBy["via"] == "claude"
+        @test _read_movies_registry(uid)["f.png"]["updatedBy"]["via"] == "gui"
+
+        # delete takes the side files with it
+        @test _post(api_movies_delete, Dict("projectUid" => uid, "name" => "f.png"))[1] == 200
+        @test !isfile(joinpath(mdir, "f.png")) && !isdir(joinpath(mdir, ".figures", "f"))
+
+        # a deliberate artefact is not overwritten by a second one of the same name
+        write(joinpath(mdir, "cell_figure.png"), "1")
+        img = CciaImage(; uid = "IMG1", name = "cell", dir = "")
+        @test _figure_filename(mdir, img, "", false) == "cell_figure-2.png"
+        @test _figure_filename(mdir, img, "", true) == "cell_figure.png"
+        @test _valid_movie_name(_figure_filename(mdir, img, "../Fig 4b", false))   # sanitised, no traversal
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+    end
+end

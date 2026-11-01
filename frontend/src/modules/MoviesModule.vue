@@ -15,7 +15,7 @@ import { formatBytes } from '../utils/storage'
 import { formatWhen } from '../utils/formatWhen'
 import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
          filterMovieRows, movieFilterOptions, parseMovieTags,
-         movieChannelCells, movieChannelCount, nextMovieName,
+         movieChannelCells, movieChannelCount, nextMovieName, isFigure,
          type MovieEntry, type MovieRow } from '../utils/movies'
 import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
 import { rafCoalesce } from '../utils/rafCoalesce'
@@ -150,6 +150,13 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
 })
 
+// A still figure (FIGURES_PLAN) shares the list: shown as an image in the same zoomable box.
+const currentIsFigure = computed(() => isFigure(movies.value.find(m => m.name === selected.value)))
+function onFigureLoad(e: Event) {
+  const im = e.target as HTMLImageElement
+  natW.value = im.naturalWidth
+  natH.value = im.naturalHeight
+}
 const currentUrl = computed(() =>
   selected.value && projectUid.value ? movieStreamUrl(projectUid.value, selected.value) : '')
 
@@ -496,7 +503,9 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
       <!-- Player -->
       <div class="mov-stage">
         <div v-if="currentUrl" ref="viewportEl" class="mov-viewport">
-          <video ref="videoEl" class="mov-video" :src="currentUrl" controls
+          <img v-if="currentIsFigure" class="mov-video" :src="currentUrl" :style="videoStyle"
+               alt="" @load="onFigureLoad">
+          <video v-else ref="videoEl" class="mov-video" :src="currentUrl" controls
                  :autoplay="settings.moviesAutoplay" :loop="settings.moviesEndMode === 'loop'"
                  :style="videoStyle" @loadedmetadata="onLoadedMeta" @ended="onEnded" />
         </div>
