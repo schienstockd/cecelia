@@ -2,8 +2,8 @@
 
 Every worktree lands in ONE bucket. Only SAFE (merged, clean, unused, no stash) and DEAD (the
 folder is gone) are ever acted on, and only with `git worktree remove` / `git worktree prune` /
-`git branch -d` — never `--force`, `branch -D` or `kill`. Anything that needs one of those is
-printed as a command for a person to run. Design and the reasons behind each rule:
+a SAFE worktree's branch deleted at the commit judged SAFE (`delete_branch`) — never `--force`,
+`branch -D` or `kill`. Anything that needs one of those is printed as a command for a person to run. Design and the reasons behind each rule:
 docs/todo/WORKTREE_CLEANUP_PLAN.md.
 
 A worktree is in use when a process runs from it (`/proc`) or a live Claude Code session is working
@@ -378,21 +378,38 @@ def remove(rows, primary: str) -> list[str]:
         sessions = live_sessions() or []
         if (note := unreadable_note(sessions)) and note not in log:
             log.append(note)
-        now_bucket, why = classify(gather(entry, primary, scan_processes(), stash_counts(primary),
-                                          time.time(), sessions)) \
-            if entry else (DEAD, "gone")
+        now = gather(entry, primary, scan_processes(), stash_counts(primary), time.time(), sessions) \
+            if entry else None
+        now_bucket, why = classify(now) if now else (DEAD, "gone")
         if now_bucket != SAFE:
             log.append(f"skipped {f.path}: now {now_bucket} ({why})")
             continue
         if git_output("worktree", "remove", f.path, cwd=primary) is None:
             log.append(f"FAILED  git worktree remove {f.path}")
             continue
-        note = ""
-        if f.branch:
-            note = (" + branch deleted" if git_output("branch", "-d", f.branch, cwd=primary) is not None
-                    else f" (branch {f.branch} kept: git branch -d refused)")
+        note = delete_branch(now.branch, now.head, primary) if now.branch and now.head else ""
         log.append(f"removed {f.path}{note}")
     return log
+
+
+def delete_branch(branch: str, head: str, primary: str) -> str:
+    """Delete the local branch of a SAFE worktree just removed; returns the log suffix.
+
+    SAFE already proved the commits are kept — in `origin/main`, or a PR merged at exactly `head`.
+    `git branch -d` can't use that: it checks the primary checkout's own HEAD, which is usually
+    behind `origin/main`, and knows nothing of PRs, so it refused merged branches. `update-ref -d`
+    with `head` as the expected value deletes only if the branch is still at the commit judged
+    SAFE (like the lease on `remove_remote`), and a branch checked out in another worktree is kept.
+    """
+    if not head.strip("0"):   # an all-zero expected value makes `update-ref -d` skip the check
+        return f" (branch {branch} kept: no commit to check it against)"
+    elsewhere = any(e.get("branch") == f"refs/heads/{branch}"
+                    for e in parse_worktree_list(git_output("worktree", "list", "--porcelain", cwd=primary) or ""))
+    if elsewhere:
+        return f" (branch {branch} kept: checked out in another worktree)"
+    if git_output("update-ref", "-d", f"refs/heads/{branch}", head, cwd=primary) is None:
+        return f" (branch {branch} kept: it moved since the check)"
+    return " + branch deleted"
 
 
 def main(argv: list[str] | None = None) -> int:

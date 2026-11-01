@@ -466,7 +466,9 @@ squash merges count and commits pushed after the merge don't), clean, nothing ru
 sessions are launched from the workspace root and `cd` into a worktree. **Dead** entries (folder already
 gone) are pruned. Everything else is listed for a person to decide — the tool never uses `--force`,
 `git branch -D` or `kill`, and prints the command where one would be needed. Each SAFE worktree is
-re-checked just before it is removed. Design: `docs/todo/WORKTREE_CLEANUP_PLAN.md`.
+re-checked just before it is removed, and its branch is deleted only if it is still at the commit
+judged SAFE and checked out nowhere else (not `git branch -d`, which checks the primary checkout's own
+`main` and so kept every branch merged since its last pull). Design: `docs/todo/WORKTREE_CLEANUP_PLAN.md`.
 
 Branches on GitHub are listed below the worktrees (`--local-only` skips them). **GONE** — in
 `origin/main`, or a PR merged or closed at exactly this tip (GitHub keeps every PR's commits) — is

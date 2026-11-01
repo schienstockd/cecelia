@@ -112,7 +112,10 @@ turned out to be P1 as built, with one gate that doesn't hold on Dominik's machi
 ## Phases
 
 - **P1 — report + safe removal.** Fact gathering, classifier, table report with `df` before/after,
-  `--remove` for SAFE (`worktree remove` + `branch -d`) and DEAD (`git worktree prune`). Unit
+  `--remove` for SAFE (`worktree remove` + the branch deleted with `update-ref -d <branch> <head>`:
+  only at the commit judged SAFE, and not while another worktree has it checked out. `branch -d`
+  refused merged branches: a pushed branch's upstream is deleted on merge, so git fell back to the
+  primary checkout's lagging `main`) and DEAD (`git worktree prune`). Unit
   tests on the classifier; one hermetic test against a throwaway repo. `docs/DEV.md` section next
   to *Creating a new worktree*.
 - **P1b — session gate + actionable nudge** (decisions 11–15). The session reader is

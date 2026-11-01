@@ -243,6 +243,52 @@ class EndToEndTest(unittest.TestCase):
         self.assertIn("ahead", branches)
         self.assertTrue(any("pruned 1" in line for line in log), log)
 
+    def branches(self):
+        return subprocess.run(["git", "branch", "--format=%(refname:short)"], cwd=str(self.primary),
+                              capture_output=True, text=True, encoding="utf-8").stdout.split()
+
+    def test_a_branch_merged_after_the_primary_checkout_last_pulled_is_deleted(self):
+        # A PR branch is pushed with `-u`, so its upstream is its own remote branch, which GitHub
+        # deletes on merge. `git branch -d` then judges "merged" against the primary checkout's own
+        # `main`, which lags `origin/main` — so every branch merged since its last pull was kept.
+        landed = self.primary.parent / "cecelia-landed"
+        _git("worktree", "add", "-q", "-b", "landed", str(landed), "origin/main", cwd=self.primary)
+        (landed / "h.txt").write_text("landed\n", encoding="utf-8")
+        _git("add", "h.txt", cwd=landed)
+        _git("commit", "-qm", "landed", cwd=landed)
+        _git("push", "-q", "-u", "origin", "landed", cwd=landed)
+        _git("push", "-q", "origin", "HEAD:main", cwd=landed)          # the PR merges
+        _git("push", "-q", "origin", ":landed", cwd=landed)            # and its branch is deleted
+        _git("fetch", "-q", "--prune", "origin", cwd=self.primary)   # origin/main moves; the primary's main doesn't
+        os.utime(landed / ".git", (0, 0))
+        self.assertEqual(self.buckets()["cecelia-landed"], P.SAFE)
+
+        log = P.remove(P.survey(str(self.primary), self.sessions), str(self.primary))
+
+        self.assertFalse(landed.exists())
+        self.assertNotIn("landed", self.branches(), log)
+
+    def test_a_squash_merged_branch_is_deleted_at_its_pr_head(self):
+        (self.ahead / "g.txt").write_text("unmerged, but its PR merged at this head\n", encoding="utf-8")
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(self.ahead), capture_output=True,
+                              text=True, encoding="utf-8").stdout.strip()
+        (self.ahead / "g.txt").unlink()
+        _git("checkout", "-q", "--", ".", cwd=self.ahead)
+        with mock.patch.object(P, "merged_pr_heads", lambda *a, **k: [{"headRefOid": head}]):
+            self.assertEqual(self.buckets()["cecelia-ahead"], P.SAFE)
+            P.remove(P.survey(str(self.primary), self.sessions), str(self.primary))
+        self.assertNotIn("ahead", self.branches())
+
+    def test_a_branch_is_kept_when_it_moved_or_is_checked_out_elsewhere(self):
+        head = subprocess.run(["git", "rev-parse", "merged"], cwd=str(self.primary), capture_output=True,
+                              text=True, encoding="utf-8").stdout.strip()
+        self.assertIn("checked out in another worktree", P.delete_branch("merged", head, str(self.primary)))
+        _git("worktree", "remove", str(self.merged), cwd=self.primary)
+        self.assertIn("moved", P.delete_branch("merged", "1" * 40, str(self.primary)))
+        self.assertIn("kept", P.delete_branch("merged", "0" * 40, str(self.primary)))   # zeros skip git's check
+        self.assertIn("merged", self.branches())
+        self.assertEqual(P.delete_branch("merged", head, str(self.primary)), " + branch deleted")
+
     def test_a_worktree_that_changed_since_the_survey_is_skipped(self):
         rows = P.survey(str(self.primary), self.sessions)
         (self.merged / "late.txt").write_text("written after the survey\n", encoding="utf-8")
