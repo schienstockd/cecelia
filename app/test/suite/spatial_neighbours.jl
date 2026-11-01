@@ -337,15 +337,16 @@ end
         run(["seg/near", "seg/far"])
         @test any(l -> occursin("earlier combined columns", l) && occursin("seg_far+seg_near", l), logs)
 
-        # containment: the cubes sit side by side, so no A cell is inside a
-        # near cell and none holds one — the columns are written, and a run without containment
-        # drops them rather than leaving them beside fresh distances (positives: test_mesh_containment.py)
+        # enclosure: the cubes sit side by side, so at most one face of an A cell's shell is a near
+        # cell — partly, never mostly, enclosed — and none encloses one; the columns are written, and a
+        # run without containment drops them rather than leaving them beside fresh distances
+        # (positives: test_mesh_containment.py)
         res = Cecelia._run_task(ContactsMeshes(), img, Dict{String,Any}("popsA" => ["seg/A"],
             "popsB" => ["seg/near"], "maxContactDist" => 5.0, "checkContained" => true); on_log = l -> push!(logs, l))
         @test res !== nothing || error(join(logs, "\n"))
         cont = sort(label_props(img; value_name="seg") |>
             select_cols([col("contained_by", "flow.seg_near"), col("contains_n", "flow.seg_near")]) |> as_df, :label)[[1, 4], :]
-        @test cont[!, col("contained_by", "flow.seg_near")] == [0.0, 0.0]
+        @test all(f -> 0.0 <= f < 0.5, cont[!, col("contained_by", "flow.seg_near")])
         @test cont[!, col("contains_n", "flow.seg_near")] == [0.0, 0.0]
         @test Cecelia.read_qc(img, "spatialAnalysis.contactsMeshes", "seg")["metrics"]["nContained"] == 0
         run(["seg/near"])

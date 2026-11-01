@@ -59,7 +59,7 @@
       "label": "Containment",
       "type": "bool",
       "default": false,
-      "tip": "Also record which A cells sit inside a B cell, and how many each holds"
+      "tip": "Also record how enclosed each A cell is by B (0–1), and how many B cells each A encloses"
     }
   ]
 }

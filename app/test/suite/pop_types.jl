@@ -247,7 +247,7 @@ end
     @test Cecelia._is_categorical_col([1, 2, 3], "live.cell.min_distance#live.T_qc") == false
     @test Cecelia._is_categorical_col([0, 0, 1], "spatial.comp.other.immune") == false
     # …while the IDENTIFIERS beside them stay categorical (they are label codes, not quantities)
-    @test Cecelia._is_categorical_col(flag, "flow.cell.contained_by#flow.M_tbm") == false
+    @test Cecelia._is_categorical_col([0.0, 0.42, 0.9], "flow.cell.contained_by#flow.M_tbm") == false  # a 0–1 enclosure share
     @test Cecelia._is_categorical_col([0, 2, 1], "flow.cell.contains_n#flow.B_frags") == false
     @test Cecelia._is_categorical_col([3, 7, 7], "live.cell.contact_id#live.T_qc__tracked") == true
     @test Cecelia._is_categorical_col([1, 2, 2], "live.cell.aggregate.id") == true

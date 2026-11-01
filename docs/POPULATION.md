@@ -629,9 +629,11 @@ off) makes every B ref one group — the nearest of any target, the pre-#1734 be
 `<target>` is `_contact_target(pop_namespace(group), group)`; every reader (analysis runs, plots,
 measure pickers, track aggregation, viewer colour-by) matches the `contact#` / `min_distance#` prefix,
 so N column sets need no reader change. `contactsMeshes` with **Containment** on adds
-`.contained_by#<target>` (0/1: the A cell sits inside a B cell) and `.contains_n#<target>` (B cells
-inside this A cell) — on each object's label voxels with holes filled plane by plane, because an
-engulfed fragment is dark in its host's channel and leaves a hole in the host's segmentation. Both are
+`.contained_by#<target>` (0–1: the share of a 2-voxel 3D shell round the A cell that is a B cell —
+how ENCLOSED it is) and `.contains_n#<target>` (B cells with ≥ 0.5 of their shell on this A cell) — on
+the label voxels. A share, not "inside a sealed hole": an engulfed fragment's vacuole is open in some
+planes, or the fragment's label spills past it, so a hole-filling test found almost nothing on real
+intravital data. Gate the share (e.g. ≥ 0.6) to say "enclosed". Both are
 quantities to the same readers (`_SPATIAL_NUMERIC_MEASURE`, `spatial_cell_properties.json`). QC `nContacts`/`fracInContact` count A cells in contact with
 ANY target (= what the pooled column reported), plus `nTargets`; a target with no cells is skipped
 with `contact.no_target_cells`. A per-target re-run leaves an earlier combined set in place (it is a

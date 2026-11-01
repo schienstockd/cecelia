@@ -5,13 +5,14 @@ Surface-to-surface contact: for each population-A cell, the minimum SURFACE dist
 population-B cell, from meshes built on the fly (marching cubes on the label submasks) — the accurate
 counterpart to the fast centroid (points) route, mostly for live images (docs/todo/SPATIAL_REGIONS_PLAN.md
 Decision 11). Per timepoint for live. Candidate pairs are pre-filtered by centroid distance
-(mesh_utils.nearest_surface), so it's O(edges), not O(N²), and needs no fcl.
+(mesh_utils.nearest_surface: one KD-tree over the B vertices), and needs no fcl.
 
 A and B are each a single segmentation (label ids collide across segmentations, so B is one seg). Params:
 imPath (for dims), aLabelPath / bLabelPath (label zarrs), aLabels (member label ids), targets
 (`[{target: obs-column suffix, bLabels: member label ids}]` — one column set per target, #1734; B is
 meshed once per timepoint and split per target), physicalSizes [sz,sy,sx], maxContactDist (µm),
-checkContained (bool — also write `contained_by#` / `contains_n#`, `mesh_utils.containment_per_target`),
+checkContained (bool — also write `contained_by#` (0–1, how enclosed by the target) / `contains_n#`,
+`mesh_utils.enclosure_per_target`),
 popType, propsPath (A's labelProps to write), qcOutPath.
 """
 
@@ -71,9 +72,9 @@ def run(params):
     # per target, per-A-cell nearest B surface distance + id, accumulated across timepoints
     min_dist = {name: {l: float("inf") for l in a_labels} for name, _ in targets}
     contact_id = {name: {l: 0 for l in a_labels} for name, _ in targets}
-    # containment, max over timepoints (a label is one object; a tracked id held over frames keeps
-    # its highest count rather than a sum that counts the same fragment once per frame)
-    contained_by = {name: {l: 0 for l in a_labels} for name, _ in targets}
+    # enclosure, max over timepoints (a label is one object; a tracked id held over frames keeps
+    # its most-enclosed frame and highest count rather than a sum that counts a fragment once per frame)
+    contained_by = {name: {l: 0.0 for l in a_labels} for name, _ in targets}
     contains_n = {name: {l: 0 for l in a_labels} for name, _ in targets}
     # targets with at least one B mesh at some timepoint; the rest (every cell below min_voxels, or
     # absent from the B zarr) get no columns and are reported back for the QC warning
@@ -94,7 +95,7 @@ def run(params):
                     min_dist[name][al] = d
                     contact_id[name][al] = bl or 0
         if contained:
-            per = mesh_utils.containment_per_target(a_vol, a_labels, b_vol, targets)
+            per = mesh_utils.enclosure_per_target(a_vol, a_labels, b_vol, targets)
             for name, (inside, held) in per.items():
                 for al, v in inside.items():
                     contained_by[name][al] = max(contained_by[name][al], v)
@@ -122,8 +123,9 @@ def run(params):
             inside = np.array([float(contained_by[name][l]) for l in labels])
             cols[f"{pop_type}.cell.contained_by#{name}"] = inside
             cols[f"{pop_type}.cell.contains_n#{name}"] = [float(contains_n[name][l]) for l in labels]
-            in_host |= inside > 0
-            log.log(f">> contactsMeshes: {int(inside.sum())}/{len(labels)} A cells inside {name}")
+            in_host |= inside >= mesh_utils.ENCLOSED_FRAC
+            log.log(f">> contactsMeshes: {int((inside >= mesh_utils.ENCLOSED_FRAC).sum())}/{len(labels)} "
+                    f"A cells enclosed by {name} (≥{mesh_utils.ENCLOSED_FRAC:g} of their shell)")
     if len(cols) > 1:
         view = LabelPropsView(props)
         if not contained:

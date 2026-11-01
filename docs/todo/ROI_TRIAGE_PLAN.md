@@ -15,7 +15,7 @@ the test case, not the design.
 **The question lives in the population, not in the task.** Segmentation + gating already express
 "which objects matter": a gate, or a filter population on any measure (PopulationManager → *New
 filter population*, compound conditions; `docs/POPULATION.md`). "Fragments inside a macrophage" is
-`frags` filtered on `contained_by#<macrophages>` > 0 (from Cell contacts (meshes) → *Containment*);
+B-cell objects gated on `contained_by#<macrophages>` ≥ ~0.6 (how enclosed, from Cell contacts (meshes) → *Containment*);
 "naked nuclei" is `nuc` minus `mem`. Find ROIs then answers one general question: **where do these
 objects gather in space and time?**
 
@@ -56,12 +56,13 @@ The first P1 thresholded the CD169 channel inside the task (smooth → threshold
 
 Instead: **segment macrophages** with the existing segmentation tasks (cellpose / coastal on CD169),
 correct them with the existing tools, then run **Cell contacts (meshes)** with **Containment** on:
-`contained_by#<target>` (0/1, the A object sits inside a B object) and `contains_n#<target>` (B
-objects inside this A object — the per-TBM fragment count of the MERTK question). This is the old R
-`checkBContainsA` (`old-R-shiny-version/inst/modules/sources/spatialAnalysis/py/cell_contacts_mesh.py`),
-dropped in the port. It is measured on label voxels **after per-plane hole filling**: an engulfed
-fragment is dark in CD169, so the host's segmentation has a hole where it sits, and an unfilled test
-reads it as outside. The dim-TBM problem does not go away — it moves into segmentation, where it can
+`contained_by#<target>` (0–1, how enclosed the A object is: the share of a 2-voxel shell round it on
+a B object) and `contains_n#<target>` (B objects this A object encloses — the per-TBM fragment count of
+the MERTK question). It replaces the old R `checkBContainsA`
+(`old-R-shiny-version/inst/modules/sources/spatialAnalysis/py/cell_contacts_mesh.py`), dropped in the
+port. A first port tested "inside a hole after per-plane hole filling"; on UMq4v3 it found 5 objects in
+the whole movie and none of the known uptakes — vacuoles open in some planes, and the engulfed object's
+label spills past them. The shell share is what found s28 / s24 by hand. The dim-TBM problem does not go away — it moves into segmentation, where it can
 be seen and fixed.
 
 ### 1c. Existing pieces reused [code]
@@ -70,7 +71,7 @@ be seen and fixed.
 |---|---|---|
 | Pop membership → labels | `pop_df_multi` | `app/src/gating/popmanager/` |
 | Filter populations on any measure | PopulationManager *New filter population* | `docs/POPULATION.md` → *User-defined filter populations* |
-| Surface contacts (+ containment, new) | `spatialAnalysis.contactsMeshes` | `contactsMeshes.jl`, `cell_contacts_mesh_run.py`, `mesh_utils.containment_per_target` |
+| Surface contacts (+ enclosure) | `spatialAnalysis.contactsMeshes` | `contactsMeshes.jl`, `cell_contacts_mesh_run.py`, `mesh_utils.enclosure_per_target` |
 | Measure picker | `labelPropsColsSelection` (+ `allObs`, new) | `frontend/src/tasks/ParamRenderer.vue` |
 | Sidecar path convention | `img_stats_path` / `img_stats_suffixes` | `app/src/model/image.jl` |
 | Atomic JSON | `write_json_atomic` | `app/src/utils.jl`, `python/cecelia/utils/atomic_io.py` |

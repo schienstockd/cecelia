@@ -49,37 +49,34 @@ def _radius(m):
 
 
 def _surface_distance(ma, mb):
-    """Approx min surface-to-surface distance (µm): min of A-vertices→B-surface and B-vertices→A-surface
-    (vertex-sampled, unsigned). ~0 when the meshes touch/overlap. Avoids fcl."""
-    import trimesh
-    _, da, _ = trimesh.proximity.closest_point(mb, ma.vertices)
-    _, db, _ = trimesh.proximity.closest_point(ma, mb.vertices)
-    return float(min(da.min(), db.min()))
+    """Min surface-to-surface distance (µm) as the nearest VERTEX pair of the two meshes. Marching-cubes
+    vertices sit on every voxel face, so this is within half a voxel of the true surface gap (up to
+    ~1 µm along a 2 µm z step) and ~0 when the meshes touch. The same definition `nearest_surface`
+    answers in bulk; a triangle-exact search cost minutes per frame on a dense image."""
+    from scipy.spatial import cKDTree
+
+    d, _ = cKDTree(mb.vertices).query(ma.vertices, k=1)
+    return float(d.min())
 
 
 def nearest_surface(a_meshes, b_meshes):
-    """For each A mesh, the nearest B mesh surface distance + B label. Pre-filters candidate B by
-    CENTROID distance (KDTree, Decision 11) — a B can only be within surface range if its centroid is
-    within `max_dist + r_A + r_B` — then computes the exact-ish surface distance only for those
-    candidates. O(edges), not O(N²), and no fcl. Returns `{a_label: (min_dist_µm, b_label|None)}`."""
+    """For each A mesh, the nearest B mesh surface distance (µm, `_surface_distance`'s vertex-pair
+    definition) + that B's label. ONE KD-tree over every B vertex, queried with each A's vertices, so a
+    frame is a bulk lookup rather than a mesh-pair search. A with no B vertex within
+    `_SURFACE_SEARCH_PAD` µm reads `(inf, None)`. Returns `{a_label: (min_dist_µm, b_label|None)}`."""
     from scipy.spatial import cKDTree
 
     if not a_meshes or not b_meshes:
         return {lb: (float("inf"), None) for lb in a_meshes}
     b_labels = list(b_meshes.keys())
-    b_cent = np.array([b_meshes[l].centroid for l in b_labels])
-    max_b_rad = max(_radius(b_meshes[l]) for l in b_labels)
-    tree = cKDTree(b_cent)
+    verts = np.concatenate([b_meshes[l].vertices for l in b_labels])
+    owner = np.repeat(np.arange(len(b_labels)), [len(b_meshes[l].vertices) for l in b_labels])
+    tree = cKDTree(verts)
     out = {}
     for lb, m in a_meshes.items():
-        reach = _radius(m) + max_b_rad          # widest centroid gap that could still touch
-        cand = tree.query_ball_point(m.centroid, reach + _SURFACE_SEARCH_PAD)
-        best = (float("inf"), None)
-        for ci in cand:
-            d = _surface_distance(m, b_meshes[b_labels[ci]])
-            if d < best[0]:
-                best = (d, b_labels[ci])
-        out[lb] = best
+        d, i = tree.query(m.vertices, k=1, distance_upper_bound=_SURFACE_SEARCH_PAD)
+        j = int(np.argmin(d))
+        out[lb] = (float(d[j]), b_labels[owner[i[j]]]) if np.isfinite(d[j]) else (float("inf"), None)
     return out
 
 
@@ -91,8 +88,8 @@ def nearest_surface_per_target(a_meshes, b_meshes, targets):
             for name, labs in targets}
 
 
-# how far past the touching-reach to still consider a candidate (µm), so a near-but-not-touching
-# nearest neighbour is still found for the min_distance readout, not just contacts.
+# how far to look for the nearest surface (µm): a near-but-not-touching neighbour is still found for
+# the min_distance readout, not just contacts; beyond it reads as none.
 _SURFACE_SEARCH_PAD = 50.0
 
 
@@ -148,62 +145,63 @@ def mesh_aggregates(meshes, max_dist, min_cells):
     return out
 
 
-# ── Containment: is an A cell inside a B cell, and how many B cells does an A cell hold ──────────
-# Measured on the LABEL voxels the meshes come from, after filling each
-# object's holes plane by plane: an engulfed fragment is dark in the host's channel, so the host's
-# segmentation has a hole exactly where the fragment sits, and a mesh or raw-voxel test then reads it
-# as OUTSIDE — the one case the measure exists for.
+# ── Enclosure: how much of an A cell is wrapped by a B cell, and how many B cells an A cell wraps ───
+# Measured on the LABEL voxels the meshes come from: the share of a thin shell around the object that
+# lies on the host. An engulfed fragment sits in a vacuole that is open in some planes, or spills past
+# it, so "inside a sealed hole" almost never holds on real segmentations; the share of its surroundings
+# that is host does, and stays a measure (0–1) rather than a verdict.
+
+ENCLOSURE_SHELL = 2          # voxels: the shell grown round the object, in 3D
+ENCLOSED_FRAC = 0.5          # a host wraps an object when this much of its shell is that host
 
 
-def fill_label_holes(vol, labels):
-    """Copy of the label volume `vol` with each listed object's holes filled, one z-plane at a time.
-
-    Holes are filled into background only (never over another object), within the object's own
-    bounding box — a gap that opens onto the box edge is not a hole. A 2D `vol` is one plane."""
+def _shells(vol, labels, shell):
+    """`{label: (slices, ring mask)}` per listed object in `vol`: the `shell`-voxel ring round it (3D
+    dilation minus the object), inside its bounding box grown by `shell`."""
     from scipy import ndimage
 
     wanted = {int(l) for l in labels}
-    out = np.array(vol, copy=True)
+    out = {}
     for i, sl in enumerate(ndimage.find_objects(vol)):
         if sl is None or i + 1 not in wanted:
             continue
-        m = vol[sl] == i + 1
-        filled = (np.stack([ndimage.binary_fill_holes(p) for p in m]) if m.ndim == 3
-                  else ndimage.binary_fill_holes(m))
-        sub = out[sl]                                   # a view: writes land in `out`
-        sub[filled & (sub == 0)] = i + 1
+        box = tuple(slice(max(0, s.start - shell), min(n, s.stop + shell)) for s, n in zip(sl, vol.shape))
+        obj = vol[box] == i + 1
+        ring = ndimage.binary_dilation(obj, iterations=shell) & ~obj
+        if ring.any():
+            out[i + 1] = (box, ring)
     return out
 
 
-def _hosts(src_vol, src_labels, host_vol, min_frac):
-    """`{src_label: host_label}` for each src object with ≥ `min_frac` of its voxels on ONE host."""
-    ids = np.fromiter((int(l) for l in src_labels), dtype=np.int64)
-    m = np.isin(src_vol, ids)
-    if not m.any():
-        return {}
-    s = src_vol[m].astype(np.int64)
-    h = host_vol[m].astype(np.int64)
-    size = dict(zip(*np.unique(s, return_counts=True)))
-    pairs, cnt = np.unique(np.stack([s, h]), axis=1, return_counts=True)
-    return {int(si): int(hi) for (si, hi), c in zip(pairs.T, cnt) if hi != 0 and c >= min_frac * size[si]}
+def enclosure_per_target(a_vol, a_labels, b_vol, targets, shell=ENCLOSURE_SHELL, frac=ENCLOSED_FRAC):
+    """Per target: how enclosed each A cell is by that target's B cells, and how many of them each A wraps.
 
-
-def containment_per_target(a_vol, a_labels, b_vol, targets, min_frac=0.5):
-    """Per target: which A cells sit inside one of its B cells, and how many of its B cells each A holds.
-
-    `targets` is `[(name, {b_label, ...}), ...]` as for `nearest_surface_per_target`. "Inside" = at
-    least `min_frac` of the cell's voxels lie on ONE hole-filled host. Returns
-    `{name: (contained_by {a: 0|1}, contains_n {a: int})}` over the A labels present in `a_vol`."""
+    `targets` is `[(name, {b_label, ...}), ...]` as for `nearest_surface_per_target`. `enclosed[a]` =
+    the share (0–1) of A's `shell`-voxel ring lying on the target's B labels in `b_vol`; `holds[a]` =
+    how many of the target's B cells have ≥ `frac` of THEIR ring on A. A and B may be the same label
+    image (one segmentation gated twice). Returns `{name: (enclosed {a: float}, holds {a: int})}` over
+    the A labels present in `a_vol`."""
     b_all = set().union(*(labs for _, labs in targets)) if targets else set()
-    a_host = _hosts(a_vol, a_labels, fill_label_holes(b_vol, b_all), min_frac)
-    b_host = _hosts(b_vol, b_all, fill_label_holes(a_vol, a_labels), min_frac)
+    a_rings = _shells(a_vol, a_labels, shell)
     present = {int(l) for l in np.unique(a_vol)} & {int(l) for l in a_labels}
+    # which A label wraps each B (≥ frac of B's ring on one A)
+    wrapped_by = {}
+    for b, (box, ring) in _shells(b_vol, b_all, shell).items():
+        under = a_vol[box][ring].astype(np.int64)
+        labs, cnt = np.unique(under[under > 0], return_counts=True)
+        if len(labs):
+            k = int(np.argmax(cnt))
+            if cnt[k] >= frac * ring.sum() and int(labs[k]) in present:
+                wrapped_by[b] = int(labs[k])
     out = {}
     for name, labs in targets:
-        contained = {a: int(a_host.get(a) in labs) for a in present}
-        n = {a: 0 for a in present}
-        for b, a in b_host.items():
-            if b in labs and a in n:
-                n[a] += 1
-        out[name] = (contained, n)
+        ids = np.fromiter((int(l) for l in labs), dtype=np.int64)
+        enclosed = {a: 0.0 for a in present}
+        for a, (box, ring) in a_rings.items():
+            enclosed[a] = float(np.isin(b_vol[box][ring], ids).mean())
+        holds = {a: 0 for a in present}
+        for b, a in wrapped_by.items():
+            if b in labs:
+                holds[a] += 1
+        out[name] = (enclosed, holds)
     return out
