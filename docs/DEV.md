@@ -356,6 +356,7 @@ validation* in the root `CLAUDE.md`).
 | A major breaks the tests and you want to fix it now | **Don't push fixes to `update-deps`.** The next run rebuilds that branch from `main` and force-pushes, which drops them. Branch off it instead (`git switch -c deps/pandas-3 origin/update-deps`), fix, and PR that to `main`. It carries the lock too, so close the bot PR. |
 | A major breaks the tests and the fix can wait | Cap it in `pixi.toml` (`pandas = ">=2.3,<3"`) with a comment, **and** add a `docs/TODO.md` item to lift the cap. Re-run the workflow (*Run workflow*) so the rest of the refresh lands. The cap then appears in every month's *held back* list. **A cap without a TODO item is how we get stuck on an old version.** |
 | One OS only | Usually a missing wheel on that platform. Cap it under that `[target.<platform>…]` table, not globally. |
+| Nobody has looked yet | The weekly judge pass runs `pixi run judge-deps` on every red bot PR: an unattended session finds the bump and opens a PR with the bump plus the fix, or reports the hold to make. [`ai-assist/WEEKLY_JUDGE.md`](ai-assist/WEEKLY_JUDGE.md) → *Red dependency PRs*. |
 
 The first CI run after a lock change is slower: every OS starts a fresh pixi cache.
 

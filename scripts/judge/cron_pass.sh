@@ -21,6 +21,9 @@
 # (`auto-*.log`). It starts no session past AUTO_UNTIL_SEC after this script started, so the last one
 # ends before the unit's 12h timeout kills it mid-way. Its exit never changes the pass's: a failed
 # session or the usage limit leaves the rest for next week. `JUDGE_AUTO_FIX=0` in the unit skips it.
+# Before it, `judge-deps` works the dependency-bot PRs whose CI is red (one session and PR each, the
+# same fence and deadline, `deps-*.log`): they block every update behind them, and are usually 0-2.
+# `JUDGE_DEPS_FIX=0` skips that.
 #
 # Called by systemd/weekly-judge.service — see that dir's README. Fails loudly (exit non-zero) so
 # `systemctl --user status weekly-judge.service` shows red. Design: docs/ai-assist/WEEKLY_JUDGE.md.
@@ -49,6 +52,7 @@ mkdir -p "$LOG_DIR"
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE="$LOG_DIR/$([ "$MODE" = chart ] && echo chart || echo judge)-$TS.log"
 AUTO_LOG_FILE="$LOG_DIR/auto-$TS.log"
+DEPS_LOG_FILE="$LOG_DIR/deps-$TS.log"
 STARTED_S=$(date +%s)
 # The unit's TimeoutStartSec is 12h: 4h left for the last session (the longest seen so far took ~2.5h,
 # most of it waiting on its PR's CI).
@@ -72,18 +76,20 @@ run_pass() {   # $1 = attempt; returns the pass's exit code
     return "${PIPESTATUS[0]}"
 }
 
-run_auto_fix() {   # after a pass that succeeded; never fails the pass
-    if [ "${JUDGE_AUTO_FIX:-1}" = 0 ]; then
-        log "JUDGE_AUTO_FIX=0: judge-review --auto skipped"
+run_unattended() {   # $1 = its off-switch var, $2 = its log file, the rest = the pixi task; never fails the pass
+    local switch=$1 file=$2 label rc=0
+    shift 2
+    label="${*}"
+    if [ "${!switch:-1}" = 0 ]; then
+        log "$switch=0: $label skipped"
         return 0
     fi
-    local rc=0
-    (cd "$REPO_ROOT" && nice -n 10 ionice -c 3 pixi run judge-review --auto --until "$((STARTED_S + AUTO_UNTIL_SEC))") \
-        2>&1 | tee -a "$AUTO_LOG_FILE" || rc=${PIPESTATUS[0]}
+    (cd "$REPO_ROOT" && nice -n 10 ionice -c 3 pixi run "$@" --until "$((STARTED_S + AUTO_UNTIL_SEC))") \
+        2>&1 | tee -a "$file" || rc=${PIPESTATUS[0]}
     case "$rc" in
         0) ;;
-        "$EX_TEMPFAIL") log "judge-review --auto stopped on the usage limit; the rest wait for next week" ;;
-        *) log "judge-review --auto exited $rc (see $AUTO_LOG_FILE); the pass itself succeeded" ;;
+        "$EX_TEMPFAIL") log "$label stopped on the usage limit; the rest wait for next week" ;;
+        *) log "$label exited $rc (see $file); the pass itself succeeded" ;;
     esac
     return 0
 }
@@ -121,7 +127,10 @@ main() {
         rc=0
         run_pass "$attempt" || rc=$?
         if [ "$rc" -ne "$EX_TEMPFAIL" ] || [ ! -f "$LIMIT_FILE" ]; then
-            [ "$rc" -eq 0 ] && run_auto_fix
+            if [ "$rc" -eq 0 ]; then   # red bot PRs first: they block every update behind them
+                run_unattended JUDGE_DEPS_FIX "$DEPS_LOG_FILE" judge-deps
+                run_unattended JUDGE_AUTO_FIX "$AUTO_LOG_FILE" judge-review --auto
+            fi
             return "$rc"
         fi
         read -r retry reset < <(python3 -c 'import json, sys

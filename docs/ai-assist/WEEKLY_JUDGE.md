@@ -352,15 +352,33 @@ the last one (up to ~4h, CI included) ends inside the unit's 12h timeout instead
 the pass's: a failed session, the usage limit or the deadline leaves the rest for next week.
 `Environment=JUDGE_AUTO_FIX=0` in the unit (`systemctl --user edit weekly-judge.service`) skips it.
 
+**Red dependency PRs.** Before `--auto`, the same pass runs `judge-deps` (`scripts/judge/deps_fix.py`)
+on every open Dependabot or `update-deps` PR whose CI finished red. A green bot PR is yours to merge; a
+red one means a bump broke something, and finding which is the work this takes off you. One session per
+PR, through the same pipeline as `--auto` (`auto_fix.run_job`: fence, recital rounds, PR, CI rounds):
+
+- The worktree is made off **the bot's branch**, so the bumped packages are installed: the agent has no
+  network to install them itself. It reproduces the failure, names the bump, and fixes our code for it.
+- Its PR to main carries the bump **and** the fix, never a push to the bot's branch (`docs/DEV.md` →
+  *When CI goes red*). Once green, the bot PR gets a comment pointing at it. Dependabot closes its own PR
+  when the versions reach main; close an `update-deps` PR by hand.
+- An upstream regression with no fix in our code comes back `left`, with the hold it proposes (a
+  Dependabot `ignore` range, or a pixi cap plus its `docs/TODO.md` item). Those files are fenced
+  (`auto_fix.PROTECTED`), so you make the hold.
+- The brief carries the bot PR's version table and the failed jobs' logs, never its release notes:
+  third-party text has no place in an unattended agent's prompt.
+- Each PR is tried once per head commit (`~/.cecelia-effectiveness/deps_fix.jsonl`); a rebase or a new
+  bump gets a fresh try. A worktree left from an earlier try (`cecelia-deps-<n>`) blocks a retry until
+  you remove it.
+
+Logged to `cron/deps-*.log`, under the same 8h deadline; `Environment=JUDGE_DEPS_FIX=0` skips it.
+
 A bug you started a fix session for isn't offered again. The next pass marks it `gone` once the fix
 has merged; if it hasn't, the bug is still open there and back on the list. The bugs are also in
 `~/.cecelia-effectiveness/judge-runs/<date>.md` for any session pointed at the record.
 
 The rules-only PR only carries `EFFECTIVENESS.md` to main: merge it whenever, and answer its
 proposals in `judge-review`.
-
-No fix runs unattended: an unattended fix agent is deferred, see
-[`../FUTURE.md`](../FUTURE.md) → *Unattended fix agent for the weekly judge*.
 
 ## The chart
 
@@ -414,6 +432,7 @@ next pass (or `pixi run effectiveness-chart -- --push`) recreates it.
 | `pixi run judge-run-reviews` | The run reviews a pass would log and the agent causes per guide, printed; logs nothing |
 | `pixi run judge-review` | Decide, work the open bugs (`[f] fix now` opens a briefed session), then the rule proposals (`[e] edit the rule`) |
 | `pixi run judge-review --auto` | Work the `fix` bugs unattended, one PR per session (`--limit N`, `--dry-run`) |
+| `pixi run judge-deps` | Work the red Dependabot / `update-deps` PRs unattended, one PR each (`--limit N`, `--dry-run`) |
 | `pixi run judge-record D --mirror` | Re-render a stored record |
 | `pixi run effectiveness-chart` | Render the README chart to `~/.cecelia-effectiveness/chart/`; `-- --dry-run` prints the push, `-- --push` publishes to `judge-assets` |
 | `pixi run judge-issues` | What the issue mirror would do for the newest record, every body printed; reads only. `-- --apply` does it |
