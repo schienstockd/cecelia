@@ -30,7 +30,7 @@
 // Rows are selected by CLICKING ANYWHERE on the row; the radio/checkbox is a visual + a11y affordance,
 // not the hit target (a 12px radio is a poor one). The row carries the tooltip, which is also what
 // satisfies the `uncoveredControls` ratchet — see docs/UI.md → Tooltips.
-import { computed, ref, watch, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, nextTick, getCurrentInstance, useSlots, onMounted, onBeforeUnmount } from 'vue'
 import { profileStorage } from '../utils/profileStorage'
 import { sortRows, cycleSort, sortIconFor, parseSortState,
          type SortState, type SortValue } from '../utils/sortRows'
@@ -208,6 +208,12 @@ const props = withDefaults(defineProps<{
    * draw over the column titles.
    */
   stickyHeader?: boolean
+  /**
+   * Scroll the picked row into view when the selection changes from OUTSIDE a click — a keyboard
+   * pager stepping a long list (the viewer's ROI list). `nearest`, so a row already on screen does not
+   * move. Opt-in: a table whose selection is set elsewhere for other reasons should not jump.
+   */
+  followSelection?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -412,6 +418,11 @@ const tableStyle = computed(() =>
 // never report the panel shrinking back. The width is applied a frame later (`rafCoalesce`), never in
 // the observer callback: the column it widens sits inside the observed box.
 const tableEl = ref<HTMLTableElement | null>(null)
+// `followSelection`: after the DOM has the new `.sel-on`, bring it into view
+watch(() => props.modelValue, () => {
+  if (!props.followSelection) return
+  void nextTick(() => tableEl.value?.querySelector('tbody tr.sel-on')?.scrollIntoView({ block: 'nearest' }))
+})
 const parentPx = ref(0)
 const measureParent = rafCoalesce((w: number) => { parentPx.value = w })
 let fillRo: ResizeObserver | null = null
@@ -600,6 +611,8 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
   box-shadow: inset 0 -1px 0 var(--cc-border);
 }
 .sel-table.sticky-head thead th.sel-sticky { z-index: 4; }
+/* a row scrolled into view (`followSelection`) stops below the pinned header, not under it */
+.sel-table.sticky-head tbody tr { scroll-margin-top: 2rem; }
 .sel-col-resize {
   position: absolute; right: 0; top: 0; width: 5px; height: 100%;
   cursor: col-resize; z-index: 1;

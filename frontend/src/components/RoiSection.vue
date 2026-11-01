@@ -203,7 +203,7 @@ defineExpose({ step, onKey })
       </div>
       <div class="roi-list">
         <SelectionTable :columns="columns" :rows="tableRows" id-key="id" :model-value="activeId"
-                        density="compact" sticky-header column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
+                        density="compact" sticky-header follow-selection column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
                         @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }">
           <!-- the label as a pill, like a movie's tags -->
           <template #cell-label="{ row }">
