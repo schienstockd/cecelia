@@ -7,6 +7,7 @@ are agreed in principle; the enforcement steps are deliberately deferred.
 - Brief: [`../archive/hardening-audit-prompt.md`](../archive/hardening-audit-prompt.md) — includes
   *Notes for the run*.
 - Step 1 output: [`HARDENING_SURFACES.md`](HARDENING_SURFACES.md) — surface inventory, draft, 175 rows.
+- Step 2a output: [`HARDENING_RESULT_CORRECTNESS.md`](HARDENING_RESULT_CORRECTNESS.md) — result correctness, draft.
 - Test-data route: [`CALL_FOR_DATASETS_PLAN.md`](CALL_FOR_DATASETS_PLAN.md) — the in-app
   call-for-datasets registry (`frontend/src/lib/callForDatasets.ts`).
 - Prior decision: [`DRIFT_PREVENTION_ASSESSMENT.md`](DRIFT_PREVENTION_ASSESSMENT.md) — declined a
