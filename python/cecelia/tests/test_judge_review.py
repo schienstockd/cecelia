@@ -396,7 +396,9 @@ class FullscreenTest(_ReviewFixture):
         self.assertIn("1 answered this session · 3 left", after)   # B2, and B1 + B3 to work
 
     def card_rows(self, text: str, paint: int) -> list[str]:
-        return text.split(self.rv._CLEAR)[paint].splitlines()
+        # a paint runs from `_CLEAR` to the `\033[J` that erases below it; each row starts with `\033[K`
+        frame = text.split(self.rv._CLEAR)[paint].split("\033[J")[0]
+        return frame.replace("\033[K", "").splitlines()
 
     def test_page_down_scrolls_a_card_taller_than_the_terminal(self):
         with mock.patch.object(self.rv, "_terminal_size", return_value=(80, 12)):   # a 7-row card window
