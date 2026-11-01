@@ -85,7 +85,9 @@ import {
 import { toHex } from '../utils/colour'
 import { CHANNEL_COLORMAP_OPTIONS, distinctChannelHexes } from '../utils/viewerColormap'
 import { captureViewState, applyViewState, loadViewerProps, saveViewerProps } from '../utils/viewerProps'
-import { screenToImagePx, cameraViewL0, l0RectToScreen, screenToL0, type L0Rect } from '../utils/viewerPick'
+import {
+  screenToImagePx, cameraViewL0, l0RectToScreen, l0BoxToScreen, l0BoxCorners, BOX_EDGES, screenToL0, type L0Rect,
+} from '../utils/viewerPick'
 import { placeBox } from '../utils/anchorPosition'
 import { BOX_HANDLES, resizeBox, drawnBox, previewBoxNeeded, type BoxHandle } from '../utils/viewer/previewBox'
 import { beginRect, updateRect, finishRect, type RectDraft } from '../utils/drawGeometry'
@@ -131,6 +133,7 @@ import ColourPicker from '../components/ColourPicker.vue'
 import RangeSlider from '../components/RangeSlider.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import RoiSection from '../components/RoiSection.vue'
+import type { RoiSpot } from '../utils/rois'
 import CollapsiblePanel from '../components/CollapsiblePanel.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
@@ -3729,6 +3732,26 @@ const previewBoxScreen = computed(() => {
   if (!r || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
   return l0RectToScreen(r, cam.value, m, el.clientWidth, el.clientHeight)
 })
+/** The ROI under review (RoiSection's `focus`) and its box in canvas CSS px — the spotlight dims the
+ *  rest of the image. Anchored to the image like the preview box, so pan and zoom keep it on the ROI. */
+const roiSection = ref<{ step: (dir: 1 | -1) => void, onKey: (e: KeyboardEvent) => boolean } | null>(null)
+const roiSpot = ref<RoiSpot | null>(null)
+const roiSpotScreen = computed(() => {
+  const r = roiSpot.value, m = meta.value, el = canvas.value
+  if (!r || !settings.viewerRoiSpotlight || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
+  return l0BoxToScreen(r.box, cam.value, m, zLoaded.value, true, el.clientWidth, el.clientHeight)
+})
+/** 3D: the ROI's box itself — its twelve edges through the shaders' projection, so it turns with the
+ *  volume (docs/todo/ROI_TRIAGE_PLAN.md → Spotlight). */
+const roiBoxLines = computed(() => {
+  const r = roiSpot.value, m = meta.value, el = canvas.value
+  if (!r || !settings.viewerRoiSpotlight || !m || !el || mode.value !== 'volume' || el.clientHeight <= 0) return null
+  const c = l0BoxCorners(r.box, cam.value, m, zLoaded.value, settings.viewerVolumeProjection !== 'persp',
+                         el.clientWidth, el.clientHeight)
+  if (!c) return null
+  const top = c.reduce((a, b) => (b.y < a.y ? b : a))
+  return { lines: BOX_EDGES.map(([a, b]) => ({ x1: c[a].x, y1: c[a].y, x2: c[b].x, y2: c[b].y })), top }
+})
 /** the box's button bar, measured once it renders — `placeBox` needs its size */
 const pboxBarSize = ref({ width: 0, height: 0 })
 function measurePboxBar(el: unknown) {
@@ -5013,6 +5036,14 @@ function onKey(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null
   if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
   if (e.key === ' ') { e.preventDefault(); togglePlay(); return }
+  // the ROIs section open: Up / Down step through its list (it takes them from a solo channel)
+  if (openSection.value === 'rois' && roiSection.value && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault()
+    roiSection.value.step(e.key === 'ArrowUp' ? -1 : 1)
+    return
+  }
+  // …and A / R / F / U / 1–9 review the ROI on screen
+  if (openSection.value === 'rois' && roiSection.value?.onKey(e)) { e.preventDefault(); return }
   if (soloChannel.value && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault()
     stepSolo(e.key === 'ArrowUp' ? -1 : 1)
@@ -5681,6 +5712,22 @@ onUnmounted(() => {
       <!-- The task preview's box (see `ownPreviewBox`): edges/corners resize, the bar moves / redraws /
            resets it. The interior passes pointer events through, so panning inside it still works.
            Clipped to the canvas so it never paints over the side panel. -->
+      <!-- ROI in 3D: the box's own edges, turning with the volume; dashed outside its time window -->
+      <div v-if="roiBoxLines && roiSpot" class="vw-pbox-clip">
+        <svg class="vw-roi-box3d" :class="{ 'vw-roi-box3d-off': shownT < roiSpot.t0 || shownT > roiSpot.t1 }">
+          <line v-for="(l, i) in roiBoxLines.lines" :key="i" :x1="l.x1" :y1="l.y1" :x2="l.x2" :y2="l.y2" />
+        </svg>
+        <span class="vw-roi-spot-label vw-roi-box3d-label cc-fs-2xs"
+              :style="{ left: roiBoxLines.top.x + 'px', top: roiBoxLines.top.y + 'px' }">ROI {{ roiSpot.rank }} · t {{ roiSpot.t0 }}–{{ roiSpot.t1 }}</span>
+      </div>
+      <!-- ROI spotlight (2D): everything outside the ROI under review dimmed, its time window named -->
+      <div v-if="roiSpotScreen && roiSpot" class="vw-pbox-clip">
+        <div class="vw-roi-spot" :class="{ 'vw-roi-spot-off': shownT < roiSpot.t0 || shownT > roiSpot.t1 }"
+             :style="{ left: roiSpotScreen.x + 'px', top: roiSpotScreen.y + 'px',
+                       width: roiSpotScreen.w + 'px', height: roiSpotScreen.h + 'px' }">
+          <span class="vw-roi-spot-label cc-fs-2xs">ROI {{ roiSpot.rank }} · t {{ roiSpot.t0 }}–{{ roiSpot.t1 }}</span>
+        </div>
+      </div>
       <div v-if="previewBoxScreen" class="vw-pbox-clip">
         <div class="vw-preview-box"
              :style="{ left: previewBoxScreen.x + 'px', top: previewBoxScreen.y + 'px',
@@ -6722,7 +6769,8 @@ onUnmounted(() => {
         <CollapsibleSection label="ROIs" tip="Regions found by Find ROIs, for review"
                             accordion="cc.vw.section" section="rois"
                             fill>
-          <RoiSection v-if="openSection === 'rois'" :project-uid="projectUid" :image-uid="imageUid" />
+          <RoiSection v-if="openSection === 'rois'" ref="roiSection" :project-uid="projectUid" :image-uid="imageUid"
+                      @focus="roiSpot = $event" />
         </CollapsibleSection>
         <CollapsibleSection label="Debug" tip="Render knobs, live perf and diagnostics"
                             accordion="cc.vw.section" section="debug"
@@ -7043,6 +7091,21 @@ onUnmounted(() => {
    but semi-transparent so the cells underneath stay readable. Non-interactive so it never eats
    the pointerup that ends the gesture (that would strand the drag). */
 .vw-pbox-clip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+/* ROI spotlight: the box's own shadow, spread past any canvas, dims the rest; the clip above stops it
+   at the canvas edge. Dashed while the shown frame is outside the ROI's time window. */
+.vw-roi-spot {
+  position: absolute; pointer-events: none;
+  border: 1px solid var(--cc-accent-strong); border-radius: var(--cc-radius-sm);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--cc-bg) 65%, transparent);
+}
+.vw-roi-spot-off { border-style: dashed; }
+.vw-roi-box3d { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.vw-roi-box3d line { stroke: var(--cc-accent-strong); stroke-width: 1.5; }
+/* its own off-state: the 2D one sets a border style, which on this canvas-sized layer draws a border */
+.vw-roi-box3d-off line { stroke-dasharray: 4 3; }
+.vw-roi-box3d-label { transform: translate(-50%, -100%); bottom: auto; }
+.vw-roi-spot-label { position: absolute; bottom: 100%; left: 0; margin-bottom: 2px; white-space: nowrap;
+  color: var(--cc-text); }
 .vw-preview-box {
   position: absolute; pointer-events: none;
   border: 1px dashed var(--cc-accent-strong);

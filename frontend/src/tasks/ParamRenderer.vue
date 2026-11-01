@@ -26,6 +26,8 @@ import { measureGroups } from '../utils/measureGroups'
 import { channelLabel } from '../utils/channelNames'
 import { consumerField, type ValueNameNamespace } from '../utils/taskOutput'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import ChipInput from '../components/ChipInput.vue'
+import { parseChips, joinChips } from '../utils/chipInput'
 import { asRoleMap, setChannelRole } from '../utils/channelRoles'
 import { fetchVersions, versionChipOptions, VERSION_LATEST_CHIP } from '../utils/versions'
 import ParamFigure from '../components/ParamFigure.vue'
@@ -743,6 +745,13 @@ function onChannelUpdate(next: string[]) {
          options (task.jl), and options injected from the current form are absent at validation time
          (`_task_spec` resolves without form state), so a picked value would fail to validate. This is
          the same shape as `valueNameInput`'s suggestions — offer, never constrain. -->
+    <!-- text + `variant: "chips"` — a list of words you invent, typed as chips; still ONE stored string
+         (comma-separated, utils/chipInput.ts), so the backend param and its validation are plain text.
+         `max` caps the chips. -->
+    <ChipInput v-else-if="param.type === 'text' && param.variant === 'chips'"
+      :model-value="parseChips(val as string)" :max="param.max" :aria-label="param.label"
+      :placeholder="param.placeholder" @update:model-value="val = joinChips($event)" />
+
     <template v-else-if="param.type === 'text'">
       <input
         type="text" class="text-input"

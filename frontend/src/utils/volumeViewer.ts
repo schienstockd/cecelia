@@ -710,6 +710,33 @@ export function cameraBasis(yaw: number, pitch: number): { fwd: Vec3; right: Vec
 }
 
 /**
+ * World µm (box centred on the origin) → clip space `[x, y, w]` — the shaders' `project()`
+ * (`mip_common.wgsl`, `brick_common.wgsl`), the one TS copy, for an HTML overlay that has to sit on
+ * the rendered volume. `w` is the distance along the view axis (≤ 0 = behind the eye, perspective
+ * only); clip x/y are −1…1 across the canvas, +y up.
+ */
+export function projectWorld(
+  world: Vec3, cam: OrbitCamera, aspect: number, orthographic: boolean,
+): Vec3 {
+  const { fwd, right, up } = cameraBasis(cam.yaw, cam.pitch)
+  const d: Vec3 = [
+    world[0] - (fwd[0] * cam.dist + right[0] * cam.panX + up[0] * cam.panY),
+    world[1] - (fwd[1] * cam.dist + right[1] * cam.panX + up[1] * cam.panY),
+    world[2] - (fwd[2] * cam.dist + right[2] * cam.panX + up[2] * cam.panY),
+  ]
+  const sx = d[0] * right[0] + d[1] * right[1] + d[2] * right[2]
+  const sy = d[0] * up[0] + d[1] * up[1] + d[2] * up[2]
+  const a = Math.max(aspect, 1e-6)
+  if (orthographic) {
+    const hh = visibleExtentUm(cam.dist, 1)[1] / 2   // orthographic: constant half-height
+    return [sx / (hh * a), sy / hh, 1]
+  }
+  const w = -(d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2])
+  const ww = Math.max(w, 1e-4)
+  return [sx / (ww * VIEW_HALF_ANGLE * a), sy / (ww * VIEW_HALF_ANGLE), w]
+}
+
+/**
  * Half-height of the view at unit distance — the ONE framing constant, shared with the shader.
  *
  * It is interpolated into the WGSL rather than written twice, because the camera solves for `dist` from

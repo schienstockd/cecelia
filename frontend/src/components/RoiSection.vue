@@ -17,11 +17,13 @@ import { useFieldDraft } from '../composables/useFieldDraft'
 import { buildFocusViewState } from '../utils/viewer/focusOnCell'
 import { nextIndex, prevIndex, clampIndex, pageSummary } from '../utils/reviewPager'
 import {
-  fetchRois, postRoiReview, filterRois, roiFocusTarget, claudeLabelText, disagrees,
-  ROI_STATUSES, type RoiChange, type RoiList, type RoiRow, type RoiStatus,
+  fetchRois, postRoiReview, filterRois, roiFocusTarget, roiKeyAction, nextRoiId, claudeLabelText, disagrees,
+  ROI_STATUSES, type RoiChange, type RoiList, type RoiRow, type RoiSpot, type RoiStatus,
 } from '../utils/rois'
 
 const props = defineProps<{ projectUid: string, imageUid: string }>()
+// the ROI under review, for the viewer's spotlight; null when none is (or the section closes)
+const emit = defineEmits<{ focus: [spot: RoiSpot | null] }>()
 
 const viewer = useViewerStore()
 const settings = useSettingsStore()
@@ -57,6 +59,9 @@ function goto(r: RoiRow) {
                               focusId: 0, label: `ROI ${r.rank}`, origin: 'user' })
   }
 }
+watch(active, r => emit('focus', r ? { rank: r.rank, box: r.box, t0: r.t0, t1: r.t1 } : null))
+onBeforeUnmount(() => emit('focus', null))
+
 function step(dir: 1 | -1) {
   const n = rows.value.length
   if (!n) return
@@ -70,8 +75,14 @@ async function review(r: RoiRow, change: RoiChange) {
   if (err) toast.add({ severity: 'error', summary: 'ROI not updated', detail: err, life: 5000 })
   await load()
 }
-const setStatus = (r: RoiRow, s: 'accepted' | 'rejected' | 'flagged' | 'pending') =>
-  review(r, { status: r.status === s ? 'pending' : s })
+async function setStatus(r: RoiRow, s: 'accepted' | 'rejected' | 'flagged' | 'pending') {
+  const to = r.status === s ? 'pending' : s
+  // picked BEFORE the review: a status filter can drop the reviewed row from the reloaded list
+  const next = settings.viewerRoiAutoNext && to !== 'pending' ? nextRoiId(rows.value, r.id) : null
+  await review(r, { status: to })
+  const n = next ? rows.value.find(x => x.id === next) : null
+  if (n) goto(n)
+}
 
 const columns: SelectionColumn[] = [
   { key: 'rank', label: '#', sortable: true, width: 34 },
@@ -99,6 +110,9 @@ const statusOptions = computed<ChipOption[]>(() => [
   ...ROI_STATUSES.map(s => ({ value: s, label: STATUS_LABEL[s], tip: `ROIs that are ${s}`,
                                badge: (list.value?.rois ?? []).filter(r => r.status === s).length })),
 ])
+const labelOptions = computed<ChipOption[]>(() =>
+  (list.value?.labels ?? []).map((l, i) => ({ value: l, label: l, tip: i < 9 ? `Label as ${l} (${i + 1})` : `Label as ${l}` })))
+const setLabel = (r: RoiRow, l: string) => review(r, { userLabel: r.review?.userLabel === l ? '' : l })
 // the committed note is the source; a list reload while typing leaves the draft alone (useFieldDraft)
 const noteDraft = useFieldDraft(() => active.value?.review?.note ?? '')
 function commitNote() {
@@ -112,60 +126,86 @@ function onChanged(data: Record<string, unknown>) {
 onMounted(() => { load(); ws.on('rois:changed', onChanged) })
 onBeforeUnmount(() => ws.off('rois:changed', onChanged))
 watch(() => settings.viewerRoiSuffix, load)
+
+/** The viewer's keys while this section is open (`roiKeyAction`): true when the key was a review. */
+function onKey(e: KeyboardEvent): boolean {
+  const r = active.value
+  const act = r ? roiKeyAction(e, list.value?.labels.length ?? 0) : null
+  if (!r || !act) return false
+  if (act.kind === 'status') setStatus(r, act.status)
+  else if (act.kind === 'undo') review(r, { undo: true })
+  else setLabel(r, list.value!.labels[act.index])
+  return true
+}
+// the viewer's Up / Down step through the list, and its review keys land here, while this section is open
+defineExpose({ step, onKey })
 </script>
 
 <template>
   <div class="roi-sec">
     <template v-if="list && list.rois.length">
+      <!-- fixed above the list, which scrolls on its own, so the review controls never leave the screen -->
+      <div class="roi-head">
       <div class="cc-row cc-row-tight">
         <select v-if="list.suffixes.length > 1" v-model="settings.viewerRoiSuffix" class="cc-input-2xs"
                 v-tooltip.bottom="'Which ROI set'">
           <option v-for="s in list.suffixes" :key="s" :value="s">{{ s }}</option>
         </select>
+        <!-- on/off icon toggles in the viewer's View-row style: ghost, tinted when on -->
+        <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerRoiSpotlight }]"
+                :aria-pressed="settings.viewerRoiSpotlight" aria-label="Spotlight"
+                v-tooltip.bottom="'Spotlight — dim everything outside the ROI'"
+                @click="settings.viewerRoiSpotlight = !settings.viewerRoiSpotlight"><i class="pi pi-dot-circle" /></button>
+        <button :class="['cc-btn cc-btn-ghost cc-btn-icon', { 'cc-btn-on cc-btn-on-tint': settings.viewerRoiAutoNext }]"
+                :aria-pressed="settings.viewerRoiAutoNext" aria-label="Auto-next"
+                v-tooltip.bottom="'Next ROI after accept, reject or flag'"
+                @click="settings.viewerRoiAutoNext = !settings.viewerRoiAutoNext"><i class="pi pi-step-forward" /></button>
         <span class="roi-grow" />
-        <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Previous ROI'"
+        <button class="cc-btn cc-btn-ghost cc-btn-icon" v-tooltip.bottom="'Previous ROI (↑)'"
                 aria-label="Previous ROI" @click="step(-1)"><i class="pi pi-chevron-left" /></button>
         <span class="cc-readout cc-fs-2xs">{{ pageSummary(index, rows.length) }}</span>
-        <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Next ROI'"
+        <button class="cc-btn cc-btn-ghost cc-btn-icon" v-tooltip.bottom="'Next ROI (↓)'"
                 aria-label="Next ROI" @click="step(1)"><i class="pi pi-chevron-right" /></button>
       </div>
-
-      <ChipSelect v-model="settings.viewerRoiStatus" :options="statusOptions" variant="pill" />
-      <SelectionTable :columns="columns" :rows="tableRows" id-key="id" :model-value="activeId"
-                      density="compact" column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
-                      @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }" />
 
       <div v-if="active" class="roi-detail">
         <div class="cc-row cc-row-tight">
           <span class="cc-eyebrow cc-fs-2xs">ROI {{ active.rank }}</span>
           <span class="cc-muted cc-fs-3xs">{{ active.nObjects }} objects · z {{ active.box.z0 }}–{{ active.box.z1 }}</span>
           <span class="roi-grow" />
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': active.status === 'accepted' }"
-                  v-tooltip.bottom="'Accept'" aria-label="Accept" @click="setStatus(active, 'accepted')"><i class="pi pi-check" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': active.status === 'rejected' }"
-                  v-tooltip.bottom="'Reject'" aria-label="Reject" @click="setStatus(active, 'rejected')"><i class="pi pi-times" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" :class="{ 'cc-btn-on': active.status === 'flagged' }"
-                  v-tooltip.bottom="'Flag for a second look'" aria-label="Flag" @click="setStatus(active, 'flagged')"><i class="pi pi-flag" /></button>
-          <button class="cc-btn cc-btn-bare cc-btn-icon" v-tooltip.bottom="'Undo the last change'"
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': active.status === 'accepted' }"
+                  :aria-pressed="active.status === 'accepted'"
+                  v-tooltip.bottom="'Accept (A)'" aria-label="Accept" @click="setStatus(active, 'accepted')"><i class="pi pi-check" /></button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': active.status === 'rejected' }"
+                  :aria-pressed="active.status === 'rejected'"
+                  v-tooltip.bottom="'Reject (R)'" aria-label="Reject" @click="setStatus(active, 'rejected')"><i class="pi pi-times" /></button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" :class="{ 'cc-btn-on cc-btn-on-tint': active.status === 'flagged' }"
+                  :aria-pressed="active.status === 'flagged'"
+                  v-tooltip.bottom="'Flag for a second look (F)'" aria-label="Flag" @click="setStatus(active, 'flagged')"><i class="pi pi-flag" /></button>
+          <button class="cc-btn cc-btn-ghost cc-btn-icon" v-tooltip.bottom="'Undo the last change (U)'"
                   aria-label="Undo" @click="review(active, { undo: true })"><i class="pi pi-undo" /></button>
         </div>
         <div v-if="active.review?.claudeLabel" class="cc-muted cc-fs-3xs">
           Claude: {{ claudeLabelText(active.review) }} — {{ active.review.claudeLabel.reason }}
         </div>
-        <div class="cc-row cc-row-tight">
-          <span class="cc-muted cc-fs-2xs cc-lbl-col">Label</span>
-          <select :value="active.review?.userLabel ?? ''" class="cc-input-2xs roi-grow" v-tooltip.bottom="'Your label for this ROI'"
-                  @change="e => review(active!, { userLabel: (e.target as HTMLSelectElement).value })">
-            <option value="">—</option>
-            <option v-for="t in list.labels" :key="t" :value="t">{{ t }}</option>
-          </select>
-        </div>
+        <!-- one click per label, all in view — re-click the active one to clear it -->
+        <ChipSelect :model-value="active.review?.userLabel ?? ''" :options="labelOptions" variant="pill"
+                    allow-empty aria-label="Your label for this ROI"
+                    @update:model-value="v => review(active!, { userLabel: String(v ?? '') })" />
         <div class="cc-row cc-row-tight">
           <span class="cc-muted cc-fs-2xs cc-lbl-col">Note</span>
           <input v-model="noteDraft" class="cc-input-2xs roi-grow" v-tooltip.bottom="'Saved when you leave the field'"
                  @change="commitNote">
         </div>
       </div>
+      <ChipSelect v-model="settings.viewerRoiStatus" :options="statusOptions" variant="pill" />
+      </div>
+      <div class="roi-list">
+        <SelectionTable :columns="columns" :rows="tableRows" id-key="id" :model-value="activeId"
+                        density="compact" sticky-header column-width-key="cc.vw.rois.colw" :row-tooltip="rowTooltip"
+                        @update:model-value="(id: string) => { const r = rows.find(x => x.id === id); if (r) goto(r) }" />
+      </div>
+
     </template>
     <div v-else-if="!loading" class="cc-empty-inline cc-fs-2xs">
       No ROIs yet — run Find ROIs
@@ -174,7 +214,10 @@ watch(() => settings.viewerRoiSuffix, load)
 </template>
 
 <style scoped>
-.roi-sec { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.roi-sec { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; height: 100%; }
 .roi-grow { flex: 1; min-width: 0; }
 .roi-detail { display: flex; flex-direction: column; gap: 0.25rem; }
+.roi-head { flex: none; display: flex; flex-direction: column; gap: 0.3rem; }
+/* the section body is sized by the accordion (fill), so the list takes what the head leaves and scrolls */
+.roi-list { flex: 1 1 0; min-height: 0; overflow-y: auto; }
 </style>

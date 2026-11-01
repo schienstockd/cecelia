@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeLabelText, disagrees, filterRois, roiFocusTarget, type RoiRow } from './rois'
+import { claudeLabelText, disagrees, filterRois, roiFocusTarget, roiKeyAction, nextRoiId, type RoiRow } from './rois'
 
 const row = (id: string, rank: number, status: RoiRow['status']): RoiRow => ({
   id, rank, status, score: 1, t0: 10, t1: 21,
@@ -38,5 +38,37 @@ describe('Claude label text + disagreement', () => {
     expect(disagrees({ claudeLabel: cl, userLabel: 'engulfment' })).toBe(true)
     expect(disagrees({ claudeLabel: cl, userLabel: 'free debris' })).toBe(false)
     expect(disagrees({ claudeLabel: cl })).toBe(false)
+  })
+})
+
+describe('roiKeyAction', () => {
+  it('maps A / R / F to a status and U to undo, either case', () => {
+    expect(roiKeyAction({ key: 'a' }, 3)).toEqual({ kind: 'status', status: 'accepted' })
+    expect(roiKeyAction({ key: 'R' }, 3)).toEqual({ kind: 'status', status: 'rejected' })
+    expect(roiKeyAction({ key: 'f' }, 3)).toEqual({ kind: 'status', status: 'flagged' })
+    expect(roiKeyAction({ key: 'u' }, 3)).toEqual({ kind: 'undo' })
+  })
+  it('maps 1–9 to a review label, only for labels that exist', () => {
+    expect(roiKeyAction({ key: '1' }, 3)).toEqual({ kind: 'label', index: 0 })
+    expect(roiKeyAction({ key: '3' }, 3)).toEqual({ kind: 'label', index: 2 })
+    expect(roiKeyAction({ key: '4' }, 3)).toBeNull()
+    expect(roiKeyAction({ key: '0' }, 3)).toBeNull()
+  })
+  it('leaves a modified key to the browser', () => {
+    expect(roiKeyAction({ key: 'r', ctrlKey: true }, 3)).toBeNull()
+    expect(roiKeyAction({ key: 'a', metaKey: true }, 3)).toBeNull()
+    expect(roiKeyAction({ key: '1', altKey: true }, 3)).toBeNull()
+  })
+})
+
+describe('nextRoiId', () => {
+  const rs = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  it('is the next row, wrapping round', () => {
+    expect(nextRoiId(rs, 'a')).toBe('b')
+    expect(nextRoiId(rs, 'c')).toBe('a')
+  })
+  it('is null for the only row, or one not in the list', () => {
+    expect(nextRoiId([{ id: 'a' }], 'a')).toBeNull()
+    expect(nextRoiId(rs, 'x')).toBeNull()
   })
 })

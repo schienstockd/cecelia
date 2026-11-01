@@ -201,6 +201,13 @@ const props = withDefaults(defineProps<{
    * are genuinely not wanted — a table the user might want to sort keeps its header.
    */
   headerless?: boolean
+  /**
+   * Keep the header row in view while the rows scroll VERTICALLY inside the caller's scroll box (a
+   * list under fixed controls). Opt-in: on a table that scrolls with its page, a pinned header would
+   * stick to the page top instead. The header sits above the pinned pick column, so its radios never
+   * draw over the column titles.
+   */
+  stickyHeader?: boolean
 }>(), {
   idKey: 'name',
   disabled: false,
@@ -433,7 +440,7 @@ function colStyle(c: SelectionColumn) {
 </script>
 
 <template>
-  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact' }" :style="tableStyle">
+  <table ref="tableEl" class="sel-table" :class="{ sized, compact: density === 'compact', 'sticky-head': stickyHeader }" :style="tableStyle">
     <!-- fixed layout needs every column declared, or the radio column claims an equal share -->
     <colgroup v-if="sized">
       <col v-if="selectionMode !== 'none'" class="sel-col-pick">
@@ -585,6 +592,14 @@ thead .sel-sticky { z-index: 3; background: var(--cc-bg); }
 .sel-table.sized th { position: relative; }
 .sel-table.sized th.sel-sticky, .sel-table.sized td.sel-sticky { position: sticky; }
 .sel-table.sized th, .sel-table.sized td { overflow: hidden; text-overflow: ellipsis; }
+/* `stickyHeader`: the header row pins to the TOP of the caller's scroll box, above the body's pinned
+   cells (z 2); a header cell that is also a pinned column is above both. Opaque, and the bottom rule is
+   a shadow because a collapsed border does not travel with a sticky cell. Out-ranks `.sized th`. */
+.sel-table.sticky-head thead th {
+  position: sticky; top: 0; z-index: 3; background: var(--cc-bg);
+  box-shadow: inset 0 -1px 0 var(--cc-border);
+}
+.sel-table.sticky-head thead th.sel-sticky { z-index: 4; }
 .sel-col-resize {
   position: absolute; right: 0; top: 0; width: 5px; height: 100%;
   cursor: col-resize; z-index: 1;
