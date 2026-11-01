@@ -3,8 +3,8 @@ import { describe, it, expect } from 'vitest'
 // what every user reads in the What's New modal, so it is tested here with the rest of the pure logic.
 // @ts-expect-error — plain .mjs, no type declarations
 import { changelogSection, releaseBody, normaliseVersion, overlongBullets } from '../../../scripts/changelogSection.mjs'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+// The real CHANGELOG, read as text — the `?raw` idiom (userDocs.test.ts); node:fs has no types here.
+import CHANGELOG from '../../../CHANGELOG.md?raw'
 
 const MD = `# Changelog
 
@@ -102,7 +102,7 @@ describe('changelog bullet budget', () => {
 
   // The real file: the newest release and [Unreleased]. Older sections are history and stay as written.
   it('the newest section and [Unreleased] stay within budget', () => {
-    const md = readFileSync(resolve(__dirname, '../../../CHANGELOG.md'), 'utf8')
+    const md = CHANGELOG
     const newest = md.match(/^## \[(\d[^\]]*)\]/m)?.[1]
     const unreleased = (md.split(/^## \[Unreleased\]/m)[1] ?? '').split(/^## /m)[0]
     expect(overlongBullets(changelogSection(md, newest))).toEqual([])
