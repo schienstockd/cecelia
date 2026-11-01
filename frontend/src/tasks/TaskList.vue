@@ -137,6 +137,9 @@ const rows = computed(() => taskRows(items.value, {
   nameOfProject:     () => undefined,
   now:               now.value,
 }))
+// In script, not inline: vue-tsc 3.3.12+ mis-unwraps an imported const inside a template arrow
+// function (`TASK_STATUS.value`, vuejs/language-tools#6305).
+const rowClass = (r: (typeof rows.value)[number]) => `tone-${TASK_STATUS[r.shownStatus].tone} st-${r.shownStatus}`
 
 // THREE columns, not six. `headerless` means no sort and no column resize (both live in a header
 // cell), so widths here are not starting hints for anything to drag — the table is auto-layout and
@@ -177,7 +180,7 @@ const TL_COLUMNS: SelectionColumn[] = [
         :columns="TL_COLUMNS" :rows="rows" id-key="id"
         actions-width="7.2rem"
         :row-tooltip="r => r.task"
-        :row-class="r => `tone-${TASK_STATUS[r.shownStatus].tone} st-${r.shownStatus}`"
+        :row-class="rowClass"
         :is-expanded="r => expanded.has(r.id)">
 
         <template #cell-status="{ row: r }">
