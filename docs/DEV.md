@@ -467,6 +467,16 @@ gone) are pruned. Everything else is listed for a person to decide — the tool 
 `git branch -D` or `kill`, and prints the command where one would be needed. Each SAFE worktree is
 re-checked just before it is removed. Design: `docs/todo/WORKTREE_CLEANUP_PLAN.md`.
 
+Branches on GitHub are listed below the worktrees (`--local-only` skips them). **GONE** — in
+`origin/main`, or a PR merged or closed at exactly this tip (GitHub keeps every PR's commits) — is
+deleted by `--remove`, and only if nobody pushed to it since the survey. **STRAY** — no PR after two
+weeks, or commits pushed after its PR — is printed with its `git push origin --delete` for a person.
+Open PRs, `main` and `judge-assets` never show.
+
+The `pre-push` hook (`.githooks/pre-push`, on with `pixi run install-git-hooks`) refuses a push to a
+branch whose PR already merged or closed: that push re-creates the branch on GitHub with commits no
+PR shows. Branch fresh off `origin/main` and open a new PR instead.
+
 `bootstrap-worktree` ends with `prune-worktrees --summary` — one line, `N removable, M dead
 worktrees — …`, or nothing when none can go; agents relay it.
 
