@@ -20,6 +20,7 @@ import { movieStreamUrl, sortMovies, anchoredScroll, movieRows,
 import { sortRows, parseSortState, type SortState, type SortValue } from '../utils/sortRows'
 import { rafCoalesce } from '../utils/rafCoalesce'
 import { RESTORE_ROUTE, type RestoreKind } from '../utils/movieRestore'
+import FigureEditor from '../components/FigureEditor.vue'
 import { attrKeysOf, emptyAttrFilter, attrFilterActive, matchesAttrFilter, pruneAttrFilter,
          type AttrFilterState } from '../utils/attrFilter'
 import { useInlineEdit } from '../composables/useInlineEdit'
@@ -157,8 +158,13 @@ function onFigureLoad(e: Event) {
   natW.value = im.naturalWidth
   natH.value = im.naturalHeight
 }
-const currentUrl = computed(() =>
-  selected.value && projectUid.value ? movieStreamUrl(projectUid.value, selected.value) : '')
+const currentUrl = computed(() => {
+  if (!selected.value || !projectUid.value) return ''
+  const url = movieStreamUrl(projectUid.value, selected.value)
+  // A re-made figure keeps its name — its mtime busts the browser's copy of the old bytes.
+  const m = currentIsFigure.value ? movies.value.find(x => x.name === selected.value) : undefined
+  return m ? `${url}&v=${Math.round(m.mtime)}` : url
+})
 
 async function refresh() {
   if (!projectUid.value) { movies.value = []; return }
@@ -512,7 +518,7 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
         <!-- Both empty states live in the STAGE, so the panel beside it (and its Refresh) stays
              reachable in a project with no movies yet — it used to replace the whole page. -->
         <p v-else-if="!movies.length && !loading" class="cc-empty">No movies yet — record one from the
-          Animation, Batch movies or Viewer panels; they appear here.</p>
+          Animation, Batch movies or Viewer panels, or save a figure from the Viewer; they appear here.</p>
         <p v-else class="cc-empty">Select a movie to play.</p>
       </div>
 
@@ -553,6 +559,10 @@ const hiddenCount = computed(() => allRows.value.length - movieTableRows.value.l
                 <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Refresh
               </button>
             </div>
+          </div>
+
+          <div v-if="currentIsFigure && projectUid" class="cc-card">
+            <FigureEditor :project-uid="projectUid" :name="selected" @rendered="refresh" />
           </div>
 
           <div class="mov-list cc-card">

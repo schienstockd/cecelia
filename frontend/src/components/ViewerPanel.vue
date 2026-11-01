@@ -38,6 +38,8 @@ import { normaliseItems, compareSuffix, compareActionTip, compareShape,
 import { publishViewerCacheClear } from '../lib/viewerCacheClearChannel'
 import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
+import { figureSpecFromView, niceFigureBarUm } from '../utils/figureSpec'
+import type { Severity } from '../lib/severity'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -269,7 +271,7 @@ const renderQuality = computed<RenderQuality>({
 const matchViewer = computed<boolean>({
   get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).matchViewer : true,
   set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { matchViewer: v }) } })
-const recordNote = ref<{ severity: 'warn' | 'fail'; short: string; detail?: string } | null>(null)
+const recordNote = ref<{ severity: Severity; short: string; detail?: string } | null>(null)
 
 // Side-by-side version comparison (docs/todo/MOVIE_COMPARE_PLAN.md). The selection IS the mode: none
 // records what's on screen (unchanged), two or more record a column per version into one movie.
@@ -416,6 +418,38 @@ async function saveScreenshot() {
 // list with a live progress bar and a working Cancel. It used to be a blocking POST that resolved when
 // the movie was finished — a frozen button, no progress, and no way out of a 4K render started by
 // mistake. The button no longer owns the "in progress" state either; the task list does.
+// "Save as figure" (docs/todo/FIGURES_PLAN.md): this view — crop, z window, frame, visible channels at
+// their on-screen contrast — as a figure spec, rendered from the raw image at native resolution in the
+// house style and listed on the Movies page. The spec is kept, so the figure can be re-made with more
+// frames or other names there.
+const savingFigure = ref(false)
+async function saveFigure() {
+  const img = openedImage.value
+  const projectUid = projectMeta.current?.uid
+  if (!img || !projectUid) return
+  const vs = viewerStore.openImage?.imageUid === img.uid ? viewerStore.viewState as unknown as ViewerViewState | null : null
+  const valueName = viewerStore.openImage?.valueName || undefined
+  const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName })
+  if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
+  r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, img.physicalSizeX)
+  savingFigure.value = true
+  try {
+    const res = await fetch('/api/figures/render', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUid: img.uid, spec: r.spec,
+                             name: `${img.name ?? img.uid}_t${r.spec.frames[0]}` }),
+    })
+    const body = await res.json().catch(() => ({}))
+    recordNote.value = res.ok
+      ? { severity: 'ok', short: `Saved figure ${body.name}`, detail: 'Open it on the Movies page.' }
+      : { severity: 'fail', short: 'Could not save the figure', detail: body.error ?? `HTTP ${res.status}` }
+  } catch (e) {
+    recordNote.value = { severity: 'fail', short: 'Could not save the figure', detail: String(e) }
+  } finally {
+    savingFigure.value = false
+  }
+}
+
 async function recordTimelapse() {
   // `openImageUid` is the ANY-viewer field — set by ImageTable's eye button whenever any viewer
   // has the image. Was `viewerImageUid`, which stayed null when only the popup viewer was open,
@@ -1166,6 +1200,10 @@ onUnmounted(() => {
                     : compareActionTip(compareShapeNow,
                     'Record the current view over the time axis → mp4 in the project\'s movies/ folder')">
             <i :class="['pi', (recording || recordingTask) ? 'pi-spin pi-spinner' : 'pi-video']" />
+          </button>
+          <button class="opt-btn cc-btn cc-btn-ghost cc-btn-icon" :disabled="savingFigure"
+                  @click="saveFigure" v-tooltip.bottom="'Save this view as a figure (native resolution) → Movies'">
+            <i :class="['pi', savingFigure ? 'pi-spin pi-spinner' : 'pi-print']" />
           </button>
         </div>
         <InlineNote v-if="recordNote" :severity="recordNote.severity"

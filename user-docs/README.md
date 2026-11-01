@@ -98,7 +98,7 @@ page that defines a population names the page that summarises it.
 | Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | Claude Code writes a notebook for you |
 | Animation | Keyframe a fly-through of one image into a movie |  | Build an animation |  |
 | Batch movies | One movie setup, one timelapse movie per image |  | Record a movie |  |
-| Movies | Play the movies this project has rendered |  |  |  |
+| Movies & figures | Play the movies this project has rendered |  |  |  |
 
 ### Pipeline: run many images
 
