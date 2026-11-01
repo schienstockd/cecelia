@@ -1378,13 +1378,6 @@ end
     c = window_coverage(r)
     @test c.cells ≈ 14 / 25 && c.tracks ≈ 2 / 3
     @test isnan(window_coverage(off).tracks)
-    @test isempty(window_coverage_qc_findings(c, 4.0))
-    # a window longer than most tracks warns, naming the share that is left (1 of 3 tracks)
-    long = window_coverage(track_window_measures([mk(1, 10, 1.0), mk(3, 2, 1.0), mk(4, 3, 1.0)], 4.0, 1.0))
-    @test long.tracks ≈ 1 / 3
-    f = window_coverage_qc_findings(long, 4.0)
-    @test length(f) == 1 && f[1]["key"] == "tracking.window_coverage" && f[1]["level"] == "warn"
-    @test isempty(window_coverage_qc_findings(window_coverage(off), 0.0))
 end
 @testset "approach_columns — one approach column per min_distance target" begin
     cols = ["label", "live.cell.speed", "live.cell.min_distance#DC", "live.cell.contact#DC",

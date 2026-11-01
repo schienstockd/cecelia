@@ -167,7 +167,7 @@ export track_msd, msd_log_slope, msd_motion_kind, track_autocorrelation, persist
 export plane_angle_profile, plane_artefact, drift_test
 export track_diagnostics, track_diagnostics_for, track_diagnostic_findings, pooled_track_frame
 export window_measures, track_window_measures, window_span, WINDOW_CELL_COLS, WINDOW_TRACK_COLS,
-       window_coverage, window_coverage_qc_findings
+       window_coverage
 export approach_columns, step_approach, approach_index, approach_measures,
        contact_col_regex, approach_cell_col, approach_track_col, is_stale_track_measure,
        drop_stale_approach!

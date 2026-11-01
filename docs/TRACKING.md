@@ -323,9 +323,9 @@ number of frames — 5 min on 1-min frames reaches ±2 frames (a 4-min span) whi
 full 5 — which would break the cross-frame-rate comparison the window exists for. A window ending at its
 cell (celltrackR's `increment.cell.id`, as `live.cell.speed`) is exact for any whole number of frames.
 The task snaps the asked window to whole frames (`window_span`), logs a `[WARN]` when that shortens it
-("5 min" on 2-min frames measures 4), and banks both in QC (`windowMinutes`, `windowSpanMinutes`), with the share of cells and tracks that got a value
-(`windowCellCoverage`, `windowTrackCoverage`). Fewer than half the tracks outlasting the window raises
-`tracking.window_coverage`: the per-track medians then describe only the long-lived cells.
+("5 min" on 2-min frames measures 4), and banks both in QC (`windowMinutes`, `windowSpanMinutes`), with the share of cells that got a value
+(`windowCellCoverage`) — low coverage means the window outlasts most tracks and the windowed measures
+describe only the long-lived cells.
 Re-running with the window off drops the windowed columns. One window per run (a second time scale is
 a second segmentation run).
 - `obs` = lineage carried over per track (`track_root`, `track_parent`, `track_state`,
