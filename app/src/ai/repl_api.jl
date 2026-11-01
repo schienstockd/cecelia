@@ -29,6 +29,8 @@ const NOTEBOOK_API = Symbol[
     :track_props, :track_cell_measures,
     # summary-plot data (the same data behind the analysis-board summary plots)
     :plot_summary_data,
+    # figures — the one writer here: it writes only into the `out_dir` you give it
+    :render_figure,
 ]
 
 # Markers delimiting the generated block inside docs/REPL.md. Everything OUTSIDE them is the

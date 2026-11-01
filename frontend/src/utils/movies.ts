@@ -8,6 +8,7 @@ import { safeNamePart } from './batchMovie'
 
 export interface MovieEntry {
   name: string     // file name, e.g. "myImage_animation.mp4" — the id, and what the player streams
+  kind?: 'movie' | 'figure'   // a `.png` still figure (docs/todo/FIGURES_PLAN.md) shares the list
   size: number     // bytes
   mtime: number    // unix seconds (Float)
   // ── registry fields (settings/movies.json, merged in by /api/movies) ─────────────────────────────
@@ -24,16 +25,28 @@ export interface MovieEntry {
                          // it back — it is not recoverable from the filename, which also carries uid
                          // and attribute parts with no marker saying which is which.
   hasConfig?: boolean    // a saved generation config exists (fetched on demand, not in the list)
-  configKind?: string    // 'look' | 'keyframes' (Decision 7)
+  configKind?: string    // 'look' | 'keyframes' | 'figure' (Decision 7)
   configStale?: boolean  // the file was re-recorded after the config was saved (Decision 5)
+  createdBy?: { profile?: string, via?: string } | null   // who made it — figures stamp it
+}
+
+/** The extensions the movies dir holds — a movie or a still figure. */
+const MEDIA_EXT = /\.(mp4|png)$/i
+
+/** A still figure rather than a movie — shown as an image, not played. Falls back to the extension for
+ *  a server that predates `kind`. */
+export function isFigure(m: Pick<MovieEntry, 'name' | 'kind'> | undefined | null): boolean {
+  if (!m) return false
+  return m.kind ? m.kind === 'figure' : m.name.toLowerCase().endsWith('.png')
 }
 
 /** The producers, and how each is labelled. A movie with no `producedBy` predates the registry. */
 export const MOVIE_PRODUCERS: Record<string, string> = {
-  viewer: 'viewer', animation: 'animation', batch: 'batch',
+  viewer: 'viewer', animation: 'animation', batch: 'batch', figure: 'figure',
 }
 
-// URL the <video> element points at. The name is a server-sanitised basename ([A-Za-z0-9._-]+.mp4),
+// URL the <video> (or a figure's <img>) points at. The name is a server-sanitised basename
+// ([A-Za-z0-9._-]+.(mp4|png)),
 // but encode it anyway so it survives as a query param regardless.
 export function movieStreamUrl(projectUid: string, name: string): string {
   return `/api/movies/file?projectUid=${encodeURIComponent(projectUid)}&name=${encodeURIComponent(name)}`
@@ -50,9 +63,9 @@ export function movieDisplayName(movie: string | MovieEntry): string {
   if (typeof movie !== 'string') {
     const custom = (movie.displayName ?? '').trim()
     if (custom) return custom
-    return movie.name.replace(/\.mp4$/i, '')
+    return movie.name.replace(MEDIA_EXT, '')
   }
-  return movie.replace(/\.mp4$/i, '')
+  return movie.replace(MEDIA_EXT, '')
 }
 
 // Newest-first, then by name for stable ordering of same-mtime files. The backend already sorts by
@@ -102,7 +115,7 @@ export function resolveMovieImageUid(fileName: string, bankedUid: string,
                                      images: MovieImage[]): string {
   const known = new Set(images.map(i => i.uid))
   if (bankedUid && known.has(bankedUid)) return bankedUid
-  const tokens = nameTokens(fileName.replace(/\.mp4$/i, ''))
+  const tokens = nameTokens(fileName.replace(MEDIA_EXT, ''))
   const byUid = tokens.find(t => known.has(t))
   if (byUid) return byUid
   let best: MovieImage[] = [], bestLen = 0

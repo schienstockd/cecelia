@@ -275,6 +275,7 @@ include(joinpath(@__DIR__, "suite", "pop_df_multi_share.jl"))
 # defined earlier in suite.jl are still in scope for the extracted fragments (Julia
 # includes are lexical).
 include(joinpath(@__DIR__, "suite", "gate_centroids.jl"))
+include(joinpath(@__DIR__, "suite", "figures.jl"))
 
 # ── pop_df(centroids=…): coordinates without naming the columns ────────────
 # `pop_df` is the primary accessor for population data (docs/POPULATION.md) — a caller should never

@@ -472,4 +472,22 @@ a `measure`, from `pop_df`. Returns the plot-ready series (not a figure). The ve
 same population across images (tagged by `uID`). Use it to reproduce a board plot's numbers in a
 notebook; pick `measure` from the population's columns (`pop_df` / `get_measure_summary`).
 
+### `render_figure`
+
+render_figure(img, spec; out_dir, task_dir = task_run_dir(img._dir), on_log = println) -> (; figure, spec)
+
+Render `spec` on `img` into `out_dir`: `figure.png` (the layout at the style's dpi), `tiles/` (each tile
+alone) and `figure.json` (the spec as rendered — measured display ranges included). `spec` holds only
+what to show; see `render_figure.py` for its fields (`kind`, `center`, `sizePx`, `z`, `zHalf`, `frames` or
+`t` + `planes`, `rows` (a channel's `c` is a name or a 0-based index), `display`, `interpolation`, `scaleBarUm`, `style`, `valueName`).
+
+A bad spec fails with the renderer's message, which names the field.
+
+```julia
+render_figure(img, Dict("center" => [597, 361], "sizePx" => 90, "z" => 9, "zHalf" => 1,
+                        "frames" => [50, 64, 80], "valueName" => "denoised",
+                        "rows" => [Dict("channels" => [Dict("c" => "mem-TOM", "colour" => "#ff00ff", "name" => "tdTom")])],
+                        "scaleBarUm" => 5); out_dir = "fig")
+```
+
 <!-- END GENERATED API -->
