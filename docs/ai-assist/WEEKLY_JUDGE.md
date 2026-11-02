@@ -401,7 +401,8 @@ and what they can't is in [`AGENT_RECORD.md`](AGENT_RECORD.md). `chart.py` build
   fixed before commit, one line per reviewer; c real bugs open at each pass, stacked by age, with *N
   fixed* over each bar; d judge tokens per pass, stacked by stage; e median review wait, per
   reviewer; f the reviewers' tokens per week once a whole week is logged, until then a note. What
-  each counts: [`AGENT_RECORD.md`](AGENT_RECORD.md). Partial (including the week still running) and
+  each counts: [`AGENT_RECORD.md`](AGENT_RECORD.md). The week still running isn't drawn (c and d
+  can't show a pass not yet run either; it's in the JSON). Partial and
   low-session weeks are hollow points on dashed segments with a `*` (leading low-session ones aren't
   drawn); a pass with no token data gets a `*` at d's baseline. c's ages are an ordinal orange ramp
   (`chart.AGES`), the rest Okabe-Ito swatches from
