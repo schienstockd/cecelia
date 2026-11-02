@@ -13,6 +13,12 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were
+  read as seconds or µm. Re-run measures on such images.
+- **Metadata QC flags a unit it can't convert**, instead of assuming seconds or µm.
+
 ## [0.2.12] — 2026-11-02
 
 ### Read this first

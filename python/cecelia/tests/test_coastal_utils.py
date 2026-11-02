@@ -58,6 +58,8 @@ class _DimUtils:
     def dim_idx(self, ax):
         return self.im_dim_order.index(ax)
 
+    def im_physical_size_um(self, axis, default=1.0):  # the fakes' sizes are already µm
+        return self.im_physical_size(axis)
     def im_physical_size(self, ax, default=1.0):
         return default
 
