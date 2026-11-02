@@ -412,7 +412,7 @@ the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks vi
 gate or filter reads: intensity columns are named by channel index (`mean_intensity_1`), so on such an
 image the gate would silently select another marker. `channel_order_mismatches` (`label_props.jl`)
 compares the channel name at each read index (case-insensitive); images without registered names are
-not compared. The same check (`channel_order_problems`) refuses a set-wide `clustPops` or `clustTracks` run that pools such images; per-track aggregates (`mean_intensity_0.mean`) are read as their base column. The dialog lists
+not compared. The same check (`channel_order_problems`) refuses a set-wide `clustPops` or `clustTracks` run that pools such images, and a heatmap (matrix chart) across such images, which reads intensity columns raw (`_require_channel_order`, `plot_data.jl`); per-track aggregates (`mean_intensity_0.mean`) are read as their base column. The dialog lists
 every refused target with its reason (`copySkippedLines` in `utils/gatingCopyWarnings.ts`). A target that HAS the segmentation but lacks a column a
 gate or filter reads — typically `clusters.<run>` from a clustering run it wasn't in — is still copied,
 but the reply's `warnings` names, per target, each absent column and the populations it leaves empty

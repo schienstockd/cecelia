@@ -657,3 +657,21 @@ end
     @test derived_pop_paths("live") == ["/_tracked"]
     @test isempty(derived_pop_paths("flow"))
 end
+
+@testset "heatmap across images refuses a different channel order" begin
+    mk(uid, v) = (img = CciaImage(uid = uid, dir = mktempdir());
+                  img.im_channel_names = Dict{String,Any}("default" => v, "_active" => "default"); img)
+    a, b, c = mk("A", ["CD4", "CD8"]), mk("B", ["CD4", "CD8"]), mk("C", ["CD8", "CD4"])
+    cols = ["mean_intensity_0", "mean_intensity_1", "area"]
+    @test Cecelia._require_channel_order([a, b], [nothing], cols) === nothing
+    @test Cecelia._require_channel_order([c], [nothing], cols) === nothing           # one image: nothing pooled
+    err = try Cecelia._require_channel_order([a, b, c], ["default"], cols); nothing catch e; e end
+    @test err isa ArgumentError
+    @test occursin("C/default: mean_intensity_0 is CD8 here, CD4 in A", err.msg)
+    @test Cecelia._require_channel_order([a, c], [nothing], ["area"]) === nothing     # no intensity column read
+    # the targets form reaches it before any data is read
+    e2 = try Cecelia.plot_summary_data([a, c], ["A", "C"], "flow", [("default", "/x")], "matrix";
+                                       matrix_mode = "profile", measures = ["mean_intensity_0"]); nothing
+         catch e; e end
+    @test e2 isa ArgumentError && startswith(e2.msg, "channel order differs across images")
+end

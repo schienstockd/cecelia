@@ -15,11 +15,10 @@ stack. Per-tag notes are also on the
 
 ### Fixed
 
-- **Copying gates to an image with a different channel order** no longer selects the wrong marker.
-  Gates read channels by position, so on an image with CD4 and CD8 swapped a copied CD4 gate read CD8.
-  That image is now skipped, and the copy dialog says why. Track gates are covered too. Clustering cells or tracks across a set refuses to pool images
-  whose channel order differs. Gates copied before this onto such images are still wrong: check
-  images whose channel order differs from the source's.
+- **Copying gates skips images with a different channel order**, which read the wrong marker.
+  Gates copied before this may be wrong.
+- **Cell and track clustering, and heatmaps across images,** refuse images whose channel order
+  differs.
 - **The copy dialog now names images it did not copy to**, with the reason. Before, they went missing
   from "Copied to N images" without a word.
 

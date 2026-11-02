@@ -1019,6 +1019,19 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                  stats_enabled=stats_enabled, stats_test=stats_test)
 end
 
+# A heatmap reads intensity columns RAW (`mean_intensity_N`) and pools them by channel INDEX, so across
+# images with a different channel order one row would average different markers. Refuse instead
+# (the API turns the error into a message on the plot). One image, or no names registered: no check.
+function _require_channel_order(imgs, vns, cols)
+    length(imgs) < 2 && return nothing
+    by_uid = Dict(img.uid => img for img in imgs)
+    for vn in unique(vns)
+        bad = channel_order_problems(by_uid, [Dict{String,Any}("uID" => img.uid, "valueName" => vn) for img in imgs], cols)
+        isempty(bad) || throw(ArgumentError("channel order differs across images — " * join(bad, "; ")))
+    end
+    nothing
+end
+
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
                            pop_type::PopTypeArg, pops, chart_type::AbstractString;
                            scope::Symbol=:per_image,
@@ -1042,6 +1055,12 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     # taking the run from the first image — clustering is set-scope so the value_name set is consistent.
     eff_vn = isempty(imgs) ? value_name :
              _cluster_pop_vn(first(imgs), pop_type, value_name, cluster_suffix, granularity)
+    # a per-cluster heatmap pools every co-clustered segmentation — check them all (runs from before the
+    # clustering tasks refused a mixed channel order were never checked)
+    chart_type == "matrix" && _require_channel_order(imgs,
+        (sfx !== nothing && _is_cluster_pop_type(pop_type) && !isempty(imgs)) ?
+            co_clustered_value_names(first(imgs), sfx; granularity=granularity,
+                                     family=_cluster_measure_family(pop_type)) : [eff_vn], cols)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
@@ -1199,6 +1218,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         return _interaction_matrix(first(imgs); suffix = stats_suffix)
     end
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
+    chart_type == "matrix" && _require_channel_order(imgs, [t[1] for t in targets], pcols)
     # see the single-image form above — a picked (segmentation, population) pair is explicit
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,

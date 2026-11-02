@@ -271,7 +271,8 @@ end
 
 For a set-wide run that pools `cols` across segments (`Dict`s with `"uID"`, `"valueName"`): each segment
 whose channel order disagrees with the first segment's at a pooled column, as `"<uID>/<vn>: <mismatches>"`.
-Empty when the order agrees, or names aren't registered to compare. Used by `clustPops` and `clustTracks`.
+Empty when the order agrees, or names aren't registered to compare. Used by `clustPops`, `clustTracks`
+and multi-image heatmaps (`_require_channel_order`, `plot_data.jl`).
 """
 function channel_order_problems(img_by_uid::AbstractDict, segments, cols)::Vector{String}
     isempty(segments) && return String[]
@@ -280,7 +281,8 @@ function channel_order_problems(img_by_uid::AbstractDict, segments, cols)::Vecto
     out = String[]
     for s in segments[2:end]
         ms = channel_order_mismatches(cols, ref_names, names_of(s))
-        isempty(ms) || push!(out, "$(s["uID"])/$(s["valueName"]): " *
+        vn = s["valueName"]
+        isempty(ms) || push!(out, "$(s["uID"])$(isnothing(vn) ? "" : "/$vn"): " *
                                   describe_channel_mismatches(ms; ref_label = "$(ref["uID"])"))
     end
     out
