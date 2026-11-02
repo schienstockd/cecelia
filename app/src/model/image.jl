@@ -729,7 +729,7 @@ function img_physical_sizes(img::CciaImage)::Tuple{Vector{Float64}, Float64}
     # µm / s makes every speed and distance 1000× off with no signal. Convert by the unit; an absent
     # unit keeps the historical assumption (µm, s), and an unknown one is left as-is and flagged by
     # `metadata_qc_findings`.
-    lf(axis) = something(length_unit_um(_axis_unit(m, axis)), 1.0)
+    lf(axis) = something(length_unit_um(_meta_axis_length_unit(m, axis)), 1.0)
     sx = getf("PhysicalSizeX") * lf("X")
     sy = getf("PhysicalSizeY") * lf("Y")
     sz = getf("PhysicalSizeZ") * lf("Z")
@@ -759,7 +759,7 @@ length_unit_um(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_LENGTH_UNIT_UM
 time_unit_seconds(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_TIME_UNIT_S, k, nothing))
 
 # a per-axis unit (PhysicalSizeXUnit) when the meta has one, else the shared PhysicalSizeUnit
-_axis_unit(m, axis) = something(get(m, "PhysicalSize$(axis)Unit", nothing), get(m, "PhysicalSizeUnit", nothing), Some(nothing))
+_meta_axis_length_unit(m, axis) = something(get(m, "PhysicalSize$(axis)Unit", nothing), get(m, "PhysicalSizeUnit", nothing), Some(nothing))
 
 """
     img_is_calibrated(img) -> Bool
