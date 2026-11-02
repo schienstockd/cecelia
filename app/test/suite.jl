@@ -442,6 +442,11 @@ include(joinpath(@__DIR__, "suite", "label_import.jl"))
 # After label_import.jl: its fixture project is what the dispatch end-to-end runs on.
 include(joinpath(@__DIR__, "suite", "hpc_dispatch.jl"))
 include(joinpath(@__DIR__, "suite", "hpc_job.jl"))
+# ── Pipeline golden ──────────────────────────────────────────────────────────
+# A synthetic movie with planted truth (intensities, straight-line motion, calibration) through
+# import labels + measure → btrack + track measures → a rectangle gate → clustPops, asserted against
+# the truth by construction. ~22 s in the full suite (~45 s alone), mostly the Python subprocesses.
+include(joinpath(@__DIR__, "suite", "pipeline_golden.jl"))
 
 # ── chipSelect param type ────────────────────────────────────────────────────
 # "1,2,4,8" was a raw text field, which is a parse error waiting to happen and reads as unfinished.
