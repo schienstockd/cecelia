@@ -15,14 +15,7 @@
 # "flow")` default — the bug that made every spatial/cluster task assume `flow`, so a region / cluster /
 # tracked pop came back empty and tracked cells never appeared in those functions' pickers.
 
-# Split a (possibly value-name-prefixed) pop ref into (value_name, path) — same grammar as
-# `_group_pops_by_value_name` (prefix names the vn; a leading "/" or root stays in `default_vn`).
-function _split_pop_ref(ref, default_vn::AbstractString)::Tuple{String,String}
-    p = String(ref)
-    (startswith(p, "/") || is_root(p)) && return (String(default_vn), p)
-    idx = findfirst('/', p)
-    idx === nothing ? (String(default_vn), "/" * p) : (p[1:idx-1], p[idx:end])
-end
+# `_split_pop_ref` (pop_df.jl) is THE pop-ref grammar these resolvers share.
 
 # Probe order for pops whose type is unknown from the value alone. A `_tracked` (or any reserved
 # derived) leaf resolves to its registered pop_type (`live`) up front; otherwise the first stored map

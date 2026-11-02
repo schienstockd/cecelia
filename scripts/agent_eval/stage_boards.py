@@ -50,8 +50,10 @@ def stage_of(fn: str) -> str | None:
 def _pops_tracked(vn: str, pop: str) -> list[list[str]]:
     """Candidate populations for a tracked pop, most specific first (`/_tracked` only exists where it
     tells the picker something — the expander says which)."""
-    base = f"{vn}/{pop.strip('/')}" if pop.strip("/") else f"{vn}/root"
-    return [[f"{base}/_tracked"], [base]]
+    path = pop.strip("/")
+    if path in ("", "root"):      # the all-cells root is `vn/` (what the picker sends), not `vn/root`
+        return [[f"{vn}/_tracked"], [f"{vn}/"]]
+    return [[f"{vn}/{path}/_tracked"], [f"{vn}/{path}"]]
 
 
 def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
@@ -73,7 +75,7 @@ def _plots(stage: str, units: list[dict]) -> list[tuple[str, list[list[dict]]]]:
             {"plot": "trackPaths", "pops": c}] for c in _pops_tracked(vn, pop)])]
     if stage == "hmm":
         col = p.get("colName") or "default"
-        raw = (p.get("pops") or ["default/root"])[0]
+        raw = (p.get("pops") or ["default/"])[0]
         vn, _, pop = raw.partition("/")
         return [("HMM", [[
             {"plot": "hmm_state_frequency", "chart": "frequency", "measure": f"live.cell.hmm.state.{col}", "pops": c},

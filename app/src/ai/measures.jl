@@ -69,7 +69,9 @@ function _vn_targets(img::CciaImage, vn::AbstractString, gated::AbstractVector)
         end
     else
         for p in gated
-            if p.is_track
+            # `is_track_pop`, not the stored `p.is_track` flag: no GUI/MCP writer sets that flag, so a
+            # real `trackclust` / `track` pop carries `is_track=false`
+            if is_track_pop(p.pop_type, p.path)
                 push!(T, (p.path, string(p.pop_type), p.path, :track, "motility"))
             else
                 push!(T, (p.path, string(p.pop_type), p.path, :cell, "phenotype"))
