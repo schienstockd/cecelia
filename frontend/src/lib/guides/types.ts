@@ -140,7 +140,8 @@ export interface Maturity {
   evidence?: Evidence[]
   next?: NextItem[]           // the graduation checklist, 1–3 items, from the hardening audit's gaps
   needs?: string              // the data that would help, in a user's words
-  datasetAsk?: string         // a `lib/callForDatasets.ts` id
+  datasetAsk?: string         // a `lib/callForDatasets.ts` id — required whenever `needs` is set…
+  noAsk?: string              // …unless this says why the need can't be a dataset ask (e.g. a cluster account)
   // The tasks (fun_names) and sidebar pages this record ALSO tiers. A guide already covers the tasks
   // it runs (`awaitTask.fun`) and its page in `mapData.ts`; list only what it teaches beyond those —
   // a hidden helper task, the correction composites. In `unguided.ts` this is the feature's key.

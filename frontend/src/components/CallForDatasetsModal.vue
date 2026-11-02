@@ -1,21 +1,23 @@
 <script setup lang="ts">
 /**
- * The "Call for Datasets" modal — a discoverable list of capabilities Cecelia can build once a
- * real dataset lands.
+ * The "Call for Datasets" modal — a discoverable list of capabilities Cecelia can build, or check,
+ * once a real dataset lands. Two sections by `kind`: "Help us build" (not built yet), then "Help us
+ * test" (built; data with a known answer would check it — the maturity map's Share data buttons).
  *
  * Reachable from three places, all named in `docs/todo/CALL_FOR_DATASETS_PLAN.md`:
  * - the icon in `AppHeader`'s help row (a browse-first entry),
  * - a `?ask=<id>` query-string deep link from a task-param vis-aid placeholder,
  * - and — later — a small chip on the drift-rigid vis aid's fourth column.
  *
- * NOT a wish-list or a public roadmap — see the header of `lib/callForDatasets.ts`. Entries are
- * capabilities whose engineering decision is unblocked as soon as a validation dataset arrives.
+ * NOT a wish-list or a public roadmap — see the header of `lib/callForDatasets.ts`. A build entry is
+ * a capability unblocked as soon as a validation dataset arrives; a test entry, a built module that
+ * data with a known answer would check.
  * Each card's primary action opens a prefilled GitHub issue asking the two things we cannot guess
  * (what the imaging looks like, and a cloud link to a sample); the modal does not host files.
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
-import { CALL_FOR_DATASETS, datasetAskUrl, type CapabilityAsk } from '../lib/callForDatasets'
+import { asksOfKind, datasetAskUrl, type CapabilityAsk } from '../lib/callForDatasets'
 import { callForDatasetsFocusId, closeCallForDatasets } from '../lib/callForDatasetsOpen'
 
 /**
@@ -49,7 +51,10 @@ function isFocused(a: CapabilityAsk): boolean {
   return callForDatasetsFocusId.value === a.id
 }
 
-const asks = computed<CapabilityAsk[]>(() => CALL_FOR_DATASETS)
+const sections = computed(() => [
+  { kind: 'build', heading: 'Help us build', sub: 'Not built yet — waiting on data like yours', asks: asksOfKind('build') },
+  { kind: 'test', heading: 'Help us test', sub: 'Built, but checked on one lab’s data so far', asks: asksOfKind('test') },
+].filter(s => s.asks.length))
 </script>
 
 <template>
@@ -57,15 +62,19 @@ const asks = computed<CapabilityAsk[]>(() => CALL_FOR_DATASETS)
              @close="closeCallForDatasets">
     <div class="cfd-body">
       <p class="cfd-intro cc-muted cc-fs-xs">
-        These are capabilities Cecelia can build once a real dataset lands. If your imaging matches
-        one of these, opening an issue with a cloud link to a sample is what moves it.
+        If your imaging matches one, an issue with a link to a sample is what moves it.
       </p>
 
-      <section v-for="a in asks" :key="a.id"
+      <template v-for="s in sections" :key="s.kind">
+      <header class="cfd-section">
+        <h3 class="cc-eyebrow cc-fs-2xs">{{ s.heading }}</h3>
+        <p class="cc-muted cc-fs-xs">{{ s.sub }}</p>
+      </header>
+      <section v-for="a in s.asks" :key="a.id"
                :ref="el => bindCard(a.id, el as Element | null)"
                class="cfd-card" :class="{ 'is-focused': isFocused(a) }">
         <header class="cfd-head">
-          <h3 class="cfd-title">{{ a.title }}</h3>
+          <h4 class="cfd-title">{{ a.title }}</h4>
           <p class="cfd-one cc-muted cc-fs-sm">{{ a.oneLiner }}</p>
         </header>
         <p class="cfd-blurb cc-fs-sm">{{ a.blurb }}</p>
@@ -81,6 +90,7 @@ const asks = computed<CapabilityAsk[]>(() => CALL_FOR_DATASETS)
           <span class="cc-muted cc-fs-2xs cfd-plan">Plan: {{ a.planPath }}</span>
         </footer>
       </section>
+      </template>
     </div>
   </BaseModal>
 </template>
@@ -88,6 +98,8 @@ const asks = computed<CapabilityAsk[]>(() => CALL_FOR_DATASETS)
 <style scoped>
 .cfd-body { display: flex; flex-direction: column; gap: 1rem; padding: 0.6rem 0.2rem 0.4rem; }
 .cfd-intro { margin: 0 0.2rem; }
+.cfd-section { margin: 0.4rem 0.2rem -0.5rem; }
+.cfd-section h3, .cfd-section p { margin: 0; }
 
 /* Cards read as separate cards without a heavy chrome: a border, a rest state, and a soft focus
    ring on the deep-link target. */

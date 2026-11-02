@@ -100,11 +100,18 @@ describe('evidence is real', () => {
     const ids = new Set(CALL_FOR_DATASETS.map(a => a.id))
     expect(all.filter(o => o.maturity.datasetAsk && !ids.has(o.maturity.datasetAsk)).map(o => o.id)).toEqual([])
   })
+  // A "Needs data" line with no Share data button is a need nobody can answer from the app.
+  it('every need has a dataset ask, or says why it can’t have one', () => {
+    expect(all.filter(o => o.maturity.needs && !o.maturity.datasetAsk && !o.maturity.noAsk?.trim()).map(o => o.id))
+      .toEqual([])
+    expect(all.filter(o => (o.maturity.datasetAsk || o.maturity.noAsk) && !o.maturity.needs).map(o => o.id)).toEqual([])
+    expect(all.filter(o => o.maturity.datasetAsk && o.maturity.noAsk).map(o => o.id)).toEqual([])
+  })
   it('stable is reserved, and an exempt record claims nothing', () => {
     expect(all.filter(o => o.maturity.tier === 'stable').map(o => o.id)).toEqual([])
     for (const o of all.filter(x => x.maturity.tier === 'exempt')) {
-      expect([o.maturity.evidence, o.maturity.next, o.maturity.needs, o.maturity.datasetAsk], o.id)
-        .toEqual([undefined, undefined, undefined, undefined])
+      expect([o.maturity.evidence, o.maturity.next, o.maturity.needs, o.maturity.datasetAsk, o.maturity.noAsk], o.id)
+        .toEqual([undefined, undefined, undefined, undefined, undefined])
     }
   })
   it('keeps the map’s lines short (docs/ui/COPY.md)', () => {

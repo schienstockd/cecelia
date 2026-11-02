@@ -7,7 +7,7 @@
  * cloud link to a sample), and the labels are present so triage can find it.
  */
 import { describe, expect, it } from 'vitest'
-import { CALL_FOR_DATASETS, datasetAskUrl, findAsk } from './callForDatasets'
+import { CALL_FOR_DATASETS, asksOfKind, datasetAskUrl, findAsk } from './callForDatasets'
 import { CECELIA_NEW_ISSUE_URL } from './links'
 
 describe('CALL_FOR_DATASETS registry', () => {
@@ -47,6 +47,25 @@ describe('CALL_FOR_DATASETS registry', () => {
     const ids = CALL_FOR_DATASETS.map(a => a.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
+
+  it('every entry is a build or a test ask, and the two sections hold every entry once', () => {
+    // The modal renders asksOfKind('build') then asksOfKind('test'); an entry of any other kind
+    // would be in the registry and on no card.
+    for (const a of CALL_FOR_DATASETS) expect(['build', 'test'], a.id).toContain(a.kind)
+    const shown = [...asksOfKind('build'), ...asksOfKind('test')].map(a => a.id)
+    expect(shown.sort()).toEqual(CALL_FOR_DATASETS.map(a => a.id).sort())
+    expect(asksOfKind('build').length).toBeGreaterThan(0)
+    expect(asksOfKind('test').length).toBeGreaterThan(0)
+  })
+
+  it('a test ask carries the test-data label and keeps its card lines short', () => {
+    // docs/ui/COPY.md: the one-liner is one line; the blurb two sentences at most.
+    for (const a of asksOfKind('test')) {
+      expect(a.labels, a.id).toContain('test-data')
+      expect(a.oneLiner.length, a.id).toBeLessThanOrEqual(90)
+      expect(a.blurb.split(/(?<=\.) /).length, a.id).toBeLessThanOrEqual(2)
+    }
+  })
 })
 
 describe('datasetAskUrl', () => {
@@ -63,6 +82,14 @@ describe('datasetAskUrl', () => {
     expect(body.toLowerCase()).toContain('what does the imaging look like')
     expect(body.toLowerCase()).toContain('cloud link')
     expect(body).toContain(ask.planPath)
+  })
+})
+
+describe('datasetAskUrl for a test ask', () => {
+  it('names what the data would test rather than a capability to build', () => {
+    const body = new URLSearchParams(datasetAskUrl(asksOfKind('test')[0]).split('?')[1]).get('body') ?? ''
+    expect(body).toContain('## What it would test')
+    expect(body).not.toContain('## Capability')
   })
 })
 

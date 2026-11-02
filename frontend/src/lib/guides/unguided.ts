@@ -84,6 +84,7 @@ export const UNGUIDED: UnguidedFeature[] = [
     tier: 'experimental', testedOn: '—',
     next: [todo('An output-quality check on a known-noise input')],
     needs: 'Paired low- and high-SNR acquisitions',
+    datasetAsk: 'paired-snr',
   }) },
   { id: 'import-labels', title: 'Import external labels', group: 'Data', maturity: covering(
     ['segment.importLabels', 'segment.importLabelsMeasure'], {
@@ -149,6 +150,7 @@ export const UNGUIDED: UnguidedFeature[] = [
     tier: 'beta', testedOn: 'A real measured fixture',
     next: [todo('Compare channel names when copying gates; refuse or warn on a mismatch')],
     needs: 'Two images of one set with the channel order swapped',
+    datasetAsk: 'swapped-channel-set',
   }) },
   { id: 'proposed-gate', title: 'Claude proposes a gate', group: 'Populations', maturity: {
     tier: 'experimental', testedOn: IV2P,
@@ -203,6 +205,7 @@ export const UNGUIDED: UnguidedFeature[] = [
       todo('A run-time refusal test for several segmentations'),
     ],
     needs: 'Tracks with known behaviour switches',
+    datasetAsk: 'behaviour-switch-tracks',
   }) },
   { id: 'behaviour-cards', title: 'Behaviour and cell cards', group: 'Explore', maturity: {
     tier: 'experimental', testedOn: 'A real measured + tracked fixture',
@@ -239,5 +242,6 @@ export const UNGUIDED: UnguidedFeature[] = [
     tier: 'experimental', testedOn: 'One lab’s SLURM cluster',
     next: [todo('A second site'), todo('An HPC run’s output equals the local run’s')],
     needs: 'Access to a second HPC site',
+    noAsk: 'A cluster account to run on, not a dataset to share',
   } },
 ]

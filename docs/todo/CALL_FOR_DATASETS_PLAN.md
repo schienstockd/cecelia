@@ -74,6 +74,14 @@ can't act on the dataset, it doesn't belong here.
    in the registry when engineering decides "we could build this if we had data" — same
    discipline as `docs/todo/README.md`, which is human-curated.
 
+9. **Two kinds, one registry** (2026-11-02). `kind: 'build' | 'test'` on every entry. A `build`
+   ask is the original shape (capability not built; removed once built). A `test` ask names a
+   module that EXISTS and data with a known answer that would check it — fed by the maturity map's
+   "Needs data" rows (`FEATURE_MATURITY_PLAN.md`) and the test-set table in
+   `HARDENING_RESULT_CORRECTNESS.md` §5; removed once that data is in a committed test. Labels add
+   `test-data`. The modal shows two sections, "Help us build" then "Help us test"; `?ask=` deep links
+   work across both. Not a status field (Decision 7): the kind never changes for an entry.
+
 ## Phases
 
 ### P1 — the registry + the modal

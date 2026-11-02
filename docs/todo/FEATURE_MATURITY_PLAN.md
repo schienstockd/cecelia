@@ -48,6 +48,10 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 10. **On the map, a dot per tier with a legend, not a pill.** A pill on every page button was clutter
    (nearly every page is Beta); an unexplained dot, or marking only Experimental, said nothing. One
    `.cc-dot` tone per tier, a legend line under the grid (2026-11-02, from his look at P1).
+11. **Test sets go through the call for datasets** — one registry, a `kind: 'build' | 'test'` field;
+   the modal shows "Help us build" then "Help us test" (`CALL_FOR_DATASETS_PLAN.md`, Decision 9). Every
+   record with `needs` carries a `datasetAsk`, or a `noAsk` reason when the need isn't data (an HPC
+   site); `maturity.test.ts` enforces it.
 
 ## The scale
 

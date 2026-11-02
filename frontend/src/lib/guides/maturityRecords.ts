@@ -40,6 +40,7 @@ export const GUIDE_MATURITY = {
       todo('Tiny vendor files with known calibration, incl. ms/min time and nm pixels'),
     ],
     needs: 'Vendor files with known pixel size and frame interval, in other units',
+    datasetAsk: 'vendor-calibration',
     covers: ['importImages.remove', 'editImages.copyImage'],
   },
   'fix-metadata': {
@@ -55,6 +56,8 @@ export const GUIDE_MATURITY = {
       REVIEW,
       todo('A calibration edit marks downstream µm and speed outputs stale'),
     ],
+    needs: 'Vendor files with known pixel size and frame interval, in other units',
+    datasetAsk: 'vendor-calibration',
   },
   'preprocess-images': {
     tier: 'experimental',
@@ -105,6 +108,7 @@ export const GUIDE_MATURITY = {
       todo('Land the downstream-impact audit PROVENANCE.md calls in flight'),
     ],
     needs: 'Single-stained controls from another microscope',
+    datasetAsk: 'single-stain-controls',
   },
   'segment-an-image': {
     tier: 'beta',
@@ -123,6 +127,7 @@ export const GUIDE_MATURITY = {
       todo('An ellipticity test for measure'),
     ],
     needs: 'A fixed or cultured 3D stack with hand-annotated masks',
+    datasetAsk: 'annotated-3d-stack',
   },
   'train-denoise-model': {
     tier: 'experimental',
@@ -132,6 +137,7 @@ export const GUIDE_MATURITY = {
       todo('Record a hand-check of denoised output in the docs'),
     ],
     needs: 'Paired low- and high-SNR acquisitions',
+    datasetAsk: 'paired-snr',
   },
   'train-flow-model': {
     tier: 'experimental',
@@ -179,6 +185,7 @@ export const GUIDE_MATURITY = {
       todo('A nested child is a subset of its parent, on real data'),
     ],
     needs: 'Two images of one set with the channel order swapped',
+    datasetAsk: 'swapped-channel-set',
   },
   'track-cells': {
     tier: 'beta',
@@ -193,6 +200,7 @@ export const GUIDE_MATURITY = {
       todo('A fixture with a frame interval not in seconds'),
     ],
     needs: 'Ground-truth tracks, e.g. a Cell Tracking Challenge-style movie',
+    datasetAsk: 'ground-truth-tracks',
   },
   'correct-a-mask': {
     tier: 'experimental',
@@ -231,6 +239,7 @@ export const GUIDE_MATURITY = {
       todo('A guard for which track-cluster version is preferred'),
     ],
     needs: 'Tracks with known behaviour switches',
+    datasetAsk: 'behaviour-switch-tracks',
   },
   'cluster-regions': {
     tier: 'experimental',
@@ -244,6 +253,7 @@ export const GUIDE_MATURITY = {
       todo('Extend the contact-mesh fixture to 2+ frames'),
     ],
     needs: 'A multiplex tissue section with annotated niches',
+    datasetAsk: 'annotated-niches',
   },
 
   // ── Explore ──
@@ -255,6 +265,7 @@ export const GUIDE_MATURITY = {
       todo('An interleaved-track-order fixture'),
     ],
     needs: 'Tracks with known behaviour switches',
+    datasetAsk: 'behaviour-switch-tracks',
   },
   'spatial-analysis': {
     tier: 'experimental',
@@ -264,6 +275,7 @@ export const GUIDE_MATURITY = {
       todo('Extend the contact-mesh fixture to 2+ frames'),
     ],
     needs: 'A multiplex tissue section with annotated niches',
+    datasetAsk: 'annotated-niches',
     covers: ['spatialAnalysis.cellNeighbours'],
   },
 

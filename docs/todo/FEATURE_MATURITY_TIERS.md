@@ -20,7 +20,7 @@
    - **KDIeEm** = the committed real measured+tracked fixture.
    - **ZARRFMT** = a real 64×64 crop with real calibration.
    - **syn** = synthetic test input.
-5. "Proposed ask" = a new call-for-datasets entry that does not exist yet (from 2a §5). Only three ask ids exist today: `sitk-rigid-3d-full`, `static-3d-registration`, `cluster-grouping-highplex`.
+5. "Proposed ask" = a new call-for-datasets entry that does not exist yet (from 2a §5). Since wired: each proposed ask is a `test` entry in `callForDatasets.ts` (CALL_FOR_DATASETS_PLAN Decision 9); the HPC site is a `noAsk`.
 
 ## Tiers by sidebar group
 
