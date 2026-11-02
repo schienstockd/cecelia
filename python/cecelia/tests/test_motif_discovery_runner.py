@@ -11,12 +11,15 @@ are the only matrix-profile minima, so with topK=4 every instance comes from tra
 labelled cell must be a track-1 cell, and each instance must cover `window` consecutive frames of
 ONE track. Pre-fix, each instance's labels spread over all three tracks.
 
-The runner is executed by path (`run_py`), never imported, so it is loaded the same way here.
+The runner is launched the way `run_py` launches it — its own process, `python <runner> --params
+<file>` with `PYTHONPATH=python/` — never imported into the test process: STUMPY's numba/OpenMP
+runtime segfaults (OMP pthread_mutex_init) when it meets the OpenMP runtime earlier tests loaded.
 Skipped when `app/` is absent — an external `pip install cecelia` consumer gets the IO library only.
 """
-import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,11 +36,19 @@ MOTIF_TRACK = 1
 MOTIF_STARTS = (2, 16, 30, 44)   # four non-overlapping copies, separated by noise
 
 
-def _load_runner():
-    spec = importlib.util.spec_from_file_location('motif_discovery_run', _RUNNER)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+def _run_runner(params, td):
+    """Run the runner in its own process, as `run_py` does; return its results JSON."""
+    pfile = os.path.join(td, 'params.json')
+    with open(pfile, 'w', encoding='utf-8') as f:
+        json.dump(params, f)
+    env = dict(os.environ, PYTHONPATH=str(_RUNNER.parents[4] / 'python'))
+    env.pop('CECELIA_PY_CONTRACT', None)
+    proc = subprocess.run([sys.executable, str(_RUNNER), '--params', pfile], env=env,
+                          capture_output=True, text=True, encoding='utf-8')
+    if proc.returncode != 0 or not os.path.isfile(params['resultsOutPath']):
+        raise AssertionError(f'runner failed ({proc.returncode}):\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}')
+    with open(params['resultsOutPath'], encoding='utf-8') as f:
+        return json.load(f)
 
 
 def _interleaved_pool():
@@ -73,15 +84,13 @@ class MotifDiscoverySpanBroadcastTest(unittest.TestCase):
         n = len(labels)
         with tempfile.TemporaryDirectory() as td:
             out = os.path.join(td, 'results.json')
-            _load_runner().run({
+            res = _run_runner({
                 'suffix': 'T', 'windowSize': WINDOW, 'topK': len(MOTIF_STARTS), 'numClasses': 2,
                 'resolution': 0.5, 'randomState': 0, 'resultsOutPath': out,
                 'uIDs': ['img1'] * n, 'valueNames': ['T'] * n, 'labels': labels,
                 'trackIds': track_ids, 'ts': ts,
                 'speed': feats[:, 0].tolist(), 'angle': feats[:, 1].tolist(),
-                'hmmState': feats[:, 2].tolist()})
-            with open(out, encoding='utf-8') as f:
-                res = json.load(f)
+                'hmmState': feats[:, 2].tolist()}, td)
 
         inst = res['instance_id_by_cell']
         self.assertEqual(len(inst), n)
