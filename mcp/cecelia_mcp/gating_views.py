@@ -26,10 +26,13 @@ get_measure_summary lists them, get_image_info lists channel names in index orde
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
 {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
 asinh sent without its parameters takes the channel's own (logicle top = its max — the reply's
-`transform` says which). Alongside the image: each axis's extent and the gates with their path and coordinates (a
-gate reaching past the axes is clipped in the picture, not in the list). The tick labels are RAW
-values; gate coordinates and `extent` are TRANSFORMED — with a non-linear transform, read vertices
-off gate_histogram's `grid`, not off the ticks."""
+`transform` says which). One spec sets both axes; `{"x": spec, "y": spec}` sets each (to match a gate
+stored with different axis transforms — its `x_transform`/`y_transform` pass as they are). Alongside
+the image: each axis's extent and the gates with their path and coordinates (a gate reaching past the
+axes is clipped in the picture, not in the list). The tick labels are RAW values; gate coordinates and
+`extent` are in THIS plot's transformed space — a gate is re-projected into it, so its vertices match
+the stored ones only when the plot uses the gate's own transforms. With a non-linear transform, read
+vertices off gate_histogram's `grid`, not off the ticks."""
 
 GATE_CELLS_VIEW_DOC = """The image with populations marked — the check of a gate where it matters, on the cells.
 One timepoint `t` (default the middle frame) in the saved viewer contrast, with segmentation
@@ -65,7 +68,8 @@ measures such as `volume_mesh` only come from the mesh-measuring tasks); get_ima
 names in index order.
 `transform`: {"kind": "linear"} (default) | {"kind": "asinh", "cof": 150} |
 {"kind": "log", "floor": 1} | {"kind": "logicle", "T": 4096, "W": 0.5, "M": 4.5, "A": 0}; a logicle or
-asinh sent without its parameters takes the channel's own (logicle top = its max), as gate_plot draws it."""
+asinh sent without its parameters takes the channel's own (logicle top = its max), as gate_plot draws it.
+One spec sets both axes; `{"x": spec, "y": spec}` sets each."""
 
 GATE_STATS_DOC = """Cells in population `pop` and its % of the parent. `pop` may be a gate (`/qc`) or a
 tracked set (`/qc/_tracked`, `/_tracked`) — the same paths a task takes as input."""
@@ -137,15 +141,37 @@ def with_doc(doc: str):
     return deco
 
 
+# Each kind's parameters as the plot routes read them (`_axis_transform`); a stored gate spells asinh's
+# `cofactor`, the routes `cof` — both are taken, so a transform from a reply can be passed back as is.
+TRANSFORM_PARAMS = {"linear": (), "log": ("floor",), "asinh": ("cof",), "logicle": ("T", "W", "M", "A")}
+
+
+def _axis_query(axis: str, spec: dict | None) -> dict:
+    t = dict(spec or {})
+    kind = t.pop("kind", "linear")
+    if kind not in TRANSFORM_PARAMS:
+        raise ValueError(f"transform kind {kind!r} is not one of {', '.join(TRANSFORM_PARAMS)}")
+    if kind == "asinh" and "cofactor" in t:
+        t.setdefault("cof", t.pop("cofactor"))
+    bad = [k for k in t if k not in TRANSFORM_PARAMS[kind]]
+    if bad:
+        raise ValueError(f"{kind} transform takes {list(TRANSFORM_PARAMS[kind]) or 'no parameters'}, "
+                         f"not {bad}")
+    return {f"{axis}t": kind, **{f"{axis}{k}": v for k, v in t.items()}}
+
+
 def axis_transform_query(transform: dict | None) -> dict:
-    """A gating transform spec → the gating routes' per-axis query keys (`xt`, `xcof`, … for x and y)."""
-    q = {}
-    for axis in ("x", "y"):
-        t = dict(transform or {})
-        q[f"{axis}t"] = t.pop("kind", "linear")
-        for k, v in t.items():
-            q[f"{axis}{k}"] = v
-    return q
+    """A gating transform → the gating routes' per-axis query keys (`xt`, `xcof`, … for x and y).
+
+    One spec (`{"kind": "log", "floor": 1}`) applies to both axes; `{"x": spec, "y": spec}` sets each
+    (an axis left out is linear). Anything the routes cannot read is refused — they would ignore it and
+    draw a different plot than the one asked for."""
+    t = transform or {}
+    if "x" in t or "y" in t:
+        if set(t) - {"x", "y"}:
+            raise ValueError("transform is one spec for both axes or {\"x\": spec, \"y\": spec}, not both")
+        return {**_axis_query("x", t.get("x")), **_axis_query("y", t.get("y"))}
+    return {**_axis_query("x", t), **_axis_query("y", t)}
 
 
 def plot_query(project_uid: str, image_uid: str, value_name: str, x: str, y: str,
