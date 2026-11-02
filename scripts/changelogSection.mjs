@@ -75,6 +75,22 @@ export function releaseBody(md, version, { repo, previousTag } = {}) {
     `**Full commit log:** [\`${previousTag}…${tag}\`](https://github.com/${repo}/compare/${previousTag}...${tag})`
 }
 
+/**
+ * Bullets in a section that are over the length budget. Release notes kept growing into essays —
+ * v0.2.11 was 1,700 words, because each agent copied the previous section's register and carried
+ * the PR body's measurements and rationale along. The PR is one click away; a bullet names the
+ * change and the PR number. See docs/RELEASING.md → *Regenerating the CHANGELOG section*.
+ */
+export const BULLET_MAX_WORDS = 30
+export function overlongBullets(section, maxWords = BULLET_MAX_WORDS) {
+  const bullets = []
+  for (const line of String(section ?? '').split('\n')) {
+    if (/^- /.test(line)) bullets.push(line.slice(2))
+    else if (/^\s+\S/.test(line) && bullets.length) bullets[bullets.length - 1] += ' ' + line.trim()
+  }
+  return bullets.filter(b => b.split(/\s+/).filter(Boolean).length > maxWords)
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 // `import.meta.main` is Node 24+; the argv check keeps it working if this is ever run on older.
 if (process.argv[1] && process.argv[1].endsWith('changelogSection.mjs')) {

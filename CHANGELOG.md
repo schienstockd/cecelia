@@ -13,31 +13,67 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
-_Changes on `main` that have not yet been tagged in a release._
+## [0.2.12] — 2026-11-02
+
+### Read this first
+
+These change results when old work is re-run:
+
+- **Coastal with several model groups:** re-run. Groups 2+ used group 1's motion (#1837).
+- **Cellpose:** flow threshold 1.0 (was 0.4), no per-tile re-normalising (#1705).
+- **Tile size and overlap** default to Auto (#1827).
+- **Segmentation:** per-frame window when *Normalise to whole image* is off (#1830); stitched 3D
+  Cellpose no longer merges across planes (#1825).
+- **Cell contacts:** one column set per target; tick *Combine targets* for the old behaviour (#1734).
+- **Crops made before 0.2.12** may record the wrong Z size; re-crop (#1877).
+- **Mesh contact distances** are measured to the nearest vertex; they shift by up to ~half a voxel (#1891).
+- **AF correction:** saved settings don't pre-fill the new role rows (#1711).
+- **Renamed:** UMAP → Cluster map, `mergeUmap` → `createUmap` (#1822); Whiteboard → Chains;
+  Project profile → About this project (#1841); `pixi run headless` → `pixi run chat` (#1849).
+- **Claude Code setup** is now the Cecelia plugin; it replaces the old MCP registration (#1826).
 
 ### Added
 
-- **AF correction: AF channels, and one role per channel.** For each channel you correct, every
-  other channel now gets one row where you pick what it does to that channel: **Competes** (takes the
-  share of signal it outshines, as before) or **AF** (a channel that only picks up
-  autofluorescence), or nothing. A channel can't do both to the same marker, but it can be AF for one
-  marker and compete with another. Wherever an AF channel is clearly bright, the marker is set to
-  zero, including where AF overlaps a real cell. Before, AF could only compete, so AF that was as
-  bright in your marker stayed in: on one CAR-T movie about 70% of the marker survived on AF
-  granules, and now almost none does, while about 97% of the marker is kept. Any of your marker that
-  leaks into the AF channel is removed first, so bright cells are not hollowed out. The threshold
-  comes from the AF channel's own noise, so there is nothing to tune. A figure next to each marker's
-  roles shows what that setup does to a sketch of cells and AF. **Different cell types** now only
-  appears when something competes with that marker. Saved chains still run; an image's previously
-  saved AF settings will not pre-fill the new rows.
+- AF correction: mark a channel as AF for a marker; bright AF zeroes the marker (#1711).
+- Figures from the viewer, kept with movies and placeable on boards; Claude can make them (#1880–#1890).
+- Find ROIs: where a population gathers, reviewed in the viewer (#1793, #1884).
+- Containment in *Cell contacts (meshes)*: how enclosed each cell is (0–1), and how many each holds (#1793, #1891).
+- Motility: persistence, order index, windowed measures, approach to a target (#1862–#1875).
+- Behaviour axes for track clusters (#1821, #1823).
+- Colour masks by population or track cluster (#1756, #1792, #1819).
+- Viewer populations: all on, all off, one at a time (#1751).
+- Chains: pause for a manual step, build from history, pre-flight check (#1847).
+- In-app map and guides (#1850).
+- Claude can propose gates; it never edits yours (#1852, #1856, #1869).
+- Claude login inside Cecelia (#1717, #1718, #1840); Kiwi and Claude Code modes (#1860, #1864).
+- Claude's writes record which model made them (#1826).
+- `pixi run chat` (#1835–#1839).
+- HPC on NCI Gadi; live job logs; out-of-date environment warning (#1758, #1786, #1796, #1800).
+- Share a project when creating it (#1716).
+- Seam QC for tiled segmentation (#1832).
 
 ### Changed
 
-- **Cell contacts give one distance per target** (#1734). Picking several target populations used to
-  give one distance, to the nearest cell of any of them. Now each target gets its own contact,
-  distance and nearest-cell columns, as in the old R version. The same population picked from
-  several segmentations still counts as one target. Tick **Combine targets** for the old single
-  distance. Columns from earlier runs are kept; delete them under Analysis runs if not wanted.
+- Coastal ~24% faster on time-lapses (#1825, #1831, #1837).
+- Mesh contacts take seconds per frame, not minutes (#1891).
+- Range sliders: drag the span to move the whole range (#1895).
+- Gate plot: click to select before dragging (#1752, #1776, #1866).
+- Task forms hide settings that don't apply (#1763, #1774).
+- Landscape captures aren't comparable with earlier ones (#1710, #1824).
+- Confirm buttons flip in place (#1719).
+- Viewer channel stepper on the canvas (#1708).
+
+### Fixed
+
+- Clustering crashed on cluster populations (#1743, #1744).
+- Population Manager *Show in viewer* (#1818).
+- Gate plot error on Float32 + logicle (#1851).
+- Renaming a segmentation updates saved settings (#1876).
+- Warnings where results were silently empty or cut short (#1761, #1764, #1783, #1797).
+- Viewer *Save PNG*, stale preview mask, ribbon visibility (#1778, #1790, #1791, #1792).
+- Board heatmaps, facet labels, panel resize (#1755, #1787, #1789, #1820).
+- Windows exports landing in the projects folder (#1829).
+- HPC series metadata and settings (#1745, #1753, #1757, #1781).
 
 ## [0.2.11] — 2026-10-16
 
@@ -1371,7 +1407,8 @@ have reached an installed client at all. This tag ends that: it outranks every p
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.11...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/schienstockd/cecelia/compare/v0.2.11...v0.2.12
 [0.2.11]: https://github.com/schienstockd/cecelia/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/schienstockd/cecelia/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/schienstockd/cecelia/compare/v0.2.8...v0.2.9
