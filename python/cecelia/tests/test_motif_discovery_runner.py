@@ -113,5 +113,30 @@ class MotifDiscoverySpanBroadcastTest(unittest.TestCase):
         self.assertEqual(sorted(ts[i] for i in labelled), sorted(planted))
 
 
+@unittest.skipUnless(_RUNNER.is_file(), f'runner not present at {_RUNNER}')
+class PairwiseDtwFallbackTest(unittest.TestCase):
+    """Without dtaidistance's compiled C library (the macOS wheels), the DTW matrix still comes out —
+    and equal to the fast path's. Loads only `_pairwise_dtw` (no STUMPY), so in-process is safe."""
+
+    def test_no_c_library_gives_the_same_matrix(self):
+        import importlib.util
+        from unittest import mock
+        from dtaidistance import dtw_ndim
+        from dtaidistance.exceptions import CythonException
+        spec = importlib.util.spec_from_file_location('motif_discovery_run', _RUNNER)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        rng = np.random.default_rng(3)
+        windows = [rng.normal(size=(WINDOW, 3)) for _ in range(5)]
+        ref = mod._pairwise_dtw(windows, lambda *_: None)
+
+        def no_c(*_a, **_k):
+            raise CythonException('The compiled dtaidistance C library is not available.')
+        with mock.patch.object(dtw_ndim, 'distance_matrix_fast', no_c):
+            got = mod._pairwise_dtw(windows, lambda *_: None)
+        np.testing.assert_allclose(got, ref, rtol=1e-6)
+        self.assertTrue(np.allclose(got, got.T) and np.all(np.diag(got) == 0))
+
+
 if __name__ == '__main__':
     unittest.main()
