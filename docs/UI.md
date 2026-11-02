@@ -1173,6 +1173,34 @@ the user-facing wording and is a copy decision, not a rename of the type.
 a task name pasted into a recipe would be counted as a guide's. A recipe names guides; the guides name
 tasks. Pinned from the recipes side too, in `guides.test.ts`.
 
+### Maturity — how far to trust each feature (on the map)
+
+A guide teaches one feature, so it carries that feature's **maturity record** (`GuideDef.maturity`,
+type `Maturity` in `lib/guides/types.ts`): a tier, what it was tested on, who checked it by hand or where
+that check is written down, the tests that would catch a wrong result (`evidence`: path + test name +
+a "fails if…" line), the 1–3 item checklist to the next tier, and the data that would help (`needs`,
+`datasetAsk` → a `lib/callForDatasets.ts` id). The records live in ONE file, `lib/guides/maturityRecords.ts`
+(`GUIDE_MATURITY`, keyed by guide id), so a promotion PR edits one place; a feature with no guide gets
+the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FEATURE_MATURITY_PLAN.md`.
+
+- **Tiers:** Experimental · Beta · Tested (Stable reserved). **Coming soon is never written in a record**
+  — it is the task JSON `comingSoon` flag or the nav item's `soon`, and the map derives it. **Exempt**
+  features (no scientific result: the tour, profiles, blackboard, Movies, Tasks) get no badge and no row.
+- **One pill:** `ComingSoonBadge` with a `tier` prop; its words are `lib/guides/tiers.ts`
+  (`TIER_LABEL`, and `TIER_TIP` — what the user should do — on hover). Never a second badge.
+- **Where it shows:** each page button on the map (`MapChip.tier`, `pageTier`), each guide row in the
+  picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
+  group, guides first, unguided ones dimmed "no guide yet", expandable to the record. "Share your data"
+  opens the call-for-datasets modal at its ask. `user-docs/README.md` has a Maturity column.
+- **Enforced by `utils/maturity.test.ts`** (logic in `utils/maturity.ts`): every sidebar page and every
+  task JSON under `app/src/tasks/` is tiered exactly once — by a guide (its page, the funs it runs,
+  its record's `covers`), by an unguided record's `covers`, by a Coming soon flag, or as a step of a
+  covered composite; a flagged feature has no record; every evidence path and test name exists, and a
+  Tested record's tests are not `@test_skip`/`@test_broken`/`skip`/`xfail`/`it.skip`; every
+  `datasetAsk` exists; testedOn ≤70, failsIf/next ≤110, needs ≤90 chars.
+- **Only the maintainer promotes** (plan Decision 6). An agent may add evidence and tick `next` items,
+  and argue for a tier in its PR; the tier line itself changes on his review.
+
 ### The orientation tour — the one guide with no prerequisites
 
 `lib/guides/tour.ts` (**Find your way around**, group `Start`, first in the picker) is the exception to

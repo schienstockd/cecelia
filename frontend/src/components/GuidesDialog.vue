@@ -37,6 +37,7 @@ import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { defaultOpenGroup } from '../utils/guideMap'
 import { closeGuides } from '../lib/guideOpen'
 import type { GuideDef } from '../lib/guides/types'
+import { tierTip as tierLine } from '../lib/guides/tiers'
 
 const guide = useGuideStore()
 const groups = computed(() => guidesByGroup())
@@ -60,6 +61,9 @@ function start(g: GuideDef) {
 }
 
 const isDone = (g: GuideDef) => guide.completed.has(g.id)
+// the badge's hover: what the tier asks of you (FEATURE_MATURITY_PLAN → *The scale*); the map's
+// Maturity section has the evidence behind it
+const tierTip = (g: GuideDef) => tierLine(g.maturity.tier)
 const misses = (g: GuideDef) => guide.prereqState(g).filter(p => !p.met)
 
 // The one-line readiness readout. Counting the misses beats naming them here — the names go on their
@@ -102,6 +106,7 @@ function firstFixable(g: GuideDef) {
         <div class="gd-main">
           <div class="gd-head">
             <span class="gd-title">{{ g.title }}</span>
+            <ComingSoonBadge v-if="g.maturity.tier !== 'exempt'" :tier="g.maturity.tier" v-tooltip.top="tierTip(g)" />
             <span v-if="isDone(g)" class="gd-done" v-tooltip.top="'You have finished this guide'">
               <i class="pi pi-check" />
             </span>

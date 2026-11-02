@@ -122,6 +122,18 @@ describe('buildMap', () => {
   })
 })
 
+describe('the map shows each page’s maturity', () => {
+  const chips = buildMap(null, visibleWith(null)).flatMap(g => g.chips)
+  it('every chip carries a tier, and says it on hover unless exempt', () => {
+    expect(chips.filter(c => !c.tier).map(c => c.route)).toEqual([])
+    const gate = chips.find(c => c.route === '/gate')!
+    expect(chipTip(gate)).toMatch(/^[^·]+ · Beta: /)
+    const tasks = chips.find(c => c.route === '/tasks')!
+    expect(tasks.tier).toBe('exempt')
+    expect(chipTip(tasks)).not.toMatch(/Beta|Experimental|Tested/)
+  })
+})
+
 describe('defaultOpenGroup', () => {
   it('opens the guides for the page you are on, else Start', () => {
     expect(defaultOpenGroup('/segment')).toBe('Data')

@@ -27,7 +27,8 @@ export interface GuideTextEntry {
   text: string
 }
 
-const funsOf = (g: GuideDef): string[] =>
+/** The task functions a guide runs (its steps' `awaitTask.fun`). */
+export const funsOf = (g: GuideDef): string[] =>
   [...new Set(g.steps.flatMap(s => (s.awaitTask?.fun ? [s.awaitTask.fun] : [])))]
 
 export function guideText(g: GuideDef): string {

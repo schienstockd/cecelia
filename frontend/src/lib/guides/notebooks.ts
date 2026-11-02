@@ -8,9 +8,11 @@
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const notebooksGuide: GuideDef = {
   id: 'create-a-notebook',
+  maturity: GUIDE_MATURITY['create-a-notebook'],
   title: 'Create a notebook',
   group: 'Analysis',
   icon: 'pi-book',

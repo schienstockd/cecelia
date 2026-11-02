@@ -6,6 +6,8 @@
                  nothing lit: there is no default path, it depends on the data and the question.
     The groups   one card per sidebar group, a button per page: click goes there. A card's heading
                  opens that group's guides in the accordion below (the map IS the accordion's index).
+    Maturity     each page's tier badge on its button (utils/maturity.ts → pageTier), and the
+                 MaturityMap section below: every feature, expandable to its evidence and next steps.
     Claude       one toggle: ✦ on the pages where Claude makes something (mapData.ts → claude), the two
                  ways in (ClaudeWaysIn.vue — the same cards as Kiwi's ?)
                  and what Claude adds at each recipe step. Off by default — Cecelia works without it.
@@ -23,6 +25,8 @@ import { useViewProfilesStore } from '../stores/viewProfiles'
 import { RECIPES, isWanted, guideById, isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides'
 import type { GuideDef } from '../lib/guides/types'
 import ClaudeWaysIn from './ClaudeWaysIn.vue'
+import ComingSoonBadge from './ComingSoonBadge.vue'
+import MaturityMap from './MaturityMap.vue'
 import { recipeRequestUrl } from '../lib/links'
 import { closeGuides } from '../lib/guideOpen'
 import { buildMap, chipTip, mapCaption } from '../utils/guideMap'
@@ -108,11 +112,15 @@ const assistTip = (s: RecipeStep) =>
                 v-tooltip.right="chipTip(c, settings.guidesShowClaude)" @click="go(c.route)">
           <i :class="['pi', c.icon]" /> {{ c.label }}
           <i v-if="settings.guidesShowClaude && c.claude" class="pi pi-sparkles gm-assist" aria-label="Claude makes something here" />
+          <ComingSoonBadge v-if="c.tier && c.tier !== 'exempt'" :tier="c.tier" class="gm-tier" />
         </button>
       </div>
     </div>
 
     <p class="gm-caption cc-muted cc-fs-2xs">{{ mapCaption(recipe) }}</p>
+
+    <!-- how far to trust each feature: one expandable row per feature, the unguided ones dimmed -->
+    <MaturityMap />
 
     <!-- Claude: the two ways in, in the same words as Kiwi's ? and its guide -->
     <ClaudeWaysIn v-if="settings.guidesShowClaude" />
@@ -144,7 +152,9 @@ const assistTip = (s: RecipeStep) =>
 .gm-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .gm-card { padding: 8px; display: flex; flex-direction: column; gap: 2px; }
 .gm-card-head { font-weight: 600; justify-content: flex-start; padding: 2px 4px; }
-.gm-page { justify-content: flex-start; gap: 6px; padding: 2px 4px; text-align: left; }
+.gm-page { justify-content: flex-start; flex-wrap: wrap; gap: 2px 6px; padding: 2px 4px; text-align: left; }
+/* the tier sits at the end of the page's line, and wraps under it when the card is narrow */
+.gm-tier { margin-left: auto; }
 /* lit = on the path. Not colour alone: lit pages are full-strength AND bold */
 .gm-page.lit { font-weight: 600; }
 .gm-page.dim { opacity: 0.55; }

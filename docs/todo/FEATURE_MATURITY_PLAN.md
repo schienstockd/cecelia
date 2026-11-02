@@ -1,7 +1,8 @@
 # Feature maturity — tiers on the guides, badges, report
 
-**Status:** **planning** (2026-11-02). Decisions 1–8 agreed in discussion; the starting tier per
-feature is open (his call).
+**Status:** **P1 built** (2026-11-02); P2, P3 open. Decisions 1–9 agreed in discussion; starting tiers
+seeded from `FEATURE_MATURITY_TIERS.md` — the 7 Tested proposals are seeded as Beta with a "maintainer
+review → Tested" item, pending his review of each fails-if line.
 
 **Related:**
 - Parent: [`HARDENING_AUDIT_PLAN.md`](HARDENING_AUDIT_PLAN.md) — the depth scores and gaps that fill
@@ -14,6 +15,8 @@ feature is open (his call).
   `utils/guideMap.test.ts`, and `user-docs/README.md` generated from the same data.
 - Pill extended: `components/ComingSoonBadge.vue` ("the ONE way to signal an incomplete surface").
 - Release checklist: [`../RELEASING.md`](../RELEASING.md).
+- Starting tiers: [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md) — 58 features, provisional, with his
+  decisions of 2026-11-02.
 
 ## Goal
 
@@ -40,6 +43,8 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 7. **Demotion on a confirmed wrong-result bug.** A Tested feature with a confirmed wrong-result bug
    drops to Beta in the fix PR, until a test guarding that bug lands.
 8. **Promotion happens in the PR, and is swept at the release cut** — not in the weekly judge.
+9. **Features with no scientific result are exempt** (blackboard, Movies, Tasks, tour, profiles): a tier
+   says how far to trust a result, and these produce none. No badge, no maturity row.
 
 ## The scale
 
@@ -135,9 +140,21 @@ evidence, and the registry shape is informed by a real case.
 
 ## Phases
 
-- **P1** — `maturity` on every guide + the unguided list + the tests; expandable rows on the map;
+- **P1** — **built.** `maturity` on every guide + the unguided list + the tests; expandable rows on the map;
   tiers in user-docs. Starting tiers drafted from the inventory and step 2, corrected by him, marked
-  provisional until the matrix re-scores them.
+  provisional until the matrix re-scores them. Where it landed:
+  - Records: `lib/guides/maturityRecords.ts` (`GUIDE_MATURITY`, keyed by guide id; each guide reads its
+    own) and `lib/guides/unguided.ts` (`UNGUIDED`); the type is `Maturity` in `lib/guides/types.ts`. A
+    record's `covers` lists the task fun_names / routes it tiers beyond the guide's own run and page; a
+    composite's steps are covered through the composite. `handCheck` points at a written hand-check
+    (PROVENANCE.md and co.) where there is no dated `checkedBy`.
+  - Logic + checks: `utils/maturity.ts` / `maturity.test.ts` — every page and every task JSON under
+    `app/src/tasks/` tiered exactly once; flagged Coming soon never tiered; every evidence path and test
+    name exists (all tiers), none skipped or broken for Tested; every `datasetAsk` exists; copy budgets.
+  - Map: the page buttons carry the badge; a Maturity section (`components/MaturityMap.vue`) lists every
+    non-exempt feature by group, expandable; Coming soon rows derive from the task flags. Guide rows in
+    the picker carry the badge. Words of the scale: `lib/guides/tiers.ts`.
+  - user-docs: a Maturity column in the sidebar tables.
 - **P2** — badges on pages and the task picker; "Something wrong?" link.
 - **P3** — the release-cut step in `RELEASING.md`; CHANGELOG entries carry the tier.
 
@@ -150,8 +167,7 @@ evidence, and the registry shape is informed by a real case.
 
 ## Open questions
 
-- Starting tier per feature — his call. Known so far: gating = Beta (first Tested candidate);
-  cluster assignment = Beta (needs multiplex data); track correction and label correction =
-  Experimental.
+- Starting tiers — drafted in [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md); 7 proposed for
+  Tested pending his review of each fails-if line; cluster assignment needs his PROVENANCE.md line.
 - A guide that spans several features (a recipe, or segment → measure): tier the feature it is named
   for; a recipe shows each step's badge.

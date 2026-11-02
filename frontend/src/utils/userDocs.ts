@@ -6,6 +6,8 @@
 import { NAV_GROUPS, navLabelFor } from '../lib/navGroups'
 import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { guideById, RECIPES, isWanted, type WrittenRecipe } from '../lib/guides'
+import { TIER_LABEL } from '../lib/guides/tiers'
+import { pageTier, badged } from './maturity'
 
 const cell = (s: string) => s.replace(/\|/g, '\\|')
 
@@ -15,16 +17,21 @@ export function sidebarSection(): string {
     '',
     'The groups follow the analysis: **Populations** pages *define* who the cells are; **Explore** pages',
     '*summarise* those populations across images. Every page except Tasks needs an open project. Each',
-    'page that defines a population names the page that summarises it.',
+    'page that defines a population names the page that summarises it. **Maturity** says how far to',
+    'trust what the page produces: *Experimental* — check every result by hand; *Beta* — checked by hand',
+    'on real data, spot-check results; *Tested* — a test fails when the result is wrong. The Maturity',
+    'section of the Guides map shows each feature\'s evidence and what would move it up.',
   ]
   for (const g of NAV_GROUPS) {
     out.push('', `### ${g.heading}: ${(GROUP_BLURB[g.heading] ?? '').toLowerCase()}`, '',
-      '| Page | What it\'s for | Summarised on | Guide | Claude |', '|---|---|---|---|---|')
+      '| Page | What it\'s for | Summarised on | Guide | Maturity | Claude |', '|---|---|---|---|---|---|')
     for (const i of g.items) {
       const e = MAP[i.to]
       const guide = e?.guide ? guideById(e.guide)?.title ?? '' : ''
       const pair = e?.pairedWith ? navLabelFor(NAV_GROUPS, e.pairedWith) : ''
-      out.push(`| ${cell(i.label)} | ${cell(e?.what ?? i.tip)} | ${cell(pair)} | ${cell(guide)} | ${cell(e?.claude ?? '')} |`)
+      const t = pageTier(i.to)
+      const tier = badged(t) ? TIER_LABEL[t] : ''
+      out.push(`| ${cell(i.label)} | ${cell(e?.what ?? i.tip)} | ${cell(pair)} | ${cell(guide)} | ${tier} | ${cell(e?.claude ?? '')} |`)
     }
   }
   return out.join('\n')

@@ -26,6 +26,7 @@
 import type { GuideDef, Reveal } from './types'
 import { PREREQ } from './prereqs'
 import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 // ── User profile: the header chip is the mid-session entry point ─────────────────────────────────
 // The launch picker (AppProfilePicker.vue) is a bare-route boot interstitial — the router bounces
@@ -34,6 +35,7 @@ import { KIWI_LOOP, TERMINAL_MODE } from '../claudeOverview'
 // chip and the Profiles pane it opens.
 export const userProfileGuide: GuideDef = {
   id: 'use-a-user-profile',
+  maturity: GUIDE_MATURITY['use-a-user-profile'],
   title: 'Use a user profile',
   group: 'Start',
   icon: 'pi-user',
@@ -72,6 +74,7 @@ export const userProfileGuide: GuideDef = {
 // every hidden page is still reachable by URL. Settings → View profile is the only entry point.
 export const viewProfileGuide: GuideDef = {
   id: 'use-a-view-profile',
+  maturity: GUIDE_MATURITY['use-a-view-profile'],
   title: 'Use a sidebar layout',
   group: 'Start',
   icon: 'pi-eye',
@@ -115,6 +118,7 @@ export const viewProfileGuide: GuideDef = {
 // ── Metadata: not a task runner (edits apply immediately), so it gets its own steps ──────────────
 export const fixMetadataGuide: GuideDef = {
   id: 'fix-metadata',
+  maturity: GUIDE_MATURITY['fix-metadata'],
   title: 'Fix pixel size and channel names',
   group: 'Data',
   icon: 'pi-tag',
@@ -199,6 +203,7 @@ export const fixMetadataGuide: GuideDef = {
 // ── Chains: the whiteboard. Its own shape — a DAG editor, not a function list ─────────────────────
 export const runChainGuide: GuideDef = {
   id: 'run-a-chain',
+  maturity: GUIDE_MATURITY['run-a-chain'],
   title: 'Run a pipeline over a whole set',
   group: 'Pipeline',
   icon: 'pi-sitemap',
@@ -271,6 +276,7 @@ export const runChainGuide: GuideDef = {
 // instead. Route /blackboard is confirmed in main.ts; prereq is projectOpen (bb-list is per project).
 export const useTheBlackboardGuide: GuideDef = {
   id: 'use-the-blackboard',
+  maturity: GUIDE_MATURITY['use-the-blackboard'],
   title: 'Use the blackboard',
   group: 'Analysis',
   icon: 'pi-comment',
@@ -343,6 +349,7 @@ export const useTheBlackboardGuide: GuideDef = {
 // and covers that.
 export const correctAMaskGuide: GuideDef = {
   id: 'correct-a-mask',
+  maturity: GUIDE_MATURITY['correct-a-mask'],
   title: 'Correct a mask or a track',
   group: 'Populations',
   icon: 'pi-wrench',
@@ -422,6 +429,7 @@ const openKiwiFirst = (anchor: string): Reveal => ({
 })
 export const kiwiGuide: GuideDef = {
   id: 'assist-with-kiwi',
+  maturity: GUIDE_MATURITY['assist-with-kiwi'],
   title: 'Assist with Kiwi',
   group: 'Analysis',
   icon: 'pi-comments',
