@@ -19,7 +19,9 @@ Copy `src`'s gating for one label set + gating pop type onto each target, by wri
 sidecar there. Membership recomputes per image on read, so gates alone are enough. Per target:
 
 - `skipped[uid]` — no such label set, a µm position gate on an uncalibrated image (it would be read as
-  pixels), the write failed, or (`replace = false`) the target already has gating of its own.
+  pixels), a channel at an index a gate reads that differs from the source's (`channel_order_mismatches`
+  — the gate would select another marker), the write failed, or (`replace = false`) the target already
+  has gating of its own.
 - `warnings[uid]` — copied, but a gate/filter column the target's table lacks leaves those populations
   empty (`missing_gate_columns`).
 
@@ -37,6 +39,7 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
         m = load_pop_map(src; value_name = vn, pop_type = pt)
         isempty(m.order) && throw(ArgumentError("$(src.uid) has no $pt gating on '$vn' to copy"))
         foreach(path -> stamp_edit!(m, path), m.order)    # in memory only — the source is not re-saved
+        src_names = channel_names(src; value_name = vn)
         copied   = String[]
         skipped  = Dict{String,String}()
         warnings = Dict{String,Vector{@NamedTuple{column::String, pops::Vector{String}}}}()
@@ -52,6 +55,12 @@ function copy_gating!(src::CciaImage, targets::AbstractVector{CciaImage};
             # silently be read as pixels (docs/todo/SPATIAL_GATE_UNITS_PLAN.md decision 7).
             (m.spatial_unit == SPATIAL_UNIT_UM && has_spatial_gate(m) && !img_is_calibrated(timg)) &&
                 (skipped[tuid] = "no physical pixel size — set it to copy a position gate"; continue)
+            # Gate columns are named by channel index: on a target whose channel order differs, the
+            # copied gate would silently select a different marker.
+            mism = channel_order_mismatches(_needed_columns(m), src_names,
+                                            channel_names(timg; value_name = vn))
+            isempty(mism) ||
+                (skipped[tuid] = "channel order differs — " * describe_channel_mismatches(mism); continue)
             try
                 save_pop_map!(m, timg)
                 on_copied(timg, m)

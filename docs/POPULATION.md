@@ -408,7 +408,12 @@ gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet 
 recomputes per image on read, copying a strategy is just writing the source sidecar to each target
 (REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking
 the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks via
-`/api/images/value-name-check` and flags them). A target that HAS the segmentation but lacks a column a
+`/api/images/value-name-check` and flags them). So is a target whose channel ORDER differs at a column a
+gate or filter reads: intensity columns are named by channel index (`mean_intensity_1`), so on such an
+image the gate would silently select another marker. `channel_order_mismatches` (`label_props.jl`)
+compares the channel name at each read index (case-insensitive); images without registered names are
+not compared. The same check (`channel_order_problems`) refuses a set-wide `clustPops` or `clustTracks` run that pools such images; per-track aggregates (`mean_intensity_0.mean`) are read as their base column. The dialog lists
+every refused target with its reason (`copySkippedLines` in `utils/gatingCopyWarnings.ts`). A target that HAS the segmentation but lacks a column a
 gate or filter reads — typically `clusters.<run>` from a clustering run it wasn't in — is still copied,
 but the reply's `warnings` names, per target, each absent column and the populations it leaves empty
 (the ones reading it plus their descendants; `missing_gate_columns(m, available)` in

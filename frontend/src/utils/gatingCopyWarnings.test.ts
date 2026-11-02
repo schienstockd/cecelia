@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { copyWarningLines, copyWarningAction, missingColumnsReason } from './gatingCopyWarnings'
+import { copyWarningLines, copySkippedLines, copyWarningAction, missingColumnsReason } from './gatingCopyWarnings'
 
 const names: Record<string, string> = { a: 'img2', b: 'img3' }
 const nameOf = (uid: string) => names[uid] ?? uid
@@ -47,5 +47,20 @@ describe('missingColumnsReason', () => {
     const label = (c: string) => (c === 'mean_intensity_2' ? 'CD11c' : c)
     expect(missingColumnsReason(['clusters.immune', 'mean_intensity_2'], label))
       .toBe('Empty: no clusters.immune, CD11c on this image')
+  })
+})
+
+describe('copySkippedLines', () => {
+  const name = (u: string) => ({ a: 'Mouse 1' } as Record<string, string>)[u] ?? u
+  it('is empty when nothing was refused', () => {
+    expect(copySkippedLines(undefined, name)).toEqual([])
+  })
+  it('says which image was refused and why; the detail goes to the hover', () => {
+    const [l] = copySkippedLines({ a: 'channel order differs — mean_intensity_0 is CD8 here, CD4 in the source' }, name)
+    expect(l.text).toBe('Mouse 1: not copied, channel order differs')
+    expect(l.pops).toEqual(['mean_intensity_0 is CD8 here, CD4 in the source'])
+  })
+  it('keeps a reason without detail whole', () => {
+    expect(copySkippedLines({ b: 'already gated' }, name)[0]).toEqual({ uid: 'b', text: 'b: not copied, already gated', pops: [] })
   })
 })

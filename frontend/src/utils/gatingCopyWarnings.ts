@@ -48,3 +48,14 @@ export function missingColumnsReason(cols: readonly string[] | undefined,
                                      label: (col: string) => string = c => c): string {
   return cols?.length ? `Empty: no ${cols.map(label).join(', ')} on this image` : ''
 }
+
+// Targets the copy refused (`POST /api/gating/copy` → `skipped`: uid → reason, e.g. "channel order
+// differs — mean_intensity_0 is CD8 here, CD4 in the source"). Short line = image + the reason's head;
+// the hover carries the rest. Without these, a refused image just goes missing from "Copied to N".
+export function copySkippedLines(skipped: Record<string, string> | undefined,
+                                 nameOf: (uid: string) => string): CopyWarningLine[] {
+  return Object.entries(skipped ?? {}).map(([uid, reason]) => {
+    const [head, ...rest] = reason.split(' — ')
+    return { uid, text: `${nameOf(uid)}: not copied, ${head}`, pops: rest.length ? [rest.join(' — ')] : [] }
+  })
+}

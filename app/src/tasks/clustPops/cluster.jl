@@ -140,6 +140,9 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
             "labels" => Int.(g.label)))
     end
     isempty(segments) && (on_log("[ERROR] clustPops: no segments resolved"); return nothing)
+    # Pooling by column name assumes one channel order across the set (see header); refuse otherwise.
+    bad = channel_order_problems(img_by_uid, segments, p.clusterMeasures)
+    isempty(bad) || (on_log("[ERROR] clustPops: channel order differs across images — $(join(bad, "; "))"); return nothing)
     on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(p.clusterMeasures)) features")
 
     # ── hand off to the Python engine runner ──

@@ -238,6 +238,58 @@ const _INTENSITY_COL_RE = r"^(?:(?<prefix>[a-z]+)_)?(?:mean|median)_intensity_(?
 _channel_index(varname::AbstractString) =
     (m = match(_INTENSITY_COL_RE, varname); isnothing(m) ? nothing : parse(Int, m[:idx]))
 
+"""
+    channel_order_mismatches(cols, ref_names, names) -> Vector{(column, ref, other)}
+
+Intensity columns are named by channel INDEX (`mean_intensity_1`), so a column read on one image and
+applied to another — a copied gate, a set-wide clustering — means the same marker only if both images
+put the same channel at that index. For each intensity column in `cols`, compare the channel name at
+its index in `ref_names` (the image the columns came from) and `names` (the image they are applied
+to); return the ones that differ. Names compare case-insensitively (`mem-TOM` vs `mem-Tom` is one
+channel). `other` is `nothing` when `names` has no channel at that index. Non-intensity columns, and
+any check where either image has no channel names registered, return no mismatches: there is nothing
+to compare, and refusing would block every image without names.
+"""
+function channel_order_mismatches(cols, ref_names::Union{Nothing,AbstractVector},
+                                  names::Union{Nothing,AbstractVector})
+    out = @NamedTuple{column::String, ref::String, other::Union{Nothing,String}}[]
+    (isnothing(ref_names) || isnothing(names) || isempty(ref_names) || isempty(names)) && return out
+    for c in unique(String.(cols))
+        # a per-track aggregate reads its base cell column (`mean_intensity_0.mean` → `mean_intensity_0`)
+        i = something(_channel_index(c), _channel_index(replace(c, r"\.[^.]+$" => "")), Some(nothing))
+        (i === nothing || i + 1 > length(ref_names)) && continue
+        ref = String(ref_names[i + 1])
+        other = i + 1 > length(names) ? nothing : String(names[i + 1])
+        (other !== nothing && lowercase(other) == lowercase(ref)) && continue
+        push!(out, (column = c, ref = ref, other = other))
+    end
+    out
+end
+
+"""
+    channel_order_problems(img_by_uid, segments, cols) -> Vector{String}
+
+For a set-wide run that pools `cols` across segments (`Dict`s with `"uID"`, `"valueName"`): each segment
+whose channel order disagrees with the first segment's at a pooled column, as `"<uID>/<vn>: <mismatches>"`.
+Empty when the order agrees, or names aren't registered to compare. Used by `clustPops` and `clustTracks`.
+"""
+function channel_order_problems(img_by_uid::AbstractDict, segments, cols)::Vector{String}
+    isempty(segments) && return String[]
+    names_of(s) = channel_names(img_by_uid[s["uID"]]; value_name = s["valueName"])
+    ref = first(segments); ref_names = names_of(ref)
+    out = String[]
+    for s in segments[2:end]
+        ms = channel_order_mismatches(cols, ref_names, names_of(s))
+        isempty(ms) || push!(out, "$(s["uID"])/$(s["valueName"]): " *
+                                  describe_channel_mismatches(ms; ref_label = "$(ref["uID"])"))
+    end
+    out
+end
+
+"""One line per mismatch, for a skip reason or a task error: `mean_intensity_1 is CD8 here, CD4 in the source`."""
+describe_channel_mismatches(ms; ref_label::AbstractString = "the source") =
+    join(("$(m.column) is $(something(m.other, "absent")) here, $(m.ref) in $ref_label" for m in ms), "; ")
+
 # How many image channels a set of intensity columns covers: the highest channel index + 1, NOT the
 # column count — a label set with a secondary store (nuc, cell, …) measures every channel twice
 # (`mean_intensity_0`, `nuc_mean_intensity_0`, …), so 11 channels arrive as 22 columns.
