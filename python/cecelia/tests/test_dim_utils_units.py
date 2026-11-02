@@ -32,5 +32,28 @@ class PhysicalSizeUmTest(unittest.TestCase):
         self.assertEqual(_dims(0.5, "µm").im_physical_size_um("z", default=1.0), 1.0)
 
 
+class LengthUnitTest(unittest.TestCase):
+    def test_table(self):
+        from cecelia.utils.units import length_unit_um
+        self.assertEqual(length_unit_um("micrometer"), 1.0)
+        self.assertEqual(length_unit_um("µm"), 1.0)
+        self.assertAlmostEqual(length_unit_um("nanometer"), 1e-3)
+        self.assertAlmostEqual(length_unit_um("MM"), 1e3)
+        self.assertEqual(length_unit_um(None), 1.0)
+
+
+class ReadScaleUmTest(unittest.TestCase):
+    """`zarr_utils.read_scale_um` converts the spatial NGFF scale by the axis unit; time is untouched."""
+
+    def test_nm_axes_convert_time_does_not(self):
+        from unittest import mock
+        import cecelia.utils.zarr_utils as zu
+        with mock.patch.object(zu, "read_scale", return_value=[30.0, 2000.0, 500.0, 500.0]), \
+             mock.patch.object(zu, "read_axes", return_value=["t", "z", "y", "x"]), \
+             mock.patch.object(zu, "read_axis_units", return_value={"t": "second", "z": "nanometer",
+                                                                     "y": "nanometer", "x": "nanometer"}):
+            self.assertEqual(zu.read_scale_um("store"), [30.0, 2.0, 0.5, 0.5])
+
+
 if __name__ == "__main__":
     unittest.main()

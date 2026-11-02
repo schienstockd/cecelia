@@ -21,10 +21,6 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 
 
 
-# µm per OME length unit (`im_physical_unit` already maps µ → u). Mirrors `_LENGTH_UNIT_UM` in
-# app/src/model/image.jl.
-_LENGTH_UNIT_UM = {"um": 1.0, "micrometer": 1.0, "micron": 1.0,
-                   "nm": 1e-3, "nanometer": 1e-3, "mm": 1e3, "millimeter": 1e3}
 
 class DimUtils:
   def __init__(self, omexml, use_channel_axis = True):
@@ -133,7 +129,8 @@ class DimUtils:
     size = self.im_physical_size(axis, default = None)
     if size is None:
       return default
-    return float(size) * _LENGTH_UNIT_UM.get(str(self.im_physical_unit(axis, default = 'um')).lower(), 1.0)
+    from cecelia.utils.units import length_unit_um
+    return float(size) * length_unit_um(self.im_physical_unit(axis, default = 'um'))
 
   def im_physical_units(self, default = 'um'):
     axis_units = {

@@ -744,8 +744,8 @@ end
 # Unit name → factor to the unit the measures are reported in. Both the NGFF names the import writes
 # ("micrometer", "second") and the OME-XML abbreviations ("µm", "ms") appear in `meta`.
 const _LENGTH_UNIT_UM = Dict(
-    "µm" => 1.0, "um" => 1.0, "micrometer" => 1.0, "micron" => 1.0,
-    "nm" => 1e-3, "nanometer" => 1e-3, "mm" => 1e3, "millimeter" => 1e3)
+    "µm" => 1.0, "um" => 1.0, "micrometer" => 1.0, "micrometre" => 1.0, "micron" => 1.0, "microns" => 1.0,
+    "nm" => 1e-3, "nanometer" => 1e-3, "nanometre" => 1e-3, "mm" => 1e3, "millimeter" => 1e3, "millimetre" => 1e3)
 const _TIME_UNIT_S = Dict(
     "s" => 1.0, "sec" => 1.0, "second" => 1.0, "ms" => 1e-3, "millisecond" => 1e-3,
     "min" => 60.0, "minute" => 60.0, "h" => 3600.0, "hour" => 3600.0)

@@ -61,8 +61,11 @@ def run(params):
         raise ValueError('image has no Z axis to resample (or only 1 plane)')
     t_idx = dim_utils.dim_idx('T') if 'T' in dim_utils.im_dim_order else None
 
-    px_x = dim_utils.im_physical_size('x', default=None)
-    px_z = dim_utils.im_physical_size('z', default=None)
+    # the ratio in µm (per-axis units may differ: x in nm, z in µm); the z size written back below
+    # stays in z's own unit, so it is the raw z size scaled by the same ratio
+    px_x = dim_utils.im_physical_size_um('x', default=None)
+    px_z = dim_utils.im_physical_size_um('z', default=None)
+    px_z_raw = dim_utils.im_physical_size('z', default=None)
     if not px_x or not px_z or px_x <= 0 or px_z <= 0:
         raise ValueError('source image has no recorded XY or Z pixel size — cannot compute isotropic target')
     px_x = float(px_x); px_z = float(px_z)
@@ -80,7 +83,7 @@ def run(params):
     # has no scale setter — mutate the OMEXML fields directly (im_physical_size reads them).
     dim_utils.im_dim[z_idx] = new_z
     try:
-        omexml.images[0].pixels.physical_size_z = px_x
+        omexml.images[0].pixels.physical_size_z = float(px_z_raw) / ratio
     except Exception:
         pass
 

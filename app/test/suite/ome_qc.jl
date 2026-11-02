@@ -1361,6 +1361,9 @@ end
               ["metadata.frame_interval_unit_unknown"]
         @test codes(Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,
             "PhysicalSizeUnit"=>"furlong"))) == ["metadata.pixel_size_unit_unknown"]
+        # Z ratio is taken in µm per axis: X 500 nm, Z 2 µm is a normal 4:1, not 0.004
+        @test isempty(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>500.0,"PhysicalSizeY"=>500.0,
+            "PhysicalSizeZ"=>2.0,"PhysicalSizeUnit"=>"nm","PhysicalSizeZUnit"=>"µm")))
         # every convertible unit (both spellings) is clean
         for (tu, pu2) in (("ms", "nm"), ("millisecond", "nanometer"), ("min", "mm"), ("hour", "µm"))
             @test isempty(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>1.0,"TimeIncrementUnit"=>tu,

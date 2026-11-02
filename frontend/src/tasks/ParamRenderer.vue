@@ -4,6 +4,7 @@
   Supports nested section (collapsible box) with recursive rendering.
 -->
 <script setup lang="ts">
+import { pixelSizeUm } from '../utils/physicalSize'
 import { computed, ref, watch, onUnmounted, onDeactivated } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import { useProjectStore, type CciaImage } from '../stores/project'
@@ -547,7 +548,7 @@ const groupOrderOptions = computed(() => groupEntries.value.map((e, i) => {
 // wrong for the others; the strip falls back to form units and says so.
 const groupPxSize = computed<number | null>(() => {
   const sizes = (props.context?.images ?? [])
-    .map(i => i.physicalSizeX).filter((v): v is number => typeof v === 'number' && v > 0)
+    .map(i => pixelSizeUm(i.physicalSizeX, i.physicalSizeUnit)).filter((v): v is number => typeof v === 'number' && v > 0)
   if (!sizes.length) return null
   return sizes.every(v => v === sizes[0]) ? sizes[0] : null
 })

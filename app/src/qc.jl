@@ -272,7 +272,9 @@ function metadata_qc_findings(meta::AbstractDict)
     elseif z_corr
         mf("metadata.z_spacing_corrected", "z")
     elseif phys_z !== nothing && phys_x !== nothing && phys_x > 0
-        ratio = phys_z / phys_x
+        # each axis in µm first: Z may carry its own unit (PhysicalSizeZUnit), e.g. X in nm, Z in µm
+        um(ax) = something(length_unit_um(_meta_axis_length_unit(meta, ax)), 1.0)
+        ratio = (phys_z * um("Z")) / (phys_x * um("X"))
         (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) && mf("metadata.z_spacing_unusual", "z")
     end
 

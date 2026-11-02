@@ -86,3 +86,14 @@ describe('formatTimeIncrement', () => {
     expect(formatTimeIncrement(undefined, 'second')).toBe('—')
   })
 })
+
+describe('pixelSizeUm', () => {
+  it('converts the stored unit to µm', async () => {
+    const { pixelSizeUm } = await import('./physicalSize')
+    expect(pixelSizeUm(0.5, 'micrometer')).toBe(0.5)
+    expect(pixelSizeUm(0.5, null)).toBe(0.5)
+    expect(pixelSizeUm(500, 'nm')).toBeCloseTo(0.5)
+    expect(pixelSizeUm(0.0005, 'millimeter')).toBeCloseTo(0.5)
+    expect(pixelSizeUm(null, 'nm')).toBeNull()
+  })
+})
