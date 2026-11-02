@@ -145,6 +145,13 @@ def repo_root() -> Path:
     return Path.cwd()
 
 
+def git_dir(cwd: str | None = None) -> Path | None:
+    """This worktree's own git dir (`.git/worktrees/<name>` in a linked worktree), or None outside a
+    repo. Per-worktree scratch files (attribution stamp, recital body) live here."""
+    out = git_output("rev-parse", "--absolute-git-dir", cwd=cwd)
+    return Path(out) if out else None
+
+
 def main_checkout(cwd: str | None = None) -> Path | None:
     """The main checkout every worktree of this repo belongs to (the parent of git's common dir),
     whichever worktree `cwd` is in. None when `cwd` is not in a repo."""

@@ -45,7 +45,7 @@ _CALLER_HOOK = _REPO_ROOT / "mcp" / "cecelia_mcp" / "caller_hook.py"
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness.attribution import (  # noqa: E402
     coauthor_line, footer, reply_line, reply_phrase, trailer_lines)
-from cecelia.effectiveness.git_context import git_output  # noqa: E402
+from cecelia.effectiveness.git_context import git_dir as _git_dir, git_output  # noqa: E402
 from cecelia.utils.atomic_io import write_json_atomic  # noqa: E402
 
 STAMP_FILE = "cecelia-claude-author.json"
@@ -81,11 +81,6 @@ def env_version(env: dict) -> str:
     """The Claude Code version from a Bash command's env (`AI_AGENT=claude-code_2-1-312_agent`)."""
     m = _AI_AGENT.search(env.get("AI_AGENT", ""))
     return m.group(1).replace("-", ".") if m else ""
-
-
-def _git_dir(cwd: str | None) -> pathlib.Path | None:
-    out = git_output("rev-parse", "--absolute-git-dir", cwd=cwd)
-    return pathlib.Path(out) if out else None
 
 
 def record(event: dict, cwd: str | None) -> None:

@@ -2,8 +2,8 @@
 """CLI wrapper for `cecelia.effectiveness.recital.run_recital`.
 
 Reads `git diff --staged` (or from stdin with `--stdin`), spawns both reviewers, emits log
-events, prints the recital body to stdout. Agent captures stdout and appends to the commit
-message body.
+events, prints the recital body to stdout and saves it to `<git dir>/recital-body.md`. Agents
+append that file to the commit message (`recital_body_path`).
 
 Usage:
     pixi run recital
@@ -28,7 +28,7 @@ import subprocess
 import sys
 
 from cecelia.effectiveness.git_context import in_sequencer_commit
-from cecelia.effectiveness.recital import RecitalError, run_recital
+from cecelia.effectiveness.recital import RecitalError, recital_body_path, run_recital
 
 
 def _parse_args() -> argparse.Namespace:
@@ -70,7 +70,24 @@ def main() -> int:
         return 1
 
     print(recital)
+    _save_body(recital)
     return 0
+
+
+def _save_body(recital: str) -> None:
+    """Also write the body to this worktree's `recital-body.md`, and say where on stderr.
+
+    Best-effort: the body is already on stdout, so a failed write only loses the convenience.
+    """
+    path = recital_body_path()
+    if path is None:
+        return
+    try:
+        path.write_text(recital + "\n", encoding="utf-8")
+    except OSError as e:
+        print(f"recital: could not save the body to {path}: {e}", file=sys.stderr)
+        return
+    print(f"recital: body saved to {path} (append it to the commit message)", file=sys.stderr)
 
 
 if __name__ == "__main__":

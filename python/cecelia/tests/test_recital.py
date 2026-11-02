@@ -741,6 +741,27 @@ class RecitalCliMergeTest(unittest.TestCase):
         with mock.patch.object(cli, "in_sequencer_commit", return_value=True), \
              mock.patch.object(cli, "_get_diff", return_value="diff --git a/x b/x\n"), \
              mock.patch.object(cli, "run_recital", return_value="body") as run, \
+             mock.patch.object(cli, "recital_body_path", return_value=None), \
              mock.patch.object(cli.sys, "argv", ["recital", "--stdin"]):
             self.assertEqual(cli.main(), 0)
         run.assert_called_once()
+
+    def test_body_is_saved_to_the_worktree_git_dir(self):
+        # Agents append this file instead of fishing a temp file back out of /tmp.
+        cli = self._cli()
+        with tempfile.TemporaryDirectory() as td:
+            body = pathlib.Path(td) / "recital-body.md"
+            with mock.patch.object(cli, "in_sequencer_commit", return_value=False), \
+                 mock.patch.object(cli, "_get_diff", return_value="diff --git a/x b/x\n"), \
+                 mock.patch.object(cli, "run_recital", return_value="_Recital stamp: b@?_"), \
+                 mock.patch.object(cli, "recital_body_path", return_value=body), \
+                 mock.patch.object(cli.sys, "argv", ["recital"]):
+                self.assertEqual(cli.main(), 0)
+            self.assertEqual(body.read_text(encoding="utf-8"), "_Recital stamp: b@?_\n")
+
+    def test_body_path_is_inside_the_git_dir(self):
+        from cecelia.effectiveness import recital as r
+        with mock.patch.object(r, "_git_dir", return_value=pathlib.Path("/repo/.git/worktrees/w")):
+            self.assertEqual(r.recital_body_path(), pathlib.Path("/repo/.git/worktrees/w/recital-body.md"))
+        with mock.patch.object(r, "_git_dir", return_value=None):
+            self.assertIsNone(r.recital_body_path())

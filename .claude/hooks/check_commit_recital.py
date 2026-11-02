@@ -55,6 +55,9 @@ This hook enforces these gates on a commit whose message carries reviewer findin
    branch — even when the message no longer quotes the finding. A finding fixed and trimmed
    from the message must still say `fixed_pre_commit`; nothing closes it on the agent's behalf.
 
+Agent commits (`CLAUDECODE=1`) also need, findings or not, a logged recital run for this change
+and a `_Recital stamp:` line in the message (`agent_recital_gate`).
+
 P3 of FINDINGS_EMISSION_PLAN.md — log writing
 ---------------------------------------------
 When the message quotes a slug in a `[slug: outcome]` pair (e.g. `[fanout-abcd1234: fixed_pre_commit]`),
@@ -91,7 +94,7 @@ sys.path.insert(0, str(_REPO_ROOT / "python"))
 from cecelia.effectiveness import OUTCOME_VOCABULARY, append_event, read_events  # noqa: E402
 from cecelia.effectiveness.log import unresolved_findings  # noqa: E402
 from cecelia.effectiveness.recital import (  # noqa: E402
-    MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code,
+    MARKERS, SLUG_PATTERN, STAMP_RE, TAGGABLE_ADVISORY, outside_code, recital_body_path,
 )
 import importlib.util  # noqa: E402
 
@@ -242,9 +245,10 @@ def foreign_stamp(message: str, head_sha: str | None, branch: str | None) -> str
             return (
                 f"the message carries recital output for a different change ({m.group(0)}; "
                 f"this commit is {branch or '?'}@{(head_sha or '?')[:12]}). A recital file "
-                "shared with another session gets spliced — write recital output to a path "
-                "only this run uses (`mktemp`), re-run `pixi run recital`, and paste its own "
-                "output. Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
+                "shared with another session gets spliced, and an old body goes stale — re-run "
+                "`pixi run recital` and append the body it saves to "
+                "`$(git rev-parse --absolute-git-dir)/recital-body.md`. Bypass in emergencies with "
+                "`CECELIA_SKIP_RECITAL_CHECK=1 git commit …`."
             )
     return None
 
@@ -405,25 +409,34 @@ def _read_message(path: str) -> str:
     return "\n".join(line for line in text.splitlines() if not line.startswith("#"))
 
 
-def agent_recital_gate() -> str | None:
-    """An AGENT's commit needs a real recital run for this change, findings or not.
+def agent_recital_gate(message: str) -> str | None:
+    """An AGENT's commit needs a real recital run for this change AND that run's body in the message.
 
     Gate 2 in `check` only fires when the message carries finding markers, so a commit with no
     findings needed no recital at all — and on 2026-09-30 a session copied the previous commit's
     `Convention check: … Inventory check: run` trailer without running recital, and it went
-    through. Claude Code sets `CLAUDECODE=1` in every Bash command it runs and git passes the
-    environment to hooks, so this applies to agent commits only; a human's commit is unaffected.
-    Degrades to allow when the SHA can't be read.
+    through. A logged run alone is not enough either, so the message must also carry a
+    `_Recital stamp:` line; `foreign_stamp` (gate 0) checks it is this change's. Claude Code sets `CLAUDECODE=1` in every Bash command it runs and git passes the
+    environment to hooks, so this applies to agent commits only; a human's commit (manual
+    protocol, no stamp) is unaffected. Degrades to allow when the SHA can't be read.
     """
     if os.environ.get("CLAUDECODE") != "1":
         return None
     head_sha, branch = _current_head_sha(), _current_branch()
-    if head_sha is None or _has_matching_run(head_sha, branch):
+    if head_sha is None:
         return None
-    return (f"no recital run is logged for this change (HEAD {head_sha[:8]}, branch "
-            f"{branch or '?'}). Run `pixi run recital` on the staged diff and append its output "
-            "— never copy another commit's check trailer. For a throwaway commit (a WIP to "
-            "rebase), `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+    if not _has_matching_run(head_sha, branch):
+        return (f"no recital run is logged for this change (HEAD {head_sha[:8]}, branch "
+                f"{branch or '?'}). Run `pixi run recital` on the staged diff and append its output "
+                "— never copy another commit's check trailer. For a throwaway commit (a WIP to "
+                "rebase), `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+    if STAMP_RE.search(message) is None:
+        body = recital_body_path()
+        where = f"`{body}`" if body else "`$(git rev-parse --absolute-git-dir)/recital-body.md`"
+        return ("recital ran for this change, but its body is not in the message (no "
+                f"`_Recital stamp:` line). Append {where} — `pixi run recital` saves its body "
+                "there — to the message and commit again.")
+    return None
 
 
 def commit_msg_main(message_path: str) -> int:
@@ -436,7 +449,7 @@ def commit_msg_main(message_path: str) -> int:
     if os.environ.get("CECELIA_SKIP_RECITAL_CHECK") == "1" or _in_sequencer_commit():
         return _EXIT_ALLOW
     message = _read_message(message_path)
-    reason = agent_recital_gate() or check(message)
+    reason = agent_recital_gate(message) or check(message)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return 1
