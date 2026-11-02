@@ -3,6 +3,7 @@
 // suggests (`GET /api/chains/suggest`); here the user picks the exemplars, picks which version of each
 // step to keep (one for most steps; several only where that is a real fork — segmentation, tracking per
 // population), settles any param the exemplars disagree on, and opens the result on the whiteboard.
+// Export CSV writes the same steps as a Methods parameter table (`GET /api/chains/history-params`).
 // docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part B.
 import { computed, onMounted, ref, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
@@ -13,7 +14,9 @@ import CollapsibleSection from './CollapsibleSection.vue'
 import { useProjectStore } from '../stores/project'
 import { useTaskDefsStore } from '../stores/taskDefs'
 import { suggestUrl, conflictOptions, applyChoices, groupSteps, defaultKeep, groupLeftOut, uniqueChainName,
-         type HistorySuggestion, type HistoryFinal } from '../utils/chainFromHistory'
+         historyParamsUrl, historyParamsCsv,
+         type HistorySuggestion, type HistoryFinal, type HistoryParamsRow } from '../utils/chainFromHistory'
+import { downloadText } from '../plots/export'
 import type { ChainTemplate } from '../tasks/types'
 import { formatWhen } from '../utils/formatWhen'
 
@@ -60,6 +63,24 @@ async function suggest() {
     failed.value = String(e instanceof Error ? e.message : e)
   } finally {
     loading.value = false
+  }
+}
+
+// the Methods parameter table for the selected images — one row per step, non-default params only
+const exporting = ref(false)
+async function exportCsv() {
+  if (!exemplars.value.length) return
+  exporting.value = true; failed.value = ''
+  try {
+    const res = await fetch(historyParamsUrl(props.projectUid, exemplars.value))
+    const body = await res.json()
+    if (!res.ok) throw new Error(String(body?.error ?? `HTTP ${res.status}`))
+    const set = project.sets.find(s => s.uid === setUid.value)?.name ?? 'set'
+    downloadText(`${set}_parameters.csv`, historyParamsCsv(body.rows as HistoryParamsRow[]), 'text/csv')
+  } catch (e) {
+    failed.value = String(e instanceof Error ? e.message : e)
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -126,6 +147,10 @@ function open() {
         <button class="cc-btn cc-btn-primary cc-btn-dense" :disabled="!exemplars.length || loading"
                 v-tooltip.bottom="'Build a chain from what ran on these images'" @click="suggest">
           <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-history']" /> Suggest
+        </button>
+        <button class="cc-btn cc-btn-dense" :disabled="!exemplars.length || exporting"
+                v-tooltip.bottom="'Parameters per step, non-defaults only — for a Methods table'" @click="exportCsv">
+          <i :class="['pi', exporting ? 'pi-spin pi-spinner' : 'pi-download']" /> Export CSV
         </button>
         <CcToggle v-if="suggestion" :model-value="reuse" @update:model-value="setReuse"
                   label="Reuse trained models" />

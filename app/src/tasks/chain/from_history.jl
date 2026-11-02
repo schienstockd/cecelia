@@ -158,6 +158,29 @@ function _history_rows(proj::CciaProject, exemplars::Vector{String})
     rows
 end
 
+# Steps 2–3: identity (task + output name, else what it reads) → per-image latest done run. Returns
+# `(latest, held, skipped)`: `latest` replays; `held` ran fine but must not replay (an import, per-image
+# geometry) — kept so the parameter table can still report it; `skipped` = `[(row, why)]` in time
+# order, every run that is not in `latest` (held ones included), for the dialog's "Left out" list.
+function _history_latest(rows, leaves_of)
+    latest = Dict{Tuple{String,String},Dict{String,Any}}()
+    held   = Dict{Tuple{String,String},Dict{String,Any}}()
+    skipped = Tuple{Any,String}[]
+    for r in sort(rows; by = r -> r.at)
+        lv = leaves_of(r.fn)
+        lv === nothing && (push!(skipped, (r, "this task no longer exists")); continue)
+        why = startswith(r.fn, "importImages.") ? "imports an image — never replayed" :
+              r.legacy ? "ran before params were recorded" :
+              any(l -> l.type == "imagePicker", values(lv)) ? "per-image geometry (e.g. a crop box)" : ""
+        isempty(why) || push!(skipped, (r, why))
+        r.legacy && continue
+        out, _ = _history_output(r.fn, r.params, lv)
+        key = isempty(out) ? "in:" * _history_inputs(r.params, lv) : "out:" * out
+        get!(Dict{String,Any}, isempty(why) ? latest : held, (r.fn, key))[r.uid] = r
+    end
+    latest, held, skipped
+end
+
 """
     chain_from_history(proj, exemplars; keep = nothing, retrain = false, name = "From history")
         -> Dict
@@ -181,25 +204,10 @@ their models. Returns, all plain JSON:
 function chain_from_history(proj::CciaProject, exemplars::Vector{String};
                             keep::Union{Nothing,AbstractVector} = nothing, retrain::Bool = false,
                             name::AbstractString = "From history")::Dict{String,Any}
-    rows   = _history_rows(proj, exemplars)
     leaves = Dict{String,Any}()
     leaves_of(fn) = get!(() -> _history_leaves(fn), leaves, fn)
-    not_replayed = Dict{String,Any}[]
-    skip!(r, why) = push!(not_replayed, Dict{String,Any}("fn" => r.fn, "imageUid" => r.uid, "why" => why))
-
-    # identity → per-image latest run
-    latest = Dict{Tuple{String,String},Dict{String,Any}}()
-    for r in sort(rows; by = r -> r.at)
-        lv = leaves_of(r.fn)
-        lv === nothing && (skip!(r, "this task no longer exists"); continue)
-        startswith(r.fn, "importImages.") && (skip!(r, "imports an image — never replayed"); continue)
-        r.legacy && (skip!(r, "ran before params were recorded"); continue)
-        any(l -> l.type == "imagePicker", values(lv)) &&
-            (skip!(r, "per-image geometry (e.g. a crop box)"); continue)
-        out, _ = _history_output(r.fn, r.params, lv)
-        key = isempty(out) ? "in:" * _history_inputs(r.params, lv) : "out:" * out
-        get!(Dict{String,Any}, latest, (r.fn, key))[r.uid] = r
-    end
+    latest, _, skipped = _history_latest(_history_rows(proj, exemplars), leaves_of)
+    not_replayed = [Dict{String,Any}("fn" => r.fn, "imageUid" => r.uid, "why" => why) for (r, why) in skipped]
     unique!(d -> (d["fn"], d["imageUid"], d["why"]), not_replayed)
 
     # merge across exemplars → steps; conflicts where their latest params differ
