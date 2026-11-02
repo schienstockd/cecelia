@@ -294,7 +294,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
     # selection: its rows/columns are fixed by the `neighbourStats` run it reads, so requiring pops
     # here rejects the only body the panel can send. Route it through the targets form with an empty
     # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
-    precomputed = chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction"
+    # The HMM state-count elbow is the same kind of readout: it reads the runs' fit records.
+    precomputed = (chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction") ||
+                  chart == "elbow"
 
     # population targets: explicit (value_name, pop) pairs, or the legacy single-segmentation form.
     # `targets === nothing` → use the legacy `pops` + resolved `value_name` path.

@@ -236,6 +236,64 @@ end
     @test task_scope(_task_from_fun_name("tracking.track_measures")) == "image"
 end
 
+# Fit quality (docs/todo/HMM_FIT_QUALITY_PLAN.md): the parameter count and criteria are hand-checkable
+# arithmetic; the fitted log-likelihood must behave like one — a nested model (K+1 ⊇ K) can't fit worse,
+# and a fit cut off at one iteration has not met Baum–Welch's own stopping rule.
+@testset "HMM fit statistics" begin
+    @test hmm_n_params(3, 2) == 2 + 6 + 12          # init (K−1) + transitions K(K−1) + mean+sd 2KD
+    @test hmm_n_params(1, 1) == 2
+    s = hmm_fit_stats(-100.0, 2, 1, 50; iterations = 7, converged = true)
+    @test s.nParams == 7 && s.aic ≈ 2 * 7 + 200 && s.bic ≈ 7 * log(50) + 200
+    @test s.logLik == -100.0 && s.nObs == 50 && s.iterations == 7 && s.converged
+
+    # two clearly separated regimes per track, as in the decode test above
+    uID = String[]; vn = String[]; tid = Int[]; tt = Float64[]; sp = Float64[]; an = Float64[]
+    for k in 1:6, t in 1:30
+        slow = t <= 15
+        push!(uID, "X"); push!(vn, "A"); push!(tid, k); push!(tt, Float64(t))
+        push!(sp, (slow ? 0.5 : 5.0) + 0.1 * sin(3t + k)); push!(an, (slow ? 0.2 : 2.5) + 0.1 * cos(2t + k))
+    end
+    df = DataFrame("uID" => uID, "value_name" => vn, "track_id" => tid, "t" => tt,
+                   "live.cell.speed" => sp, "live.cell.angle" => an)
+    ms = ["live.cell.speed", "live.cell.angle"]
+    plain = hmm_fit_states(df, ms; num_states = 2, time_col = "t")
+    r2 = hmm_fit_states(df, ms; num_states = 2, time_col = "t", return_fit = true)
+    @test isequal(r2.states, plain)                   # opting in changes nothing about the states
+    r1 = hmm_fit_states(df, ms; num_states = 1, time_col = "t", return_fit = true)
+    @test r2.fit.nObs == nrow(df) && r2.fit.nParams == hmm_n_params(2, 2)
+    @test isfinite(r2.fit.logLik) && r2.fit.logLik > r1.fit.logLik
+    @test r2.fit.converged && r2.fit.iterations < 200
+    @test r2.fit.bic < r1.fit.bic                      # two real regimes: the second state pays its way
+    cut = hmm_fit_states(df, ms; num_states = 2, time_col = "t", max_iter = 1, return_fit = true)
+    @test cut.fit.iterations == 1 && !cut.fit.converged
+    # nothing to fit → no fit record, states all missing
+    empty = hmm_fit_states(df[1:0, :], ms; num_states = 2, time_col = "t", return_fit = true)
+    @test empty.fit === nothing && isempty(empty.states)
+
+    # QC: an unfinished fit is flagged first, a finished one adds nothing
+    m = Cecelia.category_dist_metrics([1.0, 2.0, 1.0, 2.0])
+    @test isempty(Cecelia.hmm_states_qc_findings(m; fit = r2.fit))
+    f = Cecelia.hmm_states_qc_findings(Cecelia.category_dist_metrics([1.0, 1.0]); fit = cut.fit)
+    @test f[1]["code"] == "hmm.not_converged" && f[2]["code"] == "hmm.single_state"
+    @test occursin("1 iterations", f[1]["short"])
+end
+
+@testset "per-run sidecar helpers (hmmfit / clustfeatures / motiffeatures)" begin
+    props = joinpath(mktempdir(), "B.h5ad")
+    @test Cecelia.props_sidecar_path(props, "hmmfit") == joinpath(dirname(props), "B.hmmfit.json")
+    @test Cecelia.hmm_fit_entry(props, "movement") === nothing           # no file yet
+    sc = Cecelia.hmm_fit_path(props)
+    Cecelia.put_props_sidecar_entry!(sc, "movement", Dict("numStates" => 3, "logLik" => -1.5))
+    Cecelia.put_props_sidecar_entry!(sc, "shape", Dict("numStates" => 2))
+    Cecelia.put_props_sidecar_entry!(sc, "movement", Dict("numStates" => 4))   # re-run replaces its own
+    @test Cecelia.hmm_fit_entry(props, "movement") == Dict{String,Any}("numStates" => 4)
+    @test Cecelia.hmm_fit_entry(props, "shape")["numStates"] == 2
+    Cecelia.drop_props_sidecar_keys!(sc, Cecelia.read_props_sidecar(sc), ["movement", "shape"])
+    @test !isfile(sc)                                                      # last key takes the file
+    write(sc, "{not json")
+    @test Cecelia.read_props_sidecar(sc) == Dict{String,Any}()             # corrupt → empty, no throw
+end
+
 # The two entry points into hmm.jl expect a `pop_df`-shaped DataFrame (uID / value_name / track_id
 # / time_col / measures-or-state-cols). A rename upstream — the audit called this out for `pop_df`
 # too — used to fail late with a bare `KeyError`; `_require_cols` names every missing column at once

@@ -17,6 +17,7 @@
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
 import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell, ComparisonsResult, StatsComparisonPair } from './types'
 import { rescaleRows01 } from '../utils/heatmapScale'
+import { elbowRows, ELBOW_METRIC_LABEL, type ElbowMetric } from '../utils/hmmElbow'
 import { frameAxisLabel } from '../utils/timeAxis'
 import { attrCsvHeaders, attrKeysOf } from '../utils/attrFilter'
 import { needsXRotation } from './autoOverride'
@@ -143,6 +144,7 @@ export interface VisProps {
   labY: string                               // y-axis label override (R labY)
   fontSize: number                           // base font size px (R adjFontSize; one knob, see note)
   // heatmap (profile) look — ports the old R heat plots (behaviourDTx.Rmd / plotHeatmaps.R)
+  elbowMetric?: ElbowMetric                  // HMM state-count elbow: y = log-likelihood (default) or BIC
   heatmapScale?: 'minmax' | 'zscore'         // per-feature min-max→[0,1] (viridis, R default) vs z-score (diverging)
   heatmapValues?: boolean                    // print the value in each cell (default off for profile, matches R)
   // Between-group hypothesis test — one setting shared by every plot (governed by the pop-manager
@@ -549,6 +551,8 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // matrix/heatmap is a pooled grid (cells, not series) — its own builder + theme, returned early so
   // none of the per-series colour-scale / measure-axis post-processing below applies.
   if (o.chartType === 'heatmap') return buildHeatmap(Plot, r, o)
+  // the HMM state-count comparison: curves of fit against K from the runs' fit records, no series
+  if (o.chartType === 'elbow') return buildHmmElbow(Plot, r, o)
   // time series (measure/count over an ordered column, e.g. t) → a geom_smooth line, not thousands
   // of bars/boxes.
   if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
@@ -979,6 +983,39 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   if (o.rotateXLabel) opts.marginBottom = xRotMargin(64, o)
   ;(opts as Record<string, unknown>)._legend = legend
   fitFacetHeaders(opts, [...new Set(fit.map(p => p.fkey))], o)
+  return opts
+}
+
+// ── HMM state-count elbow (docs/todo/HMM_FIT_QUALITY_PLAN.md, P3) ───────────────
+// One line + dots per family of runs that differ only in K. The values are what the fits recorded —
+// nothing is smoothed (cf. the trend line): with 3–5 points a fitted curve would invent the elbow. A
+// run that did not converge is drawn HOLLOW, since its value is where the optimiser stopped, not a
+// maximum. The x axis is integer state counts only.
+function buildHmmElbow(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Record<string, unknown> | null {
+  const metric: ElbowMetric = o.elbowMetric ?? 'logLik'
+  const rows = elbowRows(r.curves, metric)
+  if (!rows.length) return null
+  const fg = o.darkTheme ? '#e6e6e6' : '#111'
+  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const domain = [...new Set(rows.map(p => p.curve))]
+  const color = { domain, range: distinctColors(domain.length) }
+  const ks = [...new Set(rows.map(p => p.k))].sort((a, b) => a - b)
+  const opts: Record<string, unknown> = {
+    // `nice` puts a tick on the top edge, where the y label sits — leave the label its own row
+    ...THEME, color, marginTop: Math.max(legendTopPad(domain.length, o), 26),
+    style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
+    x: { label: o.labX || 'Number of states', ticks: ks, tickFormat: 'd', grid: o.grid,
+         domain: [ks[0] - 0.3, ks[ks.length - 1] + 0.3] },
+    y: { label: o.labY || ELBOW_METRIC_LABEL[metric], grid: o.grid, nice: true },
+    marks: [
+      Plot.line(rows, { x: 'k', y: 'y', z: 'curve', stroke: 'curve', strokeWidth: 2 }),
+      Plot.dot(rows.filter(p => p.converged), { x: 'k', y: 'y', fill: 'curve', r: 4, title: 'tip' }),
+      Plot.dot(rows.filter(p => !p.converged), { x: 'k', y: 'y', stroke: 'curve', fill: bg, r: 4, strokeWidth: 2, title: 'tip' }),
+      Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
+      Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
+    ],
+  }
+  ;(opts as Record<string, unknown>)._legend = color
   return opts
 }
 
@@ -1673,6 +1710,12 @@ export function plotDataToCsv(r: PlotDataResponse, meta?: CsvImageMeta): string 
   const id = (s: PlotSeries): unknown[] => [s.uID ?? '', ...img.cells(s.uID ?? ''), s.value_name, s.pop]
   const idH = ['uID', ...img.header, 'value_name', 'pop', ...tail]
   switch (r.chartType) {
+    case 'elbow':
+      // one row per recorded run: the family it belongs to, its K and every fit number
+      return tbl(['family', 'pops', 'modelMeasurements', 'run', 'numStates', 'logLik', 'aic', 'bic',
+                  'gainOverPrevK', 'converged', 'nObs'],
+        (r.curves ?? []).flatMap(c => c.points.map(p => [c.label, (c.pops ?? []).join(' '),
+          (c.modelMeasurements ?? []).join(' '), p.run, p.k, p.logLik, p.aic, p.bic, p.gain, p.converged, p.nObs])))
     case 'histogram': {
       const e = r.binEdges ?? [], body: unknown[][] = []
       for (const s of r.series) (s.counts ?? []).forEach((c, i) => body.push([...id(s), e[i], e[i + 1], c]))

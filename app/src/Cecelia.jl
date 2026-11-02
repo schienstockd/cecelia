@@ -177,7 +177,7 @@ export track_group_images, track_group_value_name, track_group_pop
 export MSD_SLOPE_RANDOM, MSD_SLOPE_DIRECTED, MSD_SLOPE_CONFINED, ACOR_PERSIST_LEVEL
 export PLANE_ANGLE_UNBIASED, DRIFT_STEP_SPACING, DRIFT_ALPHA, PAIR_SCAN_MAX_TRACKS
 export TRACK_DUP_ANGLE_DEG, TRACK_DUP_DIST_UM, TRACK_DUP_MIN_SHARED
-export hmm_fit_states, hmm_transitions, DiagGaussEmission
+export hmm_fit_states, hmm_fit_stats, hmm_n_params, hmm_transitions, DiagGaussEmission
 
 # ── Task system ───────────────────────────────────────────────────────────────
 export CciaTask
@@ -286,6 +286,7 @@ include("ports.jl")          # Base-only port-slot resolver — same standalone 
 include("api_token.jl")      # Base-only API token (the loopback gate) — same standalone loaders
 include("config.jl")
 include("utils.jl")
+include("run_sidecars.jl")   # {props}.{kind}.json per-run manifests (clustfeatures / motiffeatures / hmmfit)
 include("single_instance.jl")  # at-most-one Cecelia per host — before any HTTP/WS bind. D7 / P5.
 # The log rail: the canonical console-record shape, the tee a server installs, and `spawn_logged`
 # (the only sanctioned way to start a long-lived child, because `run(cmd; wait=false)` swallows its
@@ -310,6 +311,7 @@ include("gating/gating_engine.jl")
 include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
 include("plotting/plot_data.jl")
+include("plotting/hmm_fit_curve.jl")   # HMM state-count comparison (chartType "elbow") from the hmmfit records
 include("plotting/stats.jl")
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)

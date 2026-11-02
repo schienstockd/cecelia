@@ -172,12 +172,49 @@ function _init_hmm(obs::Vector{Vector{Float64}}, K::Int)
         push!(dists, DiagGaussEmission(mu, sd))
     end
     init  = fill(1.0 / K, K)
-    off   = (1.0 - 0.9) / max(K - 1, 1)
+    # 0.9 self-transition, the rest shared out; a single state keeps all of it (a 1-state model is the
+    # baseline a log-likelihood comparison across state counts starts from)
+    stay  = K == 1 ? 1.0 : 0.9
+    off   = (1.0 - stay) / max(K - 1, 1)
     trans = fill(off, K, K)
     for i in 1:K
-        trans[i, i] = 0.9
+        trans[i, i] = stay
     end
     HMM(init, trans, dists)
+end
+
+# ── Fit statistics ───────────────────────────────────────────────────────────────
+
+# Baum–Welch's own stopping rule (HiddenMarkovModels.jl `baum_welch`, default `atol = 1e-5`): it stops
+# once an iteration improves the log-likelihood by less than `atol`. Re-applied to the returned
+# trajectory, so "converged" means the optimiser stopped by its own rule, not by running out of
+# iterations — a fit that hit `max_iter` still climbing is not a finished fit.
+const _BW_ATOL = 1e-5
+_bw_converged(evo::AbstractVector) = length(evo) >= 2 && (evo[end] - evo[end-1]) < _BW_ATOL
+
+"""
+    hmm_n_params(K, D) -> Int
+
+Free parameters of a K-state HMM with D-dimensional diagonal-Gaussian emissions: the initial
+distribution (K−1), the transition rows (K(K−1)) and a mean + sd per state per measure (2KD).
+"""
+hmm_n_params(K::Integer, D::Integer) = (K - 1) + K * (K - 1) + 2 * K * D
+
+"""
+    hmm_fit_stats(loglik, K, D, n_obs; iterations, converged) -> NamedTuple
+
+Information criteria for one fit (PURE → unit-tested). AIC = 2p − 2LL (Akaike 1974,
+doi:10.1109/TAC.1974.1100705); BIC = p·ln(n) − 2LL (Schwarz 1978, doi:10.1214/aos/1176344136), n =
+decoded timepoints. Timepoints within a track are not independent, so n overstates the evidence;
+both criteria keep falling with K on real movement data (Pohle et al. 2017, doi:10.1007/s13253-017-0283-8)
+— they are recorded for comparison, never used to pick K. See docs/todo/HMM_FIT_QUALITY_PLAN.md.
+"""
+function hmm_fit_stats(loglik::Real, K::Integer, D::Integer, n_obs::Integer;
+                       iterations::Integer, converged::Bool)
+    p = hmm_n_params(K, D)
+    (; logLik = Float64(loglik), nParams = p, nObs = Int(n_obs),
+       aic = 2p - 2loglik, bic = p * log(n_obs) - 2loglik,
+       iterations = Int(iterations), converged = converged)
 end
 
 # ── Fit states ─────────────────────────────────────────────────────────────────
@@ -186,7 +223,7 @@ end
     hmm_fit_states(df, measures; num_states, time_col,
                    group_cols=["uID","value_name","track_id"],
                    noise_filter=0, normalise=Dict(), scale_measures=String[],
-                   max_iter=200) -> Vector{Union{Int,Missing}}
+                   max_iter=200, return_fit=false) -> Vector{Union{Int,Missing}}
 
 Fit one Gaussian HMM over the `measures` columns of pooled per-cell `df` (one sequence per track,
 identified by `group_cols`, ordered within a track by `time_col`) and return a per-row state vector
@@ -195,6 +232,10 @@ with no speed/angle) are excluded from the fit and returned as `missing`.
 
 Preprocessing order: order-within-track → drop NA/Inf → per-track noise filter (running mean) →
 global normalise → global scale → fit → Viterbi decode.
+
+`return_fit=true` returns `(; states, fit)` instead, `fit` = `hmm_fit_stats` of the final estimate
+(`nothing` when nothing was fitted). The log-likelihood is of the PREPROCESSED observations, so two
+fits compare only when their measures, filters and normalisation match.
 """
 # Fail LOUDLY at the boundary rather than late with `KeyError`, so an upstream rename in `pop_df`
 # or a caller feeding the wrong table names — not just its data — the missing columns in one shot.
@@ -224,13 +265,14 @@ function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString
                         normalise::AbstractDict=Dict{String,String}(),
                         scale_measures::AbstractVector{<:AbstractString}=String[],
                         post_filter::Int=0, post_iterations::Int=1,
-                        max_iter::Int=200)
+                        max_iter::Int=200, return_fit::Bool=false)
     measures = String.(collect(measures))
     _require_cols(df, vcat(measures, String[String(time_col)], String.(group_cols)),
                   "hmm_fit_states")
     n = nrow(df)
     states = Vector{Union{Int,Missing}}(missing, n)
-    n == 0 && return states
+    _out(fit) = return_fit ? (; states, fit) : states
+    n == 0 && return _out(nothing)
 
     _finite(v) = !(v === missing) && v isa Number && isfinite(Float64(v))
 
@@ -254,7 +296,7 @@ function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString
         haskey(groups, key) || (groups[key] = Int[]; push!(order, key))
         push!(groups[key], i)
     end
-    isempty(order) && return states
+    isempty(order) && return _out(nothing)
 
     seqs    = Vector{Vector{Float64}}[]   # per-track obs vectors
     seq_idx = Vector{Int}[]               # original row indices, aligned
@@ -271,7 +313,11 @@ function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString
     seq_ends = cumsum(length.(seqs))
 
     hmm0 = _init_hmm(obs, num_states)
-    est, _ = baum_welch(hmm0, obs; seq_ends=seq_ends, max_iterations=max_iter)
+    est, evo = baum_welch(hmm0, obs; seq_ends=seq_ends, max_iterations=max_iter, atol=_BW_ATOL)
+    # the trajectory's last entry is the likelihood BEFORE the final M-step — score the estimate itself
+    fit = return_fit ? hmm_fit_stats(DensityInterface.logdensityof(est, obs; seq_ends=seq_ends),
+                                     num_states, length(measures), length(obs);
+                                     iterations=length(evo), converged=_bw_converged(evo)) : nothing
     q = viterbi(est, obs; seq_ends=seq_ends)
     q = q isa Tuple ? first(q) : q
 
@@ -286,7 +332,7 @@ function hmm_fit_states(df::DataFrame, measures::AbstractVector{<:AbstractString
         end
         start = stop + 1
     end
-    states
+    _out(fit)
 end
 
 # ── Transitions ──────────────────────────────────────────────────────────────────

@@ -1,5 +1,7 @@
 // Plot-spec registry types (served by GET /api/plots/definitions from app/src/plotDefinitions/)
 // and the /api/plot_data aggregation response. Mirrors the JSON shapes — see docs/API.md.
+import type { HmmFitSummary } from '../utils/hmmFitNote'
+import type { HmmFitCurve } from '../utils/hmmElbow'
 
 export interface PlotParam {
   key: string
@@ -19,6 +21,7 @@ export type ChartType =
   | 'heatmap'                                              // matrix (profile / crosstab) — measure-type independent
   | 'count'                                                // # objects per series (row count) — measure-independent; the segmentation-integrity headline
   | 'trend'                                                // time series: measure mean per timepoint, geom_smooth (LOESS) line over t
+  | 'elbow'                                                // HMM state-count comparison: fit vs number of states, from the runs' fit records
 
 export interface PlotSpec {
   id: string
@@ -63,6 +66,9 @@ export interface PlotSpec {
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
     matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
+    // a readout fixed by analysis runs rather than the population selection (see isPrecomputedSpec):
+    // 'hmmFit' = the HMM state-count elbow from the runs' fit records
+    precomputed?: 'hmmFit'
   }
   scopeModes?: ('per_image' | 'summarised')[]
   params?: PlotParam[]
@@ -190,5 +196,7 @@ export interface PlotDataResponse {
   zscore?: boolean         // profile: rows standardised → diverging colour scale
   normalize?: string       // crosstab normalisation (none|row|col|total)
   category?: string        // the categorical column the matrix was built from
+  curves?: HmmFitCurve[]   // chartType "elbow": one curve per family of HMM runs differing only in K
+  fit?: HmmFitSummary      // profile over an HMM state column: the run's fit record (rows = its modelled measures first)
   comparisons?: ComparisonsResult   // between-group stats, present only when requested + applicable
 }

@@ -699,16 +699,18 @@ function category_dist_metrics(vals)
 end
 
 """
-    hmm_states_qc_findings(m) -> Vector
+    hmm_states_qc_findings(m; fit = nothing) -> Vector
 
-Advisory findings for one image's HMM state assignment, from `category_dist_metrics` `m`
-(PURE → unit-tested). Most-severe first:
+Advisory findings for one image's HMM state assignment, from `category_dist_metrics` `m` and the
+set-wide `fit` (`hmm_fit_stats`, optional) (PURE → unit-tested). Most-severe first:
   • no cells decoded (`n == 0`) ⇒ warn (tracks too short / measurements incomplete).
   • all decoded cells in one state (`n_distinct ≤ 1`) ⇒ warn (image didn't switch states — check
     it's the same acquisition/measurements, or the model has too few states).
   • one state holds ≥ `_DOMINANT_FRAC` of cells ⇒ info (check it's really this uniform).
+  • the shared fit used every Baum–Welch iteration without meeting its own stopping rule ⇒ warn,
+    listed first: every state above comes from that unfinished fit.
 """
-function hmm_states_qc_findings(m)
+function hmm_states_qc_findings(m; fit = nothing)
     findings = Dict{String,Any}[]
     if m.n == 0
         push!(findings, qc_finding("warn", "hmm.no_states_decoded"))
@@ -718,6 +720,9 @@ function hmm_states_qc_findings(m)
         push!(findings, qc_finding("info", "hmm.dominant_state";
             pct = round(Int, 100 * m.dominant_frac),
             detail = Dict{String,Any}("dominantStateFrac" => round(m.dominant_frac; digits = 3))))
+    end
+    if fit !== nothing && !fit.converged
+        pushfirst!(findings, qc_finding("warn", "hmm.not_converged"; iterations = fit.iterations))
     end
     findings
 end

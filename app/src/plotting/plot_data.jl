@@ -429,6 +429,42 @@ function _wilson_ci(k::Integer, n::Integer; z::Float64 = 1.959963984540054)
     (max(0.0, c - h), min(1.0, c + h))
 end
 
+# ── State-signature rows follow the HMM run (docs/todo/HMM_FIT_QUALITY_PLAN.md, Decision 8) ─────
+# A profile heatmap over an HMM state column shows the measures the run was FITTED on first, then the
+# requested extras — the spec's fixed rows otherwise show speed/angle whatever the run modelled, and
+# nothing tells a modelled row from a plotted correlate. Resolved before the frame is read (the rows
+# must be requested from pop_df). One joint fit per run, so the first segmentation carrying the
+# record speaks for all of them. `nothing` = not an HMM profile, or a run fitted before the record.
+function _hmm_profile_fit(imgs::AbstractVector{<:CciaImage}, vns, chart_type::AbstractString,
+                          matrix_mode, category)
+    (chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "profile" &&
+     category !== nothing && startswith(String(category), _HMM_STATE_PREFIX)) || return nothing
+    run = String(category)[ncodeunits(_HMM_STATE_PREFIX)+1:end]
+    for img in imgs, vn in vns
+        e = try
+            hmm_fit_entry(img_label_props_path(img, resolve_value_name(img, vn)), run)
+        catch
+            nothing
+        end
+        e === nothing || return e
+    end
+    nothing
+end
+
+# profile rows: the modelled measures, then the requested ones not already among them
+_hmm_profile_rows(measures, fit) = fit === nothing ? measures :
+    unique(vcat(String[string(m) for m in get(fit, "modelMeasurements", String[])],
+                String[string(m) for m in something(measures, String[])]))
+
+# what the panel captions — the comparison numbers, not the whole record
+_hmm_fit_caption(fit) = Dict{String,Any}(k => get(fit, k, nothing) for k in
+    ("modelMeasurements", "numStates", "logLik", "bic", "converged"))
+
+function _attach_hmm_fit!(result::Dict{String,Any}, fit)
+    fit === nothing || (result["fit"] = _hmm_fit_caption(fit))
+    result
+end
+
 function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       measure::Union{AbstractString,Nothing}, granularity::Symbol,
                       nbins::Int, normalize::Symbol, by_image::Bool,
@@ -1000,9 +1036,11 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                            cluster_suffix::Union{AbstractString,Nothing}=nothing,
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pops = String.(collect(pops))
+    eff_vn = _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
+    fit = _hmm_profile_fit([img], [eff_vn], chart_type, matrix_mode, category)
+    measures = _hmm_profile_rows(measures, fit)
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
-    eff_vn = _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
         _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
@@ -1010,13 +1048,13 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                          pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
         pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
-    _summary_agg(df, chart_type; measure=measure, granularity=granularity,
+    _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, eff_vn),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test)
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit)
 end
 
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
@@ -1036,12 +1074,14 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            cluster_suffix::Union{AbstractString,Nothing}=nothing,
                            stats_enabled::Bool=false, stats_test::Symbol=:auto)::Dict{String,Any}
     pops = String.(collect(pops))
-    cols = _cols_for(chart_type, measure, group_by, measures, category)
-    sfx = _cluster_matrix_suffix(chart_type, category)
     # per-population cluster heatmap: resolve value_name to the run's segmentation (see _cluster_pop_vn),
     # taking the run from the first image — clustering is set-scope so the value_name set is consistent.
     eff_vn = isempty(imgs) ? value_name :
              _cluster_pop_vn(first(imgs), pop_type, value_name, cluster_suffix, granularity)
+    fit = _hmm_profile_fit(imgs, [eff_vn], chart_type, matrix_mode, category)
+    measures = _hmm_profile_rows(measures, fit)
+    cols = _cols_for(chart_type, measure, group_by, measures, category)
+    sfx = _cluster_matrix_suffix(chart_type, category)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
@@ -1062,6 +1102,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           attr_map=attr_map,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
+    _attach_hmm_fit!(result, fit)
     result
 end
 
@@ -1157,6 +1198,10 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     # `spatialStats/{suffix}.json` sidecar. Intercept before any membership work (see _interaction_matrix).
     chart_type == "matrix" && matrix_mode !== nothing && String(matrix_mode) == "interaction" &&
         return _interaction_matrix(img; suffix = stats_suffix)
+    # the HMM state-count comparison reads the runs' fit records, not cells (hmm_fit_curve.jl)
+    chart_type == "elbow" && return hmm_fit_curve_data([img])
+    fit = _hmm_profile_fit([img], unique(first.(targets)), chart_type, matrix_mode, category)
+    measures = _hmm_profile_rows(measures, fit)
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # expand_cluster_pops=false: each target IS a (segmentation, population) pair the user ticked in
     # the picker, so a bare cluster/region path must resolve under THAT segmentation only. With the
@@ -1164,13 +1209,13 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg,
     df = _targets_frame(targets, (vn, pops) ->
         pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
                raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
-    _summary_agg(df, chart_type; measure=measure, granularity=granularity,
+    _attach_hmm_fit!(_summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
-                 stats_enabled=stats_enabled, stats_test=stats_test)
+                 stats_enabled=stats_enabled, stats_test=stats_test), fit)
 end
 
 # multiple images AND multiple segmentations. `scope=:per_image` → one series per image per
@@ -1198,6 +1243,13 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
             "xLabels" => String[], "yLabels" => String[], "cells" => Any[], "series" => Any[])
         return _interaction_matrix(first(imgs); suffix = stats_suffix)
     end
+    # every recorded HMM run on the selected images, as state-count curves (hmm_fit_curve.jl)
+    if chart_type == "elbow"
+        result = hmm_fit_curve_data(imgs); result["scope"] = String(scope)
+        return result
+    end
+    fit = _hmm_profile_fit(imgs, unique(first.(targets)), chart_type, matrix_mode, category)
+    measures = _hmm_profile_rows(measures, fit)
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     # see the single-image form above — a picked (segmentation, population) pair is explicit
     df = _targets_frame(targets, (vn, pops) ->
@@ -1214,5 +1266,6 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           attr_map=attr_map,
                           stats_enabled=stats_enabled, stats_test=stats_test)
     result["scope"] = String(scope)
+    _attach_hmm_fit!(result, fit)
     result
 end

@@ -604,6 +604,93 @@ end
     end
 end
 
+# ── the state-signature heatmap follows its HMM run (docs/todo/HMM_FIT_QUALITY_PLAN.md) ─────────
+# Rows = the measures the run was FITTED on, then the requested extras; the response carries the fit.
+# A run with no fit record (fitted before it existed) keeps exactly the requested rows.
+@testset "state signature rows follow the HMM fit record" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "state signature fit (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        props = img_label_props_path(img, "B")
+        cells = label_props(props) |> select_cols(["label"]) |> as_df
+        label_props(props) |> add_obs(DataFrame("label" => cells.label,
+            "live.cell.hmm.state.mv" => [Float64(l % 2 + 1) for l in cells.label])) |> save!
+        req = (; granularity=:cell, matrix_mode="profile", category="live.cell.hmm.state.mv")
+        extra = ["live.cell.angle"]
+
+        r0 = plot_summary_data(img, "live", ["B/_tracked"], "matrix"; req..., measures=extra)
+        @test r0["yLabels"] == extra && !haskey(r0, "fit")             # no record → unchanged
+
+        Cecelia.put_props_sidecar_entry!(Cecelia.hmm_fit_path(props), "mv",
+            Dict("modelMeasurements" => ["live.cell.speed", "live.cell.angle"], "numStates" => 2,
+                 "logLik" => -12.5, "bic" => 40.0, "converged" => true, "nObs" => 99))
+        r = plot_summary_data(img, "live", ["B/_tracked"], "matrix"; req..., measures=extra)
+        @test r["yLabels"] == ["live.cell.speed", "live.cell.angle"]   # modelled first, no duplicate
+        @test r["fit"]["numStates"] == 2 && r["fit"]["logLik"] == -12.5 && !haskey(r["fit"], "nObs")
+        # the (value_name, pop) target form and the multi-image form resolve the same record
+        rt = plot_summary_data([img], ["KDIeEm"], "live", [("B", "_tracked")], "matrix"; req..., measures=extra)
+        @test rt["yLabels"] == r["yLabels"] && rt["fit"]["numStates"] == 2
+        # not an HMM column → untouched
+        rc = plot_summary_data(img, "live", ["B/_tracked"], "matrix"; granularity=:cell,
+                               matrix_mode="crosstab", category="live.cell.hmm.state.mv")
+        @test !haskey(rc, "fit")
+    end
+end
+
+# ── the HMM state-count elbow (docs/todo/HMM_FIT_QUALITY_PLAN.md, P3) ─────────
+# Runs that differ only in numStates are one curve; any other difference (pops, measures,
+# preprocessing) is another. The gain is what the reader compares — it must be against the previous K.
+@testset "HMM fit curves (state-count elbow)" begin
+    fam(run, k, ll; ms = ["live.cell.speed", "live.cell.angle"], pops = ["T/_tracked"], at = "2026-11-02T10:00:00") =
+        Dict{String,Any}("run" => run, "numStates" => k, "logLik" => ll, "bic" => -2ll + k, "aic" => -2ll,
+                         "converged" => true, "nObs" => 100, "modelMeasurements" => ms, "pops" => pops,
+                         "preprocessing" => Dict("noiseFilterMeasurements" => 5), "at" => at)
+    runs = [fam("k3", 3, -900.0), fam("k2", 2, -1000.0), fam("k4", 4, -880.0), fam("k3b", 3, -905.0),
+            fam("shape3", 3, -50.0; ms = ["volume"]),
+            fam("k2B", 2, -10.0; pops = ["B/_tracked"]),
+            Dict{String,Any}("run" => "legacy")]                       # no numbers → no point
+    cs = Cecelia.hmm_fit_curves(runs)
+    @test length(cs) == 3
+    mv = only(filter(c -> c["modelMeasurements"] == ["live.cell.speed", "live.cell.angle"] &&
+                          c["pops"] == ["T/_tracked"], cs))
+    @test [p["k"] for p in mv["points"]] == [2, 3, 3, 4]
+    @test mv["points"][1]["gain"] === nothing
+    @test mv["points"][2]["gain"] ≈ 100.0 && mv["points"][3]["gain"] ≈ 95.0   # both K=3 runs vs K=2
+    @test mv["points"][4]["gain"] ≈ 20.0                                      # vs the better K=3
+    @test mv["label"] == "speed, angle · T/_tracked"
+    @test Cecelia._hmm_family_key(fam("a", 2, 0.0; pops = ["B", "A"])) ==
+          Cecelia._hmm_family_key(fam("b", 5, 1.0; pops = ["A", "B"]))       # pop order is not a difference
+
+    # read through the records on disk, deduplicated by run, via the plot route's entry point
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if have_fixture(h5)
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        props = img_label_props_path(img, "B")
+        sc = Cecelia.hmm_fit_path(props)
+        for e in runs[1:3]; Cecelia.put_props_sidecar_entry!(sc, e["run"], e); end
+        # a record whose state column is gone (the table was rebuilt) is a run that no longer exists
+        Cecelia.put_props_sidecar_entry!(sc, "gone", fam("gone", 5, -870.0))
+        labs = (label_props(props) |> select_cols(["label"]) |> as_df).label
+        label_props(props) |> add_obs(DataFrame("label" => labs,
+            ["live.cell.hmm.state.$k" => ones(length(labs)) for k in ("k3", "k2", "k4")]...)) |> save!
+        r = plot_summary_data([img], ["KDIeEm"], "live", Tuple{String,String}[], "elbow"; scope = :summarised)
+        @test r["chartType"] == "elbow" && isempty(r["series"]) && r["scope"] == "summarised"
+        @test [p["k"] for p in only(r["curves"])["points"]] == [2, 3, 4]   # no K=5 from "gone"
+        @test plot_summary_data(img, "live", Tuple{String,String}[], "elbow")["curves"] == r["curves"]
+        @test isempty(Cecelia.hmm_fit_curve_data(CciaImage[])["curves"])
+    else
+        @test_skip "HMM fit curves on disk (fixture missing)"
+    end
+end
+
 # ── multiple SEGMENTATIONS on one plot: (value_name, pop) targets ─────────
 @testset "plot_summary_data multi-segmentation targets" begin
     h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
