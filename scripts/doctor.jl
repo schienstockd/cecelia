@@ -6,7 +6,8 @@
 # WHAT IT IS. A dispatcher over checks that already exist elsewhere in the tree. It never
 # re-implements a check — it calls the sanctioned helper (`scripts/check_claude_env.sh`,
 # `scripts/bundle_check.sh`, `Pkg.instantiate`, `npm ci`) and prints one ordered green/amber/red
-# report with a fix hint per row. Repairs the cheap things by default (npm deps, .env copy);
+# report with a fix hint per row. Repairs the cheap things by default (npm deps, Julia packages
+# a changed Manifest names but the depot lacks, .env copy);
 # `--check` reports without touching anything.
 #
 # WHY. The fresh-clone / new-worktree failure mode is repeated and silent: a `pixi run dev` that
@@ -94,7 +95,28 @@ function check_dev_dir()::Row
     Row("CECELIA_DEV_DIR", :green, dev, "")
 end
 
-function check_julia_deps(area::String)::Row
+# Manifest entries whose package source is not in any depot. A present Manifest proves nothing on
+# its own: a branch that changes it (a lock refresh, a `git pull`) leaves the old versions installed,
+# and `pixi run dev` then dies on the first `using` with "Package X is required but does not seem to
+# be installed". Asked of the env's OWN Julia (`--project=<dir>`), so it resolves exactly as the
+# server would; ~1 s per env. Registry packages only — stdlibs and path deps (`Cecelia`, `CeceliaNb`)
+# carry no `git-tree-sha1` and are never "installed".
+const _MISSING_PKGS_PROBE = raw"""
+import TOML
+m = TOML.parsefile(joinpath(dirname(Base.active_project()), "Manifest.toml"))
+for (name, entries) in get(m, "deps", m), e in entries
+    haskey(e, "git-tree-sha1") || continue
+    p = Base.locate_package(Base.PkgId(Base.UUID(e["uuid"]), name))
+    (p === nothing || !isfile(p)) && println(name)
+end
+"""
+
+function missing_julia_pkgs(proj::String)::Vector{String}
+    out = read(`$(Base.julia_cmd()) --startup-file=no --project=$proj -e $_MISSING_PKGS_PROBE`, String)
+    sort!(filter!(!isempty, split(out, '\n') .|> strip .|> String))
+end
+
+function check_julia_deps(area::String; autofix::Bool = true)::Row
     proj = joinpath(REPO_ROOT, area)
     isfile(joinpath(proj, "Project.toml")) || return Row("julia ($area)", :red,
         "no $area/Project.toml", "")
@@ -102,7 +124,26 @@ function check_julia_deps(area::String)::Row
         return Row("julia ($area)", :amber, "$area/Manifest.toml missing (deps not instantiated)",
             "pixi run $(area == "app" ? "julia-instantiate" : "julia --project=$area -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'")")
     end
-    Row("julia ($area)", :green, "Manifest.toml present", "")
+    missing = try
+        missing_julia_pkgs(proj)
+    catch e
+        return Row("julia ($area)", :amber, "could not check installed packages ($(sprint(showerror, e)))", "")
+    end
+    isempty(missing) && return Row("julia ($area)", :green, "Manifest.toml packages installed", "")
+    # `instantiate`, not `resolve`: the Manifest is the version set we want — resolving would rewrite it.
+    fix = "julia --project=$area -e 'using Pkg; Pkg.instantiate()'"
+    shown = join(first(missing, 3), ", ") * (length(missing) > 3 ? ", …" : "")
+    r = Row("julia ($area)", :amber, "$(length(missing)) Manifest packages not installed ($shown)", fix)
+    (autofix && !OPT_CHECK) || return r
+    println("     Fixing: Pkg.instantiate() in $area/ …")
+    ok = try
+        run(`$(Base.julia_cmd()) --startup-file=no --project=$proj -e "using Pkg; Pkg.instantiate()"`)
+        true
+    catch e
+        println("     Fix failed: $(sprint(showerror, e))")
+        false
+    end
+    ok ? Row(r.name, :green, "installed $(length(missing)) Manifest packages", "") : r
 end
 
 function check_frontend_deps()::Row
@@ -177,6 +218,8 @@ function main()
         check_dev_dir(),
         check_julia_deps("app"),
         check_julia_deps("api"),
+        # Notebooks only, and a cold instantiate is minutes (Makie) — reported, not auto-fixed.
+        check_julia_deps("pluto"; autofix = false),
         check_frontend_deps(),
         check_credential_env(),
         check_optional_pixi_env("cellpose-v3"),
@@ -191,4 +234,5 @@ function main()
     exit(counts[:red] == 0 ? 0 : 1)
 end
 
-main()
+# `include`d by scripts/test_doctor.jl for its helpers — only run as a script.
+abspath(PROGRAM_FILE) == (@__FILE__) && main()

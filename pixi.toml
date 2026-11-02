@@ -441,7 +441,7 @@ doctor = "julia --startup-file=no scripts/doctor.jl"
 
 # Create a fully bootstrapped sibling worktree — `git worktree add` + `.env` copy + a fresh
 # per-worktree `pixi install`, then delegates `.env`/frontend/deps verification to `pixi run
-# doctor` in the new tree (which auto-fixes npm ci). Bootstrap owns only what doctor cannot do
+# doctor` in the new tree (which auto-fixes npm ci and uninstalled Julia Manifest packages). Bootstrap owns only what doctor cannot do
 # (no tree to audit yet, no source to copy `.env` from, no per-worktree `.pixi` yet).
 # Usage: `pixi run bootstrap-worktree <name> [<branch>] [<ref>]`. See docs/DEV.md → Creating a
 # new worktree.
