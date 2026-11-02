@@ -438,7 +438,10 @@ pixi run bootstrap-worktree <name> [<branch>] [<ref>]
 Creates `../cecelia-<name>` off `origin/main` (override with `<ref>`), on a new branch `<branch>`
 (defaults to `<name>`). Does `git worktree add` + `.env` copy + a fresh per-worktree `pixi
 install`, then runs `pixi run doctor` in the new tree — which auto-repairs `npm ci`, verifies
-`.env`/`CECELIA_DEV_DIR`, and checks the julia envs. Do NOT run just `git worktree add` — each
+`.env`/`CECELIA_DEV_DIR`, and installs any `app`/`api` Manifest packages the Julia depot lacks
+(`pluto` is reported, not installed). Run `pixi run doctor` again after checking out a branch that
+changes a `Manifest.toml` (a lock refresh): otherwise `pixi run dev` stops with "Package X is
+required but does not seem to be installed". Do NOT run just `git worktree add` — each
 follow-up breaks in a way that reads as a code bug:
 
 - Missing `.env` → `CECELIA_DEV_DIR` resolves to `~/.cecelia` (the installed-app placeholder), so
