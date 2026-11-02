@@ -332,15 +332,34 @@ class JudgePassTest(_Fixture):
 
 
 class RenderTest(_Fixture):
-    def test_a_week_still_running_is_drawn_hollow_with_a_star(self):
+    def test_the_week_still_running_is_in_the_json_not_the_picture(self):
+        # c and d can't show a pass that hasn't run, so a, b, e and f don't show a week that hasn't ended
         rows = _week(day="2026-09-28") + _week(day="2026-10-06")
         data = self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 7))
         self.assertEqual([w["ongoing"] for w in data["weeks"]], [False, True])
         svg = self.c.render_svg(data)
         self.assertIn(">Sep 28<", svg)
-        self.assertIn(">Oct 5<", svg)
-        self.assertIn(">*</text>", svg)
-        self.assertIn("(still running)", svg)
+        self.assertNotIn(">Oct 5<", svg)
+        self.assertNotIn("Week of Oct 5", svg)   # nor in the <desc>
+        ended = self.c.render_svg(self.c.aggregate(rows, [], as_of=dt.date(2026, 10, 12)))
+        self.assertIn(">Oct 5<", ended)
+
+    def test_header_and_footer_say_the_drawn_span(self):
+        # a thin leading week and the running week aren't drawn, so the dates and sessions leave them out
+        rows = _week(day="2026-09-23", sessions=3) + _week(day="2026-09-29") + _week(day="2026-10-06") \
+            + _week(day="2026-10-13", sessions=5)
+        svg = self.c.render_svg(self.c.aggregate(rows, [{"kind": "pass", "date": "2026-10-09", "bugs": []}],
+                                                 as_of=dt.date(2026, 10, 14)))
+        self.assertIn("Since Sep 28, 2026 ·", svg)
+        self.assertIn("Data through Oct 11 · 12 sessions", svg)   # _week reuses session ids week to week
+        late = self.c.render_svg(self.c.aggregate(rows, [{"kind": "pass", "date": "2026-10-13", "bugs": []}],
+                                                  as_of=dt.date(2026, 10, 14)))
+        self.assertIn("Data through Oct 13 ·", late)   # a pass after the last whole week: c and d reach it
+
+    def test_only_a_running_week_says_so(self):
+        data = self.c.aggregate(_week(day="2026-10-06"), [], as_of=dt.date(2026, 10, 7))
+        self.assertIn("The first week is still running.", self.c.render_svg(data))
+        self.assertIn("<desc id=\"d\">The first week is still running.</desc>", self.c.render_svg(data))
 
     def test_slot_f_is_a_note_until_a_whole_week_of_reviewer_tokens_is_logged(self):
         tok = {"input": 0, "cache_write": 0, "cache_read": 300_000, "output": 0}
@@ -367,7 +386,7 @@ class RenderTest(_Fixture):
         self.assertIn(">Sep 21<", only)  # all there is: still drawn
 
     def test_same_numbers_same_bytes(self):
-        data = self.c.aggregate(_week(), [])
+        data = self.c.aggregate(_week(), [], as_of=dt.date(2026, 10, 12))
         self.assertEqual(self.c.render_svg(data), self.c.render_svg(json.loads(json.dumps(data))))
 
     def test_axis_ticks_are_round_and_cover_the_data(self):
@@ -382,7 +401,7 @@ class RenderTest(_Fixture):
         self.assertEqual(self.c.esc('a<b & "c"\x07'), "a&lt;b &amp; &quot;c&quot;")
 
     def test_the_numbers_are_in_the_description(self):
-        svg = self.c.render_svg(self.c.aggregate(_week(), []))
+        svg = self.c.render_svg(self.c.aggregate(_week(), [], as_of=dt.date(2026, 10, 12)))
         self.assertIn('role="img"', svg)
         self.assertIn("12 changes reviewed across 12 sessions, 0 PRs merged; 3 findings, 1 fixed before commit", svg)
 
@@ -395,7 +414,7 @@ class RenderTest(_Fixture):
 class PublishTest(_Fixture):
     def setUp(self):
         super().setUp()
-        self.data = self.c.aggregate(_week(), [])
+        self.data = self.c.aggregate(_week(), [], as_of=dt.date(2026, 10, 12))   # the week has ended: drawn
         self.svg = self.c.render_svg(self.data)
         self.state = self.tmp / "chart" / "pushed.json"
 
@@ -433,6 +452,13 @@ class PublishTest(_Fixture):
         self.publish()
         self.assertEqual(self.publish(), {"skipped": "unchanged"})
         self.assertEqual(len(self.remote.pushes()), 1)
+
+    def test_the_push_message_gives_the_footers_date(self):
+        # the log runs to Oct 13, inside the week still running; the footer and the message stop at Oct 11
+        data = self.c.aggregate(_week() + _week(day="2026-10-13", sessions=1), [], as_of=dt.date(2026, 10, 14))
+        self.c.publish(self.c.render_svg(data), data, git=self.git(), state_path=self.state)
+        [commit] = [c for c in self.remote.calls if c[0] == "commit-tree"]
+        self.assertEqual(commit[3], "chart: data through 2026-10-11")
 
     def test_a_changed_chart_is_pushed(self):
         self.publish()

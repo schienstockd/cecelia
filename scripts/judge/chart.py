@@ -238,6 +238,11 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
             "rule_edits": sum(max(monday, first_day) <= d <= sunday for d in rule_edits),
         })
         monday += _dt.timedelta(days=7)
+    since: set = set()
+    for w in reversed(weeks):
+        if not w["ongoing"]:
+            since |= sessions[_dt.date.fromisoformat(w["week"])] - {None}
+        w["sessions_since"] = len(since)
     all_sessions = set().union(*sessions.values()) - {None} if sessions else set()
     return {"weeks": weeks, "first_day": first_day.isoformat(), "last_day": last_day.isoformat(),
             "sessions": len(all_sessions), "tokens_from": tokens_from and tokens_from.isoformat(),
@@ -325,21 +330,21 @@ def describe(data: dict) -> str:
     """The chart in words: the SVG's `<desc>`, for a screen reader or anyone who can't see the bars."""
     if not data["weeks"] and not data.get("passes"):
         return "No reviews logged yet."
-    parts = []
-    for w in data["weeks"]:
+    parts = [] if drawn_weeks(data) or data.get("passes") else ["The first week is still running."]
+    for w in drawn_weeks(data):
         f = w["findings"]
         split = "; ".join(f"{name}: {sum(w['by_reviewer'][r].values())} findings, "
                           f"{w['by_reviewer'][r]['fixed_pre_commit']} fixed before commit"
                           + (f", median wait {w['wait_s'][r]:g} s" if w["wait_s"][r] is not None else "")
                           + (f", {_mtok(w['reviewer_tokens'][r])} tokens" if w["reviewer_tokens"] else "")
                           for r, name, _ in REVIEWERS)
-        thin_why = " (still running)" if w["ongoing"] else " (partial)" if w["partial"] else \
+        thin_why = " (partial)" if w["partial"] else \
             f" (under {LOW_SESSIONS} sessions)" if w["sessions"] < LOW_SESSIONS else ""
         parts.append(f"Week of {_week_label(w['week'])}{thin_why}: "
                      f"{w['changes']} changes reviewed across {w['sessions']} sessions, {w['prs']} PRs merged; "
                      f"{sum(f.values())} findings, "
                      + ", ".join(f"{f[k]} {label}" for k, label, _ in OUTCOMES) + f" ({split}).")
-    for p in data.get("passes") or []:
+    for p in (data.get("passes") or [])[-MAX_PASSES:]:   # what c and d draw, like drawn_weeks for the rest
         tok = p["tokens"]
         parts.append(f"Judge pass of {_fmt_day(p['date'])}: {sum(p['open'].values())} real bugs open ("
                      + ", ".join(f"{p['open'][k]} {name}" for k, name, _, _ in AGES)
@@ -359,8 +364,32 @@ def _fixed(w: dict, r: str) -> float | None:
     return 100 * c["fixed_pre_commit"] / _total(c) if _total(c) else None
 
 
+def drawn_weeks(data: dict) -> list[dict]:
+    """The weeks the picture (and its `<desc>`) shows: ended ones, from the first with
+    `LOW_SESSIONS` sessions on, the last `MAX_WEEKS`. The rest are in the JSON."""
+    weeks = [w for w in data["weeks"] if not w["ongoing"]]
+    while weeks[1:] and weeks[0]["sessions"] < LOW_SESSIONS:
+        weeks = weeks[1:]
+    return weeks[-MAX_WEEKS:]
+
+
+def _window(weeks: list[dict], passes: list[dict]) -> tuple[_dt.date, _dt.date] | None:
+    """The days the panels cover: the first drawn week's Monday (or an earlier pass) to the last
+    drawn week's Sunday (or a later pass). The header and footer say this span, nothing wider."""
+    days = [_dt.date.fromisoformat(p["date"]) for p in passes]
+    if weeks:
+        days += [_dt.date.fromisoformat(weeks[0]["week"]),
+                 _dt.date.fromisoformat(weeks[-1]["week"]) + _dt.timedelta(days=6)]
+    return (min(days), max(days)) if days else None
+
+
+def drawn_span(data: dict) -> tuple[_dt.date, _dt.date] | None:
+    """`_window` of what `render_svg` draws: the dates the header, footer and push message give."""
+    return _window(drawn_weeks(data), (data.get("passes") or [])[-MAX_PASSES:])
+
+
 def thin(w: dict) -> bool:
-    """A week drawn hollow and dashed, with a `*`: still filling up, or too few sessions to lean on."""
+    """A week drawn hollow and dashed, with a `*`: only partly logged, or too few sessions to lean on."""
     return w["partial"] or w["sessions"] < LOW_SESSIONS
 
 
@@ -513,12 +542,11 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     pal = palette or load_hex()
     W, H = 1280, 692
     left = 20
-    # the thin weeks before logging got going are in the JSON, not the picture: they'd only stretch
-    # the axis. A thin week after that is drawn, hollow, with a `*`.
-    weeks = list(data["weeks"])
-    while weeks[1:] and weeks[0]["sessions"] < LOW_SESSIONS:
-        weeks = weeks[1:]
-    weeks = weeks[-MAX_WEEKS:]
+    # the week still running is in the JSON, not the picture: the judge-pass panels can't show a pass
+    # that hasn't happened, so the week panels don't show a week that hasn't ended either. The thin
+    # weeks before logging got going stay out too: they'd only stretch the axis. A thin week after
+    # that is drawn, hollow, with a `*`.
+    weeks = drawn_weeks(data)
     passes = (data.get("passes") or [])[-MAX_PASSES:]
     out: list[str] = []
     add = out.append
@@ -529,13 +557,15 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
     add(f'<desc id="d">{esc(describe(data))}</desc>')
     add(_style.surface(W, H))
     add(f'<text x="{left}" y="30" font-size="17" font-weight="700">{esc(title)}</text>')
-    since = (f"Since {_fmt_day(data['first_day'])}, {data['first_day'][:4]} · the reviewer prompts still change most weeks"
-             if data["first_day"] else "Nothing logged yet")
+    span = drawn_span(data)
+    since = (f"Since {_fmt_day(span[0].isoformat())}, {span[0].year} · the reviewer prompts still change most weeks"
+             if span else "Nothing logged yet")
     add(f'<text x="{left}" y="50" font-size="12">{esc(since)}</text>')
 
     if not weeks:
-        add(f'<text x="{W // 2}" y="{H // 2}" font-size="15" text-anchor="middle">No reviews logged yet.</text>')
-        add(_footer(data, left, H))
+        empty = "The first week is still running." if data["weeks"] else "No reviews logged yet."
+        add(f'<text x="{W // 2}" y="{H // 2}" font-size="15" text-anchor="middle">{esc(empty)}</text>')
+        add(_footer(None, 0, left, H))
         add("</svg>")
         return "\n".join(out) + "\n"
 
@@ -591,7 +621,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
                  ylabel="Median wait (s)", labels=days, peak=peak(wait), xlabel="Week starting",
                  legend=reviewer_legend), wait)
     # f: reviewer tokens, once a whole week of them is logged; until then, when logging began
-    if any(w["reviewer_tokens"] and not w["ongoing"] for w in weeks):
+    if any(w["reviewer_tokens"] for w in weeks):
         rt = [sum(w["reviewer_tokens"].values()) if w["reviewer_tokens"] else 0 for w in weeks]
         began = week_of(_dt.date.fromisoformat(data["tokens_from"])).isoformat()
         f = _Axes(add, x=xs[2], y=row[1], w=col, letter="f", title="Reviewer tokens per week",
@@ -608,7 +638,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
               "Each review now logs its tokens and cost. Once a whole",
               "week is logged, this panel plots the two reviewers'",
               "tokens per week, next to the judge's in d.")
-    add(_footer(data, left, H))
+    add(_footer(span, weeks[0].get("sessions_since", 0), left, H))
     add("</svg>")
     return "\n".join(out) + "\n"
 
@@ -621,13 +651,14 @@ def _note(add, x: float, y: float, letter: str, title: str, *lines: str) -> None
         add(f'<text x="{x + 18:.1f}" y="{y + 30 + 17 * k:.1f}" font-size="12" fill="{_style.DIM}">{esc(line)}</text>')
 
 
-def _footer(data: dict, x: int, H: int) -> str:
-    through = (f"Data through {_fmt_day(data['last_day'])} · {data['sessions']} sessions"
-               if data["last_day"] else "No data yet")
+def _footer(span: tuple[_dt.date, _dt.date] | None, sessions: int, x: int, H: int) -> str:
+    """`span`: `_window`; `sessions`: distinct ones in the drawn weeks."""
+    through = (f"Data through {_fmt_day(span[1].isoformat())} · {sessions} sessions"
+               if span else "No data yet")
     lines = (
         "Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a helper or "
         "sit in the wrong place",
-        f"* beside a hollow point or bar: a week still running, or under {LOW_SESSIONS} sessions · * on its own: "
+        f"* beside a hollow point or bar: a week only partly logged, or under {LOW_SESSIONS} sessions · * on its own: "
         "no tokens logged · tokens include cache reads",
         "c: a real bug is one the verify agent called fix or decide (or found already fixed), or a stranded commit · "
         "fixed = gone at that pass, the first time since it was flagged",
@@ -734,7 +765,8 @@ def publish(svg: str, data: dict, *, git: Git, state_path: pathlib.Path, flow_sv
         blob = git("hash-object", "-w", "--stdin", input=files[name]).strip()
         entries.append(f"100644 blob {blob}\t{name}\n")
     tree = git("mktree", input="".join(entries)).strip()
-    message = f"chart: data through {data['last_day']}" if data["last_day"] else "chart: no data yet"
+    span = drawn_span(data)   # the footer's date, not the log's last day (that includes the running week)
+    message = f"chart: data through {span[1].isoformat()}" if span else "chart: no data yet"
     commit = git("commit-tree", tree, "-m", message).strip()
     git("push", "--force", "origin", f"{commit}:{REF}")
     if git.dry:

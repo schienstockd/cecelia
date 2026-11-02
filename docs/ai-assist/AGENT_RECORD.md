@@ -43,8 +43,11 @@ the x axis:
   whole week of those rows exists this slot says when logging began; then it plots the two reviewers'
   tokens per week as stacked bars, cache reads included (errored runs count: they spent the tokens),
   with a `*` at the baseline for weeks before logging and the week it began drawn as outlines.
-- **Hollow points, dashed lines and a `*`** mark a week that is partial (logging began inside it, or
-  it is still running) or had under 10 sessions: its numbers are drawn, but lean on few findings.
+- **The week still running isn't drawn**, as c and d have no pass that hasn't run: a week
+  appears once it ends on Sunday (the Monday timer redraws it then). It's in `effectiveness.json`.
+  The header's *Since*, the footer's *Data through* and its session count cover the same drawn span.
+- **Hollow points, dashed lines and a `*`** mark a week that is partial (logging began inside it)
+  or had under 10 sessions: its numbers are drawn, but lean on few findings.
   Leading weeks under 10 sessions, from before logging got going, aren't drawn; they're in
   `effectiveness.json`.
 - **Dots, not lines, under four weeks.** Until the chart has four weeks, the line panels draw each
