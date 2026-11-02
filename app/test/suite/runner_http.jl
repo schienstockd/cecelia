@@ -179,9 +179,11 @@ end
 # response that broke was never the empty one: the extra terminator sits in the connection and the
 # NEXT response is parsed starting at it.
 #
-# The unguarded `write` is kept as the negative control — a guard is only worth having if the test
-# fails without it. Ephemeral port, and a raw socket that speaks HTTP by hand (an HTTP client would
-# hide the framing, which is the whole subject).
+# The unguarded `write` is kept as an UPSTREAM WATCH, not a negative control. HTTP.jl 2.4–2.5 sent the
+# extra terminator; by 2.14.1 it no longer does (all three OS in CI), so the bare path now has to be
+# clean too. If it ever goes double again, HTTP.jl regressed: the guard still protects us (the
+# guarded half keeps passing), and this half says why. Ephemeral port, and a raw socket that speaks
+# HTTP by hand (an HTTP client would hide the framing, which is the whole subject).
 @testset "an empty response body is written through write_http_body!" begin
     using Sockets: connect as sock_connect
     HTTP = Cecelia.HTTP
@@ -242,12 +244,14 @@ end
     @test count("0\r\n\r\n", guarded) == 2        # exactly ONE terminating chunk per response
     @test endswith(guarded, "0\r\n\r\n")          # …and no bytes left over for the next response
 
-    # the bug, on the wire: `…0\r\n\r\n0\r\n\r\nHTTP/1.1 …`. Vite's proxy died on exactly these bytes
-    # (`HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>`), failing the OTHER, good
-    # requests that shared the connection with one legitimately-empty gating plot.
+    # the bug, on the wire, was `…0\r\n\r\n0\r\n\r\nHTTP/1.1 …`. Vite's proxy died on exactly these
+    # bytes (`HPE_INVALID_CONSTANT … rawPacket <30 0d 0a 0d 0a 30 0d 0a 0d 0a>`), failing the OTHER,
+    # good requests that shared the connection with one legitimately-empty gating plot. Current
+    # HTTP.jl frames the bare zero-length write correctly — see the header above.
     bare = wire(false)
-    @test count("0\r\n\r\n", bare) == 4
-    @test occursin("0\r\n\r\n0\r\n\r\n", bare)
+    @test count("HTTP/1.1 200", bare) == 2
+    @test count("0\r\n\r\n", bare) == 2
+    @test !occursin("0\r\n\r\n0\r\n\r\n", bare)
 
     # so no handler hands a body to `write` directly — the runner's reply path included
     src = read(joinpath(_app_src, "runner", "server.jl"), String)
