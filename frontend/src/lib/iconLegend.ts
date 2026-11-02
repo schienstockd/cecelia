@@ -123,6 +123,8 @@ export const ICON_LEGEND: IconFamily[] = [
       { icon: 'pi-github', lucide: 'folder-git-2', means: 'Opens the repository' },
       { icon: 'pi-gift', lucide: 'gift', means: 'What’s new in this version' },
       { icon: 'pi-megaphone', lucide: 'megaphone', means: 'Call for Datasets — what your data could help us build or test' },
+      { icon: 'pi-signal', lucide: 'signal', means: 'How far to trust this feature — its maturity' },
+      { icon: 'pi-bug', lucide: 'bug', means: 'Something wrong? Report it on GitHub' },
       { icon: 'pi-comments', lucide: 'messages-square', means: 'Chat to Claude' },
       { icon: 'pi-at', lucide: 'at-sign', means: 'Add to Kiwi — attach it to your next question' },
       { icon: 'pi-send', lucide: 'send', means: 'Ask Kiwi' },

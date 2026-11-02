@@ -7,10 +7,11 @@
 
   All joins live in `utils/maturity.ts` (tested); this file only renders them. Which rows are expanded
   is a passing look inside a dialog, not a page option, so it is not persisted; the section's own
-  open/closed state is (storage-key).
+  open/closed state is (storage-key). A page's or task's maturity link opens the dialog on its row
+  (`lib/guideOpen.ts` → `openMaturityRow`); every expanded row carries "Something wrong?".
 -->
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { chipDot, tierLabel } from '../utils/guideMap'
 import { useTaskDefsStore } from '../stores/taskDefs'
@@ -19,7 +20,9 @@ import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 import { tierTip } from '../lib/guides/tiers'
 import { findAsk } from '../lib/callForDatasets'
 import { openCallForDatasets } from '../lib/callForDatasetsOpen'
-import { closeGuides } from '../lib/guideOpen'
+import { closeGuides, maturityFocus } from '../lib/guideOpen'
+import { setSectionOpen } from '../utils/sectionOpen'
+import ReportProblemButton from './ReportProblemButton.vue'
 
 const taskDefs = useTaskDefsStore()
 onMounted(() => { void taskDefs.ensureLoaded() })
@@ -30,6 +33,28 @@ const columns = computed(() => splitColumns(groups.value))
 const rowOpen = useSingleOpenSection('cc.guides.maturityRow')
 const isOpen = (id: string) => rowOpen.isOpen(id)
 const toggle = (id: string) => rowOpen.toggle(id)
+
+// opened from a page's or task's maturity link: open this section and that row, then scroll to it.
+// In setup, before the section mounts, so it reads the open state already written. The row may be a
+// Coming soon task, which only exists once the task specs have loaded — hence the watch.
+const focus = maturityFocus.value
+maturityFocus.value = null
+if (focus) {
+  setSectionOpen('cc.guides.maturityOpen', true)
+  rowOpen.set(focus)
+}
+function scrollToFocus(): boolean {
+  const el = focus ? document.querySelector(`[data-maturity-row="${CSS.escape(focus)}"]`) : null
+  el?.scrollIntoView({ block: 'center' })
+  return !!el
+}
+onMounted(() => {
+  if (!focus) return
+  void nextTick(() => {
+    if (scrollToFocus()) return
+    const stop = watch(groups, () => void nextTick(() => { if (scrollToFocus()) stop() }))
+  })
+})
 
 const rowTip = (r: MaturityRow) => tierTip(r.tier)
 const ask = (r: MaturityRow) => findAsk(r.maturity?.datasetAsk)
@@ -49,7 +74,7 @@ function shareData(id: string) {
     <div v-for="(col, ci) in columns" :key="ci" class="mm-col">
     <div v-for="g in col" :key="g.heading" class="mm-group">
       <h4 class="mm-head cc-eyebrow cc-fs-2xs">{{ g.heading }}</h4>
-      <div v-for="r in g.rows" :key="r.id" class="mm-row">
+      <div v-for="r in g.rows" :key="r.id" class="mm-row" :data-maturity-row="r.id">
         <button v-if="r.maturity" class="mm-line cc-section-toggle cc-fs-xs" :aria-expanded="isOpen(r.id)"
                 @click="toggle(r.id)" v-tooltip.right="rowTip(r)">
           <i :class="['pi', isOpen(r.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
@@ -101,15 +126,14 @@ function shareData(id: string) {
             <dt class="cc-muted">Needs data</dt>
             <dd>{{ r.maturity.needs }}</dd>
           </template>
-          <template v-if="ask(r)">
-            <dt />
-            <dd>
-              <button class="cc-btn cc-btn-bare cc-btn-micro cc-fs-2xs" @click="shareData(ask(r)!.id)"
-                      v-tooltip.top="'Open its call for datasets'">
-                <i class="pi pi-megaphone" /> Share data
-              </button>
-            </dd>
-          </template>
+          <dt />
+          <dd class="cc-row">
+            <button v-if="ask(r)" class="cc-btn cc-btn-bare cc-btn-micro cc-fs-2xs" @click="shareData(ask(r)!.id)"
+                    v-tooltip.top="'Open its call for datasets'">
+              <i class="pi pi-megaphone" /> Share data
+            </button>
+            <ReportProblemButton :feature="r.title" :tier="r.tier" text />
+          </dd>
         </dl>
       </div>
     </div>

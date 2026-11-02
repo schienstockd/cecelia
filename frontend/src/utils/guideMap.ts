@@ -8,7 +8,7 @@ import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { GUIDES, guideById } from '../lib/guides'
 import { isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides/recipes'
 import type { GuideDef, Tier } from '../lib/guides/types'
-import { tierTip, TIER_LABEL } from '../lib/guides/tiers'
+import { tierTip, TIER_LABEL, TIER_DOT, chipDot } from '../lib/guides/tiers'
 import { pageTier, badged } from './maturity'
 
 export interface MapChip {
@@ -98,14 +98,9 @@ export function chipTip(c: MapChip, showClaude = false): string {
   return parts.join(' · ')
 }
 
-/** The page button's marker: one `.cc-dot` tone per tier, read through the legend under the grid
- *  (`TIER_LEGEND`). Exempt pages (no scientific result) carry none. `''` ⇒ no marker. */
-const TIER_DOT: Partial<Record<Tier, string>> = {
-  comingSoon: 'cc-tier-comingSoon', experimental: 'cc-tier-experimental', beta: 'cc-tier-beta', tested: 'cc-tier-tested',
-}
-export function chipDot(t: Tier | null | undefined): string {
-  return (t && TIER_DOT[t]) || ''
-}
+/** The page button's marker — `chipDot` lives beside the tier words (`lib/guides/tiers.ts`) so the
+ *  badge can use it without the guide catalogue; re-exported here for the map. */
+export { chipDot }
 
 /** The legend under the grid: each tier in use, with its dot. Stable is reserved and never listed. */
 export const TIER_LEGEND: { tier: Tier; dot: string; label: string }[] =

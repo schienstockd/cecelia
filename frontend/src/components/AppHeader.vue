@@ -13,6 +13,7 @@ import { openCallForDatasets } from '../lib/callForDatasetsOpen'
 import { CECELIA_ISSUES_URL, CECELIA_CHAT_URL } from '../lib/links'
 import { shortVersionLabel } from '../utils/versionLabel'
 import { useRestartToUpdate } from '../composables/useRestartToUpdate'
+import PageMaturity from './PageMaturity.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -124,6 +125,10 @@ const statusTip: Record<string, string> = {
         <i class="pi pi-comments" />
       </a>
     </span>
+
+    <!-- this page's maturity: a badge for Experimental / Coming soon, else a quiet link to its map row,
+         plus "Something wrong?" — after the help row, because it is the same question asked of one page -->
+    <PageMaturity />
 
     <span class="spacer" />
 

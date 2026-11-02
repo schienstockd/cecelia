@@ -1,6 +1,6 @@
 // The maturity scale's words — the badge's label and its hover line (docs/todo/FEATURE_MATURITY_PLAN.md
-// → *The scale*). Apart from `utils/maturity.ts` so `ComingSoonBadge` can name a tier without pulling in
-// the guide catalogue.
+// → *The scale*), and its dot. Apart from `utils/maturity.ts` so `ComingSoonBadge` can name a tier
+// without pulling in the guide catalogue.
 import type { Tier } from './types'
 
 export const TIER_LABEL: Record<Tier, string> = {
@@ -24,3 +24,13 @@ export const TIER_TIP: Record<Tier, string> = {
 
 /** The badge's hover line: "Beta: checked by hand on real data — spot-check results". */
 export const tierTip = (t: Tier): string => `${TIER_LABEL[t]}: ${TIER_TIP[t].toLowerCase()}`
+
+/** The tier's marker: one `.cc-dot` tone per tier (`.cc-tier-*` in style.css), read through the map's
+ *  legend (`utils/guideMap.ts` → `TIER_LEGEND`). Exempt (no scientific result) carries none. */
+export const TIER_DOT: Partial<Record<Tier, string>> = {
+  comingSoon: 'cc-tier-comingSoon', experimental: 'cc-tier-experimental', beta: 'cc-tier-beta', tested: 'cc-tier-tested',
+}
+/** `''` ⇒ no marker. */
+export function chipDot(t: Tier | null | undefined): string {
+  return (t && TIER_DOT[t]) || ''
+}

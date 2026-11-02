@@ -6,6 +6,7 @@ import { UNGUIDED } from '../lib/guides/unguided'
 import { CALL_FOR_DATASETS } from '../lib/callForDatasets'
 import {
   owners, coverIndex, uncovered, flaggedAndTiered, pageTier, maturityGroups, findTest, badged,
+  pageMaturity, taskMaturity, taskOptionSuffix, pageBadged,
   type TaskSpecLite,
 } from './maturity'
 
@@ -186,6 +187,48 @@ describe('the map’s maturity rows', () => {
   })
 })
 
+describe('badges on the pages and in the task picker (P2)', () => {
+  const rowIds = new Set(maturityGroups(TASKS).flatMap(g => g.rows.map(r => r.id)))
+  it('badges Experimental and Coming soon only — Beta and up show nothing on a page', () => {
+    expect((['comingSoon', 'experimental', 'beta', 'tested', 'stable', 'exempt'] as const).filter(pageBadged))
+      .toEqual(['comingSoon', 'experimental'])
+  })
+  it('gives a page its tier and the map row its link opens', () => {
+    expect(pageMaturity('/phenotype')).toMatchObject({ tier: 'experimental', rowId: 'unguided:phenotype' })
+    expect(pageMaturity('/gate')?.tier).toBe('beta')
+    expect(pageMaturity('/tasks')).toBeNull()        // exempt: no row, no link
+    expect(pageMaturity('/settings')).toBeNull()     // not a sidebar page
+  })
+  it('every page and task link lands on a row the map shows', () => {
+    const missing = [
+      ...ROUTES.map(r => [r, pageMaturity(r)] as const),
+      ...TASKS.map(t => [t.fun_name, taskMaturity(t, TASKS)] as const),
+    ].filter(([, m]) => m && !rowIds.has(m.rowId)).map(([k, m]) => `${k} → ${m!.rowId}`)
+    expect(missing).toEqual([])
+  })
+  it('every non-exempt page has a link (so no badge doesn’t read as fine)', () => {
+    const exempt = ROUTES.filter(r => pageTier(r) === 'exempt')
+    expect(ROUTES.filter(r => !exempt.includes(r) && !pageMaturity(r))).toEqual([])
+  })
+  it('a task takes its flag, its record, or its composite’s tier', () => {
+    const flagged = TASKS.find(t => t.comingSoon)!
+    expect(taskMaturity(flagged, TASKS)).toMatchObject({ tier: 'comingSoon', rowId: `task:${flagged.fun_name}` })
+    const step = TASKS.find(t => !coverIndex().has(t.fun_name) && !t.comingSoon
+      && TASKS.some(p => p.composite?.includes(t.fun_name)))
+    if (step) {
+      const parent = TASKS.find(p => p.composite?.includes(step.fun_name))!
+      expect(taskMaturity(step, TASKS)).toEqual(taskMaturity(parent, TASKS))
+    }
+    expect(taskMaturity({ fun_name: 'nowhere.atAll' }, TASKS)).toBeNull()
+  })
+  it('suffixes an Experimental task’s option, and nothing else', () => {
+    for (const t of TASKS) {
+      const tier = taskMaturity(t, TASKS)?.tier
+      expect(taskOptionSuffix(t, TASKS), t.fun_name).toBe(tier === 'experimental' ? ' · Experimental' : '')
+    }
+    expect(TASKS.some(t => taskOptionSuffix(t, TASKS))).toBe(true)
+  })
+})
 
 describe('splitColumns — groups stay in a fixed column', () => {
   it('keeps order, never splits a group, and balances by rows', async () => {

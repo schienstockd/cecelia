@@ -1186,11 +1186,12 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
 - **Tiers:** Experimental · Beta · Tested (Stable reserved). **Coming soon is never written in a record**
   — it is the task JSON `comingSoon` flag or the nav item's `soon`, and the map derives it. **Exempt**
   features (no scientific result: the tour, profiles, blackboard, Movies, Tasks) get no badge and no row.
-- **One pill:** `ComingSoonBadge` with a `tier` prop; its words are `lib/guides/tiers.ts`
-  (`TIER_LABEL`, and `TIER_TIP` — what the user should do — on hover). Never a second badge.
+- **One badge:** `ComingSoonBadge` with a `tier` prop renders the tier dot + its word (no pill); its
+  words and dot are `lib/guides/tiers.ts` (`TIER_LABEL`, `TIER_TIP` — what the user should do — on
+  hover, `chipDot`). Without `tier` it is still the "Coming soon" pill. Never a second badge.
 - **Where it shows:** each page button on the map carries a `.cc-dot`, one tone per tier (Experimental
-  warn, Beta info, Tested ok, Coming soon idle; exempt none — `chipDot` in `utils/guideMap.ts`), read
-  through the legend line under the grid (`TIER_LEGEND`).Each
+  warn, Beta info, Tested ok, Coming soon idle; exempt none — `chipDot`), read
+  through the legend line under the grid (`TIER_LEGEND`). Each
   guide row in the picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
   group, guides first, unguided ones marked "no guide", expandable to the record. "Share your data"
   opens the call-for-datasets modal at its ask. `user-docs/README.md` has a Maturity column.
@@ -1200,6 +1201,22 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
   covered composite; a flagged feature has no record; every evidence path and test name exists, and a
   Tested record's tests are not `@test_skip`/`@test_broken`/`skip`/`xfail`/`it.skip`; every
   `datasetAsk` exists; testedOn ≤70, failsIf/next ≤110, needs ≤90 chars.
+- **On the pages (P2):** the app header carries the current page's maturity (`components/PageMaturity.vue`,
+  one mount for every page — pages have no shared header of their own). Experimental and Coming soon show
+  the badge; every other tiered page shows a quiet `pi-signal` icon instead, so no badge never reads as
+  "fine". Both open the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
+  `openMaturityRow`; `MaturityMap` opens the section and the row, then scrolls to it). Exempt pages and
+  non-sidebar routes show nothing. In the task picker (`TaskRunner`) an Experimental task's option reads
+  `… · Experimental` (a native `<option>` holds text only) and the picked one gets the badge beside it.
+  Beta and up are never badged on a page: nothing is Tested yet, so it would mark nearly every page.
+  Logic: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in `utils/maturity.ts`.
+- **"Something wrong?"** (`components/ReportProblemButton.vue`, `pi-bug`) beside the page's badge or
+  link, beside a picked task's badge, and in every expanded Maturity row: a popover that opens a
+  prefilled bug form (`lib/links.ts` → `problemReportUrl`) — feature, tier, page, version
+  (`appCtl.updateCurrent`), OS (the server's pixi platform, `utils/systemEnvs.ts`) and the last task's
+  name + status. **The last task's settings go in only on a toggle in that popover**, off every time
+  it opens (never remembered): GitHub is public and settings carry paths and project names. The URL
+  stays under 7,500 chars — settings are cut at 2,000, then left out with a note.
 - **Only the maintainer promotes** (plan Decision 6). An agent may add evidence and tick `next` items,
   and argue for a tier in its PR; the tier line itself changes on his review.
 

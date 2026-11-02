@@ -14,6 +14,7 @@ import { GUIDES, GROUP_ORDER } from '../lib/guides'
 import { funsOf } from '../lib/guides/guideText'
 import { UNGUIDED } from '../lib/guides/unguided'
 import type { GuideDef, Maturity, Tier } from '../lib/guides/types'
+import { TIER_LABEL } from '../lib/guides/tiers'
 
 /** The slice of a task spec these checks read — the JSON on disk and `TaskDef` both fit. */
 export interface TaskSpecLite {
@@ -53,11 +54,14 @@ export function coversOf(o: MaturityOwner): string[] {
   return [...new Set(keys)]
 }
 
-/** key → every owner claiming it. More than one is a test failure (one tier per feature). */
+/** key → every owner claiming it. More than one is a test failure (one tier per feature). Built once:
+ *  the records are static, and the header and the task picker ask on every render. */
+let _coverIndex: Map<string, MaturityOwner[]> | null = null
 export function coverIndex(): Map<string, MaturityOwner[]> {
+  if (_coverIndex) return _coverIndex
   const idx = new Map<string, MaturityOwner[]>()
   for (const o of owners()) for (const k of coversOf(o)) idx.set(k, [...(idx.get(k) ?? []), o])
-  return idx
+  return (_coverIndex = idx)
 }
 
 /** Sidebar routes flagged `soon` — Coming soon, derived. */
@@ -97,6 +101,48 @@ export function pageTier(route: string): Tier | null {
 
 /** A tier the user sees a badge for — every tier but exempt (Decision 9). */
 export const badged = (t: Tier | null | undefined): t is Exclude<Tier, 'exempt'> => !!t && t !== 'exempt'
+
+// ── On the pages: the header and the task picker ──────────────────────────────────────────────────
+
+/** What a page or a task shows of its maturity: its tier, its name, and the map row it opens. */
+export interface MaturityRef { tier: Exclude<Tier, 'exempt'>; title: string; rowId: string }
+
+/** The tiers a page or a task is BADGED for. Beta and up show nothing there: nothing is Tested yet, so
+ *  badging Beta would mark nearly every page and mean nothing (FEATURE_MATURITY_PLAN → *Badges on the
+ *  pages*). The map shows every tier. */
+export const pageBadged = (t: Tier | null | undefined): t is 'experimental' | 'comingSoon' =>
+  t === 'experimental' || t === 'comingSoon'
+
+const ownerRef = (o: MaturityOwner | undefined): MaturityRef | null =>
+  o && badged(o.maturity.tier) ? { tier: o.maturity.tier, title: o.title, rowId: `${o.kind}:${o.id}` } : null
+
+/** A sidebar page's maturity, keyed like `maturityGroups`' row ids. Null for a page with no row: exempt
+ *  (no scientific result), or not a sidebar page (Settings, a popout). */
+export function pageMaturity(route: string): MaturityRef | null {
+  if (soonRoutes().includes(route)) {
+    const item = NAV_GROUPS.flatMap(g => g.items).find(i => i.to === route)!
+    return { tier: 'comingSoon', title: item.label, rowId: `page:${route}` }
+  }
+  return ownerRef(coverIndex().get(route)?.[0])
+}
+
+/** A task's maturity: Coming soon from its flag, else the record covering it, else the composite it is
+ *  a step of (`tasks` = every registered spec, to find that parent). */
+export function taskMaturity(t: TaskSpecLite, tasks: TaskSpecLite[] = []): MaturityRef | null {
+  if (t.comingSoon) return { tier: 'comingSoon', title: t.label ?? t.fun_name, rowId: `task:${t.fun_name}` }
+  const own = coverIndex().get(t.fun_name)?.[0]
+  if (own) return ownerRef(own)
+  const parent = tasks.find(p => p.composite?.includes(t.fun_name))
+  return parent ? taskMaturity(parent, tasks.filter(p => p !== parent)) : null
+}
+
+/** The task picker's option text for a badged task (a native <option> holds text only — the dot goes
+ *  beside the picked one). `''` for everything else, and for Coming soon, which the gating reason
+ *  already says (`utils/taskGating.ts`). */
+export function taskOptionSuffix(t: TaskSpecLite, tasks: TaskSpecLite[] = []): string {
+  const m = taskMaturity(t, tasks)
+  return m?.tier === 'experimental' ? ` · ${TIER_LABEL.experimental}` : ''
+}
 
 // ── The map's maturity rows ────────────────────────────────────────────────────────────────────────
 

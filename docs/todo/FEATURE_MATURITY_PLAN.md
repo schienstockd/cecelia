@@ -1,6 +1,6 @@
 # Feature maturity — tiers on the guides, badges, report
 
-**Status:** **P1 built** (2026-11-02); P2, P3 open. Decisions 1–9 agreed in discussion; starting tiers
+**Status:** **P1 + P2 built** (2026-11-02); P3 open. Decisions 1–9 agreed in discussion; starting tiers
 seeded from `FEATURE_MATURITY_TIERS.md` — the 7 Tested proposals are seeded as Beta with a "maintainer
 review → Tested" item, pending his review of each fails-if line.
 
@@ -162,7 +162,20 @@ evidence, and the registry shape is informed by a real case.
     non-exempt feature by group, expandable; Coming soon rows derive from the task flags. Guide rows in
     the picker carry the badge. Words of the scale: `lib/guides/tiers.ts`.
   - user-docs: a Maturity column in the sidebar tables.
-- **P2** — badges on pages and the task picker; "Something wrong?" link.
+- **P2** — **built.** Badges on pages and the task picker; "Something wrong?" link. Where it landed:
+  - Pages: `components/PageMaturity.vue` in the app HEADER, following the route — pages have no shared
+    header (ModuleLayout, ModulePage and the pipeline pages each draw their own), so one mount covers
+    every page. Experimental / Coming soon: `ComingSoonBadge tier` (now the tier dot + word, no pill).
+    Any other tiered page: a quiet `pi-signal` icon. Both open the map on that feature's row
+    (`openMaturityRow`, `lib/guideOpen.ts`). Exempt pages show nothing (no row to open).
+  - Task picker: TaskRunner's `<option>` gets `· Experimental` (text only in a native select); the picked
+    task gets the badge + report button. Coming soon tasks already read "— Coming soon" and can't be
+    picked. The Chains palette is not badged.
+  - "Something wrong?": `components/ReportProblemButton.vue`, a popover → `problemReportUrl`
+    (`lib/links.ts`) on the bug form: feature, tier, page, version, OS (the server's pixi platform), last
+    task name + status. **Params: an explicit per-report toggle in the popover**, never remembered.
+  - Logic + tests: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in
+    `utils/maturity.ts` (every page and task link lands on a map row); `lib/links.test.ts`.
 - **P3** — the release-cut step in `RELEASING.md`; CHANGELOG entries carry the tier.
 
 ## Deferred
