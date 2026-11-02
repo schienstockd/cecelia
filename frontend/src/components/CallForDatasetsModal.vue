@@ -1,148 +1,90 @@
 <script setup lang="ts">
 /**
- * The "Call for Datasets" modal — a discoverable list of capabilities Cecelia can build, or check,
- * once a real dataset lands. Two sections by `kind`: "Help us build" (not built yet), then "Help us
- * test" (built; data with a known answer would check it — the maturity map's Share data buttons).
+ * The "Call for Datasets" modal — capabilities Cecelia can build, or check, once a real dataset
+ * lands. Two sections by `kind`: "Help us build" (not built yet), then "Help us test" (built; data
+ * with a known answer would check it — the maturity map's Share data buttons).
  *
- * Reachable from three places, all named in `docs/todo/CALL_FOR_DATASETS_PLAN.md`:
- * - the icon in `AppHeader`'s help row (a browse-first entry),
- * - a `?ask=<id>` query-string deep link from a task-param vis-aid placeholder,
- * - and — later — a small chip on the drift-rigid vis aid's fourth column.
+ * One row per ask, one open at a time across both sections (an accordion, the MaturityMap shape:
+ * `useSingleOpenSection` + bare `.cc-section-toggle` rows). Collapsed: title + the one-phrase why.
+ * Open: a small schematic where one helps (`DatasetAskFigure`), the data we need in one line, and
+ * the issue button + plan link. The long text lives in the issue body, `get_guide`, and the plan —
+ * not here (docs/ui/COPY.md).
  *
- * NOT a wish-list or a public roadmap — see the header of `lib/callForDatasets.ts`. A build entry is
- * a capability unblocked as soon as a validation dataset arrives; a test entry, a built module that
- * data with a known answer would check.
- * Each card's primary action opens a prefilled GitHub issue asking the two things we cannot guess
- * (what the imaging looks like, and a cloud link to a sample); the modal does not host files.
+ * Reachable from the `AppHeader` help row, a `?ask=<id>` deep link (App.vue), the maturity map's
+ * Share data, and a param figure's On request chip — all of which open the modal AT that row
+ * (`docs/todo/CALL_FOR_DATASETS_PLAN.md`). The modal does not host files: the issue asks for a link.
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, watch } from 'vue'
 import BaseModal from './BaseModal.vue'
-import { asksOfKind, datasetAskUrl, type CapabilityAsk } from '../lib/callForDatasets'
+import DatasetAskFigure from './DatasetAskFigure.vue'
+import { asksOfKind, datasetAskUrl, planUrl } from '../lib/callForDatasets'
 import { callForDatasetsFocusId, closeCallForDatasets } from '../lib/callForDatasetsOpen'
+import { useSingleOpenSection } from '../composables/useSingleOpenSection'
 
-/**
- * The card DOM refs, keyed by ask id — the deep-link scroll target on open. Kept as a plain
- * `Record` (not `useTemplateRef`) because we build the keys from data rather than declaring one
- * per card, which the template-ref helper does not support directly.
- */
-const cardRefs = ref<Record<string, HTMLElement | null>>({})
-function bindCard(id: string, el: Element | null) {
-  cardRefs.value[id] = el instanceof HTMLElement ? el : null
-}
+// Not persisted: what's open is where the caller pointed, not a page option.
+const rows = useSingleOpenSection('cc.callForDatasets.openAsk', '', { persist: false })
 
-/**
- * Scroll the focused card into view once the DOM has painted. `smooth` behaviour rather than
- * instant: the visible slide is what makes the deep-link legible — otherwise a user who clicked a
- * chip on the drift vis aid sees the modal open with no confirmation that it landed anywhere in
- * particular.
- */
-async function scrollFocus() {
+/** Open the deep-link target and scroll its row into view once it has painted. */
+async function focusAsk() {
   const id = callForDatasetsFocusId.value
   if (!id) return
+  rows.set(id)
   await nextTick()
-  cardRefs.value[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  document.querySelector(`[data-ask="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 }
-onMounted(scrollFocus)
-watch(callForDatasetsFocusId, scrollFocus)
-
-/** True when this card is the deep-link target — used to draw the "you came here for this" mark
- *  in the card header. Purely visual; the scroll does the actual work. */
-function isFocused(a: CapabilityAsk): boolean {
-  return callForDatasetsFocusId.value === a.id
-}
+onMounted(focusAsk)
+watch(callForDatasetsFocusId, focusAsk)
 
 const sections = computed(() => [
-  { kind: 'build', heading: 'Help us build', sub: 'Not built yet — waiting on data like yours', asks: asksOfKind('build') },
-  { kind: 'test', heading: 'Help us test', sub: 'Built, but checked on one lab’s data so far', asks: asksOfKind('test') },
+  { kind: 'build', heading: 'Help us build', asks: asksOfKind('build') },
+  { kind: 'test', heading: 'Help us test', asks: asksOfKind('test') },
 ].filter(s => s.asks.length))
 </script>
 
 <template>
-  <BaseModal title="Call for Datasets" icon="pi-megaphone" width="640px" height="80vh"
-             @close="closeCallForDatasets">
-    <div class="cfd-body">
-      <p class="cfd-intro cc-muted cc-fs-xs">
-        If your imaging matches one, an issue with a link to a sample is what moves it.
-      </p>
+  <BaseModal title="Call for Datasets" icon="pi-megaphone" width="640px" @close="closeCallForDatasets">
+    <p class="cfd-intro cc-muted cc-fs-xs">Matching imaging? An issue with a sample link moves it.</p>
 
-      <template v-for="s in sections" :key="s.kind">
-      <header class="cfd-section">
-        <h3 class="cc-eyebrow cc-fs-2xs">{{ s.heading }}</h3>
-        <p class="cc-muted cc-fs-xs">{{ s.sub }}</p>
-      </header>
-      <section v-for="a in s.asks" :key="a.id"
-               :ref="el => bindCard(a.id, el as Element | null)"
-               class="cfd-card" :class="{ 'is-focused': isFocused(a) }">
-        <header class="cfd-head">
-          <h4 class="cfd-title">{{ a.title }}</h4>
-          <p class="cfd-one cc-muted cc-fs-sm">{{ a.oneLiner }}</p>
-        </header>
-        <p class="cfd-blurb cc-fs-sm">{{ a.blurb }}</p>
-        <div class="cfd-scenery cc-fs-xs">
-          <span class="cc-eyebrow cc-fs-2xs">What we need</span>
-          <p>{{ a.sceneryHint }}</p>
+    <section v-for="s in sections" :key="s.kind" class="cfd-section">
+      <h3 class="cfd-head cc-eyebrow cc-fs-2xs">{{ s.heading }}</h3>
+      <div v-for="a in s.asks" :key="a.id" class="cfd-row" :data-ask="a.id">
+        <button class="cfd-line cc-section-toggle cc-fs-sm" :aria-expanded="rows.isOpen(a.id)"
+                @click="rows.toggle(a.id)">
+          <i :class="['pi', rows.isOpen(a.id) ? 'pi-chevron-up' : 'pi-chevron-down']" />
+          <span class="cfd-title">{{ a.title }}</span>
+          <span class="cfd-why cc-muted cc-fs-xs">{{ a.oneLiner }}</span>
+        </button>
+
+        <div v-if="rows.isOpen(a.id)" class="cfd-body">
+          <DatasetAskFigure v-if="a.fig" :fig="a.fig" />
+          <div class="cfd-text">
+            <p class="cc-fs-xs"><span class="cc-muted">We need:</span> {{ a.need }}</p>
+            <div class="cfd-actions">
+              <a class="cc-btn cc-btn-ghost" :href="datasetAskUrl(a)" target="_blank" rel="noopener"
+                 v-tooltip.top="'Prefilled issue: your imaging and a sample link'">
+                <i class="pi pi-github" /> Open an issue
+              </a>
+              <a class="cfd-plan cc-muted cc-fs-2xs" :href="planUrl(a)" target="_blank" rel="noopener"
+                 v-tooltip.top="a.planPath">Plan</a>
+            </div>
+          </div>
         </div>
-        <footer class="cfd-actions">
-          <a class="cc-btn cc-btn-primary cc-btn-sm"
-             :href="datasetAskUrl(a)" target="_blank" rel="noopener">
-            <i class="pi pi-github" /> Open a GitHub issue
-          </a>
-          <span class="cc-muted cc-fs-2xs cfd-plan">Plan: {{ a.planPath }}</span>
-        </footer>
-      </section>
-      </template>
-    </div>
+      </div>
+    </section>
   </BaseModal>
 </template>
 
 <style scoped>
-.cfd-body { display: flex; flex-direction: column; gap: 1rem; padding: 0.6rem 0.2rem 0.4rem; }
-.cfd-intro { margin: 0 0.2rem; }
-.cfd-section { margin: 0.4rem 0.2rem -0.5rem; }
-.cfd-section h3, .cfd-section p { margin: 0; }
-
-/* Cards read as separate cards without a heavy chrome: a border, a rest state, and a soft focus
-   ring on the deep-link target. */
-.cfd-card {
-  border: 1px solid var(--cc-border);
-  border-radius: var(--cc-radius-md);
-  padding: 0.75rem 0.9rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  background: var(--cc-surface-1);
-  scroll-margin-top: 0.4rem;
-}
-.cfd-card.is-focused {
-  border-color: var(--cc-accent);
-  box-shadow: 0 0 0 1px var(--cc-accent) inset;
-}
-
-.cfd-head { display: flex; flex-direction: column; gap: 0.15rem; }
-.cfd-title { margin: 0; font-size: 0.95rem; font-weight: 600; }
-.cfd-one { margin: 0; }
-.cfd-blurb { margin: 0; line-height: 1.4; }
-
-/* "What we need" is the operational half of the card — a soft-tinted panel so it reads as a form
-   the reader can answer, not another line of blurb. */
-.cfd-scenery {
-  background: var(--cc-surface-2);
-  border-radius: var(--cc-radius-sm);
-  padding: 0.5rem 0.7rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.cfd-scenery p { margin: 0; line-height: 1.35; }
-
-/* Primary action on the left, plan pointer on the right — a footer, not a floating chip on the
-   card. Keeps the action tied to the card that offered it. */
-.cfd-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-.cfd-plan { min-width: 0; overflow-wrap: anywhere; }
+.cfd-intro { margin: 0 0 8px; }
+.cfd-section { margin-bottom: 10px; }
+.cfd-head { margin: 0 0 2px; }
+.cfd-row { border-top: 1px solid var(--cc-border); }
+.cfd-line { gap: 8px; padding: 6px 4px; min-width: 0; }
+.cfd-title { color: var(--cc-text); white-space: nowrap; }
+/* the why sits on the same line; a wide font truncates it rather than wrapping the row */
+.cfd-why { flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cfd-body { display: flex; gap: 12px; align-items: center; padding: 2px 4px 10px 22px; }
+.cfd-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cfd-text p { margin: 0; line-height: 1.35; }
+.cfd-actions { display: flex; align-items: center; gap: 10px; }
 </style>

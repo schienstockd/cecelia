@@ -1255,6 +1255,16 @@ pending (`docs/SHIPPING.md` → *Repo swap*) and should be one edit, not a grep.
 constants only — anything that *asks* GitHub something (the update check) stays in
 `stores/appControl.ts`.
 
+**Call for Datasets** (the megaphone, `CallForDatasetsModal.vue` over `lib/callForDatasets.ts`): two
+sections, *Help us build* and *Help us test*, one accordion row per ask across both
+(`useSingleOpenSection('cc.callForDatasets.openAsk')`, not persisted; the MaturityMap row shape).
+Collapsed: `title` + the one-phrase why (`oneLiner`). Open: a small schematic where one helps (`fig` →
+`DatasetAskFigure.vue`, the same hand-drawn token-stroked inline SVG as `ClaudeWaysIn.vue`), the
+data in one line (`need`), a ghost **Open an issue** button and a small **Plan** link (`planUrl`). The
+long text — `blurb` and the full `sceneryHint` — goes to the issue body and Claude's `get_guide`, never
+the modal; the copy budgets are pinned in `callForDatasets.test.ts`. `?ask=<id>` (and
+`openCallForDatasets(id)`) opens that row and scrolls to it.
+
 A What's New tip card can carry `guideId` to render a **"Show me"** button that starts the matching
 guide — so a topic is described once (tip = the summary, guide = the click-through) instead of twice.
 

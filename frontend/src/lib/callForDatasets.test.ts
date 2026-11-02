@@ -7,8 +7,8 @@
  * cloud link to a sample), and the labels are present so triage can find it.
  */
 import { describe, expect, it } from 'vitest'
-import { CALL_FOR_DATASETS, asksOfKind, datasetAskUrl, findAsk } from './callForDatasets'
-import { CECELIA_NEW_ISSUE_URL } from './links'
+import { ASK_FIGS, CALL_FOR_DATASETS, asksOfKind, datasetAskUrl, findAsk, planUrl } from './callForDatasets'
+import { CECELIA_NEW_ISSUE_URL, CECELIA_REPO_URL } from './links'
 
 describe('CALL_FOR_DATASETS registry', () => {
   it('has at least the two seed entries the plan names', () => {
@@ -32,6 +32,22 @@ describe('CALL_FOR_DATASETS registry', () => {
       expect(a.blurb.length).toBeGreaterThan(0)
       expect(a.sceneryHint.length).toBeGreaterThan(0)
     }
+  })
+
+  it('every row fits the modal: a short title + why on one line, one sentence of need', () => {
+    // docs/ui/COPY.md. The collapsed row is title + oneLiner on ONE line of a 640px dialog; the open
+    // row adds only `need`. Longer text belongs in sceneryHint (the issue body) or the plan.
+    for (const a of CALL_FOR_DATASETS) {
+      expect(a.title.length, a.id).toBeLessThanOrEqual(40)
+      expect(a.oneLiner.length, a.id).toBeLessThanOrEqual(50)
+      expect(a.oneLiner, a.id).not.toMatch(/\.$/)
+      expect(a.need.length, a.id).toBeLessThanOrEqual(110)
+      expect(a.need, a.id).not.toMatch(/\.\s+[A-Z]/)
+    }
+  })
+
+  it('a figure, where an entry has one, is a drawn kind', () => {
+    for (const a of CALL_FOR_DATASETS) if (a.fig) expect(ASK_FIGS, a.id).toContain(a.fig)
   })
 
   it('every entry carries the call-for-datasets label so triage can find it', () => {
@@ -82,6 +98,16 @@ describe('datasetAskUrl', () => {
     expect(body.toLowerCase()).toContain('what does the imaging look like')
     expect(body.toLowerCase()).toContain('cloud link')
     expect(body).toContain(ask.planPath)
+    // the full data description the modal no longer shows
+    expect(body).toContain(ask.sceneryHint)
+  })
+})
+
+describe('planUrl', () => {
+  it('points a repo path at main on GitHub, and leaves a URL alone', () => {
+    const a = CALL_FOR_DATASETS[0]
+    expect(planUrl(a)).toBe(`${CECELIA_REPO_URL}/blob/main/${a.planPath}`)
+    expect(planUrl({ ...a, planPath: 'https://example.org/plan' })).toBe('https://example.org/plan')
   })
 })
 

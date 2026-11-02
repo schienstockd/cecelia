@@ -23,7 +23,11 @@
  * **Same shape as `PARAM_FIGURES` / `PARAM_ADVISORS`** — a plain array of objects, unit-tested,
  * with the modal only mounting what it is handed.
  */
-import { CECELIA_NEW_ISSUE_URL } from './links'
+import { CECELIA_NEW_ISSUE_URL, CECELIA_REPO_URL } from './links'
+
+/** The expanded row's schematics — one inline SVG each in `DatasetAskFigure.vue`. */
+export const ASK_FIGS = ['tilt', 'cycles', 'clusters', 'bleed', 'masks', 'pair', 'swap', 'tracks', 'switch'] as const
+export type AskFig = typeof ASK_FIGS[number]
 
 /** `build` — not built, waiting on data to build against. `test` — built, waiting on data to check it. */
 export type AskKind = 'build' | 'test'
@@ -32,24 +36,34 @@ export interface CapabilityAsk {
   kind: AskKind
   /** Stable slug — cited from `?ask=<id>` deep links and from the GitHub issue's URL. */
   id: string
-  /** Card heading — a short verb phrase naming the capability. */
+  /** The collapsed row's heading — a short phrase naming the capability (≤40 chars, tested). */
   title: string
   /**
-   * One line naming what the capability would unlock. Renders under the title. Kept to one line
-   * so a reader scanning the modal picks up the "what would this do for me" without expanding.
+   * The why, as one phrase — sits beside the title on the collapsed row, so it must fit there
+   * (≤50 chars, tested). Also the `get_guide` summary.
    */
   oneLiner: string
   /**
-   * Longer paragraph. The half of the modal that persuades a reader with a matching dataset that
-   * their data is what would move this. One short paragraph — no marketing copy.
+   * The longer paragraph — NOT in the modal (docs/ui/COPY.md).
+   * Claude reads it through `get_guide` (`guideText.ts → datasetCallText`); the design detail lives in
+   * the plan at `planPath`.
    */
   blurb: string
   /**
-   * What kind of dataset would let us build (or, for a test ask, check) this. Named literally rather than a category, because
-   * "3D rigid drift" is not the same shape of ask as "large static 3D registration" and a category
-   * would let the two collapse into one prompt on the issue form.
+   * The data we need, in one line — the expanded row's text (≤110 chars, one sentence, tested).
+   * The full version is `sceneryHint`.
+   */
+  need: string
+  /**
+   * The data we need, in full — goes into the GitHub issue body and `get_guide`, where a submitter
+   * reads it once. Named literally rather than a category, because "3D rigid drift" is not the same
+   * shape of ask as "large static 3D registration" and a category would let the two collapse into
+   * one prompt on the issue form.
    */
   sceneryHint: string
+  /** Its small schematic in the expanded row (`DatasetAskFigure.vue`), or none where a picture adds
+   *  nothing. */
+  fig?: AskFig
   /** The label the modal writes into the prefilled GitHub-issue title. Kept explicit rather than
    *  derived from `title`, because a title reads "Full 3D rigid drift" and the issue wants
    *  something more like "Call for dataset: full 3D rigid drift correction" (a test ask:
@@ -71,7 +85,7 @@ const TEST_SET_NEEDS = 'docs/todo/HARDENING_RESULT_CORRECTNESS.md'
 
 /** A test ask: the shared labels and plan pointer filled in. */
 function testAsk(id: string, area: string,
-              a: Pick<CapabilityAsk, 'title' | 'oneLiner' | 'blurb' | 'sceneryHint' | 'issueTitle'>): CapabilityAsk {
+              a: Pick<CapabilityAsk, 'title' | 'oneLiner' | 'blurb' | 'need' | 'sceneryHint' | 'issueTitle' | 'fig'>): CapabilityAsk {
   return { kind: 'test', id, ...a, labels: ['call-for-datasets', 'test-data', area], planPath: TEST_SET_NEEDS }
 }
 
@@ -79,8 +93,10 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   {
     kind: 'build',
     id: 'sitk-rigid-3d-full',
-    title: 'Full 3D rigid drift (X + Y tilting)',
-    oneLiner: 'Correct drift on a movie whose sample TILTS through Z, not just rotates in-plane.',
+    title: '3D drift with tilting tissue',
+    oneLiner: 'Drift where the sample tilts through Z',
+    need: 'A 3D timelapse where a Z-plane at the start is a different plane later, not just shifted.',
+    fig: 'tilt',
     blurb:
       "The `sitkRigid` estimator today handles in-plane rotation (the whole 3D volume rotates " +
       "around the optical axis) — the case a bumped microscope stage actually produces. Full " +
@@ -100,7 +116,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     kind: 'build',
     id: 'static-3d-registration',
     title: 'Large static 3D registration',
-    oneLiner: 'Align a multi-tile or multi-cycle 3D stack the way `editImages.register` aligns 2D.',
+    oneLiner: 'Align 3D staining cycles or tiles',
+    need: 'A multi-cycle 3D acquisition (CODEX, IBEX or similar), or 3D tiles that need stitching.',
+    fig: 'cycles',
     blurb:
       "`editImages.register` uses sitkibex for 2D staining-cycle alignment. A 3D extension would " +
       "let a multi-round staining protocol be registered across cycles in 3D, or align a set of " +
@@ -117,8 +135,10 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   {
     kind: 'build',
     id: 'cluster-grouping-highplex',
-    title: 'Group many clusters into populations, with Claude',
-    oneLiner: 'Claude proposes which of your tens of clusters belong together; you accept or rename.',
+    title: 'Group many clusters with Claude',
+    oneLiner: 'Claude proposes groups; you accept or rename',
+    need: 'A 10+ marker image that clusters into 10+ groups, and your own grouping if you have one.',
+    fig: 'clusters',
     blurb:
       "Clustering a high-plex panel often gives tens of clusters, and it is hard to see which belong " +
       "together. Claude can already read each cluster's marker profile and suggest groupings in chat; " +
@@ -139,7 +159,8 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   //    §5 of the audit below.
   testAsk('vendor-calibration', 'area:import', {
     title: 'Vendor files with known calibration',
-    oneLiner: 'Check that pixel size and frame interval import right from other microscopes.',
+    oneLiner: 'Pixel size and frame interval, other vendors',
+    need: '3–4 tiny vendor files (LIF, CZI, ND2, IMS) with the pixel size and frame interval you set.',
     blurb:
       "Import has only been checked on one lab's 2-photon files, timed in seconds with pixels in µm. " +
       'Small files with a calibration you know would show whether other vendors and units read right.',
@@ -150,7 +171,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   }),
   testAsk('single-stain-controls', 'area:correction', {
     title: 'Single-stained controls',
-    oneLiner: 'Check bleedthrough correction against a measured leak, not a simulated one.',
+    oneLiner: 'Bleedthrough correction on a measured leak',
+    need: 'Two channels on a single-labelled sample and on a double-labelled one, fluorophores named.',
+    fig: 'bleed',
     blurb:
       'The correction is tested on a leak we inject ourselves. A real single-stain control from ' +
       'another microscope gives the leak a known size to recover.',
@@ -161,7 +184,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   }),
   testAsk('annotated-3d-stack', 'area:segmentation', {
     title: '3D stack with hand-drawn masks',
-    oneLiner: 'Score segmentation against cells outlined by hand.',
+    oneLiner: 'Score segmentation against hand outlines',
+    need: 'A small 3D stack (e.g. 256×256×30) with every cell outlined by hand as a label image.',
+    fig: 'masks',
     blurb:
       "Segmentation has been checked by eye on intravital movies, which have no ground truth. A stack " +
       'with every cell outlined lets a test count cells and score overlap.',
@@ -172,7 +197,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   }),
   testAsk('paired-snr', 'area:denoise', {
     title: 'Paired noisy and clean images',
-    oneLiner: 'Check what denoising removes against a clean image of the same field.',
+    oneLiner: 'What denoising removes, against a clean image',
+    need: 'One field imaged twice without moving: fast or low-power, then averaged or slow.',
+    fig: 'pair',
     blurb:
       "Denoised output has not been checked against anything. The same field imaged noisy and clean " +
       'is the reference that shows whether it keeps real structure.',
@@ -182,8 +209,10 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     issueTitle: 'Test data: paired low- and high-SNR acquisitions',
   }),
   testAsk('swapped-channel-set', 'area:gating', {
-    title: 'A set with channels in a different order',
-    oneLiner: 'Check a copied gate never lands on the wrong marker.',
+    title: 'Channels in a different order',
+    oneLiner: 'A copied gate must not land on the wrong marker',
+    need: 'Two small images from one experiment whose channel order differs, markers named.',
+    fig: 'swap',
     blurb:
       'Our sets are acquired with one channel order throughout, so a copy or a pooled set across ' +
       'a reordered channel has never been exercised on real data.',
@@ -194,7 +223,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   }),
   testAsk('ground-truth-tracks', 'area:tracking', {
     title: 'A movie with ground-truth tracks',
-    oneLiner: 'Score tracking against links made by hand.',
+    oneLiner: 'Score tracking against hand-made links',
+    need: 'A cell timelapse with hand-linked tracks, ideally with a division (Cell Tracking Challenge style).',
+    fig: 'tracks',
     blurb:
       'Tracking is checked by eye; no test scores its links. A movie whose tracks were linked by hand ' +
       'lets us measure how often a link is wrong.',
@@ -205,7 +236,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
   }),
   testAsk('behaviour-switch-tracks', 'area:behaviour', {
     title: 'Tracks with known behaviour switches',
-    oneLiner: 'Check behaviour states and clusters against switches you annotated.',
+    oneLiner: 'Behaviour states against switches you marked',
+    need: 'Tracks, as a movie or a table, where you marked when cells changed behaviour.',
+    fig: 'switch',
     blurb:
       'Behaviour states, motifs and track clusters run on real tracks, but nothing checks them against ' +
       'a known answer. Tracks whose switches are annotated are that answer.',
@@ -215,8 +248,9 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
     issueTitle: 'Test data: tracks with known behaviour switches',
   }),
   testAsk('annotated-niches', 'area:spatial', {
-    title: 'Tissue section with annotated niches',
-    oneLiner: 'Check spatial regions and interaction scores against regions an expert drew.',
+    title: 'Tissue with annotated niches',
+    oneLiner: 'Spatial regions against ones an expert drew',
+    need: 'A 6+ marker tissue section with regions such as follicles or a tumour border outlined.',
     blurb:
       'Region clustering and interaction scores have only been checked on few-marker data. A ' +
       'multiplex section with drawn niches shows whether they find the regions that are there.',
@@ -236,7 +270,8 @@ export const CALL_FOR_DATASETS: CapabilityAsk[] = [
 export function datasetAskUrl(ask: CapabilityAsk): string {
   const body =
     `## ${ask.kind === 'test' ? 'What it would test' : 'Capability'}\n\n${ask.title}\n\n` +
-    `Plan: [${ask.planPath}](${ask.planPath})\n\n` +
+    `Plan: [${ask.planPath}](${planUrl(ask)})\n\n` +
+    `## The data that would help\n\n${ask.sceneryHint}\n\n` +
     `## What does the imaging look like?\n\n` +
     `(Modality, ~size, dimensionality, per-timepoint content — one paragraph is enough)\n\n` +
     `## Cloud link to a sample\n\n` +
@@ -249,6 +284,12 @@ export function datasetAskUrl(ask: CapabilityAsk): string {
     body,
   })
   return `${CECELIA_NEW_ISSUE_URL}?${q}`
+}
+
+/** The plan on GitHub — the expanded row's small Plan link and the issue body's. A repo-relative
+ *  `planPath` points at `main`; an absolute URL is used as is. */
+export function planUrl(ask: CapabilityAsk): string {
+  return /^https?:\/\//.test(ask.planPath) ? ask.planPath : `${CECELIA_REPO_URL}/blob/main/${ask.planPath}`
 }
 
 /** The asks of one kind, in registry order — the modal's two sections. */
