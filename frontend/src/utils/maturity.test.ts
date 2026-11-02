@@ -178,3 +178,19 @@ describe('the map’s maturity rows', () => {
     expect(pageTier('/tasks')).toBe('exempt')
   })
 })
+
+
+describe('splitColumns — groups stay in a fixed column', () => {
+  it('keeps order, never splits a group, and balances by rows', async () => {
+    const { splitColumns } = await import('./maturity')
+    const g = (h: string, n: number) => ({ heading: h, rows: Array(n).fill(0) })
+    const groups = [g('a', 4), g('b', 18), g('c', 9), g('d', 9), g('e', 6), g('f', 4)]
+    const cols = splitColumns(groups)
+    expect(cols.flat().map(x => x.heading)).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+    const size = (c: typeof groups) => c.reduce((k, x) => k + x.rows.length + 1, 0)
+    expect(Math.abs(size(cols[0]) - size(cols[1]))).toBeLessThanOrEqual(19)
+    expect(cols[0].length).toBeGreaterThan(0)
+    expect(cols[1].length).toBeGreaterThan(0)
+    expect(splitColumns([g('only', 3)])).toEqual([[g('only', 3)], []])
+  })
+})

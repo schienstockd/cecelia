@@ -34,7 +34,7 @@ import { guidesByGroup, guideById } from '../lib/guides'
 import GuideMap from './GuideMap.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import { useSingleOpenSection } from '../composables/useSingleOpenSection'
-import { defaultOpenGroup } from '../utils/guideMap'
+import { defaultOpenGroup, chipDot, tierLabel } from '../utils/guideMap'
 import { closeGuides } from '../lib/guideOpen'
 import type { GuideDef } from '../lib/guides/types'
 import { tierTip as tierLine } from '../lib/guides/tiers'
@@ -106,7 +106,8 @@ function firstFixable(g: GuideDef) {
         <div class="gd-main">
           <div class="gd-head">
             <span class="gd-title">{{ g.title }}</span>
-            <ComingSoonBadge v-if="g.maturity.tier !== 'exempt'" :tier="g.maturity.tier" v-tooltip.top="tierTip(g)" />
+            <span v-if="chipDot(g.maturity.tier)" :class="['cc-dot', chipDot(g.maturity.tier)]"
+                  :aria-label="tierLabel(g.maturity.tier)" v-tooltip.top="tierTip(g)" />
             <span v-if="isDone(g)" class="gd-done" v-tooltip.top="'You have finished this guide'">
               <i class="pi pi-check" />
             </span>

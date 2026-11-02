@@ -45,6 +45,9 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 8. **Promotion happens in the PR, and is swept at the release cut** — not in the weekly judge.
 9. **Features with no scientific result are exempt** (blackboard, Movies, Tasks, tour, profiles): a tier
    says how far to trust a result, and these produce none. No badge, no maturity row.
+10. **On the map, a dot per tier with a legend, not a pill.** A pill on every page button was clutter
+   (nearly every page is Beta); an unexplained dot, or marking only Experimental, said nothing. One
+   `.cc-dot` tone per tier, a legend line under the grid (2026-11-02, from his look at P1).
 
 ## The scale
 

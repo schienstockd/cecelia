@@ -1188,9 +1188,11 @@ the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FE
   features (no scientific result: the tour, profiles, blackboard, Movies, Tasks) get no badge and no row.
 - **One pill:** `ComingSoonBadge` with a `tier` prop; its words are `lib/guides/tiers.ts`
   (`TIER_LABEL`, and `TIER_TIP` — what the user should do — on hover). Never a second badge.
-- **Where it shows:** each page button on the map (`MapChip.tier`, `pageTier`), each guide row in the
-  picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
-  group, guides first, unguided ones dimmed "no guide yet", expandable to the record. "Share your data"
+- **Where it shows:** each page button on the map carries a `.cc-dot`, one tone per tier (Experimental
+  warn, Beta info, Tested ok, Coming soon idle; exempt none — `chipDot` in `utils/guideMap.ts`), read
+  through the legend line under the grid (`TIER_LEGEND`).Each
+  guide row in the picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
+  group, guides first, unguided ones marked "no guide", expandable to the record. "Share your data"
   opens the call-for-datasets modal at its ask. `user-docs/README.md` has a Maturity column.
 - **Enforced by `utils/maturity.test.ts`** (logic in `utils/maturity.ts`): every sidebar page and every
   task JSON under `app/src/tasks/` is tiered exactly once — by a guide (its page, the funs it runs,

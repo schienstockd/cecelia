@@ -111,6 +111,20 @@ export interface MaturityRow {
 
 export interface MaturityGroup { heading: string; rows: MaturityRow[] }
 
+/** Split groups into `n` fixed columns in order, filling each to about 1/n of the rows. Fixed, so expanding
+ *  a row only pushes the rows beneath it — CSS `columns` rebalanced and moved rows between columns. */
+export function splitColumns<T extends { rows: unknown[] }>(groups: T[], n = 2): T[][] {
+  const total = groups.reduce((k, g) => k + g.rows.length + 1, 0)   // +1: the group heading
+  const cols: T[][] = Array.from({ length: n }, () => [])
+  let c = 0, used = 0
+  for (const g of groups) {
+    const size = g.rows.length + 1
+    if (c < n - 1 && used > 0 && used + size / 2 > (total / n) * (c + 1)) c++
+    cols[c].push(g); used += size
+  }
+  return cols
+}
+
 /** Every non-exempt feature, grouped like the guide picker: guides first, then "no guide yet", then
  *  a trailing Coming soon group derived from the flags (no record carries that tier). */
 export function maturityGroups(tasks: TaskSpecLite[]): MaturityGroup[] {

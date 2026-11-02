@@ -141,3 +141,18 @@ describe('defaultOpenGroup', () => {
     expect(defaultOpenGroup('/nowhere')).toBe('Start')
   })
 })
+
+
+describe('chipDot — one dot per tier, read through the legend', () => {
+  it('gives every tiered page a dot, exempt none, and the legend lists each dot in use', async () => {
+    const { chipDot, TIER_LEGEND } = await import('./guideMap')
+    expect(chipDot('experimental')).toBe('cc-tier-experimental')
+    expect(chipDot('beta')).toBe('cc-tier-beta')
+    expect(chipDot('tested')).toBe('cc-tier-tested')
+    expect(chipDot('comingSoon')).toBe('cc-tier-comingSoon')
+    for (const t of ['exempt', 'stable', null, undefined] as const) expect(chipDot(t)).toBe('')
+    // every dot a page can carry is explained in the legend
+    const legend = new Set(TIER_LEGEND.map(l => l.dot))
+    for (const t of ['experimental', 'beta', 'tested', 'comingSoon'] as const) expect(legend.has(chipDot(t))).toBe(true)
+  })
+})

@@ -8,7 +8,7 @@ import { MAP, GROUP_BLURB } from '../lib/guides/mapData'
 import { GUIDES, guideById } from '../lib/guides'
 import { isGuideStep, type WrittenRecipe, type RecipeStep } from '../lib/guides/recipes'
 import type { GuideDef, Tier } from '../lib/guides/types'
-import { tierTip } from '../lib/guides/tiers'
+import { tierTip, TIER_LABEL } from '../lib/guides/tiers'
 import { pageTier, badged } from './maturity'
 
 export interface MapChip {
@@ -97,6 +97,22 @@ export function chipTip(c: MapChip, showClaude = false): string {
   if (showClaude && c.claude) parts.push(c.claude)
   return parts.join(' · ')
 }
+
+/** The page button's marker: one `.cc-dot` tone per tier, read through the legend under the grid
+ *  (`TIER_LEGEND`). Exempt pages (no scientific result) carry none. `''` ⇒ no marker. */
+const TIER_DOT: Partial<Record<Tier, string>> = {
+  comingSoon: 'cc-tier-comingSoon', experimental: 'cc-tier-experimental', beta: 'cc-tier-beta', tested: 'cc-tier-tested',
+}
+export function chipDot(t: Tier | null | undefined): string {
+  return (t && TIER_DOT[t]) || ''
+}
+
+/** The legend under the grid: each tier in use, with its dot. Stable is reserved and never listed. */
+export const TIER_LEGEND: { tier: Tier; dot: string; label: string }[] =
+  (['experimental', 'beta', 'tested', 'comingSoon'] as const).map(t => ({ tier: t, dot: TIER_DOT[t]!, label: TIER_LABEL[t] }))
+
+/** The marker's accessible name. */
+export const tierLabel = (t: Tier | null | undefined): string => (t ? TIER_LABEL[t] : '')
 
 /** Which guide group opens first: the one whose guides teach the page you're on, else Start. */
 export function defaultOpenGroup(currentPath: string): string {
