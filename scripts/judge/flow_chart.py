@@ -72,9 +72,12 @@ def _real_class(b: dict) -> str:
     return _REAL_BY_STATUS.get(b.get("status")) or ("open_issue" if b.get("issue") else "not_filed")
 
 
-def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
-    """The counts behind the picture. `records`: the judge's pass records, oldest first."""
-    events = list(events)
+def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *, through: str | None = None) -> dict:
+    """The counts behind the picture. `records`: the judge's pass records, oldest first. `through`:
+    the last day (ISO) to count, the weekly chart's *Data through*, so the two README figures end on
+    the same day; rows logged after it are left out. It is never before the newest pass, so the
+    ledger still adds up."""
+    events = [e for e in events if not through or (e.get("ts") or "")[:10] <= through]
     resolved = _bugs.branch_resolutions(events)
     required: dict[str, dict] = {}
     slugless: list[dict] = []      # rows from before slugs, outcome inline — counted like `chart.aggregate`
@@ -122,7 +125,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict]) -> dict:
         if vcol == "real":
             real[_real_class(b)] += 1
     return {
-        "first_day": days[0] if days else None, "last_day": days[-1] if days else None,
+        "first_day": days[0] if days else None, "last_day": (through or days[-1]) if days else None,
         "recital": {"fixed": req_fixed + pl_fixed, "not_fixed": n_required - req_fixed,
                     "plausible": len(plausible) - pl_fixed},
         "required": n_required, "required_fixed": req_fixed,
