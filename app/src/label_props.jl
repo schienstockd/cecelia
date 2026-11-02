@@ -238,59 +238,90 @@ const _INTENSITY_COL_RE = r"^(?:(?<prefix>[a-z]+)_)?(?:mean|median)_intensity_(?
 _channel_index(varname::AbstractString) =
     (m = match(_INTENSITY_COL_RE, varname); isnothing(m) ? nothing : parse(Int, m[:idx]))
 
+# An intensity column, or a per-track aggregate of one (`mean_intensity_0.mean`), split into the
+# column's prefix (`nuc_mean_intensity_`), its channel index and the aggregate suffix (`.mean`, or "").
+function _split_channel_column(c::AbstractString)
+    i = _channel_index(c)
+    i === nothing || return (head = replace(c, r"\d+$" => ""), idx = i, tail = "")
+    m = match(r"^(.*?)(\.[^.]+)$", c)
+    (m === nothing || _channel_index(m[1]) === nothing) && return nothing
+    (head = replace(m[1], r"\d+$" => ""), idx = _channel_index(m[1]), tail = String(m[2]))
+end
+
 """
-    channel_order_mismatches(cols, ref_names, names) -> Vector{(column, ref, other)}
+    match_channel_columns(cols, ref_names, names) -> (; cols, remapped, problems)
 
 Intensity columns are named by channel INDEX (`mean_intensity_1`), so a column read on one image and
-applied to another — a copied gate, a set-wide clustering — means the same marker only if both images
-put the same channel at that index. For each intensity column in `cols`, compare the channel name at
-its index in `ref_names` (the image the columns came from) and `names` (the image they are applied
-to); return the ones that differ. Names compare case-insensitively (`mem-TOM` vs `mem-Tom` is one
-channel). `other` is `nothing` when `names` has no channel at that index. Non-intensity columns, and
-any check where either image has no channel names registered, return no mismatches: there is nothing
-to compare, and refusing would block every image without names.
+applied to another — a copied gate, a set-wide clustering, a heatmap across images — has to be
+re-indexed to where the SAME CHANNEL NAME sits on the other image (`docs/POPULATION.md` → *Gating pop
+types & copy across images*). `ref_names` are the channel names of the image `cols` were read on, `names` the
+other image's. Returns:
+
+- `cols` — `cols` in order, each intensity column (and per-track aggregate `mean_intensity_0.mean`)
+  re-indexed for the other image; every other column unchanged.
+- `remapped` — the `(from, to, channel)` that changed.
+- `problems` — the `(column, channel, why)` with no right answer: `why = :absent` (the channel is not
+  on the other image) or `:ambiguous` (the name is on more than one channel of either image).
+
+Names compare case-insensitively (`mem-TOM` vs `mem-Tom` is one channel). The same name at the same
+index is kept as-is. Either image without registered names, or a column past the reference's names:
+unchanged — there is nothing to match, and refusing would block every image without names.
 """
-function channel_order_mismatches(cols, ref_names::Union{Nothing,AbstractVector},
-                                  names::Union{Nothing,AbstractVector})
-    out = @NamedTuple{column::String, ref::String, other::Union{Nothing,String}}[]
-    (isnothing(ref_names) || isnothing(names) || isempty(ref_names) || isempty(names)) && return out
-    for c in unique(String.(cols))
-        # a per-track aggregate reads its base cell column (`mean_intensity_0.mean` → `mean_intensity_0`)
-        i = something(_channel_index(c), _channel_index(replace(c, r"\.[^.]+$" => "")), Some(nothing))
-        (i === nothing || i + 1 > length(ref_names)) && continue
-        ref = String(ref_names[i + 1])
-        other = i + 1 > length(names) ? nothing : String(names[i + 1])
-        (other !== nothing && lowercase(other) == lowercase(ref)) && continue
-        push!(out, (column = c, ref = ref, other = other))
+function match_channel_columns(cols, ref_names::Union{Nothing,AbstractVector},
+                               names::Union{Nothing,AbstractVector})
+    out = String.(collect(cols))
+    remapped = @NamedTuple{from::String, to::String, channel::String}[]
+    problems = @NamedTuple{column::String, channel::String, why::Symbol}[]
+    (isnothing(ref_names) || isnothing(names) || isempty(ref_names) || isempty(names)) &&
+        return (; cols = out, remapped, problems)
+    ref_lc = lowercase.(String.(ref_names)); lc = lowercase.(String.(names))
+    for (k, c) in enumerate(out)
+        sp = _split_channel_column(c)
+        (sp === nothing || sp.idx + 1 > length(ref_lc)) && continue
+        want = ref_lc[sp.idx + 1]; channel = String(ref_names[sp.idx + 1])
+        (sp.idx + 1 <= length(lc) && lc[sp.idx + 1] == want) && continue    # same channel, same index
+        hits = findall(==(want), lc)
+        if isempty(hits)
+            push!(problems, (column = c, channel = channel, why = :absent))
+        elseif length(hits) > 1 || count(==(want), ref_lc) > 1
+            push!(problems, (column = c, channel = channel, why = :ambiguous))
+        else
+            out[k] = "$(sp.head)$(hits[1] - 1)$(sp.tail)"
+            push!(remapped, (from = c, to = out[k], channel = channel))
+        end
     end
-    out
+    unique!(problems)
+    (; cols = out, remapped, problems)
 end
 
-"""
-    channel_order_problems(img_by_uid, segments, cols) -> Vector{String}
+"""One phrase per unmatched column, for a skip reason or a task error: `CD4 (mean_intensity_0) not on this image`."""
+describe_channel_problems(ps) =
+    join(("$(p.channel) ($(p.column)) " *
+          (p.why === :absent ? "not on this image" : "on more than one channel") for p in ps), "; ")
 
-For a set-wide run that pools `cols` across segments (`Dict`s with `"uID"`, `"valueName"`): each segment
-whose channel order disagrees with the first segment's at a pooled column, as `"<uID>/<vn>: <mismatches>"`.
-Empty when the order agrees, or names aren't registered to compare. Used by `clustPops`, `clustTracks`
-and multi-image heatmaps (`_require_channel_order`, `plot_data.jl`).
 """
-function channel_order_problems(img_by_uid::AbstractDict, segments, cols)::Vector{String}
-    isempty(segments) && return String[]
-    names_of(s) = channel_names(img_by_uid[s["uID"]]; value_name = s["valueName"])
+    match_segment_channel_columns(segments, cols) -> (; cols, problems)
+
+For a run that pools `cols` across `segments` — `(img, value_name)` pairs, the FIRST one the reference
+the columns were picked on — each segment's own columns for the same channels (`match_channel_columns`
+against the reference's names), parallel to `segments`. `problems`: one `"<uID>/<vn>: …"` per segment
+with a channel it lacks or holds twice. Used by `clustPops`, `clustTracks` and multi-image heatmaps
+(`_pop_df_by_channel_name`, `plot_data.jl`).
+"""
+function match_segment_channel_columns(segments, cols)
+    own = Vector{Vector{String}}(); problems = String[]
+    isempty(segments) && return (; cols = own, problems)
+    names_of((img, vn)) = channel_names(img; value_name = vn)
     ref = first(segments); ref_names = names_of(ref)
-    out = String[]
-    for s in segments[2:end]
-        ms = channel_order_mismatches(cols, ref_names, names_of(s))
-        vn = s["valueName"]
-        isempty(ms) || push!(out, "$(s["uID"])$(isnothing(vn) ? "" : "/$vn"): " *
-                                  describe_channel_mismatches(ms; ref_label = "$(ref["uID"])"))
+    for (k, s) in enumerate(segments)
+        r = k == 1 ? (cols = String.(collect(cols)), problems = ()) :
+                     match_channel_columns(cols, ref_names, names_of(s))
+        push!(own, r.cols)
+        isempty(r.problems) || push!(problems, "$(s[1].uid)$(isnothing(s[2]) ? "" : "/$(s[2])"): " *
+                                               describe_channel_problems(r.problems))
     end
-    out
+    (; cols = own, problems)
 end
-
-"""One line per mismatch, for a skip reason or a task error: `mean_intensity_1 is CD8 here, CD4 in the source`."""
-describe_channel_mismatches(ms; ref_label::AbstractString = "the source") =
-    join(("$(m.column) is $(something(m.other, "absent")) here, $(m.ref) in $ref_label" for m in ms), "; ")
 
 # How many image channels a set of intensity columns covers: the highest channel index + 1, NOT the
 # column count — a label set with a secondary store (nuc, cell, …) measures every channel twice

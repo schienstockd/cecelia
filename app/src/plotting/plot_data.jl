@@ -11,7 +11,7 @@
 # by the population's manager colour). Aggregation is pure over the `pop_df` frame and headless-
 # testable — the API route (`/api/plot_data`) is a thin wrapper.
 
-using DataFrames: DataFrame, nrow, groupby, propertynames
+using DataFrames: DataFrame, nrow, groupby, propertynames, rename!
 using Statistics: mean, median, std, quantile
 
 # `_hist_edges` / `_hist_counts` (equal-width binning) live in gating/density.jl, beside the other
@@ -1019,17 +1019,29 @@ function plot_summary_data(img::CciaImage, pop_type::PopTypeArg, pops, chart_typ
                  stats_enabled=stats_enabled, stats_test=stats_test)
 end
 
-# A heatmap reads intensity columns RAW (`mean_intensity_N`) and pools them by channel INDEX, so across
-# images with a different channel order one row would average different markers. Refuse instead
-# (the API turns the error into a message on the plot). One image, or no names registered: no check.
-function _require_channel_order(imgs, vns, cols)
-    length(imgs) < 2 && return nothing
-    by_uid = Dict(img.uid => img for img in imgs)
-    for vn in unique(vns)
-        bad = channel_order_problems(by_uid, [Dict{String,Any}("uID" => img.uid, "valueName" => vn) for img in imgs], cols)
-        isempty(bad) || throw(ArgumentError("channel order differs across images — " * join(bad, "; ")))
+# A heatmap reads intensity columns RAW (`mean_intensity_N`, the names the frontend sends and labels
+# from the first image), named by channel INDEX. Across images, each image reads its own column for the
+# same channel NAME (`match_segment_channel_columns`, the first image the reference) and renames it to
+# the first image's, so one row averages one marker even where channel order differs. A channel an
+# image lacks, or holds twice, throws (the API turns it into a message on the plot). Otherwise the
+# set-level `pop_df`, image by image.
+function _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name, pop_cols, kwargs...)
+    (pop_cols === nothing || length(imgs) < 2) &&
+        return pop_df(imgs, uids, pop_type, pops; value_name=value_name, pop_cols=pop_cols, kwargs...)
+    cols = String.(collect(pop_cols))
+    own = match_segment_channel_columns([(img, value_name) for img in imgs], cols)
+    isempty(own.problems) ||
+        throw(ArgumentError("channels don't match across images — " * join(own.problems, "; ")))
+    frames = DataFrame[]
+    for (img, uid, mine) in zip(imgs, uids, own.cols)
+        d = pop_df(img, pop_type, pops; value_name=value_name, pop_cols=mine, kwargs...)
+        nrow(d) == 0 && continue
+        back = Dict(o => c for (o, c) in zip(mine, cols) if o != c && o in names(d))
+        isempty(back) || rename!(d, back)
+        d[!, :uID] = fill(String(uid), nrow(d))
+        push!(frames, d)
     end
-    nothing
+    isempty(frames) ? DataFrame() : reduce((a, b) -> vcat(a, b; cols=:union), frames)
 end
 
 function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVector,
@@ -1055,22 +1067,18 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
     # taking the run from the first image — clustering is set-scope so the value_name set is consistent.
     eff_vn = isempty(imgs) ? value_name :
              _cluster_pop_vn(first(imgs), pop_type, value_name, cluster_suffix, granularity)
-    # a per-cluster heatmap pools every co-clustered segmentation — check them all (runs from before the
-    # clustering tasks refused a mixed channel order were never checked)
-    chart_type == "matrix" && _require_channel_order(imgs,
-        (sfx !== nothing && _is_cluster_pop_type(pop_type) && !isempty(imgs)) ?
-            co_clustered_value_names(first(imgs), sfx; granularity=granularity,
-                                     family=_cluster_measure_family(pop_type)) : [eff_vn], cols)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type) && !isempty(imgs)) ?
         _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity,
                                                     family=_cluster_measure_family(pop_type)),
-            vn -> pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
+            vn -> _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
                          pop_cols=cols, raw_channel_names=true, expand_cluster_pops=false)) :
-        pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
-               pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
+        chart_type == "matrix" ?
+        _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
+                                pop_cols=cols, raw_channel_names=true) :
+        pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity, pop_cols=cols)
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn),
@@ -1218,11 +1226,12 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         return _interaction_matrix(first(imgs); suffix = stats_suffix)
     end
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
-    chart_type == "matrix" && _require_channel_order(imgs, [t[1] for t in targets], pcols)
     # see the single-image form above — a picked (segmentation, population) pair is explicit
-    df = _targets_frame(targets, (vn, pops) ->
+    df = _targets_frame(targets, (vn, pops) -> chart_type == "matrix" ?
+        _pop_df_by_channel_name(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
+                                pop_cols=pcols, raw_channel_names=true, expand_cluster_pops=false) :
         pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
-               raw_channel_names=(chart_type == "matrix"), expand_cluster_pops=false))
+               expand_cluster_pops=false))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by,

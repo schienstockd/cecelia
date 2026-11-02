@@ -15,12 +15,12 @@ stack. Per-tag notes are also on the
 
 ### Fixed
 
-- **Copying gates skips images with a different channel order**, which read the wrong marker.
-  Gates copied before this may be wrong.
-- **Cell and track clustering, and heatmaps across images,** refuse images whose channel order
-  differs.
-- **The copy dialog now names images it did not copy to**, with the reason. Before, they went missing
-  from "Copied to N images" without a word.
+- **Copying gates matches channels by name, as the R version did.** Before, an image with another
+  channel order gated whichever marker sat at that position.
+- **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
+  lacking a channel is refused.
+- **The copy dialog now names images it did not copy to**, with the reason, and notes where it
+  matched channels by name.
 
 ## [0.2.12] — 2026-11-02
 

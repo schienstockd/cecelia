@@ -17,7 +17,7 @@ import { useLogStore } from '../../stores/log'
 import { imagesWithValueName } from '../../lib/valueNames'
 import CcToggle from '../../components/CcToggle.vue'
 import InlineNote from '../../components/InlineNote.vue'
-import { copyWarningLines, copySkippedLines, copyWarningAction, type CopyWarnings, type CopyWarningLine } from '../../utils/gatingCopyWarnings'
+import { copyWarningLines, copySkippedLines, copyRemappedLines, renamePanelColumns, copyWarningAction, type CopyWarnings, type CopyWarningLine, type ChannelRemap } from '../../utils/gatingCopyWarnings'
 
 const props = defineProps<{
   setUid: string
@@ -79,14 +79,24 @@ async function copy() {
       body: JSON.stringify({ projectUid, imageUid: props.sourceUid, valueName: props.valueName,
                              popType: props.popType, toImageUids }),
     })
-    const d = await res.json().catch(() => ({})) as { copied?: string[]; skipped?: Record<string, string>; warnings?: CopyWarnings; error?: string }
+    const d = await res.json().catch(() => ({})) as { copied?: string[]; skipped?: Record<string, string>; warnings?: CopyWarnings;
+                                                       remapped?: Record<string, ChannelRemap[]>; error?: string }
     if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
     const copied = d.copied ?? []
-    if (copyLayout.value) for (const uid of copied) canvas.copyEntry(ckey(props.sourceUid), ckey(uid))
+    if (copyLayout.value) for (const uid of copied) {
+      canvas.copyEntry(ckey(props.sourceUid), ckey(uid))
+      // a target with another channel order: its plots' axes follow the gates to the same channels
+      const e = canvas.entries[ckey(uid)]
+      if (e) renamePanelColumns(e.panels.map(p => p.state as Record<string, unknown>), d.remapped?.[uid])
+    }
     log.info(`Copied ${label.value} to ${copied.length} image(s)` + (copyLayout.value ? ' (incl. plot layout)' : '') + '.', { source: 'gating' })
-    const lines = [...copySkippedLines(d.skipped, imageName), ...copyWarningLines(d.warnings, imageName)]
+    const lines = [...copySkippedLines(d.skipped, imageName), ...copyWarningLines(d.warnings, imageName),
+                   ...copyRemappedLines(d.remapped, imageName)]
     if (!lines.length) { emit('close'); return }
-    for (const l of lines) log.warn(`Copy gating: ${l.text}.`, { source: 'gating' })
+    for (const l of lines) {
+      if (l.info) log.info(`Copy gating: ${l.text} (${l.pops.join(', ')}).`, { source: 'gating' })
+      else log.warn(`Copy gating: ${l.text}.`, { source: 'gating' })
+    }
     warnLines.value = lines
     warnAction.value = Object.keys(d.warnings ?? {}).length ? copyWarningAction(d.warnings) : ''
   } catch (e) {
@@ -103,9 +113,9 @@ async function copy() {
       <p v-if="!warnLines.length" class="cg-warn"><i class="pi pi-exclamation-triangle" />
         Overwrites the {{ label }} on each selected image ({{ valueName }}) — no undo.</p>
 
-      <!-- refused targets, and copied ones lacking a column (which populations are empty there) -->
+      <!-- refused targets, copied ones lacking a column (which populations are empty there), and ones matched by channel name -->
       <div v-if="warnLines.length" class="cg-missing">
-        <InlineNote v-for="l in warnLines" :key="l.uid" severity="warn" :short="l.text" :detail="l.pops.join(', ')" />
+        <InlineNote v-for="l in warnLines" :key="l.uid + l.text" :severity="l.info ? undefined : 'warn'" :short="l.text" :detail="l.pops.join(', ')" />
         <span v-if="warnAction" class="cc-muted">{{ warnAction }}</span>
       </div>
       <p v-else-if="checking" class="cg-empty cc-muted">Checking images…</p>

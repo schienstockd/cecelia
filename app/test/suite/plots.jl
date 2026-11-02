@@ -658,20 +658,41 @@ end
     @test isempty(derived_pop_paths("flow"))
 end
 
-@testset "heatmap across images refuses a different channel order" begin
-    mk(uid, v) = (img = CciaImage(uid = uid, dir = mktempdir());
-                  img.im_channel_names = Dict{String,Any}("default" => v, "_active" => "default"); img)
-    a, b, c = mk("A", ["CD4", "CD8"]), mk("B", ["CD4", "CD8"]), mk("C", ["CD8", "CD4"])
-    cols = ["mean_intensity_0", "mean_intensity_1", "area"]
-    @test Cecelia._require_channel_order([a, b], [nothing], cols) === nothing
-    @test Cecelia._require_channel_order([c], [nothing], cols) === nothing           # one image: nothing pooled
-    err = try Cecelia._require_channel_order([a, b, c], ["default"], cols); nothing catch e; e end
-    @test err isa ArgumentError
-    @test occursin("C/default: mean_intensity_0 is CD8 here, CD4 in A", err.msg)
-    @test Cecelia._require_channel_order([a, c], [nothing], ["area"]) === nothing     # no intensity column read
-    # the targets form reaches it before any data is read
-    e2 = try Cecelia.plot_summary_data([a, c], ["A", "C"], "flow", [("default", "/x")], "matrix";
-                                       matrix_mode = "profile", measures = ["mean_intensity_0"]); nothing
-         catch e; e end
-    @test e2 isa ArgumentError && startswith(e2.msg, "channel order differs across images")
+@testset "heatmap across images pools each channel by name" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "heatmap channel names (fixture missing)"
+    else
+        mk = function (uid, chans)
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            cp(h5, joinpath(td, "labelProps", "B.h5ad")); cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+            img = CciaImage(uid=uid, dir=td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+            img.im_channel_names = Dict{String,Any}("default" => chans, "_active" => "default")
+            img
+        end
+        x, y = mk("uX", ["CD4", "CD8", "GFP", "TOM"]), mk("uY", ["CD8", "CD4", "GFP", "TOM"])
+        # same tables under both uids, channels swapped on uY: the CD4 row (raw name from the first
+        # image, `mean_intensity_0`) must average uX's column 0 with uY's column 1
+        raw = pop_df(x, "live", ["B/_tracked"]; pop_cols=["mean_intensity_0", "mean_intensity_1"], raw_channel_names=true)
+        want = (sum(raw.mean_intensity_0) + sum(raw.mean_intensity_1)) / (2 * nrow(raw))
+        cellv(r, m) = first(c["value"] for c in r["cells"] if c["y"] == m)
+        kw = (; matrix_mode="profile", measures=["mean_intensity_0"], category="pop")
+        r = plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...)
+        @test cellv(r, "mean_intensity_0") ≈ want
+        # the targets form, likewise
+        rt = plot_summary_data([x, y], ["uX", "uY"], "live", [("B", "/_tracked")], "matrix"; kw...)
+        @test cellv(rt, "mean_intensity_0") ≈ want
+        # same order → each image's own column 0, as before
+        y.im_channel_names = Dict{String,Any}("default" => ["CD4", "CD8", "GFP", "TOM"], "_active" => "default")
+        r0 = plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...)
+        @test cellv(r0, "mean_intensity_0") ≈ sum(raw.mean_intensity_0) / nrow(raw)
+        # unresolvable: CD4 not on uY → refused, naming it
+        y.im_channel_names = Dict{String,Any}("default" => ["CD8", "GFP", "TOM", "x"], "_active" => "default")
+        err = try plot_summary_data([x, y], ["uX", "uY"], "live", ["B/_tracked"], "matrix"; kw...); nothing
+              catch e; e end
+        @test err isa ArgumentError && occursin("CD4 (mean_intensity_0) not on this image", err.msg) &&
+              occursin("uY", err.msg)
+    end
 end

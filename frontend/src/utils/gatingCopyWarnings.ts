@@ -11,7 +11,8 @@ import { clusterMeasurePrefix } from './clusterMeasure'
 export interface MissingColumn { column: string; pops: string[] }
 export type CopyWarnings = Record<string, MissingColumn[]>
 
-export interface CopyWarningLine { uid: string; text: string; pops: string[] }
+// `info` — a note, not a problem (the copy went through as meant): rendered without a severity.
+export interface CopyWarningLine { uid: string; text: string; pops: string[]; info?: boolean }
 
 const popLeaf = (path: string) => path.slice(path.lastIndexOf('/') + 1) || path
 
@@ -58,4 +59,28 @@ export function copySkippedLines(skipped: Record<string, string> | undefined,
     const [head, ...rest] = reason.split(' — ')
     return { uid, text: `${nameOf(uid)}: not copied, ${head}`, pops: rest.length ? [rest.join(' — ')] : [] }
   })
+}
+
+// Targets copied with their gates pointed at another column (`POST /api/gating/copy` → `remapped`:
+// uid → [{from, to, channel}]) — the target orders its channels differently, so each gated channel was
+// matched by NAME. A note, not a warning: the copy reads the same markers. The hover names the channels.
+export interface ChannelRemap { from: string; to: string; channel: string }
+export function copyRemappedLines(remapped: Record<string, ChannelRemap[]> | undefined,
+                                  nameOf: (uid: string) => string): CopyWarningLine[] {
+  return Object.entries(remapped ?? {})
+    .filter(([, rs]) => rs?.length)
+    .map(([uid, rs]) => ({ uid, text: `${nameOf(uid)}: channels matched by name`,
+                           pops: [...new Set(rs.map(r => r.channel))], info: true }))
+}
+
+// The copied plot layout (`canvasPanels.copyEntry`) carries each gate plot's axes as raw columns
+// (`x`/`y`/`z`, the pairs panel's `channels`). On a remapped target, point them at the target's
+// columns for the same channels too, so the axes show the markers the copied gates read. In place.
+export function renamePanelColumns(states: Record<string, unknown>[], remaps: ChannelRemap[] | undefined): void {
+  const to = Object.fromEntries((remaps ?? []).map(r => [r.from, r.to])) as Record<string, string>
+  if (!Object.keys(to).length) return
+  for (const s of states) {
+    for (const k of ['x', 'y', 'z']) { const v = s[k]; if (typeof v === 'string' && to[v]) s[k] = to[v] }
+    if (Array.isArray(s.channels)) s.channels = s.channels.map(c => (typeof c === 'string' && to[c]) || c)
+  }
 }
