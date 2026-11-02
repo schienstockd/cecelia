@@ -292,6 +292,22 @@ called from `inst/modules/sources/behaviourAnalysis/hmmStates.R:42-43`.
 
 ---
 
+## StarDist segmentation
+
+**What.** StarDist (star-convex polygon/polyhedron detection) as a second segmentation backend next to
+Cellpose and optical flow.
+
+**Why NOT — a non-goal, decided 2026-11-02.** StarDist is built for nuclei, and we have no images with
+a nuclear stain to build or validate it against. Shipping a backend we cannot check on real data is
+the kind of surface the hardening audit exists to catch.
+
+**Revisit when** someone brings a nuclear-stained dataset and wants nuclei segmented. The work is one
+`SegmentationUtils` subclass implementing `predict_slice` plus a task, the same shape as
+`CoastalUtils`.
+
+**Reference.** [`docs/SEGMENTATION.md`](SEGMENTATION.md) → extension points;
+[`docs/todo/HARDENING_AUDIT_PLAN.md`](todo/HARDENING_AUDIT_PLAN.md).
+
 ## Adding entries
 
 Add an entry when you set something aside — a known-better approach, a non-goal, or work waiting on a

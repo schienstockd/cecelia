@@ -5,7 +5,7 @@ Handles the common loop (T × XY tiles), global label ID management,
 post-processing, nucleus-cytoplasm matching, and label zarr writing.
 
 Subclasses implement predict_slice() for specific algorithms (cellpose,
-stardist, etc.).
+optical flow, etc.).
 """
 
 import contextlib
