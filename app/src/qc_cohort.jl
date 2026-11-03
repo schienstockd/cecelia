@@ -96,6 +96,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # sparser/denser than its peers (a radius/density outlier). See spatialAnalysis/cellNeighbours.jl.
     "spatialAnalysis.cellNeighbours" => ["nCells", "nEdges", "meanDegree"],
     "spatialAnalysis.neighbourStats" => ["nCells", "nEdges", "meanDegree"],
+    # spatial pattern: an image whose smallest target is far smaller than its peers' reads noisier,
+    # and one where every other image differs from random placement but this one doesn't is worth a look
+    "spatialAnalysis.spatialPattern" => ["nTargetMin", "nSignificant"],
     "spatialAnalysis.detectAggregates" => ["nCells", "nAggregates", "fracAggregated"],
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],

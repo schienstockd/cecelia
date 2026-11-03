@@ -66,9 +66,12 @@ export interface PlotSpec {
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
     matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
-    // one neighbourStats population PAIR across images — a dot per image, read from the runs'
-    // sidecars; the panel offers the run + pair pickers from the response (docs/PLOTS.md)
-    contactPairs?: boolean
+    // A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
+    // per image, the populations (or interaction pairs) fixed by the run, grouped by image attribute. `source` is a key of the
+    // backend's IMAGE_METRIC_SOURCES; `task` names the task that produces it, for the empty state.
+    imageMetric?: { source: string; task: string }
+    // display names for the spec's own measure keys (e.g. `nnRatio` → "NN ratio")
+    measureLabels?: Record<string, string>
     // a readout fixed by analysis runs rather than the population selection (see isPrecomputedSpec):
     // 'hmmFit' = the HMM state-count elbow from the runs' fit records
     precomputed?: 'hmmFit'
@@ -202,4 +205,8 @@ export interface PlotDataResponse {
   curves?: HmmFitCurve[]   // chartType "elbow": one curve per family of HMM runs differing only in K
   fit?: HmmFitSummary      // profile over an HMM state column: the run's fit record (rows = its modelled measures first)
   comparisons?: ComparisonsResult   // between-group stats, present only when requested + applicable
+  // per-image metric (imageMetric): the run plotted, every run on the images, and the run's populations
+  suffix?: string
+  suffixes?: string[]
+  pops?: string[]
 }

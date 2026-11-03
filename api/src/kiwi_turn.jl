@@ -25,6 +25,7 @@ const KIWI_READ_TOOLS = [
     "get_project_info", "get_session_briefing", "find_object", "list_images", "get_image_info",
     "get_image_notes", "get_image_attributes", "get_populations", "get_measure_summary",
     "get_behaviour_summary", "get_cluster_summary", "get_region_clusters", "get_contact_stats",
+    "get_spatial_patterns",   # one population clustered or random among the tissue's cells
     "get_analysis_lineage", "get_qc_metrics", "get_cohort_qc", "get_task_log", "get_task_history",
     "get_module_params", "get_chains", "list_plots", "get_available_plots", "get_analysis_boards",
     "get_landscape", "get_recent_captures", "get_capture", "get_capture_landscape_tiles",

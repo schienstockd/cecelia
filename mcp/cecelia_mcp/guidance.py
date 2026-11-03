@@ -93,7 +93,8 @@ get_measure_summary (phenotype + motility per population), \
 get_behaviour_summary (HMM states), get_cluster_summary (cluster sizes, and what defines each \
 cluster: its z-scored feature profile — describe from it, the name is the user's call), \
 get_region_clusters (spatial niches), \
-get_contact_stats (pairwise co-localisation). Cross-set QC: \
+get_contact_stats (pairwise co-localisation), get_spatial_patterns (one population clustered or \
+random among the tissue's cells). Cross-set QC: \
 get_cohort_qc. Per image: get_image_info (channels, dimensions), get_image_notes (the user's own \
 words), get_qc_metrics. The lab log: read_lab_log. The experiment as the lab notebook records it: \
 get_labarchives_context. The board's plot types: get_available_plots. The boards the user already \

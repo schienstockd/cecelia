@@ -198,6 +198,16 @@ export const UNGUIDED: UnguidedFeature[] = [
     ],
     next: [todo('Look at the viewer panel on real data')],
   }) },
+  { id: 'spatial-pattern', title: 'Spatial pattern', group: 'Explore', maturity: covering(['spatialAnalysis.spatialPattern'], {
+    tier: 'experimental', testedOn: 'A real measured fixture; a real movie; synthetic',
+    evidence: [
+      { path: 'python/cecelia/tests/test_spatial_pattern_utils.py', test: 'test_clustered_target_reads_as_clustered',
+        failsIf: 'a clustered population reads as random' },
+      { path: 'python/cecelia/tests/test_spatial_pattern_utils.py', test: 'test_shuffle_never_moves_a_label_across_frames',
+        failsIf: 'the null moves a cell into another frame' },
+    ],
+    next: [todo('Look at the Spatial pattern by group panel on real data'), todo('Whole-curve group test')],
+  }) },
   { id: 'motif-discovery', title: 'Motif discovery', group: 'Explore', maturity: covering(['behaviour.motif_discovery'], {
     tier: 'experimental', testedOn: 'A real measured + tracked fixture',
     next: [

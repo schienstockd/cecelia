@@ -33,14 +33,21 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
-The same sidecars answer the CROSS-image question too — one pair's value in every image, grouped by an
-attribute (`spatial_interaction_pairs.json`, `dataSource.contactPairs`). The request carries
-`contactPairs: true` + `suffix` + `pair`; `_contact_pair_plot` turns the sidecars into one row per image
-(`pop` = the pair, the measure = `logOdds` or `zScore`) and hands it to `_summary_agg`, so box/strip/bar,
-`groupAttr` and the between-group stats are the ordinary per-image path. The run and pair pickers are
-built from the `suffixes` / `pairs` the response reports. With `shufflePops` set on the run (the
+**When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or one
+interaction pair's log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question asked of
+it is "does it differ between groups of images?". The spec declares
+`dataSource.imageMetric: { source, task }` (`source` a key of `IMAGE_METRIC_SOURCES`,
+`app/src/plotting/image_metrics.jl`); the panel sends `imageMetric` + `measure` (+ `suffix` for the
+run, `pop` for one of the run's populations or pairs) to the same `/api/plot_data`. The backend turns
+the run into a `pop_df`-shaped frame — one row per (image, population) — and runs the ordinary
+`_summary_agg`, so attribute grouping, box/strip/bar, the group tests and CSV export are the existing
+ones with the image as the unit. It is precomputed (`isPrecomputedSpec`), so it takes no population
+selection; the response reports `suffixes` and `pops` for the two header pickers, and a stale pick
+falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
+Specs: `spatial_pattern_summary.json` (source `spatialPattern`) and `spatial_interaction_pairs.json`
+(source `neighbourStats`, `pop` = the pair "A × B"). With `shufflePops` set on an interaction run (the
 conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
-the shuffled populations in general".
+the shuffled populations in general". See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.
 
 This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
 counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
@@ -121,7 +128,7 @@ the mapping: `_normalise_accepts` folds `flow`→`live` (same gate map), but a p
 "Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
 
 **A PRECOMPUTED plot has no family selection at all.** `isPrecomputedSpec` (today: `matrix.mode ===
-"interaction"` or `contactPairs`) marks a plot whose rows/columns come from the analysis run it reads, not from the
+"interaction"`, `precomputed: "hmmFit"` or `imageMetric`) marks a plot whose rows/columns come from the analysis run it reads, not from the
 population picker. Three surfaces ask that one predicate — the panel (needs no series), the population
 picker (says so instead of offering dead eye toggles), and the server (`api_plot_data`'s `precomputed`,
 which must not reject a body with no pops). Forking it is how one of them ends up disagreeing.

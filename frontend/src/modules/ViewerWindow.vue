@@ -1030,6 +1030,7 @@ watch([() => settings.viewerMaskColour, maskName], () => { void loadMaskTrackclu
 // as the show3D racer below.
 // `allocatedBricks`: a cache-clear meta refresh that changes dims
 // enough to flip this already reallocates itself, reading the new value.
+// SETUP-ORDER-OK: bricksEnabled returns before reading `mode` & co. while meta is null (setup time)
 watch(bricksEnabled, b => {
   if (meta.value === null || starting.value || b === allocatedBricks) return
   reallocate()

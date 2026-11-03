@@ -1,0 +1,65 @@
+{
+  "task": "spatialPattern",
+  "fun_name": "spatialAnalysis.spatialPattern",
+  "label": "Spatial pattern",
+  "purpose": "Test if a population is clustered, random or spread among the tissue's cells",
+  "useWhen": [
+    "Testing if one cell type is randomly placed, or placed alike in two groups",
+    { "text": "After Neighbour graph: its cells are the tissue", "check": "neighbourGraph" }
+  ],
+  "notWhen": ["The graph holds only this population: there is nothing to compare against"],
+  "category": "Spatial analysis",
+  "group": "Neighbourhood",
+  "env": ["local"],
+  "resource_pool": "cpu",
+  "params": [
+    {
+      "key": "graphSuffix",
+      "label": "Neighbour graph",
+      "type": "valueNameSelection",
+      "field": "spatialGraphs",
+      "default": "default",
+      "tip": "Its cells are the reference; random means spread like them"
+    },
+    {
+      "key": "patternSuffix",
+      "label": "Name",
+      "type": "valueNameInput",
+      "namespace": "patterns",
+      "default": "default",
+      "tip": "Output name → spatialPattern/<name>.json"
+    },
+    {
+      "key": "pops",
+      "required": true,
+      "requiredMessage": "Select at least one population",
+      "label": "Populations",
+      "type": "popSelection",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Each is tested on its own against the graph's cells"
+    },
+    {
+      "key": "rMax",
+      "label": "Max distance (µm)",
+      "type": "float",
+      "min": 10,
+      "max": 1000,
+      "step": 10,
+      "default": 100,
+      "tip": "Largest distance on the pair-ratio curve"
+    },
+    {
+      "key": "nPermutations",
+      "label": "Permutations",
+      "type": "int",
+      "min": 0,
+      "max": 10000,
+      "step": 100,
+      "default": 1000,
+      "tip": "Random relabellings for the test; 0 skips it"
+    }
+  ]
+}

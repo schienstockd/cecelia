@@ -153,14 +153,19 @@ describe('isPrecomputedSpec', () => {
                                              matrix: { mode: 'interaction' } } })).toBe(true)
   })
 
+  it('is true for a per-image metric: its populations are the run\'s, not the selection', () => {
+    expect(isPrecomputedSpec({ dataSource: { popTypes: [{ popType: 'flow', granularity: 'cell' }],
+                                             imageMetric: { source: 'spatialPattern' } } })).toBe(true)
+  })
+
   it('is false for the matrix modes that DO aggregate the selected populations', () => {
     for (const mode of ['profile', 'crosstab']) {
       expect(isPrecomputedSpec({ dataSource: { popType: 'live', matrix: { mode } } })).toBe(false)
     }
   })
 
-  it('is true for one interaction pair across images', () => {
-    expect(isPrecomputedSpec({ dataSource: { popType: 'flow', contactPairs: true } })).toBe(true)
+  it('is true for a per-image metric (a spatial pattern or an interaction pair across images)', () => {
+    expect(isPrecomputedSpec({ dataSource: { popType: 'flow', imageMetric: { source: 'neighbourStats' } } })).toBe(true)
   })
 
   it('is false for an ordinary plot', () => {

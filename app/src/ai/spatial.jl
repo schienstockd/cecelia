@@ -49,6 +49,21 @@ function _collect_contact_stats(img::CciaImage)
     out
 end
 
+# spatial-pattern sidecars (spatialPattern/{suffix}.json, SPATIAL_PATTERN_PLAN Decision 5) → one entry
+# per run with its flat per-population records, passed through as written (JSON3 objects serialise
+# unchanged). A sidecar that fails to parse is skipped, like the contact reader above.
+function _collect_pattern_stats(img::CciaImage)
+    out = Any[]
+    for s in img_pattern_suffixes(img)
+        d = try JSON3.read(read(img_pattern_path(img, s), String)) catch; continue end
+        recs = get(d, :records, nothing); recs isa AbstractVector || continue
+        push!(out, (; suffix = s, graphSuffix = string(get(d, :graphSuffix, "")),
+                     nPermutations = Int(get(d, :nPermutations, 0)),
+                     rMax = Float64(something(get(d, :rMax, 0.0), 0.0)), records = recs))
+    end
+    out
+end
+
 """
     contact_matrix(img; suffix="") -> NamedTuple
 
@@ -84,14 +99,16 @@ function _spatial_image(img::CciaImage)
     for vn in sort(img_value_names(img))
         _collect_region_cols!(regions, vn, img_label_props_path(img, vn))
     end
-    (; _observer_image_header(img)..., regionRuns = regions, contactStats = _collect_contact_stats(img))
+    (; _observer_image_header(img)..., regionRuns = regions, contactStats = _collect_contact_stats(img),
+       patternStats = _collect_pattern_stats(img))
 end
 
 """
     spatial_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
-Per image: region-clustering runs (`regions.{suffix}` — n regions, sizes) and pairwise cell-type contact
-statistics (observed/expected/log-odds per population pair, association vs avoidance). Flat + MCP-friendly
+Per image: region-clustering runs (`regions.{suffix}` — n regions, sizes), pairwise cell-type contact
+statistics (observed/expected/log-odds per population pair, association vs avoidance) and one-population
+spatial-pattern runs (`patternStats`: nearest-neighbour ratio vs random relabelling). Flat + MCP-friendly
 (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 9).
 """
 spatial_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =

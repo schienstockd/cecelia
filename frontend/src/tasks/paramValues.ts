@@ -557,6 +557,7 @@ export function imageNamesForField(img: CciaImage, field: string | undefined | n
   // registered in ccid.json, so there are no keys to take.
   if (field === 'statsSuffixes') return img.statsSuffixes ?? []
   if (field === 'roiSuffixes') return img.roiSuffixes ?? []
+  if (field === 'patternSuffixes') return img.patternSuffixes ?? []
   if (field === 'clusterSuffixes') return img.clusterSuffixes ?? []
   if (field === 'regionSuffixes') return img.regionSuffixes ?? []
   return Object.keys(img.filepaths ?? { default: '' })
