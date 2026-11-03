@@ -49,8 +49,8 @@ export function cohortDocsOf(body: unknown): CohortDoc[] {
 // run selector picks one so a check judges just that run (cluster QC is banked per run).
 export interface CohortRun { run: string; valueNames: string[] }
 
-// LIVE: the distinct clustering runs a fun banked for this set (newest first); [] for funs that keep
-// no runs (segment/tracking/HMM). Cheap — no cohort math server-side.
+// LIVE: the distinct clustering / HMM runs a fun banked for this set (newest first); [] for funs that keep
+// no runs (segment/tracking). Cheap — no cohort math server-side.
 export async function fetchCohortRuns(projectUid: string, setUid: string,
                                       funName: string): Promise<CohortRun[]> {
   try {

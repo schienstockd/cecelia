@@ -163,11 +163,15 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
                 label_props(props) |> add_obs(cell_df) |> save!   # overwrites any existing column
                 n_ok += 1
                 # QC (advisory): bank this image-segmentation's state distribution (numeric state
-                # codes; NaN = undecoded) + degenerate-state findings. Never fails the write.
+                # codes; NaN = undecoded) + degenerate-state findings. Never fails the write. Keyed
+                # per RUN (`{vn}.{colName}`), like cluster QC (`write_cluster_qc!`): one label set
+                # carries many HMM runs (a K = 2…5 sweep), and a vn-only key let each run overwrite
+                # the last run's QC.
                 m = category_dist_metrics(vals)
                 fit === nothing ||
                     put_props_sidecar_entry!(hmm_fit_path(props), p.colName, _hmm_fit_record(p, fit, uids))
-                write_qc(img, "behaviour.hmm_states", string(vn), hmm_states_qc_findings(m; fit = fit);
+                write_qc(img, "behaviour.hmm_states", "$(vn).$(p.colName)",
+                         hmm_states_qc_findings(m; fit = fit); runSuffix = string(p.colName), labelSet = string(vn),
                          metrics = Dict{String,Any}("nDecoded" => m.n, "nStates" => m.n_distinct,
                              "dominantStateFrac" => round(m.dominant_frac; digits = 4)))
             catch e

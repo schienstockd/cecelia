@@ -50,6 +50,18 @@ end
     @test by_fun["segment.cellposeMeasure"].hpc.walltime_min == 480
 end
 
+@testset "API: a composite serves its first step's sweep block" begin
+    # The HMM page runs `behaviour.hmm` (states + transitions); the sweep opt-in lives on the states
+    # step, which names the output. Without the merge the page shows no sweep control at all.
+    st, body = api_task_definitions(HTTP.Request("GET", "/api/tasks/definitions?category=behaviour"))
+    @test st == 200
+    by_fun = Dict(String(s.fun_name) => s for s in JSON3.read(body).behaviour if haskey(s, :fun_name))
+    @test haskey(by_fun["behaviour.hmm_states"], :sweep)
+    @test by_fun["behaviour.hmm"].sweep == by_fun["behaviour.hmm_states"].sweep
+    @test String(by_fun["behaviour.hmm"].sweep.output) == "colName"
+    @test !haskey(by_fun["behaviour.motif_discovery"], :sweep)   # not opted in: runs overwrite
+end
+
 @testset "API: the served form resolves optionsFrom and defaultFrom" begin
     # The picker the USER sees comes from this route, not from `_task_spec` — the route walks the spec
     # FILES (it must serve a category's forms whether or not every fun_name resolves to a registered

@@ -171,6 +171,10 @@ export interface TaskDef {
   // Cluster job defaults when `env` lists "hpc" (docs/todo/HPC_PLAN.md; utils/hpcRun.ts).
   hpc?: { cpus?: number; mem_gb?: number; gpus?: number; walltime_min?: number; mem?: HpcMemModel[] }
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
+  // Parameter sweep opt-in (docs/todo/PARAM_SWEEP_PLAN.md, utils/paramSweep.ts): `output` is the param
+  // naming the output (so N runs coexist), `params` the knobs offered. A composite inherits its first
+  // step's block (definitions route). Absent = no sweep control.
+  sweep?: { output: string; params: string[] }
   // A MANUAL chain step (docs/SCHEDULER.md → Manual steps): the task prepares, then a chain run parks at
   // this node until the user continues it. `prompt` is shown while it waits; `open` is where to go to do
   // the work. Absent on every ordinary task.

@@ -24,9 +24,9 @@ const foundWarnings = ref(false)   // last run flagged an outlier → amber + "s
 const funs = computed(() => props.funs?.length ? props.funs : cohortFunsFor(props.module))
 const canCheck = computed(() => funs.value.length > 0 && !!props.setUid && !!projectMeta.current?.uid)
 
-// Clustering banks QC PER RUN (e.g. "movement"/"test"), so re-checking every past run is overkill.
+// Clustering and HMM bank QC PER RUN (e.g. "movement"/"test"), so re-checking every past run is overkill.
 // Discover the runs and let the user pick which to check; default to the newest. Funs that keep no
-// runs (segment/tracking/HMM) return [] → no selector, checks as before. See cohortCheck.ts.
+// runs (segment/tracking) return [] → no selector, checks as before. See cohortCheck.ts.
 const runs = ref<string[]>([])            // distinct run suffixes across the page's cohort funs, newest first
 const selectedRun = ref('')               // '' ⇒ check every value_name (no runs, or user picks "All runs")
 const showSelector = computed(() => runs.value.length >= 1)   // show the selector whenever there's a run to pick

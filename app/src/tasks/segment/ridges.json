@@ -12,6 +12,7 @@
   "group": "Segment",
   "env": ["local"],
   "resource_pool": "cpu",
+  "sweep": { "output": "outputValueName", "params": ["sigmaMaxPx", "threshold", "minSizePx"] },
   "requires": { "scale": ["xy"] },
   "params": [
     {

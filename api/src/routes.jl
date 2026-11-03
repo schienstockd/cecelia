@@ -323,6 +323,15 @@ function api_task_definitions(req::HTTP.Request)
                     sub_hpc isa AbstractDict && append!(mem_models, get(sub_hpc, "mem", Any[]))
                 end
                 spec["params"] = merged
+                # The sweep opt-in (docs/todo/PARAM_SWEEP_PLAN.md): the module page runs the composite,
+                # so it carries its first step's block — the step that names the output, as
+                # `task_output_name` resolves it. A composite's own block wins.
+                if !haskey(spec, "sweep")
+                    for fn_ref in composite
+                        sw = get(something(get(by_fun, string(fn_ref), nothing), Dict{String,Any}()), "sweep", nothing)
+                        sw === nothing || (spec["sweep"] = sw; break)
+                    end
+                end
                 hpc = get(spec, "hpc", nothing)
                 if hpc isa AbstractDict && !haskey(hpc, "mem") && !isempty(mem_models)
                     hpc["mem"] = mem_models

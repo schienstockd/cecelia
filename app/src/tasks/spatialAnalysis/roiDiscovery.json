@@ -16,6 +16,7 @@
     "local"
   ],
   "resource_pool": "cpu",
+  "sweep": { "output": "roisSuffix", "params": ["minObjects", "maxRois"] },
   "requires": {
     "scale": [
       "xy"

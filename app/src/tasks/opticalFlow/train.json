@@ -16,6 +16,7 @@
     "local"
   ],
   "resource_pool": "gpu",
+  "sweep": { "output": "modelName", "params": ["epochs", "temporalWeight", "foregroundWeight", "embeddingDim"] },
   "scope": "set",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [

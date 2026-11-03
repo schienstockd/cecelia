@@ -15,6 +15,7 @@
   "category": "Model training",
   "env": ["local"],
   "resource_pool": "gpu",
+  "sweep": { "output": "modelName", "params": ["epochs", "learningRate", "inputFrames"] },
   "scope": "set",
   "requires": { "axes": ["T"], "scale": ["xy", "t"] },
   "params": [

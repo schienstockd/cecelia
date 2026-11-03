@@ -203,6 +203,11 @@ function _hmm_delete!(img, run; on_log = _ -> nothing)
         sidecar = hmm_fit_path(p)
         drop_props_sidecar_keys!(sidecar, read_props_sidecar(sidecar), [run.key])
     end
+    # per-run QC (`{vn}.{colName}`, hmm_states.jl / hmm_transitions.jl) — checked separately: the
+    # table can be gone
+    for vn in run.value_names, fun in ("behaviour.hmm_states", "behaviour.hmm_transitions")
+        _rm_if(qc_path(img, fun, "$vn.$(run.key)"); on_log)
+    end
 end
 
 # ── spatial: neighbour graphs + stats (image-level files), contacts + aggregates (obs) ─────────

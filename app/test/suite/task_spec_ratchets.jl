@@ -771,3 +771,33 @@ end
               "$where_: a single-segmentation picker lists one map — declare one accepts token" == ""
     end
 end
+
+@testset "a sweep block names params the spec has" begin
+    # docs/todo/PARAM_SWEEP_PLAN.md: `sweep.output` keeps N runs apart, so it must be a param the task
+    # writes its output under; each of `sweep.params` must be a top-level (or section) scalar the form
+    # can set — a key inside a repeatable group has no single value to vary. A typo here hides the
+    # sweep control (the frontend drops unknown keys), so it fails here instead.
+    found = 0
+    each_spec() do f, spec
+        sw = spec_get(spec, "sweep")
+        sw === nothing && return
+        found += 1
+        top = Dict{String,Any}()
+        walk(ps) = ps isa AbstractVector && for q in ps
+            t = String(something(spec_get(q, "type"), ""))
+            t == "section" ? walk(spec_get(q, "params")) :
+                (t != "group" && spec_get(q, "key") !== nothing && (top[String(spec_get(q, "key"))] = q))
+        end
+        walk(spec_get(spec, "params"))
+        out = String(something(spec_get(sw, "output"), ""))
+        @test (haskey(top, out) && String(spec_get(top[out], "type")) in ("text", "valueNameInput")) ||
+              "$f: sweep.output '$out' is not a name param" == ""
+        ps = something(spec_get(sw, "params"), String[])
+        @test !isempty(ps) || "$f: sweep.params is empty" == ""
+        for k in ps
+            @test (haskey(top, String(k)) && String(spec_get(top[String(k)], "type")) in ("int", "float", "select")) ||
+                  "$f: sweep param '$k' is not a top-level int/float/select" == ""
+        end
+    end
+    @test found >= 5                             # the walk found the opted-in tasks
+end
