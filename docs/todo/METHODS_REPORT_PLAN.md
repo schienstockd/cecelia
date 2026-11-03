@@ -42,8 +42,11 @@ reachable from the UI: `get_analysis_lineage` exists only for Claude (MCP + `/ap
 - **Where the button lives.** The Analysis board's `⤓ Export` dropdown (beside PDF/CSV) reads
   naturally — "export the methods for what this board shows". Alternative: the project/set panel.
 - **Scope unit.** Per set (the natural experiment unit) or per board (what is actually in the figure)?
-  **Parameter table answered (2026-11-02): per set**, as the From-history dialog's Export CSV
-  (`history_params_table`, one row per step, non-defaults only). The paragraph's scope is still open.
+  **Parameter table answered (2026-11-02): both, one function.** Per set = the From-history dialog's
+  Export CSV (the Methods section); per board = the board's `⤓ Export` → *Parameters (CSV)* ("what did
+  you use for this plot?"). Both are `history_params_table` (one row per step, non-defaults only); the
+  board passes its populations + cluster run and gets that lineage only. The paragraph's scope is still
+  open; its per step × image table is superseded by this one.
 - **Format.** Markdown + a CSV/TSV parameter table is the minimum; DOCX is a later nicety.
 - **Paired-terminal suggestions.** A step Claude *suggested* and the user clicked is stamped as the
   user. The session id on Claude's own writes points at the transcript, but the transcript lives on the

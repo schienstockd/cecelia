@@ -357,7 +357,8 @@ board SVG builder (`plots/boardSvg.ts` `buildBoardSvgs`) both consume it, so the
 identically.
 
 **One `⤓ Export` dropdown — figure, data, or both in a single pass.** The board's single export control
-offers: **PDF (raster)**, **SVG (vector)**, **PDF + CSV**, **SVG + CSV**, **CSV only**. Figure and CSV
+offers: **PDF (raster)**, **SVG (vector)**, **PDF + CSV**, **SVG + CSV**, **CSV only**, **Parameters
+(CSV)**. Figure and CSV
 share the exact same visit-each-tab-and-capture walk, so the combined items do BOTH in **one pass** —
 `runExport(figure, csv)` walks the tabs once, capturing a figure page (raster for PDF, vector for SVG)
 and/or the per-plot CSVs, then emits whichever outputs were requested. One control, **one spinner**; the
@@ -375,6 +376,20 @@ two exports can't interleave over the shared active-tab slot (only the active bo
   image name + attributes after `uID` — on by default; one setting (`settings.csvIncludeAttrs`) for
   every summary-plot CSV (the zip, the PDF attachment, a floating plot's Export). The per-view CSVs
   (gating, UMAP, track plots, HMM panels) carry no image uID and are unaffected.
+- **Parameters (CSV)** — the steps behind the ACTIVE board, for "what did you use for this plot?":
+  `<board>_parameters.csv`, the same table as the From-history dialog's Export CSV (one row per step,
+  only what differs from the defaults, the images' spread where they disagree) cut to what the board
+  shows. `LayoutCanvas.paramsScope()` → `boardParamsScope` (`utils/chainFromHistory.ts`) collects each
+  slot's resolved selection, a self-contained view's label set, and the board's cluster run;
+  `history_params_table(…; pops, cluster_runs)` keeps the steps that wrote those label sets and runs
+  (a cluster/region population's run is read from its gating sidecar's `filter_measure`), the steps run
+  on a shown population (tracking `/qc/cells` for a `/qc/cells/_tracked` plot, not `/qc/frags`), and
+  everything upstream. A `labels::` plot (segmentation QC) draws the objects, so only their producers.
+  A `relation` column says which: **made** (wrote what is shown, or fed a step that did) or **ran on**
+  (ran on the shown cells — tracking, behaviour, contacts). No task declares the measures it writes, so
+  which "ran on" step one plot reads is not knowable; the column says the weaker thing, never guesses.
+  "Used" = the latest done run on disk, as everywhere in the history table; a step with no recorded run
+  (e.g. tracking from before the run log) is simply absent.
 
 An **info icon** by the dropdown says which slot types stay raster and that a huge point cloud warns —
 no silent surprise.

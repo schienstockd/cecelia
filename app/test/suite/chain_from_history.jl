@@ -159,3 +159,60 @@ end
     @test ct["note"] == "parameters unknown — ran before params were recorded"
     rm(proj.root; recursive = true)
 end
+
+@testset "History params table — cut to what a board shows" begin
+    # a /qc/cells plot drew the /qc/cells tracking, the segmentation it sits on and the model that
+    # segmented — not the /qc/frags tracking
+    proj, uids = _history_project("u" => "zolIMa_UMq4v3")
+    t = history_params_table(proj, [uids["u"]]; pops = ["live::Bcells/qc/cells/_tracked"])
+    @test sort([r["task"] for r in t]) ==
+          ["opticalFlow.train", "segment.coastalMeasure", "tracking.bayesian_track_measures"]
+    trk = only(_hprow(t, "tracking.bayesian_track_measures"))
+    @test occursin("popsToTrack=/qc/cells", trk["changedFromDefault"])
+    # the segmentation (and its model) made the cells; tracking ran on them
+    @test trk["relation"] == "ran on" && only(_hprow(t, "segment.coastalMeasure"))["relation"] == "made" &&
+          only(_hprow(t, "opticalFlow.train"))["relation"] == "made"
+    @test all(r -> r["relation"] == "", history_params_table(proj, [uids["u"]]))
+    # a segmentation QC plot draws the objects: what ran on them since is not part of it
+    @test sort([r["task"] for r in history_params_table(proj, [uids["u"]]; pops = ["labels::Bcells/labels"])]) ==
+          ["opticalFlow.train", "segment.coastalMeasure"]
+    # the label set's root population: every tracking on it
+    @test length(_hprow(history_params_table(proj, [uids["u"]]; pops = ["live::Bcells/"]),
+                        "tracking.bayesian_track_measures")) == 2
+    rm(proj.root; recursive = true)
+
+    # the segmentation walks back through denoise (and its training) and drift; stack-align fed nothing
+    proj, uids = _history_project("x" => "zolIMa_x4E5HU")
+    t = history_params_table(proj, [uids["x"]]; pops = ["labels::flowTom/labels"])
+    @test sort([r["task"] for r in t]) == ["cleanupImages.denoise", "cleanupImages.driftCorrect",
+                                           "opticalFlow.trainSupportDenoise", "segment.coastalMeasure"]
+    @test isempty(history_params_table(proj, [uids["x"]]; pops = String[]))
+    # every version on the way was written by a recorded step, so no gap rows
+    @test !any(r -> isempty(r["task"]), t)
+    # one that wasn't: segmentation read a version whose writer is not in the log
+    v = init_object(proj.uid, uids["x"])
+    log = [e for e in read_run_log(v) if e["fun"] != "cleanupImages.denoise"]
+    write(Cecelia.run_log_path(v._dir), JSON3.write(log))
+    t = history_params_table(proj, [uids["x"]]; pops = ["labels::flowTom/labels"])
+    @test any(r -> r["step"] == "image version denoised" && startswith(r["note"], "no recorded run"), t)
+    rm(proj.root; recursive = true)
+
+    # a region population is a filter on one run's column: that run, not the other region run
+    proj, uids = _history_project("a" => "4kS67f_LUkCpP")
+    img = init_object(proj.uid, uids["a"])
+    mkpath(Cecelia.gating_dir(img._dir))
+    cp(normpath(joinpath(@__DIR__, "..", "..", "..", "test-data", "run-logs", "4kS67f_LUkCpP_B__region.json")),
+       gating_path(img._dir, "B"; pop_type = "region"))
+    reg(t) = [r["output"] for r in _hprow(t, "clustRegions.cluster")]
+    @test reg(history_params_table(proj, [uids["a"]]; pops = ["region::B/Population 1"])) == ["default"]
+    # a board's cluster panels name their run directly
+    @test reg(history_params_table(proj, [uids["a"]]; pops = String[], cluster_runs = ["region:immune"])) == ["immune"]
+    # a run the board draws that nothing recorded made is a row saying so, beside that task's
+    # unrecorded runs — never silently left out
+    t = history_params_table(proj, [uids["a"]]; pops = ["live::B/qc/_tracked"], cluster_runs = ["trackclust:movement"])
+    gap = only(r for r in t if r["step"] == "clusters.movement")
+    @test startswith(gap["note"], "no recorded run made this")
+    @test only(_hprow(t, "clustTracks.cluster"))["note"] == "parameters unknown — ran before params were recorded"
+    @test any(r -> r["step"] == "label set B", t)          # this log holds no segmentation of B
+    rm(proj.root; recursive = true)
+end

@@ -4,6 +4,8 @@
 
 import type { ChainTemplate } from '../tasks/types'
 import { rowsToCsv } from '../plots/export'
+import type { RailKind } from '../components/canvas/canvasManager'
+import { tkey } from '../plots/series'
 
 export interface HistoryFinal {
   id: string; fn: string; output: string; imageUids: string[]; kept: boolean
@@ -106,6 +108,9 @@ export function uniqueChainName(base: string, existing: readonly string[]): stri
 // ── Methods parameter table (`GET /api/chains/history-params`, app/src/tasks/chain/history_params.jl) ──
 
 /** One step as it ran on the selected images — only params that differ from the task's defaults. */
+/** A board-scoped row: 'made' = wrote what is shown (or fed a step that did); 'ran on' = the shown cells. */
+export type HistoryRelation = 'made' | 'ran on' | ''
+
 export interface HistoryParamsRow {
   step: string; task: string; output: string
   images: string             // "n/N"
@@ -113,16 +118,48 @@ export interface HistoryParamsRow {
   changedFromDefault: string // "key=value; …"
   conflicts: string          // "key: a (n) | b (m); …" — the images disagree
   note: string               // why it is not something a chain repeats, or why its params are unknown
+  relation?: HistoryRelation // board-scoped only
 }
 
-export function historyParamsUrl(projectUid: string, imageUids: string[]): string {
-  return `/api/chains/history-params?${new URLSearchParams({ projectUid, imageUids: imageUids.join(',') })}`
+/** What an analysis board shows, for cutting the table to it: population keys + its cluster runs. */
+export interface BoardParamsScope { pops: string[]; clusterRuns: string[] }
+
+export function historyParamsUrl(projectUid: string, imageUids: string[], scope?: BoardParamsScope): string {
+  const q = new URLSearchParams({ projectUid, imageUids: imageUids.join(',') })
+  if (scope) {   // JSON, not a comma list: population names may hold commas
+    q.set('pops', JSON.stringify(scope.pops))
+    q.set('clusterRuns', JSON.stringify(scope.clusterRuns))
+  }
+  return `/api/chains/history-params?${q}`
 }
 
-/** The table as CSV, columns in a fixed order (the backend's JSON objects carry no key order). */
+/**
+ * A board's scope from its filled slots: each population-rail slot's selection, a self-contained view's
+ * label set (its root population), and — when a cluster slot is on the board — the board's one cluster
+ * run (`popType:suffix`). The host resolves each slot's rail and selection (global vs local scope).
+ */
+export function boardParamsScope(
+  slots: { rail: RailKind; sel: readonly string[]; valueName?: string }[],
+  cluster: { popType: string; suffix: string } | null,
+): BoardParamsScope {
+  const pops = new Set<string>()
+  for (const s of slots) {
+    if (s.rail === 'pops') s.sel.forEach(k => pops.add(k))
+    else if (s.valueName) pops.add(tkey('live', s.valueName, '/'))
+  }
+  const hasCluster = slots.some(s => s.rail === 'clusterPops')
+  return { pops: [...pops], clusterRuns: hasCluster && cluster ? [`${cluster.popType}:${cluster.suffix}`] : [] }
+}
+
+/**
+ * The table as CSV, columns in a fixed order (the backend's JSON objects carry no key order). A
+ * board-scoped table adds `relation` after `output`; the whole-history one has none to say.
+ */
 export function historyParamsCsv(rows: HistoryParamsRow[]): string {
+  const scoped = rows.some(r => r.relation)
   return rowsToCsv(rows.map(r => ({
-    step: r.step, task: r.task, output: r.output, images: r.images, last_run: r.lastRun,
+    step: r.step, task: r.task, output: r.output, ...(scoped ? { relation: r.relation ?? '' } : {}),
+    images: r.images, last_run: r.lastRun,
     changed_from_default: r.changedFromDefault, differs_between_images: r.conflicts, note: r.note,
   })))
 }
