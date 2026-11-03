@@ -196,7 +196,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
             # an errored run spent its tokens too
             tokens[week_of(day), _RUN_OF[name]] += _token_sum(payload["tokens"])
             tokens_from = min(tokens_from or day, day)
-        if name in _FINDING_EVENTS:
+        if name in _FINDING_EVENTS and name in _REVIEWER_OF:   # a reviewer the chart draws
             slug = payload.get("slug")
             if slug in _REDTEAM_SLUGS:
                 continue

@@ -54,6 +54,15 @@ EVENT_TYPES = frozenset({
     "convention_check_finding",
     "convention_check_finding_resolved",
     "convention_check_advisory",
+    #: Result review — the third recital reviewer, for silent wrong results
+    #: (`docs/ai-assist/RESULT_REVIEW.md`). `_run` carries `escape_valve` (`no_result_paths` /
+    #: `unchanged_diff`) when it didn't spawn, else tokens/cost/models plus `paths` and `repro_dir`.
+    #: `_finding` = a `reproduced` bullet (outcome tag required); `_advisory` = `inferred` (optional
+    #: tag, swept by the weekly judge) or `display` (listed only).
+    "result_review_run",
+    "result_review_finding",
+    "result_review_finding_resolved",
+    "result_review_advisory",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",
@@ -256,8 +265,9 @@ def read_events(log_path: pathlib.Path | None = None) -> _t.Iterator[dict]:
 
 
 #: Per-finding rows the recital writes, and the rows the commit hook writes when a slug is tagged.
-FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
-RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved"})
+FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding", "result_review_finding"})
+RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved",
+                             "result_review_finding_resolved"})
 
 
 def latest_resolutions_by_slug(events: _t.Iterable[dict],

@@ -67,6 +67,10 @@ test whether an agent can actually use the framework.
      the check is a proxy, and a busy file would otherwise send its every parked bug back each
      week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
+   **Result review** (key `result-…`): `reproduced` findings not tagged `fixed_pre_commit`, and untagged
+   `inferred` notes, judged like fanout findings. `display` notes are never swept
+   ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)).
+
    **Duplicates** (`kind: "duplicate"`, key `conv-…`): convention findings marked `should reuse` that
    were never fixed. New code copying a helper doesn't misbehave, so the judge's question for these is
    whether the copy is still there and does the job of the helper the finding names; when the
