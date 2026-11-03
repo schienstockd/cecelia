@@ -80,9 +80,10 @@ LOW_SESSIONS = 10
 #: as a trend.
 MIN_LINE_WEEKS = 4
 #: The reviewer prompts (the rubric) and the rules they check against: an edit is noted on its week.
-PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md")
+PROMPT_DOCS = ("docs/ai-assist/FANOUT_AUDIT.md", "docs/ai-assist/CONVENTION_CHECK.md",
+               "docs/ai-assist/RESULT_REVIEW.md")
 RULE_DOCS = ("CLAUDE.md",)
-_RUN_EVENTS = ("fanout_audit_run", "convention_check_run")
+_RUN_EVENTS = ("fanout_audit_run", "convention_check_run", "result_review_run")
 #: Legend text and swatch per outcome in the log's closed vocabulary, plus `none`: no outcome logged,
 #: or one this map doesn't know. The chart never echoes a value from the log.
 _OUTCOME_LOOK = {
@@ -99,12 +100,14 @@ _OUTCOME_KEYS = set(_OUTCOME_LOOK)
 #: Ink for labels, series and axes: the README figures' shared look (`figure_style.py`), on its own
 #: light surface so the chart reads the same on GitHub's light and dark themes.
 INK = _style.INK
-#: The two reviewers: key, legend name, swatch, `_run` event.
-REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"))
-_RUN_OF = {"fanout_audit_run": "fanout", "convention_check_run": "convention"}
+#: The reviewers: key, legend name, swatch, `_run` event.
+REVIEWERS = (("fanout", "Fan-out audit", "blue"), ("convention", "Convention check", "orange"),
+             ("result", "Result review", "bluish_green"))
+_RUN_OF = {"fanout_audit_run": "fanout", "convention_check_run": "convention", "result_review_run": "result"}
 #: Merged PRs, beside the changes reviewed: how many checks went into each PR.
 PR_SWATCH = "reddish_purple"
-_REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention"}
+_REVIEWER_OF = {"fanout_audit_finding": "fanout", "convention_check_finding": "convention",
+                "result_review_finding": "result"}
 #: A pass's spend stages, stacked bottom-up in panel d: key, swatch.
 STAGES = (("verify", "blue"), ("sweep", "orange"), ("rules", "reddish_purple"))
 #: Age since a real bug was first flagged, in panel c: key, legend name, upper bound in days
@@ -166,7 +169,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *,
     """Per-week and per-pass numbers for the chart; JSON-ready and free of any text from the log.
 
     A *change reviewed* is one branch + parent commit a recital reviewed (reruns on the same change
-    count once; an errored reviewer counts none). A *finding* is one fanout or convention finding,
+    count once; an errored reviewer counts none). A *finding* is one fanout, convention or result-review finding,
     once per slug, in the week it was first raised, with its latest logged outcome. A week's *wait*
     is each reviewer's median `duration_s` over its clean runs; its *reviewer tokens*, the sum over
     the runs that logged them (None before any did). A week is *partial* if logging began inside
@@ -636,7 +639,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
                  else "not logged yet (#1807)")
         _note(add, xs[2], row[1], "f", f"Reviewer tokens: {since}",
               "Each review now logs its tokens and cost. Once a whole",
-              "week is logged, this panel plots the two reviewers'",
+              "week is logged, this panel plots the reviewers'",
               "tokens per week, next to the judge's in d.")
     add(_footer(span, weeks[0].get("sessions_since", 0), left, H))
     add("</svg>")
@@ -657,7 +660,7 @@ def _footer(span: tuple[_dt.date, _dt.date] | None, sessions: int, x: int, H: in
                if span else "No data yet")
     lines = (
         "Fan-out audit: does a fix need making elsewhere too · Convention check: does new code copy a helper or "
-        "sit in the wrong place",
+        "sit in the wrong place · Result review: does a change make a result wrong",
         f"* beside a hollow point or bar: a week only partly logged, or under {LOW_SESSIONS} sessions · * on its own: "
         "no tokens logged · tokens include cache reads",
         "c: a real bug is one the verify agent called fix or decide (or found already fixed), or a stranded commit · "

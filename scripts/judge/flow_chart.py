@@ -179,7 +179,7 @@ def render_svg(data: dict, *, palette: dict[str, str] | None = None) -> str:
         ("Recital", f"{sum(rec.values())} findings", [
             (rec["fixed"], pal["sky_blue"], "fixed in the commit"),
             (rec["not_fixed"], pal["orange"], "not fixed"),
-            (rec["plausible"], pal["blue"], "plausible notes, untagged")], (1, 2)),
+            (rec["plausible"], pal["blue"], "untagged notes")], (1, 2)),
         ("Bug check", f"{n_check} bugs", [
             (chk["settled"], _style.NEUTRAL, "already gone, or not a bug"),
             (chk["waiting"], _style.NEUTRAL_LIGHT, "waiting (unmerged, backlog)"),
@@ -270,7 +270,7 @@ def _ledger(into: dict, bugs: int) -> list[tuple[str, int, str]]:
     a line with nothing on it left out."""
     since = (f"logged since the last pass ({_fmt_day(into['last_pass'])}): judged at the next"
              if into["last_pass"] else "logged before the first pass: judged at it")
-    lines = [("", into["notes"], "not fixed, or plausible and untagged"),
+    lines = [("", into["notes"], "not fixed, or an untagged plausible / inferred note"),
              ("−", into["rules_only"], "wrong home: these feed only the rule count"),
              ("−", into["not_listed"], "already gone when the judge first read them: not listed"),
              ("−", into["since_pass"], since),
