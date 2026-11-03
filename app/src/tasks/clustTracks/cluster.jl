@@ -104,6 +104,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     df = pop_df_multi(imgs, uids, p.popsToCluster;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(p.popsToCluster)"); return nothing)
+    df = _match_track_channels(df, imgs, uids, p.popsToCluster, cell_measures, mot_set; on_log = on_log)
+    df === nothing && return nothing
     on_progress(2, 4)
 
     # min track length: drop short tracks (num_cells = per-track cell count from track_props)

@@ -408,7 +408,20 @@ gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet 
 recomputes per image on read, copying a strategy is just writing the source sidecar to each target
 (REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking
 the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks via
-`/api/images/value-name-check` and flags them). A target that HAS the segmentation but lacks a column a
+`/api/images/value-name-check` and flags them). Intensity columns are named by channel INDEX
+(`mean_intensity_1`), so a target whose channel ORDER differs gets its own copy of the map with each
+gate/filter column pointed at its column for the same channel NAME — as the old R version, which gated
+on names (`match_channel_columns` in `label_props.jl`, `rename_pop_columns` in `gating_engine.jl`;
+case-insensitive; the reply's `remapped[uid]` lists each `(from, to, channel)` and the dialog notes
+"channels matched by name"). Only a target lacking a gated channel, or holding its name on two channels,
+is skipped. Images without registered names are copied as-is. With "Also copy plot layout", each
+copied gate plot's axes are remapped the same way (`renamePanelColumns`, `utils/gatingCopyWarnings.ts`). The same matching
+(`match_segment_channel_columns`, the first segment the reference) lets a set-wide `clustPops` run read
+each segment's own columns (renamed to the first segment's in `cluster_run.py`), `clustTracks` rebase
+per-track aggregates (`mean_intensity_1.mean` → `mean_intensity_0.mean`; `_match_track_channels` + `rebase_track_aggregates!`, `track_props.jl`), and
+a heatmap (matrix chart) across images, which reads intensity columns raw, read each image's own column
+(`_pop_df_by_channel_name`, `plot_data.jl`); each refuses only an image lacking the channel. The dialog lists
+every refused target with its reason (`copySkippedLines` in `utils/gatingCopyWarnings.ts`). A target that HAS the segmentation but lacks a column a
 gate or filter reads — typically `clusters.<run>` from a clustering run it wasn't in — is still copied,
 but the reply's `warnings` names, per target, each absent column and the populations it leaves empty
 (the ones reading it plus their descendants; `missing_gate_columns(m, available)` in

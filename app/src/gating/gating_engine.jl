@@ -84,6 +84,32 @@ end
 _needed_columns(m::PopulationMap)::Vector{String} =
     unique(String[c for path in m.order for c in _pop_columns(m.pops[path])])
 
+_rename_gate(g::RectangleGate, f) = RectangleGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
+                                                  g.x_min, g.x_max, g.y_min, g.y_max)
+_rename_gate(g::PolygonGate, f)   = PolygonGate(f(g.x_channel), f(g.y_channel), g.x_transform, g.y_transform,
+                                                g.vertices)
+
+"""
+    rename_pop_columns(m, rename::AbstractDict) -> PopulationMap
+
+A copy of `m` with every column a population reads (`_pop_columns`: gate x/y channels, the single
+filter measure, each compound-filter condition) renamed through `rename`; columns not in it are kept.
+`m` is untouched. Used by `copy_gating!` to point a copied gate at the target's column for the same
+channel name (`match_channel_columns`).
+"""
+function rename_pop_columns(m::PopulationMap, rename::AbstractDict)::PopulationMap
+    out = deepcopy(m); out._labels = nothing; out._membership = nothing
+    isempty(rename) && return out
+    f(c) = get(rename, c, c)
+    for p in values(out.pops)
+        p.gate === nothing || (p.gate = _rename_gate(p.gate, f))
+        p.filter_measure === nothing || (p.filter_measure = f(p.filter_measure))
+        p.filter_conditions === nothing ||
+            (p.filter_conditions = [FilterCondition(f(c.measure), c.fun, c.values) for c in p.filter_conditions])
+    end
+    out
+end
+
 """
     missing_gate_columns(m, available) -> Vector{(column, pops)}
 

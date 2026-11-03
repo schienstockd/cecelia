@@ -10,8 +10,10 @@ script just reads the columns it is told, clusters, and writes back.
 
 Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
   suffix                output column suffix → clusters.{suffix} / X_umap.{suffix}
-  segments              [{uID, valueName, propsPath, labels|null}] — one per (image, segmentation)
-  featureCols           var columns to cluster on (channels + object measures), same names across segments
+  segments              [{uID, valueName, propsPath, labels|null, featureCols?}] — one per (image,
+                        segmentation); `featureCols` = that segment's OWN columns, parallel to the top-level
+                        list, when its channel order differs (Julia matched the channels by name)
+  featureCols           var columns to cluster on (channels + object measures), as named on the first segment
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
@@ -43,11 +45,15 @@ def run(params):
     for seg in segments:
         path   = seg["propsPath"]
         labels = seg.get("labels", None)
-        view = LabelPropsView(path).view_cols(feature_cols)
+        # a segment whose channels are in another order reads its own columns for the same channels,
+        # renamed to the pooled names — so the AnnData var names stay the first segment's
+        own_cols = seg.get("featureCols") or feature_cols
+        view = LabelPropsView(path).view_cols(own_cols)
         if labels is not None:
             view = view.filter_by_label(labels)
         df = view.as_df()
         view.close()
+        df = df.rename(columns={o: f for o, f in zip(own_cols, feature_cols) if o != f})
         if df.shape[0] == 0:
             log.log(f"> {seg['uID']}/{seg['valueName']}: no cells, skipped")
             continue
