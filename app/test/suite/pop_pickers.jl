@@ -338,6 +338,10 @@ end
     @test Cecelia._split_pop_ref("B/qc", "default") == ("B", "/qc")
     @test Cecelia._split_pop_ref("/qc", "B")        == ("B", "/qc")
     @test Cecelia._split_pop_ref("qc", "B")         == ("B", "/qc")
+    @test Cecelia._split_pop_ref("B/", "default")   == ("B", "/")
+    @test Cecelia._split_pop_ref("B/root", "default")         == ("B", "/")      # root's own name
+    @test Cecelia._split_pop_ref("B/root/_tracked", "default") == ("B", "/_tracked")
+    @test Cecelia._split_pop_ref("B/rooted", "default")       == ("B", "/rooted") # not a prefix match
 
     # pops_value_name: the spatial tasks derive their segmentation from the pick (no dropdown).
     # Value_name comes from the first ref's prefix; the all-cells root "B/" carries it too.

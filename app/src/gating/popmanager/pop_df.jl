@@ -19,19 +19,29 @@
 # tables), `pop_df` (population cells), `load_pop_map`/`save_pop_map!` (population maps) —
 # mirroring the R cciaImage accessors but kept in subsystem files, not a single god-object.
 
-# A pop reference may name its value_name as a prefix ("Tcells/_tracked") or use a
-# leading-slash path within the default value_name ("/cd4/cd8"). Group accordingly.
+# THE population-ref grammar — split a (possibly value-name-prefixed) pop ref into (value_name, path).
+# A prefix names the value_name ("Tcells/_tracked"); a leading-slash path ("/cd4/cd8") or the root
+# stays in `default_vn`; a bare name ("cd4") is a root child in `default_vn`. The all-cells root after
+# a prefix is `"Tcells/"` (what the picker sends) — and `"Tcells/root"` too: `root` is the root's own
+# name everywhere else in the grammar (a bare `"root"`, `parent="root"`), so `<vn>/root[/…]` means the
+# root, not a pop called "root". Read as a pop path, it would come back EMPTY without a word: pop_df
+# skips absent pops so a pooled set tolerates partial definitions.
+function _split_pop_ref(ref, default_vn::AbstractString)::Tuple{String,String}
+    p = String(ref)
+    (startswith(p, "/") || is_root(p)) && return (String(default_vn), p)
+    idx = findfirst('/', p)
+    idx === nothing && return (String(default_vn), "/" * p)
+    vn, path = p[1:idx-1], p[idx:end]
+    path == "/" * ROOT && return (vn, "/")
+    startswith(path, "/" * ROOT * "/") && return (vn, path[ncodeunits(ROOT)+2:end])
+    (vn, path)
+end
+
+# Group pop refs by value_name (`_split_pop_ref` grammar).
 function _group_pops_by_value_name(pops, default_vn::AbstractString)
     groups = Dict{String,Vector{String}}()
     for p in pops
-        p = String(p)
-        if startswith(p, "/") || is_root(p)
-            vn, path = default_vn, p
-        else
-            idx = findfirst('/', p)
-            idx === nothing ? (vn = default_vn; path = "/" * p) :
-                              (vn = p[1:idx-1]; path = p[idx:end])
-        end
+        vn, path = _split_pop_ref(p, default_vn)
         push!(get!(groups, vn, String[]), path)
     end
     groups

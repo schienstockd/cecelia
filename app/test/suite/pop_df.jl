@@ -79,6 +79,15 @@ end
     @test getpop(3, "A") == "/p/c"
     @test getpop(10, "B") == "/hi"                            # x=7 ≥ 5
     @test nrow(res[res.value_name .== "B", :]) == 1           # label 11 (x=2) excluded
+
+    # the all-cells root under a prefix: `B/` (the picker) AND `B/root` (saved boards carried it) are
+    # the whole table — `B/root` used to parse as a pop "/root" no map has and came back silently empty
+    for ref in ("B/", "B/root")
+        r = Cecelia._pop_df(load_map, fetch, "flow", [ref]; default_vn="A", pop_cols=["x"])
+        @test sort(r.label) == [10, 11] && all(==("B"), r.value_name)
+    end
+    r = Cecelia._pop_df(load_map, fetch, "flow", ["B/root/hi"]; default_vn="A", pop_cols=["x"])
+    @test r.label == [10] && r.pop == ["/hi"]                 # a root-anchored child path, too
 end
 
 # ── pop_df: drop_na drops NA/NaN cells in requested pop_cols ──────────────

@@ -654,7 +654,7 @@ different measure) and names it in the log; drop it under Analysis runs.
 
 **`pops_value_name(pops; default)`** gives the **segmentation** a single-segmentation task operates on,
 **derived from its picked populations** — every picker value is value_name-prefixed (`"B/qc"`, and the
-all-cells root `"B/"`), so the segmentation is already implied by the selection. The spatial-analysis
+all-cells root `"B/"`; `"B/root"` parses the same — `_split_pop_ref` is the one grammar), so the segmentation is already implied by the selection. The spatial-analysis
 tasks use this instead of a separate `valueNameSelection` dropdown (R parity — legacy had no
 segmentation dropdown for the point/aggregate tasks, and used the one on `cellNeighbours` only to name
 the output). The picker params are `acrossSegmentations:false`, so all refs share one value_name (the
