@@ -90,12 +90,19 @@ _hp_show(v) = _hp_empty(v) ? "(none)" : v isa AbstractString ? v :
     history_params_table(proj, image_uids) -> Vector{Dict}
 
 One row per step that ran on `image_uids` (grouped as `chain_from_history` groups them), for a Methods
-table: `step`, `task`, `output`, `images` (`"n/N"`), `lastRun`, `changedFromDefault` (`key=value; …`,
+table: `step`, `task`, `output`, `images` (`"n/N"`), `lastRun`, `relation` (scoped only: `made` /
+`ran on`), `changedFromDefault` (`key=value; …`,
 only params every image ran with the same non-default value), `conflicts` (`key: a (n) | b (m); …`,
 params the images disagree on), `note` (why a step is not something a chain replays, or why its
 params are unknown).
+
+`pops` cuts the table to what a board shows (`nothing` = the whole history): board population keys
+(`popType::labelSet/pop`) plus `cluster_runs` (`"popType:suffix"`, the run a board's cluster panels
+draw) — see `_history_scope`.
 """
-function history_params_table(proj::CciaProject, image_uids::Vector{String})::Vector{Dict{String,Any}}
+function history_params_table(proj::CciaProject, image_uids::Vector{String};
+                              pops::Union{Nothing,AbstractVector} = nothing,
+                              cluster_runs::AbstractVector = String[])::Vector{Dict{String,Any}}
     leaves = Dict{String,Any}()
     leaves_of(fn) = get!(() -> _history_leaves(fn), leaves, fn)
     rows = _history_rows(proj, image_uids)
@@ -107,7 +114,22 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String})::Ve
     groups = [(k, v, false) for (k, v) in latest]
     append!(groups, [(k, v, true) for (k, v) in held])
     sort!(groups; by = g -> minimum(r.at for r in values(g[2])))
-    for ((fn, _), by_img, is_held) in groups
+    groups = [(g..., "") for g in groups]
+    unmade = Tuple{String,String}[]
+    if pops !== nothing
+        runs = _hp_cluster_runs(proj, image_uids, [_parse_tkey(string(k)) for k in pops], String.(cluster_runs))
+        # label set → the populations shown on it; a `labels` key (a segmentation QC plot) draws the
+        # objects themselves, so nothing run on them since is part of it
+        shown = Dict{String,Vector{String}}()
+        for t in (_parse_tkey(string(k)) for k in pops)
+            isempty(t.valueName) && continue
+            v = get!(Vector{String}, shown, t.valueName)
+            t.popType == "labels" || push!(v, t.pop)
+        end
+        relation, unmade = _history_scope(groups, leaves_of, shown, runs)
+        groups = [(g[1:3]..., relation[i]) for (i, g) in enumerate(groups) if haskey(relation, i)]
+    end
+    for ((fn, _), by_img, is_held, relation) in groups
         defaults = _history_param_defaults(fn)
         spec = try _task_spec(_task_from_fun_name(fn)) catch; nothing end
         out_name, _ = _history_output(fn, first(values(by_img)).params, leaves_of(fn))
@@ -140,22 +162,33 @@ function history_params_table(proj::CciaProject, image_uids::Vector{String})::Ve
             "output" => out_name, "images" => "$(length(by_img))/$N",
             "lastRun" => maximum(r.at for r in values(by_img)),
             "changedFromDefault" => join(changed, "; "), "conflicts" => join(conflicts, "; "),
-            "note" => note))
+            "note" => note, "relation" => relation))
     end
 
     # runs with no params to report — logged before params were recorded, or a task that is gone —
     # unless a later run of the same task on that image is already in a row above
-    known = Set((fn, u) for ((fn, _), by_img, _) in groups for u in keys(by_img))
+    known = Set((fn, u) for ((fn, _), by_img, _, _) in groups for u in keys(by_img))
     lost = Dict{Tuple{String,String},Set{String}}()
     for (r, w) in skipped
         (r.legacy || w == "this task no longer exists") || continue
+        # a scoped table can't place a run whose params (and so outputs) are unknown — say so anyway
+        # for a task that is otherwise in the lineage, or that would have made something left unmade
+        pops === nothing || any(g -> g[1][1] == r.fn, groups) ||
+            any(u -> !isempty(u[2]) && startswith(r.fn, u[2]), unmade) || continue
         (r.fn, r.uid) in known && continue
         push!(get!(Set{String}, lost, (r.fn, r.legacy ? "ran before params were recorded" : w)), r.uid)
     end
     for ((fn, w), uids) in sort!(collect(lost); by = first)
         push!(out, Dict{String,Any}("step" => fn, "task" => fn, "output" => "", "images" => "$(length(uids))/$N",
                                     "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
-                                    "note" => "parameters unknown — $w"))
+                                    "note" => "parameters unknown — $w", "relation" => ""))
+    end
+    # what the board shows that no recorded run made: said, so a gap never reads as a complete answer
+    for (what, _) in unmade
+        push!(out, Dict{String,Any}("step" => what, "task" => "", "output" => "", "images" => "",
+                                    "lastRun" => "", "changedFromDefault" => "", "conflicts" => "",
+                                    "note" => "no recorded run made this — ran before the run log, or outside Cecelia",
+                                    "relation" => "made"))
     end
     out
 end

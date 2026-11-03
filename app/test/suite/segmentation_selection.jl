@@ -65,10 +65,11 @@ end
         proj = CciaProject(; uid = "mP", name = "m"); proj.root = mktempdir()
         st = CciaSet(; uid = "mS", dir = mktempdir()); push!(proj._sets, st); push!(proj.set_uids, st.uid)
         push!(st._images, img); push!(st.image_uids, img.uid)
-        summ = measure_summary(proj; kind = "phenotype").images[1].summaries
+        # a track cluster is profiled as motility (`is_track_pop`, ai/measures.jl), one row per track
+        summ = measure_summary(proj; kind = "motility").images[1].summaries
         got = Dict((s.valueName, s.population) => s.n for s in summ)
-        # each summary is labelled with ONE segmentation, so its n is that segmentation's cells in the pop
-        want = Dict((vn, p) => _cluster_truth(img, vn, codes).n_cells
+        # each summary is labelled with ONE segmentation, so its n is that segmentation's tracks in the pop
+        want = Dict((vn, p) => nrow(_cluster_truth(img, vn, codes).tracks)
                     for vn in ("B", "T") for (p, codes) in _MOVEMENT_CODES)
         filter!(kv -> kv.second > 0, want)            # T has no Directed tracks → no summary
         @test got[("B", "/Scanning")] != got[("T", "/Scanning")]

@@ -1,0 +1,55 @@
+{
+    "spatial_unit": "px",
+    "value_name": "B",
+    "populations": [
+        {
+            "name": "Population 1",
+            "colour": "#ef4444",
+            "show": true,
+            "uid": "Ko1dd2",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    0
+                ],
+                "measure": "regions.default",
+                "default_all": false
+            },
+            "children": [
+            ]
+        },
+        {
+            "name": "Population 2",
+            "colour": "#f59e0b",
+            "show": true,
+            "uid": "L8qSXQ",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    1
+                ],
+                "measure": "regions.default",
+                "default_all": false
+            },
+            "children": [
+            ]
+        },
+        {
+            "name": "Population 3",
+            "colour": "#10b981",
+            "show": true,
+            "uid": "paDLdm",
+            "filter": {
+                "fun": "in",
+                "values": [
+                    2
+                ],
+                "measure": "regions.default",
+                "default_all": false
+            },
+            "children": [
+            ]
+        }
+    ],
+    "pop_type": "region"
+}

@@ -118,13 +118,19 @@ end
 # GET /api/chains/history-params?projectUid&imageUids=a,b → {rows} — the Methods parameter table for the
 # same steps the suggestion is built from, one row per step with only non-default params and the images'
 # spread where they disagree (`history_params_table`, tasks/chain/history_params.jl). Read-only.
+# `pops` (a JSON array of board population keys — pop names may hold commas) + `clusterRuns` (JSON array
+# of `"popType:suffix"`) cut it to what an analysis board shows; absent = the whole history.
 function api_chains_history_params(req::HTTP.Request)
     q    = HTTP.queryparams(HTTP.URI(req.target))
     uid  = get(q, "projectUid", "")
     uids = String[strip(x) for x in split(get(q, "imageUids", ""), ',') if !isempty(strip(x))]
     (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
+    list(k) = (v = get(q, k, nothing); v === nothing ? nothing : String.(JSON3.read(v, Vector{String})))
+    pops, runs = try (list("pops"), list("clusterRuns")) catch
+        return 400, JSON3.write((; error="pops and clusterRuns must be JSON arrays of strings"))
+    end
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
-    200, JSON3.write((; rows = history_params_table(proj, uids)))
+    200, JSON3.write((; rows = history_params_table(proj, uids; pops, cluster_runs = something(runs, String[]))))
 end
 
 # POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
