@@ -1,6 +1,6 @@
 # Result review — a third pre-commit reviewer for silent wrong results
 
-**Status:** P1 built (2026-11-03), P2 and P3 open.
+**Status:** P1, P1b, P2 built (2026-11-03); P3 guard built, golden-fixture variants open.
 
 ## Why
 
@@ -87,5 +87,9 @@ P1 as built:
 - README recital paragraph and the `readme-findings.svg` diagram.
 - `chart.py` and `flow_chart.py`: a third reviewer.
 
-**P3 (later):** the Decision 6 test guard in the hook, and golden-fixture parameters so `pipeline_golden.jl`
-variants become the cheap repro path.
+**P3:**
+- Built: the Decision 6 guard. A committed repro carries `RESULT-REVIEW: <slug>`. The commit hook
+  (gate 4) blocks a commit that edits, renames or deletes it unless the message tags the slug
+  `false_positive`. That commit logs `result_review_test_edited`, which the sweep sends to the owner
+  whatever branch the finding came from.
+- Open: golden-fixture parameters, so `pipeline_golden.jl` variants become the cheap repro path.

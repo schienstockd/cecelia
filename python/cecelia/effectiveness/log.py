@@ -63,6 +63,10 @@ EVENT_TYPES = frozenset({
     "result_review_finding",
     "result_review_finding_resolved",
     "result_review_advisory",
+    #: A commit changed a committed result-review repro (a file carrying `RESULT-REVIEW: <slug>`) under
+    #: a `false_positive` tag (the commit hook's gate 4). Payload: `slug`, `file`, `reason`. The bug
+    #: sweep sends it to the owner, whichever branch the finding came from.
+    "result_review_test_edited",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",
