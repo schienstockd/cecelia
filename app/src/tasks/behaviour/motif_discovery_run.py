@@ -120,16 +120,21 @@ def _pairwise_dtw(windows, log):
 
     `dtw_ndim.distance_matrix_fast` takes list of (W, D)-shaped series and returns an upper-tri
     K×K matrix (lower is inf); mirror it into symmetric. Multivariate DTW is O(K² · W · D)
-    which at K=100, W=8, D=3 is ≈ 240k cell ops — trivial. The `use_c=True` path is the C
-    backend (compiled at install time); it falls back to Python if the C extension isn't
-    available.
+    which at K=100, W=8, D=3 is ≈ 240k cell ops — trivial. The fast path is dtaidistance's compiled C
+    backend; where that isn't available (the macOS wheels ship without it) it raises rather than
+    falling back, so fall back here to the pure-Python matrix — same values, slower, fine at this K.
     """
     from dtaidistance import dtw_ndim
+    from dtaidistance.exceptions import CythonException
     K = len(windows)
     log(f">> pairwise DTW (K={K}, W={windows[0].shape[0]}, D={windows[0].shape[1]})")
     # dtaidistance's fast path wants a list of contiguous (W, D) arrays.
     series = [np.ascontiguousarray(w) for w in windows]
-    mat = dtw_ndim.distance_matrix_fast(series)
+    try:
+        mat = dtw_ndim.distance_matrix_fast(series)
+    except CythonException:
+        log(">> dtaidistance C library unavailable — using the pure-Python DTW")
+        mat = dtw_ndim.distance_matrix(series, use_c=False)
     # Fold upper→symmetric (lower is inf, diagonal is 0).
     for i in range(K):
         for j in range(i):
