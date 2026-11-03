@@ -19,7 +19,8 @@ task rebuild its own basis-restricted graph in-process, which is the divergence 
 squidpy is a bundled dependency (THIRD_PARTY.md); the graph modes wrap its `spatial_neighbors`. The
 composition formula (per-cell normalised frequency of each population among its graph neighbours) is the
 CytoMAP / legacy-cecelia "i-niche" feature. The contact log-odds + label-permutation null are cited on
-`pairwise_contact_logodds`.
+`pairwise_contact_logodds`. One population's own spacing among the graph's nodes (nearest-neighbour
+ratio, pair-ratio curve) lives in `spatial_pattern_utils`, which shares `permutation_groups`.
 """
 import numpy as np
 import scipy.sparse as sp
@@ -196,6 +197,38 @@ def load_graph(path):
     return a, a.obs.reset_index(drop=True)
 
 
+def graph_node_times(obs_df, props_paths):
+    """Each graph node's frame, read from its segmentation's cell table — for a graph built with frames
+    POOLED (`perTimepoint=False`, so no `_t` obs). Returns an array parallel to `obs_df`, or None when
+    no node's table has a temporal column (a still image).
+
+    Why a consumer needs it: on a pooled graph of a time-lapse, the nearest node to a cell is usually
+    the same cell one frame later, so any distance statistic over the nodes measures the tracks, not
+    the placement. `props_paths` maps valueName → labelProps path; reads go through LabelPropsView."""
+    import pandas as pd
+    from cecelia.utils.label_props_utils import LabelPropsView
+
+    times = np.full(len(obs_df), np.nan)
+    vns = obs_df["valueName"].astype(str).to_numpy()
+    labs = obs_df["label"].astype(np.int64).to_numpy()
+    found = False
+    for vn in pd.unique(vns):
+        path = props_paths.get(vn)
+        if path is None:
+            continue
+        idx = np.where(vns == vn)[0]
+        view = LabelPropsView(path).only_centroid_cols().filter_by_label(labs[idx].tolist())
+        tcols = view.temporal_columns(); d = view.as_df(); view.close()
+        if not tcols or tcols[0] not in d.columns:
+            continue
+        t_of = dict(zip(d["label"].astype(np.int64), d[tcols[0]].to_numpy()))
+        times[idx] = [t_of.get(int(l), np.nan) for l in labs[idx]]
+        found = True
+    if not found or np.isnan(times).all():
+        return None
+    return times
+
+
 def graph_meta(adata):
     """The graph's recorded build parameters (`uns`), as plain Python — for logging + QC provenance."""
     out = {}
@@ -229,6 +262,20 @@ def pop_codes_for(obs_df, segs, n_pops):
             codes[i] = c
     coverage = float((codes >= 0).sum() / len(codes)) if len(codes) else 0.0
     return codes, coverage
+
+
+def permutation_groups(indices, times=None):
+    """The node groups a label-shuffle null permutes WITHIN: one group per timepoint when `times` (a
+    per-node frame index over the WHOLE graph) is given, else one global group. `indices` are the nodes
+    taking part in the shuffle. A per-timepoint (block-diagonal) graph must shuffle within a frame — a
+    global shuffle migrates labels across frames and destroys the per-frame composition the null
+    preserves. The one shuffle-grouping rule, shared by the contact test and the spatial-pattern test
+    (`spatial_pattern_utils`)."""
+    idx = np.asarray(indices, dtype=np.int64)
+    if times is None:
+        return [idx]
+    t = np.asarray(times).ravel()
+    return [idx[t[idx] == tv] for tv in np.unique(t[idx])]
 
 
 def _contact_counts(conn_row, conn_col, pop_codes, n_pops):
@@ -302,13 +349,7 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
         return observed, expected, log_odds, nan, nan
 
     rng = np.random.default_rng(int(random_state))
-    idx_assigned = np.where(assigned)[0]
-    # shuffle groups: one group per timepoint (per-timepoint graph) or a single global group
-    if times is None:
-        groups = [idx_assigned]
-    else:
-        t = np.asarray(times).ravel()
-        groups = [idx_assigned[t[idx_assigned] == tv] for tv in np.unique(t[idx_assigned])]
+    groups = permutation_groups(np.where(assigned)[0], times)
 
     null = np.empty((n_perm, n_pops, n_pops))
     shuffled = pop_codes.copy()

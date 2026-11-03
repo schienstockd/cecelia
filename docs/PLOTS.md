@@ -33,6 +33,19 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
+**When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or an
+interaction run's per-pair log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question
+asked of it is "does it differ between groups of images?". The spec declares
+`dataSource.imageMetric: { source, task }` (`source` a key of `IMAGE_METRIC_SOURCES`,
+`app/src/plotting/image_metrics.jl`); the panel sends `imageMetric` + `measure` (+ `suffix` for the
+run, `pop` for one of the run's populations) to the same `/api/plot_data`. The backend turns the run
+into a `pop_df`-shaped frame — one row per (image, population) — and runs the ordinary `_summary_agg`,
+so attribute grouping, box/strip/bar, the group tests and CSV export are the existing ones with the
+image as the unit. It is precomputed (`isPrecomputedSpec`), so it takes no population selection; the
+response reports `suffixes` and `pops` for the two header pickers. A new per-image readout is one entry
+in `IMAGE_METRIC_SOURCES` plus a spec. Specs: `spatial_pattern_summary.json`,
+`spatial_interactions_by_group.json`. See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.
+
 This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
 counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
 

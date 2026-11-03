@@ -63,6 +63,12 @@ export interface PlotSpec {
     // the default category column (used if present in the discovered obs columns); otherwise the panel
     // picks a sensible one (an HMM-state column for profile, a transitions column for crosstab).
     matrix?: { mode?: 'profile' | 'crosstab' | 'interaction'; category?: string }
+    // A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
+    // per image, the populations fixed by the run, grouped by image attribute. `source` is a key of the
+    // backend's IMAGE_METRIC_SOURCES; `task` names the task that produces it, for the empty state.
+    imageMetric?: { source: string; task: string }
+    // display names for the spec's own measure keys (e.g. `nnRatio` → "NN ratio")
+    measureLabels?: Record<string, string>
   }
   scopeModes?: ('per_image' | 'summarised')[]
   params?: PlotParam[]
@@ -191,4 +197,8 @@ export interface PlotDataResponse {
   normalize?: string       // crosstab normalisation (none|row|col|total)
   category?: string        // the categorical column the matrix was built from
   comparisons?: ComparisonsResult   // between-group stats, present only when requested + applicable
+  // per-image metric (imageMetric): the run plotted, every run on the images, and the run's populations
+  suffix?: string
+  suffixes?: string[]
+  pops?: string[]
 }

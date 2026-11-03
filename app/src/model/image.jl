@@ -195,6 +195,23 @@ function img_stats_suffixes(img::CciaImage)::Vector{String}
 end
 
 """
+    img_pattern_path(img, suffix) / img_pattern_suffixes(img)
+
+Spatial-pattern runs (`spatialAnalysis.spatialPattern`): `{img._dir}/spatialPattern/{suffix}.json`, one
+flat record per target population (docs/todo/SPATIAL_PATTERN_PLAN.md Decision 5). A directory of its
+own, not `spatialStats/`: every `.json` there is read as an interaction run. Listed from disk like the
+graphs and stats above; no ccid.json registration.
+"""
+img_pattern_dir(img::CciaImage)::String = joinpath(img._dir, "spatialPattern")
+img_pattern_path(img::CciaImage, suffix::AbstractString)::String =
+    joinpath(img_pattern_dir(img), "$(suffix).json")
+function img_pattern_suffixes(img::CciaImage)::Vector{String}
+    d = img_pattern_dir(img)
+    isdir(d) || return String[]
+    sort!(String[f[1:prevind(f, end, 5)] for f in readdir(d) if endswith(f, ".json")])
+end
+
+"""
     img_rois_path(img, suffix) / img_roi_reviews_path(img, suffix) / img_rois_suffixes(img)
 
 ROI auto-discovery (`docs/todo/ROI_TRIAGE_PLAN.md`): the ROI SET a `spatialAnalysis.roiDiscovery`

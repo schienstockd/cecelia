@@ -296,6 +296,44 @@ function api_plot_data(body_bytes::Vector{UInt8})
     # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
     precomputed = chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction"
 
+    # A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
+    # per image, populations fixed by the run, grouped by image attribute. Same route, same renderer;
+    # the aggregation is the shared `_summary_agg` (app/src/plotting/image_metrics.jl).
+    im_v = get(body, "imageMetric", nothing)
+    image_metric = (im_v === nothing || isempty(string(im_v))) ? nothing : string(im_v)
+    if image_metric !== nothing
+        src = get(IMAGE_METRIC_SOURCES, image_metric, nothing)
+        src === nothing && return _gerr(400, "imageMetric must be one of $(join(sort!(collect(keys(IMAGE_METRIC_SOURCES))), "|"))")
+        (measure !== nothing && measure in src.measures) ||
+            return _gerr(400, "measure for $(image_metric) must be one of $(join(src.measures, "|"))")
+        chart in ("boxplot", "points", "bar") ||
+            return _gerr(400, "a per-image metric plots as boxplot, points or bar")
+        sfx = string(something(get(body, "suffix", ""), ""))
+        try
+            set_uid_m = string(get(body, "setUid", ""))
+            pairs = if !isempty(set_uid_m)
+                obj = init_object(proj, set_uid_m)
+                obj isa CciaSet || return _gerr(400, "setUid is not a set: $set_uid_m")
+                want = Set(string.(get(body, "imageUids", obj.image_uids)))
+                [(im, uid) for (im, uid) in zip(obj._images, obj.image_uids) if uid in want]
+            else
+                img, err = _gating_image(proj, string(get(body, "imageUid", "")))
+                err === nothing || return err
+                [(img, img.uid)]
+            end
+            isempty(pairs) && return _gerr(400, "no matching images")
+            attr_map = isempty(group_attrs) ? nothing : image_attr_groups(first.(pairs), last.(pairs), group_attrs)
+            result = image_metric_summary(first.(pairs), last.(pairs), image_metric, chart;
+                                          measure = measure, suffix = sfx,
+                                          pop = string(something(get(body, "pop", ""), "")), attr_map = attr_map,
+                                          stats_enabled = stats_enabled, stats_test = stats_test, raw = raw)
+            stats_enabled && _record_stats_event(proj, result)
+            return 200, JSON3.write(_json_safe(result))
+        catch e
+            return _gerr(400, sprint(showerror, e))   # same contract as the population path below
+        end
+    end
+
     # population targets: explicit (value_name, pop) pairs, or the legacy single-segmentation form.
     # `targets === nothing` → use the legacy `pops` + resolved `value_name` path.
     raw_series = get(body, "series", nothing)

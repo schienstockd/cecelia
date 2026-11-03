@@ -1,0 +1,19 @@
+{
+  "id": "spatial_pattern_summary",
+  "label": "Spatial pattern by group",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "imageMetric": { "source": "spatialPattern", "task": "Spatial pattern" },
+    "measure": "nnRatio",
+    "measureOptions": ["nnRatio", "ceR", "zScore"],
+    "measureLabels": { "nnRatio": "NN ratio", "ceR": "Clark–Evans R", "zScore": "z-score" }
+  },
+  "scopeModes": ["summarised", "by_attr"],
+  "params": []
+}

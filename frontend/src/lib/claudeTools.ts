@@ -61,7 +61,7 @@ export const CAPABILITIES: Capability[] = [
   { group: 'results', label: 'Phenotype and motility summaries', tools: ['get_measure_summary'], kiwi: true, terminal: true },
   { group: 'results', label: 'Behaviour states', tools: ['get_behaviour_summary'], kiwi: true, terminal: true },
   { group: 'results', label: 'Clusters and spatial regions', tools: ['get_cluster_summary', 'get_region_clusters'], kiwi: true, terminal: true },
-  { group: 'results', label: 'Cell–cell contacts', tools: ['get_contact_stats'], kiwi: true, terminal: true },
+  { group: 'results', label: 'Cell–cell contacts and spatial patterns', tools: ['get_contact_stats', 'get_spatial_patterns'], kiwi: true, terminal: true },
   { group: 'results', label: 'Your boards, plots, chains and notebooks',
     tools: ['get_analysis_boards', 'get_available_plots', 'list_plots', 'get_chains', 'list_notebooks', 'get_notebook'], kiwi: true, terminal: true },
 

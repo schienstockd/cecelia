@@ -151,7 +151,7 @@ the `analysis keep-list` testset fails until it is made.
   the ROI sets themselves (`rois/`) are output and do go.
 
 `qc/` is NOT kept: its findings score outputs that no longer exist, so keeping them would assert a QC
-verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/` and the
+verdict about nothing. `populations/`, `stats/`, `mesh/`, `cl/`, `spatialGraph/`, `spatialStats/`, `spatialPattern/` and the
 rest ARE output — every one is recomputable from the labels plus a task run.
 """
 const ANALYSIS_KEEP = Set(["ccid.json", "runlog.json", "gating", "roiReviews"])

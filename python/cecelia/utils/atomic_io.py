@@ -38,6 +38,7 @@ staged write leaves the original intact where an in-place write would leave it t
 
 import contextlib
 import json
+import math
 import os
 import uuid
 
@@ -120,3 +121,15 @@ def write_h5ad_atomic(adata, path, **write_kwargs):
     with atomic_path(path) as tmp, ad.settings.override(allow_write_nullable_strings=False):
         adata.write_h5ad(tmp, **write_kwargs)
     return path
+
+
+def json_safe(obj):
+    """NaN/inf → None, recursively — the sidecar is read by JSON3 and the MCP, neither of which takes
+    a bare NaN token."""
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj

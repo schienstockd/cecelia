@@ -119,9 +119,9 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
     # value_name makes the existing strategy apply to the new cells. `reset_image_analysis!` keeps them
     # for the same reason (ANALYSIS_KEEP), so the two delete scopes agree.
     #
-    # Also not swept, and correctly so: `spatialGraph/{suffix}.h5ad` + `spatialStats/{suffix}.json` are
-    # keyed by RUN SUFFIX, not value_name — the graph pools across segmentations, so there is no
-    # per-value_name file to take (see img_spatial_graph_path).
+    # Also not swept, and correctly so: `spatialGraph/{suffix}.h5ad`, `spatialStats/{suffix}.json` and
+    # `spatialPattern/{suffix}.json` are keyed by RUN SUFFIX, not value_name — the graph pools across
+    # segmentations, so there is no per-value_name file to take (see img_spatial_graph_path).
 
     # labelProps sidecars: the registered `{vn}.h5ad` PLUS every companion derived from it —
     # `{vn}__tracks.h5ad`, `{vn}__branch.h5ad`, `{vn}.clustfeatures.json`, `{vn}__tracks.clustfeatures.json`.

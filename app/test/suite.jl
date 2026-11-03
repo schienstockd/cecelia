@@ -123,6 +123,7 @@ include(joinpath(@__DIR__, "suite", "spatial_neighbours.jl"))
 
 # ── ROI discovery + reviews (docs/todo/ROI_TRIAGE_PLAN.md) ─────────────
 include(joinpath(@__DIR__, "suite", "rois.jl"))
+include(joinpath(@__DIR__, "suite", "spatial_pattern.jl"))
 
 # ── Task spec + repeatable-group + param-defaults testsets ─────────────
 # Six sections covering every slider (int/float) can reach its own max and default, a

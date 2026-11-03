@@ -1,0 +1,19 @@
+{
+  "id": "spatial_interactions_by_group",
+  "label": "Interactions by group",
+  "module": "spatialAnalysis",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "bar"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "flow", "granularity": "cell", "label": "Gated" }
+    ],
+    "imageMetric": { "source": "neighbourStats", "task": "Interaction matrix" },
+    "measure": "logOdds",
+    "measureOptions": ["logOdds", "zScore"],
+    "measureLabels": { "logOdds": "log-odds", "zScore": "z-score" }
+  },
+  "scopeModes": ["summarised", "by_attr"],
+  "params": []
+}

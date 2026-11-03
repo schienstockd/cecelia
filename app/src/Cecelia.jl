@@ -75,6 +75,7 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_trac
 export img_labels_dir, img_labels_path
 export img_spatial_graph_dir, img_spatial_graph_path, img_spatial_graph_suffixes
 export img_stats_dir, img_stats_path, img_stats_suffixes, img_cluster_suffixes
+export img_pattern_dir, img_pattern_path, img_pattern_suffixes
 export img_rois_dir, img_rois_path, img_roi_reviews_path, img_rois_suffixes
 export load_roi_set, load_roi_reviews, roi_suffixes_on, apply_roi_review!, roi_review!, roi_status, roi_list_payload, roi_set_labels, roi_review_labels
 export img_branch_props_path, img_branch_value_names, img_branch_labels_dir, img_branch_labels_path
@@ -141,6 +142,7 @@ export pop_plot_cols, computed_pop_map, pop_membership_fetch, is_track_grained, 
 export pop_df_multi, resolve_pop_type, read_pop_type, pop_namespace, pop_name_conflict, pops_value_name
 export region_membership, region_enrichment
 export plot_summary_data
+export image_metric_frame, image_metric_summary, IMAGE_METRIC_SOURCES
 export quiver_df, branch_segments, anisotropy_df
 export track_props, track_cell_measures, track_aggregate_base, track_aggregate_measures, track_table_cols, track_name_sets, is_tracked
 # manual track correction (docs/todo/CORRECTION_PLAN.md) — the ops engine, its journal and its QC.
@@ -216,7 +218,7 @@ export stale_artefacts_for, staleness_sidecar_path
 export Branching
 export BayesianTracking, TrackMeasures, TrackCorrect, parse_track_ops
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, NeighbourStats, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes
+export CellNeighbours, ClustRegions, NeighbourStats, SpatialPattern, RoiDiscovery, DetectAggregates, CellContacts, ContactsMeshes
 export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, StackAlign, FlowRegister, Smooth, Flip, DtypeConvert, CompositeTask
@@ -311,6 +313,7 @@ include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("anisotropy.jl")   # branching anisotropy readouts as tidy frames (notebooks)
 include("plotting/plot_data.jl")
 include("plotting/stats.jl")
+include("plotting/image_metrics.jl")   # per-image sidecar metrics → summary plots (SPATIAL_PATTERN_PLAN D8)
 include("tracking/track_props.jl")
 include("tracking/track_correction.jl")   # manual track edit ops + journal (pure; used by the task)
 include("tracking/track_diagnostics.jl")  # celltrackR QC battery (pure; the plot AND the task QC)
@@ -386,6 +389,7 @@ include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
+include("tasks/spatialAnalysis/spatialPattern.jl")
 include("tasks/spatialAnalysis/roiDiscovery.jl")
 include("tasks/spatialAnalysis/detectAggregates.jl")
 include("tasks/spatialAnalysis/contact_targets.jl")   # target grouping shared by both contact routes

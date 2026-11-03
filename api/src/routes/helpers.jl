@@ -270,6 +270,8 @@ function _image_payload(img::CciaImage)
         # Interaction-stats runs (spatialAnalysis.neighbourStats), keyed by run suffix — same listing
         # convention as spatialGraphs above. Feeds the `stats` namespace of a `valueNameInput`.
         statsSuffixes   = img_stats_suffixes(img),
+        # Spatial-pattern runs (spatialAnalysis.spatialPattern) — the `patterns` namespace.
+        patternSuffixes = img_pattern_suffixes(img),
         # ROI sets (spatialAnalysis.roiDiscovery) — the `rois` namespace + the viewer's ROI list.
         roiSuffixes     = img_rois_suffixes(img),
         # Clustering runs recorded for the ACTIVE segmentation, split by family so a `clusters.immune`

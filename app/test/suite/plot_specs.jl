@@ -95,7 +95,7 @@
     # Tracked but not Track clusters — a family every spatial task happily accepts as input. So pin
     # the agreement to the PRODUCING tasks' own `accepts`, via the canonical token mapping
     # (`_accept_pop_types`) rather than a second hand-written list.
-    producing = (CellNeighbours(), NeighbourStats(), CellContacts(), ContactsMeshes(),
+    producing = (CellNeighbours(), NeighbourStats(), SpatialPattern(), CellContacts(), ContactsMeshes(),
                  DetectAggregates(), AggregatesMeshes(), ClustRegions())
     accepted = Set{String}()
     for t in producing

@@ -680,14 +680,19 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
     return _client.get_cluster_summary(project_uid, image_uid or None, set_uid or None)
 
 
-def _spatial_drop(other: str, project_uid: str, image_uid: str, set_uid: str) -> dict:
-    # Two orthogonal analyses share one backend route; each MCP tool returns its own slice, so an
+# the per-image analysis slices of /api/analysis/spatial — one MCP tool each
+_SPATIAL_SLICES = ("regionRuns", "contactStats", "patternStats")
+
+
+def _spatial_only(keep: str, project_uid: str, image_uid: str, set_uid: str) -> dict:
+    # Orthogonal analyses share one backend route; each MCP tool returns ONLY its own slice, so an
     # LLM asking about niches doesn't get the pair matrix and vice versa. Envelope + headers kept.
     envelope = _client.get_spatial_stats(project_uid, image_uid or None, set_uid or None)
     imgs = envelope.get("images") or []
+    drop = set(_SPATIAL_SLICES) - {keep}
     return {
         **{k: v for k, v in envelope.items() if k != "images"},
-        "images": [{k: v for k, v in im.items() if k != other} for im in imgs],
+        "images": [{k: v for k, v in im.items() if k not in drop} for im in imgs],
     }
 
 
@@ -706,7 +711,7 @@ def get_region_clusters(project_uid: str, image_uid: str = "", set_uid: str = ""
     Use this to answer "what spatial niches exist in this tissue"; pair with get_contact_stats for
     "who co-localises with whom". Summary-level, reads current on-disk state (region columns in the
     per-image label props)."""
-    return _spatial_drop("contactStats", project_uid, image_uid, set_uid)
+    return _spatial_only("regionRuns", project_uid, image_uid, set_uid)
 
 
 @_tool
@@ -731,7 +736,31 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
     Use this to answer "which cell types co-localise or avoid each other, and is it real?"; pair with
     get_region_clusters for the niches those cells sit in. Summary-level, reads current on-disk
     state (spatialStats sidecars)."""
-    return _spatial_drop("regionRuns", project_uid, image_uid, set_uid)
+    return _spatial_only("contactStats", project_uid, image_uid, set_uid)
+
+
+@_tool
+def get_spatial_patterns(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """ONE population's spatial PATTERN per image — is it clustered, randomly placed or spread out
+    among the cells of a neighbour graph? Scope with `image_uid` / `set_uid`; omit both for the whole
+    project.
+
+    Per image, `patternStats` is a list, one per spatialPattern run:
+      `{suffix, graphSuffix, nPermutations, rMax, records: [{pop, nTarget, nReference, targetFraction,
+      coverage, nnObserved, nnExpected, nnRatio, zScore, pValue, significant, ceR, hullSize, nDims}]}`.
+      - The REFERENCE is the graph's cells, so "random" means "spread like the cells the graph was
+        built over", not uniform over the tissue. Say which graph when you report it.
+      - `nnRatio` (headline): mean nearest-neighbour distance between the population's cells divided
+        by its mean under random relabelling of the graph's cells. 1 = random, < 1 = clustered,
+        > 1 = dispersed; `pValue` from `nPermutations` relabellings (floor 1/(n+1)).
+      - `ceR` is the classic Clark–Evans R against complete spatial randomness in the graph's convex
+        hull — DESCRIPTIVE only (no edge correction); quote nnRatio for the test.
+      - `targetFraction` near 1 means the graph holds little but this population, so there is nothing
+        to compare against.
+    To compare GROUPS (e.g. treatment), compare per-image `nnRatio` across images with the image as
+    the unit, not pooled cells; pair with get_image_attributes for the groups. Summary-level, reads
+    current on-disk state (spatialPattern sidecars)."""
+    return _spatial_only("patternStats", project_uid, image_uid, set_uid)
 
 
 @_tool

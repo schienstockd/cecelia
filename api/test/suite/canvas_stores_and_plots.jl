@@ -178,6 +178,22 @@ end
     @test occursin("series required", String(empty_series[2]))
 end
 
+@testset "API: per-image metric (imageMetric) — validated, no population selection" begin
+    # SPATIAL_PATTERN_PLAN Decision 8: a run's per-image number, populations fixed by the run, so the
+    # body carries no series/pops. Bad source / measure / chart are rejected by name before any IO.
+    base = Dict("projectUid" => "nope-not-a-project", "imageMetric" => "spatialPattern",
+                "measure" => "nnRatio", "chartType" => "boxplot")
+    msg(r) = String(r[2])
+    ok = _post(api_plot_data, base)
+    @test ok[1] == 400 && !occursin("pops (or series) required", msg(ok))   # past every guard → bogus project
+    @test occursin("imageMetric must be one of", msg(_post(api_plot_data, merge(base, Dict("imageMetric" => "nope")))))
+    @test occursin("must be one of nnRatio", msg(_post(api_plot_data, merge(base, Dict("measure" => "logOdds")))))
+    @test occursin("boxplot, points or bar", msg(_post(api_plot_data, merge(base, Dict("chartType" => "histogram")))))
+    # neighbourStats takes its own allow-list
+    @test !occursin("must be one of", msg(_post(api_plot_data,
+        merge(base, Dict("imageMetric" => "neighbourStats", "measure" => "logOdds")))))
+end
+
 @testset "API: cluster/region run resolution is family-aware" begin
     # The channels endpoint enumerates a pop_type's OWN obs column family. Hardcoding "clusters." here
     # is why the Region-clustering page showed an empty run list (falling back to "default") while

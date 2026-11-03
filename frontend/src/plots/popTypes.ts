@@ -39,6 +39,7 @@ export interface PopTypeSpecLike {
     granularity?: 'cell' | 'track'
     popTypes?: PopTypeOption[]
     matrix?: { mode?: string }
+    imageMetric?: { source: string }
   }
 }
 
@@ -51,10 +52,11 @@ export interface PopTypeSpecLike {
  * or validates a selection asks THIS predicate — the panel (don't require series, don't say "select
  * populations"), the population picker (don't offer a selection that does nothing), and the server
  * (`api_plot_data`'s `precomputed`, which must not reject a body with no pops). One question, one
- * answer; a second precomputed family extends it here.
+ * answer. The second family is a per-image metric (`imageMetric`: a spatial-pattern or interaction
+ * run's number per image, grouped by image attribute) — its populations are the run's, too.
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
-  spec.dataSource.matrix?.mode === 'interaction'
+  spec.dataSource.matrix?.mode === 'interaction' || !!spec.dataSource.imageMetric
 
 // Default display names, so a spec need not repeat them. Deliberately user-facing wording ("Gated",
 // not "flow") — the pop-type ids are an implementation detail.

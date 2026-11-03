@@ -349,6 +349,29 @@ class TestPooledImageGraphPerFrame(unittest.TestCase):
     def test_pooling_is_opt_in_and_does_cross_frames(self):
         self.assertFalse(self._edges_by_frame(per_timepoint=False).all())
 
+    def test_pooled_graph_recovers_each_nodes_frame(self):
+        """graph_node_times reads a pooled graph's frames back from the cell table, and scoring within
+        them stops a cell matching itself one frame later (SPATIAL_PATTERN_PLAN Decision 4)."""
+        from cecelia.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.spatial_pattern_utils import pattern_test
+        from cecelia.utils.spatial_utils import build_pooled_image_graph, graph_node_times
+        if not os.path.isfile(self._B):
+            self.skipTest("KDIeEm fixture missing")
+        segs = [{"valueName": "B", "propsPath": self._B, "labels": None}]
+        adata, obs = build_pooled_image_graph(segs, [1.0, 1.0, 1.0], per_timepoint=False)
+        self.assertNotIn("_t", obs.columns)
+        t = graph_node_times(obs, {"B": self._B})
+        view = LabelPropsView(self._B).only_centroid_cols()
+        d = view.as_df(); tcol = view.temporal_columns()[0]; view.close()
+        t_of = dict(zip(d["label"].to_numpy(), d[tcol].to_numpy()))
+        np.testing.assert_array_equal(t, [t_of[lb] for lb in obs["label"].to_numpy()])
+        self.assertIsNone(graph_node_times(obs, {}))              # no table → no frames, not zeros
+        coords = adata.obsm["spatial"]
+        mask = np.zeros(len(obs), bool); mask[::3] = True
+        pooled = pattern_test(coords, mask, times=None, n_permutations=0)
+        framed = pattern_test(coords, mask, times=t, n_permutations=0)
+        self.assertGreater(framed["nnObserved"], pooled["nnObserved"])
+
 
 if __name__ == "__main__":
     unittest.main()
