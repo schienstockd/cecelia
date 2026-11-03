@@ -38,7 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
-| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 15 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 17 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`user-docs/README.md`](user-docs/README.md) | **For users, not developers:** a map of every page, panel and feature, and the recipes. **Generated** — the tables from `navGroups.ts` + `lib/guides/mapData.ts` + `recipes.ts` (the same data as the in-app map), the prose from `user-docs/parts/*.md`; `utils/userDocs.test.ts` fails when it's stale (`npx vitest run -u src/utils/userDocs.test.ts`), and `utils/guideMap.test.ts` when a sidebar page has no map entry |
@@ -302,12 +302,12 @@ convention-check findings woven in, evidence cited underneath.** Kiwi-shape: cla
 When asked to commit/push (or asked for the PR url — that request itself calls the commit):
 
 ```bash
-pixi run recital
+pixi run recital -- --claim "<the commit subject>"
 ```
 
-`recital` (`python/cecelia/effectiveness/recital.py`) spawns both reviewers via `claude -p`,
+`recital` (`python/cecelia/effectiveness/recital.py`) spawns the reviewers via `claude -p`,
 emits their `_run` events **and** one `_finding` row per outcome-tag-requiring bullet
-(`**confirmed**` / `**should reuse**`) to the effectiveness log **atomically with the spawn**
+(`**confirmed**` / `**should reuse**` / `**reproduced**`) to the effectiveness log **atomically with the spawn**
 (so nothing can be silently skipped in autonomous mode — the failure that motivated this
 design was four consecutive reviewer runs where the parent skipped emission every time), and
 prints the formatted recital body — evidence folds + tail lines already in place, each
@@ -340,6 +340,7 @@ blocks a message with no stamp, or one stamped for a different change.
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
+- **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test and fix the code in place, never the reviewer's test (`false_positive` if the test expects the wrong thing). `--claim` is what it is told the change is for, marked unverified.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 - **Maintainability lint** (mechanical) catches a task file pushed past 200 lines and incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments — `docs/MAINTAINABILITY.md`.
 

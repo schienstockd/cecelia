@@ -131,6 +131,13 @@ class AggregateTest(_Fixture):
         [w] = self.c.aggregate(rows, [])["weeks"]
         self.assertEqual((w["changes"], sum(w["findings"].values())), (0, 0))
 
+    def test_a_reviewer_the_chart_does_not_draw_is_left_out_not_a_crash(self):
+        # result_review_finding is in FINDING_EVENTS before the chart has a series for it
+        rows = _week() + [_ev("result_review_finding", "2026-10-06T02:00:00Z",
+                              {"slug": "result-00000001", "marker": "reproduced"})]
+        [w] = self.c.aggregate(rows, [])["weeks"]
+        self.assertEqual(sum(w["findings"].values()), 3)
+
     def test_an_unknown_outcome_is_bucketed_not_echoed(self):
         rows = _week() + [_ev("fanout_audit_finding_resolved", "2026-10-06T05:00:00Z",
                               {"slug": "fanout-3", "outcome": "<script>evil</script>"})]

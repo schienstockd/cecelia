@@ -300,6 +300,34 @@ class FormatEventTest(unittest.TestCase):
         self.assertIn("\033[", line)
 
 
+class ResultReviewRowsTest(unittest.TestCase):
+    """The third reviewer's rows: own label, path-gated skips kept out of the run count."""
+
+    @staticmethod
+    def _run(valve=None):
+        return {"event": "result_review_run", "ts": "2026-11-03T10:00:00Z", "pr": None, "branch": "b",
+                "commit": None, "payload": {"duration_s": 70.0, **({"escape_valve": valve} if valve else {})}}
+
+    def test_a_finding_is_labelled_rslt(self):
+        line = format_event(_finding(event="result_review_finding",
+                                     payload={"slug": "result-0000aaaa", "marker": "reproduced"}), use_colour=False)
+        self.assertIn("rslt", line)
+        self.assertIn("[reproduced]", line)
+
+    def test_a_path_gated_skip_is_quiet_and_a_reused_review_says_so(self):
+        self.assertIsNone(format_event(self._run("no_result_paths"), use_colour=False))
+        self.assertIn("unchanged diff", format_event(self._run("unchanged_diff"), use_colour=False))
+        self.assertIn("1m", format_event(self._run(), use_colour=False))
+
+    def test_skips_count_apart_from_runs(self):
+        tally = console._Tally()
+        for valve in (None, "no_result_paths", "no_result_paths"):
+            tally.add(self._run(valve))
+        row = console._tally_row(tally, "rslt", use_colour=False)
+        self.assertIn("1 run", row)
+        self.assertIn("2 skipped", row)
+
+
 class ParseSinceTest(unittest.TestCase):
     def test_relative_units(self):
         now = _dt.datetime.now(_dt.timezone.utc)

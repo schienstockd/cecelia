@@ -640,6 +640,69 @@ class FindingsEmissionTest(unittest.TestCase):
             self.assertIsNone(e["commit"])
 
 
+def _diff_of(path: str) -> str:
+    return (f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n"
+            "@@ -1,1 +1,1 @@\n-old\n+new\n")
+
+
+class ResultReviewTest(unittest.TestCase):
+    """The third reviewer (`docs/ai-assist/RESULT_REVIEW.md`): gated on result paths, three markers."""
+
+    setUp = FindingsEmissionTest.setUp
+    _events = FindingsEmissionTest._events
+
+    @staticmethod
+    def _fake(result_reply: str):
+        prompts = []
+
+        def fake(prompt: str) -> str:
+            prompts.append(prompt)
+            return result_reply if "RESULT_REVIEW.md" in prompt else "no findings"
+        return fake, prompts
+
+    def test_a_diff_with_no_result_path_skips_and_says_so(self):
+        fake, prompts = self._fake("must not be asked")
+        body = run_recital(_diff_of("docs/DEV.md"), claude_runner=fake)
+        self.assertIn("_Result review: skipped — no result paths_", body)
+        self.assertFalse(any("RESULT_REVIEW.md" in p for p in prompts))
+        rows = [e for e in self._events() if e["event"] == "result_review_run"]
+        self.assertEqual([r["payload"]["escape_valve"] for r in rows], ["no_result_paths"])
+
+    def test_a_test_file_under_a_result_directory_is_not_a_result_path(self):
+        fake, prompts = self._fake("must not be asked")
+        body = run_recital(_diff_of("python/cecelia/utils/tests/test_x.py"), claude_runner=fake)
+        self.assertIn("skipped — no result paths", body)
+
+    def test_frontend_code_that_feeds_a_result_is_gated_in(self):
+        # Two of the backtest's four bugs were frontend: a task form's defaults and the viewer picker.
+        from cecelia.effectiveness.recital import _RESULT_DOC, result_paths, touched_result_paths
+        doc = (pathlib.Path(__file__).resolve().parents[3] / _RESULT_DOC).read_text(encoding="utf-8")
+        globs = result_paths(doc)
+        for path in ("frontend/src/tasks/paramValues.ts", "frontend/src/utils/viewerPick.ts",
+                     "python/cecelia/utils/coastal_utils.py", "app/src/tasks/segment/coastal.json"):
+            self.assertEqual(touched_result_paths(_diff_of(path), globs), [path], path)
+
+    def test_markers_become_a_finding_two_advisories_and_the_claim_reaches_the_prompt(self):
+        reply = ("- **python/cecelia/utils/coastal_utils.py:452** — two groups share a cache → "
+                 "group 1 gets group 0's flow. Repro: _review/r.py, max diff 1.0 [**reproduced**]\n"
+                 "- **python/cecelia/utils/coastal_utils.py:330** — clip range moves [**inferred**]\n"
+                 "- **frontend/src/x.ts:9** — ribbon not drawn [**display**]")
+        fake, prompts = self._fake(reply)
+        body = run_recital(_diff_of("python/cecelia/utils/coastal_utils.py"), claude_runner=fake,
+                           claim="reuse the flow between timepoints")
+        self.assertIn('UNVERIFIED: "reuse the flow between timepoints"', next(p for p in prompts if "RESULT_REVIEW.md" in p))
+        found = [e["payload"] for e in self._events() if e["event"] == "result_review_finding"]
+        self.assertEqual([(f["line"], f["marker"]) for f in found], [(452, "reproduced")])
+        self.assertTrue(found[0]["slug"].startswith("result-"))
+        adv = [e["payload"] for e in self._events() if e["event"] == "result_review_advisory"]
+        self.assertEqual([a["marker"] for a in adv], ["inferred", "display"])
+        self.assertIn("slug", adv[0])      # inferred may be tagged fixed, so it carries a slug
+        self.assertNotIn("slug", adv[1])   # display is listed only
+        self.assertIn(f"[{found[0]['slug']}]", body)
+        self.assertIn("Inferred notes need no tag", body)
+        self.assertIn("_Result review: run_", body)
+
+
 class DefaultRunnerEnvTest(unittest.TestCase):
     def test_reviewer_spawn_disables_observer_pairing(self):
         # A reviewer turn must not re-pair the user's project (observer MCP inherits env).

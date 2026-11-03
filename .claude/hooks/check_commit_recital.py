@@ -195,6 +195,8 @@ def _finding_event_for_slug(slug: str) -> str | None:
         return "fanout_audit_finding_resolved"
     if slug.startswith("conv-"):
         return "convention_check_finding_resolved"
+    if slug.startswith("result-"):
+        return "result_review_finding_resolved"
     return None
 
 

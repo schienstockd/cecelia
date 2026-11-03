@@ -18,6 +18,9 @@ whose change hasn't reached the SHA yet (uncommitted, or on an unmerged branch) 
 and waits, unjudged. A change reaches it by ancestry or in the head of a PR from its branch that
 merged into the SHA (a squash or rebase merge leaves no ancestry): `gh` is asked once per branch.
 
+A result-review finding nobody fixed is swept like a fanout one: every `reproduced` finding not tagged
+`fixed_pre_commit`, and every untagged `inferred` note (`display` notes are listed only).
+
 A convention finding marked `should reuse` that nobody fixed is swept too, as `kind: "duplicate"`:
 new code that copies a helper the codebase already has. It can't misbehave, so the judge asks a
 different question: is the copy still there, beside the helper the finding names (whose code it is
@@ -124,8 +127,11 @@ _PR_IN_SUBJECT = re.compile(r"\(#(\d+)\)\s*$")
 _MERGE_PR = re.compile(r"^Merge pull request #(\d+)\b")
 #: What the sweep reads, recorded on each pass (`run.swept`): a source the previous pass didn't
 #: sweep is read from the start of the log.
-SOURCES = ("fanout", "convention")
+SOURCES = ("fanout", "convention", "result")
 _FANOUT_EVENTS = ("fanout_audit_finding", "fanout_audit_advisory")
+#: Result review: every `reproduced` finding, and the `inferred` advisories (`display` is listed only).
+_RESULT_FINDING, _RESULT_ADVISORY = "result_review_finding", "result_review_advisory"
+_RESULT_SWEPT_ADVISORY = "inferred"
 _CONVENTION_EVENT = "convention_check_finding"
 #: The convention marker swept as a duplicate; the rest are rules-only.
 DUPLICATE_MARKER = "should reuse"
@@ -211,11 +217,14 @@ def _hit_again(b: dict, c: dict) -> None:
 
 
 def swept(row: dict) -> bool:
-    """Whether the sweep reads this reviewer row at all: every fan-out one, and a convention one only
-    marked `should reuse` (the other markers are `rules.py`'s input only)."""
+    """Whether the sweep reads this reviewer row at all: every fan-out one, a convention one only
+    marked `should reuse` (the other markers are `rules.py`'s input only), and a result-review one
+    unless it is `display`."""
     if row.get("event") == _CONVENTION_EVENT:
         return (row.get("payload") or {}).get("marker") == DUPLICATE_MARKER
-    return row.get("event") in _FANOUT_EVENTS
+    if row.get("event") == _RESULT_ADVISORY:
+        return (row.get("payload") or {}).get("marker") == _RESULT_SWEPT_ADVISORY
+    return row.get("event") in (*_FANOUT_EVENTS, _RESULT_FINDING)
 
 
 def branch_resolutions(events: _t.Iterable[dict]) -> dict[str | None, dict[str, dict]]:
@@ -233,7 +242,8 @@ def tag(resolved: dict[str | None, dict[str, dict]], row: dict) -> dict:
     return ((resolved.get(row.get("branch")) or {}).get(_key(row)) or {}).get("payload") or {}
 
 
-def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None) -> list[dict]:
+def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str | None = None,
+               result_since: str | None = None) -> list[dict]:
     """Fanout findings logged since `since` that nobody fixed, `should reuse` convention findings
     since `convention_since` (default `since`) that nobody fixed, and agent-run errors, one per key,
     oldest first. An agent-run error keeps its first row and counts the rows (`runs`).
@@ -243,10 +253,14 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     A fix logged from another branch costs a judge look; the other way a shipped bug goes unjudged."""
     events = list(events)
     convention_since = since if convention_since is None else convention_since
+    result_since = since if result_since is None else result_since
     resolved = branch_resolutions(events)
     out: dict[str, dict] = {}
     for r in events:
-        if r.get("ts", "") < (convention_since if r.get("event") == _CONVENTION_EVENT else since):
+        ev = r.get("event")
+        floor = (convention_since if ev == _CONVENTION_EVENT
+                 else result_since if ev in (_RESULT_FINDING, _RESULT_ADVISORY) else since)
+        if r.get("ts", "") < floor:
             continue
         if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
             key = r["payload"]["key"]
@@ -657,7 +671,8 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
         have += [c for c in commits if c["commit"] not in {h["commit"] for h in have}]
     # a source the previous pass didn't sweep starts at the log's beginning: its backlog, judged once
     swept = (previous or {}).get("run", {}).get("swept") or ("fanout",)
-    found = candidates(events, since=since, convention_since=since if "convention" in swept else "")
+    found = candidates(events, since=since, convention_since=since if "convention" in swept else "",
+                       result_since=since if "result" in swept else "")
     for c in found:
         if c.get("kind") == "agent_run" and c["key"] in carried:   # hit again: same bug, more runs
             _hit_again(carried[c["key"]], c)

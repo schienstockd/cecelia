@@ -120,6 +120,22 @@ class CandidatesTest(_Repo):
         self.assertIn(claimed["payload"]["slug"], keys)
         self.assertEqual(len(keys), 2)
 
+    def test_result_review_rows_are_swept_except_display_and_fixed_ones(self):
+        rows = [_row("result_review_finding", {"slug": "result-00000001", "file": "a.py", "line": 1,
+                                               "desc": "reproduced", "marker": "reproduced"}),
+                _row("result_review_finding", {"slug": "result-00000002", "file": "a.py", "line": 2,
+                                               "desc": "fixed", "marker": "reproduced"}),
+                _row("result_review_finding_resolved", {"slug": "result-00000002", "outcome": "fixed_pre_commit"}),
+                _row("result_review_advisory", {"slug": "result-00000003", "file": "b.py", "line": 3,
+                                                "desc": "inferred", "marker": "inferred"}),
+                _row("result_review_advisory", {"file": "c.ts", "line": 4, "desc": "ribbon", "marker": "display"})]
+        keys = {c["key"] for c in self.b.candidates(rows, since="2026-09-28")}
+        self.assertEqual(keys, {"result-00000001", "result-00000003"})
+        # the first pass that sweeps the source reads it from the log's start (`result_since=""`)
+        self.assertEqual(self.b.candidates(rows, since="2026-12-01"), [])
+        keys = {c["key"] for c in self.b.candidates(rows, since="2026-12-01", result_since="")}
+        self.assertEqual(keys, {"result-00000001", "result-00000003"})
+
     def test_only_unhandled_fanout_findings_since_the_window(self):
         events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "fixed_pre_commit"),
                   _finding("fanout-00000002"), _resolved("fanout-00000002", "false_positive"),

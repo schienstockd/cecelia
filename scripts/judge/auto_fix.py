@@ -131,21 +131,13 @@ def attribution_trailers(stamp: dict) -> list[str]:
     return [coauthor_line(stamp), *trailer_lines(stamp)]
 
 
-def _home_rule(path: pathlib.Path) -> str:
-    """`path` as a permission-rule path: `~/…` under home, `//…` (absolute) otherwise."""
-    try:
-        return "~/" + path.resolve().relative_to(pathlib.Path.home().resolve()).as_posix()
-    except ValueError:
-        return "/" + path.resolve().as_posix()
-
-
 def settings(main: pathlib.Path) -> dict:
     """The fix agent's fence: the verify sandbox, without the write-deny on all of `~` (its worktree
     is under `~`; `acceptEdits` keeps edits in it), with writes to the main checkout and the dotfiles
     denied by name as a second fence."""
     s = copy.deepcopy(agent_sandbox.SANDBOX_SETTINGS)
     keep = [d for d in s["permissions"]["deny"] if not d.endswith("(~/**)")]
-    named = [_home_rule(main) + "/**", "~/.claude/**", "~/.ssh/**", "~/.gnupg/**", "~/.config/**",
+    named = [agent_sandbox.permission_path(main) + "/**", "~/.claude/**", "~/.ssh/**", "~/.gnupg/**", "~/.config/**",
              "~/.julia/environments/**", "~/.bashrc", "~/.profile", "~/.gitconfig"]
     s["permissions"]["deny"] = keep + [f"{tool}({p})" for tool in ("Write", "Edit", "NotebookEdit") for p in named]
     return s

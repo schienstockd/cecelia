@@ -111,7 +111,8 @@ def _mechanism_section(
     run_events = (run_event,) if isinstance(run_event, str) else run_event
     finding_events = (finding_event,) if isinstance(finding_event, str) else finding_event
     resolved_events = (resolved_event,) if isinstance(resolved_event, str) else resolved_event
-    runs = [e for e in events if e.get("event") in run_events]
+    # a reviewer that didn't spawn (`escape_valve`: e.g. the result review on a diff with no result path)
+    runs = [e for e in events if e.get("event") in run_events and not (e.get("payload") or {}).get("escape_valve")]
     findings = [e for e in events if e.get("event") in finding_events]
     redteam = {f["payload"]["slug"] for f in findings
                if f.get("payload", {}).get("slug") in _REDTEAM_SLUGS}
@@ -398,6 +399,14 @@ def render_rollup(
             "convention_check_finding",
             events,
             resolved_event="convention_check_finding_resolved",
+            pr_lookup=pr_lookup,
+        ),
+        _mechanism_section(
+            "Result review",
+            "result_review_run",
+            "result_review_finding",
+            events,
+            resolved_event="result_review_finding_resolved",
             pr_lookup=pr_lookup,
         ),
         _inventory_section(events),

@@ -40,7 +40,8 @@ _style = _load_sibling("figure_style")
 _verify = _load_sibling("verify")
 
 FLOW_NAME = "findings-flow.svg"
-_PLAUSIBLE_EVENT = "fanout_audit_advisory"
+#: Advisory notes whose tag is optional and which the bug sweep reads when untagged (`bugs.swept`).
+_UNTAGGED_NOTES = {("fanout_audit_advisory", "plausible"), ("result_review_advisory", "inferred")}
 _FIXED = "fixed_pre_commit"
 
 
@@ -93,7 +94,7 @@ def aggregate(events: _t.Iterable[dict], records: _t.Sequence[dict], *, through:
             required.setdefault(p["slug"], e)
             if _bugs.tag(resolved, e).get("outcome") != _FIXED:
                 req_open.setdefault(p["slug"], e)
-        elif e.get("event") == _PLAUSIBLE_EVENT and p.get("marker") == "plausible":
+        elif (e.get("event"), p.get("marker")) in _UNTAGGED_NOTES:
             plausible.setdefault(_bugs._key(e), e)
             if _bugs.tag(resolved, e).get("outcome") != _FIXED:
                 pl_open.setdefault(_bugs._key(e), e)
