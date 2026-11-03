@@ -1703,5 +1703,6 @@ function api_gating_copy(body_bytes::Vector{UInt8})
         e isa ArgumentError || rethrow()
         return _gerr(400, "Source image has no $pt gating to copy")
     end
-    200, JSON3.write((; copied = r.copied, skipped = merge(absent, r.skipped), warnings = r.warnings))
+    200, JSON3.write((; copied = r.copied, skipped = merge(absent, r.skipped), warnings = r.warnings,
+                          remapped = r.remapped))
 end

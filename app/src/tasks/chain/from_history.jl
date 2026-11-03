@@ -312,9 +312,7 @@ function gated_pop_refs(params::AbstractDict, lv)::Vector{Tuple{String,String}}
         l = get(lv, k, nothing)
         (l !== nothing && l.type == "popSelection" && (isempty(l.accepts) || "live" in l.accepts)) || continue
         str in ("", "NONE", "root", "/") && continue
-        parts = split(str, '/'; limit = 2)
-        ls, path = startswith(str, "/") ? (own, str) :
-                   length(parts) == 2   ? (String(parts[1]), "/" * parts[2]) : (own, "/" * str)
+        ls, path = _split_pop_ref(str, own)
         segs = String[]
         produced = false
         for seg in split(path, '/'; keepempty = false)

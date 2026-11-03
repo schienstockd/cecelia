@@ -328,3 +328,35 @@ end
         rm(td; recursive=true)
     end
 end
+
+# Motif columns land on the segmentation the pops come from — there is no output-target param. Pops
+# spanning two segmentations are refused at run time, before anything is written; a stale `valueName`
+# from an old saved chain is ignored. Both segmentations carry an HMM column, so without the refusal
+# the run would proceed and write motif columns.
+@testset "motif discovery refuses pops from two segmentations, writes nothing (KDIeEm)" begin
+    h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    if !have_fixture(h5)
+        @test_skip "motif multi-segmentation refusal (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        for vn in ("B", "T")
+            p = joinpath(td, "labelProps", "$(vn).h5ad"); cp(h5, p)
+            labels = (label_props(p) |> select_cols(["track_id"]) |> as_df).label
+            label_props(p) |> add_obs(DataFrame("label" => labels,
+                                                "live.cell.hmm.state.default" => ones(length(labels)))) |> save!
+            img.label_props[vn] = "$(vn).h5ad"
+        end
+        img.label_props["_active"] = "B"
+        before = Dict(vn => read(img_label_props_path(img, vn)) for vn in ("B", "T"))
+        logs = String[]
+        r = Cecelia._run_task(Cecelia.MotifDiscovery(), [img],
+                              Dict{String,Any}("pops" => ["B/_tracked", "T/_tracked"], "valueName" => "B");
+                              on_log = l -> push!(logs, l))
+        @test r === nothing
+        # fails if: the run is not refused for spanning segmentations (names both value_names)
+        @test any(l -> occursin("single segmentation", l) && occursin("B", l) && occursin("T", l), logs)
+        @test all(read(img_label_props_path(img, vn)) == before[vn] for vn in ("B", "T"))
+        rm(td; recursive=true)
+    end
+end

@@ -104,6 +104,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     df = pop_df_multi(imgs, uids, p.popsToCluster;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(p.popsToCluster)"); return nothing)
+    df = _match_track_channels(df, imgs, uids, p.popsToCluster, cell_measures, mot_set; on_log = on_log)
+    df === nothing && return nothing
     on_progress(2, 4)
 
     # min track length: drop short tracks (num_cells = per-track cell count from track_props)
@@ -199,15 +201,14 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 end
 
 # value_name of the first value-name-prefixed pop (for the set-wide motility-column probe). Pops
-# are prefixed as "{value_name}/{pop path}" (e.g. "A/root") — the segmentation key is the part
-# before the FIRST slash (mirrors `_group_pops_by_value_name`). Root / unprefixed pops fall back
+# are prefixed as "{value_name}/{pop path}" (e.g. "A/qc", root "A/") — the segmentation key is the part
+# before the FIRST slash (`_split_pop_ref`). Root / unprefixed pops fall back
 # to the image's active segmentation. Motility columns are identical across the set, so any one
 # segment suffices.
 function pops_value_name(pops::Vector{String}, img::CciaImage)::String
     for p in pops
-        (startswith(p, "/") || is_root(p)) && continue
-        idx = findfirst('/', p)
-        idx === nothing || return p[1:idx-1]
+        vn = _split_pop_ref(p, "")[1]                 # "" = unprefixed → keep looking
+        isempty(vn) || return vn
     end
     resolve_value_name(img)
 end

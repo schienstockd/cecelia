@@ -18,7 +18,7 @@ function _pop_summary(p::Population)
            fun     = p.filter_fun === nothing ? "" : string(p.filter_fun),
            values  = p.filter_values)
     (; path = p.path, name = p.name, parent = p.parent, popType = string(p.pop_type),
-       valueName = p.value_name, colour = p.colour, isTrack = p.is_track, gate = gate, filter = filt)
+       valueName = p.value_name, colour = p.colour, isTrack = is_track_pop(p.pop_type, p.path), gate = gate, filter = filt)
 end
 
 # Every persisted population defined on an image (via the shared enumerator), capped.

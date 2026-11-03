@@ -50,6 +50,8 @@ function _run_task(::ManualGate, img::CciaImage, params::Dict{String,Any};
     r = copy_gating!(src, CciaImage[img]; value_name = vn, pop_type = pt, replace = false)
     if img.uid in r.copied
         on_log("[INFO] Copied $pt gates on '$vn' from $(src.name)")
+        rmap = get(r.remapped, img.uid, [])
+        isempty(rmap) || on_log("[INFO] Matched channels by name: $(join(("$(x.channel) $(x.from) → $(x.to)" for x in rmap), ", "))")
         for w in get(r.warnings, img.uid, [])
             on_log("[WARN] Column '$(w.column)' missing here — empty: $(join(w.pops, ", "))")
         end
