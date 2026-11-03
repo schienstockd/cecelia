@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { suggestUrl, conflictOptions, applyChoices, groupSteps, defaultKeep, groupLeftOut, uniqueChainName,
+         historyParamsCsv, historyParamsUrl,
          type HistoryConflict, type HistoryFinal } from './chainFromHistory'
 import type { ChainTemplate } from '../tasks/types'
 
@@ -71,5 +72,26 @@ describe('uniqueChainName', () => {
   it('never returns a name a chain already has', () => {
     expect(uniqueChainName('From history', [])).toBe('From history')
     expect(uniqueChainName('From history', ['From history', 'From history 2'])).toBe('From history 3')
+  })
+})
+
+describe('historyParamsCsv', () => {
+  const row = {
+    step: 'Drift correction', task: 'cleanupImages.driftCorrect', output: 'driftCorrected', images: '7/7',
+    lastRun: '2026-10-01T12:49:26', changedFromDefault: 'driftChannel=mem-TOM; driftZSmoothness=0.3',
+    conflicts: '', note: '',
+  }
+  it('writes the columns in a fixed order whatever order the object keys arrive in', () => {
+    const shuffled = { note: '', conflicts: '', images: '7/7', task: row.task, step: row.step, output: row.output,
+                       changedFromDefault: row.changedFromDefault, lastRun: row.lastRun }
+    const [header] = historyParamsCsv([shuffled]).split('\n')
+    expect(header).toBe('step,task,output,images,last_run,changed_from_default,differs_between_images,note')
+  })
+  it('quotes a cell holding a comma-separated channel list', () => {
+    const csv = historyParamsCsv([{ ...row, changedFromDefault: 'channels=SHG, nuc-GFP' }])
+    expect(csv.split('\n')[1]).toContain('"channels=SHG, nuc-GFP"')
+  })
+  it('lists the images in the url', () => {
+    expect(new URL(historyParamsUrl('P', ['a', 'b']), 'http://x').searchParams.get('imageUids')).toBe('a,b')
   })
 })
