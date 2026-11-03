@@ -812,7 +812,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           <template v-if="taskMat">
             <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
                     v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
-              <ComingSoonBadge :tier="taskMat.tier" />
+              <ComingSoonBadge :tier="taskMat.tier" dot />
             </button>
             <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
           </template>

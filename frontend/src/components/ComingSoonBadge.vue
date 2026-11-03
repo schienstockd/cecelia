@@ -12,11 +12,14 @@
   bottom of the same scale, so one badge says all of it. With a tier it is the map's tier dot plus the
   tier's word, no pill (`lib/guides/tiers.ts` → `chipDot`); `exempt` renders
   nothing (no scientific result, no badge). Where pages and tasks show it: `PageMaturity.vue`, TaskRunner.
+  `dot` drops the word, for a spot where it is already written next to it (TaskRunner: the picked
+  function's label carries "· Experimental"); the host's tooltip and the aria-label still name the tier.
 
     <ComingSoonBadge />
     <ComingSoonBadge label="Coming soon" note="0.2.1" />
     <ComingSoonBadge label="Walkthrough in progress" />
     <ComingSoonBadge tier="experimental" />
+    <ComingSoonBadge tier="experimental" dot />
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -27,13 +30,17 @@ const props = withDefaults(defineProps<{
   label?: string
   note?: string
   tier?: Tier
+  dot?: boolean
 }>(), { label: 'Coming soon' })
 
 const text = computed(() => props.tier ? TIER_LABEL[props.tier] : props.label)
 </script>
 
 <template>
-  <span v-if="tier && tier !== 'exempt'" class="cc-tier-badge cc-row-group cc-fs-2xs">
+  <span v-if="tier && tier !== 'exempt' && dot" class="cc-tier-badge" role="img" :aria-label="text">
+    <span :class="['cc-dot', chipDot(tier)]" />
+  </span>
+  <span v-else-if="tier && tier !== 'exempt'" class="cc-tier-badge cc-row-group cc-fs-2xs">
     <span :class="['cc-dot', chipDot(tier)]" />{{ text }}<template v-if="note"> — {{ note }}</template>
   </span>
   <span v-else-if="!tier" class="cc-soon-badge" :aria-label="note ? `${text} — ${note}` : text">
