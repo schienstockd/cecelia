@@ -278,6 +278,16 @@ class FenceTest(_AutoFixture):
         self.assertEqual(seen["env"]["CECELIA_OBSERVER_NO_PAIR"], "1")
         self.assertEqual(argv[argv.index("--output-format") + 1], "stream-json")
 
+    def test_the_session_reports_the_model_it_ran_on_and_each_row_logs_it(self):
+        # it runs on the user's default model: without this a default change rewrites the history unseen
+        result = {"type": "result", "structured_output": {"bugs": []}, "session_id": "s", "total_cost_usd": 0.4,
+                  "modelUsage": {"claude-opus-5-5": {}}}
+        (answer, *_), _, _ = self.session(result)
+        self.assertEqual(answer[self.af.MODELS_KEY], ["claude-opus-5-5"])
+        self.af._log(self.record, [{"id": "B1", "key": "fanout-b1"}],
+                     {"bugs": [{"key": "fanout-b1", "outcome": "fixed", "reason": "r"}], **answer}, "pr-url", self.auto)
+        self.assertEqual(self.rv.read_auto(self.auto)["fanout-b1"]["models"], ["claude-opus-5-5"])
+
     def test_a_session_cut_off_by_the_usage_limit_waits_and_resumes_itself(self):
         limit = "You've hit your session limit · resets 2:20pm (Australia/Sydney)"
         runs = iter([[{"type": "system", "session_id": "s1"},

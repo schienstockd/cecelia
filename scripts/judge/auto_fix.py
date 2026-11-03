@@ -54,7 +54,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
 from cecelia.effectiveness.claude_cli import (  # noqa: E402
-    RateLimited, failure_text, limit_in_text, limit_resets_at, rate_limit, read_result, reset_at, resolve_claude_bin,
+    RateLimited, failure_text, limit_in_text, limit_resets_at, models, rate_limit, read_result, reset_at, resolve_claude_bin,
     synthetic_limit, with_reset)
 from cecelia.effectiveness.agents import ci_state  # noqa: E402
 from cecelia.effectiveness.attribution import coauthor_line, footer, trailer_lines  # noqa: E402
@@ -432,7 +432,9 @@ def _one_session(prompt, cwd, schema, *, resume, main, label, out, budget_usd, t
     answer = res.get("structured_output")
     if code != 0 or res.get("is_error") or not isinstance(answer, dict):
         return None, cost, sid, f"session failed (exit {code}): {failure_text(done, res)}", None
-    return answer, cost, sid, None, None
+    # the model ids the session ran on, for its `auto_fix.jsonl` rows (`_log`): it runs on the default
+    ran_on = models(res)
+    return ({**answer, MODELS_KEY: ran_on} if ran_on else answer), cost, sid, None, None
 
 
 def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, input: str | None = None,
@@ -478,6 +480,10 @@ def _fixed_keys(answer: dict) -> set[str]:
     return {r["key"] for r in answer.get("bugs", []) if r.get("outcome") == "fixed"}
 
 
+#: Where `_one_session` puts the session's model ids on its answer; not a schema field.
+MODELS_KEY = "_models"
+
+
 def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log: pathlib.Path | None,
          *, stopped: str | None = None, tree: pathlib.Path | None = None, stage: str = "staged") -> None:
     """One `auto_fix.jsonl` row per bug. `stopped`: why the script stopped short of a green PR, its work
@@ -493,6 +499,7 @@ def _log(record: dict, bugs: _t.Sequence[dict], answer: dict, pr: str, auto_log:
             outcome, reason = "left", f"Stopped {where}: {stopped}. The agent had fixed it: {reason}"
         _rv.append_auto({"record": record["date"], "ref": b["id"], "key": b["key"], "outcome": outcome,
                          "reason": reason, "pr_url": pr if outcome == "fixed" or stopped else "",
+                         **({"models": answer[MODELS_KEY]} if answer.get(MODELS_KEY) else {}),
                          **({"tree": str(tree), "stage": stage if stage in STAGES else "staged"}
                             if stopped and tree else {})}, auto_log)
 
