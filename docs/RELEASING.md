@@ -221,7 +221,9 @@ node scripts/changelogSection.mjs v0.1.1        # exactly what the release (and 
 ```
 
 **Lead with what a user can act on wrongly.** A format change, a default that moved, a one-way door —
-those go first, under *Read this first*. Feature bullets can be discovered by using the app; a store
+those go first, under *Read this first*. Write the line in `[Unreleased]` in the PR that changes it:
+recital's changelog check (`python/cecelia/effectiveness/changelog_check.py`) warns when a task default
+changes on a branch with no CHANGELOG line. Feature bullets can be discovered by using the app; a store
 written in a format the previous version cannot read cannot.
 
 **One line per bullet: what changed, and the PR number.** No measurements, no rationale, no "before,

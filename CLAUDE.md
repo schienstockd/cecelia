@@ -343,6 +343,7 @@ blocks a message with no stamp, or one stamped for a different change.
 - **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test and fix the code in place, never the reviewer's test (`false_positive` if the test expects the wrong thing). `--claim` is what it is told the change is for, marked unverified.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 - **Maintainability lint** (mechanical) catches a task file pushed past 200 lines and incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments — `docs/MAINTAINABILITY.md`.
+- **Changelog check** (mechanical) catches a changed task default with no `CHANGELOG.md` line on the branch: a default changes results on re-run, so it belongs under *Read this first* (`docs/RELEASING.md`).
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
@@ -359,8 +360,10 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
 - `_Maintainability lint: run_` (or `_run — nothing flagged_` / `_skipped — no source files_`) —
   mechanical; a load-bearing line opts out with `MAINT-EXEMPT: <reason>`. See
   `python/cecelia/effectiveness/maintainability_lint.py`.
+- `_Changelog check: run_` (or `_run — N default change(s), `CHANGELOG.md` updated_` /
+  `_skipped — no default changed_`) — mechanical. See `python/cecelia/effectiveness/changelog_check.py`.
 
-Missing any of the four tails = that mechanism went dark. Don't reassure or wait to be asked "any
+Missing any of the tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
 (a new helper/component/endpoint that duplicates an existing canonical); the inventory check
 catches a new shared file or route the next session's discovery grep won't find; the maintainability
@@ -370,7 +373,7 @@ lint catches the file-size and comment-history rules at write time. See
 **Convention-check is advisory for now**: findings land in the reservations recital and the
 effectiveness log, but do not block a commit. Locked decision #4 in
 `docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
-FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
+FP rate is tolerable. The reservations recital itself and its tail lines are hard from day one.
 
 **Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
 fanout finding and every `**should reuse**` / `**wrong home**` convention finding in the recital
