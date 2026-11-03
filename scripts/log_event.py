@@ -2,7 +2,7 @@
 """CLI wrapper for the effectiveness log's `append_event`.
 
 For ad-hoc / retrospective / manual emission. The standard automatic path is
-`pixi run recital` (`python/cecelia/effectiveness/recital.py`), which spawns both reviewers
+`pixi run recital` (`python/cecelia/effectiveness/recital.py`), which spawns the reviewers
 and calls `append_event` in-process — no CLI shell-out per event. This wrapper stays for
 retrospective backfill rows, manual `human_override` entries, and any pattern the recital
 script doesn't cover.

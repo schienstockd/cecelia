@@ -120,6 +120,33 @@ class CandidatesTest(_Repo):
         self.assertIn(claimed["payload"]["slug"], keys)
         self.assertEqual(len(keys), 2)
 
+    def test_result_review_rows_are_swept_except_display_and_fixed_ones(self):
+        rows = [_row("result_review_finding", {"slug": "result-00000001", "file": "a.py", "line": 1,
+                                               "desc": "reproduced", "marker": "reproduced"}),
+                _row("result_review_finding", {"slug": "result-00000002", "file": "a.py", "line": 2,
+                                               "desc": "fixed", "marker": "reproduced"}),
+                _row("result_review_finding_resolved", {"slug": "result-00000002", "outcome": "fixed_pre_commit"}),
+                _row("result_review_advisory", {"slug": "result-00000003", "file": "b.py", "line": 3,
+                                                "desc": "inferred", "marker": "inferred"}),
+                _row("result_review_advisory", {"file": "c.ts", "line": 4, "desc": "ribbon", "marker": "display"})]
+        keys = {c["key"] for c in self.b.candidates(rows, since="2026-09-28")}
+        self.assertEqual(keys, {"result-00000001", "result-00000003"})
+        # the first pass that sweeps the source reads it from the log's start (`result_since=""`)
+        self.assertEqual(self.b.candidates(rows, since="2026-12-01"), [])
+        keys = {c["key"] for c in self.b.candidates(rows, since="2026-12-01", result_since="")}
+        self.assertEqual(keys, {"result-00000001", "result-00000003"})
+
+    def test_an_edited_repro_is_a_shipped_reproduced_finding_on_any_branch(self):
+        rows = [_row("result_review_finding", {"slug": "result-0000aaaa", "file": "a.py", "line": 1, "desc": "d",
+                                               "marker": "reproduced"}, branch="first"),
+                _row("result_review_finding_resolved", {"slug": "result-0000aaaa", "outcome": "fixed_pre_commit"},
+                     branch="first"),
+                _row("result_review_test_edited", {"slug": "result-0000aaaa", "file": "t.py", "reason": "px"},
+                     ts="2026-10-02T00:00:00Z", branch="later")]
+        (c,) = self.b.candidates(rows, since="2026-09-28")
+        self.assertEqual((c["key"], c["marker"], c["outcome"]), ("result-0000aaaa", "reproduced", "false_positive"))
+        self.assertTrue(self.b._record.shipped_reproduced(c))
+
     def test_only_unhandled_fanout_findings_since_the_window(self):
         events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "fixed_pre_commit"),
                   _finding("fanout-00000002"), _resolved("fanout-00000002", "false_positive"),
@@ -275,6 +302,25 @@ class SweepTest(_Repo):
                           by["fanout-00000001"]["verify"]["verdict"]), ("open", "2026-10-05", "fix"))
         self.assertTrue(by["fanout-00000001"]["why"].startswith("still open; not judged"))
         self.assertEqual(failures, {"sweep": "judge failed (exit 1): overloaded"})
+
+    def test_the_excerpt_judge_cant_dismiss_a_reproduced_result_its_author_shipped(self):
+        def reproduced(slug, file="a.py", **kw):
+            return _row("result_review_finding", {"slug": slug, "file": file, "line": 2, "desc": f"d {slug}",
+                                                  "marker": "reproduced"}, **kw)
+        events = [reproduced("result-00000001", branch="b"),
+                  _row("result_review_finding_resolved", {"slug": "result-00000001", "outcome": "false_positive",
+                                                          "reason": "the repro is wrong"}, branch="b"),
+                  reproduced("result-00000002", file="b.py", branch="c")]   # untagged: the judge's call stands
+        bugs, _ = self.sweep(events, judge=self.judge("not_a_bug"))
+        by = {b["key"]: b for b in bugs}
+        self.assertEqual(by["result-00000001"]["status"], "open")       # on to verify, then the owner
+        self.assertIn("back to verify", by["result-00000001"]["why"])
+        self.assertNotEqual(by.get("result-00000002", {}).get("status"), "open")   # dismissed, or not listed
+        # merged under an older fanout finding on the same function, it still holds the merged bug open
+        merged, _ = self.sweep([_finding("fanout-00000009", file="a.py", line=2, ts="2026-09-30T00:00:00Z"), *events[:2]],
+                               judge=self.judge("not_a_bug"))
+        (lead,) = [b for b in merged if "result-00000001" in (b.get("sources") or [b["key"]])]
+        self.assertEqual((lead["key"], lead["status"], lead.get("owner_only")), ("fanout-00000009", "open", True))
 
     def test_the_excerpt_judge_cant_dismiss_a_bug_verify_found_live(self):
         bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])

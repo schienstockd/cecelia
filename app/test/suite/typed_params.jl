@@ -689,6 +689,9 @@ end
             "basisPops" => ["A/B", "A/T"], "nPermutations" => 500))
         @test p.basisPops == ["A/B", "A/T"]
         @test p.nPermutations === 500
+        @test p.shufflePops == String[]
+        @test Cecelia.parse_neighbour_stats_params(Dict{String,Any}(
+            "basisPops" => ["A/B"], "shufflePops" => ["A/B", "A/T"])).shufflePops == ["A/B", "A/T"]
     end
 
     # importImages

@@ -515,6 +515,11 @@ async function readJson<T = unknown>(res: Response, label: string): Promise<T> {
 }
 
 const canvas = ref<HTMLCanvasElement | null>(null)
+/** The canvas's CSS size, as reactive state — `clientWidth/Height` are plain DOM reads, so a computed
+ *  that reads them is not re-run by a window resize and its overlay stays where the old size put it.
+ *  Written by the frame closure (`usePlotResize`, which the canvas's ResizeObserver drives); every
+ *  overlay positioned in canvas px reads this instead. */
+const canvasSize = ref({ w: 0, h: 0 })
 const renderer = shallowRef<VolumeRenderer | null>(null)
 /**
  * The 2D pan/zoom viewer for whole-slide images (`docs/todo/VIEWER_TILES_PLAN.md` → Phase C).
@@ -1284,7 +1289,8 @@ const camZoom = computed(() => {
   if (!c || !m) return 1
   const visibleHeightUm = visibleExtentUm(cam.value.dist, 1)[1]
   const visibleL0Y = visibleHeightUm / (m.voxelUm[1] || 1)
-  const devicePxY = Math.max(c.clientHeight * (window.devicePixelRatio || 1), 1)
+  // `canvasSize` makes a resize re-pick the level; the DOM read covers the moments before the first frame
+  const devicePxY = Math.max((canvasSize.value.h || c.clientHeight) * (window.devicePixelRatio || 1), 1)
   return visibleL0Y / devicePxY
 })
 /**
@@ -1642,6 +1648,9 @@ const cells = computed(() => stripCells(
 // ResizeObserver. `redraw()` is the camera/contrast/timepoint path (the box is identical but the frame
 // is not); `schedule()` is the resize path, which the size guard owns.
 const frame = usePlotResize(canvas, () => {
+  const cel = canvas.value
+  if (cel && (cel.clientWidth !== canvasSize.value.w || cel.clientHeight !== canvasSize.value.h))
+    canvasSize.value = { w: cel.clientWidth, h: cel.clientHeight }
   // Tile mode owns the canvas when a whole-slide plane is active — see `useTiles`. Dispatched HERE
   // rather than upstream because every camera/pointer path funnels through this closure; a second
   // dispatch site would drift from this one.
@@ -3728,26 +3737,25 @@ watch(previewedRegion, r => {
 /** The box (or the drag in flight) in canvas CSS px — follows pan and zoom, it is anchored to the image. */
 const previewBoxScreen = computed(() => {
   const r = boxDraft.value ?? ownPreviewBox.value
-  const m = meta.value, el = canvas.value
-  if (!r || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
-  return l0RectToScreen(r, cam.value, m, el.clientWidth, el.clientHeight)
+  const m = meta.value, { w, h } = canvasSize.value
+  if (!r || !m || mode.value !== 'plane' || h <= 0) return null
+  return l0RectToScreen(r, cam.value, m, w, h)
 })
 /** The ROI under review (RoiSection's `focus`) and its box in canvas CSS px — the spotlight dims the
  *  rest of the image. Anchored to the image like the preview box, so pan and zoom keep it on the ROI. */
 const roiSection = ref<{ step: (dir: 1 | -1) => void, onKey: (e: KeyboardEvent) => boolean } | null>(null)
 const roiSpot = ref<RoiSpot | null>(null)
 const roiSpotScreen = computed(() => {
-  const r = roiSpot.value, m = meta.value, el = canvas.value
-  if (!r || !settings.viewerRoiSpotlight || !m || !el || mode.value !== 'plane' || el.clientHeight <= 0) return null
-  return l0BoxToScreen(r.box, cam.value, m, zLoaded.value, true, el.clientWidth, el.clientHeight)
+  const r = roiSpot.value, m = meta.value, { w, h } = canvasSize.value
+  if (!r || !settings.viewerRoiSpotlight || !m || mode.value !== 'plane' || h <= 0) return null
+  return l0BoxToScreen(r.box, cam.value, m, zLoaded.value, true, w, h)
 })
 /** 3D: the ROI's box itself — its twelve edges through the shaders' projection, so it turns with the
  *  volume (docs/todo/ROI_TRIAGE_PLAN.md → Spotlight). */
 const roiBoxLines = computed(() => {
-  const r = roiSpot.value, m = meta.value, el = canvas.value
-  if (!r || !settings.viewerRoiSpotlight || !m || !el || mode.value !== 'volume' || el.clientHeight <= 0) return null
-  const c = l0BoxCorners(r.box, cam.value, m, zLoaded.value, settings.viewerVolumeProjection !== 'persp',
-                         el.clientWidth, el.clientHeight)
+  const r = roiSpot.value, m = meta.value, { w, h } = canvasSize.value
+  if (!r || !settings.viewerRoiSpotlight || !m || mode.value !== 'volume' || h <= 0) return null
+  const c = l0BoxCorners(r.box, cam.value, m, zLoaded.value, settings.viewerVolumeProjection !== 'persp', w, h)
   if (!c) return null
   const top = c.reduce((a, b) => (b.y < a.y ? b : a))
   return { lines: BOX_EDGES.map(([a, b]) => ({ x1: c[a].x, y1: c[a].y, x2: c[b].x, y2: c[b].y })), top }
@@ -3762,11 +3770,11 @@ function measurePboxBar(el: unknown) {
 /** The bar above the box's top-left corner, kept inside the canvas — the box is clipped to it, so a
  *  bar that followed the corner off-screen would take the controls with it. */
 const previewBarStyle = computed(() => {
-  const b = previewBoxScreen.value, el = canvas.value
-  if (!b || !el) return undefined
+  const b = previewBoxScreen.value, { w, h } = canvasSize.value
+  if (!b) return undefined
   const p = placeBox({
     anchor: { left: b.x, top: b.y, width: b.w, height: b.h }, box: pboxBarSize.value,
-    viewport: { width: el.clientWidth, height: el.clientHeight },
+    viewport: { width: w, height: h },
     placement: 'top-start', gap: 6, margin: 4, fallbacks: [],
   })
   return { left: p.left + 'px', top: p.top + 'px' }
@@ -3845,10 +3853,9 @@ function boxDrawUp(e: PointerEvent): boolean {
   return true
 }
 const overviewRect = computed(() => {
-  const m = meta.value
-  const el = canvas.value
-  if (!m || !el || el.clientHeight <= 0 || el.clientWidth <= 0) return null
-  const v = cameraViewL0(cam.value, m, el.clientWidth, el.clientHeight)
+  const m = meta.value, { w, h } = canvasSize.value
+  if (!m || h <= 0 || w <= 0) return null
+  const v = cameraViewL0(cam.value, m, w, h)
   const nX = Math.max(m.nX, 1), nY = Math.max(m.nY, 1)
   return {
     x: Math.max(0, Math.min(1, v.x0 / nX)),

@@ -160,6 +160,11 @@ end
         out = label_props(img; value_name="B") |> v -> select_cols(v, [col]) |> as_df
         decoded = Set(Int(l) for (l, s) in zip(out.label, out[!, col]) if s isa Real && isfinite(s))
         @test !isempty(decoded) && decoded ⊆ dcells
+        # …and the run's fit record lands beside the table it decoded into
+        fit = Cecelia.hmm_fit_entry(Cecelia.img_label_props_path(img, "B"), "tc")
+        @test fit["numStates"] == 2 && fit["modelMeasurements"] == ["live.cell.speed", "live.cell.angle"]
+        @test fit["nObs"] == count(s -> s isa Real && isfinite(s), out[!, col])
+        @test isfinite(fit["logLik"]) && fit["partOf"] == [img.uid]
 
         # a second run on the same label set (a K sweep) keeps the first run's QC: banked per run
         Cecelia._run_task(Cecelia.HmmStates(), imgs,

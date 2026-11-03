@@ -67,6 +67,13 @@ test whether an agent can actually use the framework.
      the check is a proxy, and a busy file would otherwise send its every parked bug back each
      week. The rest stay parked and go first next pass. A carried `open` bug whose verdict is `guard` (a record from before parking) is parked.
 
+   **Result review** (key `result-…`): `reproduced` findings not tagged `fixed_pre_commit`, and untagged
+   `inferred` notes, judged like fanout findings. `display` notes are never swept
+   ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)). A `reproduced` one its author tagged anything but fixed
+   goes to the owner as `decide` whatever the excerpt judge or verify said (`record.shipped_reproduced`), unless the code is gone or verify finds
+   it fixed. Verify also says per bug whether it makes a result wrong (`result`); the record lists real
+   ones outside the result paths under *Result bugs outside the result paths* (`record.path_misses`).
+
    **Duplicates** (`kind: "duplicate"`, key `conv-…`): convention findings marked `should reuse` that
    were never fixed. New code copying a helper doesn't misbehave, so the judge's question for these is
    whether the copy is still there and does the job of the helper the finding names; when the
@@ -217,6 +224,8 @@ test whether an agent can actually use the framework.
      The commit and PR name the models the pass's judge calls ran on: each call's `modelUsage` keys,
      kept in the meters as `run.spend.tokens.<step>.models` (`judge.usage`). A record without them,
      such as a failure, names a bare `Claude`.
+     The judge and verify calls pin their model (`claude_cli.MEASURED_MODEL`, Opus), as recital's
+     reviewers do, so a different default model never changes the record's history.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits (not local ones: GitHub has nothing to link)
    and a repeated agent error get a GitHub issue,

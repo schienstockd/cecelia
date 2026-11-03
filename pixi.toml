@@ -340,7 +340,7 @@ icons = "node scripts/vendor_icons.mjs"
 # meaningful. Package: python/cecelia/effectiveness/. Design: docs/todo/EFFECTIVENESS_LOG_PLAN.md.
 audit-rollup = "python scripts/audit_rollup.py"
 
-# Spawn both reviewers (fanout audit + convention check), emit `_run` events to the log, and
+# Spawn the reviewers (fanout audit + convention check, + result review on result paths), emit `_run` events to the log, and
 # print the formatted recital body to stdout. The one-command replacement for the manual
 # "agent spawns two subagents, formats findings, emits events" protocol. Also saves the body to
 # `<git dir>/recital-body.md`; agents append that file to the commit message. See CLAUDE.md → Git & commits.

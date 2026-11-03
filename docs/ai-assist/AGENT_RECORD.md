@@ -6,10 +6,11 @@ they don't show. It is written by hand; the chart is generated. Nothing rewrites
 
 ## What is counted
 
-Every change an agent commits here is first read by two reviewer agents (`pixi run recital`): one
-looks for a fix that missed its sibling call sites ([`FANOUT_AUDIT.md`](FANOUT_AUDIT.md)), the other
+Every change an agent commits here is first read by reviewer agents (`pixi run recital`): one
+looks for a fix that missed its sibling call sites ([`FANOUT_AUDIT.md`](FANOUT_AUDIT.md)), one
 for new code that duplicates an existing helper or skips a convention
-([`CONVENTION_CHECK.md`](CONVENTION_CHECK.md)). Each finding they raise has to be resolved in the
+([`CONVENTION_CHECK.md`](CONVENTION_CHECK.md)), and, when the change touches code that computes
+results, one for a result made wrong without an error ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)). Each finding they raise has to be resolved in the
 commit message, and a git hook blocks the commit until it is. All of it is logged to the
 effectiveness log ([`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md)).
 
@@ -40,7 +41,7 @@ the x axis:
 - **e. Pre-commit review wait**: per reviewer, the median `duration_s` of the week's clean runs (an
   errored run, mostly a timeout, isn't a wait anyone sat through to a result).
 - **f. Reviewer tokens.** The reviewers log their tokens on every `_run` row from #1807 on. Until a
-  whole week of those rows exists this slot says when logging began; then it plots the two reviewers'
+  whole week of those rows exists this slot says when logging began; then it plots the reviewers'
   tokens per week as stacked bars, cache reads included (errored runs count: they spent the tokens),
   with a `*` at the baseline for weeks before logging and the week it began drawn as outlines.
 - **The week still running isn't drawn**, as c and d have no pass that hasn't run: a week

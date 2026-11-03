@@ -11,7 +11,7 @@ At the pre-commit reservations step, the implementing agent spawns a fresh subag
 ```
 Agent(
   subagent_type: "general-purpose",
-  model: "sonnet",
+  model: "opus",
   prompt: <contents of the "Reviewer prompt" section below>
           + "\n\n---\n\n" + <git diff --staged>
 )
@@ -25,9 +25,9 @@ The subagent's reply is used **twice** in the recital (Kiwi-shape: claims + refe
 
 **Per-finding outcome tag — enforced by a pre-commit hook.** Every `**confirmed**` sibling finding must carry an outcome from the closed vocabulary at the end of the line, in square brackets: `[fixed_pre_commit]` / `[shipped_with_finding: <reason>]` / `[false_positive: <reason>]` / `[dropped_no_action: <reason>]`. The git `commit-msg` hook (`.githooks/commit-msg` → `.claude/hooks/check_commit_recital.py`; activate once per clone with `pixi run install-git-hooks`) checks the real commit message and blocks if any finding lacks an outcome. See root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits* for the full rationale.
 
-**Model = sonnet, not Opus.** The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match. That's many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at cost that adds up when this runs on every commit. The reviewer surfaces candidates; Opus (implementing agent) synthesises the woven reservations from them.
+**Model = Opus, pinned** by `claude_cli.MEASURED_MODEL` (passed as `--model`), never the user's default; each run row logs the `models` it ran on. The measured history is Opus, apart from the runs made while Sonnet was pinned; the `models` field tells them apart. Sonnet was the original intent (many small reads, not one deep chain) but was never measured on this job; switching needs a backtest on the known case-F pairs first. The reviewer surfaces candidates; the implementing agent synthesises the woven reservations from them.
 
-**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `fanout_audit_run` event with `duration_s`, the CLI's `tokens` (`input` / `cache_write` / `cache_read` / `output`) and `cost_usd` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`hunks_reviewed`, `escape_valve`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Each `**confirmed**` bullet also emits a pending `fanout_audit_finding` row with a slug; the commit hook resolves it from `[<slug>: <outcome>]` (see [`FINDINGS_EMISSION_PLAN.md`](../todo/FINDINGS_EMISSION_PLAN.md)). Each `**plausible**` bullet emits a `fanout_audit_advisory` row with a slug too; its tag is optional, and `[<slug>: fixed_pre_commit]` lets the weekly bug sweep skip it.
+**Log emission** — done automatically by `pixi run recital` (`python/cecelia/effectiveness/recital.py`) which is the standard invocation path (see root [`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*). Recital emits a `fanout_audit_run` event with `duration_s`, the CLI's `tokens` (`input` / `cache_write` / `cache_read` / `output`) `cost_usd` and `models` (and `error` on failure) atomically with the reviewer spawn, so the parent agent can't silently skip. The full payload documented in [`EFFECTIVENESS_METHODOLOGY.md`](EFFECTIVENESS_METHODOLOGY.md) (`hunks_reviewed`, `escape_valve`) is not populated in v1 — parsing the reviewer output for those fields is deferred. Each `**confirmed**` bullet also emits a pending `fanout_audit_finding` row with a slug; the commit hook resolves it from `[<slug>: <outcome>]` (see [`FINDINGS_EMISSION_PLAN.md`](../todo/FINDINGS_EMISSION_PLAN.md)). Each `**plausible**` bullet emits a `fanout_audit_advisory` row with a slug too; its tag is optional, and `[<slug>: fixed_pre_commit]` lets the weekly bug sweep skip it.
 
 Manual emission via `python scripts/log_event.py` remains available for ad-hoc / retrospective rows.
 

@@ -300,6 +300,59 @@ class FormatEventTest(unittest.TestCase):
         self.assertIn("\033[", line)
 
 
+class ResultReviewRowsTest(unittest.TestCase):
+    """The third reviewer's rows: own label, path-gated skips kept out of the run count."""
+
+    @staticmethod
+    def _run(valve=None):
+        return {"event": "result_review_run", "ts": "2026-11-03T10:00:00Z", "pr": None, "branch": "b",
+                "commit": None, "payload": {"duration_s": 70.0, **({"escape_valve": valve} if valve else {})}}
+
+    def test_a_finding_is_labelled_rslt(self):
+        line = format_event(_finding(event="result_review_finding",
+                                     payload={"slug": "result-0000aaaa", "marker": "reproduced"}), use_colour=False)
+        self.assertIn("rslt", line)
+        self.assertIn("[reproduced]", line)
+
+    def test_a_path_gated_skip_is_quiet_and_a_reused_review_says_so(self):
+        self.assertIsNone(format_event(self._run("no_result_paths"), use_colour=False))
+        self.assertIn("unchanged diff", format_event(self._run("unchanged_diff"), use_colour=False))
+        self.assertIn("1m", format_event(self._run(), use_colour=False))
+
+    def test_the_reviewers_list_first_then_the_mechanical_checks(self):
+        labels = ["mlnt", "rslt", "invt", "conv", "fnut", "zzzz"]
+        self.assertEqual(sorted(labels, key=console._mech_rank), ["fnut", "conv", "rslt", "invt", "mlnt", "zzzz"])
+
+    def test_skips_count_apart_from_runs(self):
+        tally = console._Tally()
+        for valve in (None, "no_result_paths", "no_result_paths"):
+            tally.add(self._run(valve))
+        row = console._tally_row(tally, "rslt", use_colour=False)
+        self.assertIn("1 run", row)
+        self.assertIn("2 skipped", row)
+
+
+class ChangelogCheckRowsTest(unittest.TestCase):
+    """The changelog check's rows: `chlg`, quiet when no default changed, a warning when one did."""
+
+    @staticmethod
+    def _run(changed, warned):
+        return {"event": "changelog_check_run", "ts": "2026-11-03T10:00:00Z", "pr": None, "branch": "b", "commit": None,
+                "payload": {"defaults_changed": changed, "warnings_emitted": warned, "duration_s": 0.01}}
+
+    def test_a_run_with_no_default_changed_is_quiet_and_a_warning_shows(self):
+        self.assertIsNone(format_event(self._run(0, 0), use_colour=False))
+        line = format_event(self._run(1, 1), use_colour=False)
+        self.assertIn("chlg", line)
+        self.assertIn("1 warn", line)
+        self.assertIn("1 default(s) changed", line)
+
+    def test_it_counts_in_the_tally(self):
+        tally = console._Tally()
+        tally.add(self._run(0, 0))
+        self.assertIn("1 run", console._tally_row(tally, "chlg", use_colour=False))
+
+
 class ParseSinceTest(unittest.TestCase):
     def test_relative_units(self):
         now = _dt.datetime.now(_dt.timezone.utc)

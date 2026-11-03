@@ -412,6 +412,25 @@ In 2D the stitch repairs ~82% of the seam splits. In 3D most of the disagreement
 reference is not at the seams at all (it is there with stitching off as well), so no seam rule can
 remove it.
 
+**One-to-one stays: a many-to-one repair was measured and guesses.** When one tile sees one cell and
+its neighbour sees two pieces, one-to-one keeps the second piece apart. On synthetic discs that
+leaves a cell cellpose split on one tile's crop as two labels (the golden test's overlap-24 case).
+A repair was tried: join the leftover pair when one cell sits closer to the frame's median cell
+area (log scale) than the two parts do. It fixed the synthetic case, but on the crops above, judged
+against the one-tile reference:
+
+| crop | joins the reference agrees with | joins it calls a merge |
+|---|---|---|
+| `f8gzA2` 2D | 4 | 5 |
+| `FtGoJO` 3D | 2 | 2 |
+
+The other tiebreakers tried offline on the same tile predictions were how much of the extra piece
+the neighbour's cell contains, and trusting the tile where the cell sits further from its edge. None
+did better than chance. These are cells where cellpose's call depends on the crop, and the labels
+carry no more evidence than either tile had. Removing the disagreement needs the network outputs
+blended across tiles before masks are drawn (cellpose's own tiling does this), which brings back
+the whole-frame flow arrays the tiling exists to avoid.
+
 **Seam QC (`seg.seam_cuts`, info).**
 - **What is counted.** On a tiled run, `seam_contacts` counts, after the stitch, the pixels where two
   *different* labels touch across each seam line. It counts the same across control lines halfway
@@ -612,6 +631,14 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 `stitchThreshold = 0` also takes a different call path: `eval(z_axis=…, stitch_threshold=0)` is a
 `ValueError` in v4, so a Z stack with no stitching is passed plane-by-plane instead. Same result as
 v3 — labels numbered independently per plane — see `test_cellpose_v4_callpath.py`.
+
+**Against known truth.** `test_segmentation_golden.py` runs real cellpose on discs drawn at known places
+(20 cells, 113 px each, a row and a column across the 64 px tile seams) at the app's default tiling and
+seam settings: whole-frame, in 2 × 2 tiles, and as a Z stack in 2 × 2 tiles. It fails when a seam
+splits a cell (30 labels with the seam stitch disabled), two discs share a label, or an area drifts
+more than 20%. The discs are bright-centred like cells: flat-topped ones are ambiguous to cellpose,
+which split one inside a single tile at some crops. Opt-in (`CECELIA_SEGMENTATION_GOLDEN=1`), it runs weekly and on segmentation or
+dependency changes in `.github/workflows/verify-segmentation-golden.yml`.
 
 ### Normalisation — ours, never cellpose's
 

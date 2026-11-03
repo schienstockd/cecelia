@@ -37,6 +37,11 @@ import { useParamHandoffStore } from '../stores/paramHandoff'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { taskGatingReason } from '../utils/taskGating'
+import { taskMaturity, taskOptionSuffix, pageBadged } from '../utils/maturity'
+import { tierTip } from '../lib/guides/tiers'
+import { openMaturityRow } from '../lib/guideOpen'
+import ComingSoonBadge from '../components/ComingSoonBadge.vue'
+import ReportProblemButton from '../components/ReportProblemButton.vue'
 import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
@@ -93,6 +98,12 @@ const paramContext = computed<ParamContext>(() => ({
 // selected function — starts empty; resolved reactively when defs load from the API
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
+// the picked task's maturity badge — Experimental only in practice (a Coming soon task can't be picked);
+// docs/todo/FEATURE_MATURITY_PLAN.md → P2, `utils/maturity.ts` → taskMaturity
+const taskMat = computed(() => {
+  const m = taskDef.value ? taskMaturity(taskDef.value, props.defs) : null
+  return m && pageBadged(m.tier) ? m : null
+})
 // picker sub-headings (Segment / Measure / Correct …); null = render the flat list
 const fnGroups = computed(() => groupTaskDefs(props.defs))
 
@@ -144,6 +155,8 @@ const canHpc = computed(() => hpcEligible(taskDef.value))
 const onHpc = computed(() => canHpc.value && runChoice.value.target === 'hpc')
 const hpcForm = computed<HpcResourcesForm | null>(() =>
   taskDef.value ? { ...hpcDefaults(taskDef.value), ...runChoice.value.resources } : null)
+// a fixed env other than this computer (e.g. a custom module's) is still worth naming
+const otherEnvs = computed(() => (taskDef.value?.env ?? []).filter(e => e !== 'local'))
 const TARGET_OPTIONS: ChipOption[] = [
   { value: 'local', label: 'local', tip: 'Run on this computer' },
   { value: 'hpc',   label: 'hpc',   tip: 'Run on the cluster: for many or large images; this computer stays free' },
@@ -828,7 +841,21 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Function selector ── -->
     <section v-if="defs.length" class="runner-section">
-      <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
+      <!-- the heading row carries what the function IS (Kiwi ref, maturity, report); WHERE it runs
+           is its own labelled row below, only when there is a choice — a fixed "local" says nothing. -->
+      <div class="section-heading-row">
+        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
+        <div v-if="taskDef" class="section-heading-actions">
+          <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
+          <template v-if="taskMat">
+            <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
+                    v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
+              <ComingSoonBadge :tier="taskMat.tier" dot />
+            </button>
+            <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
+          </template>
+        </div>
+      </div>
       <select
         class="fn-select"
         data-guide="task.fun"
@@ -844,7 +871,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
               :disabled="!!gatingReasonFor(d)"
               :title="gatingReasonFor(d) || d.purpose || undefined"
             >
-              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+              {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : taskOptionSuffix(d, defs) }}
             </option>
           </optgroup>
         </template>
@@ -856,7 +883,7 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
             :disabled="!!gatingReasonFor(d)"
             :title="gatingReasonFor(d) || d.purpose || undefined"
           >
-            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : '' }}
+            {{ d.label }}{{ gatingReasonFor(d) ? ` — ${gatingReasonFor(d)}` : taskOptionSuffix(d, defs) }}
           </option>
         </template>
       </select>
@@ -893,24 +920,17 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </template>
       </div>
 
-      <div v-if="taskDef" class="fn-meta">
-        <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
+      <div v-if="taskDef && (canHpc || otherEnvs.length)" class="cc-row fn-run-on">
+        <span class="cc-muted cc-fs-xs">Run on</span>
         <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
           :model-value="runChoice.target" aria-label="Where to run" @update:model-value="setTarget" />
         <template v-else>
-          <span class="env-badge"
-            v-for="env in taskDef.env"
-            :key="env"
-            v-tooltip.right="`Runs in the ${env} environment`">
-            {{ env }}
-          </span>
+          <span class="env-badge" v-for="env in otherEnvs" :key="env"
+                v-tooltip.right="`Runs in the ${env} environment`">{{ env }}</span>
         </template>
-        <span
-          v-if="activeTaskGatingReason"
-          class="env-badge"
-          v-tooltip.right="'Selected images do not carry the axes this task needs'"
-        >{{ activeTaskGatingReason }}</span>
       </div>
+      <InlineNote v-if="activeTaskGatingReason" class="fn-gating cc-fs-xs" severity="warn"
+                  :short="activeTaskGatingReason" detail="Selected images do not carry the axes this task needs" />
       <div v-if="onHpc && hpcForm" class="hpc-res cc-fs-xs">
         <label v-for="f in hpcFields" :key="f.key" class="hpc-res-cell">
           <span class="hpc-res-head">
@@ -963,9 +983,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <!-- Heading + a bare icon-button to zero the form back to spec defaults. The button follows
            the heading on the same row so a user reaching for it does not have to hunt — a common
            ask when a chain node was tuned once and the next run wants a clean slate. -->
-      <div class="params-heading-row">
+      <div class="section-heading-row">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
-        <div class="params-heading-actions">
+        <div class="section-heading-actions">
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   v-tooltip.left="'Copy settings from a previous run on another image'"
                   @click="copyOpen = true"><i class="pi pi-copy" /></button>
@@ -1174,12 +1194,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 /* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter
    how many there are — `justify-content: space-between` with three children would strand a middle
    button in the centre. */
-.params-heading-row {
+.section-heading-row {
   display: flex; align-items: center; justify-content: space-between;
   margin: 0 0 0.5rem;
+  min-height: 1.5rem;   /* the same height with or without the trailing buttons */
 }
-.params-heading-row .section-heading { margin: 0; }
-.params-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
+.section-heading-row .section-heading { margin: 0; }
+.section-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
 
 /* function selector */
 .fn-select {
@@ -1193,7 +1214,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
-.fn-meta { display: flex; gap: 0.3rem; margin-top: 0.4rem; }
+.fn-run-on { margin-top: 0.3rem; }
+.fn-gating { margin-top: 0.3rem; }
 .fn-effect {
   display: flex;
   align-items: center;

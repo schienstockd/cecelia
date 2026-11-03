@@ -376,6 +376,18 @@ end
     end
 end
 
+@testset "neighbourStats shufflePops → basis names" begin
+    basis = ["segT/CD69neg", "segT/CD69pos", "segT/TRITC"]
+    sdf(pops) = DataFrame(value_name = fill("seg", length(pops)), pop = pops, label = 1:length(pops))
+    # named exactly as `_basis_segments` names them (value_name * pop), sorted
+    names, err = Cecelia._shuffle_basis(basis, sdf(["T/CD69pos", "T/CD69neg", "T/CD69pos"]))
+    @test err === nothing && names == ["segT/CD69neg", "segT/CD69pos"]
+    # a shuffled pop outside the basis would silently be ignored by the runner → refuse instead
+    @test occursin("must also be in Populations", Cecelia._shuffle_basis(basis, sdf(["T/CD69pos", "T/other"]))[2])
+    @test occursin("at least 2", Cecelia._shuffle_basis(basis, sdf(["T/CD69pos"]))[2])
+    @test occursin("no cells", Cecelia._shuffle_basis(basis, sdf(String[]))[2])
+end
+
 @testset "clustRegions spec — graph knobs moved out with the graph" begin
     # regions run ON a neighbour graph and no longer build their own, so the graph knobs moved to
     # cellNeighbours; `perTimepoint` went with them (whether neighbourhoods are per-frame is a

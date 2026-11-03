@@ -33,6 +33,15 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
+The same sidecars answer the CROSS-image question too — one pair's value in every image, grouped by an
+attribute (`spatial_interaction_pairs.json`, `dataSource.contactPairs`). The request carries
+`contactPairs: true` + `suffix` + `pair`; `_contact_pair_plot` turns the sidecars into one row per image
+(`pop` = the pair, the measure = `logOdds` or `zScore`) and hands it to `_summary_agg`, so box/strip/bar,
+`groupAttr` and the between-group stats are the ordinary per-image path. The run and pair pickers are
+built from the `suffixes` / `pairs` the response reports. With `shufflePops` set on the run (the
+conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
+the shuffled populations in general".
+
 This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
 counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
 
@@ -112,7 +121,7 @@ the mapping: `_normalise_accepts` folds `flow`→`live` (same gate map), but a p
 "Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
 
 **A PRECOMPUTED plot has no family selection at all.** `isPrecomputedSpec` (today: `matrix.mode ===
-"interaction"`) marks a plot whose rows/columns come from the analysis run it reads, not from the
+"interaction"` or `contactPairs`) marks a plot whose rows/columns come from the analysis run it reads, not from the
 population picker. Three surfaces ask that one predicate — the panel (needs no series), the population
 picker (says so instead of offering dead eye toggles), and the server (`api_plot_data`'s `precomputed`,
 which must not reject a body with no pops). Forking it is how one of them ends up disagreeing.
@@ -771,6 +780,27 @@ popover picks **Mode**, **Category** (from the discovered categorical obs column
 to a `*transitions*` column, profile to a `*state*` column), **Scale** (0–1 / z-score, profile) /
 **Normalize** (crosstab), and **Cell values**. Plot defs: `state_signature.json` (profile) and
 `transition_matrix.json` (crosstab).
+
+**A profile over an HMM state column follows its run.** When the category is
+`live.cell.hmm.state.{colName}` and the run left a fit record (`{props}.hmmfit.json`, `docs/DATAMODEL.md`
+→ *HMM state output*), the rows are the measures the run was FITTED on first, then the requested
+extras, and the response carries `fit` (`modelMeasurements, numStates, logLik, bic, converged`).
+`SummaryPanel` shows it as a footer `PlotNotice` ("Fitted on speed, angle · 3 states"; amber when the
+fit did not converge), via `utils/hmmFitNote.ts`. Without it a run fitted on shape descriptors drew the
+spec's speed/angle rows, and a plotted correlate read like a modelled measure. Resolved in
+`_hmm_profile_fit` before the frame is read, in all four `plot_summary_data` methods.
+
+**HMM state count (`elbow` chart, `hmm_state_count.json`) — a second precomputed readout.** Every
+HMM run recorded on the selected images (`{props}.hmmfit.json`), grouped into FAMILIES of runs that
+differ only in `numStates` (same pops, modelled measures and preprocessing — anything else is a
+different curve, since log-likelihood is of the preprocessed data); one line per family over K, y =
+log-likelihood (the elbow) or BIC (panel option). Values are drawn as recorded — no smoothing, unlike
+the trend line, because with 3–5 points a fitted curve would invent the elbow. A run that did not
+converge is a hollow dot; the tooltip carries the run name and the gain over the previous K. Spec
+`dataSource.precomputed: "hmmFit"` → `isPrecomputedSpec` (no population selection, same as the
+interaction matrix); `plot_summary_data` intercepts `chartType == "elbow"` before any `pop_df` read
+(`app/src/plotting/hmm_fit_curve.jl`); rows built by `utils/hmmElbow.ts`, marks by `buildHmmElbow`.
+It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 **Tiled / spatial map** (binned positions over the image field) — roadmap → `Plot.raster` /
 `Plot.cell` over binned x/y. Needs a backend aggregation that bins centroids into a grid.

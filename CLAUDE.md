@@ -38,7 +38,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | Doc | Covers |
 |---|---|
 | [`INVENTORY.md`](INVENTORY.md) | Index → `docs/inventory/*.md`: what exists and where. **Check before building.** Add a line per new shared component |
-| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 15 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
+| [`docs/ai-assist/GOVERNANCE_INDEX.md`](docs/ai-assist/GOVERNANCE_INDEX.md) | Index of the 17 governance / process docs (drift-prevention, reviewers, effectiveness log). Different noun than `INVENTORY.md` (process rules, not code components). **Check before writing a new governance doc** — add a row in the same commit |
 | [`docs/MAP.md`](docs/MAP.md) | Task-first index of *where things live* — "I want to change how QC findings are reported / cancel a subprocess / add a resource pool." Skeleton; extend when the sweep uncovers a nav entry |
 | [`docs/MAINTAINABILITY.md`](docs/MAINTAINABILITY.md) | The standard a change gets checked against — comment/docstring rules, cross-module contracts, file-responsibility rules. Checklist at the bottom. Update when a future audit finds a new pattern |
 | [`user-docs/README.md`](user-docs/README.md) | **For users, not developers:** a map of every page, panel and feature, and the recipes. **Generated** — the tables from `navGroups.ts` + `lib/guides/mapData.ts` + `recipes.ts` (the same data as the in-app map), the prose from `user-docs/parts/*.md`; `utils/userDocs.test.ts` fails when it's stale (`npx vitest run -u src/utils/userDocs.test.ts`), and `utils/guideMap.test.ts` when a sidebar page has no map entry |
@@ -48,7 +48,7 @@ sed -n '1918,2137p' docs/UI.md       # then read only the section you need
 | [`docs/HPC.md`](docs/HPC.md) | Running a task's Python on a SLURM/PBS cluster over SSH: settings scopes, cluster env install, dispatch at `run_py`, mirror, stages/cancel/reattach, schedulers, testing on a real site, troubleshooting |
 | [`docs/RUNNER.md`](docs/RUNNER.md) | The detached task runner (dev only): process, lifecycle, routes, staleness, chain claims |
 | [`docs/JOBS.md`](docs/JOBS.md) | Background jobs vs scheduler tasks: `jobs.jl` registry, process-kill primitives, data patches, export/import |
-| [`docs/UI.md`](docs/UI.md) | Frontend conventions, component catalog, module pages, plots, design tokens. **190 KB — slice it.** Mandatory subsets: [`ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md), [`ui/COPY.md`](docs/ui/COPY.md) |
+| [`docs/UI.md`](docs/UI.md) | Frontend conventions, component catalog, module pages, plots, design tokens. **255 KB — slice it.** Mandatory subsets: [`ui/PRIMITIVES.md`](docs/ui/PRIMITIVES.md), [`ui/COPY.md`](docs/ui/COPY.md) |
 | [`docs/MODULES.md`](docs/MODULES.md) | Adding task functions and module pages; task JSON, registry, param widgets, composite pattern, the module file pattern. **88 KB — slice it** |
 | [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) | User drop-in tasks: `<config_dir>/modules/`, `register_task!`, `/api/tasks/custom-modules` |
 | [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) | Project/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions, calibration |
@@ -302,12 +302,14 @@ convention-check findings woven in, evidence cited underneath.** Kiwi-shape: cla
 When asked to commit/push (or asked for the PR url — that request itself calls the commit):
 
 ```bash
-pixi run recital
+pixi run recital -- --claim "<the commit subject>"
 ```
 
-`recital` (`python/cecelia/effectiveness/recital.py`) spawns both reviewers via `claude -p`,
+(No apostrophe in the claim: pixi's task parser fails on one before the script starts.)
+
+`recital` (`python/cecelia/effectiveness/recital.py`) spawns the reviewers via `claude -p`,
 emits their `_run` events **and** one `_finding` row per outcome-tag-requiring bullet
-(`**confirmed**` / `**should reuse**`) to the effectiveness log **atomically with the spawn**
+(`**confirmed**` / `**should reuse**` / `**reproduced**`) to the effectiveness log **atomically with the spawn**
 (so nothing can be silently skipped in autonomous mode — the failure that motivated this
 design was four consecutive reviewer runs where the parent skipped emission every time), and
 prints the formatted recital body — evidence folds + tail lines already in place, each
@@ -340,8 +342,10 @@ blocks a message with no stamp, or one stamped for a different change.
 
 - **Fanout audit** catches **case-F fix drift** — a fix that leaves other divergent call sites broken.
 - **Convention check** catches **convention drift** — a new helper/component/endpoint that duplicates an existing canonical or skips an existing framework, an untyped shape where an enum/struct exists, and comment content in the wrong home (`**wrong home**`, outcome-tagged like `**should reuse**`).
+- **Result review** catches **silent wrong results** — a change that makes a number, a cell set, a channel or a unit wrong with no error. It runs only when the diff touches a result path (`docs/ai-assist/RESULT_REVIEW.md`), in a copy of the staged tree, and reproduces what it can. A `**reproduced**` finding needs a tag: commit its repro as a test carrying `RESULT-REVIEW: <slug>` and fix the code in place, never the reviewer's test. The hook blocks a commit that changes such a test unless it tags the slug `false_positive`, which goes to Dominik. `--claim` is what it is told the change is for, marked unverified.
 - **Inventory check** (mechanical) catches **inventory drift** — a new shared file no `docs/inventory/*.md` names, or a new route missing from `docs/API.md` → *Route index*.
 - **Maintainability lint** (mechanical) catches a task file pushed past 200 lines and incident history (dataset uids, dated authorship, phase codes, commit SHAs) in new comments — `docs/MAINTAINABILITY.md`.
+- **Changelog check** (mechanical) catches a changed task default with no `CHANGELOG.md` line on the branch: a default changes results on re-run, so it belongs under *Read this first* (`docs/RELEASING.md`).
 
 _Below is the older manual protocol (fallback if `pixi run recital` is unavailable):_
 
@@ -358,8 +362,10 @@ _Below is the older manual protocol (fallback if `pixi run recital` is unavailab
 - `_Maintainability lint: run_` (or `_run — nothing flagged_` / `_skipped — no source files_`) —
   mechanical; a load-bearing line opts out with `MAINT-EXEMPT: <reason>`. See
   `python/cecelia/effectiveness/maintainability_lint.py`.
+- `_Changelog check: run_` (or `_run — N default change(s), `CHANGELOG.md` updated_` /
+  `_skipped — no default changed_`) — mechanical. See `python/cecelia/effectiveness/changelog_check.py`.
 
-Missing any of the four tails = that mechanism went dark. Don't reassure or wait to be asked "any
+Missing any of the tails = that mechanism went dark. Don't reassure or wait to be asked "any
 reservations?". Fanout audit catches case-F fix drift; convention check catches convention drift
 (a new helper/component/endpoint that duplicates an existing canonical); the inventory check
 catches a new shared file or route the next session's discovery grep won't find; the maintainability
@@ -369,7 +375,7 @@ lint catches the file-size and comment-history rules at write time. See
 **Convention-check is advisory for now**: findings land in the reservations recital and the
 effectiveness log, but do not block a commit. Locked decision #4 in
 `docs/todo/CONVENTION_CHECK_PLAN.md` — flip to hard-required once the effectiveness log shows the
-FP rate is tolerable. The reservations recital itself and both tail lines are hard from day one.
+FP rate is tolerable. The reservations recital itself and its tail lines are hard from day one.
 
 **Per-finding outcome tag — required, enforced by a pre-commit hook.** Every `**confirmed**`
 fanout finding and every `**should reuse**` / `**wrong home**` convention finding in the recital

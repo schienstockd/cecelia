@@ -29,7 +29,7 @@ from cecelia.utils.atomic_io import write_json_atomic
 
 
 def _spatial_scale(path, axes):
-    scale = zarr_utils.read_scale(path) or [1.0] * len(axes)
+    scale = zarr_utils.read_scale_um(path) or [1.0] * len(axes)
     s = dict(zip(axes, scale))
     return float(s.get("z", 1.0)), float(s.get("y", 1.0)), float(s.get("x", 1.0))
 

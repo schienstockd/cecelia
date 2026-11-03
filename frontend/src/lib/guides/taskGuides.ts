@@ -22,6 +22,7 @@
 import { moduleTaskGuide } from './moduleTask'
 import { PREREQ } from './prereqs'
 import type { GuideStep } from './types'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 // Where segmentation and tracking both end up: the mask/tracks are only trustworthy once you have
 // LOOKED at them. So we point at the control that puts them on screen and say what to look for.
@@ -89,6 +90,7 @@ const cleanupNewVersion: GuideStep = {
 
 export const driftCorrectGuide = moduleTaskGuide({
   id: 'drift-correct',
+  maturity: GUIDE_MATURITY['drift-correct'],
   title: 'Drift correct a time series',
   group: 'Data',
   icon: 'pi-brush-cleaning',
@@ -139,6 +141,7 @@ export const driftCorrectGuide = moduleTaskGuide({
 // No channel, percentile or threshold advice here — that judgement is the user's.
 export const afCorrectGuide = moduleTaskGuide({
   id: 'af-correct',
+  maturity: GUIDE_MATURITY['af-correct'],
   title: 'Correct bleedthrough and autofluorescence',
   group: 'Data',
   icon: 'pi-eraser',
@@ -178,6 +181,7 @@ export const afCorrectGuide = moduleTaskGuide({
 
 export const segmentGuide = moduleTaskGuide({
   id: 'segment-an-image',
+  maturity: GUIDE_MATURITY['segment-an-image'],
   title: 'Segment an image',
   group: 'Data',
   icon: 'pi-th-large',
@@ -235,6 +239,7 @@ export const segmentGuide = moduleTaskGuide({
 
 export const trackCellsGuide = moduleTaskGuide({
   id: 'track-cells',
+  maturity: GUIDE_MATURITY['track-cells'],
   title: 'Track cells',
   group: 'Populations',
   icon: 'pi-share-alt',
@@ -308,6 +313,7 @@ export const trackCellsGuide = moduleTaskGuide({
 // dependency is said in the copy — see WORKFLOW_RECIPES_PLAN.md D8 for the version that could gate on it.
 export const trainFlowModelGuide = moduleTaskGuide({
   id: 'train-flow-model',
+  maturity: GUIDE_MATURITY['train-flow-model'],
   title: 'Train a flow model',
   group: 'Data',
   icon: 'pi-sync',
@@ -357,6 +363,7 @@ export const trainFlowModelGuide = moduleTaskGuide({
 // selected images — it is a checked line on the task spec, shown under the function picker.
 export const trainDenoiseModelGuide = moduleTaskGuide({
   id: 'train-denoise-model',
+  maturity: GUIDE_MATURITY['train-denoise-model'],
   title: 'Train a denoise model',
   group: 'Data',
   icon: 'pi-sync',
@@ -401,6 +408,7 @@ export const trainDenoiseModelGuide = moduleTaskGuide({
 
 export const segmentByMotionGuide = moduleTaskGuide({
   id: 'segment-by-motion',
+  maturity: GUIDE_MATURITY['segment-by-motion'],
   title: 'Segment a movie by motion',
   group: 'Data',
   icon: 'pi-th-large',
@@ -499,6 +507,7 @@ const clusterToPops = (route: string, what: string): GuideStep[] => [
 // ── Cluster cells: a plain task run ──────────────────────────────────────────────────────────────
 export const clusterCellsGuide = moduleTaskGuide({
   id: 'cluster-cells',
+  maturity: GUIDE_MATURITY['cluster-cells'],
   title: 'Cluster cells into phenotypes',
   group: 'Populations',
   icon: 'pi-share-alt',
@@ -542,6 +551,7 @@ export const clusterCellsGuide = moduleTaskGuide({
 // are per-track aggregates, so a user who has only segmented cannot use this one.
 export const clusterTracksGuide = moduleTaskGuide({
   id: 'cluster-tracks',
+  maturity: GUIDE_MATURITY['cluster-tracks'],
   title: 'Cluster tracks into behaviours',
   group: 'Populations',
   icon: 'pi-share-alt',
@@ -585,6 +595,7 @@ export const clusterTracksGuide = moduleTaskGuide({
 // ── Behaviour states: a plain task run ───────────────────────────────────────────────────────────
 export const behaviourStatesGuide = moduleTaskGuide({
   id: 'behaviour-states',
+  maturity: GUIDE_MATURITY['behaviour-states'],
   title: 'Classify behaviour states',
   group: 'Explore',
   icon: 'pi-directions',
@@ -639,6 +650,7 @@ export const behaviourStatesGuide = moduleTaskGuide({
 // edits are in-place, this one writes a NEW image version.
 export const preprocessImagesGuide = moduleTaskGuide({
   id: 'preprocess-images',
+  maturity: GUIDE_MATURITY['preprocess-images'],
   title: 'Preprocess an image',
   group: 'Data',
   icon: 'pi-image',
@@ -680,6 +692,7 @@ export const preprocessImagesGuide = moduleTaskGuide({
 // Ends with the shared `clusterToPops` tail — a numbered region becomes a named population.
 export const clusterRegionsGuide = moduleTaskGuide({
   id: 'cluster-regions',
+  maturity: GUIDE_MATURITY['cluster-regions'],
   title: 'Cluster spatial regions',
   group: 'Populations',
   icon: 'pi-map-marker',
@@ -726,6 +739,7 @@ export const clusterRegionsGuide = moduleTaskGuide({
 // prereq, since a matching graph exists on disk or it doesn't (no local state to check).
 export const spatialAnalysisGuide = moduleTaskGuide({
   id: 'spatial-analysis',
+  maturity: GUIDE_MATURITY['spatial-analysis'],
   title: 'Score spatial interactions',
   group: 'Explore',
   icon: 'pi-share-alt',
@@ -746,6 +760,7 @@ export const spatialAnalysisGuide = moduleTaskGuide({
   params: [
     'Neighbour graph — the graph a Neighbour-graph run produced; pick the one you want scored.',
     'Population basis — the pairs to score interactions between; at least two.',
+    'Shuffle only — e.g. CD69+ and CD69− T cells; the other populations stay put.',
     'Name — output name for this run; a later plot picks it up by this name.',
   ],
   after: [
@@ -758,6 +773,7 @@ export const spatialAnalysisGuide = moduleTaskGuide({
       bullets: [
         'The permutation test tells you if a pattern is a real signal or the same cell types rearranged.',
         'Contacts and aggregates plot the same underlying graph in different shapes — worth a look next.',
+        'Interaction across images plots one pair per image, grouped by an attribute, with the group test.',
       ],
     },
   ],

@@ -31,17 +31,28 @@ end
 _read_obs(path::AbstractString) =
     isfile(path) ? (try as_df(label_props(path); include_x = false, include_obs = true) catch; nothing end) : nothing
 
+# The run's fit record, trimmed to what compares runs (log-likelihood elbow across numStates) — `nothing`
+# for runs fitted before the record existed. Same numbers on every image of the run (one joint fit).
+function _hmm_fit_summary(props::AbstractString, col_name::AbstractString)
+    e = hmm_fit_entry(props, col_name); e === nothing && return nothing
+    (; numStates = get(e, "numStates", nothing), modelMeasurements = get(e, "modelMeasurements", String[]),
+       logLik = get(e, "logLik", nothing), aic = get(e, "aic", nothing), bic = get(e, "bic", nothing),
+       nObs = get(e, "nObs", nothing), converged = get(e, "converged", nothing))
+end
+
 # One image's HMM behaviour: the distribution of each state column + the transition counts. HMM runs on
 # tracked cells, so untracked cells carry a missing state and drop out of the distribution (⇒ n = decoded).
 function _behaviour_image(img::CciaImage)
     out = Any[]
     for vn in sort(img_value_names(img))
-        df = _read_obs(img_label_props_path(img, vn)); df === nothing && continue
+        props = img_label_props_path(img, vn)
+        df = _read_obs(props); df === nothing && continue
         for c in names(df)
             if startswith(c, "live.cell.hmm.state.")
                 d = _category_distribution(df[!, c]); d.n == 0 && continue
                 push!(out, (; valueName = vn, kind = "state", column = c,
-                             n = d.n, nStates = d.nDistinct, distribution = d.top))
+                             n = d.n, nStates = d.nDistinct, distribution = d.top,
+                             fit = _hmm_fit_summary(props, c[ncodeunits(_HMM_STATE_PREFIX)+1:end])))
             elseif startswith(c, "live.cell.hmm.transitions.")
                 d = _category_distribution(df[!, c]; cap = 15); d.n == 0 && continue
                 push!(out, (; valueName = vn, kind = "transitions", column = c,

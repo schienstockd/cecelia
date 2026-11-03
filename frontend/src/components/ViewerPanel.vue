@@ -39,6 +39,7 @@ import { publishViewerCacheClear } from '../lib/viewerCacheClearChannel'
 import { useViewerMovieDefaults } from '../composables/useViewerMovieDefaults'
 import { useMovieSuffixes } from '../composables/useMovieSuffixes'
 import { figureSpecFromView, niceFigureBarUm, figureFrames, figureName, figureTipText } from '../utils/figureSpec'
+import { pixelSizeUm } from '../utils/physicalSize'
 import type { Severity } from '../lib/severity'
 
 const projectStore = useProjectStore()
@@ -445,7 +446,7 @@ async function saveFigure() {
   const frames = (img.sizeT ?? 1) > 1 ? figureRange.value.frames : undefined
   const r = figureSpecFromView(vs, img.channelNames ?? [], { valueName, frames, split: figureSplit.value })
   if ('error' in r) { recordNote.value = { severity: 'warn', short: r.error }; return }
-  r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, img.physicalSizeX)
+  r.spec.scaleBarUm = niceFigureBarUm(r.spec.sizePx, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
   savingFigure.value = true
   try {
     const res = await fetch('/api/figures/render', {

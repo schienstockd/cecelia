@@ -145,6 +145,23 @@ class VerifyTest(unittest.TestCase):
         self.assertEqual(out[0]["verify"]["recommendation"], "use the helper once the copy's caller moves")
         self.assertNotIn("trigger", out[0]["verify"])
 
+    def test_a_shipped_reproduced_result_goes_to_the_owner_whatever_verify_says(self):
+        shipped = _bug("result-1", file="s.py", branch="s", marker="reproduced", outcome="false_positive",
+                       reason="the repro expects the wrong unit")
+        untagged = _bug("result-2", file="t.py", branch="t", marker="reproduced")
+        inferred = _bug("result-3", file="u.py", branch="u", marker="inferred", outcome="shipped_with_finding")
+        gone = _bug("result-4", file="w.py", branch="w", marker="reproduced", outcome="shipped_with_finding")
+        out, _ = self.v.verify([shipped, untagged, inferred, gone], date="2026-10-03", sha="s" * 40,
+                               agent=self.agent({"result-1": "dismiss", "result-4": "fixed"}))
+        by = {b["key"]: b for b in out}
+        self.assertEqual(by["result-1"]["verify"]["verdict"], "decide")
+        self.assertIn("`false_positive`: the repro expects the wrong unit", by["result-1"]["verify"]["question"])
+        self.assertIn("Verify said `dismiss`", by["result-1"]["verify"]["question"])
+        self.assertEqual(by["result-1"]["status"], "open")          # not dismissed by the agent
+        self.assertEqual(by["result-2"]["verify"]["verdict"], "fix")  # untagged: verify's call stands
+        self.assertEqual(by["result-3"]["verify"]["verdict"], "fix")  # inferred: no repro to overrule
+        self.assertEqual(by["result-4"]["status"], "gone")            # fixed since: nothing to decide
+
     def test_the_cap_holds_even_if_every_agent_spends_its_budget(self):
         bugs = [_bug(k, file=f"{k}.py", branch=k) for k in "abc"]
         out, summary = self.v.verify(bugs, date="d", sha="s", agent=self.agent(cost=0.2),

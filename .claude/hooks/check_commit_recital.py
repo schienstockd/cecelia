@@ -195,6 +195,8 @@ def _finding_event_for_slug(slug: str) -> str | None:
         return "fanout_audit_finding_resolved"
     if slug.startswith("conv-"):
         return "convention_check_finding_resolved"
+    if slug.startswith("result-"):
+        return "result_review_finding_resolved"
     return None
 
 
@@ -439,6 +441,54 @@ def agent_recital_gate(message: str) -> str | None:
     return None
 
 
+#: The comment a committed result-review repro carries (`docs/ai-assist/RESULT_REVIEW.md`).
+REPRO_MARKER = re.compile(rf"RESULT-REVIEW:\s*({SLUG_PATTERN})")
+
+
+def _staged_changed_files() -> list[str]:
+    """Paths (as at HEAD) the staged change edits, renames or deletes — not ones it adds."""
+    out = _git("diff", "--cached", "--name-status", "-M") or ""
+    paths = []
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if parts and parts[0][:1] in ("M", "D", "R") and len(parts) > 1:
+            paths.append(parts[1])
+    return paths
+
+
+def _head_text(path: str) -> str:
+    return _git("show", f"HEAD:{path}") or ""
+
+
+def reviewer_test_gate(message: str) -> str | None:
+    """Gate 4: the author may fix the code, never the result review's test. A commit that edits,
+    renames or deletes a file carrying `RESULT-REVIEW: <slug>` needs `[<slug>: false_positive:
+    <reason>]` in its message, which sends the finding to the owner (`record.shipped_reproduced`)."""
+    pairs = {(s, o) for s, o, _ in _parse_pairs(message)}
+    held = sorted({(slug, path) for path in _staged_changed_files()
+                   for slug in REPRO_MARKER.findall(_head_text(path))
+                   if (slug, "false_positive") not in pairs})
+    if not held:
+        return None
+    listed = "\n".join(f"  - `{path}` holds the repro for `{slug}`" for slug, path in held)
+    return (f"This commit changes the result review's own test:\n{listed}\n"
+            "Fix the code, not the repro. If the repro expects the wrong thing, say so with "
+            "`[<slug>: false_positive: <reason>]` — that sends it to Dominik's decide queue. "
+            "Bypass in emergencies with `CECELIA_SKIP_RECITAL_CHECK=1 git commit …`.")
+
+
+def log_reviewer_test_edits(message: str, *, pr: str | None, commit: str | None, branch: str | None) -> None:
+    """One `result_review_test_edited` row per repro this commit changes under a `false_positive` tag.
+    Its own event, not just the resolution row: a resolution counts only on the finding's branch, and
+    a repro is often edited on a later one. The bug sweep sends each to the owner."""
+    reasons = {s: r for s, o, r in _parse_pairs(message) if o == "false_positive"}
+    for path in _staged_changed_files():
+        for slug in sorted(set(REPRO_MARKER.findall(_head_text(path)))):
+            if slug in reasons:
+                append_event("result_review_test_edited", {"slug": slug, "file": path, "reason": reasons[slug]},
+                             pr=pr, commit=commit, branch=branch)
+
+
 def commit_msg_main(message_path: str) -> int:
     """git `commit-msg` hook: run the gates on the real message, then write resolutions.
 
@@ -449,13 +499,14 @@ def commit_msg_main(message_path: str) -> int:
     if os.environ.get("CECELIA_SKIP_RECITAL_CHECK") == "1" or _in_sequencer_commit():
         return _EXIT_ALLOW
     message = _read_message(message_path)
-    reason = agent_recital_gate(message) or check(message)
+    reason = agent_recital_gate(message) or check(message) or reviewer_test_gate(message)
     if reason is not None:
         print(f"check_commit_recital: BLOCKED — {reason}", file=sys.stderr)
         return 1
     # Best-effort: log failures don't block the commit.
     pr, head_sha, branch = _current_pr(), _current_head_sha(), _current_branch()
     write_resolutions(message, pr=pr, commit=head_sha, branch=branch)
+    log_reviewer_test_edits(message, pr=pr, commit=head_sha, branch=branch)
     attribution.stamp_commit_msg(message_path)  # Claude-Model / -Code / -Session trailers
     return _EXIT_ALLOW
 

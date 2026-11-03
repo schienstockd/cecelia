@@ -5,9 +5,11 @@
 
 import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const plotsGuide: GuideDef = {
   id: 'build-plots',
+  maturity: GUIDE_MATURITY['build-plots'],
   title: 'Build plots',
   group: 'Analysis',
   icon: 'pi-chart-bar',

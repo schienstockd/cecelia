@@ -20,6 +20,7 @@
 // docs/MODULES.md → *Param advisories*.
 
 import type { Severity } from '../lib/severity'
+import { pixelSizeUm } from '../utils/physicalSize'
 import { isImageVersionField } from './paramValues'
 import { DEFAULT_VALUE_NAME } from '../utils/imageDelete'
 import { spanAnchorRate, runFrameSeconds, secondsLabel, type RateImage } from '../utils/frameDuration'
@@ -86,6 +87,7 @@ export interface AdvisorImage {
   timeIncrementUnit?: string | null
   sizeZ?: number | null
   physicalSizeX?: number | null
+  physicalSizeUnit?: string | null
   /** the version the image is currently ON — what the viewer shows and what a picker preselects */
   activeValueName?: string
   /** every registered image version, valueName → filename */
@@ -933,7 +935,7 @@ export const PARAM_ADVISORS: Record<string, ParamAdvisor> = {
     advise: async (value, ctx) => {
       const img = ctx.images?.[0]
       if (!img?.uid || !ctx.projectUid) return null
-      const geom = await frameGeometry(ctx.projectUid, img.uid, img.physicalSizeX)
+      const geom = await frameGeometry(ctx.projectUid, img.uid, pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit))
       return anisoGridAdvisory(value, geom)
     },
   },

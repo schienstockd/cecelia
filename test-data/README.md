@@ -77,6 +77,8 @@ hand): `zolIMa_UMq4v3` (train → segment → track twice), `zolIMa_x4E5HU` (ten
 retried denoise), `4kS67f_LUkCpP` / `4kS67f_k3Tx90` (one set-scope spatial run logged on both images,
 plus a row from before params were recorded). `app/test/suite/chain_from_history.jl` copies them into
 throwaway images; the expectations there are what the plan said those histories should produce.
+`4kS67f_LUkCpP_B__region.json` is that image's region gating sidecar (pops filtering
+`regions.default`), for tracing a board's region population back to the run that made it.
 
 ## `projects/ZARRFMT/` — the same image as zarr v2 and zarr v3
 

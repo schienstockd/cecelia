@@ -16,6 +16,12 @@ import sys
 import zoneinfo
 
 
+#: The model every measured `claude -p` run pins: recital's reviewers, the judge and verify. Never the
+#: user's default: their whole measured history is Opus, and a Sonnet default elsewhere would
+#: silently change it (`docs/ai-assist/FANOUT_AUDIT.md` → *Model*). Each run logs `models`.
+MEASURED_MODEL = "opus"
+
+
 def resolve_claude_bin() -> str | None:
     """Path to `claude` on PATH, or None.
 

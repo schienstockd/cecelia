@@ -97,14 +97,10 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
                                 family::AbstractString = "clusters",
                                 labels::AbstractDict = Dict{String,String}(),
                                 behaviour_axes::Union{Nothing,AbstractDict} = nothing)
-    sidecar = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
-    existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) : Dict{String,Any}()
-    merged = Dict{String,Any}(String(k) => v for (k, v) in existing)
     entry = Dict{String,Any}("features" => features, "partOf" => part_of,
                              "family" => String(family), "labels" => Dict{String,Any}(labels))
     behaviour_axes === nothing || (entry["behaviourAxes"] = behaviour_axes)
-    merged[_clustfeatures_key(suffix, family)] = entry
-    write_json_atomic(sidecar, merged)
+    put_props_sidecar_entry!(_clustfeatures_path(props_path), _clustfeatures_key(suffix, family), entry)
 end
 
 # One segment per (uID, value_name) of the pooled membership frame: its labelProps path + member labels,

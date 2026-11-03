@@ -101,6 +101,22 @@ The Leiden clustering tasks write their result back through the `LabelProps` wri
   numeric track measure. Axis names (top features + Spearman ρ) and the root's cluster are recorded as
   `behaviourAxes` on the run's `.clustfeatures.json` entry. See `docs/todo/TRACK_BEHAVIOUR_AXES_PLAN.md`.
 
+### HMM state output — `live.cell.hmm.state.{colName}` obs + `{props}.hmmfit.json`
+
+`behaviour.hmm_states` (set-scope, one joint fit) writes integer state codes (as Float64; NaN = not
+decoded) into every segmentation it read, and beside each table a **fit record** on the
+`{props}.hmmfit.json` sidecar, keyed by `colName`:
+`modelMeasurements, numStates, pops, preprocessing, logLik, nParams, nObs, aic, bic, iterations,
+converged, partOf, at`. Only `modelMeasurements` drove the states — any other measure plotted
+against them is a correlate. `logLik` is of the preprocessed observations, so two runs compare only
+when pops, measures and preprocessing match. Read it with `hmm_fit_entry(props, colName)`; runs fitted
+before the record existed have none. Deleting the run drops its key. Why and how it's used:
+`docs/todo/HMM_FIT_QUALITY_PLAN.md`.
+
+All three per-run manifests — `clustfeatures`, `motiffeatures`, `hmmfit` — go through
+`app/src/run_sidecars.jl` (`props_sidecar_path` / `read_props_sidecar` / `put_props_sidecar_entry!` /
+`drop_props_sidecar_keys!`). A segmentation rename/copy carries them by the `{vn}.` prefix rule.
+
 ### Motif discovery output — `motif.*.{suffix}` obs
 
 The `behaviour.motif_discovery` task (set-scope) writes sub-track motif discovery back through
