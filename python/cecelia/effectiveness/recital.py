@@ -227,7 +227,7 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
     return bold - len(findings)
 
 
-from .claude_cli import RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
+from .claude_cli import MEASURED_MODEL, RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
 from .claude_cli import models as _models  # noqa: E402
 from .claude_cli import tokens as _tokens  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
@@ -244,9 +244,7 @@ def _resolve_claude_bin() -> str:
     return resolved
 
 
-#: Both reviewers run on Sonnet: many small reads, not one deep chain (`FANOUT_AUDIT.md` →
-#: *Model*). Without the flag the CLI used the user's default model, which was Opus.
-REVIEWER_MODEL = "sonnet"
+REVIEWER_MODEL = MEASURED_MODEL
 
 
 class ReviewerReply(_t.NamedTuple):

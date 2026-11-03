@@ -217,6 +217,8 @@ test whether an agent can actually use the framework.
      The commit and PR name the models the pass's judge calls ran on: each call's `modelUsage` keys,
      kept in the meters as `run.spend.tokens.<step>.models` (`judge.usage`). A record without them,
      such as a failure, names a bare `Claude`.
+     The judge and verify calls pin their model (`claude_cli.MEASURED_MODEL`, Opus), as recital's
+     reviewers do, so a different default model never changes the record's history.
 8. **Issues** (`issues.py`, issue layout only). Each open bug
    verify called `fix` or `decide`, stranded commits (not local ones: GitHub has nothing to link)
    and a repeated agent error get a GitHub issue,

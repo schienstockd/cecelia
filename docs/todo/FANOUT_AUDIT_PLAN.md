@@ -38,6 +38,8 @@ Concrete failure the trigger is watching for: on 2026-09-26 (the day this shippe
 
 ## Locked decisions
 
+> **Superseded on the model (2026-11-03):** the reviewers run on Opus, pinned by `claude_cli.MEASURED_MODEL`. Sonnet was never measured on this job. See [`../ai-assist/FANOUT_AUDIT.md`](../ai-assist/FANOUT_AUDIT.md) → *Model*.
+
 1. **Model = `claude-sonnet-5`.** Not Opus. The task decomposes into read-diff → name-symbols → grep-callers → per-site shape-match — many small independent reads, not one deep reasoning chain. Sonnet handles this shape well; Opus over-reasons at a cost that accumulates because the reviewer runs on *every* commit. The reviewer surfaces **candidates** for the user's judgement — the `confirmed`/`plausible` confidence marker does the calibration work Opus would otherwise refine. Not decided by measurement — decided by task-shape reasoning + the user's stated frustration with Opus over-reasoning on tight tasks; revisit if live runs show sonnet misses siblings that Opus would have caught.
 2. **Trigger = the pre-commit reservations step, in-session.** Not a git hook, not CI. The implementing agent already recites reservations before every commit ([`CLAUDE.md`](../../CLAUDE.md) → *Git & commits*); the reviewer's findings fold into that recital under a "fanout audit" heading. Zero-latency; user decides at the same moment they were already deciding.
 3. **Isolation = a fresh subagent.** `Agent(subagent_type: "general-purpose", model: "sonnet", prompt: …)`. Empty conversation — the reviewer must not inherit the implementing session's reasoning. That's the whole "adversarial" property.

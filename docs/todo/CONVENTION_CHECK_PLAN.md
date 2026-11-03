@@ -55,6 +55,8 @@ The subagent's reply is used in the recital the same way the sibling's is:
 2. **Printed verbatim as evidence** under a `_Convention check (evidence):_` fold — the inventory files consulted, the greps run, per-addition disposition.
 3. **Tail line** — `_Convention check: run_` (or a skip line). Missing tail = mechanism went dark.
 
+> **Superseded on the model (2026-11-03):** the reviewers run on Opus, pinned by `claude_cli.MEASURED_MODEL`. Sonnet was never measured on this job. See [`../ai-assist/CONVENTION_CHECK.md`](../ai-assist/CONVENTION_CHECK.md) → *Model*.
+
 **Model = sonnet.** Same reasoning as sibling — read diff → identify additions → grep inventory + repo. Many small independent reads, not one deep reasoning chain.
 
 Latency: adds ~30s per commit on top of sibling-audit's ~30s. Total pre-commit reviewer cost ~60s. Not free; not prohibitive.
