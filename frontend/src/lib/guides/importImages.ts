@@ -13,9 +13,11 @@ import type { GuideDef } from './types'
 import { PREREQ } from './prereqs'
 import { isImported } from '../../utils/inclusion'
 import { taskRunSteps } from './moduleTask'
+import { GUIDE_MATURITY } from './maturityRecords'
 
 export const importImagesGuide: GuideDef = {
   id: 'import-images',
+  maturity: GUIDE_MATURITY['import-images'],
   title: 'Import images',
   group: 'Data',
   icon: 'pi-upload',

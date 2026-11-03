@@ -58,3 +58,14 @@ export function formatTimeIncrement(n: number | null | undefined,
   if (n === null || n === undefined) return fallback
   return `${fmtNum(n)} ${shortTimeUnit(unit)}`
 }
+
+/** µm per stored length unit — mirrors `length_unit_um` (app/src/model/image.jl) and
+ *  `cecelia.utils.units`. No unit → µm assumed; an unknown unit → 1 (shown as-is elsewhere). */
+const UM_PER: Record<string, number> = {
+  um: 1, 'µm': 1, micrometer: 1, micrometre: 1, micron: 1, microns: 1,
+  nm: 1e-3, nanometer: 1e-3, nanometre: 1e-3, mm: 1e3, millimeter: 1e3, millimetre: 1e3,
+}
+export function pixelSizeUm(n: number | null | undefined, unit: string | null | undefined): number | null {
+  if (n == null || !Number.isFinite(n)) return null
+  return n * (unit ? (UM_PER[unit.trim().toLowerCase()] ?? 1) : 1)
+}

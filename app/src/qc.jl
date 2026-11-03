@@ -272,7 +272,9 @@ function metadata_qc_findings(meta::AbstractDict)
     elseif z_corr
         mf("metadata.z_spacing_corrected", "z")
     elseif phys_z !== nothing && phys_x !== nothing && phys_x > 0
-        ratio = phys_z / phys_x
+        # each axis in µm first: Z may carry its own unit (PhysicalSizeZUnit), e.g. X in nm, Z in µm
+        um(ax) = something(length_unit_um(_meta_axis_length_unit(meta, ax)), 1.0)
+        ratio = (phys_z * um("Z")) / (phys_x * um("X"))
         (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) && mf("metadata.z_spacing_unusual", "z")
     end
 
@@ -281,6 +283,8 @@ function metadata_qc_findings(meta::AbstractDict)
         mf("metadata.frame_interval_unknown", "t")
     elseif t_incr !== nothing && t_unit === nothing
         mf("metadata.frame_interval_no_unit", "t")
+    elseif t_incr !== nothing && time_unit_seconds(t_unit) === nothing
+        mf("metadata.frame_interval_unit_unknown", "t")
     end
 
     # spatial unit — one PhysicalSizeUnit covers x/y/z; flag whichever axes carry a value
@@ -289,6 +293,8 @@ function metadata_qc_findings(meta::AbstractDict)
         phys_y !== nothing && mf("metadata.pixel_size_no_unit", "y")
         (phys_z !== nothing && !any(f -> f["detail"]["field"] == "z", fs)) &&
             mf("metadata.pixel_size_no_unit", "z"; key = "metadata.voxel_depth_no_unit")
+    elseif phys_x !== nothing && length_unit_um(phys_unit) === nothing
+        mf("metadata.pixel_size_unit_unknown", "x")
     end
     fs
 end

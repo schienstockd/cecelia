@@ -682,6 +682,28 @@ def read_time_increment(path):
     return ome_xml_utils.read_time_increment(path)
 
 
+def read_scale_um(path):
+    """`read_scale` with the spatial axes converted to µm by their unit (`read_axis_units`; OME-XML's
+    pixel unit when the NGFF axes carry none). Non-spatial axes are returned as stored. None if no
+    scale is available. Use this wherever a scale is treated as µm."""
+    scale = read_scale(path)
+    axes = read_axes(path)
+    if scale is None or not axes or len(scale) != len(axes):
+        return scale
+    from cecelia.utils.units import length_unit_um
+    units = read_axis_units(path) or {}
+    out = []
+    for ax, v in zip(axes, scale):
+        if str(ax).lower() in ("x", "y", "z"):
+            unit = units.get(ax)
+            if unit is None:
+                import cecelia.utils.ome_xml_utils as ome_xml_utils
+                unit = ome_xml_utils.read_pixel_unit(path)
+            v = float(v) * length_unit_um(unit)
+        out.append(v)
+    return out
+
+
 def read_axis_units(path):
     """NGFF ``axes[].unit`` keyed by axis name (e.g. ``{'t': 'second', 'x': 'micrometer'}``), or
     None. Axes without a unit are omitted, so a caller can fall back per axis."""

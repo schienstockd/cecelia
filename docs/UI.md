@@ -1173,6 +1173,53 @@ the user-facing wording and is a copy decision, not a rename of the type.
 a task name pasted into a recipe would be counted as a guide's. A recipe names guides; the guides name
 tasks. Pinned from the recipes side too, in `guides.test.ts`.
 
+### Maturity — how far to trust each feature (on the map)
+
+A guide teaches one feature, so it carries that feature's **maturity record** (`GuideDef.maturity`,
+type `Maturity` in `lib/guides/types.ts`): a tier, what it was tested on, who checked it by hand or where
+that check is written down, the tests that would catch a wrong result (`evidence`: path + test name +
+a "fails if…" line), the 1–3 item checklist to the next tier, and the data that would help (`needs`,
+`datasetAsk` → a `lib/callForDatasets.ts` id). The records live in ONE file, `lib/guides/maturityRecords.ts`
+(`GUIDE_MATURITY`, keyed by guide id), so a promotion PR edits one place; a feature with no guide gets
+the same record in `lib/guides/unguided.ts`. Design and the scale: `docs/todo/FEATURE_MATURITY_PLAN.md`.
+
+- **Tiers:** Experimental · Beta · Tested (Stable reserved). **Coming soon is never written in a record**
+  — it is the task JSON `comingSoon` flag or the nav item's `soon`, and the map derives it. **Exempt**
+  features (no scientific result: the tour, profiles, blackboard, Movies, Tasks) get no badge and no row.
+- **One badge:** `ComingSoonBadge` with a `tier` prop renders the tier dot + its word (no pill); its
+  words and dot are `lib/guides/tiers.ts` (`TIER_LABEL`, `TIER_TIP` — what the user should do — on
+  hover, `chipDot`). Without `tier` it is still the "Coming soon" pill. Never a second badge.
+- **Where it shows:** each page button on the map carries a `.cc-dot`, one tone per tier (Experimental
+  warn, Beta info, Tested ok, Coming soon idle; exempt none — `chipDot`), read
+  through the legend line under the grid (`TIER_LEGEND`). Each
+  guide row in the picker, and the map's **Maturity** section (`components/MaturityMap.vue`): every non-exempt feature by
+  group, guides first, unguided ones marked "no guide", expandable to the record. "Share your data"
+  opens the call-for-datasets modal at its ask. `user-docs/README.md` has a Maturity column.
+- **Enforced by `utils/maturity.test.ts`** (logic in `utils/maturity.ts`): every sidebar page and every
+  task JSON under `app/src/tasks/` is tiered exactly once — by a guide (its page, the funs it runs,
+  its record's `covers`), by an unguided record's `covers`, by a Coming soon flag, or as a step of a
+  covered composite; a flagged feature has no record; every evidence path and test name exists, and a
+  Tested record's tests are not `@test_skip`/`@test_broken`/`skip`/`xfail`/`it.skip`; every
+  `datasetAsk` exists; testedOn ≤70, failsIf/next ≤110, needs ≤90 chars.
+- **On the pages (P2):** the app header carries the current page's maturity (`components/PageMaturity.vue`,
+  one mount for every page — pages have no shared header of their own). Experimental and Coming soon show
+  the badge; every other tiered page shows a quiet `pi-signal` icon instead, so no badge never reads as
+  "fine". Both open the Guides dialog on that feature's Maturity row (`lib/guideOpen.ts` →
+  `openMaturityRow`; `MaturityMap` opens the section and the row, then scrolls to it). Exempt pages and
+  non-sidebar routes show nothing. In the task picker (`TaskRunner`) an Experimental task's option reads
+  `… · Experimental` (a native `<option>` holds text only) and the picked one gets the badge beside it.
+  Beta and up are never badged on a page: nothing is Tested yet, so it would mark nearly every page.
+  Logic: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in `utils/maturity.ts`.
+- **"Something wrong?"** (`components/ReportProblemButton.vue`, `pi-bug`) beside the page's badge or
+  link, beside a picked task's badge, and in every expanded Maturity row: a popover that opens a
+  prefilled bug form (`lib/links.ts` → `problemReportUrl`) — feature, tier, page, version
+  (`appCtl.updateCurrent`), OS (the server's pixi platform, `utils/systemEnvs.ts`) and the last task's
+  name + status. **The last task's settings go in only on a toggle in that popover**, off every time
+  it opens (never remembered): GitHub is public and settings carry paths and project names. The URL
+  stays under 7,500 chars — settings are cut at 2,000, then left out with a note.
+- **Only the maintainer promotes** (plan Decision 6). An agent may add evidence and tick `next` items,
+  and argue for a tier in its PR; the tier line itself changes on his review.
+
 ### The orientation tour — the one guide with no prerequisites
 
 `lib/guides/tour.ts` (**Find your way around**, group `Start`, first in the picker) is the exception to
@@ -1224,6 +1271,16 @@ literals across the frontend before it and the header was about to add two more;
 pending (`docs/SHIPPING.md` → *Repo swap*) and should be one edit, not a grep. `lib/links.ts` is string
 constants only — anything that *asks* GitHub something (the update check) stays in
 `stores/appControl.ts`.
+
+**Call for Datasets** (the megaphone, `CallForDatasetsModal.vue` over `lib/callForDatasets.ts`): two
+sections, *Help us build* and *Help us test*, one accordion row per ask across both
+(`useSingleOpenSection('cc.callForDatasets.openAsk')`, not persisted; the MaturityMap row shape).
+Collapsed: `title` + the one-phrase why (`oneLiner`). Open: a small schematic where one helps (`fig` →
+`DatasetAskFigure.vue`, the same hand-drawn token-stroked inline SVG as `ClaudeWaysIn.vue`), the
+data in one line (`need`), a ghost **Open an issue** button and a small **Plan** link (`planUrl`). The
+long text — `blurb` and the full `sceneryHint` — goes to the issue body and Claude's `get_guide`, never
+the modal; the copy budgets are pinned in `callForDatasets.test.ts`. `?ask=<id>` (and
+`openCallForDatasets(id)`) opens that row and scrolls to it.
 
 A What's New tip card can carry `guideId` to render a **"Show me"** button that starts the matching
 guide — so a topic is described once (tip = the summary, guide = the click-through) instead of twice.
@@ -2694,6 +2751,13 @@ reused models, and the runs not repeated folded per reason under a collapsed **L
 (`groupLeftOut`). **Open in whiteboard** creates the chain and saves it if it validates; the name
 defaults to one no chain has (`uniqueChainName`), and a name that exists blocks Open with a note — it
 never overwrites a chain.
+
+**Export CSV** (beside *Suggest*, same selected images, no suggestion needed) downloads the Methods
+parameter table (`GET /api/chains/history-params` → `history_params_table`, `historyParamsCsv`): one
+row per step grouped as the suggestion groups them, only params that differ from the task spec's
+default, the images' spread where they disagree (`value (n images)`), never resolved. Unlike the chain,
+nothing is left out — an import, a crop or a training step is a row with a note, and a run logged
+before params were recorded says so. Select every image in the set for a paper.
 
 **Pre-flight on Run**: Run first posts `/api/chains/preflight` (`utils/chainPreflight.ts` groups the
 answer per image, failures first). Nothing found → the run starts as before; anything found → a

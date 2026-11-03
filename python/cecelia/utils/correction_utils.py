@@ -1864,9 +1864,9 @@ def af_mask_sigmas(dim_utils, dim_order=None):
         sig = []
         for ax in order:
             if ax in ('X', 'Y'):
-                sig.append(xy_um / float(dim_utils.im_physical_size(ax.lower()) or 1.0))
+                sig.append(xy_um / float(dim_utils.im_physical_size_um(ax.lower()) or 1.0))
             elif ax == 'Z' and dim_utils.is_3D():
-                sig.append(z_um / float(dim_utils.im_physical_size('z') or 1.0))
+                sig.append(z_um / float(dim_utils.im_physical_size_um('z') or 1.0))
             else:
                 sig.append(0.0)
         out.append(tuple(sig))

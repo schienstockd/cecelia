@@ -13,6 +13,18 @@ stack. Per-tag notes are also on the
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copying gates matches channels by name, as the R version did.** Before, an image with another
+  channel order gated whichever marker sat at that position.
+- **Cell and track clustering, and heatmaps across images, match channels by name.** Only an image
+  lacking a channel is refused.
+- **The copy dialog now names images it did not copy to**, with the reason, and notes where it
+  matched channels by name.
+- **Stored units are now converted.** Intervals in ms or minutes, and pixel sizes in nm or mm, were
+  read as seconds or µm. Re-run measures on such images.
+- **Metadata QC flags a unit it can't convert**, instead of assuming seconds or µm.
+
 ## [0.2.12] — 2026-11-02
 
 ### Read this first

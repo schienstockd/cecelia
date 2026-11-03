@@ -58,54 +58,57 @@ as a chain.
 
 The groups follow the analysis: **Populations** pages *define* who the cells are; **Explore** pages
 *summarise* those populations across images. Every page except Tasks needs an open project. Each
-page that defines a population names the page that summarises it.
+page that defines a population names the page that summarises it. **Maturity** says how far to
+trust what the page produces: *Experimental* — check every result by hand; *Beta* — checked by hand
+on real data, spot-check results; *Tested* — a test fails when the result is wrong. The Maturity
+section of the Guides map shows each feature's evidence and what would move it up.
 
 ### Data: get images in and ready
 
-| Page | What it's for | Summarised on | Guide | Claude |
-|---|---|---|---|---|
-| Manage images | Add, organise, copy, move and export images |  | Import images |  |
-| Preprocessing | Crop, project or resample into a new image |  | Preprocess an image |  |
-| Metadata | Pixel size, channel names, colours — fix before segmenting |  | Fix pixel size and channel names |  |
-| Cleanup | Drift correction, bleedthrough and autofluorescence, denoise |  | Drift correct a time series |  |
-| Model training | Train your own denoise or flow models |  | Train a flow model |  |
-| Segment | Find cells, with segmentation QC |  | Segment an image |  |
+| Page | What it's for | Summarised on | Guide | Maturity | Claude |
+|---|---|---|---|---|---|
+| Manage images | Add, organise, copy, move and export images |  | Import images | Beta |  |
+| Preprocessing | Crop, project or resample into a new image |  | Preprocess an image | Experimental |  |
+| Metadata | Pixel size, channel names, colours — fix before segmenting |  | Fix pixel size and channel names | Beta |  |
+| Cleanup | Drift correction, bleedthrough and autofluorescence, denoise |  | Drift correct a time series | Beta |  |
+| Model training | Train your own denoise or flow models |  | Train a flow model | Experimental |  |
+| Segment | Find cells, with segmentation QC |  | Segment an image | Beta |  |
 
 ### Populations: define who the cells are
 
-| Page | What it's for | Summarised on | Guide | Claude |
-|---|---|---|---|---|
-| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | Claude Code proposes a gate; keep or delete it |
-| Track | Link cells over time; gate tracks | Behaviour | Track cells |  |
-| Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes |  |
-| Cluster tracks | Group tracks by behaviour | Behaviour | Cluster tracks into behaviours |  |
-| Cluster regions | Find tissue neighbourhoods | Spatial | Cluster spatial regions |  |
+| Page | What it's for | Summarised on | Guide | Maturity | Claude |
+|---|---|---|---|---|---|
+| Gate | Draw gates on cell measures, like flow cytometry | Phenotype | Create and gate populations | Beta | Claude Code proposes a gate; keep or delete it |
+| Track | Link cells over time; gate tracks | Behaviour | Track cells | Beta |  |
+| Cluster cells | Group cells by phenotype across a set | Phenotype | Cluster cells into phenotypes | Beta |  |
+| Cluster tracks | Group tracks by behaviour | Behaviour | Cluster tracks into behaviours | Beta |  |
+| Cluster regions | Find tissue neighbourhoods | Spatial | Cluster spatial regions | Experimental |  |
 
 ### Explore: summarise those populations across images
 
-| Page | What it's for | Summarised on | Guide | Claude |
-|---|---|---|---|---|
-| Phenotype | Counts and proportions per population, across images |  |  |  |
-| Behaviour | Speed, HMM states and other track measures |  | Classify behaviour states |  |
-| Spatial | Neighbours, interactions, contacts — build the graph first |  | Score spatial interactions |  |
+| Page | What it's for | Summarised on | Guide | Maturity | Claude |
+|---|---|---|---|---|---|
+| Phenotype | Counts and proportions per population, across images |  |  | Experimental |  |
+| Behaviour | Speed, HMM states and other track measures |  | Classify behaviour states | Experimental |  |
+| Spatial | Neighbours, interactions, contacts — build the graph first |  | Score spatial interactions | Experimental |  |
 
 ### Analysis: your own figures and notes
 
-| Page | What it's for | Summarised on | Guide | Claude |
-|---|---|---|---|---|
-| Analysis board | Combine any plots across pages and images; export PDF or CSV |  | Build plots | Claude Code builds a board of plots for you |
-| Blackboard | Notes for an open question, versioned, tagged good or bad |  | Use the blackboard | Kiwi replies you save land here; Claude Code writes entries |
-| Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | Claude Code writes a notebook for you |
-| Animation | Keyframe a fly-through of one image into a movie |  | Build an animation |  |
-| Batch movies | One movie setup, one timelapse movie per image |  | Record a movie |  |
-| Movies & figures | Play the movies this project has rendered |  |  |  |
+| Page | What it's for | Summarised on | Guide | Maturity | Claude |
+|---|---|---|---|---|---|
+| Analysis board | Combine any plots across pages and images; export PDF or CSV |  | Build plots | Beta | Claude Code builds a board of plots for you |
+| Blackboard | Notes for an open question, versioned, tagged good or bad |  | Use the blackboard |  | Kiwi replies you save land here; Claude Code writes entries |
+| Notebooks | Pluto (Julia) notebooks for what the board can’t do |  | Create a notebook | Experimental | Claude Code writes a notebook for you |
+| Animation | Keyframe a fly-through of one image into a movie |  | Build an animation | Beta |  |
+| Batch movies | One movie setup, one timelapse movie per image |  | Record a movie | Beta |  |
+| Movies & figures | Play the movies this project has rendered |  |  |  |  |
 
 ### Pipeline: run many images
 
-| Page | What it's for | Summarised on | Guide | Claude |
-|---|---|---|---|---|
-| Tasks | Everything running or finished; history of past runs |  |  |  |
-| Chains | Wire the steps you settled on into a chain; run it over a set |  | Run a pipeline over a whole set | Claude Code designs the chain; you run it |
+| Page | What it's for | Summarised on | Guide | Maturity | Claude |
+|---|---|---|---|---|---|
+| Tasks | Everything running or finished; history of past runs |  |  |  |  |
+| Chains | Wire the steps you settled on into a chain; run it over a set |  | Run a pipeline over a whole set | Beta | Claude Code designs the chain; you run it |
 
 ## Panels beside the pages
 
