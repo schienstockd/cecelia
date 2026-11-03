@@ -1,10 +1,15 @@
 """Segmentation against known truth: real cellpose on a synthetic image whose answer is built in.
 
 `pipeline_golden.jl` starts from imported labels, so a change to segmentation (a default, the tiling,
-the stitch, a cellpose bump) never reaches a stored answer there. This does: a 4 × 5 grid of bright
-discs, radius 6 px, so the answer is 20 cells of 113 px per plane, each centre inside its own label.
-It runs the app's own defaults for tiling and seams (`auto` overlap, `labelOverlap` 0.25,
-`matchThreshold` 0.3).
+the stitch, a cellpose bump) never reaches a stored answer there. This does: a 4 × 5 grid of discs,
+radius 6 px, so the answer is 20 cells of 113 px per plane, each centre inside its own label. A row
+and a column of them sit across the 64 px tile seams, so a broken seam stitch splits them (30 labels
+with the stitch disabled). It runs the app's own defaults for tiling and seams (`auto` overlap,
+`labelOverlap` 0.25, `matchThreshold` 0.3).
+
+The discs are bright in the middle and dimmer at the rim, like a cell. Flat-topped discs are an
+ambiguous input: cellpose split one inside a single tile at some crops, a failure no code change made.
+These give 20 at every overlap from 8 to 32 px, 2D and 3D.
 
 Opt-in (CECELIA_SEGMENTATION_GOLDEN=1) because it loads real model weights; CI runs it weekly and on
 segmentation or dependency changes (`.github/workflows/verify-segmentation-golden.yml`):
@@ -22,16 +27,28 @@ import numpy as np
 import ome_types
 import zarr
 
-from cecelia.tests.test_cellpose_smoke import _blobs, _ome_xml
+from cecelia.tests.test_cellpose_smoke import _ome_xml
 from cecelia.utils import cellpose_utils as cpu
 from cecelia.utils.dim_utils import DimUtils
 
 _ENABLED = os.environ.get("CECELIA_SEGMENTATION_GOLDEN") == "1"
 _Y, _X = 96, 112
-#: Where `_blobs` puts its discs: the truth, by construction.
-CENTRES = [(cy, cx) for cy in range(12, _Y - 8, 20) for cx in range(12, _X - 8, 20)]
+#: The discs' centres, the truth by construction. y = 62 and x = 62 put a row and a column across the
+#: seams of 64 px tiles.
+CENTRES = [(cy, cx) for cy in (20, 40, 62, 82) for cx in (20, 40, 62, 82, 100)]
 #: Pixels in one disc of radius 6 (`(y-cy)^2 + (x-cx)^2 <= 36`).
 DISC_PX = 113
+
+
+def _cells(size_y: int, size_x: int) -> np.ndarray:
+    """The discs on a noisy background: 3000 at the centre falling to 1600 at the rim, then nothing."""
+    rng = np.random.default_rng(0)
+    im = rng.normal(200, 20, (size_y, size_x))
+    yy, xx = np.mgrid[:size_y, :size_x]
+    for cy, cx in CENTRES:
+        r2 = (yy - cy) ** 2 + (xx - cx) ** 2
+        im += np.where(r2 <= 36, 2800 * (1 - 0.5 * r2 / 36), 0)
+    return np.clip(im, 0, 65535).astype(np.uint16)
 
 
 @unittest.skipUnless(_ENABLED, "set CECELIA_SEGMENTATION_GOLDEN=1 to run real cellpose against known truth")
@@ -43,7 +60,7 @@ class SegmentationGoldenTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def _segment(self, size_z: int, block_size) -> np.ndarray:
-        im = np.broadcast_to(_blobs(_Y, _X), (1, 1, size_z, _Y, _X)).copy()
+        im = np.broadcast_to(_cells(_Y, _X), (1, 1, size_z, _Y, _X)).copy()
         du = DimUtils(ome_types.from_xml(_ome_xml(size_z, _Y, _X)), use_channel_axis=True)
         du.calc_image_dimensions(im.shape)
         params = {
@@ -71,8 +88,12 @@ class SegmentationGoldenTest(unittest.TestCase):
     def test_one_plane_one_tile(self):
         self._assert_truth(self._segment(size_z=1, block_size="auto"))
 
+    def test_one_plane_in_four_tiles(self):
+        # 2 × 2 tiles of 64 px: eight discs sit across a seam, and the seam stitch must join each.
+        self._assert_truth(self._segment(size_z=1, block_size=64))
+
     def test_a_z_stack_in_four_tiles_stitched(self):
-        # 2 × 2 tiles of 64 px: four discs sit across a seam. Z stitching keeps each cell one label.
+        # The same tiles through 3 planes: z stitching keeps each cell one label.
         labels = self._segment(size_z=3, block_size=64)
         self._assert_truth(labels)
         for i in (i for i in np.unique(labels) if i):

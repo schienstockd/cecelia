@@ -614,9 +614,11 @@ cecelia runs **cellpose >= 4.2**. Four things about v4 are load-bearing here, al
 v3 — labels numbered independently per plane — see `test_cellpose_v4_callpath.py`.
 
 **Against known truth.** `test_segmentation_golden.py` runs real cellpose on discs drawn at known places
-(20 cells, 113 px each) at the app's default tiling and seam settings, once whole-frame and once as a Z
-stack in 2 × 2 tiles. It fails when a seam splits a cell, two discs share a label, or an area drifts
-more than 20%. Opt-in (`CECELIA_SEGMENTATION_GOLDEN=1`), it runs weekly and on segmentation or
+(20 cells, 113 px each, a row and a column across the 64 px tile seams) at the app's default tiling and
+seam settings: whole-frame, in 2 × 2 tiles, and as a Z stack in 2 × 2 tiles. It fails when a seam
+splits a cell (30 labels with the seam stitch disabled), two discs share a label, or an area drifts
+more than 20%. The discs are bright-centred like cells: flat-topped ones are ambiguous to cellpose,
+which split one inside a single tile at some crops. Opt-in (`CECELIA_SEGMENTATION_GOLDEN=1`), it runs weekly and on segmentation or
 dependency changes in `.github/workflows/verify-segmentation-golden.yml`.
 
 ### Normalisation — ours, never cellpose's
