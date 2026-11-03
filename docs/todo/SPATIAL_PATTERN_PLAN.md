@@ -161,7 +161,8 @@ Built 2026-11-03. `IMAGE_METRIC_SOURCES` + `image_metric_frame`/`image_metric_su
 `_summary_agg`. Sources `spatialPattern` (`nnRatio`, `ceR`, `zScore`, `nnObserved`) and
 `neighbourStats` (per pair: `logOdds`, `zScore`); the anisotropy scalar is the next entry. Request
 field `imageMetric` on `/api/plot_data` (+ `suffix`, `pop`). Specs `spatial_pattern_summary.json`
-("Spatial pattern by group") and `spatial_interactions_by_group.json`; `isPrecomputedSpec` covers
+("Spatial pattern by group"); `spatial_interaction_pairs.json` ("Interaction across images", added on
+main as its own `contactPairs` path at the same time) was folded onto the `neighbourStats` source; `isPrecomputedSpec` covers
 `dataSource.imageMetric`; the panel plots ONE of the run's populations at a time (header picker), so
 the test compares attribute groups, not populations. Checked headless on 4kS67f grouped by Mouse;
 the rendered panel has not been looked at.

@@ -297,6 +297,55 @@ end
     end
 end
 
+@testset "interaction PAIR across images — one dot per image, grouped by attribute" begin
+    # Four images, one neighbourStats run each; the CD69pos × TRITC log-odds is high in the two DTx
+    # images and low in the PBS ones. The plot must hand the per-image values to the ordinary
+    # distribution + stats path, so grouping by Treatment yields two series of two dots each.
+    lo = Dict("a" => 0.9, "b" => 1.1, "c" => -0.2, "d" => 0.1)
+    dirs = String[]; imgs = CciaImage[]
+    for (u, v) in sort(collect(lo))
+        td = mktempdir(); push!(dirs, td)
+        mkpath(joinpath(td, "spatialStats"))
+        write(joinpath(td, "spatialStats", "cond.json"), """
+            {"basis":["s/CD69neg","s/CD69pos","s/TRITC"],"nCells":50,"nEdges":80,"graphSuffix":"g",
+             "nPermutations":100,"shufflePops":["s/CD69neg","s/CD69pos"],"records":[
+              {"popA":"s/CD69pos","popB":"s/TRITC","observed":5,"expected":3,"logOdds":$v,
+               "zScore":$(2v),"pValue":0.04,"significant":true,"association":"associated"},
+              {"popA":"s/TRITC","popB":"s/TRITC","observed":1,"expected":1,"logOdds":0.0,
+               "zScore":null,"pValue":1.0,"significant":false,"association":"avoided"}]}
+            """)
+        push!(imgs, CciaImage(; dir = td, uid = u))
+    end
+    uids = [im.uid for im in imgs]
+    attr = Dict("a" => "DTx", "b" => "DTx", "c" => "PBS", "d" => "PBS")
+    try
+        r = image_metric_summary(imgs, uids, "neighbourStats", "points"; suffix = "cond",
+                                 measure = "logOdds", pop = "s/CD69pos × s/TRITC",
+                                 attr_map = attr, stats_enabled = true)
+        @test r["suffixes"] == ["cond"] && r["pops"] == ["s/CD69pos × s/TRITC", "s/TRITC × s/TRITC"]
+        @test r["pop"] == "s/CD69pos × s/TRITC"
+        @test length(r["series"]) == 2
+        vals = Dict(s["uID"] => sort(Float64.(s["points"])) for s in r["series"])
+        @test vals["DTx"] == [0.9, 1.1] && vals["PBS"] == [-0.2, 0.1]
+        @test r["comparisons"]["groups"] == ["DTx", "PBS"]
+        # a stale pair or run saved on a board falls back to the first rather than drawing nothing
+        st = image_metric_summary(imgs, uids, "neighbourStats", "points"; suffix = "gone",
+                                  measure = "logOdds", pop = "s/gone × s/gone")
+        @test st["suffix"] == "cond" && st["pop"] == "s/CD69pos × s/TRITC"
+        # zScore is the other readout; a pair whose z is null (fixed under the conditional null) drops
+        # out rather than plotting as 0
+        z = image_metric_summary(imgs, uids, "neighbourStats", "points"; measure = "zScore",
+                                 pop = "s/TRITC × s/TRITC")
+        @test z["pop"] == "s/TRITC × s/TRITC" && all(isempty(s["points"]) for s in z["series"])
+        # no attribute → one pooled series per pair, each image a dot
+        p = image_metric_summary(imgs, uids, "neighbourStats", "points"; measure = "logOdds",
+                                 pop = "s/CD69pos × s/TRITC")
+        @test length(p["series"]) == 1 && length(p["series"][1]["points"]) == 4
+    finally
+        foreach(d -> rm(d; recursive = true, force = true), dirs)
+    end
+end
+
 @testset "spatial graph — path accessor + discovery" begin
     # The graph pools ACROSS segmentations, so it is keyed by run suffix under spatialGraph/, not by
     # value_name next to a cell table (which could not represent a cross-segmentation graph).

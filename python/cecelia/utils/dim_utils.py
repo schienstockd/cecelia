@@ -20,6 +20,8 @@ import cecelia.utils.math_helpers as math_helpers
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 
 
+
+
 class DimUtils:
   def __init__(self, omexml, use_channel_axis = True):
     self.default_order = list("TZCYX")
@@ -119,6 +121,16 @@ class DimUtils:
     elif axis == 'z':
       axis_size = self.omexml.images[0].pixels.physical_size_z
     return axis_size if axis_size is not None else default
+
+  def im_physical_size_um(self, axis, default = 1.0):
+    """`im_physical_size` converted to µm by the axis's OME unit (nm, mm, …). A size in nm read as µm
+    makes every micron-denominated parameter 1000× off. Unknown or absent unit → the value as-is (µm
+    assumed), the same rule as the Julia `img_physical_sizes`."""
+    size = self.im_physical_size(axis, default = None)
+    if size is None:
+      return default
+    from cecelia.utils.units import length_unit_um
+    return float(size) * length_unit_um(self.im_physical_unit(axis, default = 'um'))
 
   def im_physical_units(self, default = 'um'):
     axis_units = {

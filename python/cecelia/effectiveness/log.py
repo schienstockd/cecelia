@@ -54,6 +54,19 @@ EVENT_TYPES = frozenset({
     "convention_check_finding",
     "convention_check_finding_resolved",
     "convention_check_advisory",
+    #: Result review — the third recital reviewer, for silent wrong results
+    #: (`docs/ai-assist/RESULT_REVIEW.md`). `_run` carries `escape_valve` (`no_result_paths` /
+    #: `unchanged_diff`) when it didn't spawn, else tokens/cost/models plus `paths` and `repro_dir`.
+    #: `_finding` = a `reproduced` bullet (outcome tag required); `_advisory` = `inferred` (optional
+    #: tag, swept by the weekly judge) or `display` (listed only).
+    "result_review_run",
+    "result_review_finding",
+    "result_review_finding_resolved",
+    "result_review_advisory",
+    #: A commit changed a committed result-review repro (a file carrying `RESULT-REVIEW: <slug>`) under
+    #: a `false_positive` tag (the commit hook's gate 4). Payload: `slug`, `file`, `reason`. The bug
+    #: sweep sends it to the owner, whichever branch the finding came from.
+    "result_review_test_edited",
     "ratchet_hit",
     "human_override",
     "retrospective_miss",
@@ -89,6 +102,11 @@ EVENT_TYPES = frozenset({
     #: `files_checked`, `warnings_emitted`, `findings` (check / path / line / detail),
     #: `duration_s`. See `python/cecelia/effectiveness/maintainability_lint.py`.
     "maintainability_lint_run",
+    #: Changelog check — mechanical recital step: warns when the staged diff changes a task default
+    #: and neither the diff nor the branch touched CHANGELOG.md. Payload: `defaults_changed`,
+    #: `warnings_emitted`, `changelog_noted`, `findings` (path / line / old / new / key),
+    #: `duration_s`. See `python/cecelia/effectiveness/changelog_check.py`.
+    "changelog_check_run",
     #: Retired 2026-09-30 (replaced by `inventory_coverage_run`); no emitter. Kept so the rows
     #: already in the log stay valid members of the closed taxonomy.
     "citation_currency_run",
@@ -256,8 +274,9 @@ def read_events(log_path: pathlib.Path | None = None) -> _t.Iterator[dict]:
 
 
 #: Per-finding rows the recital writes, and the rows the commit hook writes when a slug is tagged.
-FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding"})
-RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved"})
+FINDING_EVENTS = frozenset({"fanout_audit_finding", "convention_check_finding", "result_review_finding"})
+RESOLVED_EVENTS = frozenset({"fanout_audit_finding_resolved", "convention_check_finding_resolved",
+                             "result_review_finding_resolved"})
 
 
 def latest_resolutions_by_slug(events: _t.Iterable[dict],

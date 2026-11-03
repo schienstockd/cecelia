@@ -52,6 +52,7 @@ from .recital import ADVISORY_MARKERS, TAGGABLE_ADVISORY
 # user isn't necessarily CVD-safe. Source & rationale: `palette.py` docstring.
 from .palette import (
     BLUE as _BLUE,
+    BLUISH_GREEN as _BLUISH_GREEN,
     GREY as _GREY,
     ORANGE as _ORANGE,
     REDDISH_PURPLE as _REDDISH_PURPLE,
@@ -184,9 +185,11 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     "fanout_audit": ("fnut", _BLUE),
     "sibling_audit": ("fnut", _BLUE),  # pre-rename rows fold under the same header (see rollup.py)
     "convention_check": ("conv", _MAGENTA),
+    "result_review": ("rslt", _BLUISH_GREEN),
     # Grey, not sky blue: sky blue is the console's "good" (`_GOOD`), and a label in it read as a pass.
     "inventory_coverage": ("invt", _GREY),
     "maintainability_lint": ("mlnt", _GREY),
+    "changelog_check": ("chlg", _GREY),
     "citation_currency": ("cite", _GREY),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
     "agent_run": ("agnt", _RED),  # platform errors an unattended agent run hit (run_findings.py)
@@ -205,6 +208,17 @@ def _mechanism_of(event: str) -> tuple[str, str]:
         if event == prefix or event.startswith(prefix + "_"):
             return style
     return (event[:_MECH_WIDTH].ljust(_MECH_WIDTH), _GREY)
+
+
+#: Tally row order: as `_MECHANISM_STYLE` lists them (the reviewers, then the mechanical checks), and a
+#: label it doesn't know last, alphabetically.
+_MECH_ORDER: dict[str, int] = {}
+for _label, _ in _MECHANISM_STYLE.values():
+    _MECH_ORDER.setdefault(_label.strip(), len(_MECH_ORDER))
+
+
+def _mech_rank(label: str) -> tuple[int, str]:
+    return (_MECH_ORDER.get(label, len(_MECH_ORDER)), label)
 
 
 #: Reverse index: short label (`fnut`/`conv`/…) → colour. Built at import so a tally row (which
@@ -264,6 +278,9 @@ _MARKER_COLOUR: dict[str, str] = {
     "wrong home": _YELLOW,             # attention semantic — content belongs in another doc
     "plausible": _YELLOW,              # advisory — fanout fit unverified
     "potential duplicate": _YELLOW,    # advisory — convention fit unverified
+    "reproduced": _ORANGE,             # result review ran something that shows the wrong result
+    "inferred": _YELLOW,               # advisory — result review read it from code only
+    "display": _GREY,                  # listed only — changes what is drawn, not a result
     "error": _ORANGE,                  # agent run hit a platform error (5xx, no error text)
     "repeat": _YELLOW,                 # same 4xx across separate agent runs — guidance gap
 }
@@ -410,7 +427,8 @@ class _Tally:
     `task_console.jl::TALLY` for the recital side.
 
     Grouped by mechanism (`fnut`/`conv`/`cite`/`ratc`), each mechanism carries:
-      - `runs`: how many `_run` events landed (including the ones we dropped as quiet).
+      - `runs`: how many `_run` events landed (including the ones we dropped as quiet), except those
+        with an `escape_valve` (the reviewer didn't spawn): those count in `skipped`.
       - `errored_runs`: subset of `runs` classified as errored by `log.is_errored_run`.
         Kept separately so a failed reviewer isn't rendered as a clean pass; parallels the
         split in `rollup.py::_mechanism_section`.
@@ -429,6 +447,7 @@ class _Tally:
 
     def __init__(self, advisory_slugs: _t.Iterable[str] = ()) -> None:
         self.runs: dict[str, int] = {}
+        self.skipped: dict[str, int] = {}
         self.errored_runs: dict[str, int] = {}
         self.findings: dict[str, dict[str, int]] = {}
         self.resolved: dict[str, dict[str, int]] = {}
@@ -443,7 +462,9 @@ class _Tally:
         name = event.get("event", "")
         payload = event.get("payload", {}) or {}
         key = self._key(name)
-        if name.endswith("_run"):
+        if name.endswith("_run") and payload.get("escape_valve"):
+            self.skipped[key] = self.skipped.get(key, 0) + 1
+        elif name.endswith("_run"):
             self.runs[key] = self.runs.get(key, 0) + 1
             if is_errored_run(payload):
                 self.errored_runs[key] = self.errored_runs.get(key, 0) + 1
@@ -464,7 +485,7 @@ class _Tally:
                 self.resolved.setdefault(key, {})[outcome] = self.resolved.get(key, {}).get(outcome, 0) + 1
 
     def is_empty(self) -> bool:
-        return not (self.runs or self.findings or self.resolved)
+        return not (self.runs or self.skipped or self.findings or self.resolved)
 
 
 #: Advisory markers (no tag required), and those whose note the author may tag fixed.
@@ -484,6 +505,8 @@ def _tally_row(tally: _Tally, mech: str, *, use_colour: bool) -> str:
         if errored:
             run_txt += _col(_RED, f" ({errored} errored)", use_colour=use_colour)
         parts.append(run_txt)
+    if tally.skipped.get(mech):
+        parts.append(_col(_DIM, f"{tally.skipped[mech]} skipped", use_colour=use_colour))
     # `5 confirmed → 2 fixed · 2 false pos · 1 dropped`: markers name the findings (no
     # separate `N findings` total — it's the sum of the markers), `→` leads to what was done.
     fnd = tally.findings.get(mech, {})
@@ -895,7 +918,8 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
 
     # By-mechanism block (compact — one row per mechanism, still counts as chrome so it
     # doesn't compete with the findings pane for the row budget).
-    seen_mechs = sorted(set(state.tally.runs) | set(state.tally.findings) | set(state.tally.resolved))
+    seen_mechs = sorted(set(state.tally.runs) | set(state.tally.skipped) | set(state.tally.findings)
+                        | set(state.tally.resolved), key=_mech_rank)
     if seen_mechs:
         chrome.append(_hr("by mechanism", width, use_colour=use_colour))
         for mech in seen_mechs:
@@ -987,6 +1011,7 @@ def _wrap_desc(desc: str, *, width: int, indent: str, first_prefix: str) -> str:
 _MECHANICAL_RUN_COUNT: dict[str, tuple[str, str]] = {
     "inventory_coverage_run": ("new_shared_files", "new"),
     "maintainability_lint_run": ("files_checked", "checked"),
+    "changelog_check_run": ("defaults_changed", "default(s) changed"),
     "citation_currency_run": ("staged_files_checked", "staged"),
 }
 
@@ -1061,6 +1086,11 @@ def format_event(event: dict, *, use_colour: bool = True,
                 extras.append(f"{checked} {count_word}")
             extras_str = "  " + "  ".join(extras) if extras else ""
             return f"{ts} {tag} {run_verb} {dur_str}{extras_str}{ctx_str}"
+        # A reviewer that didn't spawn: a path-gated skip is quiet, a reused review says so.
+        valve = payload.get("escape_valve")
+        if valve and not errored:
+            return None if valve == "no_result_paths" else \
+                f"{ts} {tag} {_verb('RUN')} {_col(_DIM, valve.replace('_', ' '), use_colour=use_colour)}{ctx_str}"
         # For fanout/convention runs the timing is the whole `_run` payload — findings render
         # separately. Suppress extras to keep the row narrow.
         return f"{ts} {tag} {run_verb} {dur_str}{ctx_str}"

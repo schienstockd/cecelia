@@ -294,10 +294,12 @@ function api_plot_data(body_bytes::Vector{UInt8})
     # selection: its rows/columns are fixed by the `neighbourStats` run it reads, so requiring pops
     # here rejects the only body the panel can send. Route it through the targets form with an empty
     # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
-    precomputed = chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction"
+    # The HMM state-count elbow is the same kind of readout: it reads the runs' fit records.
+    precomputed = (chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction") ||
+                  chart == "elbow"
 
     # A PER-IMAGE METRIC read from an analysis run's sidecars (SPATIAL_PATTERN_PLAN Decision 8): one dot
-    # per image, populations fixed by the run, grouped by image attribute. Same route, same renderer;
+    # per image, populations (or population pairs) fixed by the run, grouped by image attribute. Same route, same renderer;
     # the aggregation is the shared `_summary_agg` (app/src/plotting/image_metrics.jl).
     im_v = get(body, "imageMetric", nothing)
     image_metric = (im_v === nothing || isempty(string(im_v))) ? nothing : string(im_v)

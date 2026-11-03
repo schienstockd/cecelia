@@ -62,13 +62,15 @@ const IMAGE_METRIC_SOURCES = Dict{String,ImageMetricSource}(
                                           ["logOdds", "zScore"]),
 )
 
-# The run to plot: the requested one, else the first run present on EVERY image (a run missing on
-# some images would silently drop them), else the first run on any. Returns (suffix, all suffixes).
+# The run to plot: the requested one when some image has it, else the first run present on EVERY image
+# (a run missing on some images would silently drop them), else the first run on any — so a stale pick
+# saved on a board falls back rather than drawing nothing. Returns (suffix, all suffixes).
 function _image_metric_run(imgs, src, suffix::AbstractString)
     per = [Set(src.suffixes(img)) for img in imgs]
     every = isempty(per) ? String[] : sort!(collect(reduce(intersect, per)))
     any_ = sort!(collect(reduce(union, per; init = Set{String}())))
-    chosen = !isempty(suffix) ? String(suffix) : (!isempty(every) ? first(every) : (isempty(any_) ? "" : first(any_)))
+    chosen = String(suffix) in any_ ? String(suffix) :
+             !isempty(every) ? first(every) : (isempty(any_) ? "" : first(any_))
     (chosen, any_)
 end
 
@@ -112,7 +114,9 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
                               raw::Bool = false)::Dict{String,Any}
     df, chosen, suffixes = image_metric_frame(imgs, uids, source; suffix = suffix)
     pops = unique(df.pop)
-    isempty(pop) || (df = df[df.pop .== String(pop), :])
+    # a population the run lacks (a stale pick) falls back to the first; "" plots them all
+    chosen_pop = isempty(pop) ? "" : (String(pop) in pops ? String(pop) : (isempty(pops) ? "" : first(pops)))
+    isempty(chosen_pop) || (df = df[df.pop .== chosen_pop, :])
     result = _summary_agg(df, chart_type; measure = String(measure), granularity = :cell, nbins = 30,
                           normalize = :none, by_image = attr_map !== nothing, attr_map = attr_map,
                           raw_points = true, raw = raw,
@@ -121,6 +125,7 @@ function image_metric_summary(imgs::AbstractVector{<:CciaImage}, uids::AbstractV
     result["suffix"] = chosen
     result["suffixes"] = suffixes
     result["pops"] = pops
+    result["pop"] = chosen_pop
     result["nImages"] = length(unique(df.uID))
     result
 end

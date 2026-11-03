@@ -17,7 +17,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
 # the usage-limit reading is shared with the autonomous runs; judge callers keep reaching it as `judge.X`
 from cecelia.effectiveness.claude_cli import (  # noqa: E402,F401
-    EX_TEMPFAIL, RESET_FALLBACK, USAGE_KEYS, RateLimited, failure_text, limit_exit, rate_limit, read_result,
+    EX_TEMPFAIL, MEASURED_MODEL, RESET_FALLBACK, USAGE_KEYS, RateLimited, failure_text, limit_exit, rate_limit, read_result,
     reset_at, resolve_claude_bin, tokens)
 from cecelia.effectiveness.claude_cli import models as _models  # noqa: E402
 
@@ -66,7 +66,7 @@ def call_judge(prompt: str, schema: dict, *, budget_usd: float = CALL_USD,
     try:
         with tempfile.TemporaryDirectory() as cwd:   # no repo, no CLAUDE.md, nothing to read
             proc = subprocess.run(
-                [claude, "-p", "--tools", "", "--safe-mode", "--strict-mcp-config", "--no-session-persistence",
+                [claude, "-p", "--model", MEASURED_MODEL, "--tools", "", "--safe-mode", "--strict-mcp-config", "--no-session-persistence",
                  "--output-format", "json", "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(schema)],
                 input=prompt, cwd=cwd, env={**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"},
                 capture_output=True, text=True, encoding="utf-8", timeout=timeout, check=False)

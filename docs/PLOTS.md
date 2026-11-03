@@ -33,18 +33,21 @@ arrangeable, exportable, board-hostable — with one route and one renderer. Suc
 no category (its populations are fixed by the run) and instead needs to know WHICH RUN; the panel sends
 `suffix` and offers a run picker built from the `suffixes` the response reports.
 
-**When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or an
-interaction run's per-pair log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question
-asked of it is "does it differ between groups of images?". The spec declares
+**When the data is one number per image from a run.** A spatial-pattern run's NN ratio, or one
+interaction pair's log-odds, is a per-IMAGE value a task wrote to a sidecar, and the question asked of
+it is "does it differ between groups of images?". The spec declares
 `dataSource.imageMetric: { source, task }` (`source` a key of `IMAGE_METRIC_SOURCES`,
 `app/src/plotting/image_metrics.jl`); the panel sends `imageMetric` + `measure` (+ `suffix` for the
-run, `pop` for one of the run's populations) to the same `/api/plot_data`. The backend turns the run
-into a `pop_df`-shaped frame — one row per (image, population) — and runs the ordinary `_summary_agg`,
-so attribute grouping, box/strip/bar, the group tests and CSV export are the existing ones with the
-image as the unit. It is precomputed (`isPrecomputedSpec`), so it takes no population selection; the
-response reports `suffixes` and `pops` for the two header pickers. A new per-image readout is one entry
-in `IMAGE_METRIC_SOURCES` plus a spec. Specs: `spatial_pattern_summary.json`,
-`spatial_interactions_by_group.json`. See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.
+run, `pop` for one of the run's populations or pairs) to the same `/api/plot_data`. The backend turns
+the run into a `pop_df`-shaped frame — one row per (image, population) — and runs the ordinary
+`_summary_agg`, so attribute grouping, box/strip/bar, the group tests and CSV export are the existing
+ones with the image as the unit. It is precomputed (`isPrecomputedSpec`), so it takes no population
+selection; the response reports `suffixes` and `pops` for the two header pickers, and a stale pick
+falls back to the first. A new per-image readout is one entry in `IMAGE_METRIC_SOURCES` plus a spec.
+Specs: `spatial_pattern_summary.json` (source `spatialPattern`) and `spatial_interaction_pairs.json`
+(source `neighbourStats`, `pop` = the pair "A × B"). With `shufflePops` set on an interaction run (the
+conditional null), the log-odds is observed vs that null's exact mean, so ≈ 0 means "no different from
+the shuffled populations in general". See `docs/todo/SPATIAL_PATTERN_PLAN.md` Decision 8.
 
 This replaced `SpatialContactHeatmap.vue` + `GET /api/plots/contact_matrix`, which broke the rule on both
 counts and was consequently pinned in a fixed box below the image table. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
@@ -125,7 +128,7 @@ the mapping: `_normalise_accepts` folds `flow`→`live` (same gate map), but a p
 "Gated" slices the cell gates, "Tracked" the derived `_tracked` sets.
 
 **A PRECOMPUTED plot has no family selection at all.** `isPrecomputedSpec` (today: `matrix.mode ===
-"interaction"`) marks a plot whose rows/columns come from the analysis run it reads, not from the
+"interaction"`, `precomputed: "hmmFit"` or `imageMetric`) marks a plot whose rows/columns come from the analysis run it reads, not from the
 population picker. Three surfaces ask that one predicate — the panel (needs no series), the population
 picker (says so instead of offering dead eye toggles), and the server (`api_plot_data`'s `precomputed`,
 which must not reject a body with no pops). Forking it is how one of them ends up disagreeing.
@@ -784,6 +787,27 @@ popover picks **Mode**, **Category** (from the discovered categorical obs column
 to a `*transitions*` column, profile to a `*state*` column), **Scale** (0–1 / z-score, profile) /
 **Normalize** (crosstab), and **Cell values**. Plot defs: `state_signature.json` (profile) and
 `transition_matrix.json` (crosstab).
+
+**A profile over an HMM state column follows its run.** When the category is
+`live.cell.hmm.state.{colName}` and the run left a fit record (`{props}.hmmfit.json`, `docs/DATAMODEL.md`
+→ *HMM state output*), the rows are the measures the run was FITTED on first, then the requested
+extras, and the response carries `fit` (`modelMeasurements, numStates, logLik, bic, converged`).
+`SummaryPanel` shows it as a footer `PlotNotice` ("Fitted on speed, angle · 3 states"; amber when the
+fit did not converge), via `utils/hmmFitNote.ts`. Without it a run fitted on shape descriptors drew the
+spec's speed/angle rows, and a plotted correlate read like a modelled measure. Resolved in
+`_hmm_profile_fit` before the frame is read, in all four `plot_summary_data` methods.
+
+**HMM state count (`elbow` chart, `hmm_state_count.json`) — a second precomputed readout.** Every
+HMM run recorded on the selected images (`{props}.hmmfit.json`), grouped into FAMILIES of runs that
+differ only in `numStates` (same pops, modelled measures and preprocessing — anything else is a
+different curve, since log-likelihood is of the preprocessed data); one line per family over K, y =
+log-likelihood (the elbow) or BIC (panel option). Values are drawn as recorded — no smoothing, unlike
+the trend line, because with 3–5 points a fitted curve would invent the elbow. A run that did not
+converge is a hollow dot; the tooltip carries the run name and the gain over the previous K. Spec
+`dataSource.precomputed: "hmmFit"` → `isPrecomputedSpec` (no population selection, same as the
+interaction matrix); `plot_summary_data` intercepts `chartType == "elbow"` before any `pop_df` read
+(`app/src/plotting/hmm_fit_curve.jl`); rows built by `utils/hmmElbow.ts`, marks by `buildHmmElbow`.
+It never picks K — see `docs/todo/HMM_FIT_QUALITY_PLAN.md`.
 
 **Tiled / spatial map** (binned positions over the image field) — roadmap → `Plot.raster` /
 `Plot.cell` over binned x/y. Needs a backend aggregation that bins centroids into a grid.

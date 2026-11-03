@@ -154,14 +154,24 @@ acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.m
    > as markdown, and 450 lines of `* title by @user in #N` told a user nothing they could act on
    > (Dominik, 2026-08-10). Write for the person opening that modal: what changed for them, and what
    > they now have to decide. The commit log is one click away on the compare link appended below.
-4. Bump the version to this tag in the four files that carry it — the suite fails on divergence:
+4. **Maturity sweep** (`docs/todo/FEATURE_MATURITY_PLAN.md` → *Promotion and demotion*). An agent can
+   draft this list; the maintainer signs off, and only the maintainer changes a tier:
+   - **Ready to promote:** features whose `next` checklist is all done but whose tier hasn't moved
+     (`frontend/src/lib/guides/maturityRecords.ts`, `unguided.ts`).
+   - **To demote:** confirmed wrong-result bugs since the last tag in a Tested feature — it drops to
+     Beta in the fix PR until a test guarding that bug lands.
+   - **Stale hand checks:** Beta `checkedBy` entries several releases old.
+   - **New surfaces:** every `Added` bullet in this section names its tier in brackets at the end —
+     `… (Experimental)`. New work starts Experimental unless its PR carried the evidence for more.
+     The bullet budget includes the tag.
+5. Bump the version to this tag in the four files that carry it — the suite fails on divergence:
    - `CITATION.cff` (`version:` + `date-released:`) — the human-facing citation
    - `app/Project.toml` (`version =`) — read at runtime via `cecelia_version()`
    - `frontend/package.json` (`"version":`) — read by JS tooling and bundle metadata
    - `frontend/package-lock.json` (top-level `"version":` **and** `packages[""].version`) — npm
      rewrites the pair on install and CI would fail on the drift; bump both by hand to keep the
      next `npm ci`'s diff empty
-5. **`bash scripts/bundle_check.sh --build --launch`** — packs the bundle `release.yml` will pack,
+6. **`bash scripts/bundle_check.sh --build --launch`** — packs the bundle `release.yml` will pack,
    extracts it, and boots the API server from it on `:8099` (~1 min, leaves the running app alone).
    Pass `--build`: without it the bundle carries whatever `frontend/dist` is already on disk, which
    is a build artefact unrelated to your working tree — before the v0.1.3 check it was five days and
@@ -173,7 +183,7 @@ acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.m
    channel only, and the `dev` channel keeps working — which is how v0.1.1 shipped without `pluto/`
    and died at launch for every installer (#540). CI pins the same list, but this is the one that
    runs the thing. See `docs/SHIPPING.md` → *Building & releasing*.
-6. **`julia scripts/publish_plugin.jl --all`** — push the example plugins to their own repos.
+7. **`julia scripts/publish_plugin.jl --all`** — push the example plugins to their own repos.
    `docs/examples/plugins/<name>/` is the SOURCE (CI loads and runs it, and a framework change lands
    with the example that uses it), while `github.com/schienstockd/<name>` is what a user installs.
    The two only converge when someone syncs them, and the first publications were done by hand:
@@ -184,10 +194,10 @@ acknowledgements (celltrackR GPL-2). **Satisfied** — `LICENSE`, `THIRD_PARTY.m
    The suite checks the structure (every example is in the registry, has a README, and its manifest
    points at its own repo) but NOT the drift — comparing against a published repo needs the network,
    so it belongs here rather than in CI.
-7. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
-8. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
+8. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
+9. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
    fresh machine + the target dataset before relying on it.
-9. Only at a coarse boundary: add a MILESTONES entry (append-only).
+10. Only at a coarse boundary: add a MILESTONES entry (append-only).
 
 ### Regenerating the CHANGELOG section
 
@@ -211,7 +221,9 @@ node scripts/changelogSection.mjs v0.1.1        # exactly what the release (and 
 ```
 
 **Lead with what a user can act on wrongly.** A format change, a default that moved, a one-way door —
-those go first, under *Read this first*. Feature bullets can be discovered by using the app; a store
+those go first, under *Read this first*. Write the line in `[Unreleased]` in the PR that changes it:
+recital's changelog check (`python/cecelia/effectiveness/changelog_check.py`) warns when a task default
+changes on a branch with no CHANGELOG line. Feature bullets can be discovered by using the app; a store
 written in a format the previous version cannot read cannot.
 
 **One line per bullet: what changed, and the PR number.** No measurements, no rationale, no "before,

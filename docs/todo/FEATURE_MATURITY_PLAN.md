@@ -1,7 +1,8 @@
 # Feature maturity — tiers on the guides, badges, report
 
-**Status:** **planning** (2026-11-02). Decisions 1–9 agreed in discussion; starting tiers drafted
-(`FEATURE_MATURITY_TIERS.md`), 7 Tested proposals await his review.
+**Status:** **P1 + P2 built** (2026-11-02); P3 open. Decisions 1–9 agreed in discussion; starting tiers
+seeded from `FEATURE_MATURITY_TIERS.md` — the 7 Tested proposals are seeded as Beta with a "maintainer
+review → Tested" item, pending his review of each fails-if line.
 
 **Related:**
 - Parent: [`HARDENING_AUDIT_PLAN.md`](HARDENING_AUDIT_PLAN.md) — the depth scores and gaps that fill
@@ -44,6 +45,13 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 8. **Promotion happens in the PR, and is swept at the release cut** — not in the weekly judge.
 9. **Features with no scientific result are exempt** (blackboard, Movies, Tasks, tour, profiles): a tier
    says how far to trust a result, and these produce none. No badge, no maturity row.
+10. **On the map, a dot per tier with a legend, not a pill.** A pill on every page button was clutter
+   (nearly every page is Beta); an unexplained dot, or marking only Experimental, said nothing. One
+   `.cc-dot` tone per tier, a legend line under the grid (2026-11-02, from his look at P1).
+11. **Test sets go through the call for datasets** — one registry, a `kind: 'build' | 'test'` field;
+   the modal shows "Help us build" then "Help us test" (`CALL_FOR_DATASETS_PLAN.md`, Decision 9). Every
+   record with `needs` carries a `datasetAsk`, or a `noAsk` reason when the need isn't data (an HPC
+   site); `maturity.test.ts` enforces it.
 
 ## The scale
 
@@ -139,10 +147,35 @@ evidence, and the registry shape is informed by a real case.
 
 ## Phases
 
-- **P1** — `maturity` on every guide + the unguided list + the tests; expandable rows on the map;
+- **P1** — **built.** `maturity` on every guide + the unguided list + the tests; expandable rows on the map;
   tiers in user-docs. Starting tiers drafted from the inventory and step 2, corrected by him, marked
-  provisional until the matrix re-scores them.
-- **P2** — badges on pages and the task picker; "Something wrong?" link.
+  provisional until the matrix re-scores them. Where it landed:
+  - Records: `lib/guides/maturityRecords.ts` (`GUIDE_MATURITY`, keyed by guide id; each guide reads its
+    own) and `lib/guides/unguided.ts` (`UNGUIDED`); the type is `Maturity` in `lib/guides/types.ts`. A
+    record's `covers` lists the task fun_names / routes it tiers beyond the guide's own run and page; a
+    composite's steps are covered through the composite. `handCheck` points at a written hand-check
+    (PROVENANCE.md and co.) where there is no dated `checkedBy`.
+  - Logic + checks: `utils/maturity.ts` / `maturity.test.ts` — every page and every task JSON under
+    `app/src/tasks/` tiered exactly once; flagged Coming soon never tiered; every evidence path and test
+    name exists (all tiers), none skipped or broken for Tested; every `datasetAsk` exists; copy budgets.
+  - Map: the page buttons carry the badge; a Maturity section (`components/MaturityMap.vue`) lists every
+    non-exempt feature by group, expandable; Coming soon rows derive from the task flags. Guide rows in
+    the picker carry the badge. Words of the scale: `lib/guides/tiers.ts`.
+  - user-docs: a Maturity column in the sidebar tables.
+- **P2** — **built.** Badges on pages and the task picker; "Something wrong?" link. Where it landed:
+  - Pages: `components/PageMaturity.vue` in the app HEADER, following the route — pages have no shared
+    header (ModuleLayout, ModulePage and the pipeline pages each draw their own), so one mount covers
+    every page. Experimental / Coming soon: `ComingSoonBadge tier` (now the tier dot + word, no pill).
+    Any other tiered page: a quiet `pi-signal` icon. Both open the map on that feature's row
+    (`openMaturityRow`, `lib/guideOpen.ts`). Exempt pages show nothing (no row to open).
+  - Task picker: TaskRunner's `<option>` gets `· Experimental` (text only in a native select); the picked
+    task gets the badge + report button. Coming soon tasks already read "— Coming soon" and can't be
+    picked. The Chains palette is not badged.
+  - "Something wrong?": `components/ReportProblemButton.vue`, a popover → `problemReportUrl`
+    (`lib/links.ts`) on the bug form: feature, tier, page, version, OS (the server's pixi platform), last
+    task name + status. **Params: an explicit per-report toggle in the popover**, never remembered.
+  - Logic + tests: `pageMaturity` / `taskMaturity` / `pageBadged` / `taskOptionSuffix` in
+    `utils/maturity.ts` (every page and task link lands on a map row); `lib/links.test.ts`.
 - **P3** — the release-cut step in `RELEASING.md`; CHANGELOG entries carry the tier.
 
 ## Deferred

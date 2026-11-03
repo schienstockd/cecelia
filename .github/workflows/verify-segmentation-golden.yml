@@ -1,0 +1,54 @@
+name: Verify segmentation golden
+
+# Real cellpose 4 (cpsam_v2) on a synthetic image with its answer built in: 20 discs, each its own
+# label, at the app's default tiling and seam settings (python/cecelia/tests/test_segmentation_golden.py).
+# The stored-answer pipeline test (app/test/suite/pipeline_golden.jl) starts from imported labels, so
+# a change to segmentation, or a cellpose / torch / numpy bump, never reaches a stored answer there.
+# CPU only: it checks the result, not speed.
+#
+# Weekly, and on a pull request that touches segmentation code or the environment. Only the Python
+# env is installed (no Julia, no frontend).
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC: catches a dependency that moved under an unchanged lockfile
+  pull_request:
+    paths:
+      - python/cecelia/utils/cellpose_utils.py
+      - python/cecelia/utils/segmentation_utils.py
+      - python/cecelia/utils/tile_budget.py
+      - app/src/tasks/segment/**
+      - app/src/tasks/fragments/imageTiling.json
+      - python/cecelia/tests/test_segmentation_golden.py
+      - python/cecelia/tests/test_cellpose_smoke.py
+      - pixi.toml
+      - pixi.lock
+      - .github/workflows/verify-segmentation-golden.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: ubuntu — cellpose 4 against known truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Pixi + default env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          environments: default
+          cache: true
+
+      # cellpose 4 downloads cpsam_v2 into ~/.cellpose/models on first use; cache it across runs.
+      - name: Cache cellpose models
+        uses: actions/cache@v6
+        with:
+          path: ~/.cellpose/models
+          key: cellpose-v4-models-cpsam_v2
+
+      - name: Segmentation against known truth
+        env:
+          CECELIA_SEGMENTATION_GOLDEN: '1'
+        run: pixi run python -m unittest -v cecelia.tests.test_segmentation_golden

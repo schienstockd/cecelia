@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { suggestUrl, conflictOptions, applyChoices, groupSteps, defaultKeep, groupLeftOut, uniqueChainName,
-         historyParamsCsv, historyParamsUrl,
+         historyParamsCsv, historyParamsUrl, boardParamsScope,
          type HistoryConflict, type HistoryFinal } from './chainFromHistory'
 import type { ChainTemplate } from '../tasks/types'
 
@@ -93,5 +93,37 @@ describe('historyParamsCsv', () => {
   })
   it('lists the images in the url', () => {
     expect(new URL(historyParamsUrl('P', ['a', 'b']), 'http://x').searchParams.get('imageUids')).toBe('a,b')
+  })
+})
+
+describe('board parameter scope', () => {
+  it('collects population selections, a view\'s label set, and the cluster run only with a cluster slot', () => {
+    const slots = [
+      { rail: 'pops' as const, sel: ['live::B/qc/_tracked', 'live::T/qc/_tracked'] },
+      { rail: 'pops' as const, sel: ['live::B/qc/_tracked'] },
+      { rail: 'none' as const, sel: [], valueName: 'OTIf' },
+      { rail: 'none' as const, sel: [] },
+    ]
+    const run = { popType: 'trackclust', suffix: 'movement' }
+    expect(boardParamsScope(slots, run)).toEqual(
+      { pops: ['live::B/qc/_tracked', 'live::T/qc/_tracked', 'live::OTIf/'], clusterRuns: [] })
+    expect(boardParamsScope([...slots, { rail: 'clusterPops', sel: [] }], run).clusterRuns)
+      .toEqual(['trackclust:movement'])
+  })
+
+  it('sends the scope as JSON so a population name may hold a comma', () => {
+    const u = new URL(historyParamsUrl('P', ['a', 'b'], { pops: ['live::B/a, b'], clusterRuns: [] }), 'http://x')
+    expect(JSON.parse(u.searchParams.get('pops')!)).toEqual(['live::B/a, b'])
+    expect(u.searchParams.get('imageUids')).toBe('a,b')
+    expect(new URL(historyParamsUrl('P', ['a']), 'http://x').searchParams.has('pops')).toBe(false)
+  })
+
+  it('adds the relation column only to a board-scoped table', () => {
+    const row = { step: 'Track', task: 'tracking.t', output: '', images: '1/1', lastRun: '', changedFromDefault: '',
+                  conflicts: '', note: '' }
+    expect(historyParamsCsv([row]).split('\n')[0]).not.toContain('relation')
+    const csv = historyParamsCsv([{ ...row, relation: 'ran on' }]).split('\n')
+    expect(csv[0].startsWith('step,task,output,relation,images')).toBe(true)
+    expect(csv[1]).toContain('ran on')
   })
 })

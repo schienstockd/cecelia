@@ -1,6 +1,6 @@
 {
-  "id": "spatial_interactions_by_group",
-  "label": "Interactions by group",
+  "id": "spatial_interaction_pairs",
+  "label": "Interaction across images",
   "module": "spatialAnalysis",
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "bar"],

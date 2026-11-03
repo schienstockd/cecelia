@@ -17,6 +17,7 @@ import { exportTabsToPdf } from '../../plots/pdf'
 import { buildBoardSvgs } from '../../plots/boardSvg'
 import { downloadBlob, downloadText, svgSizeWarning } from '../../plots/export'
 import { zipTextFiles } from '../../utils/zip'
+import { historyParamsUrl, historyParamsCsv, type HistoryParamsRow, type BoardParamsScope } from '../../utils/chainFromHistory'
 import { waitForPlotsIdle } from '../../utils/plotReady'
 import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
@@ -114,7 +115,8 @@ function onDrop(targetId: number) {
 // restore the original tab. (Timing is a fixed settle delay — plots have no unified "loaded" signal.)
 type CapturedPage = { aspect: number; slots: { rect: { x: number; y: number; w: number; h: number }; png: string | null; svg?: string | null; name?: string; csv?: string | null }[] }
 const layoutRef = useTemplateRef<{ capturePage: (vector?: boolean) => Promise<CapturedPage>
-  collectCsvs: () => Promise<{ name: string; csv: string | null }[]> }>('layoutRef')
+  collectCsvs: () => Promise<{ name: string; csv: string | null }[]>
+  paramsScope: () => BoardParamsScope }>('layoutRef')
 // ONE export pass for the whole board — a single spinner, a single walk over the tabs. Figure and CSV
 // share the exact same "visit each tab, let it render, capture" dance, so the dropdown offers combined
 // items (PDF + CSV, …) that do BOTH in one pass: no second click, no two spinners, and no chance of two
@@ -179,8 +181,28 @@ function exportBoard(kind: string) {
     pdf: ['pdf', false], svg: ['svg', false],
     'pdf+csv': ['pdf', true], 'svg+csv': ['svg', true], csv: [null, true],
   }
+  if (kind === 'params') return exportParams()
   const sel = map[kind]
   if (sel) runExport(sel[0], sel[1])
+}
+
+// The ACTIVE board's parameter table: the steps behind its plots, cut from the run history of the
+// images it shows (`history_params_table` with the board's populations + cluster run).
+async function exportParams() {
+  const scope = layoutRef.value?.paramsScope()
+  if (exporting.value || !scope || !props.imageUids.length) return
+  exporting.value = true
+  try {
+    const res = await fetch(historyParamsUrl(projectUid.value, props.imageUids, scope))
+    const d = await res.json() as { rows?: HistoryParamsRow[]; error?: string }
+    if (!res.ok || !d.rows) throw new Error(d.error ?? res.statusText)
+    if (!d.rows.length) { log.info('No recorded steps behind this board.', { source: 'analysis' }); return }
+    const name = tabs.value.find(t => t.id === activeId.value)?.name ?? 'board'
+    downloadText(`${safe(name)}_parameters.csv`, historyParamsCsv(d.rows), 'text/csv')
+    log.info(`Exported the parameters behind "${name}".`, { source: 'analysis' })
+  } catch (e) {
+    log.error(`Parameter export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
+  } finally { exporting.value = false }
 }
 </script>
 
@@ -236,9 +258,10 @@ function exportBoard(kind: string) {
         <option value="pdf+csv">PDF + CSV</option>
         <option value="svg+csv">SVG + CSV</option>
         <option value="csv">CSV only</option>
+        <option value="params">Parameters (CSV)</option>
       </select>
       <!-- opens LEFT (into the page): this is the rightmost control, a bottom tooltip would clip the edge -->
-      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data'" />
+      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF raster, SVG vector, CSV data; Parameters = the steps behind this board'" />
     </div>
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->

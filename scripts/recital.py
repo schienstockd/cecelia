@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """CLI wrapper for `cecelia.effectiveness.recital.run_recital`.
 
-Reads `git diff --staged` (or from stdin with `--stdin`), spawns both reviewers, emits log
+Reads `git diff --staged` (or from stdin with `--stdin`), spawns the reviewers, emits log
 events, prints the recital body to stdout and saves it to `<git dir>/recital-body.md`. Agents
 append that file to the commit message (`recital_body_path`).
 
 Usage:
     pixi run recital
+    pixi run recital -- --claim "<commit subject>"   # what the result review is told the change is for
 
     # Custom diff (e.g. reviewing a specific commit):
     git show <sha> | python scripts/recital.py --stdin
 
 Exit codes:
-    0 — recital produced successfully (both reviewers ran or short-circuited cleanly).
+    0 — recital produced successfully (every reviewer ran, was skipped, or short-circuited cleanly).
     1 — one or more reviewer subprocesses failed hard. Recital still printed with an error
         note in the failed reviewer's section; log records the attempt with an `error` field.
     2 — invocation error (bad args, no staged diff to review).
@@ -34,6 +35,9 @@ from cecelia.effectiveness.recital import RecitalError, recital_body_path, run_r
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--stdin", action="store_true", help="Read the diff from stdin instead of `git diff --staged`.")
+    p.add_argument("--claim", default=None,
+                   help="What the change is for, in one line (the commit subject). The result reviewer "
+                        "gets it marked unverified; docs/ai-assist/RESULT_REVIEW.md.")
     return p.parse_args()
 
 
@@ -62,7 +66,7 @@ def main() -> int:
         return 2
 
     try:
-        recital = run_recital(diff)
+        recital = run_recital(diff, claim=args.claim)
     except RecitalError as e:
         # A hard failure that run_recital itself couldn't recover from — unusual, since each
         # reviewer's error is caught inside `_run_reviewer` and folded into its section.

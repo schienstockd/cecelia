@@ -32,7 +32,10 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import read_events  # noqa: E402
-from cecelia.effectiveness.log import FINDING_EVENTS as _FINDING_EVENTS  # noqa: E402
+from cecelia.effectiveness.log import FINDING_EVENTS as _ALL_FINDING_EVENTS  # noqa: E402
+
+#: A result-review finding is a wrong result, not a CLAUDE.md rule broken: the bug sweep's input only.
+_FINDING_EVENTS = _ALL_FINDING_EVENTS - {"result_review_finding"}
 from cecelia.effectiveness.git_context import git_output, parse_diff  # noqa: E402
 from cecelia.effectiveness.recital import MARKERS  # noqa: E402
 from cecelia.effectiveness.rollup import _REDTEAM_SLUGS  # noqa: E402

@@ -292,8 +292,38 @@ def _contact_counts(conn_row, conn_col, pop_codes, n_pops):
     return m + m.T - np.diag(np.diag(m))
 
 
+def _permutation_expected(conn_row, conn_col, pop_codes, n_pops, groups):
+    """EXACT mean of `_contact_counts` over all relabellings that permute `pop_codes` within each index
+    array in `groups` (nodes outside every group keep their label). Each node gets a label distribution
+    — one-hot if fixed, the group's composition if shuffled — and an edge's expected pair matrix is the
+    outer product of its endpoints' distributions, EXCEPT when both endpoints share a group: they are
+    drawn without replacement, so P(a,b) = n_a·n_b / (N(N−1)) and P(a,a) = n_a(n_a−1) / (N(N−1)).
+    Centring the two-sided permutation p on this rather than the sampled mean matters for discrete
+    nulls: a symmetric null centred on a noisy mean of 0.99 instead of 1 loses one whole tail."""
+    n = len(pop_codes)
+    dist = np.zeros((n, n_pops))
+    fixed = pop_codes >= 0
+    gid = np.full(n, -1, dtype=np.int64)
+    for k, g in enumerate(groups):
+        gid[g] = k
+        fixed[g] = False
+    dist[np.where(fixed)[0], pop_codes[fixed]] = 1.0
+    for g in groups:
+        if len(g):
+            dist[g] = np.bincount(pop_codes[g], minlength=n_pops) / len(g)
+    m = dist[conn_row].T @ dist[conn_col]                    # ordered (row-end, col-end) pair mass
+    same = (gid[conn_row] >= 0) & (gid[conn_row] == gid[conn_col])
+    for k, n_k in zip(*np.unique(gid[conn_row][same], return_counts=True)):
+        g = groups[k]
+        cnt = np.bincount(pop_codes[g], minlength=n_pops).astype(float)
+        big_n = float(len(g))
+        without = (np.outer(cnt, cnt) - np.diag(cnt)) / (big_n * (big_n - 1.0))
+        m += n_k * (without - np.outer(cnt, cnt) / big_n ** 2)
+    return m + m.T - np.diag(np.diag(m))
+
+
 def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
-                             n_permutations=1000, random_state=0, times=None):
+                             n_permutations=1000, random_state=0, times=None, shuffle_codes=None):
     """Pairwise cell-type contact specificity, with a permutation test.
 
     EFFECT SIZE — the log-odds ratio of OBSERVED vs EXPECTED contacts between every pair of populations
@@ -309,7 +339,8 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
     DOI 10.1038/s41592-021-01358-2). The GRAPH and the label COUNTS are held fixed and only the
     assignment of labels to nodes is shuffled, so the null asks exactly "would I see this many A–B
     contacts if these cell types were arranged at random?". Yields a z-score against the null and a
-    two-sided EMPIRICAL p-value ((#|null−µ| ≥ |obs−µ| + 1)/(n+1), so p is never 0). `n_permutations=0`
+    two-sided EMPIRICAL p-value ((#|null−µ| ≥ |obs−µ| + 1)/(n+1), so p is never 0), µ being the exact
+    permutation mean (`_permutation_expected`) rather than the sampled one. `n_permutations=0`
     skips the test and returns NaN z/p — the fast path.
 
     Only ASSIGNED nodes (code ≥ 0) are shuffled, among themselves: which nodes fall outside the basis is
@@ -321,6 +352,18 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
     CAVEAT: this is a complete-spatial-randomness-of-labels null. It preserves the graph and the label
     counts but not larger-scale tissue structure, so in strongly zoned tissue it can call weak
     associations significant. squidpy's `nhood_enrichment` shares this limitation.
+
+    CONDITIONAL NULL — `shuffle_codes` (a subset of population codes) shuffles labels only among the
+    nodes of THOSE populations; every other node keeps its label. This is the random-labelling test of
+    spatial point-pattern analysis (Diggle, *Statistical Analysis of Spatial and Spatio-Temporal Point
+    Patterns*, 3rd ed., CRC 2013, §5.4; Baddeley, Rubak & Turner, *Spatial Point Patterns*, CRC 2015,
+    §14.7): e.g. shuffling CD69+ vs CD69− among T cells with the target cells fixed asks "do CD69+ T
+    cells sit next to the targets more than T cells in general do?". Because both compared groups share
+    the same positions, tissue zoning and the graph's edges cancel — the caveat above no longer applies
+    to the shuffled pairs. The CODEX expected count (global frequencies) does not describe this null,
+    so `expected` becomes the EXACT mean of the permutation null (`_permutation_expected`, no sampling —
+    so `n_permutations=0` still gives the effect size) and the log-odds is observed vs that mean. Pairs
+    with no shuffled member have a fixed count → z NaN, p = 1.
 
     Returns (observed, expected, log_odds, zscore, pvalue) as (n_pops, n_pops) symmetric matrices."""
     pop_codes = np.asarray(pop_codes, dtype=np.int64)
@@ -340,6 +383,13 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
     expected = n_edges * (2.0 * ff)
     np.fill_diagonal(expected, n_edges * np.diag(ff))
 
+    shuffled_nodes = assigned if shuffle_codes is None else np.isin(pop_codes, np.asarray(shuffle_codes))
+    idx_shuffled = np.where(shuffled_nodes)[0]
+    groups = permutation_groups(idx_shuffled, times)   # within frame on a per-timepoint graph
+    # the conditional null's expected count is its exact permutation mean (no frequency formula fits it)
+    if shuffle_codes is not None:
+        expected = _permutation_expected(row, col, pop_codes, n_pops, groups)
+
     with np.errstate(divide="ignore", invalid="ignore"):
         log_odds = np.log((observed + pseudocount) / (expected + pseudocount))
 
@@ -349,8 +399,6 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
         return observed, expected, log_odds, nan, nan
 
     rng = np.random.default_rng(int(random_state))
-    groups = permutation_groups(np.where(assigned)[0], times)
-
     null = np.empty((n_perm, n_pops, n_pops))
     shuffled = pop_codes.copy()
     for i in range(n_perm):
@@ -358,12 +406,13 @@ def pairwise_contact_logodds(conn, pop_codes, n_pops, pseudocount=0.5,
             shuffled[g] = rng.permutation(pop_codes[g])
         null[i] = _contact_counts(row, col, shuffled, n_pops)
 
-    mu = null.mean(axis=0)
+    mu = expected if shuffle_codes is not None else _permutation_expected(row, col, pop_codes, n_pops, groups)
     sd = null.std(axis=0)
     with np.errstate(divide="ignore", invalid="ignore"):
         zscore = np.where(sd > 0, (observed - mu) / sd, np.nan)
-    # two-sided empirical p with the +1 correction (Davison & Hinkley 1997) → p ∈ [1/(n+1), 1]
-    extreme = (np.abs(null - mu) >= np.abs(observed - mu)).sum(axis=0)
+    # two-sided empirical p with the +1 correction (Davison & Hinkley 1997) → p ∈ [1/(n+1), 1]; the
+    # tolerance keeps exactly-equidistant integer counts tied despite float error in `mu`
+    extreme = (np.abs(null - mu) >= np.abs(observed - mu) - 1e-9).sum(axis=0)
     pvalue = (extreme + 1.0) / (n_perm + 1.0)
     return observed, expected, log_odds, zscore, pvalue
 

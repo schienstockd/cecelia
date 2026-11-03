@@ -101,6 +101,53 @@ export interface Prereq {
   fixGuide?: string           // the guide that gets you this, offered on a miss
 }
 
+// ── Feature maturity (docs/todo/FEATURE_MATURITY_PLAN.md) ─────────────────────────────────────────
+// How far to trust what a feature produces. A guide teaches one feature, so the guide carries that
+// feature's record; a feature with no guide gets the same record in `unguided.ts`. Each tier names
+// the evidence it takes (the plan's *The scale*). Only the maintainer changes a tier (Decision 6).
+//
+//   comingSoon   not usable yet — NEVER written in a record: derived from the task JSON `comingSoon`
+//                flag or the nav item's `soon` (one source per fact; `maturity.test.ts` enforces it)
+//   experimental runs, not checked on realistic data — check every result by hand
+//   beta         someone checked results by hand on real data — spot-check results
+//   tested       an automated test fails when the result is wrong — `evidence` required
+//   stable       reserved, unused (provenance recorded, upgrades safe)
+//   exempt       produces no scientific result (blackboard, tour, …) — no badge, no map row (Decision 9)
+export type Tier = 'comingSoon' | 'experimental' | 'beta' | 'tested' | 'stable' | 'exempt'
+
+/** One test that would catch a wrong result: the file, the testset/test name, and what it catches. */
+export interface Evidence {
+  path: string                // repo-relative test file, e.g. 'app/test/suite/gating.jl'
+  test: string                // the `@testset` name / `def test_…` / `it(…)` name, verbatim
+  failsIf: string             // "fails if …" — the wrong result it catches, so a promoter can judge it
+}
+
+/** A human attestation — can't be tested and goes stale, so the map shows when it was made. */
+export interface CheckedBy {
+  who: string
+  when: string                // 'YYYY-MM' — the age signal until a feature → code-path map exists
+  version?: string            // the app version checked, when known
+  data: string                // which images or dataset
+}
+
+export interface NextItem { text: string; done: boolean }
+
+export interface Maturity {
+  tier: Exclude<Tier, 'comingSoon'>
+  testedOn: string            // breadth, separate from the tier: "intravital 2-photon, one lab"
+  checkedBy?: CheckedBy
+  handCheck?: string          // where a hand-check on real data is written down (a docs/ section)
+  evidence?: Evidence[]
+  next?: NextItem[]           // the graduation checklist, 1–3 items, from the hardening audit's gaps
+  needs?: string              // the data that would help, in a user's words
+  datasetAsk?: string         // a `lib/callForDatasets.ts` id — required whenever `needs` is set…
+  noAsk?: string              // …unless this says why the need can't be a dataset ask (e.g. a cluster account)
+  // The tasks (fun_names) and sidebar pages this record ALSO tiers. A guide already covers the tasks
+  // it runs (`awaitTask.fun`) and its page in `mapData.ts`; list only what it teaches beyond those —
+  // a hidden helper task, the correction composites. In `unguided.ts` this is the feature's key.
+  covers?: string[]
+}
+
 export interface GuideDef {
   id: string
   title: string
@@ -111,4 +158,5 @@ export interface GuideDef {
   icon: string                // an icon class, e.g. 'pi-th-large'
   prereqs: Prereq[]
   steps: GuideStep[]
+  maturity: Maturity          // the taught feature's tier — required, no silent default (Decision 5)
 }

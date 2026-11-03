@@ -20,14 +20,8 @@ import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils
 from cecelia.utils.atomic_io import write_json_atomic
 
-# ImageJ calibration unit → micrometers
-_UNIT_TO_MICRON = {
-    'micron': 1.0, 'microns': 1.0, 'um': 1.0, 'µm': 1.0, 'micrometer': 1.0,
-    'nm': 1e-3, 'nanometer': 1e-3,
-    'mm': 1e3, 'millimeter': 1e3,
-    'cm': 1e4, 'centimeter': 1e4,
-    'inch': 25400.0, 'inches': 25400.0,
-}
+# ImageJ calibration unit → micrometers — the shared table (cecelia.utils.units)
+from cecelia.utils.units import LENGTH_UNIT_UM as _UNIT_TO_MICRON
 
 
 def run(params):

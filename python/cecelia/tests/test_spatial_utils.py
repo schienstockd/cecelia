@@ -248,6 +248,99 @@ class TestContactPermutationTest(unittest.TestCase):
         self.assertTrue(np.allclose(obs, 0.0))
 
 
+class TestConditionalNull(unittest.TestCase):
+    """`shuffle_codes`: labels shuffled only among the named populations, every other node fixed — the
+    random-labelling test (e.g. CD69+ vs CD69− among T cells, target cells held in place)."""
+    def _star(self):
+        # node 8 = the target (code 2, fixed), adjacent to nodes 0 and 1 only. Nodes 0–7 are T cells:
+        # 0–3 CD69+ (code 0), 4–7 CD69− (code 1) — so both of the target's neighbours are CD69+.
+        conn = sp.csr_matrix((np.ones(4), ([0, 8, 1, 8], [8, 0, 8, 1])), shape=(9, 9))
+        return conn, np.array([0, 0, 0, 0, 1, 1, 1, 1, 2])
+
+    def test_empirical_p_matches_the_exact_hypergeometric_null(self):
+        # GOLDEN VALUE. The target's 2 neighbours are a random 2 of the 8 T cells, so the CD69+–target
+        # count is hypergeometric(8, 4, 2): P(0) = P(2) = C(4,2)/C(8,2) = 6/28, mean 1. Observed 2 →
+        # two-sided p = P(|X−1| ≥ 1) = 12/28 ≈ 0.4286; expected = the null mean = 1.
+        conn, codes = self._star()
+        obs, exp, lor, _z, p = pairwise_contact_logodds(conn, codes, 3, n_permutations=4000,
+                                                        random_state=1, shuffle_codes=[0, 1])
+        self.assertEqual(obs[0, 2], 2)
+        self.assertAlmostEqual(exp[0, 2], 1.0, delta=0.05)
+        self.assertAlmostEqual(p[0, 2], 12.0 / 28.0, delta=0.03)
+        self.assertAlmostEqual(lor[0, 2], np.log(2.5 / (exp[0, 2] + 0.5)), places=9)
+
+    def test_fixed_population_never_moves(self):
+        # a global shuffle moves the target too, so target–target and the CODEX expected change; with the
+        # target fixed its pair count is constant across the null → z undefined, p = 1
+        conn, codes = self._star()
+        _o, _e, _l, z, p = pairwise_contact_logodds(conn, codes, 3, n_permutations=200,
+                                                    random_state=2, shuffle_codes=[0, 1])
+        self.assertTrue(np.isnan(z[2, 2]))
+        self.assertAlmostEqual(p[2, 2], 1.0)
+
+    def test_zoned_target_is_not_an_association_under_the_conditional_null(self):
+        # Zoning: the target sits in a T-cell-rich patch, so under the GLOBAL null (target shuffled out
+        # into the empty area) target–T contacts look enriched. CD69 is random among T cells, so the
+        # conditional null must NOT call CD69+–target significant even though the global one does.
+        rng = np.random.default_rng(0)
+        n_t, n_far = 40, 40                          # 40 T cells in the patch, 40 unrelated far cells
+        tgt = n_t + n_far                            # one target, adjacent to every patch T cell
+        rows = list(range(n_t)) + [tgt] * n_t
+        cols = [tgt] * n_t + list(range(n_t))
+        # far cells form a chain among themselves so they are in the graph but never touch the target
+        for a in range(n_t, n_t + n_far - 1):
+            rows += [a, a + 1]; cols += [a + 1, a]
+        conn = sp.csr_matrix((np.ones(len(rows)), (rows, cols)), shape=(tgt + 1, tgt + 1))
+        codes = np.empty(tgt + 1, dtype=np.int64)
+        codes[:n_t] = rng.permutation([0] * 20 + [1] * 20)     # CD69± random within the patch
+        codes[n_t:tgt] = 3                                      # far cells: a 4th population
+        codes[tgt] = 2
+        _o, _e, _l, _z, p_glob = pairwise_contact_logodds(conn, codes, 4, n_permutations=500, random_state=3)
+        _o, _e, lor, _z, p_cond = pairwise_contact_logodds(conn, codes, 4, n_permutations=500,
+                                                           random_state=3, shuffle_codes=[0, 1])
+        self.assertLess(p_glob[0, 2], 0.05)
+        self.assertGreater(p_cond[0, 2], 0.5)                   # all 20 CD69+ touch it either way
+        self.assertAlmostEqual(lor[0, 2], 0.0, places=6)
+
+    def test_effect_size_needs_no_permutations(self):
+        # the expected count is the EXACT permutation mean, so the descriptive fast path still works
+        conn, codes = self._star()
+        _o, exp, _l, z, _p = pairwise_contact_logodds(conn, codes, 3, n_permutations=0, shuffle_codes=[0, 1])
+        self.assertAlmostEqual(exp[0, 2], 1.0, places=12)
+        self.assertTrue(np.all(np.isnan(z)))
+
+
+class TestPermutationExpected(unittest.TestCase):
+    """`_permutation_expected` is the exact mean of `_contact_counts` over the permutation group —
+    checked against brute-force enumeration of every distinct relabelling."""
+    def _brute(self, row, col, codes, n_pops, groups):
+        from itertools import permutations
+        from cecelia.utils.spatial_utils import _contact_counts
+        acc, n = np.zeros((n_pops, n_pops)), 0
+        perms = [set(permutations(codes[g])) for g in groups]
+        from itertools import product
+        for combo in product(*perms):
+            lab = codes.copy()
+            for g, pg in zip(groups, combo):
+                lab[g] = pg
+            acc += _contact_counts(row, col, lab, n_pops); n += 1
+        return acc / n
+
+    def test_matches_enumeration(self):
+        from cecelia.utils.spatial_utils import _permutation_expected
+        rng = np.random.default_rng(5)
+        n = 9
+        a = sp.triu(sp.random(n, n, density=0.5, random_state=5), k=1).tocoo()
+        row, col = a.row, a.col
+        codes = rng.integers(-1, 3, size=n)                      # includes UNASSIGNED nodes
+        assigned = np.where(codes >= 0)[0]
+        for groups in ([assigned],                               # global shuffle
+                       [assigned[codes[assigned] < 2]],          # conditional: pop 2 fixed
+                       [assigned[:3], assigned[3:]]):            # two frames
+            np.testing.assert_allclose(_permutation_expected(row, col, codes, 3, groups),
+                                       self._brute(row, col, codes, 3, groups), atol=1e-12)
+
+
 class TestMeshUtils(unittest.TestCase):
     def _vol(self):
         v = np.zeros((6, 6, 20), dtype=np.int32)

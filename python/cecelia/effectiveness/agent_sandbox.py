@@ -101,6 +101,15 @@ def node_bin_dir(env: dict[str, str] | None = None, version_file: pathlib.Path |
     return None
 
 
+def permission_path(path: pathlib.Path) -> str:
+    """`path` as a permission-rule path: `~/…` under home, `//…` (absolute) otherwise. A bare
+    absolute path in a rule is read as relative to the project, so it never matches."""
+    try:
+        return "~/" + path.resolve().relative_to(pathlib.Path.home().resolve()).as_posix()
+    except ValueError:
+        return "/" + path.resolve().as_posix()
+
+
 def agent_env(**extra: str) -> dict[str, str]:
     """This process's env for a sandboxed agent: without `CREDENTIAL_ENV`, with `CECELIA_OBSERVER_NO_PAIR`
     (a throwaway session mustn't re-pair the owner's project), the repo's pinned Node first on PATH

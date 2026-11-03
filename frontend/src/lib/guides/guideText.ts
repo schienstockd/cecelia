@@ -6,8 +6,8 @@
 // What is added is the function a task guide runs (its `awaitTask.fun`), because "pick it from the
 // dropdown" names a label, and a REPL caller needs the fun_name.
 //
-// The Call for Datasets asks ride along (`dataset-call`): what Cecelia could build once a real dataset
-// lands, each with its prefilled issue link, so Claude can match the user's data to an ask; and one
+// The Call for Datasets asks ride along (`dataset-call`): what Cecelia could build, or check, once a
+// real dataset lands, each with its prefilled issue link, so Claude can match the user's data to an ask; and one
 // `request` entry, the feature-request form, for everything else (the URL stays in links.ts).
 //
 // The rendered catalogue is committed as mcp/cecelia_mcp/guides.json and checked by guideText.test.ts
@@ -27,7 +27,8 @@ export interface GuideTextEntry {
   text: string
 }
 
-const funsOf = (g: GuideDef): string[] =>
+/** The task functions a guide runs (its steps' `awaitTask.fun`). */
+export const funsOf = (g: GuideDef): string[] =>
   [...new Set(g.steps.flatMap(s => (s.awaitTask?.fun ? [s.awaitTask.fun] : [])))]
 
 export function guideText(g: GuideDef): string {
@@ -69,7 +70,7 @@ export function recipeText(r: WrittenRecipe): string {
 
 export function datasetCallText(a: CapabilityAsk): string {
   return [`# Call for datasets: ${a.title}`, '', a.oneLiner, '', a.blurb, '',
-          `The data that would let us build it: ${a.sceneryHint}`, '',
+          `The data that would let us ${a.kind === 'test' ? 'test' : 'build'} it: ${a.sceneryHint}`, '',
           `Ask for it (prefilled GitHub issue): ${datasetAskUrl(a)}`].join('\n')
 }
 

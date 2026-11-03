@@ -1,6 +1,7 @@
 """Recital orchestrator — the single entry point for pre-commit reviewer discipline.
 
-Spawns both reviewers (fanout audit + convention check) via `claude -p` subprocess, runs the two
+Spawns the reviewers (fanout audit + convention check, plus the result review when the diff touches
+a result path) via `claude -p` subprocess, runs the two
 mechanical checks (inventory coverage, maintainability lint), emits log
 events atomically with the runs, and produces formatted recital text ready to paste into the
 commit message. Replaces the manual "agent spawns subagents, agent formats, agent emits"
@@ -13,7 +14,7 @@ Usage (from an agent, via the CLI wrapper):
 
     pixi run recital
 
-which reads `git diff --staged`, spawns both reviewers, emits `_run` events and one
+which reads `git diff --staged`, spawns the reviewers, emits `_run` events and one
 `_finding` event per outcome-tagged reviewer bullet, and prints the recital body — with a
 `[slug]` prefixed to each outcome-tagged finding line so the author can paste the slug into
 the commit message inside a `[slug: outcome]` pair. Full design in
@@ -30,15 +31,20 @@ Not built here (deferred to later phases of FINDINGS_EMISSION_PLAN.md):
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
+import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
+import sys
 import time
 import typing as _t
 
 from .inventory_coverage import run_inventory_check
+from .changelog_check import run_changelog_check
 from .maintainability_lint import run_maintainability_lint
 from .log import append_event
 
@@ -46,6 +52,7 @@ from .log import append_event
 #: the single source of truth.
 _FANOUT_DOC = "docs/ai-assist/FANOUT_AUDIT.md"
 _CONVENTION_DOC = "docs/ai-assist/CONVENTION_CHECK.md"
+_RESULT_DOC = "docs/ai-assist/RESULT_REVIEW.md"
 
 
 #: Heads a reviewer's section when it errored: the recital still prints, stamp included, but that
@@ -77,6 +84,7 @@ class RecitalError(RuntimeError):
 MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("confirmed",),
     "convention": ("should reuse", "wrong home"),
+    "result": ("reproduced",),
 }
 
 #: Advisory markers — no outcome tag required and no `_finding` row, but still a finding the
@@ -84,14 +92,15 @@ MARKERS: dict[str, tuple[str, ...]] = {
 ADVISORY_MARKERS: dict[str, tuple[str, ...]] = {
     "fanout": ("plausible",),
     "convention": ("potential duplicate",),
+    "result": ("inferred", "display"),
 }
 
 #: Advisory markers that still get a printed slug, so the author MAY tag one fixed. The weekly bug
 #: sweep re-checks every untagged `plausible` note (the same slug is its key); about half are fixed
 #: at commit, and a `[slug: fixed_pre_commit]` lets it skip those. Optional: the hook never asks.
-TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": ()}
+TAGGABLE_ADVISORY: dict[str, tuple[str, ...]] = {"fanout": ("plausible",), "convention": (), "result": ("inferred",)}
 
-_OPTIONAL_TAG_NOTE = ("_Plausible notes need no tag. If you fixed one, tag it `[<slug>: fixed_pre_commit]` "
+_OPTIONAL_TAG_NOTE = ("_{Marker} notes need no tag. If you fixed one, tag it `[<slug>: fixed_pre_commit]` "
                       "so the weekly judge doesn't re-check it._")
 
 #: Bullet-line grammar the reviewer prompts ask for:
@@ -102,7 +111,7 @@ _OPTIONAL_TAG_NOTE = ("_Plausible notes need no tag. If you fixed one, tag it `[
 #: tolerant: ANY bullet line carrying the marker is a finding. The location is best-effort —
 #: first `file:LINE` wins, so `foo.jl:42` slugs the same with or without a trailing range.
 #: A finding slug as `_slug` writes it — the one grammar recital and the commit hook match on.
-SLUG_PATTERN = r"(?:fanout|conv)-[0-9a-f]{8}"
+SLUG_PATTERN = r"(?:fanout|conv|result)-[0-9a-f]{8}"
 _BULLET_RE = re.compile(rf"^[ \t]*[-*][ \t]+(?!\[{SLUG_PATTERN}\] )(.+)$", re.MULTILINE)
 _LEAD_LOCATION_RE = re.compile(
     r"^\*\*`?([^*:`\s]+):(\d+)[^*]*?`?\*\*\s*[—–:-]?\s*(.*)$"
@@ -138,7 +147,7 @@ def _marker_bold_re(marker: str) -> re.Pattern:
 class Finding(_t.NamedTuple):
     """A single outcome-tag-requiring finding parsed from a reviewer's output."""
 
-    mechanism: str  # "fanout" | "convention"
+    mechanism: str  # "fanout" | "convention" | "result"
     file: str
     line: int
     desc: str
@@ -159,7 +168,7 @@ def _slug(mechanism: str, file: str, line: int, marker: str, desc: str = "") -> 
     if line == 0:
         key += f"|{desc}"
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:8]
-    prefix = "fanout" if mechanism == "fanout" else "conv"
+    prefix = {"fanout": "fanout", "convention": "conv"}.get(mechanism, mechanism)
     return f"{prefix}-{digest}"
 
 
@@ -227,12 +236,16 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
     return bold - len(findings)
 
 
-from .claude_cli import RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
+from .claude_cli import MEASURED_MODEL, RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
+from .claude_cli import models as _models  # noqa: E402
 from .claude_cli import tokens as _tokens  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
 from .git_context import current_pr as _current_pr  # noqa: E402  (kept near use for clarity)
 from .git_context import git_dir as _git_dir  # noqa: E402
+from .agent_sandbox import SANDBOX_SETTINGS, WORKTREE_ROOT, agent_env  # noqa: E402
+from .git_context import parse_diff as _parse_diff  # noqa: E402
+from .git_context import repo_root as _repo_root  # noqa: E402
 
 
 def _resolve_claude_bin() -> str:
@@ -243,15 +256,20 @@ def _resolve_claude_bin() -> str:
     return resolved
 
 
+REVIEWER_MODEL = MEASURED_MODEL
+
+
 class ReviewerReply(_t.NamedTuple):
     """One reviewer's answer and what it cost, as the CLI reported it. A runner may return a bare
     `str` instead (test fakes do): its row then carries no token counts."""
     text: str
     tokens: dict[str, int]
     cost_usd: float | None
+    models: tuple[str, ...] = ()
 
 
-def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
+def _default_runner(prompt: str, timeout: float = 180.0, *, cwd: str | None = None,
+                    extra_args: _t.Sequence[str] = (), env: dict[str, str] | None = None) -> ReviewerReply:
     """Spawn `claude -p --output-format json`, prompt on stdin, and return its answer with the token
     counts and cost it reports. Raises `RecitalError` on failure.
 
@@ -263,11 +281,13 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
     # Reviewer turns load the user's MCP servers; `CECELIA_OBSERVER_NO_PAIR` (read by
     # `mcp/cecelia_mcp/client.py`, inherited by MCP children) stops a throwaway turn re-pairing
     # the user's project. Siblings: `scripts/judge/verify.py`, `scripts/agent_eval/run_overnight.py`.
-    env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
+    # `env` replaces the whole environment (a sandboxed agent's `agent_env`, credentials stripped).
+    env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"} if env is None else env
     try:
         result = subprocess.run(
-            [claude_bin, "-p", "--output-format", "json"],
+            [claude_bin, "-p", "--model", REVIEWER_MODEL, "--output-format", "json", *extra_args],
             input=prompt,
+            cwd=cwd,
             env=env,
             capture_output=True,
             text=True,
@@ -297,7 +317,7 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
         raise RecitalError(f"claude exited {result.returncode}; {detail}")
     cost = out.get("total_cost_usd")
     return ReviewerReply(out["result"].strip(), _tokens(out),
-                         float(cost) if isinstance(cost, (int, float)) else None)
+                         float(cost) if isinstance(cost, (int, float)) else None, tuple(_models(out)))
 
 
 def _reviewer_prompt(doc_path: str, diff: str) -> str:
@@ -317,7 +337,7 @@ def _reviewer_prompt(doc_path: str, diff: str) -> str:
 #: Strip trailing patterns like `_Convention check: run_` / `_Fanout audit: run_` /
 #: `_Sibling-call audit: run_` so the recital's own tail isn't a duplicate.
 _STRIP_TRAILING_TAIL = re.compile(
-    r"\n?\s*_(?:Fanout audit|Sibling-call audit|Convention check):\s*[^\n_]+_\s*$"
+    r"\n?\s*_(?:Fanout audit|Sibling-call audit|Convention check|Result review):\s*[^\n_]+_\s*$"
 )
 
 
@@ -335,9 +355,12 @@ def _run_reviewer(
     pr: str | None,
     commit: str | None,
     branch: str | None,
+    prompt: str | None = None,
+    run_extra: dict | None = None,
 ) -> str:
-    """Spawn one reviewer, emit its `_run` + per-finding events, format its recital section."""
-    prompt = _reviewer_prompt(doc_path, diff)
+    """Spawn one reviewer, emit its `_run` + per-finding events, format its recital section.
+    `prompt` replaces the doc-plus-diff default; `run_extra` joins the `_run` row's payload."""
+    prompt = _reviewer_prompt(doc_path, diff) if prompt is None else prompt
     start = time.monotonic()
     error: str | None = None
     output: str = ""
@@ -348,12 +371,14 @@ def _run_reviewer(
         error = str(e)
 
     duration = time.monotonic() - start
-    payload: dict = {"duration_s": round(duration, 2)}
+    payload: dict = {"duration_s": round(duration, 2), **(run_extra or {})}
     if isinstance(reply, ReviewerReply):
         output = reply.text
         payload["tokens"] = reply.tokens
         if reply.cost_usd is not None:
             payload["cost_usd"] = round(reply.cost_usd, 4)
+        if reply.models:
+            payload["models"] = list(reply.models)
     else:
         output = reply
     if error is not None:
@@ -431,9 +456,147 @@ def _run_reviewer(
             "the console. No tag needed; report the reviewer output shape."
         )
 
+    if mechanism == "result" and findings:
+        cleaned += ("\n\n_Each reproduced finding: commit its repro as a test, as its own file, with a "
+                    "`RESULT-REVIEW: <slug>` comment, then fix the code. The commit hook keeps that test as "
+                    "written unless the message says `[<slug>: false_positive: <reason>]`._")
     if any(f.marker in TAGGABLE_ADVISORY[mechanism] for f in advisories):
-        cleaned += f"\n\n{_OPTIONAL_TAG_NOTE}"
+        cleaned += "\n\n" + _OPTIONAL_TAG_NOTE.replace("{Marker}", TAGGABLE_ADVISORY[mechanism][0].capitalize())
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"
+
+
+#: The fenced block in `RESULT_REVIEW.md` that lists the result paths, one glob per line.
+_RESULT_PATHS_FENCE = re.compile(r"^```result-paths\n(.*?)^```", re.M | re.S)
+#: Never a result path, even under a listed directory.
+_NOT_RESULT_PATHS = ("*/test/*", "*/tests/*", "*.test.ts", "*.md")
+#: Where the staged tree is copied for the reviewer: beside the sandbox's other agent checkouts, outside
+#: `~` and `.git/` (both write-denied). One folder per worktree (its git dir's hash), the latest only.
+RESULT_TREE_ROOT = WORKTREE_ROOT / "result-review"
+#: The reviewer reads, writes repros in its copy, and runs them; nothing else.
+RESULT_REVIEW_TOOLS = "Read,Grep,Glob,Write,Edit,Bash"
+#: An Opus review that writes and runs repros takes minutes, not the other reviewers' seconds.
+RESULT_REVIEW_TIMEOUT = 1200.0
+
+
+def result_paths(doc_text: str) -> list[str]:
+    """The globs in `RESULT_REVIEW.md`'s `result-paths` block; [] when the block is missing."""
+    m = _RESULT_PATHS_FENCE.search(doc_text)
+    return [ln.strip() for ln in m.group(1).splitlines() if ln.strip()] if m else []
+
+
+def is_result_path(path: str, globs: _t.Sequence[str]) -> bool:
+    """`path` matches a result glob and none of `_NOT_RESULT_PATHS`."""
+    return any(fnmatch.fnmatch(path, g) for g in globs) and not any(fnmatch.fnmatch(path, x) for x in _NOT_RESULT_PATHS)
+
+
+def repo_result_paths(root: pathlib.Path | None = None) -> list[str]:
+    """The result globs `RESULT_REVIEW.md` lists in the checkout at `root` (default: this repo)."""
+    doc = (root or _repo_root()) / _RESULT_DOC
+    return result_paths(doc.read_text(encoding="utf-8")) if doc.is_file() else []
+
+
+def touched_result_paths(diff: str, globs: _t.Sequence[str]) -> list[str]:
+    """The diff's files that are result paths (`is_result_path`)."""
+    return [f.path for f in _parse_diff(diff) if is_result_path(f.path, globs)]
+
+
+def _export_staged_tree(root: pathlib.Path, dest: pathlib.Path) -> None:
+    """The index (what is about to be committed) as plain files under `dest`, plus the worktree's
+    `frontend/node_modules` linked in so a vitest repro runs. The reviewer writes only here."""
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True)
+    subprocess.run(["git", "checkout-index", "-a", "-f", f"--prefix={dest}{os.sep}"], cwd=root,
+                   check=True, capture_output=True, encoding="utf-8")
+    modules = root / "frontend" / "node_modules"
+    if modules.is_dir() and (dest / "frontend").is_dir():
+        try:
+            (dest / "frontend" / "node_modules").symlink_to(modules, target_is_directory=True)
+        except OSError:  # no symlink rights (Windows without developer mode): vitest repros can't run
+            pass
+
+
+def _result_prompt(doc_path: str, diff: str, claim: str | None, tree: pathlib.Path, python: str) -> str:
+    """The doc's reviewer prompt plus what this run needs: the claim (unverified), and how to run code."""
+    said = (f'The author\'s claim, UNVERIFIED: "{claim}"' if claim
+            else "The author gave no claim; work out what the change is for from the diff.")
+    return (
+        f"Read `{doc_path}` and follow the 'Reviewer prompt' section verbatim against the staged diff "
+        f"below. Output ONLY the finding bullets (or the no-findings line).\n\n{said}\n\n"
+        f"Your working directory `{tree}` is a copy of the repository with the change applied; write "
+        f"only inside it. Python: `{python} <script>` (PYTHONPATH already points at `python/`). "
+        f"Frontend: `cd frontend && npx vitest run <file>`.\n\n---\n\n{diff}"
+    )
+
+
+def run_result_review(
+    diff: str,
+    *,
+    claim: str | None,
+    claude_runner: _t.Callable[[str], str | ReviewerReply] | None,
+    pr: str | None,
+    commit: str | None,
+    branch: str | None,
+) -> str:
+    """The third reviewer, gated on result paths and reused for an unchanged staged diff.
+    `claude_runner` (tests) replaces the spawn and skips the tree export."""
+    title = "Result review"
+    root = _repo_root()
+    touched = touched_result_paths(diff, repo_result_paths(root))
+    if not touched:
+        append_event("result_review_run", {"duration_s": 0.0, "escape_valve": "no_result_paths"},
+                     pr=pr, commit=commit, branch=branch)
+        return f"_{title}: skipped — no result paths_"
+
+    key = hashlib.sha1(f"{claim or ''}\n{diff}".encode("utf-8")).hexdigest()[:12]
+    gd = _git_dir() if claude_runner is None else None  # a test's fake runner caches nothing
+    home = (gd / "result-review") if gd else None
+    saved = home / key / "section.md" if home else None
+    if saved is not None and saved.is_file():
+        append_event("result_review_run", {"duration_s": 0.0, "escape_valve": "unchanged_diff"},
+                     pr=pr, commit=commit, branch=branch)
+        return saved.read_text(encoding="utf-8").replace(f"_{title}: run_", f"_{title}: run — reused, staged diff unchanged_")
+
+    runner = claude_runner
+    trees = RESULT_TREE_ROOT / hashlib.sha1(str(gd).encode("utf-8")).hexdigest()[:10] if gd else None
+    tree = (trees / key) if trees else root
+    if runner is None:
+        if home is None or trees is None:
+            return f"_{title}: not run — no git dir to key the review on_"
+        for old in [*(home.glob("*") if home.is_dir() else ()), *(trees.glob("*") if trees.is_dir() else ())]:
+            if old.name != key:  # keep one review: the latest
+                shutil.rmtree(old, ignore_errors=True)
+        _export_staged_tree(root, tree)
+        def runner(prompt: str) -> ReviewerReply:
+            # The judge's verify agent's fence: OS sandbox (no network, `~` write-denied), credentials
+            # stripped from the env. The copy lives under the temp dir, outside both denies.
+            return _default_runner(prompt, RESULT_REVIEW_TIMEOUT, cwd=str(tree),
+                                   extra_args=["--dangerously-skip-permissions",
+                                               "--settings", json.dumps(SANDBOX_SETTINGS),
+                                               "--tools", RESULT_REVIEW_TOOLS, "--strict-mcp-config",
+                                               "--no-session-persistence"],
+                                   env=agent_env(PYTHONPATH=str(tree / "python")))
+
+    section = _run_reviewer(
+        event_name="result_review_run",
+        finding_event_name="result_review_finding",
+        advisory_event_name="result_review_advisory",
+        mechanism="result",
+        title=title,
+        tail_none="no result review needed",
+        doc_path=_RESULT_DOC,
+        diff=diff,
+        claude_runner=runner,
+        pr=pr,
+        commit=commit,
+        branch=branch,
+        prompt=_result_prompt(_RESULT_DOC, diff, claim, tree, sys.executable),
+        run_extra={"paths": touched[:20], "repro_dir": str(tree / "_review")},
+    )
+    if saved is not None and ERROR_MARKER not in section:
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        saved.write_text(section, encoding="utf-8")
+    return section
 
 
 #: The stamp recital ends its body with — which change (branch @ parent SHA) the review is OF.
@@ -465,8 +628,10 @@ def run_recital(
     diff: str,
     *,
     claude_runner: _t.Callable[[str], str | ReviewerReply] | None = None,
+    claim: str | None = None,
 ) -> str:
-    """Spawn both reviewers, emit `_run` events, return the formatted recital body.
+    """Spawn the reviewers, emit `_run` events, return the formatted recital body. `claim` is what
+    the result review is told the change is for (marked unverified).
 
     - `diff`: the staged diff string (from `git diff --staged`).
     - `claude_runner`: optional; injected in tests to bypass real subprocess. Signature:
@@ -516,8 +681,11 @@ def run_recital(
         commit=commit,
         branch=branch,
     )
+    result_section = run_result_review(diff, claim=claim, claude_runner=claude_runner,
+                                       pr=pr, commit=commit, branch=branch)
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
+    changelog_section = run_changelog_check(diff, pr=pr, commit=commit, branch=branch)
 
-    return (f"{fanout_section}\n\n{convention_section}\n\n{inventory_section}\n\n{lint_section}"
+    return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{inventory_section}\n\n{lint_section}\n\n{changelog_section}"
             f"\n\n{recital_stamp(branch, commit)}")

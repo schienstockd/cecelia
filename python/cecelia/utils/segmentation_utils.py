@@ -168,8 +168,8 @@ class SegmentationUtils:
         # a CELL rather than a grid: the same number then means the same biology on every image of a
         # set, which is the whole point of one parameter value per set. A px value silently means
         # something different the moment the zoom changes.
-        self.phys_size_x = (dim_utils.im_physical_size('x', default=1.0) if dim_utils else 1.0)
-        self.phys_size_y = (dim_utils.im_physical_size('y', default=self.phys_size_x)
+        self.phys_size_x = (dim_utils.im_physical_size_um('x', default=1.0) if dim_utils else 1.0)
+        self.phys_size_y = (dim_utils.im_physical_size_um('y', default=self.phys_size_x)
                             if dim_utils else 1.0)
         # `auto` (the default) is resolved per run: the tile size once the frame and the machine are
         # known (`resolve_block_size`), the overlap from the cell size (`_auto_overlap`, below, once
@@ -821,7 +821,7 @@ class SegmentationUtils:
         self.object_stats = object_stats(
             frame_sizes,
             (self.phys_size_x, self.phys_size_y,
-             dim_utils.im_physical_size('z', default=1.0) if dim_utils else 1.0),
+             dim_utils.im_physical_size_um('z', default=1.0) if dim_utils else 1.0),
             is_3d)
         if seam_totals:
             self.object_stats['seam'] = seam_totals

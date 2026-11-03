@@ -379,9 +379,9 @@ def import_labels(sources, out_paths, im_path, im_shape, nscales, dim_utils, log
         'labelCounts': counts,
         'objectStats': object_stats(
             frame_sizes,
-            (dim_utils.im_physical_size('x', default=1.0),
-             dim_utils.im_physical_size('y', default=1.0),
-             dim_utils.im_physical_size('z', default=1.0)),
+            (dim_utils.im_physical_size_um('x', default=1.0),
+             dim_utils.im_physical_size_um('y', default=1.0),
+             dim_utils.im_physical_size_um('z', default=1.0)),
             dim_utils.is_3D()),
         'idsOffset': bool(any(offsets)),
         'matchIds': bool(match_ids),

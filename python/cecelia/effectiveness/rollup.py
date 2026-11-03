@@ -111,7 +111,8 @@ def _mechanism_section(
     run_events = (run_event,) if isinstance(run_event, str) else run_event
     finding_events = (finding_event,) if isinstance(finding_event, str) else finding_event
     resolved_events = (resolved_event,) if isinstance(resolved_event, str) else resolved_event
-    runs = [e for e in events if e.get("event") in run_events]
+    # a reviewer that didn't spawn (`escape_valve`: e.g. the result review on a diff with no result path)
+    runs = [e for e in events if e.get("event") in run_events and not (e.get("payload") or {}).get("escape_valve")]
     findings = [e for e in events if e.get("event") in finding_events]
     redteam = {f["payload"]["slug"] for f in findings
                if f.get("payload", {}).get("slug") in _REDTEAM_SLUGS}
@@ -227,6 +228,24 @@ def _maintainability_section(events: _t.Sequence[dict]) -> str:
         for p in payloads for f in (p.get("findings") or [])
     })
     for x in flagged:
+        lines.append(f"  - `{x}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _changelog_section(events: _t.Sequence[dict]) -> str:
+    """The mechanical changelog check (`changelog_check.py`): defaults changed, and those left without
+    a CHANGELOG line."""
+    runs = [e for e in events if e.get("event") == "changelog_check_run"]
+    if not runs:
+        return ""
+    payloads = [r.get("payload", {}) for r in runs]
+    n_changed = sum(p.get("defaults_changed", 0) for p in payloads)
+    n_warn = sum(p.get("warnings_emitted", 0) for p in payloads)
+    lines = ["## Changelog check", "",
+             f"- **{len(runs)} runs** · {n_changed} default(s) changed · **{n_warn} without a CHANGELOG line**"]
+    for x in sorted({f"{f.get('path')}:{f.get('line')} {f.get('old')} → {f.get('new')}"
+                     for p in payloads for f in (p.get("findings") or [])}):
         lines.append(f"  - `{x}`")
     lines.append("")
     return "\n".join(lines)
@@ -400,8 +419,17 @@ def render_rollup(
             resolved_event="convention_check_finding_resolved",
             pr_lookup=pr_lookup,
         ),
+        _mechanism_section(
+            "Result review",
+            "result_review_run",
+            "result_review_finding",
+            events,
+            resolved_event="result_review_finding_resolved",
+            pr_lookup=pr_lookup,
+        ),
         _inventory_section(events),
         _maintainability_section(events),
+        _changelog_section(events),
         _ratchets_section(events),
         _misses_section(events),
     ):

@@ -758,6 +758,23 @@ class CommitMsgHookTest(unittest.TestCase):
         self.assertEqual([(e["payload"]["slug"], e["payload"]["outcome"]) for e in self._resolved()],
                          [("fanout-abcd1234", "fixed_pre_commit")])
 
+    def test_a_commit_changing_the_result_reviews_repro_needs_false_positive(self):
+        repro = "# RESULT-REVIEW: result-0000aaaa\ndef test_two_groups_get_their_own_flow(): ...\n"
+        with mock.patch.object(self.hook, "_staged_changed_files", return_value=["python/cecelia/tests/test_r.py"]), \
+                mock.patch.object(self.hook, "_head_text", return_value=repro):
+            blocked = self.hook.main(["--commit-msg", self._msg_file("fix: relax the flow test\n")])
+            self.assertEqual(blocked, 1)
+            allowed = self.hook.main(["--commit-msg", self._msg_file(
+                "test: the repro expected px\n\n[result-0000aaaa: false_positive: the repro expects px, the spec is um]\n")])
+            self.assertEqual(allowed, 0)
+        (row,) = [e["payload"] for e in read_events(self.log_path) if e["event"] == "result_review_test_edited"]
+        self.assertEqual((row["slug"], row["file"]), ("result-0000aaaa", "python/cecelia/tests/test_r.py"))
+
+    def test_a_file_without_the_marker_is_not_held(self):
+        with mock.patch.object(self.hook, "_staged_changed_files", return_value=["a.py"]), \
+                mock.patch.object(self.hook, "_head_text", return_value="def f(): ...\n"):
+            self.assertEqual(self.hook.main(["--commit-msg", self._msg_file("fix: a\n")]), 0)
+
     def test_untagged_finding_blocks_with_exit_1(self):
         append_event("fanout_audit_run", {"duration_s": 1.0}, commit=self.head, branch="feat/x")
         rc = self.hook.main(["--commit-msg", self._msg_file("x [**confirmed**]\n")])

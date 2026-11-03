@@ -40,6 +40,7 @@ import PlateBuilder from './PlateBuilder.vue'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
 import { INTERACTIVE_VIEWS, boardViews, railFor, popTypesFor, popTypeSpecFor, singlePopFor, migrateViewKey } from './interactiveViews'
 import { DEFAULT_RAIL, type RailKind } from './canvasManager'
+import { boardParamsScope, type BoardParamsScope } from '../../utils/chainFromHistory'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
 import ModelVault from '../../modules/modelTraining/ModelVault.vue'
@@ -536,7 +537,16 @@ async function collectCsvs(): Promise<{ name: string; csv: string | null }[]> {
   }
   return out
 }
-defineExpose({ capturePage, collectCsvs })
+// What this board shows, for the parameter table (`boardParamsScope`): each slot's rail + resolved
+// selection, and the board's one cluster run.
+function paramsScope(): BoardParamsScope {
+  const slots = entry.value.contents.filter((c): c is SlotContent => !!c).map(c => ({
+    rail: railOf(c), sel: panelSel(c),
+    valueName: typeof st(c).valueName === 'string' ? st(c).valueName as string : undefined,
+  }))
+  return boardParamsScope(slots, { popType: clustPopType.value, suffix: clustSuffix.value })
+}
+defineExpose({ capturePage, collectCsvs, paramsScope })
 
 // ── Canvas Share (Kiwi's canvas Share button) ──────────────────────────────
 // LayoutCanvas is a GRID canvas — docked CanvasPanels skip `setGeom`, so the composable's default

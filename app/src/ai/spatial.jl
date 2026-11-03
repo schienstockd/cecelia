@@ -43,6 +43,7 @@ function _collect_contact_stats(img::CciaImage)
                      nCells = Int(get(d, :nCells, 0)), nEdges = Int(get(d, :nEdges, 0)),
                      graphSuffix = string(get(d, :graphSuffix, "")),
                      nPermutations = Int(get(d, :nPermutations, 0)),
+                     shufflePops = String[string(x) for x in get(d, :shufflePops, [])],
                      coverage = Float64(get(d, :coverage, 1.0)), pairs = pairs))
     end
     out
