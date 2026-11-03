@@ -803,7 +803,21 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 
     <!-- ── Function selector ── -->
     <section v-if="defs.length" class="runner-section">
-      <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
+      <!-- the heading row carries what the function IS (Kiwi ref, maturity, report); WHERE it runs
+           is its own labelled row below, only when there is a choice — a fixed "local" says nothing. -->
+      <div class="section-heading-row">
+        <h3 class="section-heading cc-eyebrow cc-fs-2xs">Function</h3>
+        <div v-if="taskDef" class="section-heading-actions">
+          <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
+          <template v-if="taskMat">
+            <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
+                    v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
+              <ComingSoonBadge :tier="taskMat.tier" />
+            </button>
+            <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
+          </template>
+        </div>
+      </div>
       <select
         class="fn-select"
         data-guide="task.fun"
@@ -868,18 +882,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </template>
       </div>
 
-      <!-- what the function IS (Kiwi ref, maturity, report) on one row; WHERE it runs on its own
-           labelled row, only when there is a choice — a fixed "local" says nothing. -->
-      <div v-if="taskDef" class="fn-meta">
-        <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
-        <template v-if="taskMat">
-          <button class="cc-btn cc-btn-bare cc-btn-dense" @click="openMaturityRow(taskMat.rowId)"
-                  v-tooltip.bottom="`${tierTip(taskMat.tier)} — show why`">
-            <ComingSoonBadge :tier="taskMat.tier" />
-          </button>
-          <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
-        </template>
-      </div>
       <div v-if="taskDef && (canHpc || otherEnvs.length)" class="cc-row fn-run-on">
         <span class="cc-muted cc-fs-xs">Run on</span>
         <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
@@ -943,9 +945,9 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
       <!-- Heading + a bare icon-button to zero the form back to spec defaults. The button follows
            the heading on the same row so a user reaching for it does not have to hunt — a common
            ask when a chain node was tuned once and the next run wants a clean slate. -->
-      <div class="params-heading-row">
+      <div class="section-heading-row">
         <h3 class="section-heading cc-eyebrow cc-fs-2xs">Parameters</h3>
-        <div class="params-heading-actions">
+        <div class="section-heading-actions">
           <button class="cc-btn cc-btn-bare cc-btn-icon cc-btn-micro"
                   v-tooltip.left="'Copy settings from a previous run on another image'"
                   @click="copyOpen = true"><i class="pi pi-copy" /></button>
@@ -1118,12 +1120,13 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 /* Heading on the left, trailing icon-buttons grouped on the right so they stay together no matter
    how many there are — `justify-content: space-between` with three children would strand a middle
    button in the centre. */
-.params-heading-row {
+.section-heading-row {
   display: flex; align-items: center; justify-content: space-between;
   margin: 0 0 0.5rem;
+  min-height: 1.5rem;   /* the same height with or without the trailing buttons */
 }
-.params-heading-row .section-heading { margin: 0; }
-.params-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
+.section-heading-row .section-heading { margin: 0; }
+.section-heading-actions { display: flex; align-items: center; gap: 0.15rem; }
 
 /* function selector */
 .fn-select {
@@ -1137,7 +1140,6 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
-.fn-meta { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.4rem; }
 .fn-run-on { margin-top: 0.3rem; }
 .fn-gating { margin-top: 0.3rem; }
 .fn-effect {
