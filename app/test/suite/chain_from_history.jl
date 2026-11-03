@@ -111,3 +111,51 @@ end
     @test Set(values(first(c)["values"])) == Set([0.1, 0.2])
     rm(proj.root; recursive = true)
 end
+
+# ── Parameter table from history (tasks/chain/history_params.jl) ──
+_hprow(t, fn) = [r for r in t if r["task"] == fn]
+
+@testset "History params table — only what differs from the spec default" begin
+    proj, uids = _history_project("x" => "zolIMa_x4E5HU")
+    t = history_params_table(proj, [uids["x"]])
+    drift = only(_hprow(t, "cleanupImages.driftCorrect"))
+    # the last done drift run; driftMaxLag 3 and driftMaxAngle 5 (spec 5.0) are defaults, so absent
+    @test drift["changedFromDefault"] ==
+          "driftChannel=CD169-Kat; driftPerPlane=true; driftSmoothSigma=0; driftZSmoothness=0.3"
+    @test drift["images"] == "1/1" && drift["output"] == "driftCorrected" && isempty(drift["conflicts"])
+    # the training step a chain would reuse is still a row: it is part of the method
+    @test !isempty(_hprow(t, "opticalFlow.trainSupportDenoise"))
+    rm(proj.root; recursive = true)
+end
+
+@testset "History params table — repeatable group entries against their own position's defaults" begin
+    proj, uids = _history_project("u" => "zolIMa_UMq4v3")
+    seg = only(_hprow(history_params_table(proj, [uids["u"]]), "segment.coastalMeasure"))
+    ch = split(seg["changedFromDefault"], "; ")
+    @test "models[0].seedSize=8" in ch && "models[1].seedSize=4" in ch
+    # entry 1's spec seed (entryDefaults) is 0.9 — what ran — so it is not a change
+    @test !any(startswith("models[1].mergeAffinityThreshold="), ch)
+    @test "models[0].model=flow.small.pt" in ch
+    rm(proj.root; recursive = true)
+end
+
+@testset "History params table — disagreement is a counted spread; unrecorded params say so" begin
+    proj, uids = _history_project("u" => "zolIMa_UMq4v3", "v" => "zolIMa_UMq4v3")
+    v = init_object(proj.uid, uids["v"])
+    log = read_run_log(v)
+    for e in log
+        e["fun"] == "tracking.bayesian_track_measures" && (e["params"]["segmentationMissRate"] = 0.2)
+    end
+    write(Cecelia.run_log_path(v._dir), JSON3.write(log))
+    trk = _hprow(history_params_table(proj, [uids["u"], uids["v"]]), "tracking.bayesian_track_measures")
+    @test length(trk) == 2 && all(r -> r["images"] == "2/2", trk)
+    @test all(r -> occursin("segmentationMissRate: ", r["conflicts"]) && occursin("0.1 (1)", r["conflicts"]) &&
+                   occursin("0.2 (1)", r["conflicts"]), trk)
+    @test all(r -> !occursin("segmentationMissRate", r["changedFromDefault"]), trk)
+    rm(proj.root; recursive = true)
+
+    proj, uids = _history_project("a" => "4kS67f_LUkCpP", "b" => "4kS67f_k3Tx90")
+    ct = only(_hprow(history_params_table(proj, [uids["a"], uids["b"]]), "clustTracks.cluster"))
+    @test ct["note"] == "parameters unknown — ran before params were recorded"
+    rm(proj.root; recursive = true)
+end
