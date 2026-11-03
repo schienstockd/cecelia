@@ -616,11 +616,11 @@ end
 _cohort_reply(set, fun_name; kw...) = haskey(COHORT_METRICS, fun_name) ?
     cohort_qc_reply(set, fun_name; kw...) : cohort_qc_by_step(set, fun_name; kw...)
 
-# GET /api/qc/cohort/runs?projectUid&setUid&funName — the distinct clustering RUNS a fun banked across
+# GET /api/qc/cohort/runs?projectUid&setUid&funName — the distinct clustering / HMM RUNS a fun banked across
 # the set (cheap: scans QC filenames + reads each doc's runSuffix, no cohort math). Powers the Check-
 # cohort button's run selector: cluster QC is banked per run, so the user picks WHICH run to check
 # rather than the button re-checking every past iteration. `[]` for funs that keep no runs (segment/
-# tracking/HMM) — the button then shows no selector and checks as before. Newest run first.
+# tracking) — the button then shows no selector and checks as before. Newest run first.
 function api_qc_cohort_runs(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")

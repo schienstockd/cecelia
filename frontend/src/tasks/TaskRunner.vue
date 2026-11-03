@@ -41,6 +41,8 @@ import { frameGeometry } from './paramAdvisors'
 import { groupTaskDefs } from '../utils/taskGroups'
 import { checkLine } from '../utils/taskDiscovery'
 import InlineNote from '../components/InlineNote.vue'
+import CcToggle from '../components/CcToggle.vue'
+import { useFieldDraft } from '../composables/useFieldDraft'
 import { debouncedLatest } from '../utils/debouncedLatest'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
@@ -56,6 +58,7 @@ import { useProjectStore } from '../stores/project'
 import CopyFunParamsModal, { type CopyFunParamsRow } from '../components/CopyFunParamsModal.vue'
 import AddToKiwiButton from '../components/kiwi/AddToKiwiButton.vue'
 import { isLiveStatus } from '../lib/taskStatus'
+import { expandSweep, parseSweepState, sweepStateKey, sweepableParams, type SweepState } from '../utils/paramSweep'
 
 const props = defineProps<{
   defs: TaskDef[]
@@ -152,6 +155,32 @@ function saveRunChoice(next: RunTargetChoice) {
   runChoice.value = next
   if (taskDef.value) profileStorage.setItem(runTargetKey(taskDef.value.fun_name), JSON.stringify(next))
 }
+// ── Parameter sweep (docs/todo/PARAM_SWEEP_PLAN.md) ── one task, N runs, one param varied. Persisted per
+// task like the run target; expanded into ordinary runs by `utils/paramSweep.ts`.
+const sweep = ref<SweepState>(parseSweepState(null, null))
+watch(taskDef, (def) => {
+  sweep.value = parseSweepState(def ? profileStorage.getItem(sweepStateKey(def.fun_name)) : null, def)
+}, { immediate: true })
+function setSweep(patch: Partial<SweepState>) {
+  sweep.value = { ...sweep.value, ...patch }
+  if (taskDef.value) profileStorage.setItem(sweepStateKey(taskDef.value.fun_name), JSON.stringify(sweep.value))
+}
+// text fields commit on change; the drafts keep a re-render from reverting what is being typed
+const sweepValuesDraft = useFieldDraft(() => sweep.value.values)
+const sweepNamesDraft  = useFieldDraft(() => sweep.value.names)
+const sweepParams = computed(() => sweepableParams(taskDef.value))
+const sweepPlan = computed(() => (sweep.value.on && taskDef.value)
+  ? expandSweep(taskDef.value, flattenParams(taskDef.value, paramValues.value), sweep.value,
+                paramContext.value.images ?? [])
+  : null)
+const sweepSummary = computed(() => {
+  const plan = sweepPlan.value
+  if (!plan || plan.error) return ''
+  const names = plan.runs.map(r => r.name)
+  return `${names.length} runs: ${names.length > 4 ? `${names.slice(0, 3).join(', ')} … ${names.at(-1)}` : names.join(', ')}`
+})
+const sweepOnGpu = computed(() => taskDef.value?.resource_pool === 'gpu')
+
 function setTarget(v: string | string[]) {
   saveRunChoice({ ...runChoice.value, target: v === 'hpc' ? 'hpc' : 'local' })
 }
@@ -635,7 +664,8 @@ const missingRequiredReason = computed(() =>
 // run
 const canRun = computed(() =>
   props.selectedUids.length > 0 && !!taskDef.value &&
-  !activeTaskGatingReason.value && !missingRequiredReason.value
+  !activeTaskGatingReason.value && !missingRequiredReason.value &&
+  !(sweepPlan.value && (sweepPlan.value.error || !sweepPlan.value.runs.length))
 )
 
 function run() {
@@ -643,6 +673,8 @@ function run() {
 
   const def = taskDef.value
   const params = flattenParams(def, paramValues.value)
+  // a sweep is the same Run, once per value — each run's params differ only in the swept param + name
+  const paramSets = sweepPlan.value ? sweepPlan.value.runs.map(r => r.params) : [params]
 
   // params are persisted server-side on run (per image + set); just remember the last-used function
   profileStorage.setItem(`cc-fn:${props.module}`, def.task)
@@ -662,6 +694,10 @@ function run() {
   // the next edit replaces it as before.
   drafts.set(currentDraftKey.value, paramValues.value)
 
+  for (const ps of paramSets) dispatch(def, ps)
+}
+
+function dispatch(def: TaskDef, params: ParamValues) {
   log.info(
     `Submitting "${def.label}" for ${props.selectedUids.length} image(s)`,
     { source: props.module, detail: JSON.stringify(params, null, 2) }
@@ -728,7 +764,9 @@ const runLabel = computed(() => {
   if (n === 0) return 'Select images to run'
   if (activeTaskGatingReason.value) return activeTaskGatingReason.value
   if (missingRequiredReason.value) return missingRequiredReason.value
-  return `Run on ${n} image${n > 1 ? 's' : ''}`
+  if (sweepPlan.value?.error) return sweepPlan.value.error
+  const k = sweepPlan.value?.runs.length
+  return `Run ${k ? `${k}× ` : ''}on ${n} image${n > 1 ? 's' : ''}`
 })
 
 // ── Cancel all running/queued tasks for this module ────────────────────────
@@ -947,6 +985,42 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           @update:groupOrder="onGroupOrderEdit"
           :context="paramContext"
         />
+      </div>
+      <!-- Sweep: run once per value of one param, each run under its own name. Laid out as param rows
+           (label above, control below — ParamRenderer's `.param-row`) so it reads as part of the form. -->
+      <div v-if="sweepParams.length" class="sweep-block">
+        <div class="sweep-row">
+          <label class="cc-muted sweep-label" v-tooltip.top="'Run once per value of one parameter'">
+            Sweep <i class="pi pi-info-circle sweep-tip" />
+          </label>
+          <CcToggle aria-label="Sweep" :modelValue="sweep.on" @update:modelValue="setSweep({ on: $event })" />
+        </div>
+        <template v-if="sweep.on">
+          <div class="sweep-row">
+            <label class="cc-muted sweep-label">Vary</label>
+            <select class="sweep-input" :value="sweep.param" aria-label="Swept parameter"
+                    v-tooltip.bottom="'Parameter to vary'"
+                    @change="setSweep({ param: ($event.target as HTMLSelectElement).value })">
+              <option v-for="p in sweepParams" :key="p.key" :value="p.key">{{ p.label }}</option>
+            </select>
+          </div>
+          <div class="sweep-row">
+            <label class="cc-muted sweep-label">Values</label>
+            <input type="text" class="sweep-input" v-model="sweepValuesDraft" placeholder="2, 3, 4 or 2:5"
+                   aria-label="Values" v-tooltip.bottom="'A list, or a range a:b or a:b:step'"
+                   @change="setSweep({ values: sweepValuesDraft })" />
+          </div>
+          <div class="sweep-row">
+            <label class="cc-muted sweep-label">Names</label>
+            <input type="text" class="sweep-input" v-model="sweepNamesDraft" aria-label="Run names"
+                   v-tooltip.bottom="'{v} is the value, {name} the output name above'"
+                   @change="setSweep({ names: sweepNamesDraft })" />
+            <p v-if="sweepPlan?.error" class="cc-muted-warn cc-fs-xs">{{ sweepPlan.error }}</p>
+            <p v-else-if="sweepSummary" class="cc-muted cc-fs-xs">{{ sweepSummary }}</p>
+            <p v-if="sweepPlan?.replaces && !sweepPlan.error" class="cc-muted cc-fs-xs">Replaces runs of the same name</p>
+            <p v-if="sweepOnGpu" class="cc-muted-warn cc-fs-xs">GPU: runs one after another</p>
+          </div>
+        </template>
       </div>
     </section>
 
@@ -1186,6 +1260,14 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
   flex-shrink: 0;
 }
 .params-list { display: flex; flex-direction: column; }
+/* mirrors ParamRenderer's `.param-row` / `.param-label` so the sweep reads as more params */
+.sweep-block { border-top: 1px solid var(--cc-border); }
+.sweep-row { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem 0;
+             border-bottom: 1px solid var(--cc-border); }
+.sweep-row:last-child { border-bottom: none; }
+.sweep-label { font-weight: 500; display: flex; align-items: center; gap: 0.3rem; cursor: default; }
+.sweep-tip { font-size: var(--cc-fs-2xs); opacity: 0.6; }
+.sweep-input { width: 100%; }
 
 /* run */
 .run-section { flex-shrink: 0; }

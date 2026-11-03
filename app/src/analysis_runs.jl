@@ -209,6 +209,11 @@ function _hmm_delete!(img, run; on_log = _ -> nothing)
         on_log("[INFO] HMM $(run.key): dropping state + transition columns from $(basename(p))")
         label_props(p) |> drop_obs([_HMM_STATE_PREFIX * run.key, _HMM_TRANS_PREFIX * run.key]) |> save!
     end
+    # per-run QC (`{vn}.{colName}`, hmm_states.jl / hmm_transitions.jl) — checked separately: the
+    # table can be gone
+    for vn in run.value_names, fun in ("behaviour.hmm_states", "behaviour.hmm_transitions")
+        _rm_if(qc_path(img, fun, "$vn.$(run.key)"); on_log)
+    end
 end
 
 # ── spatial: neighbour graphs + stats (image-level files), contacts + aggregates (obs) ─────────

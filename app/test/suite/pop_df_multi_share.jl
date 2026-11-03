@@ -160,6 +160,20 @@ end
         out = label_props(img; value_name="B") |> v -> select_cols(v, [col]) |> as_df
         decoded = Set(Int(l) for (l, s) in zip(out.label, out[!, col]) if s isa Real && isfinite(s))
         @test !isempty(decoded) && decoded ⊆ dcells
+
+        # a second run on the same label set (a K sweep) keeps the first run's QC: banked per run
+        Cecelia._run_task(Cecelia.HmmStates(), imgs,
+                          Dict{String,Any}("pops" => ["B/Directed"], "numStates" => 3, "colName" => "tc3");
+                          on_log = _ -> nothing)
+        for run in ("tc", "tc3")
+            doc = read_qc(img, "behaviour.hmm_states", "B.$run")
+            @test doc !== nothing && doc[:runSuffix] == run && doc[:labelSet] == "B"
+        end
+        @test read_qc(img, "behaviour.hmm_states", "B") === nothing
+        Cecelia._run_task(Cecelia.HmmTransitions(), imgs,
+                          Dict{String,Any}("pops" => ["B/Directed"], "colName" => "tc3"); on_log = _ -> nothing)
+        tdoc = read_qc(img, "behaviour.hmm_transitions", "B.tc3")
+        @test tdoc !== nothing && tdoc[:runSuffix] == "tc3"
         rm(td; recursive=true)
     end
 end

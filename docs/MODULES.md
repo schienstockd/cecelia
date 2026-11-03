@@ -551,6 +551,29 @@ or TS change needed to promote a task from coming-soon to shipped.
 Wired through `frontend/src/utils/taskGating.ts` → `taskGatingReason` short-circuits `comingSoon`
 before the `requires` checks; the picker + Run button read the same predicate.
 
+### `sweep` — run the task once per value of one param
+
+```json
+{ "fun_name": "behaviour.hmm_states", "sweep": { "output": "colName", "params": ["numStates", "postFiltering"] } }
+```
+
+Opts the task into the form's **Sweep** toggle: pick one of `params`, type values (`2, 3, 4`, a range
+`2:5`, or `0.5:2:0.5`) and a name template (`{name}_{v}`), and Run sends one ordinary `task:run` per
+value with that param and the output name (`output`) changed. Expanded in
+`frontend/src/utils/paramSweep.ts` (`expandSweep`); no route or chain is involved, so history, delete,
+QC and re-run treat each run as any other.
+
+- `output` — the param the task writes its output under (`text` or `valueNameInput`). Opt in only
+  when two runs with different names really coexist on disk — columns, sidecars **and QC** keyed by
+  that name. A task with a fixed output name (`cleanupImages.*`), or one writing into its input's
+  table (tracking, motifs, contacts), must not declare it. Audit: `docs/todo/PARAM_SWEEP_PLAN.md`.
+- `params` — top-level (or `section`) `int`/`float`/`select` keys. A key inside a repeatable `group`
+  has no single value to vary, so cellpose/coastal's per-model knobs are not sweepable yet.
+- Values must be valid as typed (inside `[min, max]`, whole for `int`); names already on a selected
+  image (from the output's `namespace`) are refused before anything is sent.
+- A composite serves its first step's block (`api/src/routes.jl`), so `behaviour.hmm` sweeps through
+  `behaviour.hmm_states`. Pinned by the "a sweep block names params the spec has" ratchet.
+
 ### Requires — axis-shape and physical-scale gating
 
 A task that only makes sense on a particular image shape (a timelapse for tracking, a Z-stack for

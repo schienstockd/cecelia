@@ -1,7 +1,8 @@
 # Parameter sweep — run one task over a range of one parameter, compare the runs
 
-**Status:** plan (2026-11-03). Nothing built. First customers: HMM states (numStates), clustering
-(resolution), segmentation (diameter/thresholds). Task audit below.
+**Status:** P0 + P1 built (2026-11-03) on `param-sweep` — the Sweep toggle in the task form is
+unverified live. P2–P4 open. Opted in: HMM states, the three clusterings, ridges, branching, neighbour
+graphs, ROI discovery, flow training. Task audit below.
 
 ## Why
 
@@ -26,11 +27,15 @@ Two halves, and only one of them is generic:
    by SAVED template name (`handle_chain_run`, `api/src/sockets.jl`), so a sweep would have to persist
    a throwaway template; and the scheduler's pools already queue N runs. Each run is a normal run —
    history, run log, delete, QC, re-run all work unchanged.
-2. **Pure expansion helper** `expandSweep(def, params, sweep) → ParamValues[]` in `tasks/` (unit-tested),
-   called by `run()`. Values clamp to the spec's `[min, max]` (`clampToSpec`) and dedupe.
+2. **Pure expansion helper** `expandSweep` in `frontend/src/utils/paramSweep.ts` (unit-tested), called
+   by `run()`. Values must be valid AS TYPED — outside `[min, max]` or a fraction for an `int` is
+   refused, not clamped: a clamped value would run under a name that says something else.
 3. **Output name = template with `{v}`**, default `"{name}_{v}"` from the form's current output name
    (`k3`-style naming for HMM is the user's choice of template). Names that already exist on the
-   selected images are refused before dispatch, not overwritten.
+   selected images — read from the output param's `namespace` list, the same one its name field
+   suggests from — are refused before dispatch. An output with no such list (HMM's plain `colName`)
+   cannot be checked from the payload; the form says the sweep replaces runs of the same name, which
+   is what a single Run does there too.
 4. **Opt-in per task via the spec**: `"sweep": { "output": "<param key>", "params": ["<key>", …] }`.
    `output` names the param that keeps runs apart; `params` lists the knobs offered for sweeping. A
    task without the block shows no sweep control. Not inferred from param types: whether two runs
@@ -42,9 +47,9 @@ Two halves, and only one of them is generic:
    own key (the HMM elbow groups by everything-but-K and needs no tag).
 7. **Comparison readouts stay per task**, built only when a task has a question behind it. HMM elbow
    exists. Next candidate: clustering (see P3).
-8. **Cost shown before launch**: "4 runs × 8 images". No hard cap. GPU tasks (segmentation, flow
-   training) are offered but need a confirm: the gpu pool (limit 1) runs them one after another, and
-   training is hours per run.
+8. **Cost shown before launch**: the run names and "Run 4× on 8 images" on the button; at most 20
+   runs. GPU tasks (flow training) say "GPU: runs one after another" instead of a confirm dialog — the
+   pool (limit 1) serialises them; the warning is the cost, the user is already pressing Run.
 9. **Opt in only tasks whose runs truly coexist** — the audit below, not the param types. Tasks whose
    output target is fixed (cleanup, tracking, motifs, contacts, aggregates) stay out until their output
    is nameable; that is a per-task change, listed as a blocker, not something the launcher works around.
@@ -66,6 +71,12 @@ Two halves, and only one of them is generic:
   value; the form keeps its draft (unchanged behaviour). Acceptable; noted in the tip.
 - Enable for the tasks the audit marks SWEEP.
 
+### P1 — what shipped differently
+- No `sweep` tag in run params yet (decision 6) — nothing reads it until P2.
+- Segmentation (cellpose/coastal) is NOT opted in: its knobs (diameter, thresholds, seed size) live in
+  the repeatable per-model `group`, which a one-param sweep cannot address. P4.
+- A composite serves its first step's `sweep` block (`api/src/routes.jl`), so `behaviour.hmm` sweeps.
+
 ### P2 — history groups a sweep
 - Task list / history shows a sweep as one collapsible row (`sweep.id`), with per-run status.
 
@@ -77,6 +88,10 @@ Two halves, and only one of them is generic:
 - Same readout shape as the HMM elbow: score vs resolution, one curve per family (same pops, measures,
   normalisation). Generalise `hmm_fit_curve.jl` to a `run_curve` readout when this second customer
   lands (two users — don't abstract before).
+
+### P4 — group-entry params (segmentation)
+- Sweep `models[i].cellDiameter` etc.: the sweep names one group entry and one of its keys. Needs a
+  trigger (someone tuning cellpose diameter by hand), and GPU cost per run.
 
 ## Task audit (2026-11-03, read-only, against main)
 

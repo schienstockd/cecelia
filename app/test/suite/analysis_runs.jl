@@ -78,6 +78,8 @@ end
                           Dict("clusters.alpha" => Dict("features" => ["a"]),
                                "regions.alpha"  => Dict("features" => ["b"])))
         qcf = Cecelia.qc_path(img, "clustPops.cluster", "B.alpha"); mkpath(dirname(qcf)); write(qcf, "{}")
+        hqc = Cecelia.qc_path(img, "behaviour.hmm_states", "B.movement"); mkpath(dirname(hqc)); write(hqc, "{}")
+        tqc = Cecelia.qc_path(img, "behaviour.hmm_transitions", "B.movement"); mkpath(dirname(tqc)); write(tqc, "{}")
         mkpath(Cecelia.img_spatial_graph_dir(img)); write(Cecelia.img_spatial_graph_path(img, "g1"), "x")
         mkpath(Cecelia.img_stats_dir(img));         write(Cecelia.img_stats_path(img, "s1"), "{}")
 
@@ -106,6 +108,7 @@ end
 
         @test delete_analysis_run!(img, "hmm", "movement")
         @test !any(c -> startswith(c, "live.cell.hmm."), obs())
+        @test !isfile(hqc) && !isfile(tqc)                  # the run's QC goes with its columns
         @test delete_analysis_run!(img, "contacts", "flow#flow.T", "B")
         @test !any(c -> occursin("#flow.T", c), obs())
         @test !("flow.track.approachIndex#flow.T" in col_names(label_props(tprops); data_type = :obs))

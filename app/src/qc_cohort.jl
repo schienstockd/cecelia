@@ -388,7 +388,7 @@ function cohort_value_names(set::CciaSet, fun_name::AbstractString)::Vector{Stri
     sort(collect(vns))
 end
 
-# The clustering RUN suffix a value_name was banked under (`write_cluster_qc!` stores `runSuffix` on
+# The RUN suffix a value_name was banked under (`write_cluster_qc!` and HMM states store `runSuffix` on
 # each doc), read from the first included image that carries it; "" for funs that bank no run (segment/
 # tracking). Lets the cohort filter "this run's value_names" without parsing the composite key.
 function _value_name_run(set::CciaSet, fun_name::AbstractString, value_name::AbstractString)::String

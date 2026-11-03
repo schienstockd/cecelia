@@ -16,6 +16,7 @@
   "group": "Measure",
   "env": ["local"],
   "resource_pool": "cpu",
+  "sweep": { "output": "outputValueName", "params": ["preDilationSize", "postDilationSize", "structureTensorSigmaUm"] },
   "requires": { "scale": ["xy"] },
   "params": [
     {

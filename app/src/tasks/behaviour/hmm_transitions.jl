@@ -86,9 +86,11 @@ function _run_task(::HmmTransitions, imgs::Vector{CciaImage}, params::Dict{Strin
             if ok
                 n_ok += 1
                 # QC (advisory): bank this image-segmentation's transition distribution + the
-                # no-transitions finding. Never fails the write.
+                # no-transitions finding. Never fails the write. Keyed per run (`{vn}.{colName}`) like
+                # the states step, so a K sweep keeps every run's QC.
                 m = category_dist_metrics(vals)
-                write_qc(img, "behaviour.hmm_transitions", string(vn), hmm_transitions_qc_findings(m);
+                write_qc(img, "behaviour.hmm_transitions", "$(vn).$(p.colName)", hmm_transitions_qc_findings(m);
+                         runSuffix = string(p.colName), labelSet = string(vn),
                          metrics = Dict{String,Any}("nTransitions" => m.n,
                              "nDistinctTransitions" => m.n_distinct))
             else

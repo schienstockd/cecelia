@@ -12,6 +12,7 @@
   "group": "Neighbourhood",
   "env": ["local"],
   "resource_pool": "cpu",
+  "sweep": { "output": "graphSuffix", "params": ["neighbourRadius", "nNeighbours"] },
   "requires": { "scale": ["xy"] },
   "params": [
     {

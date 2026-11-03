@@ -423,7 +423,7 @@ export function labelsTakenAdvisory(
 
 /** The image field holding a `LABEL_REGISTRIES` registry's names (segmentation.jl) — `null` for one
  *  the payload does not carry, so the hint stays silent rather than check the wrong list. */
-function registryNames(registry: string): ((i: AdvisorImage) => Record<string, unknown>) | null {
+export function registryNames(registry: string): ((i: AdvisorImage) => Record<string, unknown>) | null {
   if (registry === 'labels') return i => i.labels ?? {}
   if (registry === 'branch_labels') return i => i.branchLabels ?? {}
   return null
