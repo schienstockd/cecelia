@@ -58,7 +58,7 @@ const sections = computed(() => [
         <div v-if="rows.isOpen(a.id)" class="cfd-body">
           <DatasetAskFigure v-if="a.fig" :fig="a.fig" />
           <div class="cfd-text">
-            <p class="cc-fs-xs"><span class="cc-muted">We need:</span> {{ a.need }}</p>
+            <p class="cfd-need cc-fs-xs"><span class="cc-muted">We need:</span><span>{{ a.need }}</span></p>
             <div class="cfd-actions">
               <a class="cc-btn cc-btn-ghost" :href="datasetAskUrl(a)" target="_blank" rel="noopener"
                  v-tooltip.top="'Prefilled issue: your imaging and a sample link'">
@@ -86,5 +86,8 @@ const sections = computed(() => [
 .cfd-body { display: flex; gap: 12px; align-items: center; padding: 2px 4px 10px 22px; }
 .cfd-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .cfd-text p { margin: 0; line-height: 1.35; }
+/* the need wraps as its own block beside the label, not back under it */
+.cfd-need { display: flex; gap: 0.35em; }
+.cfd-need > span:first-child { flex: none; }
 .cfd-actions { display: flex; align-items: center; gap: 10px; }
 </style>
