@@ -328,6 +328,27 @@ class ResultReviewRowsTest(unittest.TestCase):
         self.assertIn("2 skipped", row)
 
 
+class ChangelogCheckRowsTest(unittest.TestCase):
+    """The changelog check's rows: `chlg`, quiet when no default changed, a warning when one did."""
+
+    @staticmethod
+    def _run(changed, warned):
+        return {"event": "changelog_check_run", "ts": "2026-11-03T10:00:00Z", "pr": None, "branch": "b", "commit": None,
+                "payload": {"defaults_changed": changed, "warnings_emitted": warned, "duration_s": 0.01}}
+
+    def test_a_run_with_no_default_changed_is_quiet_and_a_warning_shows(self):
+        self.assertIsNone(format_event(self._run(0, 0), use_colour=False))
+        line = format_event(self._run(1, 1), use_colour=False)
+        self.assertIn("chlg", line)
+        self.assertIn("1 warn", line)
+        self.assertIn("1 default(s) changed", line)
+
+    def test_it_counts_in_the_tally(self):
+        tally = console._Tally()
+        tally.add(self._run(0, 0))
+        self.assertIn("1 run", console._tally_row(tally, "chlg", use_colour=False))
+
+
 class ParseSinceTest(unittest.TestCase):
     def test_relative_units(self):
         now = _dt.datetime.now(_dt.timezone.utc)

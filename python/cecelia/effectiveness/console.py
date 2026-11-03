@@ -189,6 +189,7 @@ _MECHANISM_STYLE: dict[str, tuple[str, str]] = {
     # Grey, not sky blue: sky blue is the console's "good" (`_GOOD`), and a label in it read as a pass.
     "inventory_coverage": ("invt", _GREY),
     "maintainability_lint": ("mlnt", _GREY),
+    "changelog_check": ("chlg", _GREY),
     "citation_currency": ("cite", _GREY),  # retired check — old log rows still render
     "ratchet_hit": ("ratc", _YELLOW),
     "agent_run": ("agnt", _RED),  # platform errors an unattended agent run hit (run_findings.py)
@@ -999,6 +1000,7 @@ def _wrap_desc(desc: str, *, width: int, indent: str, first_prefix: str) -> str:
 _MECHANICAL_RUN_COUNT: dict[str, tuple[str, str]] = {
     "inventory_coverage_run": ("new_shared_files", "new"),
     "maintainability_lint_run": ("files_checked", "checked"),
+    "changelog_check_run": ("defaults_changed", "default(s) changed"),
     "citation_currency_run": ("staged_files_checked", "staged"),
 }
 

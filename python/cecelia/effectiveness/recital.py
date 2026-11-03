@@ -44,6 +44,7 @@ import time
 import typing as _t
 
 from .inventory_coverage import run_inventory_check
+from .changelog_check import run_changelog_check
 from .maintainability_lint import run_maintainability_lint
 from .log import append_event
 
@@ -680,6 +681,7 @@ def run_recital(
                                        pr=pr, commit=commit, branch=branch)
     inventory_section = run_inventory_check(diff, pr=pr, commit=commit, branch=branch)
     lint_section = run_maintainability_lint(diff, pr=pr, commit=commit, branch=branch)
+    changelog_section = run_changelog_check(diff, pr=pr, commit=commit, branch=branch)
 
-    return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{inventory_section}\n\n{lint_section}"
+    return (f"{fanout_section}\n\n{convention_section}\n\n{result_section}\n\n{inventory_section}\n\n{lint_section}\n\n{changelog_section}"
             f"\n\n{recital_stamp(branch, commit)}")

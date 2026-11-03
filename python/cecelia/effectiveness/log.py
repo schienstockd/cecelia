@@ -98,6 +98,11 @@ EVENT_TYPES = frozenset({
     #: `files_checked`, `warnings_emitted`, `findings` (check / path / line / detail),
     #: `duration_s`. See `python/cecelia/effectiveness/maintainability_lint.py`.
     "maintainability_lint_run",
+    #: Changelog check — mechanical recital step: warns when the staged diff changes a task default
+    #: and neither the diff nor the branch touched CHANGELOG.md. Payload: `defaults_changed`,
+    #: `warnings_emitted`, `changelog_noted`, `findings` (path / line / old / new / key),
+    #: `duration_s`. See `python/cecelia/effectiveness/changelog_check.py`.
+    "changelog_check_run",
     #: Retired 2026-09-30 (replaced by `inventory_coverage_run`); no emitter. Kept so the rows
     #: already in the log stay valid members of the closed taxonomy.
     "citation_currency_run",

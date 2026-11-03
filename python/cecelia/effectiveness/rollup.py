@@ -233,6 +233,24 @@ def _maintainability_section(events: _t.Sequence[dict]) -> str:
     return "\n".join(lines)
 
 
+def _changelog_section(events: _t.Sequence[dict]) -> str:
+    """The mechanical changelog check (`changelog_check.py`): defaults changed, and those left without
+    a CHANGELOG line."""
+    runs = [e for e in events if e.get("event") == "changelog_check_run"]
+    if not runs:
+        return ""
+    payloads = [r.get("payload", {}) for r in runs]
+    n_changed = sum(p.get("defaults_changed", 0) for p in payloads)
+    n_warn = sum(p.get("warnings_emitted", 0) for p in payloads)
+    lines = ["## Changelog check", "",
+             f"- **{len(runs)} runs** · {n_changed} default(s) changed · **{n_warn} without a CHANGELOG line**"]
+    for x in sorted({f"{f.get('path')}:{f.get('line')} {f.get('old')} → {f.get('new')}"
+                     for p in payloads for f in (p.get("findings") or [])}):
+        lines.append(f"  - `{x}`")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _pr_from_branch(branch: str, cache: dict[str, str | None]) -> str | None:
     """Cache wrapper around `git_context.pr_for_branch` — one gh call per unique branch per
     render pass. Mutates `cache` in place. A lookup failure caches None so it isn't retried."""
@@ -411,6 +429,7 @@ def render_rollup(
         ),
         _inventory_section(events),
         _maintainability_section(events),
+        _changelog_section(events),
         _ratchets_section(events),
         _misses_section(events),
     ):
