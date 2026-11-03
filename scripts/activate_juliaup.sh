@@ -48,4 +48,10 @@ if [ ! -x "$_cecelia_juliaup/bin/julia" ] && [ -f "$PIXI_PROJECT_ROOT/.cecelia-j
   fi
   unset _cecelia_julia
 fi
+# Last, as `_find_julia` does: `~/.juliaup` when no `julia` is on PATH at all. A systemd unit, cron or
+# a desktop launch has a minimal PATH without it, so a task running bare `julia` (`bootstrap-worktree`
+# under the weekly judge's unit) died on "julia: command not found". Appended: it only fills a gap.
+if ! command -v julia >/dev/null 2>&1 && [ -x "$HOME/.juliaup/bin/julia" ]; then
+  export PATH="$PATH:$HOME/.juliaup/bin"
+fi
 unset _cecelia_juliaup

@@ -79,7 +79,19 @@ class GhRefused(RuntimeError):
 
 
 class GhError(RuntimeError):
-    pass
+    @property
+    def transient(self) -> bool:
+        """GitHub's side failed (`HTTP 502`, `503`, …): the same call can work a moment later."""
+        return bool(re.search(r"HTTP 5\d\d", str(self)))
+
+
+#: Calls safe to repeat after a transient failure: reads, and writes that land the same state twice.
+#: `issue create` and `issue comment` are not (a 502 can come back after GitHub did the write);
+#: `mirror` recovers a create itself, by the key in its title.
+_IDEMPOTENT = {("issue", "edit"), ("issue", "close"), ("issue", "reopen"), ("issue", "lock"), ("issue", "pin"),
+               ("label", "create")}
+RETRIES = 2
+RETRY_GAP_S = 10.0
 
 
 _ALLOWED = {("issue", "create"), ("issue", "edit"), ("issue", "close"), ("issue", "reopen"),
@@ -113,8 +125,9 @@ class Gh:
     """Every `gh` call the mirror makes. `run(args, input)` does the call (a fake in tests); `dry`
     runs only the reads and collects the writes as `planned`."""
 
-    def __init__(self, repo: str, run: _t.Callable[[list[str], str | None], str] | None = None, *, dry: bool = False):
-        self.repo, self._run, self.dry = repo, run or _default_run, dry
+    def __init__(self, repo: str, run: _t.Callable[[list[str], str | None], str] | None = None, *, dry: bool = False,
+                 sleep: _t.Callable[[float], None] = time.sleep):
+        self.repo, self._run, self.dry, self.sleep = repo, run or _default_run, dry, sleep
         self.planned: list[tuple[list[str], str | None]] = []
 
     def __call__(self, *args: str, input: str | None = None) -> str:
@@ -126,7 +139,15 @@ class Gh:
         if self.dry and args[0] != "api":
             self.planned.append((args, input))
             return ""
-        return self._run(args, input)
+        again = args[0] == "api" or tuple(args[:2]) in _IDEMPOTENT
+        for attempt in range(RETRIES + 1):
+            try:
+                return self._run(args, input)
+            except GhError as e:
+                if not (again and e.transient and attempt < RETRIES):
+                    raise
+                self.sleep(RETRY_GAP_S)
+        raise AssertionError("unreachable")
 
     def login(self) -> str:
         return json.loads(self("api", "user"))["login"]
@@ -377,6 +398,24 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
             gh("issue", "comment", n, "--body-file", "-", input=text + "\n")
             issue["answered"] = True
 
+    def create(b: dict, head: str, text: str) -> int | str:
+        """File `b`'s issue; its number. A transient failure may have filed it anyway, so before each
+        retry the list is read again and an issue with `b`'s key in its title is taken instead."""
+        for attempt in range(RETRIES + 1):
+            try:
+                out = gh("issue", "create", "--title", head, "--body-file", "-",
+                         *[a for lb in _labels(b) for a in ("--label", lb)], input=text)
+                return "<new>" if gh.dry else int(out.strip().rstrip("/").rsplit("/", 1)[-1])
+            except GhError as e:
+                if not (e.transient and attempt < RETRIES):
+                    raise
+                gh.sleep(RETRY_GAP_S)
+                for num, i in gh.judge_issues(owner).items():
+                    listed.setdefault(num, i)
+                    if (m := _TITLE_KEY.match(i["title"])) and m[1] == b["key"]:
+                        return num
+        raise AssertionError("unreachable")
+
     for b in record["bugs"]:
         issue = dict(b.get("issue") or {})
         n = issue.get("number")
@@ -405,9 +444,7 @@ def mirror(record: dict, *, gh: Gh, previous: dict | None = None, persist: _t.Ca
             if not gh.dry:
                 b["issue"] = {"status": "pending"}
                 save()
-            out = gh("issue", "create", "--title", head, "--body-file", "-",
-                     *[a for lb in _labels(b) for a in ("--label", lb)], input=text)
-            n = "<new>" if gh.dry else int(out.strip().rstrip("/").rsplit("/", 1)[-1])
+            n = create(b, head, text)
             gh("issue", "lock", str(n))
             issue = {"number": n, "state": "open", "labels": _labels(b), "body": _sha(text),
                      "landed": [c["commit"] for c in b.get("fix_landed", [])]}

@@ -92,10 +92,12 @@ status, `parked`, keeps such a bug and its `trigger`, off the owner's list and u
   dependencies in verify is rejected (below), so a parked bug that goes live elsewhere surfaces the
   normal way, as a new finding from the commit that wires the caller. A rename fires the check once:
   the rename commit touches the old path.
-- **Re-verify cap (P1b):** at most `PARKED_RECHECK = 3` parked bugs go back to verify per pass,
-  oldest parking first. The rest stay parked, with why "file changed; waiting for a re-check slot".
-  A hot file (`viewer_api.jl`: 9 commits in a week) can't then eat the verify budget: 3 of the 6
-  guard bugs would have come back on the first pass.
+- **Re-verify cap (P1b):** at most `PARKED_RECHECK` parked bugs go back to verify per pass on the
+  proxy, oldest parking first; every one a landed fix names goes back uncapped. The rest stay parked,
+  with why "…changed; waiting for a re-check slot". Superseded in part: the cap was 3 on a whole-file
+  proxy, and the slots drained slower than they filled (18 waiting), so the proxy is now the function
+  the bug sits in (half of those 18 sat in untouched functions), the cap 10, and `judge-review --auto`
+  adds each parked bug's guard, which is how one leaves (`docs/ai-assist/WEEKLY_JUDGE.md`).
 - **What remains open:** `open` then means `fix` + `decide` + `stranded` + repeated agent errors
   being fixed. That is about 5–8 a week.
 

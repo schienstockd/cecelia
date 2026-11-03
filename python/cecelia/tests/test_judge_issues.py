@@ -102,12 +102,76 @@ class _IssuesFixture(_Fixture):
         self.slept = []
 
     def gh(self, dry=False):
-        return self.i.Gh(REPO, self.github, dry=dry)
+        return self.i.Gh(REPO, self.github, dry=dry, sleep=self.slept.append)
 
     def mirror(self, record, previous=None, dry=False, **kw):
         self.saved = []
         return self.i.mirror(record, gh=self.gh(dry), previous=previous, sleep=self.slept.append,
                              persist=lambda r: self.saved.append(json.loads(json.dumps(r))), **kw)
+
+
+class _Flaky:
+    """`github` behind a gateway that answers the first `times` calls starting `prefix` with a 502, the
+    way `gh` reports one. `lands`: GitHub did the write anyway (the reply was what got lost)."""
+
+    def __init__(self, github, prefix, *, times=1, lands=False):
+        self.github, self.prefix, self.times, self.lands = github, prefix, times, lands
+
+    def __call__(self, args, input):
+        if self.times and args[:len(self.prefix)] == self.prefix:
+            self.times -= 1
+            if self.lands:
+                self.github(args, input)
+            raise self.i.GhError(f"gh {' '.join(args[:2])} exited 1: HTTP 502: 502 Bad Gateway "
+                                 "(https://api.github.com/graphql)")
+        return self.github(args, input)
+
+
+class TransientTest(_IssuesFixture):
+    """One GitHub 502 used to stop the whole mirror: the hiccup is GitHub's, not the record's."""
+
+    def flaky(self, prefix, record=None, **kw):
+        f = _Flaky(self.github, prefix, **kw)
+        f.i = self.i
+        record = record or self.build(bugs=[_fix("B1"), _fix("B2"), _fix("B3")])
+        return self.i.mirror(record, gh=self.i.Gh(REPO, f, sleep=self.slept.append), sleep=self.slept.append)
+
+    def test_a_502_on_a_create_that_did_not_land_is_retried_and_the_rest_are_filed(self):
+        report = self.flaky(["issue", "create"])
+        self.assertEqual(report["filed"], ["fanout-b1", "fanout-b2", "fanout-b3"])
+        self.assertEqual(sorted(i["title"].split("]")[0] for i in self.github.issues.values()),
+                         ["[fanout-b1", "[fanout-b2", "[fanout-b3"])
+
+    def test_a_502_on_a_create_that_landed_adopts_it_never_files_twice(self):
+        record = self.build(bugs=[_fix("B1"), _fix("B2")])
+        report = self.flaky(["issue", "create"], record, lands=True)
+        self.assertEqual(len(self.github.issues), 2)
+        self.assertEqual(report["filed"], ["fanout-b1", "fanout-b2"])
+        self.assertEqual(record["bugs"][0]["issue"]["number"], 1)
+
+    def test_an_idempotent_write_is_retried(self):
+        self.flaky(["issue", "lock"])
+        self.assertTrue(all(i["locked"] for i in self.github.issues.values()))
+
+    def test_a_502_that_persists_still_fails_the_mirror(self):
+        with self.assertRaises(self.i.GhError):
+            self.flaky(["issue", "create"], times=99)
+
+    def test_a_non_transient_failure_is_not_retried(self):
+        class Refused:
+            def __init__(s, github):
+                s.github, s.n = github, 0
+
+            def __call__(s, args, input):
+                if args[:2] == ["issue", "create"]:
+                    s.n += 1
+                    raise self.i.GhError("gh issue create exited 1: HTTP 422: Validation Failed")
+                return s.github(args, input)
+        run = Refused(self.github)
+        with self.assertRaises(self.i.GhError):
+            self.i.mirror(self.build(bugs=[_fix("B1")]), gh=self.i.Gh(REPO, run, sleep=self.slept.append),
+                          sleep=self.slept.append)
+        self.assertEqual(run.n, 1)
 
 
 class MirrorTest(_IssuesFixture):

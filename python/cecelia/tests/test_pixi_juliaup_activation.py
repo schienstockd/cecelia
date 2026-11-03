@@ -77,6 +77,40 @@ class JuliaupActivationTest(unittest.TestCase):
         shared = os.path.join(self.root, "juliaup", "depot")
         self.assertEqual(out.stdout, f"/home/u/.cecelia/julia-depot:{shared}:")
 
+    def _home_juliaup(self):
+        home = os.path.join(self.root, "home")
+        bin_dir = os.path.join(home, ".juliaup", "bin")
+        os.makedirs(bin_dir)
+        julia = os.path.join(bin_dir, "julia")
+        open(julia, "w", encoding="utf-8").close()
+        os.chmod(julia, 0o755)
+        return home, bin_dir
+
+    def _with_home(self, home, path):
+        out = subprocess.run([shutil.which("sh"), "-c", '. "$1"; . "$1"; printf "%s" "$PATH"', "sh", str(SCRIPT)],
+                             env={"PIXI_PROJECT_ROOT": self.root, "PATH": path, "HOME": home},
+                             capture_output=True, text=True, check=True)
+        return out.stdout
+
+    @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
+    def test_a_minimal_path_gets_home_juliaup_last_once(self):
+        # a systemd unit's PATH (pixi, claude, /usr/bin): `pixi run bootstrap-worktree` found no julia.
+        # An empty dir stands in for it: a CI runner can have a julia in /usr/bin.
+        home, bin_dir = self._home_juliaup()
+        bare = os.path.join(self.root, "bare")
+        os.makedirs(bare)
+        self.assertEqual(self._with_home(home, bare), f"{bare}:{bin_dir}")
+
+    @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
+    def test_a_julia_on_path_keeps_home_juliaup_off(self):
+        home, _ = self._home_juliaup()
+        other = os.path.join(self.root, "other")
+        os.makedirs(other)
+        julia = os.path.join(other, "julia")
+        open(julia, "w", encoding="utf-8").close()
+        os.chmod(julia, 0o755)
+        self.assertEqual(self._with_home(home, other), other)
+
     @unittest.skipIf(os.name == "nt", "unix-only script: pixi.toml wires it under [target.unix.activation]")
     def test_dev_checkout_is_untouched(self):
         path, depot = _activated(self.root, "/usr/local/bin:/usr/bin:/bin")

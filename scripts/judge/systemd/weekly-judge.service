@@ -11,7 +11,8 @@ Type=oneshot
 # `pixi run judge-weekly -- --no-pr` once from any checkout to create it.
 Environment=REPO=%h/.cecelia-effectiveness/judge-worktree
 # PATH must include `pixi` (~/.pixi/bin) and `claude` (~/.local/bin). Adjust with
-# `systemctl --user edit weekly-judge.service` if either lives elsewhere.
+# `systemctl --user edit weekly-judge.service` if either lives elsewhere. `julia` needn't be: every
+# `pixi run` appends ~/.juliaup/bin when PATH has none (scripts/activate_juliaup.sh).
 Environment=PATH=%h/.pixi/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 # Reset it to origin/main first, so every pass runs today's code (cron_pass.sh `--sync`: fetch with
 # retries, detach, reset, under the cron lock).

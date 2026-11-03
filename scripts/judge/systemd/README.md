@@ -72,6 +72,8 @@ log: `usage limit, lifts …: waiting …s, then attempt 2/3`. Details:
 ## Adjust, uninstall
 
 `systemctl --user edit weekly-judge.service` to override `REPO` or `PATH`;
+`julia` needn't be on it: every `pixi run` appends `~/.juliaup/bin` when no `julia` is on PATH
+(`scripts/activate_juliaup.sh`), which the fix sessions' `bootstrap-worktree` and Julia tests need.
 `systemctl --user edit weekly-judge.timer` to override `OnCalendar=` (`systemd.time(7)`).
 
 ```bash

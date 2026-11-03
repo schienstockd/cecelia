@@ -195,8 +195,14 @@ def fix_brief(record: dict, bugs: _t.Sequence[dict], tree: pathlib.Path, branch:
               "add a test per fix that fails without it (for a duplicate, make sure the helper's tests cover "
               "what the copy did), and run the matching tests. One you can't finish (it needs a decision this "
               "brief doesn't settle, or a fix you can't test): undo your changes for it and report it `left` "
-              "with why, rather than guess.",
-              "", "Report every key. Open each `reason` with one short sentence that says it all (for `left`: "
+              "with why, rather than guess."]
+    if any((b.get("verify") or {}).get("verdict") == "guard" for b in bugs):
+        lines += ["", "A bug verified `guard` has the flaw, but nothing reachable triggers it today; its "
+                  "`Live once` line says what would. Fix it as a guard: the smallest change that makes that "
+                  "trigger fail loudly or be handled right, where the flaw is (an explicit error, an assertion, "
+                  "the missing case), plus a test that drives the trigger. Don't build what the trigger "
+                  "describes. A guard that would need a design decision is `left`."]
+    lines += ["", "Report every key. Open each `reason` with one short sentence that says it all (for `left`: "
               "what stopped you); the detail follows. `title` is the commit's subject line; `summary` is its body: what was wrong "
               "and what changed, naming each fixed bug's key. Set `visual` if the fix changes what is drawn on "
               "screen: the owner looks at those before they merge."]
@@ -435,13 +441,20 @@ def default_sh(argv: _t.Sequence[str], cwd: pathlib.Path, *, input: str | None =
                           timeout=timeout, check=False)
 
 
+class SetupFailed(RuntimeError):
+    """`bootstrap-worktree` failed. It runs the same way for every session (a missing `julia`, a broken
+    main checkout), so the loop stops at the first one instead of failing each session in turn."""
+
+
 def _tail(proc: subprocess.CompletedProcess) -> str:
     """What a failed call printed, short: its last 400 characters, led by any `fatal:` / `error:` line
-    (git's reason) that a long trailing stack trace would otherwise push out."""
+    (git's reason) or `command not found` line (pixi's, followed by its whole task list) that a long
+    trailing stack trace would otherwise push out."""
     text = (proc.stderr or proc.stdout or "").strip()
     tail = text[-400:]
     said = "\n".join(filter(None, (proc.stderr, proc.stdout)))
-    errs = [ln.strip() for ln in said.splitlines() if ln.lstrip().startswith(("fatal:", "error:"))]
+    errs = [ln.strip() for ln in said.splitlines() if ln.lstrip().startswith(("fatal:", "error:"))
+            or ln.rstrip().endswith("command not found")]
     lead = "; ".join(dict.fromkeys(e for e in errs if e not in tail))[:300]
     return f"{lead} · …{text[-200:]}" if lead else tail
 
@@ -748,7 +761,7 @@ def run_job(job: Job, tree: pathlib.Path, branch: str, *, main: pathlib.Path, ou
         step.failed = made.returncode != 0
     if made.returncode != 0:
         say(f"bootstrap-worktree failed: {_tail(made)}", bad=True)
-        return 0.0
+        raise SetupFailed(_tail(made))
     with tempfile.TemporaryDirectory(prefix="auto-fix-hooks-") as hooks_dir:
         return _work(job, tree, branch, trusted_hooks(pathlib.Path(hooks_dir)), main=main, say=say,
                      out=out, session=session, sh=sh)
@@ -1036,7 +1049,12 @@ def run(record: dict, *, limit: int | None = None, dry_run: bool = False, out: _
             name = ("fix-" if len(bugs) == 1 else "fix-bundle-") + bugs[0]["key"]
             print(fix_brief(record, bugs, main.parent / f"cecelia-{name}", name), file=out)
             continue
-        cost = work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
+        try:
+            cost = work_one(record, bugs, main=main, out=out, path=path, auto_log=auto_log, **kw)
+        except SetupFailed:
+            print(_col(_DIM, "  stopping: worktree setup fails the same way for every session", use_colour=colour),
+                  file=out)
+            break
         if cost is not None:   # an earlier run's worktree handed back instead: not a session, take the next
             spent += cost
             ran += 1
