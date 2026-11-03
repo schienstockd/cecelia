@@ -169,6 +169,45 @@ end
     rm(projS.root; recursive=true)
 end
 
+# Most tasks bank QC under a key that is NOT the run log's (fun, valueName): a composite under its
+# steps' funs, segmentation under its output name, HMM/clustering under `{labelSet}.{run}` with an
+# empty run-log valueName. A finished run claims the QC its fun/steps wrote during its window.
+@testset "Lab log context — a run's QC found by what it wrote while it ran" begin
+    projQ = create_project!(name="labctx-qckeys-$(rand(1000:9999))")
+    sQ    = add_set!(projQ; name="set-Q")
+    iQ    = add_image!(sQ; name="q-1", meta=Dict{String,Any}("ori_path"=>"/tmp/q1.tif"))
+    stamp(t) = Dates.format(t, "yyyy-mm-ddTHH:MM:SS")
+    now_ = Dates.now()
+    finished!(fun, vn, t0, t1) = Cecelia._update_run_log!(iQ) do es
+        push!(es, Dict{String,Any}("fun" => fun, "valueName" => vn, "status" => "done",
+                                   "params" => Dict{String,Any}(), "at" => stamp(t0),
+                                   "finishedAt" => stamp(t1), "taskId" => "t$(length(es))"))
+        es
+    end
+    warn(short) = [Dict{String,Any}("level"=>"warn","code"=>"c.$short","short"=>short,"long"=>"l")]
+
+    # composite run, QC under its STEP's fun + output name
+    write_qc(iQ, "segment.cellpose", "P14", warn("Few cells"))
+    finished!("segment.cellposeMeasure", "driftCorrected", now_ - Dates.Minute(1), now_ + Dates.Minute(1))
+    # HMM: run-log valueName empty, QC under the step at `{labelSet}.{colName}`
+    write_qc(iQ, "behaviour.hmm_states", "B.movement", warn("Collapsed to one state"))
+    finished!("behaviour.hmm", "", now_ - Dates.Minute(1), now_ + Dates.Minute(1))
+    # a run that finished an hour ago does NOT claim QC written now (a later run's)
+    write_qc(iQ, "clustTracks.cluster", "B.speed", warn("One cluster dominates"))
+    finished!("clustTracks.cluster", "", now_ - Dates.Hour(2), now_ - Dates.Hour(1))
+
+    ctx = capture_context!(projQ; date=Dates.Date(now_))
+    @test ctx !== nothing
+    @test occursin("cellposeMeasure on 1 image ($(iQ.uid)) — 1 flagged", ctx)
+    @test occursin("↳ Few cells", ctx)
+    @test occursin("hmm on 1 image ($(iQ.uid)) — 1 flagged", ctx)
+    @test occursin("↳ Collapsed to one state", ctx)
+    @test occursin("cluster on 1 image", ctx)
+    @test !occursin("One cluster dominates", ctx)
+
+    rm(projQ.root; recursive=true)
+end
+
 # a failure the user re-ran successfully is NOT a failure — the digest reports where the day left each
 # image, not every attempt (2026-08-13: 4 of 6 images failed drift correction, all 4 succeeded on the
 # re-run, and the module was still headed ❌ "4 failed")

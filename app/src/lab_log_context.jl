@@ -106,7 +106,66 @@ _where(uids)::String = (n = length(uids); n <= 2 ? join(sort(collect(uids)), ", 
 # it drives the cross-channel collapse so N per-channel findings read as one "ch a-b" line rather
 # than N near-identical lines. Empty when none.
 function _warn_findings(img::CciaImage, fun::AbstractString, vn::AbstractString)::Vector{Tuple{String,String,Union{Int,Nothing}}}
-    doc = read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)
+    _warn_findings_in(read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn))
+end
+
+# The run log's (fun, valueName) is NOT the QC key for most tasks, so `_warn_findings` alone misses
+# them: a task keys its QC by its OUTPUT (segmentation's `outputValueName`, a cleanup's fixed
+# `driftCorrected`, a model file, a graph suffix), by `{labelSet}.{run}` (clustering, HMM — whose run
+# log carries no valueName at all, the label set comes from the pops), and a composite
+# (`segment.cellposeMeasure`, `behaviour.hmm`) banks under its STEPS' fun names. Rather than re-derive
+# each task's key here, a finished run claims the QC docs its fun or steps WROTE while it ran: the
+# file's mtime falls inside the entry's `at`…`finishedAt`. Both clocks are this server's local time
+# (`_mtime_local`). A later run rewrites the file and moves it out of the window, which is right —
+# that QC belongs to the later run. Entries without `finishedAt` (older logs) keep the key lookup.
+function _run_warn_findings(img::CciaImage, e)::Vector{Tuple{String,String,Union{Int,Nothing}}}
+    fun, vn = String(get(e, "fun", "")), String(get(e, "valueName", ""))
+    out  = _warn_findings(img, fun, vn)
+    seen = Set([qc_path(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)])
+    win  = _run_window(e)
+    win === nothing && return out
+    for f in _qc_funs_of(fun)
+        dir = qc_fun_dir(img, f)
+        isdir(dir) || continue
+        for name in readdir(dir)
+            endswith(name, ".json") || continue
+            p = joinpath(dir, name)
+            (p in seen || !(win[1] <= _mtime_local(p) <= win[2])) && continue
+            push!(seen, p)
+            append!(out, _warn_findings_in(try _read_qc_file(p) catch; nothing end))
+        end
+    end
+    out
+end
+
+# `(start, end)` of a finished run, padded for the run log's whole-second stamps; nothing without both.
+function _run_window(e)::Union{Nothing,Tuple{Dates.DateTime,Dates.DateTime}}
+    a, b = String(get(e, "at", "")), String(get(e, "finishedAt", ""))
+    (length(a) >= 19 && length(b) >= 19) || return nothing
+    t0 = tryparse(Dates.DateTime, a[1:19], Dates.dateformat"yyyy-mm-ddTHH:MM:SS")
+    t1 = tryparse(Dates.DateTime, b[1:19], Dates.dateformat"yyyy-mm-ddTHH:MM:SS")
+    (t0 === nothing || t1 === nothing) && return nothing
+    (t0 - Dates.Second(1), t1 + Dates.Second(2))
+end
+
+# a file's mtime as server-LOCAL time, the clock `Dates.now()` stamps the run log with
+function _mtime_local(path::AbstractString)::Dates.DateTime
+    tm = Libc.TmStruct(mtime(path))
+    Dates.DateTime(tm.year + 1900, tm.month + 1, tm.mday, tm.hour, tm.min, tm.sec)
+end
+
+# the fun names a run's QC can sit under: its own, plus (recursively) a composite's steps
+function _qc_funs_of(fun::AbstractString)::Vector{String}
+    out = String[String(fun)]
+    task = try _task_from_fun_name(String(fun)) catch; nothing end
+    task === nothing && return out
+    for step in _composite_step_names(task)
+        step in out || append!(out, _qc_funs_of(step))
+    end
+    unique!(out)
+end
+
+function _warn_findings_in(doc)::Vector{Tuple{String,String,Union{Int,Nothing}}}
     doc === nothing && return Tuple{String,String,Union{Int,Nothing}}[]
     fs = get(doc, :findings, nothing)
     fs === nothing && return Tuple{String,String,Union{Int,Nothing}}[]
@@ -207,7 +266,7 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
                 # recovered: earlier attempts failed, the one that stands succeeded
                 get(n_failed, k, 0) > 0 &&
                     (retry_imgs[(mod, disp)] = get(retry_imgs, (mod, disp), 0) + 1)
-                findings = _warn_findings(img, fun, vn)
+                findings = _run_warn_findings(img, e)
                 if !isempty(findings)
                     push!(get!(warn_imgs, (mod, disp), Set{String}()), img.uid)   # count the flagged images
                     g = get!(warn_det, mod, Dict{Tuple{String,String},Tuple{Set{Int},Set{String}}}())
