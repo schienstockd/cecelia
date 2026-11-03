@@ -116,6 +116,13 @@ class RecitalTest(unittest.TestCase):
             self.assertEqual(e["payload"]["tokens"], counts)
             self.assertEqual(e["payload"]["cost_usd"], 0.0123)
 
+    def test_run_event_records_the_model_the_reviewer_ran_on(self):
+        # The log had no model field, so an Opus reviewer documented as Sonnet went unseen.
+        reply = ReviewerReply("no findings", {}, 0.01, ("claude-sonnet-5-5",))
+        run_recital("some diff", claude_runner=lambda _p: reply)
+        rows = [e for e in self._events() if e["event"] in {"fanout_audit_run", "convention_check_run"}]
+        self.assertEqual([e["payload"]["models"] for e in rows], [["claude-sonnet-5-5"]] * 2)
+
     def test_a_bare_string_reply_logs_no_tokens(self):
         run_recital("some diff", claude_runner=lambda _p: "no findings")
         for e in self._events():
@@ -660,7 +667,7 @@ class DefaultRunnerTest(unittest.TestCase):
                 mock.patch.object(r.subprocess, "run", return_value=done) as run:
             self.assertEqual(r._default_runner(big).text, "ok")
         argv, kwargs = run.call_args.args[0], run.call_args.kwargs
-        self.assertEqual(argv, ["/bin/claude", "-p", "--output-format", "json"])
+        self.assertEqual(argv, ["/bin/claude", "-p", "--model", "sonnet", "--output-format", "json"])
         self.assertEqual(kwargs["input"], big)
 
     def test_a_failure_with_empty_stderr_shows_stdout(self):
