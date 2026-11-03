@@ -41,7 +41,7 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(_REPO / "python"))
 from cecelia.effectiveness import agent_sandbox  # noqa: E402
-from cecelia.effectiveness.claude_cli import resolve_claude_bin  # noqa: E402
+from cecelia.effectiveness.claude_cli import MEASURED_MODEL, resolve_claude_bin  # noqa: E402
 from cecelia.effectiveness.git_context import git_output  # noqa: E402
 
 
@@ -191,7 +191,7 @@ def default_agent(prompt: str, *, sha: str, repo: pathlib.Path = _REPO,
     dest = agent_sandbox.make_detached_worktree(repo, agent_sandbox.WORKTREE_ROOT, "verify", ref=sha)
     try:
         proc = subprocess.run(
-            [claude, "-p", "--dangerously-skip-permissions",
+            [claude, "-p", "--model", MEASURED_MODEL, "--dangerously-skip-permissions",
              "--settings", json.dumps(agent_sandbox.SANDBOX_SETTINGS), "--tools", TOOLS,
              "--strict-mcp-config", "--no-session-persistence", "--output-format", "json",
              "--max-budget-usd", str(budget_usd), "--json-schema", json.dumps(SCHEMA)],
