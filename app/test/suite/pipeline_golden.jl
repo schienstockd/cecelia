@@ -10,7 +10,9 @@
 # calibration (µm/px, s/frame) is planted with them. A drift in any stage that changes a scientific
 # result — intensity, count, linkage, units, gate membership, cluster separation — fails an assertion
 # that says which. Segmentation itself (cellpose/coastal) is out of scope: too heavy and opt-in for CI,
-# so the movie arrives with its labels, as `segment.importLabelsMeasure` takes them.
+# so the movie arrives with its labels, as `segment.importLabelsMeasure` takes them. Cellpose against
+# known truth is `python/cecelia/tests/test_segmentation_golden.py`, run weekly and on segmentation or
+# dependency changes (`.github/workflows/verify-segmentation-golden.yml`).
 #
 # Every stage goes through `run_task` (validation, pool, log file), not `_run_task`.
 
