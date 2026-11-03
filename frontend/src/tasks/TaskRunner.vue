@@ -152,6 +152,8 @@ const canHpc = computed(() => hpcEligible(taskDef.value))
 const onHpc = computed(() => canHpc.value && runChoice.value.target === 'hpc')
 const hpcForm = computed<HpcResourcesForm | null>(() =>
   taskDef.value ? { ...hpcDefaults(taskDef.value), ...runChoice.value.resources } : null)
+// a fixed env other than this computer (e.g. a custom module's) is still worth naming
+const otherEnvs = computed(() => (taskDef.value?.env ?? []).filter(e => e !== 'local'))
 const TARGET_OPTIONS: ChipOption[] = [
   { value: 'local', label: 'local', tip: 'Run on this computer' },
   { value: 'hpc',   label: 'hpc',   tip: 'Run on the cluster: for many or large images; this computer stays free' },
@@ -866,6 +868,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
         </template>
       </div>
 
+      <!-- what the function IS (Kiwi ref, maturity, report) on one row; WHERE it runs on its own
+           labelled row, only when there is a choice — a fixed "local" says nothing. -->
       <div v-if="taskDef" class="fn-meta">
         <AddToKiwiButton :kiwi-ref="{ kind: 'task', funName: taskDef.fun_name }" tip="Add this function to Kiwi" />
         <template v-if="taskMat">
@@ -875,22 +879,18 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
           </button>
           <ReportProblemButton :feature="taskMat.title" :tier="taskMat.tier" :page="$route.path" />
         </template>
+      </div>
+      <div v-if="taskDef && (canHpc || otherEnvs.length)" class="cc-row fn-run-on">
+        <span class="cc-muted cc-fs-xs">Run on</span>
         <ChipSelect v-if="canHpc" class="env-switch" variant="segmented" :options="TARGET_OPTIONS"
           :model-value="runChoice.target" aria-label="Where to run" @update:model-value="setTarget" />
         <template v-else>
-          <span class="env-badge"
-            v-for="env in taskDef.env"
-            :key="env"
-            v-tooltip.right="`Runs in the ${env} environment`">
-            {{ env }}
-          </span>
+          <span class="env-badge" v-for="env in otherEnvs" :key="env"
+                v-tooltip.right="`Runs in the ${env} environment`">{{ env }}</span>
         </template>
-        <span
-          v-if="activeTaskGatingReason"
-          class="env-badge"
-          v-tooltip.right="'Selected images do not carry the axes this task needs'"
-        >{{ activeTaskGatingReason }}</span>
       </div>
+      <InlineNote v-if="activeTaskGatingReason" class="fn-gating cc-fs-xs" severity="warn"
+                  :short="activeTaskGatingReason" detail="Selected images do not carry the axes this task needs" />
       <div v-if="onHpc && hpcForm" class="hpc-res cc-fs-xs">
         <label v-for="f in hpcFields" :key="f.key" class="hpc-res-cell">
           <span class="hpc-res-head">
@@ -1138,6 +1138,8 @@ const { pane, toggle: togglePane } = usePaneExpand('cc-taskrunner-pane')
 .defs-empty-msg { margin: 0; }   /* + .cc-muted (was undefined --cc-text-muted) */
 
 .fn-meta { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.4rem; }
+.fn-run-on { margin-top: 0.3rem; }
+.fn-gating { margin-top: 0.3rem; }
 .fn-effect {
   display: flex;
   align-items: center;
