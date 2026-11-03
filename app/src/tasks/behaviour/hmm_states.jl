@@ -17,6 +17,7 @@
 # those named by the pops.
 
 using DataFrames: nrow, DataFrame
+import Dates
 
 struct HmmStates <: CciaTask end
 
@@ -61,6 +62,35 @@ function _hmm_pops(params)::Vector{String}
     filter(p -> !isempty(p) && p != "NONE", pops)
 end
 
+# ── fit record: `{props}.hmmfit.json`, keyed by colName ─────────────────────────────────────────
+# What one run was fitted on and how well it fit (docs/todo/HMM_FIT_QUALITY_PLAN.md). Written into
+# every segmentation the run decoded, like clustering's clustfeatures. `logLik` is of the
+# PREPROCESSED observations, so the preprocessing is recorded beside it: two runs compare only when
+# pops, measures, filter and normalisation match.
+hmm_fit_path(props_path::AbstractString) = props_sidecar_path(props_path, "hmmfit")
+
+"""
+    hmm_fit_entry(props_path, col_name) -> Union{Nothing,Dict{String,Any}}
+
+THE reader for one HMM run's fit record (`col_name` = the run's `colName`, i.e. the suffix of
+`live.cell.hmm.state.<colName>`). `nothing` for runs fitted before the record existed.
+"""
+function hmm_fit_entry(props_path::AbstractString, col_name::AbstractString)
+    e = get(read_props_sidecar(hmm_fit_path(props_path)), String(col_name), nothing)
+    e isa AbstractDict ? Dict{String,Any}(String(k) => v for (k, v) in e) : nothing
+end
+
+function _hmm_fit_record(p::HmmStatesParams, fit, part_of::Vector{String})
+    Dict{String,Any}(
+        "modelMeasurements" => p.modelMeasurements, "numStates" => p.numStates, "pops" => p.pops,
+        "preprocessing" => Dict{String,Any}(
+            "noiseFilterMeasurements" => p.noiseFilterMeasurements, "normaliseTo" => p.normaliseTo,
+            "normaliseMeasurements" => p.normaliseMeasurements, "scaleMeasurements" => p.scaleMeasurements),
+        "logLik" => fit.logLik, "nParams" => fit.nParams, "nObs" => fit.nObs,
+        "aic" => fit.aic, "bic" => fit.bic, "iterations" => fit.iterations, "converged" => fit.converged,
+        "partOf" => part_of, "at" => string(Dates.now()))
+end
+
 # First value_name among the pops whose labelProps exists and carries a temporal column.
 function _hmm_temporal(imgs, pops, default_vn::AbstractString)
     for vn in _hmm_pop_value_names(pops, default_vn)
@@ -103,14 +133,17 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
     on_progress(2, 4)
 
     on_log("[INFO] Fitting HMM over $(nrow(df)) cells…")
-    states = hmm_fit_states(df, p.modelMeasurements; num_states=p.numStates, time_col=tcol,
-                            group_cols=["uID", "value_name", "track_id"],
-                            noise_filter=p.noiseFilterMeasurements, normalise=normalise,
-                            scale_measures=p.scaleMeasurements, post_filter=p.postFiltering,
-                            post_iterations=p.postIterations)
+    states, fit = hmm_fit_states(df, p.modelMeasurements; num_states=p.numStates, time_col=tcol,
+                                 group_cols=["uID", "value_name", "track_id"],
+                                 noise_filter=p.noiseFilterMeasurements, normalise=normalise,
+                                 scale_measures=p.scaleMeasurements, post_filter=p.postFiltering,
+                                 post_iterations=p.postIterations, return_fit=true)
     n_decoded = count(!ismissing, states)
     on_log("[INFO] decoded $n_decoded/$(length(states)) cells into " *
            "$(length(unique(skipmissing(states)))) states")
+    fit === nothing ||
+        on_log("[INFO] fit: log-likelihood $(round(fit.logLik; digits=1)), BIC $(round(fit.bic; digits=1)), " *
+               "$(fit.iterations) iterations" * (fit.converged ? "" : " — NOT converged"))
     on_progress(3, 4)
 
     state_col = "live.cell.hmm.state.$(p.colName)"
@@ -132,7 +165,9 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
                 # QC (advisory): bank this image-segmentation's state distribution (numeric state
                 # codes; NaN = undecoded) + degenerate-state findings. Never fails the write.
                 m = category_dist_metrics(vals)
-                write_qc(img, "behaviour.hmm_states", string(vn), hmm_states_qc_findings(m);
+                fit === nothing ||
+                    put_props_sidecar_entry!(hmm_fit_path(props), p.colName, _hmm_fit_record(p, fit, uids))
+                write_qc(img, "behaviour.hmm_states", string(vn), hmm_states_qc_findings(m; fit = fit);
                          metrics = Dict{String,Any}("nDecoded" => m.n, "nStates" => m.n_distinct,
                              "dominantStateFrac" => round(m.dominant_frac; digits = 4)))
             catch e
@@ -146,5 +181,6 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
     # `stateColumn` is threaded into the transitions step by the `behaviour.hmm` composite.
     Dict{String,Any}("colName" => p.colName, "numStates" => p.numStates,
                      "images" => length(imgs), "stateColumn" => state_col,
-                     "decoded" => n_decoded)
+                     "decoded" => n_decoded,
+                     "fit" => fit === nothing ? nothing : Dict{String,Any}(String(k) => v for (k, v) in pairs(fit)))
 end
