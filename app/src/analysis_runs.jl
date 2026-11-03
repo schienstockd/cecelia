@@ -71,14 +71,6 @@ _obs_suffixes(cols, prefix::AbstractString) =
 _rm_if(path::AbstractString; on_log = _ -> nothing) =
     ispath(path) && (on_log("[INFO] Removing: $path"); rm(path; recursive = true); true)
 
-# Drop keys from a JSON manifest sidecar (clustfeatures / motiffeatures) already read by its owner's
-# reader (`raw`); remove the file once empty.
-function _drop_sidecar_keys!(sidecar::AbstractString, raw::AbstractDict, keys)
-    isfile(sidecar) || return
-    kept = Dict{String,Any}(String(k) => v for (k, v) in raw if !(String(k) in keys))
-    length(kept) == length(raw) && return
-    isempty(kept) ? rm(sidecar) : write_json_atomic(sidecar, kept)
-end
 
 # ── clustering-family runs (cell clusters, track clusters, regions) ────────────────────────────
 # One column family on one table per kind; the run is joint across segmentations. Cell clusters and
@@ -124,7 +116,7 @@ function _clust_delete!(img, run, family, table, fun; on_log = _ -> nothing)
         on_log("[INFO] $(run.label): dropping $(join(drops, ", ")) from $(basename(p))")
         label_props(p) |> drop_obs(drops) |> drop_obsm(embeds) |> save!
         # the legacy family-less sidecar key matches every family — only take it when nothing else uses it
-        _drop_sidecar_keys!(_clustfeatures_path(p), _clustfeatures_raw(p),
+        drop_props_sidecar_keys!(_clustfeatures_path(p), _clustfeatures_raw(p),
                             shared ? [_clustfeatures_key(s, family)] : [_clustfeatures_key(s, family), s])
         _rm_if(qc_path(img, fun, "$vn.$s"); on_log)
     end
@@ -188,7 +180,7 @@ end
 
 # ── HMM: one run per colName, across segmentations ─────────────────────────────────────────────
 
-const _HMM_STATE_PREFIX = "live.cell.hmm.state."
+const _HMM_STATE_PREFIX = "live.cell.hmm.state."   # also read by plot_data.jl, hmm_fit_curve.jl, ai/behaviour_clusters.jl
 const _HMM_TRANS_PREFIX = "live.cell.hmm.transitions."
 
 function _hmm_list(img)
@@ -208,6 +200,8 @@ function _hmm_delete!(img, run; on_log = _ -> nothing)
         isfile(p) || continue
         on_log("[INFO] HMM $(run.key): dropping state + transition columns from $(basename(p))")
         label_props(p) |> drop_obs([_HMM_STATE_PREFIX * run.key, _HMM_TRANS_PREFIX * run.key]) |> save!
+        sidecar = hmm_fit_path(p)
+        drop_props_sidecar_keys!(sidecar, read_props_sidecar(sidecar), [run.key])
     end
 end
 
@@ -293,9 +287,7 @@ function _motifs_delete!(img, run; on_log = _ -> nothing)
     tp = img_track_props_path(img, vn)
     MOTIF_SEQUENCE_COL in _run_obs_cols(tp) && (label_props(tp) |> drop_obs([MOTIF_SEQUENCE_COL]) |> save!)
     sidecar = _motiffeatures_path(p)
-    raw = isfile(sidecar) ? (try JSON3.read(read(sidecar, String), Dict{String,Any}) catch; Dict{String,Any}() end) :
-                            Dict{String,Any}()
-    _drop_sidecar_keys!(sidecar, raw, [vn])
+    drop_props_sidecar_keys!(sidecar, read_props_sidecar(sidecar), [vn])
     _rm_if(qc_path(img, "behaviour.motif_discovery", vn); on_log)
 end
 

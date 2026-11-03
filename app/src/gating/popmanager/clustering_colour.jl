@@ -10,7 +10,7 @@
 # `{props}.clustfeatures.json` sidecar (keyed by suffix) into EVERY input segment. So the value_names
 # that took part in a run = those whose clustfeatures sidecar carries `suffix` — the single source of
 # truth for "which segmentations belong to this clustering".
-_clustfeatures_path(props_path::AbstractString) = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
+_clustfeatures_path(props_path::AbstractString) = props_sidecar_path(props_path, "clustfeatures")
 
 # The sidecar is keyed by the FULL obs column the run wrote — `{family}.{suffix}` (= the
 # `_cluster_measure_prefix` family + the run suffix), so a `clusters.immune` cell clustering and a
@@ -29,11 +29,7 @@ function _clustfeatures_split_key(key::AbstractString)
     (String(key), nothing)
 end
 
-_clustfeatures_raw(props_path::AbstractString) =
-    let s = _clustfeatures_path(props_path)
-        isfile(s) ? (try JSON3.read(read(s, String), Dict{String,Any}) catch; Dict{String,Any}() end) :
-                    Dict{String,Any}()
-    end
+_clustfeatures_raw(props_path::AbstractString) = read_props_sidecar(_clustfeatures_path(props_path))
 
 """
     prune_stale_clustfeatures!(props_path; on_log) -> Vector{String}
@@ -55,7 +51,7 @@ function prune_stale_clustfeatures!(props_path::AbstractString; on_log = _ -> no
     isempty(stale) && return stale
     on_log("[INFO] $(basename(props_path)) no longer carries cluster run(s) $(join(sort(stale), ", ")) — " *
            "re-run the clustering to restore them")
-    _drop_sidecar_keys!(_clustfeatures_path(props_path), raw, stale)
+    drop_props_sidecar_keys!(_clustfeatures_path(props_path), raw, stale)
     stale
 end
 

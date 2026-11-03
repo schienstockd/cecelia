@@ -295,11 +295,13 @@ function api_plot_data(body_bytes::Vector{UInt8})
     # here rejects the only body the panel can send. Route it through the targets form with an empty
     # target list — `plot_summary_data` intercepts on `matrixMode` before touching pop_df.
     # Same for ONE pair across images (`contactPairs`): the pair comes from the run, picked by `pair`.
+    # The HMM state-count elbow is the same kind of readout: it reads the runs' fit records.
     contact_pairs = _wbool(body, "contactPairs", false)
     pair_v    = get(body, "pair", nothing)
     stats_pair = pair_v === nothing ? "" : string(pair_v)
     precomputed = contact_pairs ||
-                  (chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction")
+                  (chart == "matrix" && matrix_mode !== nothing && matrix_mode == "interaction") ||
+                  chart == "elbow"
 
     # population targets: explicit (value_name, pop) pairs, or the legacy single-segmentation form.
     # `targets === nothing` → use the legacy `pops` + resolved `value_name` path.

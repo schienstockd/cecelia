@@ -228,6 +228,7 @@ def _unparsed_marker_count(output: str, findings: _t.Sequence[Finding],
 
 
 from .claude_cli import RateLimited, failure_text, read_result, resolve_claude_bin  # noqa: E402
+from .claude_cli import models as _models  # noqa: E402
 from .claude_cli import tokens as _tokens  # noqa: E402
 from .git_context import current_branch as _current_branch  # noqa: E402
 from .git_context import current_head_sha as _current_head_sha  # noqa: E402
@@ -243,12 +244,18 @@ def _resolve_claude_bin() -> str:
     return resolved
 
 
+#: Both reviewers run on Sonnet: many small reads, not one deep chain (`FANOUT_AUDIT.md` →
+#: *Model*). Without the flag the CLI used the user's default model, which was Opus.
+REVIEWER_MODEL = "sonnet"
+
+
 class ReviewerReply(_t.NamedTuple):
     """One reviewer's answer and what it cost, as the CLI reported it. A runner may return a bare
     `str` instead (test fakes do): its row then carries no token counts."""
     text: str
     tokens: dict[str, int]
     cost_usd: float | None
+    models: tuple[str, ...] = ()
 
 
 def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
@@ -266,7 +273,7 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
     env = {**os.environ, "CECELIA_OBSERVER_NO_PAIR": "1"}
     try:
         result = subprocess.run(
-            [claude_bin, "-p", "--output-format", "json"],
+            [claude_bin, "-p", "--model", REVIEWER_MODEL, "--output-format", "json"],
             input=prompt,
             env=env,
             capture_output=True,
@@ -297,7 +304,7 @@ def _default_runner(prompt: str, timeout: float = 180.0) -> ReviewerReply:
         raise RecitalError(f"claude exited {result.returncode}; {detail}")
     cost = out.get("total_cost_usd")
     return ReviewerReply(out["result"].strip(), _tokens(out),
-                         float(cost) if isinstance(cost, (int, float)) else None)
+                         float(cost) if isinstance(cost, (int, float)) else None, tuple(_models(out)))
 
 
 def _reviewer_prompt(doc_path: str, diff: str) -> str:
@@ -354,6 +361,8 @@ def _run_reviewer(
         payload["tokens"] = reply.tokens
         if reply.cost_usd is not None:
             payload["cost_usd"] = round(reply.cost_usd, 4)
+        if reply.models:
+            payload["models"] = list(reply.models)
     else:
         output = reply
     if error is not None:

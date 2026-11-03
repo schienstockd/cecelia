@@ -40,6 +40,7 @@ export interface PopTypeSpecLike {
     popTypes?: PopTypeOption[]
     matrix?: { mode?: string }
     contactPairs?: boolean
+    precomputed?: string     // 'hmmFit' — the HMM state-count elbow, read from the runs' fit records
   }
 }
 
@@ -52,10 +53,12 @@ export interface PopTypeSpecLike {
  * or validates a selection asks THIS predicate — the panel (don't require series, don't say "select
  * populations"), the population picker (don't offer a selection that does nothing), and the server
  * (`api_plot_data`'s `precomputed`, which must not reject a body with no pops). One question, one
- * answer; a second precomputed family extends it here.
+ * answer. The HMM state-count elbow (`precomputed: 'hmmFit'`) is the second family: it reads every
+ * recorded HMM run's fit, so its curves are fixed by the runs, not the ticked populations.
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
-  spec.dataSource.matrix?.mode === 'interaction' || isContactPairsSpec(spec)
+  spec.dataSource.matrix?.mode === 'interaction' || spec.dataSource.precomputed === 'hmmFit' ||
+  isContactPairsSpec(spec)
 
 /** One interaction pair across images (a dot per image): precomputed too, plus a pair picker. */
 export const isContactPairsSpec = (spec: PopTypeSpecLike): boolean => !!spec.dataSource.contactPairs

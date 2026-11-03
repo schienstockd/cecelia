@@ -1,0 +1,15 @@
+{
+  "id": "hmm_state_count",
+  "label": "HMM state count",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["elbow"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popTypes": [
+      { "popType": "live", "granularity": "cell", "label": "Tracked" }
+    ],
+    "precomputed": "hmmFit"
+  },
+  "scopeModes": ["summarised"]
+}
