@@ -114,6 +114,21 @@ class RecordTest(_Fixture):
 
 
 class RenderTest(_Fixture):
+    def test_a_real_result_bug_outside_the_result_paths_is_listed(self):
+        globs = ["python/cecelia/utils/*"]
+        live = {"verdict": "fix", "result": True, "effect": "areas in px, not um"}
+        bugs = [{**_bug("B1"), "key": "fanout-1", "file": "app/src/spatial2.jl", "verify": live},       # missed
+                {**_bug("B2"), "key": "fanout-2", "file": "python/cecelia/utils/a.py", "verify": live}, # on the list
+                {**_bug("B3"), "key": "result-3", "file": "app/src/x.jl", "verify": live},              # its own
+                {**_bug("B4"), "key": "fanout-4", "file": "app/src/y.jl", "verify": {**live, "result": False}},
+                {**_bug("B5"), "key": "fanout-5", "file": "app/src/z.jl", "verify": {**live, "verdict": "dismiss"}}]
+        self.assertEqual([b["id"] for b in self.rec.path_misses(bugs, globs)], ["B1"])
+        with mock.patch.object(self.rec, "repo_result_paths", return_value=globs):
+            md = self.rec.render_markdown(self.build(bugs=bugs))
+            self.assertIn("## Result bugs outside the result paths", md)
+            self.assertIn("`app/src/spatial2.jl` · areas in px, not um", md)
+            self.assertNotIn("Result bugs outside", self.rec.render_markdown(self.build(bugs=bugs[1:])))
+
     def test_bugs_rules_and_spend_render(self):
         record = self.build(
             bugs=[_bug("B1"), _bug("B2", status="unjudged", why="waiting for the judge")],

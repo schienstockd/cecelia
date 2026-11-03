@@ -292,6 +292,25 @@ class SweepTest(_Repo):
         self.assertTrue(by["fanout-00000001"]["why"].startswith("still open; not judged"))
         self.assertEqual(failures, {"sweep": "judge failed (exit 1): overloaded"})
 
+    def test_the_excerpt_judge_cant_dismiss_a_reproduced_result_its_author_shipped(self):
+        def reproduced(slug, file="a.py", **kw):
+            return _row("result_review_finding", {"slug": slug, "file": file, "line": 2, "desc": f"d {slug}",
+                                                  "marker": "reproduced"}, **kw)
+        events = [reproduced("result-00000001", branch="b"),
+                  _row("result_review_finding_resolved", {"slug": "result-00000001", "outcome": "false_positive",
+                                                          "reason": "the repro is wrong"}, branch="b"),
+                  reproduced("result-00000002", file="b.py", branch="c")]   # untagged: the judge's call stands
+        bugs, _ = self.sweep(events, judge=self.judge("not_a_bug"))
+        by = {b["key"]: b for b in bugs}
+        self.assertEqual(by["result-00000001"]["status"], "open")       # on to verify, then the owner
+        self.assertIn("back to verify", by["result-00000001"]["why"])
+        self.assertNotEqual(by.get("result-00000002", {}).get("status"), "open")   # dismissed, or not listed
+        # merged under an older fanout finding on the same function, it still holds the merged bug open
+        merged, _ = self.sweep([_finding("fanout-00000009", file="a.py", line=2, ts="2026-09-30T00:00:00Z"), *events[:2]],
+                               judge=self.judge("not_a_bug"))
+        (lead,) = [b for b in merged if "result-00000001" in (b.get("sources") or [b["key"]])]
+        self.assertEqual((lead["key"], lead["status"], lead.get("owner_only")), ("fanout-00000009", "open", True))
+
     def test_the_excerpt_judge_cant_dismiss_a_bug_verify_found_live(self):
         bugs, _ = self.sweep([_finding("fanout-00000001"), _finding("fanout-00000002", line=40)])
         bugs[0]["verify"] = {"verdict": "fix", "date": "2026-10-05", "effect": "it breaks"}

@@ -479,11 +479,20 @@ def result_paths(doc_text: str) -> list[str]:
     return [ln.strip() for ln in m.group(1).splitlines() if ln.strip()] if m else []
 
 
+def is_result_path(path: str, globs: _t.Sequence[str]) -> bool:
+    """`path` matches a result glob and none of `_NOT_RESULT_PATHS`."""
+    return any(fnmatch.fnmatch(path, g) for g in globs) and not any(fnmatch.fnmatch(path, x) for x in _NOT_RESULT_PATHS)
+
+
+def repo_result_paths(root: pathlib.Path | None = None) -> list[str]:
+    """The result globs `RESULT_REVIEW.md` lists in the checkout at `root` (default: this repo)."""
+    doc = (root or _repo_root()) / _RESULT_DOC
+    return result_paths(doc.read_text(encoding="utf-8")) if doc.is_file() else []
+
+
 def touched_result_paths(diff: str, globs: _t.Sequence[str]) -> list[str]:
-    """The diff's files that match a result glob and none of `_NOT_RESULT_PATHS`."""
-    return [f.path for f in _parse_diff(diff)
-            if any(fnmatch.fnmatch(f.path, g) for g in globs)
-            and not any(fnmatch.fnmatch(f.path, x) for x in _NOT_RESULT_PATHS)]
+    """The diff's files that are result paths (`is_result_path`)."""
+    return [f.path for f in _parse_diff(diff) if is_result_path(f.path, globs)]
 
 
 def _export_staged_tree(root: pathlib.Path, dest: pathlib.Path) -> None:
@@ -528,8 +537,7 @@ def run_result_review(
     `claude_runner` (tests) replaces the spawn and skips the tree export."""
     title = "Result review"
     root = _repo_root()
-    doc = root / _RESULT_DOC
-    touched = touched_result_paths(diff, result_paths(doc.read_text(encoding="utf-8")) if doc.is_file() else [])
+    touched = touched_result_paths(diff, repo_result_paths(root))
     if not touched:
         append_event("result_review_run", {"duration_s": 0.0, "escape_valve": "no_result_paths"},
                      pr=pr, commit=commit, branch=branch)

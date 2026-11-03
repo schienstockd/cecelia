@@ -69,7 +69,10 @@ test whether an agent can actually use the framework.
 
    **Result review** (key `result-…`): `reproduced` findings not tagged `fixed_pre_commit`, and untagged
    `inferred` notes, judged like fanout findings. `display` notes are never swept
-   ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)).
+   ([`RESULT_REVIEW.md`](RESULT_REVIEW.md)). A `reproduced` one its author tagged anything but fixed
+   goes to the owner as `decide` whatever the excerpt judge or verify said (`record.shipped_reproduced`), unless the code is gone or verify finds
+   it fixed. Verify also says per bug whether it makes a result wrong (`result`); the record lists real
+   ones outside the result paths under *Result bugs outside the result paths* (`record.path_misses`).
 
    **Duplicates** (`kind: "duplicate"`, key `conv-…`): convention findings marked `should reuse` that
    were never fixed. New code copying a helper doesn't misbehave, so the judge's question for these is

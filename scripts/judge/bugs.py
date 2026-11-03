@@ -446,7 +446,10 @@ def _merge(group: list[dict]) -> dict:
     seen = {a["key"] for a in also} | {lead["key"]}
     also += [{"key": b["key"], "marker": b.get("marker"), "branch": b.get("branch"), "desc": b["desc"]}
              for b in group if b["key"] not in seen]
-    return {**lead, **({"sources": sources, "also": also} if len(sources) > 1 else {})}
+    # a shipped repro anywhere in the group keeps the merged bug the owner's to close
+    owner = any(_record.shipped_reproduced(b) for b in group)
+    return {**lead, **({"sources": sources, "also": also} if len(sources) > 1 else {}),
+            **({"owner_only": True} if owner else {})}
 
 
 def stranded_commits(head: str | None, head_oid: str | None, sha: str, repo: pathlib.Path,
@@ -767,7 +770,7 @@ def sweep(events: _t.Sequence[dict], *, date: str, sha: str, previous: dict | No
                    "not judged (the judge failed)" if broke else
                    f"waiting for the judge (over the ${SWEEP_USD:g} sweep budget)")
             bugs.append(_not_judged(b, date, why))
-        elif v["verdict"] == "not_a_bug" and _verified_live(b):
+        elif v["verdict"] == "not_a_bug" and (_verified_live(b) or _record.shipped_reproduced(b)):
             # the excerpt judge has no tools; verify's agent traced the code: it checks again, this pass
             bugs.append({**_strip({k: x for k, x in b.items() if k != "verify"}), "status": "open",
                          "opened": _opened(b, date),
