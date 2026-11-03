@@ -1,7 +1,7 @@
 # Feature maturity — tiers on the guides, badges, report
 
-**Status:** **planning** (2026-11-02). Decisions 1–8 agreed in discussion; the starting tier per
-feature is open (his call).
+**Status:** **planning** (2026-11-02). Decisions 1–9 agreed in discussion; starting tiers drafted
+(`FEATURE_MATURITY_TIERS.md`), 7 Tested proposals await his review.
 
 **Related:**
 - Parent: [`HARDENING_AUDIT_PLAN.md`](HARDENING_AUDIT_PLAN.md) — the depth scores and gaps that fill
@@ -14,6 +14,8 @@ feature is open (his call).
   `utils/guideMap.test.ts`, and `user-docs/README.md` generated from the same data.
 - Pill extended: `components/ComingSoonBadge.vue` ("the ONE way to signal an incomplete surface").
 - Release checklist: [`../RELEASING.md`](../RELEASING.md).
+- Starting tiers: [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md) — 58 features, provisional, with his
+  decisions of 2026-11-02.
 
 ## Goal
 
@@ -40,6 +42,8 @@ Precedent: spacr labels every feature Stable/Beta/Alpha in a table.
 7. **Demotion on a confirmed wrong-result bug.** A Tested feature with a confirmed wrong-result bug
    drops to Beta in the fix PR, until a test guarding that bug lands.
 8. **Promotion happens in the PR, and is swept at the release cut** — not in the weekly judge.
+9. **Features with no scientific result are exempt** (blackboard, Movies, Tasks, tour, profiles): a tier
+   says how far to trust a result, and these produce none. No badge, no maturity row.
 
 ## The scale
 
@@ -150,8 +154,7 @@ evidence, and the registry shape is informed by a real case.
 
 ## Open questions
 
-- Starting tier per feature — his call. Known so far: gating = Beta (first Tested candidate);
-  cluster assignment = Beta (needs multiplex data); track correction and label correction =
-  Experimental.
+- Starting tiers — drafted in [`FEATURE_MATURITY_TIERS.md`](FEATURE_MATURITY_TIERS.md); 7 proposed for
+  Tested pending his review of each fails-if line; cluster assignment needs his PROVENANCE.md line.
 - A guide that spans several features (a recipe, or segment → measure): tier the feature it is named
   for; a recipe shows each step's badge.

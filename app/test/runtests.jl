@@ -71,6 +71,9 @@ function have_fixture(path::AbstractString)::Bool
     false
 end
 
+# A second segmentation that DIFFERS from the first (shared with api/test/runtests.jl).
+include(joinpath(@__DIR__, "distinct_segmentations.jl"))
+
 # Custom drop-in task fixture — structs must live at module top level, not inside a @testset block.
 struct _TestCustomTask <: CciaTask end
 # A SECOND distinct type, so a fun_name precedence test can tell which registration actually won

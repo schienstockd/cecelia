@@ -101,6 +101,20 @@ class FlowTest(unittest.TestCase):
         self.assertIn("From 6 notes to 4 bugs", svg)
         self.assertNotIn("commits made on", svg)   # a line with nothing on it is left out
 
+    def test_through_leaves_out_rows_after_it_and_ends_the_span_there(self):
+        # the weekly chart's *Data through*: a row logged after it (the week still running) isn't counted
+        events = [_finding("fanout-00000001", ts="2026-10-01T00:00:00Z"),
+                  _finding("fanout-00000002", ts="2026-10-06T00:00:00Z"),
+                  _resolved("fanout-00000001", "fixed_pre_commit")]
+        record = {"run": {"ts": "2026-10-02T00:00:00Z"}, "bugs": []}
+        everything = self.f.aggregate(events, [record])
+        cut = self.f.aggregate(events, [record], through="2026-10-04")
+        self.assertEqual((everything["required"], cut["required"]), (2, 1))
+        self.assertEqual(cut["last_day"], "2026-10-04")
+        self.assertIn("1 October 2026 to 4 October 2026.", self.f.render_svg(cut))
+        # the cut drops only rows after the newest pass, so the ledger still reaches the bug check
+        self.assertEqual(everything["into_check"]["since_pass"] - cut["into_check"]["since_pass"], 1)
+
     def test_a_finding_waiting_on_stranded_commits_reached_that_bug(self):
         events = [_finding("fanout-00000001"), _finding("fanout-00000002")]
         record = {"run": {"ts": "2026-10-05T00:00:00Z"}, "bugs": [

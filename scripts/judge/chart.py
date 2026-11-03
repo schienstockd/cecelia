@@ -785,7 +785,8 @@ def update(*, push: bool, repo: pathlib.Path = _REPO, git: Git | None = None, dr
                          prompt_edits=doc_edits(PROMPT_DOCS, repo=repo), rule_edits=doc_edits(RULE_DOCS, repo=repo),
                          prs=pr_merges(repo=repo), as_of=_dt.date.today())
         svg = render_svg(data)
-        data["flow"] = _flow.aggregate(events, records)
+        span = drawn_span(data)   # the flow figure ends where this one does
+        data["flow"] = _flow.aggregate(events, records, through=span and span[1].isoformat())
         flow_svg = _flow.render_svg(data["flow"])
         out_dir = out_dir or chart_dir()
         out_dir.mkdir(parents=True, exist_ok=True)

@@ -2193,6 +2193,14 @@ end
         @test dir.popType == "trackclust" && dir.gate === nothing
         @test dir.filter.measure == "clusters.movement" && dir.filter.fun == "in" &&
               collect(dir.filter.values) == [3]
+        # cell-vs-track comes from the pop_type, not the stored `is_track` flag — no GUI/MCP writer sets
+        # it, so a real trackclust pop carries `is_track=false` (this map's, too) and was reported as
+        # cells, and the measure summary profiled it as phenotype instead of motility
+        @test dir.isTrack == true && cd3.isTrack == false
+        tg = Cecelia._vn_targets(img, "A", Cecelia._gated_by_value_name(img)["A"])
+        @test ("/Directed", "trackclust", "/Directed", :track, "motility") in tg
+        @test !any(t -> t[3] == "/Directed" && t[4] === :cell, tg)
+        @test ("/CD3", "flow", "/CD3", :cell, "phenotype") in tg
         # scoping mirrors lineage
         @test length(populations_summary(proj; image_uid = "i1").images) == 1
         @test isempty(populations_summary(proj; image_uid = "nope").images)
