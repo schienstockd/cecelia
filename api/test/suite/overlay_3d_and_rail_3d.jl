@@ -374,8 +374,9 @@ end
 
 @testset "API: co-clustered segmentations stay apart — overlays, heatmap pooling" begin
     # A cluster pop's bare path expands across every segmentation clustered in the same run. A read
-    # meant for ONE segmentation must not pool the others: here T is a copy of B clustered with it, so
-    # any leak shows up as an exact doubling of B's numbers.
+    # meant for ONE segmentation must not pool the others. T is B clustered with it but DIFFERENT
+    # (`distinct_segmentation!`: B's Directed tracks are Scanning in T), so "each segmentation once",
+    # "B's twice" and "the pool once per segmentation" all give different numbers.
     src = api_fixture("testpr", "1", "KDIeEm")
     if !api_have_fixture(joinpath(src, "labelProps", "B__tracks.h5ad"))
         @test_skip "track fixture missing"
@@ -386,9 +387,7 @@ end
             img = CciaImage(uid = "KDIeEm", dir = td)
             img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
             if with_t
-                for f in ("B.h5ad", "B__tracks.h5ad", "B__tracks.clustfeatures.json")
-                    cp(joinpath(lp, f), joinpath(lp, replace(f, "B" => "T"; count = 1)))
-                end
+                distinct_segmentation!(lp)
                 img.label_props["T"] = "T.h5ad"
             end
             img
@@ -401,11 +400,51 @@ end
                     sum(t -> (p = per_t(t)[1]; p === nothing ? 0 : length(p.x)), 0:19))
         @test pts(alone) > 0
         @test pts(paired) == pts(alone)                            # B's cells only, not B's + T's
-        # the per-cluster heatmap pools the run itself — each segmentation once
-        n(img) = only(plot_summary_data(img, "trackclust", ["/Directed"], "matrix"; granularity = :track,
+        # the per-cluster heatmap pools the run itself — each segmentation once: B's Scanning tracks +
+        # T's (21 + 41), not B's twice or the pool counted once per segmentation
+        n(img) = only(plot_summary_data(img, "trackclust", ["/Scanning"], "matrix"; granularity = :track,
                                         category = "clusters.movement", matrix_mode = "profile",
                                         measures = ["live.track.speed"])["cells"])["n"]
-        @test n(paired) == 2 * n(alone)
+        scanning(vn) = count(==(0), (label_props(img_track_props_path(paired, vn)) |>
+                                     select_cols(["clusters.movement"]) |> as_df)[!, "clusters.movement"])
+        @test (scanning("B"), scanning("T")) == (21, 41)
+        @test n(alone) == scanning("B")
+        @test n(paired) == scanning("B") + scanning("T")
+    end
+end
+
+@testset "API: /channels trackclust — prefers the tracked segmentation that HAS the run" begin
+    # Two tracked segmentations, only one clustered: the active T is tracked but carries no trackclust
+    # run (`distinct_segmentation!(…; clustered = false)` drops the column), the `movement` run lives on
+    # B. A pop manager asking with no valueName must land on B. On an identical copy both would carry
+    # the run and any pick would look right.
+    if !api_have_fixture(api_fixture("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad"))
+        @test_skip "track fixture missing"
+    else
+        dir = mktempdir()
+        cp(api_fixture("testpr"), joinpath(dir, "testpr"))
+        lp = joinpath(dir, "testpr", "1", "KDIeEm", "labelProps")
+        @test isempty(distinct_segmentation!(lp; clustered = false).to)   # T: tracked, no run
+        old = Cecelia.cecelia_conf()["dirs"]["projects"]
+        try
+            Cecelia.cecelia_conf()["dirs"]["projects"] = dir
+            img = Cecelia.init_object("testpr", "KDIeEm")
+            img.label_props["T"] = "T.h5ad"; img.label_props["_active"] = "T"; save!(img)
+            @test is_tracked(img; value_name = "T") && is_tracked(img; value_name = "B")
+            ch(q) = JSON3.read(api_gating_channels(HTTP.Request("GET",
+                "/api/gating/channels?projectUid=testpr&imageUid=KDIeEm&" * q))[2])
+            r = ch("popType=trackclust")
+            # fails if: the trackclust coercion stops at "is the resolved vn tracked?" — T is, so it
+            # stays on T and the pop manager gets no clusters
+            @test String(r.valueName) == "B"
+            @test collect(String, r.clusterSuffixes) == ["movement"]
+            @test !isempty(r.clusterIds)
+            # an explicit valueName is honoured unchanged, and `track` (not trackclust) keeps the active
+            @test String(ch("popType=trackclust&valueName=T").valueName) == "T"
+            @test String(ch("popType=track").valueName) == "T"
+        finally
+            Cecelia.cecelia_conf()["dirs"]["projects"] = old
+        end
     end
 end
 

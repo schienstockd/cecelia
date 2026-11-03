@@ -492,6 +492,12 @@ include(joinpath(@__DIR__, "suite", "runner_http.jl"))
 # fragments (Julia includes are lexical).
 include(joinpath(@__DIR__, "suite", "correction.jl"))
 
+# ── Which segmentation / version a result came from ───────────────────────
+# Guards for the wrong-segmentation / wrong-version class on inputs that DIFFER (a distinct second
+# segmentation, two image versions of different length). Uses `_label_import_project` from
+# label_import.jl and `distinct_segmentation!` (app/test/distinct_segmentations.jl).
+include(joinpath(@__DIR__, "suite", "segmentation_selection.jl"))
+
 # ── Tracking / celltrackR testsets ─────────────────────────────────────────
 # 5 testsets covering: analyze_cell_pairs (celltrackR port + double-tracking + angle/dist
 # semantics), the diagnostics battery (app/src/tracking/track_diagnostics.jl), golden values
