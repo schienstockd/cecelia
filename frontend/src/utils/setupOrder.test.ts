@@ -71,6 +71,26 @@ const starredOnly = ref(false)
     expect(setupOrderHazards(src)).toEqual([{ name: 'starredOnly', line: 4 }])
   })
 
+  it('follows a computed with a type argument', () => {
+    const src = sfc(`
+const opts = computed<readonly (string | number)[]>(() => result.value?.pops ?? [])
+watch(opts, o => pick(o))
+const result = ref(null)
+`)
+    expect(setupOrderHazards(src)).toEqual([{ name: 'result', line: 4 }])
+  })
+
+  it('skips a watch marked SETUP-ORDER-OK with a reason, and only with one', () => {
+    const body = (mark: string) => sfc(`
+const opts = computed(() => gate.value ? later.value : 0)
+${mark}
+watch(opts, () => {})
+const later = ref(1)
+`)
+    expect(setupOrderHazards(body('// SETUP-ORDER-OK: gate is null at setup'))).toEqual([])
+    expect(setupOrderHazards(body('// SETUP-ORDER-OK:')).map(h => h.name)).toEqual(['later'])
+  })
+
   it('is happy once that ref moves above the watch', () => {
     const src = sfc(`
 const starredOnly = ref(false)
@@ -128,8 +148,9 @@ const later = computed(() => 1)
   })
 })
 
-// The ratchet. Zero, with no allow-list: there is no legitimate reason for a watch source to name a
-// binding that does not exist yet, and the failure mode is a blank page with a console-only clue.
+// The ratchet. Zero: there is no legitimate reason for a watch source to name a binding that does not
+// exist yet, and the failure mode is a blank page with a console-only clue. The only way out is a
+// `// SETUP-ORDER-OK: <reason>` marker naming the runtime gate that keeps the later read unreached.
 const RAW = import.meta.glob('/src/**/*.vue', { query: '?raw', import: 'default', eager: true }) as
   Record<string, string>
 

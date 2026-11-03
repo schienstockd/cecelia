@@ -164,7 +164,8 @@ describe('isPrecomputedSpec', () => {
     }
   })
 
-  it('is true for one interaction pair across images', () => {
+  it('is true for a per-image metric (a spatial pattern or an interaction pair across images)', () => {
+    expect(isPrecomputedSpec({ dataSource: { popType: 'flow', imageMetric: { source: 'neighbourStats' } } })).toBe(true)
   })
 
   it('is false for an ordinary plot', () => {

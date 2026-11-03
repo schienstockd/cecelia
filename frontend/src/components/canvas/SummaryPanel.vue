@@ -322,8 +322,6 @@ const imageMetric = computed(() => props.spec.dataSource.imageMetric)
 const metricPopOptions = computed<string[]>(() => result.value?.pops ?? [])
 const metricPop = computed<string>({
   get: () => props.ui.metricPop ?? props.ui.statsPair ?? '', set: v => (props.ui.metricPop = v) })
-// default to the run's first population once the response names them; drop a pick the run lacks
-watch(metricPopOptions, opts => { if (opts.length && !opts.includes(metricPop.value)) metricPop.value = opts[0] })
 const matrixMode = computed<'profile' | 'crosstab' | 'interaction'>({
   get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
   set: v => (props.ui.matrixMode = v) })
@@ -381,6 +379,9 @@ const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
 const result = ref<PlotDataResponse | null>(null)
+// default to the run's first population once the response names them; drop a pick the run lacks
+// (declared after `result`: a watch evaluates its source at setup)
+watch(metricPopOptions, opts => { if (opts.length && !opts.includes(metricPop.value)) metricPop.value = opts[0] })
 // The temporal group levels are FRAME INDICES; the x axis should read in real elapsed time. The
 // interval is per IMAGE (OME `timeIncrement`), so this is a uID → seconds-per-frame map — and it is
 // `null` unless EVERY plotted image has one, because an unknown interval must not be drawn as

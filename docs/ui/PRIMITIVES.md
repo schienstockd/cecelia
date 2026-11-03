@@ -153,8 +153,8 @@ serves the module, and every test passes. What you get is a blank page and a con
 It is worth its own checker because of the blast radius: the throw aborts the PARENT's patch, so
 innocent siblings vanish with it. One mis-ordered line in `FlowMetricsView` blanked the whole flow
 canvas — the plot panels and the model vault, which is a sibling and had nothing to do with it — and
-it read as a data problem. `utils/setupOrder.ts` (`setupOrderHazards`) ratchets it to zero with no
-allow-list. It checks the source only (a callback runs later and may name anything), all of
+it read as a data problem. `utils/setupOrder.ts` (`setupOrderHazards`) ratchets it to zero; the one
+way out is `// SETUP-ORDER-OK: <reason>` above the watch, naming the runtime gate. It checks the source only (a callback runs later and may name anything), all of
 `watchEffect`, and top-level calls only.
 
 **A tier that most sites override is the wrong default.** The form-control base was `--cc-fs-md` (= body)

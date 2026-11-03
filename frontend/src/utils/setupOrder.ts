@@ -31,6 +31,9 @@
  *   direct check saw nothing — but naming it as a source is precisely what makes its lazy getter run
  *   at setup, dead zone and all. One hop, not a graph walk: two levels of indirection between a
  *   watcher and a dead binding has not happened, and a full walk would need real scope analysis.
+ *   A typed `computed<T>(` counts too.
+ * - **`// SETUP-ORDER-OK: <reason>`** on the line above a watch skips it. Only for a later read that
+ *   sits behind a runtime gate the text check cannot see; the reason says which gate.
  */
 
 export interface SetupOrderHazard {
@@ -74,8 +77,10 @@ function callArgs(script: string, at: number): string {
 
 /** The `computed(...)` getter text for a top-level `const <name> = computed(`, else ''. */
 function computedBody(script: string, name: string): string {
-  const at = script.search(new RegExp(`^(?:const|let)\\s+${name}\\s*=\\s*computed\\s*\\(`, 'm'))
-  return at < 0 ? '' : callArgs(script, at)
+  // `computed<T>(` too, including a `T` with parentheses (`readonly (A | B)[]`): the lazy match stops
+  // at the first `>` that is followed by the call's `(`, and the body starts at THAT paren
+  const m = new RegExp(`^(?:const|let)\\s+${name}\\s*=\\s*computed\\s*(?:<[^\\n]*?>)?\\s*\\(`, 'm').exec(script)
+  return m ? callArgs(script, m.index + m[0].length - 1) : ''
 }
 
 /** The first argument only — split at the first comma that is not inside brackets or a string. */
@@ -107,6 +112,10 @@ export function setupOrderHazards(src: string): SetupOrderHazard[] {
     new RegExp(`(?<![.$\\w])${name}\\b`).test(text)
 
   for (const m of script.matchAll(TOP_WATCH)) {
+    // an opt-out on the line above, with its reason — for a source whose later reads sit behind a
+    // runtime gate this text check cannot see (e.g. an early return while setup-time state is null)
+    const prevLine = script.slice(0, m.index!).trimEnd().split('\n').pop() ?? ''
+    if (/SETUP-ORDER-OK:\s*\S/.test(prevLine)) continue
     const args = callArgs(script, m.index!)
     // watchEffect's whole argument IS the effect; watch's first argument is the source
     const immediate = m[1] ? args : firstArg(args)
