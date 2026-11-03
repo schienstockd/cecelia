@@ -29,7 +29,7 @@ import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } 
 import { readoutOf, type PlotReadout } from '../../plots/plotReadout'
 import { overrideNote, overrideTooltip, type AutoOverride } from '../../plots/autoOverride'
 import { popTypeOptions, popTypeLabel, hasPopTypeChoice, resolvePopType, granularityFor,
-         filterSeriesToPopType, isPrecomputedSpec } from '../../plots/popTypes'
+         filterSeriesToPopType, isPrecomputedSpec, isContactPairsSpec } from '../../plots/popTypes'
 import { discoverObsMeasures, obsMeasureLabel, distinctValueNames, mergeColumnSets } from '../../plots/obsMeasures'
 import type { ColumnSets } from '../../plots/obsMeasures'
 import CcToggle from '../CcToggle.vue'
@@ -61,7 +61,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { popType?: string; chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        statsSuffix?: string; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statsSuffix?: string; statsPair?: string; matrixMode?: 'profile' | 'crosstab' | 'interaction'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
         statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
@@ -137,7 +137,9 @@ const measureOpts = computed<string[]>(() => {
 })
 // display name for a measure option — obs-discovered spatial measures show the part that VARIES
 // (the target population / region basis) rather than the family repeated on every row.
+const PAIR_MEASURE_LABEL: Record<string, string> = { logOdds: 'log-odds', zScore: 'z-score' }
 const measureLabel = (m: string) => {
+  if (props.spec.dataSource.contactPairs) return PAIR_MEASURE_LABEL[m] ?? m
   const p = props.spec.dataSource.obsMeasurePatterns
   return p?.length ? obsMeasureLabel(m, p) : m
 }
@@ -216,7 +218,7 @@ const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorM
 const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit ?? 'individual', set: v => (props.ui.statUnit = v) })
 // how each image is collapsed to its one point when statUnit==='image' (mean = average; median = robust)
 const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
-const canStatUnit = computed(() => crossImage.value && hasMeasure.value
+const canStatUnit = computed(() => crossImage.value && hasMeasure.value && !isPairs.value
   && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
 // NB an earlier version of this persisted the summary level EXPLICITLY from a `watchEffect` here, so
 // that no reader had to resolve `?? 'individual'`. REVERTED 2026-08-08: the effect both read and wrote
@@ -305,6 +307,11 @@ const isInteraction = computed(() => isPrecomputedSpec(props.spec))
 const statsSuffix = computed<string>({
   get: () => props.ui.statsSuffix ?? '', set: v => (props.ui.statsSuffix = v) })
 const runOptions = computed<string[]>(() => (result.value as { suffixes?: string[] } | null)?.suffixes ?? [])
+// one pair across images: WHICH pair, options again from the response (the run fixes them)
+const isPairs = computed(() => isContactPairsSpec(props.spec))
+const statsPair = computed<string>({
+  get: () => props.ui.statsPair ?? '', set: v => (props.ui.statsPair = v) })
+const pairOptions = computed<string[]>(() => (result.value as { pairs?: string[] } | null)?.pairs ?? [])
 const matrixMode = computed<'profile' | 'crosstab' | 'interaction'>({
   get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
   set: v => (props.ui.matrixMode = v) })
@@ -520,6 +527,8 @@ async function fetchData(isCurrent: () => boolean) {
     // beeswarm are per-series and unaffected. Tracked as a follow-up if it matters.)
     const byType = new Map<string, SeriesTarget[]>()
     for (const t of ownSeries.value) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
+    // one pair across images selects no populations: ONE request, the run + pair stand in for series
+    if (isPairs.value) byType.set(popType.value, [])
 
     const requests = [...byType.entries()].map(async ([pt, targets]) => {
       const body: Record<string, unknown> = {
@@ -529,7 +538,11 @@ async function fetchData(isCurrent: () => boolean) {
         // count is a row count — no measure. A measure-less (population summary) spec sends none for
         // any chart, so the backend runs the per-image count/proportion distribution. Else send it.
         ...(chartType.value === 'count' || !hasMeasure.value ? {} : { measure: measure.value }),
-        series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
+        ...(isPairs.value
+          ? { contactPairs: true,
+              ...(statsSuffix.value ? { suffix: statsSuffix.value } : {}),
+              ...(statsPair.value ? { pair: statsPair.value } : {}) }
+          : { series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })) }),
         bins: bins.value,
         normalize: be.normalize ?? normalize.value,
         rawPoints: be.rawPoints ?? false,
@@ -567,7 +580,7 @@ async function fetchData(isCurrent: () => boolean) {
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
 watch([() => ownSeries.value.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'), popType,
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
-       statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
+       statUnit, imageAgg, matrixMode, statsSuffix, statsPair, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken,
        () => !!props.vis?.statsEnabled, () => props.vis?.statsTest ?? 'auto'],
@@ -598,7 +611,9 @@ const hasData = computed(() => {
 })
 // An interaction matrix reads a `neighbourStats` run, not the ticked populations, so "no data" means
 // the run is missing — name the task that produces it rather than blaming the selection.
-const emptyMessage = computed(() => isInteraction.value
+const emptyMessage = computed(() => isPairs.value
+  ? 'No interaction run on these images yet.'
+  : isInteraction.value
   ? 'No interaction run yet — run "Interaction matrix" on this image.'
   : 'No data for the selected populations.')
 // Named empty series (see emptySeriesLabels): only meaningful for a measure plot — a population summary
@@ -1118,6 +1133,10 @@ function onPlotPointBrush(p: { kind: 'track' | 'cell'; sources: Array<{ imageUid
       <select v-if="isInteraction && runOptions.length > 1" v-model="statsSuffix" class="sp-poptype"
               v-tooltip.bottom="'Which interaction run to show'">
         <option v-for="s in runOptions" :key="s" :value="s">{{ s }}</option>
+      </select>
+      <select v-if="isPairs && pairOptions.length > 1" v-model="statsPair" class="sp-poptype"
+              v-tooltip.bottom="'Which population pair'">
+        <option v-for="p in pairOptions" :key="p" :value="p">{{ p }}</option>
       </select>
       <select v-if="showPopTypePicker && !isInteraction" v-model="popType" class="sp-poptype"
               v-tooltip.bottom="'Population type'">

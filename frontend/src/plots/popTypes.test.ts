@@ -159,6 +159,10 @@ describe('isPrecomputedSpec', () => {
     }
   })
 
+  it('is true for one interaction pair across images', () => {
+    expect(isPrecomputedSpec({ dataSource: { popType: 'flow', contactPairs: true } })).toBe(true)
+  })
+
   it('is false for an ordinary plot', () => {
     expect(isPrecomputedSpec({ dataSource: { popType: 'flow', granularity: 'cell' } })).toBe(false)
     expect(isPrecomputedSpec({ dataSource: {} })).toBe(false)

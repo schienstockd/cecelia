@@ -60,6 +60,35 @@ class NeighbourStatsRunnerQcTest(unittest.TestCase):
             self.assertAlmostEqual(qc['meanDegree'], 2 * (n - 1) / n)
             self.assertEqual(qc['isolatedFrac'], 0.0)
 
+    def test_shuffle_pops_fixes_the_rest_and_lands_in_the_sidecar(self):
+        import anndata as ad
+        import pandas as pd
+        import scipy.sparse as sp
+        from cecelia.utils.spatial_utils import save_graph
+
+        # star: label 9 (target) touches labels 1 and 2; labels 1-4 'pos', 5-8 'neg'
+        n = 9
+        labels = list(range(1, n + 1))
+        with tempfile.TemporaryDirectory() as td:
+            g = ad.AnnData(np.zeros((n, 2), dtype=np.float32))
+            g.obsp['spatial_connectivities'] = sp.csr_matrix(
+                (np.ones(4), ([0, 8, 1, 8], [8, 0, 8, 1])), shape=(n, n))
+            graph_path = os.path.join(td, 'spatialGraph', 'default.h5ad')
+            save_graph(g, pd.DataFrame({'valueName': ['B'] * n, 'label': labels}), graph_path)
+            stats_path = os.path.join(td, 'stats.json')
+            _load_runner().run({
+                'graphPath': graph_path, 'graphSuffix': 'default', 'basis': ['neg', 'pos', 'tgt'],
+                'segments': [{'valueName': 'B', 'labels': labels,
+                              'popCodes': [1, 1, 1, 1, 0, 0, 0, 0, 2]}],
+                'statsPath': stats_path, 'nPermutations': 0, 'randomState': 0,
+                'shufflePops': ['pos', 'neg'], 'qcOutPath': os.path.join(td, 'qc.json')})
+            with open(stats_path, encoding='utf-8') as f:
+                out = json.load(f)
+            self.assertEqual(out['shufflePops'], ['neg', 'pos'])          # basis order
+            rec = {(r['popA'], r['popB']): r for r in out['records']}
+            self.assertEqual(rec[('pos', 'tgt')]['observed'], 2.0)
+            self.assertAlmostEqual(rec[('pos', 'tgt')]['expected'], 1.0)   # hypergeometric mean, not CODEX
+
 
 if __name__ == '__main__':
     unittest.main()

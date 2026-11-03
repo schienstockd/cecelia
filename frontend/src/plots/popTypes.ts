@@ -39,6 +39,7 @@ export interface PopTypeSpecLike {
     granularity?: 'cell' | 'track'
     popTypes?: PopTypeOption[]
     matrix?: { mode?: string }
+    contactPairs?: boolean
   }
 }
 
@@ -54,7 +55,10 @@ export interface PopTypeSpecLike {
  * answer; a second precomputed family extends it here.
  */
 export const isPrecomputedSpec = (spec: PopTypeSpecLike): boolean =>
-  spec.dataSource.matrix?.mode === 'interaction'
+  spec.dataSource.matrix?.mode === 'interaction' || isContactPairsSpec(spec)
+
+/** One interaction pair across images (a dot per image): precomputed too, plus a pair picker. */
+export const isContactPairsSpec = (spec: PopTypeSpecLike): boolean => !!spec.dataSource.contactPairs
 
 // Default display names, so a spec need not repeat them. Deliberately user-facing wording ("Gated",
 // not "flow") — the pop-type ids are an implementation detail.

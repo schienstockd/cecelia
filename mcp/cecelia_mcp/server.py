@@ -715,7 +715,7 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
     avoid each other. Scope with `image_uid` / `set_uid`; omit both for the whole project.
 
     Per image, `contactStats` is a list, one per neighbourStats run:
-      `{suffix, graphSuffix, basis: [populations], nCells, nEdges, coverage, nPermutations,
+      `{suffix, graphSuffix, basis: [populations], nCells, nEdges, coverage, nPermutations, shufflePops,
       pairs: [{popA, popB, observed, expected, logOdds, zScore, pValue, significant,
       association: associated|avoided}]}`.
       - `logOdds` is the CODEX observed-vs-expected contact log-odds ratio — the EFFECT SIZE: > 0 =
@@ -724,6 +724,10 @@ def get_contact_stats(project_uid: str, image_uid: str = "", set_uid: str = "") 
         same neighbour graph: they answer "is this more than a random arrangement of these cell
         types would give?". Both are null when the test was skipped (nPermutations = 0), in which
         case logOdds is descriptive only.
+      - `shufflePops` non-empty = the CONDITIONAL null: only those populations' labels were shuffled,
+        the rest held in place (e.g. CD69+ vs CD69− T cells shuffled, targets fixed → "do CD69+ T cells
+        touch targets more than T cells in general?"). `expected` is then that null's exact mean, and
+        a pair with no shuffled member has p = 1 by construction — read only pairs that involve one.
       - `pValue` cannot go below 1/(nPermutations+1), so p at that floor means "no permutation
         matched it", not p=0.
       - `coverage` is the fraction of the graph's cells that were in `basis` — a low value means
