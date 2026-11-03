@@ -136,6 +136,17 @@ class CandidatesTest(_Repo):
         keys = {c["key"] for c in self.b.candidates(rows, since="2026-12-01", result_since="")}
         self.assertEqual(keys, {"result-00000001", "result-00000003"})
 
+    def test_an_edited_repro_is_a_shipped_reproduced_finding_on_any_branch(self):
+        rows = [_row("result_review_finding", {"slug": "result-0000aaaa", "file": "a.py", "line": 1, "desc": "d",
+                                               "marker": "reproduced"}, branch="first"),
+                _row("result_review_finding_resolved", {"slug": "result-0000aaaa", "outcome": "fixed_pre_commit"},
+                     branch="first"),
+                _row("result_review_test_edited", {"slug": "result-0000aaaa", "file": "t.py", "reason": "px"},
+                     ts="2026-10-02T00:00:00Z", branch="later")]
+        (c,) = self.b.candidates(rows, since="2026-09-28")
+        self.assertEqual((c["key"], c["marker"], c["outcome"]), ("result-0000aaaa", "reproduced", "false_positive"))
+        self.assertTrue(self.b._record.shipped_reproduced(c))
+
     def test_only_unhandled_fanout_findings_since_the_window(self):
         events = [_finding("fanout-00000001"), _resolved("fanout-00000001", "fixed_pre_commit"),
                   _finding("fanout-00000002"), _resolved("fanout-00000002", "false_positive"),

@@ -132,6 +132,8 @@ _FANOUT_EVENTS = ("fanout_audit_finding", "fanout_audit_advisory")
 #: Result review: every `reproduced` finding, and the `inferred` advisories (`display` is listed only).
 _RESULT_FINDING, _RESULT_ADVISORY = "result_review_finding", "result_review_advisory"
 _RESULT_SWEPT_ADVISORY = "inferred"
+#: A committed repro changed under a `false_positive` tag (the commit hook's gate 4): always the owner's.
+_RESULT_TEST_EDITED = "result_review_test_edited"
 _CONVENTION_EVENT = "convention_check_finding"
 #: The convention marker swept as a duplicate; the rest are rules-only.
 DUPLICATE_MARKER = "should reuse"
@@ -259,7 +261,7 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
     for r in events:
         ev = r.get("event")
         floor = (convention_since if ev == _CONVENTION_EVENT
-                 else result_since if ev in (_RESULT_FINDING, _RESULT_ADVISORY) else since)
+                 else result_since if ev in (_RESULT_FINDING, _RESULT_ADVISORY, _RESULT_TEST_EDITED) else since)
         if r.get("ts", "") < floor:
             continue
         if r.get("event") == AGENT_RUN_EVENT and (r.get("payload") or {}).get("key"):
@@ -268,6 +270,13 @@ def candidates(events: _t.Iterable[dict], *, since: str, convention_since: str |
                 _hit_again(out[key], _agent_run(r))
             else:
                 out[key] = _agent_run(r)
+            continue
+        if r.get("event") == _RESULT_TEST_EDITED and (r.get("payload") or {}).get("slug"):
+            p = r["payload"]
+            out[p["slug"]] = {"key": p["slug"], "marker": "reproduced", "outcome": "false_positive",
+                              "reason": f"its repro `{p.get('file')}` was changed: {p.get('reason', '')}",
+                              "file": p.get("file"), "line": 1, "desc": f"repro edited: {p.get('reason', '')}",
+                              "branch": r.get("branch"), "commit": r.get("commit"), "logged": r.get("ts")}
             continue
         if not swept(r):
             continue

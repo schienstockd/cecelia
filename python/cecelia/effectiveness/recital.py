@@ -456,6 +456,10 @@ def _run_reviewer(
             "the console. No tag needed; report the reviewer output shape."
         )
 
+    if mechanism == "result" and findings:
+        cleaned += ("\n\n_Each reproduced finding: commit its repro as a test, as its own file, with a "
+                    "`RESULT-REVIEW: <slug>` comment, then fix the code. The commit hook keeps that test as "
+                    "written unless the message says `[<slug>: false_positive: <reason>]`._")
     if any(f.marker in TAGGABLE_ADVISORY[mechanism] for f in advisories):
         cleaned += "\n\n" + _OPTIONAL_TAG_NOTE.replace("{Marker}", TAGGABLE_ADVISORY[mechanism][0].capitalize())
     return f"_{title} (evidence):_\n\n{cleaned}\n\n_{title}: run_"

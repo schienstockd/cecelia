@@ -19,7 +19,8 @@ each with a failing test. It also found 2 live bugs in PRs nobody had reported a
    `frontend/node_modules` is linked in. It sits outside `.git/` because the harness won't let an
    agent write under it.
 2. `claude -p --model opus` runs in that copy, with this doc's *Reviewer prompt*, the staged diff,
-   and the claim (`pixi run recital -- --claim "<commit subject>"`). The claim is marked
+   and the claim (`pixi run recital -- --claim "<commit subject>"`; no apostrophe in it, which pixi's
+   task parser fails on). The claim is marked
    unverified. The author's reasoning is never passed. Tools: Read/Grep/Glob, Write/Edit inside the
    copy, and Bash for the pixi Python (with `PYTHONPATH` set to the copy) and `npx vitest`.
 3. A re-round with the same staged diff reuses the earlier review and doesn't spawn again.
@@ -32,7 +33,7 @@ The path gate keeps the cost off most commits. Each run row logs the `models` it
 
 | Marker | Meaning | Author |
 |---|---|---|
-| `**reproduced**` | It ran something that shows the wrong result | **Outcome tag required.** Commit the repro as a test in the right suite, as its own file, then fix the code in place: `fixed_pre_commit`. Never change the reviewer's test to make it pass; if it expects the wrong thing, tag `false_positive: <reason>`. Any tag but `fixed_pre_commit` sends it to the owner's `decide` queue at the next weekly pass, whatever the verify agent says: a session can't tag a failing repro away |
+| `**reproduced**` | It ran something that shows the wrong result | **Outcome tag required.** Commit the repro as a test in the right suite, as its own file, with a `RESULT-REVIEW: <slug>` comment, then fix the code in place: `fixed_pre_commit`. The commit hook blocks any later commit that edits, renames or deletes that file unless its message tags the slug `false_positive`. Never change the reviewer's test to make it pass; if it expects the wrong thing, tag `false_positive: <reason>`. Any tag but `fixed_pre_commit` sends it to the owner's `decide` queue at the next weekly pass, whatever the verify agent says: a session can't tag a failing repro away |
 | `**inferred**` | Read from code only | Optional tag (like fanout `plausible`). Untagged, the weekly bug sweep checks it at `origin/main` |
 | `**display**` | Wrong only in what is drawn; no number, membership or export changes | Listed only |
 
