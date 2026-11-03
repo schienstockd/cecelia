@@ -255,8 +255,10 @@ function _resolve_track_family_pops(img::CciaImage, pt::AbstractString,
     for path in pop_paths(m)
         p = pop_at(m, path)
         p.transient && continue
+        # typed-as-track comes from the pop_type (`is_track_pop`), not the stored `p.is_track` flag,
+        # which no GUI/MCP writer sets — every viewer/overlay/movie consumer reads it from here
         meta[String(path)] = (colour = p.colour, name = p.name, uid = p.uid,
-                              show = p.show, is_track = p.is_track)
+                              show = p.show, is_track = is_track_pop(pt, String(path)))
         push!(paths, String(path))
     end
     isempty(paths) && return NamedTuple[]
@@ -400,7 +402,7 @@ function resolve_pops(img::CciaImage, pop_type::PopTypeArg;
         # a sibling pop from bleeding into this pop's tracks. See viewer_api.jl overlays payload +
         # frontend `filterPayloadByTrackSource`. Additive field; existing callers ignore it.
         push!(out, (path = p.path, name = p.name, colour = p.colour, uid = p.uid,
-                    show = p.show, is_track = p.is_track, has_tracks = has_tracks,
+                    show = p.show, is_track = is_track_pop(pt, p.path), has_tracks = has_tracks,
                     labels = labs))
     end
     img._pop_df_cache[ckey] = out

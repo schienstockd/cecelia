@@ -12,8 +12,10 @@
 #     segmentation. So all structural anndata writes stay in Python; membership stays in Julia.
 #
 # Features are picked as var COLUMN names (intensities `mean_intensity_N` + morphology), via
-# `labelPropsColsSelection` like behaviour.hmm — no channel-index/name resolution layer. Columns are
-# pooled by name (`mean_intensity_0` = same channel across the set); that holds for one acquisition.
+# `labelPropsColsSelection` like behaviour.hmm, on the FIRST segment. Intensity columns are named by
+# channel index, so each other segment reads its own column for the same channel NAME
+# (`match_segment_channel_columns`; images may order channels differently) and the runner renames it
+# back, so the pooled features keep the first segment's names.
 # See docs/todo/CLUSTERING_PLAN.md.
 
 using DataFrames: nrow, groupby, DataFrame
@@ -105,6 +107,32 @@ function _write_clust_features!(props_path::AbstractString, suffix::AbstractStri
     write_json_atomic(sidecar, merged)
 end
 
+# One segment per (uID, value_name) of the pooled membership frame: its labelProps path + member labels,
+# plus — where its channel order differs from the first segment's — its own `featureCols` for the same
+# channel names (see header). `nothing` (logged) when none resolve or a segment lacks a channel.
+function _cluster_segments(df, img_by_uid, measures; on_log)
+    segments = Vector{Dict{String,Any}}()
+    for g in groupby(df, [:uID, :value_name])
+        uid = string(first(g.uID)); vn = string(first(g.value_name))
+        img = get(img_by_uid, uid, nothing); img === nothing && continue
+        push!(segments, Dict{String,Any}(
+            "uID" => uid, "valueName" => vn,
+            "propsPath" => img_label_props_path(img, vn),
+            "labels" => Int.(g.label)))
+    end
+    isempty(segments) && (on_log("[ERROR] clustPops: no segments resolved"); return nothing)
+    own = match_segment_channel_columns([(img_by_uid[g["uID"]], g["valueName"]) for g in segments], measures)
+    isempty(own.problems) ||
+        (on_log("[ERROR] clustPops: channels don't match across images — $(join(own.problems, "; "))"); return nothing)
+    for (seg, cols) in zip(segments, own.cols)
+        cols == measures && continue
+        seg["featureCols"] = cols
+        on_log("[INFO] $(seg["uID"])/$(seg["valueName"]): channels matched by name — " *
+               join(("$a → $b" for (a, b) in zip(measures, cols) if a != b), ", "))
+    end
+    segments
+end
+
 function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -128,18 +156,9 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     nrow(df) == 0 && (on_log("[ERROR] clustPops: no cells for pops=$(p.popsToCluster)"); return nothing)
     on_progress(2, 4)
 
-    # ── one segment per (uID, value_name): its labelProps path + member labels ──
     img_by_uid = Dict(img.uid => img for img in imgs)
-    segments = Vector{Dict{String,Any}}()
-    for g in groupby(df, [:uID, :value_name])
-        uid = string(first(g.uID)); vn = string(first(g.value_name))
-        img = get(img_by_uid, uid, nothing); img === nothing && continue
-        push!(segments, Dict{String,Any}(
-            "uID" => uid, "valueName" => vn,
-            "propsPath" => img_label_props_path(img, vn),
-            "labels" => Int.(g.label)))
-    end
-    isempty(segments) && (on_log("[ERROR] clustPops: no segments resolved"); return nothing)
+    segments = _cluster_segments(df, img_by_uid, p.clusterMeasures; on_log = on_log)
+    segments === nothing && return nothing
     on_log("[INFO] $(length(segments)) segment(s), $(nrow(df)) cells, $(length(p.clusterMeasures)) features")
 
     # ── hand off to the Python engine runner ──

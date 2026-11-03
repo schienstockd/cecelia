@@ -272,6 +272,7 @@ Every row would be **small, self-contained and committed** (fits the 1 MB/file c
    - btrack, Leiden and HMM outputs are never checked.
    - Of 88 past wrong-result bugs, none was caught by a result test before shipping.
    - Evidence: observed. Fix shape: one tiny annotated 3D stack + simulated tracks, run on CPU in default CI with tolerance goldens.
+   - **Partly closed (post-segmentation half):** `app/test/suite/pipeline_golden.jl`, in `test-pkg`. A synthetic 2D movie with planted intensities, straight-line motion and calibration (X ≠ Y) runs import labels + measure → btrack + track measures → rectangle gate → clustPops, asserted against the planted truth. Mutation-checked: swapped channels, a dropped label frame, a seconds-not-minutes interval and an X/Y pixel-size swap each fail named assertions. Still open: segmentation (no real weights in CI), 3D/Z, HMM.
 2. **Blocker — channel identity by index across images (S1).**
    - Columns are named by channel index, set-scope clustering pools by name, gating copy checks only missing columns, and the code comment states the one-acquisition assumption.
    - Swapped channel order → wrong marker, no signal.

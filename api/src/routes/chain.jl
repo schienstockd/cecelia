@@ -115,6 +115,18 @@ function api_chains_suggest(req::HTTP.Request)
     200, JSON3.write(r)
 end
 
+# GET /api/chains/history-params?projectUid&imageUids=a,b → {rows} — the Methods parameter table for the
+# same steps the suggestion is built from, one row per step with only non-default params and the images'
+# spread where they disagree (`history_params_table`, tasks/chain/history_params.jl). Read-only.
+function api_chains_history_params(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    uid  = get(q, "projectUid", "")
+    uids = String[strip(x) for x in split(get(q, "imageUids", ""), ',') if !isempty(strip(x))]
+    (isempty(uid) || isempty(uids)) && return 400, JSON3.write((; error="projectUid and imageUids required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    200, JSON3.write((; rows = history_params_table(proj, uids)))
+end
+
 # POST /api/chains/preflight { projectUid, chain, imageUids } → { problems: [{imageUid, nodeId, fn, level,
 # message}] } — what the run will hit on each image, before it starts (`chain_preflight`,
 # tasks/chain/preflight.jl). The chain's start dot is honoured, so only the steps that will run are read.

@@ -2752,6 +2752,13 @@ reused models, and the runs not repeated folded per reason under a collapsed **L
 defaults to one no chain has (`uniqueChainName`), and a name that exists blocks Open with a note — it
 never overwrites a chain.
 
+**Export CSV** (beside *Suggest*, same selected images, no suggestion needed) downloads the Methods
+parameter table (`GET /api/chains/history-params` → `history_params_table`, `historyParamsCsv`): one
+row per step grouped as the suggestion groups them, only params that differ from the task spec's
+default, the images' spread where they disagree (`value (n images)`), never resolved. Unlike the chain,
+nothing is left out — an import, a crop or a training step is a row with a note, and a run logged
+before params were recorded says so. Select every image in the set for a paper.
+
 **Pre-flight on Run**: Run first posts `/api/chains/preflight` (`utils/chainPreflight.ts` groups the
 answer per image, failures first). Nothing found → the run starts as before; anything found → a
 *Before this run* dialog lists it (`InlineNote` per problem) with **Cancel** / **Run anyway**. A failed

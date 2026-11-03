@@ -4,6 +4,7 @@
 import type { CciaImage } from '../stores/project'
 import { attrCsvHeaders } from './attrFilter'
 import { isExcluded, isBlocked } from './inclusion'
+import { pixelSizeUm } from './physicalSize'
 import { sortRows, type SortDir } from './sortRows'
 import { toSeconds } from './timeAxis'      // ONE time-unit conversion, shared with the time axis
 
@@ -37,7 +38,7 @@ export function imageSortValue(img: CciaImage, key: ImageSortKey): string | numb
   // Blocked FIRST, then by pixel size. Sorting this column is how you find the images that need the
   // metadata editor, so the ones with nothing recorded have to lead rather than fall to the end with
   // the other blanks — hence a real value (-1) rather than `null`.
-  if (key === 'scale') return isBlocked(img) ? -1 : (img.physicalSizeX ?? 0)
+  if (key === 'scale') return isBlocked(img) ? -1 : (pixelSizeUm(img.physicalSizeX, img.physicalSizeUnit) ?? 0)
   if (key.startsWith('attr:')) return img.attr?.[key.slice(5)] ?? null
   return null
 }

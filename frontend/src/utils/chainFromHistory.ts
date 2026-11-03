@@ -1,8 +1,9 @@
 // The whiteboard's "From history…" dialog: what the backend suggests (`GET /api/chains/suggest`,
 // app/src/tasks/chain/from_history.jl) and the pure steps between that and a chain on the canvas.
-// Design: docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part B.
+// Design: docs/todo/CHAIN_FROM_HISTORY_PLAN.md, Part B. Also the dialog's Methods parameter-table export.
 
 import type { ChainTemplate } from '../tasks/types'
+import { rowsToCsv } from '../plots/export'
 
 export interface HistoryFinal {
   id: string; fn: string; output: string; imageUids: string[]; kept: boolean
@@ -100,4 +101,28 @@ export function uniqueChainName(base: string, existing: readonly string[]): stri
   let i = 2
   while (taken.has(`${base} ${i}`)) i++
   return `${base} ${i}`
+}
+
+// ── Methods parameter table (`GET /api/chains/history-params`, app/src/tasks/chain/history_params.jl) ──
+
+/** One step as it ran on the selected images — only params that differ from the task's defaults. */
+export interface HistoryParamsRow {
+  step: string; task: string; output: string
+  images: string             // "n/N"
+  lastRun: string            // ISO, '' when unknown
+  changedFromDefault: string // "key=value; …"
+  conflicts: string          // "key: a (n) | b (m); …" — the images disagree
+  note: string               // why it is not something a chain repeats, or why its params are unknown
+}
+
+export function historyParamsUrl(projectUid: string, imageUids: string[]): string {
+  return `/api/chains/history-params?${new URLSearchParams({ projectUid, imageUids: imageUids.join(',') })}`
+}
+
+/** The table as CSV, columns in a fixed order (the backend's JSON objects carry no key order). */
+export function historyParamsCsv(rows: HistoryParamsRow[]): string {
+  return rowsToCsv(rows.map(r => ({
+    step: r.step, task: r.task, output: r.output, images: r.images, last_run: r.lastRun,
+    changed_from_default: r.changedFromDefault, differs_between_images: r.conflicts, note: r.note,
+  })))
 }

@@ -708,7 +708,8 @@ end
 """
 Physical pixel sizes for the image, read from `img.meta`.
 Returns `(pixel_res, time_step)` where `pixel_res` is a `Vector{Float64}` of µm/px per
-spatial axis in skimage order (z, y, x for 3-D), and `time_step` is **minutes/frame**.
+spatial axis in skimage order (z, y, x for 3-D), and `time_step` is **minutes/frame** — both
+converted from the stored unit (`PhysicalSizeUnit`/`PhysicalSize{X,Y,Z}Unit`, `TimeIncrementUnit`).
 Mirrors `cciaImage\$omeXMLPixelRes()` / `omeXMLTimelapseInfo()` from the old R version — which
 reports the interval in minutes (`TimeIncrement / 60`), so track speed comes out in **µm/min**
 (the celltrackR / T-cell convention, ~10 µm/min) rather than µm/s.
@@ -724,15 +725,41 @@ function img_physical_sizes(img::CciaImage)::Tuple{Vector{Float64}, Float64}
         v = get(m, key, nothing)
         (isnothing(v) || v == "") ? 1.0 : something(tryparse_f64(v), 1.0)
     end
-    sx = getf("PhysicalSizeX")
-    sy = getf("PhysicalSizeY")
-    sz = getf("PhysicalSizeZ")
-    # OME TimeIncrement is in SECONDS; report minutes/frame (÷60) so speed is µm/min, matching the
-    # old R omeXMLTimelapseInfo. Absent/blank → 1.0 min/frame fallback (parity with R interval=1).
+    # The stored value is in the stored unit: a pixel size in nm or a frame interval in ms read as
+    # µm / s makes every speed and distance 1000× off with no signal. Convert by the unit; an absent
+    # unit keeps the historical assumption (µm, s), and an unknown one is left as-is and flagged by
+    # `metadata_qc_findings`.
+    lf(axis) = something(length_unit_um(_meta_axis_length_unit(m, axis)), 1.0)
+    sx = getf("PhysicalSizeX") * lf("X")
+    sy = getf("PhysicalSizeY") * lf("Y")
+    sz = getf("PhysicalSizeZ") * lf("Z")
+    # Report minutes/frame so speed is µm/min, matching the old R omeXMLTimelapseInfo.
+    # Absent/blank → 1.0 min/frame fallback (parity with R interval=1).
     tiv = get(m, "TimeIncrement", nothing)
-    ts = (isnothing(tiv) || tiv == "") ? 1.0 : something(tryparse_f64(tiv), 60.0) / 60.0
+    secs = something(time_unit_seconds(get(m, "TimeIncrementUnit", nothing)), 1.0)
+    ts = (isnothing(tiv) || tiv == "") ? 1.0 : something(tryparse_f64(tiv), 60.0) * secs / 60.0
     ([sz, sy, sx], ts)   # skimage order: z, y, x
 end
+
+# Unit name → factor to the unit the measures are reported in. Both the NGFF names the import writes
+# ("micrometer", "second") and the OME-XML abbreviations ("µm", "ms") appear in `meta`.
+const _LENGTH_UNIT_UM = Dict(
+    "µm" => 1.0, "um" => 1.0, "micrometer" => 1.0, "micrometre" => 1.0, "micron" => 1.0, "microns" => 1.0,
+    "nm" => 1e-3, "nanometer" => 1e-3, "nanometre" => 1e-3, "mm" => 1e3, "millimeter" => 1e3, "millimetre" => 1e3)
+const _TIME_UNIT_S = Dict(
+    "s" => 1.0, "sec" => 1.0, "second" => 1.0, "ms" => 1e-3, "millisecond" => 1e-3,
+    "min" => 60.0, "minute" => 60.0, "h" => 3600.0, "hour" => 3600.0)
+
+_unit_key(u) = (u === nothing || u == "") ? nothing : lowercase(strip(String(u)))
+
+"""`length_unit_um(unit)` → µm per `unit`; `1.0` when no unit is recorded; `nothing` when it isn't one we know."""
+length_unit_um(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_LENGTH_UNIT_UM, k, nothing))
+
+"""`time_unit_seconds(unit)` → seconds per `unit`; `1.0` when no unit is recorded; `nothing` when unknown."""
+time_unit_seconds(u) = (k = _unit_key(u); k === nothing ? 1.0 : get(_TIME_UNIT_S, k, nothing))
+
+# a per-axis unit (PhysicalSizeXUnit) when the meta has one, else the shared PhysicalSizeUnit
+_meta_axis_length_unit(m, axis) = something(get(m, "PhysicalSize$(axis)Unit", nothing), get(m, "PhysicalSizeUnit", nothing), Some(nothing))
 
 """
     img_is_calibrated(img) -> Bool

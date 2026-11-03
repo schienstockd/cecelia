@@ -70,6 +70,31 @@ end
     end
 end
 
+# ── resolve_pops.is_track — typed from the pop_type, NOT the stored flag ─────────────────────────
+# No GUI/MCP writer sets a pop's stored `is_track`, so a real track gate saved through pop/add carries
+# `is_track=false`. The viewer/overlay/movie consumers all read `is_track` from resolve_pops — it must
+# say "track" for a track-family pop regardless of that flag.
+@testset "resolve_pops is_track: typed by pop_type, not the stored flag" begin
+    h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+    trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+    if !have_fixture(h5) || !have_fixture(trk)
+        @test_skip "resolve_pops is_track (fixture missing)"
+    else
+        td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+        cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
+        cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+        img = CciaImage(uid="KDIeEm", dir=td)
+        img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+        m = PopulationMap(pop_type="track", value_name="B")
+        add_pop!(m, "any"; gate=RectangleGate("live.track.speed", "live.track.speed",
+                                              -1e12, 1e12, -1e12, 1e12))      # stored is_track=false
+        @test m.pops["/any"].is_track === false
+        save_pop_map!(m, img)
+        layers = resolve_pops(img, "track"; value_name="B")
+        @test length(layers) == 1 && layers[1].is_track === true
+    end
+end
+
 # ── has_tracks attribution guard (MULTI_POP_TRACKING_ORPHANS_PLAN P0) ─────────
 # `_pop_has_authored_tracks` is the predicate that fixes the wrong-attribution bug where an orphan
 # row (from a deleted pop) or a shared-label row (from an overlapping live pop) bled into a

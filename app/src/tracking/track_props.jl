@@ -9,7 +9,7 @@
 # This is the data source for track-gating (pop_type="track") and per-track summary plots.
 
 using Statistics: mean, median, std, quantile
-using DataFrames: DataFrame, groupby, combine, leftjoin, rename!, nrow
+using DataFrames: DataFrame, groupby, combine, leftjoin, rename!, nrow, allowmissing!
 
 # finite-only reductions (cells with NaN/missing in a measure are skipped, like R na.rm=TRUE)
 _finite_vals(x) = Float64[Float64(v) for v in x if v isa Real && isfinite(v)]
@@ -229,6 +229,56 @@ function track_aggregate_base(col::AbstractString, direct;
     hit !== nothing && return c[1:end-ncodeunits(_TRACK_NUM_AGG_SUFFIXES[hit])]   # strip `.agg`
     idx = findlast('.', c)                                                          # `{base}.{cat}` → base
     idx === nothing ? nothing : c[1:prevind(c, idx)]
+end
+
+"""
+    rebase_track_aggregates!(df, rows, bases, own_bases, direct) -> df
+
+For `rows` of a pooled per-track frame, overwrite every aggregate column of each base in `bases`
+(`mean_intensity_0.mean`, `.sd`, …) with the same aggregate of the parallel base in `own_bases`
+(`mean_intensity_1.mean`) — so rows whose segment holds a channel at another index pool under the
+reference's column names (clustTracks, `match_segment_channel_columns`). All values are read before
+any is written, so a swap is safe. `direct` = motility columns, as for `track_aggregate_base`.
+"""
+function rebase_track_aggregates!(df, rows, bases, own_bases, direct)
+    moves = Pair{String,String}[]
+    for (ref, mine) in zip(bases, own_bases), c in names(df)
+        ref == mine && continue
+        track_aggregate_base(c, direct; cell_cols = Set([ref])) == ref || continue
+        src = mine * c[ncodeunits(ref)+1:end]
+        src in names(df) && push!(moves, c => src)
+    end
+    vals = Dict(src => df[rows, src] for (_, src) in moves)
+    for (dst, src) in moves
+        df[rows, dst] = vals[src]
+    end
+    df
+end
+
+# clustTracks: intensity cell measures are named by channel index and were picked on the first segment. A segment
+# whose channels are in another order aggregates its own column for the same channel NAME
+# (`match_segment_channel_columns`), copied into the first segment's aggregate columns
+# (`mean_intensity_1.mean` → `mean_intensity_0.mean`), so the matrix pools one channel per column. A
+# second read adds the other segments' columns only when some order differs. `nothing` (logged) when a
+# segment lacks a channel or holds its name twice.
+function _match_track_channels(df, imgs, uids, pops, cell_measures, mot_set; on_log)
+    img_by_uid = Dict(img.uid => img for img in imgs)
+    keys_ = unique(zip(string.(df.uID), string.(df.value_name)))
+    own = match_segment_channel_columns([(img_by_uid[u], v) for (u, v) in keys_], cell_measures)
+    isempty(own.problems) ||
+        (on_log("[ERROR] clustTracks: channels don't match across images — $(join(own.problems, "; "))"); return nothing)
+    all(==(cell_measures), own.cols) && return df
+    wide = unique(vcat(cell_measures, own.cols...))
+    df = pop_df_multi(imgs, uids, pops; granularity = :track, cell_measures = wide, pop_cols = String[])
+    allowmissing!(df)
+    for ((u, v), cols) in zip(keys_, own.cols)
+        cols == cell_measures && continue
+        rows = findall((string.(df.uID) .== u) .& (string.(df.value_name) .== v))
+        on_log("[INFO] $u/$v: channels matched by name — " *
+               join(("$a → $b" for (a, b) in zip(cell_measures, cols) if a != b), ", "))
+        rebase_track_aggregates!(df, rows, cell_measures, cols, mot_set)
+    end
+    df
 end
 
 """

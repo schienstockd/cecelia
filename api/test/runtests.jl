@@ -63,6 +63,10 @@ _repl(code) = _post(api_repl, Dict("code" => code))
 # to api/test, since runtests.jl itself did not move.
 const API_TEST_DIR = @__DIR__
 
+# A second segmentation that DIFFERS from the first — the package suite's helper, shared so the API
+# multi-segmentation tests don't fall back to an identical copy (app/test/distinct_segmentations.jl).
+include(joinpath(@__DIR__, "..", "..", "app", "test", "distinct_segmentations.jl"))
+
 # ── Image payload + narrow-query API testsets ─────────────────────
 # Five testsets covering payload shape (points-only value_name), run-log enrichment
 # (image-writing tasks only), register-legacy REPAIRS-not-clobbers, /api/tasks/funparams/sources

@@ -648,6 +648,12 @@ and `have_fixture(path)` (override the root with the `CECELIA_TEST_DATA` env var
 on `have_fixture(...)` and `@test_skip` otherwise; `have_fixture` emits a single strong `@warn` per
 missing path. Unrelated tests must still pass. Example: the LabelProps/`pop_df` testsets.
 
+**Two segmentations? Make them differ.** A test of "which segmentation did this read" needs a second
+table that disagrees with the first, or a mix-up returns the same numbers. Don't copy `B` as `T` —
+call `distinct_segmentation!(labelProps_dir)` (`app/test/distinct_segmentations.jl`, loaded by both
+the package and API suites): it derives `T` from KDIeEm's `B` through the sanctioned writer and
+relabels its clusters (`clustered = false` drops the run instead).
+
 **Keep fixtures small** — e.g. a `labelProps/*.h5ad` (hundreds of KB), not GB-scale raw images or
 OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
 
