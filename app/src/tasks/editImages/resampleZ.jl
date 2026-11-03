@@ -26,16 +26,19 @@ end
 # GUI but a REPL/chain caller can still reach).
 function _resample_z_inherited_meta(src_meta::AbstractDict)::Dict{String,Any}
     out = Dict{String,Any}()
-    for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeUnit",
+    for k in ("PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeUnit", "PhysicalSizeZUnit",
               "TimeIncrement", "TimeIncrementUnit", "SizeC", "SizeT", "SizeX", "SizeY")
         haskey(src_meta, k) && (out[k] = src_meta[k])
     end
-    px_x = Float64(get(src_meta, "PhysicalSizeX", 1.0))
-    px_z = Float64(get(src_meta, "PhysicalSizeZ", px_x))
+    # the ratio in µm (per-axis units may differ); the Z size written back stays in Z's own unit
+    um(axis) = something(length_unit_um(_meta_axis_length_unit(src_meta, axis)), 1.0)
+    px_x_raw = Float64(get(src_meta, "PhysicalSizeX", 1.0))
+    px_z_raw = Float64(get(src_meta, "PhysicalSizeZ", px_x_raw))
+    px_x, px_z = px_x_raw * um("X"), px_z_raw * um("Z")
     size_z_src = Int(get(src_meta, "SizeZ", 1))
     ratio = px_x > 0 ? px_z / px_x : 1.0
     out["SizeZ"] = max(1, round(Int, size_z_src * ratio))
-    out["PhysicalSizeZ"] = px_x                   # isotropic: Z spacing = X spacing
+    out["PhysicalSizeZ"] = px_x / um("Z")        # isotropic: Z spacing = X spacing, in Z's unit
     out
 end
 

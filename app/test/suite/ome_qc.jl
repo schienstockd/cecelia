@@ -1355,6 +1355,20 @@ end
         @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,
             "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
               ["metadata.frame_interval_no_unit"]
+        # a unit we can't convert → flagged (the accessor would otherwise assume s / µm silently)
+        @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,"TimeIncrementUnit"=>"fortnight",
+            "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
+              ["metadata.frame_interval_unit_unknown"]
+        @test codes(Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,
+            "PhysicalSizeUnit"=>"furlong"))) == ["metadata.pixel_size_unit_unknown"]
+        # Z ratio is taken in µm per axis: X 500 nm, Z 2 µm is a normal 4:1, not 0.004
+        @test isempty(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>500.0,"PhysicalSizeY"=>500.0,
+            "PhysicalSizeZ"=>2.0,"PhysicalSizeUnit"=>"nm","PhysicalSizeZUnit"=>"µm")))
+        # every convertible unit (both spellings) is clean
+        for (tu, pu2) in (("ms", "nm"), ("millisecond", "nanometer"), ("min", "mm"), ("hour", "µm"))
+            @test isempty(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>1.0,"TimeIncrementUnit"=>tu,
+                "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeUnit"=>pu2)))
+        end
         # no spatial unit, x+y+z present (2D-safe: SizeZ=1 so no z-spacing case) → three no-unit (x,y,z)
         fu = Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeZ"=>2.0))
         @test all(==("metadata.pixel_size_no_unit"), codes(fu)) && fields(fu) == ["x","y","z"]
@@ -2597,4 +2611,25 @@ end
     cidx2 = findfirst(==("-C"), gzun.exec)
     @test cidx2 !== nothing && gzun.exec[cidx2 + 1] == joinpath("C:", "out", "payload")
     @test gzun.dir == joinpath("C:", "tmp")
+end
+
+
+@testset "img_physical_sizes converts the stored units (µm, minutes/frame)" begin
+    mk(meta) = (img = CciaImage(uid = "U", dir = mktempdir()); merge!(img.meta, meta); img)
+    base = Dict{String,Any}("PhysicalSizeX" => 0.5, "PhysicalSizeY" => 0.5, "PhysicalSizeZ" => 2.0)
+    # µm + seconds: the historical case, unchanged
+    px, ts = Cecelia.img_physical_sizes(mk(merge(base, Dict("PhysicalSizeUnit" => "micrometer",
+                                                             "TimeIncrement" => 30.0, "TimeIncrementUnit" => "second"))))
+    @test px == [2.0, 0.5, 0.5] && ts ≈ 0.5
+    # nothing recorded → the same historical assumption
+    @test Cecelia.img_physical_sizes(mk(merge(base, Dict("TimeIncrement" => 30.0)))) == ([2.0, 0.5, 0.5], 0.5)
+    # ms / minutes / hours: the interval is converted, not read as seconds
+    @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 30000.0, "TimeIncrementUnit" => "ms")))[2] ≈ 0.5
+    @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 0.5, "TimeIncrementUnit" => "minute")))[2] ≈ 0.5
+    @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 1.0, "TimeIncrementUnit" => "h")))[2] ≈ 60.0
+    # nm / mm pixel sizes → µm; a per-axis unit wins over the shared one
+    @test Cecelia.img_physical_sizes(mk(merge(base, Dict("PhysicalSizeUnit" => "nanometer"))))[1] ≈ [0.002, 0.0005, 0.0005]
+    @test Cecelia.img_physical_sizes(mk(merge(base, Dict("PhysicalSizeUnit" => "nm", "PhysicalSizeZUnit" => "µm"))))[1] ≈ [2.0, 0.0005, 0.0005]
+    # an unknown unit is left as-is (QC flags it)
+    @test Cecelia.img_physical_sizes(mk(Dict("TimeIncrement" => 30.0, "TimeIncrementUnit" => "fortnight")))[2] ≈ 0.5
 end
