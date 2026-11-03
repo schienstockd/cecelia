@@ -209,6 +209,17 @@ def _mechanism_of(event: str) -> tuple[str, str]:
     return (event[:_MECH_WIDTH].ljust(_MECH_WIDTH), _GREY)
 
 
+#: Tally row order: as `_MECHANISM_STYLE` lists them (the reviewers, then the mechanical checks), and a
+#: label it doesn't know last, alphabetically.
+_MECH_ORDER: dict[str, int] = {}
+for _label, _ in _MECHANISM_STYLE.values():
+    _MECH_ORDER.setdefault(_label.strip(), len(_MECH_ORDER))
+
+
+def _mech_rank(label: str) -> tuple[int, str]:
+    return (_MECH_ORDER.get(label, len(_MECH_ORDER)), label)
+
+
 #: Reverse index: short label (`fnut`/`conv`/…) → colour. Built at import so a tally row (which
 #: knows only the label, not the source event name) can pick the same colour the event stream
 #: used. Kept as a mapping instead of a second `_mechanism_of("cite_run")` walk — that lookup
@@ -907,7 +918,7 @@ def render_dashboard(state: DashboardState, log_path: pathlib.Path, *,
     # By-mechanism block (compact — one row per mechanism, still counts as chrome so it
     # doesn't compete with the findings pane for the row budget).
     seen_mechs = sorted(set(state.tally.runs) | set(state.tally.skipped) | set(state.tally.findings)
-                        | set(state.tally.resolved))
+                        | set(state.tally.resolved), key=_mech_rank)
     if seen_mechs:
         chrome.append(_hr("by mechanism", width, use_colour=use_colour))
         for mech in seen_mechs:
